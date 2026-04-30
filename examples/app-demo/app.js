@@ -1,11 +1,12 @@
 import {
   getUniqueBins,
   aggregateBinCounts,
+  aggregateValues,
   getColorScheme,
   listColorSchemes,
 } from 'wafermap';
 import { createWafermapWorker } from 'wafermap/worker';
-import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
+import { renderWaferGallery } from 'wafermap/canvas-adapter';
 
 const workerUrl = new URL('../../dist/packages/worker/wafermap.worker.js', import.meta.url);
 const wmWorker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
@@ -28,7 +29,6 @@ const state = {
   },
   ui: {
     selectedWafers: new Set(),
-    view: 'maps',
     plotMode: 'hardbin',
     valueChannel: 0,
     colorScheme: 'color',
@@ -280,18 +280,52 @@ function refreshGallery() {
 }
 
 function _doRefreshGallery() {
-  const { view } = state.ui;
-  document.getElementById('btn-view-maps').classList.toggle('active', view === 'maps');
-  document.getElementById('btn-view-bingallery').classList.toggle('active', view === 'bingallery');
   updateWaferChips();
-  if (view === 'maps') renderWafermapGallery();
-  else renderBinGallery();
+  renderWafermapGallery();
+}
+
+function buildGalleryItems(plotMode, selected, diesByWafer, wafer) {
+  const selectedDiesList = selected.map(wId => diesByWafer[wId] ?? []);
+
+  if (plotMode === 'stackedValues') {
+    // One card per test parameter — lot mean at each die position across selected wafers.
+    return state.cfg.valueCols.map((col, paramIndex) => {
+      const dies = aggregateValues(selectedDiesList, 'mean', paramIndex);
+      return { wafer, dies, label: col };
+    });
+  }
+
+  if (plotMode === 'stackedBins') {
+    // One card per distinct bin — count of that bin at each die position across selected wafers.
+    const allBins = [...new Set(selectedDiesList.flat().flatMap(d => d.bins ?? []))].sort((a, b) => a - b);
+    return allBins.map(bin => {
+      const dies = aggregateBinCounts(selectedDiesList, bin, 0);
+      return { wafer, dies, label: `HBin ${bin}` };
+    });
+  }
+
+  // Individual wafer items (value / hardbin / softbin modes).
+  const { valueChannel } = state.ui;
+  const dies4map = valueChannel > 0
+    ? dies => dies.map(die => {
+        const v = die.values ?? [];
+        const reordered = [...v];
+        reordered[0] = v[valueChannel] ?? v[0];
+        return { ...die, values: reordered };
+      })
+    : dies => dies;
+
+  return selected.map(waferId => ({
+    wafer,
+    dies:  dies4map(diesByWafer[waferId] ?? []),
+    label: waferId,
+  }));
 }
 
 function renderWafermapGallery() {
   const galleryEl = document.getElementById('wafermap-gallery');
   galleryEl.classList.remove('bin-gallery-grid');
-  const { selectedWafers, plotMode, valueChannel, colorScheme, showRings, showQuadrants, showXY, highlightBin } = state.ui;
+  const { selectedWafers, plotMode, colorScheme, showRings, showQuadrants, showXY, highlightBin } = state.ui;
   const { diesByWafer, wafer } = state.data;
   const selected = [...selectedWafers].sort();
 
@@ -304,20 +338,7 @@ function renderWafermapGallery() {
     return;
   }
 
-  const dies4map = valueChannel > 0
-    ? dies => dies.map(die => {
-        const v = die.values ?? [];
-        const reordered = [...v];
-        reordered[0] = v[valueChannel] ?? v[0];
-        return { ...die, values: reordered };
-      })
-    : dies => dies;
-
-  const items = selected.map(waferId => ({
-    wafer,
-    dies:  dies4map(diesByWafer[waferId] ?? []),
-    label: waferId,
-  }));
+  const items = buildGalleryItems(plotMode, selected, diesByWafer, wafer);
 
   galleryCtrl = renderWaferGallery(galleryEl, items, {
     sceneOptions: {
@@ -327,27 +348,37 @@ function renderWafermapGallery() {
       showQuadrantBoundaries: showQuadrants,
       showXYIndicator:        showXY,
       highlightBin,
+      ...(plotMode === 'stackedBins'   ? { valueRange: [0, selected.length], lotSize: selected.length } : {}),
+      ...(plotMode === 'stackedValues' ? { aggrMethod: 'mean' } : {}),
     },
     onSceneOptionsChange(opts) {
       // Keep sidebar controls in sync when gallery bar changes something.
-      if (opts.plotMode     !== undefined) { state.ui.plotMode     = opts.plotMode;     document.getElementById('map-mode').value  = opts.plotMode; }
+      if (opts.plotMode     !== undefined) {
+        state.ui.plotMode = opts.plotMode;
+        document.getElementById('map-mode').value = opts.plotMode;
+        // Stacked modes rebuild items (aggregated vs individual).
+        refreshGallery();
+      }
       if (opts.colorScheme  !== undefined) { state.ui.colorScheme  = opts.colorScheme;  document.getElementById('map-color').value = opts.colorScheme; }
       if (opts.showRingBoundaries     !== undefined) { state.ui.showRings     = opts.showRingBoundaries;     document.getElementById('btn-rings').checked     = opts.showRingBoundaries; }
       if (opts.showQuadrantBoundaries !== undefined) { state.ui.showQuadrants = opts.showQuadrantBoundaries; document.getElementById('btn-quadrants').checked = opts.showQuadrantBoundaries; }
     },
   });
 
-  // Append per-card stats divs after gallery mounts cards (cards are in order).
-  const cards = galleryEl.querySelectorAll('.wmap-gallery-card');
-  cards.forEach((card, i) => {
-    const waferId = selected[i];
-    const dies = diesByWafer[waferId];
-    if (!dies) return;
-    const statsEl = document.createElement('div');
-    statsEl.className = 'map-stats';
-    card.appendChild(statsEl);
-    renderMapStats(statsEl, dies);
-  });
+  // Append per-card stats for individual wafer items only.
+  const isStacked = plotMode === 'stackedValues' || plotMode === 'stackedBins';
+  if (!isStacked) {
+    const cards = galleryEl.querySelectorAll('.wmap-gallery-card');
+    cards.forEach((card, i) => {
+      const waferId = selected[i];
+      const dies = diesByWafer[waferId];
+      if (!dies) return;
+      const statsEl = document.createElement('div');
+      statsEl.className = 'map-stats';
+      card.appendChild(statsEl);
+      renderMapStats(statsEl, dies);
+    });
+  }
 }
 
 function renderMapStats(targetEl, dies) {
@@ -372,65 +403,12 @@ function renderMapStats(targetEl, dies) {
     }).join('');
 }
 
-function renderBinGallery() {
-  const gallery       = document.getElementById('wafermap-gallery');
-  gallery.classList.add('bin-gallery-grid');
-  const { diesByWafer, wafer } = state.data;
-  const { colorScheme, showRings } = state.ui;
-  const allDies       = Object.values(diesByWafer).flat();
-  const uniqueBins    = getUniqueBins(allDies);
-  const allWaferDies  = Object.values(diesByWafer);
-  const numWafers     = allWaferDies.length;
-
-  gallery.innerHTML = uniqueBins.map(bin => `
-    <div class="map-card" data-bin="${bin}">
-      <div class="map-card-header">
-        <span class="map-card-title">Bin ${bin}</span>
-        <span class="map-card-sub" id="binsub-${bin}"></span>
-      </div>
-      <canvas class="map-chart" id="map-bin-${bin}"></canvas>
-      <div class="map-stats" id="mapstats-bin-${bin}"></div>
-    </div>
-  `).join('');
-
-  const token = renderQueue.token;
-  let i = 0;
-
-  function renderNext() {
-    if (renderQueue.token !== token) return;
-    if (i >= uniqueBins.length) return;
-
-    const bin        = uniqueBins[i++];
-    const aggregated = aggregateBinCounts(allWaferDies, bin);
-    const totalHits  = aggregated.reduce((s, d) => s + (d.values?.[0] ?? 0), 0);
-    const affected   = aggregated.filter(d => (d.values?.[0] ?? 0) > 0).length;
-
-    const canvas = document.getElementById(`map-bin-${bin}`);
-    renderWaferMap(canvas, wafer, aggregated, {
-      sceneOptions: { plotMode: 'value', valueRange: [0, numWafers], colorScheme, showRingBoundaries: showRings },
-      showToolbar: false,
-      showTooltip: false,
-    });
-
-    const subEl   = document.getElementById(`binsub-${bin}`);
-    const statsEl = document.getElementById(`mapstats-bin-${bin}`);
-    if (subEl)   subEl.textContent = `${affected} positions`;
-    if (statsEl) statsEl.innerHTML =
-      `<span class="stat-chip">Total: ${totalHits} occurrences across ${numWafers} wafers</span>` +
-      `<span class="stat-chip">Scale: 0 – ${numWafers}</span>`;
-
-    requestAnimationFrame(renderNext);
-  }
-
-  requestAnimationFrame(renderNext);
-}
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 function updateWaferChips() {
   const bar = document.getElementById('wafer-chips');
   if (!bar) return;
-  if (state.ui.view === 'bingallery') { bar.innerHTML = ''; return; }
 
   bar.innerHTML = [...state.ui.selectedWafers].sort().map(w =>
     `<span class="chip">${w} <button class="chip-remove" data-wafer="${w}">×</button></span>`
@@ -617,21 +595,6 @@ function wireEvents() {
     updateHeaderYield();
   });
 
-  document.getElementById('btn-view-maps').addEventListener('click', () => {
-    state.ui.view = 'maps';
-    document.getElementById('btn-view-maps').classList.add('active');
-    document.getElementById('btn-view-bingallery').classList.remove('active');
-    document.getElementById('wafer-selection-bar').hidden = false;
-    refreshGallery();
-  });
-  document.getElementById('btn-view-bingallery').addEventListener('click', () => {
-    state.ui.view = 'bingallery';
-    document.getElementById('btn-view-bingallery').classList.add('active');
-    document.getElementById('btn-view-maps').classList.remove('active');
-    document.getElementById('wafer-selection-bar').hidden = true;
-    refreshGallery();
-  });
-
   document.getElementById('btn-select-all').addEventListener('click', () => {
     state.data.waferIds.forEach(w => state.ui.selectedWafers.add(w));
     refreshGallery();
@@ -645,25 +608,27 @@ function wireEvents() {
 
   document.getElementById('map-mode').addEventListener('change', e => {
     state.ui.plotMode = e.target.value;
+    const isStacked = e.target.value === 'stackedValues' || e.target.value === 'stackedBins';
     document.getElementById('map-channel-group').hidden =
       e.target.value !== 'value' || !state.cfg.valueCols.length;
-    if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ plotMode: e.target.value });
+    // Stacked modes change the items (aggregated vs individual) — always full rebuild.
+    if (!isStacked && galleryCtrl) galleryCtrl.setOptions({ plotMode: e.target.value });
     else refreshGallery();
   });
   document.getElementById('map-channel').addEventListener('change', e => {
     state.ui.valueChannel = Number(e.target.value);
-    refreshGallery(); // channel reorder requires full rebuild
+    refreshGallery();
   });
   document.getElementById('map-color').addEventListener('change', e => {
     state.ui.colorScheme = e.target.value;
     renderPareto();
     renderYieldChart();
-    if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ colorScheme: e.target.value });
+    if (galleryCtrl) galleryCtrl.setOptions({ colorScheme: e.target.value });
     else refreshGallery();
   });
   document.getElementById('map-highlight').addEventListener('change', e => {
     state.ui.highlightBin = e.target.value === '' ? undefined : Number(e.target.value);
-    if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ highlightBin: state.ui.highlightBin });
+    if (galleryCtrl) galleryCtrl.setOptions({ highlightBin: state.ui.highlightBin });
     else refreshGallery();
   });
 
@@ -674,7 +639,7 @@ function wireEvents() {
   ]) {
     document.getElementById(id).addEventListener('change', e => {
       state.ui[stateKey] = e.target.checked;
-      if (state.ui.view === 'maps' && galleryCtrl) galleryCtrl.setOptions({ [optsKey]: e.target.checked });
+      if (galleryCtrl) galleryCtrl.setOptions({ [optsKey]: e.target.checked });
       else refreshGallery();
     });
   }

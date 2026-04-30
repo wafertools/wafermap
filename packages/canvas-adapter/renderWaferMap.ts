@@ -39,6 +39,21 @@ export interface WaferSceneOptions {
   hbinDefs?:               BinDef[];
   /** Named soft bin definitions — one per distinct `bins[1]` value. Independent number space from hard bins. */
   sbinDefs?:               BinDef[];
+  /**
+   * Explicit [min, max] for value colour normalization. When omitted the range
+   * is auto-computed from the die values present in the scene.
+   */
+  valueRange?:             [number, number];
+  /**
+   * Aggregation method label shown in hover tooltips for `stackedValues` mode.
+   * E.g. `'mean'`, `'median'`, `'stddev'`, `'min'`, `'max'`.
+   */
+  aggrMethod?:             string;
+  /**
+   * Total number of wafers in the lot — used to compute bin occurrence percentage
+   * in `stackedBins` hover tooltips.
+   */
+  lotSize?:                number;
 }
 
 export interface MountOptions extends Omit<ToCanvasOptions, '_viewport'> {
@@ -204,6 +219,9 @@ export function renderWaferMap(
       testDefs:               so.testDefs,
       hbinDefs:               so.hbinDefs,
       sbinDefs:               so.sbinDefs,
+      valueRange:             so.valueRange,
+      aggrMethod:             so.aggrMethod,
+      lotSize:                so.lotSize,
       fallbackFormat:         currentFallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
@@ -620,8 +638,15 @@ export function renderWaferMap(
   // ── Render ─────────────────────────────────────────────────────────────────
   function render(): void {
     const vp = viewport ?? undefined;
+    // Derive die pitch from the first die so axis labels show die grid indices.
+    const firstDie = currentScene.dies[0];
+    const diePitchMm = firstDie
+      ? { x: firstDie.width, y: firstDie.height }
+      : drawOptions.diePitchMm;
+
     const result = toCanvas(canvas, currentScene, {
       ...drawOptions,
+      diePitchMm,
       fallbackFormat: currentFallbackFormat,
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
       _viewport: vp,

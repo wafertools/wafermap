@@ -64,12 +64,12 @@ export interface ToCanvasResult {
   hitTarget:      CanvasHitTarget;
   /** The fitted viewport — useful as initial state for mountWaferCanvas. */
   viewport:       ViewportTransform;
-  /** Non-empty only when a bin legend was drawn (hardbin / softbin / stackedBins modes). */
+  /** Non-empty only when a bin legend was drawn (hardbin / softbin modes). */
   binLegendRows:  BinLegendRow[];
 }
 
-const COLORBAR_MODES   = new Set(['value', 'stackedValues']);
-const BIN_LEGEND_MODES = new Set(['hardbin', 'softbin', 'stackedBins']);
+const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins']);
+const BIN_LEGEND_MODES = new Set(['hardbin', 'softbin']);
 const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
 const COLORBAR_STEPS = 128;
 const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
@@ -260,8 +260,10 @@ export function toCanvas(
     }
 
     const testDef = scene.testDefs?.find(t => t.index === scene.testIndex);
+    const cbName  = scene.plotMode === 'stackedBins' ? 'Count' : testDef?.name;
+    const cbUnit  = scene.plotMode === 'stackedBins' ? undefined : testDef?.unit;
     const { tickFmt, axisLabel } = fmtColorbarAxis(
-      vMax, testDef?.name, testDef?.unit, fallbackFormat,
+      vMax, cbName, cbUnit, fallbackFormat,
     );
 
     // Draw intermediate ticks with middle baseline.
@@ -309,7 +311,7 @@ export function toCanvas(
   if (drawBinLegend) {
     const scheme = getColorScheme(scene.colorScheme);
 
-    // Collect unique bins from all channels (stackedBins uses all bins[]).
+    // Collect unique bins from dies.
     const binCounts = new Map<number, number>();
     for (const die of scene.dies) {
       if (die.partial) continue;

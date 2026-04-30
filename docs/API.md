@@ -492,8 +492,25 @@ Scene display options controllable via the toolbar or programmatically:
   sbinDefs?:               BinDef[]          // soft bin names/colors (bins[1], 0–32767 space — independent)
   testIndex?:              number            // which values[] slot to show in 'value' mode; default 0
   binIndex?:               number            // which bins[] slot to show in bin modes; default 0
+  valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
+  aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
+  lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins' hover tooltips
 }
 ```
+
+### Hover tooltip content by mode
+
+| Mode | Tooltip content |
+| --- | --- |
+| `value`, `hardbin`, `softbin` | Die (i, j) · all values with test names · all bins with hard/soft labels |
+| `stackedValues` | Die (i, j) · test name + method + aggregated value (e.g. "Idsat (mean): 1.23 mA") |
+| `stackedBins` | Die (i, j) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
+
+The `aggrMethod` and `lotSize` fields on `WaferSceneOptions` populate the method label and percentage denominator respectively.
+
+### Axis labels
+
+When `showAxes: true`, tick labels show die grid indices (integer i/j values). `renderWaferMap` derives `diePitchMm` automatically from the scene geometry, so axes always show grid indices. Only when calling `toCanvas` directly without supplying `diePitchMm` do axes fall back to mm values.
 
 ### `MountOptions`
 
@@ -668,10 +685,10 @@ the gallery. Close with Esc, the × button, or clicking the backdrop.
 
 ### Shared bin legend
 
-For `hardbin`, `softbin`, and `stackedBins` modes a shared legend strip is rendered
-between the control bar and the card grid — one coloured swatch + label per unique
-bin across all items. The legend is hidden for `value` and `stackedValues` (those
-modes use a per-card colorbar instead).
+For `hardbin` and `softbin` modes a shared legend strip is rendered between the
+control bar and the card grid — one coloured swatch + label per unique bin across
+all items. The legend is hidden for `value`, `stackedValues`, and `stackedBins`
+(those modes use a per-card colorbar instead).
 
 When `hbinDefs` or `sbinDefs` are provided via `sceneOptions`, the legend uses the
 correct definition array for the active mode — `hbinDefs` for hardbin, `sbinDefs`
@@ -842,7 +859,7 @@ interface ToCanvasOptions {
   colorbarWidth?:   number    // CSS-px width of the colorbar strip (default 16)
   background?:      string    // canvas background colour (default '#f5f5f5')
   showAxes?:        boolean   // draw axis tick marks and labels (default false)
-  diePitchMm?:      { x: number; y: number }  // convert mm axis labels to die-index labels
+  diePitchMm?:      { x: number; y: number }  // when provided, axis labels show die grid indices; otherwise mm values
   fallbackFormat?:  'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
 ```
@@ -851,14 +868,14 @@ interface ToCanvasOptions {
 
 | Mode | Right-side legend |
 | --- | --- |
-| `value`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks) |
-| `hardbin`, `softbin`, `stackedBins` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
+| `value`, `stackedValues`, `stackedBins` | Continuous colorbar (gradient strip with min/max ticks). For `stackedBins` the colorbar axis is labelled "Count". |
+| `hardbin`, `softbin`                    | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
 
 Returns `{ hitTarget, viewport, binLegendRows }`:
 
 - `hitTarget.getDieAtPoint(x, y): Die | null` — hit-test a CSS-pixel position
 - `viewport` — the auto-fitted viewport transform (useful as initial state for custom zoom/pan)
-- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardbin/softbin/stackedBins)
+- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardbin/softbin)
 
 ```ts
 const result  = buildWaferMap({ results, waferConfig, dieConfig });
@@ -1087,10 +1104,12 @@ interface SceneOptions {
   sbinDefs?:               BinDef[]    // named soft bin definitions (bins[1] space, 0–32767 — independent)
   testIndex?:              number      // which values[] slot to display in 'value' mode; default 0
   binIndex?:               number      // which bins[] slot to display in 'hardbin'/'softbin' mode; default 0
+  aggrMethod?:             string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
+  lotSize?:                number      // total wafers in lot — for 'stackedBins' hover percentage computation
 }
 ```
 
-Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `binIndex`.
+Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `binIndex`, `aggrMethod`, `lotSize`.
 
 ---
 
@@ -1198,3 +1217,4 @@ type WaferMetadata = Record<string, unknown>
 
 - Ring segmentation uses equal-width radial bands.  Configurable breakpoints are planned.
 - Plotly types are not exposed as formal peer-typed interfaces.
+- `stackedSoftBins` plot mode is planned — same behaviour as `stackedBins` but operating on the soft bin channel (`bins[1]`) instead of the hard bin channel (`bins[0]`).

@@ -75,7 +75,7 @@ const CLR = {
   menuActive: '#dce8f8',
 };
 
-const BIN_LEGEND_MODES = new Set<PlotMode>(['hardbin', 'softbin', 'stackedBins']);
+const BIN_LEGEND_MODES = new Set<PlotMode>(['hardbin', 'softbin']);
 
 const MODE_LABELS: Record<PlotMode, string> = {
   value:         'Value',
@@ -448,11 +448,17 @@ export function renderWaferGallery(
 
   // ── Shared option sync ─────────────────────────────────────────────────────
 
+  // Called from toolbar interactions — updates state, propagates to cards, fires callback.
   function applyShared(partial: Partial<WaferSceneOptions>): void {
+    syncShared(partial);
+    options.onSceneOptionsChange?.(sharedOpts);
+  }
+
+  // Called from the public setOptions API — updates state and cards, does NOT fire callback.
+  function syncShared(partial: Partial<WaferSceneOptions>): void {
     sharedOpts = { ...sharedOpts, ...partial };
     for (const ctrl of cardControllers) ctrl.setOptions(partial);
     rebuildLegend();
-    options.onSceneOptionsChange?.(sharedOpts);
   }
 
   // ── Card building ──────────────────────────────────────────────────────────
@@ -678,7 +684,7 @@ export function renderWaferGallery(
     },
 
     setOptions(partial: Partial<WaferSceneOptions>): void {
-      applyShared(partial);
+      syncShared(partial);
     },
 
     getOptions(): WaferSceneOptions {

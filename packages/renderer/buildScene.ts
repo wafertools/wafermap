@@ -10,6 +10,7 @@ import { fmt, fmtColorbarAxis } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
 
+// TODO: add 'stackedSoftBins' mode — same as stackedBins but aggregating bins[1] (soft bin channel).
 export type PlotMode = 'value' | 'hardbin' | 'softbin' | 'stackedValues' | 'stackedBins';
 
 interface Point {
@@ -73,6 +74,10 @@ export interface Scene {
   testIndex: number;
   /** Which `bins[]` index is being displayed (for `hardbin`/`softbin` plot modes). Default 0. */
   binIndex: number;
+  /** Aggregation method label for `stackedValues` hover tooltips (e.g. `'mean'`). */
+  aggrMethod?: string;
+  /** Total wafers in lot — for `stackedBins` hover percentage calculation. */
+  lotSize?: number;
 }
 
 export interface SceneOptions {
@@ -127,6 +132,16 @@ export interface SceneOptions {
    * Values with a unit always use SI prefix regardless of this setting.
    */
   fallbackFormat?: 'si' | 'engineering';
+  /**
+   * Aggregation method label shown in hover tooltips for `stackedValues` mode.
+   * E.g. `'mean'`, `'median'`, `'stddev'`, `'min'`, `'max'`.
+   */
+  aggrMethod?: string;
+  /**
+   * Total number of wafers in the lot — used to compute bin occurrence percentage
+   * in `stackedBins` hover tooltips.
+   */
+  lotSize?: number;
 }
 
 /** @deprecated Use {@link SceneOptions} */
@@ -248,42 +263,68 @@ function fontSizeForDie(die: Die, text: string): number {
 
 function buildHoverText(
   die: Die,
+  plotMode: PlotMode,
   testDefs?: TestDef[],
   hbinDefs?: BinDef[],
   sbinDefs?: BinDef[],
   fallbackFormat?: 'si' | 'engineering',
+  aggrMethod?: string,
+  lotSize?: number,
 ): string {
   const lines: string[] = [`Die (${die.i}, ${die.j})`];
 
-  if (die.values?.length) {
-    if (testDefs?.length) {
-      const parts = die.values.map((v, i) => {
-        const def = testDefs.find(t => t.index === i);
-        const label = def?.name ?? `Test ${i}`;
-        return `${label}: ${fmt(v, def?.unit, fallbackFormat)}`;
-      });
-      lines.push(parts.join('<br>'));
-    } else {
-      lines.push(`Values: ${die.values.map((v) => fmt(v, undefined, fallbackFormat)).join(' / ')}`);
+  if (plotMode === 'stackedValues') {
+    // Show only the aggregated test value for this card's parameter (values[0]).
+    const v = die.values?.[0];
+    if (v !== undefined) {
+      const def   = testDefs?.[0];
+      const name  = def?.name ?? 'Value';
+      const method = aggrMethod ? ` (${aggrMethod})` : '';
+      lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
     }
-  }
+  } else if (plotMode === 'stackedBins') {
+    // Show count and percentage for this card's bin (values[0] = count, bins[0] = targetBin).
+    const count = die.values?.[0];
+    const bin   = die.bins?.[0];
+    if (count !== undefined) {
+      const pct  = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
+      const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
+      const binLabel = bin !== undefined
+        ? (hbinMap?.get(bin)?.name ? `${bin} · ${hbinMap.get(bin)!.name}` : `Bin ${bin}`)
+        : 'Bin';
+      lines.push(`${binLabel}: ${count}${pct}`);
+    }
+  } else {
+    // Standard modes: show all values with test names, then bins.
+    if (die.values?.length) {
+      if (testDefs?.length) {
+        const parts = die.values.map((v, i) => {
+          const def   = testDefs.find(t => t.index === i);
+          const label = def?.name ?? `Test ${i}`;
+          return `${label}: ${fmt(v, def?.unit, fallbackFormat)}`;
+        });
+        lines.push(parts.join('<br>'));
+      } else {
+        lines.push(`Values: ${die.values.map((v) => fmt(v, undefined, fallbackFormat)).join(' / ')}`);
+      }
+    }
 
-  if (die.bins?.length) {
-    // Hard and soft bins have independent number spaces — use the correct def map per channel.
-    const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
-    const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
-    const hasAnyDefs = hbinMap || sbinMap;
-    if (hasAnyDefs) {
-      const parts = die.bins.map((b, i) => {
-        const defMap = i === 0 ? hbinMap : i === 1 ? sbinMap : null;
-        const name   = defMap?.get(b)?.name;
-        const value  = name ? `${b} · ${name}` : String(b);
-        const label  = i === 0 ? 'HBin' : i === 1 ? 'SBin' : `Bin[${i}]`;
-        return `${label}: ${value}`;
-      });
-      lines.push(parts.join(' &nbsp;·&nbsp; '));
-    } else {
-      lines.push(`Bins: ${die.bins.map((b) => `B${b}`).join(' | ')}`);
+    if (die.bins?.length) {
+      const hbinMap    = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
+      const sbinMap    = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
+      const hasAnyDefs = hbinMap || sbinMap;
+      if (hasAnyDefs) {
+        const parts = die.bins.map((b, i) => {
+          const defMap = i === 0 ? hbinMap : i === 1 ? sbinMap : null;
+          const name   = defMap?.get(b)?.name;
+          const value  = name ? `${b} · ${name}` : String(b);
+          const label  = i === 0 ? 'HBin' : i === 1 ? 'SBin' : `Bin[${i}]`;
+          return `${label}: ${value}`;
+        });
+        lines.push(parts.join(' &nbsp;·&nbsp; '));
+      } else {
+        lines.push(`Bins: ${die.bins.map((b) => `B${b}`).join(' | ')}`);
+      }
     }
   }
 
@@ -341,14 +382,12 @@ export function generateTextOverlay(
       if (bin === undefined) return [];
       text = String(bin);
       color = contrastTextColor(colorFns.forBin(bin));
-    } else if (plotMode === 'stackedBins') {
-      if (!die.bins?.length) return [];
-      text = formatBinLabel(die.bins);
-      color = contrastTextColor(colorFns.forBin(die.bins[Math.floor(die.bins.length / 2)]));
     } else {
-      if (!die.values?.length) return [];
-      text = formatValueLabel(die.values, tickFmt);
-      color = contrastTextColor(colorFns.forValue(normalize(die.values[Math.floor(die.values.length / 2)])));
+      // stackedValues / stackedBins: single aggregated value in values[testIndex] or values[0]
+      const v = die.values?.[testIndex] ?? die.values?.[0];
+      if (v === undefined) return [];
+      text = formatValueLabel([v], tickFmt);
+      color = contrastTextColor(colorFns.forValue(normalize(v)));
     }
 
     return [{
@@ -583,36 +622,15 @@ function pushDieRectangles(
     return;
   }
 
-  if (plotMode === 'stackedBins') {
-    const bins = die.bins?.length ? die.bins : [0];
-    const segmentWidth = rw / bins.length;
-
-    bins.forEach((bin, index) => {
-      const localX = -rw / 2 + segmentWidth * (index + 0.5);
-      const offset = transformVector(localX, 0, transform);
-      const fill = binDefMap?.get(bin)?.color ?? colorFns.forBin(bin);
-      rectangles.push({
-        x: die.x + offset.x, y: die.y + offset.y,
-        width: segmentWidth, height: rh,
-        fill, type: 'stacked', stack: [...bins], metadata: die.metadata,
-        path: rectanglePath({ x: die.x + offset.x, y: die.y + offset.y }, segmentWidth, rh, transform),
-      });
-    });
-    return;
-  }
-
-  const values = die.values?.length ? die.values : [0];
-  const segmentWidth = rw / values.length;
-
-  values.forEach((value, index) => {
-    const localX = -rw / 2 + segmentWidth * (index + 0.5);
-    const offset = transformVector(localX, 0, transform);
-    rectangles.push({
-      x: die.x + offset.x, y: die.y + offset.y,
-      width: segmentWidth, height: rh,
-      fill: colorFns.forValue(normalize(value)), type: 'stacked', stack: [...values], metadata: die.metadata,
-      path: rectanglePath({ x: die.x + offset.x, y: die.y + offset.y }, segmentWidth, rh, transform),
-    });
+  // stackedValues / stackedBins: lot-aggregated data, single colour per die.
+  // The caller pre-aggregates dies (aggregateValues / aggregateBinCounts) and
+  // passes them with values[0] holding the aggregated scalar. Render like 'value'.
+  const aggValue = die.values?.[testIndex] ?? die.values?.[0];
+  const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
+  rectangles.push({
+    x: die.x, y: die.y, width: rw, height: rh,
+    fill, type: 'value', metadata: die.metadata,
+    path: rectanglePath(die, rw, rh, transform),
   });
 }
 
@@ -680,6 +698,8 @@ export function buildScene(
     testIndex = 0,
     binIndex  = 0,
     fallbackFormat = 'engineering' as const,
+    aggrMethod,
+    lotSize,
   } = options;
 
   // Hard and soft bins have independent number spaces — select the correct def map for the
@@ -706,7 +726,7 @@ export function buildScene(
     let lo = Infinity, hi = -Infinity;
     for (const die of dies) {
       const vals = die.values ?? [];
-      const candidates = plotMode === 'stackedValues' ? vals : (vals[testIndex] !== undefined ? [vals[testIndex]] : []);
+      const candidates = vals[testIndex] !== undefined ? [vals[testIndex]] : [];
       for (const v of candidates) {
         if (v < lo) lo = v;
         if (v > hi) hi = v;
@@ -739,7 +759,7 @@ export function buildScene(
 
   for (const tdie of transformedDies) {
     pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, testIndex, binIndex, binDefMap);
-    hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, testDefs, hbinDefs, sbinDefs, fallbackFormat) });
+    hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize) });
   }
 
   const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, {
@@ -769,6 +789,8 @@ export function buildScene(
     sbinDefs,
     testIndex,
     binIndex,
+    aggrMethod,
+    lotSize,
   };
 }
 
