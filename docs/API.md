@@ -266,6 +266,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hardbin-spa
   wafer:   Wafer    // resolved wafer model (diameter, radius, center, notch, orientation)
   dies:    Die[]    // all dies inside the wafer boundary, with values/bins attached
   scene:   Scene    // renderer-agnostic scene — pass directly to toPlotly() if needed
+  reticles: Reticle[]  // generated reticle geometry — pass as sceneOptions.reticles to renderWaferMap
   units:   'mm' | 'normalized'   // coordinate space of die.x/die.y and wafer dimensions
   inference: {
     wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1
@@ -482,6 +483,9 @@ Scene display options controllable via the toolbar or programmatically:
   showText?:               boolean           // die index labels
   showRingBoundaries?:     boolean
   showQuadrantBoundaries?: boolean
+  showReticle?:            boolean           // reticle field boundary overlay (requires reticles to be set)
+  showXYIndicator?:        boolean           // axis-orientation arrows showing +X/+Y directions
+  reticles?:               Reticle[]         // pass result.reticles from buildWaferMap to enable the overlay
   ringCount?:              number            // default 4
   highlightBin?:           number            // dim all other bins
   rotation?:               0 | 90 | 180 | 270
@@ -494,7 +498,7 @@ Scene display options controllable via the toolbar or programmatically:
   binIndex?:               number            // which bins[] slot to show in bin modes; default 0
   valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
-  lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins' hover tooltips
+  lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
 }
 ```
 
@@ -505,6 +509,7 @@ Scene display options controllable via the toolbar or programmatically:
 | `value`, `hardbin`, `softbin` | Die (i, j) · all values with test names · all bins with hard/soft labels |
 | `stackedValues` | Die (i, j) · test name + method + aggregated value (e.g. "Idsat (mean): 1.23 mA") |
 | `stackedBins` | Die (i, j) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
+| `stackedSoftBins` | Same as `stackedBins` but uses `sbinDefs` for name lookup |
 
 The `aggrMethod` and `lotSize` fields on `WaferSceneOptions` populate the method label and percentage denominator respectively.
 
@@ -526,6 +531,9 @@ All `ToCanvasOptions` fields (padding, background, etc.) are accepted, plus:
   showTooltip?:            boolean   // default true
   showToolbar?:            boolean   // default true
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
+  showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
+  statsSummary?:           StatsSummary  // precomputed wafer-level findings — adds a findings panel button to the toolbar
+  showFindingsPanel?:      boolean   // show the findings panel toggle when statsSummary is provided (default true)
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
@@ -534,6 +542,8 @@ All `ToCanvasOptions` fields (padding, background, etc.) are accepted, plus:
 
 The box-select toolbar button only appears when `onSelect` is provided.
 
+The findings panel button only appears when `statsSummary` is provided and `showFindingsPanel` is not `false`. Clicking a finding in the panel highlights the affected die zone on the map.
+
 ### `WaferCanvasController`
 
 ```ts
@@ -541,9 +551,11 @@ The box-select toolbar button only appears when `onSelect` is provided.
   setDies(dies: Die[]): void                        // replace die data, rebuild scene
   setOptions(opts: Partial<WaferSceneOptions>): void // merge options, rebuild scene
   getOptions(): WaferSceneOptions                    // current options snapshot
-  setSelection(dies: Die[]): void                    // programmatically set selection
+  setSelection(dies: Die[]): void                    // programmatically highlight dies
   clearSelection(): void
   resetView(): void                                  // return to fitted view
+  setFallbackFormat(format: 'si' | 'engineering'): void
+  setStatsSummary(summary: StatsSummary | undefined): void  // update the findings panel at runtime
   destroy(): void                                    // remove all listeners and DOM elements
 }
 ```
@@ -559,14 +571,17 @@ The box-select toolbar button only appears when `onSelect` is provided.
 | Zoom + | Zoom in centred on canvas |
 | Zoom − | Zoom out centred on canvas |
 | Reset | Return to fitted view (also: double-click canvas) |
-| Mode | Dropdown: Value / Hard Bin / Soft Bin / Stacked Values / Stacked Bins |
+| Mode | Grouped dropdown: **Test Value** section (one entry per test, or cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Dropdown: all registered colour schemes |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
 | Labels | Toggle die index text labels |
+| Reticle | Toggle reticle field overlay — only shown when `reticles` are present |
+| XY indicator | Toggle axis-orientation arrows showing +X/+Y directions |
 | Rotate | Rotate 90° clockwise (cycles 0→90→180→270) |
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
+| Findings | Toggle per-wafer findings panel — only shown when `statsSummary` is provided |
 
 ### Interactions
 
@@ -629,23 +644,33 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 
 ```ts
 {
-  wafer:     Wafer
-  dies:      Die[]
-  label?:    string                               // card header text
-  onClick?:  (die: Die, event: MouseEvent) => void
-  onSelect?: (dies: Die[]) => void
+  wafer:          Wafer
+  dies:           Die[]
+  label?:         string                               // card header text
+  sceneOptions?:  Partial<WaferSceneOptions>           // per-card scene option overrides merged on top of shared options
+  hasReticle?:    boolean                              // set true when wafer was built with ReticleConfig — shows reticle toggle in bar
+  statsSummary?:  StatsSummary                         // per-wafer findings shown in the modal's findings panel
+  onClick?:       (die: Die, event: MouseEvent) => void
+  onSelect?:      (dies: Die[]) => void
 }
 ```
+
+`sceneOptions` is useful in stacked gallery modes to set per-card metadata — for example supplying a single-entry `testDefs` array so each card's colorbar shows the correct test name, or per-card `hbinDefs`/`sbinDefs` for bin-count maps.
+
+Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` so the overlay has geometry to draw.
 
 ### `GalleryOptions`
 
 ```ts
 {
-  sceneOptions?:         WaferSceneOptions  // initial shared state
-  onSceneOptionsChange?: (opts: WaferSceneOptions) => void
-  cardPadding?:          number             // CSS-px padding inside each card canvas (default 6)
-  downloadFilename?:     string             // stem for the composite PNG filename (default 'wafer-gallery')
-  fallbackFormat?:       'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
+  sceneOptions?:           WaferSceneOptions  // initial shared state
+  onSceneOptionsChange?:   (opts: WaferSceneOptions) => void
+  cardPadding?:            number             // CSS-px padding inside each card canvas (default 6)
+  downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
+  fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
+  showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
+  lotStatsSummary?:        LotStatsSummary   // precomputed lot-level findings — adds a findings drawer beside the card grid
+  showFindingsPanel?:      boolean           // show the lot findings toggle button (default true)
 }
 ```
 
@@ -656,6 +681,8 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
   setItems(items: GalleryItem[]): void               // rebuild all cards
   setOptions(opts: Partial<WaferSceneOptions>): void // sync shared options to all cards
   getOptions(): WaferSceneOptions
+  setFallbackFormat(format: 'si' | 'engineering'): void
+  setLotStatsSummary(summary: LotStatsSummary | undefined): void  // update findings drawer at runtime
   destroy(): void
 }
 ```
@@ -669,12 +696,26 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
 | Labels | Toggle die labels on all cards |
+| Reticle | Toggle reticle overlay on all cards — only shown when at least one item has `hasReticle: true` |
+| XY indicator | Toggle axis-orientation arrows on all cards |
 | Rotate | Rotate all cards 90° clockwise |
 | Flip H | Flip all cards horizontally |
 | Flip V | Flip all cards vertically |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
+| Findings | Toggle lot findings drawer — only shown when `lotStatsSummary` is provided |
 
 Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
+
+### Lot findings drawer
+
+When `lotStatsSummary` is provided, a findings button appears in the control bar. Clicking it opens a side drawer alongside the card grid (cards reflow to use the remaining width). Findings are grouped by severity: **Unusual** → **Notable** → **Informational**.
+
+Clicking a finding highlights the affected area:
+
+- **Repeated-pattern findings** (e.g. ring or quadrant patterns seen across multiple wafers) — outlines the affected cards and highlights the matching die zone on each
+- **Inter-wafer yield outliers** — outlines the outlier card(s)
+
+Clicking the active finding again clears the highlight. Opening a card modal while a finding is active passes through the card's `statsSummary` so the modal's own findings panel is also available.
 
 ### Click-to-detail modal
 
@@ -687,7 +728,7 @@ the gallery. Close with Esc, the × button, or clicking the backdrop.
 
 For `hardbin` and `softbin` modes a shared legend strip is rendered between the
 control bar and the card grid — one coloured swatch + label per unique bin across
-all items. The legend is hidden for `value`, `stackedValues`, and `stackedBins`
+all items. The legend is hidden for `value`, `stackedValues`, `stackedBins`, and `stackedSoftBins`
 (those modes use a per-card colorbar instead).
 
 When `hbinDefs` or `sbinDefs` are provided via `sceneOptions`, the legend uses the
@@ -701,7 +742,7 @@ the highlight. The active entry is indicated with a bold label and a blue swatch
 border. The legend rebuilds automatically whenever the mode, colour scheme, or
 highlight changes.
 
-### Example usage
+### Gallery example
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -729,6 +770,171 @@ ctrl.setOptions({ plotMode: 'value' });
 
 // Clean up:
 ctrl.destroy();
+```
+
+---
+
+## Statistics / Findings Engine
+
+Detects statistically significant spatial patterns in wafer test data — yield loss, bin accumulation, or test value shifts concentrated in specific rings, quadrants, reticle positions, or individual wafers.
+
+```ts
+import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
+```
+
+### `analyzeWaferMap(input, options?)`
+
+Analyses a single wafer and returns a `StatsSummary`.  Accepts either a `WaferMapInput` object or the `WaferMapResult` returned by `buildWaferMap`.
+
+```ts
+const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const summary = analyzeWaferMap(result, { ringCount: 4 });
+```
+
+### `analyzeWaferLot(items, options?)`
+
+Analyses an array of wafers and returns a `LotStatsSummary`.  Each element is a `WaferMapInput` or `WaferMapResult`.  In addition to per-wafer findings, the lot summary includes:
+
+- **Repeated-pattern findings** — patterns present on ≥ 2 wafers
+- **Inter-wafer yield outliers** — wafers whose yield is a statistical outlier within the lot
+
+```ts
+const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
+```
+
+### `AnalyzeWaferMapOptions`
+
+```ts
+{
+  ringCount?:                    number   // ring count for spatial analysis; should match renderer ringCount (default 4)
+  passBins?:                     number[] // bins counted as pass; defaults to WaferMapInput.passBins, then [1]
+  significanceLevel?:            number   // adjusted p-value threshold (default 0.05)
+  minimumEffectSize?:            number   // minimum |delta| or Cohen's d to report (default 0.1)
+  minimumSampleSize?:            number   // minimum dies per region to test (default 5)
+  includePartial?:               boolean  // include partial dies in analysis (default false)
+  includeEdgeExcluded?:          boolean  // include edge-excluded dies (default false)
+  enableYieldAnalysis?:          boolean  // default true
+  enableHardBinAnalysis?:        boolean  // default true
+  enableSoftBinAnalysis?:        boolean  // default true
+  enableTestValueAnalysis?:      boolean  // default true
+  enableReticlePositionAnalysis?: boolean // default true (only runs when reticleConfig is present)
+}
+```
+
+`AnalyzeWaferLotOptions` extends `AnalyzeWaferMapOptions` with no additional fields.
+
+### `StatsSummary`
+
+```ts
+{
+  level: 'wafer'
+  hasNotableFindings: boolean          // true when any finding is 'notable' or 'unusual'
+  findings: StatsFinding[]
+  metadata: {
+    totalDies:            number
+    analyzedDies:         number
+    excludedDies:         number
+    yieldPercent:         number | null
+    testsConsidered:      number[]     // values[] indices that had enough data
+    hardBinsConsidered:   number[]
+    softBinsConsidered:   number[]
+  }
+}
+```
+
+### `LotStatsSummary`
+
+```ts
+{
+  level: 'lot'
+  hasNotableFindings: boolean
+  findings: StatsFinding[]             // lot-level findings (repeated patterns + inter-wafer outliers)
+  perWafer: Array<{
+    waferIndex: number
+    summary: StatsSummary              // per-wafer findings
+  }>
+  metadata: {
+    waferCount:           number
+    comparableWaferCount: number       // wafers with enough data for inter-wafer comparison
+  }
+}
+```
+
+### `StatsFinding`
+
+```ts
+{
+  id:       string          // stable identifier for this finding
+  level:    'wafer' | 'lot' | 'inter-wafer'
+  severity: 'unusual' | 'notable' | 'info'
+  variable: {
+    kind:   'yield' | 'hardbin' | 'softbin' | 'test'
+    index?: number          // values[] or bins[] slot index
+    bin?:   number          // bin value (hardbin/softbin)
+    label:  string          // human-readable name
+    unit?:  string
+  }
+  comparison: {
+    family: 'ring' | 'quadrant' | 'half-wafer' | 'ring-band' | 'reticle-position' | 'wafer'
+    left:   string          // e.g. "Ring 3 (edge)", "NE", "Reticle cell (1, 0)"
+    right:  string          // typically "Rest of wafer" or "Lot median"
+  }
+  effect: {
+    direction:      'higher' | 'lower' | 'different'
+    absoluteDelta?: number
+    relativeDelta?: number
+    effectSize?:    number
+  }
+  stats: {
+    method:            string
+    pValue?:           number
+    adjustedPValue?:   number
+    sampleSizeLeft:    number
+    sampleSizeRight:   number
+  }
+  summary:   string         // one-sentence human-readable description
+  highlight: HighlightTarget
+}
+```
+
+### `HighlightTarget`
+
+Describes what to visually emphasise when a finding is selected.
+
+```ts
+type HighlightTarget =
+  | { kind: 'region';  regionFamily: string; keys: string[]; dieKeys?: string[] }
+  | { kind: 'bin';     binIndex: number; bin: number; regionKeys?: string[]; dieKeys?: string[] }
+  | { kind: 'wafer';   waferIndices: number[] }
+  | { kind: 'dies';    dieKeys: string[] }
+```
+
+`dieKeys` entries use the `"i,j"` format returned by `getDieKey`.
+
+### Integrating with `renderWaferMap` and `renderWaferGallery`
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap, renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
+
+// Single wafer with findings panel:
+const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const summary = analyzeWaferMap(result, { ringCount: 4 });
+renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+
+// Lot gallery with lot-level findings drawer:
+const waferResults = waferDataSets.map(d => buildWaferMap(d));
+const items = waferResults.map((r, i) => ({
+  wafer:         r.wafer,
+  dies:          r.dies,
+  label:         `Wafer ${i + 1}`,
+  hasReticle:    r.reticles.length > 0,
+  sceneOptions:  { reticles: r.reticles },
+  statsSummary:  analyzeWaferMap(r, { ringCount: 4 }),
+}));
+const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
+renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
 ---
@@ -868,8 +1074,9 @@ interface ToCanvasOptions {
 
 | Mode | Right-side legend |
 | --- | --- |
-| `value`, `stackedValues`, `stackedBins` | Continuous colorbar (gradient strip with min/max ticks). For `stackedBins` the colorbar axis is labelled "Count". |
-| `hardbin`, `softbin`                    | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
+| `value`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks). |
+| `stackedBins`, `stackedSoftBins` | Continuous colorbar; axis labelled "Count". |
+| `hardbin`, `softbin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
 
 Returns `{ hitTarget, viewport, binLegendRows }`:
 
@@ -889,7 +1096,9 @@ canvas.addEventListener('mousemove', e => {
 });
 ```
 
-`toCanvas` reads `window.devicePixelRatio` automatically.  Set canvas size in CSS only.
+`toCanvas` reads `window.devicePixelRatio` automatically and snaps canvas dimensions to integer CSS pixels to prevent sub-pixel interpolation blur.  Set canvas size in CSS only; do not set `canvas.width`/`canvas.height` directly.
+
+`renderWaferMap` additionally watches for `devicePixelRatio` changes (browser zoom, moving between displays) via a `matchMedia` listener and re-renders automatically.
 
 ---
 
@@ -899,10 +1108,11 @@ canvas.addEventListener('mousemove', e => {
 import { buildWaferMap }                       from '@paulrobins/wafermap';
 import { renderWaferMap, renderWaferGallery }  from '@paulrobins/wafermap/canvas-adapter';
 import { toPlotly }                            from '@paulrobins/wafermap';
+import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats';
 import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
 ```
 
-Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotly-adapter`, `/canvas-adapter`, `/worker`, `/worker-script`
+Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotly-adapter`, `/canvas-adapter`, `/stats`, `/worker`, `/worker-script`
 
 ---
 
@@ -1067,7 +1277,10 @@ Stacks multiple wafers and counts, per die position, how many wafers had a speci
 
 Returns one `Die` per unique `(i, j)` with `values[0]` = count, `bins[0]` = `targetBin`.
 
-Use with `plotMode: 'value'` and `valueRange: [0, diesByWafer.length]`.
+- Pass `binChannel: 0` (default) for hard bins → use with `plotMode: 'stackedBins'`
+- Pass `binChannel: 1` for soft bins → use with `plotMode: 'stackedSoftBins'`
+
+Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for correct colorbar and percentage tooltips.
 
 ---
 
@@ -1085,7 +1298,7 @@ Builds the renderer-agnostic scene.
 
 ```ts
 interface SceneOptions {
-  plotMode?:               'value' | 'hardbin' | 'softbin' | 'stackedValues' | 'stackedBins'
+  plotMode?:               'value' | 'hardbin' | 'softbin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
   showText?:               boolean
   showReticle?:            boolean
   showProbePath?:          boolean
@@ -1105,7 +1318,7 @@ interface SceneOptions {
   testIndex?:              number      // which values[] slot to display in 'value' mode; default 0
   binIndex?:               number      // which bins[] slot to display in 'hardbin'/'softbin' mode; default 0
   aggrMethod?:             string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
-  lotSize?:                number      // total wafers in lot — for 'stackedBins' hover percentage computation
+  lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
 }
 ```
 
@@ -1217,4 +1430,3 @@ type WaferMetadata = Record<string, unknown>
 
 - Ring segmentation uses equal-width radial bands.  Configurable breakpoints are planned.
 - Plotly types are not exposed as formal peer-typed interfaces.
-- `stackedSoftBins` plot mode is planned — same behaviour as `stackedBins` but operating on the soft bin channel (`bins[1]`) instead of the hard bin channel (`bins[0]`).

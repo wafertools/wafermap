@@ -2,53 +2,68 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  aggregateBinCounts,
+  aggregateValues,
+  applyOrientation,
+  applyProbeSequence,
+  buildScene,
+  classifyDie,
+  clipDiesToWafer,
+  contrastTextColor,
   createWafer,
   generateDies,
-  clipDiesToWafer,
-  mapDataToDies,
-  applyOrientation,
-  transformDies,
-  applyProbeSequence,
   generateReticleGrid,
-  buildScene,
+  generateTextOverlay,
+  getColorScheme,
+  getDieAtPoint,
+  getDieKey,
+  getRingLabel,
+  getUniqueBins,
+  hardBinColor,
+  hardBinGreyscale,
+  listColorSchemes,
+  mapDataToDies,
+  registerColorScheme,
+  softBinColor,
+  transformDies,
   toPlotly,
+  valueToGreyscale,
+  valueToViridis,
 } from '../dist/index.js';
+import { fmt, fmtColorbarAxis } from '../dist/packages/renderer/fmt.js';
+import {
+  assignGridIndices,
+  inferWaferFromXY,
+  resolveGridPitch,
+} from '../dist/packages/core/inference/index.js';
 
-function enrichDies(dies) {
-  return dies.map((die) => ({
-    ...die,
-    values: [0.9 - Math.abs(die.i) * 0.1, 0.8 - Math.abs(die.j) * 0.1].map((value) => Math.max(0.1, value)),
-    bins: [die.i === 0 ? 1 : 2, die.j === 0 ? 1 : 3],
-    metadata: {
-      lotId: 'LOT-001',
-      waferId: 'LOT-001-W01',
-      deviceType: 'TestDevice',
-      customFields: {
-        site: `${die.i}:${die.j}`,
-      },
-    },
-  }));
+function approxEqual(actual, expected, epsilon = 1e-9) {
+  assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} != ${expected}`);
 }
 
-test('core geometry pipeline produces clipped dies with expected metadata hooks', () => {
+function buildSampleDies() {
+  return [
+    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [0.9], bins: [1] },
+    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [0.7], bins: [2] },
+    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, values: [0.8], bins: [1] },
+    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, values: [0.6], bins: [2] },
+  ];
+}
+
+test('core geometry, data mapping, sequencing, and reticle helpers stay stable', () => {
   const wafer = createWafer({
     diameter: 40,
     notch: { type: 'bottom' },
-    metadata: {
-      lot: 'LOT-001',
-      waferNumber: 1,
-      testDate: '2026-04-21',
-      testProgram: 'CP1',
-      temperature: 25,
-    },
+    metadata: { lot: 'LOT-001', waferNumber: 1 },
   });
 
   assert.equal(wafer.radius, 20);
   assert.deepEqual(wafer.center, { x: 0, y: 0 });
+  assert.equal(wafer.notch?.length, 32.5);
 
   const dies = generateDies(wafer, { width: 10, height: 10, gridSize: 2 });
+  assert.equal(dies.length, 25);
   assert.ok(dies.some((die) => die.id === '0_0'));
-  assert.ok(dies.some((die) => die.i < 0 && die.j < 0));
 
   const clipped = clipDiesToWafer(dies, wafer, { width: 10, height: 10 });
   assert.ok(clipped.length < dies.length);
@@ -58,23 +73,15 @@ test('core geometry pipeline produces clipped dies with expected metadata hooks'
   const mapped = mapDataToDies(clipped, [
     { i: 0, j: 0, value: 0.97 },
     { i: 1, j: 0, value: 0.88 },
-  ], {
-    valueField: 'value',
-    matchBy: 'ij',
-  });
+    { i: 1, j: 0, value: 0.91 },
+  ], { valueField: 'value', matchBy: 'ij' });
+  assert.deepEqual(mapped.find((die) => die.i === 0 && die.j === 0)?.values, [0.97]);
+  assert.deepEqual(mapped.find((die) => die.i === 1 && die.j === 0)?.values, [0.91]);
 
-  const centerDie = mapped.find((die) => die.i === 0 && die.j === 0);
-  assert.deepEqual(centerDie.values, [0.97]);
-});
-
-test('orientation, transforms, and probe sequencing behave predictably', () => {
-  const wafer = createWafer({ diameter: 100, orientation: 90 });
-  const dies = [
+  const oriented = applyOrientation([
     { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
     { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10 },
-  ];
-
-  const oriented = applyOrientation(dies, wafer);
+  ], createWafer({ diameter: 100, orientation: 90 }));
   assert.equal(Math.round(oriented[0].x), 0);
   assert.equal(Math.round(oriented[0].y), 10);
 
@@ -88,14 +95,142 @@ test('orientation, transforms, and probe sequencing behave predictably', () => {
     { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
     { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
   ], { type: 'snake' });
-
   assert.deepEqual(
     sequenced.map((die) => `${die.id}:${die.probeIndex}`),
-    ['0_1:0', '1_1:1', '1_0:2', '0_0:3']
+    ['0_1:0', '1_1:1', '1_0:2', '0_0:3'],
+  );
+
+  const customSequenced = applyProbeSequence([
+    { id: 'a', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
+    { id: 'b', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+  ], { type: 'custom', customOrder: ['b', 'a'] });
+  assert.deepEqual(customSequenced.map((die) => die.probeIndex), [1, 0]);
+
+  const reticles = generateReticleGrid(wafer, { width: 2, height: 2, diePitchX: 10, diePitchY: 10 });
+  const shiftedReticles = generateReticleGrid(wafer, {
+    width: 2,
+    height: 2,
+    diePitchX: 10,
+    diePitchY: 10,
+    anchorDie: { x: 1, y: 1 },
+  });
+  assert.ok(reticles.length > 0);
+  assert.ok(reticles.every((reticle) => reticle.width === 20 && reticle.height === 20));
+  assert.notDeepEqual(
+    reticles.slice(0, 3).map((reticle) => `${reticle.x},${reticle.y}`),
+    shiftedReticles.slice(0, 3).map((reticle) => `${reticle.x},${reticle.y}`),
   );
 });
 
-test('renderer builds scene rectangles, overlays, and text for stacked modes', () => {
+test('aggregation, inference, classification, formatting, and color helpers are deterministic', () => {
+  const diesByWafer = [
+    [
+      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [1], bins: [2] },
+      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [9], bins: [1] },
+    ],
+    [
+      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [3], bins: [2] },
+      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [7], bins: [2] },
+    ],
+    [
+      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [5], bins: [1] },
+      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [11], bins: [2] },
+    ],
+  ];
+
+  assert.deepEqual(aggregateValues(diesByWafer, 'mean').find((die) => die.i === 0 && die.j === 0)?.values, [3]);
+  assert.deepEqual(aggregateValues(diesByWafer, 'median').find((die) => die.i === 0 && die.j === 0)?.values, [3]);
+  approxEqual(
+    aggregateValues(diesByWafer, 'stddev').find((die) => die.i === 0 && die.j === 0)?.values?.[0] ?? 0,
+    Math.sqrt(8 / 3),
+  );
+  assert.deepEqual(aggregateValues(diesByWafer, 'min').find((die) => die.i === 0 && die.j === 0)?.values, [1]);
+  assert.deepEqual(aggregateValues(diesByWafer, 'max').find((die) => die.i === 0 && die.j === 0)?.values, [5]);
+  assert.deepEqual(aggregateValues(diesByWafer, 'count').find((die) => die.i === 0 && die.j === 0)?.values, [3]);
+  assert.deepEqual(getUniqueBins(diesByWafer[0]), [1, 2]);
+  assert.deepEqual(aggregateBinCounts(diesByWafer, 2).find((die) => die.i === 0 && die.j === 0)?.values, [2]);
+
+  assert.deepEqual(classifyDie({ id: '1_1', i: 1, j: 1, x: 9, y: 9, width: 1, height: 1 }, createWafer({ diameter: 20 })), { ring: 4, quadrant: 'NE' });
+  assert.equal(getRingLabel(1, 1), 'Full Wafer');
+  assert.equal(getRingLabel(1, 2), 'Ring 1 (core)');
+  assert.equal(getRingLabel(2, 2), 'Ring 2 (edge)');
+  assert.equal(getRingLabel(3, 5), 'Ring 3');
+  assert.equal(getRingLabel(1, 4), 'Ring 1 (core)');
+  assert.equal(getRingLabel(4, 4), 'Ring 4 (edge)');
+
+  assert.deepEqual(assignGridIndices([
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+  ]), {
+    indices: [{ i: -1, j: -1 }, { i: 0, j: 0 }],
+    offsetX: 1,
+    offsetY: 1,
+    confidence: 1,
+  });
+
+  const inferredWafer = inferWaferFromXY([
+    { x: 90, y: 0 },
+    { x: -90, y: 0 },
+    { x: 0, y: 90 },
+    { x: 0, y: -90 },
+  ]);
+  assert.deepEqual(inferredWafer, {
+    center: { x: 0, y: 0 },
+    diameter: 200,
+    radius: 100,
+    confidence: 1,
+    method: 'snapped-200mm',
+  });
+
+  assert.deepEqual(resolveGridPitch([
+    { x: 0, y: 0 },
+    { x: 2, y: 0 },
+    { x: 0, y: 1 },
+    { x: 2, y: 1 },
+  ]), {
+    pitchX: 1,
+    pitchY: 0.5,
+    units: 'normalized',
+    confidence: 0.5,
+  });
+  assert.deepEqual(resolveGridPitch([], { width: 11 }), {
+    pitchX: 11,
+    pitchY: 11,
+    units: 'mm',
+    confidence: 0,
+  });
+
+  assert.equal(fmt(0), '0');
+  assert.equal(fmt(1234), '1234');
+  assert.equal(fmt(1e6, undefined, 'engineering'), '1.00E+6');
+  assert.equal(fmt(2e-6, 'A'), '2.00 µA');
+  assert.equal(fmtColorbarAxis(1e-6, 'Idsat', 'A').axisLabel, 'Idsat (µA)');
+  assert.equal(fmtColorbarAxis(1e-6, 'Idsat', 'A').tickFmt(2e-6), '2.00');
+
+  assert.equal(hardBinColor(1), '#2ecc71');
+  assert.equal(hardBinColor(999), '#16a085');
+  assert.equal(hardBinGreyscale(1), '#f0f0f0');
+  assert.equal(softBinColor(3, 6), valueToViridis(0.5));
+  assert.equal(valueToViridis(-1), 'rgb(68,1,84)');
+  assert.equal(valueToGreyscale(1), 'rgb(230,230,230)');
+  assert.equal(contrastTextColor('#ffffff'), '#000000');
+  assert.equal(contrastTextColor('#000000'), '#ffffff');
+
+  assert.equal(getColorScheme('default').label, 'Default');
+  assert.ok(listColorSchemes().some((scheme) => scheme.name === 'default'));
+  assert.ok(listColorSchemes().some((scheme) => scheme.name === 'accessible'));
+
+  registerColorScheme('custom-suite', {
+    label: 'Custom Suite',
+    forBin: (bin) => `bin-${bin}`,
+    forValue: (t) => `value-${t.toFixed(2)}`,
+    plotlyColorscale: [[0, '#000000'], [1, '#ffffff']],
+  });
+  assert.equal(getColorScheme('custom-suite').label, 'Custom Suite');
+  assert.ok(listColorSchemes().some((scheme) => scheme.name === 'custom-suite'));
+});
+
+test('renderer scene assembly and Plotly conversion preserve the public contract', () => {
   const wafer = createWafer({
     diameter: 60,
     metadata: {
@@ -107,54 +242,62 @@ test('renderer builds scene rectangles, overlays, and text for stacked modes', (
     },
   });
 
-  const clipped = clipDiesToWafer(
-    generateDies(wafer, { width: 10, height: 10, gridSize: 1 }),
-    wafer,
-    { width: 10, height: 10 }
-  );
-  const dies = enrichDies(clipped);
+  const dies = applyProbeSequence(buildSampleDies(), { type: 'snake' });
   const reticles = generateReticleGrid(wafer, { width: 2, height: 2, diePitchX: 10, diePitchY: 10 });
 
   const scene = buildScene(wafer, dies, {
-    plotMode: 'stackedBins',
+    plotMode: 'hardbin',
     showText: true,
     showReticle: true,
     showProbePath: true,
     showRingBoundaries: true,
     showQuadrantBoundaries: true,
+    showXYIndicator: true,
     ringCount: 4,
     reticles,
+    highlightBin: 1,
+    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+    hbinDefs: [{ bin: 1, name: 'Pass', color: '#00aa00' }],
+    sbinDefs: [{ bin: 2, name: 'SoftFail', color: '#aa0000' }],
   });
 
-  assert.equal(scene.metadata.lot, 'LOT-001');
-  assert.ok(scene.rectangles.length > dies.length);
-  assert.ok(scene.texts.length > 0);
+  assert.equal(scene.metadata?.lot, 'LOT-001');
+  assert.equal(scene.valueRange[0], 0.6);
+  assert.equal(scene.valueRange[1], 0.9);
+  assert.ok(scene.rectangles.some((rect) => rect.fill === '#00aa00'));
+  assert.ok(scene.rectangles.some((rect) => rect.fill === '#e8e9ea'));
+  assert.ok(scene.texts.some((text) => text.text === '+X'));
+  assert.ok(scene.texts.some((text) => text.text === '+Y'));
   assert.ok(scene.hoverPoints.every((point) => point.text.includes('Die (')));
+  assert.ok(scene.hoverPoints[0].text.includes('HBin: 1'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'wafer-boundary'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'reticle'));
+  assert.ok(scene.overlays.some((overlay) => overlay.kind === 'probe-path'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'ring-boundary'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'quadrant-boundary'));
-});
+  assert.ok(scene.overlays.some((overlay) => overlay.kind === 'xy-indicator'));
 
-test('plotly adapter converts a scene into path shapes and traces', () => {
-  const wafer = createWafer({ diameter: 60 });
-  const dies = enrichDies(
-    clipDiesToWafer(
-      generateDies(wafer, { width: 10, height: 10, gridSize: 1 }),
-      wafer,
-      { width: 10, height: 10 }
-    )
-  );
-  const scene = buildScene(wafer, dies, {
+  assert.equal(getDieKey({ i: 3, j: -2 }), '3,-2');
+  assert.equal(getDieAtPoint(scene, { points: [{ curveNumber: 0, pointIndex: 2 }] })?.id, '1_0');
+  assert.equal(getDieAtPoint(scene, { points: [{ curveNumber: 1, pointIndex: 1 }] }), null);
+
+  const textOverlay = generateTextOverlay(dies, {
     plotMode: 'value',
-    showText: true,
+    colorFns: getColorScheme('default'),
+    normalize: (v) => v,
+    testIndex: 0,
+    binIndex: 0,
+    valueRange: [0.6, 0.9],
+    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
   });
+  assert.equal(textOverlay.length, dies.length);
 
-  const plot = toPlotly(scene);
-
+  const plot = toPlotly(scene, { showAxes: true, diePitchMm: { x: 10, y: 10 } });
   assert.ok(Array.isArray(plot.data));
   assert.ok(Array.isArray(plot.layout.shapes));
   assert.ok(plot.layout.shapes.every((shape) => shape.type === 'path'));
   assert.equal(plot.data[0].type, 'scatter');
   assert.ok(plot.data.some((trace) => trace.mode === 'text'));
+  assert.equal(plot.layout.xaxis.title.text, 'Die X');
+  assert.equal(plot.layout.yaxis.title.text, 'Die Y');
 });

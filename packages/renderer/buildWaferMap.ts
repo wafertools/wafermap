@@ -271,6 +271,8 @@ export interface WaferMapResult {
   wafer: Wafer;
   dies: Die[];
   scene: Scene;
+  /** Reticle configuration used to generate the overlay and reticle-local groupings. */
+  reticleConfig?: ReticleConfig;
   /**
    * Coordinate space of `die.x` / `die.y` and wafer dimensions:
    * - **'mm'**         — at least one physical dimension was provided or could
@@ -297,6 +299,8 @@ export interface WaferMapResult {
   };
   /** Yield statistics computed against `passBins`. */
   yield: YieldSummary;
+  /** Generated reticle geometry — pass as `sceneOptions.reticles` to `renderWaferMap` to show the reticle overlay. */
+  reticles: Reticle[];
 }
 
 // ── Internal normalized model ─────────────────────────────────────────────────
@@ -701,9 +705,10 @@ export function buildWaferMap(
     });
 
     return {
-      wafer, dies, scene, units: 'mm', inference,
+      wafer, dies, scene, reticleConfig: norm.reticleOpts, units: 'mm', inference,
       dataCoverage: computeCoverage(dies),
       yield: computeYield(dies, norm.passBins),
+      reticles,
     };
   }
 
@@ -756,6 +761,17 @@ export function buildWaferMap(
     });
   }
 
+  // Shift i/j from centred grid indices to original input coordinates.
+  // die.x/y (physical mm) remain unchanged — only the public identity fields move.
+  if (offsetX !== 0 || offsetY !== 0) {
+    dies = dies.map(die => ({
+      ...die,
+      i:  die.i + offsetX,
+      j:  die.j + offsetY,
+      id: `${die.i + offsetX}_${die.j + offsetY}`,
+    }));
+  }
+
   dies = applyOrientation(dies, wafer);
 
   if (flipX || flipY) {
@@ -773,15 +789,17 @@ export function buildWaferMap(
     ...sceneOpts,
     reticles,
     showReticle,
-    plotMode: autoPlotMode(results, sceneOpts),
-    testDefs:  norm.testDefs,
-    hbinDefs:  norm.hbinDefs,
-    sbinDefs:  norm.sbinDefs,
+    plotMode:     autoPlotMode(results, sceneOpts),
+    testDefs:     norm.testDefs,
+    hbinDefs:     norm.hbinDefs,
+    sbinDefs:     norm.sbinDefs,
+    dataAxisFlip: { x: flipX, y: flipY },
   });
 
   return {
-    wafer, dies, scene, units, inference,
+    wafer, dies, scene, reticleConfig: norm.reticleOpts, units, inference,
     dataCoverage: computeCoverage(dies),
     yield: computeYield(dies, norm.passBins),
+    reticles,
   };
 }

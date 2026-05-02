@@ -10,8 +10,7 @@ import { fmt, fmtColorbarAxis } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
 
-// TODO: add 'stackedSoftBins' mode — same as stackedBins but aggregating bins[1] (soft bin channel).
-export type PlotMode = 'value' | 'hardbin' | 'softbin' | 'stackedValues' | 'stackedBins';
+export type PlotMode = 'value' | 'hardbin' | 'softbin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins';
 
 interface Point {
   x: number;
@@ -78,6 +77,10 @@ export interface Scene {
   aggrMethod?: string;
   /** Total wafers in lot — for `stackedBins` hover percentage calculation. */
   lotSize?: number;
+  /** Total effective axis flip for tick labels (data-pipeline flip XOR interactive flip). */
+  axisFlip: { x: boolean; y: boolean };
+  /** True when reticle geometry is present — used to conditionally show the reticle toolbar button. */
+  hasReticle: boolean;
 }
 
 export interface SceneOptions {
@@ -142,6 +145,12 @@ export interface SceneOptions {
    * in `stackedBins` hover tooltips.
    */
   lotSize?: number;
+  /**
+   * Axis flip baked in by the data pipeline (for LL/LR/UL/UR origins or explicit
+   * `xAxisDirection`/`yAxisDirection`). Combined with `interactiveTransform` flip
+   * to produce the total effective axis flip for tick labels.
+   */
+  dataAxisFlip?: { x: boolean; y: boolean };
 }
 
 /** @deprecated Use {@link SceneOptions} */
@@ -282,15 +291,17 @@ function buildHoverText(
       const method = aggrMethod ? ` (${aggrMethod})` : '';
       lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
     }
-  } else if (plotMode === 'stackedBins') {
+  } else if (plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
     // Show count and percentage for this card's bin (values[0] = count, bins[0] = targetBin).
     const count = die.values?.[0];
     const bin   = die.bins?.[0];
     if (count !== undefined) {
-      const pct  = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
-      const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
+      const pct     = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
+      const defMap  = plotMode === 'stackedSoftBins'
+        ? (sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null)
+        : (hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null);
       const binLabel = bin !== undefined
-        ? (hbinMap?.get(bin)?.name ? `${bin} · ${hbinMap.get(bin)!.name}` : `Bin ${bin}`)
+        ? (defMap?.get(bin)?.name ? `${bin} · ${defMap.get(bin)!.name}` : `Bin ${bin}`)
         : 'Bin';
       lines.push(`${binLabel}: ${count}${pct}`);
     }
@@ -700,7 +711,14 @@ export function buildScene(
     fallbackFormat = 'engineering' as const,
     aggrMethod,
     lotSize,
+    dataAxisFlip,
   } = options;
+
+  // Total effective axis flip for display: data-pipeline flip XOR interactive flip.
+  const axisFlip = {
+    x: (dataAxisFlip?.x ?? false) !== (interactiveTransform?.flipX ?? false),
+    y: (dataAxisFlip?.y ?? false) !== (interactiveTransform?.flipY ?? false),
+  };
 
   // Hard and soft bins have independent number spaces — select the correct def map for the
   // current plot mode so bin 5 in hardbin-space and bin 5 in softbin-space can have different names.
@@ -715,9 +733,8 @@ export function buildScene(
     forBin:   scheme.forBin,
   };
 
-  // Compute value range for normalization (used by value / stackedValues modes).
-  // For 'value' mode only values[testIndex] is rendered — range against that entry only.
-  // For 'stackedValues' all entries are rendered side-by-side — range across all.
+  // Compute value range for normalization. Always range against values[testIndex] only
+  // (for stackedValues/stackedBins the aggregated scalar sits in values[0], testIndex=0).
   let vMin: number;
   let vMax: number;
   if (explicitRange) {
@@ -791,6 +808,8 @@ export function buildScene(
     binIndex,
     aggrMethod,
     lotSize,
+    axisFlip,
+    hasReticle: reticles.length > 0,
   };
 }
 

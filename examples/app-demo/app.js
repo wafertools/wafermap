@@ -267,15 +267,12 @@ function renderYieldChart() {
 
 let galleryCtrl = null;
 
-// ── Render queue — debounced, cancellable progressive rendering ───────────────
+// ── Render queue — debounced ───────────────────────────────────────────────────
 
-const renderQueue = { token: 0, timer: null };
+const renderQueue = { timer: null };
 
 function refreshGallery() {
-  // Debounce: cancel any pending timer and increment the cancellation token
-  // to abort any in-progress rAF render loop.
   clearTimeout(renderQueue.timer);
-  renderQueue.token++;
   renderQueue.timer = setTimeout(_doRefreshGallery, 150);
 }
 
@@ -291,16 +288,32 @@ function buildGalleryItems(plotMode, selected, diesByWafer, wafer) {
     // One card per test parameter — lot mean at each die position across selected wafers.
     return state.cfg.valueCols.map((col, paramIndex) => {
       const dies = aggregateValues(selectedDiesList, 'mean', paramIndex);
-      return { wafer, dies, label: col };
+      return {
+        wafer, dies, label: col,
+        sceneOptions: { testDefs: [{ index: 0, name: col }], aggrMethod: 'mean' },
+      };
     });
   }
 
   if (plotMode === 'stackedBins') {
-    // One card per distinct bin — count of that bin at each die position across selected wafers.
-    const allBins = [...new Set(selectedDiesList.flat().flatMap(d => d.bins ?? []))].sort((a, b) => a - b);
+    const allBins = [...new Set(selectedDiesList.flat().flatMap(d => d.bins?.[0] != null ? [d.bins[0]] : []))].sort((a, b) => a - b);
     return allBins.map(bin => {
       const dies = aggregateBinCounts(selectedDiesList, bin, 0);
-      return { wafer, dies, label: `HBin ${bin}` };
+      return {
+        wafer, dies, label: `HBin ${bin}`,
+        sceneOptions: { hbinDefs: [{ bin, name: `HBin ${bin}` }], lotSize: selected.length },
+      };
+    });
+  }
+
+  if (plotMode === 'stackedSoftBins') {
+    const allBins = [...new Set(selectedDiesList.flat().flatMap(d => d.bins?.[1] != null ? [d.bins[1]] : []))].sort((a, b) => a - b);
+    return allBins.map(bin => {
+      const dies = aggregateBinCounts(selectedDiesList, bin, 1);
+      return {
+        wafer, dies, label: `SBin ${bin}`,
+        sceneOptions: { sbinDefs: [{ bin, name: `SBin ${bin}` }], lotSize: selected.length },
+      };
     });
   }
 
@@ -348,7 +361,7 @@ function renderWafermapGallery() {
       showQuadrantBoundaries: showQuadrants,
       showXYIndicator:        showXY,
       highlightBin,
-      ...(plotMode === 'stackedBins'   ? { valueRange: [0, selected.length], lotSize: selected.length } : {}),
+      ...((plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') ? { valueRange: [0, selected.length], lotSize: selected.length } : {}),
       ...(plotMode === 'stackedValues' ? { aggrMethod: 'mean' } : {}),
     },
     onSceneOptionsChange(opts) {
@@ -362,11 +375,12 @@ function renderWafermapGallery() {
       if (opts.colorScheme  !== undefined) { state.ui.colorScheme  = opts.colorScheme;  document.getElementById('map-color').value = opts.colorScheme; }
       if (opts.showRingBoundaries     !== undefined) { state.ui.showRings     = opts.showRingBoundaries;     document.getElementById('btn-rings').checked     = opts.showRingBoundaries; }
       if (opts.showQuadrantBoundaries !== undefined) { state.ui.showQuadrants = opts.showQuadrantBoundaries; document.getElementById('btn-quadrants').checked = opts.showQuadrantBoundaries; }
+      if (opts.showXYIndicator        !== undefined) { state.ui.showXY        = opts.showXYIndicator;        document.getElementById('btn-xy').checked        = opts.showXYIndicator; }
     },
   });
 
   // Append per-card stats for individual wafer items only.
-  const isStacked = plotMode === 'stackedValues' || plotMode === 'stackedBins';
+  const isStacked = plotMode === 'stackedValues' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
   if (!isStacked) {
     const cards = galleryEl.querySelectorAll('.wmap-gallery-card');
     cards.forEach((card, i) => {
@@ -471,8 +485,9 @@ function populateMapControls() {
     <option value="hardbin">Hard Bin</option>
     <option value="softbin">Soft Bin</option>
     <option value="value">Test Value</option>
-    <option value="stackedValues">Stacked Values</option>
-    <option value="stackedBins">Stacked Bins</option>
+    <option value="stackedValues">Stacked Test Values</option>
+    <option value="stackedBins">Stacked Hard Bins</option>
+    <option value="stackedSoftBins">Stacked Soft Bins</option>
   `;
 
   const chanEl = document.getElementById('map-channel');
@@ -608,7 +623,7 @@ function wireEvents() {
 
   document.getElementById('map-mode').addEventListener('change', e => {
     state.ui.plotMode = e.target.value;
-    const isStacked = e.target.value === 'stackedValues' || e.target.value === 'stackedBins';
+    const isStacked = e.target.value === 'stackedValues' || e.target.value === 'stackedBins' || e.target.value === 'stackedSoftBins';
     document.getElementById('map-channel-group').hidden =
       e.target.value !== 'value' || !state.cfg.valueCols.length;
     // Stacked modes change the items (aggregated vs individual) — always full rebuild.

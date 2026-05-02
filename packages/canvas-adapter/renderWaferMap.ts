@@ -3,8 +3,10 @@ import { buildScene } from '../renderer/buildScene.js';
 import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
+import type { Reticle } from '../core/reticle.js';
 import { toCanvas, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef } from '../renderer/buildWaferMap.js';
+import type { StatsFinding, StatsSummary } from '../stats/types.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -18,6 +20,10 @@ export interface WaferSceneOptions {
   showText?:               boolean;
   showRingBoundaries?:     boolean;
   showQuadrantBoundaries?: boolean;
+  showReticle?:            boolean;
+  showXYIndicator?:        boolean;
+  /** Reticle geometry to overlay — pass `result.reticles` from `buildWaferMap`. */
+  reticles?:               Reticle[];
   ringCount?:              number;
   highlightBin?:           number;
   /** Interactive rotation in degrees (0 | 90 | 180 | 270). */
@@ -54,6 +60,11 @@ export interface WaferSceneOptions {
    * in `stackedBins` hover tooltips.
    */
   lotSize?:                number;
+  /**
+   * Axis flip baked in by the data pipeline (LL/LR/UL/UR origins or explicit
+   * `xAxisDirection`/`yAxisDirection`). Passed through to axis tick label computation.
+   */
+  dataAxisFlip?:           { x: boolean; y: boolean };
 }
 
 export interface MountOptions extends Omit<ToCanvasOptions, '_viewport'> {
@@ -71,11 +82,20 @@ export interface MountOptions extends Omit<ToCanvasOptions, '_viewport'> {
   showTooltip?: boolean;
   /** Show the built-in toolbar. Default true. */
   showToolbar?: boolean;
+  /** Optional precomputed wafer-level stats summary for the built-in findings panel. */
+  statsSummary?: StatsSummary;
+  /** Show the built-in findings panel toggle when stats are provided. Default true. */
+  showFindingsPanel?: boolean;
   /**
    * 'full' (default) shows all toolbar controls.
    * 'view-only' shows only zoom, reset, box-select, and download — used by gallery cards.
    */
   toolbarControls?: 'full' | 'view-only';
+  /**
+   * Show the plot mode selector in the toolbar. Default true.
+   * Set to false when the host application manages mode switching itself.
+   */
+  showPlotModeSelector?: boolean;
   /** Minimum zoom relative to fit. Default 0.5. */
   minZoom?: number;
   /** Maximum zoom relative to fit. Default 20. */
@@ -97,6 +117,8 @@ export interface WaferCanvasController {
   resetView(): void;
   /** Update the fallback format for unitless values and re-render. */
   setFallbackFormat(format: 'si' | 'engineering'): void;
+  /** Replace the current stats summary used by the built-in findings panel. */
+  setStatsSummary(summary: StatsSummary | undefined): void;
   /** Remove all event listeners and DOM elements. */
   destroy(): void;
 }
@@ -119,6 +141,9 @@ const ICONS: Record<string, string> = {
   // Wafer-specific — no Lucide equivalent
   rings:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
   quadrants: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
+  reticle:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="6" rx="0.5"/><rect x="13" y="3" width="8" height="6" rx="0.5"/><rect x="3" y="11" width="8" height="6" rx="0.5"/><rect x="13" y="11" width="8" height="6" rx="0.5"/><rect x="3" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/><rect x="13" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/></svg>`,
+  xyIndicator: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 L5 7"/><path d="M5 7 L3 10"/><path d="M5 7 L7 10"/><path d="M5 19 L17 19"/><path d="M17 19 L14 17"/><path d="M17 19 L14 21"/><text x="18" y="8" font-size="6" fill="currentColor" stroke="none">X</text><text x="2" y="6" font-size="6" fill="currentColor" stroke="none">Y</text></svg>`,
+  findings: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11h6"/><path d="M9 15h4"/><path d="M5 4h14"/><path d="M5 20h14"/><path d="M5 4v16"/><path d="M19 4v16"/></svg>`,
 };
 
 // ── Toolbar colours ───────────────────────────────────────────────────────────
@@ -137,13 +162,16 @@ const CLR = {
 
 // ── Plot mode display labels ───────────────────────────────────────────────────
 const MODE_LABELS: Record<PlotMode, string> = {
-  value:         'Value',
-  hardbin:       'Hard Bin',
-  softbin:       'Soft Bin',
-  stackedValues: 'Stacked Values',
-  stackedBins:   'Stacked Bins',
+  value:            'Test Value',
+  hardbin:          'Hard Bin',
+  softbin:          'Soft Bin',
+  stackedValues:    'Stacked Test Values',
+  stackedBins:      'Stacked Hard Bins',
+  stackedSoftBins:  'Stacked Soft Bins',
 };
-const ALL_MODES: PlotMode[] = ['value', 'hardbin', 'softbin', 'stackedValues', 'stackedBins'];
+
+// Number of test entries to show inline before switching to a cascade submenu.
+const INLINE_TEST_LIMIT = 6;
 const ROTATIONS: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -159,16 +187,19 @@ export function renderWaferMap(
     onClick,
     onSelect,
     onSceneOptionsChange,
-    showTooltip     = true,
-    showToolbar     = true,
-    toolbarControls = 'full',
-    minZoom         = 0.5,
+    showTooltip          = true,
+    showToolbar          = true,
+    showFindingsPanel    = true,
+    toolbarControls      = 'full',
+    showPlotModeSelector = true,
+    minZoom              = 0.5,
     maxZoom         = 20,
     sceneOptions: initialSceneOptions = {},
     ...drawOptions
   } = options;
 
   let currentFallbackFormat = drawOptions.fallbackFormat;
+  let currentStatsSummary = options.statsSummary;
 
   // ── Mutable state ──────────────────────────────────────────────────────────
   let currentDies     = dies;
@@ -180,6 +211,8 @@ export function renderWaferMap(
     showText:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
+    showReticle:            false,
+    showXYIndicator:        false,
     ringCount:              4,
     rotation:               0,
     flipX:                  false,
@@ -212,6 +245,9 @@ export function renderWaferMap(
       showText:               so.showText,
       showRingBoundaries:     so.showRingBoundaries,
       showQuadrantBoundaries: so.showQuadrantBoundaries,
+      showReticle:            so.showReticle,
+      showXYIndicator:        so.showXYIndicator,
+      reticles:               so.reticles,
       ringCount:              so.ringCount,
       highlightBin:           so.highlightBin,
       testIndex:              so.testIndex,
@@ -222,6 +258,7 @@ export function renderWaferMap(
       valueRange:             so.valueRange,
       aggrMethod:             so.aggrMethod,
       lotSize:                so.lotSize,
+      dataAxisFlip:           so.dataAxisFlip,
       fallbackFormat:         currentFallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
@@ -258,8 +295,12 @@ export function renderWaferMap(
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
   let toolbar:      HTMLDivElement    | null = null;
+  let findingsPanel: HTMLDivElement   | null = null;
   let btnBoxSelect: HTMLButtonElement | null = null;
+  let btnFindings: HTMLButtonElement | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  let findingsOpen = false;
+  let activeFindingId: string | null = null;
 
   // Track open dropdown so we can close it when another opens.
   let openMenu: HTMLDivElement | null = null;
@@ -270,6 +311,157 @@ export function renderWaferMap(
       openMenu = null;
     }
   };
+
+  function selectionFromKeys(keys: string[] | undefined): void {
+    selectedKeys = new Set(keys ?? []);
+    if (onSelect) onSelect(selectionAsDies());
+    render();
+  }
+
+  function clearFindingHighlight(): void {
+    activeFindingId = null;
+    selectionFromKeys([]);
+    applyOpts({ highlightBin: undefined });
+    // Update active state on all finding rows.
+    findingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-finding]').forEach(btn => {
+      btn.style.background = '#fff';
+      btn.style.fontWeight = '400';
+    });
+  }
+
+  function applyFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
+    // Toggle off if already active.
+    if (activeFindingId === finding.id) {
+      clearFindingHighlight();
+      return;
+    }
+    // Clear previous, then apply new.
+    findingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-finding]').forEach(btn => {
+      btn.style.background = '#fff';
+      btn.style.fontWeight = '400';
+    });
+    activeFindingId = finding.id;
+    row.style.background  = CLR.bgActive;
+    row.style.fontWeight  = '600';
+
+    if (finding.highlight.kind === 'bin') {
+      selectionFromKeys(finding.highlight.dieKeys);
+      applyOpts({ highlightBin: finding.highlight.bin });
+      return;
+    }
+    if (finding.highlight.kind === 'region') {
+      selectionFromKeys(finding.highlight.dieKeys);
+      return;
+    }
+    if (finding.highlight.kind === 'dies') {
+      selectionFromKeys(finding.highlight.dieKeys);
+    }
+  }
+
+  function findingsSeverityColor(severity: StatsFinding['severity']): string {
+    return severity === 'unusual' ? '#a84112' : severity === 'notable' ? '#8a6500' : '#506784';
+  }
+
+  function refreshFindingsButton(): void {
+    if (!btnFindings) return;
+    btnFindings.style.display = currentStatsSummary ? 'flex' : 'none';
+    btnFindings.title = currentStatsSummary?.hasNotableFindings
+      ? 'Show findings (notable patterns found)'
+      : 'Show findings';
+    if (currentStatsSummary?.hasNotableFindings && !findingsOpen) {
+      btnFindings.style.color = '#b7551a';
+    } else if (!btnFindings.dataset.active) {
+      btnFindings.style.color = CLR.icon;
+    }
+  }
+
+  function rebuildFindingsPanel(): void {
+    if (!findingsPanel) return;
+    findingsPanel.innerHTML = '';
+    findingsPanel.style.display = currentStatsSummary && findingsOpen ? 'flex' : 'none';
+    if (!currentStatsSummary) {
+      refreshFindingsButton();
+      return;
+    }
+
+    const header = document.createElement('div');
+    header.textContent = 'Findings';
+    Object.assign(header.style, {
+      fontSize: '12px',
+      fontWeight: '700',
+      color: '#1f2f43',
+      marginBottom: '2px',
+    });
+    findingsPanel.appendChild(header);
+
+    if (currentStatsSummary.findings.length === 0) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No significant findings';
+      Object.assign(empty.style, { fontSize: '12px', color: '#66788a' });
+      findingsPanel.appendChild(empty);
+      refreshFindingsButton();
+      return;
+    }
+
+    const severityOrder: StatsFinding['severity'][] = ['unusual', 'notable', 'info'];
+    const severityLabel: Record<StatsFinding['severity'], string> = {
+      unusual: 'Unusual',
+      notable: 'Notable',
+      info:    'Informational',
+    };
+    const grouped = new Map<StatsFinding['severity'], StatsFinding[]>(
+      severityOrder.map(s => [s, []])
+    );
+    for (const finding of currentStatsSummary.findings) {
+      grouped.get(finding.severity)!.push(finding);
+    }
+    let firstGroup = true;
+    for (const severity of severityOrder) {
+      const group = grouped.get(severity)!;
+      if (!group.length) continue;
+
+      if (!firstGroup) {
+        const divider = document.createElement('div');
+        Object.assign(divider.style, { height: '1px', background: CLR.separator, margin: '4px 0' });
+        findingsPanel.appendChild(divider);
+      }
+      firstGroup = false;
+
+      const groupLabel = document.createElement('div');
+      groupLabel.textContent = severityLabel[severity];
+      Object.assign(groupLabel.style, {
+        fontSize: '10px', fontWeight: '700', letterSpacing: '0.05em',
+        textTransform: 'uppercase', color: findingsSeverityColor(severity),
+        padding: '2px 0',
+      });
+      findingsPanel.appendChild(groupLabel);
+
+      for (const finding of group) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.dataset.wmapFinding = finding.id;
+        row.textContent = finding.summary;
+        const isActive = activeFindingId === finding.id;
+        Object.assign(row.style, {
+          border:      `1px solid ${CLR.menuBorder}`,
+          borderLeft:  `3px solid ${findingsSeverityColor(finding.severity)}`,
+          background:  isActive ? CLR.bgActive : '#fff',
+          borderRadius:'6px',
+          padding:     '8px 10px',
+          textAlign:   'left',
+          fontSize:    '12px',
+          fontWeight:  isActive ? '600' : '400',
+          color:       '#2a3f5f',
+          cursor:      'pointer',
+          width:       '100%',
+        });
+        row.addEventListener('click', () => applyFindingHighlight(finding, row));
+        findingsPanel.appendChild(row);
+      }
+    }
+
+    refreshFindingsButton();
+  }
 
   if (showToolbar) {
     const parent = canvas.parentElement;
@@ -296,6 +488,25 @@ export function renderWaferMap(
         transition:    'opacity 0.2s ease',
         pointerEvents: 'none',
       });
+
+      findingsPanel = document.createElement('div');
+      findingsPanel.dataset.wmapFindingsPanel = '1';
+      Object.assign(findingsPanel.style, {
+        position: 'absolute',
+        top: '40px',
+        right: '4px',
+        width: 'min(320px, calc(100% - 8px))',
+        maxHeight: 'min(50vh, 360px)',
+        overflowY: 'auto',
+        background: '#fff',
+        border: `1px solid ${CLR.menuBorder}`,
+        borderRadius: '8px',
+        boxShadow: '0 8px 20px rgba(0,0,0,0.16)',
+        zIndex: '1001',
+        padding: '10px',
+        display: 'none',
+      });
+      parent.appendChild(findingsPanel);
 
       // ── Button factory ───────────────────────────────────────────────────
       function makeBtn(
@@ -486,19 +697,81 @@ export function renderWaferMap(
           return true;
         }
 
+        // Build a menu row and wire hover/click.
+        function makeMenuRow(
+          label: string,
+          active: boolean,
+          indent: boolean,
+          onClick: (e: MouseEvent) => void,
+        ): HTMLDivElement {
+          const row = document.createElement('div');
+          row.textContent = label;
+          Object.assign(row.style, {
+            padding:    `6px 14px 6px ${indent ? '26px' : '14px'}`,
+            fontSize:   '12px',
+            cursor:     'pointer',
+            color:      active ? CLR.iconActive : '#333',
+            fontWeight: active ? '700' : '400',
+            background: active ? CLR.menuActive : 'transparent',
+            whiteSpace: 'nowrap',
+          });
+          row.addEventListener('mouseenter', () => { if (!active) row.style.background = CLR.menuHover; });
+          row.addEventListener('mouseleave', () => { row.style.background = active ? CLR.menuActive : 'transparent'; });
+          row.addEventListener('click', onClick);
+          return row;
+        }
+
+        // Non-clickable section divider with label.
+        function makeMenuSection(label: string): HTMLDivElement {
+          const el = document.createElement('div');
+          el.textContent = label;
+          Object.assign(el.style, {
+            padding:       '5px 14px 2px',
+            fontSize:      '10px',
+            fontWeight:    '600',
+            letterSpacing: '0.05em',
+            color:         '#888',
+            textTransform: 'uppercase',
+            pointerEvents: 'none',
+            userSelect:    'none',
+          });
+          return el;
+        }
+
+        function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
+          if (entry.testIndex !== undefined) {
+            applyOpts({ plotMode: 'value', testIndex: entry.testIndex });
+          } else {
+            applyOpts({ plotMode: entry.plotMode, testIndex: undefined });
+          }
+          menu.remove();
+          openMenu = null;
+        }
+
         const btnMode = makeBtn('mode', 'Plot mode', () => {
           if (openMenu) { openMenu.remove(); openMenu = null; return; }
 
+          // Only include modes for which data is actually present.
+          const dies     = currentScene.dies;
           const testDefs = currentScene.testDefs;
-          const entries: ModeEntry[] = testDefs?.length
-            ? testDefs.map(t => ({ plotMode: 'value' as PlotMode, testIndex: t.index, label: t.unit ? `${t.name} (${t.unit})` : t.name }))
-            : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }];
-          entries.push(
-            { plotMode: 'hardbin',       label: MODE_LABELS.hardbin },
-            { plotMode: 'softbin',       label: MODE_LABELS.softbin },
-            { plotMode: 'stackedValues', label: MODE_LABELS.stackedValues },
-            { plotMode: 'stackedBins',   label: MODE_LABELS.stackedBins },
-          );
+          const hasValues = dies.some(d => d.values?.length);
+          const hasHbin   = dies.some(d => d.bins?.[0] != null);
+          const hasSbin   = dies.some(d => d.bins?.[1] != null);
+
+          const testEntries: ModeEntry[] = hasValues
+            ? (testDefs?.length
+                ? testDefs.map(t => ({ plotMode: 'value' as PlotMode, testIndex: t.index, label: t.unit ? `${t.name} (${t.unit})` : t.name }))
+                : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
+            : [];
+          const binEntries: ModeEntry[] = [
+            ...(hasHbin ? [{ plotMode: 'hardbin'  as PlotMode, label: MODE_LABELS.hardbin }] : []),
+            ...(hasSbin ? [{ plotMode: 'softbin'  as PlotMode, label: MODE_LABELS.softbin }] : []),
+          ];
+          const stackedEntries: ModeEntry[] = [
+            ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
+            ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
+            ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
+          ];
 
           const menu = document.createElement('div');
           const btnRect = btnMode.getBoundingClientRect();
@@ -511,41 +784,101 @@ export function renderWaferMap(
             borderRadius:  '4px',
             boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
             zIndex:        '9998',
-            minWidth:      '160px',
+            minWidth:      '180px',
             padding:       '4px 0',
             pointerEvents: 'auto',
           });
 
-          for (const entry of entries) {
-            const row = document.createElement('div');
-            row.textContent = entry.label;
-            const active = isCurrentEntry(entry);
-            Object.assign(row.style, {
-              padding:    '6px 14px',
-              fontSize:   '12px',
-              cursor:     'pointer',
-              color:      active ? CLR.iconActive : '#333',
-              fontWeight: active ? '700' : '400',
-              background: active ? CLR.menuActive : 'transparent',
-              whiteSpace: 'nowrap',
-            });
-            row.addEventListener('mouseenter', () => {
-              if (!isCurrentEntry(entry)) row.style.background = CLR.menuHover;
-            });
-            row.addEventListener('mouseleave', () => {
-              row.style.background = isCurrentEntry(entry) ? CLR.menuActive : 'transparent';
-            });
-            row.addEventListener('click', e => {
-              e.stopPropagation();
-              if (entry.testIndex !== undefined) {
-                applyOpts({ plotMode: 'value', testIndex: entry.testIndex });
-              } else {
-                applyOpts({ plotMode: entry.plotMode, testIndex: undefined });
+          // ── Test Value section ────────────────────────────────────────────
+          if (testEntries.length) {
+            menu.appendChild(makeMenuSection('Test Value'));
+
+            if (testEntries.length <= INLINE_TEST_LIMIT) {
+              // Inline: one row per test, indented.
+              for (const entry of testEntries) {
+                const active = isCurrentEntry(entry);
+                menu.appendChild(makeMenuRow(entry.label, active, true, e => {
+                  e.stopPropagation();
+                  pickEntry(entry, menu);
+                }));
               }
-              menu.remove();
-              openMenu = null;
-            });
-            menu.appendChild(row);
+            } else {
+              // Cascade: single "Test Value ▶" row that opens a submenu.
+              const cascadeActive = (sceneOpts.plotMode ?? 'hardbin') === 'value';
+              const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, () => {});
+              // Remove default pointer cursor on the cascade row itself — submenu handles selection.
+              cascadeRow.style.display       = 'flex';
+              cascadeRow.style.justifyContent = 'space-between';
+              cascadeRow.style.alignItems    = 'center';
+
+              let subMenu: HTMLDivElement | null = null;
+
+              const openSub = () => {
+                if (subMenu) return;
+                const rowRect = cascadeRow.getBoundingClientRect();
+                subMenu = document.createElement('div');
+                Object.assign(subMenu.style, {
+                  position:  'fixed',
+                  top:       `${rowRect.top - 4}px`,
+                  left:      `${rowRect.right + 2}px`,
+                  background: CLR.menuBg,
+                  border:    `1px solid ${CLR.menuBorder}`,
+                  borderRadius: '4px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  zIndex:    '9999',
+                  minWidth:  '160px',
+                  maxHeight: '320px',
+                  overflowY: 'auto',
+                  padding:   '4px 0',
+                  pointerEvents: 'auto',
+                });
+                for (const entry of testEntries) {
+                  const active = isCurrentEntry(entry);
+                  subMenu.appendChild(makeMenuRow(entry.label, active, false, e => {
+                    e.stopPropagation();
+                    subMenu?.remove(); subMenu = null;
+                    pickEntry(entry, menu);
+                  }));
+                }
+                document.body.appendChild(subMenu);
+              };
+
+              const closeSub = () => { subMenu?.remove(); subMenu = null; };
+
+              cascadeRow.addEventListener('mouseenter', openSub);
+              cascadeRow.addEventListener('mouseleave', (e) => {
+                // Keep open if moving into the submenu.
+                if (subMenu && subMenu.contains(e.relatedTarget as Node)) return;
+                closeSub();
+              });
+              subMenu && document.addEventListener('click', closeSub, { once: true });
+
+              menu.appendChild(cascadeRow);
+            }
+          }
+
+          // ── Bins section ─────────────────────────────────────────────────
+          if (binEntries.length) {
+            menu.appendChild(makeMenuSection('Bins'));
+            for (const entry of binEntries) {
+              const active = isCurrentEntry(entry);
+              menu.appendChild(makeMenuRow(entry.label, active, false, e => {
+                e.stopPropagation();
+                pickEntry(entry, menu);
+              }));
+            }
+          }
+
+          // ── Stacked (lot aggregation) section ─────────────────────────────
+          if (stackedEntries.length) {
+            menu.appendChild(makeMenuSection('Lot Aggregation'));
+            for (const entry of stackedEntries) {
+              const active = isCurrentEntry(entry);
+              menu.appendChild(makeMenuRow(entry.label, active, false, e => {
+                e.stopPropagation();
+                pickEntry(entry, menu);
+              }));
+            }
           }
 
           document.body.appendChild(menu);
@@ -569,6 +902,14 @@ export function renderWaferMap(
           applyOpts({ showText: !sceneOpts.showText });
           setActive(btnLabels, !!sceneOpts.showText);
         });
+        const btnReticle = makeBtn('reticle', 'Toggle reticle overlay', () => {
+          applyOpts({ showReticle: !sceneOpts.showReticle });
+          setActive(btnReticle, !!sceneOpts.showReticle);
+        });
+        const btnXY = makeBtn('xyIndicator', 'Toggle XY axis indicator', () => {
+          applyOpts({ showXYIndicator: !sceneOpts.showXYIndicator });
+          setActive(btnXY, !!sceneOpts.showXYIndicator);
+        });
         const btnRotate = makeBtn('rotateCW', 'Rotate 90° clockwise', () => {
           const r = sceneOpts.rotation ?? 0;
           // Positive rotation is CCW in standard math convention, so decrement to rotate CW.
@@ -583,12 +924,14 @@ export function renderWaferMap(
           setActive(btnFlipV, !!sceneOpts.flipY);
         });
 
-        toolbar.appendChild(btnMode);
+        if (showPlotModeSelector) toolbar.appendChild(btnMode);
         toolbar.appendChild(btnPalette);
         toolbar.appendChild(makeSep());
         toolbar.appendChild(btnRings);
         toolbar.appendChild(btnQuadrants);
         toolbar.appendChild(btnLabels);
+        if (currentScene!.hasReticle) toolbar.appendChild(btnReticle);
+        toolbar.appendChild(btnXY);
         toolbar.appendChild(makeSep());
         toolbar.appendChild(btnRotate);
         toolbar.appendChild(btnFlipH);
@@ -597,8 +940,23 @@ export function renderWaferMap(
         setActive(btnRings,     !!sceneOpts.showRingBoundaries);
         setActive(btnQuadrants, !!sceneOpts.showQuadrantBoundaries);
         setActive(btnLabels,    !!sceneOpts.showText);
+        setActive(btnReticle,   !!sceneOpts.showReticle);
+        setActive(btnXY,        !!sceneOpts.showXYIndicator);
         setActive(btnFlipH,     !!sceneOpts.flipX);
         setActive(btnFlipV,     !!sceneOpts.flipY);
+
+        // Findings button — only shown when a stats summary is provided.
+        if (showFindingsPanel) {
+          btnFindings = makeBtn('findings', 'Show findings', () => {
+            findingsOpen = !findingsOpen;
+            setActive(btnFindings!, findingsOpen);
+            rebuildFindingsPanel();
+          });
+          toolbar.appendChild(makeSep());
+          toolbar.appendChild(btnFindings);
+          refreshFindingsButton();
+          rebuildFindingsPanel();
+        }
       }
 
       canvas.insertAdjacentElement('afterend', toolbar);
@@ -1004,6 +1362,18 @@ export function renderWaferMap(
   });
   resizeObserver.observe(canvas);
 
+  // ── DPR change listener (browser zoom / display change) ────────────────────
+  // ResizeObserver does not fire when devicePixelRatio changes without a layout
+  // size change. Re-register on each change to catch successive zoom steps.
+  let dprMediaQuery = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  const onDprChange = () => {
+    dprMediaQuery.removeEventListener('change', onDprChange);
+    dprMediaQuery = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    dprMediaQuery.addEventListener('change', onDprChange);
+    render();
+  };
+  dprMediaQuery.addEventListener('change', onDprChange);
+
   // ── Wire canvas events ─────────────────────────────────────────────────────
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape' && selectedKeys.size > 0) {
@@ -1020,7 +1390,8 @@ export function renderWaferMap(
   canvas.addEventListener('pointermove',  onPointerMove);
   canvas.addEventListener('pointerup',    onPointerUp);
   canvas.addEventListener('pointerleave', onPointerLeave);
-  canvas.addEventListener('dblclick',     () => resetView());
+  const onDblClick = () => resetView();
+  canvas.addEventListener('dblclick',     onDblClick);
   canvas.addEventListener('keydown',      onKeyDown);
 
   // ── Initial render ─────────────────────────────────────────────────────────
@@ -1067,6 +1438,11 @@ export function renderWaferMap(
       render();
     },
 
+    setStatsSummary(summary: StatsSummary | undefined): void {
+      currentStatsSummary = summary;
+      rebuildFindingsPanel();
+    },
+
     destroy(): void {
       if (hideTimer) clearTimeout(hideTimer);
       openMenu?.remove();
@@ -1076,9 +1452,10 @@ export function renderWaferMap(
       canvas.removeEventListener('pointermove',  onPointerMove);
       canvas.removeEventListener('pointerup',    onPointerUp);
       canvas.removeEventListener('pointerleave', onPointerLeave);
-      canvas.removeEventListener('dblclick',     resetView);
+      canvas.removeEventListener('dblclick',     onDblClick);
       canvas.removeEventListener('keydown',      onKeyDown);
       resizeObserver.disconnect();
+      dprMediaQuery.removeEventListener('change', onDprChange);
       tooltip?.remove();
       toolbar?.remove();
       canvas.style.cursor = '';

@@ -68,7 +68,7 @@ export interface ToCanvasResult {
   binLegendRows:  BinLegendRow[];
 }
 
-const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins']);
+const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins', 'stackedSoftBins']);
 const BIN_LEGEND_MODES = new Set(['hardbin', 'softbin']);
 const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
 const COLORBAR_STEPS = 128;
@@ -102,8 +102,8 @@ export function toCanvas(
 
   // ── HiDPI setup ────────────────────────────────────────────────────────────
   const dpr     = window.devicePixelRatio ?? 1;
-  const cssW    = canvas.clientWidth  || canvas.width;
-  const cssH    = canvas.clientHeight || canvas.height;
+  const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
+  const cssH    = Math.floor(canvas.clientHeight || canvas.height);
 
   // Canvas not yet laid out — bail without touching canvas dimensions so that
   // the ResizeObserver fires when layout is resolved and triggers a real render.
@@ -209,7 +209,7 @@ export function toCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, scene.axisFlip);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
@@ -260,8 +260,9 @@ export function toCanvas(
     }
 
     const testDef = scene.testDefs?.find(t => t.index === scene.testIndex);
-    const cbName  = scene.plotMode === 'stackedBins' ? 'Count' : testDef?.name;
-    const cbUnit  = scene.plotMode === 'stackedBins' ? undefined : testDef?.unit;
+    const isCountMode = scene.plotMode === 'stackedBins' || scene.plotMode === 'stackedSoftBins';
+    const cbName  = isCountMode ? 'Count' : testDef?.name;
+    const cbUnit  = isCountMode ? undefined : testDef?.unit;
     const { tickFmt, axisLabel } = fmtColorbarAxis(
       vMax, cbName, cbUnit, fallbackFormat,
     );
@@ -439,6 +440,7 @@ function drawAxisTicks(
   axisReserve: number,
   axisLeftReserve: number,
   diePitchMm?: { x: number; y: number },
+  axisFlip?: { x: boolean; y: boolean },
 ): void {
   ctx.save();
   ctx.font        = AXIS_TICK_FONT;
@@ -449,39 +451,42 @@ function drawAxisTicks(
   const axisY = cssH - axisReserve + 4;
   const axisX = padding + axisLeftReserve - 4;
 
-  // Target ~one tick per 50px.
-  const xTickStepMm = niceStep(50 / ppm);
-  const yTickStepMm = niceStep(50 / ppm);
+  // Target ~one tick per 50px. Same step for both axes (square die grid).
+  const tickStepMm = niceStep(50 / ppm);
 
   // X axis (bottom)
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  const xStartMm = Math.ceil(((padding - originX) / ppm) / xTickStepMm) * xTickStepMm;
+  const xStartMm = Math.ceil(((padding - originX) / ppm) / tickStepMm) * tickStepMm;
   const xEndMm   = (cssW - padding - originX) / ppm;
-  for (let mm = xStartMm; mm <= xEndMm; mm += xTickStepMm) {
+  for (let mm = xStartMm; mm <= xEndMm; mm += tickStepMm) {
     const sx = originX + mm * ppm;
     if (sx < padding || sx > cssW - padding) continue;
     ctx.beginPath();
     ctx.moveTo(sx, axisY - AXIS_TICK_LEN);
     ctx.lineTo(sx, axisY);
     ctx.stroke();
-    const label = diePitchMm ? String(Math.round(mm / diePitchMm.x)) : fmt(mm);
+    const label = diePitchMm
+      ? String((axisFlip?.x ? -1 : 1) * Math.round(mm / diePitchMm.x))
+      : fmt(mm);
     ctx.fillText(label, sx, axisY + 2);
   }
 
   // Y axis (left) — remember Y is flipped: screen y = originY - mm * ppm
   ctx.textAlign    = 'right';
   ctx.textBaseline = 'middle';
-  const yStartMm = Math.ceil(((originY - (cssH - padding)) / ppm) / yTickStepMm) * yTickStepMm;
+  const yStartMm = Math.ceil(((originY - (cssH - padding)) / ppm) / tickStepMm) * tickStepMm;
   const yEndMm   = (originY - padding) / ppm;
-  for (let mm = yStartMm; mm <= yEndMm; mm += yTickStepMm) {
+  for (let mm = yStartMm; mm <= yEndMm; mm += tickStepMm) {
     const sy = originY - mm * ppm;
     if (sy < padding || sy > cssH - padding) continue;
     ctx.beginPath();
     ctx.moveTo(axisX, sy);
     ctx.lineTo(axisX + AXIS_TICK_LEN, sy);
     ctx.stroke();
-    const label = diePitchMm ? String(Math.round(mm / diePitchMm.y)) : fmt(mm);
+    const label = diePitchMm
+      ? String((axisFlip?.y ? -1 : 1) * Math.round(mm / diePitchMm.y))
+      : fmt(mm);
     ctx.fillText(label, axisX - 2, sy);
   }
 

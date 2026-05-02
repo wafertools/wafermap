@@ -1,8 +1,21 @@
-import { buildWaferMap, aggregateValues, aggregateBinCounts } from 'wafermap';
+import { buildWaferMap, aggregateValues, aggregateBinCounts, analyzeWaferMap, analyzeWaferLot } from 'wafermap';
 import { renderWaferGallery } from 'wafermap/canvas-adapter';
 
 const PITCH = 10;
 const WAFER_IDS = ['W01', 'W02', 'W03', 'W04'];
+
+// Each wafer uses a different coordinate convention to exercise origin/axis handling.
+// The underlying die data is identical — only how coordinates are expressed differs.
+//   W01: centred (prober outputs −7..+7 on both axes)           → default 'center' origin
+//   W02: lower-left origin (prober outputs 0..14 on both axes)  → auto-detected 'LL'
+//   W03: upper-left origin (x: 0..14, y: 0..14 top-down)       → explicit 'UL'
+//   W04: lower-right origin (x: 0..14 right-to-left, y: 0..14) → explicit 'LR'
+const WAFER_COORD_CONFIGS = {
+  W01: { xform: (x, y) => ({ x,       y       }), dieConfig: { width: PITCH, height: PITCH } },
+  W02: { xform: (x, y) => ({ x: x+7,  y: y+7  }), dieConfig: { width: PITCH, height: PITCH } },
+  W03: { xform: (x, y) => ({ x: x+7,  y: 7-y  }), dieConfig: { width: PITCH, height: PITCH, coordinateOrigin: { type: 'UL' } } },
+  W04: { xform: (x, y) => ({ x: 7-x,  y: y+7  }), dieConfig: { width: PITCH, height: PITCH, coordinateOrigin: { type: 'LR' } } },
+};
 
 const TEST_DEFS_WITH_UNITS = [
   { index: 0, name: 'Idsat', unit: 'A' },
@@ -45,6 +58,7 @@ let aggrMethod     = 'mean';   // method for Stacked Values mode
 let gallery         = null;
 let waferItems      = [];       // one item per wafer, for Value/Hard Bin/Soft Bin modes
 let waferDiesByWafer = [];      // Die[][] used by aggregation functions
+let waferResults    = [];       // WaferMapResult[] used by stats analysis
 
 function currentTestDefs() {
   return showUnits ? TEST_DEFS_WITH_UNITS : TEST_DEFS_NO_UNITS;
@@ -64,6 +78,7 @@ function buildGalleryItems(plotMode) {
       wafer: waferItems[0].wafer,
       dies:  aggregateValues(waferDiesByWafer, aggrMethod, def.index),
       label: def.name,
+      sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }], aggrMethod },
     }));
   }
 
@@ -72,15 +87,26 @@ function buildGalleryItems(plotMode) {
       wafer: waferItems[0].wafer,
       dies:  aggregateBinCounts(waferDiesByWafer, def.bin, 0),
       label: `${def.bin} · ${def.name}`,
+      sceneOptions: { hbinDefs: [{ bin: def.bin, name: def.name }], lotSize: WAFER_IDS.length },
+    }));
+  }
+
+  if (plotMode === 'stackedSoftBins') {
+    return SBIN_DEFS.map(def => ({
+      wafer: waferItems[0].wafer,
+      dies:  aggregateBinCounts(waferDiesByWafer, def.bin, 1),
+      label: `${def.bin} · ${def.name}`,
+      sceneOptions: { sbinDefs: [{ bin: def.bin, name: def.name }], lotSize: WAFER_IDS.length },
     }));
   }
 
   return waferItems;
 }
 
-function stacked_opts(mode) {
-  if (mode === 'stackedValues') return { aggrMethod, lotSize: undefined };
-  if (mode === 'stackedBins')   return { valueRange: [0, WAFER_IDS.length], lotSize: WAFER_IDS.length, aggrMethod: undefined };
+function stackedOpts(mode) {
+  if (mode === 'stackedValues')    return { aggrMethod, lotSize: undefined };
+  if (mode === 'stackedBins')      return { valueRange: [0, WAFER_IDS.length], lotSize: WAFER_IDS.length, aggrMethod: undefined };
+  if (mode === 'stackedSoftBins')  return { valueRange: [0, WAFER_IDS.length], lotSize: WAFER_IDS.length, aggrMethod: undefined };
   return { aggrMethod: undefined, lotSize: undefined, valueRange: undefined };
 }
 
@@ -88,7 +114,7 @@ function refreshGallery() {
   if (!gallery) return;
   const mode = currentPlotMode();
   gallery.setItems(buildGalleryItems(mode));
-  const opts = { testDefs: currentTestDefs(), hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, ...stacked_opts(mode) };
+  const opts = { testDefs: currentTestDefs(), hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, ...stackedOpts(mode) };
   gallery.setOptions(opts);
   gallery.setFallbackFormat(fallbackFormat);
   syncControlVis();
@@ -155,20 +181,25 @@ function buildControls() {
 // ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
   const rows = await loadCsv('../../data/fmt-demo.csv');
-  waferItems = [];
+  waferItems    = [];
   waferDiesByWafer = [];
+  waferResults  = [];
 
   for (const waferId of WAFER_IDS) {
     const waferRows = rows.filter(row => row.wafer === waferId);
     const firstRow  = waferRows[0] ?? {};
 
-    const results = waferRows.map(row => ({
-      x:      Number(row.x),
-      y:      Number(row.y),
-      bins:   [Number(row.hbin), Number(row.sbin)],
-      values: [Number(row.Idsat), Number(row.Vth), Number(row.Ioff), Number(row.Cgg)],
-    }));
+    const coordCfg = WAFER_COORD_CONFIGS[waferId];
+    const results = waferRows.map(row => {
+      const { x, y } = coordCfg.xform(Number(row.x), Number(row.y));
+      return {
+        x, y,
+        bins:   [Number(row.hbin), Number(row.sbin)],
+        values: [Number(row.Idsat), Number(row.Vth), Number(row.Ioff), Number(row.Cgg)],
+      };
+    });
 
+    const originLabel = { W01: 'centre', W02: 'LL', W03: 'UL', W04: 'LR' }[waferId];
     const result = buildWaferMap({
       results,
       waferConfig: {
@@ -176,17 +207,32 @@ async function main() {
         notch: { type: 'bottom' },
         metadata: { lot: firstRow.lot ?? 'FMTDEMO', waferNumber: Number(waferId.replace(/\D/g, '')) },
       },
-      dieConfig: { width: PITCH, height: PITCH },
-      testDefs:  TEST_DEFS_WITH_UNITS,
-      hbinDefs:  HBIN_DEFS,
-      sbinDefs:  SBIN_DEFS,
+      dieConfig:      coordCfg.dieConfig,
+      reticleConfig:  { width: 3, height: 2 },
+      testDefs:   TEST_DEFS_WITH_UNITS,
+      hbinDefs:   HBIN_DEFS,
+      sbinDefs:   SBIN_DEFS,
     });
 
-    waferItems.push({ wafer: result.wafer, dies: result.dies, label: `${firstRow.lot ?? 'FMTDEMO'} · ${waferId}` });
+    waferItems.push({
+      wafer: result.wafer,
+      dies:  result.dies,
+      label: `${waferId} (${originLabel} origin)`,
+      hasReticle: true,
+      sceneOptions: { reticles: result.reticles },
+    });
     waferDiesByWafer.push(result.dies);
+    waferResults.push(result);
   }
 
   buildControls();
+
+  // Run wafer-level stats for the findings panel on each card.
+  const waferStats = waferResults.map(r => analyzeWaferMap(r));
+  waferItems.forEach((item, i) => { item.statsSummary = waferStats[i]; });
+
+  // Run lot-level stats across all wafers.
+  const lotStats = analyzeWaferLot(waferResults);
 
   gallery = renderWaferGallery(
     document.getElementById('gallery'),
@@ -199,10 +245,11 @@ async function main() {
         sbinDefs: SBIN_DEFS,
       },
       fallbackFormat,
+      lotStatsSummary: lotStats,
       onSceneOptionsChange: (opts) => {
         if (opts.plotMode !== undefined) {
           gallery.setItems(buildGalleryItems(opts.plotMode));
-          gallery.setOptions(stacked_opts(opts.plotMode));
+          gallery.setOptions(stackedOpts(opts.plotMode));
         }
         syncControlVis();
       },

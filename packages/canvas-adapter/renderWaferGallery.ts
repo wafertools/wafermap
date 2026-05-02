@@ -5,15 +5,22 @@ import type { Die } from '../core/dies.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
+import type { LotStatsSummary, StatsFinding } from '../stats/types.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
 export interface GalleryItem {
-  wafer:     Wafer;
-  dies:      Die[];
-  label?:    string;
-  onClick?:  (die: Die, event: MouseEvent) => void;
-  onSelect?: (dies: Die[]) => void;
+  wafer:        Wafer;
+  dies:         Die[];
+  label?:       string;
+  /** Set to true when the wafer was built with a ReticleConfig — shows the reticle toggle button. */
+  hasReticle?:  boolean;
+  /** Per-card scene option overrides merged on top of the shared gallery options. */
+  sceneOptions?: Partial<WaferSceneOptions>;
+  /** Wafer-level stats summary — shown in the findings panel when this card is opened in the modal. */
+  statsSummary?: import('../stats/types.js').StatsSummary;
+  onClick?:     (die: Die, event: MouseEvent) => void;
+  onSelect?:    (dies: Die[]) => void;
 }
 
 export interface GalleryOptions {
@@ -32,6 +39,15 @@ export interface GalleryOptions {
    * Values with a unit always use SI prefix regardless of this setting.
    */
   fallbackFormat?:         'si' | 'engineering';
+  /**
+   * Show the plot mode selector in the gallery control bar. Default true.
+   * Set to false when the host application manages mode switching itself.
+   */
+  showPlotModeSelector?:   boolean;
+  /** Precomputed lot-level stats summary — shows a findings panel in the control bar. */
+  lotStatsSummary?:        LotStatsSummary;
+  /** Show the built-in lot findings panel toggle when stats are provided. Default true. */
+  showFindingsPanel?:      boolean;
 }
 
 export interface GalleryController {
@@ -43,6 +59,8 @@ export interface GalleryController {
   getOptions(): WaferSceneOptions;
   /** Update the fallback format for unitless values across all cards. */
   setFallbackFormat(format: 'si' | 'engineering'): void;
+  /** Replace the lot-level stats summary used by the built-in findings panel. */
+  setLotStatsSummary(summary: LotStatsSummary | undefined): void;
   /** Remove all DOM and event listeners. */
   destroy(): void;
 }
@@ -58,8 +76,11 @@ const ICONS: Record<string, string> = {
   // Wafer-specific — no Lucide equivalent
   rings:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
   quadrants:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
+  reticle:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="6" rx="0.5"/><rect x="13" y="3" width="8" height="6" rx="0.5"/><rect x="3" y="11" width="8" height="6" rx="0.5"/><rect x="13" y="11" width="8" height="6" rx="0.5"/><rect x="3" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/><rect x="13" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/></svg>`,
+  xyIndicator: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 L5 7"/><path d="M5 7 L3 10"/><path d="M5 7 L7 10"/><path d="M5 19 L17 19"/><path d="M17 19 L14 17"/><path d="M17 19 L14 21"/><text x="18" y="8" font-size="6" fill="currentColor" stroke="none">X</text><text x="2" y="6" font-size="6" fill="currentColor" stroke="none">Y</text></svg>`,
   // Gallery download: Lucide Camera + small grid indicator (gallery-specific)
   downloadAll: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/><circle cx="5.5" cy="4.5" r="0.8" fill="currentColor" stroke="none"/><circle cx="8" cy="4.5" r="0.8" fill="currentColor" stroke="none"/><circle cx="5.5" cy="7" r="0.8" fill="currentColor" stroke="none"/><circle cx="8" cy="7" r="0.8" fill="currentColor" stroke="none"/></svg>`,
+  findings:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11h6"/><path d="M9 15h4"/><path d="M5 4h14"/><path d="M5 20h14"/><path d="M5 4v16"/><path d="M19 4v16"/></svg>`,
 };
 
 const CLR = {
@@ -78,13 +99,13 @@ const CLR = {
 const BIN_LEGEND_MODES = new Set<PlotMode>(['hardbin', 'softbin']);
 
 const MODE_LABELS: Record<PlotMode, string> = {
-  value:         'Value',
-  hardbin:       'Hard Bin',
-  softbin:       'Soft Bin',
-  stackedValues: 'Stacked Values',
-  stackedBins:   'Stacked Bins',
+  value:           'Test Value',
+  hardbin:         'Hard Bin',
+  softbin:         'Soft Bin',
+  stackedValues:   'Stacked Test Values',
+  stackedBins:     'Stacked Hard Bins',
+  stackedSoftBins: 'Stacked Soft Bins',
 };
-const ALL_MODES: PlotMode[] = ['value', 'hardbin', 'softbin', 'stackedValues', 'stackedBins'];
 const ROTATIONS: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -94,9 +115,12 @@ export function renderWaferGallery(
   items: GalleryItem[],
   options: GalleryOptions = {},
 ): GalleryController {
-  const cardPadding      = options.cardPadding      ?? 6;
-  const downloadFilename = options.downloadFilename ?? 'wafer-gallery';
-  let currentFallbackFormat = options.fallbackFormat;
+  const cardPadding          = options.cardPadding          ?? 6;
+  const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
+  const showPlotModeSelector = options.showPlotModeSelector ?? true;
+  const showFindingsPanel    = options.showFindingsPanel    ?? true;
+  let currentFallbackFormat  = options.fallbackFormat;
+  let currentLotStats        = options.lotStatsSummary;
 
   let sharedOpts: WaferSceneOptions = {
     plotMode:               'hardbin',
@@ -116,6 +140,14 @@ export function renderWaferGallery(
   let openMenu: HTMLDivElement | null = null;
   let modalController: WaferCanvasController | null = null;
   let savedBodyOverflow = '';
+
+  // Findings state
+  let lotFindingsOpen        = false;
+  let activeLotFindingId: string | null = null;
+  let btnLotFindings: HTMLButtonElement | null = null;
+  let lotFindingsPanel: HTMLDivElement  | null = null;
+  // Card highlight state: indices of cards to visually emphasise.
+  let highlightedCardIndices = new Set<number>();
 
   // ── Toolbar helpers ────────────────────────────────────────────────────────
 
@@ -184,7 +216,7 @@ export function renderWaferGallery(
   function makeDropdown<T extends string>(
     iconKey:    string,
     title:      string,
-    items:      Array<{ value: T; label: string }>,
+    getItems:   () => Array<{ value: T; label: string }>,
     getCurrent: () => T,
     onPick:     (v: T) => void,
   ): HTMLButtonElement {
@@ -205,7 +237,7 @@ export function renderWaferGallery(
         padding:       '4px 0',
         pointerEvents: 'auto',
       });
-      for (const item of items) {
+      for (const item of getItems()) {
         const row = document.createElement('div');
         row.textContent = item.label;
         const isActive = item.value === getCurrent();
@@ -238,6 +270,203 @@ export function renderWaferGallery(
     return btn;
   }
 
+  // ── Lot findings helpers ───────────────────────────────────────────────────
+
+  function findingsSeverityColor(severity: StatsFinding['severity']): string {
+    return severity === 'unusual' ? '#a84112' : severity === 'notable' ? '#8a6500' : '#506784';
+  }
+
+  function applyCardHighlight(indices: number[]): void {
+    highlightedCardIndices = new Set(indices);
+    const cards = [...gridEl.querySelectorAll<HTMLElement>('.wmap-gallery-card')];
+    cards.forEach((card, i) => {
+      card.style.outline     = highlightedCardIndices.has(i) ? '3px solid #e07a20' : '';
+      card.style.outlineOffset = highlightedCardIndices.has(i) ? '-3px' : '';
+    });
+  }
+
+  function clearCardHighlight(): void {
+    applyCardHighlight([]);
+  }
+
+  function clearDieZoneHighlight(): void {
+    for (const ctrl of cardControllers) ctrl.clearSelection();
+  }
+
+  function applyDieZoneHighlight(dieKeys: string[], cardIndices?: number[]): void {
+    const keySet = new Set(dieKeys);
+    const targets = cardIndices ?? cardControllers.map((_, i) => i);
+    for (const ci of targets) {
+      const item = currentItems[ci];
+      if (!item) continue;
+      const matched = item.dies.filter(d => keySet.has(`${d.i},${d.j}`));
+      cardControllers[ci].setSelection(matched);
+    }
+  }
+
+  function findingFingerprint(f: StatsFinding): string {
+    return [
+      f.variable.kind,
+      f.variable.index ?? '',
+      f.variable.bin ?? '',
+      f.comparison.family,
+      f.comparison.left,
+      f.effect.direction,
+    ].join('|');
+  }
+
+  function clearLotFindingHighlight(): void {
+    activeLotFindingId = null;
+    clearCardHighlight();
+    clearDieZoneHighlight();
+    applyShared({ highlightBin: undefined });
+    lotFindingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-lot-finding]').forEach(btn => {
+      btn.style.background = '#fff';
+      btn.style.fontWeight = '400';
+    });
+  }
+
+  function applyLotFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
+    // Toggle off if already active.
+    if (activeLotFindingId === finding.id) {
+      clearLotFindingHighlight();
+      return;
+    }
+    // Clear previous, then apply new.
+    lotFindingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-lot-finding]').forEach(btn => {
+      btn.style.background = '#fff';
+      btn.style.fontWeight = '400';
+    });
+    activeLotFindingId    = finding.id;
+    row.style.background  = CLR.bgActive;
+    row.style.fontWeight  = '600';
+
+    const h = finding.highlight;
+    applyShared({ highlightBin: undefined });
+    clearCardHighlight();
+
+    if (h.kind === 'wafer') {
+      applyCardHighlight(h.waferIndices);
+      // For repeated-pattern findings, highlight the actual die zones on the
+      // affected cards using each card's matching per-wafer finding's dieKeys.
+      const fp = findingFingerprint(finding);
+      for (const ci of h.waferIndices) {
+        const item = currentItems[ci];
+        const perWaferFinding = item?.statsSummary?.findings.find(
+          f => findingFingerprint(f) === fp,
+        );
+        const dieKeys = (perWaferFinding?.highlight as { dieKeys?: string[] } | undefined)?.dieKeys;
+        if (dieKeys?.length) {
+          applyDieZoneHighlight(dieKeys, [ci]);
+        }
+      }
+      return;
+    }
+    if (h.kind === 'bin') {
+      applyShared({ highlightBin: h.bin });
+      if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys);
+      else clearDieZoneHighlight();
+    } else if (h.kind === 'region' || h.kind === 'dies') {
+      if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys);
+      else clearDieZoneHighlight();
+    }
+  }
+
+  function refreshLotFindingsButton(): void {
+    if (!btnLotFindings) return;
+    btnLotFindings.style.display = currentLotStats ? 'flex' : 'none';
+    btnLotFindings.title = currentLotStats?.hasNotableFindings
+      ? 'Show lot findings (notable patterns found)'
+      : 'Show lot findings';
+    if (currentLotStats?.hasNotableFindings && !lotFindingsOpen) {
+      btnLotFindings.style.color = '#b7551a';
+    } else if (!btnLotFindings.dataset.active) {
+      btnLotFindings.style.color = CLR.icon;
+    }
+  }
+
+  function rebuildLotFindingsPanel(): void {
+    if (!lotFindingsPanel) return;
+    lotFindingsPanel.innerHTML = '';
+    lotFindingsPanel.style.display = currentLotStats && lotFindingsOpen ? 'flex' : 'none';
+    if (!currentLotStats) {
+      refreshLotFindingsButton();
+      return;
+    }
+
+    const header = document.createElement('div');
+    header.textContent = 'Lot Findings';
+    Object.assign(header.style, {
+      fontSize: '12px', fontWeight: '700', color: '#1f2f43', marginBottom: '2px',
+    });
+    lotFindingsPanel.appendChild(header);
+
+    const findings = currentLotStats.findings;
+    if (findings.length === 0) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No significant lot-level findings';
+      Object.assign(empty.style, { fontSize: '12px', color: '#66788a' });
+      lotFindingsPanel.appendChild(empty);
+      refreshLotFindingsButton();
+      return;
+    }
+
+    const severityOrder: StatsFinding['severity'][] = ['unusual', 'notable', 'info'];
+    const severityLabel: Record<StatsFinding['severity'], string> = {
+      unusual: 'Unusual', notable: 'Notable', info: 'Informational',
+    };
+    const grouped = new Map<StatsFinding['severity'], StatsFinding[]>(
+      severityOrder.map(s => [s, []])
+    );
+    for (const finding of findings) grouped.get(finding.severity)!.push(finding);
+
+    let firstGroup = true;
+    for (const severity of severityOrder) {
+      const group = grouped.get(severity)!;
+      if (!group.length) continue;
+
+      if (!firstGroup) {
+        const divider = document.createElement('div');
+        Object.assign(divider.style, { height: '1px', background: CLR.separator, margin: '4px 0' });
+        lotFindingsPanel.appendChild(divider);
+      }
+      firstGroup = false;
+
+      const groupLabel = document.createElement('div');
+      groupLabel.textContent = severityLabel[severity];
+      Object.assign(groupLabel.style, {
+        fontSize: '10px', fontWeight: '700', letterSpacing: '0.05em',
+        textTransform: 'uppercase', color: findingsSeverityColor(severity), padding: '2px 0',
+      });
+      lotFindingsPanel.appendChild(groupLabel);
+
+      for (const finding of group) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.dataset.wmapLotFinding = finding.id;
+        const isActive = activeLotFindingId === finding.id;
+        row.textContent = finding.summary;
+        Object.assign(row.style, {
+          border:       `1px solid ${CLR.menuBorder}`,
+          borderLeft:   `3px solid ${findingsSeverityColor(finding.severity)}`,
+          background:   isActive ? CLR.bgActive : '#fff',
+          borderRadius: '6px',
+          padding:      '8px 10px',
+          textAlign:    'left',
+          fontSize:     '12px',
+          fontWeight:   isActive ? '600' : '400',
+          color:        '#2a3f5f',
+          cursor:       'pointer',
+          width:        '100%',
+        });
+        row.addEventListener('click', () => applyLotFindingHighlight(finding, row));
+        lotFindingsPanel.appendChild(row);
+      }
+    }
+
+    refreshLotFindingsButton();
+  }
+
   // ── Gallery control bar ────────────────────────────────────────────────────
 
   const barEl = document.createElement('div');
@@ -257,16 +486,30 @@ export function renderWaferGallery(
     overflowX:     'auto',
   });
 
-  const btnMode = makeDropdown(
+  const btnMode = makeDropdown<PlotMode>(
     'mode', 'Plot mode',
-    ALL_MODES.map(m => ({ value: m, label: MODE_LABELS[m] })),
+    () => {
+      // Only include modes for which data is actually present across gallery items.
+      const dies     = currentItems.flatMap(it => it.dies);
+      const hasValues = dies.some(d => d.values?.length);
+      const hasHbin   = dies.some(d => d.bins?.[0] != null);
+      const hasSbin   = dies.some(d => d.bins?.[1] != null);
+      const modes: PlotMode[] = [];
+      if (hasValues) modes.push('value');
+      if (hasHbin)   modes.push('hardbin');
+      if (hasSbin)   modes.push('softbin');
+      if (hasValues) modes.push('stackedValues');
+      if (hasHbin)   modes.push('stackedBins');
+      if (hasSbin)   modes.push('stackedSoftBins');
+      return modes.map(m => ({ value: m, label: MODE_LABELS[m] }));
+    },
     () => sharedOpts.plotMode ?? 'hardbin',
     v => applyShared({ plotMode: v }),
   );
 
   const btnPalette = makeDropdown(
     'palette', 'Colour scheme',
-    listColorSchemes().map(s => ({ value: s.name, label: s.label })),
+    () => listColorSchemes().map(s => ({ value: s.name, label: s.label })),
     () => sharedOpts.colorScheme ?? 'color',
     v => applyShared({ colorScheme: v }),
   );
@@ -286,6 +529,16 @@ export function renderWaferGallery(
     setActive(btnLabels, !!sharedOpts.showText);
   });
 
+  const btnReticle = makeBtn('reticle', 'Toggle reticle overlay', () => {
+    applyShared({ showReticle: !sharedOpts.showReticle });
+    setActive(btnReticle, !!sharedOpts.showReticle);
+  });
+
+  const btnXY = makeBtn('xyIndicator', 'Toggle XY axis indicator', () => {
+    applyShared({ showXYIndicator: !sharedOpts.showXYIndicator });
+    setActive(btnXY, !!sharedOpts.showXYIndicator);
+  });
+
   const btnRotate = makeBtn('rotateCW', 'Rotate all 90\xB0 clockwise', () => {
     const r = sharedOpts.rotation ?? 0;
     applyShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] });
@@ -303,12 +556,14 @@ export function renderWaferGallery(
 
   const btnDownloadAll = makeBtn('downloadAll', 'Download gallery PNG', downloadGalleryPng);
 
-  barEl.appendChild(btnMode);
+  if (showPlotModeSelector) barEl.appendChild(btnMode);
   barEl.appendChild(btnPalette);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnRings);
   barEl.appendChild(btnQuadrants);
   barEl.appendChild(btnLabels);
+  if (items.some(it => it.hasReticle)) barEl.appendChild(btnReticle);
+  barEl.appendChild(btnXY);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnRotate);
   barEl.appendChild(btnFlipH);
@@ -316,10 +571,22 @@ export function renderWaferGallery(
   barEl.appendChild(makeSep());
   barEl.appendChild(btnDownloadAll);
 
+  if (showFindingsPanel) {
+    btnLotFindings = makeBtn('findings', 'Show lot findings', () => {
+      lotFindingsOpen = !lotFindingsOpen;
+      setActive(btnLotFindings!, lotFindingsOpen);
+      rebuildLotFindingsPanel();
+    });
+    barEl.appendChild(makeSep());
+    barEl.appendChild(btnLotFindings);
+  }
+
   // Sync initial toggle states.
   setActive(btnRings,     !!sharedOpts.showRingBoundaries);
   setActive(btnQuadrants, !!sharedOpts.showQuadrantBoundaries);
   setActive(btnLabels,    !!sharedOpts.showText);
+  setActive(btnReticle,   !!sharedOpts.showReticle);
+  setActive(btnXY,        !!sharedOpts.showXYIndicator);
   setActive(btnFlipH,     !!sharedOpts.flipX);
   setActive(btnFlipV,     !!sharedOpts.flipY);
 
@@ -343,18 +610,57 @@ export function renderWaferGallery(
     minWidth:      '0',
   });
 
+  // ── Body row (grid + side drawer) ──────────────────────────────────────────
+
+  const bodyEl = document.createElement('div');
+  Object.assign(bodyEl.style, {
+    display:   'flex',
+    flexDirection: 'row',
+    gap:       '12px',
+    alignItems: 'flex-start',
+  });
+
   // ── Grid container ─────────────────────────────────────────────────────────
 
   const gridEl = document.createElement('div');
   Object.assign(gridEl.style, {
+    flex:                    '1 1 0',
+    minWidth:                '0',
     display:                 'grid',
     gridTemplateColumns:     'repeat(auto-fill, minmax(240px, 1fr))',
     gap:                     '12px',
   });
 
+  // ── Lot findings side drawer ───────────────────────────────────────────────
+
+  if (showFindingsPanel) {
+    lotFindingsPanel = document.createElement('div');
+    Object.assign(lotFindingsPanel.style, {
+      display:    'none',
+      flexDirection: 'column',
+      gap:        '6px',
+      background: '#fff',
+      border:     `1px solid ${CLR.menuBorder}`,
+      borderRadius: '8px',
+      boxShadow:  '0 4px 12px rgba(0,0,0,0.12)',
+      padding:    '10px',
+      width:      '240px',
+      flexShrink: '0',
+      overflowY:  'auto',
+      maxHeight:  'calc(100vh - 120px)',
+      boxSizing:  'border-box',
+      position:   'sticky',
+      top:        '8px',
+    });
+    refreshLotFindingsButton();
+  }
+
+  bodyEl.appendChild(gridEl);
+  if (lotFindingsPanel) bodyEl.appendChild(lotFindingsPanel);
+
   container.appendChild(barEl);
   container.appendChild(legendEl);
-  container.appendChild(gridEl);
+  container.appendChild(bodyEl);
 
   // ── Bin legend ─────────────────────────────────────────────────────────────
 
@@ -367,17 +673,13 @@ export function renderWaferGallery(
       return;
     }
 
-    // Collect unique bins across all gallery items.
+    // Collect unique bins across all gallery items (bins[0] = hard bin channel).
     const binSet = new Set<number>();
     for (const item of currentItems) {
       for (const die of item.dies) {
         if (die.partial) continue;
-        if (mode === 'stackedBins') {
-          for (const b of die.bins ?? []) binSet.add(b);
-        } else {
-          const b = die.bins?.[0];
-          if (b != null) binSet.add(b);
-        }
+        const b = die.bins?.[0];
+        if (b != null) binSet.add(b);
       }
     }
 
@@ -512,7 +814,7 @@ export function renderWaferGallery(
       gridEl.appendChild(card);
 
       const ctrl = renderWaferMap(canvas, item.wafer, item.dies, {
-        sceneOptions:    sharedOpts,
+        sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
         toolbarControls: 'view-only',
         showTooltip:     true,
         padding:         cardPadding,
@@ -616,10 +918,11 @@ export function renderWaferGallery(
     document.body.appendChild(backdrop);
 
     modalController = renderWaferMap(modalCanvas, item.wafer, item.dies, {
-      sceneOptions:    sharedOpts,
+      sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,
       fallbackFormat:  options.fallbackFormat,
+      statsSummary:    item.statsSummary,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
     });
@@ -696,6 +999,11 @@ export function renderWaferGallery(
       for (const ctrl of cardControllers) ctrl.setFallbackFormat(format);
     },
 
+    setLotStatsSummary(summary: LotStatsSummary | undefined): void {
+      currentLotStats = summary;
+      rebuildLotFindingsPanel();
+    },
+
     destroy(): void {
       closeModal();
       for (const ctrl of cardControllers) ctrl.destroy();
@@ -704,7 +1012,7 @@ export function renderWaferGallery(
       document.removeEventListener('click', closeOpenMenu, true);
       barEl.remove();
       legendEl.remove();
-      gridEl.remove();
+      bodyEl.remove();
     },
   };
 }

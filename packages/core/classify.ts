@@ -32,10 +32,7 @@ export function classifyDie(die: Die, wafer: Wafer, options: ClassifyOptions = {
 /** Human-readable label for a ring index (1-based) given a total ring count. */
 export function getRingLabel(ring: number, ringCount: number): string {
   if (ringCount === 1) return 'Full Wafer';
-  if (ringCount === 2) return ring === 1 ? 'Core' : 'Edge';
-  if (ringCount === 3) return (['Core', 'Middle', 'Edge'])[ring - 1] ?? `Ring ${ring}`;
-  if (ringCount === 4) return (['Core', 'Inner', 'Outer', 'Edge'])[ring - 1] ?? `Ring ${ring}`;
-  if (ring === 1) return 'Core';
-  if (ring === ringCount) return 'Edge';
-  return `Middle ${ring - 1}`;
+  if (ring === 1) return `Ring 1 (core)`;
+  if (ring === ringCount) return `Ring ${ring} (edge)`;
+  return `Ring ${ring}`;
 }
