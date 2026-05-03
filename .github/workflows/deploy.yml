@@ -51,6 +51,8 @@ jobs:
           cp -r examples/vite-demo/dist _site/examples/vite-demo
           # CSV data files — demos load from ../../data/
           cp -r data _site/data
+          # Guide companion demos
+          cp -r guide-demos _site/guide-demos
           # Landing page
           cp index.html _site/index.html
 

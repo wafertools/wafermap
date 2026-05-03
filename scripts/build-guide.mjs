@@ -2,7 +2,7 @@
 // Converts docs/GUIDE.md → _site/guide/index.html
 // Images referenced as image-N.png are copied from docs/ to _site/guide/
 
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync } from 'fs';
 import { marked, Renderer } from 'marked';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -234,3 +234,14 @@ const html = `<!DOCTYPE html>
 
 writeFileSync(resolve(outDir, 'index.html'), html, 'utf8');
 console.log(`[build-guide] written _site/guide/index.html (${copied.size} images copied)`);
+
+// ── Copy guide-demos alongside _site/guide/ so ../guide-demos/ links resolve ─
+const guideDemosSrc = resolve(root, 'guide-demos');
+const guideDemosDst = resolve(root, '_site', 'guide-demos');
+if (existsSync(guideDemosSrc)) {
+  mkdirSync(guideDemosDst, { recursive: true });
+  for (const f of readdirSync(guideDemosSrc)) {
+    copyFileSync(resolve(guideDemosSrc, f), resolve(guideDemosDst, f));
+  }
+  console.log(`[build-guide] copied guide-demos/ to _site/guide-demos/`);
+}
