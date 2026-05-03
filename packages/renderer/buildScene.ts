@@ -260,9 +260,6 @@ function formatValueLabel(values: number[], tickFmt: (v: number) => string): str
   return values.map(tickFmt).join(' / ');
 }
 
-function formatBinLabel(bins: number[]): string {
-  return bins.map((bin) => String(bin)).join('|');
-}
 
 function fontSizeForDie(die: Die, text: string): number {
   const minSide = Math.max(1, Math.min(die.width, die.height));
@@ -655,12 +652,15 @@ function buildXYIndicatorOverlay(
   // Do NOT transform the anchor — it stays in the corner regardless of wafer rotation/flip.
   // Only the arrow directions rotate, so they still correctly indicate the data axes.
   const len = wafer.radius * 0.15;
-  const anchor = {
-    x: wafer.center.x - wafer.radius * 0.9,
-    y: wafer.center.y - wafer.radius * 0.9,
-  };
   const xDir = transformVector(len, 0, transform);
   const yDir = transformVector(0, len, transform);
+  // Place anchor in the corner the arrows point away from, so they never clip.
+  const signX = (xDir.x + yDir.x) >= 0 ? -1 : 1;
+  const signY = (xDir.y + yDir.y) >= 0 ? -1 : 1;
+  const anchor = {
+    x: wafer.center.x + signX * wafer.radius * 0.9,
+    y: wafer.center.y + signY * wafer.radius * 0.9,
+  };
   const xTip = { x: anchor.x + xDir.x, y: anchor.y + xDir.y };
   const yTip = { x: anchor.x + yDir.x, y: anchor.y + yDir.y };
 

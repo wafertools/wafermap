@@ -275,7 +275,7 @@ To avoid misleading findings:
 
 - exclude `partial` dies by default
 - exclude `edgeExcluded` dies by default
-- ignore missing values for a given test channel
+- ignore missing values for a given test
 - analyze hard bins and soft bins independently
 - carry `retestCount` through only as metadata, not as repeated samples
 - only emit reticle-position findings when reticle-local coordinates can be assigned reliably

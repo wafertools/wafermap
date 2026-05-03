@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Gallery with stacked occurrence map</title></head>
+<body>
+  <h3>Gallery with stacked bin occurrence map</h3>
+  <div style="display:flex; gap:20px; align-items:flex-start">
+    <div id="gallery" style="width:60%; height:800px;"></div>
+    <canvas id="stacked" style="width:35%; height:600px; border:1px solid #ccc"></canvas>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap, aggregateBinCounts } from '../dist/index.js';
+    import { renderWaferGallery, renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
+
+    function makeWaferData(seed) {
+      const results = [];
+      for (let i = -14; i <= 14; i++) for (let j = -14; j <= 14; j++) {
+        const r = Math.hypot(i, j);
+        if (r > 13) continue;
+        const val = Math.abs((i * seed + j) % 7);
+        const bin = val < 3 ? 1 : 2;
+        results.push({ x: i, y: j, bins: [bin] });
+      }
+      return results;
+    }
+
+    const waferResults = Array.from({ length: 6 }, (_, idx) => buildWaferMap({ results: makeWaferData(idx + 1), waferConfig: { diameter: 300 }, dieConfig: { width: 10, height: 10 } }));
+
+    const items = waferResults.map((r, i) => ({ wafer: r.wafer, dies: r.dies, label: `W${i+1}` }));
+
+    renderWaferGallery(document.getElementById('gallery'), items, { sceneOptions: { plotMode: 'hardbin' } });
+
+    const diesByWafer = waferResults.map(r => r.dies);
+    const stackedDies = aggregateBinCounts(diesByWafer, 2); // count bin-2 failures
+    const stacked = buildWaferMap({ dies: stackedDies, waferConfig: { diameter: 300 }, dieConfig: { width: 10, height: 10 } });
+
+    renderWaferMap(document.getElementById('stacked'), stacked.wafer, stacked.dies, { sceneOptions: { plotMode: 'stackedBins', valueRange: [0, waferResults.length], lotSize: waferResults.length } });
+  </script>
+</body>
+</html>

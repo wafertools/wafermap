@@ -1,333 +1,200 @@
 import {
-  createWafer,
-  generateDies,
-  clipDiesToWafer,
-  applyOrientation,
-  transformDies,
-  applyProbeSequence,
-  generateReticleGrid,
+  buildWaferMap,
   classifyDie,
   getRingLabel,
-  getColorScheme,
-  listColorSchemes,
-  buildScene,
+  hardBinColor,
 } from 'wafermap';
-import { toCanvas } from 'wafermap/canvas-adapter';
+import { renderWaferMap } from 'wafermap/canvas-adapter';
 
-const DIE_SIZE = { width: 10, height: 10 };
-const WAFER_DIAMETER = 150;
+const RING_COUNT = 4;
+const PASS_BINS  = [1];
 
-const appState = {
-  wafer: null,
-  baseDies: [],
-  currentDies: [],
-  reticles: [],
-  allRows: [],
-  selectedWafer: 'W01',
-  rotation: 0,
-  flipX: false,
-  flipY: false,
-  plotMode: 'value',
-  valueChannel: 0,
-  showText: false,
-  showReticle: false,
-  showProbePath: false,
-  showRingBoundaries: false,
-  showQuadrantBoundaries: false,
-  showXYIndicator: false,
-  ringCount: 4,
-  colorScheme: 'color',
-  highlightBin: undefined,
-};
+const TEST_DEFS = [
+  { index: 0, name: 'testA', unit: '' },
+  { index: 1, name: 'testB', unit: '' },
+  { index: 2, name: 'testC', unit: '' },
+];
+
+const HBIN_DEFS = [
+  { bin: 1, name: 'Pass',       color: '#2ecc71' },
+  { bin: 2, name: 'Fail — B',   color: '#e74c3c' },
+  { bin: 3, name: 'Fail — C',   color: '#e67e22' },
+  { bin: 4, name: 'Fail — D',   color: '#9b59b6' },
+  { bin: 5, name: 'Fail — E',   color: '#3498db' },
+];
+
+let ctrl        = null;
+let currentResult = null;
+let allRows     = [];
 
 async function main() {
-  appState.allRows = await loadCsv('../../data/dummy-fulldata.csv');
-  populateWaferSelector(appState.allRows);
-  loadWafer(appState.selectedWafer);
-  wireControls();
+  allRows = await loadCsv('../../data/dummy-fulldata.csv');
+  populateWaferSelector();
+  await loadWafer('W01');
+  document.getElementById('sel-wafer').addEventListener('change', e => loadWafer(e.target.value));
 }
 
 async function loadCsv(path) {
-  const response = await fetch(path);
-  const text = await response.text();
-  const [headerLine, ...lines] = text.trim().split(/\r?\n/);
-  const headers = headerLine.split(',');
-  return lines.filter(Boolean).map((line) => {
-    const values = line.split(',');
-    return Object.fromEntries(headers.map((header, index) => [header, values[index]]));
-  });
+  const text    = await (await fetch(path)).text();
+  const [header, ...lines] = text.trim().split(/\r?\n/);
+  const keys = header.split(',');
+  return lines.filter(Boolean).map(line => Object.fromEntries(keys.map((k, i) => [k, line.split(',')[i]])));
 }
 
-function populateWaferSelector(rows) {
-  const wafers = [...new Set(rows.map((row) => row.wafer))].sort();
-  const sel = document.getElementById('sel-wafer');
-  sel.innerHTML = wafers.map((w) => `<option value="${w}"${w === appState.selectedWafer ? ' selected' : ''}>${w}</option>`).join('');
+function populateWaferSelector() {
+  const wafers = [...new Set(allRows.map(r => r.wafer))].sort();
+  document.getElementById('sel-wafer').innerHTML =
+    wafers.map(w => `<option value="${w}">${w}</option>`).join('');
 }
 
-function loadWafer(waferId) {
-  const rows = appState.allRows.filter((row) => row.wafer === waferId);
+async function loadWafer(waferId) {
+  const rows     = allRows.filter(r => r.wafer === waferId);
   const firstRow = rows[0] ?? {};
 
-  const waferMeta = {
-    lot: firstRow.lot ?? '—',
-    waferNumber: Number(waferId.replace(/\D/g, '')),
-    testDate: firstRow.testdate ?? '—',
-    testProgram: 'PROG-V300-1',
-    temperature: Number(firstRow.temp ?? 25),
-  };
-
-  const wafer = createWafer({
-    diameter: WAFER_DIAMETER,
-    notch: { type: 'bottom' },
-    orientation: 0,
-    metadata: waferMeta,
-  });
-
-  const allDies = generateDies(wafer, DIE_SIZE);
-  const clipped = clipDiesToWafer(allDies, wafer, DIE_SIZE);
-  const enriched = enrichDiesFromRows(clipped, rows);
-  const sequenced = applyProbeSequence(enriched, { type: 'snake' });
-  const oriented = applyOrientation(sequenced, wafer);
-
-  appState.wafer = wafer;
-  appState.baseDies = oriented;
-  appState.reticles = generateReticleGrid(wafer, { width: 3, height: 3, diePitchX: DIE_SIZE.width, diePitchY: DIE_SIZE.height });
-
-  updateMetaPanel(waferMeta);
-  redraw();
-}
-
-function enrichDiesFromRows(dies, rows) {
-  const rowMap = new Map(rows.map((row) => [`${Number(row.x)},${Number(row.y)}`, row]));
-
-  return dies.map((die) => {
-    const row = rowMap.get(`${die.i},${die.j}`);
-    if (!row) {
-      return {
-        ...die,
-        values: [0],
-        bins: [0],
-        metadata: {},
-      };
-    }
-
-    return {
-      ...die,
-      values: [Number(row.testA), Number(row.testB), Number(row.testC)],
-      bins: [Number(row.hbin), Number(row.sbin)],
+  currentResult = buildWaferMap({
+    results: rows.map(r => ({
+      x:      +r.x,
+      y:      +r.y,
+      values: [+r.testA, +r.testB, +r.testC],
+      bins:   [+r.hbin,  +r.sbin],
+    })),
+    waferConfig: {
+      diameter: 150,
+      notch:    { type: 'bottom' },
       metadata: {
-        lotId: row.lot,
-        waferId: `${row.lot}-${row.wafer}`,
-        testDate: row.testdate,
-        temperature: row.temp,
-        customFields: {
-          hbin: row.hbin,
-          sbin: row.sbin,
-          testA: row.testA,
-          testB: row.testB,
-          testC: row.testC,
-        },
+        lot:          firstRow.lot,
+        waferNumber:  +waferId.replace(/\D/g, ''),
+        testDate:     firstRow.testdate,
+        testProgram:  'PROG-V300-1',
+        temperature:  +(firstRow.temp ?? 25),
       },
-    };
+    },
+    dieConfig:     { width: 10, height: 10 },
+    reticleConfig: { width: 3, height: 3 },
+    passBins:      PASS_BINS,
+    testDefs:      TEST_DEFS,
+    hbinDefs:      HBIN_DEFS,
   });
-}
 
-function redraw() {
-  const interactiveTransform = {
-    rotation: appState.rotation,
-    flipX: appState.flipX,
-    flipY: appState.flipY,
+  const { wafer, dies, scene, reticles } = currentResult;
+
+  const sceneOptions = {
+    plotMode:  'hardbin',
+    ringCount: RING_COUNT,
+    reticles,
+    testDefs:  scene.testDefs,
+    hbinDefs:  scene.hbinDefs,
+    sbinDefs:  scene.sbinDefs,
   };
 
-  appState.currentDies = transformDies(appState.baseDies, interactiveTransform, appState.wafer.center);
-
-  const diesForScene = appState.valueChannel === 0
-    ? appState.currentDies
-    : appState.currentDies.map((die) => {
-        const v = die.values ?? [];
-        const reordered = [...v];
-        reordered[0] = v[appState.valueChannel] ?? v[0];
-        return { ...die, values: reordered };
-      });
-
-  const scene = buildScene(appState.wafer, diesForScene, {
-    reticles: appState.reticles,
-    plotMode: appState.plotMode,
-    showText: appState.showText,
-    showReticle: appState.showReticle,
-    showProbePath: appState.showProbePath,
-    showRingBoundaries: appState.showRingBoundaries,
-    showQuadrantBoundaries: appState.showQuadrantBoundaries,
-    showXYIndicator: appState.showXYIndicator,
-    ringCount: appState.ringCount,
-    colorScheme: appState.colorScheme,
-    highlightBin: appState.highlightBin,
-    interactiveTransform,
-  });
-
-  toCanvas(document.getElementById('chart'), scene);
-  updateUI();
-}
-
-function renderBinLegend() {
-  const scheme = getColorScheme(appState.colorScheme);
-  const dies = appState.currentDies;
-  const binCounts = {};
-  for (const d of dies.filter(d => !d.partial)) {
-    const b = d.bins?.[0];
-    if (b !== undefined) binCounts[b] = (binCounts[b] ?? 0) + 1;
-  }
-  const bins = Object.keys(binCounts).map(Number).sort((a, b) => a - b);
-  document.getElementById('bin-legend').innerHTML = bins.map((bin) =>
-    `<div class="bin-row">
-      <div class="bin-dot" style="background:${scheme.forBin(bin)}"></div>
-      <span class="bin-name">Bin ${bin}</span>
-      <span class="bin-count">${binCounts[bin]}</span>
-    </div>`
-  ).join('');
-}
-
-function updateUI() {
-  document.getElementById('rot-badge').textContent = `${appState.rotation}°`;
-  document.getElementById('flipx-btn').classList.toggle('active', appState.flipX);
-  document.getElementById('flipy-btn').classList.toggle('active', appState.flipY);
-
-  const dies = appState.currentDies;
-  const fullDies = dies.filter((die) => !die.partial);
-  const pass = fullDies.filter((die) => die.bins?.[0] === 1).length;
-  const total = fullDies.length;
-  const pct = total ? (100 * pass / total).toFixed(1) : '0.0';
-
-  document.getElementById('stat-dies').textContent    = total;
-  document.getElementById('stat-pass').textContent    = `${pct}%`;
-  document.getElementById('stat-partial').textContent = dies.filter((die) => die.partial).length;
-
-  const spatial = summarizeSpatialStats(dies, appState.wafer, appState.ringCount);
-  renderSpatialTable('ring-stats', spatial.ringStats);
-  renderSpatialTable('quadrant-stats', spatial.quadrantStats);
-  renderBinLegend();
-}
-
-function updateMetaPanel(meta) {
-  if (!meta) return;
-  document.getElementById('meta-lot').textContent     = meta.lot;
-  document.getElementById('meta-wafer').textContent   = meta.waferNumber;
-  document.getElementById('meta-date').textContent    = meta.testDate;
-  document.getElementById('meta-program').textContent = meta.testProgram;
-  document.getElementById('meta-temp').textContent    = `${meta.temperature}°C`;
-}
-
-function summarizeSpatialStats(dies, wafer, ringCount) {
-  const fullDies = dies.filter((die) => !die.partial);
-  const ringStats = Array.from({ length: ringCount }, (_, index) => ({
-    label: getRingLabel(index + 1, ringCount),
-    total: 0,
-    pass: 0,
-  }));
-  const quadrantStats = ['NE', 'NW', 'SW', 'SE'].map((label) => ({
-    label,
-    total: 0,
-    pass: 0,
-  }));
-  const quadrantMap = new Map(quadrantStats.map((entry) => [entry.label, entry]));
-
-  for (const die of fullDies) {
-    const { ring, quadrant } = classifyDie(die, wafer, { ringCount });
-    ringStats[ring - 1].total += 1;
-    if (die.bins?.[0] === 1) ringStats[ring - 1].pass += 1;
-    quadrantMap.get(quadrant).total += 1;
-    if (die.bins?.[0] === 1) quadrantMap.get(quadrant).pass += 1;
+  if (!ctrl) {
+    ctrl = renderWaferMap(document.getElementById('chart'), wafer, dies, {
+      sceneOptions,
+      onSelect: updateSelectionPanel,
+    });
+  } else {
+    ctrl.setDies(dies);
+    ctrl.setOptions({ reticles });
   }
 
-  return { ringStats, quadrantStats };
+  updateMetaPanel(wafer.metadata);
+  updateStatsPanel(currentResult);
+  updateBinLegend(dies);
+  clearSelectionPanel();
 }
 
-function renderSpatialTable(targetId, rows) {
-  const target = document.getElementById(targetId);
-  target.innerHTML = rows.map((row) => {
-    const pct = row.total ? (100 * row.pass / row.total) : 0;
+// ── Sidebar panels ────────────────────────────────────────────────────────────
+
+function updateMetaPanel(meta = {}) {
+  document.getElementById('meta-lot').textContent     = meta.lot          ?? '—';
+  document.getElementById('meta-wafer').textContent   = meta.waferNumber  ?? '—';
+  document.getElementById('meta-date').textContent    = meta.testDate     ?? '—';
+  document.getElementById('meta-program').textContent = meta.testProgram  ?? '—';
+  document.getElementById('meta-temp').textContent    = meta.temperature != null ? `${meta.temperature}°C` : '—';
+
+  const tag = document.getElementById('header-tag');
+  if (meta.lot) tag.innerHTML = `<strong>${meta.lot}</strong>`;
+}
+
+function updateStatsPanel({ yield: yld, dies, wafer }) {
+  document.getElementById('stat-dies').textContent    = yld.totalDies;
+  document.getElementById('stat-partial').textContent = yld.partialDies;
+  document.getElementById('stat-pass').textContent    =
+    yld.yieldPercent != null ? `${(yld.yieldPercent * 100).toFixed(1)}%` : '—';
+
+  const full        = dies.filter(d => !d.partial && !d.edgeExcluded);
+  const ringStats   = Array.from({ length: RING_COUNT }, (_, i) => ({
+    label: getRingLabel(i + 1, RING_COUNT), total: 0, pass: 0,
+  }));
+  const quadStats   = ['NE', 'NW', 'SW', 'SE'].map(label => ({ label, total: 0, pass: 0 }));
+  const qMap        = new Map(quadStats.map(q => [q.label, q]));
+
+  for (const die of full) {
+    const { ring, quadrant } = classifyDie(die, wafer, { ringCount: RING_COUNT });
+    ringStats[ring - 1].total++;
+    if (die.bins?.[0] === 1) ringStats[ring - 1].pass++;
+    qMap.get(quadrant).total++;
+    if (die.bins?.[0] === 1) qMap.get(quadrant).pass++;
+  }
+
+  renderPctTable('ring-stats',     ringStats);
+  renderPctTable('quadrant-stats', quadStats);
+}
+
+function renderPctTable(id, rows) {
+  document.getElementById(id).innerHTML = rows.map(r => {
+    const pct = r.total ? (100 * r.pass / r.total) : 0;
     return `<tr>
-      <td>${row.label}</td>
-      <td>
-        <div class="pct-bar-wrap">
-          <div class="pct-bar"><div class="pct-bar-fill" style="width:${pct.toFixed(1)}%"></div></div>
-          <span class="pct-num">${pct.toFixed(0)}%</span>
-        </div>
-      </td>
+      <td>${r.label}</td>
+      <td><div class="pct-bar-wrap">
+        <div class="pct-bar"><div class="pct-bar-fill" style="width:${pct.toFixed(1)}%"></div></div>
+        <span class="pct-num">${pct.toFixed(0)}%</span>
+      </div></td>
     </tr>`;
   }).join('');
 }
 
-function wireControls() {
-  document.getElementById('sel-wafer').addEventListener('change', (event) => {
-    appState.selectedWafer = event.target.value;
-    loadWafer(appState.selectedWafer);
-  });
-
-  document.getElementById('sel-mode').addEventListener('change', (event) => {
-    appState.plotMode = event.target.value;
-    redraw();
-  });
-
-  document.getElementById('sel-channel').addEventListener('change', (event) => {
-    appState.valueChannel = Number(event.target.value);
-    redraw();
-  });
-
-  for (const [id, key] of [
-    ['chk-text', 'showText'],
-    ['chk-reticle', 'showReticle'],
-    ['chk-probe', 'showProbePath'],
-    ['chk-rings', 'showRingBoundaries'],
-    ['chk-quadrants', 'showQuadrantBoundaries'],
-    ['chk-xy', 'showXYIndicator'],
-  ]) {
-    document.getElementById(id).addEventListener('change', (event) => {
-      appState[key] = event.target.checked;
-      redraw();
-    });
+function updateBinLegend(dies) {
+  const counts = {};
+  for (const d of dies.filter(d => !d.partial)) {
+    const b = d.bins?.[0];
+    if (b != null) counts[b] = (counts[b] ?? 0) + 1;
   }
+  const hbinMap  = new Map(HBIN_DEFS.map(d => [d.bin, d]));
+  document.getElementById('bin-legend').innerHTML = Object.keys(counts)
+    .map(Number).sort((a, b) => a - b)
+    .map(bin => {
+      const def   = hbinMap.get(bin);
+      const color = def?.color ?? hardBinColor(bin);
+      const name  = def?.name  ?? `Bin ${bin}`;
+      return `<div class="bin-row">
+        <div class="bin-dot" style="background:${color}"></div>
+        <span class="bin-name">${name}</span>
+        <span class="bin-count">${counts[bin]}</span>
+      </div>`;
+    }).join('');
+}
 
-  document.getElementById('sel-rings').addEventListener('change', (event) => {
-    appState.ringCount = Number(event.target.value) || 4;
-    redraw();
-  });
+function updateSelectionPanel(selectedDies) {
+  const section = document.getElementById('selection-section');
+  const sep     = document.getElementById('selection-sep');
+  if (!selectedDies.length) {
+    section.classList.remove('visible');
+    sep.style.display = 'none';
+    return;
+  }
+  const pass = selectedDies.filter(d => d.bins?.[0] === 1).length;
+  const pct  = (100 * pass / selectedDies.length).toFixed(1);
+  document.getElementById('stat-sel-count').textContent = selectedDies.length;
+  document.getElementById('stat-sel-pass').textContent  = `${pct}%`;
+  section.classList.add('visible');
+  sep.style.display = 'block';
+}
 
-  const colorSel = document.getElementById('sel-color');
-  colorSel.innerHTML = listColorSchemes()
-    .filter(({ name }) => name !== 'color') // hide the 'color' alias
-    .map(({ name, label }) => `<option value="${name}"${name === appState.colorScheme ? ' selected' : ''}>${label}</option>`)
-    .join('');
-  colorSel.addEventListener('change', (event) => {
-    appState.colorScheme = event.target.value;
-    redraw();
-  });
-
-  document.getElementById('sel-highlight').addEventListener('change', (event) => {
-    const v = Number(event.target.value);
-    appState.highlightBin = v === 0 ? undefined : v;
-    redraw();
-  });
-
-  document.getElementById('rot-left-btn').addEventListener('click', () => {
-    appState.rotation = (appState.rotation + 90) % 360;
-    redraw();
-  });
-
-  document.getElementById('rot-right-btn').addEventListener('click', () => {
-    appState.rotation = (appState.rotation - 90 + 360) % 360;
-    redraw();
-  });
-
-  document.getElementById('flipx-btn').addEventListener('click', () => {
-    appState.flipX = !appState.flipX;
-    redraw();
-  });
-
-  document.getElementById('flipy-btn').addEventListener('click', () => {
-    appState.flipY = !appState.flipY;
-    redraw();
-  });
+function clearSelectionPanel() {
+  ctrl?.clearSelection();
+  document.getElementById('selection-section').classList.remove('visible');
+  document.getElementById('selection-sep').style.display = 'none';
 }
 
 main().catch(console.error);

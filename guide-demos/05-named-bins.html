@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Working with bins — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§5 — Working with bins</span>
+    <span class="demo-desc">Named hard bins + soft bins · custom colours · pass bin yield</span>
+  </header>
+
+  <!-- Mode toggle: hard bin vs soft bin -->
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">View</span>
+      <button class="toggle-btn active" id="btn-hard">Hard bins</button>
+      <button class="toggle-btn"        id="btn-soft">Soft bins</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <span style="font-size:12px; color:var(--muted)">
+      Hard bins = physical sort result · Soft bins = test-program failure category
+    </span>
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+
+    <div class="demo-panel">
+      <div class="demo-panel-scroll">
+
+        <div class="section">
+          <div class="section-heading">Yield</div>
+          <div class="stats-grid">
+            <div class="stat full">
+              <div class="stat-val" id="stat-yield">—</div>
+              <div class="stat-lbl">Yield (pass bin = 1)</div>
+            </div>
+            <div class="stat">
+              <div class="stat-val" id="stat-pass">—</div>
+              <div class="stat-lbl">Pass dies</div>
+            </div>
+            <div class="stat">
+              <div class="stat-val" id="stat-fail">—</div>
+              <div class="stat-lbl">Fail dies</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- Hard bin breakdown (shown when in hardbin mode) -->
+        <div class="section" id="hbin-section">
+          <div class="section-heading">Hard bin counts</div>
+          <div class="bin-rows" id="hbin-rows"></div>
+        </div>
+
+        <!-- Soft bin breakdown (shown when in softbin mode) -->
+        <div class="section" id="sbin-section" style="display:none">
+          <div class="section-heading">Soft bin counts</div>
+          <div class="bin-rows" id="sbin-rows"></div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section">
+          <div class="section-heading">Definition</div>
+          <div class="info-box" style="font-size:11px; font-family:monospace; line-height:1.65">
+            hbinDefs: [<br>
+            &nbsp; { bin: 1, name: 'Pass', color: '#22c55e' },<br>
+            &nbsp; { bin: 2, name: 'Contact Open', … },<br>
+            &nbsp; { bin: 3, name: 'Vth - Hi', … },<br>
+            &nbsp; { bin: 4, name: 'Leakage', … },<br>
+            ]
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS } from './data.js';
+
+    const result = buildWaferMap({
+      results:     makeResults({ seed: 11 }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig:   DIE_CONFIG,
+      hbinDefs:    HBIN_DEFS,   // named definitions for bins[0] (hard bin space)
+      sbinDefs:    SBIN_DEFS,   // named definitions for bins[1] (soft bin space — independent)
+      passBins:    [1],
+    });
+
+    // Populate yield summary
+    const yld = result.yield;
+    document.getElementById('stat-yield').textContent =
+      yld.yieldPercent != null ? `${(yld.yieldPercent * 100).toFixed(1)}%` : '—';
+    document.getElementById('stat-pass').textContent = yld.passDies;
+    document.getElementById('stat-fail').textContent = yld.failDies;
+
+    // Count dies per bin
+    function binCounts(dies, binIdx) {
+      const map = new Map();
+      for (const d of dies) {
+        const b = d.bins?.[binIdx];
+        if (b != null) map.set(b, (map.get(b) ?? 0) + 1);
+      }
+      return map;
+    }
+
+    function renderBinRows(containerId, defs, counts) {
+      const total = [...counts.values()].reduce((a, b) => a + b, 0);
+      const el = document.getElementById(containerId);
+      el.innerHTML = '';
+      for (const def of defs) {
+        const count = counts.get(def.bin) ?? 0;
+        const pct   = total > 0 ? (count / total * 100).toFixed(1) : '0.0';
+        el.insertAdjacentHTML('beforeend', `
+          <div class="bin-row">
+            <div class="bin-swatch" style="background:${def.color}"></div>
+            <span class="bin-name">${def.name}</span>
+            <span class="bin-count">${count} (${pct}%)</span>
+          </div>`);
+      }
+    }
+
+    const hCounts = binCounts(result.dies, 0);
+    const sCounts = binCounts(result.dies, 1);
+    renderBinRows('hbin-rows', HBIN_DEFS, hCounts);
+    renderBinRows('sbin-rows', SBIN_DEFS, sCounts);
+
+    // Render the map, starting in hard bin mode
+    const ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
+      sceneOptions: {
+        plotMode: 'hardbin',
+        hbinDefs: HBIN_DEFS,
+        sbinDefs: SBIN_DEFS,
+      },
+    });
+
+    // Toggle between hard / soft bin view
+    document.getElementById('btn-hard').addEventListener('click', () => {
+      ctrl.setOptions({ plotMode: 'hardbin' });
+      document.getElementById('btn-hard').classList.add('active');
+      document.getElementById('btn-soft').classList.remove('active');
+      document.getElementById('hbin-section').style.display = '';
+      document.getElementById('sbin-section').style.display = 'none';
+    });
+
+    document.getElementById('btn-soft').addEventListener('click', () => {
+      ctrl.setOptions({ plotMode: 'softbin' });
+      document.getElementById('btn-soft').classList.add('active');
+      document.getElementById('btn-hard').classList.remove('active');
+      document.getElementById('hbin-section').style.display = 'none';
+      document.getElementById('sbin-section').style.display = '';
+    });
+  </script>
+
+</body>
+</html>

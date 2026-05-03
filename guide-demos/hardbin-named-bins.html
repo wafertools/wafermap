@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Hard bin map with named bins — demo</title></head>
+<body>
+  <h3>Hard bin map with named bins and legend</h3>
+  <canvas id="map" style="width:700px; height:700px; border:1px solid #ccc"></canvas>
+
+  <script type="module">
+    import { buildWaferMap } from '../dist/index.js';
+    import { renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
+
+    const results = [];
+    for (let i = -16; i <= 16; i++) {
+      for (let j = -16; j <= 16; j++) {
+        const r = Math.hypot(i, j);
+        const bin = r < 6 ? 1 : r < 10 ? 2 : r < 13 ? 3 : 4;
+        results.push({ x: i, y: j, bins: [bin] });
+      }
+    }
+
+    const hbinDefs = [
+      { bin: 1, name: 'Pass', color: '#2ecc71' },
+      { bin: 2, name: 'Contact Open', color: '#e74c3c' },
+      { bin: 3, name: 'Vth - Hi NMOS', color: '#e67e22' },
+      { bin: 4, name: 'Continuity', color: '#9b59b6' },
+    ];
+
+    const { wafer, dies } = buildWaferMap({ results, hbinDefs, waferConfig: { diameter: 300 }, dieConfig: { width: 10, height: 10 } });
+    renderWaferMap(document.getElementById('map'), wafer, dies, { sceneOptions: { plotMode: 'hardbin', hbinDefs } });
+  </script>
+</body>
+</html>

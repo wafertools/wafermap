@@ -524,9 +524,9 @@ export function analyzeWaferMap(
   }
   if (resolved.enableTestValueAnalysis) {
     findings.push(
-      ...buildTestValueFindings(includedDies, ringRegions, result.scene.testDefs, resolved),
-      ...buildTestValueFindings(includedDies, quadrantRegions, result.scene.testDefs, resolved),
-      ...buildTestValueFindings(includedDies, reticlePositionRegions, result.scene.testDefs, resolved),
+      ...buildTestValueFindings(eligibleDies, ringRegions, result.scene.testDefs, resolved),
+      ...buildTestValueFindings(eligibleDies, quadrantRegions, result.scene.testDefs, resolved),
+      ...buildTestValueFindings(eligibleDies, reticlePositionRegions, result.scene.testDefs, resolved),
     );
   }
 

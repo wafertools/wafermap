@@ -38,7 +38,7 @@ Your SvelteKit app should own:
 
 1. Load your test data — rows with `x`, `y` (die grid positions), `value`, `bin`
 2. Call `buildWaferMap({ data, wafer?, die? })` — handles geometry automatically
-3. Optionally post-enrich `result.dies` for multi-channel data
+3. Optionally post-enrich `result.dies` to attach additional test values or bins
 4. Build a scene with `buildScene(result.wafer, dies, [], options)`
 5. Convert with `toPlotly(scene)`
 6. Render with `Plotly.react(...)` inside a Svelte component

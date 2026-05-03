@@ -20,7 +20,12 @@ export function applyProbeSequence(dies: Die[], config: ProbeSequenceConfig): Di
   if (type === 'custom') {
     if (!customOrder) throw new Error('customOrder is required for type="custom"');
     const indexMap = new Map(customOrder.map((id, i) => [id, i]));
-    return dies.map((d) => ({ ...d, probeIndex: indexMap.get(d.id) }));
+    const result = dies.map((d) => ({ ...d, probeIndex: indexMap.get(d.id) }));
+    const missing = result.filter((d) => d.probeIndex === undefined).map((d) => d.id);
+    if (missing.length > 0) {
+      throw new Error(`applyProbeSequence: die IDs not found in customOrder: ${missing.join(', ')}`);
+    }
+    return result;
   }
 
   if (type === 'column') {

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controlling the display — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+  <style>
+    /* Wider panel for the external controls */
+    .demo-panel { width: 260px; }
+    .ctrl-row { display:flex; align-items:center; gap:8px; font-size:12px; }
+    .ctrl-row label { flex:1; color:var(--text-2); }
+    .ctrl-row select { flex:1; }
+    .prog-btn {
+      width: 100%;
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--bg);
+      font: inherit;
+      font-size: 12px;
+      color: var(--text-2);
+      cursor: pointer;
+      text-align: left;
+      transition: background .12s;
+    }
+    .prog-btn:hover { background: #e2e8f0; }
+    .prog-btn strong { color: var(--accent); }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§8 — Controlling the display</span>
+    <span class="demo-desc">
+      setOptions · onSceneOptionsChange · toolbar ↔ external controls stay in sync
+    </span>
+  </header>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+
+    <div class="demo-panel">
+      <div class="demo-panel-scroll">
+
+        <!-- ── External controls that mirror the toolbar ── -->
+        <div class="section">
+          <div class="section-heading">External controls</div>
+          <div style="display:flex; flex-direction:column; gap:8px">
+
+            <div class="ctrl-row">
+              <label>Mode</label>
+              <select id="ext-mode">
+                <option value="hardbin">Hard Bin</option>
+                <option value="softbin">Soft Bin</option>
+                <option value="value">Value — Idsat</option>
+                <option value="value-1">Value — Vth</option>
+                <option value="value-2">Value — Ioff</option>
+              </select>
+            </div>
+
+            <div class="ctrl-row">
+              <label>Colour scheme</label>
+              <select id="ext-scheme">
+                <option value="color">color (default)</option>
+                <option value="plasma">plasma</option>
+                <option value="inferno">inferno</option>
+                <option value="greyscale">greyscale</option>
+                <option value="accessible">accessible</option>
+              </select>
+            </div>
+
+            <div class="ctrl-row">
+              <label>Rotation</label>
+              <select id="ext-rotation">
+                <option value="0">0°</option>
+                <option value="90">90°</option>
+                <option value="180">180°</option>
+                <option value="270">270°</option>
+              </select>
+            </div>
+
+            <div class="ctrl-row">
+              <label><input type="checkbox" id="ext-rings"> Ring boundaries</label>
+            </div>
+
+            <div class="ctrl-row">
+              <label><input type="checkbox" id="ext-quads"> Quadrant boundaries</label>
+            </div>
+
+            <div class="ctrl-row">
+              <label><input type="checkbox" id="ext-labels"> Die labels</label>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- ── Programmatic one-shot actions ── -->
+        <div class="section">
+          <div class="section-heading">Programmatic actions</div>
+          <div style="display:flex; flex-direction:column; gap:5px">
+            <button class="prog-btn" id="btn-reset-view">
+              <strong>ctrl.resetView()</strong><br>return to fitted view
+            </button>
+            <button class="prog-btn" id="btn-show-fails">
+              <strong>ctrl.setOptions({ highlightBin: 2 })</strong><br>highlight Contact Open dies
+            </button>
+            <button class="prog-btn" id="btn-clear-hl">
+              <strong>ctrl.setOptions({ highlightBin: undefined })</strong><br>clear highlight
+            </button>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- ── Live state readout — updated by onSceneOptionsChange ── -->
+        <div class="section">
+          <div class="section-heading">Live state (from onSceneOptionsChange)</div>
+          <table class="kv">
+            <tr><td>plotMode</td>    <td id="st-mode">—</td></tr>
+            <tr><td>colorScheme</td> <td id="st-scheme">—</td></tr>
+            <tr><td>rotation</td>    <td id="st-rotation">—</td></tr>
+            <tr><td>rings</td>       <td id="st-rings">—</td></tr>
+            <tr><td>quadrants</td>   <td id="st-quads">—</td></tr>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS, TEST_DEFS } from './data.js';
+
+    const { wafer, dies, scene } = buildWaferMap({
+      results:     makeResults({ seed: 9 }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig:   DIE_CONFIG,
+      hbinDefs:    HBIN_DEFS,
+      sbinDefs:    SBIN_DEFS,
+      testDefs:    TEST_DEFS,
+      passBins:    [1],
+    });
+
+    // onSceneOptionsChange fires when the TOOLBAR changes options.
+    // Calling ctrl.setOptions() does NOT re-fire it, preventing feedback loops.
+    const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
+      sceneOptions: {
+        plotMode: 'hardbin',
+        hbinDefs: HBIN_DEFS,
+        sbinDefs: SBIN_DEFS,
+        testDefs: scene.testDefs,
+      },
+      onSceneOptionsChange(opts) {
+        // Mirror every toolbar change into the external controls
+        syncExternalControls(opts);
+        updateStateDisplay(opts);
+      },
+    });
+
+    function syncExternalControls(opts) {
+      // Map plotMode back to the compound mode selector value
+      const modeValue = opts.plotMode === 'value'
+        ? `value-${opts.testIndex ?? 0}`
+        : (opts.plotMode ?? 'hardbin');
+      // Avoid spurious change events by only writing when different
+      const modeEl = document.getElementById('ext-mode');
+      if (modeEl.value !== modeValue && [...modeEl.options].some(o => o.value === modeValue)) {
+        modeEl.value = modeValue;
+      }
+
+      const schemeEl = document.getElementById('ext-scheme');
+      if (opts.colorScheme && schemeEl.value !== opts.colorScheme &&
+          [...schemeEl.options].some(o => o.value === opts.colorScheme)) {
+        schemeEl.value = opts.colorScheme;
+      }
+
+      const rotEl = document.getElementById('ext-rotation');
+      const rotVal = String(opts.rotation ?? 0);
+      if (rotEl.value !== rotVal) rotEl.value = rotVal;
+
+      document.getElementById('ext-rings').checked  = opts.showRingBoundaries      ?? false;
+      document.getElementById('ext-quads').checked  = opts.showQuadrantBoundaries  ?? false;
+      document.getElementById('ext-labels').checked = opts.showText                ?? false;
+    }
+
+    function updateStateDisplay(opts) {
+      document.getElementById('st-mode').textContent    = opts.plotMode    ?? '—';
+      document.getElementById('st-scheme').textContent  = opts.colorScheme ?? '—';
+      document.getElementById('st-rotation').textContent = `${opts.rotation ?? 0}°`;
+      document.getElementById('st-rings').textContent   = String(opts.showRingBoundaries      ?? false);
+      document.getElementById('st-quads').textContent   = String(opts.showQuadrantBoundaries  ?? false);
+    }
+
+    // Seed the state display with initial values
+    updateStateDisplay(ctrl.getOptions());
+
+    // ── External control → ctrl.setOptions() ────────────────────────────────
+
+    document.getElementById('ext-mode').addEventListener('change', e => {
+      const val = e.target.value;
+      if (val.startsWith('value-')) {
+        ctrl.setOptions({ plotMode: 'value', testIndex: Number(val.split('-')[1]) });
+      } else {
+        ctrl.setOptions({ plotMode: val });
+      }
+    });
+
+    document.getElementById('ext-scheme').addEventListener('change', e => {
+      ctrl.setOptions({ colorScheme: e.target.value });
+    });
+
+    document.getElementById('ext-rotation').addEventListener('change', e => {
+      ctrl.setOptions({ rotation: Number(e.target.value) });
+    });
+
+    document.getElementById('ext-rings').addEventListener('change', e => {
+      ctrl.setOptions({ showRingBoundaries: e.target.checked });
+    });
+
+    document.getElementById('ext-quads').addEventListener('change', e => {
+      ctrl.setOptions({ showQuadrantBoundaries: e.target.checked });
+    });
+
+    document.getElementById('ext-labels').addEventListener('change', e => {
+      ctrl.setOptions({ showText: e.target.checked });
+    });
+
+    // ── Programmatic action buttons ──────────────────────────────────────────
+
+    document.getElementById('btn-reset-view').addEventListener('click', () => ctrl.resetView());
+
+    document.getElementById('btn-show-fails').addEventListener('click', () => {
+      ctrl.setOptions({ highlightBin: 2 }); // dim all bins except Contact Open
+    });
+
+    document.getElementById('btn-clear-hl').addEventListener('click', () => {
+      ctrl.setOptions({ highlightBin: undefined });
+    });
+  </script>
+
+</body>
+</html>

@@ -5,9 +5,7 @@ export type StatsLevel = 'wafer' | 'lot' | 'inter-wafer';
 export type StatsVariableKind = 'yield' | 'hardbin' | 'softbin' | 'test';
 export type StatsComparisonFamily =
   | 'ring'
-  | 'ring-band'
   | 'quadrant'
-  | 'half-wafer'
   | 'reticle-position'
   | 'wafer';
 

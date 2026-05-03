@@ -2,6 +2,8 @@ import type { PlotMode } from '../renderer/buildScene.js';
 import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
+import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
+import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
@@ -97,6 +99,7 @@ const CLR = {
 };
 
 const BIN_LEGEND_MODES = new Set<PlotMode>(['hardbin', 'softbin']);
+const STACKED_MODES    = new Set<PlotMode>(['stackedValues', 'stackedBins', 'stackedSoftBins']);
 
 const MODE_LABELS: Record<PlotMode, string> = {
   value:           'Test Value',
@@ -107,6 +110,8 @@ const MODE_LABELS: Record<PlotMode, string> = {
   stackedSoftBins: 'Stacked Soft Bins',
 };
 const ROTATIONS: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
+// Number of test entries to show inline before switching to a cascade submenu.
+const INLINE_TEST_LIMIT = 6;
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -136,7 +141,8 @@ export function renderWaferGallery(
   };
 
   let cardControllers: WaferCanvasController[] = [];
-  let currentItems: GalleryItem[] = [];
+  let currentItems:  GalleryItem[] = [];
+  let originalItems: GalleryItem[] = [];  // per-wafer source items; stacked modes aggregate from this
   let openMenu: HTMLDivElement | null = null;
   let modalController: WaferCanvasController | null = null;
   let savedBodyOverflow = '';
@@ -319,7 +325,7 @@ export function renderWaferGallery(
     activeLotFindingId = null;
     clearCardHighlight();
     clearDieZoneHighlight();
-    applyShared({ highlightBin: undefined });
+    syncShared({ highlightBin: undefined });
     lotFindingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-lot-finding]').forEach(btn => {
       btn.style.background = '#fff';
       btn.style.fontWeight = '400';
@@ -332,19 +338,35 @@ export function renderWaferGallery(
       clearLotFindingHighlight();
       return;
     }
-    // Clear previous, then apply new.
+
+    // Clear previous highlight styling.
     lotFindingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-lot-finding]').forEach(btn => {
       btn.style.background = '#fff';
       btn.style.fontWeight = '400';
     });
-    activeLotFindingId    = finding.id;
-    row.style.background  = CLR.bgActive;
-    row.style.fontWeight  = '600';
+    activeLotFindingId   = finding.id;
+    row.style.background = CLR.bgActive;
+    row.style.fontWeight = '600';
+
+    // Switch to the mode that makes this finding's data visible.
+    // Don't set highlightBin — the die zone selection overlay already shows the affected
+    // dies, and highlightBin dims everything else making the map look empty.
+    const { kind, index } = finding.variable;
+    if (kind === 'test') {
+      syncShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
+    } else if (kind === 'softbin') {
+      // index is the bins[] slot index (1 for softbin); binIndex must match so colours render.
+      syncShared({ plotMode: 'softbin', binIndex: index ?? 1, highlightBin: undefined });
+    } else {
+      // 'hardbin' and 'yield' both show in hardbin mode; binIndex 0 is the default.
+      syncShared({ plotMode: 'hardbin', binIndex: index ?? 0, highlightBin: undefined });
+    }
+
+    // Clear all card outlines and die zone selections before applying new ones.
+    clearCardHighlight();
+    clearDieZoneHighlight();
 
     const h = finding.highlight;
-    applyShared({ highlightBin: undefined });
-    clearCardHighlight();
-
     if (h.kind === 'wafer') {
       applyCardHighlight(h.waferIndices);
       // For repeated-pattern findings, highlight the actual die zones on the
@@ -356,19 +378,12 @@ export function renderWaferGallery(
           f => findingFingerprint(f) === fp,
         );
         const dieKeys = (perWaferFinding?.highlight as { dieKeys?: string[] } | undefined)?.dieKeys;
-        if (dieKeys?.length) {
-          applyDieZoneHighlight(dieKeys, [ci]);
-        }
+        if (dieKeys?.length) applyDieZoneHighlight(dieKeys, [ci]);
       }
-      return;
-    }
-    if (h.kind === 'bin') {
-      applyShared({ highlightBin: h.bin });
+    } else if (h.kind === 'bin') {
       if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys);
-      else clearDieZoneHighlight();
     } else if (h.kind === 'region' || h.kind === 'dies') {
       if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys);
-      else clearDieZoneHighlight();
     }
   }
 
@@ -486,26 +501,169 @@ export function renderWaferGallery(
     overflowX:     'auto',
   });
 
-  const btnMode = makeDropdown<PlotMode>(
-    'mode', 'Plot mode',
-    () => {
-      // Only include modes for which data is actually present across gallery items.
-      const dies     = currentItems.flatMap(it => it.dies);
-      const hasValues = dies.some(d => d.values?.length);
-      const hasHbin   = dies.some(d => d.bins?.[0] != null);
-      const hasSbin   = dies.some(d => d.bins?.[1] != null);
-      const modes: PlotMode[] = [];
-      if (hasValues) modes.push('value');
-      if (hasHbin)   modes.push('hardbin');
-      if (hasSbin)   modes.push('softbin');
-      if (hasValues) modes.push('stackedValues');
-      if (hasHbin)   modes.push('stackedBins');
-      if (hasSbin)   modes.push('stackedSoftBins');
-      return modes.map(m => ({ value: m, label: MODE_LABELS[m] }));
-    },
-    () => sharedOpts.plotMode ?? 'hardbin',
-    v => applyShared({ plotMode: v }),
-  );
+  type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string };
+
+  function makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void): HTMLDivElement {
+    const row = document.createElement('div');
+    row.textContent = label;
+    Object.assign(row.style, {
+      padding:    `6px 14px 6px ${indent ? '26px' : '14px'}`,
+      fontSize:   '12px',
+      cursor:     'pointer',
+      color:      active ? CLR.iconActive : '#333',
+      fontWeight: active ? '700' : '400',
+      background: active ? CLR.menuActive : 'transparent',
+      whiteSpace: 'nowrap',
+    });
+    row.addEventListener('mouseenter', () => { if (!active) row.style.background = CLR.menuHover; });
+    row.addEventListener('mouseleave', () => { row.style.background = active ? CLR.menuActive : 'transparent'; });
+    row.addEventListener('click', onClick);
+    return row;
+  }
+
+  function makeMenuSection(label: string): HTMLDivElement {
+    const el = document.createElement('div');
+    el.textContent = label;
+    Object.assign(el.style, {
+      padding:       '5px 14px 2px',
+      fontSize:      '10px',
+      fontWeight:    '600',
+      letterSpacing: '0.05em',
+      color:         '#888',
+      textTransform: 'uppercase',
+      pointerEvents: 'none',
+      userSelect:    'none',
+    });
+    return el;
+  }
+
+  const btnMode = makeBtn('mode', 'Plot mode', () => {
+    if (openMenu) { openMenu.remove(); openMenu = null; return; }
+
+    const dies      = currentItems.flatMap(it => it.dies);
+    const testDefs  = sharedOpts.testDefs;
+    const hasValues = dies.some(d => d.values?.length);
+    const hasHbin   = dies.some(d => d.bins?.[0] != null);
+    const hasSbin   = dies.some(d => d.bins?.[1] != null);
+
+    const currentMode    = sharedOpts.plotMode ?? 'hardbin';
+    const currentTestIdx = sharedOpts.testIndex ?? 0;
+
+    function isCurrentEntry(e: ModeEntry): boolean {
+      if (e.plotMode !== currentMode) return false;
+      if (e.plotMode === 'value') return currentTestIdx === (e.testIndex ?? 0);
+      return true;
+    }
+
+    function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
+      if (entry.testIndex !== undefined) {
+        applyShared({ plotMode: 'value', testIndex: entry.testIndex });
+      } else {
+        applyShared({ plotMode: entry.plotMode, testIndex: undefined });
+      }
+      menu.remove();
+      openMenu = null;
+    }
+
+    const testEntries: ModeEntry[] = hasValues
+      ? (testDefs?.length
+          ? testDefs.map(t => ({ plotMode: 'value' as PlotMode, testIndex: t.index, label: t.unit ? `${t.name} (${t.unit})` : t.name }))
+          : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
+      : [];
+    const binEntries: ModeEntry[] = [
+      ...(hasHbin ? [{ plotMode: 'hardbin'  as PlotMode, label: MODE_LABELS.hardbin }] : []),
+      ...(hasSbin ? [{ plotMode: 'softbin'  as PlotMode, label: MODE_LABELS.softbin }] : []),
+    ];
+    const stackedEntries: ModeEntry[] = [
+      ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
+      ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
+      ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
+    ];
+
+    const menu = document.createElement('div');
+    const btnRect = btnMode.getBoundingClientRect();
+    Object.assign(menu.style, {
+      position:      'fixed',
+      top:           `${btnRect.bottom + 4}px`,
+      left:          `${btnRect.left}px`,
+      background:    CLR.menuBg,
+      border:        `1px solid ${CLR.menuBorder}`,
+      borderRadius:  '4px',
+      boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+      zIndex:        '9998',
+      minWidth:      '180px',
+      padding:       '4px 0',
+      pointerEvents: 'auto',
+    });
+
+    // ── Test Value section ──────────────────────────────────────────────────
+    if (testEntries.length) {
+      menu.appendChild(makeMenuSection('Test Value'));
+      if (testEntries.length <= INLINE_TEST_LIMIT) {
+        for (const entry of testEntries) {
+          menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), true, e => {
+            e.stopPropagation(); pickEntry(entry, menu);
+          }));
+        }
+      } else {
+        const cascadeActive = currentMode === 'value';
+        const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, () => {});
+        cascadeRow.style.display        = 'flex';
+        cascadeRow.style.justifyContent = 'space-between';
+        cascadeRow.style.alignItems     = 'center';
+        let subMenu: HTMLDivElement | null = null;
+        const openSub = () => {
+          if (subMenu) return;
+          const rowRect = cascadeRow.getBoundingClientRect();
+          subMenu = document.createElement('div');
+          Object.assign(subMenu.style, {
+            position: 'fixed', top: `${rowRect.top - 4}px`, left: `${rowRect.right + 2}px`,
+            background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: '9999',
+            minWidth: '160px', maxHeight: '320px', overflowY: 'auto',
+            padding: '4px 0', pointerEvents: 'auto',
+          });
+          for (const entry of testEntries) {
+            subMenu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+              e.stopPropagation(); subMenu?.remove(); subMenu = null; pickEntry(entry, menu);
+            }));
+          }
+          document.body.appendChild(subMenu);
+          document.addEventListener('click', closeSub, { once: true });
+        };
+        const closeSub = () => { subMenu?.remove(); subMenu = null; };
+        cascadeRow.addEventListener('mouseenter', openSub);
+        cascadeRow.addEventListener('mouseleave', e => {
+          if (subMenu && subMenu.contains(e.relatedTarget as Node)) return;
+          closeSub();
+        });
+        menu.appendChild(cascadeRow);
+      }
+    }
+
+    // ── Bins section ────────────────────────────────────────────────────────
+    if (binEntries.length) {
+      menu.appendChild(makeMenuSection('Bins'));
+      for (const entry of binEntries) {
+        menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+          e.stopPropagation(); pickEntry(entry, menu);
+        }));
+      }
+    }
+
+    // ── Lot aggregation section ──────────────────────────────────────────────
+    if (stackedEntries.length) {
+      menu.appendChild(makeMenuSection('Lot Aggregation'));
+      for (const entry of stackedEntries) {
+        menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+          e.stopPropagation(); pickEntry(entry, menu);
+        }));
+      }
+    }
+
+    document.body.appendChild(menu);
+    openMenu = menu;
+  });
 
   const btnPalette = makeDropdown(
     'palette', 'Colour scheme',
@@ -673,12 +831,14 @@ export function renderWaferGallery(
       return;
     }
 
-    // Collect unique bins across all gallery items (bins[0] = hard bin channel).
-    const binSet = new Set<number>();
+    // Collect unique bins — use only the slot matching the active mode.
+    // Hard bins are bins[0], soft bins are bins[1]; independent number spaces (STDF V4).
+    const binIndex = mode === 'softbin' ? 1 : 0;
+    const binSet   = new Set<number>();
     for (const item of currentItems) {
       for (const die of item.dies) {
         if (die.partial) continue;
-        const b = die.bins?.[0];
+        const b = die.bins?.[binIndex];
         if (b != null) binSet.add(b);
       }
     }
@@ -748,11 +908,88 @@ export function renderWaferGallery(
     }
   }
 
+  // ── Stacked-mode aggregation helpers ──────────────────────────────────────
+
+  // Build lot-aggregated GalleryItems from originalItems for a stacked mode.
+  // One card per bin (stackedBins/stackedSoftBins) or per test parameter (stackedValues).
+  function buildStackedItems(mode: PlotMode): GalleryItem[] {
+    if (!originalItems.length) return [];
+    const allDies   = originalItems.map(item => item.dies);
+    const baseWafer = originalItems[0].wafer;
+
+    if (mode === 'stackedValues') {
+      const defs   = sharedOpts.testDefs ?? [];
+      const method = (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod;
+      return defs.map(def => ({
+        wafer: baseWafer,
+        dies:  aggregateValues(allDies, method, def.index),
+        label: def.name,
+        sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }] },
+      }));
+    }
+
+    if (mode === 'stackedBins') {
+      return (sharedOpts.hbinDefs ?? []).map(def => ({
+        wafer: baseWafer,
+        dies:  aggregateBinCounts(allDies, def.bin, 0),
+        label: `${def.bin} · ${def.name}`,
+        sceneOptions: { hbinDefs: [{ bin: def.bin, name: def.name }] },
+      }));
+    }
+
+    if (mode === 'stackedSoftBins') {
+      return (sharedOpts.sbinDefs ?? []).map(def => ({
+        wafer: baseWafer,
+        dies:  aggregateBinCounts(allDies, def.bin, 1),
+        label: `${def.bin} · ${def.name}`,
+        sceneOptions: { sbinDefs: [{ bin: def.bin, name: def.name }] },
+      }));
+    }
+
+    return originalItems;
+  }
+
+  // Extra shared options required for stacked modes (colour scale / lot size metadata).
+  function stackedSharedOpts(mode: PlotMode): Partial<WaferSceneOptions> {
+    const lotSize = originalItems.length;
+    if (mode === 'stackedBins' || mode === 'stackedSoftBins')
+      return { valueRange: [0, lotSize] as [number, number], lotSize };
+    if (mode === 'stackedValues')
+      return { aggrMethod: (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod };
+    return {};
+  }
+
   // ── Shared option sync ─────────────────────────────────────────────────────
 
-  // Called from toolbar interactions — updates state, propagates to cards, fires callback.
+  // Called from toolbar interactions — updates state, handles stacked-mode card rebuilds,
+  // propagates to cards, fires callback.
   function applyShared(partial: Partial<WaferSceneOptions>): void {
-    syncShared(partial);
+    const prevMode = sharedOpts.plotMode;
+    sharedOpts = { ...sharedOpts, ...partial };
+    const newMode    = sharedOpts.plotMode!;
+    const nowStacked = STACKED_MODES.has(newMode);
+    const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
+
+    if (partial.plotMode !== undefined) {
+      if (nowStacked) {
+        // Switching into a stacked mode — aggregate internally and apply extra scene opts.
+        const extra = stackedSharedOpts(newMode);
+        sharedOpts = { ...sharedOpts, ...extra };
+        buildCards(buildStackedItems(newMode));
+      } else if (wasStacked) {
+        // Returning to a non-stacked mode — restore the original per-wafer cards.
+        buildCards(originalItems);
+      } else {
+        for (const ctrl of cardControllers) ctrl.setOptions(partial);
+      }
+    } else if (partial.aggrMethod !== undefined && newMode === 'stackedValues') {
+      // Aggregation method changed while in stackedValues — re-aggregate.
+      buildCards(buildStackedItems('stackedValues'));
+    } else {
+      for (const ctrl of cardControllers) ctrl.setOptions(partial);
+    }
+
+    rebuildLegend();
     options.onSceneOptionsChange?.(sharedOpts);
   }
 
@@ -766,6 +1003,8 @@ export function renderWaferGallery(
   // ── Card building ──────────────────────────────────────────────────────────
 
   function buildCards(newItems: GalleryItem[]): void {
+    openMenu?.remove(); openMenu = null;
+    clearLotFindingHighlight();
     currentItems = newItems;
     for (const ctrl of cardControllers) ctrl.destroy();
     cardControllers = [];
@@ -783,7 +1022,6 @@ export function renderWaferGallery(
         display:       'flex',
         flexDirection: 'column',
         position:      'relative',
-        cursor:        'pointer',
       });
 
       const header = document.createElement('div');
@@ -793,12 +1031,44 @@ export function renderWaferGallery(
         padding:        '8px 10px 6px',
         borderBottom:   '1px solid #e2e5ea',
         flexShrink:     '0',
+        gap:            '6px',
       });
       const label = document.createElement('span');
       label.textContent = item.label ?? '';
-      Object.assign(label.style, { fontWeight: '700', fontSize: '13px' });
+      Object.assign(label.style, { fontWeight: '700', fontSize: '13px', flex: '1' });
       header.appendChild(label);
+
+      // Expand button — the only affordance that opens the modal.
+      const expandBtn = document.createElement('button');
+      expandBtn.dataset.wmapExpandBtn = '1';
+      expandBtn.title = 'Open full view';
+      expandBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+      Object.assign(expandBtn.style, {
+        display:         'flex',
+        alignItems:      'center',
+        justifyContent:  'center',
+        border:          '1px solid #d1d5db',
+        borderRadius:    '4px',
+        background:      '#f9fafb',
+        color:           '#6b7280',
+        padding:         '2px',
+        cursor:          'pointer',
+        flexShrink:      '0',
+        width:           '22px',
+        height:          '22px',
+      });
+      header.appendChild(expandBtn);
       card.appendChild(header);
+
+      // Wrap canvas in a positioned container so the toolbar (position:absolute,
+      // top:4px) anchors within the canvas area, not the full card including header.
+      const canvasWrapper = document.createElement('div');
+      Object.assign(canvasWrapper.style, {
+        position: 'relative',
+        flex:     '1',
+        minHeight:'0',
+        overflow: 'hidden',
+      });
 
       const canvas = document.createElement('canvas');
       Object.assign(canvas.style, {
@@ -806,7 +1076,8 @@ export function renderWaferGallery(
         width:       '100%',
         display:     'block',
       });
-      card.appendChild(canvas);
+      canvasWrapper.appendChild(canvas);
+      card.appendChild(canvasWrapper);
 
       // Append to DOM before renderWaferMap so the canvas has a resolved CSS
       // layout size when the initial render() fires — avoids a zero-size first
@@ -824,15 +1095,21 @@ export function renderWaferGallery(
       });
       cardControllers.push(ctrl);
 
-      // Click on card (but not toolbar) → open modal.
-      card.addEventListener('click', (e) => {
-        if ((e.target as Element).closest('[data-wmap-toolbar]')) return;
-        openModal(item);
-      });
+      // Only the expand button opens the modal — canvas clicks are handled
+      // internally by renderWaferMap and stop propagation before reaching here.
+      expandBtn.addEventListener('click', () => openModal(item));
     }
   }
 
-  buildCards(items);
+  originalItems = items;
+  // If the initial plotMode is already a stacked mode, aggregate immediately.
+  if (STACKED_MODES.has(sharedOpts.plotMode!) && originalItems.length > 0) {
+    const extra = stackedSharedOpts(sharedOpts.plotMode!);
+    sharedOpts = { ...sharedOpts, ...extra };
+    buildCards(buildStackedItems(sharedOpts.plotMode!));
+  } else {
+    buildCards(items);
+  }
 
   // ── Modal ──────────────────────────────────────────────────────────────────
 
@@ -983,7 +1260,9 @@ export function renderWaferGallery(
 
   return {
     setItems(newItems: GalleryItem[]): void {
-      buildCards(newItems);
+      originalItems = newItems;
+      const mode = sharedOpts.plotMode!;
+      buildCards(STACKED_MODES.has(mode) ? buildStackedItems(mode) : newItems);
     },
 
     setOptions(partial: Partial<WaferSceneOptions>): void {

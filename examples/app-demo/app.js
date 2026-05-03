@@ -1,9 +1,9 @@
 import {
   getUniqueBins,
-  aggregateBinCounts,
-  aggregateValues,
   getColorScheme,
   listColorSchemes,
+  analyzeWaferMap,
+  analyzeWaferLot,
 } from 'wafermap';
 import { createWafermapWorker } from 'wafermap/worker';
 import { renderWaferGallery } from 'wafermap/canvas-adapter';
@@ -26,6 +26,7 @@ const state = {
     waferIds: [],
     wafer: null,
     diesByWafer: {},
+    resultsByWafer: {},
   },
   ui: {
     selectedWafers: new Set(),
@@ -116,6 +117,7 @@ async function processData() {
   );
 
   const diesByWafer = {};
+  const resultsByWafer = {};
   let sharedWafer = null;
 
   for (let i = 0; i < waferIds.length; i++) {
@@ -125,7 +127,7 @@ async function processData() {
 
     // Post-enrich with additional channels — die.i === prober x for centred grids.
     const rowMap = new Map(waferRows.map(r => [`${r[cfg.xCol]},${r[cfg.yCol]}`, r]));
-    diesByWafer[waferId] = result.dies.map(die => {
+    const enrichedDies = result.dies.map(die => {
       const row = rowMap.get(`${die.i},${die.j}`);
       if (!row) return { ...die, values: [], bins: [], metadata: {} };
       return {
@@ -142,12 +144,16 @@ async function processData() {
       };
     });
 
+    diesByWafer[waferId] = enrichedDies;
+    // Store enriched result for stats engine (wafer + enriched dies).
+    resultsByWafer[waferId] = { ...result, dies: enrichedDies };
+
     // All wafers share the same wafer geometry (use the first one).
     if (!sharedWafer) sharedWafer = result.wafer;
   }
 
   setLoading(false);
-  state.data = { waferIds, wafer: sharedWafer, diesByWafer };
+  state.data = { waferIds, wafer: sharedWafer, diesByWafer, resultsByWafer };
   state.ui.selectedWafers = new Set(waferIds.slice(0, Math.min(4, waferIds.length)));
 }
 
@@ -281,43 +287,9 @@ function _doRefreshGallery() {
   renderWafermapGallery();
 }
 
-function buildGalleryItems(plotMode, selected, diesByWafer, wafer) {
-  const selectedDiesList = selected.map(wId => diesByWafer[wId] ?? []);
-
-  if (plotMode === 'stackedValues') {
-    // One card per test parameter — lot mean at each die position across selected wafers.
-    return state.cfg.valueCols.map((col, paramIndex) => {
-      const dies = aggregateValues(selectedDiesList, 'mean', paramIndex);
-      return {
-        wafer, dies, label: col,
-        sceneOptions: { testDefs: [{ index: 0, name: col }], aggrMethod: 'mean' },
-      };
-    });
-  }
-
-  if (plotMode === 'stackedBins') {
-    const allBins = [...new Set(selectedDiesList.flat().flatMap(d => d.bins?.[0] != null ? [d.bins[0]] : []))].sort((a, b) => a - b);
-    return allBins.map(bin => {
-      const dies = aggregateBinCounts(selectedDiesList, bin, 0);
-      return {
-        wafer, dies, label: `HBin ${bin}`,
-        sceneOptions: { hbinDefs: [{ bin, name: `HBin ${bin}` }], lotSize: selected.length },
-      };
-    });
-  }
-
-  if (plotMode === 'stackedSoftBins') {
-    const allBins = [...new Set(selectedDiesList.flat().flatMap(d => d.bins?.[1] != null ? [d.bins[1]] : []))].sort((a, b) => a - b);
-    return allBins.map(bin => {
-      const dies = aggregateBinCounts(selectedDiesList, bin, 1);
-      return {
-        wafer, dies, label: `SBin ${bin}`,
-        sceneOptions: { sbinDefs: [{ bin, name: `SBin ${bin}` }], lotSize: selected.length },
-      };
-    });
-  }
-
-  // Individual wafer items (value / hardbin / softbin modes).
+function buildGalleryItems(selected, diesByWafer, wafer) {
+  // Always returns per-wafer items — stacked modes are handled automatically
+  // by renderWaferGallery when the mode is selected from the toolbar.
   const { valueChannel } = state.ui;
   const dies4map = valueChannel > 0
     ? dies => dies.map(die => {
@@ -351,7 +323,19 @@ function renderWafermapGallery() {
     return;
   }
 
-  const items = buildGalleryItems(plotMode, selected, diesByWafer, wafer);
+  const items = buildGalleryItems(selected, diesByWafer, wafer);
+
+  // Attach per-wafer stats and compute lot-level stats.
+  const { resultsByWafer } = state.data;
+  const passBins = state.cfg.passBin !== null ? [state.cfg.passBin] : undefined;
+  const selectedResults = selected.map(wId => resultsByWafer[wId]).filter(Boolean);
+  const waferStats = selectedResults.map(r => analyzeWaferMap(r, { passBins }));
+  items.forEach((item, i) => { item.statsSummary = waferStats[i]; });
+  const lotStatsSummary = analyzeWaferLot(selectedResults, { passBins });
+
+  const testDefs = state.cfg.valueCols.map((col, i) => ({ index: i, name: col }));
+  const allBins = getUniqueBins(Object.values(diesByWafer).flat());
+  const hbinDefs = allBins.map(b => ({ bin: b, name: `HBin ${b}` }));
 
   galleryCtrl = renderWaferGallery(galleryEl, items, {
     sceneOptions: {
@@ -361,27 +345,24 @@ function renderWafermapGallery() {
       showQuadrantBoundaries: showQuadrants,
       showXYIndicator:        showXY,
       highlightBin,
-      ...((plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') ? { valueRange: [0, selected.length], lotSize: selected.length } : {}),
-      ...(plotMode === 'stackedValues' ? { aggrMethod: 'mean' } : {}),
+      testDefs,
+      hbinDefs,
     },
+    lotStatsSummary,
     onSceneOptionsChange(opts) {
-      // Keep sidebar controls in sync when gallery bar changes something.
-      if (opts.plotMode     !== undefined) {
-        state.ui.plotMode = opts.plotMode;
-        document.getElementById('map-mode').value = opts.plotMode;
-        // Stacked modes rebuild items (aggregated vs individual).
-        refreshGallery();
-      }
-      if (opts.colorScheme  !== undefined) { state.ui.colorScheme  = opts.colorScheme;  document.getElementById('map-color').value = opts.colorScheme; }
+      // Keep sidebar controls in sync when the gallery toolbar changes something.
+      // Stacked mode transitions are handled internally by the gallery — no refreshGallery().
+      if (opts.plotMode     !== undefined) { state.ui.plotMode    = opts.plotMode;    document.getElementById('map-mode').value        = opts.plotMode; }
+      if (opts.colorScheme  !== undefined) { state.ui.colorScheme = opts.colorScheme; document.getElementById('map-color').value        = opts.colorScheme; }
       if (opts.showRingBoundaries     !== undefined) { state.ui.showRings     = opts.showRingBoundaries;     document.getElementById('btn-rings').checked     = opts.showRingBoundaries; }
       if (opts.showQuadrantBoundaries !== undefined) { state.ui.showQuadrants = opts.showQuadrantBoundaries; document.getElementById('btn-quadrants').checked = opts.showQuadrantBoundaries; }
       if (opts.showXYIndicator        !== undefined) { state.ui.showXY        = opts.showXYIndicator;        document.getElementById('btn-xy').checked        = opts.showXYIndicator; }
     },
   });
 
-  // Append per-card stats for individual wafer items only.
-  const isStacked = plotMode === 'stackedValues' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
-  if (!isStacked) {
+  // Append per-card bin stats — only in per-wafer modes (not stacked).
+  const STACKED = new Set(['stackedValues', 'stackedBins', 'stackedSoftBins']);
+  if (!STACKED.has(plotMode)) {
     const cards = galleryEl.querySelectorAll('.wmap-gallery-card');
     cards.forEach((card, i) => {
       const waferId = selected[i];

@@ -44,6 +44,9 @@ function standardNotchLength(diameter: number): number {
 
 /** Create a wafer model from spec. Defaults: center={0,0}, orientation=0. */
 export function createWafer(config: WaferSpec): Wafer {
+  if (config.diameter <= 0) {
+    throw new RangeError(`createWafer: diameter must be > 0 (got ${config.diameter})`);
+  }
   return {
     diameter:    config.diameter,
     radius:      config.diameter / 2,

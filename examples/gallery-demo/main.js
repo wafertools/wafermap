@@ -1,4 +1,4 @@
-import { buildWaferMap, aggregateValues, aggregateBinCounts, analyzeWaferMap, analyzeWaferLot } from 'wafermap';
+import { buildWaferMap, analyzeWaferMap, analyzeWaferLot } from 'wafermap';
 import { renderWaferGallery } from 'wafermap/canvas-adapter';
 
 const PITCH = 10;
@@ -53,82 +53,14 @@ const SBIN_DEFS = [
 // ── State ──────────────────────────────────────────────────────────────────
 let showUnits      = true;
 let fallbackFormat = 'engineering';
-let aggrMethod     = 'mean';   // method for Stacked Values mode
 
-let gallery         = null;
-let waferItems      = [];       // one item per wafer, for Value/Hard Bin/Soft Bin modes
-let waferDiesByWafer = [];      // Die[][] used by aggregation functions
-let waferResults    = [];       // WaferMapResult[] used by stats analysis
+let gallery = null;
 
 function currentTestDefs() {
   return showUnits ? TEST_DEFS_WITH_UNITS : TEST_DEFS_NO_UNITS;
 }
 
-function currentPlotMode() {
-  return gallery?.getOptions()?.plotMode ?? 'value';
-}
-
-// Build gallery items appropriate for the current plot mode.
-//   Value / Hard Bin / Soft Bin  →  individual wafer cards
-//   Stacked Values               →  one card per test parameter (lot mean/median/etc.)
-//   Stacked Bins                 →  one card per bin (lot occurrence count)
-function buildGalleryItems(plotMode) {
-  if (plotMode === 'stackedValues') {
-    return currentTestDefs().map(def => ({
-      wafer: waferItems[0].wafer,
-      dies:  aggregateValues(waferDiesByWafer, aggrMethod, def.index),
-      label: def.name,
-      sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }], aggrMethod },
-    }));
-  }
-
-  if (plotMode === 'stackedBins') {
-    return HBIN_DEFS.map(def => ({
-      wafer: waferItems[0].wafer,
-      dies:  aggregateBinCounts(waferDiesByWafer, def.bin, 0),
-      label: `${def.bin} · ${def.name}`,
-      sceneOptions: { hbinDefs: [{ bin: def.bin, name: def.name }], lotSize: WAFER_IDS.length },
-    }));
-  }
-
-  if (plotMode === 'stackedSoftBins') {
-    return SBIN_DEFS.map(def => ({
-      wafer: waferItems[0].wafer,
-      dies:  aggregateBinCounts(waferDiesByWafer, def.bin, 1),
-      label: `${def.bin} · ${def.name}`,
-      sceneOptions: { sbinDefs: [{ bin: def.bin, name: def.name }], lotSize: WAFER_IDS.length },
-    }));
-  }
-
-  return waferItems;
-}
-
-function stackedOpts(mode) {
-  if (mode === 'stackedValues')    return { aggrMethod, lotSize: undefined };
-  if (mode === 'stackedBins')      return { valueRange: [0, WAFER_IDS.length], lotSize: WAFER_IDS.length, aggrMethod: undefined };
-  if (mode === 'stackedSoftBins')  return { valueRange: [0, WAFER_IDS.length], lotSize: WAFER_IDS.length, aggrMethod: undefined };
-  return { aggrMethod: undefined, lotSize: undefined, valueRange: undefined };
-}
-
-function refreshGallery() {
-  if (!gallery) return;
-  const mode = currentPlotMode();
-  gallery.setItems(buildGalleryItems(mode));
-  const opts = { testDefs: currentTestDefs(), hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, ...stackedOpts(mode) };
-  gallery.setOptions(opts);
-  gallery.setFallbackFormat(fallbackFormat);
-  syncControlVis();
-}
-
 // ── Controls ───────────────────────────────────────────────────────────────
-
-let elAggrMethod = null;   // Method dropdown, shown only in Stacked Values mode
-
-function syncControlVis() {
-  if (!elAggrMethod) return;
-  elAggrMethod.closest('label').style.display =
-    currentPlotMode() === 'stackedValues' ? '' : 'none';
-}
 
 function buildControls() {
   const bar = document.getElementById('controls');
@@ -144,10 +76,13 @@ function buildControls() {
     if (v === fallbackFormat) o.selected = true;
     fmtSel.appendChild(o);
   });
-  fmtSel.addEventListener('change', () => { fallbackFormat = fmtSel.value; refreshGallery(); });
+  fmtSel.addEventListener('change', () => {
+    fallbackFormat = fmtSel.value;
+    gallery?.setFallbackFormat(fallbackFormat);
+  });
   fmtLabel.appendChild(fmtSel);
 
-  // Units toggle
+  // Units toggle — updates testDefs so names and units in tooltips stay correct
   const unitLabel = document.createElement('label');
   unitLabel.textContent = 'Test units: ';
   const unitSel = document.createElement('select');
@@ -157,21 +92,26 @@ function buildControls() {
     if ((v === 'units') === showUnits) o.selected = true;
     unitSel.appendChild(o);
   });
-  unitSel.addEventListener('change', () => { showUnits = unitSel.value === 'units'; refreshGallery(); });
+  unitSel.addEventListener('change', () => {
+    showUnits = unitSel.value === 'units';
+    gallery?.setOptions({ testDefs: currentTestDefs() });
+  });
   unitLabel.appendChild(unitSel);
 
-  // Aggregation method (Stacked Values mode only)
+  // Aggregation method — only relevant in Stacked Test Values mode
   const methodLabel = document.createElement('label');
   methodLabel.textContent = 'Method: ';
-  elAggrMethod = document.createElement('select');
+  const methodSel = document.createElement('select');
   [['mean','Mean'],['median','Median'],['stddev','Std dev'],['min','Min'],['max','Max']].forEach(([v,t]) => {
     const o = document.createElement('option');
     o.value = v; o.textContent = t;
-    if (v === aggrMethod) o.selected = true;
-    elAggrMethod.appendChild(o);
+    if (v === 'mean') o.selected = true;
+    methodSel.appendChild(o);
   });
-  elAggrMethod.addEventListener('change', () => { aggrMethod = elAggrMethod.value; refreshGallery(); });
-  methodLabel.appendChild(elAggrMethod);
+  // gallery.setOptions({ aggrMethod }) triggers re-aggregation automatically when
+  // the current mode is stackedValues.
+  methodSel.addEventListener('change', () => gallery?.setOptions({ aggrMethod: methodSel.value }));
+  methodLabel.appendChild(methodSel);
 
   bar.appendChild(fmtLabel);
   bar.appendChild(unitLabel);
@@ -181,9 +121,8 @@ function buildControls() {
 // ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
   const rows = await loadCsv('../../data/fmt-demo.csv');
-  waferItems    = [];
-  waferDiesByWafer = [];
-  waferResults  = [];
+  const waferItems   = [];
+  const waferResults = [];
 
   for (const waferId of WAFER_IDS) {
     const waferRows = rows.filter(row => row.wafer === waferId);
@@ -221,7 +160,6 @@ async function main() {
       hasReticle: true,
       sceneOptions: { reticles: result.reticles },
     });
-    waferDiesByWafer.push(result.dies);
     waferResults.push(result);
   }
 
@@ -234,9 +172,11 @@ async function main() {
   // Run lot-level stats across all wafers.
   const lotStats = analyzeWaferLot(waferResults);
 
+  // Stacked modes (Stacked Hard Bins, Stacked Soft Bins, Stacked Test Values) are
+  // handled automatically by the gallery — switching modes re-aggregates internally.
   gallery = renderWaferGallery(
     document.getElementById('gallery'),
-    buildGalleryItems('value'),
+    waferItems,
     {
       sceneOptions: {
         plotMode: 'value',
@@ -246,17 +186,8 @@ async function main() {
       },
       fallbackFormat,
       lotStatsSummary: lotStats,
-      onSceneOptionsChange: (opts) => {
-        if (opts.plotMode !== undefined) {
-          gallery.setItems(buildGalleryItems(opts.plotMode));
-          gallery.setOptions(stackedOpts(opts.plotMode));
-        }
-        syncControlVis();
-      },
     },
   );
-
-  syncControlVis();
 }
 
 async function loadCsv(path) {

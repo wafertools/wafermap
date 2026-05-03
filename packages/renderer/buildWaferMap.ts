@@ -23,7 +23,7 @@ export interface DieResult {
   x: number;
   /** Die grid Y position (prober step coordinate). */
   y: number;
-  /** Measured test values — one per test channel. */
+  /** Measured test values — one entry per test (e.g. [idsat, vth, ioff]). */
   values?: number[];
   /** Bin assignments — bins[0] is the hard bin, bins[1] the soft bin, etc. */
   bins?: number[];
@@ -621,7 +621,7 @@ function autoPlotMode(results: DieResult[], opts: SceneOptions): PlotMode {
  * Plotly.react('chart', data, layout);
  * ```
  *
- * @example Multi-channel — values and bins supplied directly:
+ * @example Multiple tests and bins supplied directly:
  * ```ts
  * const result = buildWaferMap({
  *   results: rows.map(r => ({

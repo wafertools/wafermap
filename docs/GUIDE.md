@@ -1,0 +1,1136 @@
+# Developer Guide — wafermap
+
+This guide walks through building wafer map visualisations in a real application,
+from a single interactive map up to a multi-wafer gallery with statistical findings.
+It focuses on practical patterns; for the full type reference see [API.md](./API.md).
+
+---
+
+## Contents
+
+1. [Installation and setup](#1-installation-and-setup)
+2. [Your first wafer map](#2-your-first-wafer-map)
+3. [Loading real data from a CSV](#3-loading-real-data-from-a-csv)
+4. [Adding die size and wafer geometry](#4-adding-die-size-and-wafer-geometry)
+5. [Working with bins](#5-working-with-bins)
+6. [Working with test values](#6-working-with-test-values)
+7. [Retests and enriching dies after build](#7-retests-and-enriching-dies-after-build)
+8. [Controlling the display](#8-controlling-the-display)
+9. [Responding to user interaction](#9-responding-to-user-interaction)
+10. [Adding statistical findings](#10-adding-statistical-findings)
+11. [Building a lot gallery](#11-building-a-lot-gallery)
+12. [Lot-level statistical findings](#12-lot-level-statistical-findings)
+13. [Reticle overlays](#13-reticle-overlays)
+14. [Processing large datasets with a Web Worker](#14-processing-large-datasets-with-a-web-worker)
+15. [Custom colour schemes](#15-custom-colour-schemes)
+16. [Common patterns and tips](#16-common-patterns-and-tips)
+
+---
+
+## 1. Installation and setup
+
+Install the package:
+
+```bash
+npm install @paulrobins/wafermap
+```
+
+The library has no runtime dependencies beyond Plotly.js, which is only needed if
+you use the lower-level `toPlotly()` path. The canvas renderer (`renderWaferMap`,
+`renderWaferGallery`) has no external dependencies at all.
+
+### With a bundler (Vite, webpack, etc.)
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+```
+
+### Plain HTML (CDN / script tags)
+
+```html
+<script type="module">
+  import { buildWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/index.js';
+  import { renderWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/canvas-adapter/index.js';
+</script>
+```
+
+---
+
+## 2. Your first wafer map
+
+The minimal path is two function calls: `buildWaferMap` to process your data, then
+`renderWaferMap` to draw it.
+
+```html
+<canvas id="map" style="width:500px; height:500px;"></canvas>
+```
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+// Minimum input: x/y die grid positions. The library infers everything else.
+const { wafer, dies } = buildWaferMap([
+  { x:  0, y:  0, bins: [1] },
+  { x:  1, y:  0, bins: [2] },
+  { x:  0, y: -1, bins: [1] },
+  { x:  1, y: -1, bins: [1] },
+  // ... more dies
+]);
+
+renderWaferMap(document.getElementById('map'), wafer, dies);
+```
+
+`renderWaferMap` returns immediately and mounts a self-contained interactive map.
+A toolbar appears on hover, giving users access to all display controls — no extra
+HTML or JavaScript required.
+
+> **`x` and `y` are always die grid positions (prober step coordinates) — integers
+> like −7, 0, 5.  They are NOT millimetre values.**  The library converts to physical
+> mm internally when you supply a die size.
+
+**→ [Demo: Your first wafer map](../guide-demos/01-first-map.html)**
+
+
+![alt text](image-1.png)  
+---
+
+## 3. Loading real data from a CSV
+
+In practice your data comes from a wafer prober log, STDF export, or a CSV pulled
+from your database.  A typical row has a wafer ID, die grid position, and one or
+more test results.
+
+```
+lot,wafer,x,y,hbin,sbin,testA,testB,testC
+LOT123,W01,-7,-2,3,45,1.098,0.773,5.758
+LOT123,W01,-7,-1,1,10,1.099,0.772,5.966
+...
+```
+
+Parse the CSV and map each row to a `DieResult`:
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
+  const rows = parseCsv(csvText);  // your CSV parser of choice
+
+  const results = rows.map(r => ({
+    x:      Number(r.x),
+    y:      Number(r.y),
+    bins:   [Number(r.hbin), Number(r.sbin)],
+    values: [Number(r.testA), Number(r.testB), Number(r.testC)],
+  }));
+
+  const { wafer, dies } = buildWaferMap({ results });
+  renderWaferMap(canvas, wafer, dies);
+}
+```
+
+`x` and `y` are the prober step positions from your equipment — pass them directly,
+no unit conversion needed.
+
+**→ [Demo: Loading real data from a CSV](../guide-demos/03-csv-data.html)**
+
+Here we have toggled some toolbar options on: XY Axis indicator and Ring boundaries. 
+
+![alt text](image-2.png)
+---
+
+## 4. Adding die size and wafer geometry
+
+When you supply physical dimensions, `die.x`/`die.y` are in real millimetres and
+the wafer boundary is drawn to scale.
+
+```ts
+const { wafer, dies } = buildWaferMap({
+  results,
+  waferConfig: {
+    diameter:  300,                       // mm — 200 or 300 are most common
+    notch:     { type: 'bottom' },        // physical alignment notch direction
+  },
+  dieConfig: {
+    width:  10,                           // mm — die X pitch
+    height: 10,                           // mm — die Y pitch
+  },
+});
+```
+
+The notch renders as a V-notch on 200 mm+ wafers and as a flat on smaller wafers —
+you don't need to specify which.
+
+### When you don't know the geometry
+
+Omit any field you don't know — the library infers what it can:
+
+```ts
+// Die size known, diameter unknown → diameter inferred from grid extent
+buildWaferMap({ results, dieConfig: { width: 10, height: 10 } });
+
+// Diameter known, die size unknown → die size estimated from diameter ÷ grid extent
+buildWaferMap({ results, waferConfig: { diameter: 300 } });
+
+// Nothing known → proportionally correct layout in normalised units
+buildWaferMap({ results });
+```
+
+Check `result.units` to know which case applied: `'mm'` means physical millimetres;
+`'normalized'` means grid-relative units.
+
+### Edge exclusion
+
+```ts
+const { wafer, dies } = buildWaferMap({
+  results,
+  waferConfig: { diameter: 300, edgeExclusion: 3 },  // 3 mm exclusion band
+  dieConfig:   { width: 10, height: 10 },
+});
+
+console.log(result.yield.yieldPercent);  // excludes edge dies from numerator and denominator
+```
+
+Dies within the exclusion band have `die.edgeExcluded = true` and are shown dimmed
+on the map.
+
+### Coordinate origins
+
+If your prober uses a non-centred origin, tell the library:
+
+```ts
+// All x,y ≥ 0 → auto-detected as lower-left origin (no explicit config needed)
+buildWaferMap({ results, dieConfig: { width: 10, height: 10 } });
+
+// Row-based prober: origin at upper-left, Y increases downward
+buildWaferMap({
+  results,
+  dieConfig: { width: 10, height: 10, coordinateOrigin: { type: 'UL' } },
+});
+```
+
+**→ [Demo: Die size and wafer geometry](../guide-demos/04-geometry.html)**
+
+![alt text](image-3.png)
+
+---
+
+
+## 5. Working with bins
+
+Bins are the primary pass/fail classification from wafer test equipment.  Hard bins
+are the physical sort result; soft bins are the failure category assigned by the
+test program.
+
+### Basic bin map
+
+```ts
+const results = rows.map(r => ({
+  x:    Number(r.x),
+  y:    Number(r.y),
+  bins: [Number(r.hbin)],   // bins[0] = hard bin
+}));
+
+const { wafer, dies } = buildWaferMap({ results });
+renderWaferMap(canvas, wafer, dies);
+// Opens in 'hardbin' mode by default
+```
+
+### Named bins with custom colours
+
+Without names, bins are labelled "HBin 1", "HBin 2", etc.  Supply `hbinDefs` for
+readable labels and optional colour overrides:
+
+```ts
+const { wafer, dies } = buildWaferMap({
+  results,
+  hbinDefs: [
+    { bin: 1, name: 'Pass',          color: '#2ecc71' },
+    { bin: 2, name: 'Contact Open',  color: '#e74c3c' },
+    { bin: 3, name: 'Vth - Hi NMOS', color: '#e67e22' },
+    { bin: 5, name: 'Continuity',    color: '#9b59b6' },
+  ],
+});
+
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: { plotMode: 'hardbin', hbinDefs: wafer /* carries through */ },
+});
+```
+
+> **Tip:** Pass `hbinDefs` into `buildWaferMap`, not just `renderWaferMap`.  The
+> stats engine and tooltips both read them from the built result.
+
+### Hard bin and soft bin together
+
+```ts
+const results = rows.map(r => ({
+  x:    Number(r.x),
+  y:    Number(r.y),
+  bins: [Number(r.hbin), Number(r.sbin)],  // bins[0] = hard bin, bins[1] = soft bin
+}));
+
+const { wafer, dies, scene } = buildWaferMap({
+  results,
+  hbinDefs: [ { bin: 1, name: 'Pass' }, /* ... */ ],
+  sbinDefs: [ { bin: 10, name: 'Vth - Lo' }, { bin: 11, name: 'Vth - Hi' }, /* ... */ ],
+});
+
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: {
+    hbinDefs: scene.hbinDefs,
+    sbinDefs: scene.sbinDefs,
+  },
+});
+// User can switch between Hard Bin and Soft Bin in the toolbar Mode menu
+```
+
+### Pass bins and yield
+
+The library counts yield against `passBins` (default `[1]`).  Change this if your
+pass bin isn't 1:
+
+```ts
+const { yield: yld } = buildWaferMap({
+  results,
+  passBins: [1, 100],   // bins 1 and 100 are both counted as pass
+});
+
+console.log(`${(yld.yieldPercent * 100).toFixed(1)}%`);
+```
+
+**→ [Demo: Working with bins](../guide-demos/05-named-bins.html)**
+
+![alt text](image-4.png)
+---
+
+## 6. Working with test values
+
+Continuous test measurements (leakage current, threshold voltage, etc.) go in the
+`values[]` array.  Use `TestDef` to give each test a name and unit:
+
+```ts
+const results = rows.map(r => ({
+  x:      Number(r.x),
+  y:      Number(r.y),
+  values: [Number(r.testA), Number(r.testB), Number(r.testC)],
+}));
+
+const { wafer, dies, scene } = buildWaferMap({
+  results,
+  dieConfig: { width: 10, height: 10 },
+  testDefs: [
+    { index: 0, name: 'Idsat', unit: 'A'  },
+    { index: 1, name: 'Vth',   unit: 'V'  },
+    { index: 2, name: 'Ioff',  unit: 'A'  },
+  ],
+});
+
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: {
+    plotMode:  'value',
+    testIndex: 0,          // show Idsat first
+    testDefs:  scene.testDefs,
+  },
+});
+```
+
+With `testDefs` in place:
+- The toolbar Mode dropdown shows one entry per test by name ("Idsat", "Vth", …)
+- Hover tooltips show "Idsat: 1.23 mA" instead of "Values: 1.23e-3"
+- The colorbar axis label includes the unit
+
+**→ [Demo: Working with test values](../guide-demos/06-test-values.html)**
+
+![alt text](image-5.png)
+---
+
+## 7. Retests and enriching dies after build
+
+### Handling retests
+
+If your data includes multiple probe results for the same die position (retests),
+the library handles them automatically.  The default keeps the last result per
+position; use `'first'` to keep the initial test:
+
+```ts
+const { wafer, dies } = buildWaferMap({
+  results: rawResults,  // may contain the same (x,y) more than once
+  retestPolicy: 'last', // default — keep the most recent result
+});
+
+// Check which dies were retested:
+dies.filter(d => d.retestCount !== undefined)
+    .forEach(d => console.log(`(${d.i},${d.j}) retested ${d.retestCount}×`));
+```
+
+Retested dies automatically show "Retests: N" in their hover tooltip.
+
+### Post-enrichment (attaching extra values after the map is built)
+
+Sometimes you need to attach data that isn't in the same table as the grid
+positions — for example, merging test values from a separate parametric table into
+a map already built from a bin summary:
+
+```ts
+import { buildWaferMap, getDieKey } from '@paulrobins/wafermap';
+
+// Step 1: build the map from the bin data
+const result = buildWaferMap({ results: binRows.map(r => ({
+  x: Number(r.x), y: Number(r.y), bins: [Number(r.hbin)],
+})), dieConfig: { width: 10, height: 10 } });
+
+// Step 2: build a lookup from the parametric table
+const paramMap = new Map(paramRows.map(r => [getDieKey({ i: Number(r.x), j: Number(r.y) }), r]));
+
+// Step 3: enrich dies in place
+const enrichedDies = result.dies.map(die => {
+  const row = paramMap.get(getDieKey(die));
+  if (!row) return die;
+  return { ...die, values: [Number(row.idsat), Number(row.vth)] };
+});
+
+renderWaferMap(canvas, result.wafer, enrichedDies, {
+  sceneOptions: {
+    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }, { index: 1, name: 'Vth', unit: 'V' }],
+  },
+});
+```
+
+> Always use `getDieKey(die)` for lookups rather than manually formatting `"${die.i},${die.j}"` —
+> it guarantees the correct format after any grid offset correction.
+
+
+**→ [Demo: Working with retested dies](../guide-demos/07-retests.html)**
+
+![alt text](image-6.png)
+---
+
+## 8. Controlling the display
+
+### Initial display options
+
+Pass `sceneOptions` to `renderWaferMap` to set the initial state:
+
+```ts
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: {
+    plotMode:                'hardbin',
+    colorScheme:             'color',       // 'color', 'greyscale', 'accessible', 'plasma', 'inferno'
+    showRingBoundaries:      true,
+    showQuadrantBoundaries:  false,
+    showText:                false,         // die index labels
+    showXYIndicator:         true,
+    ringCount:               4,
+    rotation:                0,             // 0, 90, 180, 270
+    flipX:                   false,
+    flipY:                   false,
+  },
+});
+```
+
+All of these can also be changed by the user via the toolbar at any time.
+
+### Programmatic control
+
+`renderWaferMap` returns a controller you can call from application code:
+
+```ts
+const ctrl = renderWaferMap(canvas, wafer, dies, { sceneOptions: { plotMode: 'hardbin' } });
+
+// Switch display mode:
+ctrl.setOptions({ plotMode: 'value', testIndex: 1 });
+
+// Replace die data (e.g. after a data reload) — preserves zoom/pan:
+ctrl.setDies(newDies);
+
+// Read current state:
+const opts = ctrl.getOptions();
+console.log(opts.plotMode, opts.colorScheme);
+
+// Return to default zoom:
+ctrl.resetView();
+
+// Clean up when the component unmounts:
+ctrl.destroy();
+```
+
+### Syncing with external UI controls
+
+Use `onSceneOptionsChange` to keep your own UI elements in sync with the toolbar:
+
+```ts
+const ctrl = renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: { plotMode: 'hardbin' },
+  onSceneOptionsChange: (opts) => {
+    modeDropdown.value     = opts.plotMode;
+    schemeDropdown.value   = opts.colorScheme;
+    ringsCheckbox.checked  = opts.showRingBoundaries ?? false;
+  },
+});
+
+// When your own control changes, push it back:
+modeDropdown.addEventListener('change', () => {
+  ctrl.setOptions({ plotMode: modeDropdown.value });
+});
+```
+
+> `onSceneOptionsChange` fires only when the toolbar changes options.  Calling
+> `ctrl.setOptions()` programmatically does NOT re-fire it, so there is no
+> feedback loop.
+
+### Hiding the toolbar
+
+If you want a static display with no toolbar:
+
+```ts
+renderWaferMap(canvas, wafer, dies, {
+  showToolbar: false,
+  sceneOptions: { plotMode: 'hardbin' },
+});
+```
+
+Or keep the toolbar but remove the mode selector (useful when your app manages the
+mode externally):
+
+```ts
+renderWaferMap(canvas, wafer, dies, {
+  showPlotModeSelector: false,
+  sceneOptions: { plotMode: 'value' },
+  onSceneOptionsChange: (opts) => syncMyModeUI(opts),
+});
+```
+**→ [Demo: Controlling the display](../guide-demos/08-display-control.html)**
+
+![alt text](image-7.png)
+---
+
+## 9. Responding to user interaction
+
+### Click and hover callbacks
+
+```ts
+renderWaferMap(canvas, wafer, dies, {
+  onClick: (die, event) => {
+    console.log(`Clicked die (${die.i}, ${die.j})`);
+    console.log('Hard bin:', die.bins?.[0]);
+    console.log('Values:', die.values);
+    showDetailPanel(die);
+  },
+  onHover: (die, event) => {
+    if (die) updateStatusBar(`(${die.i}, ${die.j})`);
+    else     clearStatusBar();
+  },
+});
+```
+
+`onClick` and `onHover` receive the full `Die` object — `die.i`, `die.j`, `die.values`,
+`die.bins`, and any metadata you attached.  `onHover` receives `null` when the cursor
+leaves a die.
+
+### Box selection
+
+Provide `onSelect` to enable box-select mode.  A selection button appears in the
+toolbar automatically:
+
+```ts
+renderWaferMap(canvas, wafer, dies, {
+  onSelect: (selectedDies) => {
+    console.log(`${selectedDies.length} dies selected`);
+    const passing = selectedDies.filter(d => d.bins?.[0] === 1).length;
+    showSelectionStats({ count: selectedDies.length, passing });
+  },
+});
+```
+
+Users can also click individual dies, Ctrl/Cmd+click to add to the selection, and
+press Esc to clear.
+
+### Programmatic selection
+
+```ts
+// Highlight a specific set of dies (e.g. from a table click):
+const failingDies = result.dies.filter(d => d.bins?.[0] === 2);
+ctrl.setSelection(failingDies);
+
+// Clear:
+ctrl.clearSelection();
+```
+**→ [Demo: Responding to user interaction](../guide-demos/09-interaction.html)**
+
+![alt text](image-8.png)
+---
+
+## 10. Adding statistical findings
+
+The statistics engine (`analyzeWaferMap`) scans for spatial patterns: die rings,
+quadrants, or reticle positions where yield, bin rates, or test values differ
+significantly from the rest of the wafer.
+
+### Basic usage
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+
+const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const summary = analyzeWaferMap(result);
+
+renderWaferMap(canvas, result.wafer, result.dies, {
+  statsSummary: summary,
+});
+```
+
+A "Findings" button (clipboard icon) appears in the toolbar when `statsSummary` is
+provided.  Clicking it opens a panel listing all detected findings grouped by
+severity.
+
+
+### What gets analysed
+
+By default the engine checks every combination of:
+
+- **Comparison families:** ring zones, quadrant zones, reticle-field positions (if a reticle config was used)
+- **Variables:** yield, hard bin rate per bin, soft bin rate per bin, mean test value per test
+
+Results below a significance threshold (adjusted p-value < 0.05) and a minimum
+effect size (15% by default) are suppressed.
+
+### Clicking a finding highlights the map
+
+When the user clicks a finding row in the panel, the map automatically:
+1. Switches to the most relevant display mode (value mode for test findings, bin
+   mode for bin findings)
+2. Highlights the affected die zone with an amber overlay
+
+Clicking the finding again clears the highlight.
+
+### Controlling what is analysed
+
+```ts
+const summary = analyzeWaferMap(result, {
+  ringCount:                 4,      // must match the renderer's ringCount
+  passBins:                  [1],
+  significanceLevel:         0.05,   // adjusted p-value threshold
+  minimumEffectSize:         0.15,   // |delta| or Cohen's d
+  minimumSampleSize:         5,      // min dies per region to test
+  enableYieldAnalysis:       true,
+  enableHardBinAnalysis:     true,
+  enableSoftBinAnalysis:     true,
+  enableTestValueAnalysis:   true,
+  enableReticlePositionAnalysis: true,  // auto-disabled when no reticle config
+});
+```
+
+### Reading findings in code
+
+Each finding is a `StatsFinding` with a human-readable `summary` and structured
+data you can use in your own UI:
+
+```ts
+for (const finding of summary.findings) {
+  console.log(finding.severity);          // 'unusual' | 'notable' | 'info'
+  console.log(finding.summary);           // "Ring 3 (edge) yield is lower than the rest of the wafer"
+  console.log(finding.variable.kind);     // 'yield' | 'hardbin' | 'softbin' | 'test'
+  console.log(finding.effect.absoluteDelta);  // signed magnitude of the effect
+  console.log(finding.stats.adjustedPValue);  // BH-adjusted p-value
+}
+```
+
+### Updating findings after a data change
+
+```ts
+// After replacing die data:
+ctrl.setDies(newDies);
+const newSummary = analyzeWaferMap({ ...result, dies: newDies });
+ctrl.setStatsSummary(newSummary);
+```
+
+**→ [Demo: Statistical findings](../guide-demos/10-findings.html)**
+
+![alt text](image-13.png)
+---
+
+## 11. Building a lot gallery
+
+`renderWaferGallery` renders multiple wafer maps in a responsive card grid.  All
+cards share a single control bar — changing mode, colour, rotate, or flip applies
+to every card at once.
+
+### Basic gallery
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+
+// Build a result per wafer
+const waferResults = waferDatasets.map(data =>
+  buildWaferMap({
+    results:     data.map(r => ({ x: +r.x, y: +r.y, bins: [+r.hbin, +r.sbin] })),
+    waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+    dieConfig:   { width: 10, height: 10 },
+    hbinDefs,
+    sbinDefs,
+  })
+);
+
+// Build gallery items
+const items = waferResults.map((r, i) => ({
+  wafer: r.wafer,
+  dies:  r.dies,
+  label: `Wafer ${i + 1}`,
+}));
+
+const ctrl = renderWaferGallery(
+  document.getElementById('gallery'),
+  items,
+  { sceneOptions: { plotMode: 'hardbin' } },
+);
+```
+
+Cards reflow responsively as the container resizes.  Each card has an expand
+button (↗) in its header — clicking it opens a full-screen modal with the
+complete toolbar.
+
+
+### Sharing bin and test definitions across cards
+
+Pass `hbinDefs`, `sbinDefs`, and `testDefs` through `sceneOptions` so the shared
+bin legend and tooltips use the correct names on every card:
+
+```ts
+const sharedSceneOptions = {
+  plotMode:  'hardbin',
+  hbinDefs: [
+    { bin: 1, name: 'Pass',  color: '#2ecc71' },
+    { bin: 2, name: 'Fail',  color: '#e74c3c' },
+  ],
+  sbinDefs: [
+    { bin: 10, name: 'Vth - Lo' },
+    { bin: 11, name: 'Vth - Hi' },
+  ],
+  testDefs: [
+    { index: 0, name: 'Idsat', unit: 'A' },
+    { index: 1, name: 'Vth',   unit: 'V' },
+  ],
+};
+
+renderWaferGallery(container, items, { sceneOptions: sharedSceneOptions });
+```
+
+### Per-card overrides
+
+Each `GalleryItem` can override any `sceneOptions` field.  The per-card value is
+merged on top of the shared options.  Use this sparingly — the main purpose is
+providing per-card reticle geometry:
+
+```ts
+const items = waferResults.map((r, i) => ({
+  wafer:        r.wafer,
+  dies:         r.dies,
+  label:        `Wafer ${i + 1}`,
+  hasReticle:   r.reticles.length > 0,
+  sceneOptions: { reticles: r.reticles },   // per-card reticle geometry
+}));
+```
+
+### Click and select callbacks
+
+```ts
+const items = waferResults.map((r, i) => ({
+  wafer: r.wafer,
+  dies:  r.dies,
+  label: `W${i + 1}`,
+  onClick:  (die) => showDieDetail(die, i),
+  onSelect: (dies) => showSelectionPanel(i, dies),
+}));
+```
+
+### Updating the gallery after data changes
+
+```ts
+// Rebuild after the user changes wafer selection:
+ctrl.setItems(newItems);
+
+// Sync display mode from an external control:
+ctrl.setOptions({ plotMode: 'value', testIndex: 1 });
+
+// Track state changes back to your UI:
+renderWaferGallery(container, items, {
+  onSceneOptionsChange: (opts) => {
+    myModeDropdown.value = opts.plotMode;
+  },
+});
+```
+
+### Stacked lot maps
+
+The gallery toolbar includes three stacked modes that aggregate all wafers into a
+single view — one card per bin (stacked hard bins / soft bins) or one card per
+test parameter (stacked test values).  **These modes are handled automatically by
+the gallery** — no extra code is needed:
+
+```ts
+// Just pass the per-wafer items with hbinDefs/sbinDefs/testDefs in sceneOptions.
+// Selecting "Stacked Hard Bins" from the toolbar will produce one card per bin,
+// where each die shows the count of wafers on which that bin appeared.
+renderWaferGallery(container, items, {
+  sceneOptions: {
+    plotMode:  'hardbin',
+    hbinDefs,
+    sbinDefs,
+    testDefs,
+  },
+});
+```
+
+Switching to a stacked mode rebuilds the card set automatically; switching back
+restores the original per-wafer cards.  The aggregation method for
+**Stacked Test Values** defaults to `mean` and can be changed programmatically:
+
+```ts
+ctrl.setOptions({ aggrMethod: 'median' });  // re-aggregates immediately
+```
+**→ [Demo: Building a lot gallery](../guide-demos/11-gallery.html)**
+
+![alt text](image-9.png)
+---
+
+## 12. Lot-level statistical findings
+
+`analyzeWaferLot` extends the per-wafer analysis to the full lot, detecting:
+
+- **Repeated patterns** — ring, quadrant, or reticle findings that appear on ≥ 2 wafers
+- **Inter-wafer yield outliers** — individual wafers whose yield deviates from the lot median
+
+```ts
+import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
+
+// Per-wafer summaries (attach to each gallery item)
+const waferSummaries = waferResults.map(r => analyzeWaferMap(r, { ringCount: 4 }));
+
+// Lot-level summary
+const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
+
+// Gallery items carry their own per-wafer summary
+const items = waferResults.map((r, i) => ({
+  wafer:        r.wafer,
+  dies:         r.dies,
+  label:        `Wafer ${i + 1}`,
+  statsSummary: waferSummaries[i],   // shown when modal opens
+}));
+
+renderWaferGallery(container, items, {
+  sceneOptions:    { plotMode: 'hardbin', hbinDefs, sbinDefs, testDefs },
+  lotStatsSummary: lotSummary,
+});
+```
+
+A "Findings" button appears in the gallery control bar.  Clicking it opens a side
+drawer listing lot-level findings.  When the drawer is open, the card grid reflows
+to use the remaining width.
+
+
+### What highlighting looks like
+
+- **Repeated pattern finding** (ring/quadrant seen across N wafers): the affected
+  wafer cards are outlined; the matching die zone is highlighted on each card using
+  that wafer's own per-wafer finding data
+- **Yield outlier** (single wafer): the outlier card is outlined
+- Clicking the active finding again clears all highlights
+
+### Updating the lot summary at runtime
+
+```ts
+const ctrl = renderWaferGallery(container, items, { lotStatsSummary });
+
+// After data changes:
+const newLotSummary = analyzeWaferLot(newResults);
+ctrl.setLotStatsSummary(newLotSummary);
+```
+
+**→ [Demo: Lot-level statistical findings](../guide-demos/12-lot-findings.html)**
+
+![alt text](image-10.png)
+---
+
+## 13. Reticle overlays
+
+A reticle (stepper field) is a rectangular group of dies that the lithography
+tool exposes in a single step.  The reticle overlay draws the field boundaries on
+top of the wafer map and enables reticle-position analysis in the stats engine.
+
+### Adding a reticle overlay
+
+```ts
+const { wafer, dies, reticles, reticleConfig } = buildWaferMap({
+  results,
+  dieConfig:     { width: 10, height: 10 },
+  reticleConfig: {
+    width:  4,    // 4 dies wide per stepper field
+    height: 2,    // 2 dies tall per stepper field
+    // anchorDie: { x: 1, y: 0 }  // optional: pin a specific die to a field corner
+  },
+});
+
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: { reticles },   // pass the generated reticle geometry
+});
+// showReticle defaults to true when reticles are provided
+```
+
+The toolbar shows a Reticle toggle button whenever `reticles` is non-empty.
+
+### Reticle analysis in the stats engine
+
+When a `reticleConfig` was used, `analyzeWaferMap` automatically includes
+reticle-position comparisons (die's position within its stepper field vs. rest).
+This surfaces systematic problems from mask defects, focus variation, or lens
+aberrations:
+
+```ts
+const result  = buildWaferMap({ results, dieConfig, reticleConfig });
+const summary = analyzeWaferMap(result, { enableReticlePositionAnalysis: true });
+// result.reticleConfig is passed through automatically
+```
+
+### Reticle overlay in a gallery
+
+Pass `reticles` as a per-card `sceneOptions` override and set `hasReticle: true` to
+show the Reticle toggle in the gallery bar:
+
+```ts
+const items = waferResults.map(r => ({
+  wafer:        r.wafer,
+  dies:         r.dies,
+  hasReticle:   r.reticles.length > 0,
+  sceneOptions: { reticles: r.reticles },
+}));
+```
+**→ [Demo: Reticle overlays](../guide-demos/13-reticle.html)**
+
+![alt text](image-11.png)
+---
+
+## 14. Processing large datasets with a Web Worker
+
+For lots with many wafers or high die counts, `buildWaferMap` can be moved off the
+main thread to avoid blocking the UI.
+
+### Setup
+
+```ts
+import { createWafermapWorker } from '@paulrobins/wafermap/worker';
+
+// Vite / webpack — import the pre-built worker script
+import workerUrl from '@paulrobins/wafermap/worker-script?url';
+const wmWorker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
+
+// Plain HTML / CDN
+const wmWorker = createWafermapWorker(
+  new Worker('https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/worker/wafermap.worker.js', { type: 'module' })
+);
+```
+
+Create the worker once at app startup and reuse it for all calls.
+
+### Replacing `buildWaferMap` with `worker.run`
+
+```ts
+// Before:
+const result = buildWaferMap({ results, waferConfig, dieConfig });
+
+// After (same input/output, just async):
+const result = await wmWorker.run({ results, waferConfig, dieConfig });
+
+// Everything after is unchanged:
+renderWaferMap(canvas, result.wafer, result.dies);
+```
+
+### Processing a lot in parallel
+
+```ts
+const waferResults = await Promise.all(
+  waferIds.map(id => wmWorker.run({
+    results:     dataByWafer[id],
+    waferConfig: { diameter: 300 },
+    dieConfig:   { width: 10, height: 10 },
+  }))
+);
+```
+
+### Cleanup
+
+```ts
+// When the app or page unmounts:
+wmWorker.terminate();
+```
+
+> **Note:** `renderWaferMap`, `renderWaferGallery`, and `analyzeWaferMap`/`analyzeWaferLot`
+> are fast synchronous operations that always run on the main thread — only
+> `buildWaferMap` (the data layer) can be offloaded.
+
+---
+
+## 15. Custom colour schemes
+
+The built-in colour schemes are `'color'` (default), `'greyscale'`, `'accessible'`,
+`'plasma'`, and `'inferno'`.  You can register additional schemes for brand colours,
+thematic colouring, or specialised analysis:
+
+```ts
+import { registerColorScheme, listColorSchemes } from '@paulrobins/wafermap';
+
+registerColorScheme('my-brand', {
+  label: 'My Brand',
+
+  // Colour for a specific bin number (hardbin / softbin modes)
+  forBin: (bin: number) => {
+    const palette = ['#003f88', '#e63946', '#2a9d8f', '#e9c46a', '#f4a261'];
+    return palette[(bin - 1) % palette.length];
+  },
+
+  // Colour for a normalised value t ∈ [0, 1] (value / stackedValues modes)
+  forValue: (t: number) => {
+    const r = Math.round(t * 0);
+    const g = Math.round(t * 100);
+    const b = Math.round(80 + t * 175);
+    return `rgb(${r},${g},${b})`;
+  },
+
+  // Plotly colorscale (only needed if you also use the toPlotly() path)
+  plotlyColorscale: [
+    [0,   '#000050'],
+    [0.5, '#0064c8'],
+    [1,   '#b4ffff'],
+  ],
+});
+
+// The scheme now appears in every toolbar colour picker automatically:
+listColorSchemes();  // [..., { name: 'my-brand', label: 'My Brand' }]
+
+// Apply programmatically:
+ctrl.setOptions({ colorScheme: 'my-brand' });
+```
+
+Register your schemes once, before any `renderWaferMap` or `renderWaferGallery`
+call.  They are global and persist for the lifetime of the page.
+
+**→ [Demo: Custom colour schemes](../guide-demos/15-color-schemes.html)**
+
+---
+
+## 16. Common patterns and tips
+
+### Show wafer metadata in the card header
+
+Pass `metadata` via `waferConfig` so values appear in hover tooltips and can be
+used for card labels:
+
+```ts
+const result = buildWaferMap({
+  results,
+  waferConfig: {
+    diameter: 300,
+    metadata: { lot: 'LOT123', waferNumber: 3, testDate: '2026-05-01' },
+  },
+});
+
+// Use in gallery label:
+items.push({ wafer: result.wafer, dies: result.dies, label: `W${result.wafer.metadata.waferNumber}` });
+```
+![alt text](image-12.png)
+
+### Keep `ringCount` consistent between renderer and stats engine
+
+The stats engine partitions dies into rings using the same count as the renderer.
+If you change `ringCount` in one place, change it in the other:
+
+```ts
+const RING_COUNT = 4;
+
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: { ringCount: RING_COUNT },
+});
+
+const summary = analyzeWaferMap(result, { ringCount: RING_COUNT });
+```
+
+### Re-use a single `buildWaferMap` result for both rendering and analysis
+
+`analyzeWaferMap` accepts a `WaferMapResult` directly — no need to rebuild:
+
+```ts
+const result  = buildWaferMap({ results, waferConfig, dieConfig });
+const summary = analyzeWaferMap(result);     // reuses the already-built dies and scene
+
+renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+```
+
+### Check yield programmatically before rendering
+
+```ts
+const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const { passDies, totalDies, yieldPercent } = result.yield;
+
+if (yieldPercent !== null && yieldPercent < 0.5) {
+  banner.textContent = `⚠ Low yield: ${(yieldPercent * 100).toFixed(1)}%`;
+}
+renderWaferMap(canvas, result.wafer, result.dies);
+```
+
+### Fit multiple maps to the same value range
+
+When showing several wafers side-by-side in value mode, lock them all to the same
+colour scale so the maps are visually comparable:
+
+```ts
+// Compute the range across all wafers first
+let min = Infinity, max = -Infinity;
+for (const r of waferResults) {
+  for (const die of r.dies) {
+    const v = die.values?.[0];
+    if (v !== undefined) { min = Math.min(min, v); max = Math.max(max, v); }
+  }
+}
+
+const items = waferResults.map(r => ({
+  wafer:        r.wafer,
+  dies:         r.dies,
+  sceneOptions: { valueRange: [min, max] },
+}));
+
+renderWaferGallery(container, items, { sceneOptions: { plotMode: 'value' } });
+```
+
+### Engineering vs SI format for unitless values
+
+Values without a unit (no `TestDef.unit` supplied) are formatted using
+`fallbackFormat`.  The default is `'engineering'` (e.g. `1.00E-3`).  Switch to
+`'si'` for µ/n/p prefixes (e.g. `1.00 m`):
+
+```ts
+renderWaferMap(canvas, wafer, dies, { fallbackFormat: 'si' });
+renderWaferGallery(container, items, { fallbackFormat: 'si' });
+```
+
+### `buildWaferMap` is pure — safe to call on a server
+
+`buildWaferMap` and `analyzeWaferMap`/`analyzeWaferLot` have no DOM access and no
+side effects.  You can run them in Node.js, Deno, or any server-side environment to
+pre-compute results and stream them to the browser:
+
+```ts
+// server.ts (Node.js)
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { analyzeWaferLot } from '@paulrobins/wafermap/stats';
+
+const results  = waferResults.map(r => buildWaferMap(r));
+const lotStats = analyzeWaferLot(results);
+// Serialise and send to the client...
+```
+
+Only `renderWaferMap`, `renderWaferGallery`, and `toCanvas` require a browser
+environment.

@@ -142,7 +142,7 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   assert.deepEqual(aggregateValues(diesByWafer, 'median').find((die) => die.i === 0 && die.j === 0)?.values, [3]);
   approxEqual(
     aggregateValues(diesByWafer, 'stddev').find((die) => die.i === 0 && die.j === 0)?.values?.[0] ?? 0,
-    Math.sqrt(8 / 3),
+    Math.sqrt(4),
   );
   assert.deepEqual(aggregateValues(diesByWafer, 'min').find((die) => die.i === 0 && die.j === 0)?.values, [1]);
   assert.deepEqual(aggregateValues(diesByWafer, 'max').find((die) => die.i === 0 && die.j === 0)?.values, [5]);

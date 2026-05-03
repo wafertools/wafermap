@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Working with test values — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§6 — Working with test values</span>
+    <span class="demo-desc">Continuous parametric data · testDefs for labels and units</span>
+  </header>
+
+  <!-- Test selector — shows the three tests from TEST_DEFS -->
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Test</span>
+      <select id="sel-test">
+        <option value="0">Idsat  (drive current)</option>
+        <option value="1">Vth    (threshold voltage)</option>
+        <option value="2">Ioff   (off-state leakage)</option>
+      </select>
+    </div>
+    <div class="ctrl-sep"></div>
+    <span style="font-size:12px; color:var(--muted)">
+      testDefs give each values[] slot a name and unit — tooltips, colorbar, and mode menu all update
+    </span>
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+
+    <div class="demo-panel">
+      <div class="demo-panel-scroll">
+
+        <div class="section">
+          <div class="section-heading">Selected test</div>
+          <table class="kv">
+            <tr><td>Name</td>    <td id="test-name">—</td></tr>
+            <tr><td>Unit</td>    <td id="test-unit">—</td></tr>
+            <tr><td>Min</td>     <td id="test-min">—</td></tr>
+            <tr><td>Max</td>     <td id="test-max">—</td></tr>
+            <tr><td>Mean</td>    <td id="test-mean">—</td></tr>
+            <tr><td>Median</td>  <td id="test-median">—</td></tr>
+          </table>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section">
+          <div class="section-heading">Definition</div>
+          <div class="info-box" id="def-box" style="font-size:11px; font-family:monospace; line-height:1.65"></div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section">
+          <div class="section-heading">Spatial pattern</div>
+          <div class="info-box" id="pattern-box" style="font-size:12px"></div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS, HBIN_DEFS } from './data.js';
+
+    // TEST_DEFS: [{ index:0, name:'Idsat', unit:'A' }, { index:1, name:'Vth', unit:'V' }, ...]
+    // These give the toolbar mode menu named entries, tooltips show "Idsat: 1.23 mA", etc.
+    const { wafer, dies, scene } = buildWaferMap({
+      results:     makeResults({ seed: 5, quadrant: true }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig:   DIE_CONFIG,
+      testDefs:    TEST_DEFS,
+      passBins:    [1],
+    });
+
+    const patterns = [
+      'Peaks at the wafer centre (~1.5 mA), falls toward the edge. The NE quadrant shows a ~7% suppression from process gradient.',
+      'Increases radially from centre (0.45 V) to edge (0.53 V). The NE quadrant shows an additional +40 mV shift.',
+      'Exponential growth toward the edge. Higher Ioff in the NE quadrant correlates with elevated Vth.',
+    ];
+
+    // Compute per-test statistics from the dies array
+    function testStats(dies, idx) {
+      const vals = dies.map(d => d.values?.[idx]).filter(v => v != null);
+      if (!vals.length) return {};
+      vals.sort((a, b) => a - b);
+      const min  = vals[0];
+      const max  = vals[vals.length - 1];
+      const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+      const med  = vals[Math.floor(vals.length / 2)];
+      return { min, max, mean, med };
+    }
+
+    // Use the SI prefix formatter from the browser (via Intl is not great for science;
+    // we'll do a simple engineering formatter instead)
+    function fmt(v, unit) {
+      if (v == null) return '—';
+      const abs = Math.abs(v);
+      if      (abs >= 1e-3) return `${(v * 1e3).toPrecision(4)} m${unit}`;
+      else if (abs >= 1e-6) return `${(v * 1e6).toPrecision(4)} µ${unit}`;
+      else if (abs >= 1e-9) return `${(v * 1e9).toPrecision(4)} n${unit}`;
+      else if (abs >= 1e-12) return `${(v * 1e12).toPrecision(4)} p${unit}`;
+      return `${v.toExponential(3)} ${unit}`;
+    }
+
+    function updatePanel(idx) {
+      const def   = TEST_DEFS[idx];
+      const stats = testStats(dies, idx);
+      document.getElementById('test-name').textContent   = def.name;
+      document.getElementById('test-unit').textContent   = def.unit;
+      document.getElementById('test-min').textContent    = fmt(stats.min,  def.unit);
+      document.getElementById('test-max').textContent    = fmt(stats.max,  def.unit);
+      document.getElementById('test-mean').textContent   = fmt(stats.mean, def.unit);
+      document.getElementById('test-median').textContent = fmt(stats.med,  def.unit);
+      document.getElementById('def-box').textContent =
+        `testDefs[\n  { index:${def.index}, name:'${def.name}',\n    unit:'${def.unit}' }\n]`;
+      document.getElementById('pattern-box').textContent = patterns[idx];
+    }
+
+    // Mount renderer in value mode — testDefs wires up the mode menu automatically
+    const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
+      sceneOptions: {
+        plotMode:  'value',
+        testIndex: 0,
+        testDefs:  scene.testDefs,  // pass through the definitions built into the scene
+      },
+    });
+
+    updatePanel(0);
+
+    document.getElementById('sel-test').addEventListener('change', e => {
+      const idx = Number(e.target.value);
+      ctrl.setOptions({ plotMode: 'value', testIndex: idx });
+      updatePanel(idx);
+    });
+
+    // Keep the external selector in sync with the toolbar
+    ctrl.getOptions && (function sync() {
+      requestAnimationFrame(sync);
+      const o = ctrl.getOptions();
+      if (o && o.testIndex != null) {
+        const sel = document.getElementById('sel-test');
+        if (Number(sel.value) !== o.testIndex) {
+          sel.value = String(o.testIndex);
+          updatePanel(o.testIndex);
+        }
+      }
+    })();
+  </script>
+
+</body>
+</html>

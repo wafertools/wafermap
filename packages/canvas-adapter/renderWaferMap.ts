@@ -378,7 +378,7 @@ export function renderWaferMap(
   function rebuildFindingsPanel(): void {
     if (!findingsPanel) return;
     findingsPanel.innerHTML = '';
-    findingsPanel.style.display = currentStatsSummary && findingsOpen ? 'flex' : 'none';
+    findingsPanel.style.display = currentStatsSummary && findingsOpen ? 'block' : 'none';
     if (!currentStatsSummary) {
       refreshFindingsButton();
       return;
@@ -495,7 +495,8 @@ export function renderWaferMap(
         position: 'absolute',
         top: '40px',
         right: '4px',
-        width: 'min(320px, calc(100% - 8px))',
+        width: '320px',
+        maxWidth: 'calc(100% - 8px)',
         maxHeight: 'min(50vh, 360px)',
         overflowY: 'auto',
         background: '#fff',
@@ -666,10 +667,8 @@ export function renderWaferMap(
       toolbar.appendChild(btnZoomMode);
       toolbar.appendChild(btnPanMode);
 
-      if (onSelect) {
-        btnBoxSelect = makeBtn('boxSelect', 'Select (drag to select dies)', () => setInteractMode('select'));
-        toolbar.appendChild(btnBoxSelect);
-      }
+      btnBoxSelect = makeBtn('boxSelect', 'Select (drag to select dies)', () => setInteractMode('select'));
+      toolbar.appendChild(btnBoxSelect);
 
       // Zoom +/− and reset
       const btnZoomIn  = makeBtn('zoomIn',  'Zoom in',                    () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.5));
@@ -841,6 +840,7 @@ export function renderWaferMap(
                   }));
                 }
                 document.body.appendChild(subMenu);
+                document.addEventListener('click', closeSub, { once: true });
               };
 
               const closeSub = () => { subMenu?.remove(); subMenu = null; };
@@ -851,7 +851,6 @@ export function renderWaferMap(
                 if (subMenu && subMenu.contains(e.relatedTarget as Node)) return;
                 closeSub();
               });
-              subMenu && document.addEventListener('click', closeSub, { once: true });
 
               menu.appendChild(cascadeRow);
             }
@@ -987,7 +986,14 @@ export function renderWaferMap(
 
   // ── Apply scene option changes ─────────────────────────────────────────────
   function applyOpts(partial: Partial<WaferSceneOptions>): void {
+    const prevMode = sceneOpts.plotMode;
     sceneOpts = { ...sceneOpts, ...partial };
+    // Changing plot mode changes the colorbar/legend width, which shifts the
+    // auto-fit viewport's originX. Invalidate fittedViewport so it is
+    // recomputed for the new mode before drawSelectionOverlay reads it.
+    if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
+      fittedViewport = null;
+    }
     rebuildScene();
     render();
     onSceneOptionsChange?.(sceneOpts);
@@ -1013,10 +1019,7 @@ export function renderWaferMap(
 
     binLegendRows = result.binLegendRows;
 
-    if (!fittedViewport || !viewport) {
-      fittedViewport = result.viewport;
-      if (!viewport) viewport = null;
-    }
+    if (!fittedViewport) fittedViewport = result.viewport;
 
     if (selectedKeys.size > 0) drawSelectionOverlay();
     if (isBoxSelecting) drawBoxOverlay();
@@ -1051,17 +1054,17 @@ export function renderWaferMap(
       const hw = dieHalfW - inset;
       const hh = dieHalfH - inset;
 
-      // Semi-transparent blue fill over the die.
-      ctx.fillStyle = 'rgba(30,120,255,0.25)';
+      // Subtle amber tint — colour-neutral enough to work over any die colour.
+      ctx.fillStyle = 'rgba(255,210,0,0.18)';
       ctx.fillRect(sx - hw, sy - hh, hw * 2, hh * 2);
 
-      // White outer stroke for contrast on dark dies.
+      // White halo separates the outline from any background colour.
       ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth   = 2.5;
+      ctx.lineWidth   = 3;
       ctx.strokeRect(sx - hw, sy - hh, hw * 2, hh * 2);
 
-      // Blue inner stroke — the selection colour.
-      ctx.strokeStyle = 'rgba(30,120,255,1)';
+      // Amber inner stroke — visible against blue, green, purple, grey, and light fills.
+      ctx.strokeStyle = 'rgba(245,185,0,1)';
       ctx.lineWidth   = 1.5;
       ctx.strokeRect(sx - hw, sy - hh, hw * 2, hh * 2);
     }
@@ -1271,7 +1274,7 @@ export function renderWaferMap(
         } else {
           selectedKeys = new Set(boxDies.map(d => `${d.i},${d.j}`));
         }
-        if (onSelect) onSelect(selectionAsDies());
+        onSelect?.(selectionAsDies());
       }
       render();
       canvas.style.cursor = 'crosshair';
@@ -1304,23 +1307,21 @@ export function renderWaferMap(
 
     if (die) {
       onClick?.(die, e);
-      if (onSelect) {
-        const key = `${die.i},${die.j}`;
-        if (multi) {
-          // Toggle this die.
-          if (selectedKeys.has(key)) selectedKeys.delete(key);
-          else selectedKeys.add(key);
-        } else {
-          // Replace selection with just this die.
-          selectedKeys = new Set([key]);
-        }
-        onSelect(selectionAsDies());
-        render();
+      const key = `${die.i},${die.j}`;
+      if (multi) {
+        // Toggle this die.
+        if (selectedKeys.has(key)) selectedKeys.delete(key);
+        else selectedKeys.add(key);
+      } else {
+        // Replace selection with just this die.
+        selectedKeys = new Set([key]);
       }
-    } else if (!multi && onSelect) {
+      onSelect?.(selectionAsDies());
+      render();
+    } else if (!multi) {
       // Click on empty space clears selection.
       selectedKeys = new Set();
-      onSelect([]);
+      onSelect?.([]);
       render();
     }
   }
@@ -1393,6 +1394,11 @@ export function renderWaferMap(
   const onDblClick = () => resetView();
   canvas.addEventListener('dblclick',     onDblClick);
   canvas.addEventListener('keydown',      onKeyDown);
+  // Always stop propagation — prevents canvas interactions (bin legend clicks,
+  // die clicks, pan gestures) from bubbling to parent containers such as a
+  // gallery card's click-to-modal handler.
+  const onCanvasClick = (e: MouseEvent) => { e.stopPropagation(); };
+  canvas.addEventListener('click', onCanvasClick);
 
   // ── Initial render ─────────────────────────────────────────────────────────
   render();
@@ -1454,6 +1460,7 @@ export function renderWaferMap(
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('dblclick',     onDblClick);
       canvas.removeEventListener('keydown',      onKeyDown);
+      canvas.removeEventListener('click',        onCanvasClick);
       resizeObserver.disconnect();
       dprMediaQuery.removeEventListener('change', onDprChange);
       tooltip?.remove();

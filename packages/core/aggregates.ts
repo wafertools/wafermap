@@ -9,6 +9,8 @@ export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | '
  * @param method       Aggregation function applied per (i,j) position across all wafers.
  * @param paramIndex   Which index in `die.values[]` to aggregate (default 0).
  * @returns One Die per unique (i,j) position with `values[0]` set to the aggregate result.
+ *          Dies that had no values on any wafer are included with `values: undefined` as a
+ *          "no data" signal — they are not filtered out.
  *
  * @example Compute mean test value across a lot:
  * ```ts
@@ -58,8 +60,9 @@ export function aggregateValues(
       const mid = Math.floor(sorted.length / 2);
       agg = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     } else if (method === 'stddev') {
+      if (vals.length < 2) { result.push({ ...template, values: [0] }); continue; }
       const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-      agg = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length);
+      agg = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1));
     } else if (method === 'min') {
       agg = Math.min(...vals);
     } else if (method === 'max') {

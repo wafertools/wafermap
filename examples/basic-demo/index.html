@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>wafermap — Manual Pipeline</title>
+  <title>wafermap — Single Wafer Map</title>
   <script type="importmap">{ "imports": {
     "wafermap": "../../dist/index.js",
     "wafermap/canvas-adapter": "../../dist/packages/canvas-adapter/index.js"
@@ -22,7 +22,6 @@
       --radius:     10px;
       --panel-w:    192px;
       --header-h:   52px;
-      --toolbar-h:  48px;
       --shadow-sm:  0 1px 3px rgba(0,0,0,.08);
     }
 
@@ -62,16 +61,6 @@
       background: #2d3748;
     }
 
-    .header-tag {
-      font-size: 11px;
-      color: #64748b;
-    }
-
-    .header-tag strong {
-      font-weight: 500;
-      color: #94a3b8;
-    }
-
     #wafer-selector {
       display: flex;
       align-items: center;
@@ -98,95 +87,14 @@
 
     #header .spacer { flex: 1; }
 
-    .header-badge {
+    .header-tag {
       font-size: 11px;
-      color: #475569;
-      padding: 3px 8px;
-      border: 1px solid #1e293b;
-      border-radius: 5px;
+      color: #64748b;
     }
-
-    /* ── Toolbar ─────────────────────────────────────────── */
-    #toolbar {
-      height: var(--toolbar-h);
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 0;
-      padding: 0 14px;
-      flex-shrink: 0;
-      box-shadow: var(--shadow-sm);
-      overflow-x: auto;
-    }
-
-    .ctrl-group {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      padding: 0 12px;
-      border-right: 1px solid var(--border);
-      height: 100%;
-    }
-
-    .ctrl-group:first-child { padding-left: 0; }
-    .ctrl-group:last-child  { border-right: none; }
-
-    .ctrl-label {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-
-    select {
-      padding: 4px 7px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 12px;
-      background: #fafbfc;
-      color: var(--text);
-      cursor: pointer;
-    }
-    select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-
-    button {
-      padding: 5px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 12px;
+    .header-tag strong {
       font-weight: 500;
-      background: #fafbfc;
-      color: var(--text);
-      cursor: pointer;
-      transition: background .1s, border-color .1s;
-      white-space: nowrap;
+      color: #94a3b8;
     }
-    button:hover  { background: #f0f1f3; }
-    button.active { background: var(--accent-dim); border-color: #93c5fd; color: var(--accent); font-weight: 600; }
-    button.icon   { padding: 5px 8px; font-size: 14px; }
-
-    #rot-badge {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-      min-width: 30px;
-      text-align: center;
-    }
-
-    label.toggle {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      cursor: pointer;
-      font-size: 12px;
-      color: var(--text);
-      white-space: nowrap;
-      user-select: none;
-    }
-    label.toggle input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; }
 
     /* ── Main layout ─────────────────────────────────────── */
     #main {
@@ -319,6 +227,10 @@
 
     .bin-name { flex: 1; color: var(--text); }
     .bin-count { color: var(--muted); }
+
+    /* Selection info */
+    #selection-section { display: none; flex-direction: column; gap: 6px; }
+    #selection-section.visible { display: flex; }
   </style>
 </head>
 <body>
@@ -335,80 +247,7 @@
 
   <div class="spacer"></div>
 
-  <div class="header-tag"><strong>Manual Pipeline</strong> · LOT456</div>
-</div>
-
-<!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
-<div id="toolbar">
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Mode</span>
-    <select id="sel-mode">
-      <option value="value">Test Value</option>
-      <option value="hardbin">Hard Bin</option>
-      <option value="softbin">Soft Bin</option>
-      <option value="stacked_values">Stacked A/B/C</option>
-      <option value="stacked_bins">Stacked Bins</option>
-    </select>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Test</span>
-    <select id="sel-channel">
-      <option value="0">A</option>
-      <option value="1">B</option>
-      <option value="2">C</option>
-    </select>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Colour</span>
-    <select id="sel-color"></select>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Highlight</span>
-    <select id="sel-highlight">
-      <option value="0">None</option>
-      <option value="2">Bin 2</option>
-      <option value="3">Bin 3</option>
-      <option value="4">Bin 4</option>
-      <option value="5">Bin 5</option>
-    </select>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Rotate</span>
-    <button class="icon" id="rot-left-btn" title="Rotate −90°">↺</button>
-    <span id="rot-badge">0°</span>
-    <button class="icon" id="rot-right-btn" title="Rotate +90°">↻</button>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Flip</span>
-    <button id="flipx-btn">H</button>
-    <button id="flipy-btn">V</button>
-  </div>
-
-  <div class="ctrl-group">
-    <label class="toggle"><input type="checkbox" id="chk-text"> Labels</label>
-    <label class="toggle"><input type="checkbox" id="chk-reticle"> Reticle</label>
-    <label class="toggle"><input type="checkbox" id="chk-probe"> Probe</label>
-    <label class="toggle"><input type="checkbox" id="chk-rings"> Rings</label>
-    <label class="toggle"><input type="checkbox" id="chk-quadrants"> Quadrants</label>
-    <label class="toggle"><input type="checkbox" id="chk-xy"> XY</label>
-  </div>
-
-  <div class="ctrl-group">
-    <span class="ctrl-label">Ring count</span>
-    <select id="sel-rings">
-      <option value="3">3</option>
-      <option value="4" selected>4</option>
-      <option value="5">5</option>
-      <option value="6">6</option>
-    </select>
-  </div>
-
+  <div class="header-tag" id="header-tag"><strong>LOT456</strong></div>
 </div>
 
 <!-- ── Main ────────────────────────────────────────────────────────────── -->
@@ -438,7 +277,7 @@
       <div class="stats-grid">
         <div class="stat-cell">
           <div class="stat-val" id="stat-dies">—</div>
-          <div class="stat-lbl">Total</div>
+          <div class="stat-lbl">Total dies</div>
         </div>
         <div class="stat-cell">
           <div class="stat-val" id="stat-partial">—</div>
@@ -446,7 +285,7 @@
         </div>
         <div class="stat-cell full">
           <div class="stat-val" id="stat-pass">—</div>
-          <div class="stat-lbl">Bin 1 pass rate</div>
+          <div class="stat-lbl">Yield (Bin 1 pass)</div>
         </div>
       </div>
     </div>
@@ -466,6 +305,22 @@
     </div>
 
     <div class="sep"></div>
+
+    <div class="panel-section" id="selection-section">
+      <div class="panel-heading">Selection</div>
+      <div class="stats-grid">
+        <div class="stat-cell">
+          <div class="stat-val" id="stat-sel-count">0</div>
+          <div class="stat-lbl">Selected</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-val" id="stat-sel-pass">—</div>
+          <div class="stat-lbl">Yield</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sep" id="selection-sep" style="display:none"></div>
 
     <div class="panel-section">
       <div class="panel-heading">Bin legend</div>

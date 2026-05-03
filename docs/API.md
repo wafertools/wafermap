@@ -100,12 +100,12 @@ A single die record from wafer test equipment.
 {
   x:       number    // die grid X position (prober step coordinate)
   y:       number    // die grid Y position (prober step coordinate)
-  values?: number[]  // multi-channel test measurement values
-  bins?:   number[]  // multi-channel bin assignments (hard bin, soft bin, …)
+  values?: number[]  // per-test measurement values — one entry per test (e.g. [idsat, vth, ioff])
+  bins?:   number[]  // bin assignments — one entry per bin type (e.g. [hbin, sbin])
 }
 ```
 
-Single-channel data is just `values: [0.95]` — an array with one element.
+A single test result is just `values: [0.95]` — an array with one element.
 
 When a die position appears more than once in the `results` array (a retest), the
 `retestPolicy` field on `WaferMapInput` controls which result is kept.  The
@@ -263,10 +263,11 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hardbin-spa
 
 ```ts
 {
-  wafer:   Wafer    // resolved wafer model (diameter, radius, center, notch, orientation)
-  dies:    Die[]    // all dies inside the wafer boundary, with values/bins attached
-  scene:   Scene    // renderer-agnostic scene — pass directly to toPlotly() if needed
-  reticles: Reticle[]  // generated reticle geometry — pass as sceneOptions.reticles to renderWaferMap
+  wafer:         Wafer          // resolved wafer model (diameter, radius, center, notch, orientation)
+  dies:          Die[]          // all dies inside the wafer boundary, with values/bins attached
+  scene:         Scene          // renderer-agnostic scene — pass directly to toPlotly() if needed
+  reticles:      Reticle[]      // generated reticle geometry — pass as sceneOptions.reticles to renderWaferMap
+  reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.x/die.y and wafer dimensions
   inference: {
     wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1
@@ -366,7 +367,7 @@ const { wafer, dies, yield: yld } = buildWaferMap({
 console.log(yld.yieldPercent);
 ```
 
-**Multi-channel input — values and bins in a single pass:**
+**Multiple tests and bins in a single pass:**
 
 ```ts
 const { wafer, dies } = buildWaferMap({
@@ -433,7 +434,7 @@ console.log(`${retested.length} die positions were retested`);
 
 ### Post-enrichment
 
-When you need to attach additional channels after the map is built, use `getDieKey`
+When you need to attach additional values after the map is built, use `getDieKey`
 for stable lookups:
 
 ```ts
@@ -519,10 +520,11 @@ When `showAxes: true`, tick labels show die grid indices (integer i/j values). `
 
 ### `MountOptions`
 
-All `ToCanvasOptions` fields (padding, background, etc.) are accepted, plus:
+All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, etc. — see `toCanvas` options below), plus:
 
 ```ts
 {
+  showAxes?:               boolean            // draw axis tick marks and die grid index labels (default false)
   sceneOptions?:           WaferSceneOptions  // initial display state
   onHover?:                (die: Die | null, event: MouseEvent) => void
   onClick?:                (die: Die, event: MouseEvent) => void
@@ -540,7 +542,7 @@ All `ToCanvasOptions` fields (padding, background, etc.) are accepted, plus:
 }
 ```
 
-The box-select toolbar button only appears when `onSelect` is provided.
+The box-select toolbar button is always shown. Providing `onSelect` lets your app react to selection changes; without it the selection is purely visual.
 
 The findings panel button only appears when `statsSummary` is provided and `showFindingsPanel` is not `false`. Clicking a finding in the panel highlights the affected die zone on the map.
 
@@ -567,7 +569,7 @@ The findings panel button only appears when `statsSummary` is provided and `show
 | Camera | Export current view as PNG |
 | Zoom region | Drag to draw a zoom rectangle |
 | Pan | Drag to pan the map (default mode) |
-| Box select | Draw selection rectangle — only shown when `onSelect` is provided |
+| Box select | Draw selection rectangle — fires `onSelect` callback if provided |
 | Zoom + | Zoom in centred on canvas |
 | Zoom − | Zoom out centred on canvas |
 | Reset | Return to fitted view (also: double-click canvas) |
@@ -655,8 +657,6 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 }
 ```
 
-`sceneOptions` is useful in stacked gallery modes to set per-card metadata — for example supplying a single-entry `testDefs` array so each card's colorbar shows the correct test name, or per-card `hbinDefs`/`sbinDefs` for bin-count maps.
-
 Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` so the overlay has geometry to draw.
 
 ### `GalleryOptions`
@@ -719,10 +719,11 @@ Clicking the active finding again clears the highlight. Opening a card modal whi
 
 ### Click-to-detail modal
 
-Clicking anywhere on a card (outside its toolbar) opens a full-screen modal with
-`renderWaferMap` mounted at full resolution and with the complete toolbar. Shared
-scene options are passed through so the modal opens in the same display state as
-the gallery. Close with Esc, the × button, or clicking the backdrop.
+Each card header contains an expand button (↗).  Clicking it opens a full-screen
+modal with `renderWaferMap` mounted at full resolution and with the complete
+toolbar.  Shared scene options are passed through so the modal opens in the same
+display state as the gallery.  Close with Esc, the × button, or clicking the
+backdrop.
 
 ### Shared bin legend
 
@@ -742,6 +743,24 @@ the highlight. The active entry is indicated with a bold label and a blue swatch
 border. The legend rebuilds automatically whenever the mode, colour scheme, or
 highlight changes.
 
+### Stacked modes
+
+The toolbar includes three lot-aggregation modes: **Stacked Hard Bins**,
+**Stacked Soft Bins**, and **Stacked Test Values**.  The gallery handles
+aggregation internally — pass `hbinDefs`, `sbinDefs`, and `testDefs` in
+`sceneOptions` and the gallery does the rest:
+
+- **`stackedBins` / `stackedSoftBins`** — one card per bin; each die shows the
+  count of wafers on which that bin appeared at that position.
+- **`stackedValues`** — one card per test parameter; each die shows the lot
+  aggregate (mean by default) of that parameter.  The aggregation method is
+  `sharedOpts.aggrMethod` (default `'mean'`); change it with
+  `ctrl.setOptions({ aggrMethod: 'median' })`.
+
+Switching to a stacked mode rebuilds the cards; switching back restores the
+original per-wafer cards.  `ctrl.setItems(newItems)` always accepts per-wafer
+items — the gallery re-aggregates automatically if a stacked mode is active.
+
 ### Gallery example
 
 ```ts
@@ -757,7 +776,7 @@ const items = waferIds.map(id => ({
 }));
 
 const ctrl = renderWaferGallery(document.getElementById('gallery'), items, {
-  sceneOptions: { plotMode: 'hardbin', colorScheme: 'color' },
+  sceneOptions: { plotMode: 'hardbin', hbinDefs, sbinDefs, testDefs },
   onSceneOptionsChange: (opts) => syncSidebarControls(opts),
   downloadFilename: 'lot-overview',
 });
@@ -809,7 +828,7 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   ringCount?:                    number   // ring count for spatial analysis; should match renderer ringCount (default 4)
   passBins?:                     number[] // bins counted as pass; defaults to WaferMapInput.passBins, then [1]
   significanceLevel?:            number   // adjusted p-value threshold (default 0.05)
-  minimumEffectSize?:            number   // minimum |delta| or Cohen's d to report (default 0.1)
+  minimumEffectSize?:            number   // minimum |delta| or Cohen's d to report (default 0.15)
   minimumSampleSize?:            number   // minimum dies per region to test (default 5)
   includePartial?:               boolean  // include partial dies in analysis (default false)
   includeEdgeExcluded?:          boolean  // include edge-excluded dies (default false)
@@ -875,7 +894,7 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
     unit?:  string
   }
   comparison: {
-    family: 'ring' | 'quadrant' | 'half-wafer' | 'ring-band' | 'reticle-position' | 'wafer'
+    family: 'ring' | 'quadrant' | 'reticle-position' | 'wafer'
     left:   string          // e.g. "Ring 3 (edge)", "NE", "Reticle cell (1, 0)"
     right:  string          // typically "Rest of wafer" or "Lot median"
   }
@@ -1121,7 +1140,7 @@ Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotl
 For full control over each pipeline stage, use the low-level functions directly.
 These are the building blocks that `buildWaferMap` uses internally.
 
-The [Manual Pipeline demo](../examples/basic-demo/) (`basic-demo`) is the reference for this path.  Prefer `buildWaferMap` for all other use cases.
+The [Manual Pipeline demo](../examples/pipeline-demo/) (`pipeline-demo`) is the reference for this path.  Prefer `buildWaferMap` for all other use cases.
 
 ```text
 createWafer(spec)
@@ -1265,26 +1284,26 @@ Returns a human-readable label for a ring index.
 
 ---
 
-### `getUniqueBins(dies, binChannel?)`
+### `getUniqueBins(dies, binIndex?)`
 
 Returns all distinct bin values, sorted ascending.
 
 ---
 
-### `aggregateBinCounts(diesByWafer, targetBin, binChannel?)`
+### `aggregateBinCounts(diesByWafer, targetBin, binIndex?)`
 
 Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
 
 Returns one `Die` per unique `(i, j)` with `values[0]` = count, `bins[0]` = `targetBin`.
 
-- Pass `binChannel: 0` (default) for hard bins → use with `plotMode: 'stackedBins'`
-- Pass `binChannel: 1` for soft bins → use with `plotMode: 'stackedSoftBins'`
+- Pass `binIndex: 0` (default) for hard bins → use with `plotMode: 'stackedBins'`
+- Pass `binIndex: 1` for soft bins → use with `plotMode: 'stackedSoftBins'`
 
 Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for correct colorbar and percentage tooltips.
 
 ---
 
-### `aggregateValues(diesByWafer, method, binChannel?)`
+### `aggregateValues(diesByWafer, method, binIndex?)`
 
 `method` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
 

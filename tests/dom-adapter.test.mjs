@@ -282,7 +282,7 @@ test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () 
     assert.equal(container.querySelectorAll('canvas').length >= 2, true);
     assert.equal(container.querySelectorAll('button').length > 0, true);
 
-    click(window, container.querySelector('.wmap-gallery-card'));
+    click(window, container.querySelector('[data-wmap-expand-btn]'));
     assert.ok(window.document.getElementById('wmap-modal-backdrop'));
 
     ctrl.setItems([{ wafer: base.wafer, dies: base.dies, label: 'C' }]);

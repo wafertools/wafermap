@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User interaction — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+  <style>
+    .demo-panel { width: 240px; }
+    .die-detail-row { display:flex; align-items:center; gap:6px; font-size:12px; padding:2px 0; }
+    .die-detail-row .label { color:var(--muted); width:64px; flex-shrink:0; }
+    .die-detail-row .value { font-weight:500; }
+    .die-swatch { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§9 — Responding to user interaction</span>
+    <span class="demo-desc">onClick · onHover · onSelect · programmatic selection</span>
+  </header>
+
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Selection</span>
+      <button class="toggle-btn" id="btn-select-fails">Select all fail dies</button>
+      <button class="toggle-btn" id="btn-clear-sel">Clear selection</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <span style="font-size:12px; color:var(--muted)">
+      Click a die · hover · or drag a selection box (toolbar select tool)
+    </span>
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+
+    <div class="demo-panel">
+      <div class="demo-panel-scroll">
+
+        <!-- Hover state -->
+        <div class="section">
+          <div class="section-heading">Hover</div>
+          <div class="info-box" id="hover-box">
+            <span class="empty">Hover over a die</span>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- Last clicked die -->
+        <div class="section">
+          <div class="section-heading">Last clicked die</div>
+          <div id="click-detail">
+            <div class="info-box"><span class="empty">Click a die</span></div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- Box-select stats -->
+        <div class="section">
+          <div class="section-heading">Selection (box-select or Ctrl+click)</div>
+          <div class="stats-grid">
+            <div class="stat">
+              <div class="stat-val" id="sel-count">0</div>
+              <div class="stat-lbl">Selected</div>
+            </div>
+            <div class="stat">
+              <div class="stat-val" id="sel-yield">—</div>
+              <div class="stat-lbl">Yield</div>
+            </div>
+          </div>
+          <div class="info-box" id="sel-bins" style="font-size:11px">
+            <span class="empty">No selection</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, TEST_DEFS } from './data.js';
+
+    const { wafer, dies } = buildWaferMap({
+      results:     makeResults({ seed: 6 }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig:   DIE_CONFIG,
+      hbinDefs:    HBIN_DEFS,
+      testDefs:    TEST_DEFS,
+      passBins:    [1],
+    });
+
+    function fmtValue(v, unit) {
+      if (v == null) return '—';
+      const abs = Math.abs(v);
+      if (abs >= 1)    return `${v.toPrecision(4)} ${unit}`;
+      if (abs >= 1e-3) return `${(v*1e3).toPrecision(3)} m${unit}`;
+      if (abs >= 1e-6) return `${(v*1e6).toPrecision(3)} µ${unit}`;
+      if (abs >= 1e-9) return `${(v*1e9).toPrecision(3)} n${unit}`;
+      return `${v.toExponential(2)} ${unit}`;
+    }
+
+    function binLabel(hbin) {
+      const def = HBIN_DEFS.find(b => b.bin === hbin);
+      return def
+        ? `<span class="die-swatch" style="background:${def.color}"></span>${def.name}`
+        : `Bin ${hbin}`;
+    }
+
+    // ── Callbacks ────────────────────────────────────────────────────────────
+
+    function onHover(die) {
+      const el = document.getElementById('hover-box');
+      if (!die) {
+        el.innerHTML = '<span class="empty">Hover over a die</span>';
+        return;
+      }
+      const hbin = die.bins?.[0];
+      el.innerHTML = `
+        (${die.i}, ${die.j}) &nbsp; ${binLabel(hbin)}<br>
+        Idsat: <strong>${fmtValue(die.values?.[0], 'A')}</strong> &nbsp;
+        Vth: <strong>${fmtValue(die.values?.[1], 'V')}</strong>`;
+    }
+
+    function onClick(die) {
+      const hbin = die.bins?.[0];
+      const sbin = die.bins?.[1];
+      document.getElementById('click-detail').innerHTML = `
+        <div class="die-detail-row"><span class="label">Position</span><span class="value">(${die.i}, ${die.j})</span></div>
+        <div class="die-detail-row"><span class="label">Hard bin</span><span class="value">${binLabel(hbin)}</span></div>
+        <div class="die-detail-row"><span class="label">Soft bin</span><span class="value">SBin ${sbin ?? '—'}</span></div>
+        <div class="die-detail-row"><span class="label">Idsat</span><span class="value">${fmtValue(die.values?.[0], 'A')}</span></div>
+        <div class="die-detail-row"><span class="label">Vth</span><span class="value">${fmtValue(die.values?.[1], 'V')}</span></div>
+        <div class="die-detail-row"><span class="label">Ioff</span><span class="value">${fmtValue(die.values?.[2], 'A')}</span></div>
+        ${die.retestCount != null ? `<div class="die-detail-row"><span class="label">Retests</span><span class="value badge badge-amber">${die.retestCount}</span></div>` : ''}
+      `;
+    }
+
+    function onSelect(selected) {
+      document.getElementById('sel-count').textContent = selected.length;
+
+      if (selected.length === 0) {
+        document.getElementById('sel-yield').textContent = '—';
+        document.getElementById('sel-bins').innerHTML = '<span class="empty">No selection</span>';
+        return;
+      }
+
+      // Compute yield and bin breakdown for the selection
+      const pass  = selected.filter(d => d.bins?.[0] === 1).length;
+      const total = selected.filter(d => d.bins?.[0] != null).length;
+      document.getElementById('sel-yield').textContent =
+        total > 0 ? `${(pass / total * 100).toFixed(1)}%` : '—';
+
+      const counts = new Map();
+      for (const d of selected) {
+        const b = d.bins?.[0];
+        if (b != null) counts.set(b, (counts.get(b) ?? 0) + 1);
+      }
+      const lines = HBIN_DEFS
+        .filter(def => counts.has(def.bin))
+        .map(def => `<span style="color:${def.color}">●</span> ${def.name}: ${counts.get(def.bin)}`)
+        .join('<br>');
+      document.getElementById('sel-bins').innerHTML = lines || '<span class="empty">—</span>';
+    }
+
+    const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
+      sceneOptions: {
+        plotMode:  'hardbin',
+        hbinDefs:  HBIN_DEFS,
+      },
+      onHover,
+      onClick,
+      onSelect,
+    });
+
+    // ── Programmatic selection ────────────────────────────────────────────────
+
+    // Highlight all failing dies programmatically (e.g. from a table click in your app)
+    document.getElementById('btn-select-fails').addEventListener('click', () => {
+      const failing = dies.filter(d => d.bins?.[0] != null && d.bins[0] !== 1);
+      ctrl.setSelection(failing);
+      onSelect(failing);
+    });
+
+    document.getElementById('btn-clear-sel').addEventListener('click', () => {
+      ctrl.clearSelection();
+      onSelect([]);
+    });
+  </script>
+
+</body>
+</html>

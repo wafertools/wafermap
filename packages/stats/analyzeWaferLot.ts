@@ -163,7 +163,7 @@ export function analyzeWaferLot(
     const leftRank = left.severity === 'unusual' ? 2 : left.severity === 'notable' ? 1 : 0;
     const rightRank = right.severity === 'unusual' ? 2 : right.severity === 'notable' ? 1 : 0;
     if (leftRank !== rightRank) return rightRank - leftRank;
-    return left.summary.localeCompare(right.summary);
+    return left.summary.localeCompare(right.summary, 'en');
   });
 
   return {

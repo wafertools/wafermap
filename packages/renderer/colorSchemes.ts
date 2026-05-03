@@ -32,6 +32,9 @@ const aliases = new Set<string>();
  * Register a named colour scheme, making it available to buildScene via the
  * colorScheme option.  Call this once at app startup before rendering.
  *
+ * `forBin` and `forValue` must return valid CSS color strings — invalid values
+ * produce silent rendering artifacts (blank or black rectangles).
+ *
  * @example
  * registerColorScheme('my-brand', {
  *   label: 'My Brand',
@@ -94,12 +97,7 @@ registerColorScheme('default', {
 
 // 'color' kept as an alias so existing code that passed colorScheme:'color' still works.
 aliases.add('color');
-registerColorScheme('color', {
-  label: 'Default',
-  forBin: binArray(HARD_BIN_COLORS),
-  forValue: valueToViridis,
-  plotlyColorscale: 'Viridis',
-});
+registerColorScheme('color', registry.get('default')!);
 
 /**
  * GREYSCALE — grey categorical bins, grey continuous gradient.

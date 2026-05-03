@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lot gallery — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+  <style>
+    /* Gallery fills the full content area */
+    .demo-content { padding: 0; }
+    #gallery-container { flex: 1; overflow: hidden; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§11 — Building a lot gallery</span>
+    <span class="demo-desc">
+      renderWaferGallery · shared controls · stacked modes · click ↗ to open modal
+    </span>
+  </header>
+
+  <div class="demo-content">
+    <div id="gallery-container"></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }      from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/canvas-adapter';
+    import {
+      makeResults, WAFER_CONFIG, DIE_CONFIG,
+      HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
+    } from './data.js';
+
+    // ── Build six wafers with varied failure patterns ─────────────────────────
+
+    const waferSpecs = [
+      { seed:  7, quadrant: false, edgeFail: false },
+      { seed: 11, quadrant: false, edgeFail: true  },
+      { seed: 17, quadrant: true,  edgeFail: false },
+      { seed: 23, quadrant: false, edgeFail: false },
+      { seed: 31, quadrant: false, edgeFail: true  },
+      { seed: 37, quadrant: true,  edgeFail: false },
+    ];
+
+    const waferResults = waferSpecs.map(opts =>
+      buildWaferMap({
+        results:     makeResults(opts),
+        waferConfig: WAFER_CONFIG,
+        dieConfig:   DIE_CONFIG,
+        hbinDefs:    HBIN_DEFS,
+        sbinDefs:    SBIN_DEFS,
+        testDefs:    TEST_DEFS,
+        passBins:    [1],
+      })
+    );
+
+    const items = waferResults.map((r, i) => ({
+      wafer: r.wafer,
+      dies:  r.dies,
+      label: `W${String(i + 1).padStart(2, '0')} · ${
+        r.yield.yieldPercent != null
+          ? (r.yield.yieldPercent * 100).toFixed(1) + '%'
+          : '—'
+      }`,
+    }));
+
+    // ── Render gallery ────────────────────────────────────────────────────────
+    //
+    // Stacked modes (Stacked Hard Bins, Stacked Soft Bins, Stacked Test Values)
+    // are handled automatically by the gallery — no extra wiring needed.
+    // Switching to a stacked mode rebuilds the cards as one card per bin or
+    // test parameter, aggregated across the full lot.
+
+    renderWaferGallery(
+      document.getElementById('gallery-container'),
+      items,
+      {
+        sceneOptions: {
+          plotMode: 'hardbin',
+          hbinDefs: HBIN_DEFS,
+          sbinDefs: SBIN_DEFS,
+          testDefs: TEST_DEFS,
+        },
+      },
+    );
+  </script>
+
+</body>
+</html>

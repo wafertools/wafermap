@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your first wafer map — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§2 — Your first wafer map</span>
+    <span class="demo-desc">buildWaferMap + renderWaferMap · hover the canvas to reveal the toolbar</span>
+  </header>
+
+  <div class="demo-content">
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS } from './data.js';
+
+    // Step 1 — buildWaferMap: pure data layer (no DOM, server-safe).
+    // Pass prober step positions in x/y — the library converts to mm internally.
+    const { wafer, dies } = buildWaferMap({
+      results:     makeResults({ seed: 7 }),
+      waferConfig: WAFER_CONFIG,   // { diameter: 300, notch: { type: 'bottom' } }
+      dieConfig:   DIE_CONFIG,     // { width: 10, height: 10 }
+      hbinDefs:    HBIN_DEFS,
+      passBins:    [1],
+    });
+
+    // Step 2 — renderWaferMap: mounts a self-contained interactive canvas.
+    // The toolbar (mode, colour, rotate, zoom…) appears on hover — no extra HTML needed.
+    renderWaferMap(document.getElementById('map'), wafer, dies, {
+      sceneOptions: { plotMode: 'hardbin', hbinDefs: HBIN_DEFS },
+    });
+  </script>
+
+</body>
+</html>
