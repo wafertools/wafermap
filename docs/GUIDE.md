@@ -2,7 +2,7 @@
 
 This guide walks through building wafer map visualisations in a real application,
 from a single interactive map up to a multi-wafer gallery with statistical findings.
-It focuses on practical patterns; for the full type reference see [API.md](./API.md).
+It focuses on practical patterns; for the full type reference see [API.md](https://github.com/telecasterer/wafermap/blob/main/docs/API.md).
 
 ---
 
@@ -968,9 +968,10 @@ const waferResults = await Promise.all(
 wmWorker.terminate();
 ```
 
-> **Note:** `renderWaferMap`, `renderWaferGallery`, and `analyzeWaferMap`/`analyzeWaferLot`
-> are fast synchronous operations that always run on the main thread — only
-> `buildWaferMap` (the data layer) can be offloaded.
+> **Note:** `renderWaferMap` and `renderWaferGallery` require the DOM and must run on
+> the main thread. `analyzeWaferMap`/`analyzeWaferLot` and `buildWaferMap` are pure
+> functions with no DOM access — they can run in a Web Worker, Node.js, or any
+> server-side environment.
 
 ---
 
