@@ -1,4 +1,5 @@
 dist/
 node_modules/
+_site/
 CLAUDE.md
 .claude

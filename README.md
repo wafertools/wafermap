@@ -3,7 +3,7 @@
 Browser-first wafer map visualization for semiconductor test data.
 
 **[Live demos →](https://telecasterer.github.io/wafermap/)**  
-**[Developer Guide →](docs/GUIDE.md)** — step-by-step from first map to full lot gallery with statistical findings
+**[Developer Guide →](https://telecasterer.github.io/wafermap/guide/)** — step-by-step from first map to full lot gallery with statistical findings
 
 | Demo | Live | Source |
 | --- | --- | --- |
@@ -156,7 +156,7 @@ packages/worker/         — createWafermapWorker(): run buildWaferMap off the m
 - `buildWaferMap` and `analyzeWaferMap`/`analyzeWaferLot` are pure functions — safe to run server-side
 
 Full API reference: [docs/API.md](docs/API.md)  
-Developer guide: [docs/GUIDE.md](docs/GUIDE.md)
+Developer guide: [telecasterer.github.io/wafermap/guide/](https://telecasterer.github.io/wafermap/guide/)
 
 ---
 

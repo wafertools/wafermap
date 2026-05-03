@@ -54,6 +54,9 @@ jobs:
           # Landing page
           cp index.html _site/index.html
 
+      - name: Build guide
+        run: npm run build:guide
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
