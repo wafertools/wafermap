@@ -1020,6 +1020,7 @@ call.  They are global and persist for the lifetime of the page.
 
 **→ [Demo: Custom colour schemes](../guide-demos/15-color-schemes.html)**
 
+![alt text](image-14.png)
 ---
 
 ## 16. Common patterns and tips
