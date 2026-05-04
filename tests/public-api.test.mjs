@@ -301,3 +301,51 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
   assert.equal(plot.layout.xaxis.title.text, 'Die X');
   assert.equal(plot.layout.yaxis.title.text, 'Die Y');
 });
+
+test('error conditions are properly validated', () => {
+  // createWafer validation
+  assert.throws(() => createWafer({ diameter: 0 }), /diameter must be > 0/);
+  assert.throws(() => createWafer({ diameter: -10 }), /diameter must be > 0/);
+
+  // applyProbeSequence validation
+  const dies = [
+    { id: 'a', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
+    { id: 'b', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+  ];
+
+  assert.throws(() => applyProbeSequence(dies, { type: 'custom' }), /customOrder is required/);
+  assert.throws(() => applyProbeSequence(dies, { type: 'custom', customOrder: ['a', 'c'] }), /die IDs not found in customOrder: b/);
+});
+
+test('inference functions handle edge cases', () => {
+  // assignGridIndices with empty input
+  const emptyGrid = assignGridIndices([]);
+  assert.deepEqual(emptyGrid.indices, []);
+  assert.equal(emptyGrid.confidence, 1); // Empty input has default confidence
+
+  // assignGridIndices with single point
+  const singlePoint = assignGridIndices([{ x: 0, y: 0 }]);
+  assert.deepEqual(singlePoint.indices, [{ i: 0, j: 0 }]);
+  assert.equal(singlePoint.confidence, 1); // Single integer point has full confidence
+
+  // inferWaferFromXY with insufficient points
+  const insufficient = inferWaferFromXY([{ x: 0, y: 0 }]);
+  assert.equal(insufficient.confidence, 0.5); // Single point at origin has low confidence
+
+  // inferWaferFromXY with collinear points
+  const collinear = inferWaferFromXY([
+    { x: -50, y: 0 },
+    { x: 0, y: 0 },
+    { x: 50, y: 0 },
+  ]);
+  assert.ok(collinear.confidence < 1); // Collinear points have lower confidence
+
+  // resolveGridPitch with empty input
+  const emptyPitch = resolveGridPitch([]);
+  assert.equal(emptyPitch.confidence, 0);
+  assert.equal(emptyPitch.units, 'normalized');
+
+  // resolveGridPitch with single point
+  const singlePitch = resolveGridPitch([{ x: 0, y: 0 }]);
+  assert.equal(singlePitch.confidence, 0.4);
+});

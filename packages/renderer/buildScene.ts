@@ -605,7 +605,9 @@ function pushDieRectangles(
     return;
   }
 
-  if (highlightBin !== undefined && die.bins?.[binIndex] !== highlightBin) {
+  if (highlightBin !== undefined &&
+      (plotMode === 'hardbin' || plotMode === 'softbin') &&
+      die.bins?.[binIndex] !== highlightBin) {
     rectangles.push({
       x: die.x, y: die.y, width: rw, height: rh,
       fill: DIM_FILL, type: 'hardbin', metadata: die.metadata,

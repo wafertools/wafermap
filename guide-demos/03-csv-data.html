@@ -23,10 +23,7 @@
   <div class="demo-controls">
     <div class="ctrl-group">
       <span class="ctrl-label">Wafer</span>
-      <select id="sel-wafer">
-        <option>W01</option><option>W02</option><option>W03</option>
-        <option>W04</option><option>W05</option><option>W06</option>
-      </select>
+      <select id="sel-wafer"></select>
     </div>
     <div class="ctrl-sep"></div>
     <span id="file-info" style="font-size:12px; color:var(--muted)">Loading…</span>
@@ -101,9 +98,17 @@
     // Load the bundled demo CSV (columns: lot,wafer,x,y,hbin,sbin,testdate,temp,testA,testB,testC)
     const csvText = await fetch('../data/dummy-fulldata.csv').then(r => r.text());
     const allRows = parseCsv(csvText);
+    const waferIds = [...new Set(allRows.map(r => r.wafer))];
+
+    const sel = document.getElementById('sel-wafer');
+    for (const id of waferIds) {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = id;
+      sel.appendChild(opt);
+    }
 
     document.getElementById('file-info').textContent =
-      `${allRows.length} rows · ${[...new Set(allRows.map(r => r.wafer))].join(', ')}`;
+      `${allRows.length} rows · ${waferIds.join(', ')}`;
 
     // Show the column names so readers can see what the CSV contains
     const headers = Object.keys(allRows[0]);
@@ -163,7 +168,7 @@
       });
     }
 
-    render('W01');
+    render(waferIds[0]);
 
     document.getElementById('sel-wafer').addEventListener('change', e => render(e.target.value));
   </script>

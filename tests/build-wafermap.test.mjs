@@ -161,3 +161,43 @@ test('buildWaferMap marks edge-excluded dies and falls back to hardbin mode when
   assert.ok(result.dataCoverage.edgeExcludedDies > 0);
   assert.equal(result.dataCoverage.filledDies, 2);
 });
+
+test('buildWaferMap handles empty inputs gracefully', () => {
+  const empty = buildWaferMap([]);
+  assert.ok(empty.dies.length > 0); // Still generates default grid
+  assert.equal(empty.units, 'normalized');
+  assert.equal(empty.dataCoverage.filledDies, 0);
+  assert.equal(empty.dataCoverage.totalDies, empty.dies.length);
+  assert.equal(empty.yield.totalDies, 0); // No dies with bin data
+  assert.equal(empty.yield.yieldPercent, null);
+});
+
+test('buildWaferMap handles explicit dies without results', () => {
+  const dies = [
+    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
+    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+  ];
+
+  const result = buildWaferMap({
+    dies,
+    waferConfig: { diameter: 40 },
+  });
+
+  assert.equal(result.dies.length, 2);
+  assert.equal(result.units, 'mm');
+  assert.equal(result.dataCoverage.filledDies, 0);
+  assert.equal(result.dataCoverage.totalDies, 2);
+});
+
+test('buildWaferMap infers wafer diameter from grid extent when not provided', () => {
+  const result = buildWaferMap({
+    results: [
+      { x: -5, y: -5, values: [1], bins: [1] },
+      { x: 5, y: 5, values: [1], bins: [1] },
+    ],
+    dieConfig: { width: 10, height: 10 },
+  });
+
+  assert.ok(result.wafer.diameter > 100); // Should be larger than the grid extent
+  assert.equal(result.units, 'mm');
+});

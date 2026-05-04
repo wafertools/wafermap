@@ -351,15 +351,15 @@ export function renderWaferGallery(
     // Switch to the mode that makes this finding's data visible.
     // Don't set highlightBin — the die zone selection overlay already shows the affected
     // dies, and highlightBin dims everything else making the map look empty.
+    // Don't set binIndex — buildScene auto-derives it from plotMode (0 for hardbin, 1 for
+    // softbin). Explicit binIndex here would persist as stale state after the finding clears.
     const { kind, index } = finding.variable;
     if (kind === 'test') {
       syncShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
     } else if (kind === 'softbin') {
-      // index is the bins[] slot index (1 for softbin); binIndex must match so colours render.
-      syncShared({ plotMode: 'softbin', binIndex: index ?? 1, highlightBin: undefined });
+      syncShared({ plotMode: 'softbin', highlightBin: undefined });
     } else {
-      // 'hardbin' and 'yield' both show in hardbin mode; binIndex 0 is the default.
-      syncShared({ plotMode: 'hardbin', binIndex: index ?? 0, highlightBin: undefined });
+      syncShared({ plotMode: 'hardbin', highlightBin: undefined });
     }
 
     // Clear all card outlines and die zone selections before applying new ones.
@@ -540,7 +540,9 @@ export function renderWaferGallery(
   const btnMode = makeBtn('mode', 'Plot mode', () => {
     if (openMenu) { openMenu.remove(); openMenu = null; return; }
 
-    const dies      = currentItems.flatMap(it => it.dies);
+    // Use originalItems (per-wafer source) — currentItems may be aggregated cards
+    // in stacked modes, which don't accurately reflect the full data availability.
+    const dies      = originalItems.flatMap(it => it.dies);
     const testDefs  = sharedOpts.testDefs;
     const hasValues = dies.some(d => d.values?.length);
     const hasHbin   = dies.some(d => d.bins?.[0] != null);
@@ -955,7 +957,7 @@ export function renderWaferGallery(
     if (mode === 'stackedBins' || mode === 'stackedSoftBins')
       return { valueRange: [0, lotSize] as [number, number], lotSize };
     if (mode === 'stackedValues')
-      return { aggrMethod: (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod };
+      return { aggrMethod: (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod, valueRange: undefined, lotSize: undefined };
     return {};
   }
 
@@ -977,7 +979,9 @@ export function renderWaferGallery(
         sharedOpts = { ...sharedOpts, ...extra };
         buildCards(buildStackedItems(newMode));
       } else if (wasStacked) {
-        // Returning to a non-stacked mode — restore the original per-wafer cards.
+        // Clear stacked-specific options when leaving stacked mode
+        const { valueRange, lotSize, aggrMethod, ...cleanOpts } = sharedOpts;
+        sharedOpts = cleanOpts;
         buildCards(originalItems);
       } else {
         for (const ctrl of cardControllers) ctrl.setOptions(partial);
@@ -995,8 +999,33 @@ export function renderWaferGallery(
 
   // Called from the public setOptions API — updates state and cards, does NOT fire callback.
   function syncShared(partial: Partial<WaferSceneOptions>): void {
+    const prevMode = sharedOpts.plotMode;
     sharedOpts = { ...sharedOpts, ...partial };
-    for (const ctrl of cardControllers) ctrl.setOptions(partial);
+    const newMode    = sharedOpts.plotMode!;
+    const nowStacked = STACKED_MODES.has(newMode);
+    const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
+
+    if (partial.plotMode !== undefined) {
+      if (nowStacked) {
+        // Switching into a stacked mode — aggregate internally and apply extra scene opts.
+        const extra = stackedSharedOpts(newMode);
+        sharedOpts = { ...sharedOpts, ...extra };
+        buildCards(buildStackedItems(newMode));
+      } else if (wasStacked) {
+        // Clear stacked-specific options when leaving stacked mode
+        const { valueRange, lotSize, aggrMethod, ...cleanOpts } = sharedOpts;
+        sharedOpts = cleanOpts;
+        buildCards(originalItems);
+      } else {
+        for (const ctrl of cardControllers) ctrl.setOptions(partial);
+      }
+    } else if (partial.aggrMethod !== undefined && newMode === 'stackedValues') {
+      // Aggregation method changed while in stackedValues — re-aggregate.
+      buildCards(buildStackedItems('stackedValues'));
+    } else {
+      for (const ctrl of cardControllers) ctrl.setOptions(partial);
+    }
+
     rebuildLegend();
   }
 
@@ -1262,7 +1291,14 @@ export function renderWaferGallery(
     setItems(newItems: GalleryItem[]): void {
       originalItems = newItems;
       const mode = sharedOpts.plotMode!;
-      buildCards(STACKED_MODES.has(mode) ? buildStackedItems(mode) : newItems);
+      if (STACKED_MODES.has(mode)) {
+        // Refresh lotSize and valueRange in case the wafer count changed.
+        const extra = stackedSharedOpts(mode);
+        sharedOpts = { ...sharedOpts, ...extra };
+        buildCards(buildStackedItems(mode));
+      } else {
+        buildCards(newItems);
+      }
     },
 
     setOptions(partial: Partial<WaferSceneOptions>): void {

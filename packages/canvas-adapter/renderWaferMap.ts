@@ -986,7 +986,11 @@ export function renderWaferMap(
   }
 
   // ── Apply scene option changes ─────────────────────────────────────────────
-  function applyOpts(partial: Partial<WaferSceneOptions>): void {
+
+  // Rebuild and redraw without firing the external callback.
+  // Used by ctrl.setOptions() so programmatic updates don't re-fire the callback
+  // (consistent with renderWaferGallery behaviour and documented API contract).
+  function syncOpts(partial: Partial<WaferSceneOptions>): void {
     const prevMode = sceneOpts.plotMode;
     sceneOpts = { ...sceneOpts, ...partial };
     // Changing plot mode changes the colorbar/legend width, which shifts the
@@ -997,6 +1001,12 @@ export function renderWaferMap(
     }
     rebuildScene();
     render();
+  }
+
+  // Rebuild, redraw, and fire onSceneOptionsChange.
+  // Used by all toolbar interactions.
+  function applyOpts(partial: Partial<WaferSceneOptions>): void {
+    syncOpts(partial);
     onSceneOptionsChange?.(sceneOpts);
   }
 
@@ -1419,7 +1429,7 @@ export function renderWaferMap(
     },
 
     setOptions(partial: Partial<WaferSceneOptions>): void {
-      applyOpts(partial);
+      syncOpts(partial);
     },
 
     getOptions(): WaferSceneOptions {

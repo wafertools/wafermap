@@ -220,3 +220,45 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
   assert.equal(lot.perWafer[2].summary.hasNotableFindings, false);
   assert.equal(lot.perWafer[3].summary.hasNotableFindings, true);
 });
+test('analyzeWaferMap handles wafers with no data', () => {
+  const { wafer, dies } = makeBaseDies();
+  const emptyDies = dies.map(die => ({ ...die, bins: undefined, values: undefined }));
+
+  const summary = analyzeWaferMap({
+    dies: emptyDies,
+    waferConfig: { diameter: 60 },
+    passBins: [1],
+  });
+
+  assert.equal(summary.level, 'wafer');
+  assert.equal(summary.hasNotableFindings, false);
+  assert.equal(summary.findings.length, 0);
+});
+
+test('analyzeWaferLot handles empty lot', () => {
+  const lot = analyzeWaferLot([]);
+
+  assert.equal(lot.level, 'lot');
+  assert.equal(lot.hasNotableFindings, false);
+  assert.equal(lot.findings.length, 0);
+  assert.equal(lot.perWafer.length, 0);
+});
+
+test('analyzeWaferMap respects minimum sample size filtering', () => {
+  const { wafer, dies } = makeBaseDies();
+  // Create a wafer with very few dies in each ring
+  const minimalDies = dies.slice(0, 2).map((die, i) => ({
+    ...die,
+    bins: [i === 0 ? 1 : 2], // Only one die per bin
+  }));
+
+  const summary = analyzeWaferMap({
+    dies: minimalDies,
+    waferConfig: { diameter: 60 },
+    passBins: [1],
+  }, {
+    minimumSampleSize: 5, // Higher than available
+  });
+
+  assert.equal(summary.hasNotableFindings, false);
+});

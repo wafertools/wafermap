@@ -295,3 +295,173 @@ test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () 
     cleanup();
   }
 });
+
+test('renderWaferGallery restores original cards when leaving stacked mode', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const base = buildWaferMap({
+      results: [
+        { x: 0, y: 0, values: [0.9], bins: [1, 10] },
+        { x: 1, y: 0, values: [0.7], bins: [2, 11] },
+        { x: 0, y: 1, values: [0.8], bins: [1, 10] },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
+      sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
+      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+    });
+
+    const items = [
+      { wafer: base.wafer, dies: base.dies, label: 'A' },
+      { wafer: base.wafer, dies: base.dies, label: 'B' },
+      { wafer: base.wafer, dies: base.dies, label: 'C' },
+    ];
+
+    const ctrl = renderWaferGallery(container, items, {
+      sceneOptions: { plotMode: 'stackedBins', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
+    });
+
+    const stackedCards = container.querySelectorAll('.wmap-gallery-card').length;
+    assert.equal(stackedCards, (base.scene.hbinDefs ?? []).length);
+
+    ctrl.setOptions({ plotMode: 'hardbin' });
+    assert.equal(container.querySelectorAll('.wmap-gallery-card').length, items.length);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery clears stacked options when leaving stacked mode', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const base = buildWaferMap({
+      results: [
+        { x: 0, y: 0, values: [0.9], bins: [1, 10] },
+        { x: 1, y: 0, values: [0.7], bins: [2, 11] },
+        { x: 0, y: 1, values: [0.8], bins: [1, 10] },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
+      sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
+      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+    });
+
+    const items = [
+      { wafer: base.wafer, dies: base.dies, label: 'A' },
+      { wafer: base.wafer, dies: base.dies, label: 'B' },
+      { wafer: base.wafer, dies: base.dies, label: 'C' },
+    ];
+
+    const ctrl = renderWaferGallery(container, items, {
+      sceneOptions: { plotMode: 'stackedValues', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
+    });
+
+    // Initially in stacked mode
+    assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 1); // One aggregated card for stackedValues
+
+    // Switch to value mode - should restore individual cards and clear stacked options
+    ctrl.setOptions({ plotMode: 'value', testIndex: 0 });
+    assert.equal(container.querySelectorAll('.wmap-gallery-card').length, items.length);
+
+    // Verify the shared options don't contain stacked-specific properties
+    const opts = ctrl.getOptions();
+    assert.equal(opts.valueRange, undefined);
+    assert.equal(opts.lotSize, undefined);
+    assert.equal(opts.aggrMethod, undefined);
+    assert.equal(opts.plotMode, 'value');
+    assert.equal(opts.testIndex, 0);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery computes correct valueRange for stackedValues mode', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    // Create test data with known value ranges
+    const base = buildWaferMap({
+      results: [
+        { x: 0, y: 0, values: [1.0], bins: [1, 10] },
+        { x: 1, y: 0, values: [2.0], bins: [2, 11] },
+        { x: 0, y: 1, values: [3.0], bins: [1, 10] },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
+      sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
+      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+    });
+
+    const items = [
+      { wafer: base.wafer, dies: base.dies, label: 'A' },
+      { wafer: base.wafer, dies: base.dies, label: 'B' },
+      { wafer: base.wafer, dies: base.dies, label: 'C' },
+    ];
+
+    const ctrl = renderWaferGallery(container, items, {
+      sceneOptions: { plotMode: 'hardbin', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
+    });
+
+    // Switch to stackedValues mode
+    ctrl.setOptions({ plotMode: 'stackedValues' });
+
+    // Check that valueRange is not set globally for stackedValues (each card computes its own)
+    const opts = ctrl.getOptions();
+    assert.equal(opts.valueRange, undefined); // Each card computes its own range
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap handles empty scenes gracefully', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const canvas = window.document.createElement('canvas');
+    canvas.width = 400;
+    canvas.height = 400;
+    canvas.__clientWidth = 400;
+    canvas.__clientHeight = 400;
+    root.appendChild(canvas);
+
+    const emptyWafer = buildWaferMap([]);
+    const ctrl = renderWaferMap(canvas, emptyWafer.wafer, emptyWafer.dies);
+
+    assert.ok(ctrl);
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery handles empty items array', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const ctrl = renderWaferGallery(container, []);
+    assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 0);
+
+    ctrl.destroy();
+    assert.equal(container.childElementCount, 0);
+  } finally {
+    cleanup();
+  }
+});
