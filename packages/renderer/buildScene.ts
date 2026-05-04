@@ -626,8 +626,10 @@ function pushDieRectangles(
   }
 
   if (plotMode === 'hardbin' || plotMode === 'softbin') {
-    const bin = die.bins?.[binIndex] ?? 0;
-    const fill = binDefMap?.get(bin)?.color ?? colorFns.forBin(bin);
+    const bin = die.bins?.[binIndex];
+    const fill = bin != null
+      ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
+      : '#d6d9dd';
     rectangles.push({
       x: die.x, y: die.y, width: rw, height: rh,
       fill, type: plotMode, metadata: die.metadata,

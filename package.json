@@ -1,6 +1,6 @@
 {
   "name": "@paulrobins/wafermap",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Browser-first wafer map visualization toolkit with a renderer abstraction and Plotly adapter.",
   "type": "module",
   "license": "MIT",
@@ -52,7 +52,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "check": "tsc --noEmit -p tsconfig.json",
     "dev": "npm run build && serve -l 3000 .",

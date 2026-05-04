@@ -318,7 +318,8 @@ export function toCanvas(
     const binCounts = new Map<number, number>();
     for (const die of scene.dies) {
       if (die.partial) continue;
-      const bin = die.bins?.[binIndex] ?? 0;
+      const bin = die.bins?.[binIndex];
+      if (bin == null) continue;
       binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
     }
     const entries = [...binCounts.entries()].sort(([a], [b]) => a - b);
