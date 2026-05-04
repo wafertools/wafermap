@@ -43,10 +43,10 @@ function approxEqual(actual, expected, epsilon = 1e-9) {
 
 function buildSampleDies() {
   return [
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [0.9], bins: [1] },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [0.7], bins: [2] },
-    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, values: [0.8], bins: [1] },
-    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, values: [0.6], bins: [2] },
+    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [0.9], hbin: 1 },
+    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [0.7], hbin: 2 },
+    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, values: [0.8], hbin: 1 },
+    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, values: [0.6], hbin: 2 },
   ];
 }
 
@@ -125,16 +125,16 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
 test('aggregation, inference, classification, formatting, and color helpers are deterministic', () => {
   const diesByWafer = [
     [
-      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [1], bins: [2] },
-      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [9], bins: [1] },
+      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [1], hbin: 2 },
+      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [9], hbin: 1 },
     ],
     [
-      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [3], bins: [2] },
-      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [7], bins: [2] },
+      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [3], hbin: 2 },
+      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [7], hbin: 2 },
     ],
     [
-      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [5], bins: [1] },
-      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [11], bins: [2] },
+      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [5], hbin: 1 },
+      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [11], hbin: 2 },
     ],
   ];
 
@@ -286,7 +286,6 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
     colorFns: getColorScheme('default'),
     normalize: (v) => v,
     testIndex: 0,
-    binIndex: 0,
     valueRange: [0.6, 0.9],
     testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
   });

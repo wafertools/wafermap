@@ -351,8 +351,6 @@ export function renderWaferGallery(
     // Switch to the mode that makes this finding's data visible.
     // Don't set highlightBin — the die zone selection overlay already shows the affected
     // dies, and highlightBin dims everything else making the map look empty.
-    // Don't set binIndex — buildScene auto-derives it from plotMode (0 for hardbin, 1 for
-    // softbin). Explicit binIndex here would persist as stale state after the finding clears.
     const { kind, index } = finding.variable;
     if (kind === 'test') {
       syncShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
@@ -545,8 +543,8 @@ export function renderWaferGallery(
     const dies      = originalItems.flatMap(it => it.dies);
     const testDefs  = sharedOpts.testDefs;
     const hasValues = dies.some(d => d.values?.length);
-    const hasHbin   = dies.some(d => d.bins?.[0] != null);
-    const hasSbin   = dies.some(d => d.bins?.[1] != null);
+    const hasHbin   = dies.some(d => d.hbin != null);
+    const hasSbin   = dies.some(d => d.sbin != null);
 
     const currentMode    = sharedOpts.plotMode ?? 'hardbin';
     const currentTestIdx = sharedOpts.testIndex ?? 0;
@@ -833,14 +831,12 @@ export function renderWaferGallery(
       return;
     }
 
-    // Collect unique bins — use only the slot matching the active mode.
-    // Hard bins are bins[0], soft bins are bins[1]; independent number spaces (STDF V4).
-    const binIndex = mode === 'softbin' ? 1 : 0;
-    const binSet   = new Set<number>();
+    // Collect unique bins — use hbin or sbin depending on active mode.
+    const binSet = new Set<number>();
     for (const item of currentItems) {
       for (const die of item.dies) {
         if (die.partial) continue;
-        const b = die.bins?.[binIndex];
+        const b = mode === 'softbin' ? die.sbin : die.hbin;
         if (b != null) binSet.add(b);
       }
     }
@@ -933,7 +929,7 @@ export function renderWaferGallery(
     if (mode === 'stackedBins') {
       return (sharedOpts.hbinDefs ?? []).map(def => ({
         wafer: baseWafer,
-        dies:  aggregateBinCounts(allDies, def.bin, 0),
+        dies:  aggregateBinCounts(allDies, def.bin, 'hard'),
         label: `${def.bin} · ${def.name}`,
         sceneOptions: { hbinDefs: [{ bin: def.bin, name: def.name }] },
       }));
@@ -942,7 +938,7 @@ export function renderWaferGallery(
     if (mode === 'stackedSoftBins') {
       return (sharedOpts.sbinDefs ?? []).map(def => ({
         wafer: baseWafer,
-        dies:  aggregateBinCounts(allDies, def.bin, 1),
+        dies:  aggregateBinCounts(allDies, def.bin, 'soft'),
         label: `${def.bin} · ${def.name}`,
         sceneOptions: { sbinDefs: [{ bin: def.bin, name: def.name }] },
       }));

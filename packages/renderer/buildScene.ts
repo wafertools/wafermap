@@ -65,14 +65,12 @@ export interface Scene {
   valueRange: [number, number];
   /** Named test definitions — populated when `testDefs` is passed to `buildWaferMap`. */
   testDefs?: TestDef[];
-  /** Named hard bin definitions (for `bins[0]`). Independent number space from soft bins. */
+  /** Named hard bin definitions (for `die.hbin`). Independent number space from soft bins. */
   hbinDefs?: BinDef[];
-  /** Named soft bin definitions (for `bins[1]`). Independent number space from hard bins. */
+  /** Named soft bin definitions (for `die.sbin`). Independent number space from hard bins. */
   sbinDefs?: BinDef[];
   /** Which `values[]` index is being displayed (for `value` plot mode). Default 0. */
   testIndex: number;
-  /** Which `bins[]` index is being displayed (for `hardbin`/`softbin` plot modes). Default 0. */
-  binIndex: number;
   /** Aggregation method label for `stackedValues` hover tooltips (e.g. `'mean'`). */
   aggrMethod?: string;
   /** Total wafers in lot — for `stackedBins` hover percentage calculation. */
@@ -114,12 +112,12 @@ export interface SceneOptions {
   /** Named test definitions — one per `values[]` entry. */
   testDefs?: TestDef[];
   /**
-   * Named hard bin definitions — one per distinct `bins[0]` value.
+   * Named hard bin definitions — one per distinct `die.hbin` value.
    * Hard and soft bin number spaces are independent (STDF V4: both 0–32767).
    */
   hbinDefs?: BinDef[];
   /**
-   * Named soft bin definitions — one per distinct `bins[1]` value.
+   * Named soft bin definitions — one per distinct `die.sbin` value.
    * Soft bins are the logical test-program classification; hard bins are the physical sort result.
    */
   sbinDefs?: BinDef[];
@@ -128,10 +126,6 @@ export interface SceneOptions {
    * When `testDefs` is provided, the toolbar mode dropdown offers one item per test.
    */
   testIndex?: number;
-  /**
-   * Which `bins[]` index to display in `hardbin` / `softbin` plot modes. Default `0`.
-   */
-  binIndex?: number;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -295,9 +289,9 @@ function buildHoverText(
       lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
     }
   } else if (plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
-    // Show count and percentage for this card's bin (values[0] = count, bins[0] = targetBin).
+    // Show count and percentage for this card's bin (values[0] = count, hbin/sbin = targetBin).
     const count = die.values?.[0];
-    const bin   = die.bins?.[0];
+    const bin   = plotMode === 'stackedSoftBins' ? die.sbin : die.hbin;
     if (count !== undefined) {
       const pct     = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
       const defMap  = plotMode === 'stackedSoftBins'
@@ -323,22 +317,21 @@ function buildHoverText(
       }
     }
 
-    if (die.bins?.length) {
-      const hbinMap    = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
-      const sbinMap    = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
-      const hasAnyDefs = hbinMap || sbinMap;
-      if (hasAnyDefs) {
-        const parts = die.bins.map((b, i) => {
-          const defMap = i === 0 ? hbinMap : i === 1 ? sbinMap : null;
-          const name   = defMap?.get(b)?.name;
-          const value  = name ? `${b} · ${name}` : String(b);
-          const label  = i === 0 ? 'HBin' : i === 1 ? 'SBin' : `Bin[${i}]`;
-          return `${label}: ${value}`;
-        });
-        lines.push(parts.join(' &nbsp;·&nbsp; '));
-      } else {
-        lines.push(`Bins: ${die.bins.map((b) => `B${b}`).join(' | ')}`);
+    if (die.hbin !== undefined || die.sbin !== undefined) {
+      const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
+      const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
+      const parts: string[] = [];
+      if (die.hbin !== undefined) {
+        const name  = hbinMap?.get(die.hbin)?.name;
+        const value = name ? `${die.hbin} · ${name}` : String(die.hbin);
+        parts.push(`HBin: ${value}`);
       }
+      if (die.sbin !== undefined) {
+        const name  = sbinMap?.get(die.sbin)?.name;
+        const value = name ? `${die.sbin} · ${name}` : String(die.sbin);
+        parts.push(`SBin: ${value}`);
+      }
+      lines.push(parts.join(' &nbsp;·&nbsp; '));
     }
   }
 
@@ -370,13 +363,12 @@ export function generateTextOverlay(
     colorFns: ColorFns;
     normalize: (v: number) => number;
     testIndex: number;
-    binIndex: number;
     valueRange: [number, number];
     testDefs?: TestDef[];
     fallbackFormat?: 'si' | 'engineering';
   },
 ): SceneText[] {
-  const { plotMode, colorFns, normalize, testIndex, binIndex, valueRange, testDefs, fallbackFormat } = options;
+  const { plotMode, colorFns, normalize, testIndex, valueRange, testDefs, fallbackFormat } = options;
 
   // Build a tick formatter matched to the colorbar scale so die labels are consistent.
   const testDef = testDefs?.find(t => t.index === testIndex);
@@ -392,7 +384,7 @@ export function generateTextOverlay(
       text = formatValueLabel([v], tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(v)));
     } else if (plotMode === 'hardbin' || plotMode === 'softbin') {
-      const bin = die.bins?.[binIndex];
+      const bin = plotMode === 'softbin' ? die.sbin : die.hbin;
       if (bin === undefined) return [];
       text = String(bin);
       color = contrastTextColor(colorFns.forBin(bin));
@@ -581,11 +573,12 @@ function pushDieRectangles(
   highlightBin: number | undefined,
   normalize: (v: number) => number,
   testIndex: number,
-  binIndex: number,
   binDefMap: Map<number, BinDef> | null,
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
+
+  const getBin = (d: Die) => plotMode === 'softbin' ? d.sbin : d.hbin;
 
   if (die.partial) {
     rectangles.push({
@@ -607,7 +600,7 @@ function pushDieRectangles(
 
   if (highlightBin !== undefined &&
       (plotMode === 'hardbin' || plotMode === 'softbin') &&
-      die.bins?.[binIndex] !== highlightBin) {
+      getBin(die) !== highlightBin) {
     rectangles.push({
       x: die.x, y: die.y, width: rw, height: rh,
       fill: DIM_FILL, type: 'hardbin', metadata: die.metadata,
@@ -628,7 +621,7 @@ function pushDieRectangles(
   }
 
   if (plotMode === 'hardbin' || plotMode === 'softbin') {
-    const bin = die.bins?.[binIndex];
+    const bin = getBin(die);
     const fill = bin != null
       ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
       : '#d6d9dd';
@@ -717,17 +710,12 @@ export function buildScene(
     hbinDefs,
     sbinDefs,
     testIndex = 0,
-    binIndex: rawBinIndex,
     fallbackFormat = 'engineering' as const,
     aggrMethod,
     lotSize,
     dataAxisFlip,
     isLotStack = false,
   } = options;
-
-  // Soft bins live in bins[1]; hard bins in bins[0]. Apply the correct default when
-  // the caller didn't explicitly supply binIndex.
-  const binIndex = rawBinIndex ?? (plotMode === 'softbin' ? 1 : 0);
 
   // Total effective axis flip for display: data-pipeline flip XOR interactive flip.
   const axisFlip = {
@@ -781,7 +769,7 @@ export function buildScene(
   const rectangles: SceneRect[] = [];
   const hoverPoints: SceneHoverPoint[] = [];
   // Pre-transformed dies — positions rotated/flipped around wafer centre.
-  // Only the x,y centre moves; die.i/j/width/height/bins/values are unchanged.
+  // Only the x,y centre moves; die.i/j/width/height/hbin/sbin/values are unchanged.
   const transformedDies = (transform.rotation || transform.flipX || transform.flipY)
     ? dies.map(d => {
         const tp = transformPoint({ x: d.x, y: d.y }, wafer.center, transform);
@@ -790,12 +778,12 @@ export function buildScene(
     : dies;
 
   for (const tdie of transformedDies) {
-    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, testIndex, binIndex, binDefMap);
+    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, testIndex, binDefMap);
     hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize) });
   }
 
   const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, {
-    plotMode, colorFns, normalize, testIndex, binIndex,
+    plotMode, colorFns, normalize, testIndex,
     valueRange: [vMin, vMax], testDefs, fallbackFormat,
   }) : [];
   const overlays = buildBoundaryOverlay(wafer, transform);
@@ -820,7 +808,6 @@ export function buildScene(
     hbinDefs,
     sbinDefs,
     testIndex,
-    binIndex,
     aggrMethod,
     lotSize,
     axisFlip,
@@ -854,7 +841,7 @@ export function getDieKey(die: { i: number; j: number }): string {
  * ```ts
  * chart.on('plotly_click', ev => {
  *   const die = getDieAtPoint(scene, ev);
- *   if (die) console.log(die.i, die.j, die.values, die.bins);
+ *   if (die) console.log(die.i, die.j, die.values, die.hbin, die.sbin);
  * });
  * ```
  *

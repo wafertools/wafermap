@@ -106,7 +106,7 @@ function enrichDiesFromRows(dies, rows) {
       return {
         ...die,
         values: [0],
-        bins: [0],
+        hbin: 0,
         metadata: {},
       };
     }
@@ -114,7 +114,8 @@ function enrichDiesFromRows(dies, rows) {
     return {
       ...die,
       values: [Number(row.testA), Number(row.testB), Number(row.testC)],
-      bins: [Number(row.hbin), Number(row.sbin)],
+      hbin: Number(row.hbin),
+      sbin: Number(row.sbin),
       metadata: {
         lotId: row.lot,
         waferId: `${row.lot}-${row.wafer}`,
@@ -174,7 +175,7 @@ function renderBinLegend() {
   const dies = appState.currentDies;
   const binCounts = {};
   for (const d of dies.filter(d => !d.partial)) {
-    const b = d.bins?.[0];
+    const b = d.hbin;
     if (b !== undefined) binCounts[b] = (binCounts[b] ?? 0) + 1;
   }
   const bins = Object.keys(binCounts).map(Number).sort((a, b) => a - b);
@@ -194,7 +195,7 @@ function updateUI() {
 
   const dies = appState.currentDies;
   const fullDies = dies.filter((die) => !die.partial);
-  const pass = fullDies.filter((die) => die.bins?.[0] === 1).length;
+  const pass = fullDies.filter((die) => die.hbin === 1).length;
   const total = fullDies.length;
   const pct = total ? (100 * pass / total).toFixed(1) : '0.0';
 
@@ -234,9 +235,9 @@ function summarizeSpatialStats(dies, wafer, ringCount) {
   for (const die of fullDies) {
     const { ring, quadrant } = classifyDie(die, wafer, { ringCount });
     ringStats[ring - 1].total += 1;
-    if (die.bins?.[0] === 1) ringStats[ring - 1].pass += 1;
+    if (die.hbin === 1) ringStats[ring - 1].pass += 1;
     quadrantMap.get(quadrant).total += 1;
-    if (die.bins?.[0] === 1) quadrantMap.get(quadrant).pass += 1;
+    if (die.hbin === 1) quadrantMap.get(quadrant).pass += 1;
   }
 
   return { ringStats, quadrantStats };

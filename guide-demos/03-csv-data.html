@@ -124,7 +124,8 @@
       const results = rows.map(r => ({
         x:      Number(r.x),
         y:      Number(r.y),
-        bins:   [Number(r.hbin), Number(r.sbin)],
+        hbin:   Number(r.hbin),
+        sbin:   Number(r.sbin),
         values: [Number(r.testA), Number(r.testB), Number(r.testC)],
       }));
 

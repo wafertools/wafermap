@@ -21,7 +21,7 @@ async function main() {
   const firstRow = W01rows[0] ?? {};
 
   const template = buildWaferMap({
-    results: W01rows.map(r => ({ x: Number(r.x), y: Number(r.y), bins: [Number(r.hbin)] })),
+    results: W01rows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
     waferConfig: {
       diameter: WAFER_DIAMETER,
       notch: { type: 'bottom' },
@@ -40,8 +40,8 @@ async function main() {
     return templateDies.map(die => {
       const row = rowMap.get(`${die.i},${die.j}`);
       return row
-        ? { ...die, bins: [Number(row.hbin)], values: [Number(row.testA)] }
-        : { ...die, bins: [0], values: [0] };
+        ? { ...die, hbin: Number(row.hbin), values: [Number(row.testA)] }
+        : { ...die, hbin: 0, values: [0] };
     });
   });
 

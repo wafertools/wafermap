@@ -18,7 +18,6 @@ export interface HighlightRegionTarget {
 
 export interface HighlightBinTarget {
   kind: 'bin';
-  binIndex: number;
   bin: number;
   regionKeys?: string[];
   dieKeys?: string[];

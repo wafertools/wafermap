@@ -35,15 +35,11 @@ export interface WaferSceneOptions {
    * Controlled by the mode dropdown when `testDefs` are defined.
    */
   testIndex?:              number;
-  /**
-   * Which `bins[]` index to display in `hardbin` / `softbin` plot modes. Default `0`.
-   */
-  binIndex?:               number;
   /** Named test definitions — one per `values[]` entry. Shown in mode dropdown and tooltip. */
   testDefs?:               TestDef[];
-  /** Named hard bin definitions — one per distinct `bins[0]` value. Independent number space from soft bins. */
+  /** Named hard bin definitions — one per distinct `die.hbin` value. Independent number space from soft bins. */
   hbinDefs?:               BinDef[];
-  /** Named soft bin definitions — one per distinct `bins[1]` value. Independent number space from hard bins. */
+  /** Named soft bin definitions — one per distinct `die.sbin` value. Independent number space from hard bins. */
   sbinDefs?:               BinDef[];
   /**
    * Explicit [min, max] for value colour normalization. When omitted the range
@@ -251,7 +247,6 @@ export function renderWaferMap(
       ringCount:              so.ringCount,
       highlightBin:           so.highlightBin,
       testIndex:              so.testIndex,
-      binIndex:               so.binIndex,
       testDefs:               so.testDefs,
       hbinDefs:               so.hbinDefs,
       sbinDefs:               so.sbinDefs,
@@ -754,8 +749,8 @@ export function renderWaferMap(
           const dies     = currentScene.dies;
           const testDefs = currentScene.testDefs;
           const hasValues = dies.some(d => d.values?.length);
-          const hasHbin   = dies.some(d => d.bins?.[0] != null);
-          const hasSbin   = dies.some(d => d.bins?.[1] != null);
+          const hasHbin   = dies.some(d => d.hbin != null);
+          const hasSbin   = dies.some(d => d.sbin != null);
 
           const testEntries: ModeEntry[] = hasValues
             ? (testDefs?.length

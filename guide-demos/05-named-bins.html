@@ -101,8 +101,8 @@
       results:     makeResults({ seed: 11 }),
       waferConfig: WAFER_CONFIG,
       dieConfig:   DIE_CONFIG,
-      hbinDefs:    HBIN_DEFS,   // named definitions for bins[0] (hard bin space)
-      sbinDefs:    SBIN_DEFS,   // named definitions for bins[1] (soft bin space — independent)
+      hbinDefs:    HBIN_DEFS,   // named definitions for hard bins
+      sbinDefs:    SBIN_DEFS,   // named definitions for soft bins
       passBins:    [1],
     });
 
@@ -114,14 +114,7 @@
     document.getElementById('stat-fail').textContent = yld.failDies;
 
     // Count dies per bin
-    function binCounts(dies, binIdx) {
-      const map = new Map();
-      for (const d of dies) {
-        const b = d.bins?.[binIdx];
-        if (b != null) map.set(b, (map.get(b) ?? 0) + 1);
-      }
-      return map;
-    }
+    
 
     function renderBinRows(containerId, defs, counts) {
       const total = [...counts.values()].reduce((a, b) => a + b, 0);
@@ -139,8 +132,8 @@
       }
     }
 
-    const hCounts = binCounts(result.dies, 0);
-    const sCounts = binCounts(result.dies, 1);
+    const hCounts = binCounts(result.hbin);
+    const sCounts = binCounts(result.sbin);
     renderBinRows('hbin-rows', HBIN_DEFS, hCounts);
     renderBinRows('sbin-rows', SBIN_DEFS, sCounts);
 

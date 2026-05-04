@@ -14,7 +14,7 @@
       for (let j = -16; j <= 16; j++) {
         const r = Math.hypot(i, j);
         const bin = r < 6 ? 1 : r < 10 ? 2 : r < 13 ? 3 : 4;
-        results.push({ x: i, y: j, bins: [bin] });
+        results.push({ x: i, y: j, hbin: bin });
       }
     }
 

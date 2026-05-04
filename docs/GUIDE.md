@@ -73,10 +73,10 @@ import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 // Minimum input: x/y die grid positions. The library infers everything else.
 const { wafer, dies } = buildWaferMap([
-  { x:  0, y:  0, bins: [1] },
-  { x:  1, y:  0, bins: [2] },
-  { x:  0, y: -1, bins: [1] },
-  { x:  1, y: -1, bins: [1] },
+  { x:  0, y:  0, hbin: 1 },
+  { x:  1, y:  0, hbin: 2 },
+  { x:  0, y: -1, hbin: 1 },
+  { x:  1, y: -1, hbin: 1 },
   // ... more dies
 ]);
 
@@ -122,7 +122,8 @@ async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
   const results = rows.map(r => ({
     x:      Number(r.x),
     y:      Number(r.y),
-    bins:   [Number(r.hbin), Number(r.sbin)],
+    hbin:   Number(r.hbin),
+    sbin:   Number(r.sbin),
     values: [Number(r.testA), Number(r.testB), Number(r.testC)],
   }));
 
@@ -230,7 +231,7 @@ test program.
 const results = rows.map(r => ({
   x:    Number(r.x),
   y:    Number(r.y),
-  bins: [Number(r.hbin)],   // bins[0] = hard bin
+  hbin: Number(r.hbin),
 }));
 
 const { wafer, dies } = buildWaferMap({ results });
@@ -268,7 +269,8 @@ renderWaferMap(canvas, wafer, dies, {
 const results = rows.map(r => ({
   x:    Number(r.x),
   y:    Number(r.y),
-  bins: [Number(r.hbin), Number(r.sbin)],  // bins[0] = hard bin, bins[1] = soft bin
+  hbin: Number(r.hbin),
+  sbin: Number(r.sbin),
 }));
 
 const { wafer, dies, scene } = buildWaferMap({
@@ -378,7 +380,7 @@ import { buildWaferMap, getDieKey } from '@paulrobins/wafermap';
 
 // Step 1: build the map from the bin data
 const result = buildWaferMap({ results: binRows.map(r => ({
-  x: Number(r.x), y: Number(r.y), bins: [Number(r.hbin)],
+  x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin),
 })), dieConfig: { width: 10, height: 10 } });
 
 // Step 2: build a lookup from the parametric table
@@ -514,7 +516,7 @@ renderWaferMap(canvas, wafer, dies, {
 renderWaferMap(canvas, wafer, dies, {
   onClick: (die, event) => {
     console.log(`Clicked die (${die.i}, ${die.j})`);
-    console.log('Hard bin:', die.bins?.[0]);
+    console.log('Hard bin:', die.hbin);
     console.log('Values:', die.values);
     showDetailPanel(die);
   },
@@ -538,7 +540,7 @@ toolbar automatically:
 renderWaferMap(canvas, wafer, dies, {
   onSelect: (selectedDies) => {
     console.log(`${selectedDies.length} dies selected`);
-    const passing = selectedDies.filter(d => d.bins?.[0] === 1).length;
+    const passing = selectedDies.filter(d => d.hbin === 1).length;
     showSelectionStats({ count: selectedDies.length, passing });
   },
 });
@@ -551,7 +553,7 @@ press Esc to clear.
 
 ```ts
 // Highlight a specific set of dies (e.g. from a table click):
-const failingDies = result.dies.filter(d => d.bins?.[0] === 2);
+const failingDies = result.dies.filter(d => d.hbin === 2);
 ctrl.setSelection(failingDies);
 
 // Clear:
@@ -668,7 +670,7 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 // Build a result per wafer
 const waferResults = waferDatasets.map(data =>
   buildWaferMap({
-    results:     data.map(r => ({ x: +r.x, y: +r.y, bins: [+r.hbin, +r.sbin] })),
+    results:     data.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, sbin: +r.sbin })),
     waferConfig: { diameter: 300, notch: { type: 'bottom' } },
     dieConfig:   { width: 10, height: 10 },
     hbinDefs,

@@ -133,7 +133,8 @@ async function main() {
       const { x, y } = coordCfg.xform(Number(row.x), Number(row.y));
       return {
         x, y,
-        bins:   [Number(row.hbin), Number(row.sbin)],
+        hbin:   Number(row.hbin),
+        sbin:   Number(row.sbin),
         values: [Number(row.Idsat), Number(row.Vth), Number(row.Ioff), Number(row.Cgg)],
       };
     });

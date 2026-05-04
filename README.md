@@ -44,7 +44,7 @@ import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 const { wafer, dies } = buildWaferMap({
-  results:     rows.map(r => ({ x: +r.x, y: +r.y, bins: [+r.hbin], values: [+r.testA] })),
+  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, values: [+r.testA] })),
   waferConfig: { diameter: 300, notch: { type: 'bottom' } },
   dieConfig:   { width: 10, height: 10 },
 });
@@ -112,7 +112,7 @@ renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
 
 const result = buildWaferMap({
-  results:     rows.map(r => ({ x: +r.x, y: +r.y, bins: [+r.hbin], values: [+r.testA] })),
+  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, values: [+r.testA] })),
   waferConfig: { diameter: 300, notch: { type: 'bottom' } },
   dieConfig:   { width: 10, height: 10 },
 });
@@ -147,7 +147,7 @@ packages/worker/         — createWafermapWorker(): run buildWaferMap off the m
 - Wafer orientation flat / V-notch rendered from diameter automatically
 - Interactive rotate, flip, zoom, pan, and die selection
 - Reticle, probe path, ring, quadrant, and XY indicator overlays
-- Multi-channel `values[]` and `bins[]` per die
+- Multi-test `values[]`, named `hbin` and `sbin` per die
 - Stacked lot modes with automatic internal aggregation (mean / median / stddev / min / max)
 - Statistical findings engine — ring, quadrant, reticle, and inter-wafer yield outlier detection
 - Adaptive geometry inference — omit die size or diameter and the library estimates them

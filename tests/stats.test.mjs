@@ -25,7 +25,7 @@ test('analyzeWaferMap detects ring-level yield loss', () => {
   const { wafer, dies } = makeBaseDies();
   const enriched = dies.map((die) => {
     const { ring } = classifyDie(die, wafer, { ringCount: 3 });
-    return { ...die, bins: [ring === 3 ? 2 : 1] };
+    return { ...die, hbin: ring === 3 ? 2 : 1 };
   });
 
   const result = buildWaferMap({
@@ -56,7 +56,7 @@ test('analyzeWaferMap detects quadrant-level yield loss and respects filtering o
   const { dies } = makeBaseDies();
   const enriched = dies.map((die) => ({
     ...die,
-    bins: [die.x >= 0 && die.y >= 0 ? 2 : 1],
+    hbin: die.x >= 0 && die.y >= 0 ? 2 : 1,
   }));
 
   const summary = analyzeWaferMap({
@@ -84,10 +84,8 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
     return {
       ...die,
       values: [quadrant === 'NE' ? 10 : 1],
-      bins: [
-        quadrant === 'NE' ? 8 : 1,
-        ring === 3 ? 23 : 1,
-      ],
+      hbin: quadrant === 'NE' ? 8 : 1,
+      sbin: ring === 3 ? 23 : 1,
     };
   });
 
@@ -138,7 +136,8 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
     return {
       ...die,
       values: [isBadCell ? 10 : 1],
-      bins: [isBadCell ? 9 : 1, isBadCell ? 31 : 1],
+      hbin: isBadCell ? 9 : 1,
+      sbin: isBadCell ? 31 : 1,
     };
   });
 
@@ -181,10 +180,10 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
   const { wafer, dies } = makeBaseDies();
   const patternDies = dies.map((die) => {
     const { ring } = classifyDie(die, wafer, { ringCount: 3 });
-    return { ...die, bins: [ring === 3 ? 2 : 1] };
+    return { ...die, hbin: ring === 3 ? 2 : 1 };
   });
-  const passDies = dies.map((die) => ({ ...die, bins: [1] }));
-  const lowYieldDies = dies.map((die) => ({ ...die, bins: [2] }));
+  const passDies = dies.map((die) => ({ ...die, hbin: 1 }));
+  const lowYieldDies = dies.map((die) => ({ ...die, hbin: 2 }));
 
   const lot = analyzeWaferLot([
     { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1] },
@@ -222,7 +221,7 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
 });
 test('analyzeWaferMap handles wafers with no data', () => {
   const { wafer, dies } = makeBaseDies();
-  const emptyDies = dies.map(die => ({ ...die, bins: undefined, values: undefined }));
+  const emptyDies = dies.map(die => ({ ...die, hbin: undefined, sbin: undefined, values: undefined }));
 
   const summary = analyzeWaferMap({
     dies: emptyDies,
@@ -249,7 +248,7 @@ test('analyzeWaferMap respects minimum sample size filtering', () => {
   // Create a wafer with very few dies in each ring
   const minimalDies = dies.slice(0, 2).map((die, i) => ({
     ...die,
-    bins: [i === 0 ? 1 : 2], // Only one die per bin
+    hbin: i === 0 ? 1 : 2,
   }));
 
   const summary = analyzeWaferMap({

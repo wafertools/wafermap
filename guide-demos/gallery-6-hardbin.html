@@ -19,7 +19,7 @@
         const passProb = Math.max(0.15, 1 - (r / 13) * 0.9 + (noise - 0.5) * 0.25);
         const rand = seededNoise(i, j, seed * 7 + 3);
         const bin = rand < passProb ? 1 : (rand < passProb + 0.12 ? 2 : 3);
-        results.push({ x: i, y: j, bins: [bin] });
+        results.push({ x: i, y: j, hbin: bin });
       }
       return results;
     }

@@ -17,9 +17,9 @@ test('buildWaferMap applies retest policy and chooses plot mode from the data', 
     { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
   ];
   const results = [
-    { x: 0, y: 0, values: [0.4], bins: [1] },
-    { x: 0, y: 0, values: [0.9], bins: [2] },
-    { x: 1, y: 0, values: [0.8], bins: [1] },
+    { x: 0, y: 0, values: [0.4], hbin: 1 },
+    { x: 0, y: 0, values: [0.9], hbin: 2 },
+    { x: 1, y: 0, values: [0.8], hbin: 1 },
   ];
 
   const first = buildWaferMap({
@@ -40,11 +40,11 @@ test('buildWaferMap applies retest policy and chooses plot mode from the data', 
   assert.equal(last.scene.plotMode, 'value');
 
   assert.deepEqual(findDie(first, 0, 0)?.values, [0.4]);
-  assert.deepEqual(findDie(first, 0, 0)?.bins, [1]);
+  assert.equal(findDie(first, 0, 0)?.hbin, 1);
   assert.equal(findDie(first, 0, 0)?.retestCount, 2);
 
   assert.deepEqual(findDie(last, 0, 0)?.values, [0.9]);
-  assert.deepEqual(findDie(last, 0, 0)?.bins, [2]);
+  assert.equal(findDie(last, 0, 0)?.hbin, 2);
   assert.equal(findDie(last, 0, 0)?.retestCount, 2);
 
   assert.equal(first.yield.passDies, 2);
@@ -64,7 +64,7 @@ test('buildWaferMap accepts explicit dies and enables reticles by default when c
 
   const result = buildWaferMap({
     dies,
-    results: [{ x: 0, y: 0, values: [1.23], bins: [1] }],
+    results: [{ x: 0, y: 0, values: [1.23], hbin: 1 }],
     waferConfig: {
       diameter: 60,
       metadata: { lot: 'LOT-9', waferNumber: 7 },
@@ -83,16 +83,16 @@ test('buildWaferMap accepts explicit dies and enables reticles by default when c
 test('buildWaferMap collapses lot stacks before rendering', () => {
   const lotStack = [
     [
-      { x: 0, y: 0, values: [1], bins: [2] },
-      { x: 1, y: 0, values: [9], bins: [1] },
+      { x: 0, y: 0, values: [1], hbin: 2 },
+      { x: 1, y: 0, values: [9], hbin: 1 },
     ],
     [
-      { x: 0, y: 0, values: [3], bins: [2] },
-      { x: 1, y: 0, values: [7], bins: [2] },
+      { x: 0, y: 0, values: [3], hbin: 2 },
+      { x: 1, y: 0, values: [7], hbin: 2 },
     ],
     [
-      { x: 0, y: 0, values: [5], bins: [1] },
-      { x: 1, y: 0, values: [11], bins: [2] },
+      { x: 0, y: 0, values: [5], hbin: 1 },
+      { x: 1, y: 0, values: [11], hbin: 2 },
     ],
   ];
 
@@ -139,14 +139,14 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
     dieConfig: { width: 10, height: 10 },
   });
   assert.equal(mode.scene.plotMode, 'hardbin');
-  assert.deepEqual(mode.dies.filter((die) => die.bins).map((die) => die.bins?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
+  assert.deepEqual(mode.dies.filter((die) => die.hbin !== undefined).map((die) => die.hbin).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
 });
 
 test('buildWaferMap marks edge-excluded dies and falls back to hardbin mode when no values are present', () => {
   const result = buildWaferMap({
     results: [
-      { x: 0, y: 0, bins: [1] },
-      { x: 1, y: 0, bins: [2] },
+      { x: 0, y: 0, hbin: 1 },
+      { x: 1, y: 0, hbin: 2 },
     ],
     waferConfig: {
       diameter: 60,
@@ -192,8 +192,8 @@ test('buildWaferMap handles explicit dies without results', () => {
 test('buildWaferMap infers wafer diameter from grid extent when not provided', () => {
   const result = buildWaferMap({
     results: [
-      { x: -5, y: -5, values: [1], bins: [1] },
-      { x: 5, y: 5, values: [1], bins: [1] },
+      { x: -5, y: -5, values: [1], hbin: 1 },
+      { x: 5, y: 5, values: [1], hbin: 1 },
     ],
     dieConfig: { width: 10, height: 10 },
   });

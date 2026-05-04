@@ -233,7 +233,7 @@ For yield and bin presence:
 - report absolute and relative delta, not just p-value
 
 Hard-bin and soft-bin analysis should use the same statistical machinery and
-finding model in V1. They differ only in which `bins[]` index is being analyzed
+finding model in V1. They differ only in whether `hbin` or `sbin` is being analyzed
 and which bin definitions are attached to the output.
 
 Reticle-position analysis should reuse the same finding machinery as ring and

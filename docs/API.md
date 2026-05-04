@@ -27,7 +27,7 @@ import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 // x,y are prober step positions (die grid indices), not mm.
 const { wafer, dies } = buildWaferMap({
-  results:   rows.map(r => ({ x: +r.x, y: +r.y, bins: [+r.hbin], values: [+r.testA] })),
+  results:   rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, values: [+r.testA] })),
   waferConfig: { diameter: 300, notch: { type: 'bottom' } },
   dieConfig:   { width: 10, height: 10 },
 });
@@ -85,8 +85,8 @@ buildWaferMap({
   passBins?:     number[],         // bins counted as pass for yield (default [1])
   retestPolicy?: 'last' | 'first', // how to handle multiple results at the same (x,y); default 'last'
   testDefs?:     TestDef[],        // named test definitions — one per values[] slot
-  hbinDefs?:     BinDef[],         // named hard bin definitions — one per distinct bins[0] value
-  sbinDefs?:     BinDef[],         // named soft bin definitions — one per distinct bins[1] value
+  hbinDefs?:     BinDef[],         // named hard bin definitions — one per distinct hbin value
+  sbinDefs?:     BinDef[],         // named soft bin definitions — one per distinct sbin value
 })
 ```
 
@@ -98,10 +98,11 @@ A single die record from wafer test equipment.
 
 ```ts
 {
-  x:       number    // die grid X position (prober step coordinate)
-  y:       number    // die grid Y position (prober step coordinate)
-  values?: number[]  // per-test measurement values — one entry per test (e.g. [idsat, vth, ioff])
-  bins?:   number[]  // bin assignments — one entry per bin type (e.g. [hbin, sbin])
+  x:      number    // die grid X position (prober step coordinate)
+  y:      number    // die grid Y position (prober step coordinate)
+  values?: number[] // per-test measurement values — one entry per test (e.g. [idsat, vth, ioff])
+  hbin?:  number    // hard bin assignment (physical sort result; STDF V4 range 0–32767)
+  sbin?:  number    // soft bin assignment (test-program failure category; independent 0–32767 space)
 }
 ```
 
@@ -186,7 +187,7 @@ is present the top-level `results` field is ignored.
     | 'median'     // median of values
     | 'stddev'     // sample standard deviation of values
     | 'countBin'   // how many wafers had targetBin at this position → values[0]
-    | 'mode'       // most frequent bin across wafers → bins[0]
+    | 'mode'       // most frequent bin across wafers → hbin
     | 'percent'    // percentage of wafers that had targetBin → values[0] in [0,100]
   targetBin?: number   // bin value to count or measure; required for 'countBin' and 'percent'
 }
@@ -264,7 +265,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hardbin-spa
 ```ts
 {
   wafer:         Wafer          // resolved wafer model (diameter, radius, center, notch, orientation)
-  dies:          Die[]          // all dies inside the wafer boundary, with values/bins attached
+  dies:          Die[]          // all dies inside the wafer boundary, with values/hbin/sbin attached
   scene:         Scene          // renderer-agnostic scene — pass directly to toPlotly() if needed
   reticles:      Reticle[]      // generated reticle geometry — pass as sceneOptions.reticles to renderWaferMap
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
@@ -360,7 +361,7 @@ const { wafer, dies } = buildWaferMap({
 
 ```ts
 const { wafer, dies, yield: yld } = buildWaferMap({
-  results:     csvRows.map(r => ({ x: Number(r.x), y: Number(r.y), bins: [Number(r.hbin)] })),
+  results:     csvRows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
   waferConfig: { diameter: 200, edgeExclusion: 3 },
   dieConfig:   { width: 8, height: 8 },
 });
@@ -374,7 +375,8 @@ const { wafer, dies } = buildWaferMap({
   results: rows.map(r => ({
     x: +r.x, y: +r.y,
     values: [+r.testA, +r.testB, +r.testC],
-    bins:   [+r.hbin, +r.sbin],
+    hbin: +r.hbin,
+    sbin: +r.sbin,
   })),
   dieConfig: { width: 10, height: 10 },
 });
@@ -449,7 +451,8 @@ const enrichedDies = result.dies.map(d => {
   return {
     ...d,
     values: [+row.testA, +row.testB, +row.testC],
-    bins:   [+row.hbin, +row.sbin],
+    hbin:   +row.hbin,
+    sbin:   +row.sbin,
   };
 });
 ```
@@ -493,10 +496,9 @@ Scene display options controllable via the toolbar or programmatically:
   flipX?:                  boolean
   flipY?:                  boolean
   testDefs?:               TestDef[]         // named test definitions — drives mode dropdown entries
-  hbinDefs?:               BinDef[]          // hard bin names/colors (bins[0], 0–32767 space)
-  sbinDefs?:               BinDef[]          // soft bin names/colors (bins[1], 0–32767 space — independent)
+  hbinDefs?:               BinDef[]          // hard bin names/colors (hbin, 0–32767 space)
+  sbinDefs?:               BinDef[]          // soft bin names/colors (sbin, 0–32767 space — independent)
   testIndex?:              number            // which values[] slot to show in 'value' mode; default 0
-  binIndex?:               number            // which bins[] slot to show in bin modes; default 0
   valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
   lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
@@ -615,7 +617,7 @@ const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 
 const ctrl = renderWaferMap(canvas, wafer, dies, {
   sceneOptions: { plotMode: 'hardbin', colorScheme: 'color' },
-  onClick:  (die)  => console.log(die.i, die.j, die.bins),
+  onClick:  (die)  => console.log(die.i, die.j, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
   onSceneOptionsChange: (opts) => syncExternalUI(opts),
 });
@@ -888,8 +890,8 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   severity: 'unusual' | 'notable' | 'info'
   variable: {
     kind:   'yield' | 'hardbin' | 'softbin' | 'test'
-    index?: number          // values[] or bins[] slot index
-    bin?:   number          // bin value (hardbin/softbin)
+    index?: number          // values[] slot index (for 'test' kind)
+    bin?:   number          // bin value (for 'hardbin'/'softbin' kind)
     label:  string          // human-readable name
     unit?:  string
   }
@@ -923,7 +925,7 @@ Describes what to visually emphasise when a finding is selected.
 ```ts
 type HighlightTarget =
   | { kind: 'region';  regionFamily: string; keys: string[]; dieKeys?: string[] }
-  | { kind: 'bin';     binIndex: number; bin: number; regionKeys?: string[]; dieKeys?: string[] }
+  | { kind: 'bin';     binSpace: 'hard' | 'soft'; bin: number; regionKeys?: string[]; dieKeys?: string[] }
   | { kind: 'wafer';   waferIndices: number[] }
   | { kind: 'dies';    dieKeys: string[] }
 ```
@@ -1064,7 +1066,7 @@ import { getDieAtPoint } from '@paulrobins/wafermap';
 
 document.getElementById('chart').on('plotly_click', (ev) => {
   const die = getDieAtPoint(result.scene, ev);
-  if (die) console.log(die.i, die.j, die.values, die.bins);
+  if (die) console.log(die.i, die.j, die.values, die.hbin, die.sbin);
 });
 ```
 
@@ -1146,7 +1148,7 @@ The [Manual Pipeline demo](../examples/pipeline-demo/) (`pipeline-demo`) is the 
 createWafer(spec)
   → generateDies(wafer, dieSpec)
   → clipDiesToWafer(dies, wafer, dieSpec)
-  → [attach values / bins / metadata to each die, keyed by die.i, die.j]
+  → [attach values / hbin / sbin / metadata to each die, keyed by die.i, die.j]
   → applyProbeSequence(dies, config)              // optional
   → applyOrientation(dies, wafer)
   ↓  (on each redraw)
@@ -1211,7 +1213,7 @@ Returns `true` when the point (x, y) falls inside the wafer boundary.
 
 ### `mapDataToDies(dies, data, options)`
 
-Maps row data onto dies, attaching `values` and/or `bins`.
+Maps row data onto dies, attaching `values` and/or bin fields.
 
 ```ts
 {
@@ -1284,26 +1286,28 @@ Returns a human-readable label for a ring index.
 
 ---
 
-### `getUniqueBins(dies, binIndex?)`
+### `getUniqueBins(dies, binSpace?)`
 
 Returns all distinct bin values, sorted ascending.
 
+`binSpace?: 'hard' | 'soft'` — selects which field to read (`'hard'` reads `die.hbin`, `'soft'` reads `die.sbin`; default `'hard'`).
+
 ---
 
-### `aggregateBinCounts(diesByWafer, targetBin, binIndex?)`
+### `aggregateBinCounts(diesByWafer, targetBin, binSpace?)`
 
 Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
 
-Returns one `Die` per unique `(i, j)` with `values[0]` = count, `bins[0]` = `targetBin`.
+Returns one `Die` per unique `(i, j)` with `values[0]` = count, and `hbin: targetBin` (for `'hard'`) or `sbin: targetBin` (for `'soft'`).
 
-- Pass `binIndex: 0` (default) for hard bins → use with `plotMode: 'stackedBins'`
-- Pass `binIndex: 1` for soft bins → use with `plotMode: 'stackedSoftBins'`
+- Pass `binSpace: 'hard'` (default) for hard bins → use with `plotMode: 'stackedBins'`
+- Pass `binSpace: 'soft'` for soft bins → use with `plotMode: 'stackedSoftBins'`
 
 Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for correct colorbar and percentage tooltips.
 
 ---
 
-### `aggregateValues(diesByWafer, method, binIndex?)`
+### `aggregateValues(diesByWafer, method)`
 
 `method` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
 
@@ -1332,16 +1336,15 @@ interface SceneOptions {
   interactiveTransform?:   { rotation?: number; flipX?: boolean; flipY?: boolean }
   reticles?:               Reticle[]
   testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
-  hbinDefs?:               BinDef[]    // named hard bin definitions (bins[0] space, 0–32767)
-  sbinDefs?:               BinDef[]    // named soft bin definitions (bins[1] space, 0–32767 — independent)
+  hbinDefs?:               BinDef[]    // named hard bin definitions (hbin, 0–32767 space)
+  sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
   testIndex?:              number      // which values[] slot to display in 'value' mode; default 0
-  binIndex?:               number      // which bins[] slot to display in 'hardbin'/'softbin' mode; default 0
   aggrMethod?:             string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
   lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
 }
 ```
 
-Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `binIndex`, `aggrMethod`, `lotSize`.
+Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `aggrMethod`, `lotSize`.
 
 ---
 
@@ -1363,7 +1366,7 @@ Returns the die that a Plotly click or hover event points to, or `null`.
 ```ts
 chart.on('plotly_click', ev => {
   const die = getDieAtPoint(scene, ev);
-  if (die) console.log(die.i, die.j, die.values, die.bins);
+  if (die) console.log(die.i, die.j, die.values, die.hbin, die.sbin);
 });
 ```
 
@@ -1396,7 +1399,8 @@ chart.on('plotly_click', ev => {
   width:         number    // die width in mm (or normalized units)
   height:        number    // die height in mm (or normalized units)
   values?:       number[]
-  bins?:         number[]
+  hbin?:         number    // hard bin (physical sort result; STDF V4 range 0–32767)
+  sbin?:         number    // soft bin (test-program failure category; independent 0–32767 space)
   metadata?:     DieMetadata
   insideWafer?:  boolean
   partial?:      boolean   // straddles the wafer boundary

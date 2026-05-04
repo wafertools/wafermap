@@ -7,10 +7,10 @@ import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adap
 
 function makeDies() {
   return [
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [0.9], bins: [1] },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [0.7], bins: [2] },
-    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, values: [0.8], bins: [1] },
-    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, values: [0.6], bins: [2] },
+    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [0.9], hbin: 1 },
+    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [0.7], hbin: 2 },
+    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, values: [0.8], hbin: 1 },
+    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, values: [0.6], hbin: 2 },
   ];
 }
 
@@ -198,9 +198,9 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
 
     const wafer = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], bins: [1] },
-        { x: 1, y: 0, values: [0.7], bins: [2] },
-        { x: 0, y: 1, values: [0.8], bins: [1] },
+        { x: 0, y: 0, values: [0.9], hbin: 1 },
+        { x: 1, y: 0, values: [0.7], hbin: 2 },
+        { x: 0, y: 1, values: [0.8], hbin: 1 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -264,9 +264,9 @@ test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () 
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], bins: [1] },
-        { x: 1, y: 0, values: [0.7], bins: [2] },
-        { x: 0, y: 1, values: [0.8], bins: [1] },
+        { x: 0, y: 0, values: [0.9], hbin: 1 },
+        { x: 1, y: 0, values: [0.7], hbin: 2 },
+        { x: 0, y: 1, values: [0.8], hbin: 1 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -304,9 +304,9 @@ test('renderWaferGallery restores original cards when leaving stacked mode', () 
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], bins: [1, 10] },
-        { x: 1, y: 0, values: [0.7], bins: [2, 11] },
-        { x: 0, y: 1, values: [0.8], bins: [1, 10] },
+        { x: 0, y: 0, values: [0.9], hbin: 1, sbin: 10 },
+        { x: 1, y: 0, values: [0.7], hbin: 2, sbin: 11 },
+        { x: 0, y: 1, values: [0.8], hbin: 1, sbin: 10 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -345,9 +345,9 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], bins: [1, 10] },
-        { x: 1, y: 0, values: [0.7], bins: [2, 11] },
-        { x: 0, y: 1, values: [0.8], bins: [1, 10] },
+        { x: 0, y: 0, values: [0.9], hbin: 1, sbin: 10 },
+        { x: 1, y: 0, values: [0.7], hbin: 2, sbin: 11 },
+        { x: 0, y: 1, values: [0.8], hbin: 1, sbin: 10 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -396,9 +396,9 @@ test('renderWaferGallery computes correct valueRange for stackedValues mode', ()
     // Create test data with known value ranges
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [1.0], bins: [1, 10] },
-        { x: 1, y: 0, values: [2.0], bins: [2, 11] },
-        { x: 0, y: 1, values: [3.0], bins: [1, 10] },
+        { x: 0, y: 0, values: [1.0], hbin: 1, sbin: 10 },
+        { x: 1, y: 0, values: [2.0], hbin: 2, sbin: 11 },
+        { x: 0, y: 1, values: [3.0], hbin: 1, sbin: 10 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },

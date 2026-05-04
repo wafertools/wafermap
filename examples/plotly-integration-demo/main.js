@@ -37,7 +37,7 @@ async function main() {
   const result = buildWaferMap({
     results: waferRows.map(r => ({
       x: Number(r.x), y: Number(r.y),
-      bins:   [Number(r.hbin)],
+      hbin:   Number(r.hbin),
       values: [Number(r.testA)],
     })),
     waferConfig: {
@@ -56,7 +56,7 @@ async function main() {
 
   wafer = result.wafer;
 
-  // Post-enrich with all channels.
+  // Post-enrich with all tests.
   const rowMap = new Map(waferRows.map(r => [`${r.x},${r.y}`, r]));
   dies = result.dies.map(die => {
     const r = rowMap.get(`${die.i},${die.j}`);
@@ -64,7 +64,8 @@ async function main() {
     return {
       ...die,
       values: [Number(r.testA), Number(r.testB), Number(r.testC)],
-      bins:   [Number(r.hbin),  Number(r.sbin)],
+      hbin:   Number(r.hbin),
+      sbin:   Number(r.sbin),
       metadata: {
         lotId:       r.lot,
         waferId:     `${r.lot}-${r.wafer}`,
@@ -189,7 +190,7 @@ function showSelection(dies) {
   // Bin distribution.
   const binCounts = {};
   for (const d of dies) {
-    const b = d.bins?.[0];
+    const b = d.hbin;
     if (b !== undefined) binCounts[b] = (binCounts[b] ?? 0) + 1;
   }
   const binEntries = Object.entries(binCounts).sort(([a],[b]) => Number(a)-Number(b));
@@ -197,7 +198,7 @@ function showSelection(dies) {
     statsRows.push([`Bin ${bin}`, `${n} (${(100*n/dies.length).toFixed(0)}%)`]);
   }
 
-  // Value stats (channel 0).
+  // Value stats (test 0).
   const vals = dies.map(d => d.values?.[0]).filter(v => v !== undefined);
   if (vals.length) {
     const mean   = vals.reduce((s,v) => s+v, 0) / vals.length;
@@ -235,7 +236,7 @@ function renderMetadata(metadata) {
 function renderSummaryStats(dies) {
   const full = dies.filter(d => !d.partial);
   const bins = {};
-  for (const d of full) { const b = d.bins?.[0] ?? 0; bins[b] = (bins[b] ?? 0) + 1; }
+  for (const d of full) { const b = d.hbin ?? 0; bins[b] = (bins[b] ?? 0) + 1; }
   const rows = [
     ['Total Dies',   full.length],
     ['Partial Dies', dies.filter(d => d.partial).length],

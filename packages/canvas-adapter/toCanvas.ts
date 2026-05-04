@@ -312,13 +312,11 @@ export function toCanvas(
   if (drawBinLegend) {
     const scheme = getColorScheme(scene.colorScheme);
 
-    // Collect unique bins from dies — use only the slot that matches the active mode.
-    // Hard bins are bins[0], soft bins are bins[1]; independent number spaces (STDF V4).
-    const binIndex  = scene.plotMode === 'softbin' ? 1 : 0;
+    // Collect unique bins from dies — use hbin or sbin depending on active mode.
     const binCounts = new Map<number, number>();
     for (const die of scene.dies) {
       if (die.partial) continue;
-      const bin = die.bins?.[binIndex];
+      const bin = scene.plotMode === 'softbin' ? die.sbin : die.hbin;
       if (bin == null) continue;
       binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
     }

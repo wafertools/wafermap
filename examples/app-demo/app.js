@@ -172,7 +172,7 @@ function renderPareto() {
   for (const dies of Object.values(diesByWafer)) {
     for (const die of dies) {
       if (die.partial) continue;
-      const bin = die.bins?.[0];
+      const bin = die.hbin;
       if (bin !== undefined) counts[bin] = (counts[bin] ?? 0) + 1;
     }
   }
@@ -225,7 +225,7 @@ function renderYieldChart() {
     for (const die of diesByWafer[waferId]) {
       if (die.partial) continue;
       total++;
-      const bin = die.bins?.[0];
+      const bin = die.hbin;
       if (bin !== undefined) binsByWafer[waferId][bin] = (binsByWafer[waferId][bin] ?? 0) + 1;
     }
     totalsByWafer[waferId] = total;
@@ -382,7 +382,7 @@ function renderMapStats(targetEl, dies) {
   const fullDies  = dies.filter(d => !d.partial);
   const binCounts = {};
   for (const die of fullDies) {
-    const bin = die.bins?.[0] ?? 0;
+    const bin = die.hbin ?? 0;
     binCounts[bin] = (binCounts[bin] ?? 0) + 1;
   }
   const total = fullDies.length;
@@ -457,8 +457,8 @@ function populatePassBinSelector() {
   const sel     = document.getElementById('cfg-passbin');
   sel.innerHTML = `<option value="">None</option>` +
     bins.map(b => `<option value="${b}">Bin ${b}</option>`).join('');
-  if (bins.length) sel.value = String(bins[0]);
-  state.cfg.passBin = bins.length ? bins[0] : null;
+  if (bins.length) sel.value = String(hbin);
+  state.cfg.passBin = bins.length ? hbin : null;
 }
 
 function populateMapControls() {
@@ -500,7 +500,7 @@ function updateHeaderYield() {
     return;
   }
   const flatDies = Object.values(state.data.diesByWafer).flat().filter(d => !d.partial);
-  const passCount = flatDies.filter(d => d.bins?.[0] === passBin).length;
+  const passCount = flatDies.filter(d => d.hbin === passBin).length;
   const yieldPct  = flatDies.length ? (100 * passCount / flatDies.length).toFixed(1) : '—';
   valEl.textContent = yieldPct + '%';
   statEl.hidden = false;

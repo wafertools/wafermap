@@ -11,7 +11,7 @@ import type {
 import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, type StatsRegion } from './regions.js';
 
 interface EligibleDie extends Die {
-  bins: number[];
+  hbin: number;
 }
 
 interface RawFinding extends StatsFinding {
@@ -42,7 +42,7 @@ function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
 function isEligibleDie(die: Die, options: Required<AnalyzeWaferMapOptions>): die is EligibleDie {
   if (!options.includePartial && die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
-  return die.bins?.[0] !== undefined;
+  return die.hbin !== undefined;
 }
 
 function collectMetadata(dies: Die[], analyzedDies: number, yieldPercent: number | null): StatsSummary['metadata'] {
@@ -54,8 +54,8 @@ function collectMetadata(dies: Die[], analyzedDies: number, yieldPercent: number
     die.values?.forEach((value, index) => {
       if (value !== undefined) testSet.add(index);
     });
-    if (die.bins?.[0] !== undefined) hardBinSet.add(die.bins[0]);
-    if (die.bins?.[1] !== undefined) softBinSet.add(die.bins[1]);
+    if (die.hbin !== undefined) hardBinSet.add(die.hbin);
+    if (die.sbin !== undefined) softBinSet.add(die.sbin);
   }
 
   return {
@@ -198,8 +198,8 @@ function buildYieldFindings(
 
     if (left.length < options.minimumSampleSize || right.length < options.minimumSampleSize) continue;
 
-    const leftPass = left.filter((die) => passSet.has(die.bins[0])).length;
-    const rightPass = right.filter((die) => passSet.has(die.bins[0])).length;
+    const leftPass = left.filter((die) => passSet.has(die.hbin)).length;
+    const rightPass = right.filter((die) => passSet.has(die.hbin)).length;
     const leftRate = leftPass / left.length;
     const rightRate = rightPass / right.length;
     const delta = leftRate - rightRate;
@@ -260,15 +260,16 @@ function buildYieldFindings(
 function buildBinFindings(
   eligibleDies: EligibleDie[],
   regionFamily: StatsRegion[],
-  binIndex: number,
+  binSpace: 'hard' | 'soft',
   defs: BinDef[] | undefined,
   variableKind: 'hardbin' | 'softbin',
   options: Required<AnalyzeWaferMapOptions>,
 ): RawFinding[] {
+  const getBin = (d: EligibleDie) => binSpace === 'soft' ? d.sbin : d.hbin;
   const dieMap = new Map(eligibleDies.map((die) => [`${die.i},${die.j}`, die]));
   const bins = [...new Set(
     eligibleDies
-      .map((die) => die.bins?.[binIndex])
+      .map(getBin)
       .filter((bin): bin is number => bin !== undefined),
   )].sort((left, right) => left - right);
   const findings: RawFinding[] = [];
@@ -284,8 +285,8 @@ function buildBinFindings(
     if (left.length < options.minimumSampleSize || right.length < options.minimumSampleSize) continue;
 
     for (const bin of bins) {
-      const leftHits = left.filter((die) => die.bins?.[binIndex] === bin).length;
-      const rightHits = right.filter((die) => die.bins?.[binIndex] === bin).length;
+      const leftHits = left.filter((die) => getBin(die) === bin).length;
+      const rightHits = right.filter((die) => getBin(die) === bin).length;
       const leftRate = leftHits / left.length;
       const rightRate = rightHits / right.length;
       const delta = leftRate - rightRate;
@@ -298,7 +299,6 @@ function buildBinFindings(
         severity: 'info',
         variable: {
           kind: variableKind,
-          index: binIndex,
           bin,
           label: binLabel,
         },
@@ -322,7 +322,6 @@ function buildBinFindings(
         summary: summarizeBinFinding(region.label, binLabel, delta, region.family),
         highlight: {
           kind: 'bin',
-          binIndex,
           bin,
           regionKeys: [region.key],
           dieKeys: [...region.dieKeys],
@@ -509,17 +508,17 @@ export function analyzeWaferMap(
   }
   if (resolved.enableHardBinAnalysis) {
     findings.push(
-      ...buildBinFindings(eligibleDies, ringRegions, 0, result.scene.hbinDefs, 'hardbin', resolved),
-      ...buildBinFindings(eligibleDies, quadrantRegions, 0, result.scene.hbinDefs, 'hardbin', resolved),
-      ...buildBinFindings(eligibleDies, reticlePositionRegions, 0, result.scene.hbinDefs, 'hardbin', resolved),
+      ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.scene.hbinDefs, 'hardbin', resolved),
+      ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.scene.hbinDefs, 'hardbin', resolved),
+      ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.scene.hbinDefs, 'hardbin', resolved),
     );
   }
   if (resolved.enableSoftBinAnalysis) {
-    const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.bins?.[1] !== undefined);
+    const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined);
     findings.push(
-      ...buildBinFindings(softEligibleDies, ringRegions, 1, result.scene.sbinDefs, 'softbin', resolved),
-      ...buildBinFindings(softEligibleDies, quadrantRegions, 1, result.scene.sbinDefs, 'softbin', resolved),
-      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 1, result.scene.sbinDefs, 'softbin', resolved),
+      ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.scene.sbinDefs, 'softbin', resolved),
+      ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.scene.sbinDefs, 'softbin', resolved),
+      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.scene.sbinDefs, 'softbin', resolved),
     );
   }
   if (resolved.enableTestValueAnalysis) {

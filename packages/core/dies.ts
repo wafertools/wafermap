@@ -17,7 +17,8 @@ export interface Die {
   width: number;       // die size in mm — set by generateDies
   height: number;
   values?: number[];   // ordered test values (index 0 = primary)
-  bins?: number[];     // ordered bin assignments (index 0 = primary)
+  hbin?: number;       // hard bin (physical sort result)
+  sbin?: number;       // soft bin (test-program failure category)
   metadata?: DieMetadata;
   insideWafer?: boolean;
   partial?: boolean;     // true if die straddles the wafer boundary

@@ -104,8 +104,8 @@
         const shouldRetest = (Math.abs(r.x + r.y * 3 + seed) % 7) === 0;
         if (!shouldRetest) continue;
         // Flip the bin on the retest — first probe failed, retest passes (or vice versa)
-        const retestBin = r.bins[0] === 1 ? 2 : 1;
-        retests.push({ ...r, bins: [retestBin, r.bins[1]] });
+        const retestBin = r.hbin === 1 ? 2 : 1;
+        retests.push({ ...r, hbin: retestBin });
       }
 
       // Return primary + retests interleaved (same (x,y) appears twice)
@@ -145,12 +145,12 @@
       const listEl = document.getElementById('retest-list');
       listEl.innerHTML = '';
       for (const d of retested.slice(0, 30)) {
-        const bin = HBIN_DEFS.find(b => b.bin === d.bins?.[0]);
+        const bin = HBIN_DEFS.find(b => b.bin === d.hbin);
         listEl.insertAdjacentHTML('beforeend', `
           <div class="retest-die">
             (${d.i}, ${d.j})
             <span class="badge badge-amber">×${d.retestCount + 1}</span>
-            <span style="color:${bin?.color ?? '#666'}">● ${bin?.name ?? `bin ${d.bins?.[0]}`}</span>
+            <span style="color:${bin?.color ?? '#666'}">● ${bin?.name ?? `bin ${d.hbin}`}</span>
           </div>`);
       }
       if (retested.length > 30) {
@@ -161,13 +161,13 @@
       ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
         sceneOptions: { plotMode: 'hardbin', hbinDefs: HBIN_DEFS },
         onClick(die) {
-          const bin  = HBIN_DEFS.find(b => b.bin === die.bins?.[0]);
+          const bin  = HBIN_DEFS.find(b => b.bin === die.hbin);
           const retest = die.retestCount != null
             ? `<br><strong>Retested ${die.retestCount + 1}×</strong> — tooltip shows "Retests: N"`
             : '';
           document.getElementById('die-box').innerHTML = `
             Position: <strong>(${die.i}, ${die.j})</strong><br>
-            Hard bin: <strong style="color:${bin?.color}">${bin?.name ?? die.bins?.[0]}</strong><br>
+            Hard bin: <strong style="color:${bin?.color}">${bin?.name ?? die.hbin}</strong><br>
             Idsat: <strong>${fmt(die.values?.[0])}</strong>${retest}`;
         },
       });

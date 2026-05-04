@@ -89,7 +89,7 @@ export function makeResults({
       //   Ioff: off-state leakage grows exponentially toward edge
       const ioff = 8e-12 * Math.exp((r / radius) * 2.1) * (1 + (n1 - 0.5) * 0.4);
 
-      results.push({ x: i, y: j, bins: [hbin, sbin], values: [idsat, vth, ioff] });
+      results.push({ x: i, y: j, hbin, sbin, values: [idsat, vth, ioff] });
     }
   }
 

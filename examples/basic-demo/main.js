@@ -56,7 +56,8 @@ async function loadWafer(waferId) {
       x:      +r.x,
       y:      +r.y,
       values: [+r.testA, +r.testB, +r.testC],
-      bins:   [+r.hbin,  +r.sbin],
+      hbin:   +r.hbin,
+      sbin:   +r.sbin,
     })),
     waferConfig: {
       diameter: 150,
@@ -132,9 +133,9 @@ function updateStatsPanel({ yield: yld, dies, wafer }) {
   for (const die of full) {
     const { ring, quadrant } = classifyDie(die, wafer, { ringCount: RING_COUNT });
     ringStats[ring - 1].total++;
-    if (die.bins?.[0] === 1) ringStats[ring - 1].pass++;
+    if (die.hbin === 1) ringStats[ring - 1].pass++;
     qMap.get(quadrant).total++;
-    if (die.bins?.[0] === 1) qMap.get(quadrant).pass++;
+    if (die.hbin === 1) qMap.get(quadrant).pass++;
   }
 
   renderPctTable('ring-stats',     ringStats);
@@ -157,7 +158,7 @@ function renderPctTable(id, rows) {
 function updateBinLegend(dies) {
   const counts = {};
   for (const d of dies.filter(d => !d.partial)) {
-    const b = d.bins?.[0];
+    const b = d.hbin;
     if (b != null) counts[b] = (counts[b] ?? 0) + 1;
   }
   const hbinMap  = new Map(HBIN_DEFS.map(d => [d.bin, d]));
@@ -183,7 +184,7 @@ function updateSelectionPanel(selectedDies) {
     sep.style.display = 'none';
     return;
   }
-  const pass = selectedDies.filter(d => d.bins?.[0] === 1).length;
+  const pass = selectedDies.filter(d => d.hbin === 1).length;
   const pct  = (100 * pass / selectedDies.length).toFixed(1);
   document.getElementById('stat-sel-count').textContent = selectedDies.length;
   document.getElementById('stat-sel-pass').textContent  = `${pct}%`;

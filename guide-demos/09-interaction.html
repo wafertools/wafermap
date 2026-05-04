@@ -129,7 +129,7 @@
         el.innerHTML = '<span class="empty">Hover over a die</span>';
         return;
       }
-      const hbin = die.bins?.[0];
+      const hbin = die.hbin;
       el.innerHTML = `
         (${die.i}, ${die.j}) &nbsp; ${binLabel(hbin)}<br>
         Idsat: <strong>${fmtValue(die.values?.[0], 'A')}</strong> &nbsp;
@@ -137,8 +137,8 @@
     }
 
     function onClick(die) {
-      const hbin = die.bins?.[0];
-      const sbin = die.bins?.[1];
+      const hbin = die.hbin;
+      const sbin = die.sbin;
       document.getElementById('click-detail').innerHTML = `
         <div class="die-detail-row"><span class="label">Position</span><span class="value">(${die.i}, ${die.j})</span></div>
         <div class="die-detail-row"><span class="label">Hard bin</span><span class="value">${binLabel(hbin)}</span></div>
@@ -160,14 +160,14 @@
       }
 
       // Compute yield and bin breakdown for the selection
-      const pass  = selected.filter(d => d.bins?.[0] === 1).length;
-      const total = selected.filter(d => d.bins?.[0] != null).length;
+      const pass  = selected.filter(d => d.hbin === 1).length;
+      const total = selected.filter(d => d.hbin != null).length;
       document.getElementById('sel-yield').textContent =
         total > 0 ? `${(pass / total * 100).toFixed(1)}%` : '—';
 
       const counts = new Map();
       for (const d of selected) {
-        const b = d.bins?.[0];
+        const b = d.hbin;
         if (b != null) counts.set(b, (counts.get(b) ?? 0) + 1);
       }
       const lines = HBIN_DEFS
@@ -191,7 +191,7 @@
 
     // Highlight all failing dies programmatically (e.g. from a table click in your app)
     document.getElementById('btn-select-fails').addEventListener('click', () => {
-      const failing = dies.filter(d => d.bins?.[0] != null && d.bins[0] !== 1);
+      const failing = dies.filter(d => d.hbin != null && d.hbin !== 1);
       ctrl.setSelection(failing);
       onSelect(failing);
     });

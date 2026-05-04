@@ -47,7 +47,7 @@ for (let y = -15; y <= 15; y++) {
     rawData.push({
       x, y,
       values: [v, Math.max(0.05, v - 0.08), Math.max(0.05, v - 0.14)],
-      bins:   [bin],
+      hbin:   bin,
     });
   }
 }

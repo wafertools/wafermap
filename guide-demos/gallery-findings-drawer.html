@@ -26,7 +26,7 @@
         } else {
           bin = rand < passProb ? 1 : (rand < passProb + 0.12 ? 2 : 3);
         }
-        results.push({ x: i, y: j, bins: [bin] });
+        results.push({ x: i, y: j, hbin: bin });
       }
       return results;
     }

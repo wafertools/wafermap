@@ -19,7 +19,7 @@
         if (r > 13) continue;
         const val = Math.abs((i * seed + j) % 7);
         const bin = val < 3 ? 1 : 2;
-        results.push({ x: i, y: j, bins: [bin] });
+        results.push({ x: i, y: j, hbin: bin });
       }
       return results;
     }

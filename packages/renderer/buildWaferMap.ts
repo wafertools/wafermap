@@ -25,8 +25,10 @@ export interface DieResult {
   y: number;
   /** Measured test values — one entry per test (e.g. [idsat, vth, ioff]). */
   values?: number[];
-  /** Bin assignments — bins[0] is the hard bin, bins[1] the soft bin, etc. */
-  bins?: number[];
+  /** Hard bin assignment (physical sort result). */
+  hbin?: number;
+  /** Soft bin assignment (test-program failure category). */
+  sbin?: number;
   /**
    * Number of times this die position appeared in the input results array.
    * Populated automatically by `buildWaferMap` — do not set manually.
@@ -227,7 +229,7 @@ export interface WaferMapInput {
    */
   testDefs?: TestDef[];
   /**
-   * Named hard bin definitions — one per distinct `bins[0]` value.
+   * Named hard bin definitions — one per distinct `hbin` value.
    * Hard bins and soft bins have independent number spaces (STDF V4: both 0–32767),
    * so they are defined separately.
    * When provided, the bin legend and tooltips show names like `"Pass"` instead of `"Bin 1"`.
@@ -235,7 +237,7 @@ export interface WaferMapInput {
    */
   hbinDefs?: BinDef[];
   /**
-   * Named soft bin definitions — one per distinct `bins[1]` value.
+   * Named soft bin definitions — one per distinct `sbin` value.
    * Soft bins are the logical/test-program classification; hard bins are the physical sort result.
    * Both spaces range 0–32767 and may overlap — define them separately.
    */
@@ -442,7 +444,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): Die
     const x = Number(parts[0]);
     const y = Number(parts[1]);
 
-    const primaryBin = (pt: DieResult) => pt.bins?.[0];
+    const primaryBin = (pt: DieResult) => pt.hbin;
     const primaryVal = (pt: DieResult): number | undefined => pt.values?.[0];
 
     if (method === 'countBin' && targetBin !== undefined) {
@@ -476,7 +478,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): Die
     } else if (method === 'mode') {
       const bins = points.map(primaryBin).filter((b): b is number => b !== undefined);
       const m = modeOf(bins);
-      if (m !== null) result.push({ x, y, bins: [m] });
+      if (m !== null) result.push({ x, y, hbin: m });
     }
   }
 
@@ -489,7 +491,7 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
   const totalDies = dies.length;
   const edgeExcludedDies = dies.filter(d => d.edgeExcluded).length;
   const filledDies = dies.filter(
-    d => (d.values?.length ?? 0) > 0 || (d.bins?.length ?? 0) > 0,
+    d => (d.values?.length ?? 0) > 0 || d.hbin !== undefined || d.sbin !== undefined,
   ).length;
   return {
     filledDies,
@@ -511,7 +513,7 @@ function computeYield(dies: Die[], passBins: number[]): YieldSummary {
 
   for (const die of fullDies) {
     if (die.edgeExcluded) continue;
-    const bin = die.bins?.[0];
+    const bin = die.hbin;
     if (bin !== undefined) {
       hasBinData = true;
       if (passBinSet.has(bin)) passDies++;
@@ -590,7 +592,8 @@ function attachData(die: Die, pt: DieResult): Die {
   return {
     ...die,
     ...(pt.values      !== undefined ? { values:      pt.values      } : {}),
-    ...(pt.bins        !== undefined ? { bins:        pt.bins        } : {}),
+    ...(pt.hbin        !== undefined ? { hbin:        pt.hbin        } : {}),
+    ...(pt.sbin        !== undefined ? { sbin:        pt.sbin        } : {}),
     ...(pt.retestCount !== undefined ? { retestCount: pt.retestCount } : {}),
   };
 }
@@ -627,7 +630,8 @@ function autoPlotMode(results: DieResult[], opts: SceneOptions): PlotMode {
  *   results: rows.map(r => ({
  *     x: +r.x, y: +r.y,
  *     values: [+r.testA, +r.testB, +r.testC],
- *     bins:   [+r.hbin, +r.sbin],
+ *     hbin: +r.hbin,
+ *     sbin: +r.sbin,
  *   })),
  *   dieConfig: { width: 10, height: 10 },
  * });
