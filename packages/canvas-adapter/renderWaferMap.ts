@@ -766,11 +766,12 @@ export function renderWaferMap(
             ...(hasHbin ? [{ plotMode: 'hardbin'  as PlotMode, label: MODE_LABELS.hardbin }] : []),
             ...(hasSbin ? [{ plotMode: 'softbin'  as PlotMode, label: MODE_LABELS.softbin }] : []),
           ];
-          const stackedEntries: ModeEntry[] = [
+          // Stacked modes are only valid for lot-aggregated data — the scene knows this via isLotStack.
+          const stackedEntries: ModeEntry[] = currentScene.isLotStack ? [
             ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
             ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
             ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
-          ];
+          ] : [];
 
           const menu = document.createElement('div');
           const btnRect = btnMode.getBoundingClientRect();

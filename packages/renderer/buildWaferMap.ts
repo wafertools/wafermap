@@ -698,10 +698,11 @@ export function buildWaferMap(
       ...sceneOpts,
       reticles,
       showReticle,
-      plotMode: autoPlotMode(results, sceneOpts),
-      testDefs:  norm.testDefs,
-      hbinDefs: norm.hbinDefs,
-      sbinDefs: norm.sbinDefs,
+      plotMode:   autoPlotMode(results, sceneOpts),
+      testDefs:   norm.testDefs,
+      hbinDefs:   norm.hbinDefs,
+      sbinDefs:   norm.sbinDefs,
+      isLotStack: false,
     });
 
     return {
@@ -794,6 +795,7 @@ export function buildWaferMap(
     hbinDefs:     norm.hbinDefs,
     sbinDefs:     norm.sbinDefs,
     dataAxisFlip: { x: flipX, y: flipY },
+    isLotStack:   norm.lotStackOpts !== undefined,
   });
 
   return {

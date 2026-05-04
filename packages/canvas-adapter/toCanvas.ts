@@ -209,7 +209,7 @@ export function toCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, scene.axisFlip);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, scene.axisFlip, scene.rotation);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
@@ -441,6 +441,7 @@ function drawAxisTicks(
   axisLeftReserve: number,
   diePitchMm?: { x: number; y: number },
   axisFlip?: { x: boolean; y: boolean },
+  rotation = 0,
 ): void {
   ctx.save();
   ctx.font        = AXIS_TICK_FONT;
@@ -454,6 +455,41 @@ function drawAxisTicks(
   // Target ~one tick per 50px. Same step for both axes (square die grid).
   const tickStepMm = niceStep(50 / ppm);
 
+  // Convert a display-space mm position to the die grid index for axis labels.
+  //
+  // CCW rotation R maps die coords to display coords as:
+  //   display_x =  cos(R)*die_x - sin(R)*die_y
+  //   display_y =  sin(R)*die_x + cos(R)*die_y
+  // Inverting for the 4 cardinal cases (before any flip):
+  //   R=0:   die_x =  display_x/px,  die_y =  display_y/py
+  //   R=90:  die_x =  display_y/px,  die_y = -display_x/py
+  //   R=180: die_x = -display_x/px,  die_y = -display_y/py
+  //   R=270: die_x = -display_y/px,  die_y =  display_x/py
+  //
+  // axisFlip (XOR of data-pipeline and interactive flips) negates the display coordinate
+  // before the rotation inverse, so flip sign is applied to the mm value first.
+  const r = ((rotation % 360) + 360) % 360;
+  const fx = axisFlip?.x ? -1 : 1;  // flip applied to display-X before inversion
+  const fy = axisFlip?.y ? -1 : 1;  // flip applied to display-Y before inversion
+
+  function dieIndexForDisplayX(mm: number): number {
+    if (!diePitchMm) return mm;
+    const ux = fx * mm; // unflipped display-X
+    if (r === 0)   return Math.round( ux / diePitchMm.x);
+    if (r === 90)  return Math.round(-ux / diePitchMm.y);
+    if (r === 180) return Math.round(-ux / diePitchMm.x);
+    /* 270 */      return Math.round( ux / diePitchMm.y);
+  }
+
+  function dieIndexForDisplayY(mm: number): number {
+    if (!diePitchMm) return mm;
+    const uy = fy * mm; // unflipped display-Y
+    if (r === 0)   return Math.round( uy / diePitchMm.y);
+    if (r === 90)  return Math.round( uy / diePitchMm.x);
+    if (r === 180) return Math.round(-uy / diePitchMm.y);
+    /* 270 */      return Math.round(-uy / diePitchMm.x);
+  }
+
   // X axis (bottom)
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
@@ -466,9 +502,7 @@ function drawAxisTicks(
     ctx.moveTo(sx, axisY - AXIS_TICK_LEN);
     ctx.lineTo(sx, axisY);
     ctx.stroke();
-    const label = diePitchMm
-      ? String((axisFlip?.x ? -1 : 1) * Math.round(mm / diePitchMm.x))
-      : fmt(mm);
+    const label = diePitchMm ? String(dieIndexForDisplayX(mm)) : fmt(mm);
     ctx.fillText(label, sx, axisY + 2);
   }
 
@@ -484,9 +518,7 @@ function drawAxisTicks(
     ctx.moveTo(axisX, sy);
     ctx.lineTo(axisX + AXIS_TICK_LEN, sy);
     ctx.stroke();
-    const label = diePitchMm
-      ? String((axisFlip?.y ? -1 : 1) * Math.round(mm / diePitchMm.y))
-      : fmt(mm);
+    const label = diePitchMm ? String(dieIndexForDisplayY(mm)) : fmt(mm);
     ctx.fillText(label, axisX - 2, sy);
   }
 

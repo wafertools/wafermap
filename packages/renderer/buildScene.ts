@@ -79,8 +79,12 @@ export interface Scene {
   lotSize?: number;
   /** Total effective axis flip for tick labels (data-pipeline flip XOR interactive flip). */
   axisFlip: { x: boolean; y: boolean };
+  /** Total effective rotation in degrees (wafer orientation + interactive rotation). */
+  rotation: number;
   /** True when reticle geometry is present — used to conditionally show the reticle toolbar button. */
   hasReticle: boolean;
+  /** True when the scene was built from lot-aggregated data (lotStack). Controls toolbar stacked-mode visibility. */
+  isLotStack: boolean;
 }
 
 export interface SceneOptions {
@@ -151,6 +155,8 @@ export interface SceneOptions {
    * to produce the total effective axis flip for tick labels.
    */
   dataAxisFlip?: { x: boolean; y: boolean };
+  /** Set to true when the scene is built from lot-aggregated data (lotStack). */
+  isLotStack?: boolean;
 }
 
 /** @deprecated Use {@link SceneOptions} */
@@ -707,12 +713,17 @@ export function buildScene(
     hbinDefs,
     sbinDefs,
     testIndex = 0,
-    binIndex  = 0,
+    binIndex: rawBinIndex,
     fallbackFormat = 'engineering' as const,
     aggrMethod,
     lotSize,
     dataAxisFlip,
+    isLotStack = false,
   } = options;
+
+  // Soft bins live in bins[1]; hard bins in bins[0]. Apply the correct default when
+  // the caller didn't explicitly supply binIndex.
+  const binIndex = rawBinIndex ?? (plotMode === 'softbin' ? 1 : 0);
 
   // Total effective axis flip for display: data-pipeline flip XOR interactive flip.
   const axisFlip = {
@@ -809,7 +820,9 @@ export function buildScene(
     aggrMethod,
     lotSize,
     axisFlip,
+    rotation: ((transform.rotation % 360) + 360) % 360,
     hasReticle: reticles.length > 0,
+    isLotStack,
   };
 }
 
