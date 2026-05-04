@@ -106,7 +106,8 @@ async function processData() {
     const results = waferRows.map(r => ({
       x:      Number(r[cfg.xCol]),
       y:      Number(r[cfg.yCol]),
-      bins:   cfg.hbinCol           ? [Number(r[cfg.hbinCol])]                   : undefined,
+      hbin:   cfg.hbinCol           ? Number(r[cfg.hbinCol])                     : undefined,
+      sbin:   cfg.sbinCol           ? Number(r[cfg.sbinCol])                     : undefined,
       values: cfg.valueCols.length  ? cfg.valueCols.map(col => Number(r[col]))   : undefined,
     }));
     return { waferId, waferRows, results };
@@ -129,14 +130,12 @@ async function processData() {
     const rowMap = new Map(waferRows.map(r => [`${r[cfg.xCol]},${r[cfg.yCol]}`, r]));
     const enrichedDies = result.dies.map(die => {
       const row = rowMap.get(`${die.i},${die.j}`);
-      if (!row) return { ...die, values: [], bins: [], metadata: {} };
+      if (!row) return { ...die, values: [], hbin: undefined, sbin: undefined, metadata: {} };
       return {
         ...die,
         values: cfg.valueCols.map(col => Number(row[col])),
-        bins: [
-          cfg.hbinCol ? Number(row[cfg.hbinCol]) : 0,
-          ...(cfg.sbinCol ? [Number(row[cfg.sbinCol])] : []),
-        ],
+        hbin: cfg.hbinCol ? Number(row[cfg.hbinCol]) : undefined,
+        sbin: cfg.sbinCol ? Number(row[cfg.sbinCol]) : undefined,
         metadata: {
           waferId,
           customFields: Object.fromEntries(state.headers.map(h => [h, row[h]])),
@@ -457,8 +456,8 @@ function populatePassBinSelector() {
   const sel     = document.getElementById('cfg-passbin');
   sel.innerHTML = `<option value="">None</option>` +
     bins.map(b => `<option value="${b}">Bin ${b}</option>`).join('');
-  if (bins.length) sel.value = String(hbin);
-  state.cfg.passBin = bins.length ? hbin : null;
+  if (bins.length) sel.value = String(bins[0]);
+  state.cfg.passBin = bins.length ? bins[0] : null;
 }
 
 function populateMapControls() {
