@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,6 +11,7 @@
     "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
   } }</script>
 </head>
+
 <body class="demo-page">
 
   <header class="demo-header">
@@ -24,7 +26,7 @@
     <div class="ctrl-group">
       <span class="ctrl-label">View</span>
       <button class="toggle-btn active" id="btn-hard">Hard bins</button>
-      <button class="toggle-btn"        id="btn-soft">Soft bins</button>
+      <button class="toggle-btn" id="btn-soft">Soft bins</button>
     </div>
     <div class="ctrl-sep"></div>
     <span style="font-size:12px; color:var(--muted)">
@@ -93,17 +95,17 @@
   </div>
 
   <script type="module">
-    import { buildWaferMap }  from 'wafermap';
+    import { buildWaferMap } from 'wafermap';
     import { renderWaferMap } from 'wafermap/canvas-adapter';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS } from './data.js';
 
     const result = buildWaferMap({
-      results:     makeResults({ seed: 11 }),
+      results: makeResults({ seed: 11 }),
       waferConfig: WAFER_CONFIG,
-      dieConfig:   DIE_CONFIG,
-      hbinDefs:    HBIN_DEFS,   // named definitions for hard bins
-      sbinDefs:    SBIN_DEFS,   // named definitions for soft bins
-      passBins:    [1],
+      dieConfig: DIE_CONFIG,
+      hbinDefs: HBIN_DEFS,   // named definitions for hard bins
+      sbinDefs: SBIN_DEFS,   // named definitions for soft bins
+      passBins: [1],
     });
 
     // Populate yield summary
@@ -114,7 +116,14 @@
     document.getElementById('stat-fail').textContent = yld.failDies;
 
     // Count dies per bin
-    
+    function binCounts(dies, binType) {
+      const map = new Map();
+      for (const d of dies) {
+        const b = d[binType]; // "hbin" or "sbin"
+        if (b != null) map.set(b, (map.get(b) ?? 0) + 1);
+      }
+      return map;
+    }
 
     function renderBinRows(containerId, defs, counts) {
       const total = [...counts.values()].reduce((a, b) => a + b, 0);
@@ -122,7 +131,7 @@
       el.innerHTML = '';
       for (const def of defs) {
         const count = counts.get(def.bin) ?? 0;
-        const pct   = total > 0 ? (count / total * 100).toFixed(1) : '0.0';
+        const pct = total > 0 ? (count / total * 100).toFixed(1) : '0.0';
         el.insertAdjacentHTML('beforeend', `
           <div class="bin-row">
             <div class="bin-swatch" style="background:${def.color}"></div>
@@ -132,8 +141,8 @@
       }
     }
 
-    const hCounts = binCounts(result.hbin);
-    const sCounts = binCounts(result.sbin);
+    const hCounts = binCounts(result.dies, "hbin");
+    const sCounts = binCounts(result.dies, "sbin");
     renderBinRows('hbin-rows', HBIN_DEFS, hCounts);
     renderBinRows('sbin-rows', SBIN_DEFS, sCounts);
 
@@ -165,4 +174,5 @@
   </script>
 
 </body>
+
 </html>
