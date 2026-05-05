@@ -557,7 +557,7 @@ The findings panel button only appears when `statsSummary` is provided and `show
   getOptions(): WaferSceneOptions                    // current options snapshot
   setSelection(dies: Die[]): void                    // programmatically highlight dies
   clearSelection(): void
-  resetView(): void                                  // return to fitted view
+  resetZoom(): void                                  // return to fitted view
   setFallbackFormat(format: 'si' | 'engineering'): void
   setStatsSummary(summary: StatsSummary | undefined): void  // update the findings panel at runtime
   destroy(): void                                    // remove all listeners and DOM elements

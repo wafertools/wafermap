@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,10 +12,26 @@
   } }</script>
   <style>
     /* Wider panel for the external controls */
-    .demo-panel { width: 260px; }
-    .ctrl-row { display:flex; align-items:center; gap:8px; font-size:12px; }
-    .ctrl-row label { flex:1; color:var(--text-2); }
-    .ctrl-row select { flex:1; }
+    .demo-panel {
+      width: 260px;
+    }
+
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .ctrl-row label {
+      flex: 1;
+      color: var(--text-2);
+    }
+
+    .ctrl-row select {
+      flex: 1;
+    }
+
     .prog-btn {
       width: 100%;
       padding: 7px 12px;
@@ -28,10 +45,17 @@
       text-align: left;
       transition: background .12s;
     }
-    .prog-btn:hover { background: #e2e8f0; }
-    .prog-btn strong { color: var(--accent); }
+
+    .prog-btn:hover {
+      background: #e2e8f0;
+    }
+
+    .prog-btn strong {
+      color: var(--accent);
+    }
   </style>
 </head>
+
 <body class="demo-page">
 
   <header class="demo-header">
@@ -111,7 +135,7 @@
           <div class="section-heading">Programmatic actions</div>
           <div style="display:flex; flex-direction:column; gap:5px">
             <button class="prog-btn" id="btn-reset-view">
-              <strong>ctrl.resetView()</strong><br>return to fitted view
+              <strong>ctrl.resetZoom()</strong><br>return to fitted view
             </button>
             <button class="prog-btn" id="btn-show-fails">
               <strong>ctrl.setOptions({ highlightBin: 2 })</strong><br>highlight Contact Open dies
@@ -128,11 +152,26 @@
         <div class="section">
           <div class="section-heading">Live state (from onSceneOptionsChange)</div>
           <table class="kv">
-            <tr><td>plotMode</td>    <td id="st-mode">—</td></tr>
-            <tr><td>colorScheme</td> <td id="st-scheme">—</td></tr>
-            <tr><td>rotation</td>    <td id="st-rotation">—</td></tr>
-            <tr><td>rings</td>       <td id="st-rings">—</td></tr>
-            <tr><td>quadrants</td>   <td id="st-quads">—</td></tr>
+            <tr>
+              <td>plotMode</td>
+              <td id="st-mode">—</td>
+            </tr>
+            <tr>
+              <td>colorScheme</td>
+              <td id="st-scheme">—</td>
+            </tr>
+            <tr>
+              <td>rotation</td>
+              <td id="st-rotation">—</td>
+            </tr>
+            <tr>
+              <td>rings</td>
+              <td id="st-rings">—</td>
+            </tr>
+            <tr>
+              <td>quadrants</td>
+              <td id="st-quads">—</td>
+            </tr>
           </table>
         </div>
 
@@ -142,18 +181,42 @@
   </div>
 
   <script type="module">
-    import { buildWaferMap }  from 'wafermap';
+    import { buildWaferMap } from 'wafermap';
     import { renderWaferMap } from 'wafermap/canvas-adapter';
-    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS, TEST_DEFS } from './data.js';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS } from './data.js';
+
+    // ── Shared definitions ────────────────────────────────────────────────────────
+
+    /**
+     * Hard bin names.
+     * Bin 1 = Pass; bins 2–4 are failure categories as assigned by the test program handler.
+     */
+    const HBIN_DEFS = [
+      { bin: 1, name: 'Pass' },
+      { bin: 2, name: 'Contact Open' },
+      { bin: 3, name: 'Vth - Hi' },
+      { bin: 4, name: 'Leakage' },
+    ];
+
+    /**
+     * Soft bin names — independent number space from hard bins (STDF V4: both 0–32767).
+     * Many soft bins can map to a single hard bin for triage purposes.
+     */
+    const SBIN_DEFS = [
+      { bin: 10, name: 'Pass' },
+      { bin: 11, name: 'Vth Out of Range' },
+      { bin: 20, name: 'Contact Fail' },
+      { bin: 21, name: 'Leakage Fail' },
+    ];
 
     const { wafer, dies, scene } = buildWaferMap({
-      results:     makeResults({ seed: 9 }),
+      results: makeResults({ seed: 9 }),
       waferConfig: WAFER_CONFIG,
-      dieConfig:   DIE_CONFIG,
-      hbinDefs:    HBIN_DEFS,
-      sbinDefs:    SBIN_DEFS,
-      testDefs:    TEST_DEFS,
-      passBins:    [1],
+      dieConfig: DIE_CONFIG,
+      hbinDefs: HBIN_DEFS,
+      sbinDefs: SBIN_DEFS,
+      testDefs: TEST_DEFS,
+      passBins: [1],
     });
 
     // onSceneOptionsChange fires when the TOOLBAR changes options.
@@ -185,7 +248,7 @@
 
       const schemeEl = document.getElementById('ext-scheme');
       if (opts.colorScheme && schemeEl.value !== opts.colorScheme &&
-          [...schemeEl.options].some(o => o.value === opts.colorScheme)) {
+        [...schemeEl.options].some(o => o.value === opts.colorScheme)) {
         schemeEl.value = opts.colorScheme;
       }
 
@@ -193,17 +256,17 @@
       const rotVal = String(opts.rotation ?? 0);
       if (rotEl.value !== rotVal) rotEl.value = rotVal;
 
-      document.getElementById('ext-rings').checked  = opts.showRingBoundaries      ?? false;
-      document.getElementById('ext-quads').checked  = opts.showQuadrantBoundaries  ?? false;
-      document.getElementById('ext-labels').checked = opts.showText                ?? false;
+      document.getElementById('ext-rings').checked = opts.showRingBoundaries ?? false;
+      document.getElementById('ext-quads').checked = opts.showQuadrantBoundaries ?? false;
+      document.getElementById('ext-labels').checked = opts.showText ?? false;
     }
 
     function updateStateDisplay(opts) {
-      document.getElementById('st-mode').textContent    = opts.plotMode    ?? '—';
-      document.getElementById('st-scheme').textContent  = opts.colorScheme ?? '—';
+      document.getElementById('st-mode').textContent = opts.plotMode ?? '—';
+      document.getElementById('st-scheme').textContent = opts.colorScheme ?? '—';
       document.getElementById('st-rotation').textContent = `${opts.rotation ?? 0}°`;
-      document.getElementById('st-rings').textContent   = String(opts.showRingBoundaries      ?? false);
-      document.getElementById('st-quads').textContent   = String(opts.showQuadrantBoundaries  ?? false);
+      document.getElementById('st-rings').textContent = String(opts.showRingBoundaries ?? false);
+      document.getElementById('st-quads').textContent = String(opts.showQuadrantBoundaries ?? false);
     }
 
     // Seed the state display with initial values
@@ -242,7 +305,7 @@
 
     // ── Programmatic action buttons ──────────────────────────────────────────
 
-    document.getElementById('btn-reset-view').addEventListener('click', () => ctrl.resetView());
+    document.getElementById('btn-reset-view').addEventListener('click', () => ctrl.resetZoom());
 
     document.getElementById('btn-show-fails').addEventListener('click', () => {
       ctrl.setOptions({ highlightBin: 2 }); // dim all bins except Contact Open
@@ -254,4 +317,5 @@
   </script>
 
 </body>
+
 </html>

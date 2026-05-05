@@ -31,14 +31,16 @@ export function rng(i, j, seed = 1) {
  * @param {boolean} [opts.edgeFail=false]  Adds a strong failure band in the outer ring (~r > 72% radius).
  * @param {boolean} [opts.quadrant=false]  NE quadrant has lower yield and higher Vth.
  * @param {boolean} [opts.center=false]    Small defect cluster at the wafer centre.
+ * @param {boolean} [opts.reticlePattern=false]  Repeating field-position defect pattern.
  * @returns {Array<{x,y,bins,values}>}
  */
 export function makeResults({
-  seed       = 1,
-  radius     = 14,
-  edgeFail   = false,
-  quadrant   = false,
-  center     = false,
+  seed            = 1,
+  radius          = 14,
+  edgeFail        = false,
+  quadrant        = false,
+  center          = false,
+  reticlePattern  = false,
 } = {}) {
   const results = [];
 
@@ -62,6 +64,14 @@ export function makeResults({
       if (edgeFail  && r > radius * 0.72)           pass -= 0.32; // outer ring yield loss
       if (quadrant  && i > 0 && j > 0)              pass -= 0.20; // NE quadrant drift
       if (center    && r < radius * 0.22)           pass -= 0.28; // centre defect cluster
+      if (reticlePattern) {
+        const reticleWidth = 4;
+        const reticleHeight = 3;
+        const phaseX = ((1 % reticleWidth) + reticleWidth) % reticleWidth;
+        const cellX = ((i + phaseX) % reticleWidth + reticleWidth) % reticleWidth;
+        const cellY = ((j % reticleHeight) + reticleHeight) % reticleHeight;
+        if (cellX === 2 && cellY === 1) pass -= 0.32; // repeated defect at one reticle-local position
+      }
 
       pass = Math.max(0.04, Math.min(0.97, pass));
 

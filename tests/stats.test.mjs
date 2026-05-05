@@ -157,12 +157,14 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
 
   assert.ok(summary.findings.some((finding) =>
     finding.comparison.family === 'reticle-position' &&
+    finding.comparison.right === 'Other reticle positions' &&
     finding.comparison.left === 'Reticle cell (1, 0)' &&
     finding.variable.kind === 'hardbin' &&
     finding.variable.bin === 9,
   ));
   assert.ok(summary.findings.some((finding) =>
     finding.comparison.family === 'reticle-position' &&
+    finding.comparison.right === 'Other reticle positions' &&
     finding.comparison.left === 'Reticle cell (1, 0)' &&
     finding.variable.kind === 'softbin' &&
     finding.variable.bin === 31,

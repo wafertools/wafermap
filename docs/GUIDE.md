@@ -452,7 +452,7 @@ const opts = ctrl.getOptions();
 console.log(opts.plotMode, opts.colorScheme);
 
 // Return to default zoom:
-ctrl.resetView();
+ctrl.resetZoom();
 
 // Clean up when the component unmounts:
 ctrl.destroy();
@@ -566,9 +566,7 @@ ctrl.clearSelection();
 
 ## 10. Adding statistical findings
 
-The statistics engine (`analyzeWaferMap`) scans for spatial patterns: die rings,
-quadrants, or reticle positions where yield, bin rates, or test values differ
-significantly from the rest of the wafer.
+The statistics engine ('analyzeWaferMap') scans for spatial patterns in die rings, quadrants, and reticle positions. For rings and quadrants it compares each zone to the rest of the wafer, while reticle-position analysis compares each reticle cell to the other positions within the reticle grid.
 
 ### Basic usage
 
@@ -888,7 +886,7 @@ The toolbar shows a Reticle toggle button whenever `reticles` is non-empty.
 ### Reticle analysis in the stats engine
 
 When a `reticleConfig` was used, `analyzeWaferMap` automatically includes
-reticle-position comparisons (die's position within its stepper field vs. rest).
+reticle-position comparisons (die's position within its stepper field vs. rest of reticle).
 This surfaces systematic problems from mask defects, focus variation, or lens
 aberrations:
 

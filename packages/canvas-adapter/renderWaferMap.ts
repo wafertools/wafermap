@@ -110,7 +110,7 @@ export interface WaferCanvasController {
   /** Clear the current selection. */
   clearSelection(): void;
   /** Reset zoom and pan to fitted view. */
-  resetView(): void;
+  resetZoom(): void;
   /** Update the fallback format for unitless values and re-render. */
   setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the current stats summary used by the built-in findings panel. */
@@ -668,7 +668,7 @@ export function renderWaferMap(
       // Zoom +/− and reset
       const btnZoomIn  = makeBtn('zoomIn',  'Zoom in',                    () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.5));
       const btnZoomOut = makeBtn('zoomOut', 'Zoom out',                   () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.5));
-      const btnReset   = makeBtn('reset',   'Reset view (double-click)',   () => resetView());
+      const btnReset   = makeBtn('reset',   'Reset zoom (double-click)',   () => resetZoom());
       toolbar.appendChild(btnZoomIn);
       toolbar.appendChild(btnZoomOut);
       toolbar.appendChild(btnReset);
@@ -1397,7 +1397,7 @@ export function renderWaferMap(
   canvas.addEventListener('pointermove',  onPointerMove);
   canvas.addEventListener('pointerup',    onPointerUp);
   canvas.addEventListener('pointerleave', onPointerLeave);
-  const onDblClick = () => resetView();
+  const onDblClick = () => resetZoom();
   canvas.addEventListener('dblclick',     onDblClick);
   canvas.addEventListener('keydown',      onKeyDown);
   // Always stop propagation — prevents canvas interactions (bin legend clicks,
@@ -1410,7 +1410,7 @@ export function renderWaferMap(
   render();
 
   // ── Controller ─────────────────────────────────────────────────────────────
-  function resetView(): void {
+  function resetZoom(): void {
     fittedViewport = null;
     viewport = null;
     render();
@@ -1431,7 +1431,7 @@ export function renderWaferMap(
       return { ...sceneOpts };
     },
 
-    resetView,
+    resetZoom,
 
     setSelection(dies: Die[]): void {
       selectedKeys = new Set(dies.map(d => `${d.i},${d.j}`));

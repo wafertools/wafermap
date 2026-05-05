@@ -140,8 +140,9 @@ function severityForScore(pValue: number, score: number): StatsSeverity {
   return 'info';
 }
 
-function summarizeYieldFinding(label: string, delta: number): string {
-  return `${label} yield is ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`;
+function summarizeYieldFinding(label: string, delta: number, family: 'ring' | 'quadrant' | 'reticle-position'): string {
+  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
+  return `${label} yield is ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
 }
 
 function summarizeRegionLabel(label: string, family: 'ring' | 'quadrant' | 'reticle-position'): string {
@@ -156,7 +157,8 @@ function summarizeBinFinding(
   family: 'ring' | 'quadrant' | 'reticle-position',
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
-  return `${familyLabel} has ${delta > 0 ? 'higher' : 'lower'} ${binLabel} occurrence than the rest of the wafer`;
+  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
+  return `${familyLabel} has ${delta > 0 ? 'higher' : 'lower'} ${binLabel} occurrence than ${target}`;
 }
 
 function summarizeTestFinding(
@@ -166,7 +168,8 @@ function summarizeTestFinding(
   family: 'ring' | 'quadrant' | 'reticle-position',
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
-  return `${familyLabel} has ${delta > 0 ? 'higher' : 'lower'} ${testLabel} than the rest of the wafer`;
+  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
+  return `${familyLabel} has ${delta > 0 ? 'higher' : 'lower'} ${testLabel} than ${target}`;
 }
 
 function labelForBin(bin: number, defs: BinDef[] | undefined, prefix: 'HBin' | 'SBin'): string {
@@ -187,6 +190,7 @@ function buildYieldFindings(
 ): RawFinding[] {
   const passSet = new Set(passBins);
   const dieMap = new Map(eligibleDies.map((die) => [`${die.i},${die.j}`, die]));
+  const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
   const findings: RawFinding[] = [];
 
   for (const region of regionFamily) {
@@ -194,7 +198,10 @@ function buildYieldFindings(
       .map((key) => dieMap.get(key))
       .filter((die): die is EligibleDie => die !== undefined);
     const leftKeySet = new Set(region.dieKeys);
-    const right = eligibleDies.filter((die) => !leftKeySet.has(`${die.i},${die.j}`));
+    const right = eligibleDies.filter((die) => {
+      const key = `${die.i},${die.j}`;
+      return !leftKeySet.has(key) && regionDieKeySet.has(key);
+    });
 
     if (left.length < options.minimumSampleSize || right.length < options.minimumSampleSize) continue;
 
@@ -216,7 +223,7 @@ function buildYieldFindings(
       comparison: {
         family: region.family,
         left: region.label,
-        right: 'Rest of wafer',
+        right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
       },
       effect: {
         direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -230,7 +237,7 @@ function buildYieldFindings(
         sampleSizeLeft: left.length,
         sampleSizeRight: right.length,
       },
-      summary: summarizeYieldFinding(region.label, delta),
+      summary: summarizeYieldFinding(region.label, delta, region.family),
       highlight: {
         kind: 'region',
         regionFamily: region.family,
@@ -272,6 +279,7 @@ function buildBinFindings(
       .map(getBin)
       .filter((bin): bin is number => bin !== undefined),
   )].sort((left, right) => left - right);
+  const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
   const findings: RawFinding[] = [];
   const prefix = variableKind === 'hardbin' ? 'HBin' : 'SBin';
 
@@ -280,7 +288,10 @@ function buildBinFindings(
       .map((key) => dieMap.get(key))
       .filter((die): die is EligibleDie => die !== undefined);
     const leftKeySet = new Set(region.dieKeys);
-    const right = eligibleDies.filter((die) => !leftKeySet.has(`${die.i},${die.j}`));
+    const right = eligibleDies.filter((die) => {
+      const key = `${die.i},${die.j}`;
+      return !leftKeySet.has(key) && regionDieKeySet.has(key);
+    });
 
     if (left.length < options.minimumSampleSize || right.length < options.minimumSampleSize) continue;
 
@@ -305,7 +316,7 @@ function buildBinFindings(
         comparison: {
           family: region.family,
           left: region.label,
-          right: 'Rest of wafer',
+          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
         },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -385,6 +396,7 @@ function buildTestValueFindings(
   options: Required<AnalyzeWaferMapOptions>,
 ): RawFinding[] {
   const dieMap = new Map(dies.map((die) => [`${die.i},${die.j}`, die]));
+  const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
   const testIndices = [...new Set(
     dies.flatMap((die) =>
       (die.values ?? [])
@@ -400,7 +412,10 @@ function buildTestValueFindings(
       .map((key) => dieMap.get(key))
       .filter((die): die is Die => die !== undefined);
     const leftKeySet = new Set(region.dieKeys);
-    const rightDies = dies.filter((die) => !leftKeySet.has(`${die.i},${die.j}`));
+    const rightDies = dies.filter((die) => {
+      const key = `${die.i},${die.j}`;
+      return !leftKeySet.has(key) && regionDieKeySet.has(key);
+    });
 
     for (const testIndex of testIndices) {
       const leftValues = leftDies.map((die) => die.values?.[testIndex]).filter((value): value is number => value !== undefined);
@@ -424,7 +439,7 @@ function buildTestValueFindings(
         comparison: {
           family: region.family,
           left: region.label,
-          right: 'Rest of wafer',
+          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
         },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',

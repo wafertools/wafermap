@@ -60,7 +60,7 @@ const ctrl = renderWaferMap(canvas, wafer, dies, {
 // Programmatic control
 ctrl.setOptions({ plotMode: 'value', colorScheme: 'viridis' });
 ctrl.clearSelection();
-ctrl.resetView();
+ctrl.resetZoom();
 ctrl.destroy();
 ```
 
