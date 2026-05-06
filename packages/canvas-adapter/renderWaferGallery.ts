@@ -1,5 +1,6 @@
 import type { PlotMode } from '../renderer/buildScene.js';
 import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
+import { CLR, ROTATIONS, INLINE_TEST_LIMIT, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers } from './toolbar.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
@@ -30,6 +31,8 @@ export interface GalleryOptions {
   sceneOptions?:         WaferSceneOptions;
   /** Called whenever a shared gallery option changes. */
   onSceneOptionsChange?: (opts: WaferSceneOptions) => void;
+  /** Legend layout style for bin modes. Default 'default'. */
+  legendStyle?:          'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /** Padding inside each card canvas in CSS pixels. Default 6. */
   cardPadding?:          number;
   /** Filename stem for the composite gallery PNG. Default 'wafer-gallery'. */
@@ -67,51 +70,6 @@ export interface GalleryController {
   destroy(): void;
 }
 
-// ── Icon set — Lucide-sourced SVG strings (same as renderWaferMap) ─────────────
-const ICONS: Record<string, string> = {
-  rotateCW:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
-  flipH:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 5 5-5 5V7"/><path d="m21 7-5 5 5 5V7"/><path d="M12 20v2"/><path d="M12 14v2"/><path d="M12 8v2"/><path d="M12 2v2"/></svg>`,
-  flipV:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m17 3-5 5-5-5h10"/><path d="m17 21-5-5-5 5h10"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/></svg>`,
-  labels:      `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg>`,
-  palette:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14.622 17.897-10.68-2.913"/><path d="M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z"/><path d="M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15"/></svg>`,
-  mode:        `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>`,
-  // Wafer-specific — no Lucide equivalent
-  rings:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
-  quadrants:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
-  reticle:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="6" rx="0.5"/><rect x="13" y="3" width="8" height="6" rx="0.5"/><rect x="3" y="11" width="8" height="6" rx="0.5"/><rect x="13" y="11" width="8" height="6" rx="0.5"/><rect x="3" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/><rect x="13" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/></svg>`,
-  xyIndicator: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 L5 7"/><path d="M5 7 L3 10"/><path d="M5 7 L7 10"/><path d="M5 19 L17 19"/><path d="M17 19 L14 17"/><path d="M17 19 L14 21"/><text x="18" y="8" font-size="6" fill="currentColor" stroke="none">X</text><text x="2" y="6" font-size="6" fill="currentColor" stroke="none">Y</text></svg>`,
-  // Gallery download: Lucide Camera + small grid indicator (gallery-specific)
-  downloadAll: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/><circle cx="5.5" cy="4.5" r="0.8" fill="currentColor" stroke="none"/><circle cx="8" cy="4.5" r="0.8" fill="currentColor" stroke="none"/><circle cx="5.5" cy="7" r="0.8" fill="currentColor" stroke="none"/><circle cx="8" cy="7" r="0.8" fill="currentColor" stroke="none"/></svg>`,
-  findings:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11h6"/><path d="M9 15h4"/><path d="M5 4h14"/><path d="M5 20h14"/><path d="M5 4v16"/><path d="M19 4v16"/></svg>`,
-};
-
-const CLR = {
-  icon:       '#506784',
-  iconHover:  '#2a3f5f',
-  iconActive: '#1a66cc',
-  bgHover:    '#edf0f8',
-  bgActive:   '#dce8f8',
-  separator:  'rgba(0,0,0,0.12)',
-  menuBg:     '#fff',
-  menuBorder: 'rgba(0,0,0,0.12)',
-  menuHover:  '#f0f4fc',
-  menuActive: '#dce8f8',
-};
-
-const BIN_LEGEND_MODES = new Set<PlotMode>(['hardbin', 'softbin']);
-const STACKED_MODES    = new Set<PlotMode>(['stackedValues', 'stackedBins', 'stackedSoftBins']);
-
-const MODE_LABELS: Record<PlotMode, string> = {
-  value:           'Test Value',
-  hardbin:         'Hard Bin',
-  softbin:         'Soft Bin',
-  stackedValues:   'Stacked Test Values',
-  stackedBins:     'Stacked Hard Bins',
-  stackedSoftBins: 'Stacked Soft Bins',
-};
-const ROTATIONS: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
-// Number of test entries to show inline before switching to a cascade submenu.
-const INLINE_TEST_LIMIT = 6;
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -126,6 +84,7 @@ export function renderWaferGallery(
   const showFindingsPanel    = options.showFindingsPanel    ?? true;
   let currentFallbackFormat  = options.fallbackFormat;
   let currentLotStats        = options.lotStatsSummary;
+  let currentLegendStyle     = options.legendStyle ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 
   let sharedOpts: WaferSceneOptions = {
     plotMode:               'hardbin',
@@ -143,7 +102,6 @@ export function renderWaferGallery(
   let cardControllers: WaferCanvasController[] = [];
   let currentItems:  GalleryItem[] = [];
   let originalItems: GalleryItem[] = [];  // per-wafer source items; stacked modes aggregate from this
-  let openMenu: HTMLDivElement | null = null;
   let modalController: WaferCanvasController | null = null;
   let savedBodyOverflow = '';
 
@@ -157,124 +115,9 @@ export function renderWaferGallery(
 
   // ── Toolbar helpers ────────────────────────────────────────────────────────
 
-  const closeOpenMenu = (e: MouseEvent): void => {
-    if (openMenu && !openMenu.contains(e.target as Node)) {
-      openMenu.remove();
-      openMenu = null;
-    }
-  };
+  const tooltip = createTooltip();
+  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tooltip);
   document.addEventListener('click', closeOpenMenu, true);
-
-  function makeBtn(iconKey: string, title: string, onClick: () => void): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.title     = title;
-    btn.innerHTML = ICONS[iconKey];
-    btn.type      = 'button';
-    Object.assign(btn.style, {
-      display:        'flex',
-      alignItems:     'center',
-      justifyContent: 'center',
-      width:          '28px',
-      height:         '28px',
-      padding:        '0',
-      border:         'none',
-      borderRadius:   '3px',
-      background:     'transparent',
-      color:          CLR.icon,
-      cursor:         'pointer',
-      transition:     'background 0.12s, color 0.12s',
-      flexShrink:     '0',
-    });
-    btn.addEventListener('mouseenter', () => {
-      if (!btn.dataset.active) { btn.style.background = CLR.bgHover; btn.style.color = CLR.iconHover; }
-    });
-    btn.addEventListener('mouseleave', () => {
-      if (!btn.dataset.active) { btn.style.background = 'transparent'; btn.style.color = CLR.icon; }
-    });
-    btn.addEventListener('click', onClick);
-    return btn;
-  }
-
-  function setActive(btn: HTMLButtonElement, active: boolean): void {
-    if (active) {
-      btn.dataset.active   = '1';
-      btn.style.background = CLR.bgActive;
-      btn.style.color      = CLR.iconActive;
-    } else {
-      delete btn.dataset.active;
-      btn.style.background = 'transparent';
-      btn.style.color      = CLR.icon;
-    }
-  }
-
-  function makeSep(): HTMLDivElement {
-    const sep = document.createElement('div');
-    Object.assign(sep.style, {
-      width:      '1px',
-      height:     '18px',
-      background: CLR.separator,
-      margin:     '0 2px',
-      flexShrink: '0',
-    });
-    return sep;
-  }
-
-  function makeDropdown<T extends string>(
-    iconKey:    string,
-    title:      string,
-    getItems:   () => Array<{ value: T; label: string }>,
-    getCurrent: () => T,
-    onPick:     (v: T) => void,
-  ): HTMLButtonElement {
-    const btn = makeBtn(iconKey, title, () => {
-      if (openMenu) { openMenu.remove(); openMenu = null; return; }
-      const menu = document.createElement('div');
-      const btnRect = btn.getBoundingClientRect();
-      Object.assign(menu.style, {
-        position:      'fixed',
-        top:           `${btnRect.bottom + 4}px`,
-        left:          `${btnRect.left}px`,
-        background:    CLR.menuBg,
-        border:        `1px solid ${CLR.menuBorder}`,
-        borderRadius:  '4px',
-        boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-        zIndex:        '9998',
-        minWidth:      '148px',
-        padding:       '4px 0',
-        pointerEvents: 'auto',
-      });
-      for (const item of getItems()) {
-        const row = document.createElement('div');
-        row.textContent = item.label;
-        const isActive = item.value === getCurrent();
-        Object.assign(row.style, {
-          padding:    '6px 14px',
-          fontSize:   '12px',
-          cursor:     'pointer',
-          color:      isActive ? CLR.iconActive : '#333',
-          fontWeight: isActive ? '700' : '400',
-          background: isActive ? CLR.menuActive : 'transparent',
-          whiteSpace: 'nowrap',
-        });
-        row.addEventListener('mouseenter', () => {
-          if (item.value !== getCurrent()) row.style.background = CLR.menuHover;
-        });
-        row.addEventListener('mouseleave', () => {
-          row.style.background = item.value === getCurrent() ? CLR.menuActive : 'transparent';
-        });
-        row.addEventListener('click', e => {
-          e.stopPropagation();
-          onPick(item.value);
-          menu.remove();
-          openMenu = null;
-        });
-        menu.appendChild(row);
-      }
-      document.body.appendChild(menu);
-      openMenu = menu;
-    });
-    return btn;
-  }
 
   // ── Lot findings helpers ───────────────────────────────────────────────────
 
@@ -501,42 +344,9 @@ export function renderWaferGallery(
 
   type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string };
 
-  function makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void): HTMLDivElement {
-    const row = document.createElement('div');
-    row.textContent = label;
-    Object.assign(row.style, {
-      padding:    `6px 14px 6px ${indent ? '26px' : '14px'}`,
-      fontSize:   '12px',
-      cursor:     'pointer',
-      color:      active ? CLR.iconActive : '#333',
-      fontWeight: active ? '700' : '400',
-      background: active ? CLR.menuActive : 'transparent',
-      whiteSpace: 'nowrap',
-    });
-    row.addEventListener('mouseenter', () => { if (!active) row.style.background = CLR.menuHover; });
-    row.addEventListener('mouseleave', () => { row.style.background = active ? CLR.menuActive : 'transparent'; });
-    row.addEventListener('click', onClick);
-    return row;
-  }
-
-  function makeMenuSection(label: string): HTMLDivElement {
-    const el = document.createElement('div');
-    el.textContent = label;
-    Object.assign(el.style, {
-      padding:       '5px 14px 2px',
-      fontSize:      '10px',
-      fontWeight:    '600',
-      letterSpacing: '0.05em',
-      color:         '#888',
-      textTransform: 'uppercase',
-      pointerEvents: 'none',
-      userSelect:    'none',
-    });
-    return el;
-  }
-
   const btnMode = makeBtn('mode', 'Plot mode', () => {
-    if (openMenu) { openMenu.remove(); openMenu = null; return; }
+    const openMenu = getOpenMenu();
+    if (openMenu) { openMenu.remove(); setOpenMenu(null); return; }
 
     // Use originalItems (per-wafer source) — currentItems may be aggregated cards
     // in stacked modes, which don't accurately reflect the full data availability.
@@ -562,7 +372,7 @@ export function renderWaferGallery(
         applyShared({ plotMode: entry.plotMode, testIndex: undefined });
       }
       menu.remove();
-      openMenu = null;
+      setOpenMenu(null);
     }
 
     const testEntries: ModeEntry[] = hasValues
@@ -662,7 +472,7 @@ export function renderWaferGallery(
     }
 
     document.body.appendChild(menu);
-    openMenu = menu;
+    setOpenMenu(menu);
   });
 
   const btnPalette = makeDropdown(
@@ -697,6 +507,31 @@ export function renderWaferGallery(
     setActive(btnXY, !!sharedOpts.showXYIndicator);
   });
 
+  const btnLegendStyle = makeDropdown(
+    'legend',
+    'Legend style',
+    () => [
+      { value: 'default'  as const, label: 'Default (right)' },
+      { value: 'compact'  as const, label: 'Compact (right)' },
+      { value: 'left'     as const, label: 'Left' },
+      { value: 'top'      as const, label: 'Top' },
+      { value: 'bottom'   as const, label: 'Bottom' },
+      { value: 'floating' as const, label: 'Floating' },
+    ],
+    () => currentLegendStyle,
+    (v) => {
+      currentLegendStyle = v;
+      for (const ctrl of cardControllers) ctrl.setOptions({ legendStyle: currentLegendStyle });
+    },
+  );
+
+  function syncLegendStyleBtn(): void {
+    const isBinMode = sharedOpts.plotMode === 'hardbin' || sharedOpts.plotMode === 'softbin';
+    btnLegendStyle.style.opacity       = isBinMode ? '' : '0.35';
+    btnLegendStyle.style.pointerEvents = isBinMode ? '' : 'none';
+  }
+  syncLegendStyleBtn();
+
   const btnRotate = makeBtn('rotateCW', 'Rotate all 90\xB0 clockwise', () => {
     const r = sharedOpts.rotation ?? 0;
     applyShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] });
@@ -722,6 +557,8 @@ export function renderWaferGallery(
   barEl.appendChild(btnLabels);
   if (items.some(it => it.hasReticle)) barEl.appendChild(btnReticle);
   barEl.appendChild(btnXY);
+  barEl.appendChild(makeSep());
+  barEl.appendChild(btnLegendStyle);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnRotate);
   barEl.appendChild(btnFlipH);
@@ -990,6 +827,7 @@ export function renderWaferGallery(
     }
 
     rebuildLegend();
+    syncLegendStyleBtn();
     options.onSceneOptionsChange?.(sharedOpts);
   }
 
@@ -1023,12 +861,13 @@ export function renderWaferGallery(
     }
 
     rebuildLegend();
+    syncLegendStyleBtn();
   }
 
   // ── Card building ──────────────────────────────────────────────────────────
 
   function buildCards(newItems: GalleryItem[]): void {
-    openMenu?.remove(); openMenu = null;
+    getOpenMenu()?.remove(); setOpenMenu(null);
     clearLotFindingHighlight();
     currentItems = newItems;
     for (const ctrl of cardControllers) ctrl.destroy();
@@ -1114,6 +953,7 @@ export function renderWaferGallery(
         toolbarControls: 'view-only',
         showTooltip:     true,
         padding:         cardPadding,
+        legendStyle:     currentLegendStyle,
         fallbackFormat:  currentFallbackFormat,
         onClick:         item.onClick,
         onSelect:        item.onSelect,
@@ -1223,6 +1063,7 @@ export function renderWaferGallery(
       sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,
+      legendStyle:     currentLegendStyle,
       fallbackFormat:  options.fallbackFormat,
       statsSummary:    item.statsSummary,
       onClick:         item.onClick,
@@ -1319,8 +1160,9 @@ export function renderWaferGallery(
       closeModal();
       for (const ctrl of cardControllers) ctrl.destroy();
       cardControllers = [];
-      openMenu?.remove();
+      getOpenMenu()?.remove();
       document.removeEventListener('click', closeOpenMenu, true);
+      tooltip.remove();
       barEl.remove();
       legendEl.remove();
       bodyEl.remove();

@@ -13,6 +13,10 @@ export interface ToCanvasOptions {
   colorbarWidth?: number;
   /** Canvas background colour. Default '#f5f5f5'. */
   background?: string;
+  /** Legend layout style for bin modes. Default 'default'. */
+  legendStyle?: 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  /** Floating legend offset in CSS pixels. Used when `legendStyle === 'floating'`. */
+  legendOffset?: { x: number; y: number };
   /**
    * Draw axis tick marks and labels. Default false.
    * When true, labels show die grid indices if `diePitchMm` is provided,
@@ -54,10 +58,15 @@ export interface CanvasHitTarget {
 /** A hit-testable row in the bin legend — one entry per unique bin. */
 export interface BinLegendRow {
   bin: number;
+  x: number;
   /** Top CSS-pixel of the row (relative to canvas). */
-  y:   number;
+  y: number;
+  /** Width in CSS pixels of the row. */
+  w: number;
   /** Height in CSS pixels of the row. */
-  h:   number;
+  h: number;
+  /** Optional full label text for tooltips. */
+  label?: string;
 }
 
 export interface ToCanvasResult {
@@ -66,6 +75,8 @@ export interface ToCanvasResult {
   viewport:       ViewportTransform;
   /** Non-empty only when a bin legend was drawn (hardbin / softbin modes). */
   binLegendRows:  BinLegendRow[];
+  /** Floating legend box bounds, when rendered. */
+  legendBox?:     { x: number; y: number; w: number; h: number };
 }
 
 const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins', 'stackedSoftBins']);
@@ -77,8 +88,10 @@ const AXIS_TICK_LEN   = 4;  // px
 const BIN_ROW_H       = 17; // px per legend row
 const BIN_SWATCH_SIZE = 11; // px
 const BIN_LEGEND_W    = 110; // px total right-side reserve for bin legend
+const BIN_LEGEND_W_COMPACT = 64; // px right-side reserve for compact legend
 const BIN_COUNT_W     = 28;  // px reserved on the right of the legend for the die count
 const BIN_LABEL_GAP   = 5;   // px gap between swatch and label
+const BIN_FLOATING_PADDING = 8; // px padding around floating legend box
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
@@ -90,6 +103,8 @@ export function toCanvas(
     showColorbar  = true,
     colorbarWidth = 16,
     background    = '#f5f5f5',
+    legendStyle   = 'default',
+    legendOffset,
     showAxes      = false,
     diePitchMm,
     _viewport,
@@ -99,8 +114,27 @@ export function toCanvas(
 
   const drawColorbar   = showColorbar && COLORBAR_MODES.has(scene.plotMode);
   const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(scene.plotMode);
+  const legendIsRight    = legendStyle === 'default' || legendStyle === 'compact';
+  const legendIsLeft     = legendStyle === 'left';
+  const legendIsBottom   = legendStyle === 'bottom';
+  const legendIsTop      = legendStyle === 'top';
+  const legendIsFloating = legendStyle === 'floating';
 
-  // ── HiDPI setup ────────────────────────────────────────────────────────────
+  function collectBinLegendEntries(): Array<[number, number]> {
+    const binCounts = new Map<number, number>();
+    for (const die of scene.dies) {
+      if (die.partial) continue;
+      const bin = scene.plotMode === 'softbin' ? die.sbin : die.hbin;
+      if (bin == null) continue;
+      binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
+    }
+    return [...binCounts.entries()].sort(([a], [b]) => a - b);
+  }
+
+  const binLegendEntries = drawBinLegend ? collectBinLegendEntries() : [];
+
+  const legendWidth = legendStyle === 'compact' || legendStyle === 'floating' ? BIN_LEGEND_W_COMPACT : BIN_LEGEND_W;
+
   const dpr     = window.devicePixelRatio ?? 1;
   const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
   const cssH    = Math.floor(canvas.clientHeight || canvas.height);
@@ -111,6 +145,17 @@ export function toCanvas(
     const vp: ViewportTransform = { originX: 0, originY: 0, ppm: 1, snapDist: 1 };
     return { hitTarget: { getDieAtPoint: () => null }, viewport: vp, binLegendRows: [] };
   }
+
+  const maxLegendRows  = Math.floor((cssH - 2 * padding) / BIN_ROW_H);
+  const legendRowCount = binLegendEntries.length > maxLegendRows ? maxLegendRows - 1 : binLegendEntries.length;
+  const bottomLegendReserve = drawBinLegend && legendIsBottom ? legendRowCount * BIN_ROW_H : 0;
+  const topLegendReserve    = drawBinLegend && legendIsTop    ? legendRowCount * BIN_ROW_H : 0;
+  const rightReserve    = drawColorbar ? colorbarWidth + 28 : drawBinLegend && legendIsRight ? legendWidth : 0;
+  const leftLegendReserve   = drawBinLegend && legendIsLeft   ? legendWidth : 0;
+  const axisReserve     = showAxes ? 32 : 0;
+  const axisLeftReserve = showAxes ? 36 : 0;
+  const drawW = cssW - 2 * padding - rightReserve - axisLeftReserve - leftLegendReserve;
+  const drawH = cssH - 2 * padding - axisReserve - bottomLegendReserve - topLegendReserve;
 
   canvas.width  = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
@@ -146,21 +191,13 @@ export function toCanvas(
   const dataW = maxX - minX;
   const dataH = maxY - minY;
 
-  // ── Viewport transform ─────────────────────────────────────────────────────
-  const colorbarReserve = drawColorbar ? colorbarWidth + 28 : drawBinLegend ? BIN_LEGEND_W : 0;
-  const axisReserve     = showAxes ? 32 : 0;
-  const axisLeftReserve = showAxes ? 36 : 0;
-  const drawW = cssW - 2 * padding - colorbarReserve - axisLeftReserve;
-  const drawH = cssH - 2 * padding - axisReserve;
-
   let originX: number, originY: number, ppm: number;
-
   if (_viewport) {
     ({ originX, originY, ppm } = _viewport);
   } else {
     ppm     = Math.min(drawW / dataW, drawH / dataH);
-    originX = padding + axisLeftReserve + (drawW - dataW * ppm) / 2 - minX * ppm;
-    originY = padding + (drawH - dataH * ppm) / 2 + maxY * ppm;
+    originX = padding + axisLeftReserve + leftLegendReserve + (drawW - dataW * ppm) / 2 - minX * ppm;
+    originY = padding + topLegendReserve + (drawH - dataH * ppm) / 2 + maxY * ppm;
   }
 
   const snapDist = _viewport?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
@@ -308,11 +345,11 @@ export function toCanvas(
 
   // ── Draw bin legend ────────────────────────────────────────────────────────
   const binLegendRows: BinLegendRow[] = [];
+  let legendBox: { x: number; y: number; w: number; h: number } | undefined;
 
   if (drawBinLegend) {
     const scheme = getColorScheme(scene.colorScheme);
 
-    // Collect unique bins from dies — use hbin or sbin depending on active mode.
     const binCounts = new Map<number, number>();
     for (const die of scene.dies) {
       if (die.partial) continue;
@@ -322,28 +359,123 @@ export function toCanvas(
     }
     const entries = [...binCounts.entries()].sort(([a], [b]) => a - b);
 
-    const legendX    = cssW - padding - BIN_LEGEND_W + 4;
-    const swatchX    = legendX;
-    const labelX     = legendX + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
-    const countX     = cssW - padding + 2;
-    // Available width for the label text: total legend minus swatch, gap, and count column.
-    const maxLabelW  = BIN_LEGEND_W - BIN_SWATCH_SIZE - BIN_LABEL_GAP - BIN_COUNT_W;
-    const maxRows    = Math.floor((cssH - 2 * padding) / BIN_ROW_H);
-    const overflow   = entries.length > maxRows ? entries.length - (maxRows - 1) : 0;
-    const visible    = overflow > 0 ? entries.slice(0, maxRows - 1) : entries;
-    let rowY         = padding + Math.round((cssH - 2 * padding - Math.min(entries.length, maxRows) * BIN_ROW_H) / 2);
-
-    ctx.save();
-    ctx.font = COLORBAR_LABEL_FONT;
-
-    // Hard and soft bins have independent number spaces — pick the correct def array for the mode.
     const activeDefs = scene.plotMode === 'softbin' ? scene.sbinDefs : scene.hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
-    // Truncate text to fit maxLabelW pixels, appending ellipsis if needed.
-    function truncate(text: string, maxW: number): string {
+    type LegendEntry = {
+      bin: number;
+      count: number;
+      label: string;
+      tooltipLabel: string;
+      labelWidth: number;
+      countWidth: number;
+      totalWidth: number;
+      binDef?: { name?: string; color?: string };
+    };
+
+    const legendEntries: LegendEntry[] = entries.map(([bin, count]) => {
+      const binDef = binDefMap?.get(bin);
+      const fullLabel = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
+      const label = legendStyle === 'compact' ? String(bin) : fullLabel;
+      const tooltipLabel = `${fullLabel} · ${count} dies`;
+      const labelWidth = ctx.measureText(label).width;
+      const countStr = String(count);
+      const countWidth = legendStyle === 'compact' ? 0 : ctx.measureText(countStr).width;
+      const totalWidth = BIN_SWATCH_SIZE + BIN_LABEL_GAP + labelWidth + (countWidth ? BIN_COUNT_W : 0);
+      return { bin, count, label, tooltipLabel, labelWidth, countWidth, totalWidth, binDef };
+    });
+
+    const availableWidth = cssW - padding * 2;
+
+    if (legendEntries.length > 0) {
+    const maxRows = Math.max(1, Math.floor((cssH - 2 * padding) / BIN_ROW_H));
+    let legendRows = legendEntries.length;
+    let legendCols = 1;
+    let legendHeight = legendRows * BIN_ROW_H;
+    let columnWidths: number[] = [];
+    let rowsPerCol = legendRows;
+    let overflow = 0;
+
+    const isHorizontal = legendIsBottom || legendIsTop;
+    if (isHorizontal) {
+      const minColWidth = Math.max(...legendEntries.map(e => e.totalWidth));
+      const maxCols = Math.max(1, Math.min(legendEntries.length, Math.floor((availableWidth + 8) / (minColWidth + 8))));
+      for (let cols = maxCols; cols >= 1; cols--) {
+        const rows = Math.ceil(legendEntries.length / cols);
+        if (rows > maxRows) continue;
+        const widths = new Array(cols).fill(0);
+        for (let i = 0; i < legendEntries.length; i++) {
+          const col = i % cols;
+          widths[col] = Math.max(widths[col], legendEntries[i].totalWidth);
+        }
+        const total = widths.reduce((sum, w) => sum + w, 0) + (cols - 1) * 8;
+        if (total <= availableWidth || cols === 1) {
+          legendCols = cols;
+          columnWidths = widths;
+          rowsPerCol = rows;
+          legendRows = rows;
+          legendHeight = rows * BIN_ROW_H;
+          break;
+        }
+      }
+    } else {
+      legendRows = Math.min(legendEntries.length, maxRows);
+      legendHeight = legendRows * BIN_ROW_H;
+      if (legendEntries.length > maxRows) {
+        overflow = legendEntries.length - (maxRows - 1);
+      }
+      columnWidths = [legendWidth];
+    }
+
+    let originXLegend: number;
+    let originYLegend: number;
+    if (legendIsFloating) {
+      // Measure full labels (not compact) so the floating box fits all content.
+      const floatingEntryWidth = Math.max(...legendEntries.map(e => {
+        const fullLabel = e.binDef?.name ? `${e.bin} · ${e.binDef.name}` : `Bin ${e.bin}`;
+        return BIN_SWATCH_SIZE + BIN_LABEL_GAP + ctx.measureText(fullLabel).width + BIN_COUNT_W;
+      }));
+      const floatingWidth = Math.ceil(floatingEntryWidth);
+      columnWidths = [floatingWidth];
+      const boxW = floatingWidth + BIN_FLOATING_PADDING * 2;
+      const boxH = legendHeight + BIN_FLOATING_PADDING * 2;
+      const offsetX = legendOffset?.x ?? 0;
+      const offsetY = legendOffset?.y ?? 0;
+      originXLegend = Math.min(Math.max(cssW - padding - boxW + offsetX, padding), cssW - padding - boxW);
+      originYLegend = Math.min(Math.max(cssH - padding - boxH + offsetY, padding), cssH - padding - boxH);
+      legendBox = { x: originXLegend, y: originYLegend, w: boxW, h: boxH };
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+      ctx.lineWidth = 1;
+      ctx.fillRect(originXLegend, originYLegend, boxW, boxH);
+      ctx.strokeRect(originXLegend, originYLegend, boxW, boxH);
+      ctx.restore();
+      originXLegend += BIN_FLOATING_PADDING;
+      originYLegend += BIN_FLOATING_PADDING;
+    } else if (legendIsBottom) {
+      originXLegend = padding;
+      originYLegend = cssH - padding - legendHeight;
+    } else if (legendIsTop) {
+      originXLegend = padding;
+      originYLegend = padding;
+    } else if (legendIsLeft) {
+      originXLegend = padding + 4;
+      originYLegend = padding + Math.round((cssH - 2 * padding - legendHeight) / 2);
+    } else {
+      // right (default / compact)
+      originXLegend = cssW - padding - legendWidth + 4;
+      originYLegend = padding + Math.round((cssH - 2 * padding - legendHeight) / 2);
+    }
+
+    ctx.save();
+    ctx.font = COLORBAR_LABEL_FONT;
+    const columnGap = isHorizontal ? 8 : 0;
+
+    const truncate = (text: string, maxW: number): string => {
       if (ctx.measureText(text).width <= maxW) return text;
-      let lo = 0, hi = text.length;
+      let lo = 0;
+      let hi = text.length;
       const ellipsis = '…';
       const ellW = ctx.measureText(ellipsis).width;
       while (lo < hi) {
@@ -352,52 +484,102 @@ export function toCanvas(
         else hi = mid - 1;
       }
       return lo === 0 ? ellipsis : text.slice(0, lo) + ellipsis;
+    };
+
+    if (isHorizontal) {
+      let idx = 0;
+      for (let row = 0; row < legendRows; row++) {
+        let x = originXLegend;
+        for (let col = 0; col < legendCols; col++) {
+          const entry = legendEntries[idx++];
+          if (!entry) break;
+          const isActive = entry.bin === _activeBin;
+          const swatchX = x;
+          const labelX = x + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
+          const midY = originYLegend + row * BIN_ROW_H + BIN_ROW_H / 2;
+          const swatchY = originYLegend + row * BIN_ROW_H + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
+          const labelMaxW = columnWidths[col] - BIN_SWATCH_SIZE - BIN_LABEL_GAP - BIN_COUNT_W;
+          ctx.fillStyle = entry.binDef?.color ?? scheme.forBin(entry.bin);
+          ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
+          ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
+          ctx.lineWidth = isActive ? 2 : 0.75;
+          ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
+          ctx.fillStyle = isActive ? '#1a66cc' : '#333';
+          ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT}` : COLORBAR_LABEL_FONT;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(truncate(entry.label, labelMaxW), labelX, midY);
+          ctx.fillStyle = '#999';
+          ctx.font = COLORBAR_LABEL_FONT;
+          ctx.textAlign = 'right';
+          ctx.fillText(String(entry.count), x + columnWidths[col] - 2, midY);
+          binLegendRows.push({
+            bin: entry.bin,
+            x,
+            y: originYLegend + row * BIN_ROW_H,
+            w: columnWidths[col],
+            h: BIN_ROW_H,
+            label: entry.tooltipLabel,
+          });
+          x += columnWidths[col] + columnGap;
+        }
+      }
+    } else {
+      const colW = columnWidths[0];
+      const showCount = legendStyle !== 'compact';
+      const maxLabelW = colW - BIN_SWATCH_SIZE - BIN_LABEL_GAP - (showCount ? BIN_COUNT_W : 0);
+      const countX = originXLegend + colW - 2;
+      let visibleEntries = legendEntries;
+      if (overflow > 0) visibleEntries = legendEntries.slice(0, maxRows - 1);
+      let rowY = originYLegend;
+      for (const entry of visibleEntries) {
+        const isActive = entry.bin === _activeBin;
+        const swatchX = originXLegend;
+        const labelX = originXLegend + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
+        const midY = rowY + BIN_ROW_H / 2;
+        const swatchY = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
+        // Floating always shows full labels and counts, regardless of legendStyle.
+        const displayLabel = legendIsFloating
+          ? (entry.binDef?.name ? `${entry.bin} · ${entry.binDef.name}` : `Bin ${entry.bin}`)
+          : entry.label;
+        ctx.fillStyle = entry.binDef?.color ?? scheme.forBin(entry.bin);
+        ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
+        ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = isActive ? 2 : 0.75;
+        ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
+        ctx.fillStyle = isActive ? '#1a66cc' : '#333';
+        ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT}` : COLORBAR_LABEL_FONT;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(truncate(displayLabel, maxLabelW), labelX, midY);
+        if (showCount || legendIsFloating) {
+          ctx.fillStyle = '#999';
+          ctx.font = COLORBAR_LABEL_FONT;
+          ctx.textAlign = 'right';
+          ctx.fillText(String(entry.count), countX, midY);
+        }
+        binLegendRows.push({
+          bin: entry.bin,
+          x: originXLegend,
+          y: rowY,
+          w: colW,
+          h: BIN_ROW_H,
+          label: entry.tooltipLabel,
+        });
+        rowY += BIN_ROW_H;
+      }
+      if (overflow > 0) {
+        ctx.fillStyle = '#aaa';
+        ctx.font = COLORBAR_LABEL_FONT;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`+ ${overflow} more`, originXLegend + BIN_SWATCH_SIZE + BIN_LABEL_GAP, rowY + BIN_ROW_H / 2);
+      }
     }
-
-    for (const [bin, count] of visible) {
-      const isActive  = _activeBin === bin;
-      const swatchY   = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
-      const binDef    = binDefMap?.get(bin);
-      const midY      = rowY + BIN_ROW_H / 2;
-
-      // Swatch fill — use BinDef color override if present.
-      ctx.fillStyle = binDef?.color ?? scheme.forBin(bin);
-      ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
-
-      // Swatch border — thicker + blue when active.
-      ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
-      ctx.lineWidth   = isActive ? 2 : 0.75;
-      ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
-
-      // Label — truncated to fit within the label column.
-      const rawLabel   = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
-      ctx.fillStyle    = isActive ? '#1a66cc' : '#333';
-      ctx.font         = isActive ? 'bold 10px system-ui, sans-serif' : COLORBAR_LABEL_FONT;
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(truncate(rawLabel, maxLabelW), labelX, midY);
-
-      // Die count — right-aligned, inside the legend reserve.
-      ctx.fillStyle    = '#999';
-      ctx.font         = COLORBAR_LABEL_FONT;
-      ctx.textAlign    = 'right';
-      ctx.fillText(String(count), countX, midY);
-
-      binLegendRows.push({ bin, y: rowY, h: BIN_ROW_H });
-      rowY += BIN_ROW_H;
-    }
-
-    // Overflow indicator.
-    if (overflow > 0) {
-      ctx.fillStyle    = '#aaa';
-      ctx.font         = COLORBAR_LABEL_FONT;
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`+ ${overflow} more`, labelX, rowY + BIN_ROW_H / 2);
-    }
-
-    ctx.restore();
   }
+
+  if (legendEntries.length > 0) ctx.restore();
+}
 
   // ── Build viewport and hit target ──────────────────────────────────────────
   const viewport: ViewportTransform = { originX, originY, ppm, snapDist };
@@ -423,7 +605,7 @@ export function toCanvas(
     },
   };
 
-  return { hitTarget, viewport, binLegendRows };
+  return { hitTarget, viewport, binLegendRows, legendBox };
 }
 
 // ── Axis tick rendering ────────────────────────────────────────────────────────

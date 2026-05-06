@@ -51,7 +51,7 @@ export function softBinColor(bin: number, maxBin = 6): string {
 /** Categorical greyscale shades for hard bins. Index 0 = no data. */
 export const HARD_BIN_GREY: readonly string[] = [
   '#aaaaaa', // 0: no data
-  '#f0f0f0', // 1: pass (lightest — clearly distinct)
+  '#f7f7f7', // 1: pass (lightest — clearly distinct)
   '#303030', // 2: fail (darkest)
   '#888888', // 3: marginal
   '#bbbbbb', // 4

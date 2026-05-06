@@ -502,6 +502,7 @@ Scene display options controllable via the toolbar or programmatically:
   valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
   lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
+  legendStyle?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // bin legend position/style (default 'default'); only applies in hardbin/softbin modes
 }
 ```
 
@@ -536,6 +537,7 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   showToolbar?:            boolean   // default true
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
+  legendStyle?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position (default 'default'); user can change via toolbar
   statsSummary?:           StatsSummary  // precomputed wafer-level findings — adds a findings panel button to the toolbar
   showFindingsPanel?:      boolean   // show the findings panel toggle when statsSummary is provided (default true)
   minZoom?:                number    // default 0.5
@@ -582,6 +584,7 @@ The findings panel button only appears when `statsSummary` is provided and `show
 | Labels | Toggle die index text labels |
 | Reticle | Toggle reticle field overlay — only shown when `reticles` are present |
 | XY indicator | Toggle axis-orientation arrows showing +X/+Y directions |
+| Legend style | Dropdown: bin legend position — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating** (draggable). Disabled when not in a bin mode. |
 | Rotate | Rotate 90° clockwise (cycles 0→90→180→270) |
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
@@ -667,6 +670,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 {
   sceneOptions?:           WaferSceneOptions  // initial shared state
   onSceneOptionsChange?:   (opts: WaferSceneOptions) => void
+  legendStyle?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position for all cards (default 'default'); user can change via gallery bar
   cardPadding?:            number             // CSS-px padding inside each card canvas (default 6)
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
@@ -700,6 +704,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 | Labels | Toggle die labels on all cards |
 | Reticle | Toggle reticle overlay on all cards — only shown when at least one item has `hasReticle: true` |
 | XY indicator | Toggle axis-orientation arrows on all cards |
+| Legend style | Dropdown: bin legend position for all cards — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating**. Disabled when not in a bin mode. |
 | Rotate | Rotate all cards 90° clockwise |
 | Flip H | Flip all cards horizontally |
 | Flip V | Flip all cards vertically |

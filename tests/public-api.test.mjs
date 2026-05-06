@@ -209,7 +209,7 @@ test('aggregation, inference, classification, formatting, and color helpers are 
 
   assert.equal(hardBinColor(1), '#2ecc71');
   assert.equal(hardBinColor(999), '#16a085');
-  assert.equal(hardBinGreyscale(1), '#f0f0f0');
+  assert.equal(hardBinGreyscale(1), '#f7f7f7');
   assert.equal(softBinColor(3, 6), valueToViridis(0.5));
   assert.equal(valueToViridis(-1), 'rgb(68,1,84)');
   assert.equal(valueToGreyscale(1), 'rgb(230,230,230)');

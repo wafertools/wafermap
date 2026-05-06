@@ -428,6 +428,7 @@ renderWaferMap(canvas, wafer, dies, {
     rotation:                0,             // 0, 90, 180, 270
     flipX:                   false,
     flipY:                   false,
+    legendStyle:             'default',     // 'default'|'compact'|'left'|'top'|'bottom'|'floating'
   },
 });
 ```
@@ -506,6 +507,38 @@ renderWaferMap(canvas, wafer, dies, {
 **→ [Demo: Controlling the display](../guide-demos/08-display-control.html)**
 
 ![alt text](image-7.png)
+
+### Bin legend position
+
+In `hardbin` and `softbin` modes, the bin legend can be placed in six positions via the **Legend style** toolbar button or the `legendStyle` option:
+
+| Value | Behaviour |
+| --- | --- |
+| `'default'` | Vertical list on the right (full labels + counts) |
+| `'compact'` | Vertical list on the right (bin numbers only) |
+| `'left'` | Vertical list on the left (full labels + counts) |
+| `'top'` | Horizontal strip above the wafer (multi-column, auto-fitted) |
+| `'bottom'` | Horizontal strip below the wafer (multi-column, auto-fitted) |
+| `'floating'` | Draggable overlay, initially bottom-right (full labels + counts) |
+
+Set the initial position via `sceneOptions` — the user can change it at any time via the toolbar:
+
+```ts
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: { plotMode: 'hardbin', legendStyle: 'bottom' },
+});
+```
+
+The Legend style button is automatically disabled when the map is in `value` or stacked mode, since those modes use a continuous colorbar instead of a bin legend.
+
+For galleries, `legendStyle` is a top-level `GalleryOptions` field and applies to all cards:
+
+```ts
+renderWaferGallery(container, items, {
+  legendStyle: 'compact',
+});
+```
+
 ---
 
 ## 9. Responding to user interaction

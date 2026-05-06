@@ -7,6 +7,7 @@ import type { Reticle } from '../core/reticle.js';
 import { toCanvas, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
+import { CLR, ROTATIONS, INLINE_TEST_LIMIT, MODE_LABELS, createTooltip, createToolbarHelpers } from './toolbar.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ export interface WaferSceneOptions {
    * `xAxisDirection`/`yAxisDirection`). Passed through to axis tick label computation.
    */
   dataAxisFlip?:           { x: boolean; y: boolean };
+  /** Legend layout style for bin modes. Default 'default'. */
+  legendStyle?:            'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 }
 
 export interface MountOptions extends Omit<ToCanvasOptions, '_viewport'> {
@@ -119,56 +122,7 @@ export interface WaferCanvasController {
   destroy(): void;
 }
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
-const ICONS: Record<string, string> = {
-  download:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg>`,
-  zoomMode:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m13 13.5 2-2.5-2-2.5"/><path d="m21 21-4.3-4.3"/><path d="M9 8.5 7 11l2 2.5"/><circle cx="11" cy="11" r="8"/></svg>`,
-  pan:       `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg>`,
-  zoomIn:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/></svg>`,
-  zoomOut:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/></svg>`,
-  reset:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`,
-  boxSelect: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></svg>`,
-  rotateCW:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
-  flipH:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 5 5-5 5V7"/><path d="m21 7-5 5 5 5V7"/><path d="M12 20v2"/><path d="M12 14v2"/><path d="M12 8v2"/><path d="M12 2v2"/></svg>`,
-  flipV:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m17 3-5 5-5-5h10"/><path d="m17 21-5-5-5 5h10"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/></svg>`,
-  labels:    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg>`,
-  palette:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14.622 17.897-10.68-2.913"/><path d="M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z"/><path d="M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15"/></svg>`,
-  mode:      `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>`,
-  // Wafer-specific — no Lucide equivalent
-  rings:     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
-  quadrants: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
-  reticle:   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="6" rx="0.5"/><rect x="13" y="3" width="8" height="6" rx="0.5"/><rect x="3" y="11" width="8" height="6" rx="0.5"/><rect x="13" y="11" width="8" height="6" rx="0.5"/><rect x="3" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/><rect x="13" y="19" width="8" height="2" rx="0.5" stroke-dasharray="2 1"/></svg>`,
-  xyIndicator: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 L5 7"/><path d="M5 7 L3 10"/><path d="M5 7 L7 10"/><path d="M5 19 L17 19"/><path d="M17 19 L14 17"/><path d="M17 19 L14 21"/><text x="18" y="8" font-size="6" fill="currentColor" stroke="none">X</text><text x="2" y="6" font-size="6" fill="currentColor" stroke="none">Y</text></svg>`,
-  findings: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11h6"/><path d="M9 15h4"/><path d="M5 4h14"/><path d="M5 20h14"/><path d="M5 4v16"/><path d="M19 4v16"/></svg>`,
-};
 
-// ── Toolbar colours ───────────────────────────────────────────────────────────
-const CLR = {
-  icon:        '#506784',
-  iconHover:   '#2a3f5f',
-  iconActive:  '#1a66cc',
-  bgHover:     '#edf0f8',
-  bgActive:    '#dce8f8',
-  separator:   'rgba(0,0,0,0.12)',
-  menuBg:      '#fff',
-  menuBorder:  'rgba(0,0,0,0.12)',
-  menuHover:   '#f0f4fc',
-  menuActive:  '#dce8f8',
-};
-
-// ── Plot mode display labels ───────────────────────────────────────────────────
-const MODE_LABELS: Record<PlotMode, string> = {
-  value:            'Test Value',
-  hardbin:          'Hard Bin',
-  softbin:          'Soft Bin',
-  stackedValues:    'Stacked Test Values',
-  stackedBins:      'Stacked Hard Bins',
-  stackedSoftBins:  'Stacked Soft Bins',
-};
-
-// Number of test entries to show inline before switching to a cascade submenu.
-const INLINE_TEST_LIMIT = 6;
-const ROTATIONS: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -213,6 +167,8 @@ export function renderWaferMap(
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
+    // legendStyle can come from sceneOptions or the top-level drawOptions.
+    legendStyle:            drawOptions.legendStyle ?? 'default',
     ...initialSceneOptions,
   };
 
@@ -220,6 +176,12 @@ export function renderWaferMap(
   let fittedViewport: ViewportTransform | null = null;
   let viewport:       ViewportTransform | null = null;
   let binLegendRows:  BinLegendRow[] = [];
+  let legendBoxRect:  { x: number; y: number; w: number; h: number } | null = null;
+  let legendOffset = drawOptions.legendOffset ?? { x: 0, y: 0 };
+  let draggingLegend = false;
+  let legendDragPending = false;  // pointerdown inside legend box, not yet confirmed as drag
+  let legendDragStart = { x: 0, y: 0 };
+  let legendOffsetStart = { x: 0, y: 0 };
   let isPanning       = false;
   let isBoxSelecting  = false;
   // Interaction mode: 'pan' | 'zoom' | 'select'
@@ -268,24 +230,7 @@ export function renderWaferMap(
   // ── Tooltip ────────────────────────────────────────────────────────────────
   let tooltip: HTMLDivElement | null = null;
   if (showTooltip) {
-    tooltip = document.createElement('div');
-    Object.assign(tooltip.style, {
-      position:     'fixed',
-      pointerEvents:'none',
-      background:   'rgba(20,20,30,0.88)',
-      color:        '#f0f0f0',
-      padding:      '6px 10px',
-      borderRadius: '5px',
-      fontSize:     '11px',
-      lineHeight:   '1.5',
-      maxWidth:     '220px',
-      whiteSpace:   'pre-wrap',
-      zIndex:       '9999',
-      display:      'none',
-      fontFamily:   'system-ui, sans-serif',
-      boxShadow:    '0 2px 8px rgba(0,0,0,0.35)',
-    });
-    document.body.appendChild(tooltip);
+    tooltip = createTooltip();
   }
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
@@ -297,15 +242,12 @@ export function renderWaferMap(
   let findingsOpen = false;
   let activeFindingId: string | null = null;
 
-  // Track open dropdown so we can close it when another opens.
-  let openMenu: HTMLDivElement | null = null;
-
-  const closeOpenMenu = (e: MouseEvent): void => {
-    if (openMenu && !openMenu.contains(e.target as Node)) {
-      openMenu.remove();
-      openMenu = null;
-    }
-  };
+  // Set when toolbar is created — used by destroy() regardless of showToolbar.
+  let tbCloseOpenMenu: ((e: MouseEvent) => void) | null = null;
+  let tbGetOpenMenu:   (() => HTMLDivElement | null) | null = null;
+  let tbSetOpenMenu:   ((m: HTMLDivElement | null) => void) | null = null;
+  // Called after every option change to keep the legend style button in sync.
+  let syncLegendStyleBtnFn: (() => void) | null = null;
 
   function selectionFromKeys(keys: string[] | undefined): void {
     selectedKeys = new Set(keys ?? []);
@@ -504,139 +446,15 @@ export function renderWaferMap(
       });
       parent.appendChild(findingsPanel);
 
-      // ── Button factory ───────────────────────────────────────────────────
-      function makeBtn(
-        iconKey: string,
-        title: string,
-        onClick: () => void,
-      ): HTMLButtonElement {
-        const btn = document.createElement('button');
-        btn.title     = title;
-        btn.innerHTML = ICONS[iconKey];
-        btn.type      = 'button';
-        Object.assign(btn.style, {
-          display:        'flex',
-          alignItems:     'center',
-          justifyContent: 'center',
-          width:          '28px',
-          height:         '28px',
-          padding:        '0',
-          border:         'none',
-          borderRadius:   '3px',
-          background:     'transparent',
-          color:          CLR.icon,
-          cursor:         'pointer',
-          pointerEvents:  'auto',
-          transition:     'background 0.12s, color 0.12s',
-          flexShrink:     '0',
-        });
-        btn.addEventListener('mouseenter', () => {
-          if (!btn.dataset.active) {
-            btn.style.background = CLR.bgHover;
-            btn.style.color      = CLR.iconHover;
-          }
-        });
-        btn.addEventListener('mouseleave', () => {
-          if (!btn.dataset.active) {
-            btn.style.background = 'transparent';
-            btn.style.color      = CLR.icon;
-          }
-        });
-        btn.addEventListener('click', onClick);
-        return btn;
-      }
-
-      function setActive(btn: HTMLButtonElement, active: boolean): void {
-        if (active) {
-          btn.dataset.active   = '1';
-          btn.style.background = CLR.bgActive;
-          btn.style.color      = CLR.iconActive;
-        } else {
-          delete btn.dataset.active;
-          btn.style.background = 'transparent';
-          btn.style.color      = CLR.icon;
-        }
-      }
-
-      // ── Separator ────────────────────────────────────────────────────────
-      function makeSep(): HTMLDivElement {
-        const sep = document.createElement('div');
-        Object.assign(sep.style, {
-          width:      '1px',
-          height:     '18px',
-          background: CLR.separator,
-          margin:     '0 2px',
-          flexShrink: '0',
-        });
-        return sep;
-      }
-
+      // ── Toolbar helpers ──────────────────────────────────────────────────
+      // Use shared tooltip if available, otherwise create one for the toolbar.
+      const tbTooltip = tooltip ?? createTooltip();
+      const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tbTooltip);
+      tbCloseOpenMenu = closeOpenMenu;
+      tbGetOpenMenu   = getOpenMenu;
+      tbSetOpenMenu   = setOpenMenu;
       // Single persistent listener — closes any open dropdown on outside click.
       document.addEventListener('click', closeOpenMenu, true);
-
-      // ── Dropdown menu factory ────────────────────────────────────────────
-      // Menus are appended to document.body with position:fixed so they never
-      // affect document layout or cause the page to shift.
-      function makeDropdown<T extends string>(
-        iconKey:  string,
-        title:    string,
-        items:    Array<{ value: T; label: string }>,
-        getCurrent: () => T,
-        onPick:   (v: T) => void,
-      ): HTMLButtonElement {
-        const btn = makeBtn(iconKey, title, () => {
-          if (openMenu) { openMenu.remove(); openMenu = null; return; }
-
-          const menu = document.createElement('div');
-          const btnRect = btn.getBoundingClientRect();
-          Object.assign(menu.style, {
-            position:      'fixed',
-            top:           `${btnRect.bottom + 4}px`,
-            left:          `${btnRect.left}px`,
-            background:    CLR.menuBg,
-            border:        `1px solid ${CLR.menuBorder}`,
-            borderRadius:  '4px',
-            boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-            zIndex:        '9998',
-            minWidth:      '148px',
-            padding:       '4px 0',
-            pointerEvents: 'auto',
-          });
-
-          for (const item of items) {
-            const row = document.createElement('div');
-            row.textContent = item.label;
-            const isActive = item.value === getCurrent();
-            Object.assign(row.style, {
-              padding:    '6px 14px',
-              fontSize:   '12px',
-              cursor:     'pointer',
-              color:      isActive ? CLR.iconActive : '#333',
-              fontWeight: isActive ? '700' : '400',
-              background: isActive ? CLR.menuActive : 'transparent',
-              whiteSpace: 'nowrap',
-            });
-            row.addEventListener('mouseenter', () => {
-              if (item.value !== getCurrent()) row.style.background = CLR.menuHover;
-            });
-            row.addEventListener('mouseleave', () => {
-              row.style.background = item.value === getCurrent() ? CLR.menuActive : 'transparent';
-            });
-            row.addEventListener('click', e => {
-              e.stopPropagation();
-              onPick(item.value);
-              menu.remove();
-              openMenu = null;
-            });
-            menu.appendChild(row);
-          }
-
-          document.body.appendChild(menu);
-          openMenu = menu;
-        });
-
-        return btn;
-      }
 
       // ── Wire up toolbar buttons ──────────────────────────────────────────
 
@@ -649,14 +467,14 @@ export function renderWaferMap(
         canvas.style.cursor = mode === 'pan' ? 'grab' : 'crosshair';
       }
 
-      // ── Order matches Plotly modebar: camera | sep | zoom | pan | [select] | zoom+ | zoom− | reset | sep | scene controls ──
+      // Camera first, then interaction mode group, then zoom-level group, then scene controls.
 
-      // Camera first — leftmost, matching Plotly
+      // Camera first — leftmost
       const btnDownload = makeBtn('download', 'Download PNG', downloadPng);
       toolbar.appendChild(btnDownload);
       toolbar.appendChild(makeSep());
 
-      // Navigation mode group
+      // Interaction mode group: zoom-region | pan | box-select
       const btnZoomMode = makeBtn('zoomMode', 'Zoom (drag to zoom region)', () => setInteractMode('zoom'));
       const btnPanMode  = makeBtn('pan',      'Pan (drag to move)',          () => setInteractMode('pan'));
       toolbar.appendChild(btnZoomMode);
@@ -664,8 +482,9 @@ export function renderWaferMap(
 
       btnBoxSelect = makeBtn('boxSelect', 'Select (drag to select dies)', () => setInteractMode('select'));
       toolbar.appendChild(btnBoxSelect);
+      toolbar.appendChild(makeSep());
 
-      // Zoom +/− and reset
+      // Zoom level group: zoom in | zoom out | reset
       const btnZoomIn  = makeBtn('zoomIn',  'Zoom in',                    () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.5));
       const btnZoomOut = makeBtn('zoomOut', 'Zoom out',                   () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.5));
       const btnReset   = makeBtn('reset',   'Reset zoom (double-click)',   () => resetZoom());
@@ -739,11 +558,12 @@ export function renderWaferMap(
             applyOpts({ plotMode: entry.plotMode, testIndex: undefined });
           }
           menu.remove();
-          openMenu = null;
+          setOpenMenu(null);
         }
 
         const btnMode = makeBtn('mode', 'Plot mode', () => {
-          if (openMenu) { openMenu.remove(); openMenu = null; return; }
+          const openMenu = getOpenMenu();
+          if (openMenu) { openMenu.remove(); setOpenMenu(null); return; }
 
           // Only include modes for which data is actually present.
           const dies     = currentScene.dies;
@@ -877,11 +697,11 @@ export function renderWaferMap(
           }
 
           document.body.appendChild(menu);
-          openMenu = menu;
+          setOpenMenu(menu);
         });
         const btnPalette = makeDropdown(
           'palette', 'Colour scheme',
-          listColorSchemes().map(s => ({ value: s.name, label: s.label })),
+          () => listColorSchemes().map(s => ({ value: s.name, label: s.label })),
           () => sceneOpts.colorScheme ?? 'color',
           v => applyOpts({ colorScheme: v }),
         );
@@ -905,6 +725,26 @@ export function renderWaferMap(
           applyOpts({ showXYIndicator: !sceneOpts.showXYIndicator });
           setActive(btnXY, !!sceneOpts.showXYIndicator);
         });
+        const btnLegendStyle = makeDropdown(
+          'legend', 'Legend style',
+          () => [
+            { value: 'default'  as const, label: 'Default (right)' },
+            { value: 'compact'  as const, label: 'Compact (right)' },
+            { value: 'left'     as const, label: 'Left' },
+            { value: 'top'      as const, label: 'Top' },
+            { value: 'bottom'   as const, label: 'Bottom' },
+            { value: 'floating' as const, label: 'Floating' },
+          ],
+          () => sceneOpts.legendStyle ?? 'default',
+          (v) => applyOpts({ legendStyle: v }),
+        );
+        // Disable legend style button when not in a bin mode (it only affects bin legends).
+        syncLegendStyleBtnFn = () => {
+          const isBinMode = sceneOpts.plotMode === 'hardbin' || sceneOpts.plotMode === 'softbin';
+          btnLegendStyle.style.opacity       = isBinMode ? '' : '0.35';
+          btnLegendStyle.style.pointerEvents = isBinMode ? '' : 'none';
+        };
+        syncLegendStyleBtnFn();
         const btnRotate = makeBtn('rotateCW', 'Rotate 90° clockwise', () => {
           const r = sceneOpts.rotation ?? 0;
           // Positive rotation is CCW in standard math convention, so decrement to rotate CW.
@@ -927,6 +767,8 @@ export function renderWaferMap(
         toolbar.appendChild(btnLabels);
         if (currentScene!.hasReticle) toolbar.appendChild(btnReticle);
         toolbar.appendChild(btnXY);
+        toolbar.appendChild(makeSep());
+        toolbar.appendChild(btnLegendStyle);
         toolbar.appendChild(makeSep());
         toolbar.appendChild(btnRotate);
         toolbar.appendChild(btnFlipH);
@@ -994,7 +836,10 @@ export function renderWaferMap(
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
       fittedViewport = null;
     }
-    rebuildScene();
+    // legendStyle only affects canvas layout — skip the scene rebuild.
+    const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendStyle');
+    if (!onlyLegendStyle) rebuildScene();
+    syncLegendStyleBtnFn?.();
     render();
   }
 
@@ -1016,6 +861,8 @@ export function renderWaferMap(
 
     const result = toCanvas(canvas, currentScene, {
       ...drawOptions,
+      legendStyle: sceneOpts.legendStyle ?? 'default',
+      legendOffset,
       diePitchMm,
       fallbackFormat: currentFallbackFormat,
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
@@ -1024,6 +871,7 @@ export function renderWaferMap(
     });
 
     binLegendRows = result.binLegendRows;
+    legendBoxRect = result.legendBox ?? null;
 
     if (!fittedViewport) fittedViewport = result.viewport;
 
@@ -1140,6 +988,10 @@ export function renderWaferMap(
     zoomAt(e.clientX - rect.left, e.clientY - rect.top, factor);
   }
 
+  function pointInRect(px: number, py: number, rect: { x: number; y: number; w: number; h: number }): boolean {
+    return px >= rect.x && px < rect.x + rect.w && py >= rect.y && py < rect.y + rect.h;
+  }
+
   function onPointerDown(e: PointerEvent): void {
     if (e.button !== 0) return;
     if (!currentViewport()) return;
@@ -1148,6 +1000,14 @@ export function renderWaferMap(
     const rect = canvas.getBoundingClientRect();
     const px   = e.clientX - rect.left;
     const py   = e.clientY - rect.top;
+
+    if (legendBoxRect && sceneOpts.legendStyle === 'floating' && pointInRect(px, py, legendBoxRect)) {
+      legendDragPending = true;
+      legendDragStart = { x: px, y: py };
+      legendOffsetStart = { ...legendOffset };
+      return;
+    }
+
     if (interactMode === 'zoom' || interactMode === 'select') {
       isBoxSelecting = true;
       boxStart = boxEnd = { x: px, y: py };
@@ -1170,6 +1030,25 @@ export function renderWaferMap(
       return;
     }
 
+    if (legendDragPending) {
+      const dx = cssPx - legendDragStart.x;
+      const dy = cssPy - legendDragStart.y;
+      if (dx * dx + dy * dy > 16) {
+        legendDragPending = false;
+        draggingLegend = true;
+        canvas.style.cursor = 'grabbing';
+      }
+    }
+
+    if (draggingLegend) {
+      legendOffset = {
+        x: legendOffsetStart.x + (cssPx - legendDragStart.x),
+        y: legendOffsetStart.y + (cssPy - legendDragStart.y),
+      };
+      render();
+      return;
+    }
+
     if (isPanning) {
       const vp       = currentViewport()!;
       const snapDist = viewport?.snapDist ?? fittedViewport?.snapDist ?? 1;
@@ -1188,6 +1067,21 @@ export function renderWaferMap(
     const mx  = (cssPx - vp.originX) / vp.ppm;
     const my  = (vp.originY - cssPy) / vp.ppm;
     const die = hitTest(mx, my, vp.snapDist);
+
+    const legendRow = binLegendRows.find(row =>
+      cssPx >= row.x && cssPx < row.x + row.w && cssPy >= row.y && cssPy < row.y + row.h,
+    );
+    if (legendRow) {
+      canvas.style.cursor = 'pointer';
+      if (tooltip) {
+        tooltip.style.display = 'block';
+        tooltip.style.left = `${e.clientX + 14}px`;
+        tooltip.style.top = `${e.clientY - 8}px`;
+        tooltip.innerHTML = legendRow.label ?? `Bin ${legendRow.bin}`;
+      }
+      onHover?.(null, e);
+      return;
+    }
 
     if (interactMode === 'pan') canvas.style.cursor = die ? 'crosshair' : 'grab';
 
@@ -1287,6 +1181,18 @@ export function renderWaferMap(
       return;
     }
 
+    if (legendDragPending) {
+      legendDragPending = false;
+      handleClick(cssPx, cssPy, multi, e);
+      return;
+    }
+
+    if (draggingLegend) {
+      draggingLegend = false;
+      canvas.style.cursor = 'grab';
+      return;
+    }
+
     if (!isPanning) return;
     isPanning = false;
     canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
@@ -1300,11 +1206,15 @@ export function renderWaferMap(
   function handleClick(cssPx: number, cssPy: number, multi: boolean, e: PointerEvent): void {
     // Check bin legend hit first — legend rows take priority over die clicks.
     for (const row of binLegendRows) {
-      if (cssPy >= row.y && cssPy < row.y + row.h) {
+      if (cssPx >= row.x && cssPx < row.x + row.w && cssPy >= row.y && cssPy < row.y + row.h) {
         const next = sceneOpts.highlightBin === row.bin ? undefined : row.bin;
         applyOpts({ highlightBin: next });
         return;
       }
+    }
+
+    if (legendBoxRect && pointInRect(cssPx, cssPy, legendBoxRect)) {
+      return;
     }
 
     const vp = currentViewport();
@@ -1457,8 +1367,8 @@ export function renderWaferMap(
 
     destroy(): void {
       if (hideTimer) clearTimeout(hideTimer);
-      openMenu?.remove();
-      document.removeEventListener('click', closeOpenMenu, true);
+      tbGetOpenMenu?.()?.remove();
+      if (tbCloseOpenMenu) document.removeEventListener('click', tbCloseOpenMenu, true);
       canvas.removeEventListener('wheel',        onWheel);
       canvas.removeEventListener('pointerdown',  onPointerDown);
       canvas.removeEventListener('pointermove',  onPointerMove);
