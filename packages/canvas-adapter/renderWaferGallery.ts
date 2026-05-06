@@ -31,8 +31,8 @@ export interface GalleryOptions {
   sceneOptions?:         WaferSceneOptions;
   /** Called whenever a shared gallery option changes. */
   onSceneOptionsChange?: (opts: WaferSceneOptions) => void;
-  /** Legend layout style for bin modes. Default 'default'. */
-  legendStyle?:          'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  /** Legend position for bin modes. Default 'default'. */
+  legendPosition?:       'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /** Padding inside each card canvas in CSS pixels. Default 6. */
   cardPadding?:          number;
   /** Filename stem for the composite gallery PNG. Default 'wafer-gallery'. */
@@ -84,7 +84,7 @@ export function renderWaferGallery(
   const showFindingsPanel    = options.showFindingsPanel    ?? true;
   let currentFallbackFormat  = options.fallbackFormat;
   let currentLotStats        = options.lotStatsSummary;
-  let currentLegendStyle     = options.legendStyle ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  let currentLegendStyle     = options.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 
   let sharedOpts: WaferSceneOptions = {
     plotMode:               'hardbin',
@@ -521,7 +521,7 @@ export function renderWaferGallery(
     () => currentLegendStyle,
     (v) => {
       currentLegendStyle = v;
-      for (const ctrl of cardControllers) ctrl.setOptions({ legendStyle: currentLegendStyle });
+      for (const ctrl of cardControllers) ctrl.setOptions({ legendPosition: currentLegendStyle });
     },
   );
 
@@ -953,7 +953,7 @@ export function renderWaferGallery(
         toolbarControls: 'view-only',
         showTooltip:     true,
         padding:         cardPadding,
-        legendStyle:     currentLegendStyle,
+        legendPosition:     currentLegendStyle,
         fallbackFormat:  currentFallbackFormat,
         onClick:         item.onClick,
         onSelect:        item.onSelect,
@@ -1063,7 +1063,7 @@ export function renderWaferGallery(
       sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,
-      legendStyle:     currentLegendStyle,
+      legendPosition:     currentLegendStyle,
       fallbackFormat:  options.fallbackFormat,
       statsSummary:    item.statsSummary,
       onClick:         item.onClick,

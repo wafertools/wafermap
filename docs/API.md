@@ -502,7 +502,7 @@ Scene display options controllable via the toolbar or programmatically:
   valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
   lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
-  legendStyle?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // bin legend position/style (default 'default'); only applies in hardbin/softbin modes
+  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // bin legend position/style (default 'default'); only applies in hardbin/softbin modes
 }
 ```
 
@@ -537,7 +537,7 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   showToolbar?:            boolean   // default true
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
-  legendStyle?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position (default 'default'); user can change via toolbar
+  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position (default 'default'); user can change via toolbar
   statsSummary?:           StatsSummary  // precomputed wafer-level findings — adds a findings panel button to the toolbar
   showFindingsPanel?:      boolean   // show the findings panel toggle when statsSummary is provided (default true)
   minZoom?:                number    // default 0.5
@@ -670,7 +670,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 {
   sceneOptions?:           WaferSceneOptions  // initial shared state
   onSceneOptionsChange?:   (opts: WaferSceneOptions) => void
-  legendStyle?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position for all cards (default 'default'); user can change via gallery bar
+  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position for all cards (default 'default'); user can change via gallery bar
   cardPadding?:            number             // CSS-px padding inside each card canvas (default 6)
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')

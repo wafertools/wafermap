@@ -62,8 +62,8 @@ export interface WaferSceneOptions {
    * `xAxisDirection`/`yAxisDirection`). Passed through to axis tick label computation.
    */
   dataAxisFlip?:           { x: boolean; y: boolean };
-  /** Legend layout style for bin modes. Default 'default'. */
-  legendStyle?:            'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  /** Legend position for bin modes. Default 'default'. */
+  legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 }
 
 export interface MountOptions extends Omit<ToCanvasOptions, '_viewport'> {
@@ -167,8 +167,8 @@ export function renderWaferMap(
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
-    // legendStyle can come from sceneOptions or the top-level drawOptions.
-    legendStyle:            drawOptions.legendStyle ?? 'default',
+    // legendPosition can come from sceneOptions or the top-level drawOptions.
+    legendPosition:            drawOptions.legendPosition ?? 'default',
     ...initialSceneOptions,
   };
 
@@ -735,8 +735,8 @@ export function renderWaferMap(
             { value: 'bottom'   as const, label: 'Bottom' },
             { value: 'floating' as const, label: 'Floating' },
           ],
-          () => sceneOpts.legendStyle ?? 'default',
-          (v) => applyOpts({ legendStyle: v }),
+          () => sceneOpts.legendPosition ?? 'default',
+          (v) => applyOpts({ legendPosition: v }),
         );
         // Disable legend style button when not in a bin mode (it only affects bin legends).
         syncLegendStyleBtnFn = () => {
@@ -836,8 +836,8 @@ export function renderWaferMap(
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
       fittedViewport = null;
     }
-    // legendStyle only affects canvas layout — skip the scene rebuild.
-    const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendStyle');
+    // legendPosition only affects canvas layout — skip the scene rebuild.
+    const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendPosition');
     if (!onlyLegendStyle) rebuildScene();
     syncLegendStyleBtnFn?.();
     render();
@@ -861,7 +861,7 @@ export function renderWaferMap(
 
     const result = toCanvas(canvas, currentScene, {
       ...drawOptions,
-      legendStyle: sceneOpts.legendStyle ?? 'default',
+      legendPosition: sceneOpts.legendPosition ?? 'default',
       legendOffset,
       diePitchMm,
       fallbackFormat: currentFallbackFormat,
@@ -1001,7 +1001,7 @@ export function renderWaferMap(
     const px   = e.clientX - rect.left;
     const py   = e.clientY - rect.top;
 
-    if (legendBoxRect && sceneOpts.legendStyle === 'floating' && pointInRect(px, py, legendBoxRect)) {
+    if (legendBoxRect && sceneOpts.legendPosition === 'floating' && pointInRect(px, py, legendBoxRect)) {
       legendDragPending = true;
       legendDragStart = { x: px, y: py };
       legendOffsetStart = { ...legendOffset };

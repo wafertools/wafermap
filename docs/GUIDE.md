@@ -428,7 +428,7 @@ renderWaferMap(canvas, wafer, dies, {
     rotation:                0,             // 0, 90, 180, 270
     flipX:                   false,
     flipY:                   false,
-    legendStyle:             'default',     // 'default'|'compact'|'left'|'top'|'bottom'|'floating'
+    legendPosition:             'default',     // 'default'|'compact'|'left'|'top'|'bottom'|'floating'
   },
 });
 ```
@@ -510,7 +510,7 @@ renderWaferMap(canvas, wafer, dies, {
 
 ### Bin legend position
 
-In `hardbin` and `softbin` modes, the bin legend can be placed in six positions via the **Legend style** toolbar button or the `legendStyle` option:
+In `hardbin` and `softbin` modes, the bin legend can be placed in six positions via the **Legend style** toolbar button or the `legendPosition` option:
 
 | Value | Behaviour |
 | --- | --- |
@@ -525,17 +525,17 @@ Set the initial position via `sceneOptions` — the user can change it at any ti
 
 ```ts
 renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardbin', legendStyle: 'bottom' },
+  sceneOptions: { plotMode: 'hardbin', legendPosition: 'bottom' },
 });
 ```
 
 The Legend style button is automatically disabled when the map is in `value` or stacked mode, since those modes use a continuous colorbar instead of a bin legend.
 
-For galleries, `legendStyle` is a top-level `GalleryOptions` field and applies to all cards:
+For galleries, `legendPosition` is a top-level `GalleryOptions` field and applies to all cards:
 
 ```ts
 renderWaferGallery(container, items, {
-  legendStyle: 'compact',
+  legendPosition: 'compact',
 });
 ```
 

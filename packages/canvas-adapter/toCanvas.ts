@@ -13,9 +13,9 @@ export interface ToCanvasOptions {
   colorbarWidth?: number;
   /** Canvas background colour. Default '#f5f5f5'. */
   background?: string;
-  /** Legend layout style for bin modes. Default 'default'. */
-  legendStyle?: 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
-  /** Floating legend offset in CSS pixels. Used when `legendStyle === 'floating'`. */
+  /** Legend position for bin modes. Default 'default'. */
+  legendPosition?: 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  /** Floating legend offset in CSS pixels. Used when `legendPosition === 'floating'`. */
   legendOffset?: { x: number; y: number };
   /**
    * Draw axis tick marks and labels. Default false.
@@ -103,7 +103,7 @@ export function toCanvas(
     showColorbar  = true,
     colorbarWidth = 16,
     background    = '#f5f5f5',
-    legendStyle   = 'default',
+    legendPosition   = 'default',
     legendOffset,
     showAxes      = false,
     diePitchMm,
@@ -114,11 +114,11 @@ export function toCanvas(
 
   const drawColorbar   = showColorbar && COLORBAR_MODES.has(scene.plotMode);
   const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(scene.plotMode);
-  const legendIsRight    = legendStyle === 'default' || legendStyle === 'compact';
-  const legendIsLeft     = legendStyle === 'left';
-  const legendIsBottom   = legendStyle === 'bottom';
-  const legendIsTop      = legendStyle === 'top';
-  const legendIsFloating = legendStyle === 'floating';
+  const legendIsRight    = legendPosition === 'default' || legendPosition === 'compact';
+  const legendIsLeft     = legendPosition === 'left';
+  const legendIsBottom   = legendPosition === 'bottom';
+  const legendIsTop      = legendPosition === 'top';
+  const legendIsFloating = legendPosition === 'floating';
 
   function collectBinLegendEntries(): Array<[number, number]> {
     const binCounts = new Map<number, number>();
@@ -133,7 +133,7 @@ export function toCanvas(
 
   const binLegendEntries = drawBinLegend ? collectBinLegendEntries() : [];
 
-  const legendWidth = legendStyle === 'compact' || legendStyle === 'floating' ? BIN_LEGEND_W_COMPACT : BIN_LEGEND_W;
+  const legendWidth = legendPosition === 'compact' || legendPosition === 'floating' ? BIN_LEGEND_W_COMPACT : BIN_LEGEND_W;
 
   const dpr     = window.devicePixelRatio ?? 1;
   const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
@@ -376,11 +376,11 @@ export function toCanvas(
     const legendEntries: LegendEntry[] = entries.map(([bin, count]) => {
       const binDef = binDefMap?.get(bin);
       const fullLabel = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
-      const label = legendStyle === 'compact' ? String(bin) : fullLabel;
+      const label = legendPosition === 'compact' ? String(bin) : fullLabel;
       const tooltipLabel = `${fullLabel} · ${count} dies`;
       const labelWidth = ctx.measureText(label).width;
       const countStr = String(count);
-      const countWidth = legendStyle === 'compact' ? 0 : ctx.measureText(countStr).width;
+      const countWidth = legendPosition === 'compact' ? 0 : ctx.measureText(countStr).width;
       const totalWidth = BIN_SWATCH_SIZE + BIN_LABEL_GAP + labelWidth + (countWidth ? BIN_COUNT_W : 0);
       return { bin, count, label, tooltipLabel, labelWidth, countWidth, totalWidth, binDef };
     });
@@ -526,7 +526,7 @@ export function toCanvas(
       }
     } else {
       const colW = columnWidths[0];
-      const showCount = legendStyle !== 'compact';
+      const showCount = legendPosition !== 'compact';
       const maxLabelW = colW - BIN_SWATCH_SIZE - BIN_LABEL_GAP - (showCount ? BIN_COUNT_W : 0);
       const countX = originXLegend + colW - 2;
       let visibleEntries = legendEntries;
@@ -538,7 +538,7 @@ export function toCanvas(
         const labelX = originXLegend + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
         const midY = rowY + BIN_ROW_H / 2;
         const swatchY = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
-        // Floating always shows full labels and counts, regardless of legendStyle.
+        // Floating always shows full labels and counts, regardless of legendPosition.
         const displayLabel = legendIsFloating
           ? (entry.binDef?.name ? `${entry.bin} · ${entry.binDef.name}` : `Bin ${entry.bin}`)
           : entry.label;
