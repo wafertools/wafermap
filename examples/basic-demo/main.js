@@ -80,7 +80,7 @@ async function loadWafer(waferId) {
   const { wafer, dies, scene, reticles } = currentResult;
 
   const sceneOptions = {
-    plotMode:  'hardbin',
+    plotMode:  'hardBin',
     ringCount: RING_COUNT,
     reticles,
     testDefs:  scene.testDefs,

@@ -30,7 +30,7 @@ const state = {
   },
   ui: {
     selectedWafers: new Set(),
-    plotMode: 'hardbin',
+    plotMode: 'hardBin',
     valueChannel: 0,
     colorScheme: 'color',
     showRings: false,
@@ -72,23 +72,19 @@ function autoDetect(headers, rows) {
   const waferCol = claim(findExact('wafer', 'wid', 'wafer_id') ?? findSub('wafer', 'wid') ?? headers[0] ?? '');
   const xCol     = claim(findExact('x', 'die_x', 'diex') ?? findSub('die_x', 'diex', '_x', 'col') ?? nextFree() ?? headers[1] ?? '');
   const yCol     = claim(findExact('y', 'die_y', 'diey') ?? findSub('die_y', 'diey', '_y', 'row') ?? nextFree() ?? headers[2] ?? '');
-  const hbinCol  = claim(findExact('hbin', 'bin') ?? findSub('hbin', 'hard_bin', 'hardbin') ?? '');
-  const sbinCol  = claim(findExact('sbin') ?? findSub('sbin', 'soft_bin', 'softbin') ?? '');
+  const hbinCol  = claim(findExact('hbin', 'bin') ?? findSub('hbin', 'hard_bin', 'hardBin') ?? '');
+  const sbinCol  = claim(findExact('sbin') ?? findSub('sbin', 'soft_bin', 'softBin') ?? '');
 
-  for (const col of [
-    findExact('lot', 'lotid')          ?? findSub('lot', 'lotid'),
-    findExact('testdate', 'date')      ?? findSub('testdate', 'date'),
-    findExact('temp', 'temperature')   ?? findSub('temp'),
-  ]) {
-    if (col) consumed.add(col);
-  }
+  const lotCol      = claim(findExact('lot', 'lotid')        ?? findSub('lot', 'lotid'));
+  const testDateCol = claim(findExact('testdate', 'date')    ?? findSub('testdate', 'date'));
+  const tempCol     = claim(findExact('temp', 'temperature') ?? findSub('temp'));
 
   const valueCols = headers.filter(h => {
     if (consumed.has(h)) return false;
     return rows.slice(0, 20).some(r => r[h] !== '' && !isNaN(Number(r[h])));
   });
 
-  return { waferCol, xCol, yCol, hbinCol, sbinCol, valueCols };
+  return { waferCol, xCol, yCol, hbinCol, sbinCol, valueCols, lotCol, testDateCol, tempCol };
 }
 
 // ── Data processing ───────────────────────────────────────────────────────────
@@ -114,7 +110,15 @@ async function processData() {
   });
 
   const workerResults = await Promise.all(
-    waferInputs.map(({ results }) => wmWorker.run({ results }))
+    waferInputs.map(({ waferId, waferRows, results }) => {
+      const firstRow = waferRows[0] ?? {};
+      const waferMeta = {};
+      if (cfg.lotCol      && firstRow[cfg.lotCol])      waferMeta.lot      = firstRow[cfg.lotCol];
+      if (cfg.testDateCol && firstRow[cfg.testDateCol]) waferMeta.testDate = firstRow[cfg.testDateCol];
+      if (cfg.tempCol     && firstRow[cfg.tempCol])     waferMeta.temp     = firstRow[cfg.tempCol];
+      waferMeta.wafer = waferId;
+      return wmWorker.run({ results, waferConfig: { metadata: waferMeta } });
+    })
   );
 
   const diesByWafer = {};
@@ -462,8 +466,8 @@ function populatePassBinSelector() {
 
 function populateMapControls() {
   document.getElementById('map-mode').innerHTML = `
-    <option value="hardbin">Hard Bin</option>
-    <option value="softbin">Soft Bin</option>
+    <option value="hardBin">Hard Bin</option>
+    <option value="softBin">Soft Bin</option>
     <option value="value">Test Value</option>
     <option value="stackedValues">Stacked Test Values</option>
     <option value="stackedBins">Stacked Hard Bins</option>

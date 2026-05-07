@@ -2,7 +2,7 @@ import type { WaferMapInput, WaferMapResult } from '../renderer/buildWaferMap.js
 
 export type StatsSeverity = 'info' | 'notable' | 'unusual';
 export type StatsLevel = 'wafer' | 'lot' | 'inter-wafer';
-export type StatsVariableKind = 'yield' | 'hardbin' | 'softbin' | 'test';
+export type StatsVariableKind = 'yield' | 'hardBin' | 'softBin' | 'test';
 export type StatsComparisonFamily =
   | 'ring'
   | 'quadrant'
@@ -76,7 +76,10 @@ export interface StatsSummary {
   level: 'wafer';
   hasNotableFindings: boolean;
   findings: StatsFinding[];
-  metadata: {
+  /** Free-form identity fields from waferConfig.metadata (lot, wafer ID, test date, etc.). */
+  wafer?: Record<string, unknown>;
+  /** Engine-computed analysis stats for this wafer. */
+  stats: {
     totalDies: number;
     analyzedDies: number;
     excludedDies: number;
@@ -91,14 +94,16 @@ export interface LotStatsSummary {
   level: 'lot';
   hasNotableFindings: boolean;
   findings: StatsFinding[];
+  /** Free-form lot-level identity fields (lot ID, product, etc. — wafer-specific keys excluded). */
+  lot?: Record<string, unknown>;
+  /** Engine-computed analysis stats for this lot. */
+  stats: {
+    waferCount: number;
+  };
   perWafer: Array<{
     waferIndex: number;
     summary: StatsSummary;
   }>;
-  metadata: {
-    waferCount: number;
-    comparableWaferCount: number;
-  };
 }
 
 export interface AnalyzeWaferMapOptions {
@@ -119,8 +124,6 @@ export interface AnalyzeWaferMapOptions {
   enableTestValueAnalysis?: boolean;
   enableReticlePositionAnalysis?: boolean;
 }
-
-export interface AnalyzeWaferLotOptions extends AnalyzeWaferMapOptions {}
 
 export type AnalyzeWaferMapInput = WaferMapInput | WaferMapResult;
 export type AnalyzeWaferLotInput = Array<WaferMapInput | WaferMapResult>;

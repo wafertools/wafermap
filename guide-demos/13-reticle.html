@@ -32,7 +32,7 @@
     <div class="ctrl-group">
       <span class="ctrl-label">Mode</span>
       <select id="sel-mode">
-        <option value="hardbin">Hard Bin</option>
+        <option value="hardBin">Hard Bin</option>
         <option value="value">Value — Idsat</option>
       </select>
     </div>
@@ -154,7 +154,7 @@
     // Mount the renderer — pass reticles so the overlay has geometry to draw
     const ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
       sceneOptions: {
-        plotMode:     'hardbin',
+        plotMode:     'hardBin',
         hbinDefs:     HBIN_DEFS,
         testDefs:     result.scene.testDefs,
         reticles:     result.reticles,   // field boundary geometry from buildWaferMap

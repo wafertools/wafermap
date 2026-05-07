@@ -45,7 +45,7 @@ function isEligibleDie(die: Die, options: Required<AnalyzeWaferMapOptions>): die
   return die.hbin !== undefined;
 }
 
-function collectMetadata(dies: Die[], analyzedDies: number, yieldPercent: number | null): StatsSummary['metadata'] {
+function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | null): StatsSummary['stats'] {
   const testSet = new Set<number>();
   const hardBinSet = new Set<number>();
   const softBinSet = new Set<number>();
@@ -142,7 +142,8 @@ function severityForScore(pValue: number, score: number): StatsSeverity {
 
 function summarizeYieldFinding(label: string, delta: number, family: 'ring' | 'quadrant' | 'reticle-position'): string {
   const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
-  return `${label} yield is ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
+  const pp = (Math.abs(delta) * 100).toFixed(1);
+  return `${label} yield is ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
 }
 
 function summarizeRegionLabel(label: string, family: 'ring' | 'quadrant' | 'reticle-position'): string {
@@ -158,18 +159,27 @@ function summarizeBinFinding(
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
   const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
-  return `${familyLabel} has ${delta > 0 ? 'higher' : 'lower'} ${binLabel} occurrence than ${target}`;
+  const pp = (Math.abs(delta) * 100).toFixed(1);
+  return `${familyLabel} has ${binLabel} occurrence ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
 }
 
 function summarizeTestFinding(
   label: string,
   testLabel: string,
   delta: number,
+  relativeDelta: number | undefined,
   family: 'ring' | 'quadrant' | 'reticle-position',
+  unit?: string,
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
   const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
-  return `${familyLabel} has ${delta > 0 ? 'higher' : 'lower'} ${testLabel} than ${target}`;
+  const dir = delta > 0 ? 'higher' : 'lower';
+  if (relativeDelta !== undefined && Number.isFinite(relativeDelta)) {
+    const pct = (Math.abs(relativeDelta) * 100).toFixed(1);
+    return `${familyLabel} mean ${testLabel} is ${pct}% ${dir} than ${target}`;
+  }
+  const unitSuffix = unit ? ` ${unit}` : '';
+  return `${familyLabel} mean ${testLabel} is ${Math.abs(delta).toPrecision(3)}${unitSuffix} ${dir} than ${target}`;
 }
 
 function labelForBin(bin: number, defs: BinDef[] | undefined, prefix: 'HBin' | 'SBin'): string {
@@ -269,7 +279,7 @@ function buildBinFindings(
   regionFamily: StatsRegion[],
   binSpace: 'hard' | 'soft',
   defs: BinDef[] | undefined,
-  variableKind: 'hardbin' | 'softbin',
+  variableKind: 'hardBin' | 'softBin',
   options: Required<AnalyzeWaferMapOptions>,
 ): RawFinding[] {
   const getBin = (d: EligibleDie) => binSpace === 'soft' ? d.sbin : d.hbin;
@@ -281,7 +291,7 @@ function buildBinFindings(
   )].sort((left, right) => left - right);
   const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
   const findings: RawFinding[] = [];
-  const prefix = variableKind === 'hardbin' ? 'HBin' : 'SBin';
+  const prefix = variableKind === 'hardBin' ? 'HBin' : 'SBin';
 
   for (const region of regionFamily) {
     const left = region.dieKeys
@@ -425,6 +435,8 @@ function buildTestValueFindings(
 
       const { pValue, effectSize, delta } = welchPValue(leftValues, rightValues);
       const { label, unit } = labelForTest(testIndex, defs);
+      const rightMean = mean(rightValues);
+      const relativeDelta = rightMean !== 0 ? delta / Math.abs(rightMean) : undefined;
 
       findings.push({
         id: `test:${testIndex}:${region.key}`,
@@ -444,6 +456,7 @@ function buildTestValueFindings(
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
           absoluteDelta: delta,
+          relativeDelta,
           effectSize,
         },
         stats: {
@@ -452,7 +465,7 @@ function buildTestValueFindings(
           sampleSizeLeft: leftValues.length,
           sampleSizeRight: rightValues.length,
         },
-        summary: summarizeTestFinding(region.label, label, delta, region.family),
+        summary: summarizeTestFinding(region.label, label, delta, relativeDelta, region.family, unit),
         highlight: {
           kind: 'region',
           regionFamily: region.family,
@@ -523,17 +536,17 @@ export function analyzeWaferMap(
   }
   if (resolved.enableHardBinAnalysis) {
     findings.push(
-      ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.scene.hbinDefs, 'hardbin', resolved),
-      ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.scene.hbinDefs, 'hardbin', resolved),
-      ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.scene.hbinDefs, 'hardbin', resolved),
+      ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
     );
   }
   if (resolved.enableSoftBinAnalysis) {
     const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined);
     findings.push(
-      ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.scene.sbinDefs, 'softbin', resolved),
-      ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.scene.sbinDefs, 'softbin', resolved),
-      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.scene.sbinDefs, 'softbin', resolved),
+      ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
     );
   }
   if (resolved.enableTestValueAnalysis) {
@@ -555,6 +568,7 @@ export function analyzeWaferMap(
     level: 'wafer',
     hasNotableFindings: findings.some((finding) => finding.severity === 'notable' || finding.severity === 'unusual'),
     findings,
-    metadata: collectMetadata(result.dies, eligibleDies.length, result.yield.yieldPercent),
+    wafer: result.wafer.metadata ?? undefined,
+    stats: collectStats(result.dies, eligibleDies.length, result.yield.yieldPercent),
   };
 }

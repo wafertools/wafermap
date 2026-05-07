@@ -159,7 +159,7 @@
       }
 
       ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
-        sceneOptions: { plotMode: 'hardbin', hbinDefs: HBIN_DEFS },
+        sceneOptions: { plotMode: 'hardBin', hbinDefs: HBIN_DEFS },
         onClick(die) {
           const bin  = HBIN_DEFS.find(b => b.bin === die.hbin);
           const retest = die.retestCount != null

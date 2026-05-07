@@ -97,7 +97,7 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
     });
   }
 
-  if (showColorbar && (plotMode === 'value' || plotMode === 'softbin' || plotMode === 'stackedValues')) {
+  if (showColorbar && (plotMode === 'value' || plotMode === 'softBin' || plotMode === 'stackedValues')) {
     const colorscale = getColorScheme(colorScheme).plotlyColorscale;
     const [cmin, cmax] = valueRange ?? [0, 1];
     traces.push({

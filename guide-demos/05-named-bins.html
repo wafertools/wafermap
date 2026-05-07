@@ -149,7 +149,7 @@
     // Render the map, starting in hard bin mode
     const ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
       sceneOptions: {
-        plotMode: 'hardbin',
+        plotMode: 'hardBin',
         hbinDefs: HBIN_DEFS,
         sbinDefs: SBIN_DEFS,
       },
@@ -157,7 +157,7 @@
 
     // Toggle between hard / soft bin view
     document.getElementById('btn-hard').addEventListener('click', () => {
-      ctrl.setOptions({ plotMode: 'hardbin' });
+      ctrl.setOptions({ plotMode: 'hardBin' });
       document.getElementById('btn-hard').classList.add('active');
       document.getElementById('btn-soft').classList.remove('active');
       document.getElementById('hbin-section').style.display = '';
@@ -165,7 +165,7 @@
     });
 
     document.getElementById('btn-soft').addEventListener('click', () => {
-      ctrl.setOptions({ plotMode: 'softbin' });
+      ctrl.setOptions({ plotMode: 'softBin' });
       document.getElementById('btn-soft').classList.add('active');
       document.getElementById('btn-hard').classList.remove('active');
       document.getElementById('hbin-section').style.display = 'none';

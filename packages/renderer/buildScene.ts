@@ -10,7 +10,7 @@ import { fmt, fmtColorbarAxis } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
 
-export type PlotMode = 'value' | 'hardbin' | 'softbin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins';
+export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins';
 
 interface Point {
   x: number;
@@ -23,7 +23,7 @@ export interface SceneRect {
   width: number;
   height: number;
   fill: string | number;
-  type: 'hardbin' | 'softbin' | 'value' | 'stacked';
+  type: 'hardBin' | 'softBin' | 'value' | 'stacked';
   stack?: number[];
   metadata?: DieMetadata;
   path: string;
@@ -83,6 +83,12 @@ export interface Scene {
   hasReticle: boolean;
   /** True when the scene was built from lot-aggregated data (lotStack). Controls toolbar stacked-mode visibility. */
   isLotStack: boolean;
+  /** Wafer centre in scene/display mm coordinates (the rotation pivot). */
+  waferCenter: { x: number; y: number };
+  /** Wafer radius in mm. */
+  waferRadius: number;
+  /** Unit vector pointing toward the notch/flat in display space (post-transform). Null when no notch. */
+  notchDir: { x: number; y: number } | null;
 }
 
 export interface SceneOptions {
@@ -153,8 +159,6 @@ export interface SceneOptions {
   isLotStack?: boolean;
 }
 
-/** @deprecated Use {@link SceneOptions} */
-export type BuildSceneOptions = SceneOptions;
 
 interface TransformState {
   rotation: number;
@@ -383,8 +387,8 @@ export function generateTextOverlay(
       if (v === undefined) return [];
       text = formatValueLabel([v], tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(v)));
-    } else if (plotMode === 'hardbin' || plotMode === 'softbin') {
-      const bin = plotMode === 'softbin' ? die.sbin : die.hbin;
+    } else if (plotMode === 'hardBin' || plotMode === 'softBin') {
+      const bin = plotMode === 'softBin' ? die.sbin : die.hbin;
       if (bin === undefined) return [];
       text = String(bin);
       color = contrastTextColor(colorFns.forBin(bin));
@@ -578,7 +582,7 @@ function pushDieRectangles(
   const rw = die.width - gap;
   const rh = die.height - gap;
 
-  const getBin = (d: Die) => plotMode === 'softbin' ? d.sbin : d.hbin;
+  const getBin = (d: Die) => plotMode === 'softBin' ? d.sbin : d.hbin;
 
   if (die.partial) {
     rectangles.push({
@@ -599,11 +603,11 @@ function pushDieRectangles(
   }
 
   if (highlightBin !== undefined &&
-      (plotMode === 'hardbin' || plotMode === 'softbin') &&
+      (plotMode === 'hardBin' || plotMode === 'softBin') &&
       getBin(die) !== highlightBin) {
     rectangles.push({
       x: die.x, y: die.y, width: rw, height: rh,
-      fill: DIM_FILL, type: 'hardbin', metadata: die.metadata,
+      fill: DIM_FILL, type: 'hardBin', metadata: die.metadata,
       path: rectanglePath(die, rw, rh, transform),
     });
     return;
@@ -620,7 +624,7 @@ function pushDieRectangles(
     return;
   }
 
-  if (plotMode === 'hardbin' || plotMode === 'softbin') {
+  if (plotMode === 'hardBin' || plotMode === 'softBin') {
     const bin = getBin(die);
     const fill = bin != null
       ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
@@ -682,7 +686,7 @@ function buildXYIndicatorOverlay(
  * Build a renderer-agnostic scene from a wafer, dies, and display options.
  *
  * ```ts
- * buildScene(wafer, dies, { plotMode: 'hardbin', reticles })
+ * buildScene(wafer, dies, { plotMode: 'hardBin', reticles })
  * ```
  */
 export function buildScene(
@@ -727,7 +731,7 @@ export function buildScene(
   // current plot mode so bin 5 in hardbin-space and bin 5 in softbin-space can have different names.
   const hbinDefMap: BinDefMap | null = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinDefMap: BinDefMap | null = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
-  const binDefMap: BinDefMap | null  = plotMode === 'softbin' ? sbinDefMap : hbinDefMap;
+  const binDefMap: BinDefMap | null  = plotMode === 'softBin' ? sbinDefMap : hbinDefMap;
 
   const scheme = getColorScheme(colorScheme);
 
@@ -759,6 +763,15 @@ export function buildScene(
   const normalize = (v: number) => Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
 
   const transform = normalizeTransform(wafer, interactiveTransform);
+
+  // Notch direction in display space (post-transform unit vector).
+  let notchDir: { x: number; y: number } | null = null;
+  if (wafer.notch) {
+    const θ0 = notchAngle(wafer.notch.type);
+    const tv = transformVector(Math.cos(θ0) * wafer.radius, Math.sin(θ0) * wafer.radius, transform);
+    const len = Math.hypot(tv.x, tv.y);
+    if (len > 0) notchDir = { x: tv.x / len, y: tv.y / len };
+  }
 
   // Cap the visual kerf gap at 12 % of the smallest die dimension so that
   // normalized-unit scenes (die pitch ≈ 1) remain visible. No effect for
@@ -814,6 +827,9 @@ export function buildScene(
     rotation: ((transform.rotation % 360) + 360) % 360,
     hasReticle: reticles.length > 0,
     isLotStack,
+    waferCenter: wafer.center,
+    waferRadius: wafer.radius,
+    notchDir,
   };
 }
 

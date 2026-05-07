@@ -176,7 +176,7 @@
       passBins:    [1],
     });
 
-    const sharedOpts = { sceneOptions: { plotMode: 'hardbin', hbinDefs: HBIN_DEFS }, showToolbar: false };
+    const sharedOpts = { sceneOptions: { plotMode: 'hardBin', hbinDefs: HBIN_DEFS }, showToolbar: false };
 
     renderWaferMap(document.getElementById('map-color'),
       wafer, dies, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'color'     } });

@@ -112,13 +112,13 @@
     document.getElementById('stat-yield').textContent =
       yld.yieldPercent != null ? `${(yld.yieldPercent * 100).toFixed(1)}%` : '—';
     document.getElementById('stat-findings').textContent = summary.findings.length;
-    document.getElementById('meta-analyzed').textContent = summary.metadata.analyzedDies;
+    document.getElementById('meta-analyzed').textContent = summary.stats.analyzedDies;
     document.getElementById('meta-rings').textContent    = RING_COUNT;
 
     // Mount the map — pass the StatsSummary to get the built-in findings panel too
     const ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
       sceneOptions: {
-        plotMode:  'hardbin',
+        plotMode:  'hardBin',
         hbinDefs:  HBIN_DEFS,
         sbinDefs:  SBIN_DEFS,
         testDefs:  result.scene.testDefs,
@@ -159,10 +159,10 @@
         const kind = finding.variable.kind;
         if (kind === 'test') {
           ctrl.setOptions({ plotMode: 'value', testIndex: finding.variable.index ?? 0 });
-        } else if (kind === 'hardbin') {
-          ctrl.setOptions({ plotMode: 'hardbin', highlightBin: finding.variable.bin });
+        } else if (kind === 'hardBin') {
+          ctrl.setOptions({ plotMode: 'hardBin', highlightBin: finding.variable.bin });
         } else {
-          ctrl.setOptions({ plotMode: 'hardbin', highlightBin: undefined });
+          ctrl.setOptions({ plotMode: 'hardBin', highlightBin: undefined });
         }
 
         // Show zone boundaries for context

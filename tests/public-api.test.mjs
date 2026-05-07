@@ -246,7 +246,7 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
   const reticles = generateReticleGrid(wafer, { width: 2, height: 2, diePitchX: 10, diePitchY: 10 });
 
   const scene = buildScene(wafer, dies, {
-    plotMode: 'hardbin',
+    plotMode: 'hardBin',
     showText: true,
     showReticle: true,
     showProbePath: true,

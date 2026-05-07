@@ -30,9 +30,9 @@ export interface ToCanvasOptions {
    * and `ppm` replace the auto-fitted values — used by mountWaferCanvas for
    * zoom/pan. Also accepts a zoom-adjusted `snapDist` for hit testing.
    */
-  _viewport?: ViewportTransform;
+  viewport?: ViewportTransform;
   /** Currently highlighted bin — drawn with an active indicator in the bin legend. */
-  _activeBin?: number;
+  activeBin?: number;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -80,7 +80,7 @@ export interface ToCanvasResult {
 }
 
 const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins', 'stackedSoftBins']);
-const BIN_LEGEND_MODES = new Set(['hardbin', 'softbin']);
+const BIN_LEGEND_MODES = new Set(['hardBin', 'softBin']);
 const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
 const COLORBAR_STEPS = 128;
 const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
@@ -107,8 +107,8 @@ export function toCanvas(
     legendOffset,
     showAxes      = false,
     diePitchMm,
-    _viewport,
-    _activeBin,
+    viewport: viewportOverride,
+    activeBin,
     fallbackFormat,
   } = options;
 
@@ -124,7 +124,7 @@ export function toCanvas(
     const binCounts = new Map<number, number>();
     for (const die of scene.dies) {
       if (die.partial) continue;
-      const bin = scene.plotMode === 'softbin' ? die.sbin : die.hbin;
+      const bin = scene.plotMode === 'softBin' ? die.sbin : die.hbin;
       if (bin == null) continue;
       binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
     }
@@ -192,15 +192,15 @@ export function toCanvas(
   const dataH = maxY - minY;
 
   let originX: number, originY: number, ppm: number;
-  if (_viewport) {
-    ({ originX, originY, ppm } = _viewport);
+  if (viewportOverride) {
+    ({ originX, originY, ppm } = viewportOverride);
   } else {
     ppm     = Math.min(drawW / dataW, drawH / dataH);
     originX = padding + axisLeftReserve + leftLegendReserve + (drawW - dataW * ppm) / 2 - minX * ppm;
     originY = padding + topLegendReserve + (drawH - dataH * ppm) / 2 + maxY * ppm;
   }
 
-  const snapDist = _viewport?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
+  const snapDist = viewportOverride?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
 
   // ── Draw rectangles ────────────────────────────────────────────────────────
   ctx.save();
@@ -230,6 +230,43 @@ export function toCanvas(
   }
 
   ctx.restore();
+
+  // ── Draw notch orientation arrow (fixed px, screen space) ─────────────────
+  // Arrow points inward toward the wafer. Clipped to the wafer draw area so it
+  // never overlaps the toolbar, legend, or canvas edge.
+  if (scene.notchDir) {
+    const cx = originX + scene.waferCenter.x * ppm;
+    const cy = originY - scene.waferCenter.y * ppm;
+    const nx =  scene.notchDir.x;
+    const ny = -scene.notchDir.y;  // canvas Y is inverted relative to data Y
+    const r_px = scene.waferRadius * ppm;
+    const OFFSET = 4;   // px gap between wafer edge and arrow tip
+    const ARROW_L = 9;  // px arrow length (tip to base)
+    const ARROW_W = 5;  // px half-width at base
+    // Tip points inward (toward the wafer), base is further out
+    const tipX  = cx + nx * (r_px + OFFSET);
+    const tipY  = cy + ny * (r_px + OFFSET);
+    const baseX = tipX + nx * ARROW_L;
+    const baseY = tipY + ny * ARROW_L;
+    const perp = { x: -ny, y: nx };
+    // Safe drawing area — avoids toolbar (top), legend/colorbar (right), and canvas edges
+    const safeX1 = padding + axisLeftReserve + leftLegendReserve;
+    const safeX2 = cssW - padding - rightReserve;
+    const safeY1 = padding + topLegendReserve;
+    const safeY2 = cssH - padding - bottomLegendReserve - axisReserve;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(safeX1, safeY1, safeX2 - safeX1, safeY2 - safeY1);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(baseX + perp.x * ARROW_W, baseY + perp.y * ARROW_W);
+    ctx.lineTo(baseX - perp.x * ARROW_W, baseY - perp.y * ARROW_W);
+    ctx.closePath();
+    ctx.fillStyle = '#555';
+    ctx.fill();
+    ctx.restore();
+  }
 
   // ── Draw text labels (screen coords to avoid Y-flip distortion) ────────────
   ctx.save();
@@ -353,13 +390,13 @@ export function toCanvas(
     const binCounts = new Map<number, number>();
     for (const die of scene.dies) {
       if (die.partial) continue;
-      const bin = scene.plotMode === 'softbin' ? die.sbin : die.hbin;
+      const bin = scene.plotMode === 'softBin' ? die.sbin : die.hbin;
       if (bin == null) continue;
       binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
     }
     const entries = [...binCounts.entries()].sort(([a], [b]) => a - b);
 
-    const activeDefs = scene.plotMode === 'softbin' ? scene.sbinDefs : scene.hbinDefs;
+    const activeDefs = scene.plotMode === 'softBin' ? scene.sbinDefs : scene.hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
     type LegendEntry = {
@@ -493,7 +530,7 @@ export function toCanvas(
         for (let col = 0; col < legendCols; col++) {
           const entry = legendEntries[idx++];
           if (!entry) break;
-          const isActive = entry.bin === _activeBin;
+          const isActive = entry.bin === activeBin;
           const swatchX = x;
           const labelX = x + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
           const midY = originYLegend + row * BIN_ROW_H + BIN_ROW_H / 2;
@@ -533,7 +570,7 @@ export function toCanvas(
       if (overflow > 0) visibleEntries = legendEntries.slice(0, maxRows - 1);
       let rowY = originYLegend;
       for (const entry of visibleEntries) {
-        const isActive = entry.bin === _activeBin;
+        const isActive = entry.bin === activeBin;
         const swatchX = originXLegend;
         const labelX = originXLegend + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
         const midY = rowY + BIN_ROW_H / 2;

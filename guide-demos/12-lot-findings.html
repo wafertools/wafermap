@@ -35,7 +35,7 @@
     import { renderWaferGallery }               from 'wafermap/canvas-adapter';
     import { analyzeWaferMap, analyzeWaferLot } from 'wafermap/stats';
     import {
-      makeResults, WAFER_CONFIG, DIE_CONFIG,
+      makeResults, makeWaferConfig, DIE_CONFIG,
       HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
     } from './data.js';
 
@@ -53,10 +53,10 @@
       { seed: 37, edgeFail: true,  quadrant: true, center: true },  // W06 — low-yield outlier
     ];
 
-    const waferResults = waferSpecs.map(spec =>
+    const waferResults = waferSpecs.map((spec, i) =>
       buildWaferMap({
         results:     makeResults(spec),
-        waferConfig: WAFER_CONFIG,
+        waferConfig: makeWaferConfig(i),
         dieConfig:   DIE_CONFIG,
         hbinDefs:    HBIN_DEFS,
         sbinDefs:    SBIN_DEFS,
@@ -96,7 +96,7 @@
       items,
       {
         sceneOptions: {
-          plotMode:  'hardbin',
+          plotMode:  'hardBin',
           hbinDefs:  HBIN_DEFS,
           sbinDefs:  SBIN_DEFS,
           testDefs:  TEST_DEFS,

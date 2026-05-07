@@ -34,7 +34,7 @@
     import { buildWaferMap }      from 'wafermap';
     import { renderWaferGallery } from 'wafermap/canvas-adapter';
     import {
-      makeResults, WAFER_CONFIG, DIE_CONFIG,
+      makeResults, makeWaferConfig, DIE_CONFIG,
       HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
     } from './data.js';
 
@@ -49,10 +49,10 @@
       { seed: 37, quadrant: true,  edgeFail: false },
     ];
 
-    const waferResults = waferSpecs.map(opts =>
+    const waferResults = waferSpecs.map((opts, i) =>
       buildWaferMap({
         results:     makeResults(opts),
-        waferConfig: WAFER_CONFIG,
+        waferConfig: makeWaferConfig(i),
         dieConfig:   DIE_CONFIG,
         hbinDefs:    HBIN_DEFS,
         sbinDefs:    SBIN_DEFS,
@@ -83,7 +83,7 @@
       items,
       {
         sceneOptions: {
-          plotMode: 'hardbin',
+          plotMode: 'hardBin',
           hbinDefs: HBIN_DEFS,
           sbinDefs: SBIN_DEFS,
           testDefs: TEST_DEFS,

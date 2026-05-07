@@ -77,8 +77,8 @@ buildWaferMap(results: DieResult[])
 // Object form — with optional geometry hints
 buildWaferMap({
   results?:      DieResult[],      // per-die measurements from the prober
-  waferConfig?:  WaferOptions,     // physical wafer geometry (diameter, notch, orientation…)
-  dieConfig?:    DieOptions,       // die size and coordinate conventions
+  waferConfig?:  WaferConfig,     // physical wafer geometry (diameter, notch, orientation…)
+  dieConfig?:    DieConfig,       // die size and coordinate conventions
   dies?:         Die[],            // pre-built die array; skips geometry generation
   reticleConfig?: ReticleConfig,   // stepper field grid overlay
   lotStack?:     LotStackConfig,   // collapse multiple wafers into one aggregated map
@@ -112,7 +112,7 @@ When a die position appears more than once in the `results` array (a retest), th
 `retestPolicy` field on `WaferMapInput` controls which result is kept.  The
 `die.retestCount` field always records how many times that position appeared.
 
-#### `WaferOptions`
+#### `WaferConfig`
 
 ```ts
 {
@@ -130,9 +130,8 @@ When a die position appears more than once in the `results` array (a retest), th
 
 **`orientation` note:** positive values rotate the die grid counter-clockwise (standard mathematical convention).  The notch/flat position is controlled by `notch.type` and is **not** affected by `orientation` — it stays fixed as the physical alignment mark.
 
-> **Deprecated names:** `WaferConfig` and `WaferParams` are aliases for `WaferOptions` and will be removed in a future release.
 
-#### `DieOptions`
+#### `DieConfig`
 
 ```ts
 {
@@ -157,7 +156,6 @@ When `width` and `height` are omitted, the library estimates die dimensions from
 the grid layout using nearest-neighbour step analysis first, falling back to the
 circular-wafer aspect-ratio constraint.
 
-> **Deprecated names:** `DieConfig` and `DieParams` are aliases for `DieOptions` and will be removed in a future release.
 
 #### `ReticleConfig`
 
@@ -248,7 +246,7 @@ Named definition for one `die.values[]` slot.  When provided, tooltips show `"Id
 
 Named definition for one bin number.  Used for both hard bin (`hbinDefs`) and soft bin (`sbinDefs`) — the shape is identical but the number spaces are independent.
 
-Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hardbin-space and bin 1 in softbin-space are different things and may have different names — always pass them as separate arrays.
+Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin space and bin 1 in soft bin space are different things and may have different names — always pass them as separate arrays.
 
 ```ts
 {
@@ -482,7 +480,7 @@ Scene display options controllable via the toolbar or programmatically:
 
 ```ts
 {
-  plotMode?:               PlotMode          // default 'hardbin'
+  plotMode?:               PlotMode          // default 'hardBin'
   colorScheme?:            string            // default 'color'
   showText?:               boolean           // die index labels
   showRingBoundaries?:     boolean
@@ -502,7 +500,7 @@ Scene display options controllable via the toolbar or programmatically:
   valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
   lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
-  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // bin legend position/style (default 'default'); only applies in hardbin/softbin modes
+  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // bin legend position/style (default 'default'); only applies in hardBin/softBin modes
 }
 ```
 
@@ -510,7 +508,7 @@ Scene display options controllable via the toolbar or programmatically:
 
 | Mode | Tooltip content |
 | --- | --- |
-| `value`, `hardbin`, `softbin` | Die (i, j) · all values with test names · all bins with hard/soft labels |
+| `value`, `hardBin`, `softBin` | Die (i, j) · all values with test names · all bins with hard/soft labels |
 | `stackedValues` | Die (i, j) · test name + method + aggregated value (e.g. "Idsat (mean): 1.23 mA") |
 | `stackedBins` | Die (i, j) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
 | `stackedSoftBins` | Same as `stackedBins` but uses `sbinDefs` for name lookup |
@@ -619,7 +617,7 @@ import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 
 const ctrl = renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardbin', colorScheme: 'color' },
+  sceneOptions: { plotMode: 'hardBin', colorScheme: 'color' },
   onClick:  (die)  => console.log(die.i, die.j, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
   onSceneOptionsChange: (opts) => syncExternalUI(opts),
@@ -734,14 +732,14 @@ backdrop.
 
 ### Shared bin legend
 
-For `hardbin` and `softbin` modes a shared legend strip is rendered between the
+For `hardBin` and `softBin` modes a shared legend strip is rendered between the
 control bar and the card grid — one coloured swatch + label per unique bin across
 all items. The legend is hidden for `value`, `stackedValues`, `stackedBins`, and `stackedSoftBins`
 (those modes use a per-card colorbar instead).
 
 When `hbinDefs` or `sbinDefs` are provided via `sceneOptions`, the legend uses the
-correct definition array for the active mode — `hbinDefs` for hardbin, `sbinDefs`
-for softbin. Because hard and soft bin number spaces are independent (STDF V4: both
+correct definition array for the active mode — `hbinDefs` for hardBin, `sbinDefs`
+for softBin. Because hard and soft bin number spaces are independent (STDF V4: both
 0–32767), the two arrays are kept separate and never merged.
 
 Clicking a bin entry calls `setOptions({ highlightBin: bin })`, which dims all
@@ -783,7 +781,7 @@ const items = waferIds.map(id => ({
 }));
 
 const ctrl = renderWaferGallery(document.getElementById('gallery'), items, {
-  sceneOptions: { plotMode: 'hardbin', hbinDefs, sbinDefs, testDefs },
+  sceneOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
   onSceneOptionsChange: (opts) => syncSidebarControls(opts),
   downloadFilename: 'lot-overview',
 });
@@ -847,7 +845,7 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 }
 ```
 
-`AnalyzeWaferLotOptions` extends `AnalyzeWaferMapOptions` with no additional fields.
+Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
 
 ### `StatsSummary`
 
@@ -856,7 +854,8 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   level: 'wafer'
   hasNotableFindings: boolean          // true when any finding is 'notable' or 'unusual'
   findings: StatsFinding[]
-  metadata: {
+  wafer?: Record<string, unknown>      // identity fields from waferConfig.metadata (lot, wafer ID, test date, etc.)
+  stats: {
     totalDies:            number
     analyzedDies:         number
     excludedDies:         number
@@ -875,16 +874,27 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   level: 'lot'
   hasNotableFindings: boolean
   findings: StatsFinding[]             // lot-level findings (repeated patterns + inter-wafer outliers)
+  lot?: Record<string, unknown>        // shared identity fields from first wafer (lot ID, product, etc. — wafer-specific keys excluded)
+  stats: {
+    waferCount: number
+  }
   perWafer: Array<{
     waferIndex: number
     summary: StatsSummary              // per-wafer findings
   }>
-  metadata: {
-    waferCount:           number
-    comparableWaferCount: number       // wafers with enough data for inter-wafer comparison
-  }
 }
 ```
+
+### `renderFindingsReportHtml` / `openHtmlReport`
+
+```ts
+import { renderFindingsReportHtml, openHtmlReport } from 'wafermap/stats';
+
+const html = renderFindingsReportHtml(summary, { title?: string }): string
+openHtmlReport(html): void
+```
+
+Generates a standalone printable HTML findings report from a `StatsSummary` or `LotStatsSummary`. The report includes wafer/lot identity fields from `summary.wafer` / `lot.lot` (lot, wafer ID, test date, temperature, product — any key present is rendered), yield and die count stats, and a severity-coded findings table. `openHtmlReport` opens the HTML string in a new browser tab for printing or saving as PDF.
 
 ### `StatsFinding`
 
@@ -894,9 +904,9 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   level:    'wafer' | 'lot' | 'inter-wafer'
   severity: 'unusual' | 'notable' | 'info'
   variable: {
-    kind:   'yield' | 'hardbin' | 'softbin' | 'test'
+    kind:   'yield' | 'hardBin' | 'softBin' | 'test'
     index?: number          // values[] slot index (for 'test' kind)
-    bin?:   number          // bin value (for 'hardbin'/'softbin' kind)
+    bin?:   number          // bin value (for 'hardBin'/'softBin' kind)
     label:  string          // human-readable name
     unit?:  string
   }
@@ -1102,17 +1112,17 @@ interface ToCanvasOptions {
 | --- | --- |
 | `value`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks). |
 | `stackedBins`, `stackedSoftBins` | Continuous colorbar; axis labelled "Count". |
-| `hardbin`, `softbin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
+| `hardBin`, `softBin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
 
 Returns `{ hitTarget, viewport, binLegendRows }`:
 
 - `hitTarget.getDieAtPoint(x, y): Die | null` — hit-test a CSS-pixel position
 - `viewport` — the auto-fitted viewport transform (useful as initial state for custom zoom/pan)
-- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardbin/softbin)
+- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardBin/softBin)
 
 ```ts
 const result  = buildWaferMap({ results, waferConfig, dieConfig });
-const scene   = buildScene(result.wafer, result.dies, { plotMode: 'hardbin' });
+const scene   = buildScene(result.wafer, result.dies, { plotMode: 'hardBin' });
 const { hitTarget } = toCanvas(canvas, scene);
 
 canvas.addEventListener('mousemove', e => {
@@ -1326,7 +1336,7 @@ Builds the renderer-agnostic scene.
 
 ```ts
 interface SceneOptions {
-  plotMode?:               'value' | 'hardbin' | 'softbin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
+  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
   showText?:               boolean
   showReticle?:            boolean
   showProbePath?:          boolean

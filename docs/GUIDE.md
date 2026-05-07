@@ -236,7 +236,7 @@ const results = rows.map(r => ({
 
 const { wafer, dies } = buildWaferMap({ results });
 renderWaferMap(canvas, wafer, dies);
-// Opens in 'hardbin' mode by default
+// Opens in 'hardBin' mode by default
 ```
 
 ### Named bins with custom colours
@@ -256,7 +256,7 @@ const { wafer, dies } = buildWaferMap({
 });
 
 renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardbin', hbinDefs: wafer /* carries through */ },
+  sceneOptions: { plotMode: 'hardBin', hbinDefs: wafer /* carries through */ },
 });
 ```
 
@@ -418,7 +418,7 @@ Pass `sceneOptions` to `renderWaferMap` to set the initial state:
 ```ts
 renderWaferMap(canvas, wafer, dies, {
   sceneOptions: {
-    plotMode:                'hardbin',
+    plotMode:                'hardBin',
     colorScheme:             'color',       // 'color', 'greyscale', 'accessible', 'plasma', 'inferno'
     showRingBoundaries:      true,
     showQuadrantBoundaries:  false,
@@ -440,7 +440,7 @@ All of these can also be changed by the user via the toolbar at any time.
 `renderWaferMap` returns a controller you can call from application code:
 
 ```ts
-const ctrl = renderWaferMap(canvas, wafer, dies, { sceneOptions: { plotMode: 'hardbin' } });
+const ctrl = renderWaferMap(canvas, wafer, dies, { sceneOptions: { plotMode: 'hardBin' } });
 
 // Switch display mode:
 ctrl.setOptions({ plotMode: 'value', testIndex: 1 });
@@ -465,7 +465,7 @@ Use `onSceneOptionsChange` to keep your own UI elements in sync with the toolbar
 
 ```ts
 const ctrl = renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardbin' },
+  sceneOptions: { plotMode: 'hardBin' },
   onSceneOptionsChange: (opts) => {
     modeDropdown.value     = opts.plotMode;
     schemeDropdown.value   = opts.colorScheme;
@@ -490,7 +490,7 @@ If you want a static display with no toolbar:
 ```ts
 renderWaferMap(canvas, wafer, dies, {
   showToolbar: false,
-  sceneOptions: { plotMode: 'hardbin' },
+  sceneOptions: { plotMode: 'hardBin' },
 });
 ```
 
@@ -510,7 +510,7 @@ renderWaferMap(canvas, wafer, dies, {
 
 ### Bin legend position
 
-In `hardbin` and `softbin` modes, the bin legend can be placed in six positions via the **Legend style** toolbar button or the `legendPosition` option:
+In `hardBin` and `softBin` modes, the bin legend can be placed in six positions via the **Legend style** toolbar button or the `legendPosition` option:
 
 | Value | Behaviour |
 | --- | --- |
@@ -525,7 +525,7 @@ Set the initial position via `sceneOptions` — the user can change it at any ti
 
 ```ts
 renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardbin', legendPosition: 'bottom' },
+  sceneOptions: { plotMode: 'hardBin', legendPosition: 'bottom' },
 });
 ```
 
@@ -666,7 +666,7 @@ data you can use in your own UI:
 for (const finding of summary.findings) {
   console.log(finding.severity);          // 'unusual' | 'notable' | 'info'
   console.log(finding.summary);           // "Ring 3 (edge) yield is lower than the rest of the wafer"
-  console.log(finding.variable.kind);     // 'yield' | 'hardbin' | 'softbin' | 'test'
+  console.log(finding.variable.kind);     // 'yield' | 'hardBin' | 'softBin' | 'test'
   console.log(finding.effect.absoluteDelta);  // signed magnitude of the effect
   console.log(finding.stats.adjustedPValue);  // BH-adjusted p-value
 }
@@ -719,7 +719,7 @@ const items = waferResults.map((r, i) => ({
 const ctrl = renderWaferGallery(
   document.getElementById('gallery'),
   items,
-  { sceneOptions: { plotMode: 'hardbin' } },
+  { sceneOptions: { plotMode: 'hardBin' } },
 );
 ```
 
@@ -735,7 +735,7 @@ bin legend and tooltips use the correct names on every card:
 
 ```ts
 const sharedSceneOptions = {
-  plotMode:  'hardbin',
+  plotMode:  'hardBin',
   hbinDefs: [
     { bin: 1, name: 'Pass',  color: '#2ecc71' },
     { bin: 2, name: 'Fail',  color: '#e74c3c' },
@@ -811,7 +811,7 @@ the gallery** — no extra code is needed:
 // where each die shows the count of wafers on which that bin appeared.
 renderWaferGallery(container, items, {
   sceneOptions: {
-    plotMode:  'hardbin',
+    plotMode:  'hardBin',
     hbinDefs,
     sbinDefs,
     testDefs,
@@ -856,7 +856,7 @@ const items = waferResults.map((r, i) => ({
 }));
 
 renderWaferGallery(container, items, {
-  sceneOptions:    { plotMode: 'hardbin', hbinDefs, sbinDefs, testDefs },
+  sceneOptions:    { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
   lotStatsSummary: lotSummary,
 });
 ```
@@ -1020,7 +1020,7 @@ import { registerColorScheme, listColorSchemes } from '@paulrobins/wafermap';
 registerColorScheme('my-brand', {
   label: 'My Brand',
 
-  // Colour for a specific bin number (hardbin / softbin modes)
+  // Colour for a specific bin number (hardBin / softBin modes)
   forBin: (bin: number) => {
     const palette = ['#003f88', '#e63946', '#2a9d8f', '#e9c46a', '#f4a261'];
     return palette[(bin - 1) % palette.length];

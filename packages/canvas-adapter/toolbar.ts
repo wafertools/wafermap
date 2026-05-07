@@ -27,14 +27,14 @@ export const INLINE_TEST_LIMIT = 6;
 
 export const MODE_LABELS: Record<PlotMode, string> = {
   value:           'Test Value',
-  hardbin:         'Hard Bin',
-  softbin:         'Soft Bin',
+  hardBin:         'Hard Bin',
+  softBin:         'Soft Bin',
   stackedValues:   'Stacked Test Values',
   stackedBins:     'Stacked Hard Bins',
   stackedSoftBins: 'Stacked Soft Bins',
 };
 
-export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardbin', 'softbin']);
+export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardBin', 'softBin']);
 export const STACKED_MODES    = new Set<PlotMode>(['stackedValues', 'stackedBins', 'stackedSoftBins']);
 
 // ── Tooltip ────────────────────────────────────────────────────────────────────

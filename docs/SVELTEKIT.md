@@ -63,8 +63,8 @@ See [docs/examples/WaferPlot.svelte](examples/WaferPlot.svelte) for a copy-paste
 For a first test in a SvelteKit analysis app:
 
 - keep data loading outside the component
-- pass rows into a wafer plot component as props (`WaferMapPoint[]`)
-- start with `plotMode: 'hardbin'` or `plotMode: 'value'`
+- pass rows into a wafer plot component as props (`DieResult[]`)
+- start with `plotMode: 'hardBin'` or `plotMode: 'value'`
 - add stacked modes and post-enrichment only after the basic rendering path works
 
 ## Reference Files

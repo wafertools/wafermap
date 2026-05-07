@@ -7,6 +7,7 @@ import type { Reticle } from '../core/reticle.js';
 import { toCanvas, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
+import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
 import { CLR, ROTATIONS, INLINE_TEST_LIMIT, MODE_LABELS, createTooltip, createToolbarHelpers } from './toolbar.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ export interface WaferSceneOptions {
   legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 }
 
-export interface MountOptions extends Omit<ToCanvasOptions, '_viewport'> {
+export interface MountOptions extends Omit<ToCanvasOptions, 'viewport'> {
   /** Initial scene display options. All are overridable via the toolbar. */
   sceneOptions?: WaferSceneOptions;
   /** Called when the user hovers over a die. Null when leaving a die. */
@@ -156,7 +157,7 @@ export function renderWaferMap(
   // Selected die keys ("i,j") — key-based so references survive scene rebuilds.
   let selectedKeys    = new Set<string>();
   let sceneOpts: WaferSceneOptions = {
-    plotMode:               'hardbin',
+    plotMode:               'hardBin',
     colorScheme:            'color',
     showText:               false,
     showRingBoundaries:     false,
@@ -246,6 +247,7 @@ export function renderWaferMap(
   let tbCloseOpenMenu: ((e: MouseEvent) => void) | null = null;
   let tbGetOpenMenu:   (() => HTMLDivElement | null) | null = null;
   let tbSetOpenMenu:   ((m: HTMLDivElement | null) => void) | null = null;
+  let tbSetActive:     ((btn: HTMLButtonElement, active: boolean) => void) | null = null;
   // Called after every option change to keep the legend style button in sync.
   let syncLegendStyleBtnFn: (() => void) | null = null;
 
@@ -322,14 +324,41 @@ export function renderWaferMap(
     }
 
     const header = document.createElement('div');
-    header.textContent = 'Findings';
     Object.assign(header.style, {
-      fontSize: '12px',
-      fontWeight: '700',
-      color: '#1f2f43',
-      marginBottom: '2px',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px',
     });
+    const headerTitle = document.createElement('span');
+    headerTitle.textContent = 'Findings';
+    Object.assign(headerTitle.style, { fontSize: '12px', fontWeight: '700', color: '#1f2f43' });
+    const headerClose = document.createElement('button');
+    headerClose.type = 'button';
+    headerClose.textContent = '\xD7';
+    headerClose.title = 'Close';
+    Object.assign(headerClose.style, {
+      background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px',
+      lineHeight: '1', color: '#66788a', padding: '0 2px',
+    });
+    headerClose.addEventListener('click', () => {
+      findingsOpen = false;
+      if (btnFindings) tbSetActive?.(btnFindings, false);
+      rebuildFindingsPanel();
+    });
+    header.appendChild(headerTitle);
+    header.appendChild(headerClose);
     findingsPanel.appendChild(header);
+
+    if (currentStatsSummary.findings.length > 0) {
+      const reportBtn = document.createElement('button');
+      reportBtn.type = 'button';
+      reportBtn.textContent = 'Open Report';
+      Object.assign(reportBtn.style, {
+        background: 'none', border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
+        cursor: 'pointer', fontSize: '11px', color: '#2a3f5f', padding: '3px 8px',
+        marginBottom: '6px', alignSelf: 'flex-start',
+      });
+      reportBtn.addEventListener('click', () => openHtmlReport(renderFindingsReportHtml(currentStatsSummary!)));
+      findingsPanel.appendChild(reportBtn);
+    }
 
     if (currentStatsSummary.findings.length === 0) {
       const empty = document.createElement('div');
@@ -453,6 +482,7 @@ export function renderWaferMap(
       tbCloseOpenMenu = closeOpenMenu;
       tbGetOpenMenu   = getOpenMenu;
       tbSetOpenMenu   = setOpenMenu;
+      tbSetActive     = setActive;
       // Single persistent listener — closes any open dropdown on outside click.
       document.addEventListener('click', closeOpenMenu, true);
 
@@ -505,7 +535,7 @@ export function renderWaferMap(
         type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string };
 
         function isCurrentEntry(e: ModeEntry): boolean {
-          if (e.plotMode !== (sceneOpts.plotMode ?? 'hardbin')) return false;
+          if (e.plotMode !== (sceneOpts.plotMode ?? 'hardBin')) return false;
           if (e.plotMode === 'value') return (sceneOpts.testIndex ?? 0) === (e.testIndex ?? 0);
           return true;
         }
@@ -578,8 +608,8 @@ export function renderWaferMap(
                 : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
             : [];
           const binEntries: ModeEntry[] = [
-            ...(hasHbin ? [{ plotMode: 'hardbin'  as PlotMode, label: MODE_LABELS.hardbin }] : []),
-            ...(hasSbin ? [{ plotMode: 'softbin'  as PlotMode, label: MODE_LABELS.softbin }] : []),
+            ...(hasHbin ? [{ plotMode: 'hardBin'  as PlotMode, label: MODE_LABELS.hardBin }] : []),
+            ...(hasSbin ? [{ plotMode: 'softBin'  as PlotMode, label: MODE_LABELS.softBin }] : []),
           ];
           // Stacked modes are only valid for lot-aggregated data — the scene knows this via isLotStack.
           const stackedEntries: ModeEntry[] = currentScene.isLotStack ? [
@@ -619,7 +649,7 @@ export function renderWaferMap(
               }
             } else {
               // Cascade: single "Test Value ▶" row that opens a submenu.
-              const cascadeActive = (sceneOpts.plotMode ?? 'hardbin') === 'value';
+              const cascadeActive = (sceneOpts.plotMode ?? 'hardBin') === 'value';
               const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, () => {});
               // Remove default pointer cursor on the cascade row itself — submenu handles selection.
               cascadeRow.style.display       = 'flex';
@@ -740,7 +770,7 @@ export function renderWaferMap(
         );
         // Disable legend style button when not in a bin mode (it only affects bin legends).
         syncLegendStyleBtnFn = () => {
-          const isBinMode = sceneOpts.plotMode === 'hardbin' || sceneOpts.plotMode === 'softbin';
+          const isBinMode = sceneOpts.plotMode === 'hardBin' || sceneOpts.plotMode === 'softBin';
           btnLegendStyle.style.opacity       = isBinMode ? '' : '0.35';
           btnLegendStyle.style.pointerEvents = isBinMode ? '' : 'none';
         };
@@ -866,8 +896,8 @@ export function renderWaferMap(
       diePitchMm,
       fallbackFormat: currentFallbackFormat,
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
-      _viewport: vp,
-      _activeBin: sceneOpts.highlightBin,
+      viewport: vp,
+      activeBin: sceneOpts.highlightBin,
     });
 
     binLegendRows = result.binLegendRows;

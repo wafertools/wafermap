@@ -9,6 +9,7 @@ import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding } from '../stats/types.js';
+import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export function renderWaferGallery(
   let currentLegendStyle     = options.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 
   let sharedOpts: WaferSceneOptions = {
-    plotMode:               'hardbin',
+    plotMode:               'hardBin',
     colorScheme:            'color',
     showText:               false,
     showRingBoundaries:     false,
@@ -197,10 +198,10 @@ export function renderWaferGallery(
     const { kind, index } = finding.variable;
     if (kind === 'test') {
       syncShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
-    } else if (kind === 'softbin') {
-      syncShared({ plotMode: 'softbin', highlightBin: undefined });
+    } else if (kind === 'softBin') {
+      syncShared({ plotMode: 'softBin', highlightBin: undefined });
     } else {
-      syncShared({ plotMode: 'hardbin', highlightBin: undefined });
+      syncShared({ plotMode: 'hardBin', highlightBin: undefined });
     }
 
     // Clear all card outlines and die zone selections before applying new ones.
@@ -251,13 +252,44 @@ export function renderWaferGallery(
     }
 
     const header = document.createElement('div');
-    header.textContent = 'Lot Findings';
     Object.assign(header.style, {
-      fontSize: '12px', fontWeight: '700', color: '#1f2f43', marginBottom: '2px',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px',
     });
+    const headerTitle = document.createElement('span');
+    headerTitle.textContent = 'Lot Findings';
+    Object.assign(headerTitle.style, { fontSize: '12px', fontWeight: '700', color: '#1f2f43' });
+    const headerClose = document.createElement('button');
+    headerClose.type = 'button';
+    headerClose.textContent = '\xD7';
+    headerClose.title = 'Close';
+    Object.assign(headerClose.style, {
+      background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px',
+      lineHeight: '1', color: '#66788a', padding: '0 2px',
+    });
+    headerClose.addEventListener('click', () => {
+      lotFindingsOpen = false;
+      setActive(btnLotFindings!, false);
+      rebuildLotFindingsPanel();
+    });
+    header.appendChild(headerTitle);
+    header.appendChild(headerClose);
     lotFindingsPanel.appendChild(header);
 
     const findings = currentLotStats.findings;
+
+    if (findings.length > 0) {
+      const reportBtn = document.createElement('button');
+      reportBtn.type = 'button';
+      reportBtn.textContent = 'Open Report';
+      Object.assign(reportBtn.style, {
+        background: 'none', border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
+        cursor: 'pointer', fontSize: '11px', color: '#2a3f5f', padding: '3px 8px',
+        marginBottom: '6px', alignSelf: 'flex-start',
+      });
+      reportBtn.addEventListener('click', () => openHtmlReport(renderFindingsReportHtml(currentLotStats!)));
+      lotFindingsPanel.appendChild(reportBtn);
+    }
+
     if (findings.length === 0) {
       const empty = document.createElement('div');
       empty.textContent = 'No significant lot-level findings';
@@ -356,7 +388,7 @@ export function renderWaferGallery(
     const hasHbin   = dies.some(d => d.hbin != null);
     const hasSbin   = dies.some(d => d.sbin != null);
 
-    const currentMode    = sharedOpts.plotMode ?? 'hardbin';
+    const currentMode    = sharedOpts.plotMode ?? 'hardBin';
     const currentTestIdx = sharedOpts.testIndex ?? 0;
 
     function isCurrentEntry(e: ModeEntry): boolean {
@@ -381,8 +413,8 @@ export function renderWaferGallery(
           : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
       : [];
     const binEntries: ModeEntry[] = [
-      ...(hasHbin ? [{ plotMode: 'hardbin'  as PlotMode, label: MODE_LABELS.hardbin }] : []),
-      ...(hasSbin ? [{ plotMode: 'softbin'  as PlotMode, label: MODE_LABELS.softbin }] : []),
+      ...(hasHbin ? [{ plotMode: 'hardBin'  as PlotMode, label: MODE_LABELS.hardBin }] : []),
+      ...(hasSbin ? [{ plotMode: 'softBin'  as PlotMode, label: MODE_LABELS.softBin }] : []),
     ];
     const stackedEntries: ModeEntry[] = [
       ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
@@ -526,7 +558,7 @@ export function renderWaferGallery(
   );
 
   function syncLegendStyleBtn(): void {
-    const isBinMode = sharedOpts.plotMode === 'hardbin' || sharedOpts.plotMode === 'softbin';
+    const isBinMode = sharedOpts.plotMode === 'hardBin' || sharedOpts.plotMode === 'softBin';
     btnLegendStyle.style.opacity       = isBinMode ? '' : '0.35';
     btnLegendStyle.style.pointerEvents = isBinMode ? '' : 'none';
   }
@@ -661,7 +693,7 @@ export function renderWaferGallery(
 
   function rebuildLegend(): void {
     legendEl.innerHTML = '';
-    const mode = sharedOpts.plotMode ?? 'hardbin';
+    const mode = sharedOpts.plotMode ?? 'hardBin';
 
     if (!BIN_LEGEND_MODES.has(mode)) {
       legendEl.style.display = 'none';
@@ -673,7 +705,7 @@ export function renderWaferGallery(
     for (const item of currentItems) {
       for (const die of item.dies) {
         if (die.partial) continue;
-        const b = mode === 'softbin' ? die.sbin : die.hbin;
+        const b = mode === 'softBin' ? die.sbin : die.hbin;
         if (b != null) binSet.add(b);
       }
     }
@@ -688,7 +720,7 @@ export function renderWaferGallery(
     const scheme    = getColorScheme(sharedOpts.colorScheme);
     const activeBin = sharedOpts.highlightBin;
     // Hard and soft bins have independent number spaces — pick the correct defs for the active mode.
-    const activeDefs = mode === 'softbin' ? sharedOpts.sbinDefs : sharedOpts.hbinDefs;
+    const activeDefs = mode === 'softBin' ? sharedOpts.sbinDefs : sharedOpts.hbinDefs;
     const binDefMap  = activeDefs ? new Map((activeDefs as BinDef[]).map(d => [d.bin, d])) : null;
 
     for (const bin of bins) {
@@ -1096,20 +1128,35 @@ export function renderWaferGallery(
   function downloadGalleryPng(): void {
     const canvases = [...gridEl.querySelectorAll<HTMLCanvasElement>('canvas')];
     if (!canvases.length) return;
-    const N     = canvases.length;
-    const cols  = Math.ceil(Math.sqrt(N));
-    const rows  = Math.ceil(N / cols);
-    const cellW = canvases[0].width;
-    const cellH = canvases[0].height;
-    const gap   = 8;
+    const N      = canvases.length;
+    const cols   = Math.ceil(Math.sqrt(N));
+    const rows   = Math.ceil(N / cols);
+    const cellW  = canvases[0].width;
+    const cellH  = canvases[0].height;
+    const gap    = 8;
+    const dpr    = window.devicePixelRatio || 1;
+    const headerH = Math.round(26 * dpr);
+    const fontSize = Math.round(12 * dpr);
     const off   = document.createElement('canvas');
     off.width   = cols * cellW + (cols - 1) * gap;
-    off.height  = rows * cellH + (rows - 1) * gap;
+    off.height  = rows * (cellH + headerH) + (rows - 1) * gap;
     const ctx   = off.getContext('2d')!;
     ctx.fillStyle = '#f0f2f5';
     ctx.fillRect(0, 0, off.width, off.height);
     canvases.forEach((c, i) => {
-      ctx.drawImage(c, (i % cols) * (cellW + gap), Math.floor(i / cols) * (cellH + gap));
+      const col   = i % cols;
+      const row   = Math.floor(i / cols);
+      const x     = col * (cellW + gap);
+      const y     = row * (cellH + headerH + gap);
+      const label = c.closest('.wmap-gallery-card')?.querySelector<HTMLElement>('span')?.textContent ?? '';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x, y, cellW, headerH);
+      ctx.fillStyle = '#1a1a2e';
+      ctx.font      = `700 ${fontSize}px system-ui, sans-serif`;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x + Math.round(10 * dpr), y + headerH / 2, cellW - Math.round(20 * dpr));
+      ctx.drawImage(c, x, y + headerH);
     });
     off.toBlob(blob => {
       if (!blob) return;

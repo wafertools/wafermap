@@ -84,8 +84,8 @@
             <div class="ctrl-row">
               <label>Mode</label>
               <select id="ext-mode">
-                <option value="hardbin">Hard Bin</option>
-                <option value="softbin">Soft Bin</option>
+                <option value="hardBin">Hard Bin</option>
+                <option value="softBin">Soft Bin</option>
                 <option value="value">Value — Idsat</option>
                 <option value="value-1">Value — Vth</option>
                 <option value="value-2">Value — Ioff</option>
@@ -223,7 +223,7 @@
     // Calling ctrl.setOptions() does NOT re-fire it, preventing feedback loops.
     const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
       sceneOptions: {
-        plotMode: 'hardbin',
+        plotMode: 'hardBin',
         hbinDefs: HBIN_DEFS,
         sbinDefs: SBIN_DEFS,
         testDefs: scene.testDefs,
@@ -239,7 +239,7 @@
       // Map plotMode back to the compound mode selector value
       const modeValue = opts.plotMode === 'value'
         ? `value-${opts.testIndex ?? 0}`
-        : (opts.plotMode ?? 'hardbin');
+        : (opts.plotMode ?? 'hardBin');
       // Avoid spurious change events by only writing when different
       const modeEl = document.getElementById('ext-mode');
       if (modeEl.value !== modeValue && [...modeEl.options].some(o => o.value === modeValue)) {

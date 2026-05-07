@@ -37,13 +37,9 @@ export interface DieResult {
   retestCount?: number;
 }
 
-/** @deprecated Use {@link DieResult} */
-export type DieSample = DieResult;
-/** @deprecated Use {@link DieResult} */
-export type WaferMapPoint = DieResult;
 
 /** Wafer geometry parameters — all optional; any omitted fields are inferred. */
-export interface WaferOptions {
+export interface WaferConfig {
   /** Wafer diameter in mm.  Inferred from grid extent × pitch when omitted. */
   diameter?: number;
   /**
@@ -72,16 +68,12 @@ export interface WaferOptions {
   edgeExclusion?: number;
 }
 
-/** @deprecated Use {@link WaferOptions} */
-export type WaferConfig = WaferOptions;
-/** @deprecated Use {@link WaferOptions} */
-export type WaferParams = WaferOptions;
 
 /**
  * Die geometry and coordinate-system parameters — all optional.
  * When omitted, dimensions are estimated from the grid layout.
  */
-export interface DieOptions {
+export interface DieConfig {
   /** Die width in mm (= X pitch). */
   width?: number;
   /** Die height in mm (= Y pitch). */
@@ -118,10 +110,6 @@ export interface DieOptions {
   xAxisDirection?: 'right' | 'left';
 }
 
-/** @deprecated Use {@link DieOptions} */
-export type DieConfig = DieOptions;
-/** @deprecated Use {@link DieOptions} */
-export type DieParams = DieOptions;
 
 /**
  * Reticle (stepper field) overlay configuration.
@@ -191,9 +179,9 @@ export interface WaferMapInput {
   /** Per-die test results from the prober. */
   results?: DieResult[];
   /** Wafer geometry — diameter, notch direction, orientation, edge exclusion. */
-  waferConfig?: WaferOptions;
+  waferConfig?: WaferConfig;
   /** Die size and coordinate-system conventions. */
-  dieConfig?: DieOptions;
+  dieConfig?: DieConfig;
   /** Pre-built die array.  When supplied, geometry generation is skipped. */
   dies?: Die[];
   /**
@@ -266,8 +254,6 @@ export interface YieldSummary {
   yieldPercent: number | null;
 }
 
-/** @deprecated Use {@link YieldSummary} */
-export type WaferYield = YieldSummary;
 
 export interface WaferMapResult {
   wafer: Wafer;
@@ -309,8 +295,8 @@ export interface WaferMapResult {
 
 interface Normalized {
   results:      DieResult[];
-  waferOpts:    WaferOptions    | undefined;
-  dieOpts:      DieOptions      | undefined;
+  waferOpts:    WaferConfig    | undefined;
+  dieOpts:      DieConfig      | undefined;
   explicitDies: Die[]          | undefined;
   reticleOpts:  ReticleConfig  | undefined;
   lotStackOpts: LotStackConfig | undefined;
@@ -355,7 +341,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
 // ── Notch helper ──────────────────────────────────────────────────────────────
 
 function resolveNotch(
-  waferOpts: WaferOptions | undefined,
+  waferOpts: WaferConfig | undefined,
 ): { type: 'top' | 'bottom' | 'left' | 'right' } | undefined {
   return waferOpts?.notch;
 }
@@ -364,8 +350,8 @@ function resolveNotch(
 
 function detectOrigin(
   results: DieResult[],
-  dieOpts: DieOptions | undefined,
-): NonNullable<DieOptions['coordinateOrigin']> {
+  dieOpts: DieConfig | undefined,
+): NonNullable<DieConfig['coordinateOrigin']> {
   if (dieOpts?.coordinateOrigin) return dieOpts.coordinateOrigin;
   if (results.length > 0 && results.every(p => p.x >= 0 && p.y >= 0)) {
     return { type: 'LL' };
@@ -375,7 +361,7 @@ function detectOrigin(
 
 function resolveGridOriginOffset(
   gridPoints: Array<{ x: number; y: number }>,
-  origin: NonNullable<DieOptions['coordinateOrigin']>,
+  origin: NonNullable<DieConfig['coordinateOrigin']>,
   ga: { offsetX: number; offsetY: number },
 ): { offsetX: number; offsetY: number } {
   if (origin.type === 'custom' && origin.offset) {
@@ -393,8 +379,8 @@ function resolveGridOriginOffset(
 }
 
 function resolveAxisFlips(
-  dieOpts: DieOptions | undefined,
-  origin: NonNullable<DieOptions['coordinateOrigin']>,
+  dieOpts: DieConfig | undefined,
+  origin: NonNullable<DieConfig['coordinateOrigin']>,
 ): { flipX: boolean; flipY: boolean } {
   let flipX = dieOpts?.xAxisDirection === 'left';
   let flipY = dieOpts?.yAxisDirection === 'down';
@@ -601,7 +587,7 @@ function attachData(die: Die, pt: DieResult): Die {
 function autoPlotMode(results: DieResult[], opts: SceneOptions): PlotMode {
   if (opts.plotMode) return opts.plotMode;
   const hasValues = results.some(d => (d.values?.length ?? 0) > 0);
-  return hasValues ? 'value' : 'hardbin';
+  return hasValues ? 'value' : 'hardBin';
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────

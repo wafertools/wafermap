@@ -138,11 +138,11 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.equal(mode.scene.plotMode, 'hardbin');
+  assert.equal(mode.scene.plotMode, 'hardBin');
   assert.deepEqual(mode.dies.filter((die) => die.hbin !== undefined).map((die) => die.hbin).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
 });
 
-test('buildWaferMap marks edge-excluded dies and falls back to hardbin mode when no values are present', () => {
+test('buildWaferMap marks edge-excluded dies and falls back to hardBin mode when no values are present', () => {
   const result = buildWaferMap({
     results: [
       { x: 0, y: 0, hbin: 1 },
@@ -156,7 +156,7 @@ test('buildWaferMap marks edge-excluded dies and falls back to hardbin mode when
     dieConfig: { width: 10, height: 10 },
   });
 
-  assert.equal(result.scene.plotMode, 'hardbin');
+  assert.equal(result.scene.plotMode, 'hardBin');
   assert.ok(result.dies.some((die) => die.edgeExcluded));
   assert.ok(result.dataCoverage.edgeExcludedDies > 0);
   assert.equal(result.dataCoverage.filledDies, 2);

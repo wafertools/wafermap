@@ -48,8 +48,8 @@ test('analyzeWaferMap detects ring-level yield loss', () => {
     finding.comparison.left === 'Ring 3 (edge)' &&
     finding.effect.direction === 'lower',
   ));
-  assert.equal(summary.metadata.analyzedDies, enriched.length);
-  assert.deepEqual(summary.metadata.hardBinsConsidered, [1, 2]);
+  assert.equal(summary.stats.analyzedDies, enriched.length);
+  assert.deepEqual(summary.stats.hardBinsConsidered, [1, 2]);
 });
 
 test('analyzeWaferMap detects quadrant-level yield loss and respects filtering options', () => {
@@ -73,8 +73,8 @@ test('analyzeWaferMap detects quadrant-level yield loss and respects filtering o
     finding.comparison.left === 'NE' &&
     finding.effect.direction === 'lower',
   ));
-  assert.equal(summary.metadata.softBinsConsidered.length, 0);
-  assert.deepEqual(summary.metadata.testsConsidered, []);
+  assert.equal(summary.stats.softBinsConsidered.length, 0);
+  assert.deepEqual(summary.stats.testsConsidered, []);
 });
 
 test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patterns', () => {
@@ -104,13 +104,13 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
   });
 
   assert.ok(summary.findings.some((finding) =>
-    finding.variable.kind === 'hardbin' &&
+    finding.variable.kind === 'hardBin' &&
     finding.variable.bin === 8 &&
     finding.comparison.family === 'quadrant' &&
     finding.comparison.left === 'NE',
   ));
   assert.ok(summary.findings.some((finding) =>
-    finding.variable.kind === 'softbin' &&
+    finding.variable.kind === 'softBin' &&
     finding.variable.bin === 23 &&
     finding.comparison.family === 'ring' &&
     finding.comparison.left === 'Ring 3 (edge)',
@@ -122,9 +122,9 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
     finding.comparison.left === 'NE' &&
     finding.effect.direction === 'higher',
   ));
-  assert.deepEqual(summary.metadata.testsConsidered, [0]);
-  assert.deepEqual(summary.metadata.hardBinsConsidered, [1, 8]);
-  assert.deepEqual(summary.metadata.softBinsConsidered, [1, 23]);
+  assert.deepEqual(summary.stats.testsConsidered, [0]);
+  assert.deepEqual(summary.stats.hardBinsConsidered, [1, 8]);
+  assert.deepEqual(summary.stats.softBinsConsidered, [1, 23]);
 });
 
 test('analyzeWaferMap detects repeating reticle-local patterns when reticle config is present', () => {
@@ -159,14 +159,14 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
     finding.comparison.family === 'reticle-position' &&
     finding.comparison.right === 'Other reticle positions' &&
     finding.comparison.left === 'Reticle cell (1, 0)' &&
-    finding.variable.kind === 'hardbin' &&
+    finding.variable.kind === 'hardBin' &&
     finding.variable.bin === 9,
   ));
   assert.ok(summary.findings.some((finding) =>
     finding.comparison.family === 'reticle-position' &&
     finding.comparison.right === 'Other reticle positions' &&
     finding.comparison.left === 'Reticle cell (1, 0)' &&
-    finding.variable.kind === 'softbin' &&
+    finding.variable.kind === 'softBin' &&
     finding.variable.bin === 31,
   ));
   assert.ok(summary.findings.some((finding) =>
@@ -199,7 +199,7 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
   });
 
   assert.equal(lot.level, 'lot');
-  assert.equal(lot.metadata.waferCount, 4);
+  assert.equal(lot.stats.waferCount, 4);
   assert.equal(lot.perWafer.length, 4);
   assert.ok(lot.findings.some((finding) =>
     finding.level === 'lot' &&

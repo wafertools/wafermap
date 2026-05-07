@@ -141,7 +141,20 @@ export const TEST_DEFS = [
 ];
 
 /** Standard 300 mm production wafer with bottom notch. */
-export const WAFER_CONFIG = { diameter: 300, notch: { type: 'bottom' } };
+export const WAFER_CONFIG = {
+  diameter: 300,
+  notch: { type: 'bottom' },
+  metadata: { lot: 'LOT-DEMO', product: 'DEMO-DEVICE', wafer: 'W01' },
+};
+
+/**
+ * Build a wafer config for a specific wafer in a lot.
+ * @param {number} index  0-based wafer index.
+ */
+export function makeWaferConfig(index) {
+  const n = String(index + 1).padStart(2, '0');
+  return { ...WAFER_CONFIG, metadata: { ...WAFER_CONFIG.metadata, wafer: `W${n}` } };
+}
 
 /** 10 mm × 10 mm die pitch — common for test vehicles and leading-edge devices. */
 export const DIE_CONFIG = { width: 10, height: 10 };

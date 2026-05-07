@@ -5,19 +5,19 @@
     buildWaferMap,
     buildScene,
     toPlotly,
-    type WaferMapPoint,
+    type DieResult,
   } from 'wafermap';
 
   /**
    * Array of data points.  x and y are **die grid positions** (prober step
    * coordinates — integers like −7, 0, 5), not millimetre values.
    */
-  export let rows: WaferMapPoint[] = [];
+  export let rows: DieResult[] = [];
   /** Die width and height in mm.  Passed to buildWaferMap for physical scaling. */
   export let die: { width: number; height: number } = { width: 10, height: 10 };
   /** Wafer diameter in mm.  Inferred from grid extent when omitted. */
   export let diameter: number | undefined = undefined;
-  export let plotMode: 'value' | 'hardbin' | 'softbin' | 'stacked_values' | 'stacked_bins' = 'value';
+  export let plotMode: 'value' | 'hardBin' | 'softBin' = 'value';
   export let showText = false;
 
   let chartEl: HTMLDivElement;
@@ -26,13 +26,11 @@
   async function render() {
     if (!browser || !chartEl || !Plotly) return;
 
-    // buildWaferMap handles geometry — pass grid positions and let it compute
-    // die layout, clipping, and wafer diameter.
     const result = buildWaferMap({
-      data: rows,
-      wafer: {
+      results: rows,
+      waferConfig: {
         diameter,
-        flat: { type: 'bottom', length: 40 },
+        notch: { type: 'bottom' },
         orientation: 0,
         metadata: {
           lot: 'LOT-SVELTE',
@@ -42,10 +40,10 @@
           temperature: 25,
         },
       },
-      die,
+      dieConfig: die,
     });
 
-    const scene = buildScene(result.wafer, result.dies, [], { plotMode, showText });
+    const scene = buildScene(result.wafer, result.dies, { plotMode, showText });
     const plot  = toPlotly(scene);
     await Plotly.react(chartEl, plot.data, plot.layout, { responsive: true });
   }

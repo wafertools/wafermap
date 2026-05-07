@@ -13,7 +13,7 @@ const WAFER_DIAMETER = 150;
 
 // Plotly-side display state — mirrors whatever the canvas toolbar sets.
 const plotlyState = {
-  plotMode:               'hardbin',
+  plotMode:               'hardBin',
   colorScheme:            'color',
   showRingBoundaries:     false,
   showQuadrantBoundaries: false,

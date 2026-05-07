@@ -1,7 +1,7 @@
 import { analyzeWaferMap } from './analyzeWaferMap.js';
 import type {
   AnalyzeWaferLotInput,
-  AnalyzeWaferLotOptions,
+  AnalyzeWaferMapOptions,
   LotStatsSummary,
   StatsFinding,
   StatsSeverity,
@@ -80,7 +80,7 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
         sampleSizeLeft: bucket.waferIndices.length,
         sampleSizeRight: perWafer.length - bucket.waferIndices.length,
       },
-      summary: `${finding.summary} across ${bucket.waferIndices.length}/${perWafer.length} wafers`,
+      summary: `${finding.summary} — seen on ${bucket.waferIndices.length}/${perWafer.length} wafers (${Math.round(coverage * 100)}%)`,
       highlight: {
         kind: 'wafer',
         waferIndices: bucket.waferIndices,
@@ -95,7 +95,7 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer']): Stats
   const comparable = perWafer
     .map((entry) => ({
       waferIndex: entry.waferIndex,
-      yieldPercent: entry.summary.metadata.yieldPercent,
+      yieldPercent: entry.summary.stats.yieldPercent,
     }))
     .filter((entry): entry is { waferIndex: number; yieldPercent: number } => entry.yieldPercent !== null);
 
@@ -136,7 +136,7 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer']): Stats
         sampleSizeLeft: 1,
         sampleSizeRight: comparable.length - 1,
       },
-      summary: `Wafer ${entry.waferIndex + 1} yield is ${delta > 0 ? 'higher' : 'lower'} than the lot median`,
+      summary: `Wafer ${entry.waferIndex + 1} yield is ${Math.abs(delta).toFixed(1)} percentage points ${delta > 0 ? 'higher' : 'lower'} than the lot median`,
       highlight: {
         kind: 'wafer',
         waferIndices: [entry.waferIndex],
@@ -149,13 +149,12 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer']): Stats
 
 export function analyzeWaferLot(
   items: AnalyzeWaferLotInput,
-  options: AnalyzeWaferLotOptions = {},
+  options: AnalyzeWaferMapOptions = {},
 ): LotStatsSummary {
   const perWafer = items.map((item, waferIndex) => ({
     waferIndex,
     summary: analyzeWaferMap(item, options),
   }));
-  const comparableWaferCount = perWafer.filter((entry) => entry.summary.metadata.yieldPercent !== null).length;
   const findings = [
     ...buildRepeatedPatternFindings(perWafer),
     ...buildYieldOutlierFindings(perWafer),
@@ -166,15 +165,20 @@ export function analyzeWaferLot(
     return left.summary.localeCompare(right.summary, 'en');
   });
 
+  // Lot-level identity: take shared fields from the first wafer that has identity data,
+  // excluding wafer-specific keys so only lot/product/date etc. remain.
+  const firstWafer = perWafer.find(w => w.summary.wafer)?.summary.wafer;
+  const lotIdentity = firstWafer
+    ? Object.fromEntries(Object.entries(firstWafer).filter(([k]) => k !== 'wafer' && k !== 'waferId'))
+    : undefined;
+
   return {
     level: 'lot',
     hasNotableFindings: findings.some((finding) => finding.severity !== 'info')
       || perWafer.some((entry) => entry.summary.hasNotableFindings),
     findings,
+    lot: Object.keys(lotIdentity ?? {}).length > 0 ? lotIdentity : undefined,
+    stats: { waferCount: items.length },
     perWafer,
-    metadata: {
-      waferCount: items.length,
-      comparableWaferCount,
-    },
   };
 }

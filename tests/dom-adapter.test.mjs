@@ -219,7 +219,7 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     });
 
     assert.equal(wrapper.querySelector('[data-wmap-toolbar="1"]') !== null, true);
-    assert.equal(ctrl.getOptions().plotMode, 'hardbin');
+    assert.equal(ctrl.getOptions().plotMode, 'hardBin');
 
     const buttons = [...wrapper.parentElement.querySelectorAll('button')];
     const labelsBtn = buttons.find((btn) => btn.title === 'Toggle die labels');
@@ -328,7 +328,7 @@ test('renderWaferGallery restores original cards when leaving stacked mode', () 
     const stackedCards = container.querySelectorAll('.wmap-gallery-card').length;
     assert.equal(stackedCards, (base.scene.hbinDefs ?? []).length);
 
-    ctrl.setOptions({ plotMode: 'hardbin' });
+    ctrl.setOptions({ plotMode: 'hardBin' });
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, items.length);
 
     ctrl.destroy();
@@ -414,7 +414,7 @@ test('renderWaferGallery computes correct valueRange for stackedValues mode', ()
     ];
 
     const ctrl = renderWaferGallery(container, items, {
-      sceneOptions: { plotMode: 'hardbin', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
+      sceneOptions: { plotMode: 'hardBin', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
     });
 
     // Switch to stackedValues mode
