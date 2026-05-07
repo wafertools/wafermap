@@ -6,7 +6,8 @@
  * value distributions, and optional spatial failure patterns.
  *
  * Typical setup used by most demos:
- *   300 mm diameter · 10 mm × 10 mm dies · ~580 dies per wafer
+ *   300 mm diameter · 8 mm × 12 mm dies · ~490 dies per wafer
+ *   (8×12 mm is a realistic rectangular die for a leading-edge logic device)
  */
 
 // ── Core RNG ─────────────────────────────────────────────────────────────────
@@ -23,54 +24,64 @@ export function rng(i, j, seed = 1) {
 // ── Data generator ────────────────────────────────────────────────────────────
 
 /**
- * Generate one wafer's worth of DieResult objects for a 300 mm / 10 mm-pitch wafer.
+ * Generate one wafer's worth of DieResult objects for a 300 mm wafer with 8×12 mm dies.
+ * Spatial patterns are computed from physical mm distances so they are correct for
+ * rectangular dies. buildWaferMap clips the result to the real circular wafer boundary.
  *
  * @param {object}  opts
- * @param {number}  [opts.seed=1]          Controls per-wafer variation.
- * @param {number}  [opts.radius=14]       Die-grid radius (steps from wafer centre to edge).
- * @param {boolean} [opts.edgeFail=false]  Adds a strong failure band in the outer ring (~r > 72% radius).
- * @param {boolean} [opts.quadrant=false]  NE quadrant has lower yield and higher Vth.
- * @param {boolean} [opts.center=false]    Small defect cluster at the wafer centre.
+ * @param {number}  [opts.seed=1]               Controls per-wafer variation.
+ * @param {boolean} [opts.edgeFail=false]        Adds a strong failure band in the outer ring (r > 72%).
+ * @param {boolean} [opts.quadrant=false]        NE quadrant has lower yield and higher Vth.
+ * @param {boolean} [opts.center=false]          Small defect cluster at the wafer centre.
  * @param {boolean} [opts.reticlePattern=false]  Repeating field-position defect pattern.
- * @returns {Array<{x,y,bins,values}>}
+ * @returns {Array<{x,y,hbin,sbin,values}>}
  */
 export function makeResults({
   seed            = 1,
-  radius          = 14,
   edgeFail        = false,
   quadrant        = false,
   center          = false,
   reticlePattern  = false,
 } = {}) {
+  // Physical die pitch and wafer radius in mm.
+  // Grid sweeps enough index steps to cover the full wafer in each direction.
+  const pitchX = 8, pitchY = 12, waferRadius = 150;
+  const iMax = Math.ceil(waferRadius / pitchX);
+  const jMax = Math.ceil(waferRadius / pitchY);
+
   const results = [];
 
-  for (let i = -radius; i <= radius; i++) {
-    for (let j = -radius; j <= radius; j++) {
-      const r = Math.hypot(i, j);
-      if (r > radius - 0.5) continue; // exclude dice straddling the wafer edge
+  for (let i = -iMax; i <= iMax; i++) {
+    for (let j = -jMax; j <= jMax; j++) {
+      // Physical distance from wafer centre — used for all spatial patterns.
+      const rMm = Math.hypot(i * pitchX, j * pitchY);
+      // Skip dies whose centre is outside the wafer; buildWaferMap will also
+      // clip based on die corners, but pre-filtering keeps the data set lean.
+      if (rMm > waferRadius) continue;
+
+      const t = rMm / waferRadius; // normalised radial position [0, 1]
 
       // Independent noise channels
       const n1 = rng(i, j, seed);
       const n2 = rng(i, j, seed + 37);
       const n3 = rng(i, j, seed + 89);
-      const roll = rng(i, j, seed + 200); // bin assignment roll
+      const roll = rng(i, j, seed + 200);
 
       // Base pass probability: ~93% at centre, falls to ~68% at the edge
-      let pass = 0.93 * Math.exp(-(r / radius) * 1.3)
-               + 0.68 * (1 - Math.exp(-(r / radius) * 1.3))
+      let pass = 0.93 * Math.exp(-t * 1.3)
+               + 0.68 * (1 - Math.exp(-t * 1.3))
                + (n1 - 0.5) * 0.06;
 
       // Optional failure patterns
-      if (edgeFail  && r > radius * 0.72)           pass -= 0.32; // outer ring yield loss
-      if (quadrant  && i > 0 && j > 0)              pass -= 0.20; // NE quadrant drift
-      if (center    && r < radius * 0.22)           pass -= 0.28; // centre defect cluster
+      if (edgeFail  && t > 0.72)            pass -= 0.32; // outer ring yield loss
+      if (quadrant  && i > 0 && j > 0)      pass -= 0.20; // NE quadrant drift
+      if (center    && t < 0.22)            pass -= 0.28; // centre defect cluster
       if (reticlePattern) {
-        const reticleWidth = 4;
-        const reticleHeight = 3;
+        const reticleWidth = 4, reticleHeight = 3;
         const phaseX = ((1 % reticleWidth) + reticleWidth) % reticleWidth;
         const cellX = ((i + phaseX) % reticleWidth + reticleWidth) % reticleWidth;
         const cellY = ((j % reticleHeight) + reticleHeight) % reticleHeight;
-        if (cellX === 2 && cellY === 1) pass -= 0.32; // repeated defect at one reticle-local position
+        if (cellX === 2 && cellY === 1) pass -= 0.32;
       }
 
       pass = Math.max(0.04, Math.min(0.97, pass));
@@ -88,16 +99,16 @@ export function makeResults({
 
       // Test values — physically motivated spatial gradients:
       //   Idsat: drive current peaks at centre, drops toward edge
-      const idsatBase = 1.5e-3 * (1 - (r / radius) * 0.35);
+      const idsatBase = 1.5e-3 * (1 - t * 0.35);
       const idsatQuad = (quadrant && i > 0 && j > 0) ? -0.11e-3 : 0;
       const idsat = idsatBase + idsatQuad + (n2 - 0.5) * 0.18e-3;
 
       //   Vth: threshold voltage increases toward edge (process gradient)
       const vthQuad = (quadrant && i > 0 && j > 0) ? 0.04 : 0;
-      const vth = 0.450 + (r / radius) * 0.085 + vthQuad + (n3 - 0.5) * 0.028;
+      const vth = 0.450 + t * 0.085 + vthQuad + (n3 - 0.5) * 0.028;
 
       //   Ioff: off-state leakage grows exponentially toward edge
-      const ioff = 8e-12 * Math.exp((r / radius) * 2.1) * (1 + (n1 - 0.5) * 0.4);
+      const ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
 
       results.push({ x: i, y: j, hbin, sbin, values: [idsat, vth, ioff] });
     }
@@ -156,5 +167,5 @@ export function makeWaferConfig(index) {
   return { ...WAFER_CONFIG, metadata: { ...WAFER_CONFIG.metadata, wafer: `W${n}` } };
 }
 
-/** 10 mm × 10 mm die pitch — common for test vehicles and leading-edge devices. */
-export const DIE_CONFIG = { width: 10, height: 10 };
+/** 8 mm × 12 mm die pitch — realistic rectangular die for a leading-edge logic device. */
+export const DIE_CONFIG = { width: 8, height: 12 };

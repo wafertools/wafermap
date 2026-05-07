@@ -96,7 +96,7 @@
     // Build a dataset with deliberate retests:
     // about 15% of die positions appear twice with a different final bin (simulating a recontact).
     function makeRetestResults(seed) {
-      const primary = makeResults({ seed, radius: 13 });
+      const primary = makeResults({ seed });
 
       // Inject retests: some initially-failing dies pass on retest (and vice versa)
       const retests = [];

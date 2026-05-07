@@ -670,9 +670,6 @@ function drawAxisTicks(
   const axisY = cssH - axisReserve + 4;
   const axisX = padding + axisLeftReserve - 4;
 
-  // Target ~one tick per 50px. Same step for both axes (square die grid).
-  const tickStepMm = niceStep(50 / ppm);
-
   // Convert a display-space mm position to the die grid index for axis labels.
   //
   // CCW rotation R maps die coords to display coords as:
@@ -708,12 +705,33 @@ function drawAxisTicks(
     /* 270 */      return Math.round(-uy / diePitchMm.x);
   }
 
+  // When displaying die indices, snap ticks to whole-die boundaries and pick
+  // a step size (in mm) that gives ~one tick per 50px for each axis independently.
+  // For mm display, use a single nice step targeting 50px.
+  function tickStep(pitchMm: number | undefined): number {
+    if (!pitchMm) return niceStep(50 / ppm);
+    const diesPer50px = 50 / (pitchMm * ppm);
+    const dieStep = Math.max(1, Math.round(diesPer50px));
+    return dieStep * pitchMm;
+  }
+
+  // Which pitch drives each screen axis depends on current rotation.
+  const xPitchMm = diePitchMm
+    ? (r === 0 || r === 180 ? diePitchMm.x : diePitchMm.y)
+    : undefined;
+  const yPitchMm = diePitchMm
+    ? (r === 0 || r === 180 ? diePitchMm.y : diePitchMm.x)
+    : undefined;
+
+  const tickStepX = tickStep(xPitchMm);
+  const tickStepY = tickStep(yPitchMm);
+
   // X axis (bottom)
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  const xStartMm = Math.ceil(((padding - originX) / ppm) / tickStepMm) * tickStepMm;
+  const xStartMm = Math.ceil(((padding - originX) / ppm) / tickStepX) * tickStepX;
   const xEndMm   = (cssW - padding - originX) / ppm;
-  for (let mm = xStartMm; mm <= xEndMm; mm += tickStepMm) {
+  for (let mm = xStartMm; mm <= xEndMm; mm += tickStepX) {
     const sx = originX + mm * ppm;
     if (sx < padding || sx > cssW - padding) continue;
     ctx.beginPath();
@@ -727,9 +745,9 @@ function drawAxisTicks(
   // Y axis (left) — remember Y is flipped: screen y = originY - mm * ppm
   ctx.textAlign    = 'right';
   ctx.textBaseline = 'middle';
-  const yStartMm = Math.ceil(((originY - (cssH - padding)) / ppm) / tickStepMm) * tickStepMm;
+  const yStartMm = Math.ceil(((originY - (cssH - padding)) / ppm) / tickStepY) * tickStepY;
   const yEndMm   = (originY - padding) / ppm;
-  for (let mm = yStartMm; mm <= yEndMm; mm += tickStepMm) {
+  for (let mm = yStartMm; mm <= yEndMm; mm += tickStepY) {
     const sy = originY - mm * ppm;
     if (sy < padding || sy > cssH - padding) continue;
     ctx.beginPath();

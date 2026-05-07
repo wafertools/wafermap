@@ -70,7 +70,7 @@ async function loadWafer(waferId) {
         temperature:  +(firstRow.temp ?? 25),
       },
     },
-    dieConfig:     { width: 10, height: 10 },
+    dieConfig:     { width: 6, height: 9 },
     reticleConfig: { width: 3, height: 3 },
     passBins:      PASS_BINS,
     testDefs:      TEST_DEFS,

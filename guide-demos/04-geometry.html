@@ -53,7 +53,7 @@
         <div class="canvas-badge">B — die size provided</div>
         <canvas id="map-b"></canvas>
         <div class="card-caption">
-          <strong>dieConfig: { width: 10, height: 10 }</strong> — diameter inferred from
+          <strong>dieConfig: { width: 8, height: 12 }</strong> — diameter inferred from
           grid extent × pitch. <code>units: 'mm'</code>
         </div>
       </div>
@@ -73,7 +73,7 @@
         <div class="canvas-badge">D — fully specified + edge exclusion</div>
         <canvas id="map-d"></canvas>
         <div class="card-caption">
-          <strong>diameter: 300, notch: bottom, edgeExclusion: 5 mm, die: 10×10 mm.</strong>
+          <strong>diameter: 300, notch: bottom, edgeExclusion: 5 mm, die: 8×12 mm.</strong>
           Dimmed dies fall within the 5 mm exclusion band and are excluded from yield.
         </div>
       </div>
@@ -100,7 +100,7 @@
     {
       const { wafer, dies } = buildWaferMap({
         ...shared,
-        dieConfig: { width: 10, height: 10 },
+        dieConfig: { width: 8, height: 12 },
       });
       renderWaferMap(document.getElementById('map-b'), wafer, dies, opts);
     }
@@ -119,7 +119,7 @@
       const { wafer, dies } = buildWaferMap({
         ...shared,
         waferConfig: { diameter: 300, notch: { type: 'bottom' }, edgeExclusion: 5 },
-        dieConfig:   { width: 10, height: 10 },
+        dieConfig:   { width: 8, height: 12 },
       });
       renderWaferMap(document.getElementById('map-d'), wafer, dies, opts);
     }

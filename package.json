@@ -1,6 +1,6 @@
 {
   "name": "@paulrobins/wafermap",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "Browser-first wafer map visualization toolkit with a renderer abstraction and Plotly adapter.",
   "type": "module",
   "license": "MIT",

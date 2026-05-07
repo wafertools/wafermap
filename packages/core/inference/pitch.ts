@@ -155,28 +155,26 @@ export function resolveGridPitch(
     };
   }
 
-  // Case 5: Nothing provided — attempt nearest-neighbour step analysis first.
-  // This yields integer step sizes (e.g. pitchX=1, pitchY=1 for a 1-step grid)
-  // in normalized units; the physical scale is still unknown but the aspect
-  // ratio is more robust than the circular constraint for sparse/non-circular data.
+  // Case 5: Nothing provided — attempt nearest-neighbour step analysis first,
+  // then apply the circular-wafer constraint to recover the aspect ratio.
+  //
+  // NN finds the step size in each axis (e.g. pitchX=1, pitchY=1 for integer
+  // grid coordinates). When NN returns equal steps in both directions the ratio
+  // is uninformative (all integer grids look the same), so we use the circular
+  // constraint: a wafer is always round, therefore physical X and Y extents must
+  // be equal, giving pitchY/pitchX = xRange/yRange.
+  //
+  // When NN finds genuinely different step sizes (e.g. a 2-step coarse grid on
+  // one axis), those steps carry real aspect-ratio information and we use them
+  // directly — the circular constraint is not applied on top.
   const nn = computeNearestNeighborPitch(gridPoints);
-  if (nn !== null) {
-    // Normalise so that pitchX = 1; preserve the derived aspect ratio.
-    const scale = nn.pitchX;
-    return {
-      pitchX: 1,
-      pitchY: nn.pitchY / scale,
-      units: 'normalized',
-      confidence: 0.5,
-    };
-  }
-
-  // Final fallback: circular-wafer constraint.
-  // pitchX = 1 unit; pitchY = xRange / yRange keeps physical extents equal.
+  const nnRatio = nn !== null ? nn.pitchY / nn.pitchX : 1;
+  const useCircular = nnRatio === 1;
+  const aspectRatio = useCircular && yRange > 0 ? xRange / yRange : nnRatio;
   return {
     pitchX: 1,
-    pitchY: xRange / yRange,
+    pitchY: aspectRatio,
     units: 'normalized',
-    confidence: 0.4,
+    confidence: nn !== null ? 0.5 : 0.4,
   };
 }

@@ -8,7 +8,8 @@ import {
 } from 'wafermap';
 import { renderWaferMap } from 'wafermap/canvas-adapter';
 
-const PITCH = 10;
+const PITCH_X = 6;
+const PITCH_Y = 9;
 const WAFER_DIAMETER = 150;
 
 // Plotly-side display state — mirrors whatever the canvas toolbar sets.
@@ -51,7 +52,7 @@ async function main() {
         temperature: Number(firstRow.temp ?? 25),
       },
     },
-    dieConfig: { width: PITCH, height: PITCH },
+    dieConfig: { width: PITCH_X, height: PITCH_Y },
   });
 
   wafer = result.wafer;
@@ -134,7 +135,7 @@ function renderPlotly() {
   if (!wafer) return;
   const scene = currentPlotlyScene();
   const { data, layout } = toPlotly(scene, {
-    diePitchMm: { x: PITCH, y: PITCH },
+    diePitchMm: { x: PITCH_X, y: PITCH_Y },
   });
   Plotly.react('plotly-chart', data, {
     ...layout,
