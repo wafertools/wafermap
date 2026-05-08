@@ -222,18 +222,18 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     assert.equal(ctrl.getOptions().plotMode, 'hardBin');
 
     const buttons = [...wrapper.parentElement.querySelectorAll('button')];
-    const labelsBtn = buttons.find((btn) => btn.title === 'Toggle die labels');
+    const labelsBtn = buttons.find((btn) => btn.ariaLabel === 'Toggle die labels');
     assert.ok(labelsBtn);
     click(window, labelsBtn);
     assert.equal(ctrl.getOptions().showText, true);
     assert.equal(sceneCalls.at(-1).showText, true);
 
-    const panBtn = buttons.find((btn) => btn.title === 'Pan (drag to move)');
+    const panBtn = buttons.find((btn) => btn.ariaLabel === 'Pan (drag to move)');
     assert.ok(panBtn);
     click(window, panBtn);
     assert.equal(canvas.style.cursor, 'grab');
 
-    const selectBtn = buttons.find((btn) => btn.title === 'Select (drag to select dies)');
+    const selectBtn = buttons.find((btn) => btn.ariaLabel === 'Select (drag to select dies)');
     assert.ok(selectBtn);
     click(window, selectBtn);
     assert.equal(canvas.style.cursor, 'crosshair');

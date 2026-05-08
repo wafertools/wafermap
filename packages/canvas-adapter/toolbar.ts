@@ -89,8 +89,9 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
 
   function makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement {
     const btn = document.createElement('button');
-    btn.innerHTML = ICONS[iconKey];
-    btn.type      = 'button';
+    btn.innerHTML    = ICONS[iconKey];
+    btn.type         = 'button';
+    btn.ariaLabel    = label;
     Object.assign(btn.style, {
       display:        'flex',
       alignItems:     'center',
