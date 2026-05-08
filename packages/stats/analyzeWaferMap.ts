@@ -20,7 +20,9 @@ interface RawFinding extends StatsFinding {
   effect: StatsFinding['effect'];
 }
 
-const DEFAULT_OPTIONS: Required<AnalyzeWaferMapOptions> = {
+type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers'>> & { testNumbers?: number[] };
+
+const DEFAULT_OPTIONS: ResolvedOptions = {
   ringCount: 4,
   passBins: [1],
   significanceLevel: 0.05,
@@ -39,7 +41,7 @@ function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
   return 'wafer' in input && 'dies' in input && 'scene' in input ? input : buildWaferMap(input);
 }
 
-function isEligibleDie(die: Die, options: Required<AnalyzeWaferMapOptions>): die is EligibleDie {
+function isEligibleDie(die: Die, options: ResolvedOptions): die is EligibleDie {
   if (!options.includePartial && die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
   return die.hbin !== undefined;
@@ -51,9 +53,13 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
   const softBinSet = new Set<number>();
 
   for (const die of dies) {
-    die.values?.forEach((value, index) => {
-      if (value !== undefined) testSet.add(index);
-    });
+    if (die.testValues) {
+      for (const k of Object.keys(die.testValues)) testSet.add(Number(k));
+    } else {
+      die.values?.forEach((value, index) => {
+        if (value !== undefined) testSet.add(index);
+      });
+    }
     if (die.hbin !== undefined) hardBinSet.add(die.hbin);
     if (die.sbin !== undefined) softBinSet.add(die.sbin);
   }
@@ -187,16 +193,17 @@ function labelForBin(bin: number, defs: BinDef[] | undefined, prefix: 'HBin' | '
   return def?.name ? `${prefix} ${bin} (${def.name})` : `${prefix} ${bin}`;
 }
 
-function labelForTest(index: number, defs: TestDef[] | undefined): { label: string; unit?: string } {
-  const def = defs?.find((entry) => entry.index === index);
-  return { label: def?.name ?? `Test ${index}`, unit: def?.unit };
+function labelForTest(testNumber: number, defs: TestDef[] | undefined): { label: string; unit?: string } {
+  // Match by testNumber first, then fall back to index for the deprecated path.
+  const def = defs?.find((entry) => (entry.testNumber ?? entry.index) === testNumber);
+  return { label: def?.name ?? `Test ${testNumber}`, unit: def?.unit };
 }
 
 function buildYieldFindings(
   eligibleDies: EligibleDie[],
   regionFamily: StatsRegion[],
   passBins: number[],
-  options: Required<AnalyzeWaferMapOptions>,
+  options: ResolvedOptions,
 ): RawFinding[] {
   const passSet = new Set(passBins);
   const dieMap = new Map(eligibleDies.map((die) => [`${die.i},${die.j}`, die]));
@@ -280,7 +287,7 @@ function buildBinFindings(
   binSpace: 'hard' | 'soft',
   defs: BinDef[] | undefined,
   variableKind: 'hardBin' | 'softBin',
-  options: Required<AnalyzeWaferMapOptions>,
+  options: ResolvedOptions,
 ): RawFinding[] {
   const getBin = (d: EligibleDie) => binSpace === 'soft' ? d.sbin : d.hbin;
   const dieMap = new Map(eligibleDies.map((die) => [`${die.i},${die.j}`, die]));
@@ -399,22 +406,40 @@ function welchPValue(leftValues: number[], rightValues: number[]): { pValue: num
   };
 }
 
+const TEST_COUNT_WARN_THRESHOLD = 100;
+
 function buildTestValueFindings(
   dies: Die[],
   regionFamily: StatsRegion[],
   defs: TestDef[] | undefined,
-  options: Required<AnalyzeWaferMapOptions>,
+  options: ResolvedOptions,
 ): RawFinding[] {
   const dieMap = new Map(dies.map((die) => [`${die.i},${die.j}`, die]));
   const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
-  const testIndices = [...new Set(
-    dies.flatMap((die) =>
-      (die.values ?? [])
-        .map((value, index) => ({ value, index }))
-        .filter((entry) => entry.value !== undefined)
-        .map((entry) => entry.index),
-    ),
-  )].sort((left, right) => left - right);
+
+  // Collect all test numbers present in the data.
+  const allTestNumbers = [...new Set(
+    dies.flatMap((die) => {
+      if (die.testValues) return Object.keys(die.testValues).map(Number);
+      return (die.values ?? []).map((v, i) => v !== undefined ? i : -1).filter(i => i >= 0);
+    }),
+  )].sort((a, b) => a - b);
+
+  // Auto-cap: if no filter and too many tests, warn and skip test value analysis.
+  if (!options.testNumbers && allTestNumbers.length > TEST_COUNT_WARN_THRESHOLD) {
+    console.warn(
+      `[wafermap] analyzeWaferMap: ${allTestNumbers.length} tests found in die data. ` +
+      `Pass testNumbers: [...] in options to enable test value analysis for specific tests. ` +
+      `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`,
+    );
+    return [];
+  }
+
+  // Apply testNumbers filter when provided.
+  const activeTestNumbers = options.testNumbers
+    ? allTestNumbers.filter(n => options.testNumbers!.includes(n))
+    : allTestNumbers;
+
   const findings: RawFinding[] = [];
 
   for (const region of regionFamily) {
@@ -427,24 +452,25 @@ function buildTestValueFindings(
       return !leftKeySet.has(key) && regionDieKeySet.has(key);
     });
 
-    for (const testIndex of testIndices) {
-      const leftValues = leftDies.map((die) => die.values?.[testIndex]).filter((value): value is number => value !== undefined);
-      const rightValues = rightDies.map((die) => die.values?.[testIndex]).filter((value): value is number => value !== undefined);
+    for (const testNumber of activeTestNumbers) {
+      const readVal = (die: Die) => die.testValues?.[testNumber] ?? die.values?.[testNumber];
+      const leftValues = leftDies.map(readVal).filter((value): value is number => value !== undefined);
+      const rightValues = rightDies.map(readVal).filter((value): value is number => value !== undefined);
 
       if (leftValues.length < options.minimumSampleSize || rightValues.length < options.minimumSampleSize) continue;
 
       const { pValue, effectSize, delta } = welchPValue(leftValues, rightValues);
-      const { label, unit } = labelForTest(testIndex, defs);
+      const { label, unit } = labelForTest(testNumber, defs);
       const rightMean = mean(rightValues);
       const relativeDelta = rightMean !== 0 ? delta / Math.abs(rightMean) : undefined;
 
       findings.push({
-        id: `test:${testIndex}:${region.key}`,
+        id: `test:${testNumber}:${region.key}`,
         level: 'wafer',
         severity: 'info',
         variable: {
           kind: 'test',
-          index: testIndex,
+          index: testNumber,
           label,
           unit,
         },

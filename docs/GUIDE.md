@@ -18,12 +18,13 @@ It focuses on practical patterns; for the full type reference see [API.md](https
 8. [Controlling the display](#8-controlling-the-display)
 9. [Responding to user interaction](#9-responding-to-user-interaction)
 10. [Adding statistical findings](#10-adding-statistical-findings)
-11. [Building a lot gallery](#11-building-a-lot-gallery)
-12. [Lot-level statistical findings](#12-lot-level-statistical-findings)
-13. [Reticle overlays](#13-reticle-overlays)
-14. [Processing large datasets with a Web Worker](#14-processing-large-datasets-with-a-web-worker)
-15. [Custom colour schemes](#15-custom-colour-schemes)
-16. [Common patterns and tips](#16-common-patterns-and-tips)
+11. [Summary panel](#11-summary-panel)
+12. [Building a lot gallery](#12-building-a-lot-gallery)
+13. [Lot-level statistical findings](#13-lot-level-statistical-findings)
+14. [Reticle overlays](#14-reticle-overlays)
+15. [Processing large datasets with a Web Worker](#15-processing-large-datasets-with-a-web-worker)
+16. [Custom colour schemes](#16-custom-colour-schemes)
+17. [Common patterns and tips](#17-common-patterns-and-tips)
 
 ---
 
@@ -120,14 +121,21 @@ async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
   const rows = parseCsv(csvText);  // your CSV parser of choice
 
   const results = rows.map(r => ({
-    x:      Number(r.x),
-    y:      Number(r.y),
-    hbin:   Number(r.hbin),
-    sbin:   Number(r.sbin),
-    values: [Number(r.testA), Number(r.testB), Number(r.testC)],
+    x:          Number(r.x),
+    y:          Number(r.y),
+    hbin:       Number(r.hbin),
+    sbin:       Number(r.sbin),
+    testValues: { 1010: Number(r.testA), 1020: Number(r.testB), 1030: Number(r.testC) },
   }));
 
-  const { wafer, dies } = buildWaferMap({ results });
+  const { wafer, dies } = buildWaferMap({
+    results,
+    testDefs: [
+      { testNumber: 1010, name: 'TestA' },
+      { testNumber: 1020, name: 'TestB' },
+      { testNumber: 1030, name: 'TestC' },
+    ],
+  });
   renderWaferMap(canvas, wafer, dies);
 }
 ```
@@ -309,23 +317,28 @@ console.log(`${(yld.yieldPercent * 100).toFixed(1)}%`);
 
 ## 6. Working with test values
 
-Continuous test measurements (leakage current, threshold voltage, etc.) go in the
-`values[]` array.  Use `TestDef` to give each test a name and unit:
+Continuous test measurements (leakage current, threshold voltage, etc.) go in
+`testValues` — a map keyed by a stable integer test identity.  Use `TestDef` to
+give each test a name and unit:
 
 ```ts
 const results = rows.map(r => ({
-  x:      Number(r.x),
-  y:      Number(r.y),
-  values: [Number(r.testA), Number(r.testB), Number(r.testC)],
+  x:          Number(r.x),
+  y:          Number(r.y),
+  testValues: {
+    1050: Number(r.idsat),
+    1060: Number(r.vth),
+    1070: Number(r.ioff),
+  },
 }));
 
 const { wafer, dies, scene } = buildWaferMap({
   results,
-  dieConfig: { width: 10, height: 10 },
+  dieConfig: { width: 8, height: 12 },
   testDefs: [
-    { index: 0, name: 'Idsat', unit: 'A'  },
-    { index: 1, name: 'Vth',   unit: 'V'  },
-    { index: 2, name: 'Ioff',  unit: 'A'  },
+    { testNumber: 1050, name: 'Idsat', unit: 'A' },
+    { testNumber: 1060, name: 'Vth',   unit: 'V' },
+    { testNumber: 1070, name: 'Ioff',  unit: 'A' },
   ],
 });
 
@@ -338,9 +351,13 @@ renderWaferMap(canvas, wafer, dies, {
 });
 ```
 
+The `testValues` key is any stable integer that uniquely identifies the test — for
+example an STDF TEST_NUM, a database test ID, or an application-defined constant.
+The key must match the `testNumber` field in the corresponding `TestDef`.
+
 With `testDefs` in place:
 - The toolbar Mode dropdown shows one entry per test by name ("Idsat", "Vth", …)
-- Hover tooltips show "Idsat: 1.23 mA" instead of "Values: 1.23e-3"
+- Hover tooltips show "Idsat: 1.23 mA" instead of a raw number
 - The colorbar axis label includes the unit
 
 **→ [Demo: Working with test values](../guide-demos/06-test-values.html)**
@@ -390,12 +407,15 @@ const paramMap = new Map(paramRows.map(r => [getDieKey({ i: Number(r.x), j: Numb
 const enrichedDies = result.dies.map(die => {
   const row = paramMap.get(getDieKey(die));
   if (!row) return die;
-  return { ...die, values: [Number(row.idsat), Number(row.vth)] };
+  return { ...die, testValues: { 1050: Number(row.idsat), 1060: Number(row.vth) } };
 });
 
 renderWaferMap(canvas, result.wafer, enrichedDies, {
   sceneOptions: {
-    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }, { index: 1, name: 'Vth', unit: 'V' }],
+    testDefs: [
+      { testNumber: 1050, name: 'Idsat', unit: 'A' },
+      { testNumber: 1060, name: 'Vth',   unit: 'V' },
+    ],
   },
 });
 ```
@@ -550,7 +570,7 @@ renderWaferMap(canvas, wafer, dies, {
   onClick: (die, event) => {
     console.log(`Clicked die (${die.i}, ${die.j})`);
     console.log('Hard bin:', die.hbin);
-    console.log('Values:', die.values);
+    console.log('Test values:', die.testValues);
     showDetailPanel(die);
   },
   onHover: (die, event) => {
@@ -560,8 +580,8 @@ renderWaferMap(canvas, wafer, dies, {
 });
 ```
 
-`onClick` and `onHover` receive the full `Die` object — `die.i`, `die.j`, `die.values`,
-`die.bins`, and any metadata you attached.  `onHover` receives `null` when the cursor
+`onClick` and `onHover` receive the full `Die` object — `die.i`, `die.j`, `die.testValues`,
+`die.hbin`, `die.sbin`, and any metadata you attached.  `onHover` receives `null` when the cursor
 leaves a die.
 
 ### Box selection
@@ -617,8 +637,8 @@ renderWaferMap(canvas, result.wafer, result.dies, {
 ```
 
 A "Findings" button (clipboard icon) appears in the toolbar when `statsSummary` is
-provided.  Clicking it opens a panel listing all detected findings grouped by
-severity.
+provided.  Clicking it opens the summary panel, which lists all detected findings
+grouped by severity alongside yield, bin, and test statistics.
 
 
 ### What gets analysed
@@ -686,7 +706,79 @@ ctrl.setStatsSummary(newSummary);
 ![alt text](image-13.png)
 ---
 
-## 11. Building a lot gallery
+## 11. Summary panel
+
+The summary panel is a persistent results panel that sits alongside the wafer map.
+It shows yield, bin distribution, ring and quadrant statistics, test value summaries,
+and the full findings list — all in one place without requiring the user to open the
+toolbar findings button.
+
+### Adding a summary panel to a single map
+
+Pass `statsSummary` to `renderWaferMap` and the findings button appears in the toolbar
+automatically.  The panel is hidden by default; clicking the button toggles it open:
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+
+const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const summary = analyzeWaferMap(result);
+
+renderWaferMap(canvas, result.wafer, result.dies, {
+  statsSummary: summary,
+});
+```
+
+### What the panel shows
+
+The panel is divided into sections:
+
+| Section | Content |
+| --- | --- |
+| **Yield** | Pass count, fail count, yield %, edge-excluded count |
+| **Hard Bins** | Count and percentage per bin; colour-coded |
+| **Soft Bins** | Count and percentage per soft bin (when sbin data is present) |
+| **Ring analysis** | Per-ring yield breakdown (Ring 1 = centre, Ring N = edge) |
+| **Quadrant analysis** | Per-quadrant yield and die count |
+| **Test values** | Mean, median, stddev, min, max per test parameter |
+| **Findings** | All `StatsFinding` entries grouped by severity — clicking a finding highlights the affected die zone on the map |
+
+### Updating the panel after data changes
+
+```ts
+const ctrl = renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+
+// After a data reload:
+ctrl.setDies(newDies);
+const newSummary = analyzeWaferMap({ ...result, dies: newDies });
+ctrl.setStatsSummary(newSummary);
+```
+
+### Summary panel in a gallery
+
+Each gallery card carries its own `statsSummary`.  When the user opens a card modal
+(expand ↗), the modal's summary panel shows that card's per-wafer summary:
+
+```ts
+const items = waferResults.map((r, i) => ({
+  wafer:        r.wafer,
+  dies:         r.dies,
+  label:        `Wafer ${i + 1}`,
+  statsSummary: analyzeWaferMap(r),
+}));
+
+renderWaferGallery(container, items, {
+  sceneOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
+});
+```
+
+**→ [Demo: Summary panel](../guide-demos/14-summary-panel.html)**
+
+---
+
+## 12. Building a lot gallery
 
 `renderWaferGallery` renders multiple wafer maps in a responsive card grid.  All
 cards share a single control bar — changing mode, colour, rotate, or flip applies
@@ -745,8 +837,8 @@ const sharedSceneOptions = {
     { bin: 11, name: 'Vth - Hi' },
   ],
   testDefs: [
-    { index: 0, name: 'Idsat', unit: 'A' },
-    { index: 1, name: 'Vth',   unit: 'V' },
+    { testNumber: 1050, name: 'Idsat', unit: 'A' },
+    { testNumber: 1060, name: 'Vth',   unit: 'V' },
   ],
 };
 
@@ -831,7 +923,7 @@ ctrl.setOptions({ aggrMethod: 'median' });  // re-aggregates immediately
 ![alt text](image-9.png)
 ---
 
-## 12. Lot-level statistical findings
+## 13. Lot-level statistical findings
 
 `analyzeWaferLot` extends the per-wafer analysis to the full lot, detecting:
 
@@ -861,9 +953,9 @@ renderWaferGallery(container, items, {
 });
 ```
 
-A "Findings" button appears in the gallery control bar.  Clicking it opens a side
-drawer listing lot-level findings.  When the drawer is open, the card grid reflows
-to use the remaining width.
+A "Findings" button appears in the gallery control bar.  Clicking it toggles the
+lot summary panel alongside the card grid, showing lot-level yield, bin breakdown,
+ring and quadrant statistics, test value summaries, and findings.
 
 
 ### What highlighting looks like
@@ -889,7 +981,7 @@ ctrl.setLotStatsSummary(newLotSummary);
 ![alt text](image-10.png)
 ---
 
-## 13. Reticle overlays
+## 14. Reticle overlays
 
 A reticle (stepper field) is a rectangular group of dies that the lithography
 tool exposes in a single step.  The reticle overlay draws the field boundaries on
@@ -947,7 +1039,7 @@ const items = waferResults.map(r => ({
 ![alt text](image-11.png)
 ---
 
-## 14. Processing large datasets with a Web Worker
+## 15. Processing large datasets with a Web Worker
 
 For lots with many wafers or high die counts, `buildWaferMap` can be moved off the
 main thread to avoid blocking the UI.
@@ -1008,7 +1100,7 @@ wmWorker.terminate();
 
 ---
 
-## 15. Custom colour schemes
+## 16. Custom colour schemes
 
 The built-in colour schemes are `'color'` (default), `'greyscale'`, `'accessible'`,
 `'plasma'`, and `'inferno'`.  You can register additional schemes for brand colours,
@@ -1057,7 +1149,7 @@ call.  They are global and persist for the lifetime of the page.
 ![alt text](image-14.png)
 ---
 
-## 16. Common patterns and tips
+## 17. Common patterns and tips
 
 ### Show wafer metadata in the card header
 
@@ -1126,7 +1218,7 @@ colour scale so the maps are visually comparable:
 let min = Infinity, max = -Infinity;
 for (const r of waferResults) {
   for (const die of r.dies) {
-    const v = die.values?.[0];
+    const v = die.testValues?.[1050];  // test number 1050 = Idsat
     if (v !== undefined) { min = Math.min(min, v); max = Math.max(max, v); }
   }
 }

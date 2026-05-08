@@ -122,11 +122,15 @@
 
       // Map CSV rows to DieResult — x/y are prober step positions, not mm
       const results = rows.map(r => ({
-        x:      Number(r.x),
-        y:      Number(r.y),
-        hbin:   Number(r.hbin),
-        sbin:   Number(r.sbin),
-        values: [Number(r.testA), Number(r.testB), Number(r.testC)],
+        x:          Number(r.x),
+        y:          Number(r.y),
+        hbin:       Number(r.hbin),
+        sbin:       Number(r.sbin),
+        testValues: {
+          1010: Number(r.testA),
+          1020: Number(r.testB),
+          1030: Number(r.testC),
+        },
       }));
 
       const waferMeta = {
@@ -146,6 +150,11 @@
           metadata: waferMeta,
         },
         dieConfig: { width: 10, height: 10 },
+        testDefs: [
+          { testNumber: 1010, name: 'TestA' },
+          { testNumber: 1020, name: 'TestB' },
+          { testNumber: 1030, name: 'TestC' },
+        ],
         passBins:  [1],
       });
 

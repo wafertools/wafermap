@@ -110,7 +110,7 @@ export function makeResults({
       //   Ioff: off-state leakage grows exponentially toward edge
       const ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
 
-      results.push({ x: i, y: j, hbin, sbin, values: [idsat, vth, ioff] });
+      results.push({ x: i, y: j, hbin, sbin, testValues: { 1050: idsat, 1060: vth, 1070: ioff } });
     }
   }
 
@@ -143,12 +143,12 @@ export const SBIN_DEFS = [
 
 /**
  * Three continuous parametric tests: saturation current, threshold voltage, leakage.
- * The index matches the values[] slot in each DieResult.
+ * testNumber is a stable per-test identity (e.g. STDF TEST_NUM or equivalent).
  */
 export const TEST_DEFS = [
-  { index: 0, name: 'Idsat', unit: 'A' },
-  { index: 1, name: 'Vth',   unit: 'V' },
-  { index: 2, name: 'Ioff',  unit: 'A' },
+  { testNumber: 1050, name: 'Idsat', unit: 'A' },
+  { testNumber: 1060, name: 'Vth',   unit: 'V' },
+  { testNumber: 1070, name: 'Ioff',  unit: 'A' },
 ];
 
 /** Standard 300 mm production wafer with bottom notch. */

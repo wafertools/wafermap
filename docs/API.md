@@ -27,9 +27,10 @@ import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 // x,y are prober step positions (die grid indices), not mm.
 const { wafer, dies } = buildWaferMap({
-  results:   rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, values: [+r.testA] })),
+  results:   rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
   waferConfig: { diameter: 300, notch: { type: 'bottom' } },
   dieConfig:   { width: 10, height: 10 },
+  testDefs: [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
 });
 
 renderWaferMap(document.getElementById('map'), wafer, dies);
@@ -84,7 +85,7 @@ buildWaferMap({
   lotStack?:     LotStackConfig,   // collapse multiple wafers into one aggregated map
   passBins?:     number[],         // bins counted as pass for yield (default [1])
   retestPolicy?: 'last' | 'first', // how to handle multiple results at the same (x,y); default 'last'
-  testDefs?:     TestDef[],        // named test definitions — one per values[] slot
+  testDefs?:     TestDef[],        // named test definitions — one per testValues entry
   hbinDefs?:     BinDef[],         // named hard bin definitions — one per distinct hbin value
   sbinDefs?:     BinDef[],         // named soft bin definitions — one per distinct sbin value
 })
@@ -98,15 +99,21 @@ A single die record from wafer test equipment.
 
 ```ts
 {
-  x:      number    // die grid X position (prober step coordinate)
-  y:      number    // die grid Y position (prober step coordinate)
-  values?: number[] // per-test measurement values — one entry per test (e.g. [idsat, vth, ioff])
-  hbin?:  number    // hard bin assignment (physical sort result; STDF V4 range 0–32767)
-  sbin?:  number    // soft bin assignment (test-program failure category; independent 0–32767 space)
+  x:           number                      // die grid X position (prober step coordinate)
+  y:           number                      // die grid Y position (prober step coordinate)
+  testValues?: Record<number, number>      // preferred: test measurements keyed by stable test identity
+                                           // e.g. { 1050: 1.42e-3, 1060: 0.487, 1070: 8.3e-12 }
+                                           // the key is any stable integer per test — for example an STDF TEST_NUM,
+                                           // a database test ID, or an application-defined constant
+  values?:     number[]                    // @deprecated: use testValues. Positional array — fragile when tests are added or removed
+  hbin?:       number                      // hard bin assignment (physical sort result; STDF V4 range 0–32767)
+  sbin?:       number                      // soft bin assignment (test-program failure category; independent 0–32767 space)
 }
 ```
 
-A single test result is just `values: [0.95]` — an array with one element.
+Use `testValues` (keyed map) rather than `values` (positional array). A keyed map is stable when tests are added, removed, or reordered between test program revisions; a positional array is not.
+
+A single test result: `testValues: { 1050: 0.95 }`
 
 When a die position appears more than once in the `results` array (a retest), the
 `retestPolicy` field on `WaferMapInput` controls which result is kept.  The
@@ -181,12 +188,12 @@ is present the top-level `results` field is ignored.
 {
   results:    DieResult[][]  // input data — one DieResult[] per wafer in the lot
   method:     // aggregation applied per die position across all wafers:
-    | 'mean'       // arithmetic mean of values
-    | 'median'     // median of values
-    | 'stddev'     // sample standard deviation of values
-    | 'countBin'   // how many wafers had targetBin at this position → values[0]
+    | 'mean'       // arithmetic mean of values → testValues[0]
+    | 'median'     // median of values → testValues[0]
+    | 'stddev'     // sample standard deviation of values → testValues[0]
+    | 'countBin'   // how many wafers had targetBin at this position → testValues[0]
     | 'mode'       // most frequent bin across wafers → hbin
-    | 'percent'    // percentage of wafers that had targetBin → values[0] in [0,100]
+    | 'percent'    // percentage of wafers that had targetBin → testValues[0] in [0,100]
   targetBin?: number   // bin value to count or measure; required for 'countBin' and 'percent'
 }
 ```
@@ -232,15 +239,20 @@ result.dies.filter(d => d.retestCount !== undefined)
 
 #### `TestDef`
 
-Named definition for one `die.values[]` slot.  When provided, tooltips show `"Idsat: 1.23e-3 A"` instead of `"Values: 1.23e-3"`, and the toolbar mode dropdown offers one entry per test.
+Named definition for one test parameter.  When provided, tooltips show `"Idsat: 1.23e-3 A"` instead of `"Values: 1.23e-3"`, and the toolbar mode dropdown offers one entry per test.
 
 ```ts
 {
-  index: number   // which values[] slot this describes
-  name:  string   // e.g. "Idsat", "Vth", "Continuity"
-  unit?: string   // e.g. "A", "V", "Ω" — shown in tooltip and colorbar label
+  testNumber?: number  // preferred: stable test identity matching the key used in DieResult.testValues
+                       // e.g. an STDF TEST_NUM, a database test ID, or an application-defined constant
+  index?:      number  // @deprecated: use testNumber. Positional index into the deprecated values[] array.
+                       // At least one of testNumber or index must be provided.
+  name:        string  // e.g. "Idsat", "Vth", "Continuity"
+  unit?:       string  // e.g. "A", "V", "Ω" — shown in tooltip and colorbar label
 }
 ```
+
+`testNumber` is preferred. When `testNumber` is set it must match the key used in `DieResult.testValues`. Use `index` only when working with the deprecated `values[]` array.
 
 #### `BinDef`
 
@@ -263,7 +275,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 ```ts
 {
   wafer:         Wafer          // resolved wafer model (diameter, radius, center, notch, orientation)
-  dies:          Die[]          // all dies inside the wafer boundary, with values/hbin/sbin attached
+  dies:          Die[]          // all dies inside the wafer boundary, with testValues/hbin/sbin attached
   scene:         Scene          // renderer-agnostic scene — pass directly to toPlotly() if needed
   reticles:      Reticle[]      // generated reticle geometry — pass as sceneOptions.reticles to renderWaferMap
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
@@ -328,9 +340,9 @@ automatically infers lower-left (`'LL'`) origin and centres the grid for display
 
 ```ts
 const { wafer, dies } = buildWaferMap([
-  { x: 0, y:  0, values: [0.95] },
-  { x: 1, y:  0, values: [0.87] },
-  { x: 0, y: -1, values: [0.91] },
+  { x: 0, y:  0, testValues: { 1050: 0.95 } },
+  { x: 1, y:  0, testValues: { 1050: 0.87 } },
+  { x: 0, y: -1, testValues: { 1050: 0.91 } },
 ]);
 // result.units === 'normalized'
 ```
@@ -372,10 +384,15 @@ console.log(yld.yieldPercent);
 const { wafer, dies } = buildWaferMap({
   results: rows.map(r => ({
     x: +r.x, y: +r.y,
-    values: [+r.testA, +r.testB, +r.testC],
+    testValues: { 1010: +r.testA, 1020: +r.testB, 1030: +r.testC },
     hbin: +r.hbin,
     sbin: +r.sbin,
   })),
+  testDefs: [
+    { testNumber: 1010, name: 'Idsat', unit: 'A' },
+    { testNumber: 1020, name: 'Vth',   unit: 'V' },
+    { testNumber: 1030, name: 'Ioff',  unit: 'A' },
+  ],
   dieConfig: { width: 10, height: 10 },
 });
 ```
@@ -448,9 +465,9 @@ const enrichedDies = result.dies.map(d => {
   if (!row) return d;
   return {
     ...d,
-    values: [+row.testA, +row.testB, +row.testC],
-    hbin:   +row.hbin,
-    sbin:   +row.sbin,
+    testValues: { 1010: +row.testA, 1020: +row.testB, 1030: +row.testC },
+    hbin:       +row.hbin,
+    sbin:       +row.sbin,
   };
 });
 ```
@@ -496,7 +513,7 @@ Scene display options controllable via the toolbar or programmatically:
   testDefs?:               TestDef[]         // named test definitions — drives mode dropdown entries
   hbinDefs?:               BinDef[]          // hard bin names/colors (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]          // soft bin names/colors (sbin, 0–32767 space — independent)
-  testIndex?:              number            // which values[] slot to show in 'value' mode; default 0
+  testIndex?:              number            // toolbar cursor: which testDefs entry to show in 'value' mode; default 0
   valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
   lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
@@ -536,8 +553,7 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
   legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position (default 'default'); user can change via toolbar
-  statsSummary?:           StatsSummary  // precomputed wafer-level findings — adds a findings panel button to the toolbar
-  showFindingsPanel?:      boolean   // show the findings panel toggle when statsSummary is provided (default true)
+  statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a summary panel toggle button to the toolbar
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
@@ -546,7 +562,7 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 
 The box-select toolbar button is always shown. Providing `onSelect` lets your app react to selection changes; without it the selection is purely visual.
 
-The findings panel button only appears when `statsSummary` is provided and `showFindingsPanel` is not `false`. Clicking a finding in the panel highlights the affected die zone on the map.
+When `statsSummary` is provided, a summary panel toggle button (clipboard icon) appears in the toolbar. The panel opens hidden by default; clicking the button shows or hides it. Clicking a finding in the panel highlights the affected die zone on the map.
 
 ### `WaferCanvasController`
 
@@ -559,7 +575,7 @@ The findings panel button only appears when `statsSummary` is provided and `show
   clearSelection(): void
   resetZoom(): void                                  // return to fitted view
   setFallbackFormat(format: 'si' | 'engineering'): void
-  setStatsSummary(summary: StatsSummary | undefined): void  // update the findings panel at runtime
+  setStatsSummary(summary: StatsSummary | undefined): void  // update the summary panel at runtime
   destroy(): void                                    // remove all listeners and DOM elements
 }
 ```
@@ -586,7 +602,7 @@ The findings panel button only appears when `statsSummary` is provided and `show
 | Rotate | Rotate 90° clockwise (cycles 0→90→180→270) |
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
-| Findings | Toggle per-wafer findings panel — only shown when `statsSummary` is provided |
+| Findings | Toggle summary panel — only shown when `statsSummary` is provided |
 
 ### Interactions
 
@@ -654,7 +670,7 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
   label?:         string                               // card header text
   sceneOptions?:  Partial<WaferSceneOptions>           // per-card scene option overrides merged on top of shared options
   hasReticle?:    boolean                              // set true when wafer was built with ReticleConfig — shows reticle toggle in bar
-  statsSummary?:  StatsSummary                         // per-wafer findings shown in the modal's findings panel
+  statsSummary?:  StatsSummary                         // per-wafer stats — shown in the modal's summary panel when the card is expanded
   onClick?:       (die: Die, event: MouseEvent) => void
   onSelect?:      (dies: Die[]) => void
 }
@@ -673,8 +689,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
-  lotStatsSummary?:        LotStatsSummary   // precomputed lot-level findings — adds a findings drawer beside the card grid
-  showFindingsPanel?:      boolean           // show the lot findings toggle button (default true)
+  lotStatsSummary?:        LotStatsSummary   // precomputed lot-level stats — adds a summary panel toggle button to the control bar
 }
 ```
 
@@ -686,7 +701,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
   setOptions(opts: Partial<WaferSceneOptions>): void // sync shared options to all cards
   getOptions(): WaferSceneOptions
   setFallbackFormat(format: 'si' | 'engineering'): void
-  setLotStatsSummary(summary: LotStatsSummary | undefined): void  // update findings drawer at runtime
+  setLotStatsSummary(summary: LotStatsSummary | undefined): void  // update the lot summary panel at runtime
   destroy(): void
 }
 ```
@@ -707,20 +722,20 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 | Flip H | Flip all cards horizontally |
 | Flip V | Flip all cards vertically |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
-| Findings | Toggle lot findings drawer — only shown when `lotStatsSummary` is provided |
+| Findings | Toggle lot summary panel — only shown when `lotStatsSummary` is provided |
 
 Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
 
-### Lot findings drawer
+### Lot summary panel
 
-When `lotStatsSummary` is provided, a findings button appears in the control bar. Clicking it opens a side drawer alongside the card grid (cards reflow to use the remaining width). Findings are grouped by severity: **Unusual** → **Notable** → **Informational**.
+When `lotStatsSummary` is provided, a summary panel toggle button appears in the control bar. The panel is hidden by default; clicking the button shows or hides it alongside the card grid. The panel shows lot-level yield, bin breakdown, ring and quadrant yield aggregated across all wafers, test value statistics, and findings grouped by severity: **Unusual** → **Notable** → **Informational**.
 
 Clicking a finding highlights the affected area:
 
 - **Repeated-pattern findings** (e.g. ring or quadrant patterns seen across multiple wafers) — outlines the affected cards and highlights the matching die zone on each
 - **Inter-wafer yield outliers** — outlines the outlier card(s)
 
-Clicking the active finding again clears the highlight. Opening a card modal while a finding is active passes through the card's `statsSummary` so the modal's own findings panel is also available.
+Clicking the active finding again clears the highlight. Opening a card modal while a finding is active passes through the card's `statsSummary` so the modal's own per-wafer summary panel is also available.
 
 ### Click-to-detail modal
 
@@ -842,6 +857,9 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   enableSoftBinAnalysis?:        boolean  // default true
   enableTestValueAnalysis?:      boolean  // default true
   enableReticlePositionAnalysis?: boolean // default true (only runs when reticleConfig is present)
+  testNumbers?:                  number[] // restrict test-value analysis to these test numbers (keys from testValues)
+                                          // when omitted: all tests analysed, up to 100 — beyond that a console.warn
+                                          // fires and test-value analysis is skipped (pass testNumbers to override)
 }
 ```
 
@@ -860,7 +878,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
     analyzedDies:         number
     excludedDies:         number
     yieldPercent:         number | null
-    testsConsidered:      number[]     // values[] indices that had enough data
+    testsConsidered:      number[]     // test numbers (keys from testValues) that had enough data
     hardBinsConsidered:   number[]
     softBinsConsidered:   number[]
   }
@@ -894,7 +912,35 @@ const html = renderFindingsReportHtml(summary, { title?: string }): string
 openHtmlReport(html): void
 ```
 
-Generates a standalone printable HTML findings report from a `StatsSummary` or `LotStatsSummary`. The report includes wafer/lot identity fields from `summary.wafer` / `lot.lot` (lot, wafer ID, test date, temperature, product — any key present is rendered), yield and die count stats, and a severity-coded findings table. `openHtmlReport` opens the HTML string in a new browser tab for printing or saving as PDF.
+Generates a standalone printable HTML **findings-only** report from a `StatsSummary` or `LotStatsSummary`. Includes wafer/lot identity fields, yield and die count stats, and a severity-coded findings table. `openHtmlReport` opens the HTML string in a new browser tab for printing or saving as PDF.
+
+### `renderSummaryReportHtml`
+
+```ts
+import { renderSummaryReportHtml } from 'wafermap/stats';
+
+const html = renderSummaryReportHtml(params, { title?: string }): string
+```
+
+Generates a standalone printable HTML **full summary report** — a snapshot of everything shown in the summary panel: metadata, yield, bin breakdown, ring yield, quadrant yield, test value statistics (min/mean/median/stddev/max per test), and findings. Suitable for printing or saving as PDF via `openHtmlReport(html)`.
+
+```ts
+// Params mirror renderWaferSummaryContent (minus DOM callbacks):
+{
+  wafer:        Wafer;
+  dies:         Die[];
+  yieldSummary: YieldSummary;
+  dataCoverage: { filledDies, totalDies, edgeExcludedDies, ratio };
+  hbinDefs?:    BinDef[];
+  sbinDefs?:    BinDef[];
+  testDefs?:    TestDef[];
+  statsSummary?: StatsSummary;
+  passBins?:    number[];   // default [1]
+  ringCount?:   number;     // default 4
+}
+```
+
+The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided.
 
 ### `StatsFinding`
 
@@ -905,7 +951,7 @@ Generates a standalone printable HTML findings report from a `StatsSummary` or `
   severity: 'unusual' | 'notable' | 'info'
   variable: {
     kind:   'yield' | 'hardBin' | 'softBin' | 'test'
-    index?: number          // values[] slot index (for 'test' kind)
+    index?: number          // test number — the key from testValues (for 'test' kind)
     bin?:   number          // bin value (for 'hardBin'/'softBin' kind)
     label:  string          // human-readable name
     unit?:  string
@@ -954,12 +1000,12 @@ import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap, renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 
-// Single wafer with findings panel:
+// Single wafer with summary panel toggle:
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result, { ringCount: 4 });
 renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
 
-// Lot gallery with lot-level findings drawer:
+// Lot gallery with lot-level summary panel toggle:
 const waferResults = waferDataSets.map(d => buildWaferMap(d));
 const items = waferResults.map((r, i) => ({
   wafer:         r.wafer,
@@ -1148,6 +1194,28 @@ import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats'
 import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
 ```
 
+### Helper exports
+
+```ts
+import { getDieKey, getDieAtPoint, getDieTestValue } from '@paulrobins/wafermap';
+```
+
+`getDieKey(die)` — returns a stable `"i,j"` string for map lookups (see manual pipeline section below for details).
+
+`getDieAtPoint(scene, event)` — hit-tests a Plotly event against the scene (see manual pipeline section below).
+
+`getDieTestValue(die, testNumber, fallbackIndex?)` — reads a test value from a die by test number:
+
+```ts
+// Preferred — reads from die.testValues
+const idsat = getDieTestValue(die, 1050);
+
+// Deprecated path — reads from die.values by position (fallback)
+const v = getDieTestValue(die, 0, 0);
+```
+
+Returns `undefined` when no value is present.  Use this in post-build code that reads test values from dies.
+
 Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotly-adapter`, `/canvas-adapter`, `/stats`, `/worker`, `/worker-script`
 
 ---
@@ -1313,7 +1381,7 @@ Returns all distinct bin values, sorted ascending.
 
 Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
 
-Returns one `Die` per unique `(i, j)` with `values[0]` = count, and `hbin: targetBin` (for `'hard'`) or `sbin: targetBin` (for `'soft'`).
+Returns one `Die` per unique `(i, j)` with `testValues[0]` = count, and `hbin: targetBin` (for `'hard'`) or `sbin: targetBin` (for `'soft'`).
 
 - Pass `binSpace: 'hard'` (default) for hard bins → use with `plotMode: 'stackedBins'`
 - Pass `binSpace: 'soft'` for soft bins → use with `plotMode: 'stackedSoftBins'`
@@ -1326,7 +1394,7 @@ Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for 
 
 `method` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
 
-Returns one `Die` per unique `(i, j)` with `values[0]` = aggregate.
+Returns one `Die` per unique `(i, j)` with `testValues[0]` = aggregate.
 
 ---
 

@@ -44,14 +44,15 @@ import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 const { wafer, dies } = buildWaferMap({
-  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, values: [+r.testA] })),
+  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
   waferConfig: { diameter: 300, notch: { type: 'bottom' } },
   dieConfig:   { width: 10, height: 10 },
+  testDefs:    [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
 });
 
 const canvas = document.getElementById('map');
 const ctrl = renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardbin' },
+  sceneOptions: { plotMode: 'hardBin' },
   onClick:  die  => console.log('clicked', die),
   onSelect: dies => console.log('selected', dies.length, 'dies'),
   onSceneOptionsChange: opts => syncSidebar(opts),
@@ -75,7 +76,7 @@ const galleryCtrl = renderWaferGallery(
   document.getElementById('gallery'),
   waferIds.map(id => ({ wafer: wafers[id], dies: dies[id], label: id })),
   {
-    sceneOptions: { plotMode: 'hardbin', hbinDefs, sbinDefs, testDefs },
+    sceneOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
     onSceneOptionsChange: opts => syncSidebar(opts),
   },
 );
@@ -112,7 +113,7 @@ renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
 
 const result = buildWaferMap({
-  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, values: [+r.testA] })),
+  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
   waferConfig: { diameter: 300, notch: { type: 'bottom' } },
   dieConfig:   { width: 10, height: 10 },
 });
@@ -138,7 +139,7 @@ packages/worker/         — createWafermapWorker(): run buildWaferMap off the m
 
 ### Plot modes
 
-`'value'` · `'hardbin'` · `'softbin'` · `'stackedValues'` · `'stackedBins'` · `'stackedSoftBins'`
+`'value'` · `'hardBin'` · `'softBin'` · `'stackedValues'` · `'stackedBins'` · `'stackedSoftBins'`
 
 ### Key features
 
@@ -147,7 +148,7 @@ packages/worker/         — createWafermapWorker(): run buildWaferMap off the m
 - Wafer orientation flat / V-notch rendered from diameter automatically
 - Interactive rotate, flip, zoom, pan, and die selection
 - Reticle, probe path, ring, quadrant, and XY indicator overlays
-- Multi-test `values[]`, named `hbin` and `sbin` per die
+- Stable-identity `testValues` map (keyed by test number) and named `hbin`/`sbin` per die
 - Stacked lot modes with automatic internal aggregation (mean / median / stddev / min / max)
 - Statistical findings engine — ring, quadrant, reticle, and inter-wafer yield outlier detection
 - Adaptive geometry inference — omit die size or diameter and the library estimates them

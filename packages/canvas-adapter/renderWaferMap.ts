@@ -7,8 +7,11 @@ import type { Reticle } from '../core/reticle.js';
 import { toCanvas, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
-import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
 import { CLR, ROTATIONS, INLINE_TEST_LIMIT, MODE_LABELS, createTooltip, createToolbarHelpers } from './toolbar.js';
+import type { SummaryPanelOptions } from './summaryPanel.js';
+import {
+  createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
+} from './summaryPanel.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -82,10 +85,8 @@ export interface MountOptions extends Omit<ToCanvasOptions, 'viewport'> {
   showTooltip?: boolean;
   /** Show the built-in toolbar. Default true. */
   showToolbar?: boolean;
-  /** Optional precomputed wafer-level stats summary for the built-in findings panel. */
+  /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
-  /** Show the built-in findings panel toggle when stats are provided. Default true. */
-  showFindingsPanel?: boolean;
   /**
    * 'full' (default) shows all toolbar controls.
    * 'view-only' shows only zoom, reset, box-select, and download — used by gallery cards.
@@ -100,6 +101,20 @@ export interface MountOptions extends Omit<ToCanvasOptions, 'viewport'> {
   minZoom?: number;
   /** Maximum zoom relative to fit. Default 20. */
   maxZoom?: number;
+  /**
+   * When provided, renders a persistent summary panel alongside the canvas.
+   * The panel shows metadata, yield, bins, rings, quadrants, test values, and findings.
+   * The toolbar findings button is hidden when this option is active.
+   */
+  summaryPanel?: SummaryPanelOptions;
+  /**
+   * Precomputed WaferMapResult — used by the summary panel to display yield and
+   * coverage data. When omitted, only stats-derived sections are shown.
+   */
+  waferResult?: {
+    yield:        import('../renderer/buildWaferMap.js').YieldSummary;
+    dataCoverage: { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number };
+  };
 }
 
 export interface WaferCanvasController {
@@ -140,11 +155,12 @@ export function renderWaferMap(
     onSceneOptionsChange,
     showTooltip          = true,
     showToolbar          = true,
-    showFindingsPanel    = true,
     toolbarControls      = 'full',
     showPlotModeSelector = true,
     minZoom              = 0.5,
-    maxZoom         = 20,
+    maxZoom              = 20,
+    summaryPanel:        summaryPanelOpts,
+    waferResult,
     sceneOptions: initialSceneOptions = {},
     ...drawOptions
   } = options;
@@ -228,6 +244,115 @@ export function renderWaferMap(
 
   rebuildScene();
 
+  // ── Summary panel ──────────────────────────────────────────────────────────
+  let summaryPanelEl: HTMLDivElement | null = null;
+  let summaryPanelWrapper: HTMLDivElement | null = null;
+  let summaryActiveFindingId: string | null = null;
+  // Auto-mounted panel: created when statsSummary is provided but no explicit summaryPanel option.
+  let autoSummaryPanelEl: HTMLDivElement | null = null;
+  let autoSummaryPanelWrapper: HTMLDivElement | null = null;
+
+  function renderSummaryPanel(): void {
+    if (!summaryPanelEl) return;
+    renderWaferSummaryContent(summaryPanelEl, {
+      wafer,
+      dies:         currentDies,
+      yieldSummary: waferResult?.yield ?? {
+        passDies: 0, failDies: 0, edgeExcludedDies: 0, partialDies: 0,
+        totalDies: currentDies.filter(d => !d.partial && !d.edgeExcluded).length,
+        yieldPercent: null,
+      },
+      dataCoverage: waferResult?.dataCoverage ?? {
+        filledDies: currentDies.filter(d => !d.partial).length,
+        totalDies:  currentDies.length,
+        edgeExcludedDies: 0,
+        ratio: 1,
+      },
+      hbinDefs:       sceneOpts.hbinDefs,
+      sbinDefs:       sceneOpts.sbinDefs,
+      testDefs:       sceneOpts.testDefs,
+      statsSummary:   currentStatsSummary,
+      passBins:       [1],
+      ringCount:      sceneOpts.ringCount ?? 4,
+      activeFindingId: summaryActiveFindingId,
+      onFindingClick: (finding, row) => {
+        if (summaryActiveFindingId === finding.id) {
+          summaryActiveFindingId = null;
+          selectionFromKeys([]);
+          applyOpts({ highlightBin: undefined });
+        } else {
+          summaryActiveFindingId = finding.id;
+          applyFindingHighlightFromPanel(finding);
+        }
+        renderSummaryPanel();
+        void row;
+      },
+    });
+  }
+
+  function renderAutoSummaryPanel(): void {
+    if (!autoSummaryPanelEl) return;
+    renderWaferSummaryContent(autoSummaryPanelEl, {
+      wafer,
+      dies:         currentDies,
+      yieldSummary: waferResult?.yield ?? {
+        passDies: 0, failDies: 0, edgeExcludedDies: 0, partialDies: 0,
+        totalDies: currentDies.filter(d => !d.partial && !d.edgeExcluded).length,
+        yieldPercent: null,
+      },
+      dataCoverage: waferResult?.dataCoverage ?? {
+        filledDies: currentDies.filter(d => !d.partial).length,
+        totalDies:  currentDies.length,
+        edgeExcludedDies: 0,
+        ratio: 1,
+      },
+      hbinDefs:       sceneOpts.hbinDefs,
+      sbinDefs:       sceneOpts.sbinDefs,
+      testDefs:       sceneOpts.testDefs,
+      statsSummary:   currentStatsSummary,
+      passBins:       [1],
+      ringCount:      sceneOpts.ringCount ?? 4,
+      activeFindingId: summaryActiveFindingId,
+      onFindingClick: (finding, row) => {
+        if (summaryActiveFindingId === finding.id) {
+          summaryActiveFindingId = null;
+          selectionFromKeys([]);
+          applyOpts({ highlightBin: undefined });
+        } else {
+          summaryActiveFindingId = finding.id;
+          applyFindingHighlightFromPanel(finding);
+        }
+        renderAutoSummaryPanel();
+        void row;
+      },
+    });
+  }
+
+  function applyFindingHighlightFromPanel(finding: StatsFinding): void {
+    if (finding.highlight.kind === 'bin') {
+      selectionFromKeys(finding.highlight.dieKeys);
+      applyOpts({ highlightBin: finding.highlight.bin });
+    } else if (finding.highlight.kind === 'region' || finding.highlight.kind === 'dies') {
+      selectionFromKeys(finding.highlight.dieKeys);
+      applyOpts({ highlightBin: undefined });
+    }
+  }
+
+  if (summaryPanelOpts) {
+    const placement = summaryPanelOpts.placement ?? 'right';
+    // Add clearance to prevent the summary panel content from being obscured by the
+    // floating toolbar (position:absolute, top:4px, height ~32px → ~44px total).
+    const clearance = showToolbar ? 44 : 0;
+    summaryPanelEl = createSummaryPanelEl(placement, clearance);
+    const parent = canvas.parentElement;
+    if (parent) {
+      const next = canvas.nextSibling;
+      summaryPanelWrapper = wrapWithSummaryPanel(canvas, summaryPanelEl, placement);
+      parent.insertBefore(summaryPanelWrapper, next);
+    }
+    renderSummaryPanel();
+  }
+
   // ── Tooltip ────────────────────────────────────────────────────────────────
   let tooltip: HTMLDivElement | null = null;
   if (showTooltip) {
@@ -236,18 +361,13 @@ export function renderWaferMap(
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
   let toolbar:      HTMLDivElement    | null = null;
-  let findingsPanel: HTMLDivElement   | null = null;
   let btnBoxSelect: HTMLButtonElement | null = null;
   let btnFindings: HTMLButtonElement | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let findingsOpen = false;
-  let activeFindingId: string | null = null;
 
   // Set when toolbar is created — used by destroy() regardless of showToolbar.
   let tbCloseOpenMenu: ((e: MouseEvent) => void) | null = null;
   let tbGetOpenMenu:   (() => HTMLDivElement | null) | null = null;
-  let tbSetOpenMenu:   ((m: HTMLDivElement | null) => void) | null = null;
-  let tbSetActive:     ((btn: HTMLButtonElement, active: boolean) => void) | null = null;
   // Called after every option change to keep the legend style button in sync.
   let syncLegendStyleBtnFn: (() => void) | null = null;
 
@@ -257,176 +377,18 @@ export function renderWaferMap(
     render();
   }
 
-  function clearFindingHighlight(): void {
-    activeFindingId = null;
-    selectionFromKeys([]);
-    applyOpts({ highlightBin: undefined });
-    // Update active state on all finding rows.
-    findingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-finding]').forEach(btn => {
-      btn.style.background = '#fff';
-      btn.style.fontWeight = '400';
-    });
-  }
-
-  function applyFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
-    // Toggle off if already active.
-    if (activeFindingId === finding.id) {
-      clearFindingHighlight();
-      return;
-    }
-    // Clear previous, then apply new.
-    findingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-finding]').forEach(btn => {
-      btn.style.background = '#fff';
-      btn.style.fontWeight = '400';
-    });
-    activeFindingId = finding.id;
-    row.style.background  = CLR.bgActive;
-    row.style.fontWeight  = '600';
-
-    if (finding.highlight.kind === 'bin') {
-      selectionFromKeys(finding.highlight.dieKeys);
-      applyOpts({ highlightBin: finding.highlight.bin });
-      return;
-    }
-    if (finding.highlight.kind === 'region') {
-      selectionFromKeys(finding.highlight.dieKeys);
-      return;
-    }
-    if (finding.highlight.kind === 'dies') {
-      selectionFromKeys(finding.highlight.dieKeys);
-    }
-  }
-
-  function findingsSeverityColor(severity: StatsFinding['severity']): string {
-    return severity === 'unusual' ? '#a84112' : severity === 'notable' ? '#8a6500' : '#506784';
-  }
-
   function refreshFindingsButton(): void {
     if (!btnFindings) return;
-    btnFindings.style.display = currentStatsSummary ? 'flex' : 'none';
-    btnFindings.title = currentStatsSummary?.hasNotableFindings
-      ? 'Show findings (notable patterns found)'
-      : 'Show findings';
-    if (currentStatsSummary?.hasNotableFindings && !findingsOpen) {
+    const hasSummary = !!(summaryPanelEl ?? autoSummaryPanelEl);
+    btnFindings.style.display = (currentStatsSummary && hasSummary) ? 'flex' : 'none';
+    const panelOpen = autoSummaryPanelEl
+      ? autoSummaryPanelEl.style.display !== 'none'
+      : false;
+    if (currentStatsSummary?.hasNotableFindings && !panelOpen) {
       btnFindings.style.color = '#b7551a';
     } else if (!btnFindings.dataset.active) {
       btnFindings.style.color = CLR.icon;
     }
-  }
-
-  function rebuildFindingsPanel(): void {
-    if (!findingsPanel) return;
-    findingsPanel.innerHTML = '';
-    findingsPanel.style.display = currentStatsSummary && findingsOpen ? 'block' : 'none';
-    if (!currentStatsSummary) {
-      refreshFindingsButton();
-      return;
-    }
-
-    const header = document.createElement('div');
-    Object.assign(header.style, {
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px',
-    });
-    const headerTitle = document.createElement('span');
-    headerTitle.textContent = 'Findings';
-    Object.assign(headerTitle.style, { fontSize: '12px', fontWeight: '700', color: '#1f2f43' });
-    const headerClose = document.createElement('button');
-    headerClose.type = 'button';
-    headerClose.textContent = '\xD7';
-    headerClose.title = 'Close';
-    Object.assign(headerClose.style, {
-      background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px',
-      lineHeight: '1', color: '#66788a', padding: '0 2px',
-    });
-    headerClose.addEventListener('click', () => {
-      findingsOpen = false;
-      if (btnFindings) tbSetActive?.(btnFindings, false);
-      rebuildFindingsPanel();
-    });
-    header.appendChild(headerTitle);
-    header.appendChild(headerClose);
-    findingsPanel.appendChild(header);
-
-    if (currentStatsSummary.findings.length > 0) {
-      const reportBtn = document.createElement('button');
-      reportBtn.type = 'button';
-      reportBtn.textContent = 'Open Report';
-      Object.assign(reportBtn.style, {
-        background: 'none', border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
-        cursor: 'pointer', fontSize: '11px', color: '#2a3f5f', padding: '3px 8px',
-        marginBottom: '6px', alignSelf: 'flex-start',
-      });
-      reportBtn.addEventListener('click', () => openHtmlReport(renderFindingsReportHtml(currentStatsSummary!)));
-      findingsPanel.appendChild(reportBtn);
-    }
-
-    if (currentStatsSummary.findings.length === 0) {
-      const empty = document.createElement('div');
-      empty.textContent = 'No significant findings';
-      Object.assign(empty.style, { fontSize: '12px', color: '#66788a' });
-      findingsPanel.appendChild(empty);
-      refreshFindingsButton();
-      return;
-    }
-
-    const severityOrder: StatsFinding['severity'][] = ['unusual', 'notable', 'info'];
-    const severityLabel: Record<StatsFinding['severity'], string> = {
-      unusual: 'Unusual',
-      notable: 'Notable',
-      info:    'Informational',
-    };
-    const grouped = new Map<StatsFinding['severity'], StatsFinding[]>(
-      severityOrder.map(s => [s, []])
-    );
-    for (const finding of currentStatsSummary.findings) {
-      grouped.get(finding.severity)!.push(finding);
-    }
-    let firstGroup = true;
-    for (const severity of severityOrder) {
-      const group = grouped.get(severity)!;
-      if (!group.length) continue;
-
-      if (!firstGroup) {
-        const divider = document.createElement('div');
-        Object.assign(divider.style, { height: '1px', background: CLR.separator, margin: '4px 0' });
-        findingsPanel.appendChild(divider);
-      }
-      firstGroup = false;
-
-      const groupLabel = document.createElement('div');
-      groupLabel.textContent = severityLabel[severity];
-      Object.assign(groupLabel.style, {
-        fontSize: '10px', fontWeight: '700', letterSpacing: '0.05em',
-        textTransform: 'uppercase', color: findingsSeverityColor(severity),
-        padding: '2px 0',
-      });
-      findingsPanel.appendChild(groupLabel);
-
-      for (const finding of group) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.dataset.wmapFinding = finding.id;
-        row.textContent = finding.summary;
-        const isActive = activeFindingId === finding.id;
-        Object.assign(row.style, {
-          border:      `1px solid ${CLR.menuBorder}`,
-          borderLeft:  `3px solid ${findingsSeverityColor(finding.severity)}`,
-          background:  isActive ? CLR.bgActive : '#fff',
-          borderRadius:'6px',
-          padding:     '8px 10px',
-          textAlign:   'left',
-          fontSize:    '12px',
-          fontWeight:  isActive ? '600' : '400',
-          color:       '#2a3f5f',
-          cursor:      'pointer',
-          width:       '100%',
-        });
-        row.addEventListener('click', () => applyFindingHighlight(finding, row));
-        findingsPanel.appendChild(row);
-      }
-    }
-
-    refreshFindingsButton();
   }
 
   if (showToolbar) {
@@ -455,34 +417,12 @@ export function renderWaferMap(
         pointerEvents: 'none',
       });
 
-      findingsPanel = document.createElement('div');
-      findingsPanel.dataset.wmapFindingsPanel = '1';
-      Object.assign(findingsPanel.style, {
-        position: 'absolute',
-        top: '40px',
-        right: '4px',
-        width: '320px',
-        maxWidth: 'calc(100% - 8px)',
-        maxHeight: 'min(50vh, 360px)',
-        overflowY: 'auto',
-        background: '#fff',
-        border: `1px solid ${CLR.menuBorder}`,
-        borderRadius: '8px',
-        boxShadow: '0 8px 20px rgba(0,0,0,0.16)',
-        zIndex: '1001',
-        padding: '10px',
-        display: 'none',
-      });
-      parent.appendChild(findingsPanel);
-
       // ── Toolbar helpers ──────────────────────────────────────────────────
       // Use shared tooltip if available, otherwise create one for the toolbar.
       const tbTooltip = tooltip ?? createTooltip();
       const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tbTooltip);
       tbCloseOpenMenu = closeOpenMenu;
       tbGetOpenMenu   = getOpenMenu;
-      tbSetOpenMenu   = setOpenMenu;
-      tbSetActive     = setActive;
       // Single persistent listener — closes any open dropdown on outside click.
       document.addEventListener('click', closeOpenMenu, true);
 
@@ -598,13 +538,20 @@ export function renderWaferMap(
           // Only include modes for which data is actually present.
           const dies     = currentScene.dies;
           const testDefs = currentScene.testDefs;
-          const hasValues = dies.some(d => d.values?.length);
+          const hasValues = dies.some(d =>
+            (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
+            (d.values?.length ?? 0) > 0
+          );
           const hasHbin   = dies.some(d => d.hbin != null);
           const hasSbin   = dies.some(d => d.sbin != null);
 
           const testEntries: ModeEntry[] = hasValues
             ? (testDefs?.length
-                ? testDefs.map(t => ({ plotMode: 'value' as PlotMode, testIndex: t.index, label: t.unit ? `${t.name} (${t.unit})` : t.name }))
+                ? testDefs.map(t => ({
+                    plotMode: 'value' as PlotMode,
+                    testIndex: t.index ?? t.testNumber ?? 0,
+                    label: t.unit ? `${t.name} (${t.unit})` : t.name,
+                  }))
                 : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
             : [];
           const binEntries: ModeEntry[] = [
@@ -812,17 +759,29 @@ export function renderWaferMap(
         setActive(btnFlipH,     !!sceneOpts.flipX);
         setActive(btnFlipV,     !!sceneOpts.flipY);
 
-        // Findings button — only shown when a stats summary is provided.
-        if (showFindingsPanel) {
-          btnFindings = makeBtn('findings', 'Show findings', () => {
-            findingsOpen = !findingsOpen;
-            setActive(btnFindings!, findingsOpen);
-            rebuildFindingsPanel();
+        // Findings button — toggles the summary panel.
+        // When statsSummary is provided with no explicit summaryPanel option, auto-mount a hidden panel.
+        if (currentStatsSummary && !summaryPanelOpts) {
+          const clearance = 44;
+          autoSummaryPanelEl = createSummaryPanelEl('right', clearance);
+          autoSummaryPanelEl.style.display = 'none';
+          const next = canvas.nextSibling;
+          autoSummaryPanelWrapper = wrapWithSummaryPanel(canvas, autoSummaryPanelEl, 'right');
+          parent.insertBefore(autoSummaryPanelWrapper, next);
+          renderAutoSummaryPanel();
+        }
+        if (currentStatsSummary) {
+          btnFindings = makeBtn('findings', 'Summary panel', () => {
+            const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
+            if (!panelEl) return;
+            const isOpen = panelEl.style.display !== 'none';
+            panelEl.style.display = isOpen ? 'none' : 'block';
+            setActive(btnFindings!, !isOpen);
+            refreshFindingsButton();
           });
           toolbar.appendChild(makeSep());
           toolbar.appendChild(btnFindings);
           refreshFindingsButton();
-          rebuildFindingsPanel();
         }
       }
 
@@ -1361,6 +1320,7 @@ export function renderWaferMap(
       currentDies = newDies;
       rebuildScene();
       render();
+      if (summaryPanelEl) renderSummaryPanel();
     },
 
     setOptions(partial: Partial<WaferSceneOptions>): void {
@@ -1392,7 +1352,12 @@ export function renderWaferMap(
 
     setStatsSummary(summary: StatsSummary | undefined): void {
       currentStatsSummary = summary;
-      rebuildFindingsPanel();
+      if (summaryPanelEl) {
+        renderSummaryPanel();
+      } else if (autoSummaryPanelEl) {
+        renderAutoSummaryPanel();
+      }
+      refreshFindingsButton();
     },
 
     destroy(): void {
@@ -1411,6 +1376,8 @@ export function renderWaferMap(
       dprMediaQuery.removeEventListener('change', onDprChange);
       tooltip?.remove();
       toolbar?.remove();
+      summaryPanelWrapper?.remove();
+      autoSummaryPanelWrapper?.remove();
       canvas.style.cursor = '';
     },
   };

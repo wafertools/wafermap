@@ -23,7 +23,19 @@ export interface DieResult {
   x: number;
   /** Die grid Y position (prober step coordinate). */
   y: number;
-  /** Measured test values — one entry per test (e.g. [idsat, vth, ioff]). */
+  /**
+   * Test values keyed by test number — a stable per-test identity such as
+   * STDF TEST_NUM or an equivalent application-defined integer.
+   * Preferred over the deprecated `values` array because it is unaffected by
+   * test ordering changes in the test program.
+   * Example: `{ 1050: 1.42e-3, 1060: 0.487, 1070: 8.3e-12 }`
+   */
+  testValues?: Record<number, number>;
+  /**
+   * @deprecated Use `testValues` instead.
+   * Positional array of test measurements — fragile when tests are added,
+   * removed, or reordered between runs.
+   */
   values?: number[];
   /** Hard bin assignment (physical sort result). */
   hbin?: number;
@@ -144,13 +156,25 @@ export interface LotStackConfig {
 }
 
 /**
- * Metadata for one test measurement — maps to `die.values[index]`.
+ * Metadata for one test measurement.
  * Provides a human-readable name and optional unit for display in tooltips,
  * the colorbar, and the mode selector.
+ *
+ * At least one of `testNumber` or `index` must be set.
  */
 export interface TestDef {
-  /** Index into `die.values[]` that this definition describes. */
-  index: number;
+  /**
+   * Stable per-test identity — an application-defined integer that uniquely
+   * identifies this test within a test program (for example, STDF TEST_NUM).
+   * Preferred over `index` because it is unaffected by test ordering changes.
+   */
+  testNumber?: number;
+  /**
+   * @deprecated Use `testNumber` instead.
+   * Positional index into the deprecated `die.values[]` array.
+   * Required only when using the deprecated `values` field.
+   */
+  index?: number;
   /** Human-readable test name, e.g. `"Idsat"` or `"Vth"`. */
   name: string;
   /** Physical unit string, e.g. `"A"`, `"V"`, `"Ω"`. Shown in tooltip and colorbar. */
@@ -431,34 +455,36 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): Die
     const y = Number(parts[1]);
 
     const primaryBin = (pt: DieResult) => pt.hbin;
-    const primaryVal = (pt: DieResult): number | undefined => pt.values?.[0];
+    // Primary value: testValues[0] if present (lot-stack aggregated scalar), else values[0].
+    const primaryVal = (pt: DieResult): number | undefined =>
+      pt.testValues?.[0] ?? pt.values?.[0];
 
     if (method === 'countBin' && targetBin !== undefined) {
-      result.push({ x, y, values: [points.filter(p => primaryBin(p) === targetBin).length] });
+      result.push({ x, y, testValues: { 0: points.filter(p => primaryBin(p) === targetBin).length } });
 
     } else if (method === 'percent' && targetBin !== undefined) {
       result.push({
         x, y,
-        values: [(points.filter(p => primaryBin(p) === targetBin).length / totalWafers) * 100],
+        testValues: { 0: (points.filter(p => primaryBin(p) === targetBin).length / totalWafers) * 100 },
       });
 
     } else if (method === 'mean') {
       const vals = points.map(primaryVal).filter((v): v is number => v !== undefined);
-      if (vals.length) result.push({ x, y, values: [vals.reduce((a, b) => a + b, 0) / vals.length] });
+      if (vals.length) result.push({ x, y, testValues: { 0: vals.reduce((a, b) => a + b, 0) / vals.length } });
 
     } else if (method === 'median') {
       const vals = points
         .map(primaryVal)
         .filter((v): v is number => v !== undefined)
         .sort((a, b) => a - b);
-      if (vals.length) result.push({ x, y, values: [medianOf(vals)] });
+      if (vals.length) result.push({ x, y, testValues: { 0: medianOf(vals) } });
 
     } else if (method === 'stddev') {
       const vals = points.map(primaryVal).filter((v): v is number => v !== undefined);
       if (vals.length > 1) {
         const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
         const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1);
-        result.push({ x, y, values: [Math.sqrt(variance)] });
+        result.push({ x, y, testValues: { 0: Math.sqrt(variance) } });
       }
 
     } else if (method === 'mode') {
@@ -477,7 +503,9 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
   const totalDies = dies.length;
   const edgeExcludedDies = dies.filter(d => d.edgeExcluded).length;
   const filledDies = dies.filter(
-    d => (d.values?.length ?? 0) > 0 || d.hbin !== undefined || d.sbin !== undefined,
+    d => (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
+         (d.values?.length ?? 0) > 0 ||
+         d.hbin !== undefined || d.sbin !== undefined,
   ).length;
   return {
     filledDies,
@@ -572,21 +600,55 @@ function applyRetestPolicy(
   });
 }
 
+// ── Test value helpers ────────────────────────────────────────────────────────
+
+/**
+ * Read a test value from a die by test number.
+ * Falls back to `values[fallbackIndex]` when `testValues` is absent (deprecated path).
+ */
+export function getDieTestValue(die: Die, testNumber: number, fallbackIndex?: number): number | undefined {
+  if (die.testValues) return die.testValues[testNumber];
+  return fallbackIndex !== undefined ? die.values?.[fallbackIndex] : undefined;
+}
+
 // ── Data attachment ───────────────────────────────────────────────────────────
 
-function attachData(die: Die, pt: DieResult): Die {
-  return {
-    ...die,
-    ...(pt.values      !== undefined ? { values:      pt.values      } : {}),
-    ...(pt.hbin        !== undefined ? { hbin:        pt.hbin        } : {}),
-    ...(pt.sbin        !== undefined ? { sbin:        pt.sbin        } : {}),
-    ...(pt.retestCount !== undefined ? { retestCount: pt.retestCount } : {}),
-  };
+function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
+  const base: Partial<Die> = {};
+  if (pt.hbin        !== undefined) base.hbin        = pt.hbin;
+  if (pt.sbin        !== undefined) base.sbin        = pt.sbin;
+  if (pt.retestCount !== undefined) base.retestCount = pt.retestCount;
+
+  // Preferred path: testValues map supplied directly — use as-is.
+  if (pt.testValues) {
+    return { ...die, ...base, testValues: pt.testValues };
+  }
+
+  // Deprecated path: convert positional values[] to testValues using TestDef mappings.
+  if (pt.values?.length) {
+    base.values = pt.values; // keep for backwards-compat reads
+    const testValues: Record<number, number> = {};
+    if (testDefs?.length) {
+      for (const def of testDefs) {
+        const key = def.testNumber ?? def.index;
+        const idx = def.index ?? def.testNumber;
+        if (key !== undefined && idx !== undefined && pt.values[idx] !== undefined) {
+          testValues[key] = pt.values[idx]!;
+        }
+      }
+    } else {
+      // No testDefs — key by positional index.
+      pt.values.forEach((v, i) => { testValues[i] = v; });
+    }
+    return { ...die, ...base, testValues };
+  }
+
+  return { ...die, ...base };
 }
 
 function autoPlotMode(results: DieResult[], opts: SceneOptions): PlotMode {
   if (opts.plotMode) return opts.plotMode;
-  const hasValues = results.some(d => (d.values?.length ?? 0) > 0);
+  const hasValues = results.some(d => (d.testValues && Object.keys(d.testValues).length > 0) || (d.values?.length ?? 0) > 0);
   return hasValues ? 'value' : 'hardBin';
 }
 
@@ -669,7 +731,7 @@ export function buildWaferMap(
       const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
       dies = dies.map(die => {
         const pt = lookup.get(`${die.i},${die.j}`);
-        return pt ? attachData(die, pt) : die;
+        return pt ? attachData(die, pt, norm.testDefs) : die;
       });
     }
 
@@ -748,7 +810,7 @@ export function buildWaferMap(
     const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
     dies = dies.map(die => {
       const pt = lookup.get(`${die.i + offsetX},${die.j + offsetY}`);
-      return pt ? attachData(die, pt) : die;
+      return pt ? attachData(die, pt, norm.testDefs) : die;
     });
   }
 

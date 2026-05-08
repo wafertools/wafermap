@@ -39,11 +39,11 @@ test('buildWaferMap applies retest policy and chooses plot mode from the data', 
   assert.equal(first.scene.plotMode, 'value');
   assert.equal(last.scene.plotMode, 'value');
 
-  assert.deepEqual(findDie(first, 0, 0)?.values, [0.4]);
+  assert.deepEqual(findDie(first, 0, 0)?.testValues, { 0: 0.4 });
   assert.equal(findDie(first, 0, 0)?.hbin, 1);
   assert.equal(findDie(first, 0, 0)?.retestCount, 2);
 
-  assert.deepEqual(findDie(last, 0, 0)?.values, [0.9]);
+  assert.deepEqual(findDie(last, 0, 0)?.testValues, { 0: 0.9 });
   assert.equal(findDie(last, 0, 0)?.hbin, 2);
   assert.equal(findDie(last, 0, 0)?.retestCount, 2);
 
@@ -75,7 +75,7 @@ test('buildWaferMap accepts explicit dies and enables reticles by default when c
   assert.equal(result.units, 'mm');
   assert.equal(result.wafer.metadata?.lot, 'LOT-9');
   assert.equal(result.scene.metadata?.lot, 'LOT-9');
-  assert.deepEqual(findDie(result, 0, 0)?.values, [1.23]);
+  assert.deepEqual(findDie(result, 0, 0)?.testValues, { 0: 1.23 });
   assert.ok(result.scene.overlays.some((overlay) => overlay.kind === 'reticle'));
   assert.equal(result.dataCoverage.totalDies, 2);
 });
@@ -102,21 +102,21 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
     dieConfig: { width: 10, height: 10 },
   });
   assert.equal(mean.scene.plotMode, 'value');
-  assert.deepEqual(mean.dies.filter((die) => die.values).map((die) => die.values?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [3, 9]);
+  assert.deepEqual(mean.dies.filter((die) => die.testValues).map((die) => die.testValues?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [3, 9]);
 
   const median = buildWaferMap({
     lotStack: { results: lotStack, method: 'median' },
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.deepEqual(median.dies.filter((die) => die.values).map((die) => die.values?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [3, 9]);
+  assert.deepEqual(median.dies.filter((die) => die.testValues).map((die) => die.testValues?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [3, 9]);
 
   const stddev = buildWaferMap({
     lotStack: { results: lotStack, method: 'stddev' },
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.deepEqual(stddev.dies.filter((die) => die.values).map((die) => die.values?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
+  assert.deepEqual(stddev.dies.filter((die) => die.testValues).map((die) => die.testValues?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
 
   const countBin = buildWaferMap({
     lotStack: { results: lotStack, method: 'countBin', targetBin: 2 },
@@ -124,14 +124,14 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
     dieConfig: { width: 10, height: 10 },
   });
   assert.equal(countBin.scene.plotMode, 'value');
-  assert.deepEqual(countBin.dies.filter((die) => die.values).map((die) => die.values?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
+  assert.deepEqual(countBin.dies.filter((die) => die.testValues).map((die) => die.testValues?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
 
   const percent = buildWaferMap({
     lotStack: { results: lotStack, method: 'percent', targetBin: 2 },
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   });
-  percent.dies.filter((die) => die.values).forEach((die) => approxEqual(die.values?.[0] ?? 0, 66.6666666667, 1e-6));
+  percent.dies.filter((die) => die.testValues).forEach((die) => approxEqual(die.testValues?.[0] ?? 0, 66.6666666667, 1e-6));
 
   const mode = buildWaferMap({
     lotStack: { results: lotStack, method: 'mode' },

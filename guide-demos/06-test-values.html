@@ -31,7 +31,7 @@
     </div>
     <div class="ctrl-sep"></div>
     <span style="font-size:12px; color:var(--muted)">
-      testDefs give each values[] slot a name and unit — tooltips, colorbar, and mode menu all update
+      testDefs give each testValues entry a name and unit — tooltips, colorbar, and mode menu all update
     </span>
   </div>
 
@@ -80,8 +80,8 @@
     import { renderWaferMap } from 'wafermap/canvas-adapter';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS, HBIN_DEFS } from './data.js';
 
-    // TEST_DEFS: [{ index:0, name:'Idsat', unit:'A' }, { index:1, name:'Vth', unit:'V' }, ...]
-    // These give the toolbar mode menu named entries, tooltips show "Idsat: 1.23 mA", etc.
+    // TEST_DEFS: [{ testNumber:1050, name:'Idsat', unit:'A' }, { testNumber:1060, name:'Vth', unit:'V' }, ...]
+    // testNumber matches the key used in DieResult.testValues — gives named toolbar entries, tooltips, colorbar labels.
     const { wafer, dies, scene } = buildWaferMap({
       results:     makeResults({ seed: 5, quadrant: true }),
       waferConfig: WAFER_CONFIG,
@@ -96,9 +96,9 @@
       'Exponential growth toward the edge. Higher Ioff in the NE quadrant correlates with elevated Vth.',
     ];
 
-    // Compute per-test statistics from the dies array
-    function testStats(dies, idx) {
-      const vals = dies.map(d => d.values?.[idx]).filter(v => v != null);
+    // Compute per-test statistics from the dies array using testNumber as key
+    function testStats(dies, testNumber) {
+      const vals = dies.map(d => d.testValues?.[testNumber]).filter(v => v != null);
       if (!vals.length) return {};
       vals.sort((a, b) => a - b);
       const min  = vals[0];
@@ -122,7 +122,7 @@
 
     function updatePanel(idx) {
       const def   = TEST_DEFS[idx];
-      const stats = testStats(dies, idx);
+      const stats = testStats(dies, def.testNumber);
       document.getElementById('test-name').textContent   = def.name;
       document.getElementById('test-unit').textContent   = def.unit;
       document.getElementById('test-min').textContent    = fmt(stats.min,  def.unit);
@@ -130,7 +130,7 @@
       document.getElementById('test-mean').textContent   = fmt(stats.mean, def.unit);
       document.getElementById('test-median').textContent = fmt(stats.med,  def.unit);
       document.getElementById('def-box').textContent =
-        `testDefs[\n  { index:${def.index}, name:'${def.name}',\n    unit:'${def.unit}' }\n]`;
+        `testDefs[\n  { testNumber:${def.testNumber}, name:'${def.name}',\n    unit:'${def.unit}' }\n]`;
       document.getElementById('pattern-box').textContent = patterns[idx];
     }
 

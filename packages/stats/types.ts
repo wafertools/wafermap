@@ -123,6 +123,14 @@ export interface AnalyzeWaferMapOptions {
   enableSoftBinAnalysis?: boolean;
   enableTestValueAnalysis?: boolean;
   enableReticlePositionAnalysis?: boolean;
+  /**
+   * Restrict test value analysis to a specific subset of test numbers.
+   * When omitted and more than 100 tests are present in the data, test value
+   * analysis is skipped automatically with a console warning — pass this option
+   * to analyse a specific subset in that case.
+   * Example: `testNumbers: [1050, 1060, 1070]`
+   */
+  testNumbers?: number[];
 }
 
 export type AnalyzeWaferMapInput = WaferMapInput | WaferMapResult;

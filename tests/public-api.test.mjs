@@ -138,17 +138,17 @@ test('aggregation, inference, classification, formatting, and color helpers are 
     ],
   ];
 
-  assert.deepEqual(aggregateValues(diesByWafer, 'mean').find((die) => die.i === 0 && die.j === 0)?.values, [3]);
-  assert.deepEqual(aggregateValues(diesByWafer, 'median').find((die) => die.i === 0 && die.j === 0)?.values, [3]);
+  assert.deepEqual(aggregateValues(diesByWafer, 'mean').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 3 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'median').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 3 });
   approxEqual(
-    aggregateValues(diesByWafer, 'stddev').find((die) => die.i === 0 && die.j === 0)?.values?.[0] ?? 0,
+    aggregateValues(diesByWafer, 'stddev').find((die) => die.i === 0 && die.j === 0)?.testValues?.[0] ?? 0,
     Math.sqrt(4),
   );
-  assert.deepEqual(aggregateValues(diesByWafer, 'min').find((die) => die.i === 0 && die.j === 0)?.values, [1]);
-  assert.deepEqual(aggregateValues(diesByWafer, 'max').find((die) => die.i === 0 && die.j === 0)?.values, [5]);
-  assert.deepEqual(aggregateValues(diesByWafer, 'count').find((die) => die.i === 0 && die.j === 0)?.values, [3]);
+  assert.deepEqual(aggregateValues(diesByWafer, 'min').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 1 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'max').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 5 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'count').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 3 });
   assert.deepEqual(getUniqueBins(diesByWafer[0]), [1, 2]);
-  assert.deepEqual(aggregateBinCounts(diesByWafer, 2).find((die) => die.i === 0 && die.j === 0)?.values, [2]);
+  assert.deepEqual(aggregateBinCounts(diesByWafer, 2).find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 2 });
 
   assert.deepEqual(classifyDie({ id: '1_1', i: 1, j: 1, x: 9, y: 9, width: 1, height: 1 }, createWafer({ diameter: 20 })), { ring: 4, quadrant: 'NE' });
   assert.equal(getRingLabel(1, 1), 'Full Wafer');

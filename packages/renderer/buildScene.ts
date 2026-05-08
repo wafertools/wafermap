@@ -6,9 +6,19 @@ import { rotatePoint } from '../core/transforms.js';
 import { contrastTextColor } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
 import type { TestDef, BinDef } from './buildWaferMap.js';
+import { getDieTestValue } from './buildWaferMap.js';
 import { fmt, fmtColorbarAxis } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
+
+/** Resolve a toolbar testIndex cursor to the canonical test number for getDieTestValue. */
+function resolveTestNumber(testIndex: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
+  const def = testDefs?.find(t => (t.index ?? t.testNumber) === testIndex);
+  return {
+    testNumber:    def?.testNumber ?? def?.index ?? testIndex,
+    fallbackIndex: def?.index     ?? testIndex,
+  };
+}
 
 export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins';
 
@@ -284,8 +294,8 @@ function buildHoverText(
   const lines: string[] = [`Die (${die.i}, ${die.j})`];
 
   if (plotMode === 'stackedValues') {
-    // Show only the aggregated test value for this card's parameter (values[0]).
-    const v = die.values?.[0];
+    // Aggregated scalar is stored in testValues[0] (preferred) or values[0] (deprecated).
+    const v = getDieTestValue(die, 0, 0);
     if (v !== undefined) {
       const def   = testDefs?.[0];
       const name  = def?.name ?? 'Value';
@@ -293,8 +303,7 @@ function buildHoverText(
       lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
     }
   } else if (plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
-    // Show count and percentage for this card's bin (values[0] = count, hbin/sbin = targetBin).
-    const count = die.values?.[0];
+    const count = getDieTestValue(die, 0, 0);
     const bin   = plotMode === 'stackedSoftBins' ? die.sbin : die.hbin;
     if (count !== undefined) {
       const pct     = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
@@ -307,8 +316,25 @@ function buildHoverText(
       lines.push(`${binLabel}: ${count}${pct}`);
     }
   } else {
-    // Standard modes: show all values with test names, then bins.
-    if (die.values?.length) {
+    // Standard modes: show all test values with names, then bins.
+    if (die.testValues && Object.keys(die.testValues).length > 0) {
+      if (testDefs?.length) {
+        const parts = testDefs.map(def => {
+          const tn  = def.testNumber ?? def.index;
+          if (tn === undefined) return null;
+          const v = getDieTestValue(die, tn, def.index);
+          if (v === undefined) return null;
+          return `${def.name}: ${fmt(v, def.unit, fallbackFormat)}`;
+        }).filter((s): s is string => s !== null);
+        if (parts.length) lines.push(parts.join('<br>'));
+      } else {
+        const parts = Object.entries(die.testValues).map(([k, v]) =>
+          `Test ${k}: ${fmt(v, undefined, fallbackFormat)}`
+        );
+        lines.push(`Values: ${parts.join(' / ')}`);
+      }
+    } else if (die.values?.length) {
+      // Deprecated fallback.
       if (testDefs?.length) {
         const parts = die.values.map((v, i) => {
           const def   = testDefs.find(t => t.index === i);
@@ -375,15 +401,16 @@ export function generateTextOverlay(
   const { plotMode, colorFns, normalize, testIndex, valueRange, testDefs, fallbackFormat } = options;
 
   // Build a tick formatter matched to the colorbar scale so die labels are consistent.
-  const testDef = testDefs?.find(t => t.index === testIndex);
+  const testDef = testDefs?.find(t => (t.index ?? t.testNumber) === testIndex);
   const { tickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
+  const { testNumber: tn, fallbackIndex: fi } = resolveTestNumber(testIndex, testDefs);
 
   return dies.flatMap((die) => {
     let text = '';
     let color = '#111111';
 
     if (plotMode === 'value') {
-      const v = die.values?.[testIndex];
+      const v = getDieTestValue(die, tn, fi);
       if (v === undefined) return [];
       text = formatValueLabel([v], tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(v)));
@@ -393,8 +420,8 @@ export function generateTextOverlay(
       text = String(bin);
       color = contrastTextColor(colorFns.forBin(bin));
     } else {
-      // stackedValues / stackedBins: single aggregated value in values[testIndex] or values[0]
-      const v = die.values?.[testIndex] ?? die.values?.[0];
+      // stackedValues / stackedBins: aggregated scalar in testValues[0] or values[0]
+      const v = getDieTestValue(die, 0, 0);
       if (v === undefined) return [];
       text = formatValueLabel([v], tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(v)));
@@ -576,7 +603,8 @@ function pushDieRectangles(
   colorFns: ColorFns,
   highlightBin: number | undefined,
   normalize: (v: number) => number,
-  testIndex: number,
+  testNumber: number,
+  fallbackIndex: number,
   binDefMap: Map<number, BinDef> | null,
 ): void {
   const rw = die.width - gap;
@@ -614,7 +642,7 @@ function pushDieRectangles(
   }
 
   if (plotMode === 'value') {
-    const value = die.values?.[testIndex];
+    const value = getDieTestValue(die, testNumber, fallbackIndex);
     const fill = value !== undefined ? colorFns.forValue(normalize(value)) : '#d6d9dd';
     rectangles.push({
       x: die.x, y: die.y, width: rw, height: rh,
@@ -637,10 +665,8 @@ function pushDieRectangles(
     return;
   }
 
-  // stackedValues / stackedBins: lot-aggregated data, single colour per die.
-  // The caller pre-aggregates dies (aggregateValues / aggregateBinCounts) and
-  // passes them with values[0] holding the aggregated scalar. Render like 'value'.
-  const aggValue = die.values?.[testIndex] ?? die.values?.[0];
+  // stackedValues / stackedBins: aggregated scalar in testValues[0] (preferred) or values[0].
+  const aggValue = getDieTestValue(die, 0, 0);
   const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
   rectangles.push({
     x: die.x, y: die.y, width: rw, height: rh,
@@ -740,8 +766,12 @@ export function buildScene(
     forBin:   scheme.forBin,
   };
 
-  // Compute value range for normalization. Always range against values[testIndex] only
-  // (for stackedValues/stackedBins the aggregated scalar sits in values[0], testIndex=0).
+  // Resolve testIndex (toolbar cursor) → canonical test number for getDieTestValue.
+  const { testNumber: activeTestNumber, fallbackIndex: activeTestFallback } =
+    resolveTestNumber(testIndex, testDefs);
+
+  // Compute value range for normalization.
+  // For stackedValues/stackedBins the aggregated scalar sits at testNumber=0.
   let vMin: number;
   let vMax: number;
   if (explicitRange) {
@@ -749,9 +779,10 @@ export function buildScene(
   } else {
     let lo = Infinity, hi = -Infinity;
     for (const die of dies) {
-      const vals = die.values ?? [];
-      const candidates = vals[testIndex] !== undefined ? [vals[testIndex]] : [];
-      for (const v of candidates) {
+      const v = plotMode === 'stackedValues' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins'
+        ? getDieTestValue(die, 0, 0)
+        : getDieTestValue(die, activeTestNumber, activeTestFallback);
+      if (v !== undefined) {
         if (v < lo) lo = v;
         if (v > hi) hi = v;
       }
@@ -791,7 +822,7 @@ export function buildScene(
     : dies;
 
   for (const tdie of transformedDies) {
-    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, testIndex, binDefMap);
+    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap);
     hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize) });
   }
 

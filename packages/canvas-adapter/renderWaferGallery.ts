@@ -8,8 +8,12 @@ import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
-import type { LotStatsSummary, StatsFinding } from '../stats/types.js';
-import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
+import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
+import type { SummaryPanelOptions } from './summaryPanel.js';
+import {
+  createSummaryPanelEl, renderLotSummaryContent, renderWaferSummaryContent,
+  buildWaferDetailHeader,
+} from './summaryPanel.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -50,10 +54,15 @@ export interface GalleryOptions {
    * Set to false when the host application manages mode switching itself.
    */
   showPlotModeSelector?:   boolean;
-  /** Precomputed lot-level stats summary — shows a findings panel in the control bar. */
+  /** Precomputed lot-level stats summary. Enables the summary panel toggle button in the control bar. */
   lotStatsSummary?:        LotStatsSummary;
-  /** Show the built-in lot findings panel toggle when stats are provided. Default true. */
-  showFindingsPanel?:      boolean;
+  /**
+   * When provided, renders a persistent summary panel alongside the gallery grid.
+   * The panel starts in lot-level state and drills down to wafer level when a card
+   * is clicked, with a back button to return to lot view.
+   * When active, the findings drawer is suppressed.
+   */
+  summaryPanel?:           SummaryPanelOptions;
 }
 
 export interface GalleryController {
@@ -82,7 +91,7 @@ export function renderWaferGallery(
   const cardPadding          = options.cardPadding          ?? 6;
   const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
   const showPlotModeSelector = options.showPlotModeSelector ?? true;
-  const showFindingsPanel    = options.showFindingsPanel    ?? true;
+  const summaryPanelOpts     = options.summaryPanel;
   let currentFallbackFormat  = options.fallbackFormat;
   let currentLotStats        = options.lotStatsSummary;
   let currentLegendStyle     = options.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
@@ -106,25 +115,22 @@ export function renderWaferGallery(
   let modalController: WaferCanvasController | null = null;
   let savedBodyOverflow = '';
 
-  // Findings state
-  let lotFindingsOpen        = false;
-  let activeLotFindingId: string | null = null;
   let btnLotFindings: HTMLButtonElement | null = null;
-  let lotFindingsPanel: HTMLDivElement  | null = null;
+  let activeLotFindingId: string | null = null;
   // Card highlight state: indices of cards to visually emphasise.
   let highlightedCardIndices = new Set<number>();
+
+  // Summary panel state
+  let gallerySummaryPanelEl: HTMLDivElement | null = null;
+  // null = lot-level view, number = wafer index drill-down
+  let gallerySummaryWaferIndex: number | null = null;
+  let gallerySummaryActiveFindingId: string | null = null;
 
   // ── Toolbar helpers ────────────────────────────────────────────────────────
 
   const tooltip = createTooltip();
   const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tooltip);
   document.addEventListener('click', closeOpenMenu, true);
-
-  // ── Lot findings helpers ───────────────────────────────────────────────────
-
-  function findingsSeverityColor(severity: StatsFinding['severity']): string {
-    return severity === 'unusual' ? '#a84112' : severity === 'notable' ? '#8a6500' : '#506784';
-  }
 
   function applyCardHighlight(indices: number[]): void {
     highlightedCardIndices = new Set(indices);
@@ -154,6 +160,120 @@ export function renderWaferGallery(
     }
   }
 
+  // ── Gallery summary panel ──────────────────────────────────────────────────
+
+  function renderGallerySummaryPanel(): void {
+    if (!gallerySummaryPanelEl) return;
+
+    if (gallerySummaryWaferIndex === null) {
+      // Lot-level view
+      if (!currentLotStats) {
+        gallerySummaryPanelEl.innerHTML = '';
+        return;
+      }
+      renderLotSummaryContent(gallerySummaryPanelEl, {
+        lotSummary: currentLotStats,
+        items:      originalItems,
+        hbinDefs:   sharedOpts.hbinDefs,
+        sbinDefs:   sharedOpts.sbinDefs,
+        testDefs:   sharedOpts.testDefs,
+        passBins:   [1],
+        ringCount:  sharedOpts.ringCount,
+        activeFindingId: gallerySummaryActiveFindingId,
+        onFindingClick: (finding, row) => {
+          if (gallerySummaryActiveFindingId === finding.id) {
+            gallerySummaryActiveFindingId = null;
+            clearCardHighlight();
+            clearDieZoneHighlight();
+            syncShared({ highlightBin: undefined });
+          } else {
+            gallerySummaryActiveFindingId = finding.id;
+            applyLotFindingHighlight(finding, row);
+          }
+          renderGallerySummaryPanel();
+        },
+      });
+    } else {
+      // Wafer-level view
+      const idx  = gallerySummaryWaferIndex;
+      const item = originalItems[idx];
+      if (!item) return;
+      const waferSummary: StatsSummary | undefined = item.statsSummary
+        ?? currentLotStats?.perWafer.find(pw => pw.waferIndex === idx)?.summary;
+      const yieldPct = waferSummary?.stats.yieldPercent ?? null;
+
+      gallerySummaryPanelEl.innerHTML = '';
+      const header = buildWaferDetailHeader(
+        item.label ?? `W${idx + 1}`,
+        yieldPct,
+        () => {
+          gallerySummaryWaferIndex     = null;
+          gallerySummaryActiveFindingId = null;
+          clearCardHighlight();
+          clearDieZoneHighlight();
+          renderGallerySummaryPanel();
+        },
+      );
+      gallerySummaryPanelEl.appendChild(header);
+
+      const content = document.createElement('div');
+      content.style.overflowY = 'auto';
+      content.style.flex = '1';
+      gallerySummaryPanelEl.appendChild(content);
+
+      renderWaferSummaryContent(content, {
+        wafer:        item.wafer,
+        dies:         item.dies,
+        yieldSummary: {
+          passDies:         0,
+          failDies:         0,
+          edgeExcludedDies: 0,
+          partialDies:      item.dies.filter(d => d.partial).length,
+          totalDies:        item.dies.filter(d => !d.partial && !d.edgeExcluded).length,
+          yieldPercent:     yieldPct,
+        },
+        dataCoverage: {
+          filledDies:       item.dies.filter(d => !d.partial).length,
+          totalDies:        item.dies.length,
+          edgeExcludedDies: item.dies.filter(d => d.edgeExcluded).length,
+          ratio:            1,
+        },
+        hbinDefs:       sharedOpts.hbinDefs,
+        sbinDefs:       sharedOpts.sbinDefs,
+        testDefs:       sharedOpts.testDefs,
+        statsSummary:   waferSummary,
+        activeFindingId: gallerySummaryActiveFindingId,
+        onFindingClick: (finding, row) => {
+          if (gallerySummaryActiveFindingId === finding.id) {
+            gallerySummaryActiveFindingId = null;
+            cardControllers[idx]?.clearSelection();
+            syncShared({ highlightBin: undefined });
+          } else {
+            gallerySummaryActiveFindingId = finding.id;
+            applyWaferFindingHighlight(idx, finding);
+          }
+          renderGallerySummaryPanel();
+          void row;
+        },
+      });
+    }
+  }
+
+  function applyWaferFindingHighlight(cardIndex: number, finding: StatsFinding): void {
+    clearDieZoneHighlight();
+    clearCardHighlight();
+    const { kind } = finding.highlight;
+    if (kind === 'bin') {
+      const dieKeys = finding.highlight.dieKeys;
+      if (dieKeys?.length) applyDieZoneHighlight(dieKeys, [cardIndex]);
+      syncShared({ highlightBin: finding.highlight.bin });
+    } else if (kind === 'region' || kind === 'dies') {
+      const dieKeys = finding.highlight.dieKeys;
+      if (dieKeys?.length) applyDieZoneHighlight(dieKeys, [cardIndex]);
+      syncShared({ highlightBin: undefined });
+    }
+  }
+
   function findingFingerprint(f: StatsFinding): string {
     return [
       f.variable.kind,
@@ -170,10 +290,6 @@ export function renderWaferGallery(
     clearCardHighlight();
     clearDieZoneHighlight();
     syncShared({ highlightBin: undefined });
-    lotFindingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-lot-finding]').forEach(btn => {
-      btn.style.background = '#fff';
-      btn.style.fontWeight = '400';
-    });
   }
 
   function applyLotFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
@@ -183,11 +299,6 @@ export function renderWaferGallery(
       return;
     }
 
-    // Clear previous highlight styling.
-    lotFindingsPanel?.querySelectorAll<HTMLButtonElement>('[data-wmap-lot-finding]').forEach(btn => {
-      btn.style.background = '#fff';
-      btn.style.fontWeight = '400';
-    });
     activeLotFindingId   = finding.id;
     row.style.background = CLR.bgActive;
     row.style.fontWeight = '600';
@@ -231,128 +342,16 @@ export function renderWaferGallery(
 
   function refreshLotFindingsButton(): void {
     if (!btnLotFindings) return;
-    btnLotFindings.style.display = currentLotStats ? 'flex' : 'none';
-    btnLotFindings.title = currentLotStats?.hasNotableFindings
-      ? 'Show lot findings (notable patterns found)'
-      : 'Show lot findings';
-    if (currentLotStats?.hasNotableFindings && !lotFindingsOpen) {
+    const hasSummaryPanel = !!gallerySummaryPanelEl;
+    btnLotFindings.style.display = (currentLotStats && hasSummaryPanel) ? 'flex' : 'none';
+    const panelOpen = gallerySummaryPanelEl
+      ? gallerySummaryPanelEl.style.display !== 'none'
+      : false;
+    if (currentLotStats?.hasNotableFindings && !panelOpen) {
       btnLotFindings.style.color = '#b7551a';
     } else if (!btnLotFindings.dataset.active) {
       btnLotFindings.style.color = CLR.icon;
     }
-  }
-
-  function rebuildLotFindingsPanel(): void {
-    if (!lotFindingsPanel) return;
-    lotFindingsPanel.innerHTML = '';
-    lotFindingsPanel.style.display = currentLotStats && lotFindingsOpen ? 'flex' : 'none';
-    if (!currentLotStats) {
-      refreshLotFindingsButton();
-      return;
-    }
-
-    const header = document.createElement('div');
-    Object.assign(header.style, {
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px',
-    });
-    const headerTitle = document.createElement('span');
-    headerTitle.textContent = 'Lot Findings';
-    Object.assign(headerTitle.style, { fontSize: '12px', fontWeight: '700', color: '#1f2f43' });
-    const headerClose = document.createElement('button');
-    headerClose.type = 'button';
-    headerClose.textContent = '\xD7';
-    headerClose.title = 'Close';
-    Object.assign(headerClose.style, {
-      background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px',
-      lineHeight: '1', color: '#66788a', padding: '0 2px',
-    });
-    headerClose.addEventListener('click', () => {
-      lotFindingsOpen = false;
-      setActive(btnLotFindings!, false);
-      rebuildLotFindingsPanel();
-    });
-    header.appendChild(headerTitle);
-    header.appendChild(headerClose);
-    lotFindingsPanel.appendChild(header);
-
-    const findings = currentLotStats.findings;
-
-    if (findings.length > 0) {
-      const reportBtn = document.createElement('button');
-      reportBtn.type = 'button';
-      reportBtn.textContent = 'Open Report';
-      Object.assign(reportBtn.style, {
-        background: 'none', border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
-        cursor: 'pointer', fontSize: '11px', color: '#2a3f5f', padding: '3px 8px',
-        marginBottom: '6px', alignSelf: 'flex-start',
-      });
-      reportBtn.addEventListener('click', () => openHtmlReport(renderFindingsReportHtml(currentLotStats!)));
-      lotFindingsPanel.appendChild(reportBtn);
-    }
-
-    if (findings.length === 0) {
-      const empty = document.createElement('div');
-      empty.textContent = 'No significant lot-level findings';
-      Object.assign(empty.style, { fontSize: '12px', color: '#66788a' });
-      lotFindingsPanel.appendChild(empty);
-      refreshLotFindingsButton();
-      return;
-    }
-
-    const severityOrder: StatsFinding['severity'][] = ['unusual', 'notable', 'info'];
-    const severityLabel: Record<StatsFinding['severity'], string> = {
-      unusual: 'Unusual', notable: 'Notable', info: 'Informational',
-    };
-    const grouped = new Map<StatsFinding['severity'], StatsFinding[]>(
-      severityOrder.map(s => [s, []])
-    );
-    for (const finding of findings) grouped.get(finding.severity)!.push(finding);
-
-    let firstGroup = true;
-    for (const severity of severityOrder) {
-      const group = grouped.get(severity)!;
-      if (!group.length) continue;
-
-      if (!firstGroup) {
-        const divider = document.createElement('div');
-        Object.assign(divider.style, { height: '1px', background: CLR.separator, margin: '4px 0' });
-        lotFindingsPanel.appendChild(divider);
-      }
-      firstGroup = false;
-
-      const groupLabel = document.createElement('div');
-      groupLabel.textContent = severityLabel[severity];
-      Object.assign(groupLabel.style, {
-        fontSize: '10px', fontWeight: '700', letterSpacing: '0.05em',
-        textTransform: 'uppercase', color: findingsSeverityColor(severity), padding: '2px 0',
-      });
-      lotFindingsPanel.appendChild(groupLabel);
-
-      for (const finding of group) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.dataset.wmapLotFinding = finding.id;
-        const isActive = activeLotFindingId === finding.id;
-        row.textContent = finding.summary;
-        Object.assign(row.style, {
-          border:       `1px solid ${CLR.menuBorder}`,
-          borderLeft:   `3px solid ${findingsSeverityColor(finding.severity)}`,
-          background:   isActive ? CLR.bgActive : '#fff',
-          borderRadius: '6px',
-          padding:      '8px 10px',
-          textAlign:    'left',
-          fontSize:     '12px',
-          fontWeight:   isActive ? '600' : '400',
-          color:        '#2a3f5f',
-          cursor:       'pointer',
-          width:        '100%',
-        });
-        row.addEventListener('click', () => applyLotFindingHighlight(finding, row));
-        lotFindingsPanel.appendChild(row);
-      }
-    }
-
-    refreshLotFindingsButton();
   }
 
   // ── Gallery control bar ────────────────────────────────────────────────────
@@ -384,7 +383,10 @@ export function renderWaferGallery(
     // in stacked modes, which don't accurately reflect the full data availability.
     const dies      = originalItems.flatMap(it => it.dies);
     const testDefs  = sharedOpts.testDefs;
-    const hasValues = dies.some(d => d.values?.length);
+    const hasValues = dies.some(d =>
+      (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
+      (d.values?.length ?? 0) > 0
+    );
     const hasHbin   = dies.some(d => d.hbin != null);
     const hasSbin   = dies.some(d => d.sbin != null);
 
@@ -409,7 +411,11 @@ export function renderWaferGallery(
 
     const testEntries: ModeEntry[] = hasValues
       ? (testDefs?.length
-          ? testDefs.map(t => ({ plotMode: 'value' as PlotMode, testIndex: t.index, label: t.unit ? `${t.name} (${t.unit})` : t.name }))
+          ? testDefs.map(t => ({
+              plotMode: 'value' as PlotMode,
+              testIndex: t.index ?? t.testNumber ?? 0,
+              label: t.unit ? `${t.name} (${t.unit})` : t.name,
+            }))
           : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
       : [];
     const binEntries: ModeEntry[] = [
@@ -598,11 +604,15 @@ export function renderWaferGallery(
   barEl.appendChild(makeSep());
   barEl.appendChild(btnDownloadAll);
 
-  if (showFindingsPanel) {
-    btnLotFindings = makeBtn('findings', 'Show lot findings', () => {
-      lotFindingsOpen = !lotFindingsOpen;
-      setActive(btnLotFindings!, lotFindingsOpen);
-      rebuildLotFindingsPanel();
+  // Findings button — toggles the gallery summary panel.
+  // Shown when lotStatsSummary is provided (panel may be explicit or auto-mounted below).
+  if (currentLotStats) {
+    btnLotFindings = makeBtn('findings', 'Summary panel', () => {
+      if (!gallerySummaryPanelEl) return;
+      const isOpen = gallerySummaryPanelEl.style.display !== 'none';
+      gallerySummaryPanelEl.style.display = isOpen ? 'none' : 'flex';
+      setActive(btnLotFindings!, !isOpen);
+      refreshLotFindingsButton();
     });
     barEl.appendChild(makeSep());
     barEl.appendChild(btnLotFindings);
@@ -658,32 +668,36 @@ export function renderWaferGallery(
     gap:                     '12px',
   });
 
-  // ── Lot findings side drawer ───────────────────────────────────────────────
-
-  if (showFindingsPanel) {
-    lotFindingsPanel = document.createElement('div');
-    Object.assign(lotFindingsPanel.style, {
-      display:    'none',
-      flexDirection: 'column',
-      gap:        '6px',
-      background: '#fff',
-      border:     `1px solid ${CLR.menuBorder}`,
-      borderRadius: '8px',
-      boxShadow:  '0 4px 12px rgba(0,0,0,0.12)',
-      padding:    '10px',
-      width:      '240px',
-      flexShrink: '0',
-      overflowY:  'auto',
-      maxHeight:  'calc(100vh - 120px)',
-      boxSizing:  'border-box',
-      position:   'sticky',
-      top:        '8px',
-    });
-    refreshLotFindingsButton();
+  // Build gallery summary panel.
+  // Explicit summaryPanel option: always visible. Auto-mount when lotStatsSummary provided: hidden by default.
+  if (summaryPanelOpts) {
+    const placement = summaryPanelOpts.placement ?? 'right';
+    gallerySummaryPanelEl = createSummaryPanelEl(placement);
+    gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
+    gallerySummaryPanelEl.style.position  = 'sticky';
+    gallerySummaryPanelEl.style.top       = '8px';
+    gallerySummaryPanelEl.style.display   = 'flex';
+    gallerySummaryPanelEl.style.flexDirection = 'column';
+  } else if (currentLotStats) {
+    gallerySummaryPanelEl = createSummaryPanelEl('right');
+    gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
+    gallerySummaryPanelEl.style.position  = 'sticky';
+    gallerySummaryPanelEl.style.top       = '8px';
+    gallerySummaryPanelEl.style.flexDirection = 'column';
+    gallerySummaryPanelEl.style.display   = 'none';
+    renderGallerySummaryPanel();
   }
 
-  bodyEl.appendChild(gridEl);
-  if (lotFindingsPanel) bodyEl.appendChild(lotFindingsPanel);
+  refreshLotFindingsButton();
+
+  const placement = summaryPanelOpts?.placement ?? 'right';
+  if (placement === 'left') {
+    if (gallerySummaryPanelEl) bodyEl.appendChild(gallerySummaryPanelEl);
+    bodyEl.appendChild(gridEl);
+  } else {
+    bodyEl.appendChild(gridEl);
+    if (gallerySummaryPanelEl) bodyEl.appendChild(gallerySummaryPanelEl);
+  }
 
   container.appendChild(barEl);
   container.appendChild(legendEl);
@@ -995,6 +1009,21 @@ export function renderWaferGallery(
       // Only the expand button opens the modal — canvas clicks are handled
       // internally by renderWaferMap and stop propagation before reaching here.
       expandBtn.addEventListener('click', () => openModal(item));
+
+      // Summary panel drill-down: clicking the card header area drills into wafer detail.
+      if (gallerySummaryPanelEl) {
+        const cardIndex = newItems.indexOf(item);
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', (e) => {
+          // Don't intercept expand button clicks
+          if ((e.target as HTMLElement).closest('[data-wmap-expand-btn]')) return;
+          gallerySummaryWaferIndex      = cardIndex;
+          gallerySummaryActiveFindingId = null;
+          clearCardHighlight();
+          clearDieZoneHighlight();
+          renderGallerySummaryPanel();
+        });
+      }
     }
   }
 
@@ -1007,6 +1036,9 @@ export function renderWaferGallery(
   } else {
     buildCards(items);
   }
+
+  // Initial gallery summary panel render
+  if (gallerySummaryPanelEl) renderGallerySummaryPanel();
 
   // ── Modal ──────────────────────────────────────────────────────────────────
 
@@ -1200,7 +1232,8 @@ export function renderWaferGallery(
 
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {
       currentLotStats = summary;
-      rebuildLotFindingsPanel();
+      if (gallerySummaryPanelEl) renderGallerySummaryPanel();
+      refreshLotFindingsButton();
     },
 
     destroy(): void {
@@ -1213,6 +1246,7 @@ export function renderWaferGallery(
       barEl.remove();
       legendEl.remove();
       bodyEl.remove();
+      gallerySummaryPanelEl?.remove();
     },
   };
 }

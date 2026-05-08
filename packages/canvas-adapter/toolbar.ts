@@ -91,7 +91,6 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     const btn = document.createElement('button');
     btn.innerHTML = ICONS[iconKey];
     btn.type      = 'button';
-    btn.title     = label;
     Object.assign(btn.style, {
       display:        'flex',
       alignItems:     'center',
@@ -108,21 +107,31 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       transition:     'background 0.12s, color 0.12s',
       flexShrink:     '0',
     });
+    function positionTooltip(clientX: number, clientY: number): void {
+      tooltip.style.left = '0';
+      tooltip.style.top  = '0';
+      const tw = tooltip.offsetWidth;
+      const th = tooltip.offsetHeight;
+      const margin = 8;
+      let x = clientX + 14;
+      let y = clientY - 8;
+      if (x + tw + margin > window.innerWidth)  x = clientX - tw - 6;
+      if (y + th + margin > window.innerHeight) y = window.innerHeight - th - margin;
+      if (y < margin) y = margin;
+      tooltip.style.left = `${x}px`;
+      tooltip.style.top  = `${y}px`;
+    }
     btn.addEventListener('mouseenter', (e) => {
       if (!btn.dataset.active) {
         btn.style.background = CLR.bgHover;
         btn.style.color      = CLR.iconHover;
       }
-      tooltip.style.display = 'block';
-      tooltip.style.left    = `${e.clientX + 14}px`;
-      tooltip.style.top     = `${e.clientY - 8}px`;
       tooltip.innerHTML     = label;
+      tooltip.style.display = 'block';
+      positionTooltip(e.clientX, e.clientY);
     });
     btn.addEventListener('mousemove', (e) => {
-      if (tooltip.style.display === 'block') {
-        tooltip.style.left = `${e.clientX + 14}px`;
-        tooltip.style.top  = `${e.clientY - 8}px`;
-      }
+      if (tooltip.style.display === 'block') positionTooltip(e.clientX, e.clientY);
     });
     btn.addEventListener('mouseleave', () => {
       if (!btn.dataset.active) {

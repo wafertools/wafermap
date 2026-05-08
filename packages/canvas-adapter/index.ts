@@ -8,3 +8,5 @@ export type { MountOptions, WaferCanvasController, WaferSceneOptions } from './r
 
 export { renderWaferGallery } from './renderWaferGallery.js';
 export type { GalleryItem, GalleryOptions, GalleryController } from './renderWaferGallery.js';
+
+export type { SummaryPanelOptions } from './summaryPanel.js';

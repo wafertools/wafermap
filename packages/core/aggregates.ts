@@ -31,7 +31,8 @@ export function aggregateValues(
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
       const key = `${die.i},${die.j}`;
-      const v = die.values?.[paramIndex];
+      // Read from testValues (preferred) then fall back to deprecated values[].
+      const v = die.testValues?.[paramIndex] ?? die.values?.[paramIndex];
       if (v !== undefined) {
         if (!valuesMap.has(key)) {
           valuesMap.set(key, []);
@@ -48,7 +49,7 @@ export function aggregateValues(
   for (const [key, template] of dieTemplate) {
     const vals = valuesMap.get(key);
     if (!vals?.length) {
-      result.push({ ...template, values: undefined });
+      result.push({ ...template, testValues: undefined });
       continue;
     }
 
@@ -60,7 +61,7 @@ export function aggregateValues(
       const mid = Math.floor(sorted.length / 2);
       agg = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     } else if (method === 'stddev') {
-      if (vals.length < 2) { result.push({ ...template, values: [0] }); continue; }
+      if (vals.length < 2) { result.push({ ...template, testValues: { [paramIndex]: 0 } }); continue; }
       const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
       agg = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1));
     } else if (method === 'min') {
@@ -71,7 +72,7 @@ export function aggregateValues(
       agg = vals.length; // 'count'
     }
 
-    result.push({ ...template, values: [agg] });
+    result.push({ ...template, testValues: { [paramIndex]: agg } });
   }
 
   return result;
@@ -126,7 +127,7 @@ export function aggregateBinCounts(
 
   return (diesByWafer[0] ?? []).map((die) => ({
     ...die,
-    values: [countMap.get(`${die.i},${die.j}`) ?? 0],
+    testValues: { 0: countMap.get(`${die.i},${die.j}`) ?? 0 },
     ...(binSpace === 'soft' ? { sbin: targetBin } : { hbin: targetBin }),
   }));
 }

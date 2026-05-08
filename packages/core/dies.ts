@@ -16,7 +16,14 @@ export interface Die {
   y: number;
   width: number;       // die size in mm — set by generateDies
   height: number;
-  values?: number[];   // ordered test values (index 0 = primary)
+  /**
+   * Test values keyed by test number (a stable per-test identity, e.g. STDF TEST_NUM).
+   * Preferred over the deprecated `values` array.
+   * Example: `{ 1050: 1.42e-3, 1060: 0.487, 1070: 8.3e-12 }`
+   */
+  testValues?: Record<number, number>;
+  /** @deprecated Use `testValues` instead. Positional array — fragile when tests are added or removed. */
+  values?: number[];
   hbin?: number;       // hard bin (physical sort result)
   sbin?: number;       // soft bin (test-program failure category)
   metadata?: DieMetadata;
