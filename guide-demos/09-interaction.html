@@ -132,8 +132,8 @@
       const hbin = die.hbin;
       el.innerHTML = `
         (${die.i}, ${die.j}) &nbsp; ${binLabel(hbin)}<br>
-        Idsat: <strong>${fmtValue(die.values?.[0], 'A')}</strong> &nbsp;
-        Vth: <strong>${fmtValue(die.values?.[1], 'V')}</strong>`;
+        Idsat: <strong>${fmtValue(die.testValues?.[1050], 'A')}</strong> &nbsp;
+        Vth: <strong>${fmtValue(die.testValues?.[1060], 'V')}</strong>`;
     }
 
     function onClick(die) {
@@ -143,9 +143,9 @@
         <div class="die-detail-row"><span class="label">Position</span><span class="value">(${die.i}, ${die.j})</span></div>
         <div class="die-detail-row"><span class="label">Hard bin</span><span class="value">${binLabel(hbin)}</span></div>
         <div class="die-detail-row"><span class="label">Soft bin</span><span class="value">SBin ${sbin ?? '—'}</span></div>
-        <div class="die-detail-row"><span class="label">Idsat</span><span class="value">${fmtValue(die.values?.[0], 'A')}</span></div>
-        <div class="die-detail-row"><span class="label">Vth</span><span class="value">${fmtValue(die.values?.[1], 'V')}</span></div>
-        <div class="die-detail-row"><span class="label">Ioff</span><span class="value">${fmtValue(die.values?.[2], 'A')}</span></div>
+        <div class="die-detail-row"><span class="label">Idsat</span><span class="value">${fmtValue(die.testValues?.[1050], 'A')}</span></div>
+        <div class="die-detail-row"><span class="label">Vth</span><span class="value">${fmtValue(die.testValues?.[1060], 'V')}</span></div>
+        <div class="die-detail-row"><span class="label">Ioff</span><span class="value">${fmtValue(die.testValues?.[1070], 'A')}</span></div>
         ${die.retestCount != null ? `<div class="die-detail-row"><span class="label">Retests</span><span class="value badge badge-amber">${die.retestCount}</span></div>` : ''}
       `;
     }

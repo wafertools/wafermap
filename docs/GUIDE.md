@@ -355,6 +355,11 @@ The `testValues` key is any stable integer that uniquely identifies the test —
 example an STDF TEST_NUM, a database test ID, or an application-defined constant.
 The key must match the `testNumber` field in the corresponding `TestDef`.
 
+Always pass the SI base unit in `TestDef.unit` (e.g. `'A'`, `'V'`, `'Ω'`, `'F'`).
+The formatter applies SI prefixes automatically — `0.03` with unit `'Ω'` displays as
+`30 mΩ`. Passing a pre-scaled unit like `'mA'` would produce incorrect labels
+(e.g. `30 µmA` instead of `30 nA`).
+
 With `testDefs` in place:
 - The toolbar Mode dropdown shows one entry per test by name ("Idsat", "Vth", …)
 - Hover tooltips show "Idsat: 1.23 mA" instead of a raw number

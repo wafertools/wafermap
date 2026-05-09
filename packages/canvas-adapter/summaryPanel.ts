@@ -9,6 +9,7 @@ import type { StatsFinding, StatsSummary, LotStatsSummary } from '../stats/types
 import { buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
 import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
+import { fmt as fmtValue } from '../renderer/fmt.js';
 import { CLR } from './toolbar.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
@@ -211,11 +212,6 @@ function kvRow(key: string, value: string): HTMLDivElement {
   return row;
 }
 
-function fmt(n: number): string {
-  if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  if (Number.isInteger(n)) return String(n);
-  return n.toPrecision(4).replace(/\.?0+$/, '');
-}
 
 // ── Section builders ──────────────────────────────────────────────────────────
 
@@ -371,6 +367,7 @@ const TEST_INLINE_LIMIT = 3;
 export function buildTestSection(
   dies: Die[],
   testDefs: TestDef[],
+  fallbackFormat?: 'si' | 'engineering',
 ): HTMLDivElement | null {
   if (!testDefs.length) return null;
   const hasValues = dies.some(d =>
@@ -407,13 +404,13 @@ export function buildTestSection(
     const min  = Math.min(...vals);
     const max  = Math.max(...vals);
     const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-    const unit = def.unit ? ` ${def.unit}` : '';
+    const f = (n: number) => fmtValue(n, def.unit, fallbackFormat);
 
     const section = el('div', { marginBottom: '8px' });
     section.appendChild(el('div', { fontSize: '11px', fontWeight: '600', color: VALUE_COLOR, marginBottom: '3px' }, def.name));
-    section.appendChild(kvRow('Min', `${fmt(min)}${unit}`));
-    section.appendChild(kvRow('Mean', `${fmt(mean)}${unit}`));
-    section.appendChild(kvRow('Max', `${fmt(max)}${unit}`));
+    section.appendChild(kvRow('Min',  f(min)));
+    section.appendChild(kvRow('Mean', f(mean)));
+    section.appendChild(kvRow('Max',  f(max)));
     content.appendChild(section);
   }
   return outer;
@@ -666,8 +663,9 @@ export function buildLotQuadrantSection(
 export function buildLotTestSection(
   allDies: Die[],
   testDefs: TestDef[],
+  fallbackFormat?: 'si' | 'engineering',
 ): HTMLDivElement | null {
-  return buildTestSection(allDies, testDefs);
+  return buildTestSection(allDies, testDefs, fallbackFormat);
 }
 
 // ── Panel container ───────────────────────────────────────────────────────────
@@ -749,6 +747,7 @@ export function renderWaferSummaryContent(
     statsSummary?: StatsSummary;
     passBins?:    number[];
     ringCount?:   number;
+    fallbackFormat?: 'si' | 'engineering';
     onFindingClick?: (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
   },
@@ -758,6 +757,7 @@ export function renderWaferSummaryContent(
     wafer, dies, yieldSummary, dataCoverage,
     hbinDefs, sbinDefs, testDefs,
     statsSummary, passBins = [1], ringCount = 4,
+    fallbackFormat,
     onFindingClick, activeFindingId = null,
   } = params;
 
@@ -777,7 +777,7 @@ export function renderWaferSummaryContent(
   sections.push(buildRingSection(dies, wafer, ringCount, passBins));
   sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
 
-  if (testDefs?.length) sections.push(buildTestSection(dies, testDefs));
+  if (testDefs?.length) sections.push(buildTestSection(dies, testDefs, fallbackFormat));
 
   if (statsSummary?.findings.length && onFindingClick) {
     sections.push(buildFindingsSection(
@@ -832,6 +832,7 @@ export function renderLotSummaryContent(
     testDefs?:        TestDef[];
     passBins?:        number[];
     ringCount?:       number;
+    fallbackFormat?:  'si' | 'engineering';
     onFindingClick?:  (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
   },
@@ -841,6 +842,7 @@ export function renderLotSummaryContent(
     lotSummary, items,
     hbinDefs, sbinDefs, testDefs,
     passBins = [1], ringCount = 4,
+    fallbackFormat,
     onFindingClick, activeFindingId = null,
   } = params;
 
@@ -868,7 +870,7 @@ export function renderLotSummaryContent(
             : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft') : null,
     buildLotRingSection(allDies, allWafers, ringCount, passBins),
     buildLotQuadrantSection(allDies, allWafers, ringCount, passBins),
-    testDefs?.length ? buildLotTestSection(allDies, testDefs) : null,
+    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat) : null,
   ];
 
   if (lotSummary.findings.length && onFindingClick) {

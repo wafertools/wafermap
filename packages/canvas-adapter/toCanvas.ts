@@ -333,7 +333,7 @@ export function toCanvas(
       }
     }
 
-    const testDef = scene.testDefs?.find(t => t.index === scene.testIndex);
+    const testDef = scene.testDefs?.find(t => (t.index ?? t.testNumber) === scene.testIndex);
     const isCountMode = scene.plotMode === 'stackedBins' || scene.plotMode === 'stackedSoftBins';
     const cbName  = isCountMode ? 'Count' : testDef?.name;
     const cbUnit  = isCountMode ? undefined : testDef?.unit;

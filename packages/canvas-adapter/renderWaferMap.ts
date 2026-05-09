@@ -274,6 +274,7 @@ export function renderWaferMap(
       statsSummary:   currentStatsSummary,
       passBins:       [1],
       ringCount:      sceneOpts.ringCount ?? 4,
+      fallbackFormat: currentFallbackFormat,
       activeFindingId: summaryActiveFindingId,
       onFindingClick: (finding, row) => {
         if (summaryActiveFindingId === finding.id) {
@@ -312,6 +313,7 @@ export function renderWaferMap(
       statsSummary:   currentStatsSummary,
       passBins:       [1],
       ringCount:      sceneOpts.ringCount ?? 4,
+      fallbackFormat: currentFallbackFormat,
       activeFindingId: summaryActiveFindingId,
       onFindingClick: (finding, row) => {
         if (summaryActiveFindingId === finding.id) {
@@ -329,12 +331,21 @@ export function renderWaferMap(
   }
 
   function applyFindingHighlightFromPanel(finding: StatsFinding): void {
-    if (finding.highlight.kind === 'bin') {
-      selectionFromKeys(finding.highlight.dieKeys);
-      applyOpts({ highlightBin: finding.highlight.bin });
-    } else if (finding.highlight.kind === 'region' || finding.highlight.kind === 'dies') {
-      selectionFromKeys(finding.highlight.dieKeys);
-      applyOpts({ highlightBin: undefined });
+    const { kind, index } = finding.variable;
+    if (kind === 'test') {
+      applyOpts({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
+    } else if (kind === 'softBin') {
+      applyOpts({ plotMode: 'softBin', highlightBin: undefined });
+    } else {
+      applyOpts({ plotMode: 'hardBin', highlightBin: undefined });
+    }
+
+    const h = finding.highlight;
+    if (h.kind === 'bin') {
+      selectionFromKeys(h.dieKeys);
+      applyOpts({ highlightBin: h.bin });
+    } else if (h.kind === 'region' || h.kind === 'dies') {
+      selectionFromKeys(h.dieKeys);
     }
   }
 

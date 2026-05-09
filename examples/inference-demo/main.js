@@ -23,7 +23,7 @@ function renderPanel(canvasId, bodyId, result, provided) {
   const dieW  = dies[0]?.width  ?? '—';
   const dieH  = dies[0]?.height ?? '—';
   const total = dies.length;
-  const withData = dies.filter(d => d.values?.length).length;
+  const withData = dies.filter(d => d.testValues && Object.keys(d.testValues).length > 0).length;
 
   const unitsBadge = units === 'mm'
     ? '<span class="tag tag-provided">mm</span>'
@@ -94,7 +94,7 @@ async function main() {
   const rows = await loadCsv('../../data/inference-demo.csv');
 
   // x,y are prober step positions (integers), value is the test result.
-  const data = rows.map(r => ({ x: Number(r.x), y: Number(r.y), values: [Number(r.value)] }));
+  const data = rows.map(r => ({ x: Number(r.x), y: Number(r.y), testValues: { 1010: Number(r.value) } }));
 
   document.getElementById('data-summary').textContent =
     `${data.length} points · columns: x (grid), y (grid), value · no geometry context`;

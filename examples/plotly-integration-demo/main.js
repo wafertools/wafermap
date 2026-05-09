@@ -38,8 +38,8 @@ async function main() {
   const result = buildWaferMap({
     results: waferRows.map(r => ({
       x: Number(r.x), y: Number(r.y),
-      hbin:   Number(r.hbin),
-      values: [Number(r.testA)],
+      hbin:       Number(r.hbin),
+      testValues: { 1010: Number(r.testA) },
     })),
     waferConfig: {
       diameter: WAFER_DIAMETER,
@@ -64,8 +64,8 @@ async function main() {
     if (!r) return die;
     return {
       ...die,
-      values: [Number(r.testA), Number(r.testB), Number(r.testC)],
-      hbin:   Number(r.hbin),
+      testValues: { 1010: Number(r.testA), 1020: Number(r.testB), 1030: Number(r.testC) },
+      hbin:       Number(r.hbin),
       sbin:   Number(r.sbin),
       metadata: {
         lotId:       r.lot,
@@ -199,8 +199,8 @@ function showSelection(dies) {
     statsRows.push([`Bin ${bin}`, `${n} (${(100*n/dies.length).toFixed(0)}%)`]);
   }
 
-  // Value stats (test 0).
-  const vals = dies.map(d => d.values?.[0]).filter(v => v !== undefined);
+  // Value stats (test 1010 — testA).
+  const vals = dies.map(d => d.testValues?.[1010]).filter(v => v !== undefined);
   if (vals.length) {
     const mean   = vals.reduce((s,v) => s+v, 0) / vals.length;
     const stddev = Math.sqrt(vals.reduce((s,v) => s+(v-mean)**2, 0) / vals.length);

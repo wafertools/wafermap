@@ -40,8 +40,8 @@ async function main() {
     return templateDies.map(die => {
       const row = rowMap.get(`${die.i},${die.j}`);
       return row
-        ? { ...die, hbin: Number(row.hbin), values: [Number(row.testA)] }
-        : { ...die, hbin: 0, values: [0] };
+        ? { ...die, hbin: Number(row.hbin), testValues: { 1010: Number(row.testA) } }
+        : { ...die, hbin: 0, testValues: {} };
     });
   });
 
@@ -52,8 +52,8 @@ async function main() {
   // Build one gallery item per hard bin. All share valueRange so maps are comparable.
   const items = uniqueBins.map(bin => {
     const dies = aggregateBinCounts(diesByWafer, bin);
-    const totalOccurrences = dies.reduce((sum, d) => sum + (d.values?.[0] ?? 0), 0);
-    const affectedPositions = dies.filter(d => (d.values?.[0] ?? 0) > 0).length;
+    const totalOccurrences = dies.reduce((sum, d) => sum + (d.testValues?.[0] ?? 0), 0);
+    const affectedPositions = dies.filter(d => (d.testValues?.[0] ?? 0) > 0).length;
     const binName = hbinDefMap.get(bin)?.name ?? `Bin ${bin}`;
     return {
       wafer,

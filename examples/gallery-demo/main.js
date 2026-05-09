@@ -18,16 +18,16 @@ const WAFER_COORD_CONFIGS = {
 };
 
 const TEST_DEFS_WITH_UNITS = [
-  { index: 0, name: 'Idsat', unit: 'A' },
-  { index: 1, name: 'Vth',   unit: 'V' },
-  { index: 2, name: 'Ioff',  unit: 'A' },
-  { index: 3, name: 'Cgg',   unit: 'F' },
+  { testNumber: 1050, name: 'Idsat', unit: 'A' },
+  { testNumber: 1060, name: 'Vth',   unit: 'V' },
+  { testNumber: 1070, name: 'Ioff',  unit: 'A' },
+  { testNumber: 1080, name: 'Cgg',   unit: 'F' },
 ];
 const TEST_DEFS_NO_UNITS = [
-  { index: 0, name: 'Idsat' },
-  { index: 1, name: 'Vth'   },
-  { index: 2, name: 'Ioff'  },
-  { index: 3, name: 'Cgg'   },
+  { testNumber: 1050, name: 'Idsat' },
+  { testNumber: 1060, name: 'Vth'   },
+  { testNumber: 1070, name: 'Ioff'  },
+  { testNumber: 1080, name: 'Cgg'   },
 ];
 
 const HBIN_DEFS = [
@@ -135,7 +135,7 @@ async function main() {
         x, y,
         hbin:   Number(row.hbin),
         sbin:   Number(row.sbin),
-        values: [Number(row.Idsat), Number(row.Vth), Number(row.Ioff), Number(row.Cgg)],
+        testValues: { 1050: Number(row.Idsat), 1060: Number(row.Vth), 1070: Number(row.Ioff), 1080: Number(row.Cgg) },
       };
     });
 

@@ -17,6 +17,12 @@ import { toCanvas } from 'wafermap/canvas-adapter';
 const DIE_SIZE = { width: 10, height: 10 };
 const WAFER_DIAMETER = 150;
 
+const TEST_DEFS = [
+  { testNumber: 1010, name: 'testA' },
+  { testNumber: 1020, name: 'testB' },
+  { testNumber: 1030, name: 'testC' },
+];
+
 const appState = {
   wafer: null,
   baseDies: [],
@@ -28,7 +34,7 @@ const appState = {
   flipX: false,
   flipY: false,
   plotMode: 'value',
-  testIndex: 0,
+  testIndex: 1010,
   showText: false,
   showReticle: false,
   showProbePath: false,
@@ -105,7 +111,7 @@ function enrichDiesFromRows(dies, rows) {
     if (!row) {
       return {
         ...die,
-        values: [0],
+        testValues: {},
         hbin: 0,
         metadata: {},
       };
@@ -113,7 +119,7 @@ function enrichDiesFromRows(dies, rows) {
 
     return {
       ...die,
-      values: [Number(row.testA), Number(row.testB), Number(row.testC)],
+      testValues: { 1010: Number(row.testA), 1020: Number(row.testB), 1030: Number(row.testC) },
       hbin: Number(row.hbin),
       sbin: Number(row.sbin),
       metadata: {
@@ -142,18 +148,11 @@ function redraw() {
 
   appState.currentDies = transformDies(appState.baseDies, interactiveTransform, appState.wafer.center);
 
-  const diesForScene = appState.testIndex === 0
-    ? appState.currentDies
-    : appState.currentDies.map((die) => {
-        const v = die.values ?? [];
-        const reordered = [...v];
-        reordered[0] = v[appState.testIndex] ?? v[0];
-        return { ...die, values: reordered };
-      });
-
-  const scene = buildScene(appState.wafer, diesForScene, {
+  const scene = buildScene(appState.wafer, appState.currentDies, {
     reticles: appState.reticles,
     plotMode: appState.plotMode,
+    testIndex: appState.testIndex,
+    testDefs: TEST_DEFS,
     showText: appState.showText,
     showReticle: appState.showReticle,
     showProbePath: appState.showProbePath,

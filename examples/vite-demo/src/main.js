@@ -46,8 +46,8 @@ for (let y = -15; y <= 15; y++) {
     const bin   = v >= 0.75 ? 1 : v >= 0.5 ? 2 : 3;
     rawData.push({
       x, y,
-      values: [v, Math.max(0.05, v - 0.08), Math.max(0.05, v - 0.14)],
-      hbin:   bin,
+      testValues: { 1010: v, 1020: Math.max(0.05, v - 0.08), 1030: Math.max(0.05, v - 0.14) },
+      hbin:       bin,
     });
   }
 }

@@ -134,10 +134,10 @@ async function processData() {
     const rowMap = new Map(waferRows.map(r => [`${r[cfg.xCol]},${r[cfg.yCol]}`, r]));
     const enrichedDies = result.dies.map(die => {
       const row = rowMap.get(`${die.i},${die.j}`);
-      if (!row) return { ...die, values: [], hbin: undefined, sbin: undefined, metadata: {} };
+      if (!row) return { ...die, testValues: {}, hbin: undefined, sbin: undefined, metadata: {} };
       return {
         ...die,
-        values: cfg.valueCols.map(col => Number(row[col])),
+        testValues: Object.fromEntries(cfg.valueCols.map((col, i) => [i, Number(row[col])])),
         hbin: cfg.hbinCol ? Number(row[cfg.hbinCol]) : undefined,
         sbin: cfg.sbinCol ? Number(row[cfg.sbinCol]) : undefined,
         metadata: {
@@ -295,12 +295,10 @@ function buildGalleryItems(selected, diesByWafer, wafer) {
   // by renderWaferGallery when the mode is selected from the toolbar.
   const { valueChannel } = state.ui;
   const dies4map = valueChannel > 0
-    ? dies => dies.map(die => {
-        const v = die.values ?? [];
-        const reordered = [...v];
-        reordered[0] = v[valueChannel] ?? v[0];
-        return { ...die, values: reordered };
-      })
+    ? dies => dies.map(die => ({
+        ...die,
+        testValues: { 0: die.testValues?.[valueChannel] ?? die.testValues?.[0] },
+      }))
     : dies => dies;
 
   return selected.map(waferId => ({
@@ -336,7 +334,7 @@ function renderWafermapGallery() {
   items.forEach((item, i) => { item.statsSummary = waferStats[i]; });
   const lotStatsSummary = analyzeWaferLot(selectedResults, { passBins });
 
-  const testDefs = state.cfg.valueCols.map((col, i) => ({ index: i, name: col }));
+  const testDefs = state.cfg.valueCols.map((col, i) => ({ testNumber: i, name: col }));
   const allBins = getUniqueBins(Object.values(diesByWafer).flat());
   const hbinDefs = allBins.map(b => ({ bin: b, name: `HBin ${b}` }));
 

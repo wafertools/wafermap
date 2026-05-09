@@ -248,7 +248,9 @@ Named definition for one test parameter.  When provided, tooltips show `"Idsat: 
   index?:      number  // @deprecated: use testNumber. Positional index into the deprecated values[] array.
                        // At least one of testNumber or index must be provided.
   name:        string  // e.g. "Idsat", "Vth", "Continuity"
-  unit?:       string  // e.g. "A", "V", "Ω" — shown in tooltip and colorbar label
+  unit?:       string  // SI base unit, e.g. "A", "V", "Ω", "F" — the formatter applies SI prefixes
+                       // automatically (0.03 Ω → "30 mΩ"), so always pass the base unit, never a
+                       // pre-scaled unit like "mA" or "µV"
 }
 ```
 

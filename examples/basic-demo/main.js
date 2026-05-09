@@ -10,9 +10,9 @@ const RING_COUNT = 4;
 const PASS_BINS  = [1];
 
 const TEST_DEFS = [
-  { index: 0, name: 'testA', unit: '' },
-  { index: 1, name: 'testB', unit: '' },
-  { index: 2, name: 'testC', unit: '' },
+  { testNumber: 1010, name: 'testA', unit: '' },
+  { testNumber: 1020, name: 'testB', unit: '' },
+  { testNumber: 1030, name: 'testC', unit: '' },
 ];
 
 const HBIN_DEFS = [
@@ -55,7 +55,7 @@ async function loadWafer(waferId) {
     results: rows.map(r => ({
       x:      +r.x,
       y:      +r.y,
-      values: [+r.testA, +r.testB, +r.testC],
+      testValues: { 1010: +r.testA, 1020: +r.testB, 1030: +r.testC },
       hbin:   +r.hbin,
       sbin:   +r.sbin,
     })),

@@ -177,8 +177,9 @@ export function renderWaferGallery(
         hbinDefs:   sharedOpts.hbinDefs,
         sbinDefs:   sharedOpts.sbinDefs,
         testDefs:   sharedOpts.testDefs,
-        passBins:   [1],
-        ringCount:  sharedOpts.ringCount,
+        passBins:       [1],
+        ringCount:      sharedOpts.ringCount,
+        fallbackFormat: currentFallbackFormat,
         activeFindingId: gallerySummaryActiveFindingId,
         onFindingClick: (finding, row) => {
           if (gallerySummaryActiveFindingId === finding.id) {
@@ -242,6 +243,7 @@ export function renderWaferGallery(
         sbinDefs:       sharedOpts.sbinDefs,
         testDefs:       sharedOpts.testDefs,
         statsSummary:   waferSummary,
+        fallbackFormat: currentFallbackFormat,
         activeFindingId: gallerySummaryActiveFindingId,
         onFindingClick: (finding, row) => {
           if (gallerySummaryActiveFindingId === finding.id) {
@@ -262,15 +264,20 @@ export function renderWaferGallery(
   function applyWaferFindingHighlight(cardIndex: number, finding: StatsFinding): void {
     clearDieZoneHighlight();
     clearCardHighlight();
-    const { kind } = finding.highlight;
-    if (kind === 'bin') {
-      const dieKeys = finding.highlight.dieKeys;
-      if (dieKeys?.length) applyDieZoneHighlight(dieKeys, [cardIndex]);
-      syncShared({ highlightBin: finding.highlight.bin });
-    } else if (kind === 'region' || kind === 'dies') {
-      const dieKeys = finding.highlight.dieKeys;
-      if (dieKeys?.length) applyDieZoneHighlight(dieKeys, [cardIndex]);
-      syncShared({ highlightBin: undefined });
+    const { kind: vKind, index } = finding.variable;
+    if (vKind === 'test') {
+      syncShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
+    } else if (vKind === 'softBin') {
+      syncShared({ plotMode: 'softBin', highlightBin: undefined });
+    } else {
+      syncShared({ plotMode: 'hardBin', highlightBin: undefined });
+    }
+    const h = finding.highlight;
+    if (h.kind === 'bin') {
+      if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys, [cardIndex]);
+      syncShared({ highlightBin: h.bin });
+    } else if (h.kind === 'region' || h.kind === 'dies') {
+      if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys, [cardIndex]);
     }
   }
 
