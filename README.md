@@ -5,6 +5,32 @@ Browser-first wafer map visualization for semiconductor test data.
 **[Live demos →](https://telecasterer.github.io/wafermap/)**  
 **[Developer Guide →](https://telecasterer.github.io/wafermap/guide/)** — step-by-step from first map to full lot gallery with statistical findings
 
+## Quick start
+
+Install:
+
+```bash
+npm install @paulrobins/wafermap
+```
+
+Render a first map with the preferred canvas renderer:
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+const { wafer, dies } = buildWaferMap({
+  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
+  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+  dieConfig:   { width: 10, height: 10 },
+  testDefs:    [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
+});
+
+renderWaferMap(document.getElementById('map'), wafer, dies);
+```
+
+The canvas renderers are the recommended path. They provide the full interactive toolbar, gallery support, and the best runtime performance.
+
 | Demo | Live | Source |
 | --- | --- | --- |
 | Single Wafer Map | [open](https://telecasterer.github.io/wafermap/examples/basic-demo/) | [examples/basic-demo/](examples/basic-demo/) |
@@ -23,15 +49,22 @@ Browser-first wafer map visualization for semiconductor test data.
 ```text
 buildWaferMap()         — data layer: prober results → wafer + dies + scene
     │
-    ├── renderWaferMap()       — single interactive canvas map with full toolbar
-    ├── renderWaferGallery()   — multi-map gallery with shared controls + click-to-modal
-    └── toPlotly()             — Plotly SVG renderer (bring your own Plotly CDN)
+    ├── renderWaferMap()       — single interactive canvas map with full toolbar  ← recommended
+    ├── renderWaferGallery()   — multi-map gallery with shared controls + click-to-modal  ← recommended
+    ├── analyzeWaferMap()      — per-wafer statistical findings
+    └── analyzeWaferLot()      — lot-level findings
 
-analyzeWaferMap()       — per-wafer statistical findings (ring, quadrant, reticle)
-analyzeWaferLot()       — lot-level findings (repeated patterns, yield outliers)
+Advanced / low-level APIs:
+    ├── toCanvas()             — direct canvas render without toolbar
+    └── toPlotly()             — Plotly SVG output for compatibility only
+
 ```
 
 `x` and `y` are always **die grid positions** (prober step coordinates), not millimetres.
+
+`renderWaferMap()` and `renderWaferGallery()` are the preferred entry points for day-to-day use. They expose the most functionality and avoid the overhead of the lower-level adapters.
+
+`toCanvas()` and `toPlotly()` are kept for advanced integration scenarios. Plotly support remains available, but the internal canvas renderer is the faster and preferred option.
 
 ---
 
@@ -65,7 +98,7 @@ ctrl.resetZoom();
 ctrl.destroy();
 ```
 
-The toolbar provides: camera download · zoom-region · pan · zoom+/− · reset · plot mode · colour scheme · ring/quadrant/label toggles · rotate · flip.
+The toolbar provides: camera download · zoom-region · pan · zoom+/− · reset · plot mode · colour scheme · log scale toggle · ring/quadrant/label toggles · rotate · flip.
 
 ### Multi-map gallery
 
@@ -105,24 +138,22 @@ const lotSummary = analyzeWaferLot(waferResults);
 renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
----
+### Low-level adapters
 
-## Plotly rendering
+`toCanvas()` is there for advanced integration work when you already own the canvas
+pipeline. `toPlotly()` remains available for compatibility, but it is not the
+recommended path for new projects and is slower than the internal renderers.
 
-```ts
-import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
+#### `toCanvas()`
 
-const result = buildWaferMap({
-  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
-  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
-  dieConfig:   { width: 10, height: 10 },
-});
+Use this when you want the raw canvas scene output without the higher-level toolbar
+and interaction layer.
 
-const { data, layout } = toPlotly(result.scene);
-Plotly.react('chart', data, layout, { responsive: true });
-```
+#### `toPlotly()`
 
-Plotly.js must be loaded separately (CDN or bundler). No runtime dependency on Plotly is included in this package.
+Use this only when you need Plotly-compatible output for an existing integration.
+Plotly.js still has to be loaded separately (CDN or bundler), and the output is
+best treated as a legacy compatibility path.
 
 ---
 

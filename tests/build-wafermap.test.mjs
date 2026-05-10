@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildWaferMap } from '../dist/index.js';
+import { buildWaferMap, aggregateValues, buildScene, createWafer } from '../dist/index.js';
 
 function approxEqual(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} != ${expected}`);
@@ -200,4 +200,57 @@ test('buildWaferMap infers wafer diameter from grid extent when not provided', (
 
   assert.ok(result.wafer.diameter > 100); // Should be larger than the grid extent
   assert.equal(result.units, 'mm');
+});
+
+// Dies whose testValues are keyed by a non-zero testNumber (e.g. 1050, 1060) — the
+// typical shape produced by buildWaferMap when testDefs use testNumber rather than index.
+const WAFER_A_DIES = [
+  { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, testValues: { 1050: 1.0, 1060: 0.5 } },
+  { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, testValues: { 1050: 3.0, 1060: 1.5 } },
+];
+const WAFER_B_DIES = [
+  { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, testValues: { 1050: 3.0, 1060: 2.5 } },
+  { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, testValues: { 1050: 5.0, 1060: 3.5 } },
+];
+
+test('aggregateValues reads from non-zero testNumber keys and stores result at index 0', () => {
+  const result = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 1050);
+  const d00 = result.find((d) => d.i === 0 && d.j === 0);
+  const d10 = result.find((d) => d.i === 1 && d.j === 0);
+  // Mean of 1.0 and 3.0 = 2.0; stored at testValues[0] for buildScene consumption
+  assert.deepEqual(d00?.testValues, { 0: 2.0 });
+  // Mean of 3.0 and 5.0 = 4.0
+  assert.deepEqual(d10?.testValues, { 0: 4.0 });
+});
+
+test('aggregateValues with paramIndex=1060 stores correct mean at index 0', () => {
+  const result = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 1060);
+  const d00 = result.find((d) => d.i === 0 && d.j === 0);
+  // Mean of 0.5 and 2.5 = 1.5
+  assert.deepEqual(d00?.testValues, { 0: 1.5 });
+});
+
+test('buildScene stackedValues mode produces non-grey fills when dies have testValues[0]', () => {
+  const wafer = createWafer({ diameter: 40 });
+  const aggregated = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 1050);
+  const scene = buildScene(wafer, aggregated, {
+    plotMode: 'stackedValues',
+    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+  });
+  const fills = scene.rectangles.map((r) => r.fill);
+  // All dies with data must render with a colour other than the no-data grey
+  assert.ok(fills.every((f) => f !== '#d6d9dd'), `Expected no grey fills, got: ${fills.join(', ')}`);
+});
+
+test('buildScene stackedValues mode produces grey fills when aggregation used wrong paramIndex', () => {
+  // Regression guard: if aggregateValues is called with paramIndex=0 on dies keyed by 1050,
+  // all values are missing and buildScene must render grey (no-data) — this is the bug state.
+  const wafer = createWafer({ diameter: 40 });
+  const badAggregated = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 0);
+  const scene = buildScene(wafer, badAggregated, {
+    plotMode: 'stackedValues',
+    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+  });
+  const fills = scene.rectangles.map((r) => r.fill);
+  assert.ok(fills.every((f) => f === '#d6d9dd'), `Expected all grey fills, got: ${fills.join(', ')}`);
 });

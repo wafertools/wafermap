@@ -61,7 +61,7 @@ export function aggregateValues(
       const mid = Math.floor(sorted.length / 2);
       agg = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     } else if (method === 'stddev') {
-      if (vals.length < 2) { result.push({ ...template, testValues: { [paramIndex]: 0 } }); continue; }
+      if (vals.length < 2) { result.push({ ...template, testValues: { 0: 0 } }); continue; }
       const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
       agg = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1));
     } else if (method === 'min') {
@@ -72,7 +72,7 @@ export function aggregateValues(
       agg = vals.length; // 'count'
     }
 
-    result.push({ ...template, testValues: { [paramIndex]: agg } });
+    result.push({ ...template, testValues: { 0: agg } });
   }
 
   return result;

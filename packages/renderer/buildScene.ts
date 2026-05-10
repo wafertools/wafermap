@@ -81,6 +81,8 @@ export interface Scene {
   sbinDefs?: BinDef[];
   /** Which `values[]` index is being displayed (for `value` plot mode). Default 0. */
   testIndex: number;
+  /** True when log₁₀ scale is both requested and valid (vMin > 0). */
+  logScale: boolean;
   /** Aggregation method label for `stackedValues` hover tooltips (e.g. `'mean'`). */
   aggrMethod?: string;
   /** Total wafers in lot — for `stackedBins` hover percentage calculation. */
@@ -142,6 +144,12 @@ export interface SceneOptions {
    * When `testDefs` is provided, the toolbar mode dropdown offers one item per test.
    */
   testIndex?: number;
+  /**
+   * When true, apply log₁₀ scale to value normalization and the colorbar.
+   * Overrides the per-test `TestDef.logScale` default.
+   * Falls back to linear when vMin ≤ 0.
+   */
+  logScale?: boolean;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -298,7 +306,8 @@ function buildHoverText(
     const v = getDieTestValue(die, 0, 0);
     if (v !== undefined) {
       const def   = testDefs?.[0];
-      const name  = def?.name ?? 'Value';
+      const tn    = def?.testNumber ?? def?.index;
+      const name  = def?.name ?? (tn != null ? `Test ${tn}` : 'Value');
       const method = aggrMethod ? ` (${aggrMethod})` : '';
       lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
     }
@@ -331,7 +340,7 @@ function buildHoverText(
         const parts = Object.entries(die.testValues).map(([k, v]) =>
           `Test ${k}: ${fmt(v, undefined, fallbackFormat)}`
         );
-        lines.push(`Values: ${parts.join(' / ')}`);
+        if (parts.length) lines.push(parts.join('<br>'));
       }
     } else if (die.values?.length) {
       // Deprecated fallback.
@@ -745,6 +754,7 @@ export function buildScene(
     lotSize,
     dataAxisFlip,
     isLotStack = false,
+    logScale: logScaleOption,
   } = options;
 
   // Total effective axis flip for display: data-pipeline flip XOR interactive flip.
@@ -791,7 +801,24 @@ export function buildScene(
     vMax = isFinite(hi) ? hi : 1;
   }
   if (vMin === vMax) vMax = vMin + 1;
-  const normalize = (v: number) => Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
+
+  // Resolve effective log scale: explicit option overrides per-test TestDef default.
+  const activeTestDef = testDefs?.find(t => (t.index ?? t.testNumber) === testIndex);
+  const wantsLogScale = logScaleOption ?? activeTestDef?.logScale ?? false;
+  const logScaleValid = wantsLogScale && vMin > 0 && vMax > 0;
+  const logScale      = logScaleValid;
+
+  let normalize: (v: number) => number;
+  if (logScaleValid) {
+    const logMin   = Math.log10(vMin);
+    const logRange = Math.log10(vMax) - logMin;
+    normalize = (v: number) => {
+      if (v <= 0) return 0;
+      return Math.max(0, Math.min(1, (Math.log10(v) - logMin) / logRange));
+    };
+  } else {
+    normalize = (v: number) => Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
+  }
 
   const transform = normalizeTransform(wafer, interactiveTransform);
 
@@ -852,6 +879,7 @@ export function buildScene(
     hbinDefs,
     sbinDefs,
     testIndex,
+    logScale,
     aggrMethod,
     lotSize,
     axisFlip,

@@ -366,48 +366,57 @@ const TEST_INLINE_LIMIT = 3;
 
 export function buildTestSection(
   dies: Die[],
-  testDefs: TestDef[],
+  testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
 ): HTMLDivElement | null {
-  if (!testDefs.length) return null;
-  const hasValues = dies.some(d =>
-    (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
-    (d.values?.length ?? 0) > 0
-  );
-  if (!hasValues) return null;
+  const activeDies = dies.filter(d => !d.partial && !d.edgeExcluded);
 
-  const activeDefs = dies.filter(d => !d.partial && !d.edgeExcluded);
-  const defsWithData = testDefs.filter(def => {
-    const tn = def.testNumber ?? def.index;
-    if (tn === undefined) return false;
-    return activeDefs.some(d => {
-      const v = d.testValues?.[tn] ?? d.values?.[def.index ?? tn];
+  // Build a unified list of { testNumber, name, unit } from testDefs when present,
+  // or from the testNumber keys found in die.testValues when absent.
+  type TestEntry = { testNumber: number; name: string; unit?: string };
+  let entries: TestEntry[];
+
+  if (testDefs?.length) {
+    entries = testDefs
+      .map(def => ({ testNumber: def.testNumber ?? def.index!, name: def.name, unit: def.unit }))
+      .filter(e => e.testNumber !== undefined);
+  } else {
+    const testNumbers = [...new Set(activeDies.flatMap(d =>
+      d.testValues ? Object.keys(d.testValues).map(Number) : []
+    ))].sort((a, b) => a - b);
+    entries = testNumbers.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
+  }
+
+  if (!entries.length) return null;
+
+  const entriesWithData = entries.filter(e =>
+    activeDies.some(d => {
+      const v = d.testValues?.[e.testNumber];
       return v !== undefined && isFinite(v);
-    });
-  });
-  if (!defsWithData.length) return null;
+    })
+  );
+  if (!entriesWithData.length) return null;
 
-  const manyTests = defsWithData.length > TEST_INLINE_LIMIT;
+  const manyTests = entriesWithData.length > TEST_INLINE_LIMIT;
   const { outer, content } = collapsibleSection(
     'Test Values',
-    !manyTests,  // collapsed by default when many tests
-    manyTests ? `${defsWithData.length}` : undefined,
+    !manyTests,
+    manyTests ? `${entriesWithData.length}` : undefined,
   );
 
-  for (const def of defsWithData) {
-    const tn = def.testNumber ?? def.index;
-    const vals = activeDefs
-      .map(d => d.testValues?.[tn!] ?? d.values?.[def.index ?? tn!])
+  for (const entry of entriesWithData) {
+    const vals = activeDies
+      .map(d => d.testValues?.[entry.testNumber])
       .filter((v): v is number => v !== undefined && isFinite(v));
     if (!vals.length) continue;
 
     const min  = Math.min(...vals);
     const max  = Math.max(...vals);
     const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-    const f = (n: number) => fmtValue(n, def.unit, fallbackFormat);
+    const f = (n: number) => fmtValue(n, entry.unit, fallbackFormat);
 
     const section = el('div', { marginBottom: '8px' });
-    section.appendChild(el('div', { fontSize: '11px', fontWeight: '600', color: VALUE_COLOR, marginBottom: '3px' }, def.name));
+    section.appendChild(el('div', { fontSize: '11px', fontWeight: '600', color: VALUE_COLOR, marginBottom: '3px' }, entry.name));
     section.appendChild(kvRow('Min',  f(min)));
     section.appendChild(kvRow('Mean', f(mean)));
     section.appendChild(kvRow('Max',  f(max)));
@@ -662,7 +671,7 @@ export function buildLotQuadrantSection(
 /** Aggregate test value stats across all wafers in the lot. */
 export function buildLotTestSection(
   allDies: Die[],
-  testDefs: TestDef[],
+  testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
 ): HTMLDivElement | null {
   return buildTestSection(allDies, testDefs, fallbackFormat);
@@ -777,7 +786,7 @@ export function renderWaferSummaryContent(
   sections.push(buildRingSection(dies, wafer, ringCount, passBins));
   sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
 
-  if (testDefs?.length) sections.push(buildTestSection(dies, testDefs, fallbackFormat));
+  sections.push(buildTestSection(dies, testDefs, fallbackFormat));
 
   if (statsSummary?.findings.length && onFindingClick) {
     sections.push(buildFindingsSection(

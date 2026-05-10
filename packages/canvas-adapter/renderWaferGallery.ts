@@ -380,7 +380,7 @@ export function renderWaferGallery(
     overflowX:     'auto',
   });
 
-  type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string };
+  type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string; logScale?: boolean };
 
   const btnMode = makeBtn('mode', 'Plot mode', () => {
     const openMenu = getOpenMenu();
@@ -408,7 +408,7 @@ export function renderWaferGallery(
 
     function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
       if (entry.testIndex !== undefined) {
-        applyShared({ plotMode: 'value', testIndex: entry.testIndex });
+        applyShared({ plotMode: 'value', testIndex: entry.testIndex, logScale: entry.logScale });
       } else {
         applyShared({ plotMode: entry.plotMode, testIndex: undefined });
       }
@@ -422,8 +422,15 @@ export function renderWaferGallery(
               plotMode: 'value' as PlotMode,
               testIndex: t.index ?? t.testNumber ?? 0,
               label: t.unit ? `${t.name} (${t.unit})` : t.name,
+              logScale: t.logScale,
             }))
-          : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
+          : [...new Set(dies.flatMap(d =>
+              d.testValues ? Object.keys(d.testValues).map(Number) : []
+            ))].sort((a, b) => a - b).map(tn => ({
+              plotMode: 'value' as PlotMode,
+              testIndex: tn,
+              label: `Test ${tn}`,
+            })))
       : [];
     const binEntries: ModeEntry[] = [
       ...(hasHbin ? [{ plotMode: 'hardBin'  as PlotMode, label: MODE_LABELS.hardBin }] : []),
@@ -577,6 +584,18 @@ export function renderWaferGallery(
   }
   syncLegendStyleBtn();
 
+  const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
+    applyShared({ logScale: !sharedOpts.logScale });
+    syncLogScaleBtn();
+  });
+  function syncLogScaleBtn(): void {
+    const isValueMode = sharedOpts.plotMode === 'value' || sharedOpts.plotMode === 'stackedValues';
+    btnLogScale.style.opacity       = isValueMode ? '' : '0.35';
+    btnLogScale.style.pointerEvents = isValueMode ? '' : 'none';
+    setActive(btnLogScale, !!sharedOpts.logScale);
+  }
+  syncLogScaleBtn();
+
   const btnRotate = makeBtn('rotateCW', 'Rotate all 90\xB0 clockwise', () => {
     const r = sharedOpts.rotation ?? 0;
     applyShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] });
@@ -596,6 +615,7 @@ export function renderWaferGallery(
 
   if (showPlotModeSelector) barEl.appendChild(btnMode);
   barEl.appendChild(btnPalette);
+  barEl.appendChild(btnLogScale);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnRings);
   barEl.appendChild(btnQuadrants);
@@ -810,7 +830,7 @@ export function renderWaferGallery(
       const method = (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => ({
         wafer: baseWafer,
-        dies:  aggregateValues(allDies, method, def.index),
+        dies:  aggregateValues(allDies, method, def.index ?? def.testNumber),
         label: def.name,
         sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }] },
       }));
@@ -881,6 +901,7 @@ export function renderWaferGallery(
 
     rebuildLegend();
     syncLegendStyleBtn();
+    syncLogScaleBtn();
     options.onSceneOptionsChange?.(sharedOpts);
   }
 

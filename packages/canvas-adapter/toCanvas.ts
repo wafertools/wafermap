@@ -40,6 +40,10 @@ export interface ToCanvasOptions {
    * Values with a unit always use SI prefix regardless of this setting.
    */
   fallbackFormat?: 'si' | 'engineering';
+  /** Extra space reserved at the top of the canvas in CSS pixels. Default 0. Used by renderWaferMap to prevent the floating toolbar from obscuring the wafer. */
+  topClearance?: number;
+  /** Minimum right-side reserve in CSS pixels. Ensures the wafer draw width stays stable across plot mode switches. */
+  minRightReserve?: number;
 }
 
 /** Internal viewport state shared between toCanvas and mountWaferCanvas. */
@@ -92,6 +96,8 @@ const BIN_LEGEND_W_COMPACT = 64; // px right-side reserve for compact legend
 const BIN_COUNT_W     = 28;  // px reserved on the right of the legend for the die count
 const BIN_LABEL_GAP   = 5;   // px gap between swatch and label
 const BIN_FLOATING_PADDING = 8; // px padding around floating legend box
+const BIN_LEGEND_ADAPT_COMPACT  = 280; // px canvas width — below this, auto-switch to compact
+const BIN_LEGEND_ADAPT_FLOATING = 180; // px canvas width — below this, auto-switch to floating
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
@@ -110,15 +116,12 @@ export function toCanvas(
     viewport: viewportOverride,
     activeBin,
     fallbackFormat,
+    topClearance  = 0,
+    minRightReserve,
   } = options;
 
   const drawColorbar   = showColorbar && COLORBAR_MODES.has(scene.plotMode);
   const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(scene.plotMode);
-  const legendIsRight    = legendPosition === 'default' || legendPosition === 'compact';
-  const legendIsLeft     = legendPosition === 'left';
-  const legendIsBottom   = legendPosition === 'bottom';
-  const legendIsTop      = legendPosition === 'top';
-  const legendIsFloating = legendPosition === 'floating';
 
   function collectBinLegendEntries(): Array<[number, number]> {
     const binCounts = new Map<number, number>();
@@ -133,8 +136,6 @@ export function toCanvas(
 
   const binLegendEntries = drawBinLegend ? collectBinLegendEntries() : [];
 
-  const legendWidth = legendPosition === 'compact' || legendPosition === 'floating' ? BIN_LEGEND_W_COMPACT : BIN_LEGEND_W;
-
   const dpr     = window.devicePixelRatio ?? 1;
   const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
   const cssH    = Math.floor(canvas.clientHeight || canvas.height);
@@ -146,6 +147,21 @@ export function toCanvas(
     return { hitTarget: { getDieAtPoint: () => null }, viewport: vp, binLegendRows: [] };
   }
 
+  // When the caller leaves legendPosition at 'default', auto-adapt for small canvases
+  // so gallery cards use proportionally less side space for the legend.
+  const effectiveLegendPosition: typeof legendPosition =
+    legendPosition !== 'default' ? legendPosition
+    : cssW < BIN_LEGEND_ADAPT_FLOATING ? 'floating'
+    : cssW < BIN_LEGEND_ADAPT_COMPACT  ? 'compact'
+    : 'default';
+
+  const legendIsRight    = effectiveLegendPosition === 'default' || effectiveLegendPosition === 'compact';
+  const legendIsLeft     = effectiveLegendPosition === 'left';
+  const legendIsBottom   = effectiveLegendPosition === 'bottom';
+  const legendIsTop      = effectiveLegendPosition === 'top';
+  const legendIsFloating = effectiveLegendPosition === 'floating';
+  const legendWidth = effectiveLegendPosition === 'compact' || effectiveLegendPosition === 'floating' ? BIN_LEGEND_W_COMPACT : BIN_LEGEND_W;
+
   const maxLegendRows  = Math.floor((cssH - 2 * padding) / BIN_ROW_H);
   const legendRowCount = binLegendEntries.length > maxLegendRows ? maxLegendRows - 1 : binLegendEntries.length;
   const bottomLegendReserve = drawBinLegend && legendIsBottom ? legendRowCount * BIN_ROW_H : 0;
@@ -154,7 +170,12 @@ export function toCanvas(
   const leftLegendReserve   = drawBinLegend && legendIsLeft   ? legendWidth : 0;
   const axisReserve     = showAxes ? 32 : 0;
   const axisLeftReserve = showAxes ? 36 : 0;
-  const drawW = cssW - 2 * padding - rightReserve - axisLeftReserve - leftLegendReserve;
+  // When the caller specifies a minimum right reserve, use it so the wafer size
+  // stays constant when switching between value and bin plot modes.
+  const effectiveRightReserve = minRightReserve != null
+    ? Math.max(rightReserve, minRightReserve)
+    : rightReserve;
+  const drawW = cssW - 2 * padding - effectiveRightReserve - axisLeftReserve - leftLegendReserve;
   const drawH = cssH - 2 * padding - axisReserve - bottomLegendReserve - topLegendReserve;
 
   canvas.width  = Math.round(cssW * dpr);
@@ -195,9 +216,12 @@ export function toCanvas(
   if (viewportOverride) {
     ({ originX, originY, ppm } = viewportOverride);
   } else {
-    ppm     = Math.min(drawW / dataW, drawH / dataH);
+    // Fit within the drawable area minus the top clearance so the wafer doesn't
+    // clip into the bottom padding after being shifted down by topClearance.
+    const fitH = drawH - topClearance;
+    ppm     = Math.min(drawW / dataW, fitH / dataH);
     originX = padding + axisLeftReserve + leftLegendReserve + (drawW - dataW * ppm) / 2 - minX * ppm;
-    originY = padding + topLegendReserve + (drawH - dataH * ppm) / 2 + maxY * ppm;
+    originY = padding + topClearance + topLegendReserve + (fitH - dataH * ppm) / 2 + maxY * ppm;
   }
 
   const snapDist = viewportOverride?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
@@ -252,7 +276,7 @@ export function toCanvas(
     // Safe drawing area — avoids toolbar (top), legend/colorbar (right), and canvas edges
     const safeX1 = padding + axisLeftReserve + leftLegendReserve;
     const safeX2 = cssW - padding - rightReserve;
-    const safeY1 = padding + topLegendReserve;
+    const safeY1 = padding + topClearance + topLegendReserve;
     const safeY2 = cssH - padding - bottomLegendReserve - axisReserve;
     ctx.save();
     ctx.beginPath();
@@ -290,12 +314,23 @@ export function toCanvas(
   if (drawColorbar) {
     const scheme    = getColorScheme(scene.colorScheme);
     const labelGap  = 20;
-    // Match Plotly: bar occupies ~75% of canvas height, centred vertically.
-    const cbH       = Math.round((cssH - 2 * padding) * 0.75);
-    const cbY       = padding + Math.round((cssH - 2 * padding - cbH) / 2);
+    // Bar occupies ~75% of the usable height below the top clearance, centred in that area.
+    const cbUsableH = drawH - topClearance;
+    const cbH       = Math.round(cbUsableH * 0.75);
+    const cbY       = padding + topClearance + Math.round((cbUsableH - cbH) / 2);
     const cbX       = cssW - padding - colorbarWidth - labelGap;
     const [vMin, vMax] = scene.valueRange;
     const vRange    = vMax - vMin;
+
+    // Pre-compute log constants (only valid when scene.logScale is true).
+    const logMin   = scene.logScale && vMin > 0 ? Math.log10(vMin) : 0;
+    const logRange = scene.logScale && vMax > 0 ? Math.log10(vMax) - logMin : 1;
+
+    // Pixel position of a value along the colorbar (0 = top, cbH = bottom).
+    const tickPy = (v: number): number =>
+      scene.logScale
+        ? (1 - (Math.log10(v) - logMin) / logRange) * cbH
+        : (1 - (v - vMin) / vRange) * cbH;
 
     // Gradient strip.
     for (let i = 0; i < COLORBAR_STEPS; i++) {
@@ -317,25 +352,28 @@ export function toCanvas(
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth   = 0.5;
 
-    const tickLen    = 3;
-    const minPixels  = 36;  // minimum px between tick centres
-    const step       = vRange > 0 ? niceStep(vRange * minPixels / cbH) : 0;
-
-    // Exclude intermediates within this many px of either endpoint — enough
-    // that a 10px 'middle'-baseline label never overlaps the endpoint label.
+    const tickLen       = 3;
+    const minPixels     = 36;  // minimum px between tick centres
     const endpointGuard = 14;
-    const ticks: number[] = [];
-    if (step > 0) {
-      const first = Math.ceil(vMin / step) * step;
-      for (let v = first; v <= vMax + step * 1e-6; v += step) {
-        const py = (1 - (v - vMin) / vRange) * cbH;
-        if (py > endpointGuard && py < cbH - endpointGuard) ticks.push(v);
-      }
-    }
+
+    const ticks: number[] = scene.logScale && logRange > 0
+      ? logTicks(vMin, vMax, cbH, minPixels, endpointGuard, logMin, logRange)
+      : (() => {
+          const step  = vRange > 0 ? niceStep(vRange * minPixels / cbH) : 0;
+          const ts: number[] = [];
+          if (step > 0) {
+            const first = Math.ceil(vMin / step) * step;
+            for (let v = first; v <= vMax + step * 1e-6; v += step) {
+              const py = (1 - (v - vMin) / vRange) * cbH;
+              if (py > endpointGuard && py < cbH - endpointGuard) ts.push(v);
+            }
+          }
+          return ts;
+        })();
 
     const testDef = scene.testDefs?.find(t => (t.index ?? t.testNumber) === scene.testIndex);
     const isCountMode = scene.plotMode === 'stackedBins' || scene.plotMode === 'stackedSoftBins';
-    const cbName  = isCountMode ? 'Count' : testDef?.name;
+    const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (scene.testIndex != null ? `Test ${scene.testIndex}` : undefined));
     const cbUnit  = isCountMode ? undefined : testDef?.unit;
     const { tickFmt, axisLabel } = fmtColorbarAxis(
       vMax, cbName, cbUnit, fallbackFormat,
@@ -344,7 +382,7 @@ export function toCanvas(
     // Draw intermediate ticks with middle baseline.
     ctx.textBaseline = 'middle';
     for (const v of ticks) {
-      const sy = cbY + (1 - (v - vMin) / vRange) * cbH;
+      const sy = cbY + tickPy(v);
       ctx.beginPath();
       ctx.moveTo(cbX + colorbarWidth, sy);
       ctx.lineTo(cbX + colorbarWidth + tickLen, sy);
@@ -367,7 +405,7 @@ export function toCanvas(
     ctx.textBaseline = 'bottom';
     ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
 
-    // Axis label above the bar, right-aligned to the tick column — e.g. "Idsat (mA)".
+    // Axis label below the bar, right-aligned — e.g. "Idsat (mA)".
     const cbLabel = axisLabel || null;
     if (cbLabel) {
       ctx.save();
@@ -375,7 +413,18 @@ export function toCanvas(
       ctx.font         = COLORBAR_LABEL_FONT;
       ctx.textAlign    = 'right';
       ctx.textBaseline = 'top';
-      ctx.fillText(cbLabel, cssW - padding, padding);
+      ctx.fillText(cbLabel, cssW - padding, cbY + cbH + 4);
+      ctx.restore();
+    }
+
+    // Log scale annotation below the axis label.
+    if (scene.logScale) {
+      ctx.save();
+      ctx.fillStyle    = '#555';
+      ctx.font         = '9px system-ui, sans-serif';
+      ctx.textAlign    = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText('log₁₀', cssW - padding, cbY + cbH + 16);
       ctx.restore();
     }
   }
@@ -413,11 +462,11 @@ export function toCanvas(
     const legendEntries: LegendEntry[] = entries.map(([bin, count]) => {
       const binDef = binDefMap?.get(bin);
       const fullLabel = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
-      const label = legendPosition === 'compact' ? String(bin) : fullLabel;
+      const label = effectiveLegendPosition === 'compact' ? String(bin) : fullLabel;
       const tooltipLabel = `${fullLabel} · ${count} dies`;
       const labelWidth = ctx.measureText(label).width;
       const countStr = String(count);
-      const countWidth = legendPosition === 'compact' ? 0 : ctx.measureText(countStr).width;
+      const countWidth = effectiveLegendPosition === 'compact' ? 0 : ctx.measureText(countStr).width;
       const totalWidth = BIN_SWATCH_SIZE + BIN_LABEL_GAP + labelWidth + (countWidth ? BIN_COUNT_W : 0);
       return { bin, count, label, tooltipLabel, labelWidth, countWidth, totalWidth, binDef };
     });
@@ -563,7 +612,7 @@ export function toCanvas(
       }
     } else {
       const colW = columnWidths[0];
-      const showCount = legendPosition !== 'compact';
+      const showCount = effectiveLegendPosition !== 'compact';
       const maxLabelW = colW - BIN_SWATCH_SIZE - BIN_LABEL_GAP - (showCount ? BIN_COUNT_W : 0);
       const countX = originXLegend + colW - 2;
       let visibleEntries = legendEntries;
@@ -767,6 +816,44 @@ function niceStep(rawMm: number): number {
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawMm)));
   const f = rawMm / magnitude;
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * magnitude;
+}
+
+function logTicks(
+  vMin: number, vMax: number,
+  cbH: number, minPixels: number, endpointGuard: number,
+  logMin: number, logRange: number,
+): number[] {
+  const ticks: number[] = [];
+  const decades = logRange;
+
+  if (decades < 1) {
+    // Narrow range (< 1 decade): linear niceStep on actual values, log-positioned.
+    const step = niceStep((vMax - vMin) * minPixels / cbH);
+    if (step > 0) {
+      const first = Math.ceil(vMin / step) * step;
+      for (let v = first; v <= vMax + step * 1e-6; v += step) {
+        if (v <= vMin || v >= vMax) continue;
+        const py = (1 - (Math.log10(v) - logMin) / logRange) * cbH;
+        if (py > endpointGuard && py < cbH - endpointGuard) ticks.push(v);
+      }
+    }
+    return ticks;
+  }
+
+  // 1–3 decades: 1×, 2×, 5× multiples per decade. >3 decades: decade ticks only.
+  const mults     = decades < 3 ? [1, 2, 5] : [1];
+  const floorDec  = Math.floor(Math.log10(vMin));
+  const ceilDec   = Math.ceil(Math.log10(vMax));
+
+  for (let exp = floorDec; exp <= ceilDec; exp++) {
+    for (const m of mults) {
+      const v  = m * Math.pow(10, exp);
+      if (v <= vMin || v >= vMax) continue;
+      const py = (1 - (Math.log10(v) - logMin) / logRange) * cbH;
+      if (py > endpointGuard && py < cbH - endpointGuard) ticks.push(v);
+    }
+  }
+  return ticks;
 }
 
 export { fmt, fmtColorbarAxis } from '../renderer/fmt.js';

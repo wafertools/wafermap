@@ -179,6 +179,11 @@ export interface TestDef {
   name: string;
   /** Physical unit string, e.g. `"A"`, `"V"`, `"Ω"`. Shown in tooltip and colorbar. */
   unit?: string;
+  /**
+   * When true, value normalization and the colorbar use log₁₀ scale for this test.
+   * Silently falls back to linear when any die value is ≤ 0. Default: false.
+   */
+  logScale?: boolean;
 }
 
 /**

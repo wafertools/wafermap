@@ -3,3 +3,6 @@ node_modules/
 _site/
 CLAUDE.md
 .claude
+.codex/
+.vscode/
+scratch/

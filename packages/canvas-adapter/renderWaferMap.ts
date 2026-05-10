@@ -52,6 +52,12 @@ export interface WaferSceneOptions {
    */
   valueRange?:             [number, number];
   /**
+   * When true, apply log₁₀ scale to value normalization and the colorbar.
+   * Overrides the per-test TestDef.logScale default.
+   * Falls back to linear when vMin ≤ 0.
+   */
+  logScale?:               boolean;
+  /**
    * Aggregation method label shown in hover tooltips for `stackedValues` mode.
    * E.g. `'mean'`, `'median'`, `'stddev'`, `'min'`, `'max'`.
    */
@@ -230,6 +236,7 @@ export function renderWaferMap(
       hbinDefs:               so.hbinDefs,
       sbinDefs:               so.sbinDefs,
       valueRange:             so.valueRange,
+      logScale:               so.logScale,
       aggrMethod:             so.aggrMethod,
       lotSize:                so.lotSize,
       dataAxisFlip:           so.dataAxisFlip,
@@ -349,11 +356,16 @@ export function renderWaferMap(
     }
   }
 
+  // Extra top clearance beyond the canvas padding (16px) needed to clear the
+  // toolbar: toolbar sits at top:4px, is ~32px tall → bottom at ~36px.
+  // Excess over padding: 36 - 16 = 20px, rounded up to 24px for a small gap.
+  const TOOLBAR_CLEARANCE = 24;
+
   if (summaryPanelOpts) {
     const placement = summaryPanelOpts.placement ?? 'right';
     // Add clearance to prevent the summary panel content from being obscured by the
     // floating toolbar (position:absolute, top:4px, height ~32px → ~44px total).
-    const clearance = showToolbar ? 44 : 0;
+    const clearance = showToolbar ? TOOLBAR_CLEARANCE : 0;
     summaryPanelEl = createSummaryPanelEl(placement, clearance);
     const parent = canvas.parentElement;
     if (parent) {
@@ -381,6 +393,8 @@ export function renderWaferMap(
   let tbGetOpenMenu:   (() => HTMLDivElement | null) | null = null;
   // Called after every option change to keep the legend style button in sync.
   let syncLegendStyleBtnFn: (() => void) | null = null;
+  // Called after every option change to keep the log scale button in sync.
+  let syncLogScaleBtnFn: (() => void) | null = null;
 
   function selectionFromKeys(keys: string[] | undefined): void {
     selectedKeys = new Set(keys ?? []);
@@ -483,7 +497,7 @@ export function renderWaferMap(
         // Mode dropdown: when testDefs are defined, show one entry per named test
         // plus the bin modes. Selecting a named test sets plotMode:'value' + testIndex.
         // Selecting a bin mode sets plotMode to that mode and clears testIndex.
-        type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string };
+        type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string; logScale?: boolean };
 
         function isCurrentEntry(e: ModeEntry): boolean {
           if (e.plotMode !== (sceneOpts.plotMode ?? 'hardBin')) return false;
@@ -534,7 +548,8 @@ export function renderWaferMap(
 
         function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
           if (entry.testIndex !== undefined) {
-            applyOpts({ plotMode: 'value', testIndex: entry.testIndex });
+            // Apply test's logScale default when switching tests.
+            applyOpts({ plotMode: 'value', testIndex: entry.testIndex, logScale: entry.logScale });
           } else {
             applyOpts({ plotMode: entry.plotMode, testIndex: undefined });
           }
@@ -562,8 +577,15 @@ export function renderWaferMap(
                     plotMode: 'value' as PlotMode,
                     testIndex: t.index ?? t.testNumber ?? 0,
                     label: t.unit ? `${t.name} (${t.unit})` : t.name,
+                    logScale: t.logScale,
                   }))
-                : [{ plotMode: 'value' as PlotMode, label: MODE_LABELS.value }])
+                : [...new Set(dies.flatMap(d =>
+                    d.testValues ? Object.keys(d.testValues).map(Number) : []
+                  ))].sort((a, b) => a - b).map(tn => ({
+                    plotMode: 'value' as PlotMode,
+                    testIndex: tn,
+                    label: `Test ${tn}`,
+                  })))
             : [];
           const binEntries: ModeEntry[] = [
             ...(hasHbin ? [{ plotMode: 'hardBin'  as PlotMode, label: MODE_LABELS.hardBin }] : []),
@@ -733,6 +755,19 @@ export function renderWaferMap(
           btnLegendStyle.style.pointerEvents = isBinMode ? '' : 'none';
         };
         syncLegendStyleBtnFn();
+
+        const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
+          applyOpts({ logScale: !sceneOpts.logScale });
+        });
+        // Only enable log scale button in value / stackedValues modes.
+        syncLogScaleBtnFn = () => {
+          const isValueMode = sceneOpts.plotMode === 'value' || sceneOpts.plotMode === 'stackedValues';
+          btnLogScale.style.opacity       = isValueMode ? '' : '0.35';
+          btnLogScale.style.pointerEvents = isValueMode ? '' : 'none';
+          setActive(btnLogScale, !!sceneOpts.logScale);
+        };
+        syncLogScaleBtnFn();
+
         const btnRotate = makeBtn('rotateCW', 'Rotate 90° clockwise', () => {
           const r = sceneOpts.rotation ?? 0;
           // Positive rotation is CCW in standard math convention, so decrement to rotate CW.
@@ -749,6 +784,7 @@ export function renderWaferMap(
 
         if (showPlotModeSelector) toolbar.appendChild(btnMode);
         toolbar.appendChild(btnPalette);
+        toolbar.appendChild(btnLogScale);
         toolbar.appendChild(makeSep());
         toolbar.appendChild(btnRings);
         toolbar.appendChild(btnQuadrants);
@@ -773,7 +809,7 @@ export function renderWaferMap(
         // Findings button — toggles the summary panel.
         // When statsSummary is provided with no explicit summaryPanel option, auto-mount a hidden panel.
         if (currentStatsSummary && !summaryPanelOpts) {
-          const clearance = 44;
+          const clearance = TOOLBAR_CLEARANCE;
           autoSummaryPanelEl = createSummaryPanelEl('right', clearance);
           autoSummaryPanelEl.style.display = 'none';
           const next = canvas.nextSibling;
@@ -840,6 +876,7 @@ export function renderWaferMap(
     const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendPosition');
     if (!onlyLegendStyle) rebuildScene();
     syncLegendStyleBtnFn?.();
+    syncLogScaleBtnFn?.();
     render();
   }
 
@@ -859,9 +896,35 @@ export function renderWaferMap(
       ? { x: firstDie.width, y: firstDie.height }
       : drawOptions.diePitchMm;
 
+    // Hold the right-side reserve constant across mode switches so the wafer
+    // doesn't resize when toggling between value and bin modes.
+    // Mirror the adaptive thresholds from toCanvas so the stable reserve matches
+    // whatever legend mode toCanvas will actually choose.
+    const BIN_LEGEND_W        = 110;
+    const BIN_LEGEND_W_COMPACT = 64;
+    const BIN_LEGEND_ADAPT_COMPACT  = 280;
+    const BIN_LEGEND_ADAPT_FLOATING = 180;
+    const cssW = Math.floor(canvas.clientWidth || canvas.width);
+    const hasBinData = !!(currentScene.hbinDefs?.length || currentScene.sbinDefs?.length ||
+      currentScene.dies.some(d => d.hbin != null || d.sbin != null));
+    const legendPos = sceneOpts.legendPosition ?? 'default';
+    const isRightLegend = legendPos === 'default' || legendPos === 'compact';
+    const colorbarReserve = (drawOptions.colorbarWidth ?? 16) + 28;
+    const stableRight = hasBinData && isRightLegend
+      ? legendPos !== 'default'
+        ? Math.max(BIN_LEGEND_W, colorbarReserve)
+        : cssW < BIN_LEGEND_ADAPT_FLOATING
+          ? 0
+          : cssW < BIN_LEGEND_ADAPT_COMPACT
+            ? Math.max(BIN_LEGEND_W_COMPACT, colorbarReserve)
+            : Math.max(BIN_LEGEND_W, colorbarReserve)
+      : undefined;
+
     const result = toCanvas(canvas, currentScene, {
       ...drawOptions,
-      legendPosition: sceneOpts.legendPosition ?? 'default',
+      topClearance:    showToolbar ? TOOLBAR_CLEARANCE : 0,
+      minRightReserve: stableRight,
+      legendPosition:  legendPos,
       legendOffset,
       diePitchMm,
       fallbackFormat: currentFallbackFormat,

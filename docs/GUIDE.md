@@ -2,7 +2,7 @@
 
 This guide walks through building wafer map visualisations in a real application,
 from a single interactive map up to a multi-wafer gallery with statistical findings.
-It focuses on practical patterns; for the full type reference see [API.md](https://github.com/telecasterer/wafermap/blob/main/docs/API.md).
+It focuses on practical patterns; for the full type reference see [API Reference](../api/). For the repo landing page, go back to [wafermap demos](../).
 
 ---
 
@@ -318,8 +318,10 @@ console.log(`${(yld.yieldPercent * 100).toFixed(1)}%`);
 ## 6. Working with test values
 
 Continuous test measurements (leakage current, threshold voltage, etc.) go in
-`testValues` — a map keyed by a stable integer test identity.  Use `TestDef` to
-give each test a name and unit:
+`testValues` — a map keyed by a stable integer test identity.  `TestDef` is
+optional: without it the library uses `Test {N}` (the testNumber) everywhere a
+name would appear — mode dropdown, tooltip, colorbar axis, summary panel.  Add
+`TestDef` when you want human-readable names, units, and SI prefix formatting:
 
 ```ts
 const results = rows.map(r => ({
@@ -361,9 +363,12 @@ The formatter applies SI prefixes automatically — `0.03` with unit `'Ω'` disp
 (e.g. `30 µmA` instead of `30 nA`).
 
 With `testDefs` in place:
-- The toolbar Mode dropdown shows one entry per test by name ("Idsat", "Vth", …)
-- Hover tooltips show "Idsat: 1.23 mA" instead of a raw number
-- The colorbar axis label includes the unit
+- The toolbar Mode dropdown shows one entry per test by name ("Idsat", "Vth", …) — without `testDefs` it shows "Test 1050", "Test 1060", etc.
+- Hover tooltips show "Idsat: 1.23 mA" — without `testDefs` they show "Test 1050: 1.23 mA"
+- The colorbar axis label includes the name and unit — without `testDefs` it shows "Test 1050"
+- The summary panel Test Values section uses test names — without `testDefs` it uses "Test 1050", etc.
+
+`TestDef.logScale: true` enables log₁₀ scale for that test by default (silently falls back to linear when any die value ≤ 0). The user can also toggle log scale at any time via the toolbar Log scale button, which overrides the per-test default.
 
 **→ [Demo: Working with test values](../guide-demos/06-test-values.html)**
 
@@ -539,7 +544,7 @@ In `hardBin` and `softBin` modes, the bin legend can be placed in six positions 
 
 | Value | Behaviour |
 | --- | --- |
-| `'default'` | Vertical list on the right (full labels + counts) |
+| `'default'` | Vertical list on the right (full labels + counts). Auto-adapts: switches to `compact` below 280 px canvas width, `floating` below 180 px. |
 | `'compact'` | Vertical list on the right (bin numbers only) |
 | `'left'` | Vertical list on the left (full labels + counts) |
 | `'top'` | Horizontal strip above the wafer (multi-column, auto-fitted) |
@@ -747,7 +752,7 @@ The panel is divided into sections:
 | **Soft Bins** | Count and percentage per soft bin (when sbin data is present) |
 | **Ring analysis** | Per-ring yield breakdown (Ring 1 = centre, Ring N = edge) |
 | **Quadrant analysis** | Per-quadrant yield and die count |
-| **Test values** | Mean, median, stddev, min, max per test parameter |
+| **Test values** | Min, mean, max per test parameter — labelled by `TestDef.name` when provided, otherwise `Test {N}` using the testNumber |
 | **Findings** | All `StatsFinding` entries grouped by severity — clicking a finding highlights the affected die zone on the map |
 
 ### Updating the panel after data changes

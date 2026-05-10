@@ -58,6 +58,7 @@
     "dev": "npm run build && serve -l 3000 .",
     "test": "npm run build && node --test tests/*.test.mjs",
     "build:guide": "node scripts/build-guide.mjs",
+    "build:site": "node scripts/build-site.mjs",
     "prepack": "npm run build",
     "pack:check": "npm pack --dry-run",
     "prepublishOnly": "npm test"

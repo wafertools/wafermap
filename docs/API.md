@@ -239,7 +239,7 @@ result.dies.filter(d => d.retestCount !== undefined)
 
 #### `TestDef`
 
-Named definition for one test parameter.  When provided, tooltips show `"Idsat: 1.23e-3 A"` instead of `"Values: 1.23e-3"`, and the toolbar mode dropdown offers one entry per test.
+Named definition for one test parameter. The toolbar mode dropdown always offers one entry per test — using `testNumber` as the label when `testDefs` is absent. When `testDefs` is provided, tooltips show `"Idsat: 1.23 mA"` with the test name and SI-scaled unit; without it they fall back to `"Test 1050: 1.23 mA"`.
 
 ```ts
 {
@@ -251,6 +251,8 @@ Named definition for one test parameter.  When provided, tooltips show `"Idsat: 
   unit?:       string  // SI base unit, e.g. "A", "V", "Ω", "F" — the formatter applies SI prefixes
                        // automatically (0.03 Ω → "30 mΩ"), so always pass the base unit, never a
                        // pre-scaled unit like "mA" or "µV"
+  logScale?:   boolean // when true, value normalization and the colorbar use log₁₀ scale for this test
+                       // silently falls back to linear when any die value is ≤ 0; default false
 }
 ```
 
@@ -516,10 +518,13 @@ Scene display options controllable via the toolbar or programmatically:
   hbinDefs?:               BinDef[]          // hard bin names/colors (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]          // soft bin names/colors (sbin, 0–32767 space — independent)
   testIndex?:              number            // toolbar cursor: which testDefs entry to show in 'value' mode; default 0
+  logScale?:               boolean           // override log₁₀ scale on/off for the active test; takes precedence over TestDef.logScale; silently falls back to linear when vMin ≤ 0
   valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
   lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
-  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // bin legend position/style (default 'default'); only applies in hardBin/softBin modes
+  legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
+                                            // bin legend position/style; default 'default' (auto-adapts: compact below 280 px, floating below 180 px)
+                                            // only applies in hardBin/softBin modes
 }
 ```
 
@@ -527,8 +532,8 @@ Scene display options controllable via the toolbar or programmatically:
 
 | Mode | Tooltip content |
 | --- | --- |
-| `value`, `hardBin`, `softBin` | Die (i, j) · all values with test names · all bins with hard/soft labels |
-| `stackedValues` | Die (i, j) · test name + method + aggregated value (e.g. "Idsat (mean): 1.23 mA") |
+| `value`, `hardBin`, `softBin` | Die (i, j) · one line per test value (`"Idsat: 1.23 mA"` with testDefs, `"Test 1050: 1.23 mA"` without) · bins with hard/soft labels |
+| `stackedValues` | Die (i, j) · test label + method + aggregated value (e.g. `"Idsat (mean): 1.23 mA"` with testDefs, `"Test 1050 (mean): 1.23 mA"` without) |
 | `stackedBins` | Die (i, j) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
 | `stackedSoftBins` | Same as `stackedBins` but uses `sbinDefs` for name lookup |
 
@@ -554,7 +559,9 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   showToolbar?:            boolean   // default true
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
-  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position (default 'default'); user can change via toolbar
+  legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
+                                            // initial bin legend position (default 'default'); user can change via toolbar
+                                            // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a summary panel toggle button to the toolbar
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
@@ -565,6 +572,8 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 The box-select toolbar button is always shown. Providing `onSelect` lets your app react to selection changes; without it the selection is purely visual.
 
 When `statsSummary` is provided, a summary panel toggle button (clipboard icon) appears in the toolbar. The panel opens hidden by default; clicking the button shows or hides it. Clicking a finding in the panel highlights the affected die zone on the map.
+
+The panel's **Test Values** section shows Min/Mean/Max for each test. Test names come from `testDefs` when provided; without `testDefs` each test is labelled `Test {N}` using its testNumber. The section appears whenever dies have `testValues`, regardless of whether `testDefs` is supplied.
 
 ### `WaferCanvasController`
 
@@ -593,8 +602,9 @@ When `statsSummary` is provided, a summary panel toggle button (clipboard icon) 
 | Zoom + | Zoom in centred on canvas |
 | Zoom − | Zoom out centred on canvas |
 | Reset | Return to fitted view (also: double-click canvas) |
-| Mode | Grouped dropdown: **Test Value** section (one entry per test, or cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
+| Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Dropdown: all registered colour schemes |
+| Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Active only in `value` / `stackedValues` modes; dimmed otherwise. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
 | Labels | Toggle die index text labels |
@@ -686,7 +696,9 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 {
   sceneOptions?:           WaferSceneOptions  // initial shared state
   onSceneOptionsChange?:   (opts: WaferSceneOptions) => void
-  legendPosition?:            'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'  // initial bin legend position for all cards (default 'default'); user can change via gallery bar
+  legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
+                                            // initial bin legend position for all cards (default 'default'); user can change via gallery bar
+                                            // 'default' auto-adapts: compact below 280 px card width, floating below 180 px
   cardPadding?:            number             // CSS-px padding inside each card canvas (default 6)
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
@@ -714,6 +726,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 | --- | --- |
 | Mode | Dropdown: plot mode for all cards |
 | Palette | Dropdown: colour scheme for all cards |
+| Log scale | Toggle log₁₀ scale for all cards. Active only in `value` / `stackedValues` modes; dimmed otherwise. |
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
 | Labels | Toggle die labels on all cards |
@@ -730,7 +743,7 @@ Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, 
 
 ### Lot summary panel
 
-When `lotStatsSummary` is provided, a summary panel toggle button appears in the control bar. The panel is hidden by default; clicking the button shows or hides it alongside the card grid. The panel shows lot-level yield, bin breakdown, ring and quadrant yield aggregated across all wafers, test value statistics, and findings grouped by severity: **Unusual** → **Notable** → **Informational**.
+When `lotStatsSummary` is provided, a summary panel toggle button appears in the control bar. The panel is hidden by default; clicking the button shows or hides it alongside the card grid. The panel shows lot-level yield, bin breakdown, ring and quadrant yield aggregated across all wafers, test value statistics (labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), and findings grouped by severity: **Unusual** → **Notable** → **Informational**.
 
 Clicking a finding highlights the affected area:
 
@@ -924,7 +937,7 @@ import { renderSummaryReportHtml } from 'wafermap/stats';
 const html = renderSummaryReportHtml(params, { title?: string }): string
 ```
 
-Generates a standalone printable HTML **full summary report** — a snapshot of everything shown in the summary panel: metadata, yield, bin breakdown, ring yield, quadrant yield, test value statistics (min/mean/median/stddev/max per test), and findings. Suitable for printing or saving as PDF via `openHtmlReport(html)`.
+Generates a standalone printable HTML **full summary report** — a snapshot of everything shown in the summary panel: metadata, yield, bin breakdown, ring yield, quadrant yield, test value statistics (min/mean/median/stddev/max per test, labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), and findings. Suitable for printing or saving as PDF via `openHtmlReport(html)`.
 
 ```ts
 // Params mirror renderWaferSummaryContent (minus DOM callbacks):
@@ -1158,7 +1171,7 @@ interface ToCanvasOptions {
 
 | Mode | Right-side legend |
 | --- | --- |
-| `value`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks). |
+| `value`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks). Axis label is `testDef.name` (e.g. `"Idsat (mA)"`), or `Test {N}` when no `testDefs` are supplied. |
 | `stackedBins`, `stackedSoftBins` | Continuous colorbar; axis labelled "Count". |
 | `hardBin`, `softBin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
 
@@ -1392,11 +1405,13 @@ Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for 
 
 ---
 
-### `aggregateValues(diesByWafer, method)`
+### `aggregateValues(diesByWafer, method, paramIndex?)`
 
 `method` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
 
-Returns one `Die` per unique `(i, j)` with `testValues[0]` = aggregate.
+`paramIndex` — the `testValues` key to read from each source die (e.g. a `testNumber` like `1050`). Defaults to `0`.
+
+Returns one `Die` per unique `(i, j)` with the aggregated scalar stored at `testValues[0]`, ready for `buildScene` in `stackedValues` mode.
 
 ---
 
@@ -1424,12 +1439,13 @@ interface SceneOptions {
   hbinDefs?:               BinDef[]    // named hard bin definitions (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
   testIndex?:              number      // which values[] slot to display in 'value' mode; default 0
+  logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
   aggrMethod?:             string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
   lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
 }
 ```
 
-Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `aggrMethod`, `lotSize`.
+Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `logScale`, `aggrMethod`, `lotSize`.
 
 ---
 

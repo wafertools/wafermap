@@ -39,25 +39,8 @@ jobs:
         run: npm run build
         working-directory: examples/vite-demo
 
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          # Library output — demos import from ../../dist/index.js
-          cp -r dist _site/dist
-          # All example directories
-          cp -r examples _site/examples
-          # Replace vite-demo with its compiled output
-          rm -rf _site/examples/vite-demo
-          cp -r examples/vite-demo/dist _site/examples/vite-demo
-          # CSV data files — demos load from ../../data/
-          cp -r data _site/data
-          # Guide companion demos
-          cp -r guide-demos _site/guide-demos
-          # Landing page
-          cp index.html _site/index.html
-
-      - name: Build guide
-        run: npm run build:guide
+      - name: Build site
+        run: npm run build:site
 
       - uses: actions/upload-pages-artifact@v3
         with:
