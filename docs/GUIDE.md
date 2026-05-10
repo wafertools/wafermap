@@ -2,29 +2,7 @@
 
 This guide walks through building wafer map visualisations in a real application,
 from a single interactive map up to a multi-wafer gallery with statistical findings.
-It focuses on practical patterns; for the full type reference see [API Reference](../api/). For the repo landing page, go back to [wafermap demos](../).
-
----
-
-## Contents
-
-1. [Installation and setup](#1-installation-and-setup)
-2. [Your first wafer map](#2-your-first-wafer-map)
-3. [Loading real data from a CSV](#3-loading-real-data-from-a-csv)
-4. [Adding die size and wafer geometry](#4-adding-die-size-and-wafer-geometry)
-5. [Working with bins](#5-working-with-bins)
-6. [Working with test values](#6-working-with-test-values)
-7. [Retests and enriching dies after build](#7-retests-and-enriching-dies-after-build)
-8. [Controlling the display](#8-controlling-the-display)
-9. [Responding to user interaction](#9-responding-to-user-interaction)
-10. [Adding statistical findings](#10-adding-statistical-findings)
-11. [Summary panel](#11-summary-panel)
-12. [Building a lot gallery](#12-building-a-lot-gallery)
-13. [Lot-level statistical findings](#13-lot-level-statistical-findings)
-14. [Reticle overlays](#14-reticle-overlays)
-15. [Processing large datasets with a Web Worker](#15-processing-large-datasets-with-a-web-worker)
-16. [Custom colour schemes](#16-custom-colour-schemes)
-17. [Common patterns and tips](#17-common-patterns-and-tips)
+It focuses on practical patterns; for the full type reference see [API Reference](../api/).
 
 ---
 

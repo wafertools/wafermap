@@ -13,11 +13,15 @@ type BinDefMap = Map<number, BinDef>;
 
 /** Resolve a toolbar testIndex cursor to the canonical test number for getDieTestValue. */
 function resolveTestNumber(testIndex: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
-  const def = testDefs?.find(t => (t.index ?? t.testNumber) === testIndex);
-  return {
-    testNumber:    def?.testNumber ?? def?.index ?? testIndex,
-    fallbackIndex: def?.index     ?? testIndex,
-  };
+  if (testDefs?.length) {
+    const def = testDefs.find(t => (t.index ?? t.testNumber) === testIndex)
+             ?? testDefs[0]; // default to first test when testIndex doesn't match any def
+    return {
+      testNumber:    def.testNumber ?? def.index ?? testIndex,
+      fallbackIndex: def.index     ?? testIndex,
+    };
+  }
+  return { testNumber: testIndex, fallbackIndex: testIndex };
 }
 
 export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins';
@@ -777,8 +781,27 @@ export function buildScene(
   };
 
   // Resolve testIndex (toolbar cursor) → canonical test number for getDieTestValue.
-  const { testNumber: activeTestNumber, fallbackIndex: activeTestFallback } =
+  let { testNumber: activeTestNumber, fallbackIndex: activeTestFallback } =
     resolveTestNumber(testIndex, testDefs);
+
+  // When no testDefs are provided the toolbar passes actual testNumbers as testIndex.
+  // If the resolved testNumber doesn't exist in any die (e.g. default testIndex=0 but data
+  // uses keys like 1010), fall back to the lowest key actually present in the dies.
+  if (!testDefs?.length && plotMode === 'value') {
+    const hasKey = dies.some(d => d.testValues && activeTestNumber in d.testValues);
+    if (!hasKey) {
+      const firstKey = dies.reduce<number | undefined>((min, d) => {
+        if (!d.testValues) return min;
+        const keys = Object.keys(d.testValues).map(Number);
+        const lo = keys.length ? Math.min(...keys) : undefined;
+        return lo !== undefined && (min === undefined || lo < min) ? lo : min;
+      }, undefined);
+      if (firstKey !== undefined) {
+        activeTestNumber  = firstKey;
+        activeTestFallback = firstKey;
+      }
+    }
+  }
 
   // Compute value range for normalization.
   // For stackedValues/stackedBins the aggregated scalar sits at testNumber=0.

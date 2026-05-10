@@ -4,7 +4,7 @@ This document describes the public API exposed by `wafermap`.
 
 ---
 
-## Coordinate system
+## 1 Coordinate system
 
 **`x` and `y` throughout this API are die grid positions (prober step coordinates) — integers such as −7, 0, 5.  They are NOT millimetre values.**
 
@@ -19,7 +19,7 @@ Physical mm positions appear only on the `Die` output objects (`die.x`, `die.y`)
 
 ---
 
-## Quick Start
+## 2 Quick Start
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -40,7 +40,7 @@ The map renders with a full built-in toolbar — no extra HTML or JavaScript nee
 
 ---
 
-## API overview
+## 3 API overview
 
 ```text
 buildWaferMap()            — data layer: prober results → wafer + dies (server-safe, no DOM)
@@ -54,7 +54,7 @@ buildWaferMap()            — data layer: prober results → wafer + dies (serv
 
 ---
 
-## `buildWaferMap(input)`
+## 4 `buildWaferMap(input)`
 
 The primary entry point.  Pass whatever data you have — prober step positions,
 optional geometry hints, or a pre-built die array.  The function infers whatever
@@ -67,7 +67,7 @@ effects.  It can run in Node.js, Deno, a Web Worker, or any server-side environm
 import { buildWaferMap } from '@paulrobins/wafermap';
 ```
 
-### Input
+### 4.1 Input
 
 `buildWaferMap` accepts either an array of data points or an object:
 
@@ -93,7 +93,7 @@ buildWaferMap({
 
 All fields are optional.  Supply what you know; the library handles the rest.
 
-#### `DieResult`
+#### 4.1.1 `DieResult`
 
 A single die record from wafer test equipment.
 
@@ -119,7 +119,7 @@ When a die position appears more than once in the `results` array (a retest), th
 `retestPolicy` field on `WaferMapInput` controls which result is kept.  The
 `die.retestCount` field always records how many times that position appeared.
 
-#### `WaferConfig`
+#### 4.1.2 `WaferConfig`
 
 ```ts
 {
@@ -138,7 +138,7 @@ When a die position appears more than once in the `results` array (a retest), th
 **`orientation` note:** positive values rotate the die grid counter-clockwise (standard mathematical convention).  The notch/flat position is controlled by `notch.type` and is **not** affected by `orientation` — it stays fixed as the physical alignment mark.
 
 
-#### `DieConfig`
+#### 4.1.3 `DieConfig`
 
 ```ts
 {
@@ -164,7 +164,7 @@ the grid layout using nearest-neighbour step analysis first, falling back to the
 circular-wafer aspect-ratio constraint.
 
 
-#### `ReticleConfig`
+#### 4.1.4 `ReticleConfig`
 
 ```ts
 {
@@ -179,7 +179,7 @@ circular-wafer aspect-ratio constraint.
 
 When provided, reticle overlays are shown by default (`showReticle` defaults to `true`).
 
-#### `LotStackConfig`
+#### 4.1.5 `LotStackConfig`
 
 Collapse data from multiple wafers into a single map before rendering.  When `lotStack`
 is present the top-level `results` field is ignored.
@@ -198,7 +198,7 @@ is present the top-level `results` field is ignored.
 }
 ```
 
-#### `passBins`
+#### 4.1.6 `passBins`
 
 ```ts
 passBins?: number[]   // default [1]  (industry convention: bin 1 = pass)
@@ -206,7 +206,7 @@ passBins?: number[]   // default [1]  (industry convention: bin 1 = pass)
 
 Bin values that count as pass for yield calculation.  Set to `[]` to suppress yield.
 
-#### `retestPolicy`
+#### 4.1.7 `retestPolicy`
 
 ```ts
 retestPolicy?: 'last' | 'first'   // default 'last'
@@ -237,7 +237,7 @@ result.dies.filter(d => d.retestCount !== undefined)
   .forEach(d => console.log(`Die (${d.i},${d.j}) tested ${d.retestCount} times`));
 ```
 
-#### `TestDef`
+#### 4.1.8 `TestDef`
 
 Named definition for one test parameter. The toolbar mode dropdown always offers one entry per test — using `testNumber` as the label when `testDefs` is absent. When `testDefs` is provided, tooltips show `"Idsat: 1.23 mA"` with the test name and SI-scaled unit; without it they fall back to `"Test 1050: 1.23 mA"`.
 
@@ -258,7 +258,7 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
 
 `testNumber` is preferred. When `testNumber` is set it must match the key used in `DieResult.testValues`. Use `index` only when working with the deprecated `values[]` array.
 
-#### `BinDef`
+#### 4.1.9 `BinDef`
 
 Named definition for one bin number.  Used for both hard bin (`hbinDefs`) and soft bin (`sbinDefs`) — the shape is identical but the number spaces are independent.
 
@@ -274,7 +274,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 
 **Hard bins** (`hbinDefs`) are the physical sort result — where the part goes on the handler.  **Soft bins** (`sbinDefs`) are the logical test-program classification — the failure category as determined by the test algorithm, used for debug and yield analysis.  Many soft bins typically map to one hard bin.
 
-### Return value
+### 4.2 Return value
 
 ```ts
 {
@@ -299,7 +299,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 }
 ```
 
-#### `YieldSummary`
+#### 4.2.1 `YieldSummary`
 
 ```ts
 {
@@ -319,7 +319,7 @@ Partial dies and edge-excluded dies are excluded from both numerator and denomin
 - `'mm'` — at least one physical dimension was known (die size or wafer diameter); all spatial values are in real-world millimetres.
 - `'normalized'` — only grid positions were supplied; coordinates are proportionally correct (aspect ratio preserved) but not in physical mm.  `pitchX = 1` normalized unit by convention.
 
-### Inference levels
+### 4.3 Inference levels
 
 The library adapts to whatever geometry context you provide.  Four distinct levels:
 
@@ -338,7 +338,7 @@ are rounded to the nearest 10 mm.
 **Origin auto-detection:** when all input coordinates are ≥ 0, the library
 automatically infers lower-left (`'LL'`) origin and centres the grid for display.
 
-### Examples
+### 4.4 Examples
 
 **Minimal — grid positions only (normalized units):**
 
@@ -453,7 +453,7 @@ console.log(`${retested.length} die positions were retested`);
 // The built-in tooltip automatically shows "Retests: N" for retested dies.
 ```
 
-### Post-enrichment
+### 4.5 Post-enrichment
 
 When you need to attach additional values after the map is built, use `getDieKey`
 for stable lookups:
@@ -481,7 +481,7 @@ const enrichedDies = result.dies.map(d => {
 
 ---
 
-## `renderWaferMap(canvas, wafer, dies, options?)`
+## 5 `renderWaferMap(canvas, wafer, dies, options?)`
 
 A fully self-contained interactive wafermap. Accepts `wafer` and `dies` directly,
 owns scene building internally, and provides a **built-in toolbar** that appears on
@@ -495,7 +495,7 @@ flip, zoom, box-select, and PNG download.
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 ```
 
-### `WaferSceneOptions`
+### 5.1 `WaferSceneOptions`
 
 Scene display options controllable via the toolbar or programmatically:
 
@@ -528,7 +528,7 @@ Scene display options controllable via the toolbar or programmatically:
 }
 ```
 
-### Hover tooltip content by mode
+### 5.2 Hover tooltip content by mode
 
 | Mode | Tooltip content |
 | --- | --- |
@@ -539,11 +539,11 @@ Scene display options controllable via the toolbar or programmatically:
 
 The `aggrMethod` and `lotSize` fields on `WaferSceneOptions` populate the method label and percentage denominator respectively.
 
-### Axis labels
+### 5.3 Axis labels
 
 When `showAxes: true`, tick labels show die grid indices (integer i/j values). `renderWaferMap` derives `diePitchMm` automatically from the scene geometry, so axes always show grid indices. Only when calling `toCanvas` directly without supplying `diePitchMm` do axes fall back to mm values.
 
-### `MountOptions`
+### 5.4 `MountOptions`
 
 All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, etc. — see `toCanvas` options below), plus:
 
@@ -575,7 +575,7 @@ When `statsSummary` is provided, a summary panel toggle button (clipboard icon) 
 
 The panel's **Test Values** section shows Min/Mean/Max for each test. Test names come from `testDefs` when provided; without `testDefs` each test is labelled `Test {N}` using its testNumber. The section appears whenever dies have `testValues`, regardless of whether `testDefs` is supplied.
 
-### `WaferCanvasController`
+### 5.5 `WaferCanvasController`
 
 ```ts
 {
@@ -591,7 +591,7 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 }
 ```
 
-### Toolbar buttons (full mode)
+### 5.6 Toolbar buttons (full mode)
 
 | Button | Action |
 | --- | --- |
@@ -616,7 +616,7 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 | Flip V | Mirror vertically |
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
 
-### Interactions
+### 5.7 Interactions
 
 | Gesture | Mode | Action |
 | --- | --- | --- |
@@ -636,7 +636,7 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 > underlying `Die` data.  Selection stability is guaranteed: `die.i` and `die.j`
 > remain unchanged regardless of display orientation.
 
-### Example usage
+### 5.8 Example usage
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -663,7 +663,7 @@ ctrl.destroy();
 
 ---
 
-## `renderWaferGallery(container, items, options?)`
+## 6 `renderWaferGallery(container, items, options?)`
 
 A multi-map gallery with a shared control bar, per-card view-only toolbars, and
 click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or
@@ -673,7 +673,7 @@ flip in the gallery bar applies to every card instantly.
 import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 ```
 
-### `GalleryItem`
+### 6.1 `GalleryItem`
 
 ```ts
 {
@@ -690,7 +690,7 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 
 Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` so the overlay has geometry to draw.
 
-### `GalleryOptions`
+### 6.2 `GalleryOptions`
 
 ```ts
 {
@@ -707,7 +707,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 }
 ```
 
-### `GalleryController`
+### 6.3 `GalleryController`
 
 ```ts
 {
@@ -720,7 +720,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 }
 ```
 
-### Gallery control bar
+### 6.4 Gallery control bar
 
 | Button | Action |
 | --- | --- |
@@ -741,7 +741,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 
 Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
 
-### Lot summary panel
+### 6.5 Lot summary panel
 
 When `lotStatsSummary` is provided, a summary panel toggle button appears in the control bar. The panel is hidden by default; clicking the button shows or hides it alongside the card grid. The panel shows lot-level yield, bin breakdown, ring and quadrant yield aggregated across all wafers, test value statistics (labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), and findings grouped by severity: **Unusual** → **Notable** → **Informational**.
 
@@ -752,7 +752,7 @@ Clicking a finding highlights the affected area:
 
 Clicking the active finding again clears the highlight. Opening a card modal while a finding is active passes through the card's `statsSummary` so the modal's own per-wafer summary panel is also available.
 
-### Click-to-detail modal
+### 6.6 Click-to-detail modal
 
 Each card header contains an expand button (↗).  Clicking it opens a full-screen
 modal with `renderWaferMap` mounted at full resolution and with the complete
@@ -760,7 +760,7 @@ toolbar.  Shared scene options are passed through so the modal opens in the same
 display state as the gallery.  Close with Esc, the × button, or clicking the
 backdrop.
 
-### Shared bin legend
+### 6.7 Shared bin legend
 
 For `hardBin` and `softBin` modes a shared legend strip is rendered between the
 control bar and the card grid — one coloured swatch + label per unique bin across
@@ -778,7 +778,7 @@ the highlight. The active entry is indicated with a bold label and a blue swatch
 border. The legend rebuilds automatically whenever the mode, colour scheme, or
 highlight changes.
 
-### Stacked modes
+### 6.8 Stacked modes
 
 The toolbar includes three lot-aggregation modes: **Stacked Hard Bins**,
 **Stacked Soft Bins**, and **Stacked Test Values**.  The gallery handles
@@ -796,7 +796,7 @@ Switching to a stacked mode rebuilds the cards; switching back restores the
 original per-wafer cards.  `ctrl.setItems(newItems)` always accepts per-wafer
 items — the gallery re-aggregates automatically if a stacked mode is active.
 
-### Gallery example
+### 6.9 Gallery example
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -828,7 +828,7 @@ ctrl.destroy();
 
 ---
 
-## Statistics / Findings Engine
+## 7 Statistics / Findings Engine
 
 Detects statistically significant spatial patterns in wafer test data — yield loss, bin accumulation, or test value shifts concentrated in specific rings, quadrants, reticle positions, or individual wafers.
 
@@ -836,7 +836,7 @@ Detects statistically significant spatial patterns in wafer test data — yield 
 import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 ```
 
-### `analyzeWaferMap(input, options?)`
+### 7.1 `analyzeWaferMap(input, options?)`
 
 Analyses a single wafer and returns a `StatsSummary`.  Accepts either a `WaferMapInput` object or the `WaferMapResult` returned by `buildWaferMap`.
 
@@ -845,7 +845,7 @@ const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] })
 const summary = analyzeWaferMap(result, { ringCount: 4 });
 ```
 
-### `analyzeWaferLot(items, options?)`
+### 7.2 `analyzeWaferLot(items, options?)`
 
 Analyses an array of wafers and returns a `LotStatsSummary`.  Each element is a `WaferMapInput` or `WaferMapResult`.  In addition to per-wafer findings, the lot summary includes:
 
@@ -856,7 +856,7 @@ Analyses an array of wafers and returns a `LotStatsSummary`.  Each element is a 
 const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 ```
 
-### `AnalyzeWaferMapOptions`
+### 7.3 `AnalyzeWaferMapOptions`
 
 ```ts
 {
@@ -880,7 +880,7 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 
 Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
 
-### `StatsSummary`
+### 7.4 `StatsSummary`
 
 ```ts
 {
@@ -900,7 +900,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
 }
 ```
 
-### `LotStatsSummary`
+### 7.5 `LotStatsSummary`
 
 ```ts
 {
@@ -918,7 +918,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
 }
 ```
 
-### `renderFindingsReportHtml` / `openHtmlReport`
+### 7.6 `renderFindingsReportHtml` / `openHtmlReport`
 
 ```ts
 import { renderFindingsReportHtml, openHtmlReport } from 'wafermap/stats';
@@ -929,7 +929,7 @@ openHtmlReport(html): void
 
 Generates a standalone printable HTML **findings-only** report from a `StatsSummary` or `LotStatsSummary`. Includes wafer/lot identity fields, yield and die count stats, and a severity-coded findings table. `openHtmlReport` opens the HTML string in a new browser tab for printing or saving as PDF.
 
-### `renderSummaryReportHtml`
+### 7.7 `renderSummaryReportHtml`
 
 ```ts
 import { renderSummaryReportHtml } from 'wafermap/stats';
@@ -957,7 +957,7 @@ Generates a standalone printable HTML **full summary report** — a snapshot of 
 
 The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided.
 
-### `StatsFinding`
+### 7.8 `StatsFinding`
 
 ```ts
 {
@@ -994,7 +994,7 @@ The summary panel's "Summary report" button calls this automatically when `stats
 }
 ```
 
-### `HighlightTarget`
+### 7.9 `HighlightTarget`
 
 Describes what to visually emphasise when a finding is selected.
 
@@ -1008,7 +1008,7 @@ type HighlightTarget =
 
 `dieKeys` entries use the `"i,j"` format returned by `getDieKey`.
 
-### Integrating with `renderWaferMap` and `renderWaferGallery`
+### 7.10 Integrating with `renderWaferMap` and `renderWaferGallery`
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -1036,7 +1036,7 @@ renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 
 ---
 
-## Web Worker
+## 8 Web Worker
 
 For large datasets, `buildWaferMap` can be moved off the main thread to keep the
 UI responsive.  The `wafermap/worker` subpackage provides a thin wrapper around a
@@ -1046,7 +1046,7 @@ pre-built worker script.
 For small fixed datasets the overhead is not worth it.  `renderWaferMap` and `renderWaferGallery`
 are fast rendering operations and always run on the main thread regardless.
 
-### Setup
+### 8.1 Setup
 
 ```ts
 import { createWafermapWorker } from '@paulrobins/wafermap/worker';
@@ -1063,7 +1063,7 @@ const worker = createWafermapWorker(
 
 Create the worker once and reuse it for all calls.
 
-### `createWafermapWorker(worker)`
+### 8.2 `createWafermapWorker(worker)`
 
 Returns a `WafermapWorker`:
 
@@ -1074,7 +1074,7 @@ Returns a `WafermapWorker`:
 }
 ```
 
-### `worker.run(input)`
+### 8.3 `worker.run(input)`
 
 Identical input and output to `buildWaferMap` — just async.
 
@@ -1097,20 +1097,20 @@ const results = await Promise.all(
 );
 ```
 
-### `worker.terminate()`
+### 8.4 `worker.terminate()`
 
 Shuts down the underlying worker.  Any in-flight `run()` calls reject immediately.
 
 ---
 
-## Lower-level APIs
+## 9 Lower-level APIs
 
 These APIs give you direct control over the rendering pipeline.  Use them when you
 need to integrate with your own rendering loop, build a custom gallery, or use the
 Plotly SVG renderer.  For most application development, prefer `renderWaferMap` and
 `renderWaferGallery` above.
 
-### `toPlotly(scene, options?)`
+### 9.1 `toPlotly(scene, options?)`
 
 Converts a scene into Plotly-compatible `{ data, layout }`.
 
@@ -1146,7 +1146,7 @@ document.getElementById('chart').on('plotly_click', (ev) => {
 });
 ```
 
-### `toCanvas(canvas, scene, options?)`
+### 9.2 `toCanvas(canvas, scene, options?)`
 
 Renders a scene directly onto an HTML `<canvas>` element using the 2D Canvas API.
 No toolbar is provided — this is a one-shot draw call.
@@ -1199,7 +1199,7 @@ canvas.addEventListener('mousemove', e => {
 
 ---
 
-## Package surface
+## 10 Package surface
 
 ```ts
 import { buildWaferMap }                       from '@paulrobins/wafermap';
@@ -1209,7 +1209,7 @@ import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats'
 import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
 ```
 
-### Helper exports
+### 10.1 Helper exports
 
 ```ts
 import { getDieKey, getDieAtPoint, getDieTestValue } from '@paulrobins/wafermap';
@@ -1235,7 +1235,7 @@ Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotl
 
 ---
 
-## Advanced / Manual Pipeline
+## 11 Advanced / Manual Pipeline
 
 For full control over each pipeline stage, use the low-level functions directly.
 These are the building blocks that `buildWaferMap` uses internally.
@@ -1258,7 +1258,7 @@ createWafer(spec)
 In the manual pipeline, `die.i` and `die.j` are computed by `generateDies` as
 integer grid indices centred at the wafer origin.
 
-### `createWafer(spec)`
+### 11.1 `createWafer(spec)`
 
 Creates a wafer model.  `diameter` is required.  Accepts a `WaferSpec`:
 
@@ -1276,7 +1276,7 @@ Returns `Wafer` with `diameter`, `radius`, `center`, `notch` (with computed `len
 
 ---
 
-### `generateDies(wafer, spec)`
+### 11.2 `generateDies(wafer, spec)`
 
 Creates a rectangular die grid centred on the wafer.  Accepts a `DieSpec`:
 
@@ -1293,7 +1293,7 @@ Returns `Die[]` with `id`, `i`, `j`, `x`, `y`, `width`, `height`.
 
 ---
 
-### `clipDiesToWafer(dies, wafer, spec?)`
+### 11.3 `clipDiesToWafer(dies, wafer, spec?)`
 
 Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone).
 
@@ -1303,13 +1303,13 @@ Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone).
 
 ---
 
-### `isInsideWafer(x, y, wafer)`
+### 11.4 `isInsideWafer(x, y, wafer)`
 
 Returns `true` when the point (x, y) falls inside the wafer boundary.
 
 ---
 
-### `mapDataToDies(dies, data, options)`
+### 11.5 `mapDataToDies(dies, data, options)`
 
 Maps row data onto dies, attaching `values` and/or bin fields.
 
@@ -1323,13 +1323,13 @@ Maps row data onto dies, attaching `values` and/or bin fields.
 
 ---
 
-### `applyOrientation(dies, wafer)`
+### 11.6 `applyOrientation(dies, wafer)`
 
 Rotates die coordinates by `wafer.orientation` around `wafer.center`.
 
 ---
 
-### `transformDies(dies, options, center?)`
+### 11.7 `transformDies(dies, options, center?)`
 
 Applies interactive display transforms (rotation + flip) around `center`.
 
@@ -1343,7 +1343,7 @@ Applies interactive display transforms (rotation + flip) around `center`.
 
 ---
 
-### `applyProbeSequence(dies, config)`
+### 11.8 `applyProbeSequence(dies, config)`
 
 Assigns `probeIndex` to dies in the requested order.
 
@@ -1352,7 +1352,7 @@ Supported strategies: `'row'`, `'column'`, `'snake'`, `'custom'`
 
 ---
 
-### `generateReticleGrid(wafer, spec)`
+### 11.9 `generateReticleGrid(wafer, spec)`
 
 Generates reticle rectangles covering the wafer area.  Accepts a `ReticleSpec`:
 
@@ -1370,7 +1370,7 @@ Generates reticle rectangles covering the wafer area.  Accepts a `ReticleSpec`:
 
 ---
 
-### `classifyDie(die, wafer, options?)`
+### 11.10 `classifyDie(die, wafer, options?)`
 
 Returns `{ ring: number; quadrant: 'NE' | 'NW' | 'SW' | 'SE' }`.
 
@@ -1378,13 +1378,13 @@ Returns `{ ring: number; quadrant: 'NE' | 'NW' | 'SW' | 'SE' }`.
 
 ---
 
-### `getRingLabel(ring, ringCount)`
+### 11.11 `getRingLabel(ring, ringCount)`
 
 Returns a human-readable label for a ring index.
 
 ---
 
-### `getUniqueBins(dies, binSpace?)`
+### 11.12 `getUniqueBins(dies, binSpace?)`
 
 Returns all distinct bin values, sorted ascending.
 
@@ -1392,7 +1392,7 @@ Returns all distinct bin values, sorted ascending.
 
 ---
 
-### `aggregateBinCounts(diesByWafer, targetBin, binSpace?)`
+### 11.13 `aggregateBinCounts(diesByWafer, targetBin, binSpace?)`
 
 Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
 
@@ -1405,7 +1405,7 @@ Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for 
 
 ---
 
-### `aggregateValues(diesByWafer, method, paramIndex?)`
+### 11.14 `aggregateValues(diesByWafer, method, paramIndex?)`
 
 `method` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
 
@@ -1415,7 +1415,7 @@ Returns one `Die` per unique `(i, j)` with the aggregated scalar stored at `test
 
 ---
 
-### `buildScene(wafer, dies, options?)`
+### 11.15 `buildScene(wafer, dies, options?)`
 
 Builds the renderer-agnostic scene.
 
@@ -1449,7 +1449,7 @@ Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode
 
 ---
 
-### `getDieKey(die)`
+### 11.16 `getDieKey(die)`
 
 Returns a stable string key `"i,j"` for a die.  Always prefer this over ad-hoc template literals.
 
@@ -1460,7 +1460,7 @@ const die = map.get(getDieKey({ i: 3, j: -2 }));
 
 ---
 
-### `getDieAtPoint(scene, plotlyEvent)`
+### 11.17 `getDieAtPoint(scene, plotlyEvent)`
 
 Returns the die that a Plotly click or hover event points to, or `null`.
 
@@ -1473,7 +1473,7 @@ chart.on('plotly_click', ev => {
 
 ---
 
-### Color helpers
+### 11.18 Color helpers
 
 | Function | Description |
 | -------- | ----------- |
@@ -1486,9 +1486,9 @@ chart.on('plotly_click', ev => {
 
 ---
 
-## Important types
+## 12 Important types
 
-### `Die`
+### 12.1 `Die`
 
 ```ts
 {
@@ -1511,7 +1511,7 @@ chart.on('plotly_click', ev => {
 }
 ```
 
-### `Wafer`
+### 12.2 `Wafer`
 
 ```ts
 {
@@ -1525,7 +1525,7 @@ chart.on('plotly_click', ev => {
 }
 ```
 
-### `WaferMetadata`
+### 12.3 `WaferMetadata`
 
 An open key-value record — any fields are accepted:
 
@@ -1534,7 +1534,7 @@ type WaferMetadata = Record<string, unknown>
 // e.g. { lot: 'LOT123', waferNumber: 1, testDate: '2026-04-23', temperature: 25 }
 ```
 
-### `DieMetadata`
+### 12.4 `DieMetadata`
 
 ```ts
 {
@@ -1550,7 +1550,7 @@ type WaferMetadata = Record<string, unknown>
 
 ---
 
-## Current limitations
+## 13 Current limitations
 
 - Ring segmentation uses equal-width radial bands.  Configurable breakpoints are planned.
 - Plotly types are not exposed as formal peer-typed interfaces.

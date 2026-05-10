@@ -42,12 +42,13 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
   const toc = [];
   const renderer = new Renderer();
   renderer.heading = function ({ text, depth }) {
-    const raw = text.replace(/<[^>]+>/g, '');
+    const raw = text.replace(/<[^>]+>/g, '').replace(/`/g, '');
     const id = slugify(raw);
+
     if (depth === 2 || depth === 3) {
       toc.push({ level: depth, id, text: raw });
     }
-    return `<h${depth} id="${id}">${text}</h${depth}>\n`;
+    return `<h${depth} id="${id}">${raw}</h${depth}>\n`;
   };
 
   const body = marked.parse(md, { renderer, gfm: true, breaks: false });
@@ -77,7 +78,7 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
   }).join('\n        ');
 
   const tocHtml = showToc && toc.length > 0
-    ? `<section class="contents">
+    ? `<section class="contents" aria-label="Contents">
         <h2>Contents</h2>
         <ul>
           ${toc.map(h => {
@@ -87,6 +88,10 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
         </ul>
       </section>`
     : '';
+
+  const bodyWithToc = tocHtml
+    ? body.replace('<hr>', `<hr>\n      ${tocHtml}`)
+    : body;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -155,28 +160,25 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
     .nav a:hover { color: #2563eb; }
 
     .content {
-      max-width: 920px;
+      max-width: 860px;
       margin: 0 auto;
-      padding: 2.25rem 1.5rem 5rem;
+      padding: 2rem 1.5rem 5rem;
       background: transparent;
     }
 
     .content > h1 {
-      font-size: 2rem;
-      font-weight: 750;
+      font-size: 1.9rem;
+      font-weight: 700;
       line-height: 1.2;
       margin-bottom: 0.75rem;
-      letter-spacing: -0.03em;
+      letter-spacing: -0.02em;
     }
 
     ${showToc && toc.length > 0 ? `
     .contents {
-      margin: 0 0 2rem;
-      padding: 1rem 1.1rem;
-      background: rgba(255, 255, 255, 0.72);
-      border: 1px solid #e2e5ea;
-      border-radius: 14px;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+      margin: 0 0 1.5rem;
+      padding: 0.25rem 0 1rem;
+      border-bottom: 1px solid #e2e5ea;
     }
 
     .contents h2 {
@@ -185,77 +187,95 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: #6b7280;
-      margin-bottom: 0.75rem;
+      margin-bottom: 0.55rem;
     }
 
     .contents ul {
       list-style: none;
       display: grid;
-      gap: 0.2rem;
+      gap: 0.02rem;
+      margin: 0;
     }
 
-    .contents li.depth-3 a { padding-left: 1rem; font-size: 0.92em; }
+    .contents li {
+      margin: 0;
+      line-height: 1.2;
+    }
+
+    .contents li.depth-3 a { padding-left: 0.9rem; font-size: 0.94em; }
 
     .contents a {
       display: block;
       color: #374151;
       text-decoration: none;
-      padding: 0.15rem 0.4rem;
-      border-radius: 6px;
+      padding: 0.12rem 0.15rem;
+      border-radius: 4px;
+      line-height: 1.2;
     }
 
     .contents a:hover {
-      background: #eff6ff;
       color: #1d4ed8;
+      text-decoration: underline;
     }
     ` : ''}
 
     .content h2 {
-      font-size: 1.35rem;
+      font-size: 1.18rem;
       font-weight: 700;
-      margin: 2.5rem 0 0.75rem;
+      margin: 2.25rem 0 0.65rem;
       border-bottom: 1px solid #e2e5ea;
       padding-bottom: 0.4rem;
     }
 
     .content h3 {
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 600;
-      margin: 1.8rem 0 0.5rem;
+      margin: 1.55rem 0 0.45rem;
     }
 
     .content h4 {
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       font-weight: 600;
-      margin: 1.4rem 0 0.4rem;
+      margin: 1.2rem 0 0.35rem;
       color: #374151;
     }
 
-    .content p { margin: 0.75rem 0; }
-    .content ul, .content ol { margin: 0.75rem 0 0.75rem 1.5rem; }
-    .content li { margin: 0.25rem 0; }
+    .content p { margin: 0.7rem 0; }
+    .content ul, .content ol { margin: 0.7rem 0 0.7rem 1.5rem; }
+    .content li { margin: 0.2rem 0; }
     .content a { color: #2563eb; text-decoration: none; }
     .content a:hover { text-decoration: underline; }
+    .content .contents a {
+      color: #374151;
+      text-decoration: none;
+    }
+    .content .contents a:hover {
+      color: #1d4ed8;
+      text-decoration: underline;
+    }
     .content hr { border: none; border-top: 1px solid #e2e5ea; margin: 2rem 0; }
 
     .content code {
       font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 0.85em;
-      background: #f3f4f6;
-      border: 1px solid #e2e5ea;
-      border-radius: 3px;
-      padding: 0.1em 0.35em;
+      background: #eef2f7;
+      border: 1px solid #dbe3ed;
+      border-radius: 4px;
+      padding: 0.08em 0.32em;
+      color: #334155;
     }
 
     .content pre {
-      background: #1e2128;
-      color: #abb2bf;
+      background: #f8fafc;
+      color: #243042;
       border-radius: 8px;
       padding: 1.25rem 1.5rem;
       overflow-x: auto;
       margin: 1rem 0;
-      font-size: 0.875rem;
-      line-height: 1.6;
+      font-size: 0.86rem;
+      line-height: 1.65;
+      border: 1px solid #dbe3ed;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
     }
 
     .content pre code {
@@ -285,7 +305,7 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
       max-width: 100%;
       border-radius: 6px;
       border: 1px solid #e2e5ea;
-      margin: 1rem 0;
+      margin: 0.9rem 0;
       display: block;
     }
 
@@ -307,7 +327,7 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
       }
 
       .content {
-        padding: 1.5rem 1rem 4rem;
+        padding: 1.35rem 1rem 4rem;
       }
     }
   </style>
@@ -321,8 +341,7 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
       </nav>
     </header>
     <main class="content">
-      ${tocHtml}
-      ${body}
+      ${bodyWithToc}
     </main>
   </div>
 </body>
@@ -337,7 +356,7 @@ buildMarkdownPage({
   outPath: resolve(siteDir, 'guide', 'index.html'),
   title: 'Developer Guide — wafermap',
   copyImages: true,
-  showToc: false,
+  showToc: true,
   navLinks: [
     { href: '../', label: 'Home' },
     { href: '../api/', label: 'API Reference' },
@@ -346,14 +365,14 @@ buildMarkdownPage({
 });
 console.log('[build-docs] written _site/guide/index.html');
 
-buildMarkdownPage({
-  sourceName: 'API.md',
-  outPath: resolve(siteDir, 'api', 'index.html'),
-  title: 'API Reference — wafermap',
-  showToc: true,
-  navLinks: [
-    { href: '../', label: 'Home' },
-    { href: '../guide/', label: 'Developer Guide' },
+  buildMarkdownPage({
+    sourceName: 'API.md',
+    outPath: resolve(siteDir, 'api', 'index.html'),
+    title: 'API Reference — wafermap',
+    showToc: true,
+    navLinks: [
+      { href: '../', label: 'Home' },
+      { href: '../guide/', label: 'Developer Guide' },
     { href: repoRootUrl, label: 'GitHub repo', external: true },
   ],
 });
