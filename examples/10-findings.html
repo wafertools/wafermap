@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Statistical findings — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§10 — Statistical findings</span>
+    <span class="demo-desc">
+      analyzeWaferMap detects yield loss concentrated in rings, quadrants, or reticle positions
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    <code>analyzeWaferMap</code> scans every ring, quadrant, and bin combination for statistically significant yield loss,
+    applying Benjamini–Hochberg p-value correction and a minimum effect-size filter.
+    This wafer has deliberate edge-ring failure and NE-quadrant drift — both are detected as findings.
+    The <strong>clipboard icon</strong> in the toolbar opens the findings panel: click any finding to highlight the affected dies and switch to the most relevant display mode.
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }   from 'wafermap';
+    import { renderWaferMap }  from 'wafermap/canvas-adapter';
+    import { analyzeWaferMap } from 'wafermap/stats';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS, TEST_DEFS } from './data.js';
+
+    // A wafer with deliberate spatial patterns: edge ring yield loss + NE quadrant drift.
+    // These are chosen because they are large enough to be detected by the stats engine.
+    const result = buildWaferMap({
+      results:     makeResults({ seed: 13, edgeFail: true, quadrant: true }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig:   DIE_CONFIG,
+      hbinDefs:    HBIN_DEFS,
+      sbinDefs:    SBIN_DEFS,
+      testDefs:    TEST_DEFS,
+      passBins:    [1],
+    });
+
+    const RING_COUNT = 4;
+
+    // analyzeWaferMap scans every ring, quadrant, and bin combination,
+    // applying BH-adjusted p-value and a minimum effect size filter.
+    const summary = analyzeWaferMap(result, {
+      ringCount:         RING_COUNT,
+      passBins:          [1],
+      minimumEffectSize: 0.08, // slightly relaxed threshold to show more findings
+    });
+
+    // Mount the map — pass statsSummary to get the built-in findings panel.
+    // defaultOpen: true starts it visible so the user sees results immediately.
+    renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
+      sceneOptions: {
+        plotMode:  'hardBin',
+        hbinDefs:  HBIN_DEFS,
+        sbinDefs:  SBIN_DEFS,
+        testDefs:  result.scene.testDefs,
+        ringCount: RING_COUNT,
+      },
+      statsSummary: summary,
+      summaryPanel: { defaultOpen: true },
+    });
+  </script>
+
+</body>
+</html>

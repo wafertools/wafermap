@@ -378,13 +378,13 @@ console.log('[build-docs] written _site/guide/index.html');
 });
 console.log('[build-docs] written _site/api/index.html');
 
-// ── Copy guide-demos alongside _site/ so ../guide-demos/ links resolve ──────
-const guideDemosSrc = resolve(root, 'guide-demos');
-const guideDemosDst = resolve(siteDir, 'guide-demos');
-if (existsSync(guideDemosSrc)) {
-  mkdirSync(guideDemosDst, { recursive: true });
-  for (const f of readdirSync(guideDemosSrc)) {
-    copyFileSync(resolve(guideDemosSrc, f), resolve(guideDemosDst, f));
+// ── Copy examples/ alongside _site/ so ../examples/ links from guide resolve ─
+const examplesSrc = resolve(root, 'examples');
+const examplesDst = resolve(siteDir, 'examples');
+if (existsSync(examplesSrc)) {
+  mkdirSync(examplesDst, { recursive: true });
+  for (const f of readdirSync(examplesSrc)) {
+    copyFileSync(resolve(examplesSrc, f), resolve(examplesDst, f));
   }
-  console.log('[build-docs] copied guide-demos/ to _site/guide-demos/');
+  console.log('[build-docs] copied examples/ to _site/examples/');
 }

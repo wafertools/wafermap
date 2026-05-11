@@ -696,9 +696,11 @@ export function renderWaferGallery(
   });
 
   // Build gallery summary panel.
-  // Explicit summaryPanel option: always visible. Auto-mount when lotStatsSummary provided: hidden by default.
-  if (summaryPanelOpts) {
-    const placement = summaryPanelOpts.placement ?? 'right';
+  // Explicit placement: always visible persistent panel.
+  // Auto-mount (lotStatsSummary, no placement): toggled via toolbar button.
+  // defaultOpen: true starts the auto-mounted panel visible.
+  if (summaryPanelOpts?.placement) {
+    const placement = summaryPanelOpts.placement;
     gallerySummaryPanelEl = createSummaryPanelEl(placement);
     gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
     gallerySummaryPanelEl.style.position  = 'sticky';
@@ -706,16 +708,21 @@ export function renderWaferGallery(
     gallerySummaryPanelEl.style.display   = 'flex';
     gallerySummaryPanelEl.style.flexDirection = 'column';
   } else if (currentLotStats) {
+    const openOnMount = !!summaryPanelOpts?.defaultOpen;
     gallerySummaryPanelEl = createSummaryPanelEl('right');
     gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
     gallerySummaryPanelEl.style.position  = 'sticky';
     gallerySummaryPanelEl.style.top       = '8px';
     gallerySummaryPanelEl.style.flexDirection = 'column';
-    gallerySummaryPanelEl.style.display   = 'none';
+    gallerySummaryPanelEl.style.display   = openOnMount ? 'flex' : 'none';
     renderGallerySummaryPanel();
   }
 
   refreshLotFindingsButton();
+  // Sync toolbar button active state with initial panel visibility
+  if (gallerySummaryPanelEl?.style.display !== 'none' && btnLotFindings) {
+    setActive(btnLotFindings, true);
+  }
 
   const placement = summaryPanelOpts?.placement ?? 'right';
   if (placement === 'left') {

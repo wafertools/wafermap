@@ -20,11 +20,18 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§12 — Lot-level statistical findings</span>
+    <span class="demo-title">§13 — Lot-level statistical findings</span>
     <span class="demo-desc">
       analyzeWaferLot · repeated patterns · inter-wafer yield outliers · lot findings drawer
     </span>
   </header>
+
+  <div class="demo-intro">
+    <code>analyzeWaferLot</code> surfaces patterns that repeat across multiple wafers and flags individual yield outliers.
+    W01, W03, and W05 share the same edge-ring failure — detected as a repeated lot pattern.
+    W06 has stacked failures and is flagged as a yield outlier.
+    The findings panel (open on the right) lists all lot-level findings; each card also carries its own per-wafer findings accessible via the card's expand modal.
+  </div>
 
   <div class="demo-content">
     <div id="gallery-container"></div>
@@ -102,6 +109,7 @@
           testDefs:  TEST_DEFS,
         },
         lotStatsSummary: lotSummary,
+        summaryPanel:    { defaultOpen: true },
       },
     );
   </script>

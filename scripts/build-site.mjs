@@ -23,7 +23,5 @@ execFileSync(process.execPath, [resolve(root, 'scripts', 'build-guide.mjs')], {
 
 copyDir(resolve(root, 'dist'), resolve(siteDir, 'dist'));
 copyDir(resolve(root, 'examples'), resolve(siteDir, 'examples'));
-rmSync(resolve(siteDir, 'examples', 'vite-demo'), { recursive: true, force: true });
-copyDir(resolve(root, 'examples', 'vite-demo', 'dist'), resolve(siteDir, 'examples', 'vite-demo'));
 copyDir(resolve(root, 'data'), resolve(siteDir, 'data'));
 copyDir(resolve(root, 'index.html'), resolve(siteDir, 'index.html'));

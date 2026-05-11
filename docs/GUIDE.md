@@ -70,7 +70,7 @@ HTML or JavaScript required.
 > like −7, 0, 5.  They are NOT millimetre values.**  The library converts to physical
 > mm internally when you supply a die size.
 
-**→ [Demo: Your first wafer map](../guide-demos/01-first-map.html)**
+**→ [Demo: Your first wafer map](../examples/01-first-map.html)**
 
 
 ![alt text](image-1.png)  
@@ -121,7 +121,7 @@ async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
 `x` and `y` are the prober step positions from your equipment — pass them directly,
 no unit conversion needed.
 
-**→ [Demo: Loading real data from a CSV](../guide-demos/03-csv-data.html)**
+**→ [Demo: Loading real data from a CSV](../examples/03-csv-data.html)**
 
 Here we have toggled some toolbar options on: XY Axis indicator and Ring boundaries. 
 
@@ -198,7 +198,7 @@ buildWaferMap({
 });
 ```
 
-**→ [Demo: Die size and wafer geometry](../guide-demos/04-geometry.html)**
+**→ [Demo: Die size and wafer geometry](../examples/04-geometry.html)**
 
 ![alt text](image-3.png)
 
@@ -288,7 +288,7 @@ const { yield: yld } = buildWaferMap({
 console.log(`${(yld.yieldPercent * 100).toFixed(1)}%`);
 ```
 
-**→ [Demo: Working with bins](../guide-demos/05-named-bins.html)**
+**→ [Demo: Working with bins](../examples/05-named-bins.html)**
 
 ![alt text](image-4.png)
 ---
@@ -348,7 +348,7 @@ With `testDefs` in place:
 
 `TestDef.logScale: true` enables log₁₀ scale for that test by default (silently falls back to linear when any die value ≤ 0). The user can also toggle log scale at any time via the toolbar Log scale button, which overrides the per-test default.
 
-**→ [Demo: Working with test values](../guide-demos/06-test-values.html)**
+**→ [Demo: Working with test values](../examples/06-test-values.html)**
 
 ![alt text](image-5.png)
 ---
@@ -412,7 +412,7 @@ renderWaferMap(canvas, result.wafer, enrichedDies, {
 > it guarantees the correct format after any grid offset correction.
 
 
-**→ [Demo: Working with retested dies](../guide-demos/07-retests.html)**
+**→ [Demo: Working with retested dies](../examples/07-retests.html)**
 
 ![alt text](image-6.png)
 ---
@@ -512,7 +512,7 @@ renderWaferMap(canvas, wafer, dies, {
   onSceneOptionsChange: (opts) => syncMyModeUI(opts),
 });
 ```
-**→ [Demo: Controlling the display](../guide-demos/08-display-control.html)**
+**→ [Demo: Controlling the display](../examples/08-display-control.html)**
 
 ![alt text](image-7.png)
 
@@ -600,7 +600,7 @@ ctrl.setSelection(failingDies);
 // Clear:
 ctrl.clearSelection();
 ```
-**→ [Demo: Responding to user interaction](../guide-demos/09-interaction.html)**
+**→ [Demo: Responding to user interaction](../examples/09-interaction.html)**
 
 ![alt text](image-8.png)
 ---
@@ -689,7 +689,7 @@ const newSummary = analyzeWaferMap({ ...result, dies: newDies });
 ctrl.setStatsSummary(newSummary);
 ```
 
-**→ [Demo: Statistical findings](../guide-demos/10-findings.html)**
+**→ [Demo: Statistical findings](../examples/10-findings.html)**
 
 ![alt text](image-13.png)
 ---
@@ -716,6 +716,27 @@ const summary = analyzeWaferMap(result);
 
 renderWaferMap(canvas, result.wafer, result.dies, {
   statsSummary: summary,
+});
+```
+
+To start with the panel already open (no toolbar click required), add
+`summaryPanel: { defaultOpen: true }`:
+
+```ts
+renderWaferMap(canvas, result.wafer, result.dies, {
+  statsSummary: summary,
+  summaryPanel: { defaultOpen: true },
+});
+```
+
+The toolbar findings button reflects the current open/closed state, and the user can
+still toggle the panel closed via that button.  Combine with a `placement` to pin the
+panel to a specific side of the canvas without the toggle behaviour:
+
+```ts
+renderWaferMap(canvas, result.wafer, result.dies, {
+  statsSummary: summary,
+  summaryPanel: { placement: 'right' },   // always visible; no toggle
 });
 ```
 
@@ -762,7 +783,7 @@ renderWaferGallery(container, items, {
 });
 ```
 
-**→ [Demo: Summary panel](../guide-demos/14-summary-panel.html)**
+**→ [Demo: Summary panel](../examples/11-summary-panel.html)**
 
 ---
 
@@ -906,7 +927,7 @@ restores the original per-wafer cards.  The aggregation method for
 ```ts
 ctrl.setOptions({ aggrMethod: 'median' });  // re-aggregates immediately
 ```
-**→ [Demo: Building a lot gallery](../guide-demos/11-gallery.html)**
+**→ [Demo: Building a lot gallery](../examples/12-gallery.html)**
 
 ![alt text](image-9.png)
 ---
@@ -964,7 +985,7 @@ const newLotSummary = analyzeWaferLot(newResults);
 ctrl.setLotStatsSummary(newLotSummary);
 ```
 
-**→ [Demo: Lot-level statistical findings](../guide-demos/12-lot-findings.html)**
+**→ [Demo: Lot-level statistical findings](../examples/13-lot-findings.html)**
 
 ![alt text](image-10.png)
 ---
@@ -1022,7 +1043,7 @@ const items = waferResults.map(r => ({
   sceneOptions: { reticles: r.reticles },
 }));
 ```
-**→ [Demo: Reticle overlays](../guide-demos/13-reticle.html)**
+**→ [Demo: Reticle overlays](../examples/14-reticle.html)**
 
 ![alt text](image-11.png)
 ---
@@ -1086,6 +1107,8 @@ wmWorker.terminate();
 > functions with no DOM access — they can run in a Web Worker, Node.js, or any
 > server-side environment.
 
+**→ [Demo: Processing large datasets with a Web Worker](../examples/15-worker.html)**
+
 ---
 
 ## 16. Custom colour schemes
@@ -1132,7 +1155,7 @@ ctrl.setOptions({ colorScheme: 'my-brand' });
 Register your schemes once, before any `renderWaferMap` or `renderWaferGallery`
 call.  They are global and persist for the lifetime of the page.
 
-**→ [Demo: Custom colour schemes](../guide-demos/15-color-schemes.html)**
+**→ [Demo: Custom colour schemes](../examples/16-color-schemes.html)**
 
 ![alt text](image-14.png)
 ---
@@ -1249,3 +1272,120 @@ const lotStats = analyzeWaferLot(results);
 
 Only `renderWaferMap`, `renderWaferGallery`, and `toCanvas` require a browser
 environment.
+
+---
+
+## 18. Plotly/SVG output
+
+`toPlotly` converts a `Scene` into Plotly `{ data, layout }` for use with
+`Plotly.react`.  Use this when you need SVG export, server-side rendering, or
+want to embed the wafer map inside an existing Plotly dashboard.
+
+```ts
+import { buildWaferMap, buildScene, toPlotly, getDieAtPoint } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, hbinDefs });
+
+// Mirror the canvas toolbar state into Plotly via onSceneOptionsChange.
+let sharedOpts = { plotMode: 'hardBin' };
+
+function renderPlotly() {
+  const scene = buildScene(wafer, dies, {
+    ...sharedOpts,
+    interactiveTransform: {
+      rotation: sharedOpts.rotation ?? 0,
+      flipX:    sharedOpts.flipX    ?? false,
+      flipY:    sharedOpts.flipY    ?? false,
+    },
+  });
+  const { data, layout } = toPlotly(scene, {
+    diePitchMm: { x: dieWidth, y: dieHeight },
+  });
+  Plotly.react('plotly-chart', data, layout, { responsive: true });
+}
+
+// Canvas toolbar drives both renderers.
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: sharedOpts,
+  onSceneOptionsChange(opts) {
+    Object.assign(sharedOpts, opts);
+    renderPlotly();
+  },
+});
+
+renderPlotly();  // initial render
+
+// getDieAtPoint converts a Plotly click event to the matching Die object.
+document.getElementById('plotly-chart').on('plotly_click', ev => {
+  const scene = buildScene(wafer, dies, { ...sharedOpts });
+  const die   = getDieAtPoint(scene, ev);
+  if (die) console.log(die.i, die.j, die.hbin);
+});
+```
+
+> **Note:** `buildScene` and `toPlotly` are lightweight and fast enough to call on
+> every toolbar change.  `buildWaferMap` is the expensive step — call it once.
+
+**→ [Demo: Plotly/SVG output](../examples/17-plotly.html)**
+
+---
+
+## 19. Advanced: the rendering pipeline
+
+`renderWaferMap` and `renderWaferGallery` handle the full pipeline for you.  Use
+the manual pipeline only when you need control they cannot provide — for example,
+to drive a custom canvas renderer, integrate with a non-DOM environment, or step
+through the geometry for debugging.
+
+```ts
+import {
+  createWafer,
+  generateDies,
+  clipDiesToWafer,
+  applyOrientation,
+  applyProbeSequence,
+  transformDies,
+  generateReticleGrid,
+  buildScene,
+} from '@paulrobins/wafermap';
+import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+
+// 1. Create the wafer geometry
+const wafer = createWafer({ diameter: 300, notch: { type: 'bottom' } });
+
+// 2. Generate and clip the die grid
+const clipped = clipDiesToWafer(generateDies(wafer, dieSpec), wafer, dieSpec);
+
+// 3. Apply wafer orientation (rotates the data grid to match orientation field)
+const oriented = applyOrientation(clipped, wafer);
+
+// 4. Assign probe sequence (sets die.probeIndex in snake order)
+const sequenced = applyProbeSequence(oriented, { type: 'snake' });
+
+// 5. Merge DieResult[] onto the die grid by (i, j) position
+const resultMap = new Map(results.map(r => [`${r.x},${r.y}`, r]));
+const enriched  = sequenced.map(die => {
+  const r = resultMap.get(`${die.i},${die.j}`);
+  return r ? { ...die, hbin: r.hbin, sbin: r.sbin, testValues: r.testValues } : die;
+});
+
+// 6. Build the reticle grid (optional)
+const reticles = generateReticleGrid(wafer, { width: 4, height: 3, diePitchX: 8, diePitchY: 12 });
+
+// 7. Apply interactive transforms (rotation, flip) on top of the base orientation
+const currentDies = transformDies(enriched, { rotation: 90, flipX: false, flipY: false }, wafer.center);
+
+// 8. Build a renderer-agnostic Scene
+const scene = buildScene(wafer, currentDies, {
+  plotMode: 'hardBin',
+  reticles,
+  showProbePath: true,
+  interactiveTransform: { rotation: 90, flipX: false, flipY: false },
+});
+
+// 9. Draw to a canvas element (no toolbar, no DOM scaffolding)
+toCanvas(document.getElementById('map'), scene);
+```
+
+**→ [Demo: Advanced — the rendering pipeline](../examples/18-pipeline.html)**

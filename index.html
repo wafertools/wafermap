@@ -19,10 +19,21 @@
     header { text-align: center; margin-bottom: 48px; }
     header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
     header p { margin-top: 8px; color: #6b7280; font-size: 1rem; }
+    .section-label {
+      width: 100%;
+      max-width: 960px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #9ca3af;
+      margin: 28px 0 10px;
+    }
+    .section-label:first-of-type { margin-top: 0; }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 20px;
+      gap: 16px;
       width: 100%;
       max-width: 960px;
     }
@@ -31,7 +42,7 @@
       background: #fff;
       border: 1px solid #e2e5ea;
       border-radius: 10px;
-      padding: 24px;
+      padding: 20px 22px;
       text-decoration: none;
       color: inherit;
       transition: box-shadow 0.15s, border-color 0.15s;
@@ -40,20 +51,23 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.08);
       border-color: #2563eb;
     }
-    .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
-    .card p  { font-size: 0.875rem; color: #6b7280; line-height: 1.5; }
+    .card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 5px; }
+    .card p  { font-size: 0.84rem; color: #6b7280; line-height: 1.5; }
     .badge {
       display: inline-block;
-      font-size: 0.7rem;
+      font-size: 0.68rem;
       font-weight: 600;
       padding: 2px 7px;
       border-radius: 4px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       background: #dbeafe;
       color: #1d4ed8;
     }
+    .badge.stats    { background: #ede9fe; color: #5b21b6; }
+    .badge.adapter  { background: #d1fae5; color: #065f46; }
+    .badge.plotly   { background: #fce7f3; color: #9d174d; }
     .badge.advanced { background: #fef3c7; color: #92400e; }
-    .badge.docs { background: #dcfce7; color: #166534; }
+    .badge.docs     { background: #dcfce7; color: #166534; }
   </style>
 </head>
 <body>
@@ -62,6 +76,7 @@
     <p>Browser-first wafer map visualization for semiconductor test data</p>
   </header>
 
+  <p class="section-label">Documentation</p>
   <div class="grid">
     <a class="card" href="guide/">
       <div class="badge docs">docs</div>
@@ -73,41 +88,93 @@
       <h2>API Reference</h2>
       <p>Complete public API surface, input types, geometry rules, and renderer entry points.</p>
     </a>
-    <a class="card" href="examples/plotly-integration-demo/">
+  </div>
+
+  <p class="section-label">Getting started</p>
+  <div class="grid">
+    <a class="card" href="examples/01-first-map.html">
       <div class="badge">buildWaferMap</div>
-      <h2>Single Wafer</h2>
-      <p>One wafer, three tests, spatial ring and quadrant stats, Plotly click drill-down.</p>
+      <h2>Your first wafer map</h2>
+      <p>Minimal example: buildWaferMap + renderWaferMap. Hover the canvas to reveal the built-in toolbar.</p>
     </a>
-    <a class="card" href="examples/gallery-demo/">
+    <a class="card" href="examples/03-csv-data.html">
       <div class="badge">buildWaferMap</div>
-      <h2>Lot Gallery</h2>
-      <p>2×2 grid of wafers from a lot. Shared colour scheme, per-wafer yield stats.</p>
+      <h2>Loading CSV data</h2>
+      <p>Parse a real CSV file into DieResult[], select between wafers, view file metadata in the sidebar.</p>
     </a>
-    <a class="card" href="examples/bin-gallery-demo/">
+    <a class="card" href="examples/05-named-bins.html">
       <div class="badge">buildWaferMap</div>
-      <h2>Bin Occurrence Map</h2>
-      <p>One map per bin showing how many wafers had each bin at each die position across a six-wafer lot.</p>
+      <h2>Bins and yield</h2>
+      <p>Named hard bins and soft bins with custom colours. Switch modes from the toolbar; summary panel shows yield and bin counts.</p>
     </a>
-    <a class="card" href="examples/inference-demo/">
+    <a class="card" href="examples/06-test-values.html">
       <div class="badge">buildWaferMap</div>
-      <h2>Geometry Inference</h2>
-      <p>Same CSV rendered four ways with increasing geometry input — shows how missing parameters are inferred.</p>
-    </a>
-    <a class="card" href="examples/app-demo/">
-      <div class="badge">buildWaferMap</div>
-      <h2>CSV Analyzer</h2>
-      <p>Upload any CSV. Column mapping, per-wafer gallery, Pareto chart, Web Worker processing.</p>
-    </a>
-    <a class="card" href="examples/vite-demo/">
-      <div class="badge">buildWaferMap</div>
-      <h2>Bundler Setup</h2>
-      <p>Consumes wafermap as a local npm package via Vite. Starting point for React, Vue, or Svelte projects.</p>
-    </a>
-    <a class="card" href="examples/basic-demo/">
-      <div class="badge advanced">manual pipeline</div>
-      <h2>Manual Pipeline</h2>
-      <p>Low-level reference: all plot modes, rotate/flip, probe path, reticle overlay, ring boundaries.</p>
+      <h2>Test values</h2>
+      <p>Continuous parametric data with testDefs for named labels and units. Try log scale for the leakage test.</p>
     </a>
   </div>
+
+  <p class="section-label">Interaction and control</p>
+  <div class="grid">
+    <a class="card" href="examples/09-interaction.html">
+      <div class="badge adapter">canvas adapter</div>
+      <h2>Interaction API</h2>
+      <p>Wire onHover, onClick, and onSelect callbacks. Box-select a region to see live yield and bin breakdown.</p>
+    </a>
+    <a class="card" href="examples/12-gallery.html">
+      <div class="badge adapter">canvas adapter</div>
+      <h2>Lot gallery</h2>
+      <p>renderWaferGallery: a responsive card grid with shared controls. Switch to stacked modes to aggregate the lot.</p>
+    </a>
+    <a class="card" href="examples/15-worker.html">
+      <div class="badge adapter">canvas adapter</div>
+      <h2>Web Worker</h2>
+      <p>Run buildWaferMap off the main thread with createWafermapWorker. Page stays responsive while building.</p>
+    </a>
+    <a class="card" href="examples/16-color-schemes.html">
+      <div class="badge adapter">canvas adapter</div>
+      <h2>Custom colour schemes</h2>
+      <p>Register a palette with registerColorScheme — it appears in every toolbar colour picker automatically.</p>
+    </a>
+  </div>
+
+  <p class="section-label">Statistical analysis</p>
+  <div class="grid">
+    <a class="card" href="examples/10-findings.html">
+      <div class="badge stats">stats</div>
+      <h2>Statistical findings</h2>
+      <p>analyzeWaferMap detects yield loss in rings and quadrants. Click a finding in the panel to highlight affected dies.</p>
+    </a>
+    <a class="card" href="examples/11-summary-panel.html">
+      <div class="badge stats">stats</div>
+      <h2>Summary panel</h2>
+      <p>Persistent panel alongside the map showing yield, bin counts, ring/quadrant stats, test values, and findings.</p>
+    </a>
+    <a class="card" href="examples/13-lot-findings.html">
+      <div class="badge stats">stats</div>
+      <h2>Lot-level findings</h2>
+      <p>analyzeWaferLot surfaces repeated spatial patterns and yield outliers across a full lot of wafers.</p>
+    </a>
+    <a class="card" href="examples/14-reticle.html">
+      <div class="badge stats">stats</div>
+      <h2>Reticle overlays</h2>
+      <p>Stepper field boundaries drawn on the map. Reticle-position analysis detects systematic mask or focus defects.</p>
+    </a>
+  </div>
+
+  <p class="section-label">Advanced</p>
+  <div class="grid">
+    <a class="card" href="examples/17-plotly.html">
+      <div class="badge plotly">plotly adapter</div>
+      <h2>Plotly / SVG output</h2>
+      <p>Side-by-side canvas and Plotly SVG renderers sharing the same data. Toolbar changes sync to Plotly via onSceneOptionsChange.</p>
+    </a>
+    <a class="card" href="examples/18-pipeline.html">
+      <div class="badge advanced">manual pipeline</div>
+      <h2>Advanced: rendering pipeline</h2>
+      <p>Full manual pipeline: createWafer → generateDies → clip → orient → enrich → buildScene → toCanvas.</p>
+    </a>
+  </div>
+
 </body>
 </html>

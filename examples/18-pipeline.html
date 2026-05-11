@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced: the rendering pipeline — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+  <style>
+    .demo-controls { flex-wrap: wrap; gap: 8px 14px; }
+
+    .ctrl-group label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--fg);
+      cursor: pointer;
+      user-select: none;
+    }
+    .ctrl-group input[type=checkbox] { accent-color: var(--accent); }
+
+    .rot-badge {
+      display: inline-block;
+      min-width: 32px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§18 — Advanced: the rendering pipeline</span>
+    <span class="demo-desc">
+      createWafer · generateDies · clipDiesToWafer · applyOrientation · applyProbeSequence
+      · transformDies · generateReticleGrid · buildScene · toCanvas
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    The manual pipeline gives you full control over every step: <code>createWafer</code> → <code>generateDies</code> → <code>clipDiesToWafer</code> → <code>applyOrientation</code> → <code>applyProbeSequence</code> → enrich with test data → <code>generateReticleGrid</code> → <code>buildScene</code> → <code>toCanvas</code>.
+    Use this when you need to intercept or customise individual stages — for example to inject custom enrichment, apply a non-standard probe path, or integrate with a server-side pipeline.
+    For most use cases <code>buildWaferMap</code> + <code>renderWaferMap</code> is simpler. Controls above drive <code>toCanvas</code> directly — no built-in toolbar.
+  </div>
+
+  <!-- Manual toolbar — no renderWaferMap, so no built-in toolbar -->
+  <div class="demo-controls">
+
+    <div class="ctrl-group">
+      <span class="ctrl-label">Rotate</span>
+      <button class="icon-btn" id="btn-rot-left" title="Rotate CCW">↺</button>
+      <span class="rot-badge" id="rot-badge">0°</span>
+      <button class="icon-btn" id="btn-rot-right" title="Rotate CW">↻</button>
+    </div>
+
+    <div class="ctrl-group">
+      <span class="ctrl-label">Flip</span>
+      <button class="toggle-btn" id="btn-flipx">Flip X</button>
+      <button class="toggle-btn" id="btn-flipy">Flip Y</button>
+    </div>
+
+    <div class="ctrl-group">
+      <label><input type="checkbox" id="chk-probe"> Probe path</label>
+      <label><input type="checkbox" id="chk-reticle"> Reticle</label>
+      <label><input type="checkbox" id="chk-text"> Die labels</label>
+      <label><input type="checkbox" id="chk-rings"> Rings</label>
+      <label><input type="checkbox" id="chk-quadrants"> Quadrants</label>
+    </div>
+
+  </div>
+
+  <div class="demo-content">
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      createWafer,
+      generateDies,
+      clipDiesToWafer,
+      applyOrientation,
+      applyProbeSequence,
+      transformDies,
+      generateReticleGrid,
+      buildScene,
+    } from 'wafermap';
+    import { toCanvas } from 'wafermap/canvas-adapter';
+    import {
+      makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS,
+    } from './data.js';
+
+    // ── Step 1: create the wafer geometry ──────────────────────────────────────
+    //
+    // createWafer requires at minimum a diameter.  All other fields are optional.
+    const wafer = createWafer({
+      diameter:    WAFER_CONFIG.diameter,
+      notch:       WAFER_CONFIG.notch,
+      orientation: 0,
+    });
+
+    // ── Step 2: generate and clip the die grid ─────────────────────────────────
+    //
+    // generateDies fills a rectangular grid across the wafer area.
+    // clipDiesToWafer marks each die as full, partial, or outside the boundary.
+    const allDies = generateDies(wafer, DIE_CONFIG);
+    const clipped = clipDiesToWafer(allDies, wafer, DIE_CONFIG);
+
+    // ── Step 3: apply wafer orientation ───────────────────────────────────────
+    //
+    // applyOrientation rotates the grid to match the wafer's orientation field.
+    // This is a data-space transform; the notch position is fixed by notch.type.
+    const oriented = applyOrientation(clipped, wafer);
+
+    // ── Step 4: apply a probe sequence ────────────────────────────────────────
+    //
+    // applyProbeSequence assigns die.probeIndex in probe order — useful for
+    // visualising prober paths.  Only inside-wafer dies are sequenced.
+    const sequenced = applyProbeSequence(oriented, { type: 'snake' });
+
+    // ── Step 5: merge test data onto the die grid ─────────────────────────────
+    //
+    // Build a lookup map keyed by "(i,j)" then spread each result's hbin and
+    // testValues onto the matching die.  This is what buildWaferMap does
+    // internally — in the manual pipeline you own this step.
+    const results = makeResults({ seed: 7, edgeFail: true });
+    const resultMap = new Map(results.map(r => [`${r.x},${r.y}`, r]));
+    const enriched = sequenced.map(die => {
+      const r = resultMap.get(`${die.i},${die.j}`);
+      if (!r) return die;
+      return { ...die, hbin: r.hbin, sbin: r.sbin, testValues: r.testValues };
+    });
+
+    // ── Step 6: generate the reticle grid ─────────────────────────────────────
+    const reticles = generateReticleGrid(wafer, {
+      width:      4,
+      height:     3,
+      diePitchX:  DIE_CONFIG.width,
+      diePitchY:  DIE_CONFIG.height,
+    });
+
+    // ── Interactive state ──────────────────────────────────────────────────────
+    const state = {
+      rotation:               0,
+      flipX:                  false,
+      flipY:                  false,
+      showProbePath:          false,
+      showReticle:            false,
+      showText:               false,
+      showRingBoundaries:     false,
+      showQuadrantBoundaries: false,
+    };
+
+    // ── Redraw ─────────────────────────────────────────────────────────────────
+    //
+    // transformDies applies the interactive rotation/flip on top of the
+    // already-oriented base dies.  buildScene then converts the dies and
+    // options into a renderer-agnostic Scene.  toCanvas draws it directly
+    // onto the canvas element — no DOM scaffolding or toolbar is added.
+    function redraw() {
+      const interactiveTransform = {
+        rotation: state.rotation,
+        flipX:    state.flipX,
+        flipY:    state.flipY,
+      };
+
+      const currentDies = transformDies(enriched, interactiveTransform, wafer.center);
+
+      const scene = buildScene(wafer, currentDies, {
+        plotMode:               'hardBin',
+        hbinDefs:               HBIN_DEFS,
+        reticles,
+        showProbePath:          state.showProbePath,
+        showReticle:            state.showReticle,
+        showText:               state.showText,
+        showRingBoundaries:     state.showRingBoundaries,
+        showQuadrantBoundaries: state.showQuadrantBoundaries,
+        interactiveTransform,
+      });
+
+      toCanvas(document.getElementById('map'), scene);
+
+      document.getElementById('rot-badge').textContent = `${state.rotation}°`;
+      document.getElementById('btn-flipx').classList.toggle('active', state.flipX);
+      document.getElementById('btn-flipy').classList.toggle('active', state.flipY);
+    }
+
+    redraw();
+
+    // ── Controls ───────────────────────────────────────────────────────────────
+    document.getElementById('btn-rot-left').addEventListener('click', () => {
+      state.rotation = (state.rotation + 90) % 360;
+      redraw();
+    });
+    document.getElementById('btn-rot-right').addEventListener('click', () => {
+      state.rotation = (state.rotation - 90 + 360) % 360;
+      redraw();
+    });
+    document.getElementById('btn-flipx').addEventListener('click', () => {
+      state.flipX = !state.flipX;
+      redraw();
+    });
+    document.getElementById('btn-flipy').addEventListener('click', () => {
+      state.flipY = !state.flipY;
+      redraw();
+    });
+
+    for (const [id, key] of [
+      ['chk-probe',     'showProbePath'],
+      ['chk-reticle',   'showReticle'],
+      ['chk-text',      'showText'],
+      ['chk-rings',     'showRingBoundaries'],
+      ['chk-quadrants', 'showQuadrantBoundaries'],
+    ]) {
+      document.getElementById(id).addEventListener('change', ev => {
+        state[key] = ev.target.checked;
+        redraw();
+      });
+    }
+  </script>
+
+</body>
+</html>

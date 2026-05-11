@@ -19,14 +19,21 @@
     <span class="demo-desc">Continuous parametric data · testDefs for labels and units</span>
   </header>
 
-  <!-- Test selector — shows the three tests from TEST_DEFS -->
+  <div class="demo-intro">
+    Continuous parametric data stored in <code>die.testValues</code> as a <code>testNumber → value</code> map.
+    <code>testDefs</code> gives each test a name and unit — the toolbar mode menu, tooltips, and colorbar all update automatically.
+    Select a test above or use the toolbar mode picker. The sidebar shows per-test statistics for the selected parameter.
+    Toggle <strong>log scale</strong> from the toolbar for Ioff (leakage spans several decades).
+  </div>
+
+  <!-- Test selector — values are testNumbers, matching testValues keys and testDefs -->
   <div class="demo-controls">
     <div class="ctrl-group">
       <span class="ctrl-label">Test</span>
       <select id="sel-test">
-        <option value="0">Idsat  (drive current)</option>
-        <option value="1">Vth    (threshold voltage)</option>
-        <option value="2">Ioff   (off-state leakage)</option>
+        <option value="1050">Idsat  (drive current)</option>
+        <option value="1060">Vth    (threshold voltage)</option>
+        <option value="1070">Ioff   (off-state leakage)</option>
       </select>
     </div>
     <div class="ctrl-sep"></div>
@@ -120,8 +127,9 @@
       return `${v.toExponential(3)} ${unit}`;
     }
 
-    function updatePanel(idx) {
-      const def   = TEST_DEFS[idx];
+    function updatePanel(testNumber) {
+      const def   = TEST_DEFS.find(t => t.testNumber === testNumber) ?? TEST_DEFS[0];
+      const idx   = TEST_DEFS.indexOf(def);
       const stats = testStats(dies, def.testNumber);
       document.getElementById('test-name').textContent   = def.name;
       document.getElementById('test-unit').textContent   = def.unit;
@@ -134,24 +142,25 @@
       document.getElementById('pattern-box').textContent = patterns[idx];
     }
 
-    // Mount renderer in value mode — testDefs wires up the mode menu automatically
+    // Mount renderer in value mode — testDefs wires up the mode menu automatically.
+    // testIndex uses the testNumber as its value (1050, 1060, 1070) — not a position.
     const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
       sceneOptions: {
         plotMode:  'value',
-        testIndex: 0,
-        testDefs:  scene.testDefs,  // pass through the definitions built into the scene
+        testIndex: TEST_DEFS[0].testNumber,
+        testDefs:  scene.testDefs,
       },
     });
 
-    updatePanel(0);
+    updatePanel(TEST_DEFS[0].testNumber);
 
     document.getElementById('sel-test').addEventListener('change', e => {
-      const idx = Number(e.target.value);
-      ctrl.setOptions({ plotMode: 'value', testIndex: idx });
-      updatePanel(idx);
+      const testNumber = Number(e.target.value);
+      ctrl.setOptions({ plotMode: 'value', testIndex: testNumber });
+      updatePanel(testNumber);
     });
 
-    // Keep the external selector in sync with the toolbar
+    // Keep the external selector in sync with the toolbar test picker
     ctrl.getOptions && (function sync() {
       requestAnimationFrame(sync);
       const o = ctrl.getOptions();

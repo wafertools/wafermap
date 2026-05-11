@@ -29,6 +29,13 @@
     <span class="demo-desc">retestPolicy · retestCount · getDieKey post-enrichment</span>
   </header>
 
+  <div class="demo-intro">
+    When the same die position appears more than once in the input, <code>buildWaferMap</code> resolves it using a retest policy.
+    <strong>last</strong> (default) keeps the final result; <strong>first</strong> keeps the initial probe.
+    Dies with multiple probes get a <code>retestCount</code> — click any die to see its details.
+    The sidebar lists all retested positions and their final bin.
+  </div>
+
   <!-- Switch between retest policies -->
   <div class="demo-controls">
     <div class="ctrl-group">
@@ -89,7 +96,7 @@
   </div>
 
   <script type="module">
-    import { buildWaferMap, getDieKey } from 'wafermap';
+    import { buildWaferMap } from 'wafermap';
     import { renderWaferMap }           from 'wafermap/canvas-adapter';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS } from './data.js';
 

@@ -7,7 +7,8 @@
   <link rel="stylesheet" href="demo.css">
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
   } }</script>
 </head>
 <body class="demo-page">
@@ -18,6 +19,12 @@
     <span class="demo-title">§3 — Loading real data from a CSV</span>
     <span class="demo-desc">Parse CSV rows → DieResult[] → buildWaferMap</span>
   </header>
+
+  <div class="demo-intro">
+    Loads <code>dummy-fulldata.csv</code> (lot, wafer, x, y, hbin, sbin, test columns) and maps each row to a <code>DieResult</code>.
+    Select a wafer from the dropdown — the map re-renders instantly. Metadata about the CSV file appears in the sidebar.
+    The toolbar clipboard icon opens the built-in summary panel showing yield and bin breakdown.
+  </div>
 
   <!-- Wafer selector and file info -->
   <div class="demo-controls">
@@ -52,26 +59,6 @@
         <div class="section-divider"></div>
 
         <div class="section">
-          <div class="section-heading">Yield</div>
-          <div class="stats-grid">
-            <div class="stat full">
-              <div class="stat-val" id="stat-yield">—</div>
-              <div class="stat-lbl">Yield (Hard Bin 1)</div>
-            </div>
-            <div class="stat">
-              <div class="stat-val" id="stat-pass">—</div>
-              <div class="stat-lbl">Pass dies</div>
-            </div>
-            <div class="stat">
-              <div class="stat-val" id="stat-total">—</div>
-              <div class="stat-lbl">Total dies</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-divider"></div>
-
-        <div class="section">
           <div class="section-heading">Columns detected</div>
           <div class="info-box" id="cols-box" style="font-family:monospace; font-size:11px; line-height:1.7"></div>
         </div>
@@ -84,6 +71,7 @@
   <script type="module">
     import { buildWaferMap }  from 'wafermap';
     import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { analyzeWaferMap } from 'wafermap/stats';
 
     // ── Minimal CSV parser — no external library needed for demo data ─────────
     function parseCsv(text) {
@@ -140,8 +128,8 @@
         temp:     rows[0]?.temp ? `${rows[0].temp} °C` : '—',
       };
 
-      // buildWaferMap infers geometry when none is supplied —
-      // pass dieConfig so coordinates are in real mm
+      // buildWaferMap infers die pitch from the grid when dieConfig is omitted.
+      // Supplying waferConfig.diameter is enough for units: 'mm'.
       const result = buildWaferMap({
         results,
         waferConfig: {
@@ -149,7 +137,6 @@
           notch:    { type: 'bottom' },
           metadata: waferMeta,
         },
-        dieConfig: { width: 10, height: 10 },
         testDefs: [
           { testNumber: 1010, name: 'TestA' },
           { testNumber: 1020, name: 'TestB' },
@@ -158,23 +145,26 @@
         passBins:  [1],
       });
 
-      // Update sidebar
+      const summary = analyzeWaferMap(result, { passBins: [1] });
+
+      // Update sidebar metadata
       document.getElementById('meta-lot').textContent   = waferMeta.lot   ?? '—';
       document.getElementById('meta-wafer').textContent = waferId;
       document.getElementById('meta-rows').textContent  = rows.length;
       document.getElementById('meta-date').textContent  = waferMeta.testDate ?? '—';
       document.getElementById('meta-temp').textContent  = waferMeta.temp;
 
-      const yld = result.yield;
-      document.getElementById('stat-yield').textContent =
-        yld.yieldPercent != null ? `${(yld.yieldPercent * 100).toFixed(1)}%` : '—';
-      document.getElementById('stat-pass').textContent  = yld.passDies;
-      document.getElementById('stat-total').textContent = yld.totalDies;
-
-      // Mount or replace the canvas renderer
+      // Destroy the old renderer and replace the canvas element — reusing the same
+      // canvas after destroy() does not reinitialise correctly.
       if (ctrl) ctrl.destroy();
-      ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
+      const oldCanvas = document.getElementById('map');
+      const newCanvas = document.createElement('canvas');
+      newCanvas.id = 'map';
+      oldCanvas.replaceWith(newCanvas);
+
+      ctrl = renderWaferMap(newCanvas, result.wafer, result.dies, {
         sceneOptions: { plotMode: 'hardBin' },
+        statsSummary: summary,
       });
     }
 

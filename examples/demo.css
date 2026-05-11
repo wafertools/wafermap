@@ -76,6 +76,21 @@ html, body {
   margin-left: auto;
 }
 
+/* ── Intro bar ───────────────────────────────────────────────────────────── */
+
+.demo-intro {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.demo-intro strong { color: var(--text); font-weight: 600; }
+.demo-intro code   { font-family: var(--mono); font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+
 /* ── Controls bar ────────────────────────────────────────────────────────── */
 
 .demo-controls {

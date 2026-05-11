@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Working with bins — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+</head>
+
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§5 — Working with bins</span>
+    <span class="demo-desc">Named hard bins + soft bins · custom colours · pass bin yield</span>
+  </header>
+
+  <div class="demo-intro">
+    Pass <code>hbinDefs</code> and <code>sbinDefs</code> to name every bin and give it a colour.
+    Named bins appear in tooltips, the legend, and the summary panel.
+    Use the toolbar to switch between <strong>Hard Bin</strong> and <strong>Soft Bin</strong> modes — the clipboard icon opens the summary panel showing yield and per-bin counts.
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <canvas id="map"></canvas>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap } from 'wafermap';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { analyzeWaferMap } from 'wafermap/stats';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS } from './data.js';
+
+    const result = buildWaferMap({
+      results: makeResults({ seed: 11 }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig: DIE_CONFIG,
+      hbinDefs: HBIN_DEFS,   // named definitions for hard bins
+      sbinDefs: SBIN_DEFS,   // named definitions for soft bins
+      passBins: [1],
+    });
+
+    const summary = analyzeWaferMap(result, { passBins: [1] });
+
+    // The built-in summary panel (toolbar clipboard icon) shows yield, bin counts,
+    // and ring/quadrant yield breakdown. defaultOpen: true starts it visible.
+    renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
+      sceneOptions: {
+        plotMode: 'hardBin',
+        hbinDefs: HBIN_DEFS,
+        sbinDefs: SBIN_DEFS,
+      },
+      statsSummary: summary,
+      summaryPanel: { defaultOpen: true },
+    });
+  </script>
+
+</body>
+
+</html>

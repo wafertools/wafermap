@@ -75,11 +75,18 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§15 — Custom colour schemes</span>
+    <span class="demo-title">§16 — Custom colour schemes</span>
     <span class="demo-desc">
       registerColorScheme · forBin · forValue · schemes appear in every toolbar palette picker
     </span>
   </header>
+
+  <div class="demo-intro">
+    Call <code>registerColorScheme(name, { forBin, forValue })</code> before rendering to add a custom palette.
+    Registered schemes appear automatically in every toolbar colour picker alongside the built-in ones.
+    <code>forBin(bin)</code> returns a CSS colour for categorical bin modes; <code>forValue(t)</code> interpolates a colour for continuous value modes (t ∈ [0, 1]).
+    The three cards show the built-in <strong>color</strong> and <strong>plasma</strong> schemes alongside the custom <strong>teal-rose</strong> scheme registered in this demo.
+  </div>
 
   <div class="demo-content">
     <div class="scheme-grid">

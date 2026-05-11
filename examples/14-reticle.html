@@ -16,11 +16,19 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§13 — Reticle overlays</span>
+    <span class="demo-title">§14 — Reticle overlays</span>
     <span class="demo-desc">
       reticleConfig · stepper field boundaries · reticle-position analysis in the stats engine
     </span>
   </header>
+
+  <div class="demo-intro">
+    A reticle (stepper field) is the group of dies exposed in one lithography step.
+    Pass <code>reticleConfig</code> to <code>buildWaferMap</code> to generate field boundary geometry, then pass <code>reticles</code> to <code>renderWaferMap</code> to draw the overlay.
+    <code>analyzeWaferMap</code> with <code>enableReticlePositionAnalysis: true</code> detects systematic defects at the same position within every field.
+    Toggle the overlay on/off above, or switch to Value mode to see the parametric spatial pattern.
+    The findings panel (open on the right) shows any detected reticle-position findings.
+  </div>
 
   <div class="demo-controls">
     <div class="ctrl-group">
@@ -55,28 +63,6 @@
             <tr><td>Fields total</td> <td id="rc-count">—</td></tr>
             <tr><td>Dies/field</td>   <td id="rc-dies">—</td></tr>
           </table>
-        </div>
-
-        <div class="section-divider"></div>
-
-        <div class="section">
-          <div class="section-heading">Yield</div>
-          <div class="stats-grid">
-            <div class="stat full">
-              <div class="stat-val" id="stat-yield">—</div>
-              <div class="stat-lbl">Overall yield</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-divider"></div>
-
-        <!-- Reticle findings from analyzeWaferMap -->
-        <div class="section">
-          <div class="section-heading">Reticle-position findings</div>
-          <div id="reticle-findings" style="display:flex; flex-direction:column; gap:5px">
-            <div class="info-box"><span class="empty">Analyzing…</span></div>
-          </div>
         </div>
 
         <div class="section-divider"></div>
@@ -121,46 +107,26 @@
     document.getElementById('rc-count').textContent = result.reticles.length;
     document.getElementById('rc-dies').textContent  = reticleConfig.width * reticleConfig.height;
 
-    const yld = result.yield;
-    document.getElementById('stat-yield').textContent =
-      yld.yieldPercent != null ? `${(yld.yieldPercent * 100).toFixed(1)}%` : '—';
-
     // Run stats engine with reticle-position analysis enabled.
     // result.reticleConfig is passed through automatically by analyzeWaferMap.
     const summary = analyzeWaferMap(result, {
-      ringCount:                    4,
-      passBins:                     [1],
+      ringCount:                     4,
+      passBins:                      [1],
       enableReticlePositionAnalysis: true,
     });
 
-    // Render reticle findings in the panel
-    const reticleFindingsEl = document.getElementById('reticle-findings');
-    const retFindings = summary.findings.filter(f => f.comparison.family === 'reticle-position');
-
-    if (retFindings.length === 0) {
-      reticleFindingsEl.innerHTML =
-        '<div class="info-box"><span class="empty">No reticle-position findings</span></div>';
-    } else {
-      reticleFindingsEl.innerHTML = '';
-      for (const f of retFindings) {
-        reticleFindingsEl.insertAdjacentHTML('beforeend', `
-          <div class="info-box" style="font-size:11px; line-height:1.5">
-            <span class="badge badge-amber">${f.severity}</span><br>
-            ${f.summary}
-          </div>`);
-      }
-    }
-
-    // Mount the renderer — pass reticles so the overlay has geometry to draw
+    // Mount the renderer — pass reticles so the overlay has geometry to draw.
+    // Reticle-position findings appear in the built-in summary panel (defaultOpen: true).
     const ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
       sceneOptions: {
-        plotMode:     'hardBin',
-        hbinDefs:     HBIN_DEFS,
-        testDefs:     result.scene.testDefs,
-        reticles:     result.reticles,   // field boundary geometry from buildWaferMap
-        showReticle:  true,              // default true when reticles are provided
+        plotMode:    'hardBin',
+        hbinDefs:    HBIN_DEFS,
+        testDefs:    result.scene.testDefs,
+        reticles:    result.reticles,   // field boundary geometry from buildWaferMap
+        showReticle: true,              // default true when reticles are provided
       },
       statsSummary: summary,
+      summaryPanel: { defaultOpen: true },
     });
 
     // Toolbar toggle buttons
@@ -177,7 +143,7 @@
     });
 
     document.getElementById('sel-mode').addEventListener('change', e => {
-      ctrl.setOptions({ plotMode: e.target.value, testIndex: 0 });
+      ctrl.setOptions({ plotMode: e.target.value, testIndex: TEST_DEFS[0].testNumber });
     });
   </script>
 

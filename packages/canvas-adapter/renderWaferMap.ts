@@ -361,8 +361,8 @@ export function renderWaferMap(
   // Excess over padding: 36 - 16 = 20px, rounded up to 24px for a small gap.
   const TOOLBAR_CLEARANCE = 24;
 
-  if (summaryPanelOpts) {
-    const placement = summaryPanelOpts.placement ?? 'right';
+  if (summaryPanelOpts?.placement) {
+    const placement = summaryPanelOpts.placement;
     // Add clearance to prevent the summary panel content from being obscured by the
     // floating toolbar (position:absolute, top:4px, height ~32px → ~44px total).
     const clearance = showToolbar ? TOOLBAR_CLEARANCE : 0;
@@ -807,11 +807,14 @@ export function renderWaferMap(
         setActive(btnFlipV,     !!sceneOpts.flipY);
 
         // Findings button — toggles the summary panel.
-        // When statsSummary is provided with no explicit summaryPanel option, auto-mount a hidden panel.
-        if (currentStatsSummary && !summaryPanelOpts) {
+        // Auto-mount when statsSummary is provided without an explicit placement (persistent panel).
+        // defaultOpen: true starts the panel visible; otherwise hidden until the user clicks.
+        const autoMount = currentStatsSummary && !summaryPanelOpts?.placement;
+        if (autoMount) {
           const clearance = TOOLBAR_CLEARANCE;
+          const openOnMount = !!summaryPanelOpts?.defaultOpen;
           autoSummaryPanelEl = createSummaryPanelEl('right', clearance);
-          autoSummaryPanelEl.style.display = 'none';
+          autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
           const next = canvas.nextSibling;
           autoSummaryPanelWrapper = wrapWithSummaryPanel(canvas, autoSummaryPanelEl, 'right');
           parent.insertBefore(autoSummaryPanelWrapper, next);
@@ -828,6 +831,8 @@ export function renderWaferMap(
           });
           toolbar.appendChild(makeSep());
           toolbar.appendChild(btnFindings);
+          // Set button active state to match initial panel visibility
+          if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnFindings, true);
           refreshFindingsButton();
         }
       }

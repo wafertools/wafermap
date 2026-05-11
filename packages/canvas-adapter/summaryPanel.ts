@@ -17,6 +17,8 @@ import { CLR } from './toolbar.js';
 export interface SummaryPanelOptions {
   /** Which side of the content area to place the panel. Default 'right'. */
   placement?: 'right' | 'left' | 'top' | 'bottom';
+  /** Open the panel immediately on render without requiring the user to click the toolbar button. Default false. */
+  defaultOpen?: boolean;
   /** Extra top padding in px to clear an overlapping toolbar. Set internally by renderWaferMap. */
   _toolbarClearance?: number;
 }
