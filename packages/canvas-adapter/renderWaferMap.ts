@@ -58,8 +58,10 @@ export interface WaferSceneOptions {
    */
   logScale?:               boolean;
   /**
-   * Aggregation method label shown in hover tooltips for `stackedValues` mode.
-   * E.g. `'mean'`, `'median'`, `'stddev'`, `'min'`, `'max'`.
+   * Aggregation method for `stackedValues` mode.
+   * Drives both the per-die aggregation and the hover tooltip label.
+   * Accepted values: `'mean'` | `'median'` | `'stddev'` | `'min'` | `'max'` | `'count'`.
+   * Defaults to `'mean'` when not set.
    */
   aggrMethod?:             string;
   /**
@@ -748,22 +750,18 @@ export function renderWaferMap(
           () => sceneOpts.legendPosition ?? 'default',
           (v) => applyOpts({ legendPosition: v }),
         );
-        // Disable legend style button when not in a bin mode (it only affects bin legends).
         syncLegendStyleBtnFn = () => {
           const isBinMode = sceneOpts.plotMode === 'hardBin' || sceneOpts.plotMode === 'softBin';
-          btnLegendStyle.style.opacity       = isBinMode ? '' : '0.35';
-          btnLegendStyle.style.pointerEvents = isBinMode ? '' : 'none';
+          btnLegendStyle.style.display = isBinMode ? '' : 'none';
         };
         syncLegendStyleBtnFn();
 
         const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
           applyOpts({ logScale: !sceneOpts.logScale });
         });
-        // Only enable log scale button in value / stackedValues modes.
         syncLogScaleBtnFn = () => {
           const isValueMode = sceneOpts.plotMode === 'value' || sceneOpts.plotMode === 'stackedValues';
-          btnLogScale.style.opacity       = isValueMode ? '' : '0.35';
-          btnLogScale.style.pointerEvents = isValueMode ? '' : 'none';
+          btnLogScale.style.display = isValueMode ? '' : 'none';
           setActive(btnLogScale, !!sceneOpts.logScale);
         };
         syncLogScaleBtnFn();

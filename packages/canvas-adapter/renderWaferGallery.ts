@@ -579,10 +579,30 @@ export function renderWaferGallery(
 
   function syncLegendStyleBtn(): void {
     const isBinMode = sharedOpts.plotMode === 'hardBin' || sharedOpts.plotMode === 'softBin';
-    btnLegendStyle.style.opacity       = isBinMode ? '' : '0.35';
-    btnLegendStyle.style.pointerEvents = isBinMode ? '' : 'none';
+    btnLegendStyle.style.display = isBinMode ? '' : 'none';
   }
   syncLegendStyleBtn();
+
+  const AGGR_METHOD_ITEMS: Array<{ value: string; label: string }> = [
+    { value: 'mean',   label: 'Mean' },
+    { value: 'median', label: 'Median' },
+    { value: 'stddev', label: 'Std Dev' },
+    { value: 'min',    label: 'Min' },
+    { value: 'max',    label: 'Max' },
+    { value: 'count',  label: 'Count' },
+  ];
+
+  const btnAggrMethod = makeDropdown(
+    'aggr', 'Aggregation method',
+    () => AGGR_METHOD_ITEMS,
+    () => sharedOpts.aggrMethod ?? 'mean',
+    v => applyShared({ aggrMethod: v }),
+  );
+  function syncAggrMethodBtn(): void {
+    const isStackedValues = sharedOpts.plotMode === 'stackedValues';
+    btnAggrMethod.style.display = isStackedValues ? '' : 'none';
+  }
+  syncAggrMethodBtn();
 
   const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
     applyShared({ logScale: !sharedOpts.logScale });
@@ -590,8 +610,7 @@ export function renderWaferGallery(
   });
   function syncLogScaleBtn(): void {
     const isValueMode = sharedOpts.plotMode === 'value' || sharedOpts.plotMode === 'stackedValues';
-    btnLogScale.style.opacity       = isValueMode ? '' : '0.35';
-    btnLogScale.style.pointerEvents = isValueMode ? '' : 'none';
+    btnLogScale.style.display = isValueMode ? '' : 'none';
     setActive(btnLogScale, !!sharedOpts.logScale);
   }
   syncLogScaleBtn();
@@ -615,6 +634,7 @@ export function renderWaferGallery(
 
   if (showPlotModeSelector) barEl.appendChild(btnMode);
   barEl.appendChild(btnPalette);
+  barEl.appendChild(btnAggrMethod);
   barEl.appendChild(btnLogScale);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnRings);
@@ -838,7 +858,7 @@ export function renderWaferGallery(
       return defs.map(def => ({
         wafer: baseWafer,
         dies:  aggregateValues(allDies, method, def.index ?? def.testNumber),
-        label: def.name,
+        label: `${def.name} · ${method}`,
         sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }] },
       }));
     }
@@ -907,6 +927,7 @@ export function renderWaferGallery(
     }
 
     rebuildLegend();
+    syncAggrMethodBtn();
     syncLegendStyleBtn();
     syncLogScaleBtn();
     options.onSceneOptionsChange?.(sharedOpts);
@@ -942,6 +963,7 @@ export function renderWaferGallery(
     }
 
     rebuildLegend();
+    syncAggrMethodBtn();
     syncLegendStyleBtn();
   }
 

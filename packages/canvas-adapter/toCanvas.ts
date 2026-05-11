@@ -405,8 +405,9 @@ export function toCanvas(
     ctx.textBaseline = 'bottom';
     ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
 
-    // Axis label below the bar, right-aligned — e.g. "Idsat (mA)".
-    const cbLabel = axisLabel || null;
+    // Axis label below the bar, right-aligned — e.g. "Idsat (mA)" or "Idsat (mA) · mean".
+    const aggrSuffix = scene.plotMode === 'stackedValues' && scene.aggrMethod ? ` · ${scene.aggrMethod}` : '';
+    const cbLabel = axisLabel ? axisLabel + aggrSuffix : null;
     if (cbLabel) {
       ctx.save();
       ctx.fillStyle    = '#555';
