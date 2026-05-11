@@ -5,6 +5,18 @@ import { buildRingRegions, buildQuadrantRegions } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary } from './types.js';
 import { openHtmlReport } from './renderFindingsReport.js';
 import { fmt } from '../renderer/fmt.js';
+import {
+  formatFindingDelta,
+  formatFindingCoverage,
+  formatFindingTooltip,
+  escHtml,
+  renderDefinitionList,
+  renderMetricGrid,
+  renderSection,
+  renderSeverityBadge,
+  renderTable,
+  reportStyles,
+} from './reportHtml.js';
 
 export interface SummaryReportParams {
   wafer:        Wafer;
@@ -19,35 +31,8 @@ export interface SummaryReportParams {
   ringCount?:   number;
 }
 
-// ── Private helpers ───────────────────────────────────────────────────────────
-
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function sevColor(s: StatsFinding['severity']): string {
-  return s === 'unusual' ? '#c0392b' : s === 'notable' ? '#e67e22' : '#2980b9';
-}
-
 function pct(n: number, d: number): string {
   return d === 0 ? '—' : `${((n / d) * 100).toFixed(1)}%`;
-}
-
-
-function section(title: string, body: string): string {
-  return `<section>
-<h2>${esc(title)}</h2>
-${body}
-</section>`;
-}
-
-function table(headers: string[], rows: string[][]): string {
-  if (!rows.length) return '<p style="color:#888;font-style:italic">No data</p>';
-  const head = headers.map(h => `<th>${esc(h)}</th>`).join('');
-  const body = rows.map(r =>
-    `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`
-  ).join('\n');
-  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 const KNOWN_META_KEYS: Array<{ key: string; label: string }> = [
@@ -65,22 +50,20 @@ const KNOWN_META_KEYS: Array<{ key: string; label: string }> = [
 
 function metaRows(meta: Record<string, unknown>): string {
   const rendered = new Set<string>();
-  const rows: string[] = [];
+  const rows: Array<{ label: string; value: string }> = [];
   for (const { key, label } of KNOWN_META_KEYS) {
     if (key in meta && meta[key] != null && !rendered.has(label)) {
-      rows.push(`<tr><td>${esc(label)}</td><td>${esc(String(meta[key]))}</td></tr>`);
+      rows.push({ label, value: String(meta[key]) });
       rendered.add(label);
     }
   }
   for (const [key, val] of Object.entries(meta)) {
     if (!KNOWN_META_KEYS.some(k => k.key === key) && val != null) {
       const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').replace(/_/g, ' ');
-      rows.push(`<tr><td>${esc(label)}</td><td>${esc(String(val))}</td></tr>`);
+      rows.push({ label, value: String(val) });
     }
   }
-  return rows.length
-    ? `<table class="meta">${rows.join('')}</table>`
-    : '';
+  return renderDefinitionList(rows);
 }
 
 function titleFromMeta(meta?: Record<string, unknown>): string {
@@ -88,22 +71,22 @@ function titleFromMeta(meta?: Record<string, unknown>): string {
   const lot   = meta['lot']   ?? meta['lotId'];
   const wafer = meta['wafer'] ?? meta['waferId'];
   const parts = [lot, wafer].filter(Boolean).map(String);
-  return parts.length ? ` — ${parts.map(esc).join(' · ')}` : '';
+  return parts.length ? ` — ${parts.map(escHtml).join(' · ')}` : '';
 }
 
 // ── Section renderers ─────────────────────────────────────────────────────────
 
 function yieldSection(y: YieldSummary, cov: SummaryReportParams['dataCoverage']): string {
-  const rows: string[][] = [
-    ['Total dies', String(cov.totalDies)],
-    ['Filled dies', `${cov.filledDies} (${pct(cov.filledDies, cov.totalDies)} fill)`],
-    ['Pass dies', String(y.passDies)],
-    ['Fail dies', String(y.failDies)],
+  const metrics = [
+    { label: 'Total dies', value: String(cov.totalDies) },
+    { label: 'Filled dies', value: String(cov.filledDies), hint: `${pct(cov.filledDies, cov.totalDies)} fill` },
+    { label: 'Pass dies', value: String(y.passDies) },
+    { label: 'Fail dies', value: String(y.failDies) },
+    ...(y.edgeExcludedDies > 0 ? [{ label: 'Edge excluded', value: String(y.edgeExcludedDies) }] : []),
+    ...(y.partialDies > 0 ? [{ label: 'Partial dies', value: String(y.partialDies) }] : []),
+    { label: 'Yield', value: y.yieldPercent !== null ? `${(y.yieldPercent * 100).toFixed(1)}%` : 'N/A' },
   ];
-  if (y.edgeExcludedDies > 0) rows.push(['Edge excluded', String(y.edgeExcludedDies)]);
-  if (y.partialDies > 0)      rows.push(['Partial dies', String(y.partialDies)]);
-  rows.push(['Yield', y.yieldPercent !== null ? `${(y.yieldPercent * 100).toFixed(1)}%` : 'N/A']);
-  return section('Yield', table(['Metric', 'Value'], rows));
+  return renderSection('Yield', renderMetricGrid(metrics));
 }
 
 function binSection(dies: Die[], binDefs: BinDef[] | undefined, mode: 'hard' | 'soft'): string {
@@ -121,10 +104,10 @@ function binSection(dies: Die[], binDefs: BinDef[] | undefined, mode: 'hard' | '
     .map(([bin, count]) => {
       const def  = defMap?.get(bin);
       const name = def?.name ?? '—';
-      return [String(bin), esc(name), String(count), pct(count, total)];
+      return [String(bin), name, String(count), pct(count, total)];
     });
   const title = mode === 'hard' ? 'Hard Bin Breakdown' : 'Soft Bin Breakdown';
-  return section(title, table(['Bin', 'Name', 'Count', '%'], rows));
+  return renderSection(title, renderTable(['Bin', 'Name', 'Count', '%'], rows, { className: 'compact' }));
 }
 
 function regionYieldSection(
@@ -150,9 +133,9 @@ function regionYieldSection(
       if (passSet.has(b)) pass++;
     }
     if (!total) continue;
-    rows.push([esc(region.label), String(pass), String(total), pct(pass, total)]);
+    rows.push([region.label, String(pass), String(total), pct(pass, total)]);
   }
-  return rows.length ? section(title, table(['Region', 'Pass', 'Total', 'Yield'], rows)) : '';
+  return rows.length ? renderSection(title, renderTable(['Region', 'Pass', 'Total', 'Yield'], rows, { className: 'compact' })) : '';
 }
 
 function testSection(dies: Die[], testDefs: TestDef[]): string {
@@ -172,39 +155,36 @@ function testSection(dies: Die[], testDefs: TestDef[]): string {
     const min    = vals[0];
     const max    = vals[vals.length - 1];
     const mean   = vals.reduce((a, b) => a + b, 0) / vals.length;
-    const median = vals[Math.floor(vals.length / 2)];
-    const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length - 1 || 1);
-    const stddev = Math.sqrt(variance);
     const unit = def.unit || undefined;
 
     rows.push([
-      esc(def.name),
+      escHtml(def.name),
       fmt(min,    unit),
       fmt(mean,   unit),
-      fmt(median, unit),
-      fmt(stddev, unit),
       fmt(max,    unit),
     ]);
   }
   if (!rows.length) return '';
-  return section('Test Values', table(['Test', 'Min', 'Mean', 'Median', 'Std Dev', 'Max'], rows));
+  return renderSection('Test Values', renderTable(['Test', 'Min', 'Mean', 'Max'], rows, { className: 'compact' }));
 }
 
-function findingsSection(findings: StatsFinding[]): string {
+function findingsSection(findings: StatsFinding[], totalWafers?: number): string {
   if (!findings.length) return '';
-  const rows = findings.map(f => {
-    const sev = f.severity.charAt(0).toUpperCase() + f.severity.slice(1);
-    return `<tr>
-      <td style="white-space:nowrap"><span class="sev sev-${f.severity}">${sev}</span></td>
-      <td style="white-space:nowrap">${esc(f.comparison.left)}</td>
-      <td style="white-space:nowrap">${esc(f.variable.label)}</td>
-      <td>${esc(f.summary)}</td>
+  const rows = findings.map((f) => {
+    const tooltip = escHtml(formatFindingTooltip(f));
+    return `<tr title="${tooltip}">
+      <td class="tight">${renderSeverityBadge(f.severity)}</td>
+      <td class="tight">${escHtml(f.comparison.left)}</td>
+      <td>${escHtml(f.variable.label)}</td>
+      <td class="numeric">${escHtml(formatFindingDelta(f))}</td>
+      <td class="numeric">${escHtml(formatFindingCoverage(f, totalWafers))}</td>
     </tr>`;
   }).join('\n');
-  const body = `<table class="findings"><thead><tr>
-    <th>Severity</th><th>Region</th><th>Variable</th><th>Finding</th>
+  const coverageHeader = totalWafers !== undefined ? 'Wafers' : 'N (region/rest)';
+  const body = `<table class="report-table findings-table compact"><thead><tr>
+    <th>Severity</th><th>Region</th><th>Metric</th><th class="numeric">Delta</th><th class="numeric">${coverageHeader}</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
-  return section('Findings', body);
+  return renderSection('Findings', body);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -233,9 +213,18 @@ export function renderSummaryReportHtml(
   const ringRegions     = buildRingRegions(dies, wafer, ringCount);
   const quadrantRegions = buildQuadrantRegions(dies, wafer, ringCount);
 
+  const summaryMetrics = [
+    { label: 'Total dies', value: String(dataCoverage.totalDies) },
+    ...(yieldSummary.partialDies > 0 ? [{ label: 'Partial', value: String(yieldSummary.partialDies) }] : []),
+    ...(yieldSummary.yieldPercent !== null ? [{ label: 'Yield (Bin 1 pass)', value: `${(yieldSummary.yieldPercent * 100).toFixed(1)}%` }] : []),
+    ...(yieldSummary.edgeExcludedDies > 0 ? [{ label: 'Edge excluded', value: String(yieldSummary.edgeExcludedDies) }] : []),
+  ];
+
   const sections = [
-    meta ? section('Wafer', metaRows(meta)) : '',
-    yieldSection(yieldSummary, dataCoverage),
+    meta ? renderSection('Wafer Info', metaRows(meta)) : '',
+    renderSection('Summary', [
+      renderMetricGrid(summaryMetrics),
+    ].filter(Boolean).join('\n')),
     hasHbin ? binSection(dies, hbinDefs, 'hard') : hasSbin ? binSection(dies, sbinDefs, 'soft') : '',
     regionYieldSection('Ring Yield', ringRegions, dies, passBins),
     regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins),
@@ -247,40 +236,20 @@ export function renderSummaryReportHtml(
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${esc(title)}</title>
+<title>${escHtml(title)}</title>
 <style>
-  body    { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; max-width: 900px; }
-  h1      { font-size: 22px; margin: 0 0 20px; }
-  h2      { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-            color: #506784; margin: 0; padding-bottom: 5px; border-bottom: 2px solid #2a6fc0; display: inline-block; }
-  section { margin-bottom: 20px; }
-  table   { border-collapse: collapse; width: 100%; margin-top: 6px; }
-  th, td  { padding: 5px 10px; text-align: left; font-size: 13px; border-bottom: 1px solid #e8eaed; }
-  thead th { background: #f0f2f5; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-             color: #506784; border-bottom: 2px solid #d0d5dd; font-weight: 600; }
-  tbody tr:nth-child(even) td { background: #f7f8fa; }
-  tbody tr:last-child td { border-bottom: none; }
-  table.meta { width: auto; min-width: 320px; }
-  table.meta td:first-child { color: #506784; font-size: 12px; width: 140px; background: #f7f8fa; }
-  table.meta tbody tr:nth-child(even) td:first-child { background: #eef0f4; }
-  table.findings td { vertical-align: top; }
-  table.findings tr:hover td { background: #f0f4fc; }
-  .sev { display: inline-block; font-size: 11px; font-weight: 600; color: #fff;
-         border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
-  .sev-unusual { background: #c0392b; }
-  .sev-notable { background: #b96a00; }
-  .sev-info    { background: #2980b9; }
-  .footer { font-size: 11px; color: #aaa; margin-top: 20px; border-top: 1px solid #e8eaed; padding-top: 6px; }
-  @media print {
-    body { margin: 16px; }
-    table.findings tr:hover td { background: none; }
-  }
+${reportStyles()}
 </style>
 </head>
 <body>
-<h1>${esc(title)}</h1>
-${sections}
-<p class="footer">Generated ${esc(now)}</p>
+<main class="report">
+  <header class="report-header">
+    <h1>${escHtml(title)}</h1>
+    <p class="report-subtitle">Generated ${escHtml(now)}</p>
+  </header>
+  ${sections}
+  <p class="footer">Generated ${escHtml(now)}</p>
+</main>
 </body>
 </html>`;
 }
@@ -298,78 +267,81 @@ export interface LotSummaryReportParams {
 }
 
 function lotWaferYieldTable(lotSummary: LotStatsSummary, items: LotSummaryReportParams['items']): string {
-  const rows = lotSummary.perWafer.map(pw => {
+  const rows = lotSummary.perWafer.map((pw) => {
     const label = items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`;
-    const yld   = pw.summary.stats.yieldPercent;
-    return [
-      esc(label),
-      String(pw.summary.stats.totalDies),
-      yld !== null ? `${(yld * 100).toFixed(1)}%` : 'N/A',
-    ];
+    const yld = pw.summary.stats.yieldPercent;
+    return [label, yld !== null ? `${(yld * 100).toFixed(1)}%` : 'N/A'];
   });
-  return table(['Wafer', 'Total Dies', 'Yield'], rows);
+  return renderTable(['Wafer', 'Yield'], rows, { className: 'compact' });
 }
 
 function lotAggregateBinTable(allDies: Die[], binDefs: BinDef[] | undefined, mode: 'hard' | 'soft'): string {
   const counts = new Map<number, number>();
   for (const d of allDies) {
     if (d.partial || d.edgeExcluded) continue;
-    const b = mode === 'hard' ? d.hbin : d.sbin;
-    if (b != null) counts.set(b, (counts.get(b) ?? 0) + 1);
+    const bin = mode === 'hard' ? d.hbin : d.sbin;
+    if (bin != null) counts.set(bin, (counts.get(bin) ?? 0) + 1);
   }
   if (!counts.size) return '';
-  const total  = [...counts.values()].reduce((a, b) => a + b, 0);
-  const defMap = binDefs ? new Map(binDefs.map(d => [d.bin, d])) : null;
-  const rows   = [...counts.entries()].sort((a, b) => a[0] - b[0]).map(([bin, count]) => {
-    const def = defMap?.get(bin);
-    return [String(bin), esc(def?.name ?? '—'), String(count), pct(count, total)];
-  });
-  return section(
+
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  const defs = binDefs ? new Map(binDefs.map((d) => [d.bin, d])) : null;
+  const rows = [...counts.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([bin, count]) => {
+      const def = defs?.get(bin);
+      const label = def?.name ? `Bin ${bin} · ${def.name} (${count})` : `Bin ${bin} (${count})`;
+      return [label, pct(count, total)];
+    });
+
+  return renderSection(
     mode === 'hard' ? 'Hard Bin Breakdown (All Wafers)' : 'Soft Bin Breakdown (All Wafers)',
-    table(['Bin', 'Name', 'Count', '%'], rows),
+    renderTable(['Bin', 'Yield'], rows, { className: 'compact' }),
   );
 }
 
 function lotRegionYieldTable(
-  titleStr: string,
+  title: string,
   regionFn: typeof buildRingRegions,
   allDies: Die[],
   allWafers: Wafer[],
   ringCount: number,
   passBins: number[],
 ): string {
-  const passSet    = new Set(passBins);
-  const totals     = new Map<string, { pass: number; total: number }>();
+  const passSet = new Set(passBins);
+  const totals = new Map<string, { pass: number; total: number }>();
   const order: string[] = [];
 
   for (let wi = 0; wi < allWafers.length; wi++) {
-    const wafer    = allWafers[wi];
-    const wDies    = allDies.filter(d => (d as { _waferIndex?: number })._waferIndex === wi);
+    const wafer = allWafers[wi];
+    const wDies = allDies.filter((die) => (die as { _waferIndex?: number })._waferIndex === wi);
     if (!wDies.length) continue;
-    const regions  = regionFn(wDies, wafer, ringCount);
-    const dieByKey = new Map(wDies.map(d => [`${d.i},${d.j}`, d]));
+    const regions = regionFn(wDies, wafer, ringCount);
+    const dieByKey = new Map(wDies.map((die) => [`${die.i},${die.j}`, die]));
+
     for (const region of regions) {
       if (!order.includes(region.label)) order.push(region.label);
       const acc = totals.get(region.label) ?? { pass: 0, total: 0 };
       for (const key of region.dieKeys) {
-        const d = dieByKey.get(key);
-        if (!d || d.partial || d.edgeExcluded) continue;
-        const b = d.hbin ?? d.sbin;
-        if (b == null) continue;
+        const die = dieByKey.get(key);
+        if (!die || die.partial || die.edgeExcluded) continue;
+        const bin = die.hbin ?? die.sbin;
+        if (bin == null) continue;
         acc.total++;
-        if (passSet.has(b)) acc.pass++;
+        if (passSet.has(bin)) acc.pass++;
       }
       totals.set(region.label, acc);
     }
   }
+
   if (!totals.size) return '';
   const rows = order
-    .filter(l => totals.get(l)?.total)
-    .map(l => {
-      const acc = totals.get(l)!;
-      return [esc(l), String(acc.pass), String(acc.total), pct(acc.pass, acc.total)];
+    .filter((label) => totals.get(label)?.total)
+    .map((label) => {
+      const acc = totals.get(label)!;
+      return [label, pct(acc.pass, acc.total)];
     });
-  return rows.length ? section(titleStr, table(['Region', 'Pass', 'Total', 'Yield'], rows)) : '';
+  return rows.length ? renderSection(title, renderTable(['Region', 'Yield'], rows, { className: 'compact' })) : '';
 }
 
 function lotTestTable(allDies: Die[], testDefs: TestDef[]): string {
@@ -382,58 +354,60 @@ export function renderLotSummaryReportHtml(
   options: { title?: string } = {},
 ): string {
   const {
-    lotSummary, items,
-    hbinDefs, sbinDefs, testDefs = [],
-    passBins  = [1],
+    lotSummary,
+    items,
+    hbinDefs,
+    sbinDefs,
+    testDefs = [],
+    passBins = [1],
     ringCount = 4,
   } = params;
 
-  // Tag dies with wafer index for region aggregation
   const allWafers: Wafer[] = [];
-  const allDies:   Die[]   = [];
+  const allDies: Die[] = [];
   for (let wi = 0; wi < items.length; wi++) {
     const item = items[wi];
     if (item.wafer) allWafers.push(item.wafer);
     if (item.dies) {
-      for (const d of item.dies) {
-        (d as { _waferIndex?: number })._waferIndex = wi;
-        allDies.push(d);
+      for (const die of item.dies) {
+        (die as { _waferIndex?: number })._waferIndex = wi;
+        allDies.push(die);
       }
     }
   }
 
-  const hasHbin = allDies.some(d => d.hbin != null);
-  const hasSbin = allDies.some(d => d.sbin != null);
+  const hasHbin = allDies.some((die) => die.hbin != null);
+  const hasSbin = allDies.some((die) => die.sbin != null);
   const hasBins = hasHbin || hasSbin;
 
   const lotMeta = lotSummary.lot;
   const waferYields = lotSummary.perWafer
-    .map(pw => pw.summary.stats.yieldPercent)
+    .map((pw) => pw.summary.stats.yieldPercent)
     .filter((y): y is number => y !== null);
   const meanYield = waferYields.length
-    ? waferYields.reduce((a, b) => a + b, 0) / waferYields.length : null;
+    ? waferYields.reduce((a, b) => a + b, 0) / waferYields.length
+    : null;
 
   const lotTitle = (() => {
     if (!lotMeta) return '';
     const lot = lotMeta['lot'] ?? lotMeta['lotId'];
-    return lot ? ` — ${esc(String(lot))}` : '';
+    return lot ? ` — ${escHtml(String(lot))}` : '';
   })();
   const title = options.title ?? `Lot Summary${lotTitle}`;
-  const now   = new Date().toLocaleString();
+  const now = new Date().toLocaleString();
 
-  // Lot overview table
-  const overviewRows: string[][] = [
-    ['Wafer count', String(lotSummary.stats.waferCount)],
+  const overviewMetrics = [
+    { label: 'Wafers', value: String(lotSummary.stats.waferCount) },
+    ...(meanYield !== null ? [{ label: 'Mean yield', value: `${(meanYield * 100).toFixed(1)}%` }] : []),
   ];
-  if (meanYield !== null) overviewRows.push(['Mean yield', `${(meanYield * 100).toFixed(1)}%`]);
-  if (waferYields.length) {
-    overviewRows.push(['Min yield', `${(Math.min(...waferYields) * 100).toFixed(1)}%`]);
-    overviewRows.push(['Max yield', `${(Math.max(...waferYields) * 100).toFixed(1)}%`]);
-  }
 
-  const metaSection = lotMeta ? section('Lot', metaRows(lotMeta)) : '';
-  const overviewSection = section('Overview', table(['Metric', 'Value'], overviewRows));
-  const waferYieldSection = section('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
+  const summaryBody = [
+    lotMeta ? metaRows(lotMeta) : '',
+    renderMetricGrid(overviewMetrics),
+  ].filter(Boolean).join('\n');
+
+  const summarySection = renderSection('Lot Summary', summaryBody);
+  const waferYieldSection = renderSection('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
   const binSection = hasBins
     ? (hasHbin
         ? lotAggregateBinTable(allDies, hbinDefs, 'hard')
@@ -446,52 +420,36 @@ export function renderLotSummaryReportHtml(
     ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, allDies, allWafers, ringCount, passBins)
     : '';
   const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs) : '';
-  const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings) : '';
+  const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount) : '';
 
   const body = [
-    metaSection, overviewSection, waferYieldSection,
-    binSection, ringSection, quadSection,
-    testSectionHtml, findingsSectionHtml,
+    summarySection,
+    waferYieldSection,
+    binSection,
+    ringSection,
+    quadSection,
+    testSectionHtml,
+    findingsSectionHtml,
   ].filter(Boolean).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${esc(title)}</title>
+<title>${escHtml(title)}</title>
 <style>
-  body    { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; max-width: 900px; }
-  h1      { font-size: 22px; margin: 0 0 20px; }
-  h2      { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-            color: #506784; margin: 0; padding-bottom: 5px; border-bottom: 2px solid #2a6fc0; display: inline-block; }
-  section { margin-bottom: 20px; }
-  table   { border-collapse: collapse; width: 100%; margin-top: 6px; }
-  th, td  { padding: 5px 10px; text-align: left; font-size: 13px; border-bottom: 1px solid #e8eaed; }
-  thead th { background: #f0f2f5; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-             color: #506784; border-bottom: 2px solid #d0d5dd; font-weight: 600; }
-  tbody tr:nth-child(even) td { background: #f7f8fa; }
-  tbody tr:last-child td { border-bottom: none; }
-  table.meta { width: auto; min-width: 320px; }
-  table.meta td:first-child { color: #506784; font-size: 12px; width: 140px; background: #f7f8fa; }
-  table.meta tbody tr:nth-child(even) td:first-child { background: #eef0f4; }
-  table.findings td { vertical-align: top; }
-  table.findings tr:hover td { background: #f0f4fc; }
-  .sev { display: inline-block; font-size: 11px; font-weight: 600; color: #fff;
-         border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
-  .sev-unusual { background: #c0392b; }
-  .sev-notable { background: #b96a00; }
-  .sev-info    { background: #2980b9; }
-  .footer { font-size: 11px; color: #aaa; margin-top: 20px; border-top: 1px solid #e8eaed; padding-top: 6px; }
-  @media print {
-    body { margin: 16px; }
-    table.findings tr:hover td { background: none; }
-  }
+${reportStyles()}
 </style>
 </head>
 <body>
-<h1>${esc(title)}</h1>
-${body}
-<p class="footer">Generated ${esc(now)}</p>
+<main class="report">
+  <header class="report-header">
+    <h1>${escHtml(title)}</h1>
+    <p class="report-subtitle">Generated ${escHtml(now)}</p>
+  </header>
+  ${body}
+  <p class="footer">Generated ${escHtml(now)}</p>
+</main>
 </body>
 </html>`;
 }

@@ -9,6 +9,7 @@ import {
   clipDiesToWafer,
   createWafer,
   generateDies,
+  renderFindingsReportHtml,
 } from '../dist/index.js';
 
 function makeBaseDies() {
@@ -220,6 +221,33 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
   assert.equal(lot.perWafer[1].summary.hasNotableFindings, false);
   assert.equal(lot.perWafer[2].summary.hasNotableFindings, false);
   assert.equal(lot.perWafer[3].summary.hasNotableFindings, true);
+});
+
+test('lot findings report uses the lot wafer count for coverage', () => {
+  const { wafer, dies } = makeBaseDies();
+  const patternDies = dies.map((die) => {
+    const { ring } = classifyDie(die, wafer, { ringCount: 3 });
+    return { ...die, hbin: ring === 3 ? 2 : 1 };
+  });
+  const passDies = dies.map((die) => ({ ...die, hbin: 1 }));
+
+  const lot = analyzeWaferLot([
+    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1] },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
+    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1] },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
+  ], {
+    ringCount: 3,
+    minimumSampleSize: 3,
+    minimumEffectSize: 0.2,
+  });
+
+  const html = renderFindingsReportHtml(lot);
+
+  assert.match(html, /2\/6/);
+  assert.doesNotMatch(html, /2\/4/);
 });
 test('analyzeWaferMap handles wafers with no data', () => {
   const { wafer, dies } = makeBaseDies();

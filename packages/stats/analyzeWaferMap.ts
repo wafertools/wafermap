@@ -11,7 +11,7 @@ import type {
 import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, type StatsRegion } from './regions.js';
 
 interface EligibleDie extends Die {
-  hbin: number;
+  hbin?: number;
 }
 
 interface RawFinding extends StatsFinding {
@@ -44,7 +44,7 @@ function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
 function isEligibleDie(die: Die, options: ResolvedOptions): die is EligibleDie {
   if (!options.includePartial && die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
-  return die.hbin !== undefined;
+  return die.hbin !== undefined || die.sbin !== undefined;
 }
 
 function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | null): StatsSummary['stats'] {
@@ -222,8 +222,8 @@ function buildYieldFindings(
 
     if (left.length < options.minimumSampleSize || right.length < options.minimumSampleSize) continue;
 
-    const leftPass = left.filter((die) => passSet.has(die.hbin)).length;
-    const rightPass = right.filter((die) => passSet.has(die.hbin)).length;
+    const leftPass = left.filter((die) => die.hbin !== undefined && passSet.has(die.hbin)).length;
+    const rightPass = right.filter((die) => die.hbin !== undefined && passSet.has(die.hbin)).length;
     const leftRate = leftPass / left.length;
     const rightRate = rightPass / right.length;
     const delta = leftRate - rightRate;

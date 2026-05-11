@@ -72,7 +72,7 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
       effect: {
         direction: finding.effect.direction,
         absoluteDelta: finding.effect.absoluteDelta,
-        relativeDelta: coverage,
+        relativeDelta: finding.effect.relativeDelta,
         effectSize: finding.effect.effectSize,
       },
       stats: {
