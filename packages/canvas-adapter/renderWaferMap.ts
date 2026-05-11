@@ -950,7 +950,6 @@ export function renderWaferMap(
     const vp = currentViewport();
     if (!vp) return;
     const ctx = canvas.getContext('2d')!;
-    const dpr = window.devicePixelRatio ?? 1;
     const pts = currentScene.hoverPoints;
 
     const firstRect = currentScene.rectangles[0];
@@ -960,7 +959,6 @@ export function renderWaferMap(
     const inset = Math.max(1, Math.min(3, dieHalfW * 0.08));
 
     ctx.save();
-    ctx.scale(dpr, dpr);
     ctx.setLineDash([]);
 
     for (let i = 0; i < pts.length; i++) {
@@ -995,13 +993,11 @@ export function renderWaferMap(
   // ── Box select overlay ─────────────────────────────────────────────────────
   function drawBoxOverlay(): void {
     const ctx = canvas.getContext('2d')!;
-    const dpr = window.devicePixelRatio ?? 1;
     const x   = Math.min(boxStart.x, boxEnd.x);
     const y   = Math.min(boxStart.y, boxEnd.y);
     const w   = Math.abs(boxEnd.x - boxStart.x);
     const h   = Math.abs(boxEnd.y - boxStart.y);
     ctx.save();
-    ctx.scale(dpr, dpr);
     ctx.strokeStyle = 'rgba(30,100,200,0.85)';
     ctx.lineWidth   = 1.5;
     ctx.setLineDash([5, 3]);
