@@ -4,6 +4,7 @@ import type { BinDef, TestDef, YieldSummary } from '../renderer/buildWaferMap.js
 import { buildRingRegions, buildQuadrantRegions } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary } from './types.js';
 import { openHtmlReport } from './renderFindingsReport.js';
+import { fmt } from '../renderer/fmt.js';
 
 export interface SummaryReportParams {
   wafer:        Wafer;
@@ -32,12 +33,6 @@ function pct(n: number, d: number): string {
   return d === 0 ? '—' : `${((n / d) * 100).toFixed(1)}%`;
 }
 
-function fmtNum(v: number): string {
-  if (!isFinite(v)) return '—';
-  const abs = Math.abs(v);
-  if (abs >= 1e-3 && abs < 1e4) return v.toPrecision(4).replace(/\.?0+$/, '');
-  return v.toExponential(3);
-}
 
 function section(title: string, body: string): string {
   return `<section>
@@ -73,18 +68,18 @@ function metaRows(meta: Record<string, unknown>): string {
   const rows: string[] = [];
   for (const { key, label } of KNOWN_META_KEYS) {
     if (key in meta && meta[key] != null && !rendered.has(label)) {
-      rows.push(`<tr><th>${esc(label)}</th><td>${esc(String(meta[key]))}</td></tr>`);
+      rows.push(`<tr><td>${esc(label)}</td><td>${esc(String(meta[key]))}</td></tr>`);
       rendered.add(label);
     }
   }
   for (const [key, val] of Object.entries(meta)) {
     if (!KNOWN_META_KEYS.some(k => k.key === key) && val != null) {
       const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').replace(/_/g, ' ');
-      rows.push(`<tr><th>${esc(label)}</th><td>${esc(String(val))}</td></tr>`);
+      rows.push(`<tr><td>${esc(label)}</td><td>${esc(String(val))}</td></tr>`);
     }
   }
   return rows.length
-    ? `<table style="border-collapse:collapse;font-size:13px">${rows.join('')}</table>`
+    ? `<table class="meta">${rows.join('')}</table>`
     : '';
 }
 
@@ -180,15 +175,15 @@ function testSection(dies: Die[], testDefs: TestDef[]): string {
     const median = vals[Math.floor(vals.length / 2)];
     const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length - 1 || 1);
     const stddev = Math.sqrt(variance);
-    const unit   = def.unit ? ` ${def.unit}` : '';
+    const unit = def.unit || undefined;
 
     rows.push([
       esc(def.name),
-      `${fmtNum(min)}${unit}`,
-      `${fmtNum(mean)}${unit}`,
-      `${fmtNum(median)}${unit}`,
-      `${fmtNum(stddev)}${unit}`,
-      `${fmtNum(max)}${unit}`,
+      fmt(min,    unit),
+      fmt(mean,   unit),
+      fmt(median, unit),
+      fmt(stddev, unit),
+      fmt(max,    unit),
     ]);
   }
   if (!rows.length) return '';
@@ -198,12 +193,9 @@ function testSection(dies: Die[], testDefs: TestDef[]): string {
 function findingsSection(findings: StatsFinding[]): string {
   if (!findings.length) return '';
   const rows = findings.map(f => {
-    const color = sevColor(f.severity);
-    const sev   = f.severity.charAt(0).toUpperCase() + f.severity.slice(1);
+    const sev = f.severity.charAt(0).toUpperCase() + f.severity.slice(1);
     return `<tr>
-      <td style="border-left:3px solid ${color};padding-left:8px;white-space:nowrap">
-        <span style="color:${color};font-weight:600">${sev}</span>
-      </td>
+      <td style="white-space:nowrap"><span class="sev sev-${f.severity}">${sev}</span></td>
       <td style="white-space:nowrap">${esc(f.comparison.left)}</td>
       <td style="white-space:nowrap">${esc(f.variable.label)}</td>
       <td>${esc(f.summary)}</td>
@@ -257,21 +249,28 @@ export function renderSummaryReportHtml(
 <meta charset="UTF-8">
 <title>${esc(title)}</title>
 <style>
-  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; max-width: 900px; }
-  h1   { font-size: 22px; margin: 0 0 4px; }
-  h2   { font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-         color: #66788a; margin: 0 0 8px; }
-  .subtitle { color: #666; font-size: 12px; margin: 0 0 28px; }
-  section { margin-bottom: 28px; }
-  table { border-collapse: collapse; width: 100%; margin: 0; }
-  th, td { padding: 7px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #e8eaed; }
-  thead th { background: #f0f2f5; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
-             color: #555; border-bottom: 2px solid #d0d5dd; font-weight: 600; }
-  tr:last-child td { border-bottom: none; }
-  table[style*="border-collapse"] th { text-align: left; padding-right: 24px; color: #555; font-weight: normal; }
+  body    { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; max-width: 900px; }
+  h1      { font-size: 22px; margin: 0 0 20px; }
+  h2      { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+            color: #506784; margin: 0; padding-bottom: 5px; border-bottom: 2px solid #2a6fc0; display: inline-block; }
+  section { margin-bottom: 20px; }
+  table   { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  th, td  { padding: 5px 10px; text-align: left; font-size: 13px; border-bottom: 1px solid #e8eaed; }
+  thead th { background: #f0f2f5; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+             color: #506784; border-bottom: 2px solid #d0d5dd; font-weight: 600; }
+  tbody tr:nth-child(even) td { background: #f7f8fa; }
+  tbody tr:last-child td { border-bottom: none; }
+  table.meta { width: auto; min-width: 320px; }
+  table.meta td:first-child { color: #506784; font-size: 12px; width: 140px; background: #f7f8fa; }
+  table.meta tbody tr:nth-child(even) td:first-child { background: #eef0f4; }
   table.findings td { vertical-align: top; }
-  table.findings tr:hover td { background: #fafbfc; }
-  .footer { font-size: 11px; color: #aaa; margin-top: 32px; border-top: 1px solid #e8eaed; padding-top: 8px; }
+  table.findings tr:hover td { background: #f0f4fc; }
+  .sev { display: inline-block; font-size: 11px; font-weight: 600; color: #fff;
+         border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+  .sev-unusual { background: #c0392b; }
+  .sev-notable { background: #b96a00; }
+  .sev-info    { background: #2980b9; }
+  .footer { font-size: 11px; color: #aaa; margin-top: 20px; border-top: 1px solid #e8eaed; padding-top: 6px; }
   @media print {
     body { margin: 16px; }
     table.findings tr:hover td { background: none; }
@@ -280,7 +279,6 @@ export function renderSummaryReportHtml(
 </head>
 <body>
 <h1>${esc(title)}</h1>
-<p class="subtitle">Wafer summary report</p>
 ${sections}
 <p class="footer">Generated ${esc(now)}</p>
 </body>
@@ -462,21 +460,28 @@ export function renderLotSummaryReportHtml(
 <meta charset="UTF-8">
 <title>${esc(title)}</title>
 <style>
-  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; max-width: 900px; }
-  h1   { font-size: 22px; margin: 0 0 4px; }
-  h2   { font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-         color: #66788a; margin: 0 0 8px; }
-  .subtitle { color: #666; font-size: 12px; margin: 0 0 28px; }
-  section { margin-bottom: 28px; }
-  table { border-collapse: collapse; width: 100%; margin: 0; }
-  th, td { padding: 7px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #e8eaed; }
-  thead th { background: #f0f2f5; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
-             color: #555; border-bottom: 2px solid #d0d5dd; font-weight: 600; }
-  tr:last-child td { border-bottom: none; }
-  table[style*="border-collapse"] th { text-align: left; padding-right: 24px; color: #555; font-weight: normal; }
+  body    { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; max-width: 900px; }
+  h1      { font-size: 22px; margin: 0 0 20px; }
+  h2      { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+            color: #506784; margin: 0; padding-bottom: 5px; border-bottom: 2px solid #2a6fc0; display: inline-block; }
+  section { margin-bottom: 20px; }
+  table   { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  th, td  { padding: 5px 10px; text-align: left; font-size: 13px; border-bottom: 1px solid #e8eaed; }
+  thead th { background: #f0f2f5; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+             color: #506784; border-bottom: 2px solid #d0d5dd; font-weight: 600; }
+  tbody tr:nth-child(even) td { background: #f7f8fa; }
+  tbody tr:last-child td { border-bottom: none; }
+  table.meta { width: auto; min-width: 320px; }
+  table.meta td:first-child { color: #506784; font-size: 12px; width: 140px; background: #f7f8fa; }
+  table.meta tbody tr:nth-child(even) td:first-child { background: #eef0f4; }
   table.findings td { vertical-align: top; }
-  table.findings tr:hover td { background: #fafbfc; }
-  .footer { font-size: 11px; color: #aaa; margin-top: 32px; border-top: 1px solid #e8eaed; padding-top: 8px; }
+  table.findings tr:hover td { background: #f0f4fc; }
+  .sev { display: inline-block; font-size: 11px; font-weight: 600; color: #fff;
+         border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+  .sev-unusual { background: #c0392b; }
+  .sev-notable { background: #b96a00; }
+  .sev-info    { background: #2980b9; }
+  .footer { font-size: 11px; color: #aaa; margin-top: 20px; border-top: 1px solid #e8eaed; padding-top: 6px; }
   @media print {
     body { margin: 16px; }
     table.findings tr:hover td { background: none; }
@@ -485,7 +490,6 @@ export function renderLotSummaryReportHtml(
 </head>
 <body>
 <h1>${esc(title)}</h1>
-<p class="subtitle">Lot summary report</p>
 ${body}
 <p class="footer">Generated ${esc(now)}</p>
 </body>

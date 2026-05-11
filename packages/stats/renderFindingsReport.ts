@@ -15,15 +15,12 @@ function findingRows(findings: StatsFinding[]): string {
     return '<tr><td colspan="4" style="color:#888;font-style:italic;text-align:center">No significant findings</td></tr>';
   }
   return findings.map(f => {
-    const color = severityColor(f.severity);
     const severity = f.severity.charAt(0).toUpperCase() + f.severity.slice(1);
-    const region = escHtml(f.comparison.left);
+    const region   = escHtml(f.comparison.left);
     const variable = escHtml(f.variable.label);
-    const summary = escHtml(f.summary);
+    const summary  = escHtml(f.summary);
     return `<tr>
-      <td style="border-left:3px solid ${color};padding-left:8px;white-space:nowrap">
-        <span style="color:${color};font-weight:600">${severity}</span>
-      </td>
+      <td style="white-space:nowrap"><span class="sev sev-${f.severity}">${severity}</span></td>
       <td style="white-space:nowrap">${region}</td>
       <td style="white-space:nowrap">${variable}</td>
       <td>${summary}</td>
@@ -32,7 +29,7 @@ function findingRows(findings: StatsFinding[]): string {
 }
 
 function metaRow(label: string, value: string): string {
-  return `<tr><th style="text-align:left;padding-right:24px;color:#555;font-weight:normal">${escHtml(label)}</th><td>${escHtml(value)}</td></tr>`;
+  return `<tr><td>${escHtml(label)}</td><td>${escHtml(value)}</td></tr>`;
 }
 
 const KNOWN_META_KEYS: Array<{ key: string; label: string }> = [
@@ -83,7 +80,7 @@ export function renderFindingsReportHtml(
       .filter(Boolean)
       .join(', ');
     const waferIdsRow = waferIds ? metaRow('Wafers', waferIds) : '';
-    metaBlock = `<table style="border-collapse:collapse;margin-bottom:20px;font-size:13px">
+    metaBlock = `<table class="meta">
       ${lotMetaRows}
       ${waferIdsRow}
       ${metaRow('Wafer count', String(lot.stats.waferCount))}
@@ -94,7 +91,7 @@ export function renderFindingsReportHtml(
     const yld = wafer.stats.yieldPercent !== null
       ? `${wafer.stats.yieldPercent.toFixed(1)}%` : 'N/A';
     const waferMetaRows = wafer.wafer ? metaRowsFromWaferMetadata(wafer.wafer) : '';
-    metaBlock = `<table style="border-collapse:collapse;margin-bottom:20px;font-size:13px">
+    metaBlock = `<table class="meta">
       ${waferMetaRows}
       ${metaRow('Total dies', String(wafer.stats.totalDies))}
       ${metaRow('Analysed dies', String(wafer.stats.analyzedDies))}
@@ -111,15 +108,26 @@ export function renderFindingsReportHtml(
 <meta charset="UTF-8">
 <title>${escHtml(title)}</title>
 <style>
-  body { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .subtitle { color: #666; font-size: 12px; margin: 0 0 24px; }
+  body    { font-family: system-ui, sans-serif; font-size: 14px; color: #1a1a2e; margin: 32px; max-width: 900px; }
+  h1      { font-size: 22px; margin: 0 0 20px; }
+  table.meta { border-collapse: collapse; width: auto; min-width: 320px; margin-bottom: 16px; }
+  table.meta td { padding: 5px 10px; font-size: 13px; border-bottom: 1px solid #e8eaed; }
+  table.meta td:first-child { color: #506784; font-size: 12px; width: 140px; background: #f7f8fa; }
+  table.meta tbody tr:nth-child(even) td { background: #f7f8fa; }
+  table.meta tbody tr:nth-child(even) td:first-child { background: #eef0f4; }
+  table.meta tbody tr:last-child td { border-bottom: none; }
   table.findings { border-collapse: collapse; width: 100%; }
-  table.findings th { background: #f0f2f5; text-align: left; padding: 7px 12px; font-size: 12px;
-    text-transform: uppercase; letter-spacing: 0.05em; color: #555; border-bottom: 2px solid #d0d5dd; }
-  table.findings td { padding: 8px 12px; border-bottom: 1px solid #e8eaed; vertical-align: top; font-size: 13px; }
-  table.findings tr:last-child td { border-bottom: none; }
-  table.findings tr:hover td { background: #fafbfc; }
+  table.findings th { background: #f0f2f5; text-align: left; padding: 5px 10px; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #506784; border-bottom: 2px solid #d0d5dd; font-weight: 600; }
+  table.findings td { padding: 5px 10px; border-bottom: 1px solid #e8eaed; vertical-align: top; font-size: 13px; }
+  table.findings tbody tr:nth-child(even) td { background: #f7f8fa; }
+  table.findings tbody tr:last-child td { border-bottom: none; }
+  table.findings tr:hover td { background: #f0f4fc; }
+  .sev { display: inline-block; font-size: 11px; font-weight: 600; color: #fff;
+         border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+  .sev-unusual { background: #c0392b; }
+  .sev-notable { background: #b96a00; }
+  .sev-info    { background: #2980b9; }
   @media print {
     body { margin: 16px; }
     table.findings tr:hover td { background: none; }
@@ -128,7 +136,6 @@ export function renderFindingsReportHtml(
 </head>
 <body>
 <h1>${escHtml(title)}</h1>
-<p class="subtitle">${isLot ? 'Lot-level statistical findings' : 'Wafer-level statistical findings'}</p>
 ${metaBlock}
 <table class="findings">
   <thead>
