@@ -25,7 +25,7 @@
   <div class="demo-intro">
     Pass <code>hbinDefs</code> and <code>sbinDefs</code> to name every bin and give it a colour.
     Named bins appear in tooltips, the legend, and the summary panel.
-    Use the toolbar to switch between <strong>Hard Bin</strong> and <strong>Soft Bin</strong> modes — the clipboard icon opens the summary panel showing yield and per-bin counts.
+    Use the toolbar to switch between <strong>Hard Bin</strong> and <strong>Soft Bin</strong> modes — the notebook icon opens the summary panel showing yield and per-bin counts.
   </div>
 
   <div class="demo-content">
@@ -53,7 +53,7 @@
 
     const summary = analyzeWaferMap(result, { passBins: [1] });
 
-    // The built-in summary panel (toolbar clipboard icon) shows yield, bin counts,
+    // The built-in summary panel (toolbar notebook icon) shows yield, bin counts,
     // and ring/quadrant yield breakdown. defaultOpen: true starts it visible.
     renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
       sceneOptions: {

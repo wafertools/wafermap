@@ -623,7 +623,7 @@ renderWaferMap(canvas, result.wafer, result.dies, {
 });
 ```
 
-A "Findings" button (clipboard icon) appears in the toolbar when `statsSummary` is
+A "Findings" button (notebook icon) appears in the toolbar when `statsSummary` is
 provided.  Clicking it opens the summary panel, which lists all detected findings
 grouped by severity alongside yield, bin, and test statistics.
 
