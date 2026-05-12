@@ -15,8 +15,8 @@ export interface ClassifyOptions {
 /** Classify a die by its radial ring (1 = innermost) and screen quadrant. */
 export function classifyDie(die: Die, wafer: Wafer, options: ClassifyOptions = {}): DieClassification {
   const ringCount = Math.max(1, options.ringCount ?? 4);
-  const dx = die.x - wafer.center.x;
-  const dy = die.y - wafer.center.y;
+  const dx = die.physX - wafer.center.x;
+  const dy = die.physY - wafer.center.y;
   const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;
   const ring = Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
 

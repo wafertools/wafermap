@@ -1,10 +1,10 @@
 export interface GridAssignment {
-  /** Parallel to the input points array — i,j index for each point. */
-  indices: Array<{ i: number; j: number }>;
+  /** Parallel to the input points array — x,y index for each point. */
+  indices: Array<{ x: number; y: number }>;
   /**
    * Integer offset of the grid origin from (0,0) in prober-step units.
-   * To map a generated die's (i,j) back to the original prober position:
-   *   origX = die.i + offsetX,  origY = die.j + offsetY
+   * To map a generated die's (x,y) back to the original prober position:
+   *   origX = die.x + offsetX,  origY = die.y + offsetY
    */
   offsetX: number;
   offsetY: number;
@@ -22,7 +22,7 @@ export interface GridAssignment {
  * normal use).  The offset is the rounded centroid of all positions so that
  * the generated die grid is centred at the wafer's physical origin (0,0).
  *
- * The offset is always an integer, which ensures that i = x − offsetX is
+ * The offset is always an integer, which ensures that x = inputX − offsetX is
  * also an integer for integer inputs regardless of whether the centroid is
  * a whole number or a half-integer (e.g. even-count symmetric grids).
  */
@@ -40,8 +40,8 @@ export function assignGridIndices(
   const offsetY = Math.round(cy);
 
   const indices = gridPoints.map(p => ({
-    i: Math.round(p.x) - offsetX,
-    j: Math.round(p.y) - offsetY,
+    x: Math.round(p.x) - offsetX,
+    y: Math.round(p.y) - offsetY,
   }));
 
   // Confidence: fraction of points that were already near-integer.

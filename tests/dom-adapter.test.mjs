@@ -238,7 +238,7 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     click(window, selectBtn);
     assert.equal(canvas.style.cursor, 'crosshair');
 
-    ctrl.setSelection(wafer.dies.filter((die) => die.i === 0 && die.j === 0));
+    ctrl.setSelection(wafer.dies.filter((die) => die.x === 0 && die.y === 0));
     assert.equal(canvas.parentElement.querySelector('canvas') === canvas, true);
     ctrl.clearSelection();
 

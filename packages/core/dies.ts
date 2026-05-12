@@ -10,10 +10,10 @@ export interface DieSpec {
 
 export interface Die {
   id: string;
-  i: number;
-  j: number;
-  x: number;           // display coordinate (mm)
+  x: number;
   y: number;
+  physX: number;       // physical position in mm (or normalized units)
+  physY: number;
   width: number;       // die size in mm — set by generateDies
   height: number;
   /**
@@ -44,11 +44,11 @@ export function generateDies(wafer: Wafer, dieConfig: DieSpec): Die[] {
   const gridSize = dieConfig.gridSize ?? Math.ceil(wafer.radius / Math.min(width, height)) + 1;
   const dies: Die[] = [];
 
-  for (let j = -gridSize; j <= gridSize; j++) {
-    for (let i = -gridSize; i <= gridSize; i++) {
-      const x = wafer.center.x + i * width + offset.x;
-      const y = wafer.center.y + j * height + offset.y;
-      dies.push({ id: `${i}_${j}`, i, j, x, y, width, height });
+  for (let row = -gridSize; row <= gridSize; row++) {
+    for (let col = -gridSize; col <= gridSize; col++) {
+      const physX = wafer.center.x + col * width + offset.x;
+      const physY = wafer.center.y + row * height + offset.y;
+      dies.push({ id: `${col}_${row}`, x: col, y: row, physX, physY, width, height });
     }
   }
 

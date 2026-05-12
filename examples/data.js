@@ -48,6 +48,10 @@ export function makeResults({
   const pitchX = 8, pitchY = 12, waferRadius = 150;
   const iMax = Math.ceil(waferRadius / pitchX);
   const jMax = Math.ceil(waferRadius / pitchY);
+  // In practice partial dies (straddling the wafer edge) are never probed —
+  // the prober map plan excludes them. Enforce that here by requiring the
+  // die centre to be at least one half-diagonal inside the wafer boundary.
+  const halfDiag = Math.hypot(pitchX / 2, pitchY / 2);
 
   const results = [];
 
@@ -55,9 +59,7 @@ export function makeResults({
     for (let j = -jMax; j <= jMax; j++) {
       // Physical distance from wafer centre — used for all spatial patterns.
       const rMm = Math.hypot(i * pitchX, j * pitchY);
-      // Skip dies whose centre is outside the wafer; buildWaferMap will also
-      // clip based on die corners, but pre-filtering keeps the data set lean.
-      if (rMm > waferRadius) continue;
+      if (rMm + halfDiag > waferRadius) continue;
 
       const t = rMm / waferRadius; // normalised radial position [0, 1]
 

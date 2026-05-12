@@ -7,14 +7,14 @@ function approxEqual(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} != ${expected}`);
 }
 
-function findDie(result, i, j) {
-  return result.dies.find((die) => die.i === i && die.j === j);
+function findDie(result, x, y) {
+  return result.dies.find((die) => die.x === x && die.y === y);
 }
 
 test('buildWaferMap applies retest policy and chooses plot mode from the data', () => {
   const dies = [
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10 },
+    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
   ];
   const results = [
     { x: 0, y: 0, values: [0.4], hbin: 1 },
@@ -58,8 +58,8 @@ test('buildWaferMap applies retest policy and chooses plot mode from the data', 
 
 test('buildWaferMap accepts explicit dies and enables reticles by default when configured', () => {
   const dies = [
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10 },
+    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
   ];
 
   const result = buildWaferMap({
@@ -174,8 +174,8 @@ test('buildWaferMap handles empty inputs gracefully', () => {
 
 test('buildWaferMap handles explicit dies without results', () => {
   const dies = [
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10 },
+    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
   ];
 
   const result = buildWaferMap({

@@ -6,9 +6,9 @@ export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | '
  * Aggregate a per-test-parameter numeric value across a lot of wafers.
  *
  * @param diesByWafer  One `Die[]` per wafer — all wafers must share the same grid layout.
- * @param method       Aggregation function applied per (i,j) position across all wafers.
+ * @param method       Aggregation function applied per (x,y) position across all wafers.
  * @param paramIndex   Which index in `die.values[]` to aggregate (default 0).
- * @returns One Die per unique (i,j) position with `values[0]` set to the aggregate result.
+ * @returns One Die per unique (x,y) position with `values[0]` set to the aggregate result.
  *          Dies that had no values on any wafer are included with `values: undefined` as a
  *          "no data" signal — they are not filtered out.
  *
@@ -30,7 +30,7 @@ export function aggregateValues(
 
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
-      const key = `${die.i},${die.j}`;
+      const key = `${die.x},${die.y}`;
       // Read from testValues (preferred) then fall back to deprecated values[].
       const v = die.testValues?.[paramIndex] ?? die.values?.[paramIndex];
       if (v !== undefined) {
@@ -95,7 +95,7 @@ export function getUniqueBins(dies: Die[], binSpace: 'hard' | 'soft' = 'hard'): 
  * Aggregate multiple wafers by counting, per die position, how many wafers
  * had a specific bin value.
  *
- * Returns one Die per unique (i,j) position (using the first wafer's layout
+ * Returns one Die per unique (x,y) position (using the first wafer's layout
  * as the spatial template) where:
  *   values[0]  = number of wafers that had targetBin at this position
  *   hbin/sbin  = targetBin (in the appropriate bin space)
@@ -119,7 +119,7 @@ export function aggregateBinCounts(
     for (const die of waferDies) {
       const b = binSpace === 'soft' ? die.sbin : die.hbin;
       if (b === targetBin) {
-        const key = `${die.i},${die.j}`;
+        const key = `${die.x},${die.y}`;
         countMap.set(key, (countMap.get(key) ?? 0) + 1);
       }
     }
@@ -127,7 +127,7 @@ export function aggregateBinCounts(
 
   return (diesByWafer[0] ?? []).map((die) => ({
     ...die,
-    testValues: { 0: countMap.get(`${die.i},${die.j}`) ?? 0 },
+    testValues: { 0: countMap.get(`${die.x},${die.y}`) ?? 0 },
     ...(binSpace === 'soft' ? { sbin: targetBin } : { hbin: targetBin }),
   }));
 }

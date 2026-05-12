@@ -308,7 +308,7 @@ export function buildRingSection(
   if (!regions.length) return null;
 
   const passSet  = new Set(passBins);
-  const dieByKey = new Map<string, Die>(dies.map(d => [`${d.i},${d.j}`, d]));
+  const dieByKey = new Map<string, Die>(dies.map(d => [`${d.x},${d.y}`, d]));
   const hasBins  = dies.some(d => d.hbin != null || d.sbin != null);
   if (!hasBins) return null;
 
@@ -341,7 +341,7 @@ export function buildQuadrantSection(
   if (!regions.length) return null;
 
   const passSet  = new Set(passBins);
-  const dieByKey = new Map<string, Die>(dies.map(d => [`${d.i},${d.j}`, d]));
+  const dieByKey = new Map<string, Die>(dies.map(d => [`${d.x},${d.y}`, d]));
   const hasBins  = dies.some(d => d.hbin != null || d.sbin != null);
   if (!hasBins) return null;
 
@@ -596,7 +596,7 @@ export function buildLotRingSection(
     const wDies   = allDies.filter(d => (d as { _waferIndex?: number })._waferIndex === wi);
     if (!wDies.length) continue;
     const regions = buildRingRegions(wDies, wafer, ringCount);
-    const dieByKey = new Map(wDies.map(d => [`${d.i},${d.j}`, d]));
+    const dieByKey = new Map(wDies.map(d => [`${d.x},${d.y}`, d]));
     for (const region of regions) {
       if (!ringOrder.includes(region.label)) ringOrder.push(region.label);
       const acc = ringTotals.get(region.label) ?? { pass: 0, total: 0 };
@@ -643,7 +643,7 @@ export function buildLotQuadrantSection(
     const wDies    = allDies.filter(d => (d as { _waferIndex?: number })._waferIndex === wi);
     if (!wDies.length) continue;
     const regions  = buildQuadrantRegions(wDies, wafer, ringCount);
-    const dieByKey = new Map(wDies.map(d => [`${d.i},${d.j}`, d]));
+    const dieByKey = new Map(wDies.map(d => [`${d.x},${d.y}`, d]));
     for (const region of regions) {
       if (!quadOrder.includes(region.label)) quadOrder.push(region.label);
       const acc = quadTotals.get(region.label) ?? { pass: 0, total: 0 };

@@ -1,3 +1,5 @@
+import { modeOf as genericModeOf } from '../utils.js';
+
 export interface PitchResult {
   pitchX: number;
   pitchY: number;
@@ -16,17 +18,10 @@ export interface PitchResult {
  */
 function modeOf(values: number[]): number | null {
   if (!values.length) return null;
-  const counts = new Map<number, number>();
-  for (const v of values) {
-    const key = Math.round(v * 10) / 10;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  let maxCount = 0;
-  let result = values[0];
-  for (const [v, count] of counts) {
-    if (count > maxCount) { maxCount = count; result = v; }
-  }
-  return result;
+  // Round to one decimal place before finding the mode to absorb 
+  // floating-point noise from prober step data.
+  const rounded = values.map(v => Math.round(v * 10) / 10);
+  return genericModeOf(rounded);
 }
 
 /**

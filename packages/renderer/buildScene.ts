@@ -303,7 +303,7 @@ function buildHoverText(
   aggrMethod?: string,
   lotSize?: number,
 ): string {
-  const lines: string[] = [`Die (${die.i}, ${die.j})`];
+  const lines: string[] = [`Die (${die.x}, ${die.y})`];
 
   if (plotMode === 'stackedValues') {
     // Aggregated scalar is stored in testValues[0] (preferred) or values[0] (deprecated).
@@ -441,8 +441,8 @@ export function generateTextOverlay(
     }
 
     return [{
-      x: die.x,
-      y: die.y,
+      x: die.physX,
+      y: die.physY,
       text,
       fontSize: fontSizeForDie(die, text),
       color,
@@ -601,7 +601,7 @@ function buildProbeOverlay(dies: Die[]): SceneOverlay[] {
 
   return [{
     kind: 'probe-path',
-    path: polylinePath(ordered.map((die) => ({ x: die.x, y: die.y }))),
+    path: polylinePath(ordered.map((die) => ({ x: die.physX, y: die.physY }))),
     lineColor: 'rgba(220,80,0,0.55)',
     lineWidth: 1,
   }];
@@ -627,18 +627,18 @@ function pushDieRectangles(
 
   if (die.partial) {
     rectangles.push({
-      x: die.x, y: die.y, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: rw, height: rh,
       fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata,
-      path: rectanglePath(die, rw, rh, transform),
+      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
     });
     return;
   }
 
   if (die.edgeExcluded) {
     rectangles.push({
-      x: die.x, y: die.y, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: rw, height: rh,
       fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata,
-      path: rectanglePath(die, rw, rh, transform),
+      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
     });
     return;
   }
@@ -647,9 +647,9 @@ function pushDieRectangles(
       (plotMode === 'hardBin' || plotMode === 'softBin') &&
       getBin(die) !== highlightBin) {
     rectangles.push({
-      x: die.x, y: die.y, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: rw, height: rh,
       fill: DIM_FILL, type: 'hardBin', metadata: die.metadata,
-      path: rectanglePath(die, rw, rh, transform),
+      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
     });
     return;
   }
@@ -658,9 +658,9 @@ function pushDieRectangles(
     const value = getDieTestValue(die, testNumber, fallbackIndex);
     const fill = value !== undefined ? colorFns.forValue(normalize(value)) : '#d6d9dd';
     rectangles.push({
-      x: die.x, y: die.y, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: rw, height: rh,
       fill, type: 'value', metadata: die.metadata,
-      path: rectanglePath(die, rw, rh, transform),
+      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
     });
     return;
   }
@@ -671,9 +671,9 @@ function pushDieRectangles(
       ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
       : '#d6d9dd';
     rectangles.push({
-      x: die.x, y: die.y, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: rw, height: rh,
       fill, type: plotMode, metadata: die.metadata,
-      path: rectanglePath(die, rw, rh, transform),
+      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
     });
     return;
   }
@@ -682,9 +682,9 @@ function pushDieRectangles(
   const aggValue = getDieTestValue(die, 0, 0);
   const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
   rectangles.push({
-    x: die.x, y: die.y, width: rw, height: rh,
+    x: die.physX, y: die.physY, width: rw, height: rh,
     fill, type: 'value', metadata: die.metadata,
-    path: rectanglePath(die, rw, rh, transform),
+    path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
   });
 }
 
@@ -863,17 +863,17 @@ export function buildScene(
   const rectangles: SceneRect[] = [];
   const hoverPoints: SceneHoverPoint[] = [];
   // Pre-transformed dies — positions rotated/flipped around wafer centre.
-  // Only the x,y centre moves; die.i/j/width/height/hbin/sbin/values are unchanged.
+  // Only the physX/physY centre moves; die.x/y/width/height/hbin/sbin/values are unchanged.
   const transformedDies = (transform.rotation || transform.flipX || transform.flipY)
     ? dies.map(d => {
-        const tp = transformPoint({ x: d.x, y: d.y }, wafer.center, transform);
-        return { ...d, x: tp.x, y: tp.y };
+        const tp = transformPoint({ x: d.physX, y: d.physY }, wafer.center, transform);
+        return { ...d, physX: tp.x, physY: tp.y };
       })
     : dies;
 
   for (const tdie of transformedDies) {
     pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap);
-    hoverPoints.push({ x: tdie.x, y: tdie.y, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize) });
+    hoverPoints.push({ x: tdie.physX, y: tdie.physY, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize) });
   }
 
   const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, {
@@ -923,11 +923,11 @@ export function buildScene(
  *
  * ```ts
  * const map = new Map(result.dies.map(d => [getDieKey(d), d]));
- * const die = map.get(getDieKey({ i: 3, j: -2 }));
+ * const die = map.get(getDieKey({ x: 3, y: -2 }));
  * ```
  */
-export function getDieKey(die: { i: number; j: number }): string {
-  return `${die.i},${die.j}`;
+export function getDieKey(die: { x: number; y: number }): string {
+  return `${die.x},${die.y}`;
 }
 
 /**
@@ -939,7 +939,7 @@ export function getDieKey(die: { i: number; j: number }): string {
  * ```ts
  * chart.on('plotly_click', ev => {
  *   const die = getDieAtPoint(scene, ev);
- *   if (die) console.log(die.i, die.j, die.values, die.hbin, die.sbin);
+ *   if (die) console.log(die.x, die.y, die.values, die.hbin, die.sbin);
  * });
  * ```
  *

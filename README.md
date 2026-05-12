@@ -2,8 +2,12 @@
 
 Browser-first wafer map visualization for semiconductor test data.
 
-**[Live demos →](https://telecasterer.github.io/wafermap/)**  
-**[Developer Guide →](https://telecasterer.github.io/wafermap/guide/)** — step-by-step from first map to full lot gallery with statistical findings
+**[Project Portal: Docs & Interactive Demos →](https://telecasterer.github.io/wafermap/)**
+
+The project portal provides a searchable, unified interface for the entire library:
+- **Interactive Demos**: Over a dozen runnable examples from basic maps to complex lot analytics.
+- **Developer Guide**: Step-by-step tutorials covering CSV loading, web workers, and spatial statistics.
+- **API Reference**: Complete documentation of all public types, geometry rules, and configuration options.
 
 ## Quick start
 

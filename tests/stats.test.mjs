@@ -131,8 +131,8 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
 test('analyzeWaferMap detects repeating reticle-local patterns when reticle config is present', () => {
   const { dies } = makeBaseDies();
   const enriched = dies.map((die) => {
-    const localCol = ((die.i % 2) + 2) % 2;
-    const localRow = ((die.j % 2) + 2) % 2;
+    const localCol = ((die.x % 2) + 2) % 2;
+    const localRow = ((die.y % 2) + 2) % 2;
     const isBadCell = localCol === 1 && localRow === 0;
     return {
       ...die,

@@ -68,15 +68,15 @@ export function isInsideWafer(x: number, y: number, wafer: Wafer): boolean {
 export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieSpec): Die[] {
   const result: Die[] = [];
   for (const die of dies) {
-    const centerIn = isInsideWafer(die.x, die.y, wafer);
+    const centerIn = isInsideWafer(die.physX, die.physY, wafer);
     if (!dieConfig) {
       if (centerIn) result.push({ ...die, insideWafer: true, partial: false });
       continue;
     }
     const hw = dieConfig.width / 2, hh = dieConfig.height / 2;
     const corners: [number, number][] = [
-      [die.x - hw, die.y - hh], [die.x + hw, die.y - hh],
-      [die.x + hw, die.y + hh], [die.x - hw, die.y + hh],
+      [die.physX - hw, die.physY - hh], [die.physX + hw, die.physY - hh],
+      [die.physX + hw, die.physY + hh], [die.physX - hw, die.physY + hh],
     ];
     const cornersIn = corners.filter(([cx, cy]) => isInsideWafer(cx, cy, wafer)).length;
     if (!centerIn && cornersIn === 0) continue;
@@ -92,8 +92,8 @@ export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieSpec):
 export function applyOrientation(dies: Die[], wafer: Wafer): Die[] {
   if (wafer.orientation === 0) return dies;
   return dies.map((die) => {
-    const p = rotatePoint(die.x, die.y, wafer.orientation, wafer.center.x, wafer.center.y);
-    return { ...die, x: p.x, y: p.y };
+    const p = rotatePoint(die.physX, die.physY, wafer.orientation, wafer.center.x, wafer.center.y);
+    return { ...die, physX: p.x, physY: p.y };
   });
 }
 
@@ -110,13 +110,13 @@ export function transformDies(
 
   if (rotation !== 0) {
     result = result.map((d) => {
-      const p = rotatePoint(d.x, d.y, rotation, center.x, center.y);
-      return { ...d, x: p.x, y: p.y };
+      const p = rotatePoint(d.physX, d.physY, rotation, center.x, center.y);
+      return { ...d, physX: p.x, physY: p.y };
     });
   }
 
-  if (flipX) result = result.map((d) => ({ ...d, x: 2 * center.x - d.x }));
-  if (flipY) result = result.map((d) => ({ ...d, y: 2 * center.y - d.y }));
+  if (flipX) result = result.map((d) => ({ ...d, physX: 2 * center.x - d.physX }));
+  if (flipY) result = result.map((d) => ({ ...d, physY: 2 * center.y - d.physY }));
 
   return result;
 }
@@ -134,10 +134,10 @@ export function mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions)
   const lookup = new Map<string, number>();
 
   if (matchBy === 'ij') {
-    const iField = options.iField ?? 'i', jField = options.jField ?? 'j';
+    const iField = options.iField ?? 'x', jField = options.jField ?? 'y';
     for (const row of data) lookup.set(`${+row[iField]},${+row[jField]}`, +row[valueField]);
     return dies.map((d) => {
-      const v = lookup.get(`${d.i},${d.j}`);
+      const v = lookup.get(`${d.x},${d.y}`);
       return v !== undefined ? { ...d, values: [...(d.values ?? []), v] } : { ...d };
     });
   }
@@ -145,7 +145,7 @@ export function mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions)
   const xField = options.xField ?? 'x', yField = options.yField ?? 'y';
   for (const row of data) lookup.set(`${+row[xField]},${+row[yField]}`, +row[valueField]);
   return dies.map((d) => {
-    const v = lookup.get(`${d.x},${d.y}`);
+    const v = lookup.get(`${d.physX},${d.physY}`);
     return v !== undefined ? { ...d, values: [...(d.values ?? []), v] } : { ...d };
   });
 }

@@ -676,6 +676,15 @@ export function toCanvas(
       const mx = (px - originX) / ppm;
       const my = (originY - py) / ppm;
 
+      // First pass: exact rectangle containment.
+      for (let i = 0; i < scene.rectangles.length; i++) {
+        const r = scene.rectangles[i];
+        if (Math.abs(mx - r.x) <= r.width / 2 && Math.abs(my - r.y) <= r.height / 2) {
+          return scene.dies[i] ?? null;
+        }
+      }
+
+      // Second pass: nearest-centre fallback for clicks in the kerf gap.
       let bestDie: Die | null = null;
       let bestDist = snapDist * snapDist;
 

@@ -155,7 +155,7 @@
         const bin = HBIN_DEFS.find(b => b.bin === d.hbin);
         listEl.insertAdjacentHTML('beforeend', `
           <div class="retest-die">
-            (${d.i}, ${d.j})
+            (${d.x}, ${d.y})
             <span class="badge badge-amber">×${d.retestCount + 1}</span>
             <span style="color:${bin?.color ?? '#666'}">● ${bin?.name ?? `bin ${d.hbin}`}</span>
           </div>`);
@@ -173,7 +173,7 @@
             ? `<br><strong>Retested ${die.retestCount + 1}×</strong> — tooltip shows "Retests: N"`
             : '';
           document.getElementById('die-box').innerHTML = `
-            Position: <strong>(${die.i}, ${die.j})</strong><br>
+            Position: <strong>(${die.x}, ${die.y})</strong><br>
             Hard bin: <strong style="color:${bin?.color}">${bin?.name ?? die.hbin}</strong><br>
             Idsat: <strong>${fmt(die.testValues?.[1050])}</strong>${retest}`;
         },

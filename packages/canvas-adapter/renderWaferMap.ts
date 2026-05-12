@@ -964,7 +964,7 @@ export function renderWaferMap(
     for (let i = 0; i < pts.length; i++) {
       const die = currentScene.dies[i];
       if (!die) continue;
-      const key = `${die.i},${die.j}`;
+      const key = `${die.x},${die.y}`;
       if (!selectedKeys.has(key)) continue;
 
       const sx = vp.originX + pts[i].x * vp.ppm;
@@ -1153,7 +1153,7 @@ export function renderWaferMap(
         tooltip.style.display = 'block';
         tooltip.style.left    = `${e.clientX + 14}px`;
         tooltip.style.top     = `${e.clientY - 8}px`;
-        tooltip.innerHTML     = hp?.text ?? `Die (${die.i}, ${die.j})`;
+        tooltip.innerHTML     = hp?.text ?? `Die (${die.x}, ${die.y})`;
       } else {
         tooltip.style.display = 'none';
       }
@@ -1229,12 +1229,12 @@ export function renderWaferMap(
         }
         if (multi) {
           for (const d of boxDies) {
-            const key = `${d.i},${d.j}`;
+            const key = `${d.x},${d.y}`;
             if (selectedKeys.has(key)) selectedKeys.delete(key);
             else selectedKeys.add(key);
           }
         } else {
-          selectedKeys = new Set(boxDies.map(d => `${d.i},${d.j}`));
+          selectedKeys = new Set(boxDies.map(d => `${d.x},${d.y}`));
         }
         onSelect?.(selectionAsDies());
       }
@@ -1285,7 +1285,7 @@ export function renderWaferMap(
 
     if (die) {
       onClick?.(die, e);
-      const key = `${die.i},${die.j}`;
+      const key = `${die.x},${die.y}`;
       if (multi) {
         // Toggle this die.
         if (selectedKeys.has(key)) selectedKeys.delete(key);
@@ -1309,7 +1309,7 @@ export function renderWaferMap(
     const pts = currentScene.hoverPoints;
     for (let i = 0; i < pts.length; i++) {
       const d = currentScene.dies[i];
-      if (d && selectedKeys.has(`${d.i},${d.j}`)) result.push(d);
+      if (d && selectedKeys.has(`${d.x},${d.y}`)) result.push(d);
     }
     return result;
   }
@@ -1322,7 +1322,19 @@ export function renderWaferMap(
 
   // ── Hit testing ────────────────────────────────────────────────────────────
   function hitTest(mx: number, my: number, snapDist: number): Die | null {
-    const pts = currentScene.hoverPoints;
+    const pts  = currentScene.hoverPoints;
+    const rcts = currentScene.rectangles;
+
+    // First pass: exact rectangle containment — handles partial dies whose
+    // centres lie outside the wafer and would otherwise snap to a neighbour.
+    for (let i = 0; i < rcts.length; i++) {
+      const r = rcts[i];
+      if (Math.abs(mx - r.x) <= r.width / 2 && Math.abs(my - r.y) <= r.height / 2) {
+        return currentScene.dies[i] ?? null;
+      }
+    }
+
+    // Second pass: nearest-centre fallback for clicks in the kerf gap.
     let bestDie: Die | null = null;
     let bestDist = snapDist * snapDist;
     for (let i = 0; i < pts.length; i++) {
@@ -1407,7 +1419,7 @@ export function renderWaferMap(
     resetZoom,
 
     setSelection(dies: Die[]): void {
-      selectedKeys = new Set(dies.map(d => `${d.i},${d.j}`));
+      selectedKeys = new Set(dies.map(d => `${d.x},${d.y}`));
       render();
     },
 

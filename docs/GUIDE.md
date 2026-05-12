@@ -369,7 +369,7 @@ const { wafer, dies } = buildWaferMap({
 
 // Check which dies were retested:
 dies.filter(d => d.retestCount !== undefined)
-    .forEach(d => console.log(`(${d.i},${d.j}) retested ${d.retestCount}×`));
+    .forEach(d => console.log(`(${d.x},${d.y}) retested ${d.retestCount}×`));
 ```
 
 Retested dies automatically show "Retests: N" in their hover tooltip.
@@ -408,7 +408,7 @@ renderWaferMap(canvas, result.wafer, enrichedDies, {
 });
 ```
 
-> Always use `getDieKey(die)` for lookups rather than manually formatting `"${die.i},${die.j}"` —
+> Always use `getDieKey(die)` for lookups rather than manually formatting `"${die.x},${die.y}"` —
 > it guarantees the correct format after any grid offset correction.
 
 
@@ -556,19 +556,19 @@ renderWaferGallery(container, items, {
 ```ts
 renderWaferMap(canvas, wafer, dies, {
   onClick: (die, event) => {
-    console.log(`Clicked die (${die.i}, ${die.j})`);
+    console.log(`Clicked die (${die.x}, ${die.y})`);
     console.log('Hard bin:', die.hbin);
     console.log('Test values:', die.testValues);
     showDetailPanel(die);
   },
   onHover: (die, event) => {
-    if (die) updateStatusBar(`(${die.i}, ${die.j})`);
+    if (die) updateStatusBar(`(${die.x}, ${die.y})`);
     else     clearStatusBar();
   },
 });
 ```
 
-`onClick` and `onHover` receive the full `Die` object — `die.i`, `die.j`, `die.testValues`,
+`onClick` and `onHover` receive the full `Die` object — `die.x`, `die.y`, `die.testValues`,
 `die.hbin`, `die.sbin`, and any metadata you attached.  `onHover` receives `null` when the cursor
 leaves a die.
 
@@ -901,24 +901,11 @@ renderWaferGallery(container, items, {
 
 ### Stacked lot maps
 
-The gallery toolbar includes three stacked modes that aggregate all wafers into a
-single view — one card per bin (stacked hard bins / soft bins) or one card per
-test parameter (stacked test values).  **These modes are handled automatically by
-the gallery** — no extra code is needed:
+The gallery toolbar includes three stacked modes that aggregate all wafers into a single view—one card per bin or per test parameter. 
 
-```ts
-// Just pass the per-wafer items with hbinDefs/sbinDefs/testDefs in sceneOptions.
-// Selecting "Stacked Hard Bins" from the toolbar will produce one card per bin,
-// where each die shows the count of wafers on which that bin appeared.
-renderWaferGallery(container, items, {
-  sceneOptions: {
-    plotMode:  'hardBin',
-    hbinDefs,
-    sbinDefs,
-    testDefs,
-  },
-});
-```
+**Zero-Config Discovery:** Even if you don't provide `testDefs` or `binDefs`, the gallery will automatically scan your lot data to discover unique tests and bins when you switch to a stacked mode. It generates default labels (e.g., "Test 1050" or "Bin 2") and populates the shared legend automatically.
+
+Selecting "Stacked Hard Bins" will produce one card per bin found in the data, where each die shows the count of wafers on which that bin appeared at that position.
 
 Switching to a stacked mode rebuilds the card set automatically; switching back
 restores the original per-wafer cards.  The aggregation method for
@@ -1320,7 +1307,7 @@ renderPlotly();  // initial render
 document.getElementById('plotly-chart').on('plotly_click', ev => {
   const scene = buildScene(wafer, dies, { ...sharedOpts });
   const die   = getDieAtPoint(scene, ev);
-  if (die) console.log(die.i, die.j, die.hbin);
+  if (die) console.log(die.x, die.y, die.hbin);
 });
 ```
 
@@ -1363,10 +1350,10 @@ const oriented = applyOrientation(clipped, wafer);
 // 4. Assign probe sequence (sets die.probeIndex in snake order)
 const sequenced = applyProbeSequence(oriented, { type: 'snake' });
 
-// 5. Merge DieResult[] onto the die grid by (i, j) position
+// 5. Merge DieResult[] onto the die grid by (x, y) position
 const resultMap = new Map(results.map(r => [`${r.x},${r.y}`, r]));
 const enriched  = sequenced.map(die => {
-  const r = resultMap.get(`${die.i},${die.j}`);
+  const r = resultMap.get(`${die.x},${die.y}`);
   return r ? { ...die, hbin: r.hbin, sbin: r.sbin, testValues: r.testValues } : die;
 });
 

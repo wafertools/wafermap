@@ -132,13 +132,13 @@
 
     // ── Step 5: merge test data onto the die grid ─────────────────────────────
     //
-    // Build a lookup map keyed by "(i,j)" then spread each result's hbin and
+    // Build a lookup map keyed by "(x,y)" then spread each result's hbin and
     // testValues onto the matching die.  This is what buildWaferMap does
     // internally — in the manual pipeline you own this step.
     const results = makeResults({ seed: 7, edgeFail: true });
     const resultMap = new Map(results.map(r => [`${r.x},${r.y}`, r]));
     const enriched = sequenced.map(die => {
-      const r = resultMap.get(`${die.i},${die.j}`);
+      const r = resultMap.get(`${die.x},${die.y}`);
       if (!r) return die;
       return { ...die, hbin: r.hbin, sbin: r.sbin, testValues: r.testValues };
     });

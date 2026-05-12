@@ -155,7 +155,7 @@ export function renderWaferGallery(
     for (const ci of targets) {
       const item = currentItems[ci];
       if (!item) continue;
-      const matched = item.dies.filter(d => keySet.has(`${d.i},${d.j}`));
+      const matched = item.dies.filter(d => keySet.has(`${d.x},${d.y}`));
       cardControllers[ci].setSelection(matched);
     }
   }
@@ -853,18 +853,36 @@ export function renderWaferGallery(
     const baseWafer = originalItems[0].wafer;
 
     if (mode === 'stackedValues') {
-      const defs   = sharedOpts.testDefs ?? [];
+      let defs = sharedOpts.testDefs;
+
+      // If no testDefs provided, discover unique test numbers from the actual data
+      if (!defs || defs.length === 0) {
+        const uniqueNums = [...new Set(originalItems.flatMap(it => 
+          it.dies.flatMap(d => d.testValues ? Object.keys(d.testValues).map(Number) : [])
+        ))].sort((a, b) => a - b);
+        
+        defs = uniqueNums.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
+      }
+
       const method = (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => ({
         wafer: baseWafer,
-        dies:  aggregateValues(allDies, method, def.index ?? def.testNumber),
+        dies:  aggregateValues(allDies, method, def.testNumber ?? def.index),
         label: `${def.name} · ${method}`,
         sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }] },
       }));
     }
 
     if (mode === 'stackedBins') {
-      return (sharedOpts.hbinDefs ?? []).map(def => ({
+      let defs = sharedOpts.hbinDefs;
+      if (!defs || defs.length === 0) {
+        const uniqueBins = [...new Set(originalItems.flatMap(it => 
+          it.dies.map(d => d.hbin).filter((b): b is number => b != null)
+        ))].sort((a, b) => a - b);
+        defs = uniqueBins.map(b => ({ bin: b, name: `Bin ${b}` }));
+      }
+
+      return defs.map(def => ({
         wafer: baseWafer,
         dies:  aggregateBinCounts(allDies, def.bin, 'hard'),
         label: `${def.bin} · ${def.name}`,
@@ -873,7 +891,15 @@ export function renderWaferGallery(
     }
 
     if (mode === 'stackedSoftBins') {
-      return (sharedOpts.sbinDefs ?? []).map(def => ({
+      let defs = sharedOpts.sbinDefs;
+      if (!defs || defs.length === 0) {
+        const uniqueBins = [...new Set(originalItems.flatMap(it => 
+          it.dies.map(d => d.sbin).filter((b): b is number => b != null)
+        ))].sort((a, b) => a - b);
+        defs = uniqueBins.map(b => ({ bin: b, name: `Bin ${b}` }));
+      }
+
+      return defs.map(def => ({
         wafer: baseWafer,
         dies:  aggregateBinCounts(allDies, def.bin, 'soft'),
         label: `${def.bin} · ${def.name}`,

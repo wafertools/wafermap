@@ -9,7 +9,7 @@ export interface StatsRegion {
 }
 
 function dieKey(die: Die): string {
-  return `${die.i},${die.j}`;
+  return `${die.x},${die.y}`;
 }
 
 export function buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[] {
@@ -69,8 +69,8 @@ export function buildReticlePositionRegions(
   const regions = new Map<string, StatsRegion>();
 
   for (const die of dies) {
-    const column = normalizePhase(die.i + phaseX, safeWidth);
-    const row = normalizePhase(die.j + phaseY, safeHeight);
+    const column = normalizePhase(die.x + phaseX, safeWidth);
+    const row = normalizePhase(die.y + phaseY, safeHeight);
     const key = `reticle-position:cell:${column},${row}`;
     const existing = regions.get(key) ?? {
       family: 'reticle-position' as const,

@@ -29,22 +29,22 @@ export function applyProbeSequence(dies: Die[], config: ProbeSequenceConfig): Di
   }
 
   if (type === 'column') {
-    const sorted = [...dies].sort((a, b) => a.i - b.i || b.j - a.j);
+    const sorted = [...dies].sort((a, b) => a.x - b.x || b.y - a.y);
     return sorted.map((d, i) => ({ ...d, probeIndex: i }));
   }
 
-  // 'row' and 'snake': group by row j, descending (top of wafer first)
+  // 'row' and 'snake': group by row y, descending (top of wafer first)
   const rowMap = new Map<number, Die[]>();
   for (const d of dies) {
-    if (!rowMap.has(d.j)) rowMap.set(d.j, []);
-    rowMap.get(d.j)!.push(d);
+    if (!rowMap.has(d.y)) rowMap.set(d.y, []);
+    rowMap.get(d.y)!.push(d);
   }
 
   const sortedRows = [...rowMap.entries()].sort(([a], [b]) => b - a);
   const ordered: Die[] = [];
 
   sortedRows.forEach(([, rowDies], rowIdx) => {
-    const row = rowDies.sort((a, b) => a.i - b.i);
+    const row = rowDies.sort((a, b) => a.x - b.x);
     ordered.push(...(type === 'snake' && rowIdx % 2 === 1 ? [...row].reverse() : row));
   });
 

@@ -10,6 +10,8 @@ import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
 import { generateReticleGrid } from '../core/reticle.js';
 import { buildScene, type Scene, type SceneOptions, type PlotMode } from './buildScene.js';
+import { modeOf } from '../core/utils.js';
+import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
@@ -134,7 +136,7 @@ export interface ReticleConfig {
   /** Field height in number of dies. */
   height: number;
   /**
-   * Die grid index (i, j) that sits at the reticle field's internal (0,0) corner.
+   * Die grid index (x, y) that sits at the reticle field's internal (0,0) corner.
    * Controls the phase (alignment) of the reticle grid.
    * Defaults to `{x: 0, y: 0}`.
    */
@@ -150,7 +152,7 @@ export interface LotStackConfig {
   /** One `DieResult[]` per wafer in the lot. */
   results: DieResult[][];
   /** Aggregation method applied per die position across all wafers. */
-  method: 'mean' | 'median' | 'stddev' | 'countBin' | 'mode' | 'percent';
+  method: 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count' | 'countBin' | 'mode' | 'percent';
   /** Required when `method` is `'countBin'` or `'percent'`. */
   targetBin?: number;
 }
@@ -291,7 +293,7 @@ export interface WaferMapResult {
   /** Reticle configuration used to generate the overlay and reticle-local groupings. */
   reticleConfig?: ReticleConfig;
   /**
-   * Coordinate space of `die.x` / `die.y` and wafer dimensions:
+   * Coordinate space of `die.physX` / `die.physY` and wafer dimensions:
    * - **'mm'**         — at least one physical dimension was provided or could
    *                      be inferred; all spatial values are in real millimetres.
    * - **'normalized'** — only grid positions were supplied; coordinates are
@@ -422,84 +424,62 @@ function resolveAxisFlips(
 
 // ── Lot-stack aggregation ─────────────────────────────────────────────────────
 
-function modeOf(values: number[]): number | null {
-  if (!values.length) return null;
-  const counts = new Map<number, number>();
-  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
-  let maxCount = 0;
-  let result = values[0];
-  for (const [v, count] of counts) {
-    if (count > maxCount) { maxCount = count; result = v; }
-  }
-  return result;
-}
-
-function medianOf(sorted: number[]): number {
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
 function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): DieResult[] {
   const { results: waferResults, method, targetBin } = lotStack;
-  const totalWafers = waferResults.length;
 
-  const grouped = new Map<string, DieResult[]>();
-  for (const waferPoints of waferResults) {
-    for (const pt of waferPoints) {
-      const key = `${pt.x},${pt.y}`;
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key)!.push(pt);
-    }
+  // 1. Scalar numeric aggregations: mean, median, stddev, min, max, count.
+  // Reuses the robust union-based logic in core/aggregates.ts.
+  if (method === 'mean' || method === 'median' || method === 'stddev' || method === 'min' || method === 'max' || method === 'count') {
+    return aggregateValues(
+      waferResults as unknown as Die[][],
+      method as CoreAggregationMethod
+    ) as unknown as DieResult[];
   }
 
-  const result: DieResult[] = [];
+  // 2. Bin occurrence aggregations: countBin, percent.
+  // Reuses template-based logic (assumes consistent wafer layout).
+  if (method === 'countBin' || method === 'percent') {
+    if (targetBin === undefined) return [];
+    const aggregated = aggregateBinCounts(
+      waferResults as unknown as Die[][],
+      targetBin,
+      'hard'
+    ) as unknown as DieResult[];
 
-  for (const [key, points] of grouped) {
-    const parts = key.split(',');
-    const x = Number(parts[0]);
-    const y = Number(parts[1]);
+    if (method === 'countBin') return aggregated;
 
-    const primaryBin = (pt: DieResult) => pt.hbin;
-    // Primary value: testValues[0] if present (lot-stack aggregated scalar), else values[0].
-    const primaryVal = (pt: DieResult): number | undefined =>
-      pt.testValues?.[0] ?? pt.values?.[0];
+    const totalWafers = waferResults.length;
+    return aggregated.map(dr => ({
+      ...dr,
+      testValues: { 0: totalWafers > 0 ? ((dr.testValues?.[0] ?? 0) / totalWafers) * 100 : 0 }
+    }));
+  }
 
-    if (method === 'countBin' && targetBin !== undefined) {
-      result.push({ x, y, testValues: { 0: points.filter(p => primaryBin(p) === targetBin).length } });
-
-    } else if (method === 'percent' && targetBin !== undefined) {
-      result.push({
-        x, y,
-        testValues: { 0: (points.filter(p => primaryBin(p) === targetBin).length / totalWafers) * 100 },
-      });
-
-    } else if (method === 'mean') {
-      const vals = points.map(primaryVal).filter((v): v is number => v !== undefined);
-      if (vals.length) result.push({ x, y, testValues: { 0: vals.reduce((a, b) => a + b, 0) / vals.length } });
-
-    } else if (method === 'median') {
-      const vals = points
-        .map(primaryVal)
-        .filter((v): v is number => v !== undefined)
-        .sort((a, b) => a - b);
-      if (vals.length) result.push({ x, y, testValues: { 0: medianOf(vals) } });
-
-    } else if (method === 'stddev') {
-      const vals = points.map(primaryVal).filter((v): v is number => v !== undefined);
-      if (vals.length > 1) {
-        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-        const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1);
-        result.push({ x, y, testValues: { 0: Math.sqrt(variance) } });
+  // 3. Mode aggregation: Categorical (most frequent hbin).
+  // Remains local as core/aggregates focuses on testValue scalars.
+  if (method === 'mode') {
+    const grouped = new Map<string, DieResult[]>();
+    for (const waferPoints of waferResults) {
+      for (const pt of waferPoints) {
+        const key = `${pt.x},${pt.y}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(pt);
       }
+    }
 
-    } else if (method === 'mode') {
-      const bins = points.map(primaryBin).filter((b): b is number => b !== undefined);
+    const result: DieResult[] = [];
+    for (const [key, points] of grouped) {
+      const parts = key.split(',');
+      const x = Number(parts[0]);
+      const y = Number(parts[1]);
+      const bins = points.map(p => p.hbin).filter((b): b is number => b !== undefined);
       const m = modeOf(bins);
       if (m !== null) result.push({ x, y, hbin: m });
     }
+    return result;
   }
 
-  return result;
+  return [];
 }
 
 // ── Coverage & yield ──────────────────────────────────────────────────────────
@@ -574,8 +554,8 @@ function buildReticles(
 function applyEdgeExclusion(dies: Die[], wafer: Wafer, exclusionMm: number): Die[] {
   const innerRadiusSq = (wafer.radius - exclusionMm) ** 2;
   return dies.map(die => {
-    const dx = die.x - wafer.center.x;
-    const dy = die.y - wafer.center.y;
+    const dx = die.physX - wafer.center.x;
+    const dy = die.physY - wafer.center.y;
     return dx * dx + dy * dy > innerRadiusSq ? { ...die, edgeExcluded: true } : die;
   });
 }
@@ -735,7 +715,7 @@ export function buildWaferMap(
     if (results.length > 0) {
       const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
       dies = dies.map(die => {
-        const pt = lookup.get(`${die.i},${die.j}`);
+        const pt = lookup.get(`${die.x},${die.y}`);
         return pt ? attachData(die, pt, norm.testDefs) : die;
       });
     }
@@ -790,7 +770,7 @@ export function buildWaferMap(
 
   if (waferDiameter === undefined) {
     if (ga.indices.length > 0) {
-      const physPoints = ga.indices.map(({ i, j }) => ({ x: i * pitchX, y: j * pitchY }));
+      const physPoints = ga.indices.map(({ x, y }) => ({ x: x * pitchX, y: y * pitchY }));
       const wi = inferWaferFromXY(physPoints);
       waferDiameter = wi.diameter;
       inference.wafer = { confidence: wi.confidence, method: wi.method };
@@ -814,19 +794,19 @@ export function buildWaferMap(
   if (results.length > 0) {
     const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
     dies = dies.map(die => {
-      const pt = lookup.get(`${die.i + offsetX},${die.j + offsetY}`);
+      const pt = lookup.get(`${die.x + offsetX},${die.y + offsetY}`);
       return pt ? attachData(die, pt, norm.testDefs) : die;
     });
   }
 
-  // Shift i/j from centred grid indices to original input coordinates.
-  // die.x/y (physical mm) remain unchanged — only the public identity fields move.
+  // Shift x/y from centred grid indices to original input coordinates.
+  // die.physX/physY remain unchanged — only the public identity fields move.
   if (offsetX !== 0 || offsetY !== 0) {
     dies = dies.map(die => ({
       ...die,
-      i:  die.i + offsetX,
-      j:  die.j + offsetY,
-      id: `${die.i + offsetX}_${die.j + offsetY}`,
+      x:  die.x + offsetX,
+      y:  die.y + offsetY,
+      id: `${die.x + offsetX}_${die.y + offsetY}`,
     }));
   }
 

@@ -206,7 +206,7 @@ function buildYieldFindings(
   options: ResolvedOptions,
 ): RawFinding[] {
   const passSet = new Set(passBins);
-  const dieMap = new Map(eligibleDies.map((die) => [`${die.i},${die.j}`, die]));
+  const dieMap = new Map(eligibleDies.map((die) => [`${die.x},${die.y}`, die]));
   const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
   const findings: RawFinding[] = [];
 
@@ -216,7 +216,7 @@ function buildYieldFindings(
       .filter((die): die is EligibleDie => die !== undefined);
     const leftKeySet = new Set(region.dieKeys);
     const right = eligibleDies.filter((die) => {
-      const key = `${die.i},${die.j}`;
+      const key = `${die.x},${die.y}`;
       return !leftKeySet.has(key) && regionDieKeySet.has(key);
     });
 
@@ -290,7 +290,7 @@ function buildBinFindings(
   options: ResolvedOptions,
 ): RawFinding[] {
   const getBin = (d: EligibleDie) => binSpace === 'soft' ? d.sbin : d.hbin;
-  const dieMap = new Map(eligibleDies.map((die) => [`${die.i},${die.j}`, die]));
+  const dieMap = new Map(eligibleDies.map((die) => [`${die.x},${die.y}`, die]));
   const bins = [...new Set(
     eligibleDies
       .map(getBin)
@@ -306,7 +306,7 @@ function buildBinFindings(
       .filter((die): die is EligibleDie => die !== undefined);
     const leftKeySet = new Set(region.dieKeys);
     const right = eligibleDies.filter((die) => {
-      const key = `${die.i},${die.j}`;
+      const key = `${die.x},${die.y}`;
       return !leftKeySet.has(key) && regionDieKeySet.has(key);
     });
 
@@ -414,7 +414,7 @@ function buildTestValueFindings(
   defs: TestDef[] | undefined,
   options: ResolvedOptions,
 ): RawFinding[] {
-  const dieMap = new Map(dies.map((die) => [`${die.i},${die.j}`, die]));
+  const dieMap = new Map(dies.map((die) => [`${die.x},${die.y}`, die]));
   const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
 
   // Collect all test numbers present in the data.
@@ -448,7 +448,7 @@ function buildTestValueFindings(
       .filter((die): die is Die => die !== undefined);
     const leftKeySet = new Set(region.dieKeys);
     const rightDies = dies.filter((die) => {
-      const key = `${die.i},${die.j}`;
+      const key = `${die.x},${die.y}`;
       return !leftKeySet.has(key) && regionDieKeySet.has(key);
     });
 

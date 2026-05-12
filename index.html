@@ -6,19 +6,107 @@
   <title>wafermap — demos</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --primary: #2563eb; --primary-hover: #1d4ed8; --text: #1a1d23; --text-light: #6b7280; --bg: #f8fafc; --border: #e2e5ea; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #f0f2f5;
-      color: #1a1d23;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 48px 24px;
+      font-size: 14px;
+      padding: 0 24px 80px;
+      -webkit-font-smoothing: antialiased;
     }
-    header { text-align: center; margin-bottom: 48px; }
-    header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
-    header p { margin-top: 8px; color: #6b7280; font-size: 1rem; }
+    header {
+      width: 100vw;
+      position: relative;
+      text-align: center;
+      padding: 32px 24px;
+      background: white;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    header h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.03em; color: #0f172a; }
+    header p {
+      margin: 4px auto 0;
+      color: var(--text-light);
+      font-size: 0.95rem;
+      max-width: 600px;
+      line-height: 1.5;
+    }
+    .repo-link {
+      position: absolute;
+      top: 1rem;
+      right: 1.5rem;
+      text-decoration: none;
+      color: var(--text-light);
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    .repo-link:hover { color: var(--primary); }
+    .search-container {
+      position: relative;
+      width: 100%;
+      max-width: 400px;
+      margin: 24px auto 0;
+    }
+    .search-input {
+      width: 100%;
+      padding: 10px 40px 10px 16px;
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .search-input:focus {
+      background: #fff;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .search-results {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      display: none;
+      max-height: 350px;
+      overflow-y: auto;
+      z-index: 100;
+      text-align: left;
+    }
+    .search-results.active { display: block; }
+    .search-item {
+      padding: 12px 16px;
+      text-decoration: none;
+      display: block;
+      border-bottom: 1px solid var(--border);
+    }
+    .search-item:last-child { border-bottom: none; }
+    .search-item:hover { background: #f8fafc; }
+    .search-item-title { display: block; font-weight: 600; color: #0f172a; font-size: 0.9rem; margin-bottom: 2px; }
+    .search-item-meta { font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.025em; }
+    .search-shortcut {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.75rem;
+      color: var(--text-light);
+      pointer-events: none;
+      background: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
     .section-label {
       width: 100%;
       max-width: 960px;
@@ -40,19 +128,20 @@
     a.card {
       display: block;
       background: #fff;
-      border: 1px solid #e2e5ea;
+      border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 20px 22px;
+      padding: 20px;
       text-decoration: none;
       color: inherit;
-      transition: box-shadow 0.15s, border-color 0.15s;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     a.card:hover {
-      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-      border-color: #2563eb;
+      transform: translateY(-2px);
+      box-shadow: 0 12px 20px -10px rgba(0,0,0,0.1);
+      border-color: var(--primary);
     }
-    .card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 5px; }
-    .card p  { font-size: 0.84rem; color: #6b7280; line-height: 1.5; }
+    .card h2 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; color: #0f172a; }
+    .card p  { font-size: 0.85rem; color: var(--text-light); line-height: 1.5; }
     .badge {
       display: inline-block;
       font-size: 0.68rem;
@@ -72,8 +161,14 @@
 </head>
 <body>
   <header>
+    <a href="https://github.com/telecasterer/wafermap" class="repo-link">GitHub</a>
     <h1>wafermap</h1>
     <p>Browser-first wafer map visualization for semiconductor test data</p>
+    <div class="search-container">
+      <input type="text" class="search-input" placeholder="Search API and Guide..." aria-label="Search documentation">
+      <span class="search-shortcut">/</span>
+      <div class="search-results"></div>
+    </div>
   </header>
 
   <p class="section-label">Documentation</p>
@@ -175,6 +270,65 @@
       <p>Full manual pipeline: createWafer → generateDies → clip → orient → enrich → buildScene → toCanvas.</p>
     </a>
   </div>
+
+  <script>
+    const searchInput = document.querySelector('.search-input');
+    const searchResults = document.querySelector('.search-results');
+    let searchData = null;
+
+    async function initSearch() {
+      try {
+        const resp = await fetch('./search-index.json');
+        searchData = await resp.json();
+      } catch (e) { console.error('Failed to load search index', e); }
+    }
+
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      if (!query || !searchData) {
+        searchResults.classList.remove('active');
+        return;
+      }
+      const matches = searchData.filter(item => 
+        item.t.toLowerCase().includes(query) ||
+        (item.c && item.c.toLowerCase().includes(query)) ||
+        item.p.toLowerCase().includes(query)
+      ).slice(0, 10);
+
+      if (matches.length > 0) {
+        searchResults.innerHTML = matches.map(m => `
+          <a href="./${m.u}" class="search-item">
+            <span class="search-item-title">${m.t}</span>
+            <span class="search-item-meta">${m.p}</span>
+          </a>
+        `).join('');
+        searchResults.classList.add('active');
+      } else {
+        searchResults.classList.remove('active');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-container')) searchResults.classList.remove('active');
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== searchInput) {
+        e.preventDefault(); searchInput.focus();
+      }
+    });
+
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const shortcutLabel = document.querySelector('.search-shortcut');
+    shortcutLabel.innerText = isMac ? '⌘K' : 'Ctrl+K';
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault(); searchInput.focus();
+      }
+    });
+
+    initSearch();
+  </script>
 
 </body>
 </html>

@@ -15,7 +15,7 @@ prober outputs:  x=-5, y=3   (die grid position)
 library computes: x_mm = -5 × 10 = -50 mm   (given die width = 10 mm)
 ```
 
-Physical mm positions appear only on the `Die` output objects (`die.x`, `die.y`) and in the wafer model.  You never need to compute or supply mm values.
+Physical mm positions appear only on the `Die` output objects (`die.physX`, `die.physY`) and in the wafer model.  You never need to compute or supply mm values.
 
 ---
 
@@ -171,7 +171,7 @@ circular-wafer aspect-ratio constraint.
   width:      number               // stepper field width in number of dies (e.g. 4 means 4 dies wide)
   height:     number               // stepper field height in number of dies
   anchorDie?: { x: number; y: number }
-               // die grid index (i, j) that sits at the reticle field's internal (0,0) corner.
+               // die grid index (x, y) that sits at the reticle field's internal (0,0) corner.
                // Shifts the entire reticle grid so this die aligns to a field boundary.
                // Default {0,0} — die (0,0) is at a corner.
 }
@@ -191,6 +191,9 @@ is present the top-level `results` field is ignored.
     | 'mean'       // arithmetic mean of values → testValues[0]
     | 'median'     // median of values → testValues[0]
     | 'stddev'     // sample standard deviation of values → testValues[0]
+    | 'min'        // minimum value across lot → testValues[0]
+    | 'max'        // maximum value across lot → testValues[0]
+    | 'count'      // number of wafers that provided a value at this position → testValues[0]
     | 'countBin'   // how many wafers had targetBin at this position → testValues[0]
     | 'mode'       // most frequent bin across wafers → hbin
     | 'percent'    // percentage of wafers that had targetBin → testValues[0] in [0,100]
@@ -234,7 +237,7 @@ buildWaferMap({ results, retestPolicy: 'first' })
 
 // Check how many retests occurred after the map is built:
 result.dies.filter(d => d.retestCount !== undefined)
-  .forEach(d => console.log(`Die (${d.i},${d.j}) tested ${d.retestCount} times`));
+  .forEach(d => console.log(`Die (${d.x},${d.y}) tested ${d.retestCount} times`));
 ```
 
 #### 4.1.8 `TestDef`
@@ -283,7 +286,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
   scene:         Scene          // renderer-agnostic scene — pass directly to toPlotly() if needed
   reticles:      Reticle[]      // generated reticle geometry — pass as sceneOptions.reticles to renderWaferMap
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
-  units:   'mm' | 'normalized'   // coordinate space of die.x/die.y and wafer dimensions
+  units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
   inference: {
     wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1
     diePitch: { confidence: number; units: 'mm' | 'normalized' }  // how die size was resolved
@@ -477,7 +480,7 @@ const enrichedDies = result.dies.map(d => {
 ```
 
 > **`getDieKey`** always use this for stable die lookups rather than ad-hoc template
-> literals — it guarantees a consistent `"i,j"` format across grid offset corrections.
+> literals — it guarantees a consistent `"x,y"` format across grid offset corrections.
 
 ---
 
@@ -532,9 +535,9 @@ Scene display options controllable via the toolbar or programmatically:
 
 | Mode | Tooltip content |
 | --- | --- |
-| `value`, `hardBin`, `softBin` | Die (i, j) · one line per test value (`"Idsat: 1.23 mA"` with testDefs, `"Test 1050: 1.23 mA"` without) · bins with hard/soft labels |
-| `stackedValues` | Die (i, j) · test label + method + aggregated value (e.g. `"Idsat (mean): 1.23 mA"` with testDefs, `"Test 1050 (mean): 1.23 mA"` without) |
-| `stackedBins` | Die (i, j) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
+| `value`, `hardBin`, `softBin` | Die (x, y) · one line per test value (`"Idsat: 1.23 mA"` with testDefs, `"Test 1050: 1.23 mA"` without) · bins with hard/soft labels |
+| `stackedValues` | Die (x, y) · test label + method + aggregated value (e.g. `"Idsat (mean): 1.23 mA"` with testDefs, `"Test 1050 (mean): 1.23 mA"` without) |
+| `stackedBins` | Die (x, y) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
 | `stackedSoftBins` | Same as `stackedBins` but uses `sbinDefs` for name lookup |
 
 The `aggrMethod` and `lotSize` fields on `WaferSceneOptions` populate the method label and percentage denominator respectively.
@@ -633,7 +636,7 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 | Esc | Any | Clear selection |
 
 > **Note:** zoom/rotate/flip are visual-only transforms — they never mutate the
-> underlying `Die` data.  Selection stability is guaranteed: `die.i` and `die.j`
+> underlying `Die` data.  Selection stability is guaranteed: `die.x` and `die.y`
 > remain unchanged regardless of display orientation.
 
 ### 5.8 Example usage
@@ -646,7 +649,7 @@ const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 
 const ctrl = renderWaferMap(canvas, wafer, dies, {
   sceneOptions: { plotMode: 'hardBin', colorScheme: 'color' },
-  onClick:  (die)  => console.log(die.i, die.j, die.hbin, die.sbin),
+  onClick:  (die)  => console.log(die.x, die.y, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
   onSceneOptionsChange: (opts) => syncExternalUI(opts),
 });
@@ -782,8 +785,10 @@ highlight changes.
 
 The toolbar includes three lot-aggregation modes: **Stacked Hard Bins**,
 **Stacked Soft Bins**, and **Stacked Test Values**.  The gallery handles
-aggregation internally — pass `hbinDefs`, `sbinDefs`, and `testDefs` in
-`sceneOptions` and the gallery does the rest:
+aggregation internally. 
+
+If `hbinDefs`, `sbinDefs`, or `testDefs` are omitted from `sceneOptions`, the gallery 
+automatically discovers unique values from the input dies to generate the cards and legend.
 
 - **`stackedBins` / `stackedSoftBins`** — one card per bin; each die shows the
   count of wafers on which that bin appeared at that position.
@@ -1006,7 +1011,7 @@ type HighlightTarget =
   | { kind: 'dies';    dieKeys: string[] }
 ```
 
-`dieKeys` entries use the `"i,j"` format returned by `getDieKey`.
+`dieKeys` entries use the `"x,y"` format returned by `getDieKey`.
 
 ### 7.10 Integrating with `renderWaferMap` and `renderWaferGallery`
 
@@ -1142,7 +1147,7 @@ import { getDieAtPoint } from '@paulrobins/wafermap';
 
 document.getElementById('chart').on('plotly_click', (ev) => {
   const die = getDieAtPoint(result.scene, ev);
-  if (die) console.log(die.i, die.j, die.values, die.hbin, die.sbin);
+  if (die) console.log(die.x, die.y, die.values, die.hbin, die.sbin);
 });
 ```
 
@@ -1215,7 +1220,7 @@ import { createWafermapWorker }                from '@paulrobins/wafermap/worker
 import { getDieKey, getDieAtPoint, getDieTestValue } from '@paulrobins/wafermap';
 ```
 
-`getDieKey(die)` — returns a stable `"i,j"` string for map lookups (see manual pipeline section below for details).
+`getDieKey(die)` — returns a stable `"x,y"` string for map lookups (see manual pipeline section below for details).
 
 `getDieAtPoint(scene, event)` — hit-tests a Plotly event against the scene (see manual pipeline section below).
 
@@ -1246,7 +1251,7 @@ The [Manual Pipeline demo](../examples/pipeline-demo/) (`pipeline-demo`) is the 
 createWafer(spec)
   → generateDies(wafer, dieSpec)
   → clipDiesToWafer(dies, wafer, dieSpec)
-  → [attach values / hbin / sbin / metadata to each die, keyed by die.i, die.j]
+  → [attach values / hbin / sbin / metadata to each die, keyed by die.x, die.y]
   → applyProbeSequence(dies, config)              // optional
   → applyOrientation(dies, wafer)
   ↓  (on each redraw)
@@ -1255,7 +1260,7 @@ createWafer(spec)
   → toPlotly(scene)  or  toCanvas(canvas, scene)
 ```
 
-In the manual pipeline, `die.i` and `die.j` are computed by `generateDies` as
+In the manual pipeline, `die.x` and `die.y` are computed by `generateDies` as
 integer grid indices centred at the wafer origin.
 
 ### 11.1 `createWafer(spec)`
@@ -1396,7 +1401,7 @@ Returns all distinct bin values, sorted ascending.
 
 Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
 
-Returns one `Die` per unique `(i, j)` with `testValues[0]` = count, and `hbin: targetBin` (for `'hard'`) or `sbin: targetBin` (for `'soft'`).
+Returns one `Die` per unique `(x, y)` with `testValues[0]` = count, and `hbin: targetBin` (for `'hard'`) or `sbin: targetBin` (for `'soft'`).
 
 - Pass `binSpace: 'hard'` (default) for hard bins → use with `plotMode: 'stackedBins'`
 - Pass `binSpace: 'soft'` for soft bins → use with `plotMode: 'stackedSoftBins'`
@@ -1411,7 +1416,7 @@ Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for 
 
 `paramIndex` — the `testValues` key to read from each source die (e.g. a `testNumber` like `1050`). Defaults to `0`.
 
-Returns one `Die` per unique `(i, j)` with the aggregated scalar stored at `testValues[0]`, ready for `buildScene` in `stackedValues` mode.
+Returns one `Die` per unique `(x, y)` with the aggregated scalar stored at `testValues[0]`, ready for `buildScene` in `stackedValues` mode.
 
 ---
 
@@ -1451,11 +1456,11 @@ Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode
 
 ### 11.16 `getDieKey(die)`
 
-Returns a stable string key `"i,j"` for a die.  Always prefer this over ad-hoc template literals.
+Returns a stable string key `"x,y"` for a die.  Always prefer this over ad-hoc template literals.
 
 ```ts
 const map = new Map(result.dies.map(d => [getDieKey(d), d]));
-const die = map.get(getDieKey({ i: 3, j: -2 }));
+const die = map.get(getDieKey({ x: 3, y: -2 }));
 ```
 
 ---
@@ -1467,7 +1472,7 @@ Returns the die that a Plotly click or hover event points to, or `null`.
 ```ts
 chart.on('plotly_click', ev => {
   const die = getDieAtPoint(scene, ev);
-  if (die) console.log(die.i, die.j, die.values, die.hbin, die.sbin);
+  if (die) console.log(die.x, die.y, die.values, die.hbin, die.sbin);
 });
 ```
 

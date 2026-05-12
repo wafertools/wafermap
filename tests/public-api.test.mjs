@@ -43,10 +43,10 @@ function approxEqual(actual, expected, epsilon = 1e-9) {
 
 function buildSampleDies() {
   return [
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [0.9], hbin: 1 },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [0.7], hbin: 2 },
-    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, values: [0.8], hbin: 1 },
-    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, values: [0.6], hbin: 2 },
+    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [0.9], hbin: 1 },
+    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [0.7], hbin: 2 },
+    { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10, values: [0.8], hbin: 1 },
+    { id: '1_1', x: 1, y: 1, physX: 10, physY: 10, width: 10, height: 10, values: [0.6], hbin: 2 },
   ];
 }
 
@@ -71,29 +71,29 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
   assert.ok(clipped.some((die) => die.partial));
 
   const mapped = mapDataToDies(clipped, [
-    { i: 0, j: 0, value: 0.97 },
-    { i: 1, j: 0, value: 0.88 },
-    { i: 1, j: 0, value: 0.91 },
+    { x: 0, y: 0, value: 0.97 },
+    { x: 1, y: 0, value: 0.88 },
+    { x: 1, y: 0, value: 0.91 },
   ], { valueField: 'value', matchBy: 'ij' });
-  assert.deepEqual(mapped.find((die) => die.i === 0 && die.j === 0)?.values, [0.97]);
-  assert.deepEqual(mapped.find((die) => die.i === 1 && die.j === 0)?.values, [0.91]);
+  assert.deepEqual(mapped.find((die) => die.x === 0 && die.y === 0)?.values, [0.97]);
+  assert.deepEqual(mapped.find((die) => die.x === 1 && die.y === 0)?.values, [0.91]);
 
   const oriented = applyOrientation([
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
-    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10 },
+    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
+    { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10 },
   ], createWafer({ diameter: 100, orientation: 90 }));
-  assert.equal(Math.round(oriented[0].x), 0);
-  assert.equal(Math.round(oriented[0].y), 10);
+  assert.equal(Math.round(oriented[0].physX), 0);
+  assert.equal(Math.round(oriented[0].physY), 10);
 
   const transformed = transformDies(oriented, { rotation: 90, flipX: true }, wafer.center);
-  assert.equal(Math.round(transformed[0].x), 10);
-  assert.equal(Math.round(transformed[0].y), 0);
+  assert.equal(Math.round(transformed[0].physX), 10);
+  assert.equal(Math.round(transformed[0].physY), 0);
 
   const sequenced = applyProbeSequence([
-    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10 },
-    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10 },
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+    { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10 },
+    { id: '1_1', x: 1, y: 1, physX: 10, physY: 10, width: 10, height: 10 },
+    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10 },
+    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
   ], { type: 'snake' });
   assert.deepEqual(
     sequenced.map((die) => `${die.id}:${die.probeIndex}`),
@@ -101,8 +101,8 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
   );
 
   const customSequenced = applyProbeSequence([
-    { id: 'a', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
-    { id: 'b', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+    { id: 'a', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10 },
+    { id: 'b', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
   ], { type: 'custom', customOrder: ['b', 'a'] });
   assert.deepEqual(customSequenced.map((die) => die.probeIndex), [1, 0]);
 
@@ -125,32 +125,32 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
 test('aggregation, inference, classification, formatting, and color helpers are deterministic', () => {
   const diesByWafer = [
     [
-      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [1], hbin: 2 },
-      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [9], hbin: 1 },
+      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [1], hbin: 2 },
+      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [9], hbin: 1 },
     ],
     [
-      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [3], hbin: 2 },
-      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [7], hbin: 2 },
+      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [3], hbin: 2 },
+      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [7], hbin: 2 },
     ],
     [
-      { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [5], hbin: 1 },
-      { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [11], hbin: 2 },
+      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [5], hbin: 1 },
+      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [11], hbin: 2 },
     ],
   ];
 
-  assert.deepEqual(aggregateValues(diesByWafer, 'mean').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 3 });
-  assert.deepEqual(aggregateValues(diesByWafer, 'median').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 3 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'mean').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 3 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'median').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 3 });
   approxEqual(
-    aggregateValues(diesByWafer, 'stddev').find((die) => die.i === 0 && die.j === 0)?.testValues?.[0] ?? 0,
+    aggregateValues(diesByWafer, 'stddev').find((die) => die.x === 0 && die.y === 0)?.testValues?.[0] ?? 0,
     Math.sqrt(4),
   );
-  assert.deepEqual(aggregateValues(diesByWafer, 'min').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 1 });
-  assert.deepEqual(aggregateValues(diesByWafer, 'max').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 5 });
-  assert.deepEqual(aggregateValues(diesByWafer, 'count').find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 3 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'min').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 1 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'max').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 5 });
+  assert.deepEqual(aggregateValues(diesByWafer, 'count').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 3 });
   assert.deepEqual(getUniqueBins(diesByWafer[0]), [1, 2]);
-  assert.deepEqual(aggregateBinCounts(diesByWafer, 2).find((die) => die.i === 0 && die.j === 0)?.testValues, { 0: 2 });
+  assert.deepEqual(aggregateBinCounts(diesByWafer, 2).find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 2 });
 
-  assert.deepEqual(classifyDie({ id: '1_1', i: 1, j: 1, x: 9, y: 9, width: 1, height: 1 }, createWafer({ diameter: 20 })), { ring: 4, quadrant: 'NE' });
+  assert.deepEqual(classifyDie({ id: '1_1', x: 1, y: 1, physX: 9, physY: 9, width: 1, height: 1 }, createWafer({ diameter: 20 })), { ring: 4, quadrant: 'NE' });
   assert.equal(getRingLabel(1, 1), 'Full Wafer');
   assert.equal(getRingLabel(1, 2), 'Ring 1 (core)');
   assert.equal(getRingLabel(2, 2), 'Ring 2 (edge)');
@@ -162,7 +162,7 @@ test('aggregation, inference, classification, formatting, and color helpers are 
     { x: 0, y: 0 },
     { x: 1, y: 1 },
   ]), {
-    indices: [{ i: -1, j: -1 }, { i: 0, j: 0 }],
+    indices: [{ x: -1, y: -1 }, { x: 0, y: 0 }],
     offsetX: 1,
     offsetY: 1,
     confidence: 1,
@@ -277,7 +277,7 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'quadrant-boundary'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'xy-indicator'));
 
-  assert.equal(getDieKey({ i: 3, j: -2 }), '3,-2');
+  assert.equal(getDieKey({ x: 3, y: -2 }), '3,-2');
   assert.equal(getDieAtPoint(scene, { points: [{ curveNumber: 0, pointIndex: 2 }] })?.id, '1_0');
   assert.equal(getDieAtPoint(scene, { points: [{ curveNumber: 1, pointIndex: 1 }] }), null);
 
@@ -308,8 +308,8 @@ test('error conditions are properly validated', () => {
 
   // applyProbeSequence validation
   const dies = [
-    { id: 'a', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10 },
-    { id: 'b', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10 },
+    { id: 'a', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10 },
+    { id: 'b', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
   ];
 
   assert.throws(() => applyProbeSequence(dies, { type: 'custom' }), /customOrder is required/);
@@ -324,7 +324,7 @@ test('inference functions handle edge cases', () => {
 
   // assignGridIndices with single point
   const singlePoint = assignGridIndices([{ x: 0, y: 0 }]);
-  assert.deepEqual(singlePoint.indices, [{ i: 0, j: 0 }]);
+  assert.deepEqual(singlePoint.indices, [{ x: 0, y: 0 }]);
   assert.equal(singlePoint.confidence, 1); // Single integer point has full confidence
 
   // inferWaferFromXY with insufficient points

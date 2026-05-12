@@ -117,7 +117,7 @@ function regionYieldSection(
   passBins: number[],
 ): string {
   const passSet  = new Set(passBins);
-  const dieByKey = new Map(dies.map(d => [`${d.i},${d.j}`, d]));
+  const dieByKey = new Map(dies.map(d => [`${d.x},${d.y}`, d]));
   const hasBins  = dies.some(d => d.hbin != null || d.sbin != null);
   if (!hasBins || !regions.length) return '';
 
@@ -317,7 +317,7 @@ function lotRegionYieldTable(
     const wDies = allDies.filter((die) => (die as { _waferIndex?: number })._waferIndex === wi);
     if (!wDies.length) continue;
     const regions = regionFn(wDies, wafer, ringCount);
-    const dieByKey = new Map(wDies.map((die) => [`${die.i},${die.j}`, die]));
+    const dieByKey = new Map(wDies.map((die) => [`${die.x},${die.y}`, die]));
 
     for (const region of regions) {
       if (!order.includes(region.label)) order.push(region.label);
