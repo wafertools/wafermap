@@ -30,8 +30,13 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Create Python virtual environment
+        run: python -m venv .venv
+
       - name: Install MkDocs dependencies
-        run: pip install mkdocs-material pymdown-extensions
+        run: |
+          ./.venv/bin/pip install --upgrade pip
+          ./.venv/bin/pip install mkdocs-material pymdown-extensions
 
       - name: Install root dependencies
         run: npm ci
