@@ -52,7 +52,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && npm run build:site",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "check": "tsc --noEmit -p tsconfig.json",
     "dev": "./.venv/bin/mkdocs serve -a localhost:8000",
