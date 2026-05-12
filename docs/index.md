@@ -1,5 +1,7 @@
 # wafermap
 
+<img src="image-5.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
+
 A browser-targeted wafer map visualization library for semiconductor test data. The library's primary renderer uses the HTML Canvas 2D API for high-performance interactive maps; an optional Plotly export is available for SVG/Plotly workflows. wafermap handles real wafer geometry, die grid inference, reticle overlays, and statistical findings.
 
 Install

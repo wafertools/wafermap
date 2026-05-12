@@ -1,5 +1,7 @@
 # wafermap
 
+<img src="docs/image-5.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
+
 Browser-first wafer map visualization for semiconductor test data.
 
 **[Project Portal: Docs & Interactive Demos →](https://telecasterer.github.io/wafermap/)**

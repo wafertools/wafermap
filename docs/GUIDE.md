@@ -129,8 +129,7 @@ Here we have toggled some toolbar options on: XY Axis indicator and Ring boundar
 
 ## 4. Adding die size and wafer geometry
 
-When you supply physical dimensions, `die.x`/`die.y` are in real millimetres and
-the wafer boundary is drawn to scale.
+When you supply physical dimensions, `die.physX` and `die.physY` are in millimetres and the wafer boundary is drawn to scale; `die.x`/`die.y` remain die grid positions (prober step coordinates).
 
 ```ts
 const { wafer, dies } = buildWaferMap({

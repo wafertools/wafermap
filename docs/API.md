@@ -317,10 +317,10 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 
 Partial dies and edge-excluded dies are excluded from both numerator and denominator.
 
-**`units`** tells you the coordinate space of `die.x`, `die.y`, and `wafer.diameter`:
+**`units`** tells you the coordinate space of the physical coordinates (`die.physX`, `die.physY`) and wafer dimensions; `die.x`/`die.y` remain die grid positions (prober step coordinates):
 
-- `'mm'` — at least one physical dimension was known (die size or wafer diameter); all spatial values are in real-world millimetres.
-- `'normalized'` — only grid positions were supplied; coordinates are proportionally correct (aspect ratio preserved) but not in physical mm.  `pitchX = 1` normalized unit by convention.
+- `'mm'` — at least one physical dimension was known (die size or wafer diameter); physical coordinates (die.physX/die.physY and wafer dimensions) are expressed in millimetres.
+- `'normalized'` — only grid positions were supplied; physical coordinates are in normalized units (aspect ratio preserved) with `pitchX = 1` normalized unit by convention.
 
 ### 4.3 Inference levels
 
