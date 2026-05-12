@@ -102,7 +102,8 @@
     const headers = Object.keys(allRows[0]);
     document.getElementById('cols-box').textContent = headers.join('\n');
 
-    let ctrl; // keep a handle so we can replace the canvas on wafer change
+    const canvasEl = document.getElementById('map');
+    let ctrl; // keep a handle so we can destroy the previous renderer on wafer change
 
     function render(waferId) {
       // Filter to the selected wafer's rows
@@ -154,18 +155,17 @@
       document.getElementById('meta-date').textContent  = waferMeta.testDate ?? '—';
       document.getElementById('meta-temp').textContent  = waferMeta.temp;
 
-      // Destroy the old renderer and replace the canvas element — reusing the same
-      // canvas after destroy() does not reinitialise correctly.
-      if (ctrl) ctrl.destroy();
-      const oldCanvas = document.getElementById('map');
-      const newCanvas = document.createElement('canvas');
-      newCanvas.id = 'map';
-      oldCanvas.replaceWith(newCanvas);
-
-      ctrl = renderWaferMap(newCanvas, result.wafer, result.dies, {
-        sceneOptions: { plotMode: 'hardBin' },
-        statsSummary: summary,
-      });
+      // Update the existing renderer rather than destroying and recreating it —
+      // setDies + setStatsSummary is more efficient (no DOM teardown/rebuild).
+      if (ctrl) {
+        ctrl.setDies(result.dies);
+        ctrl.setStatsSummary(summary);
+      } else {
+        ctrl = renderWaferMap(canvasEl, result.wafer, result.dies, {
+          sceneOptions: { plotMode: 'hardBin' },
+          statsSummary: summary,
+        });
+      }
     }
 
     render(waferIds[0]);

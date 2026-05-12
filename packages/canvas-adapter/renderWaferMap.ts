@@ -1461,8 +1461,18 @@ export function renderWaferMap(
       dprMediaQuery.removeEventListener('change', onDprChange);
       tooltip?.remove();
       toolbar?.remove();
-      summaryPanelWrapper?.remove();
-      autoSummaryPanelWrapper?.remove();
+      // Re-insert the canvas into its original DOM position before removing the
+      // wrapper — the canvas lives inside the wrapper, so removing the wrapper
+      // without this step would detach the canvas from the DOM, silently
+      // invalidating any caller reference to the element.
+      if (summaryPanelWrapper) {
+        summaryPanelWrapper.parentElement?.insertBefore(canvas, summaryPanelWrapper);
+        summaryPanelWrapper.remove();
+      }
+      if (autoSummaryPanelWrapper) {
+        autoSummaryPanelWrapper.parentElement?.insertBefore(canvas, autoSummaryPanelWrapper);
+        autoSummaryPanelWrapper.remove();
+      }
       canvas.style.cursor = '';
     },
   };
