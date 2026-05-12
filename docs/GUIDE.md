@@ -638,6 +638,20 @@ By default the engine checks every combination of:
 Results below a significance threshold (adjusted p-value < 0.05) and a minimum
 effect size (15% by default) are suppressed.
 
+### Interpreting findings and severity
+
+The findings list is ranked and filtered by statistical strength and effect size. Key points (implementation defaults):
+
+- Adjusted p-values are used (default `significanceLevel` = 0.05) and p-values are corrected per-family using a Benjamini–Hochberg style FDR.
+- Minimum effect size (`minimumEffectSize`, default 0.15) is applied to the reported effect: for yield/bin this is the absolute proportion delta; for test values it is a Cohen-like effect size computed from pooled SD.
+- Minimum sample size per region defaults to 5 (`minimumSampleSize`). Findings failing any threshold are suppressed.
+- Severity mapping in the UI is derived from adjusted p-value and effect magnitude:
+  - `unusual`: adjusted p ≤ 0.01 and large effect (proportion delta ≥ 0.25 or effect size ≥ 0.5)
+  - `notable`: adjusted p ≤ 0.05 and moderate effect (proportion delta ≥ 0.15 or effect size ≥ 0.15)
+  - `info`: otherwise
+
+Use the `summary`, `effect`, and `stats` fields on each `StatsFinding` to display numerical details to users.
+
 ### Clicking a finding highlights the map
 
 When the user clicks a finding row in the panel, the map automatically:

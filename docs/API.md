@@ -885,6 +885,29 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 
 Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
 
+### 7.3.1 Statistical rules & thresholds
+
+- Default thresholds and behaviour (these are the library defaults):
+  - significanceLevel: 0.05 (adjusted p-value after per-family correction)
+  - minimumEffectSize: 0.15 (absolute proportion delta for yield/bin, or Cohen-like d for tests)
+  - minimumSampleSize: 5 (minimum dies per region to consider a test)
+  - passBins: defaults to [1]
+
+- Tests implemented by the engine:
+  - Yield / bin proportions: two-proportion z-test (per-region vs. rest of wafer)
+  - Test-value comparisons: Welch-style t (z-approx) with pooled SD → effect size estimate
+
+- Multiple comparisons: p-values are adjusted per variable-family using a Benjamini–Hochberg style FDR procedure (grouping key: `variable.kind` + `comparison.family`). Only findings that pass both the adjusted p-value and the minimumEffectSize are emitted.
+
+- Severity mapping (how the `severity` field is derived):
+  - `unusual`: adjusted p ≤ 0.01 and large effect (proportion delta ≥ 0.25 or effect size ≥ 0.5)
+  - `notable`: adjusted p ≤ 0.05 and moderate effect (proportion delta ≥ 0.15 or effect size ≥ 0.15)
+  - `info`: all others
+
+- Behavioural notes:
+  - Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the scene.
+  - Test-value analysis is auto-skipped if the data contains more than 100 distinct tests unless `testNumbers` is provided (a console.warn is emitted).
+
 ### 7.4 `StatsSummary`
 
 ```ts

@@ -1,6 +1,7 @@
-site_name: wafermap
+site_name: Wafermap
 site_url: https://telecasterer.github.io/wafermap/
 repo_url: https://github.com/telecasterer/wafermap
+site_author: Paul Robins
 
 theme:
   name: material
@@ -12,11 +13,23 @@ theme:
 
 nav:
   - Home: index.md
-  - Guide: GUIDE.md
+  - User Guide: GUIDE.md
   - API: API.md
+  - Examples:
+      - Getting started:
+          - Your first wafer map: examples/01-first-map.html
+          - Loading CSV data: examples/03-csv-data.html
+          - Geometry inference: examples/04-geometry.html
+      - Analysis:
+          - Statistical findings: examples/10-findings.html
+          - Summary panel: examples/11-summary-panel.html
+          - Lot-level findings: examples/13-lot-findings.html
+          - Reticle overlays: examples/14-reticle.html
+      - Advanced:
+          - Web Worker: examples/15-worker.html
+          - Rendering pipeline: examples/18-pipeline.html
   - Integration Guides:
       - SvelteKit: SVELTEKIT.md
-      - Stats Design: STATS_SUMMARY.md
 
 markdown_extensions:
   - toc:

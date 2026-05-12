@@ -1,17 +1,30 @@
 # wafermap
 
-Browser-first wafer map visualization for semiconductor test data.
+A browser-targeted wafer map visualization library for semiconductor test data. The library's primary renderer uses the HTML Canvas 2D API for high-performance interactive maps; an optional Plotly export is available for SVG/Plotly workflows. wafermap handles real wafer geometry, die grid inference, reticle overlays, and statistical findings.
 
-The canvas renderers are the preferred way to build interactive wafer maps. Use
-the guide for practical workflows, the API reference for details, and the demo
-catalog for runnable examples.
+Install
+
+```bash
+npm install @paulrobins/wafermap
+```
+
+Quick start
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+const { wafer, dies } = buildWaferMap({ results });
+renderWaferMap(document.getElementById('map'), wafer, dies);
+```
 
 ## Documentation
 
 - [User Guide](GUIDE.md) - walkthroughs, usage patterns, and practical integration advice.
 - [API Reference](API.md) - the full public API and configuration reference.
+- [Stats (guide & API)](GUIDE.md#10-adding-statistical-findings) — practical usage and [API options](API.md#73-analyzewafermapoptions) for analyzeWaferMap/analyzeWaferLot.
 
-## Canvas Demos
+## Live Demos
 
 ### Getting started
 
@@ -45,4 +58,3 @@ catalog for runnable examples.
 ## More
 
 - [SvelteKit integration guide](SVELTEKIT.md)
-- [Stats design notes](STATS_SUMMARY.md)
