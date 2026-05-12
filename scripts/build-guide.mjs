@@ -2,7 +2,7 @@
 // Converts docs/GUIDE.md and docs/API.md into the GitHub Pages site.
 // Images referenced as image-N.png are copied from docs/ into the output page.
 
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync, cpSync } from 'fs';
 import { marked, Renderer } from 'marked';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -626,6 +626,7 @@ console.log('[build-docs] written _site/guide/index.html');
     sourceName: 'API.md',
     outPath: resolve(siteDir, 'api', 'index.html'),
     title: 'API Reference — wafermap',
+    copyImages: true,
     showToc: true,
     navLinks: [
       { href: '../', label: 'Home' },
@@ -641,9 +642,6 @@ writeFileSync(resolve(siteDir, 'search-index.json'), JSON.stringify(searchIndex)
 const examplesSrc = resolve(root, 'examples');
 const examplesDst = resolve(siteDir, 'examples');
 if (existsSync(examplesSrc)) {
-  mkdirSync(examplesDst, { recursive: true });
-  for (const f of readdirSync(examplesSrc)) {
-    copyFileSync(resolve(examplesSrc, f), resolve(examplesDst, f));
-  }
-  console.log('[build-docs] copied examples/ to _site/examples/');
+  cpSync(examplesSrc, examplesDst, { recursive: true });
+  console.log('[build-docs] copied examples/ (recursively) to _site/examples/');
 }

@@ -52,13 +52,12 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/build-site.mjs",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && npm run build:site",
     "clean": "rm -rf dist",
     "check": "tsc --noEmit -p tsconfig.json",
-    "dev": "npm run build && serve -l 3000 .",
+    "dev": "./.venv/bin/mkdocs serve -a localhost:8000",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "build:guide": "node scripts/build-guide.mjs",
-    "build:site": "node scripts/build-site.mjs",
+    "build:site": "rm -rf docs/dist && cp -r dist docs/ && ./.venv/bin/mkdocs build -d _site && rm -rf docs/dist",
     "prepack": "npm run build",
     "pack:check": "npm pack --dry-run",
     "prepublishOnly": "npm test"

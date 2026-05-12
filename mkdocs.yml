@@ -1,0 +1,26 @@
+site_name: wafermap
+site_url: https://telecasterer.github.io/wafermap/
+repo_url: https://github.com/telecasterer/wafermap
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Guide: GUIDE.md
+  - API: API.md
+  - Integration Guides:
+      - SvelteKit: SVELTEKIT.md
+      - Stats Design: STATS_SUMMARY.md
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences

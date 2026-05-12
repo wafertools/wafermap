@@ -2,9 +2,8 @@
 
 This guide walks through building wafer map visualisations in a real application,
 from a single interactive map up to a multi-wafer gallery with statistical findings.
-It focuses on practical patterns; for the full type reference see [API Reference](../api/).
+It focuses on practical patterns; for the full type reference see [API Reference](API.md).
 
----
 
 ## 1. Installation and setup
 
@@ -14,9 +13,9 @@ Install the package:
 npm install @paulrobins/wafermap
 ```
 
-The library has no runtime dependencies beyond Plotly.js, which is only needed if
-you use the lower-level `toPlotly()` path. The canvas renderer (`renderWaferMap`,
-`renderWaferGallery`) has no external dependencies at all.
+The preferred canvas renderers (`renderWaferMap`, `renderWaferGallery`) have no
+external dependencies. Plotly.js is only needed if you use the optional
+`toPlotly()` compatibility path.
 
 ### With a bundler (Vite, webpack, etc.)
 
@@ -70,7 +69,7 @@ HTML or JavaScript required.
 > like −7, 0, 5.  They are NOT millimetre values.**  The library converts to physical
 > mm internally when you supply a die size.
 
-**→ [Demo: Your first wafer map](../examples/01-first-map.html)**
+**→ [Demo: Your first wafer map](examples/01-first-map.html)**
 
 
 ![alt text](image-1.png)  
@@ -121,7 +120,7 @@ async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
 `x` and `y` are the prober step positions from your equipment — pass them directly,
 no unit conversion needed.
 
-**→ [Demo: Loading real data from a CSV](../examples/03-csv-data.html)**
+**→ [Demo: Loading real data from a CSV](examples/03-csv-data.html)**
 
 Here we have toggled some toolbar options on: XY Axis indicator and Ring boundaries. 
 
@@ -198,7 +197,7 @@ buildWaferMap({
 });
 ```
 
-**→ [Demo: Die size and wafer geometry](../examples/04-geometry.html)**
+**→ [Demo: Die size and wafer geometry](examples/04-geometry.html)**
 
 ![alt text](image-3.png)
 
@@ -288,7 +287,7 @@ const { yield: yld } = buildWaferMap({
 console.log(`${(yld.yieldPercent * 100).toFixed(1)}%`);
 ```
 
-**→ [Demo: Working with bins](../examples/05-named-bins.html)**
+**→ [Demo: Working with bins](examples/05-named-bins.html)**
 
 ![alt text](image-4.png)
 ---
@@ -348,7 +347,7 @@ With `testDefs` in place:
 
 `TestDef.logScale: true` enables log₁₀ scale for that test by default (silently falls back to linear when any die value ≤ 0). The user can also toggle log scale at any time via the toolbar Log scale button, which overrides the per-test default.
 
-**→ [Demo: Working with test values](../examples/06-test-values.html)**
+**→ [Demo: Working with test values](examples/06-test-values.html)**
 
 ![alt text](image-5.png)
 ---
@@ -412,7 +411,7 @@ renderWaferMap(canvas, result.wafer, enrichedDies, {
 > it guarantees the correct format after any grid offset correction.
 
 
-**→ [Demo: Working with retested dies](../examples/07-retests.html)**
+**→ [Demo: Working with retested dies](examples/07-retests.html)**
 
 ![alt text](image-6.png)
 ---
@@ -512,7 +511,7 @@ renderWaferMap(canvas, wafer, dies, {
   onSceneOptionsChange: (opts) => syncMyModeUI(opts),
 });
 ```
-**→ [Demo: Controlling the display](../examples/08-display-control.html)**
+**→ [Demo: Controlling the display](examples/08-display-control.html)**
 
 ![alt text](image-7.png)
 
@@ -600,7 +599,7 @@ ctrl.setSelection(failingDies);
 // Clear:
 ctrl.clearSelection();
 ```
-**→ [Demo: Responding to user interaction](../examples/09-interaction.html)**
+**→ [Demo: Responding to user interaction](examples/09-interaction.html)**
 
 ![alt text](image-8.png)
 ---
@@ -689,7 +688,7 @@ const newSummary = analyzeWaferMap({ ...result, dies: newDies });
 ctrl.setStatsSummary(newSummary);
 ```
 
-**→ [Demo: Statistical findings](../examples/10-findings.html)**
+**→ [Demo: Statistical findings](examples/10-findings.html)**
 
 ![alt text](image-13.png)
 ---
@@ -783,7 +782,7 @@ renderWaferGallery(container, items, {
 });
 ```
 
-**→ [Demo: Summary panel](../examples/11-summary-panel.html)**
+**→ [Demo: Summary panel](examples/11-summary-panel.html)**
 
 ---
 
@@ -914,7 +913,7 @@ restores the original per-wafer cards.  The aggregation method for
 ```ts
 ctrl.setOptions({ aggrMethod: 'median' });  // re-aggregates immediately
 ```
-**→ [Demo: Building a lot gallery](../examples/12-gallery.html)**
+**→ [Demo: Building a lot gallery](examples/12-gallery.html)**
 
 ![alt text](image-9.png)
 ---
@@ -972,7 +971,7 @@ const newLotSummary = analyzeWaferLot(newResults);
 ctrl.setLotStatsSummary(newLotSummary);
 ```
 
-**→ [Demo: Lot-level statistical findings](../examples/13-lot-findings.html)**
+**→ [Demo: Lot-level statistical findings](examples/13-lot-findings.html)**
 
 ![alt text](image-10.png)
 ---
@@ -1030,7 +1029,7 @@ const items = waferResults.map(r => ({
   sceneOptions: { reticles: r.reticles },
 }));
 ```
-**→ [Demo: Reticle overlays](../examples/14-reticle.html)**
+**→ [Demo: Reticle overlays](examples/14-reticle.html)**
 
 ![alt text](image-11.png)
 ---
@@ -1094,7 +1093,7 @@ wmWorker.terminate();
 > functions with no DOM access — they can run in a Web Worker, Node.js, or any
 > server-side environment.
 
-**→ [Demo: Processing large datasets with a Web Worker](../examples/15-worker.html)**
+**→ [Demo: Processing large datasets with a Web Worker](examples/15-worker.html)**
 
 ---
 
@@ -1142,7 +1141,7 @@ ctrl.setOptions({ colorScheme: 'my-brand' });
 Register your schemes once, before any `renderWaferMap` or `renderWaferGallery`
 call.  They are global and persist for the lifetime of the page.
 
-**→ [Demo: Custom colour schemes](../examples/16-color-schemes.html)**
+**→ [Demo: Custom colour schemes](examples/16-color-schemes.html)**
 
 ![alt text](image-14.png)
 ---
@@ -1262,11 +1261,11 @@ environment.
 
 ---
 
-## 18. Plotly/SVG output
+## 18. Plotly/SVG compatibility
 
 `toPlotly` converts a `Scene` into Plotly `{ data, layout }` for use with
-`Plotly.react`.  Use this when you need SVG export, server-side rendering, or
-want to embed the wafer map inside an existing Plotly dashboard.
+`Plotly.react`. Use this when you specifically need SVG export, server-side
+rendering, or want to embed the wafer map inside an existing Plotly dashboard.
 
 ```ts
 import { buildWaferMap, buildScene, toPlotly, getDieAtPoint } from '@paulrobins/wafermap';
@@ -1312,9 +1311,9 @@ document.getElementById('plotly-chart').on('plotly_click', ev => {
 ```
 
 > **Note:** `buildScene` and `toPlotly` are lightweight and fast enough to call on
-> every toolbar change.  `buildWaferMap` is the expensive step — call it once.
+> every toolbar change. `buildWaferMap` is the expensive step, so call it once.
 
-**→ [Demo: Plotly/SVG output](../examples/17-plotly.html)**
+**→ [Demo: Plotly compatibility](examples/17-plotly.html)**
 
 ---
 
@@ -1375,4 +1374,4 @@ const scene = buildScene(wafer, currentDies, {
 toCanvas(document.getElementById('map'), scene);
 ```
 
-**→ [Demo: Advanced — the rendering pipeline](../examples/18-pipeline.html)**
+**→ [Demo: Advanced — the rendering pipeline](examples/18-pipeline.html)**

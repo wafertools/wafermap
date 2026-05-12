@@ -25,14 +25,19 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install MkDocs dependencies
+        run: pip install mkdocs-material pymdown-extensions
+
       - name: Install root dependencies
         run: npm ci
 
       - name: Build library (dist/)
         run: npm run build
-
-      - name: Build site
-        run: npm run build:site
 
       - uses: actions/upload-pages-artifact@v3
         with:

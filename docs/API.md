@@ -48,8 +48,8 @@ buildWaferMap()            — data layer: prober results → wafer + dies (serv
     ├── renderWaferMap()       — single interactive canvas map with full toolbar  ← recommended
     ├── renderWaferGallery()   — multi-map gallery with shared controls + click-to-modal  ← recommended
     │
-    ├── toPlotly()             — Plotly SVG renderer (lower-level, bring your own Plotly CDN)
-    └── toCanvas()             — direct canvas render without toolbar (lower-level)
+    ├── toPlotly()             — optional Plotly SVG compatibility renderer
+    └── toCanvas()             — direct canvas render without toolbar
 ```
 
 ---
@@ -1108,19 +1108,19 @@ Shuts down the underlying worker.  Any in-flight `run()` calls reject immediatel
 
 ---
 
-## 9 Lower-level APIs
+## 9 Optional compatibility APIs
 
-These APIs give you direct control over the rendering pipeline.  Use them when you
-need to integrate with your own rendering loop, build a custom gallery, or use the
-Plotly SVG renderer.  For most application development, prefer `renderWaferMap` and
+These APIs give you direct control over the rendering pipeline. Use them when you
+need to integrate with your own rendering loop, build a custom gallery, or export
+through Plotly. For most application development, prefer `renderWaferMap` and
 `renderWaferGallery` above.
 
 ### 9.1 `toPlotly(scene, options?)`
 
 Converts a scene into Plotly-compatible `{ data, layout }`.
 
-Plotly.js must be loaded separately — no runtime dependency on Plotly is included
-in this package.
+Plotly.js must be loaded separately, because the core package does not include a
+runtime Plotly dependency.
 
 ```ts
 import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
@@ -1245,7 +1245,7 @@ Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotl
 For full control over each pipeline stage, use the low-level functions directly.
 These are the building blocks that `buildWaferMap` uses internally.
 
-The [Manual Pipeline demo](../examples/pipeline-demo/) (`pipeline-demo`) is the reference for this path.  Prefer `buildWaferMap` for all other use cases.
+The [Advanced pipeline demo](examples/18-pipeline.html) is the reference for this path. Prefer `buildWaferMap` for all other use cases.
 
 ```text
 createWafer(spec)

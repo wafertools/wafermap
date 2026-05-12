@@ -4,211 +4,37 @@ Browser-first wafer map visualization for semiconductor test data.
 
 **[Project Portal: Docs & Interactive Demos →](https://telecasterer.github.io/wafermap/)**
 
-The project portal provides a searchable, unified interface for the entire library:
-- **Interactive Demos**: Over a dozen runnable examples from basic maps to complex lot analytics.
-- **Developer Guide**: Step-by-step tutorials covering CSV loading, web workers, and spatial statistics.
-- **API Reference**: Complete documentation of all public types, geometry rules, and configuration options.
-
 ## Quick start
-
-Install:
 
 ```bash
 npm install @paulrobins/wafermap
 ```
 
-Render a first map with the preferred canvas renderer:
-
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 const { wafer, dies } = buildWaferMap({
-  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
-  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
-  dieConfig:   { width: 10, height: 10 },
-  testDefs:    [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
+  results: rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin })),
 });
 
 renderWaferMap(document.getElementById('map'), wafer, dies);
 ```
 
-The canvas renderers are the recommended path. They provide the full interactive toolbar, gallery support, and the best runtime performance.
+## Docs
 
-| Demo | Live | Source |
-| --- | --- | --- |
-| Single Wafer Map | [open](https://telecasterer.github.io/wafermap/examples/basic-demo/) | [examples/basic-demo/](examples/basic-demo/) |
-| Lot Gallery | [open](https://telecasterer.github.io/wafermap/examples/gallery-demo/) | [examples/gallery-demo/](examples/gallery-demo/) |
-| CSV Analyzer | [open](https://telecasterer.github.io/wafermap/examples/app-demo/) | [examples/app-demo/](examples/app-demo/) |
-| Renderer Comparison | [open](https://telecasterer.github.io/wafermap/examples/plotly-integration-demo/) | [examples/plotly-integration-demo/](examples/plotly-integration-demo/) |
-| Bin Occurrence Map | [open](https://telecasterer.github.io/wafermap/examples/bin-gallery-demo/) | [examples/bin-gallery-demo/](examples/bin-gallery-demo/) |
-| Geometry Inference | [open](https://telecasterer.github.io/wafermap/examples/inference-demo/) | [examples/inference-demo/](examples/inference-demo/) |
-| Bundler Setup | [open](https://telecasterer.github.io/wafermap/examples/vite-demo/) | [examples/vite-demo/](examples/vite-demo/) |
-| Manual Pipeline ⚠ | [open](https://telecasterer.github.io/wafermap/examples/pipeline-demo/) | [examples/pipeline-demo/](examples/pipeline-demo/) |
+- [Guide](https://telecasterer.github.io/wafermap/guide/)
+- [API Reference](docs/API.md)
+- [Demo catalog](https://telecasterer.github.io/wafermap/)
 
----
+The docs site is the canonical home for examples, usage notes, and API details.
 
-## API overview
-
-```text
-buildWaferMap()         — data layer: prober results → wafer + dies + scene
-    │
-    ├── renderWaferMap()       — single interactive canvas map with full toolbar  ← recommended
-    ├── renderWaferGallery()   — multi-map gallery with shared controls + click-to-modal  ← recommended
-    ├── analyzeWaferMap()      — per-wafer statistical findings
-    └── analyzeWaferLot()      — lot-level findings
-
-Advanced / low-level APIs:
-    ├── toCanvas()             — direct canvas render without toolbar
-    └── toPlotly()             — Plotly SVG output for compatibility only
-
-```
-
-`x` and `y` are always **die grid positions** (prober step coordinates), not millimetres.
-
-`renderWaferMap()` and `renderWaferGallery()` are the preferred entry points for day-to-day use. They expose the most functionality and avoid the overhead of the lower-level adapters.
-
-`toCanvas()` and `toPlotly()` are kept for advanced integration scenarios. Plotly support remains available, but the internal canvas renderer is the faster and preferred option.
-
----
-
-## Canvas rendering (no Plotly required)
-
-### Single interactive map
-
-```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
-
-const { wafer, dies } = buildWaferMap({
-  results:     rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
-  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
-  dieConfig:   { width: 10, height: 10 },
-  testDefs:    [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
-});
-
-const canvas = document.getElementById('map');
-const ctrl = renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardBin' },
-  onClick:  die  => console.log('clicked', die),
-  onSelect: dies => console.log('selected', dies.length, 'dies'),
-  onSceneOptionsChange: opts => syncSidebar(opts),
-});
-
-// Programmatic control
-ctrl.setOptions({ plotMode: 'value', colorScheme: 'viridis' });
-ctrl.clearSelection();
-ctrl.resetZoom();
-ctrl.destroy();
-```
-
-The toolbar provides: camera download · zoom-region · pan · zoom+/− · reset · plot mode · colour scheme · log scale toggle · ring/quadrant/label toggles · rotate · flip.
-
-### Multi-map gallery
-
-```ts
-import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
-
-const galleryCtrl = renderWaferGallery(
-  document.getElementById('gallery'),
-  waferIds.map(id => ({ wafer: wafers[id], dies: dies[id], label: id })),
-  {
-    sceneOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
-    onSceneOptionsChange: opts => syncSidebar(opts),
-  },
-);
-
-// One shared control bar drives all cards simultaneously.
-galleryCtrl.setOptions({ plotMode: 'value' });
-```
-
-Each card has an expand button (↗) in its header that opens a full-screen modal with the complete toolbar. The gallery control bar includes a composite PNG download button.
-
-Stacked modes (`stackedBins`, `stackedSoftBins`, `stackedValues`) are handled automatically — the gallery aggregates the per-wafer data internally when one is selected and restores the original cards when switching back. No extra code is needed.
-
-### Statistical findings
-
-```ts
-import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
-
-const result  = buildWaferMap({ results, waferConfig, dieConfig });
-const summary = analyzeWaferMap(result);
-
-// A Findings button appears in the toolbar automatically:
-renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
-
-// For lot-level findings in a gallery:
-const lotSummary = analyzeWaferLot(waferResults);
-renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
-```
-
-### Low-level adapters
-
-`toCanvas()` is there for advanced integration work when you already own the canvas
-pipeline. `toPlotly()` remains available for compatibility, but it is not the
-recommended path for new projects and is slower than the internal renderers.
-
-#### `toCanvas()`
-
-Use this when you want the raw canvas scene output without the higher-level toolbar
-and interaction layer.
-
-#### `toPlotly()`
-
-Use this only when you need Plotly-compatible output for an existing integration.
-Plotly.js still has to be loaded separately (CDN or bundler), and the output is
-best treated as a legacy compatibility path.
-
----
-
-## Architecture
-
-```text
-packages/core/           — wafer geometry, die generation, clipping, transforms (no DOM, no Plotly)
-packages/renderer/       — buildWaferMap(), buildScene() → renderer-agnostic Scene
-packages/stats/          — analyzeWaferMap(), analyzeWaferLot() (no DOM)
-packages/plotly-adapter/ — toPlotly(): Scene → Plotly { data, layout }
-packages/canvas-adapter/ — renderWaferMap(), renderWaferGallery(), toCanvas()
-packages/worker/         — createWafermapWorker(): run buildWaferMap off the main thread
-```
-
-### Plot modes
-
-`'value'` · `'hardBin'` · `'softBin'` · `'stackedValues'` · `'stackedBins'` · `'stackedSoftBins'`
-
-### Key features
-
-- True rectangular die rendering with configurable kerf gap
-- Wafer clipping with partial die detection and edge exclusion zone
-- Wafer orientation flat / V-notch rendered from diameter automatically
-- Interactive rotate, flip, zoom, pan, and die selection
-- Reticle, probe path, ring, quadrant, and XY indicator overlays
-- Stable-identity `testValues` map (keyed by test number) and named `hbin`/`sbin` per die
-- Stacked lot modes with automatic internal aggregation (mean / median / stddev / min / max)
-- Statistical findings engine — ring, quadrant, reticle, and inter-wafer yield outlier detection
-- Adaptive geometry inference — omit die size or diameter and the library estimates them
-- Configurable colour schemes; continuous colorbar for value modes; bin legend with click-to-highlight for bin modes
-- Web Worker support via `createWafermapWorker` for off-main-thread data processing
-- `buildWaferMap` and `analyzeWaferMap`/`analyzeWaferLot` are pure functions — safe to run server-side
-
-Full API reference: [docs/API.md](docs/API.md)  
-Developer guide: [telecasterer.github.io/wafermap/guide/](https://telecasterer.github.io/wafermap/guide/)
-
----
-
-## Running demos locally
+## Local preview
 
 ```bash
-npm install
-npm run build
-python3 -m http.server 8000
-# open http://localhost:8000/examples/basic-demo/
-```
-
-For the Vite demo:
-
-```bash
-cd examples/vite-demo
 npm install
 npm run dev
 ```
+
+This starts MkDocs and serves the documentation site from `docs/`, including the
+example pages under `docs/examples/`.
