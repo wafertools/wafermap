@@ -84,7 +84,8 @@ buildWaferMap({
   reticleConfig?: ReticleConfig,   // stepper field grid overlay
   lotStack?:     LotStackConfig,   // collapse multiple wafers into one aggregated map
   passBins?:     number[],         // bins counted as pass for yield (default [1])
-  retestPolicy?: 'last' | 'first', // how to handle multiple results at the same (x,y); default 'last'
+  retestPolicy?: 'last' | 'first' | 'best' | 'worst', // how to handle multiple results at the same (x,y); default 'last'
+  edgeDieYieldMode?: 'exclude' | 'denominator-only', // default 'exclude'
   testDefs?:     TestDef[],        // named test definitions — one per testValues entry
   hbinDefs?:     BinDef[],         // named hard bin definitions — one per distinct hbin value
   sbinDefs?:     BinDef[],         // named soft bin definitions — one per distinct sbin value
@@ -212,7 +213,7 @@ Bin values that count as pass for yield calculation.  Set to `[]` to suppress yi
 #### 4.1.7 `retestPolicy`
 
 ```ts
-retestPolicy?: 'last' | 'first'   // default 'last'
+retestPolicy?: 'last' | 'first' | 'best' | 'worst'   // default 'last'
 ```
 
 Controls how the library handles multiple results for the same die position (retests).
@@ -223,6 +224,8 @@ a recontact, a temperature retest, or a continuity retest.
 | ------ | --------- |
 | `'last'` (default) | Keep the most recent result — the last entry in `results` for that position |
 | `'first'` | Keep the earliest result — the first entry in `results` for that position |
+| `'best'` | Keep the best result using `passBins` as the primary criterion: a pass result always beats a fail result. When both candidates are in the same pass/fail category, the lower `hbin` number is the tiebreaker. Falls back to `'last'` when any candidate has no `hbin`. |
+| `'worst'` | Keep the worst result: a fail result always beats a pass result. When both are in the same category, the higher `hbin` number wins. Falls back to `'last'` when any candidate has no `hbin`. |
 
 Regardless of which policy is active, `die.retestCount` is always set on any die that
 appeared more than once in the input.  Use it to identify retested dies in your own
@@ -256,6 +259,11 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
                        // pre-scaled unit like "mA" or "µV"
   logScale?:   boolean // when true, value normalization and the colorbar use log₁₀ scale for this test
                        // silently falls back to linear when any die value is ≤ 0; default false
+  limitLow?:   number  // lower specification limit in the same units as the test value
+                       // values below this are out-of-spec; drives specLimit plot mode and spec yield stats
+  limitHigh?:  number  // upper specification limit in the same units as the test value
+                       // values above this are out-of-spec
+                       // both limits are optional independently — one-sided limits are valid
 }
 ```
 
@@ -276,6 +284,32 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 ```
 
 **Hard bins** (`hbinDefs`) are the physical sort result — where the part goes on the handler.  **Soft bins** (`sbinDefs`) are the logical test-program classification — the failure category as determined by the test algorithm, used for debug and yield analysis.  Many soft bins typically map to one hard bin.
+
+#### 4.1.10 `edgeDieYieldMode`
+
+```ts
+edgeDieYieldMode?: 'exclude' | 'denominator-only'   // default 'exclude'
+```
+
+Controls how dies within the edge exclusion zone (`waferConfig.edgeExclusion`) are treated in yield calculation.
+
+| Value | Behaviour |
+| ----- | --------- |
+| `'exclude'` (default) | Edge dies are excluded from both numerator and denominator. `YieldSummary.yieldPercent` reflects only the interior dies. |
+| `'denominator-only'` | Edge dies are counted in the denominator but never in the pass numerator. Produces **gross die yield** — the industry metric for quantifying yield loss due to edge effects. `YieldSummary.yieldPercentGross` is populated with this value; `yieldPercent` is also populated for comparison. |
+
+```ts
+const result = buildWaferMap({
+  results,
+  waferConfig:      { diameter: 300, edgeExclusion: 3 },
+  dieConfig:        { width: 8, height: 12 },
+  edgeDieYieldMode: 'denominator-only',
+});
+
+const { yieldPercent, yieldPercentGross } = result.yield;
+// yieldPercent      — interior-only yield (edge dies excluded entirely)
+// yieldPercentGross — gross die yield (edge dies counted against you)
+```
 
 ### 4.2 Return value
 
@@ -306,16 +340,18 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 
 ```ts
 {
-  passDies:         number          // dies with a bin in passBins
-  failDies:         number          // full dies inside wafer with a bin not in passBins
-  edgeExcludedDies: number          // dies within the edge exclusion zone
-  partialDies:      number          // dies straddling the wafer boundary
-  totalDies:        number          // passDies + failDies
-  yieldPercent:     number | null   // passDies / totalDies ∈ [0,1]; null when no bin data
+  passDies:          number          // dies with a bin in passBins
+  failDies:          number          // full dies inside wafer with a bin not in passBins
+  edgeExcludedDies:  number          // dies within the edge exclusion zone
+  partialDies:       number          // dies straddling the wafer boundary
+  totalDies:         number          // passDies + failDies (edge-excluded not included)
+  yieldPercent:      number | null   // passDies / totalDies ∈ [0,1]; null when no bin data
+  yieldPercentGross: number | null   // passDies / (passDies + failDies + edgeExcludedDies);
+                                     // only set when edgeDieYieldMode: 'denominator-only'; otherwise null
 }
 ```
 
-Partial dies and edge-excluded dies are excluded from both numerator and denominator.
+Partial dies are excluded from both numerator and denominator. Edge-excluded dies are excluded by default (`edgeDieYieldMode: 'exclude'`); set `edgeDieYieldMode: 'denominator-only'` to include them in the denominator for gross die yield.
 
 **`units`** tells you the coordinate space of the physical coordinates (`die.physX`, `die.physY`) and wafer dimensions; `die.x`/`die.y` remain die grid positions (prober step coordinates):
 
@@ -466,7 +502,7 @@ import { buildWaferMap, getDieKey } from '@paulrobins/wafermap';
 
 const result = buildWaferMap({ results: primaryData, waferConfig, dieConfig });
 
-const rowMap = new Map(rows.map(r => [getDieKey({ i: +r.x, j: +r.y }), r]));
+const rowMap = new Map(rows.map(r => [getDieKey({ x: +r.x, y: +r.y }), r]));
 const enrichedDies = result.dies.map(d => {
   const row = rowMap.get(getDieKey(d));
   if (!row) return d;
@@ -504,8 +540,8 @@ Scene display options controllable via the toolbar or programmatically:
 
 ```ts
 {
-  plotMode?:               PlotMode          // default 'hardBin'
-  colorScheme?:            string            // default 'color'
+  plotMode?:               PlotMode          // default 'hardBin'; 'specLimit' requires testDefs with limitLow/limitHigh
+  colorScheme?:            string            // default 'default' (see note on 'color' alias below)
   showText?:               boolean           // die index labels
   showRingBoundaries?:     boolean
   showQuadrantBoundaries?: boolean
@@ -522,7 +558,10 @@ Scene display options controllable via the toolbar or programmatically:
   sbinDefs?:               BinDef[]          // soft bin names/colors (sbin, 0–32767 space — independent)
   testIndex?:              number            // toolbar cursor: which testDefs entry to show in 'value' mode; default 0
   logScale?:               boolean           // override log₁₀ scale on/off for the active test; takes precedence over TestDef.logScale; silently falls back to linear when vMin ≤ 0
-  valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; auto-computed when omitted
+  colorbarRangeMode?:      'spec' | 'data'   // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
+                                            // set 'data' to span actual data min/max regardless of limits
+                                            // out-of-spec die coloring (blue/red) applies in both modes
+  valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; overrides colorbarRangeMode when set
   aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
   lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
   legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
@@ -530,6 +569,8 @@ Scene display options controllable via the toolbar or programmatically:
                                             // only applies in hardBin/softBin modes
 }
 ```
+
+> **`colorScheme` note:** `'color'` is a deprecated alias for `'default'` — it works but does not appear in `listColorSchemes()` output. Use `'default'` in new code.
 
 ### 5.2 Hover tooltip content by mode
 
@@ -566,6 +607,13 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // initial bin legend position (default 'default'); user can change via toolbar
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a summary panel toggle button to the toolbar
+  waferResult?:            { yield: YieldSummary; dataCoverage: { filledDies, totalDies, edgeExcludedDies, ratio } }
+                                            // supplies yield and coverage data to the summary panel; when omitted those
+                                            // sections are hidden. Pass result directly: waferResult: buildWaferMap(...)
+  summaryPanel?:           SummaryPanelOptions  // summary panel placement and open/closed initial state
+  renderTooltip?:          (die: Die) => string | HTMLElement | null
+                                            // custom tooltip renderer — replaces built-in tooltip content
+                                            // string → innerHTML; HTMLElement → appended; null → suppress tooltip
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
@@ -575,6 +623,15 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 The box-select toolbar button is always shown. Providing `onSelect` lets your app react to selection changes; without it the selection is purely visual.
 
 When `statsSummary` is provided, a summary panel toggle button (notebook icon) appears in the toolbar. The panel opens hidden by default; clicking the button shows or hides it. Clicking a finding in the panel highlights the affected die zone on the map.
+
+#### 5.4.1 `SummaryPanelOptions`
+
+```ts
+{
+  placement?:   'right' | 'left' | 'top' | 'bottom'  // panel side; default 'right'
+  defaultOpen?: boolean                               // open on mount; default false
+}
+```
 
 The panel's **Test Values** section shows Min/Mean/Max for each test. Test names come from `testDefs` when provided; without `testDefs` each test is labelled `Test {N}` using its testNumber. The section appears whenever dies have `testValues`, regardless of whether `testDefs` is supplied.
 
@@ -590,6 +647,8 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
   resetZoom(): void                                  // return to fitted view
   setFallbackFormat(format: 'si' | 'engineering'): void
   setStatsSummary(summary: StatsSummary | undefined): void  // update the summary panel at runtime
+  getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null
+    // returns bin legend entries in hardBin/softBin modes; null in all other modes
   destroy(): void                                    // remove all listeners and DOM elements
 }
 ```
@@ -608,6 +667,7 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 | Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Dropdown: all registered colour schemes |
 | Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Active only in `value` / `stackedValues` modes; dimmed otherwise. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
+| Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. Out-of-spec die coloring (blue/red) applies in both states. |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
 | Labels | Toggle die index text labels |
@@ -648,7 +708,7 @@ import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 
 const ctrl = renderWaferMap(canvas, wafer, dies, {
-  sceneOptions: { plotMode: 'hardBin', colorScheme: 'color' },
+  sceneOptions: { plotMode: 'hardBin', colorScheme: 'default' },
   onClick:  (die)  => console.log(die.x, die.y, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
   onSceneOptionsChange: (opts) => syncExternalUI(opts),
@@ -906,7 +966,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
 
 - Behavioural notes:
   - Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the scene.
-  - Test-value analysis is auto-skipped if the data contains more than 100 distinct tests unless `testNumbers` is provided (a console.warn is emitted).
+  - Test-value analysis is auto-skipped if the data contains more than 100 distinct tests unless `testNumbers` is provided. A warning is emitted via `console.warn` and also surfaced in `summary.stats.warnings[]` for programmatic inspection.
 
 ### 7.4 `StatsSummary`
 
@@ -924,6 +984,16 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
     testsConsidered:      number[]     // test numbers (keys from testValues) that had enough data
     hardBinsConsidered:   number[]
     softBinsConsidered:   number[]
+    warnings?:            string[]     // structured warnings, e.g. test-count cap exceeded
+    testSpecYield?: Array<{            // one entry per testDef that has at least one limit; absent when no testDefs with limits
+      testNumber:   number
+      label:        string            // testDef.name
+      passDies:     number            // dies with value within [limitLow, limitHigh]
+      failLowDies:  number            // dies with value < limitLow (0 when limitLow absent)
+      failHighDies: number            // dies with value > limitHigh (0 when limitHigh absent)
+      totalDies:    number            // dies that had a value for this test
+      yieldPercent: number | null     // passDies / totalDies; null when totalDies = 0
+    }>
   }
 }
 ```
@@ -939,6 +1009,10 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
   stats: {
     waferCount: number
   }
+  lotYieldSeries: Array<{
+    waferIndex:   number
+    yieldPercent: number | null        // null when a wafer had no bin data
+  }>
   perWafer: Array<{
     waferIndex: number
     summary: StatsSummary              // per-wafer findings
@@ -1029,7 +1103,7 @@ Describes what to visually emphasise when a finding is selected.
 ```ts
 type HighlightTarget =
   | { kind: 'region';  regionFamily: string; keys: string[]; dieKeys?: string[] }
-  | { kind: 'bin';     binSpace: 'hard' | 'soft'; bin: number; regionKeys?: string[]; dieKeys?: string[] }
+  | { kind: 'bin';     bin: number; regionKeys?: string[]; dieKeys?: string[] }
   | { kind: 'wafer';   waferIndices: number[] }
   | { kind: 'dies';    dieKeys: string[] }
 ```
@@ -1060,6 +1134,32 @@ const items = waferResults.map((r, i) => ({
 }));
 const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
+```
+
+### 7.11 `filterFindings(source, filter)`
+
+Filters findings from a `StatsSummary` or `LotStatsSummary` by any combination of severity, kind, family, and level. All criteria are ANDed; each accepts a single value or an array.
+
+```ts
+import { filterFindings } from '@paulrobins/wafermap/stats';
+
+// Unusual ring or quadrant findings only:
+const critical = filterFindings(summary, {
+  severity: 'unusual',
+  family: ['ring', 'quadrant'],
+});
+
+// All yield findings across the lot:
+const yieldFindings = filterFindings(lotSummary, { kind: 'yield' });
+```
+
+```ts
+interface FindingsFilter {
+  severity?: StatsSeverity | StatsSeverity[]
+  kind?:     StatsVariableKind | StatsVariableKind[]
+  family?:   StatsComparisonFamily | StatsComparisonFamily[]
+  level?:    StatsLevel | StatsLevel[]
+}
 ```
 
 ---
@@ -1317,7 +1417,7 @@ Creates a rectangular die grid centred on the wafer.  Accepts a `DieSpec`:
 }
 ```
 
-Returns `Die[]` with `id`, `i`, `j`, `x`, `y`, `width`, `height`.
+Returns `Die[]` with `id`, `x` (grid), `y` (grid), `physX` (mm), `physY` (mm), `width`, `height`.
 
 ---
 
@@ -1449,7 +1549,7 @@ Builds the renderer-agnostic scene.
 
 ```ts
 interface SceneOptions {
-  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
+  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'specLimit'
   showText?:               boolean
   showReticle?:            boolean
   showProbePath?:          boolean
@@ -1458,7 +1558,7 @@ interface SceneOptions {
   showXYIndicator?:        boolean
   ringCount?:              number    // default 4
   dieGap?:                 number    // visual kerf gap in mm, default 1
-  colorScheme?:            string    // default 'color'
+  colorScheme?:            string    // default 'default'
   highlightBin?:           number
   valueRange?:             [number, number]
   interactiveTransform?:   { rotation?: number; flipX?: boolean; flipY?: boolean }
@@ -1468,6 +1568,8 @@ interface SceneOptions {
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
   testIndex?:              number      // which values[] slot to display in 'value' mode; default 0
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
+  colorbarRangeMode?:      'spec' | 'data'  // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
+                                            // 'data' spans actual data min/max; out-of-spec coloring applies in both modes
   aggrMethod?:             string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
   lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
 }
@@ -1521,13 +1623,14 @@ chart.on('plotly_click', ev => {
 ```ts
 {
   id:            string
-  i:             number    // die grid X position (equals input x for centred grids)
-  j:             number    // die grid Y position (equals input y for centred grids)
-  x:             number    // physical X in mm (or normalized units)
-  y:             number    // physical Y in mm (or normalized units)
+  x:             number    // die grid X position — prober step coordinate (equals input x for centred grids)
+  y:             number    // die grid Y position — prober step coordinate (equals input y for centred grids)
+  physX:         number    // physical X in mm (or normalized units)
+  physY:         number    // physical Y in mm (or normalized units)
   width:         number    // die width in mm (or normalized units)
   height:        number    // die height in mm (or normalized units)
-  values?:       number[]
+  testValues?:   Record<number, number>  // test measurements keyed by test number
+  values?:       number[]  // @deprecated: use testValues
   hbin?:         number    // hard bin (physical sort result; STDF V4 range 0–32767)
   sbin?:         number    // soft bin (test-program failure category; independent 0–32767 space)
   metadata?:     DieMetadata
@@ -1555,11 +1658,20 @@ chart.on('plotly_click', ev => {
 
 ### 12.3 `WaferMetadata`
 
-An open key-value record — any fields are accepted:
+Common named fields with an open index signature — any extra fields are accepted:
 
 ```ts
-type WaferMetadata = Record<string, unknown>
-// e.g. { lot: 'LOT123', waferNumber: 1, testDate: '2026-04-23', temperature: 25 }
+{
+  lot?:         string
+  waferId?:     string | number
+  product?:     string
+  testDate?:    string          // ISO 8601 recommended, e.g. "2026-04-23T08:30:00Z"
+  operator?:    string
+  testProgram?: string
+  temperature?: number          // chuck temperature in °C
+  [key: string]: unknown        // any additional fields accepted
+}
+// e.g. { lot: 'LOT123', waferId: 1, testDate: '2026-04-23', temperature: 25 }
 ```
 
 ### 12.4 `DieMetadata`

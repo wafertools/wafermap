@@ -26,22 +26,24 @@
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
     <span class="demo-title">§7 — Retests and enriching dies after build</span>
-    <span class="demo-desc">retestPolicy · retestCount · getDieKey post-enrichment</span>
+    <span class="demo-desc">retestPolicy (last · first · best · worst) · retestCount</span>
   </header>
 
   <div class="demo-intro">
     When the same die position appears more than once in the input, <code>buildWaferMap</code> resolves it using a retest policy.
-    <strong>last</strong> (default) keeps the final result; <strong>first</strong> keeps the initial probe.
+    <strong>last</strong> (default) keeps the final result; <strong>first</strong> keeps the initial probe;
+    <strong>best</strong> keeps the pass result when one exists (using <code>passBins</code>), falling back to the lowest hbin as a tiebreaker among failures; <strong>worst</strong> prefers a fail result, falling back to the highest hbin.
     Dies with multiple probes get a <code>retestCount</code> — click any die to see its details.
-    The sidebar lists all retested positions and their final bin.
   </div>
 
   <!-- Switch between retest policies -->
   <div class="demo-controls">
     <div class="ctrl-group">
       <span class="ctrl-label">Retest policy</span>
-      <button class="toggle-btn active" id="btn-last">last (default)</button>
+      <button class="toggle-btn active" id="btn-last">last</button>
       <button class="toggle-btn"        id="btn-first">first</button>
+      <button class="toggle-btn"        id="btn-best">best</button>
+      <button class="toggle-btn"        id="btn-worst">worst</button>
     </div>
     <div class="ctrl-sep"></div>
     <span style="font-size:12px; color:var(--muted)">
@@ -156,7 +158,7 @@
         listEl.insertAdjacentHTML('beforeend', `
           <div class="retest-die">
             (${d.x}, ${d.y})
-            <span class="badge badge-amber">×${d.retestCount + 1}</span>
+            <span class="badge badge-amber">×${d.retestCount}</span>
             <span style="color:${bin?.color ?? '#666'}">● ${bin?.name ?? `bin ${d.hbin}`}</span>
           </div>`);
       }
@@ -170,7 +172,7 @@
         onClick(die) {
           const bin  = HBIN_DEFS.find(b => b.bin === die.hbin);
           const retest = die.retestCount != null
-            ? `<br><strong>Retested ${die.retestCount + 1}×</strong> — tooltip shows "Retests: N"`
+            ? `<br><strong>Probed ${die.retestCount}×</strong>`
             : '';
           document.getElementById('die-box').innerHTML = `
             Position: <strong>(${die.x}, ${die.y})</strong><br>
@@ -182,18 +184,14 @@
 
     render();
 
-    document.getElementById('btn-last').addEventListener('click', () => {
-      policy = 'last';
-      document.getElementById('btn-last').classList.add('active');
-      document.getElementById('btn-first').classList.remove('active');
-      render();
-    });
-
-    document.getElementById('btn-first').addEventListener('click', () => {
-      policy = 'first';
-      document.getElementById('btn-first').classList.add('active');
-      document.getElementById('btn-last').classList.remove('active');
-      render();
+    const policyBtns = ['last', 'first', 'best', 'worst'];
+    policyBtns.forEach(p => {
+      document.getElementById(`btn-${p}`).addEventListener('click', () => {
+        policy = p;
+        policyBtns.forEach(q =>
+          document.getElementById(`btn-${q}`).classList.toggle('active', q === p));
+        render();
+      });
     });
   </script>
 

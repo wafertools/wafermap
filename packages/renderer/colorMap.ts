@@ -21,8 +21,21 @@ export function hardBinColor(bin: number): string {
   return HARD_BIN_COLORS[Math.max(0, Math.min(bin, HARD_BIN_COLORS.length - 1))];
 }
 
+/** Linear interpolation across RGB keypoints for t ∈ [0, 1]. */
+export function lerpKp(kp: readonly [number, number, number][], t: number): string {
+  const c = Math.max(0, Math.min(1, t));
+  const pos = c * (kp.length - 1);
+  const lo = Math.floor(pos);
+  const hi = Math.min(lo + 1, kp.length - 1);
+  const f = pos - lo;
+  const r = Math.round(kp[lo][0] + f * (kp[hi][0] - kp[lo][0]));
+  const g = Math.round(kp[lo][1] + f * (kp[hi][1] - kp[lo][1]));
+  const b = Math.round(kp[lo][2] + f * (kp[hi][2] - kp[lo][2]));
+  return `rgb(${r},${g},${b})`;
+}
+
 // Standard Viridis keypoints [R, G, B]
-const VIRIDIS: readonly [number, number, number][] = [
+export const VIRIDIS: readonly [number, number, number][] = [
   [68,  1,  84],
   [59, 82, 139],
   [33, 145, 140],
@@ -32,15 +45,7 @@ const VIRIDIS: readonly [number, number, number][] = [
 
 /** Map t ∈ [0, 1] to a Viridis RGB colour string. */
 export function valueToViridis(t: number): string {
-  const clamped = Math.max(0, Math.min(1, t));
-  const pos = clamped * (VIRIDIS.length - 1);
-  const lo = Math.floor(pos);
-  const hi = Math.min(lo + 1, VIRIDIS.length - 1);
-  const f = pos - lo;
-  const r = Math.round(VIRIDIS[lo][0] + f * (VIRIDIS[hi][0] - VIRIDIS[lo][0]));
-  const g = Math.round(VIRIDIS[lo][1] + f * (VIRIDIS[hi][1] - VIRIDIS[lo][1]));
-  const b = Math.round(VIRIDIS[lo][2] + f * (VIRIDIS[hi][2] - VIRIDIS[lo][2]));
-  return `rgb(${r},${g},${b})`;
+  return lerpKp(VIRIDIS, t);
 }
 
 /** Map a bin number to a position on the Viridis scale. */
@@ -64,7 +69,7 @@ export const HARD_BIN_GREY: readonly string[] = [
   '#777777', // 11
   '#eeeeee', // 12
   '#333333', // 13
-  '#aaaaaa', // 14
+  '#888888', // 14
 ];
 
 export function hardBinGreyscale(bin: number): string {

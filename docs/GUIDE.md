@@ -346,6 +346,48 @@ With `testDefs` in place:
 
 `TestDef.logScale: true` enables log₁₀ scale for that test by default (silently falls back to linear when any die value ≤ 0). The user can also toggle log scale at any time via the toolbar Log scale button, which overrides the per-test default.
 
+### Spec limits on test parameters
+
+Add `limitLow` and/or `limitHigh` to a `TestDef` to specify the engineering specification window. Both are optional independently — one-sided limits are valid. Once limits are defined, two things happen automatically across all plot modes:
+
+**In `value` mode** — out-of-spec dies are highlighted immediately:
+- Dies **below** `limitLow` render in <span style="color:#3498db">**blue**</span> instead of the gradient colour
+- Dies **above** `limitHigh` render in <span style="color:#e74c3c">**red**</span> instead of the gradient colour
+- In-spec dies continue to use the normal colour gradient
+
+The toolbar also gains a **bracket button** (⌥) that toggles the colorbar range between the spec window `[limitLow, limitHigh]` and the actual data range. The default is the spec window so the colorbar always shows where the limits are relative to the data.
+
+**In `specLimit` mode** — a dedicated categorical view:
+- Pass (in spec): green (`#2ecc71`)
+- Fail low (below LSL): blue (`#3498db`)
+- Fail high (above USL): red (`#e74c3c`)
+- No data: grey
+
+```ts
+const testDefs = [
+  { testNumber: 1050, name: 'Idsat', unit: 'A' },
+  {
+    testNumber: 1060, name: 'Vth', unit: 'V',
+    limitLow:  0.44,  // LSL — below this is a spec failure
+    limitHigh: 0.57,  // USL — above this is a spec failure
+  },
+  { testNumber: 1070, name: 'Ioff', unit: 'A' },
+];
+
+const { wafer, dies, scene } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
+
+// Start in specLimit mode for Vth to see pass/fail/direction at a glance
+renderWaferMap(canvas, wafer, dies, {
+  sceneOptions: {
+    plotMode:  'specLimit',
+    testIndex: 1060,
+    testDefs:  scene.testDefs,
+  },
+});
+```
+
+Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.stats.testSpecYield` with per-test spec yield, fail-low count, and fail-high count for every test that has at least one limit defined.
+
 **→ [Demo: Working with test values](examples/06-test-values.html)**
 
 ![alt text](image-5.png)
@@ -356,13 +398,19 @@ With `testDefs` in place:
 ### Handling retests
 
 If your data includes multiple probe results for the same die position (retests),
-the library handles them automatically.  The default keeps the last result per
-position; use `'first'` to keep the initial test:
+the library handles them automatically. Four policies are available:
+
+| Policy | Behaviour |
+| ------ | --------- |
+| `'last'` (default) | Keep the most recent result per position |
+| `'first'` | Keep the earliest result per position |
+| `'best'` | Keep the best result using `passBins` as the primary criterion: a pass always beats a fail. Within the same pass/fail category, lower `hbin` number wins. Falls back to `'last'` when candidates have no `hbin`. |
+| `'worst'` | Keep the worst result: a fail always beats a pass. Within the same category, higher `hbin` number wins. Falls back to `'last'` when candidates have no `hbin`. |
 
 ```ts
 const { wafer, dies } = buildWaferMap({
-  results: rawResults,  // may contain the same (x,y) more than once
-  retestPolicy: 'last', // default — keep the most recent result
+  results:      rawResults,  // may contain the same (x,y) more than once
+  retestPolicy: 'best',      // keep the best bin result per position
 });
 
 // Check which dies were retested:
@@ -370,7 +418,7 @@ dies.filter(d => d.retestCount !== undefined)
     .forEach(d => console.log(`(${d.x},${d.y}) retested ${d.retestCount}×`));
 ```
 
-Retested dies automatically show "Retests: N" in their hover tooltip.
+Retested dies automatically show "Retests: N" in their hover tooltip. `retestCount` is always set regardless of which policy is active — it records how many times that position appeared in the input.
 
 ### Post-enrichment (attaching extra values after the map is built)
 
@@ -387,7 +435,7 @@ const result = buildWaferMap({ results: binRows.map(r => ({
 })), dieConfig: { width: 10, height: 10 } });
 
 // Step 2: build a lookup from the parametric table
-const paramMap = new Map(paramRows.map(r => [getDieKey({ i: Number(r.x), j: Number(r.y) }), r]));
+const paramMap = new Map(paramRows.map(r => [getDieKey({ x: Number(r.x), y: Number(r.y) }), r]));
 
 // Step 3: enrich dies in place
 const enrichedDies = result.dies.map(die => {
@@ -1271,6 +1319,78 @@ const lotStats = analyzeWaferLot(results);
 
 Only `renderWaferMap`, `renderWaferGallery`, and `toCanvas` require a browser
 environment.
+
+### Filter findings by severity, kind, or spatial family
+
+`filterFindings` is a pure utility that slices the `findings` array from any `StatsSummary` or `LotStatsSummary`. All criteria are ANDed; each accepts a single value or an array:
+
+```ts
+import { filterFindings } from '@paulrobins/wafermap/stats';
+
+// Only ring or quadrant findings with unusual severity:
+const critical = filterFindings(summary, {
+  severity: 'unusual',
+  family:   ['ring', 'quadrant'],
+});
+
+// All yield findings regardless of severity:
+const yieldFindings = filterFindings(summary, { kind: 'yield' });
+```
+
+### Plot per-wafer yield as a trend chart using `lotYieldSeries`
+
+`LotStatsSummary.lotYieldSeries` gives you one `{ waferIndex, yieldPercent }` entry per wafer — ready to feed a line chart without extra data wrangling:
+
+```ts
+const lotSummary = analyzeWaferLot(waferResults);
+
+// lotYieldSeries is sorted by waferIndex
+const labels = lotSummary.lotYieldSeries.map(e => `W${e.waferIndex + 1}`);
+const values = lotSummary.lotYieldSeries.map(e =>
+  e.yieldPercent !== null ? (e.yieldPercent * 100).toFixed(1) : null
+);
+// Feed labels/values into any charting library
+```
+
+`yieldPercent` is `null` for a wafer that had no bin data at all.
+
+### Use gross die yield (edge dies in denominator)
+
+By default, edge-excluded dies are removed from both the numerator and denominator. Set `edgeDieYieldMode: 'denominator-only'` to compute gross die yield — edge dies count in the denominator but never as pass:
+
+```ts
+const result = buildWaferMap({
+  results,
+  waferConfig: { diameter: 300, edgeExclusion: 3 },
+  dieConfig:   { width: 8, height: 12 },
+  passBins:    [1],
+  edgeDieYieldMode: 'denominator-only',
+});
+
+const { yieldPercent, yieldPercentGross } = result.yield;
+// yieldPercent      — standard yield, edge dies excluded entirely
+// yieldPercentGross — gross die yield, edge dies in denominator
+```
+
+### Check for structured warnings from the stats engine
+
+When `analyzeWaferMap` encounters an unusual condition (e.g. more than 100 distinct tests in the data without a `testNumbers` filter), it records a structured warning in `summary.stats.warnings[]` in addition to logging to the console:
+
+```ts
+const summary = analyzeWaferMap(result);
+
+if (summary.stats.warnings?.length) {
+  console.warn('Stats warnings:', summary.stats.warnings);
+  // e.g. "101 tests found — test-value analysis skipped. Pass testNumbers to override."
+}
+```
+
+To suppress the warning and run analysis on a specific subset, pass `testNumbers`:
+
+```ts
+const summary = analyzeWaferMap(result, { testNumbers: [1050, 1060, 1070] });
+// No warning — analysis runs on exactly these three tests
+```
 
 ---
 

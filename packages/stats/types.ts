@@ -87,6 +87,21 @@ export interface StatsSummary {
     testsConsidered: number[];
     hardBinsConsidered: number[];
     softBinsConsidered: number[];
+    /** Structured warnings emitted during analysis (e.g. test-count cap exceeded). */
+    warnings?: string[];
+    /**
+     * Per-test spec yield for each test that has at least one limit defined.
+     * Only populated when testDefs with limitLow/limitHigh are provided.
+     */
+    testSpecYield?: Array<{
+      testNumber:   number;
+      label:        string;
+      passDies:     number;
+      failLowDies:  number;
+      failHighDies: number;
+      totalDies:    number;
+      yieldPercent: number | null;
+    }>;
   };
 }
 
@@ -100,6 +115,8 @@ export interface LotStatsSummary {
   stats: {
     waferCount: number;
   };
+  /** Per-wafer yield as a flat series, ordered by waferIndex. null when a wafer had no bin data. */
+  lotYieldSeries: Array<{ waferIndex: number; yieldPercent: number | null }>;
   perWafer: Array<{
     waferIndex: number;
     summary: StatsSummary;

@@ -22,8 +22,8 @@
   <div class="demo-intro">
     Continuous parametric data stored in <code>die.testValues</code> as a <code>testNumber → value</code> map.
     <code>testDefs</code> gives each test a name and unit — the toolbar mode menu, tooltips, and colorbar all update automatically.
-    Select a test above or use the toolbar mode picker. The sidebar shows per-test statistics for the selected parameter.
-    Toggle <strong>log scale</strong> from the toolbar for Ioff (leakage spans several decades).
+    Vth has spec limits defined (<code>limitLow</code> / <code>limitHigh</code>): out-of-spec dies appear in blue/red in both <strong>Test Value</strong> mode and the dedicated <strong>Spec Limit</strong> mode.
+    Use the toolbar bracket button to switch the colorbar between the spec window and the full data range.
   </div>
 
   <!-- Test selector — values are testNumbers, matching testValues keys and testDefs -->
@@ -37,8 +37,14 @@
       </select>
     </div>
     <div class="ctrl-sep"></div>
+    <div class="ctrl-group">
+      <span class="ctrl-label">Mode</span>
+      <button class="toggle-btn active" id="btn-value">Test Value</button>
+      <button class="toggle-btn"        id="btn-speclimit">Spec Limit</button>
+    </div>
+    <div class="ctrl-sep"></div>
     <span style="font-size:12px; color:var(--muted)">
-      testDefs give each testValues entry a name and unit — tooltips, colorbar, and mode menu all update
+      Spec Limit mode only available when the test has limits defined (Vth)
     </span>
   </div>
 
@@ -65,6 +71,23 @@
 
         <div class="section-divider"></div>
 
+        <div class="section" id="spec-section" style="display:none">
+          <div class="section-heading">Spec limits</div>
+          <table class="kv">
+            <tr><td>LSL</td>        <td id="spec-lsl">—</td></tr>
+            <tr><td>USL</td>        <td id="spec-usl">—</td></tr>
+            <tr><td>Fail low</td>   <td id="spec-fail-low" style="color:#3498db; font-weight:600">—</td></tr>
+            <tr><td>Fail high</td>  <td id="spec-fail-high" style="color:#e74c3c; font-weight:600">—</td></tr>
+            <tr><td>In spec</td>    <td id="spec-pass" style="color:#27ae60; font-weight:600">—</td></tr>
+            <tr><td>Spec yield</td> <td id="spec-yield" style="font-weight:600">—</td></tr>
+          </table>
+          <div style="margin-top:6px; font-size:11px; color:var(--muted); line-height:1.5">
+            Out-of-spec dies shown in <span style="color:#3498db; font-weight:600">blue</span> (below LSL)
+            and <span style="color:#e74c3c; font-weight:600">red</span> (above USL) in both modes.
+          </div>
+        </div>
+        <div id="spec-divider" class="section-divider" style="display:none"></div>
+
         <div class="section">
           <div class="section-heading">Definition</div>
           <div class="info-box" id="def-box" style="font-size:11px; font-family:monospace; line-height:1.65"></div>
@@ -87,8 +110,8 @@
     import { renderWaferMap } from 'wafermap/canvas-adapter';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS, HBIN_DEFS } from './data.js';
 
-    // TEST_DEFS: [{ testNumber:1050, name:'Idsat', unit:'A' }, { testNumber:1060, name:'Vth', unit:'V' }, ...]
-    // testNumber matches the key used in DieResult.testValues — gives named toolbar entries, tooltips, colorbar labels.
+    // TEST_DEFS includes limitLow/limitHigh for Vth (1060) — the toolbar shows a spec-range
+    // toggle button, and out-of-spec dies render in blue (below LSL) or red (above USL).
     const { wafer, dies, scene } = buildWaferMap({
       results:     makeResults({ seed: 5, quadrant: true }),
       waferConfig: WAFER_CONFIG,
@@ -99,33 +122,33 @@
 
     const patterns = [
       'Peaks at the wafer centre (~1.5 mA), falls toward the edge. The NE quadrant shows a ~7% suppression from process gradient.',
-      'Increases radially from centre (0.45 V) to edge (0.53 V). The NE quadrant shows an additional +40 mV shift.',
+      'Increases radially from centre (0.45 V) to edge (0.53 V). The NE quadrant shows an additional +40 mV shift above the USL of 0.57 V — visible as red dies in the NE quadrant.',
       'Exponential growth toward the edge. Higher Ioff in the NE quadrant correlates with elevated Vth.',
     ];
 
-    // Compute per-test statistics from the dies array using testNumber as key
     function testStats(dies, testNumber) {
       const vals = dies.map(d => d.testValues?.[testNumber]).filter(v => v != null);
       if (!vals.length) return {};
       vals.sort((a, b) => a - b);
-      const min  = vals[0];
-      const max  = vals[vals.length - 1];
-      const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
-      const med  = vals[Math.floor(vals.length / 2)];
-      return { min, max, mean, med };
+      return {
+        min:  vals[0],
+        max:  vals[vals.length - 1],
+        mean: vals.reduce((s, v) => s + v, 0) / vals.length,
+        med:  vals[Math.floor(vals.length / 2)],
+      };
     }
 
-    // Use the SI prefix formatter from the browser (via Intl is not great for science;
-    // we'll do a simple engineering formatter instead)
     function fmt(v, unit) {
       if (v == null) return '—';
       const abs = Math.abs(v);
-      if      (abs >= 1e-3) return `${(v * 1e3).toPrecision(4)} m${unit}`;
-      else if (abs >= 1e-6) return `${(v * 1e6).toPrecision(4)} µ${unit}`;
-      else if (abs >= 1e-9) return `${(v * 1e9).toPrecision(4)} n${unit}`;
+      if      (abs >= 1e-3)  return `${(v * 1e3).toPrecision(4)} m${unit}`;
+      else if (abs >= 1e-6)  return `${(v * 1e6).toPrecision(4)} µ${unit}`;
+      else if (abs >= 1e-9)  return `${(v * 1e9).toPrecision(4)} n${unit}`;
       else if (abs >= 1e-12) return `${(v * 1e12).toPrecision(4)} p${unit}`;
       return `${v.toExponential(3)} ${unit}`;
     }
+
+    function fmtV(v) { return v != null ? `${v.toFixed(3)} V` : '—'; }
 
     function updatePanel(testNumber) {
       const def   = TEST_DEFS.find(t => t.testNumber === testNumber) ?? TEST_DEFS[0];
@@ -137,13 +160,35 @@
       document.getElementById('test-max').textContent    = fmt(stats.max,  def.unit);
       document.getElementById('test-mean').textContent   = fmt(stats.mean, def.unit);
       document.getElementById('test-median').textContent = fmt(stats.med,  def.unit);
+
+      const hasLimits = def.limitLow !== undefined || def.limitHigh !== undefined;
+      document.getElementById('spec-section').style.display = hasLimits ? '' : 'none';
+      document.getElementById('spec-divider').style.display = hasLimits ? '' : 'none';
+      if (hasLimits) {
+        const vals = dies.map(d => d.testValues?.[def.testNumber]).filter(v => v != null);
+        const failLow  = def.limitLow  !== undefined ? vals.filter(v => v < def.limitLow).length  : 0;
+        const failHigh = def.limitHigh !== undefined ? vals.filter(v => v > def.limitHigh).length : 0;
+        const pass     = vals.length - failLow - failHigh;
+        const specYield = vals.length ? (pass / vals.length * 100).toFixed(1) + '%' : '—';
+        document.getElementById('spec-lsl').textContent       = fmtV(def.limitLow);
+        document.getElementById('spec-usl').textContent       = fmtV(def.limitHigh);
+        document.getElementById('spec-fail-low').textContent  = failLow;
+        document.getElementById('spec-fail-high').textContent = failHigh;
+        document.getElementById('spec-pass').textContent      = pass;
+        document.getElementById('spec-yield').textContent     = specYield;
+      }
+
+      const hasLimitsInDef = hasLimits ? `\n  limitLow:${def.limitLow != null ? ` ${def.limitLow},` : ' (none),'}\n  limitHigh:${def.limitHigh != null ? ` ${def.limitHigh},` : ' (none),'}` : '';
       document.getElementById('def-box').textContent =
-        `testDefs[\n  { testNumber:${def.testNumber}, name:'${def.name}',\n    unit:'${def.unit}' }\n]`;
+        `{ testNumber: ${def.testNumber},\n  name: '${def.name}',\n  unit: '${def.unit}',${hasLimitsInDef} }`;
       document.getElementById('pattern-box').textContent = patterns[idx];
     }
 
-    // Mount renderer in value mode — testDefs wires up the mode menu automatically.
-    // testIndex uses the testNumber as its value (1050, 1060, 1070) — not a position.
+    let plotMode = 'value';
+
+    // Mount in value mode — testDefs with limits wires up spec-range toolbar button automatically.
+    // In 'value' mode, out-of-spec dies render in blue/red; toolbar bracket button toggles
+    // colorbar between spec window [LSL, USL] and the actual data range.
     const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
       sceneOptions: {
         plotMode:  'value',
@@ -156,8 +201,32 @@
 
     document.getElementById('sel-test').addEventListener('change', e => {
       const testNumber = Number(e.target.value);
-      ctrl.setOptions({ plotMode: 'value', testIndex: testNumber });
+      const def = TEST_DEFS.find(t => t.testNumber === testNumber);
+      // Spec Limit mode only works when the test has at least one limit
+      if (plotMode === 'specLimit' && !def?.limitLow && !def?.limitHigh) {
+        plotMode = 'value';
+        document.getElementById('btn-value').classList.add('active');
+        document.getElementById('btn-speclimit').classList.remove('active');
+      }
+      ctrl.setOptions({ plotMode, testIndex: testNumber });
       updatePanel(testNumber);
+    });
+
+    document.getElementById('btn-value').addEventListener('click', () => {
+      plotMode = 'value';
+      document.getElementById('btn-value').classList.add('active');
+      document.getElementById('btn-speclimit').classList.remove('active');
+      ctrl.setOptions({ plotMode: 'value' });
+    });
+
+    document.getElementById('btn-speclimit').addEventListener('click', () => {
+      const testNumber = Number(document.getElementById('sel-test').value);
+      const def = TEST_DEFS.find(t => t.testNumber === testNumber);
+      if (!def?.limitLow && !def?.limitHigh) return; // no limits on this test
+      plotMode = 'specLimit';
+      document.getElementById('btn-speclimit').classList.add('active');
+      document.getElementById('btn-value').classList.remove('active');
+      ctrl.setOptions({ plotMode: 'specLimit', testIndex: testNumber });
     });
 
     // Keep the external selector in sync with the toolbar test picker
@@ -169,6 +238,11 @@
         if (Number(sel.value) !== o.testIndex) {
           sel.value = String(o.testIndex);
           updatePanel(o.testIndex);
+        }
+        if (o.plotMode !== plotMode) {
+          plotMode = o.plotMode;
+          document.getElementById('btn-value').classList.toggle('active', plotMode === 'value');
+          document.getElementById('btn-speclimit').classList.toggle('active', plotMode === 'specLimit');
         }
       }
     })();

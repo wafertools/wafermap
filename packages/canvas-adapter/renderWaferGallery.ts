@@ -1,6 +1,6 @@
 import type { PlotMode } from '../renderer/buildScene.js';
 import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, ROTATIONS, INLINE_TEST_LIMIT, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, type ModeEntry } from './toolbar.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
@@ -98,7 +98,7 @@ export function renderWaferGallery(
 
   let sharedOpts: WaferSceneOptions = {
     plotMode:               'hardBin',
-    colorScheme:            'color',
+    colorScheme:            'default',
     showText:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
@@ -186,7 +186,7 @@ export function renderWaferGallery(
             gallerySummaryActiveFindingId = null;
             clearCardHighlight();
             clearDieZoneHighlight();
-            syncShared({ highlightBin: undefined });
+            updateShared({ highlightBin: undefined }, { fireCallback: false });
           } else {
             gallerySummaryActiveFindingId = finding.id;
             applyLotFindingHighlight(finding, row);
@@ -226,12 +226,13 @@ export function renderWaferGallery(
         wafer:        item.wafer,
         dies:         item.dies,
         yieldSummary: {
-          passDies:         0,
-          failDies:         0,
-          edgeExcludedDies: 0,
-          partialDies:      item.dies.filter(d => d.partial).length,
-          totalDies:        item.dies.filter(d => !d.partial && !d.edgeExcluded).length,
-          yieldPercent:     yieldPct,
+          passDies:          0,
+          failDies:          0,
+          edgeExcludedDies:  0,
+          partialDies:       item.dies.filter(d => d.partial).length,
+          totalDies:         item.dies.filter(d => !d.partial && !d.edgeExcluded).length,
+          yieldPercent:      yieldPct,
+          yieldPercentGross: null,
         },
         dataCoverage: {
           filledDies:       item.dies.filter(d => !d.partial).length,
@@ -245,17 +246,16 @@ export function renderWaferGallery(
         statsSummary:   waferSummary,
         fallbackFormat: currentFallbackFormat,
         activeFindingId: gallerySummaryActiveFindingId,
-        onFindingClick: (finding, row) => {
+        onFindingClick: (finding, _row) => {
           if (gallerySummaryActiveFindingId === finding.id) {
             gallerySummaryActiveFindingId = null;
             cardControllers[idx]?.clearSelection();
-            syncShared({ highlightBin: undefined });
+            updateShared({ highlightBin: undefined }, { fireCallback: false });
           } else {
             gallerySummaryActiveFindingId = finding.id;
             applyWaferFindingHighlight(idx, finding);
           }
           renderGallerySummaryPanel();
-          void row;
         },
       });
     }
@@ -266,16 +266,16 @@ export function renderWaferGallery(
     clearCardHighlight();
     const { kind: vKind, index } = finding.variable;
     if (vKind === 'test') {
-      syncShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
+      updateShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined }, { fireCallback: false });
     } else if (vKind === 'softBin') {
-      syncShared({ plotMode: 'softBin', highlightBin: undefined });
+      updateShared({ plotMode: 'softBin', highlightBin: undefined }, { fireCallback: false });
     } else {
-      syncShared({ plotMode: 'hardBin', highlightBin: undefined });
+      updateShared({ plotMode: 'hardBin', highlightBin: undefined }, { fireCallback: false });
     }
     const h = finding.highlight;
     if (h.kind === 'bin') {
       if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys, [cardIndex]);
-      syncShared({ highlightBin: h.bin });
+      updateShared({ highlightBin: h.bin }, { fireCallback: false });
     } else if (h.kind === 'region' || h.kind === 'dies') {
       if (h.dieKeys?.length) applyDieZoneHighlight(h.dieKeys, [cardIndex]);
     }
@@ -296,7 +296,7 @@ export function renderWaferGallery(
     activeLotFindingId = null;
     clearCardHighlight();
     clearDieZoneHighlight();
-    syncShared({ highlightBin: undefined });
+    updateShared({ highlightBin: undefined }, { fireCallback: false });
   }
 
   function applyLotFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
@@ -315,11 +315,11 @@ export function renderWaferGallery(
     // dies, and highlightBin dims everything else making the map look empty.
     const { kind, index } = finding.variable;
     if (kind === 'test') {
-      syncShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
+      updateShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined }, { fireCallback: false });
     } else if (kind === 'softBin') {
-      syncShared({ plotMode: 'softBin', highlightBin: undefined });
+      updateShared({ plotMode: 'softBin', highlightBin: undefined }, { fireCallback: false });
     } else {
-      syncShared({ plotMode: 'hardBin', highlightBin: undefined });
+      updateShared({ plotMode: 'hardBin', highlightBin: undefined }, { fireCallback: false });
     }
 
     // Clear all card outlines and die zone selections before applying new ones.
@@ -380,8 +380,6 @@ export function renderWaferGallery(
     overflowX:     'auto',
   });
 
-  type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string; logScale?: boolean };
-
   const btnMode = makeBtn('mode', 'Plot mode', () => {
     const openMenu = getOpenMenu();
     if (openMenu) { openMenu.remove(); setOpenMenu(null); return; }
@@ -394,8 +392,8 @@ export function renderWaferGallery(
       (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
       (d.values?.length ?? 0) > 0
     );
-    const hasHbin   = dies.some(d => d.hbin != null);
-    const hasSbin   = dies.some(d => d.sbin != null);
+    const hasHbin = dies.some(d => d.hbin != null);
+    const hasSbin = dies.some(d => d.sbin != null);
 
     const currentMode    = sharedOpts.plotMode ?? 'hardBin';
     const currentTestIdx = sharedOpts.testIndex ?? 0;
@@ -408,9 +406,9 @@ export function renderWaferGallery(
 
     function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
       if (entry.testIndex !== undefined) {
-        applyShared({ plotMode: 'value', testIndex: entry.testIndex, logScale: entry.logScale });
+        updateShared({ plotMode: 'value', testIndex: entry.testIndex, logScale: entry.logScale });
       } else {
-        applyShared({ plotMode: entry.plotMode, testIndex: undefined });
+        updateShared({ plotMode: entry.plotMode, testIndex: undefined });
       }
       menu.remove();
       setOpenMenu(null);
@@ -433,8 +431,8 @@ export function renderWaferGallery(
             })))
       : [];
     const binEntries: ModeEntry[] = [
-      ...(hasHbin ? [{ plotMode: 'hardBin'  as PlotMode, label: MODE_LABELS.hardBin }] : []),
-      ...(hasSbin ? [{ plotMode: 'softBin'  as PlotMode, label: MODE_LABELS.softBin }] : []),
+      ...(hasHbin ? [{ plotMode: 'hardBin' as PlotMode, label: MODE_LABELS.hardBin }] : []),
+      ...(hasSbin ? [{ plotMode: 'softBin' as PlotMode, label: MODE_LABELS.softBin }] : []),
     ];
     const stackedEntries: ModeEntry[] = [
       ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
@@ -442,87 +440,13 @@ export function renderWaferGallery(
       ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
     ];
 
-    const menu = document.createElement('div');
-    const btnRect = btnMode.getBoundingClientRect();
-    Object.assign(menu.style, {
-      position:      'fixed',
-      top:           `${btnRect.bottom + 4}px`,
-      left:          `${btnRect.left}px`,
-      background:    CLR.menuBg,
-      border:        `1px solid ${CLR.menuBorder}`,
-      borderRadius:  '4px',
-      boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-      zIndex:        '9998',
-      minWidth:      '180px',
-      padding:       '4px 0',
-      pointerEvents: 'auto',
-    });
-
-    // ── Test Value section ──────────────────────────────────────────────────
-    if (testEntries.length) {
-      menu.appendChild(makeMenuSection('Test Value'));
-      if (testEntries.length <= INLINE_TEST_LIMIT) {
-        for (const entry of testEntries) {
-          menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), true, e => {
-            e.stopPropagation(); pickEntry(entry, menu);
-          }));
-        }
-      } else {
-        const cascadeActive = currentMode === 'value';
-        const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, () => {});
-        cascadeRow.style.display        = 'flex';
-        cascadeRow.style.justifyContent = 'space-between';
-        cascadeRow.style.alignItems     = 'center';
-        let subMenu: HTMLDivElement | null = null;
-        const openSub = () => {
-          if (subMenu) return;
-          const rowRect = cascadeRow.getBoundingClientRect();
-          subMenu = document.createElement('div');
-          Object.assign(subMenu.style, {
-            position: 'fixed', top: `${rowRect.top - 4}px`, left: `${rowRect.right + 2}px`,
-            background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: '9999',
-            minWidth: '160px', maxHeight: '320px', overflowY: 'auto',
-            padding: '4px 0', pointerEvents: 'auto',
-          });
-          for (const entry of testEntries) {
-            subMenu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
-              e.stopPropagation(); subMenu?.remove(); subMenu = null; pickEntry(entry, menu);
-            }));
-          }
-          document.body.appendChild(subMenu);
-          document.addEventListener('click', closeSub, { once: true });
-        };
-        const closeSub = () => { subMenu?.remove(); subMenu = null; };
-        cascadeRow.addEventListener('mouseenter', openSub);
-        cascadeRow.addEventListener('mouseleave', e => {
-          if (subMenu && subMenu.contains(e.relatedTarget as Node)) return;
-          closeSub();
-        });
-        menu.appendChild(cascadeRow);
-      }
-    }
-
-    // ── Bins section ────────────────────────────────────────────────────────
-    if (binEntries.length) {
-      menu.appendChild(makeMenuSection('Bins'));
-      for (const entry of binEntries) {
-        menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
-          e.stopPropagation(); pickEntry(entry, menu);
-        }));
-      }
-    }
-
-    // ── Lot aggregation section ──────────────────────────────────────────────
-    if (stackedEntries.length) {
-      menu.appendChild(makeMenuSection('Lot Aggregation'));
-      for (const entry of stackedEntries) {
-        menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
-          e.stopPropagation(); pickEntry(entry, menu);
-        }));
-      }
-    }
-
+    const menu = buildModeMenuEl(
+      btnMode.getBoundingClientRect(),
+      testEntries, binEntries, stackedEntries,
+      isCurrentEntry, pickEntry,
+      { makeMenuRow, makeMenuSection },
+      currentMode,
+    );
     document.body.appendChild(menu);
     setOpenMenu(menu);
   });
@@ -530,32 +454,32 @@ export function renderWaferGallery(
   const btnPalette = makeDropdown(
     'palette', 'Colour scheme',
     () => listColorSchemes().map(s => ({ value: s.name, label: s.label })),
-    () => sharedOpts.colorScheme ?? 'color',
-    v => applyShared({ colorScheme: v }),
+    () => sharedOpts.colorScheme ?? 'default',
+    v => updateShared({ colorScheme: v }),
   );
 
   const btnRings = makeBtn('rings', 'Toggle ring boundaries', () => {
-    applyShared({ showRingBoundaries: !sharedOpts.showRingBoundaries });
+    updateShared({ showRingBoundaries: !sharedOpts.showRingBoundaries });
     setActive(btnRings, !!sharedOpts.showRingBoundaries);
   });
 
   const btnQuadrants = makeBtn('quadrants', 'Toggle quadrant boundaries', () => {
-    applyShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries });
+    updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries });
     setActive(btnQuadrants, !!sharedOpts.showQuadrantBoundaries);
   });
 
   const btnLabels = makeBtn('labels', 'Toggle die labels', () => {
-    applyShared({ showText: !sharedOpts.showText });
+    updateShared({ showText: !sharedOpts.showText });
     setActive(btnLabels, !!sharedOpts.showText);
   });
 
   const btnReticle = makeBtn('reticle', 'Toggle reticle overlay', () => {
-    applyShared({ showReticle: !sharedOpts.showReticle });
+    updateShared({ showReticle: !sharedOpts.showReticle });
     setActive(btnReticle, !!sharedOpts.showReticle);
   });
 
   const btnXY = makeBtn('xyIndicator', 'Toggle XY axis indicator', () => {
-    applyShared({ showXYIndicator: !sharedOpts.showXYIndicator });
+    updateShared({ showXYIndicator: !sharedOpts.showXYIndicator });
     setActive(btnXY, !!sharedOpts.showXYIndicator);
   });
 
@@ -596,7 +520,7 @@ export function renderWaferGallery(
     'aggr', 'Aggregation method',
     () => AGGR_METHOD_ITEMS,
     () => sharedOpts.aggrMethod ?? 'mean',
-    v => applyShared({ aggrMethod: v }),
+    v => updateShared({ aggrMethod: v }),
   );
   function syncAggrMethodBtn(): void {
     const isStackedValues = sharedOpts.plotMode === 'stackedValues';
@@ -605,7 +529,7 @@ export function renderWaferGallery(
   syncAggrMethodBtn();
 
   const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
-    applyShared({ logScale: !sharedOpts.logScale });
+    updateShared({ logScale: !sharedOpts.logScale });
     syncLogScaleBtn();
   });
   function syncLogScaleBtn(): void {
@@ -617,16 +541,16 @@ export function renderWaferGallery(
 
   const btnRotate = makeBtn('rotateCW', 'Rotate all 90\xB0 clockwise', () => {
     const r = sharedOpts.rotation ?? 0;
-    applyShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] });
+    updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] });
   });
 
   const btnFlipH = makeBtn('flipH', 'Flip all horizontal', () => {
-    applyShared({ flipX: !sharedOpts.flipX });
+    updateShared({ flipX: !sharedOpts.flipX });
     setActive(btnFlipH, !!sharedOpts.flipX);
   });
 
   const btnFlipV = makeBtn('flipV', 'Flip all vertical', () => {
-    applyShared({ flipY: !sharedOpts.flipY });
+    updateShared({ flipY: !sharedOpts.flipY });
     setActive(btnFlipV, !!sharedOpts.flipY);
   });
 
@@ -836,7 +760,7 @@ export function renderWaferGallery(
       });
       entry.addEventListener('click', () => {
         const next = sharedOpts.highlightBin === bin ? undefined : bin;
-        applyShared({ highlightBin: next });
+        updateShared({ highlightBin: next });
       });
 
       legendEl.appendChild(entry);
@@ -867,7 +791,7 @@ export function renderWaferGallery(
       const method = (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => ({
         wafer: baseWafer,
-        dies:  aggregateValues(allDies, method, def.testNumber ?? def.index),
+        dies:  aggregateValues(allDies, method, def.testNumber ?? def.index) as Die[],
         label: `${def.name} · ${method}`,
         sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }] },
       }));
@@ -884,7 +808,7 @@ export function renderWaferGallery(
 
       return defs.map(def => ({
         wafer: baseWafer,
-        dies:  aggregateBinCounts(allDies, def.bin, 'hard'),
+        dies:  aggregateBinCounts(allDies, def.bin, 'hard') as Die[],
         label: `${def.bin} · ${def.name}`,
         sceneOptions: { hbinDefs: [{ bin: def.bin, name: def.name }] },
       }));
@@ -901,7 +825,7 @@ export function renderWaferGallery(
 
       return defs.map(def => ({
         wafer: baseWafer,
-        dies:  aggregateBinCounts(allDies, def.bin, 'soft'),
+        dies:  aggregateBinCounts(allDies, def.bin, 'soft') as Die[],
         label: `${def.bin} · ${def.name}`,
         sceneOptions: { sbinDefs: [{ bin: def.bin, name: def.name }] },
       }));
@@ -924,7 +848,9 @@ export function renderWaferGallery(
 
   // Called from toolbar interactions — updates state, handles stacked-mode card rebuilds,
   // propagates to cards, fires callback.
-  function applyShared(partial: Partial<WaferSceneOptions>): void {
+  // fireCallback=true (default) fires onSceneOptionsChange — used for toolbar interactions.
+  // fireCallback=false is used by the public setOptions API to avoid re-entrant callbacks.
+  function updateShared(partial: Partial<WaferSceneOptions>, { fireCallback = true } = {}): void {
     const prevMode = sharedOpts.plotMode;
     sharedOpts = { ...sharedOpts, ...partial };
     const newMode    = sharedOpts.plotMode!;
@@ -955,42 +881,10 @@ export function renderWaferGallery(
     rebuildLegend();
     syncAggrMethodBtn();
     syncLegendStyleBtn();
-    syncLogScaleBtn();
-    options.onSceneOptionsChange?.(sharedOpts);
-  }
-
-  // Called from the public setOptions API — updates state and cards, does NOT fire callback.
-  function syncShared(partial: Partial<WaferSceneOptions>): void {
-    const prevMode = sharedOpts.plotMode;
-    sharedOpts = { ...sharedOpts, ...partial };
-    const newMode    = sharedOpts.plotMode!;
-    const nowStacked = STACKED_MODES.has(newMode);
-    const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
-
-    if (partial.plotMode !== undefined) {
-      if (nowStacked) {
-        // Switching into a stacked mode — aggregate internally and apply extra scene opts.
-        const extra = stackedSharedOpts(newMode);
-        sharedOpts = { ...sharedOpts, ...extra };
-        buildCards(buildStackedItems(newMode));
-      } else if (wasStacked) {
-        // Clear stacked-specific options when leaving stacked mode
-        const { valueRange, lotSize, aggrMethod, ...cleanOpts } = sharedOpts;
-        sharedOpts = cleanOpts;
-        buildCards(originalItems);
-      } else {
-        for (const ctrl of cardControllers) ctrl.setOptions(partial);
-      }
-    } else if (partial.aggrMethod !== undefined && newMode === 'stackedValues') {
-      // Aggregation method changed while in stackedValues — re-aggregate.
-      buildCards(buildStackedItems('stackedValues'));
-    } else {
-      for (const ctrl of cardControllers) ctrl.setOptions(partial);
+    if (fireCallback) {
+      syncLogScaleBtn();
+      options.onSceneOptionsChange?.(sharedOpts);
     }
-
-    rebuildLegend();
-    syncAggrMethodBtn();
-    syncLegendStyleBtn();
   }
 
   // ── Card building ──────────────────────────────────────────────────────────
@@ -1301,7 +1195,7 @@ export function renderWaferGallery(
     },
 
     setOptions(partial: Partial<WaferSceneOptions>): void {
-      syncShared(partial);
+      updateShared(partial, { fireCallback: false });
     },
 
     getOptions(): WaferSceneOptions {

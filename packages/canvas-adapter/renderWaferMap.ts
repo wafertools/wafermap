@@ -4,14 +4,15 @@ import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
-import { toCanvas, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
+import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
-import { CLR, ROTATIONS, INLINE_TEST_LIMIT, MODE_LABELS, createTooltip, createToolbarHelpers } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, createTooltip, createToolbarHelpers, buildModeMenuEl, type ModeEntry } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
 } from './summaryPanel.js';
+import { hardBinColor, softBinColor } from '../renderer/colorMap.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -57,6 +58,12 @@ export interface WaferSceneOptions {
    * Falls back to linear when vMin ≤ 0.
    */
   logScale?:               boolean;
+  /**
+   * Controls the default colorbar range when the active testDef has spec limits.
+   * `'spec'` (default): colorbar spans [limitLow, limitHigh]; out-of-spec dies show fail colors.
+   * `'data'`: colorbar spans actual data min/max; out-of-spec coloring still applies.
+   */
+  colorbarRangeMode?:      'spec' | 'data';
   /**
    * Aggregation method for `stackedValues` mode.
    * Drives both the per-die aggregation and the hover tooltip label.
@@ -123,6 +130,12 @@ export interface MountOptions extends Omit<ToCanvasOptions, 'viewport'> {
     yield:        import('../renderer/buildWaferMap.js').YieldSummary;
     dataCoverage: { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number };
   };
+  /**
+   * Custom tooltip renderer. When provided, replaces the built-in tooltip content.
+   * Return a string (set as innerHTML), an HTMLElement (appended directly), or null to suppress the tooltip.
+   * The built-in tooltip wrapper (positioning, show/hide behaviour) is preserved.
+   */
+  renderTooltip?: (die: Die) => string | HTMLElement | null;
 }
 
 export interface WaferCanvasController {
@@ -142,6 +155,11 @@ export interface WaferCanvasController {
   setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the current stats summary used by the built-in findings panel. */
   setStatsSummary(summary: StatsSummary | undefined): void;
+  /**
+   * Returns the current bin legend entries in `hardBin`/`softBin` modes, `null` in other modes.
+   * Each entry includes the bin number, display name, and color.
+   */
+  getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null;
   /** Remove all event listeners and DOM elements. */
   destroy(): void;
 }
@@ -169,6 +187,7 @@ export function renderWaferMap(
     maxZoom              = 20,
     summaryPanel:        summaryPanelOpts,
     waferResult,
+    renderTooltip,
     sceneOptions: initialSceneOptions = {},
     ...drawOptions
   } = options;
@@ -182,7 +201,7 @@ export function renderWaferMap(
   let selectedKeys    = new Set<string>();
   let sceneOpts: WaferSceneOptions = {
     plotMode:               'hardBin',
-    colorScheme:            'color',
+    colorScheme:            'default',
     showText:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
@@ -242,6 +261,7 @@ export function renderWaferMap(
       aggrMethod:             so.aggrMethod,
       lotSize:                so.lotSize,
       dataAxisFlip:           so.dataAxisFlip,
+      colorbarRangeMode:      so.colorbarRangeMode,
       fallbackFormat:         currentFallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
@@ -261,15 +281,15 @@ export function renderWaferMap(
   let autoSummaryPanelEl: HTMLDivElement | null = null;
   let autoSummaryPanelWrapper: HTMLDivElement | null = null;
 
-  function renderSummaryPanel(): void {
-    if (!summaryPanelEl) return;
-    renderWaferSummaryContent(summaryPanelEl, {
+  function renderSummaryPanelInto(el: HTMLDivElement, rerender: () => void): void {
+    renderWaferSummaryContent(el, {
       wafer,
       dies:         currentDies,
       yieldSummary: waferResult?.yield ?? {
         passDies: 0, failDies: 0, edgeExcludedDies: 0, partialDies: 0,
         totalDies: currentDies.filter(d => !d.partial && !d.edgeExcluded).length,
         yieldPercent: null,
+        yieldPercentGross: null,
       },
       dataCoverage: waferResult?.dataCoverage ?? {
         filledDies: currentDies.filter(d => !d.partial).length,
@@ -277,15 +297,15 @@ export function renderWaferMap(
         edgeExcludedDies: 0,
         ratio: 1,
       },
-      hbinDefs:       sceneOpts.hbinDefs,
-      sbinDefs:       sceneOpts.sbinDefs,
-      testDefs:       sceneOpts.testDefs,
-      statsSummary:   currentStatsSummary,
-      passBins:       [1],
-      ringCount:      sceneOpts.ringCount ?? 4,
-      fallbackFormat: currentFallbackFormat,
+      hbinDefs:        sceneOpts.hbinDefs,
+      sbinDefs:        sceneOpts.sbinDefs,
+      testDefs:        sceneOpts.testDefs,
+      statsSummary:    currentStatsSummary,
+      passBins:        [1],
+      ringCount:       sceneOpts.ringCount ?? 4,
+      fallbackFormat:  currentFallbackFormat,
       activeFindingId: summaryActiveFindingId,
-      onFindingClick: (finding, row) => {
+      onFindingClick: (finding, _row) => {
         if (summaryActiveFindingId === finding.id) {
           summaryActiveFindingId = null;
           selectionFromKeys([]);
@@ -294,49 +314,17 @@ export function renderWaferMap(
           summaryActiveFindingId = finding.id;
           applyFindingHighlightFromPanel(finding);
         }
-        renderSummaryPanel();
-        void row;
+        rerender();
       },
     });
   }
 
+  function renderSummaryPanel(): void {
+    if (summaryPanelEl) renderSummaryPanelInto(summaryPanelEl, renderSummaryPanel);
+  }
+
   function renderAutoSummaryPanel(): void {
-    if (!autoSummaryPanelEl) return;
-    renderWaferSummaryContent(autoSummaryPanelEl, {
-      wafer,
-      dies:         currentDies,
-      yieldSummary: waferResult?.yield ?? {
-        passDies: 0, failDies: 0, edgeExcludedDies: 0, partialDies: 0,
-        totalDies: currentDies.filter(d => !d.partial && !d.edgeExcluded).length,
-        yieldPercent: null,
-      },
-      dataCoverage: waferResult?.dataCoverage ?? {
-        filledDies: currentDies.filter(d => !d.partial).length,
-        totalDies:  currentDies.length,
-        edgeExcludedDies: 0,
-        ratio: 1,
-      },
-      hbinDefs:       sceneOpts.hbinDefs,
-      sbinDefs:       sceneOpts.sbinDefs,
-      testDefs:       sceneOpts.testDefs,
-      statsSummary:   currentStatsSummary,
-      passBins:       [1],
-      ringCount:      sceneOpts.ringCount ?? 4,
-      fallbackFormat: currentFallbackFormat,
-      activeFindingId: summaryActiveFindingId,
-      onFindingClick: (finding, row) => {
-        if (summaryActiveFindingId === finding.id) {
-          summaryActiveFindingId = null;
-          selectionFromKeys([]);
-          applyOpts({ highlightBin: undefined });
-        } else {
-          summaryActiveFindingId = finding.id;
-          applyFindingHighlightFromPanel(finding);
-        }
-        renderAutoSummaryPanel();
-        void row;
-      },
-    });
+    if (autoSummaryPanelEl) renderSummaryPanelInto(autoSummaryPanelEl, renderAutoSummaryPanel);
   }
 
   function applyFindingHighlightFromPanel(finding: StatsFinding): void {
@@ -397,6 +385,8 @@ export function renderWaferMap(
   let syncLegendStyleBtnFn: (() => void) | null = null;
   // Called after every option change to keep the log scale button in sync.
   let syncLogScaleBtnFn: (() => void) | null = null;
+  // Called after every option change to keep the colorbar range mode button in sync.
+  let syncColorbarRangeBtnFn: (() => void) | null = null;
 
   function selectionFromKeys(keys: string[] | undefined): void {
     selectedKeys = new Set(keys ?? []);
@@ -499,53 +489,10 @@ export function renderWaferMap(
         // Mode dropdown: when testDefs are defined, show one entry per named test
         // plus the bin modes. Selecting a named test sets plotMode:'value' + testIndex.
         // Selecting a bin mode sets plotMode to that mode and clears testIndex.
-        type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string; logScale?: boolean };
-
         function isCurrentEntry(e: ModeEntry): boolean {
           if (e.plotMode !== (sceneOpts.plotMode ?? 'hardBin')) return false;
           if (e.plotMode === 'value') return (sceneOpts.testIndex ?? 0) === (e.testIndex ?? 0);
           return true;
-        }
-
-        // Build a menu row and wire hover/click.
-        function makeMenuRow(
-          label: string,
-          active: boolean,
-          indent: boolean,
-          onClick: (e: MouseEvent) => void,
-        ): HTMLDivElement {
-          const row = document.createElement('div');
-          row.textContent = label;
-          Object.assign(row.style, {
-            padding:    `6px 14px 6px ${indent ? '26px' : '14px'}`,
-            fontSize:   '12px',
-            cursor:     'pointer',
-            color:      active ? CLR.iconActive : '#333',
-            fontWeight: active ? '700' : '400',
-            background: active ? CLR.menuActive : 'transparent',
-            whiteSpace: 'nowrap',
-          });
-          row.addEventListener('mouseenter', () => { if (!active) row.style.background = CLR.menuHover; });
-          row.addEventListener('mouseleave', () => { row.style.background = active ? CLR.menuActive : 'transparent'; });
-          row.addEventListener('click', onClick);
-          return row;
-        }
-
-        // Non-clickable section divider with label.
-        function makeMenuSection(label: string): HTMLDivElement {
-          const el = document.createElement('div');
-          el.textContent = label;
-          Object.assign(el.style, {
-            padding:       '5px 14px 2px',
-            fontSize:      '10px',
-            fontWeight:    '600',
-            letterSpacing: '0.05em',
-            color:         '#888',
-            textTransform: 'uppercase',
-            pointerEvents: 'none',
-            userSelect:    'none',
-          });
-          return el;
         }
 
         function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
@@ -570,8 +517,8 @@ export function renderWaferMap(
             (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
             (d.values?.length ?? 0) > 0
           );
-          const hasHbin   = dies.some(d => d.hbin != null);
-          const hasSbin   = dies.some(d => d.sbin != null);
+          const hasHbin = dies.some(d => d.hbin != null);
+          const hasSbin = dies.some(d => d.sbin != null);
 
           const testEntries: ModeEntry[] = hasValues
             ? (testDefs?.length
@@ -590,8 +537,8 @@ export function renderWaferMap(
                   })))
             : [];
           const binEntries: ModeEntry[] = [
-            ...(hasHbin ? [{ plotMode: 'hardBin'  as PlotMode, label: MODE_LABELS.hardBin }] : []),
-            ...(hasSbin ? [{ plotMode: 'softBin'  as PlotMode, label: MODE_LABELS.softBin }] : []),
+            ...(hasHbin ? [{ plotMode: 'hardBin' as PlotMode, label: MODE_LABELS.hardBin }] : []),
+            ...(hasSbin ? [{ plotMode: 'softBin' as PlotMode, label: MODE_LABELS.softBin }] : []),
           ];
           // Stacked modes are only valid for lot-aggregated data — the scene knows this via isLotStack.
           const stackedEntries: ModeEntry[] = currentScene.isLotStack ? [
@@ -600,121 +547,20 @@ export function renderWaferMap(
             ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
           ] : [];
 
-          const menu = document.createElement('div');
-          const btnRect = btnMode.getBoundingClientRect();
-          Object.assign(menu.style, {
-            position:      'fixed',
-            top:           `${btnRect.bottom + 4}px`,
-            left:          `${btnRect.left}px`,
-            background:    CLR.menuBg,
-            border:        `1px solid ${CLR.menuBorder}`,
-            borderRadius:  '4px',
-            boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-            zIndex:        '9998',
-            minWidth:      '180px',
-            padding:       '4px 0',
-            pointerEvents: 'auto',
-          });
-
-          // ── Test Value section ────────────────────────────────────────────
-          if (testEntries.length) {
-            menu.appendChild(makeMenuSection('Test Value'));
-
-            if (testEntries.length <= INLINE_TEST_LIMIT) {
-              // Inline: one row per test, indented.
-              for (const entry of testEntries) {
-                const active = isCurrentEntry(entry);
-                menu.appendChild(makeMenuRow(entry.label, active, true, e => {
-                  e.stopPropagation();
-                  pickEntry(entry, menu);
-                }));
-              }
-            } else {
-              // Cascade: single "Test Value ▶" row that opens a submenu.
-              const cascadeActive = (sceneOpts.plotMode ?? 'hardBin') === 'value';
-              const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, () => {});
-              // Remove default pointer cursor on the cascade row itself — submenu handles selection.
-              cascadeRow.style.display       = 'flex';
-              cascadeRow.style.justifyContent = 'space-between';
-              cascadeRow.style.alignItems    = 'center';
-
-              let subMenu: HTMLDivElement | null = null;
-
-              const openSub = () => {
-                if (subMenu) return;
-                const rowRect = cascadeRow.getBoundingClientRect();
-                subMenu = document.createElement('div');
-                Object.assign(subMenu.style, {
-                  position:  'fixed',
-                  top:       `${rowRect.top - 4}px`,
-                  left:      `${rowRect.right + 2}px`,
-                  background: CLR.menuBg,
-                  border:    `1px solid ${CLR.menuBorder}`,
-                  borderRadius: '4px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                  zIndex:    '9999',
-                  minWidth:  '160px',
-                  maxHeight: '320px',
-                  overflowY: 'auto',
-                  padding:   '4px 0',
-                  pointerEvents: 'auto',
-                });
-                for (const entry of testEntries) {
-                  const active = isCurrentEntry(entry);
-                  subMenu.appendChild(makeMenuRow(entry.label, active, false, e => {
-                    e.stopPropagation();
-                    subMenu?.remove(); subMenu = null;
-                    pickEntry(entry, menu);
-                  }));
-                }
-                document.body.appendChild(subMenu);
-                document.addEventListener('click', closeSub, { once: true });
-              };
-
-              const closeSub = () => { subMenu?.remove(); subMenu = null; };
-
-              cascadeRow.addEventListener('mouseenter', openSub);
-              cascadeRow.addEventListener('mouseleave', (e) => {
-                // Keep open if moving into the submenu.
-                if (subMenu && subMenu.contains(e.relatedTarget as Node)) return;
-                closeSub();
-              });
-
-              menu.appendChild(cascadeRow);
-            }
-          }
-
-          // ── Bins section ─────────────────────────────────────────────────
-          if (binEntries.length) {
-            menu.appendChild(makeMenuSection('Bins'));
-            for (const entry of binEntries) {
-              const active = isCurrentEntry(entry);
-              menu.appendChild(makeMenuRow(entry.label, active, false, e => {
-                e.stopPropagation();
-                pickEntry(entry, menu);
-              }));
-            }
-          }
-
-          // ── Stacked (lot aggregation) section ─────────────────────────────
-          if (stackedEntries.length) {
-            menu.appendChild(makeMenuSection('Lot Aggregation'));
-            for (const entry of stackedEntries) {
-              const active = isCurrentEntry(entry);
-              menu.appendChild(makeMenuRow(entry.label, active, false, e => {
-                e.stopPropagation();
-                pickEntry(entry, menu);
-              }));
-            }
-          }
-
+          const menu = buildModeMenuEl(
+            btnMode.getBoundingClientRect(),
+            testEntries, binEntries, stackedEntries,
+            isCurrentEntry, pickEntry,
+            { makeMenuRow, makeMenuSection },
+            sceneOpts.plotMode ?? 'hardBin',
+          );
           document.body.appendChild(menu);
           setOpenMenu(menu);
         });
         const btnPalette = makeDropdown(
           'palette', 'Colour scheme',
           () => listColorSchemes().map(s => ({ value: s.name, label: s.label })),
-          () => sceneOpts.colorScheme ?? 'color',
+          () => sceneOpts.colorScheme ?? 'default',
           v => applyOpts({ colorScheme: v }),
         );
         const btnRings = makeBtn('rings', 'Toggle ring boundaries', () => {
@@ -766,6 +612,25 @@ export function renderWaferMap(
         };
         syncLogScaleBtnFn();
 
+        const activeTestDefHasLimits = () => {
+          const td = sceneOpts.testDefs?.find(t => (t.index ?? t.testNumber) === sceneOpts.testIndex);
+          return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
+        };
+        const btnColorbarRange = makeBtn('specRange', 'Colorbar range: spec limits', () => {
+          const next = sceneOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
+          applyOpts({ colorbarRangeMode: next });
+        });
+        syncColorbarRangeBtnFn = () => {
+          const visible = sceneOpts.plotMode === 'value' && activeTestDefHasLimits();
+          btnColorbarRange.style.display = visible ? '' : 'none';
+          const isSpec = (sceneOpts.colorbarRangeMode ?? 'spec') === 'spec';
+          setActive(btnColorbarRange, isSpec);
+          btnColorbarRange.ariaLabel = isSpec
+            ? 'Colorbar range: spec limits (click for data range)'
+            : 'Colorbar range: data range (click for spec limits)';
+        };
+        syncColorbarRangeBtnFn();
+
         const btnRotate = makeBtn('rotateCW', 'Rotate 90° clockwise', () => {
           const r = sceneOpts.rotation ?? 0;
           // Positive rotation is CCW in standard math convention, so decrement to rotate CW.
@@ -783,6 +648,7 @@ export function renderWaferMap(
         if (showPlotModeSelector) toolbar.appendChild(btnMode);
         toolbar.appendChild(btnPalette);
         toolbar.appendChild(btnLogScale);
+        toolbar.appendChild(btnColorbarRange);
         toolbar.appendChild(makeSep());
         toolbar.appendChild(btnRings);
         toolbar.appendChild(btnQuadrants);
@@ -880,6 +746,7 @@ export function renderWaferMap(
     if (!onlyLegendStyle) rebuildScene();
     syncLegendStyleBtnFn?.();
     syncLogScaleBtnFn?.();
+    syncColorbarRangeBtnFn?.();
     render();
   }
 
@@ -901,12 +768,6 @@ export function renderWaferMap(
 
     // Hold the right-side reserve constant across mode switches so the wafer
     // doesn't resize when toggling between value and bin modes.
-    // Mirror the adaptive thresholds from toCanvas so the stable reserve matches
-    // whatever legend mode toCanvas will actually choose.
-    const BIN_LEGEND_W        = 110;
-    const BIN_LEGEND_W_COMPACT = 64;
-    const BIN_LEGEND_ADAPT_COMPACT  = 280;
-    const BIN_LEGEND_ADAPT_FLOATING = 180;
     const cssW = Math.floor(canvas.clientWidth || canvas.width);
     const hasBinData = !!(currentScene.hbinDefs?.length || currentScene.sbinDefs?.length ||
       currentScene.dies.some(d => d.hbin != null || d.sbin != null));
@@ -1149,11 +1010,28 @@ export function renderWaferMap(
 
     if (tooltip) {
       if (die) {
-        const hp = currentScene.hoverPoints[currentScene.dies.indexOf(die)];
-        tooltip.style.display = 'block';
-        tooltip.style.left    = `${e.clientX + 14}px`;
-        tooltip.style.top     = `${e.clientY - 8}px`;
-        tooltip.innerHTML     = hp?.text ?? `Die (${die.x}, ${die.y})`;
+        if (renderTooltip) {
+          const content = renderTooltip(die);
+          if (content === null) {
+            tooltip.style.display = 'none';
+          } else {
+            tooltip.style.display = 'block';
+            tooltip.style.left    = `${e.clientX + 14}px`;
+            tooltip.style.top     = `${e.clientY - 8}px`;
+            if (typeof content === 'string') {
+              tooltip.innerHTML = content;
+            } else {
+              tooltip.innerHTML = '';
+              tooltip.appendChild(content);
+            }
+          }
+        } else {
+          const hp = currentScene.hoverPoints[currentScene.dies.indexOf(die)];
+          tooltip.style.display = 'block';
+          tooltip.style.left    = `${e.clientX + 14}px`;
+          tooltip.style.top     = `${e.clientY - 8}px`;
+          tooltip.innerHTML     = hp?.text ?? `Die (${die.x}, ${die.y})`;
+        }
       } else {
         tooltip.style.display = 'none';
       }
@@ -1443,6 +1321,20 @@ export function renderWaferMap(
         renderAutoSummaryPanel();
       }
       refreshFindingsButton();
+    },
+
+    getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null {
+      const mode = sceneOpts.plotMode;
+      if (mode !== 'hardBin' && mode !== 'softBin') return null;
+      const isHard = mode === 'hardBin';
+      const defs = isHard ? sceneOpts.hbinDefs : sceneOpts.sbinDefs;
+      const bins = [...new Set(currentDies.map(d => isHard ? d.hbin : d.sbin).filter((b): b is number => b !== undefined))].sort((a, b) => a - b);
+      if (!bins.length) return null;
+      return bins.map(bin => {
+        const def = defs?.find(d => d.bin === bin);
+        const color = def?.color ?? (isHard ? hardBinColor(bin) : softBinColor(bin));
+        return { bin, name: def?.name ?? `Bin ${bin}`, color };
+      });
     },
 
     destroy(): void {

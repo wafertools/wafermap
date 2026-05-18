@@ -217,12 +217,6 @@ function kvRow(key: string, value: string): HTMLDivElement {
 
 // ── Section builders ──────────────────────────────────────────────────────────
 
-const KNOWN_META_KEYS = new Set([
-  'lot', 'lotId', 'lot_id', 'wafer', 'waferId', 'wafer_id',
-  'testDate', 'test_date', 'date', 'temp', 'temperature',
-  'operator', 'product', 'device', 'program', 'testProgram', 'test_program',
-]);
-
 function prettyKey(k: string): string {
   return k
     .replace(/([A-Z])/g, ' $1')
@@ -238,9 +232,7 @@ export function buildMetadataSection(meta: Record<string, unknown>): HTMLDivElem
   const wrap = el('div');
   wrap.appendChild(sectionTitle('Wafer Info'));
   for (const [k, v] of entries) {
-    const label = KNOWN_META_KEYS.has(k) ? prettyKey(k) : prettyKey(k);
-    kvRow(label, String(v));
-    wrap.appendChild(kvRow(label, String(v)));
+    wrap.appendChild(kvRow(prettyKey(k), String(v)));
   }
   return wrap;
 }
@@ -298,22 +290,26 @@ export function buildBinSection(
   return wrap;
 }
 
-export function buildRingSection(
+type RegionBuilder = (dies: Die[], wafer: Wafer, ringCount: number) => ReturnType<typeof buildRingRegions>;
+
+function buildRegionYieldSection(
   dies: Die[],
   wafer: Wafer,
   ringCount: number,
   passBins: number[],
+  regionBuilder: RegionBuilder,
+  title: string,
 ): HTMLDivElement | null {
-  const regions = buildRingRegions(dies, wafer, ringCount);
+  const hasBins = dies.some(d => d.hbin != null || d.sbin != null);
+  if (!hasBins) return null;
+  const regions = regionBuilder(dies, wafer, ringCount);
   if (!regions.length) return null;
 
   const passSet  = new Set(passBins);
   const dieByKey = new Map<string, Die>(dies.map(d => [`${d.x},${d.y}`, d]));
-  const hasBins  = dies.some(d => d.hbin != null || d.sbin != null);
-  if (!hasBins) return null;
 
   const wrap = el('div');
-  wrap.appendChild(sectionTitle('Ring Yield'));
+  wrap.appendChild(sectionTitle(title));
   for (const region of regions) {
     let pass = 0, total = 0;
     for (const key of region.dieKeys) {
@@ -325,10 +321,18 @@ export function buildRingSection(
       if (passSet.has(b)) pass++;
     }
     if (!total) continue;
-    const pct = (pass / total) * 100;
-    wrap.appendChild(progressRow(region.label, pct));
+    wrap.appendChild(progressRow(region.label, (pass / total) * 100));
   }
   return wrap;
+}
+
+export function buildRingSection(
+  dies: Die[],
+  wafer: Wafer,
+  ringCount: number,
+  passBins: number[],
+): HTMLDivElement | null {
+  return buildRegionYieldSection(dies, wafer, ringCount, passBins, buildRingRegions, 'Ring Yield');
 }
 
 export function buildQuadrantSection(
@@ -337,31 +341,7 @@ export function buildQuadrantSection(
   ringCount: number,
   passBins: number[],
 ): HTMLDivElement | null {
-  const regions = buildQuadrantRegions(dies, wafer, ringCount);
-  if (!regions.length) return null;
-
-  const passSet  = new Set(passBins);
-  const dieByKey = new Map<string, Die>(dies.map(d => [`${d.x},${d.y}`, d]));
-  const hasBins  = dies.some(d => d.hbin != null || d.sbin != null);
-  if (!hasBins) return null;
-
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle('Quadrant Yield'));
-  for (const region of regions) {
-    let pass = 0, total = 0;
-    for (const key of region.dieKeys) {
-      const d = dieByKey.get(key);
-      if (!d || d.partial || d.edgeExcluded) continue;
-      const b = d.hbin ?? d.sbin;
-      if (b == null) continue;
-      total++;
-      if (passSet.has(b)) pass++;
-    }
-    if (!total) continue;
-    const pct = (pass / total) * 100;
-    wrap.appendChild(progressRow(region.label, pct));
-  }
-  return wrap;
+  return buildRegionYieldSection(dies, wafer, ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
 }
 
 const TEST_INLINE_LIMIT = 3;
@@ -375,12 +355,12 @@ export function buildTestSection(
 
   // Build a unified list of { testNumber, name, unit } from testDefs when present,
   // or from the testNumber keys found in die.testValues when absent.
-  type TestEntry = { testNumber: number; name: string; unit?: string };
+  type TestEntry = { testNumber: number; name: string; unit?: string; limitLow?: number; limitHigh?: number };
   let entries: TestEntry[];
 
   if (testDefs?.length) {
     entries = testDefs
-      .map(def => ({ testNumber: def.testNumber ?? def.index!, name: def.name, unit: def.unit }))
+      .map(def => ({ testNumber: def.testNumber ?? def.index!, name: def.name, unit: def.unit, limitLow: def.limitLow, limitHigh: def.limitHigh }))
       .filter(e => e.testNumber !== undefined);
   } else {
     const testNumbers = [...new Set(activeDies.flatMap(d =>
@@ -422,6 +402,23 @@ export function buildTestSection(
     section.appendChild(kvRow('Min',  f(min)));
     section.appendChild(kvRow('Mean', f(mean)));
     section.appendChild(kvRow('Max',  f(max)));
+
+    if (entry.limitLow !== undefined) {
+      section.appendChild(kvRow('LSL', f(entry.limitLow)));
+    }
+    if (entry.limitHigh !== undefined) {
+      section.appendChild(kvRow('USL', f(entry.limitHigh)));
+    }
+    if (entry.limitLow !== undefined || entry.limitHigh !== undefined) {
+      const specFail = vals.filter(v =>
+        (entry.limitLow !== undefined && v < entry.limitLow) ||
+        (entry.limitHigh !== undefined && v > entry.limitHigh),
+      ).length;
+      const specPass = vals.length - specFail;
+      const specYield = vals.length > 0 ? ((specPass / vals.length) * 100).toFixed(1) + '%' : '—';
+      section.appendChild(kvRow('Spec yield', specYield));
+    }
+
     content.appendChild(section);
   }
   return outer;
@@ -575,31 +572,30 @@ export function buildLotBinSection(
   return buildBinSection(allDies, binDefs, mode);
 }
 
-/** Aggregate ring yield across all wafers in the lot. */
-export function buildLotRingSection(
-  allDies: Die[],
+function buildLotRegionYieldSection(
+  diesByWafer: Die[][],
   allWafers: Wafer[],
   ringCount: number,
   passBins: number[],
+  regionBuilder: RegionBuilder,
+  title: string,
 ): HTMLDivElement | null {
   if (!allWafers.length) return null;
-  const passSet  = new Set(passBins);
-  const hasBins  = allDies.some(d => d.hbin != null || d.sbin != null);
+  const hasBins = diesByWafer.some(wd => wd.some(d => d.hbin != null || d.sbin != null));
   if (!hasBins) return null;
 
-  // Aggregate pass/total per ring label across all wafers
-  const ringTotals = new Map<string, { pass: number; total: number }>();
-  const ringOrder: string[] = [];
+  const passSet = new Set(passBins);
+  const totals  = new Map<string, { pass: number; total: number }>();
+  const order: string[] = [];
 
   for (let wi = 0; wi < allWafers.length; wi++) {
-    const wafer   = allWafers[wi];
-    const wDies   = allDies.filter(d => (d as { _waferIndex?: number })._waferIndex === wi);
-    if (!wDies.length) continue;
-    const regions = buildRingRegions(wDies, wafer, ringCount);
+    const wDies = diesByWafer[wi];
+    if (!wDies?.length) continue;
+    const regions  = regionBuilder(wDies, allWafers[wi], ringCount);
     const dieByKey = new Map(wDies.map(d => [`${d.x},${d.y}`, d]));
     for (const region of regions) {
-      if (!ringOrder.includes(region.label)) ringOrder.push(region.label);
-      const acc = ringTotals.get(region.label) ?? { pass: 0, total: 0 };
+      if (!order.includes(region.label)) order.push(region.label);
+      const acc = totals.get(region.label) ?? { pass: 0, total: 0 };
       for (const key of region.dieKeys) {
         const d = dieByKey.get(key);
         if (!d || d.partial || d.edgeExcluded) continue;
@@ -608,66 +604,39 @@ export function buildLotRingSection(
         acc.total++;
         if (passSet.has(b)) acc.pass++;
       }
-      ringTotals.set(region.label, acc);
+      totals.set(region.label, acc);
     }
   }
-  if (!ringTotals.size) return null;
+  if (!totals.size) return null;
 
   const wrap = el('div');
-  wrap.appendChild(sectionTitle('Ring Yield'));
-  for (const label of ringOrder) {
-    const acc = ringTotals.get(label);
+  wrap.appendChild(sectionTitle(title));
+  for (const label of order) {
+    const acc = totals.get(label);
     if (!acc || !acc.total) continue;
     wrap.appendChild(progressRow(label, (acc.pass / acc.total) * 100));
   }
   return wrap;
 }
 
-/** Aggregate quadrant yield across all wafers in the lot. */
-export function buildLotQuadrantSection(
-  allDies: Die[],
+/** Aggregate ring yield across all wafers in the lot. */
+export function buildLotRingSection(
+  diesByWafer: Die[][],
   allWafers: Wafer[],
   ringCount: number,
   passBins: number[],
 ): HTMLDivElement | null {
-  if (!allWafers.length) return null;
-  const passSet = new Set(passBins);
-  const hasBins = allDies.some(d => d.hbin != null || d.sbin != null);
-  if (!hasBins) return null;
+  return buildLotRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildRingRegions, 'Ring Yield');
+}
 
-  const quadTotals = new Map<string, { pass: number; total: number }>();
-  const quadOrder: string[] = [];
-
-  for (let wi = 0; wi < allWafers.length; wi++) {
-    const wafer    = allWafers[wi];
-    const wDies    = allDies.filter(d => (d as { _waferIndex?: number })._waferIndex === wi);
-    if (!wDies.length) continue;
-    const regions  = buildQuadrantRegions(wDies, wafer, ringCount);
-    const dieByKey = new Map(wDies.map(d => [`${d.x},${d.y}`, d]));
-    for (const region of regions) {
-      if (!quadOrder.includes(region.label)) quadOrder.push(region.label);
-      const acc = quadTotals.get(region.label) ?? { pass: 0, total: 0 };
-      for (const key of region.dieKeys) {
-        const d = dieByKey.get(key);
-        if (!d || d.partial || d.edgeExcluded) continue;
-        const b = d.hbin ?? d.sbin;
-        if (b == null) continue;
-        acc.total++;
-        if (passSet.has(b)) acc.pass++;
-      }
-      quadTotals.set(region.label, acc);
-    }
-  }
-  if (!quadTotals.size) return null;
-
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle('Quadrant Yield'));
-  for (const label of quadOrder) {
-    const acc = quadTotals.get(label);
-    if (!acc || !acc.total) continue;
-    wrap.appendChild(progressRow(label, (acc.pass / acc.total) * 100));
-  }
-  return wrap;
+/** Aggregate quadrant yield across all wafers in the lot. */
+export function buildLotQuadrantSection(
+  diesByWafer: Die[][],
+  allWafers: Wafer[],
+  ringCount: number,
+  passBins: number[],
+): HTMLDivElement | null {
+  return buildLotRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
 }
 
 /** Aggregate test value stats across all wafers in the lot. */
@@ -857,18 +826,14 @@ export function renderLotSummaryContent(
     onFindingClick, activeFindingId = null,
   } = params;
 
-  // Collect all dies tagged with their wafer index for ring/quadrant aggregation
   const allWafers: Wafer[] = [];
+  const diesByWafer: Die[][] = [];
   const allDies: Die[] = [];
-  for (let wi = 0; wi < items.length; wi++) {
-    const item = items[wi];
+  for (const item of items) {
     if (item.wafer) allWafers.push(item.wafer);
-    if (item.dies) {
-      for (const d of item.dies) {
-        (d as { _waferIndex?: number })._waferIndex = wi;
-        allDies.push(d);
-      }
-    }
+    const wd = item.dies ?? [];
+    diesByWafer.push(wd);
+    allDies.push(...wd);
   }
 
   const hasHbin = allDies.some(d => d.hbin != null);
@@ -879,8 +844,8 @@ export function renderLotSummaryContent(
     buildPerWaferYieldSection(lotSummary, items),
     hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard')
             : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft') : null,
-    buildLotRingSection(allDies, allWafers, ringCount, passBins),
-    buildLotQuadrantSection(allDies, allWafers, ringCount, passBins),
+    buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
+    buildLotQuadrantSection(diesByWafer, allWafers, ringCount, passBins),
     testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat) : null,
   ];
 

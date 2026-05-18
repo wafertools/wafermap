@@ -47,8 +47,8 @@ export function buildQuadrantRegions(dies: Die[], wafer: Wafer, ringCount: numbe
     regions.set(key, existing);
   }
 
-  const order = ['quadrant:NE', 'quadrant:NW', 'quadrant:SE', 'quadrant:SW'];
-  return [...regions.values()].sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key));
+  const rank = new Map([['quadrant:NE', 0], ['quadrant:NW', 1], ['quadrant:SE', 2], ['quadrant:SW', 3]]);
+  return [...regions.values()].sort((left, right) => (rank.get(left.key) ?? 4) - (rank.get(right.key) ?? 4));
 }
 
 function normalizePhase(anchor: number, span: number): number {

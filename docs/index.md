@@ -1,3 +1,9 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # wafermap
 
 <img src="image-5.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />

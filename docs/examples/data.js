@@ -34,7 +34,7 @@ export function rng(i, j, seed = 1) {
  * @param {boolean} [opts.quadrant=false]        NE quadrant has lower yield and higher Vth.
  * @param {boolean} [opts.center=false]          Small defect cluster at the wafer centre.
  * @param {boolean} [opts.reticlePattern=false]  Repeating field-position defect pattern.
- * @returns {Array<{x,y,hbin,sbin,values}>}
+ * @returns {Array<{x,y,hbin,sbin,testValues}>}
  */
 export function makeResults({
   seed            = 1,
@@ -63,7 +63,7 @@ export function makeResults({
 
       const t = rMm / waferRadius; // normalised radial position [0, 1]
 
-      // Independent noise channels
+      // Independent noise samples
       const n1 = rng(i, j, seed);
       const n2 = rng(i, j, seed + 37);
       const n3 = rng(i, j, seed + 89);
@@ -146,10 +146,11 @@ export const SBIN_DEFS = [
 /**
  * Three continuous parametric tests: saturation current, threshold voltage, leakage.
  * testNumber is a stable per-test identity (e.g. STDF TEST_NUM or equivalent).
+ * Vth has spec limits — the NE quadrant drifts high and produces measurable out-of-spec fails.
  */
 export const TEST_DEFS = [
   { testNumber: 1050, name: 'Idsat', unit: 'A' },
-  { testNumber: 1060, name: 'Vth',   unit: 'V' },
+  { testNumber: 1060, name: 'Vth',   unit: 'V',  limitLow: 0.44, limitHigh: 0.57 },
   { testNumber: 1070, name: 'Ioff',  unit: 'A' },
 ];
 

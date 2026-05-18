@@ -186,6 +186,17 @@ export interface TestDef {
    * Silently falls back to linear when any die value is ≤ 0. Default: false.
    */
   logScale?: boolean;
+  /**
+   * Lower specification limit in the same units as the test value.
+   * When set, values below this limit are considered out-of-spec.
+   * Both limits are optional independently — some tests have one-sided limits.
+   */
+  limitLow?: number;
+  /**
+   * Upper specification limit in the same units as the test value.
+   * When set, values above this limit are considered out-of-spec.
+   */
+  limitHigh?: number;
 }
 
 /**
@@ -240,7 +251,7 @@ export interface WaferMapInput {
    * Regardless of policy, `die.retestCount` is set on any die that was tested more than
    * once, so retest hotspots are always visible.
    */
-  retestPolicy?: 'last' | 'first';
+  retestPolicy?: 'last' | 'first' | 'best' | 'worst';
   /**
    * Named test definitions — one per entry in `die.values[]`.
    * When provided, tooltips show `"Idsat: 1.23 A"` instead of `"Values: 1.23"`,
@@ -261,6 +272,16 @@ export interface WaferMapInput {
    * Both spaces range 0–32767 and may overlap — define them separately.
    */
   sbinDefs?: BinDef[];
+  /**
+   * Controls how edge-excluded dies (dies within the edge exclusion zone) are counted in yield.
+   *
+   * - `'exclude'` (default) — edge dies are excluded from both numerator and denominator.
+   *   `yieldPercent` = `passDies / (passDies + failDies)` counting only non-edge dies.
+   * - `'denominator-only'` — edge dies are counted in `totalDies` denominator but never
+   *   as pass.  This gives gross die yield: pass count vs. total populated area.
+   *   `yieldPercentGross` is also set on `YieldSummary` for unambiguous reference.
+   */
+  edgeDieYieldMode?: 'exclude' | 'denominator-only';
 }
 
 /** Options forwarded to {@link buildScene}. */
@@ -283,6 +304,11 @@ export interface YieldSummary {
   totalDies: number;
   /** `passDies / totalDies` in [0, 1], or `null` when no bin data is present. */
   yieldPercent: number | null;
+  /**
+   * Gross die yield: `passDies / (passDies + failDies + edgeExcludedDies)`.
+   * Set when `edgeDieYieldMode: 'denominator-only'` was passed; `null` otherwise.
+   */
+  yieldPercentGross?: number | null;
 }
 
 
@@ -335,46 +361,41 @@ interface Normalized {
   testDefs:     TestDef[] | undefined;
   hbinDefs:     BinDef[]  | undefined;
   sbinDefs:     BinDef[]  | undefined;
-  retestPolicy: 'last' | 'first';
+  retestPolicy:      'last' | 'first' | 'best' | 'worst';
+  edgeDieYieldMode:  'exclude' | 'denominator-only';
 }
 
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
   if (Array.isArray(input)) {
     return {
-      results:      input,
-      waferOpts:    undefined,
-      dieOpts:      undefined,
-      explicitDies: undefined,
-      reticleOpts:  undefined,
-      lotStackOpts: undefined,
-      passBins:     [1],
-      testDefs:     undefined,
-      hbinDefs:     undefined,
-      sbinDefs:     undefined,
-      retestPolicy: 'last',
+      results:          input,
+      waferOpts:        undefined,
+      dieOpts:          undefined,
+      explicitDies:     undefined,
+      reticleOpts:      undefined,
+      lotStackOpts:     undefined,
+      passBins:         [1],
+      testDefs:         undefined,
+      hbinDefs:         undefined,
+      sbinDefs:         undefined,
+      retestPolicy:     'last',
+      edgeDieYieldMode: 'exclude',
     };
   }
   return {
-    results:      input.results   ?? [],
-    waferOpts:    input.waferConfig,
-    dieOpts:      input.dieConfig,
-    explicitDies: input.dies,
-    reticleOpts:  input.reticleConfig,
-    lotStackOpts: input.lotStack,
-    passBins:     input.passBins ?? [1],
-    testDefs:     input.testDefs,
-    hbinDefs:     input.hbinDefs,
-    sbinDefs:     input.sbinDefs,
-    retestPolicy: input.retestPolicy ?? 'last',
+    results:          input.results   ?? [],
+    waferOpts:        input.waferConfig,
+    dieOpts:          input.dieConfig,
+    explicitDies:     input.dies,
+    reticleOpts:      input.reticleConfig,
+    lotStackOpts:     input.lotStack,
+    passBins:         input.passBins ?? [1],
+    testDefs:         input.testDefs,
+    hbinDefs:         input.hbinDefs,
+    sbinDefs:         input.sbinDefs,
+    retestPolicy:     input.retestPolicy ?? 'last',
+    edgeDieYieldMode: input.edgeDieYieldMode ?? 'exclude',
   };
-}
-
-// ── Notch helper ──────────────────────────────────────────────────────────────
-
-function resolveNotch(
-  waferOpts: WaferConfig | undefined,
-): { type: 'top' | 'bottom' | 'left' | 'right' } | undefined {
-  return waferOpts?.notch;
 }
 
 // ── Grid origin & axis helpers ────────────────────────────────────────────────
@@ -430,21 +451,14 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): Die
   // 1. Scalar numeric aggregations: mean, median, stddev, min, max, count.
   // Reuses the robust union-based logic in core/aggregates.ts.
   if (method === 'mean' || method === 'median' || method === 'stddev' || method === 'min' || method === 'max' || method === 'count') {
-    return aggregateValues(
-      waferResults as unknown as Die[][],
-      method as CoreAggregationMethod
-    ) as unknown as DieResult[];
+    return aggregateValues(waferResults, method as CoreAggregationMethod) as DieResult[];
   }
 
   // 2. Bin occurrence aggregations: countBin, percent.
   // Reuses template-based logic (assumes consistent wafer layout).
   if (method === 'countBin' || method === 'percent') {
     if (targetBin === undefined) return [];
-    const aggregated = aggregateBinCounts(
-      waferResults as unknown as Die[][],
-      targetBin,
-      'hard'
-    ) as unknown as DieResult[];
+    const aggregated = aggregateBinCounts(waferResults, targetBin, 'hard') as DieResult[];
 
     if (method === 'countBin') return aggregated;
 
@@ -500,10 +514,10 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
   };
 }
 
-function computeYield(dies: Die[], passBins: number[]): YieldSummary {
+function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclude' | 'denominator-only' = 'exclude'): YieldSummary {
   const passBinSet = new Set(passBins);
   const fullDies = dies.filter(d => !d.partial);
-  const edgeExcludedDies = fullDies.filter(d => d.edgeExcluded).length;
+  const edgeCount = fullDies.filter(d => d.edgeExcluded).length;
   const partialDies = dies.filter(d => d.partial).length;
 
   let passDies = 0;
@@ -521,13 +535,22 @@ function computeYield(dies: Die[], passBins: number[]): YieldSummary {
   }
 
   const totalDies = passDies + failDies;
+  const yieldPercent = hasBinData && totalDies > 0 ? passDies / totalDies : null;
+
+  let yieldPercentGross: number | null = null;
+  if (edgeDieYieldMode === 'denominator-only') {
+    const grossDenom = totalDies + edgeCount;
+    yieldPercentGross = hasBinData && grossDenom > 0 ? passDies / grossDenom : null;
+  }
+
   return {
     passDies,
     failDies,
-    edgeExcludedDies,
+    edgeExcludedDies: edgeCount,
     partialDies,
     totalDies,
-    yieldPercent: hasBinData && totalDies > 0 ? passDies / totalDies : null,
+    yieldPercent,
+    yieldPercentGross,
   };
 }
 
@@ -564,7 +587,8 @@ function applyEdgeExclusion(dies: Die[], wafer: Wafer, exclusionMm: number): Die
 
 function applyRetestPolicy(
   results: DieResult[],
-  policy: 'last' | 'first',
+  policy: 'last' | 'first' | 'best' | 'worst',
+  passBins: number[],
 ): DieResult[] {
   const counts = new Map<string, number>();
   for (const d of results) {
@@ -572,10 +596,33 @@ function applyRetestPolicy(
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
+  const passBinSet = new Set(passBins);
+  // Returns true when the candidate should replace the existing winner.
+  // 'best': pass beats fail; within same category, lower hbin wins.
+  // 'worst': fail beats pass; within same category, higher hbin wins.
+  function shouldReplace(existing: DieResult, candidate: DieResult): boolean {
+    const eHbin = existing.hbin;
+    const cHbin = candidate.hbin;
+    if (eHbin === undefined || cHbin === undefined) return false;
+    const ePass = passBinSet.has(eHbin);
+    const cPass = passBinSet.has(cHbin);
+    if (policy === 'best') {
+      if (cPass !== ePass) return cPass;  // pass beats fail
+      return cHbin < eHbin;              // tiebreak: lower bin number
+    } else {
+      if (cPass !== ePass) return ePass; // fail beats pass (i.e. replace when existing is pass)
+      return cHbin > eHbin;              // tiebreak: higher bin number
+    }
+  }
+
   const winners = new Map<string, DieResult>();
   for (const d of results) {
     const key = `${d.x},${d.y}`;
-    if (policy === 'first' && winners.has(key)) continue;
+    const existing = winners.get(key);
+    if (policy === 'first' && existing) continue;
+    if ((policy === 'best' || policy === 'worst') && existing) {
+      if (!shouldReplace(existing, d)) continue;
+    }
     winners.set(key, d);
   }
 
@@ -699,6 +746,7 @@ export function buildWaferMap(
   const results: DieResult[] = applyRetestPolicy(
     norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts) : norm.results,
     norm.retestPolicy,
+    norm.passBins,
   );
 
   const inference = {
@@ -723,7 +771,7 @@ export function buildWaferMap(
     const diameter = norm.waferOpts?.diameter ?? 300;
     const wafer    = createWafer({
       diameter,
-      notch:       resolveNotch(norm.waferOpts),
+      notch:       norm.waferOpts?.notch,
       orientation: norm.waferOpts?.orientation ?? 0,
       metadata:    norm.waferOpts?.metadata,
     });
@@ -745,7 +793,7 @@ export function buildWaferMap(
     return {
       wafer, dies, scene, reticleConfig: norm.reticleOpts, units: 'mm', inference,
       dataCoverage: computeCoverage(dies),
-      yield: computeYield(dies, norm.passBins),
+      yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
       reticles,
     };
   }
@@ -782,7 +830,7 @@ export function buildWaferMap(
 
   const wafer = createWafer({
     diameter:    waferDiameter,
-    notch:       resolveNotch(norm.waferOpts),
+    notch:       norm.waferOpts?.notch,
     orientation: norm.waferOpts?.orientation ?? 0,
     metadata:    norm.waferOpts?.metadata,
   });
@@ -838,7 +886,7 @@ export function buildWaferMap(
   return {
     wafer, dies, scene, reticleConfig: norm.reticleOpts, units, inference,
     dataCoverage: computeCoverage(dies),
-    yield: computeYield(dies, norm.passBins),
+    yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
     reticles,
   };
 }

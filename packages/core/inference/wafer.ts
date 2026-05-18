@@ -23,7 +23,10 @@ export function inferWaferFromXY(points: Array<{ x: number; y: number }>): Wafer
   const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
   const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
 
-  const maxDist = Math.max(...points.map(p => Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2)));
+  const maxDist = points.reduce((m, p) => {
+    const d = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2);
+    return d > m ? d : m;
+  }, 0);
 
   // Die centers sit inside the wafer boundary — add a 5% buffer to account for
   // the half-die extent between the outermost die center and the wafer edge.

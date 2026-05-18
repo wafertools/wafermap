@@ -75,6 +75,45 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
   };
 }
 
+function computeTestSpecYield(
+  dies: Die[],
+  testDefs: TestDef[] | undefined,
+): StatsSummary['stats']['testSpecYield'] {
+  if (!testDefs?.length) return undefined;
+  const limited = testDefs.filter(td => td.limitLow !== undefined || td.limitHigh !== undefined);
+  if (!limited.length) return undefined;
+
+  const result: NonNullable<StatsSummary['stats']['testSpecYield']> = [];
+  for (const td of limited) {
+    const tn = td.testNumber ?? td.index;
+    if (tn === undefined) continue;
+    let passDies = 0, failLowDies = 0, failHighDies = 0, totalDies = 0;
+    for (const die of dies) {
+      if (die.partial || die.edgeExcluded) continue;
+      const v = die.testValues?.[tn] ?? die.values?.[tn];
+      if (v === undefined) continue;
+      totalDies++;
+      if (td.limitLow !== undefined && v < td.limitLow) {
+        failLowDies++;
+      } else if (td.limitHigh !== undefined && v > td.limitHigh) {
+        failHighDies++;
+      } else {
+        passDies++;
+      }
+    }
+    result.push({
+      testNumber:   tn,
+      label:        td.name,
+      passDies,
+      failLowDies,
+      failHighDies,
+      totalDies,
+      yieldPercent: totalDies > 0 ? passDies / totalDies : null,
+    });
+  }
+  return result.length ? result : undefined;
+}
+
 function errorFunction(value: number): number {
   const sign = value < 0 ? -1 : 1;
   const x = Math.abs(value);
@@ -413,7 +452,7 @@ function buildTestValueFindings(
   regionFamily: StatsRegion[],
   defs: TestDef[] | undefined,
   options: ResolvedOptions,
-): RawFinding[] {
+): { findings: RawFinding[]; warning?: string } {
   const dieMap = new Map(dies.map((die) => [`${die.x},${die.y}`, die]));
   const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
 
@@ -427,12 +466,12 @@ function buildTestValueFindings(
 
   // Auto-cap: if no filter and too many tests, warn and skip test value analysis.
   if (!options.testNumbers && allTestNumbers.length > TEST_COUNT_WARN_THRESHOLD) {
-    console.warn(
+    const warning =
       `[wafermap] analyzeWaferMap: ${allTestNumbers.length} tests found in die data. ` +
       `Pass testNumbers: [...] in options to enable test value analysis for specific tests. ` +
-      `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`,
-    );
-    return [];
+      `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`;
+    console.warn(warning);
+    return { findings: [], warning };
   }
 
   // Apply testNumbers filter when provided.
@@ -504,19 +543,131 @@ function buildTestValueFindings(
 
   adjustPValues(findings);
 
-  return findings
-    .filter((finding) => {
-      const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
-      const effectSize = Math.abs(finding.effect.effectSize ?? 0);
-      return adjusted <= options.significanceLevel && effectSize >= options.minimumEffectSize;
-    })
-    .map((finding) => ({
-      ...finding,
-      severity: severityForScore(
-        finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
-        finding.effect.effectSize ?? 0,
-      ),
-    }));
+  return {
+    findings: findings
+      .filter((finding) => {
+        const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
+        const effectSize = Math.abs(finding.effect.effectSize ?? 0);
+        return adjusted <= options.significanceLevel && effectSize >= options.minimumEffectSize;
+      })
+      .map((finding) => ({
+        ...finding,
+        severity: severityForScore(
+          finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
+          finding.effect.effectSize ?? 0,
+        ),
+      })),
+  };
+}
+
+function buildSpecLimitFindings(
+  dies: Die[],
+  regionFamilies: StatsRegion[][],
+  testDefs: TestDef[] | undefined,
+  options: ResolvedOptions,
+): RawFinding[] {
+  if (!testDefs?.length) return [];
+  const limited = testDefs.filter(td => td.limitLow !== undefined || td.limitHigh !== undefined);
+  if (!limited.length) return [];
+
+  const allFindings: RawFinding[] = [];
+
+  for (const td of limited) {
+    const tn = td.testNumber ?? td.index;
+    if (tn === undefined) continue;
+
+    for (const regionFamily of regionFamilies) {
+      const dieMap = new Map(dies.map(d => [`${d.x},${d.y}`, d]));
+      const regionDieKeySet = new Set(regionFamily.flatMap(r => r.dieKeys));
+      const findings: RawFinding[] = [];
+
+      for (const region of regionFamily) {
+        const leftDies = region.dieKeys
+          .map(key => dieMap.get(key))
+          .filter((d): d is Die => d !== undefined);
+        const leftKeySet = new Set(region.dieKeys);
+        const rightDies = dies.filter(d => {
+          const key = `${d.x},${d.y}`;
+          return !leftKeySet.has(key) && regionDieKeySet.has(key);
+        });
+
+        const hasValue = (d: Die) => (d.testValues?.[tn] ?? d.values?.[tn]) !== undefined;
+        const isSpecFail = (d: Die) => {
+          const v = d.testValues?.[tn] ?? d.values?.[tn];
+          if (v === undefined) return false;
+          if (td.limitLow !== undefined && v < td.limitLow) return true;
+          if (td.limitHigh !== undefined && v > td.limitHigh) return true;
+          return false;
+        };
+
+        const leftValid = leftDies.filter(hasValue);
+        const rightValid = rightDies.filter(hasValue);
+
+        if (leftValid.length < options.minimumSampleSize || rightValid.length < options.minimumSampleSize) continue;
+
+        const leftFail = leftValid.filter(isSpecFail).length;
+        const rightFail = rightValid.filter(isSpecFail).length;
+        const leftRate = leftFail / leftValid.length;
+        const rightRate = rightFail / rightValid.length;
+        const delta = leftRate - rightRate;
+        const pValue = twoProportionPValue(leftFail, leftValid.length, rightFail, rightValid.length);
+
+        findings.push({
+          id: `specLimit:${tn}:${region.key}`,
+          level: 'wafer',
+          severity: 'info',
+          variable: {
+            kind: 'test',
+            index: tn,
+            label: td.name,
+            unit: td.unit,
+          },
+          comparison: {
+            family: region.family,
+            left: region.label,
+            right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
+          },
+          effect: {
+            direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
+            absoluteDelta: delta,
+            relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
+            effectSize: delta,
+          },
+          stats: {
+            method: 'two-proportion-z',
+            pValue,
+            sampleSizeLeft: leftValid.length,
+            sampleSizeRight: rightValid.length,
+          },
+          summary: `${region.label} spec-fail rate for ${td.name} is ${(Math.abs(delta) * 100).toFixed(1)} pp ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`,
+          highlight: {
+            kind: 'region',
+            regionFamily: region.family,
+            keys: [region.key],
+            dieKeys: [...region.dieKeys],
+          },
+        });
+      }
+
+      adjustPValues(findings);
+      allFindings.push(
+        ...findings
+          .filter(f => {
+            const adj = f.stats.adjustedPValue ?? f.stats.pValue ?? 1;
+            return adj <= options.significanceLevel && Math.abs(f.effect.absoluteDelta ?? 0) >= options.minimumEffectSize;
+          })
+          .map(f => ({
+            ...f,
+            severity: severityForScore(
+              f.stats.adjustedPValue ?? f.stats.pValue ?? 1,
+              f.effect.effectSize ?? 0,
+            ),
+          })),
+      );
+    }
+  }
+
+  return allFindings;
 }
 
 export function analyzeWaferMap(
@@ -575,12 +726,20 @@ export function analyzeWaferMap(
       ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
     );
   }
+  const warnings: string[] = [];
   if (resolved.enableTestValueAnalysis) {
-    findings.push(
-      ...buildTestValueFindings(eligibleDies, ringRegions, result.scene.testDefs, resolved),
-      ...buildTestValueFindings(eligibleDies, quadrantRegions, result.scene.testDefs, resolved),
-      ...buildTestValueFindings(eligibleDies, reticlePositionRegions, result.scene.testDefs, resolved),
-    );
+    const ring = buildTestValueFindings(eligibleDies, ringRegions, result.scene.testDefs, resolved);
+    const quad = buildTestValueFindings(eligibleDies, quadrantRegions, result.scene.testDefs, resolved);
+    const reticle = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.scene.testDefs, resolved);
+    findings.push(...ring.findings, ...quad.findings, ...reticle.findings);
+    if (ring.warning) warnings.push(ring.warning);
+
+    findings.push(...buildSpecLimitFindings(
+      eligibleDies,
+      [ringRegions, quadrantRegions, reticlePositionRegions],
+      result.scene.testDefs,
+      resolved,
+    ));
   }
 
   findings.sort((left, right) => {
@@ -590,11 +749,16 @@ export function analyzeWaferMap(
     return Math.abs((right.effect.absoluteDelta ?? 0)) - Math.abs((left.effect.absoluteDelta ?? 0));
   });
 
+  const stats = collectStats(result.dies, eligibleDies.length, result.yield.yieldPercent);
+  if (warnings.length > 0) stats.warnings = warnings;
+  const specYield = computeTestSpecYield(result.dies, result.scene.testDefs);
+  if (specYield) stats.testSpecYield = specYield;
+
   return {
     level: 'wafer',
     hasNotableFindings: findings.some((finding) => finding.severity === 'notable' || finding.severity === 'unusual'),
     findings,
     wafer: result.wafer.metadata ?? undefined,
-    stats: collectStats(result.dies, eligibleDies.length, result.yield.yieldPercent),
+    stats,
   };
 }

@@ -2,6 +2,17 @@ import type { Die } from './dies.js';
 
 export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count';
 
+/** Minimal die shape required by aggregation functions — satisfied by both Die and DieResult. */
+export interface DieLike {
+  x: number;
+  y: number;
+  testValues?: Record<number, number>;
+  /** @deprecated */
+  values?: number[];
+  hbin?: number;
+  sbin?: number;
+}
+
 /**
  * Aggregate a per-test-parameter numeric value across a lot of wafers.
  *
@@ -19,14 +30,14 @@ export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | '
  * ```
  */
 export function aggregateValues(
-  diesByWafer: Die[][],
+  diesByWafer: DieLike[][],
   method: AggregationMethod,
   paramIndex = 0,
-): Die[] {
+): DieLike[] {
   if (!diesByWafer.length) return [];
 
   const valuesMap = new Map<string, number[]>();
-  const dieTemplate = new Map<string, Die>();
+  const dieTemplate = new Map<string, DieLike>();
 
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
@@ -45,7 +56,7 @@ export function aggregateValues(
     }
   }
 
-  const result: Die[] = [];
+  const result: DieLike[] = [];
   for (const [key, template] of dieTemplate) {
     const vals = valuesMap.get(key);
     if (!vals?.length) {
@@ -108,10 +119,10 @@ export function getUniqueBins(dies: Die[], binSpace: 'hard' | 'soft' = 'hard'): 
  * @param binSpace     Which bin space to test — `'hard'` (default) or `'soft'`.
  */
 export function aggregateBinCounts(
-  diesByWafer: Die[][],
+  diesByWafer: DieLike[][],
   targetBin: number,
   binSpace: 'hard' | 'soft' = 'hard',
-): Die[] {
+): DieLike[] {
   if (!diesByWafer.length) return [];
 
   const countMap = new Map<string, number>();

@@ -1,0 +1,145 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  buildRingRegions,
+  buildQuadrantRegions,
+  buildReticlePositionRegions,
+} from '../dist/packages/stats/regions.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+
+const wafer = createWafer({ diameter: 300 });
+const cx = wafer.center.x;
+const cy = wafer.center.y;
+const r = wafer.radius;
+
+function die(id, x, y, physX, physY) {
+  return { id, x, y, physX, physY, width: 5, height: 5 };
+}
+
+const centerDie = die('c', 0, 0, cx, cy);
+const edgeDie   = die('e', 5, 0, cx + r * 0.95, cy);
+const midDie    = die('m', 3, 0, cx + r * 0.5, cy);
+const dies = [centerDie, edgeDie, midDie];
+
+// ── buildRingRegions ──────────────────────────────────────────────────────────
+
+test('buildRingRegions — all regions have family "ring"', () => {
+  for (const region of buildRingRegions(dies, wafer, 4)) {
+    assert.equal(region.family, 'ring');
+  }
+});
+
+test('buildRingRegions — keys start with "ring:"', () => {
+  for (const region of buildRingRegions(dies, wafer, 4)) {
+    assert.match(region.key, /^ring:/);
+  }
+});
+
+test('buildRingRegions — all die keys present exactly once', () => {
+  const regions = buildRingRegions(dies, wafer, 4);
+  const allKeys = regions.flatMap(r => r.dieKeys);
+  assert.equal(allKeys.length, dies.length);
+});
+
+test('buildRingRegions — sorted by key', () => {
+  const regions = buildRingRegions(dies, wafer, 4);
+  for (let i = 1; i < regions.length; i++) {
+    assert.ok(regions[i - 1].key <= regions[i].key, 'should be sorted');
+  }
+});
+
+test('buildRingRegions — ringCount=1 gives one "Full Wafer" region covering all dies', () => {
+  const regions = buildRingRegions(dies, wafer, 1);
+  assert.equal(regions.length, 1);
+  assert.match(regions[0].label, /Full Wafer/);
+  assert.equal(regions[0].dieKeys.length, dies.length);
+});
+
+test('buildRingRegions — center and edge dies are in different rings (ringCount=4)', () => {
+  const regions = buildRingRegions([centerDie, edgeDie], wafer, 4);
+  assert.equal(regions.length, 2);
+});
+
+// ── buildQuadrantRegions ──────────────────────────────────────────────────────
+
+const qDies = [
+  die('ne', 1,  1, cx + 10, cy + 10),
+  die('nw', -1, 1, cx - 10, cy + 10),
+  die('sw', -1, -1, cx - 10, cy - 10),
+  die('se', 1, -1, cx + 10, cy - 10),
+];
+
+test('buildQuadrantRegions — 4 regions for all-quadrant dies', () => {
+  assert.equal(buildQuadrantRegions(qDies, wafer, 4).length, 4);
+});
+
+test('buildQuadrantRegions — all regions have family "quadrant"', () => {
+  for (const r of buildQuadrantRegions(qDies, wafer, 4)) {
+    assert.equal(r.family, 'quadrant');
+  }
+});
+
+test('buildQuadrantRegions — sorted NE, NW, SE, SW', () => {
+  const regions = buildQuadrantRegions(qDies, wafer, 4);
+  const order = regions.map(r => r.label);
+  assert.equal(order[0], 'NE');
+  assert.equal(order[1], 'NW');
+  assert.equal(order[2], 'SE');
+  assert.equal(order[3], 'SW');
+});
+
+test('buildQuadrantRegions — each die key appears exactly once', () => {
+  const regions = buildQuadrantRegions(qDies, wafer, 4);
+  const allKeys = regions.flatMap(r => r.dieKeys);
+  assert.equal(allKeys.length, qDies.length);
+  assert.equal(new Set(allKeys).size, qDies.length);
+});
+
+// ── buildReticlePositionRegions ───────────────────────────────────────────────
+
+const rDies = [
+  die('0_0', 0, 0, cx,      cy),
+  die('1_0', 1, 0, cx + 5,  cy),
+  die('0_1', 0, 1, cx,      cy + 5),
+  die('1_1', 1, 1, cx + 5,  cy + 5),
+  die('2_0', 2, 0, cx + 10, cy),
+  die('2_1', 2, 1, cx + 10, cy + 5),
+];
+
+test('buildReticlePositionRegions — returns empty array with no config', () => {
+  assert.deepEqual(buildReticlePositionRegions(rDies, undefined), []);
+});
+
+test('buildReticlePositionRegions — all regions have family "reticle-position"', () => {
+  for (const r of buildReticlePositionRegions(rDies, { width: 2, height: 2 })) {
+    assert.equal(r.family, 'reticle-position');
+  }
+});
+
+test('buildReticlePositionRegions — keys start with "reticle-position:cell:"', () => {
+  for (const r of buildReticlePositionRegions(rDies, { width: 2, height: 2 })) {
+    assert.match(r.key, /^reticle-position:cell:/);
+  }
+});
+
+test('buildReticlePositionRegions — all dies appear exactly once', () => {
+  const regions = buildReticlePositionRegions(rDies, { width: 2, height: 2 });
+  const allKeys = regions.flatMap(r => r.dieKeys);
+  assert.equal(allKeys.length, rDies.length);
+});
+
+test('buildReticlePositionRegions — sorted by key lexicographically', () => {
+  const regions = buildReticlePositionRegions(rDies, { width: 2, height: 2 });
+  for (let i = 1; i < regions.length; i++) {
+    assert.ok(regions[i - 1].key <= regions[i].key);
+  }
+});
+
+test('buildReticlePositionRegions — same set of cell positions with different anchorDie', () => {
+  const baseline = buildReticlePositionRegions(rDies, { width: 2, height: 2 });
+  const shifted  = buildReticlePositionRegions(rDies, { width: 2, height: 2, anchorDie: { x: 1, y: 0 } });
+  assert.deepEqual(
+    baseline.map(r => r.key).sort(),
+    shifted.map(r => r.key).sort(),
+  );
+});

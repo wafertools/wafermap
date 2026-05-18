@@ -32,6 +32,7 @@ export const MODE_LABELS: Record<PlotMode, string> = {
   stackedValues:   'Stacked Test Values',
   stackedBins:     'Stacked Hard Bins',
   stackedSoftBins: 'Stacked Soft Bins',
+  specLimit:       'Spec Limit',
 };
 
 export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardBin', 'softBin']);
@@ -82,6 +83,121 @@ export interface ToolbarHelpers {
   /** Read/write the shared open-menu slot — used by custom menus that can't go through makeDropdown. */
   getOpenMenu(): HTMLDivElement | null;
   setOpenMenu(menu: HTMLDivElement | null): void;
+}
+
+export type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string; logScale?: boolean };
+
+/**
+ * Build the plot-mode dropdown menu element.
+ * Shared between renderWaferMap and renderWaferGallery.
+ * The caller provides data-derived entry arrays and pick/active callbacks.
+ */
+export function buildModeMenuEl(
+  anchorRect: DOMRect,
+  testEntries: ModeEntry[],
+  binEntries: ModeEntry[],
+  stackedEntries: ModeEntry[],
+  isCurrentEntry: (e: ModeEntry) => boolean,
+  pickEntry: (entry: ModeEntry, menu: HTMLElement) => void,
+  helpers: Pick<ToolbarHelpers, 'makeMenuRow' | 'makeMenuSection'>,
+  currentMode: PlotMode,
+): HTMLDivElement {
+  const { makeMenuRow, makeMenuSection } = helpers;
+
+  const menu = document.createElement('div');
+  Object.assign(menu.style, {
+    position:      'fixed',
+    top:           `${anchorRect.bottom + 4}px`,
+    left:          `${anchorRect.left}px`,
+    background:    CLR.menuBg,
+    border:        `1px solid ${CLR.menuBorder}`,
+    borderRadius:  '4px',
+    boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+    zIndex:        '9998',
+    minWidth:      '180px',
+    padding:       '4px 0',
+    pointerEvents: 'auto',
+  });
+
+  // ── Test Value section ──────────────────────────────────────────────────────
+  if (testEntries.length) {
+    menu.appendChild(makeMenuSection('Test Value'));
+    if (testEntries.length <= INLINE_TEST_LIMIT) {
+      for (const entry of testEntries) {
+        menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), true, e => {
+          e.stopPropagation();
+          pickEntry(entry, menu);
+        }));
+      }
+    } else {
+      const cascadeActive = currentMode === 'value';
+      const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, () => {});
+      cascadeRow.style.display        = 'flex';
+      cascadeRow.style.justifyContent = 'space-between';
+      cascadeRow.style.alignItems     = 'center';
+      let subMenu: HTMLDivElement | null = null;
+      const closeSub = () => { subMenu?.remove(); subMenu = null; };
+      const openSub = () => {
+        if (subMenu) return;
+        const rowRect = cascadeRow.getBoundingClientRect();
+        subMenu = document.createElement('div');
+        Object.assign(subMenu.style, {
+          position:      'fixed',
+          top:           `${rowRect.top - 4}px`,
+          left:          `${rowRect.right + 2}px`,
+          background:    CLR.menuBg,
+          border:        `1px solid ${CLR.menuBorder}`,
+          borderRadius:  '4px',
+          boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+          zIndex:        '9999',
+          minWidth:      '160px',
+          maxHeight:     '320px',
+          overflowY:     'auto',
+          padding:       '4px 0',
+          pointerEvents: 'auto',
+        });
+        for (const entry of testEntries) {
+          subMenu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+            e.stopPropagation();
+            subMenu?.remove(); subMenu = null;
+            pickEntry(entry, menu);
+          }));
+        }
+        document.body.appendChild(subMenu);
+        document.addEventListener('click', closeSub, { once: true });
+      };
+      cascadeRow.addEventListener('mouseenter', openSub);
+      cascadeRow.addEventListener('mouseleave', e => {
+        if (subMenu && subMenu.contains(e.relatedTarget as Node)) return;
+        closeSub();
+      });
+      menu.appendChild(cascadeRow);
+    }
+  }
+
+  // ── Bins section ────────────────────────────────────────────────────────────
+  if (binEntries.length) {
+    menu.appendChild(makeMenuSection('Bins'));
+    for (const entry of binEntries) {
+      menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+        e.stopPropagation();
+        pickEntry(entry, menu);
+      }));
+    }
+  }
+
+  // ── Stacked (lot aggregation) section ───────────────────────────────────────
+  if (stackedEntries.length) {
+    menu.appendChild(makeMenuSection('Lot Aggregation'));
+    for (const entry of stackedEntries) {
+      menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+        e.stopPropagation();
+        pickEntry(entry, menu);
+      }));
+    }
+  }
+
+  return menu;
 }
 
 export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {

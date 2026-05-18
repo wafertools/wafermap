@@ -91,13 +91,13 @@ const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
 const AXIS_TICK_LEN   = 4;  // px
 const BIN_ROW_H       = 17; // px per legend row
 const BIN_SWATCH_SIZE = 11; // px
-const BIN_LEGEND_W    = 110; // px total right-side reserve for bin legend
-const BIN_LEGEND_W_COMPACT = 64; // px right-side reserve for compact legend
-const BIN_COUNT_W     = 28;  // px reserved on the right of the legend for the die count
-const BIN_LABEL_GAP   = 5;   // px gap between swatch and label
-const BIN_FLOATING_PADDING = 8; // px padding around floating legend box
-const BIN_LEGEND_ADAPT_COMPACT  = 280; // px canvas width — below this, auto-switch to compact
-const BIN_LEGEND_ADAPT_FLOATING = 180; // px canvas width — below this, auto-switch to floating
+export const BIN_LEGEND_W               = 110; // px total right-side reserve for bin legend
+export const BIN_LEGEND_W_COMPACT       =  64; // px right-side reserve for compact legend
+export const BIN_LEGEND_ADAPT_COMPACT   = 280; // px canvas width — below this, auto-switch to compact
+export const BIN_LEGEND_ADAPT_FLOATING  = 180; // px canvas width — below this, auto-switch to floating
+const BIN_COUNT_W          = 28;  // px reserved on the right of the legend for the die count
+const BIN_LABEL_GAP        =  5;  // px gap between swatch and label
+const BIN_FLOATING_PADDING =  8;  // px padding around floating legend box
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
@@ -437,14 +437,7 @@ export function toCanvas(
   if (drawBinLegend) {
     const scheme = getColorScheme(scene.colorScheme);
 
-    const binCounts = new Map<number, number>();
-    for (const die of scene.dies) {
-      if (die.partial) continue;
-      const bin = scene.plotMode === 'softBin' ? die.sbin : die.hbin;
-      if (bin == null) continue;
-      binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
-    }
-    const entries = [...binCounts.entries()].sort(([a], [b]) => a - b);
+    const entries = binLegendEntries;
 
     const activeDefs = scene.plotMode === 'softBin' ? scene.sbinDefs : scene.hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;

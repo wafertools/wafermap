@@ -1,4 +1,4 @@
-import { HARD_BIN_COLORS, HARD_BIN_GREY, valueToViridis, valueToGreyscale } from './colorMap.js';
+import { HARD_BIN_COLORS, HARD_BIN_GREY, VIRIDIS, lerpKp, valueToGreyscale } from './colorMap.js';
 
 // ── Public interface ──────────────────────────────────────────────────────────
 
@@ -25,8 +25,11 @@ export interface ColorScheme {
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
-const registry = new Map<string, ColorScheme>();
-const aliases = new Set<string>();
+interface SchemeRecord extends ColorScheme {
+  isAlias?: boolean;
+}
+
+const registry = new Map<string, SchemeRecord>();
 
 /**
  * Register a named colour scheme, making it available to buildScene via the
@@ -44,7 +47,7 @@ const aliases = new Set<string>();
  * });
  */
 export function registerColorScheme(name: string, scheme: ColorScheme): void {
-  registry.set(name, scheme);
+  registry.set(name, scheme as SchemeRecord);
 }
 
 /**
@@ -58,7 +61,7 @@ export function getColorScheme(name?: string): ColorScheme {
 /** Return all registered schemes as { name, label } pairs, in insertion order. */
 export function listColorSchemes(): Array<{ name: string; label: string }> {
   return [...registry.entries()]
-    .filter(([name]) => !aliases.has(name))
+    .filter(([, s]) => !s.isAlias)
     .map(([name, s]) => ({ name, label: s.label }));
 }
 
@@ -69,20 +72,18 @@ function binArray(colors: readonly string[]): (bin: number) => string {
   return (bin) => colors[Math.max(0, Math.min(bin, colors.length - 1))];
 }
 
-/** Linear interpolation across RGB keypoints for t ∈ [0, 1]. */
-function lerpKp(kp: readonly [number, number, number][], t: number): string {
-  const c = Math.max(0, Math.min(1, t));
-  const pos = c * (kp.length - 1);
-  const lo = Math.floor(pos);
-  const hi = Math.min(lo + 1, kp.length - 1);
-  const f = pos - lo;
-  const r = Math.round(kp[lo][0] + f * (kp[hi][0] - kp[lo][0]));
-  const g = Math.round(kp[lo][1] + f * (kp[hi][1] - kp[lo][1]));
-  const b = Math.round(kp[lo][2] + f * (kp[hi][2] - kp[lo][2]));
-  return `rgb(${r},${g},${b})`;
-}
-
 // ── Built-in schemes ──────────────────────────────────────────────────────────
+
+/**
+ * VIRIDIS — purple-to-yellow perceptually uniform continuous gradient.
+ * Available as a standalone scheme; also used as the continuous scale for DEFAULT.
+ */
+registerColorScheme('viridis', {
+  label: 'Viridis',
+  forBin: binArray(HARD_BIN_COLORS),
+  forValue: (t) => lerpKp(VIRIDIS, t),
+  plotlyColorscale: 'Viridis',
+});
 
 /**
  * DEFAULT — colourful categorical bins, Viridis continuous gradient.
@@ -91,13 +92,12 @@ function lerpKp(kp: readonly [number, number, number][], t: number): string {
 registerColorScheme('default', {
   label: 'Default',
   forBin: binArray(HARD_BIN_COLORS),
-  forValue: valueToViridis,
+  forValue: (t) => lerpKp(VIRIDIS, t),
   plotlyColorscale: 'Viridis',
 });
 
 // 'color' kept as an alias so existing code that passed colorScheme:'color' still works.
-aliases.add('color');
-registerColorScheme('color', registry.get('default')!);
+registry.set('color', { ...registry.get('default')!, isAlias: true });
 
 /**
  * GREYSCALE — grey categorical bins, grey continuous gradient.
@@ -145,8 +145,8 @@ const CIVIDIS: readonly [number, number, number][] = [
 
 registerColorScheme('accessible', {
   label: 'Accessible (Okabe-Ito / Cividis)',
-  forBin: binArray(OKABE_ITO),
-  forValue: (t) => lerpKp(CIVIDIS, t),
+  forBin:           binArray(OKABE_ITO),
+  forValue:         (t) => lerpKp(CIVIDIS, t),
   plotlyColorscale: 'Cividis',
 });
 

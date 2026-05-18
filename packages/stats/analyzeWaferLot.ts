@@ -172,6 +172,11 @@ export function analyzeWaferLot(
     ? Object.fromEntries(Object.entries(firstWafer).filter(([k]) => k !== 'wafer' && k !== 'waferId'))
     : undefined;
 
+  const lotYieldSeries = perWafer.map(({ waferIndex, summary }) => ({
+    waferIndex,
+    yieldPercent: summary.stats.yieldPercent,
+  }));
+
   return {
     level: 'lot',
     hasNotableFindings: findings.some((finding) => finding.severity !== 'info')
@@ -179,6 +184,7 @@ export function analyzeWaferLot(
     findings,
     lot: Object.keys(lotIdentity ?? {}).length > 0 ? lotIdentity : undefined,
     stats: { waferCount: items.length },
+    lotYieldSeries,
     perWafer,
   };
 }

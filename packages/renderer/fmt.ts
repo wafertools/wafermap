@@ -56,6 +56,17 @@ export function fmt(v: number, unit?: string, fallbackFormat?: 'si' | 'engineeri
  *
  * Without a unit the ticks use `fmt()` directly and `axisLabel` is just the name.
  */
+function makeTickFormatter(scale: number): (v: number) => string {
+  return (v: number): string => {
+    if (!isFinite(v)) return String(v);
+    if (v === 0) return '0';
+    const scaled = v / scale;
+    const a = Math.abs(scaled);
+    const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+    return scaled.toFixed(digits);
+  };
+}
+
 export function fmtColorbarAxis(
   vRef: number,
   name: string | null | undefined,
@@ -70,18 +81,9 @@ export function fmtColorbarAxis(
       ? ([1, ''] as [number, string])
       : (SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f']);
 
-    const tickFmt = (v: number): string => {
-      if (!isFinite(v)) return String(v);
-      if (v === 0) return '0';
-      const scaled = v / scale;
-      const a = Math.abs(scaled);
-      const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
-      return scaled.toFixed(digits);
-    };
-
     const scaledUnit = `${prefix}${unit}`;
     const axisLabel  = name ? `${name} (${scaledUnit})` : scaledUnit;
-    return { tickFmt, axisLabel };
+    return { tickFmt: makeTickFormatter(scale), axisLabel };
   }
 
   // No unit. Values in the normal display range [0.1, 9999] need no scaling —
@@ -97,18 +99,10 @@ export function fmtColorbarAxis(
     // SI prefix mode: scale ticks by the SI prefix factor; label uses ×10ⁿ notation
     // (the prefix letter alone is cryptic without a unit).
     const [scale] = SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f'];
-    const tickFmt = (v: number): string => {
-      if (!isFinite(v)) return String(v);
-      if (v === 0) return '0';
-      const scaled = v / scale;
-      const a = Math.abs(scaled);
-      const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
-      return scaled.toFixed(digits);
-    };
     const exp      = Math.round(Math.log10(scale));
     const expLabel = exp === 0 ? '' : `×10E${exp}`;
     const axisLabel = name ? (expLabel ? `${name} (${expLabel})` : name) : expLabel;
-    return { tickFmt, axisLabel };
+    return { tickFmt: makeTickFormatter(scale), axisLabel };
   }
 
   // Engineering mode: pick the shared E±N exponent from vRef, ticks are bare scaled numbers,
@@ -116,20 +110,10 @@ export function fmtColorbarAxis(
   const exp3    = Math.floor(Math.log10(abs) / 3) * 3;
   const clamped = Math.max(-15, Math.min(12, exp3));
   const scale   = Math.pow(10, clamped);
-
-  const tickFmt = (v: number): string => {
-    if (!isFinite(v)) return String(v);
-    if (v === 0) return '0';
-    const scaled = v / scale;
-    const a = Math.abs(scaled);
-    const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
-    return scaled.toFixed(digits);
-  };
-
   const expLabel  = clamped === 0 ? '' : `×10E${clamped}`;
   const axisLabel = name
     ? (expLabel ? `${name} (${expLabel})` : name)
     : expLabel;
-  return { tickFmt, axisLabel };
+  return { tickFmt: makeTickFormatter(scale), axisLabel };
 }
 
