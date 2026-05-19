@@ -285,7 +285,7 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
     plotMode: 'value',
     colorFns: getColorScheme('default'),
     normalize: (v) => v,
-    testIndex: 0,
+    activeTest: 0,
     valueRange: [0.6, 0.9],
     testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
   });

@@ -85,7 +85,7 @@ export interface ToolbarHelpers {
   setOpenMenu(menu: HTMLDivElement | null): void;
 }
 
-export type ModeEntry = { plotMode: PlotMode; testIndex?: number; label: string; logScale?: boolean };
+export type ModeEntry = { plotMode: PlotMode; activeTest?: number; label: string; logScale?: boolean };
 
 /**
  * Build the plot-mode dropdown menu element.

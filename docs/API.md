@@ -6,7 +6,7 @@ This document describes the public API exposed by `wafermap`.
 
 ## 1 Coordinate system
 
-**`x` and `y` throughout this API are die grid positions (prober step coordinates) — integers such as −7, 0, 5.  They are NOT millimetre values.**
+**`x` and `y` throughout this API are die grid positions (prober step coordinates) — integers such as −7, 0, 5.  They are NOT millimetre values.  They must be JavaScript `number` type — CSV parsers return strings; always cast with `Number()` or `+` before passing to `buildWaferMap`.**
 
 This matches what wafer test equipment outputs.  The library converts grid positions to physical mm internally using the die size you provide.
 
@@ -87,13 +87,13 @@ import { buildWaferMap } from '@paulrobins/wafermap';
 
 ### 4.1 Input
 
-`buildWaferMap` accepts either an array of data points or an object:
+`buildWaferMap` accepts either an array of data points or an object. They are equivalent when no extra options are needed — the array form is just shorthand for `{ results: [...] }`:
 
 ```ts
-// Array form — minimal
+// Array form — shorthand, equivalent to passing { results }
 buildWaferMap(results: DieResult[])
 
-// Object form — with optional geometry hints
+// Object form — use this when you need geometry hints or other options
 buildWaferMap({
   results?:      DieResult[],      // per-die measurements from the prober
   waferConfig?:  WaferConfig,     // physical wafer geometry (diameter, notch, orientation…)
@@ -576,7 +576,8 @@ Scene display options controllable via the toolbar or programmatically:
   testDefs?:               TestDef[]         // named test definitions — drives mode dropdown entries
   hbinDefs?:               BinDef[]          // hard bin names/colors (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]          // soft bin names/colors (sbin, 0–32767 space — independent)
-  testIndex?:              number            // toolbar cursor: which testDefs entry to show in 'value' mode; default 0
+  activeTest?:              number            // toolbar cursor: the testNumber to show in 'value' mode (matches testDef.testNumber, NOT a positional array index)
+                                            // defaults to 0, which falls back to the first test when no testDef has testNumber 0
   logScale?:               boolean           // override log₁₀ scale on/off for the active test; takes precedence over TestDef.logScale; silently falls back to linear when vMin ≤ 0
   colorbarRangeMode?:      'spec' | 'data'   // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
                                             // set 'data' to span actual data min/max regardless of limits
@@ -628,8 +629,10 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a summary panel toggle button to the toolbar
   waferResult?:            { yield: YieldSummary; dataCoverage: { filledDies, totalDies, edgeExcludedDies, ratio } }
-                                            // supplies yield and coverage data to the summary panel; when omitted those
-                                            // sections are hidden. Pass result directly: waferResult: buildWaferMap(...)
+                                            // supplies yield and coverage data to the summary panel's yield section;
+                                            // when omitted those sections are hidden. Pass result directly: waferResult: buildWaferMap(...)
+                                            // Note: toolbar yield display (the % shown in the toolbar) comes from passBins
+                                            // passed to buildWaferMap — waferResult is only needed for the summary panel
   summaryPanel?:           SummaryPanelOptions  // summary panel placement and open/closed initial state
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
@@ -1750,7 +1753,7 @@ interface SceneOptions {
   testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
   hbinDefs?:               BinDef[]    // named hard bin definitions (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
-  testIndex?:              number      // which values[] slot to display in 'value' mode; default 0
+  activeTest?:              number      // which values[] slot to display in 'value' mode; default 0
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
   colorbarRangeMode?:      'spec' | 'data'  // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
                                             // 'data' spans actual data min/max; out-of-spec coloring applies in both modes
@@ -1759,7 +1762,7 @@ interface SceneOptions {
 }
 ```
 
-Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `testIndex`, `logScale`, `aggrMethod`, `lotSize`.
+Returns `Scene` with `rectangles`, `texts`, `hoverPoints`, `overlays`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggrMethod`, `lotSize`.
 
 ---
 

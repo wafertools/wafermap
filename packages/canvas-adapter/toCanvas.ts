@@ -371,9 +371,9 @@ export function toCanvas(
           return ts;
         })();
 
-    const testDef = scene.testDefs?.find(t => (t.index ?? t.testNumber) === scene.testIndex);
+    const testDef = scene.testDefs?.find(t => (t.index ?? t.testNumber) === scene.activeTest);
     const isCountMode = scene.plotMode === 'stackedBins' || scene.plotMode === 'stackedSoftBins';
-    const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (scene.testIndex != null ? `Test ${scene.testIndex}` : undefined));
+    const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (scene.activeTest != null ? `Test ${scene.activeTest}` : undefined));
     const cbUnit  = isCountMode ? undefined : testDef?.unit;
     const { tickFmt, axisLabel } = fmtColorbarAxis(
       vMax, cbName, cbUnit, fallbackFormat,

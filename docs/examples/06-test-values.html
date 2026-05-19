@@ -192,7 +192,7 @@
     const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
       sceneOptions: {
         plotMode:  'value',
-        testIndex: TEST_DEFS[0].testNumber,
+        activeTest: TEST_DEFS[0].testNumber,
         testDefs:  scene.testDefs,
       },
     });
@@ -208,7 +208,7 @@
         document.getElementById('btn-value').classList.add('active');
         document.getElementById('btn-speclimit').classList.remove('active');
       }
-      ctrl.setOptions({ plotMode, testIndex: testNumber });
+      ctrl.setOptions({ plotMode, activeTest: testNumber });
       updatePanel(testNumber);
     });
 
@@ -226,18 +226,18 @@
       plotMode = 'specLimit';
       document.getElementById('btn-speclimit').classList.add('active');
       document.getElementById('btn-value').classList.remove('active');
-      ctrl.setOptions({ plotMode: 'specLimit', testIndex: testNumber });
+      ctrl.setOptions({ plotMode: 'specLimit', activeTest: testNumber });
     });
 
     // Keep the external selector in sync with the toolbar test picker
     ctrl.getOptions && (function sync() {
       requestAnimationFrame(sync);
       const o = ctrl.getOptions();
-      if (o && o.testIndex != null) {
+      if (o && o.activeTest != null) {
         const sel = document.getElementById('sel-test');
-        if (Number(sel.value) !== o.testIndex) {
-          sel.value = String(o.testIndex);
-          updatePanel(o.testIndex);
+        if (Number(sel.value) !== o.activeTest) {
+          sel.value = String(o.activeTest);
+          updatePanel(o.activeTest);
         }
         if (o.plotMode !== plotMode) {
           plotMode = o.plotMode;

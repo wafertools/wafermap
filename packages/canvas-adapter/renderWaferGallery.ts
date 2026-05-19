@@ -278,7 +278,7 @@ export function renderWaferGallery(
     clearCardHighlight();
     const { kind: vKind, index } = finding.variable;
     if (vKind === 'test') {
-      updateShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined }, { fireCallback: false });
+      updateShared({ plotMode: 'value', activeTest: index ?? 0, highlightBin: undefined }, { fireCallback: false });
     } else if (vKind === 'softBin') {
       updateShared({ plotMode: 'softBin', highlightBin: undefined }, { fireCallback: false });
     } else {
@@ -327,7 +327,7 @@ export function renderWaferGallery(
     // dies, and highlightBin dims everything else making the map look empty.
     const { kind, index } = finding.variable;
     if (kind === 'test') {
-      updateShared({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined }, { fireCallback: false });
+      updateShared({ plotMode: 'value', activeTest: index ?? 0, highlightBin: undefined }, { fireCallback: false });
     } else if (kind === 'softBin') {
       updateShared({ plotMode: 'softBin', highlightBin: undefined }, { fireCallback: false });
     } else {
@@ -408,19 +408,19 @@ export function renderWaferGallery(
     const hasSbin = dies.some(d => d.sbin != null);
 
     const currentMode    = sharedOpts.plotMode ?? 'hardBin';
-    const currentTestIdx = sharedOpts.testIndex ?? 0;
+    const currentTestIdx = sharedOpts.activeTest ?? 0;
 
     function isCurrentEntry(e: ModeEntry): boolean {
       if (e.plotMode !== currentMode) return false;
-      if (e.plotMode === 'value') return currentTestIdx === (e.testIndex ?? 0);
+      if (e.plotMode === 'value') return currentTestIdx === (e.activeTest ?? 0);
       return true;
     }
 
     function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
-      if (entry.testIndex !== undefined) {
-        updateShared({ plotMode: 'value', testIndex: entry.testIndex, logScale: entry.logScale });
+      if (entry.activeTest !== undefined) {
+        updateShared({ plotMode: 'value', activeTest: entry.activeTest, logScale: entry.logScale });
       } else {
-        updateShared({ plotMode: entry.plotMode, testIndex: undefined });
+        updateShared({ plotMode: entry.plotMode, activeTest: undefined });
       }
       menu.remove();
       setOpenMenu(null);
@@ -430,7 +430,7 @@ export function renderWaferGallery(
       ? (testDefs?.length
           ? testDefs.map(t => ({
               plotMode: 'value' as PlotMode,
-              testIndex: t.index ?? t.testNumber ?? 0,
+              activeTest: t.index ?? t.testNumber ?? 0,
               label: t.unit ? `${t.name} (${t.unit})` : t.name,
               logScale: t.logScale,
             }))
@@ -438,7 +438,7 @@ export function renderWaferGallery(
               d.testValues ? Object.keys(d.testValues).map(Number) : []
             ))].sort((a, b) => a - b).map(tn => ({
               plotMode: 'value' as PlotMode,
-              testIndex: tn,
+              activeTest: tn,
               label: `Test ${tn}`,
             })))
       : [];

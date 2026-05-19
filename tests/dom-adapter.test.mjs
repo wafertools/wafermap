@@ -370,7 +370,7 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 1); // One aggregated card for stackedValues
 
     // Switch to value mode - should restore individual cards and clear stacked options
-    ctrl.setOptions({ plotMode: 'value', testIndex: 0 });
+    ctrl.setOptions({ plotMode: 'value', activeTest: 0 });
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, items.length);
 
     // Verify the shared options don't contain stacked-specific properties
@@ -379,7 +379,7 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
     assert.equal(opts.lotSize, undefined);
     assert.equal(opts.aggrMethod, undefined);
     assert.equal(opts.plotMode, 'value');
-    assert.equal(opts.testIndex, 0);
+    assert.equal(opts.activeTest, 0);
 
     ctrl.destroy();
   } finally {

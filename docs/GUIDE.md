@@ -30,7 +30,8 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 ```html
 <script type="module">
   import { buildWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/index.js';
-  import { renderWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/canvas-adapter/index.js';
+  // renderWaferMap, renderWaferGallery, and GalleryItemFactory all come from the same canvas-adapter URL:
+  import { renderWaferMap, renderWaferGallery } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/canvas-adapter/index.js';
 </script>
 ```
 
@@ -41,7 +42,11 @@ The minimal path is two function calls: `buildWaferMap` to process your data, th
 `renderWaferMap` to draw it.
 
 ```html
+<!-- Fixed size: -->
 <canvas id="map" style="width:500px; height:500px;"></canvas>
+
+<!-- Responsive square (fills its container, always square): -->
+<canvas id="map" style="width:100%; aspect-ratio:1;"></canvas>
 ```
 
 ```ts
@@ -58,6 +63,11 @@ const { wafer, dies } = buildWaferMap([
 ]);
 
 renderWaferMap(document.getElementById('map'), wafer, dies);
+
+// Optional: react to die clicks. The Die object has x, y, hbin, sbin, testValues.
+// renderWaferMap(canvas, wafer, dies, {
+//   onClick: (die) => console.log(die.x, die.y, die.hbin),
+// });
 ```
 
 `renderWaferMap` returns immediately and mounts a self-contained interactive map.
@@ -87,7 +97,7 @@ LOT123,W01,-7,-1,1,10,1.099,0.772,5.966
 ...
 ```
 
-Parse the CSV and map each row to a `DieResult`:
+Parse the CSV and map each row to a `DieResult`. **All numeric fields must be cast to `number` — CSV parsers return strings, and passing string `"3"` where an integer is expected will silently produce wrong geometry or NaN values.**
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -97,7 +107,7 @@ async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
   const rows = parseCsv(csvText);  // your CSV parser of choice
 
   const results = rows.map(r => ({
-    x:          Number(r.x),
+    x:          Number(r.x),       // must be number — not string "3"
     y:          Number(r.y),
     hbin:       Number(r.hbin),
     sbin:       Number(r.sbin),
@@ -334,7 +344,7 @@ const { wafer, dies, scene } = buildWaferMap({
 renderWaferMap(canvas, wafer, dies, {
   sceneOptions: {
     plotMode:  'value',
-    testIndex: 0,          // show Idsat first
+    activeTest: 0,          // show Idsat first
     testDefs:  scene.testDefs,
   },
 });
@@ -391,7 +401,7 @@ const { wafer, dies, scene } = buildWaferMap({ results, waferConfig, dieConfig, 
 renderWaferMap(canvas, wafer, dies, {
   sceneOptions: {
     plotMode:  'specLimit',
-    testIndex: 1060,
+    activeTest: 1060,
     testDefs:  scene.testDefs,
   },
 });
@@ -508,7 +518,7 @@ All of these can also be changed by the user via the toolbar at any time.
 const ctrl = renderWaferMap(canvas, wafer, dies, { sceneOptions: { plotMode: 'hardBin' } });
 
 // Switch display mode:
-ctrl.setOptions({ plotMode: 'value', testIndex: 1 });
+ctrl.setOptions({ plotMode: 'value', activeTest: 1 });
 
 // Replace die data (e.g. after a data reload) — preserves zoom/pan:
 ctrl.setDies(newDies);
@@ -1170,7 +1180,7 @@ const items = waferResults.map((r, i) => ({
 ctrl.setItems(newItems);
 
 // Sync display mode from an external control:
-ctrl.setOptions({ plotMode: 'value', testIndex: 1 });
+ctrl.setOptions({ plotMode: 'value', activeTest: 1 });
 
 // Track state changes back to your UI:
 renderWaferGallery(container, items, {
@@ -1308,7 +1318,7 @@ const summary = analyzeWaferMap(result, {
 // summary.stats.lotSize           === 6
 
 renderWaferMap(canvas, result.wafer, result.dies, {
-  sceneOptions: { plotMode: 'value', testDefs, testIndex: 0 },
+  sceneOptions: { plotMode: 'value', testDefs, activeTest: 0 },
   statsSummary: summary,
   waferResult:  result,
   summaryPanel: { defaultOpen: true },

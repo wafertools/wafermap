@@ -40,7 +40,7 @@ export interface WaferSceneOptions {
    * Which `values[]` index to display in `value` plot mode. Default `0`.
    * Controlled by the mode dropdown when `testDefs` are defined.
    */
-  testIndex?:              number;
+  activeTest?:              number;
   /** Named test definitions — one per `values[]` entry. Shown in mode dropdown and tooltip. */
   testDefs?:               TestDef[];
   /** Named hard bin definitions — one per distinct `die.hbin` value. Independent number space from soft bins. */
@@ -252,7 +252,7 @@ export function renderWaferMap(
       reticles:               so.reticles,
       ringCount:              so.ringCount,
       highlightBin:           so.highlightBin,
-      testIndex:              so.testIndex,
+      activeTest:              so.activeTest,
       testDefs:               so.testDefs,
       hbinDefs:               so.hbinDefs,
       sbinDefs:               so.sbinDefs,
@@ -338,7 +338,7 @@ export function renderWaferMap(
   function applyFindingHighlightFromPanel(finding: StatsFinding): void {
     const { kind, index } = finding.variable;
     if (kind === 'test') {
-      applyOpts({ plotMode: 'value', testIndex: index ?? 0, highlightBin: undefined });
+      applyOpts({ plotMode: 'value', activeTest: index ?? 0, highlightBin: undefined });
     } else if (kind === 'softBin') {
       applyOpts({ plotMode: 'softBin', highlightBin: undefined });
     } else {
@@ -495,20 +495,20 @@ export function renderWaferMap(
         toolbar.appendChild(makeSep());
 
         // Mode dropdown: when testDefs are defined, show one entry per named test
-        // plus the bin modes. Selecting a named test sets plotMode:'value' + testIndex.
-        // Selecting a bin mode sets plotMode to that mode and clears testIndex.
+        // plus the bin modes. Selecting a named test sets plotMode:'value' + activeTest.
+        // Selecting a bin mode sets plotMode to that mode and clears activeTest.
         function isCurrentEntry(e: ModeEntry): boolean {
           if (e.plotMode !== (sceneOpts.plotMode ?? 'hardBin')) return false;
-          if (e.plotMode === 'value') return (sceneOpts.testIndex ?? 0) === (e.testIndex ?? 0);
+          if (e.plotMode === 'value') return (sceneOpts.activeTest ?? 0) === (e.activeTest ?? 0);
           return true;
         }
 
         function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
-          if (entry.testIndex !== undefined) {
+          if (entry.activeTest !== undefined) {
             // Apply test's logScale default when switching tests.
-            applyOpts({ plotMode: 'value', testIndex: entry.testIndex, logScale: entry.logScale });
+            applyOpts({ plotMode: 'value', activeTest: entry.activeTest, logScale: entry.logScale });
           } else {
-            applyOpts({ plotMode: entry.plotMode, testIndex: undefined });
+            applyOpts({ plotMode: entry.plotMode, activeTest: undefined });
           }
           menu.remove();
           setOpenMenu(null);
@@ -532,7 +532,7 @@ export function renderWaferMap(
             ? (testDefs?.length
                 ? testDefs.map(t => ({
                     plotMode: 'value' as PlotMode,
-                    testIndex: t.index ?? t.testNumber ?? 0,
+                    activeTest: t.index ?? t.testNumber ?? 0,
                     label: t.unit ? `${t.name} (${t.unit})` : t.name,
                     logScale: t.logScale,
                   }))
@@ -540,7 +540,7 @@ export function renderWaferMap(
                     d.testValues ? Object.keys(d.testValues).map(Number) : []
                   ))].sort((a, b) => a - b).map(tn => ({
                     plotMode: 'value' as PlotMode,
-                    testIndex: tn,
+                    activeTest: tn,
                     label: `Test ${tn}`,
                   })))
             : [];
@@ -621,7 +621,7 @@ export function renderWaferMap(
         syncLogScaleBtnFn();
 
         const activeTestDefHasLimits = () => {
-          const td = sceneOpts.testDefs?.find(t => (t.index ?? t.testNumber) === sceneOpts.testIndex);
+          const td = sceneOpts.testDefs?.find(t => (t.index ?? t.testNumber) === sceneOpts.activeTest);
           return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
         };
         const btnColorbarRange = makeBtn('specRange', 'Colorbar range: spec limits', () => {

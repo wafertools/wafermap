@@ -244,7 +244,7 @@
     function syncExternalControls(opts) {
       // Map plotMode back to the compound mode selector value
       const modeValue = opts.plotMode === 'value'
-        ? `value-${opts.testIndex ?? 0}`
+        ? `value-${opts.activeTest ?? 0}`
         : (opts.plotMode ?? 'hardBin');
       // Avoid spurious change events by only writing when different
       const modeEl = document.getElementById('ext-mode');
@@ -283,7 +283,7 @@
     document.getElementById('ext-mode').addEventListener('change', e => {
       const val = e.target.value;
       if (val.startsWith('value-')) {
-        ctrl.setOptions({ plotMode: 'value', testIndex: Number(val.split('-')[1]) });
+        ctrl.setOptions({ plotMode: 'value', activeTest: Number(val.split('-')[1]) });
       } else {
         ctrl.setOptions({ plotMode: val });
       }

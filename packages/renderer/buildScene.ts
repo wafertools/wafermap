@@ -11,17 +11,17 @@ import { fmt, fmtColorbarAxis } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
 
-/** Resolve a toolbar testIndex cursor to the canonical test number for getDieTestValue. */
-function resolveTestNumber(testIndex: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
+/** Resolve a toolbar activeTest cursor to the canonical test number for getDieTestValue. */
+function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
   if (testDefs?.length) {
-    const def = testDefs.find(t => (t.index ?? t.testNumber) === testIndex)
-             ?? testDefs[0]; // default to first test when testIndex doesn't match any def
+    const def = testDefs.find(t => (t.index ?? t.testNumber) === activeTest)
+             ?? testDefs[0]; // default to first test when activeTest doesn't match any def
     return {
-      testNumber:    def.testNumber ?? def.index ?? testIndex,
-      fallbackIndex: def.index     ?? testIndex,
+      testNumber:    def.testNumber ?? def.index ?? activeTest,
+      fallbackIndex: def.index     ?? activeTest,
     };
   }
-  return { testNumber: testIndex, fallbackIndex: testIndex };
+  return { testNumber: activeTest, fallbackIndex: activeTest };
 }
 
 export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'specLimit';
@@ -84,7 +84,7 @@ export interface Scene {
   /** Named soft bin definitions (for `die.sbin`). Independent number space from hard bins. */
   sbinDefs?: BinDef[];
   /** Which `values[]` index is being displayed (for `value` plot mode). Default 0. */
-  testIndex: number;
+  activeTest: number;
   /** True when log₁₀ scale is both requested and valid (vMin > 0). */
   logScale: boolean;
   /** Aggregation method label for `stackedValues` hover tooltips (e.g. `'mean'`). */
@@ -153,7 +153,7 @@ export interface SceneOptions {
    * Which `values[]` index to display in `value` plot mode. Default `0`.
    * When `testDefs` is provided, the toolbar mode dropdown offers one item per test.
    */
-  testIndex?: number;
+  activeTest?: number;
   /**
    * When true, apply log₁₀ scale to value normalization and the colorbar.
    * Overrides the per-test `TestDef.logScale` default.
@@ -415,18 +415,18 @@ export function generateTextOverlay(
     plotMode: PlotMode;
     colorFns: ColorFns;
     normalize: (v: number) => number;
-    testIndex: number;
+    activeTest: number;
     valueRange: [number, number];
     testDefs?: TestDef[];
     fallbackFormat?: 'si' | 'engineering';
   },
 ): SceneText[] {
-  const { plotMode, colorFns, normalize, testIndex, valueRange, testDefs, fallbackFormat } = options;
+  const { plotMode, colorFns, normalize, activeTest, valueRange, testDefs, fallbackFormat } = options;
 
   // Build a tick formatter matched to the colorbar scale so die labels are consistent.
-  const testDef = testDefs?.find(t => (t.index ?? t.testNumber) === testIndex);
+  const testDef = testDefs?.find(t => (t.index ?? t.testNumber) === activeTest);
   const { tickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
-  const { testNumber: tn, fallbackIndex: fi } = resolveTestNumber(testIndex, testDefs);
+  const { testNumber: tn, fallbackIndex: fi } = resolveTestNumber(activeTest, testDefs);
 
   return dies.flatMap((die) => {
     let text = '';
@@ -792,7 +792,7 @@ export function buildScene(
     testDefs,
     hbinDefs,
     sbinDefs,
-    testIndex = 0,
+    activeTest = 0,
     fallbackFormat = 'engineering' as const,
     aggrMethod,
     lotSize,
@@ -821,12 +821,12 @@ export function buildScene(
     forBin:   scheme.forBin,
   };
 
-  // Resolve testIndex (toolbar cursor) → canonical test number for getDieTestValue.
+  // Resolve activeTest (toolbar cursor) → canonical test number for getDieTestValue.
   let { testNumber: activeTestNumber, fallbackIndex: activeTestFallback } =
-    resolveTestNumber(testIndex, testDefs);
+    resolveTestNumber(activeTest, testDefs);
 
-  // When no testDefs are provided the toolbar passes actual testNumbers as testIndex.
-  // If the resolved testNumber doesn't exist in any die (e.g. default testIndex=0 but data
+  // When no testDefs are provided the toolbar passes actual testNumbers as activeTest.
+  // If the resolved testNumber doesn't exist in any die (e.g. default activeTest=0 but data
   // uses keys like 1010), fall back to the lowest key actually present in the dies.
   if (!testDefs?.length && plotMode === 'value') {
     const hasKey = dies.some(d => d.testValues && activeTestNumber in d.testValues);
@@ -845,7 +845,7 @@ export function buildScene(
   }
 
   // Resolve active test def now — needed for limit-based range defaulting below.
-  const activeTestDef = testDefs?.find(t => (t.index ?? t.testNumber) === testIndex);
+  const activeTestDef = testDefs?.find(t => (t.index ?? t.testNumber) === activeTest);
 
   // Compute value range for normalization.
   // For stackedValues/stackedBins the aggregated scalar sits at testNumber=0.
@@ -938,7 +938,7 @@ export function buildScene(
   }
 
   const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, {
-    plotMode, colorFns, normalize, testIndex,
+    plotMode, colorFns, normalize, activeTest,
     valueRange: [vMin, vMax], testDefs, fallbackFormat,
   }) : [];
   const overlays = buildBoundaryOverlay(wafer, transform);
@@ -962,7 +962,7 @@ export function buildScene(
     testDefs,
     hbinDefs,
     sbinDefs,
-    testIndex,
+    activeTest,
     logScale,
     aggrMethod,
     lotSize,
