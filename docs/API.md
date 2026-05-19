@@ -371,7 +371,7 @@ const { yieldPercent, yieldPercentGross } = result.yield;
 
 Partial dies are excluded from both numerator and denominator. Edge-excluded dies are excluded by default (`edgeDieYieldMode: 'exclude'`); set `edgeDieYieldMode: 'denominator-only'` to include them in the denominator for gross die yield.
 
-**`result.yield.yieldPercent` vs `summary.stats.yieldPercent`** — both are the same fraction ∈ [0,1], but they can differ when you pass custom options to `analyzeWaferMap` (e.g. a different `edgeDieYieldMode` or `passBins`). Use `result.yield` for rendering and quick checks; use `summary.stats.yieldPercent` when you need the yield that is consistent with the findings analysis.
+**`result.yield.yieldPercent` vs `summary.stats.yieldPercent`** — both are the same fraction ∈ \[0,1\], but they can differ when you pass custom options to `analyzeWaferMap` (e.g. a different `edgeDieYieldMode` or `passBins`). Use `result.yield` for rendering and quick checks; use `summary.stats.yieldPercent` when you need the yield that is consistent with the findings analysis.
 
 **`units`** tells you the coordinate space of the physical coordinates (`die.physX`, `die.physY`) and wafer dimensions; `die.x`/`die.y` remain die grid positions (prober step coordinates):
 

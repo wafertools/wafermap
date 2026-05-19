@@ -529,10 +529,6 @@ export function buildFindingsSection(
     }
   }
 
-  // Expose ordered findings and row map for panel-level keyboard navigation.
-  outer.dataset.wmapFindingsNav = '1';
-  (outer as HTMLDivElement & { _wmapNav?: FindingsNavState })._wmapNav = { orderedFindings, rowMap };
-
   return outer;
 }
 
@@ -673,10 +669,7 @@ export function buildLotTestSection(
   return buildTestSection(allDies, testDefs, fallbackFormat);
 }
 
-interface FindingsNavState {
-  orderedFindings: StatsFinding[];
-  rowMap: Map<string, HTMLButtonElement>;
-}
+
 
 // ── Panel container ───────────────────────────────────────────────────────────
 
@@ -843,44 +836,6 @@ export function renderWaferSummaryContent(
     panel.appendChild(s);
   }
 
-  // Wire keyboard navigation on the persistent panel element.
-  // Remove the previous handler (if any) before attaching a new one so we
-  // don't accumulate listeners across re-renders.
-  type PanelWithNav = HTMLDivElement & { _wmapKeydown?: (e: KeyboardEvent) => void };
-  const panelWithNav = panel as PanelWithNav;
-  if (panelWithNav._wmapKeydown) {
-    panel.removeEventListener('keydown', panelWithNav._wmapKeydown);
-  }
-
-  // Find the findings section built in this render.
-  const navEl = panel.querySelector<HTMLDivElement>('[data-wmap-findings-nav]');
-  const nav = navEl ? (navEl as HTMLDivElement & { _wmapNav?: FindingsNavState })._wmapNav : undefined;
-
-  if (nav && onFindingClick) {
-    const { orderedFindings, rowMap } = nav;
-    panelWithNav._wmapKeydown = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      e.preventDefault();
-      const activeIdx = orderedFindings.findIndex(f => f.id === activeFindingId);
-      let nextIdx: number;
-      if (activeIdx === -1) {
-        nextIdx = e.key === 'ArrowDown' ? 0 : orderedFindings.length - 1;
-      } else {
-        nextIdx = e.key === 'ArrowDown'
-          ? Math.min(activeIdx + 1, orderedFindings.length - 1)
-          : Math.max(activeIdx - 1, 0);
-      }
-      const nextFinding = orderedFindings[nextIdx];
-      const nextRow = rowMap.get(nextFinding.id);
-      if (nextRow) {
-        onFindingClick(nextFinding, nextRow);
-        nextRow.scrollIntoView({ block: 'nearest' });
-      }
-    };
-    panel.addEventListener('keydown', panelWithNav._wmapKeydown);
-  } else {
-    panelWithNav._wmapKeydown = undefined;
-  }
 }
 
 /** Render lot-level content into the panel. Clears existing content. */
