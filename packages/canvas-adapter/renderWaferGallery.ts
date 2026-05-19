@@ -18,6 +18,17 @@ import {
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
+/**
+ * A factory function that builds a GalleryItem on demand.
+ * The gallery calls each factory in a deferred task (`setTimeout(0)`) so the
+ * browser stays responsive while large item sets are built progressively.
+ * Use this instead of pre-building items when `buildWaferMap` / `analyzeWaferMap`
+ * is expensive — the gallery shell and control bar appear immediately, and cards
+ * are inserted one by one as each factory completes.
+ * The placeholder card shows no label until the factory returns.
+ */
+export type GalleryItemFactory = () => GalleryItem;
+
 export interface GalleryItem {
   wafer:        Wafer;
   dies:         Die[];
@@ -67,8 +78,8 @@ export interface GalleryOptions {
 }
 
 export interface GalleryController {
-  /** Replace all items — destroys existing cards and rebuilds the grid. */
-  setItems(items: GalleryItem[]): void;
+  /** Replace all items — destroys existing cards and rebuilds the grid. Accepts pre-built items, factory functions, or a mix. */
+  setItems(items: Array<GalleryItem | GalleryItemFactory>): void;
   /** Merge shared scene option overrides across all cards. */
   setOptions(opts: Partial<WaferSceneOptions>): void;
   /** Return the current shared scene options. */
@@ -86,7 +97,7 @@ export interface GalleryController {
 
 export function renderWaferGallery(
   container: HTMLElement,
-  items: GalleryItem[],
+  items: Array<GalleryItem | GalleryItemFactory>,
   options: GalleryOptions = {},
 ): GalleryController {
   const cardPadding          = options.cardPadding          ?? 6;
@@ -565,7 +576,7 @@ export function renderWaferGallery(
   barEl.appendChild(btnRings);
   barEl.appendChild(btnQuadrants);
   barEl.appendChild(btnLabels);
-  if (items.some(it => it.hasReticle)) barEl.appendChild(btnReticle);
+  if (items.some(it => typeof it !== 'function' && it.hasReticle)) barEl.appendChild(btnReticle);
   barEl.appendChild(btnXY);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnLegendStyle);
@@ -934,122 +945,171 @@ export function renderWaferGallery(
 
   // ── Card building ──────────────────────────────────────────────────────────
 
-  function buildCards(newItems: GalleryItem[]): void {
+  function buildCard(item: GalleryItem, cardIndex: number, totalItems: number): { card: HTMLDivElement; ctrl: WaferCanvasController } {
+    const card = document.createElement('div');
+    card.className = 'wmap-gallery-card';
+    Object.assign(card.style, {
+      background:    '#fff',
+      border:        `1px solid #e2e5ea`,
+      borderRadius:  '10px',
+      overflow:      'hidden',
+      display:       'flex',
+      flexDirection: 'column',
+      position:      'relative',
+    });
+
+    const header = document.createElement('div');
+    Object.assign(header.style, {
+      display:        'flex',
+      alignItems:     'center',
+      padding:        '8px 10px 6px',
+      borderBottom:   '1px solid #e2e5ea',
+      flexShrink:     '0',
+      gap:            '6px',
+    });
+    const labelEl = document.createElement('span');
+    labelEl.textContent = item.label ?? '';
+    Object.assign(labelEl.style, { fontWeight: '700', fontSize: '13px', flex: '1' });
+    header.appendChild(labelEl);
+
+    // Expand button — the only affordance that opens the modal.
+    const expandBtn = document.createElement('button');
+    expandBtn.dataset.wmapExpandBtn = '1';
+    expandBtn.title = 'Open full view';
+    expandBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+    Object.assign(expandBtn.style, {
+      display:         'flex',
+      alignItems:      'center',
+      justifyContent:  'center',
+      border:          '1px solid #d1d5db',
+      borderRadius:    '4px',
+      background:      '#f9fafb',
+      color:           '#6b7280',
+      padding:         '2px',
+      cursor:          'pointer',
+      flexShrink:      '0',
+      width:           '22px',
+      height:          '22px',
+    });
+    header.appendChild(expandBtn);
+    card.appendChild(header);
+
+    // Wrap canvas in a positioned container so the toolbar (position:absolute,
+    // top:4px) anchors within the canvas area, not the full card including header.
+    const canvasWrapper = document.createElement('div');
+    Object.assign(canvasWrapper.style, {
+      position: 'relative',
+      flex:     '1',
+      minHeight:'0',
+      overflow: 'hidden',
+    });
+
+    const canvas = document.createElement('canvas');
+    Object.assign(canvas.style, {
+      aspectRatio: '1',
+      width:       '100%',
+      display:     'block',
+    });
+    canvasWrapper.appendChild(canvas);
+    card.appendChild(canvasWrapper);
+
+    // Append to DOM before renderWaferMap so the canvas has a resolved CSS
+    // layout size when the initial render() fires — avoids a zero-size first
+    // render that the ResizeObserver would otherwise need to correct.
+    gridEl.appendChild(card);
+
+    const ctrl = renderWaferMap(canvas, item.wafer, item.dies, {
+      sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
+      toolbarControls: 'view-only',
+      showTooltip:     true,
+      padding:         cardPadding,
+      legendPosition:  currentLegendStyle,
+      fallbackFormat:  currentFallbackFormat,
+      onClick:         item.onClick,
+      onSelect:        item.onSelect,
+    });
+
+    // Only the expand button opens the modal — canvas clicks are handled
+    // internally by renderWaferMap and stop propagation before reaching here.
+    expandBtn.addEventListener('click', () => openModal(item));
+
+    // Summary panel drill-down: clicking the card header area drills into wafer detail.
+    if (gallerySummaryPanelEl) {
+      header.style.cursor = 'pointer';
+      header.addEventListener('click', (e) => {
+        // Don't intercept expand button clicks
+        if ((e.target as HTMLElement).closest('[data-wmap-expand-btn]')) return;
+        gallerySummaryWaferIndex      = cardIndex;
+        gallerySummaryActiveFindingId = null;
+        clearCardHighlight();
+        clearDieZoneHighlight();
+        renderGallerySummaryPanel();
+      });
+    }
+
+    return { card, ctrl };
+  }
+
+  function buildCards(newItems: Array<GalleryItem | GalleryItemFactory>): void {
     getOpenMenu()?.remove(); setOpenMenu(null);
     clearLotFindingHighlight();
-    currentItems = newItems;
+    currentItems = [];
     for (const ctrl of cardControllers) ctrl.destroy();
     cardControllers = [];
     gridEl.innerHTML = '';
     rebuildLegend();
 
-    for (const item of newItems) {
-      const card = document.createElement('div');
-      card.className = 'wmap-gallery-card';
-      Object.assign(card.style, {
-        background:    '#fff',
-        border:        `1px solid #e2e5ea`,
-        borderRadius:  '10px',
-        overflow:      'hidden',
-        display:       'flex',
-        flexDirection: 'column',
-        position:      'relative',
-      });
+    // Separate pre-built items from factories.
+    const factories: Array<{ index: number; factory: GalleryItemFactory; placeholder: HTMLDivElement }> = [];
 
-      const header = document.createElement('div');
-      Object.assign(header.style, {
-        display:        'flex',
-        alignItems:     'center',
-        padding:        '8px 10px 6px',
-        borderBottom:   '1px solid #e2e5ea',
-        flexShrink:     '0',
-        gap:            '6px',
-      });
-      const label = document.createElement('span');
-      label.textContent = item.label ?? '';
-      Object.assign(label.style, { fontWeight: '700', fontSize: '13px', flex: '1' });
-      header.appendChild(label);
-
-      // Expand button — the only affordance that opens the modal.
-      const expandBtn = document.createElement('button');
-      expandBtn.dataset.wmapExpandBtn = '1';
-      expandBtn.title = 'Open full view';
-      expandBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
-      Object.assign(expandBtn.style, {
-        display:         'flex',
-        alignItems:      'center',
-        justifyContent:  'center',
-        border:          '1px solid #d1d5db',
-        borderRadius:    '4px',
-        background:      '#f9fafb',
-        color:           '#6b7280',
-        padding:         '2px',
-        cursor:          'pointer',
-        flexShrink:      '0',
-        width:           '22px',
-        height:          '22px',
-      });
-      header.appendChild(expandBtn);
-      card.appendChild(header);
-
-      // Wrap canvas in a positioned container so the toolbar (position:absolute,
-      // top:4px) anchors within the canvas area, not the full card including header.
-      const canvasWrapper = document.createElement('div');
-      Object.assign(canvasWrapper.style, {
-        position: 'relative',
-        flex:     '1',
-        minHeight:'0',
-        overflow: 'hidden',
-      });
-
-      const canvas = document.createElement('canvas');
-      Object.assign(canvas.style, {
-        aspectRatio: '1',
-        width:       '100%',
-        display:     'block',
-      });
-      canvasWrapper.appendChild(canvas);
-      card.appendChild(canvasWrapper);
-
-      // Append to DOM before renderWaferMap so the canvas has a resolved CSS
-      // layout size when the initial render() fires — avoids a zero-size first
-      // render that the ResizeObserver would otherwise need to correct.
-      gridEl.appendChild(card);
-
-      const ctrl = renderWaferMap(canvas, item.wafer, item.dies, {
-        sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
-        toolbarControls: 'view-only',
-        showTooltip:     true,
-        padding:         cardPadding,
-        legendPosition:     currentLegendStyle,
-        fallbackFormat:  currentFallbackFormat,
-        onClick:         item.onClick,
-        onSelect:        item.onSelect,
-      });
-      cardControllers.push(ctrl);
-
-      // Only the expand button opens the modal — canvas clicks are handled
-      // internally by renderWaferMap and stop propagation before reaching here.
-      expandBtn.addEventListener('click', () => openModal(item));
-
-      // Summary panel drill-down: clicking the card header area drills into wafer detail.
-      if (gallerySummaryPanelEl) {
-        const cardIndex = newItems.indexOf(item);
-        header.style.cursor = 'pointer';
-        header.addEventListener('click', (e) => {
-          // Don't intercept expand button clicks
-          if ((e.target as HTMLElement).closest('[data-wmap-expand-btn]')) return;
-          gallerySummaryWaferIndex      = cardIndex;
-          gallerySummaryActiveFindingId = null;
-          clearCardHighlight();
-          clearDieZoneHighlight();
-          renderGallerySummaryPanel();
+    for (let i = 0; i < newItems.length; i++) {
+      const entry = newItems[i];
+      if (typeof entry === 'function') {
+        // Insert a sized placeholder so the grid layout doesn't collapse.
+        const placeholder = document.createElement('div');
+        placeholder.className = 'wmap-gallery-card';
+        Object.assign(placeholder.style, {
+          background:    '#fff',
+          border:        `1px solid #e2e5ea`,
+          borderRadius:  '10px',
+          aspectRatio:   '1',
+          display:       'flex',
+          alignItems:    'center',
+          justifyContent:'center',
         });
+        const spinner = document.createElement('span');
+        spinner.textContent = '…';
+        Object.assign(spinner.style, { color: '#bbb', fontSize: '18px' });
+        placeholder.appendChild(spinner);
+        gridEl.appendChild(placeholder);
+        currentItems.push(null as unknown as GalleryItem); // slot reserved
+        cardControllers.push(null as unknown as WaferCanvasController);
+        factories.push({ index: i, factory: entry, placeholder });
+      } else {
+        const { ctrl } = buildCard(entry, i, newItems.length);
+        currentItems.push(entry);
+        cardControllers.push(ctrl);
       }
     }
+
+    // Resolve factories one per task to keep the main thread responsive.
+    let fi = 0;
+    function resolveNext(): void {
+      if (fi >= factories.length) return;
+      const { index, factory, placeholder } = factories[fi++];
+      const item = factory();
+      currentItems[index] = item;
+      originalItems[index] = item;
+      const { card, ctrl } = buildCard(item, index, newItems.length);
+      cardControllers[index] = ctrl;
+      placeholder.replaceWith(card);
+      setTimeout(resolveNext, 0);
+    }
+    if (factories.length > 0) setTimeout(resolveNext, 0);
   }
 
-  originalItems = items;
+  // Pre-populate originalItems with resolved items (factories fill slots as they run).
+  originalItems = items.map(it => (typeof it === 'function' ? null : it) as GalleryItem);
   // If the initial plotMode is already a stacked mode, aggregate immediately.
   if (STACKED_MODES.has(sharedOpts.plotMode!) && originalItems.length > 0) {
     const extra = stackedSharedOpts(sharedOpts.plotMode!);
@@ -1226,8 +1286,8 @@ export function renderWaferGallery(
   // ── Controller ─────────────────────────────────────────────────────────────
 
   return {
-    setItems(newItems: GalleryItem[]): void {
-      originalItems = newItems;
+    setItems(newItems: Array<GalleryItem | GalleryItemFactory>): void {
+      originalItems = newItems.map(it => (typeof it === 'function' ? null : it) as GalleryItem);
       const mode = sharedOpts.plotMode!;
       if (STACKED_MODES.has(mode)) {
         // Refresh lotSize and valueRange in case the wafer count changed.

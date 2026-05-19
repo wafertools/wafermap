@@ -753,6 +753,36 @@ import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 
 Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` so the overlay has geometry to draw.
 
+### 6.1.1 `GalleryItemFactory`
+
+```ts
+type GalleryItemFactory = () => GalleryItem
+```
+
+A factory function accepted anywhere a `GalleryItem` is expected (in the `items` array passed to
+`renderWaferGallery` or `setItems`). When the gallery encounters a factory it inserts a placeholder
+card immediately and calls the factory in a deferred browser task (`setTimeout(0)`), swapping in
+the real card when it returns.
+
+Use factories instead of pre-built items when `buildWaferMap` / `analyzeWaferMap` is expensive —
+the gallery shell and control bar appear instantly and cards fill in one by one rather than the
+page being blank while all maps are built:
+
+```ts
+const items = fixtures.map(sample => () => {
+  const result  = buildWaferMap({ results: sample.results, passBins: [1] });
+  const summary = analyzeWaferMap(result, { passBins: [1] });
+  return { label: sample.label, wafer: result.wafer, dies: result.dies, statsSummary: summary };
+});
+
+renderWaferGallery(container, items);
+```
+
+The placeholder card shows no label — if the label depends on computed data (e.g. a findings
+count) it appears when the card does. Pre-built items and factories can be mixed freely in the
+same array. Stacked modes (`stackedValues`, `stackedBins`, `stackedSoftBins`) require all items
+to be pre-built.
+
 ### 6.2 `GalleryOptions`
 
 ```ts
@@ -774,7 +804,7 @@ Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` s
 
 ```ts
 {
-  setItems(items: GalleryItem[]): void               // rebuild all cards
+  setItems(items: Array<GalleryItem | GalleryItemFactory>): void  // rebuild all cards; factories resolved progressively
   setOptions(opts: Partial<WaferSceneOptions>): void // sync shared options to all cards
   getOptions(): WaferSceneOptions
   setFallbackFormat(format: 'si' | 'engineering'): void
@@ -957,9 +987,12 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   enableSoftBinAnalysis?:        boolean  // default true
   enableTestValueAnalysis?:      boolean  // default true
   enableReticlePositionAnalysis?: boolean // default true (only runs when reticleConfig is present)
-  enableAngularAnalysis?:        boolean  // 16-sector directional analysis (default true)
+  enableAngularAnalysis?:        boolean  // compass-sector directional analysis (default true); see sectorCount
   enableClusterAnalysis?:        boolean  // contiguous failure cluster + edge-arc detection (default true)
   sectorCount?:                  number   // sectors for angular analysis: 4 | 8 | 16 | 32 (default 16)
+                                          // sectors are compass-named: N, NNE, NE, ENE, E, …
+                                          // dies within 0.2 normalised radius of the wafer centre are excluded
+                                          // (too close to centre to be meaningfully attributed to a direction)
   minimumClusterSize?:           number   // min contiguous failing dies for a cluster finding (default 3)
   testNumbers?:                  number[] // restrict test-value analysis to these test numbers (keys from testValues)
                                           // when omitted: all tests analysed, up to 100 — beyond that a console.warn
@@ -1012,6 +1045,15 @@ For proportion findings, severity uses whichever criterion — absolute or relat
 
 For test-value findings (Cohen's d): `unusual` when d ≥ 0.5 at p ≤ 0.01; `notable` when d ≥ 0.15 at p ≤ 0.05.
 
+**Cluster and edge-arc severity also considers cluster size** — a large contiguous cluster is visually dominant even when the rate contrast against an elevated background is modest. An additional size criterion applies on top of the rate/relative thresholds above:
+
+| Severity | Cluster fraction of wafer |
+|----------|--------------------------|
+| `unusual` | ≥ 10 % of all eligible dies |
+| `notable` | ≥ 3 % of all eligible dies |
+
+Either the rate criterion or the size criterion can trigger the severity level; both require p ≤ 0.01 (`unusual`) or p ≤ 0.05 (`notable`).
+
 **Behavioural notes:**
 
 - Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the scene.
@@ -1025,11 +1067,14 @@ For test-value findings (Cohen's d): `unusual` when d ≥ 0.5 at p ≤ 0.01; `no
   hasNotableFindings: boolean          // true when any finding is 'notable' or 'unusual'
   findings: StatsFinding[]
   wafer?: Record<string, unknown>      // identity fields from waferConfig.metadata (lot, wafer ID, test date, etc.)
+  // Note: this `stats` block is analysis metadata; StatsFinding also has its own
+  // nested `stats` object (pValue, sampleSizeLeft, etc.) — two distinct sub-objects.
   stats: {
-    totalDies:            number
-    analyzedDies:         number
-    excludedDies:         number
-    yieldPercent:         number | null
+    totalDies:            number        // all dies on the wafer including partial and edge-excluded
+    analyzedDies:         number        // dies included in analysis (excludes partial and, by default, edge dies)
+    excludedDies:         number        // edge-excluded dies (see edgeDieYieldMode)
+    yieldPercent:         number | null // fraction ∈ [0, 1] — multiply by 100 to display as %; null when no bin data
+                                        // denominator is analyzedDies (totalDies minus excluded)
     testsConsidered:      number[]     // test numbers (keys from testValues) that had enough data
     hardBinsConsidered:   number[]
     softBinsConsidered:   number[]
@@ -1135,12 +1180,12 @@ The summary panel's "Summary report" button calls this automatically when `stats
     relativeDelta?: number
     effectSize?:    number
   }
-  stats: {
+  stats: {                   // per-finding test statistics (distinct from StatsSummary.stats)
     method:            string
     pValue?:           number
     adjustedPValue?:   number
-    sampleSizeLeft:    number
-    sampleSizeRight:   number
+    sampleSizeLeft:    number   // dies in the region (left side of comparison)
+    sampleSizeRight:   number   // dies in the rest of the wafer (right side)
   }
   summary:   string         // one-sentence human-readable description
   highlight: HighlightTarget

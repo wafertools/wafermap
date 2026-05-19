@@ -189,6 +189,14 @@ export function reportStyles(): string {
     font-style: italic;
   }
 
+  .findings-narrative {
+    margin: 0 0 14px;
+    color: var(--report-muted);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.6;
+  }
+
   .definition-item {
     display: contents;
   }

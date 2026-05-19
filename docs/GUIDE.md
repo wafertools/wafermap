@@ -1332,6 +1332,31 @@ wmWorker.terminate();
 
 **→ [Demo: Processing large datasets with a Web Worker](examples/15-worker.html)**
 
+### Tip: keeping galleries responsive when building many maps
+
+`buildWaferMap` and `analyzeWaferMap` are synchronous. Building a large gallery in
+a single `.map()` loop blocks the main thread until all items are ready, leaving
+the page blank for several seconds.
+
+Pass factory functions instead of pre-built items and the gallery handles the rest
+— the control bar and placeholder cards appear immediately, and each card is built
+and inserted one per browser task as the factories run:
+
+```ts
+const items = fixtures.map(sample => () => {
+  const result  = buildWaferMap({ results: sample.results, passBins: [1] });
+  const summary = analyzeWaferMap(result,  { passBins: [1] });
+  return { label: sample.label, wafer: result.wafer, dies: result.dies, statsSummary: summary };
+});
+
+renderWaferGallery(container, items);
+```
+
+The only visible difference is that each card's label is blank until its factory
+runs — if the label depends on computed data (e.g. a findings count), it appears
+when the card does rather than upfront. If the label is known in advance and you
+want it visible immediately, pre-build items as usual for those cards.
+
 
 ## 16. Custom colour schemes
 

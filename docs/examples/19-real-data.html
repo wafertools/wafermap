@@ -75,9 +75,9 @@
       'none':       'No defect',
     };
 
-    const items = fixture.map(sample => {
-      const result  = buildWaferMap({ results: sample.results, passBins: [1] });
-      const summary = analyzeWaferMap(result, { passBins: [1] });
+    const items = fixture.map(sample => () => {
+      const result   = buildWaferMap({ results: sample.results, passBins: [1] });
+      const summary  = analyzeWaferMap(result, { passBins: [1] });
       const typeName = LABEL_NAMES[sample.failureType] ?? sample.failureType;
       const nFindings = summary.findings.length;
       const suffix = nFindings ? ` · ${nFindings} finding${nFindings > 1 ? 's' : ''}` : '';

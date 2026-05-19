@@ -7,6 +7,6 @@ export { renderWaferMap as mountWaferCanvas } from './renderWaferMap.js';
 export type { MountOptions, WaferCanvasController, WaferSceneOptions } from './renderWaferMap.js';
 
 export { renderWaferGallery } from './renderWaferGallery.js';
-export type { GalleryItem, GalleryOptions, GalleryController } from './renderWaferGallery.js';
+export type { GalleryItem, GalleryItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 
 export type { SummaryPanelOptions } from './summaryPanel.js';

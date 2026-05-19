@@ -9,6 +9,7 @@ import {
   renderSeverityBadge,
   reportStyles,
 } from './reportHtml.js';
+import { buildFindingsNarrative } from './findingsNarrative.js';
 
 const KNOWN_META_KEYS: Array<{ key: string; label: string }> = [
   { key: 'lot',      label: 'Lot' },
@@ -115,9 +116,12 @@ export function renderFindingsReportHtml(
   const generatedAt = new Date().toLocaleString();
   const findings = summary.findings;
   const totalWafers = summary.level === 'lot' ? summary.stats.waferCount : undefined;
+  const narrativeText = buildFindingsNarrative(findings);
+  const narrativeParagraph = narrativeText
+    ? `<p class="findings-narrative">${escHtml(narrativeText)}</p>\n` : '';
   const body = [
     renderSection('Summary', summaryMetaBlock(summary, generatedAt)),
-    renderSection('Findings', findingsTable(findings, totalWafers)),
+    renderSection('Findings', narrativeParagraph + findingsTable(findings, totalWafers)),
   ].join('\n');
 
   return `<!DOCTYPE html>

@@ -41,6 +41,8 @@ nav = [
   ]},
   { "Integration Guides" = [
     { "SvelteKit" = "SVELTEKIT.md" },
+    { "React"     = "REACT.md"     },
+    { "Vue 3"     = "VUE.md"       },
   ]},
 ]
 

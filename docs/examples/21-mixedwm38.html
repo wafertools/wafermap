@@ -64,7 +64,7 @@
     }
     const fixture = await resp.json();
 
-    const items = fixture.map(sample => {
+    const items = fixture.map(sample => () => {
       const result  = buildWaferMap({ results: sample.results, passBins: [1] });
       const summary = analyzeWaferMap(result, { passBins: [1] });
       const nFindings = summary.findings.length;

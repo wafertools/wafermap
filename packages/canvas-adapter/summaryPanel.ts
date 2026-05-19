@@ -8,6 +8,7 @@ import type { BinDef, TestDef, YieldSummary } from '../renderer/buildWaferMap.js
 import type { StatsFinding, StatsSummary, LotStatsSummary } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
 import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
+import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
 import { CLR } from './toolbar.js';
@@ -456,6 +457,18 @@ export function buildFindingsSection(
   reportBtn.type = 'button';
   reportBtn.addEventListener('click', () => openHtmlReport(renderFindingsReportHtml(statsSummary)));
   content.appendChild(reportBtn);
+
+  const narrativeText = buildFindingsNarrative(findings);
+  if (narrativeText) {
+    content.appendChild(el('p', {
+      fontSize:   '10px',
+      fontStyle:  'italic',
+      color:      '#66788a',
+      margin:     '0 0 8px',
+      lineHeight: '1.5',
+      padding:    '0',
+    }, narrativeText));
+  }
 
   const severityOrder: StatsFinding['severity'][] = ['unusual', 'notable', 'info'];
   const severityLabel: Record<StatsFinding['severity'], string> = {
