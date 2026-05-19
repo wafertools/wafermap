@@ -38,6 +38,24 @@ renderWaferMap(document.getElementById('map'), wafer, dies);
 
 The map renders with a full built-in toolbar — no extra HTML or JavaScript needed.
 
+**Adding statistical findings** — the stats engine is pure (no DOM) and lives in the `/stats` subpath:
+
+```ts
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+
+// Pass the full WaferMapResult — passBins and testDefs are inferred automatically.
+const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const summary = analyzeWaferMap(result);
+
+renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+// A "Findings" button now appears in the toolbar automatically.
+
+// Access findings directly — array is pre-sorted: 'unusual' first, then 'notable', then 'info'.
+const top = summary.findings[0];
+if (top) console.log(`[${top.severity}] ${top.summary}`);
+// e.g. "[unusual] Ring 4 (edge) yield is lower than the rest of the wafer"
+```
+
 ---
 
 ## 3 API overview
@@ -352,6 +370,8 @@ const { yieldPercent, yieldPercentGross } = result.yield;
 ```
 
 Partial dies are excluded from both numerator and denominator. Edge-excluded dies are excluded by default (`edgeDieYieldMode: 'exclude'`); set `edgeDieYieldMode: 'denominator-only'` to include them in the denominator for gross die yield.
+
+**`result.yield.yieldPercent` vs `summary.stats.yieldPercent`** — both are the same fraction ∈ [0,1], but they can differ when you pass custom options to `analyzeWaferMap` (e.g. a different `edgeDieYieldMode` or `passBins`). Use `result.yield` for rendering and quick checks; use `summary.stats.yieldPercent` when you need the yield that is consistent with the findings analysis.
 
 **`units`** tells you the coordinate space of the physical coordinates (`die.physX`, `die.physY`) and wafer dimensions; `die.x`/`die.y` remain die grid positions (prober step coordinates):
 
@@ -970,6 +990,9 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 {
   ringCount?:                    number   // ring count for spatial analysis; should match renderer ringCount (default 4)
   passBins?:                     number[] // bins counted as pass; defaults to WaferMapInput.passBins, then [1]
+                                          // when you pass a WaferMapResult to analyzeWaferMap, this is inferred
+                                          // automatically — you only need to set it explicitly when passing a raw
+                                          // WaferMapInput or when you want to override the buildWaferMap value
   significanceLevel?:            number   // adjusted p-value threshold (default 0.05)
   minimumEffectSize?:            number   // minimum absolute |delta| to report for proportion findings (default 0.15)
                                           // a finding passes if it satisfies this threshold OR minimumRelativeEffect
@@ -1065,7 +1088,8 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 {
   level: 'wafer'
   hasNotableFindings: boolean          // true when any finding is 'notable' or 'unusual'
-  findings: StatsFinding[]
+  findings: StatsFinding[]             // sorted by severity: 'unusual' first, then 'notable', then 'info'
+                                       // findings[0] is always the highest-severity finding; no manual sort needed
   wafer?: Record<string, unknown>      // identity fields from waferConfig.metadata (lot, wafer ID, test date, etc.)
   // Note: this `stats` block is analysis metadata; StatsFinding also has its own
   // nested `stats` object (pValue, sampleSizeLeft, etc.) — two distinct sub-objects.
@@ -1073,7 +1097,8 @@ Either the rate criterion or the size criterion can trigger the severity level; 
     totalDies:            number        // all dies on the wafer including partial and edge-excluded
     analyzedDies:         number        // dies included in analysis (excludes partial and, by default, edge dies)
     excludedDies:         number        // edge-excluded dies (see edgeDieYieldMode)
-    yieldPercent:         number | null // fraction ∈ [0, 1] — multiply by 100 to display as %; null when no bin data
+    yieldPercent:         number | null // fraction ∈ [0, 1] — multiply by 100 to display as %
+                                        // null when no die in the wafer has an hbin value at all
                                         // denominator is analyzedDies (totalDies minus excluded)
     testsConsidered:      number[]     // test numbers (keys from testValues) that had enough data
     hardBinsConsidered:   number[]
@@ -1100,7 +1125,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 {
   level: 'lot'
   hasNotableFindings: boolean
-  findings: StatsFinding[]             // lot-level findings (repeated patterns + inter-wafer outliers)
+  findings: StatsFinding[]             // lot-level findings (repeated patterns + inter-wafer outliers); sorted unusual → notable → info
   lot?: Record<string, unknown>        // shared identity fields from first wafer (lot ID, product, etc. — wafer-specific keys excluded)
   stats: {
     waferCount: number
@@ -1162,6 +1187,7 @@ The summary panel's "Summary report" button calls this automatically when `stats
   id:       string          // stable identifier for this finding
   level:    'wafer' | 'lot' | 'inter-wafer'
   severity: 'unusual' | 'notable' | 'info'
+            // ranking (highest → lowest): unusual > notable > info
   variable: {
     kind:   'yield' | 'hardBin' | 'softBin' | 'test'
     index?: number          // test number — the key from testValues (for 'test' kind)
@@ -1187,7 +1213,8 @@ The summary panel's "Summary report" button calls this automatically when `stats
     sampleSizeLeft:    number   // dies in the region (left side of comparison)
     sampleSizeRight:   number   // dies in the rest of the wafer (right side)
   }
-  summary:   string         // one-sentence human-readable description
+  summary:   string         // one-sentence human-readable description — a plain string, not an object
+                            // e.g. "Ring 4 (edge) yield is 18.3 pp lower than the rest of the wafer"
   highlight: HighlightTarget
 }
 ```
@@ -1483,6 +1510,16 @@ import { toPlotly }                            from '@paulrobins/wafermap';
 import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats';
 import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
 ```
+
+The statistics engine (`analyzeWaferMap`, `analyzeWaferLot`, `filterFindings`) is in the **`/stats` subpath** — it is not re-exported from the root package. This means you can run a complete build-and-analyse pipeline in Node.js with no browser or canvas dependency:
+
+```ts
+// Node.js — no DOM required
+import { buildWaferMap }   from '@paulrobins/wafermap';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+```
+
+Only `renderWaferMap`, `renderWaferGallery`, and `toCanvas` (all from `/canvas-adapter`) require a browser environment.
 
 ### 10.1 Helper exports
 

@@ -294,6 +294,16 @@ console.log(`${(yld.yieldPercent * 100).toFixed(1)}%`);
 
 ## 6. Working with test values
 
+Three related terms appear together throughout the API — here is how they fit:
+
+| Term | Where it appears | Purpose |
+|------|-----------------|---------|
+| `testValues: { 1010: 0.95 }` | `DieResult` (input to `buildWaferMap`) | Per-die measurement; key is the integer test number |
+| `testDefs: [{ testNumber: 1010, name: 'Vth', unit: 'V' }]` | `buildWaferMap` options | Connects test numbers to human-readable names and units; optional but recommended |
+| `testNumbers: [1010, 1020]` | `analyzeWaferMap` options | Filter — limits which tests the stats engine analyses; required only when the data has more tests than you want to analyse |
+
+The integer key in `testValues` and `testDef.testNumber` must match exactly — the library uses these to link measurements to names and to drive the stats engine.
+
 Continuous test measurements (leakage current, threshold voltage, etc.) go in
 `testValues` — a map keyed by a stable integer test identity.  `TestDef` is
 optional: without it the library uses `Test {N}` (the testNumber) everywhere a
@@ -716,19 +726,119 @@ ctrl.clearSelection();
 
 The statistics engine (`analyzeWaferMap`) scans for spatial patterns across five families: rings, quadrants, angular sectors, contiguous failure clusters, and edge arcs. For each family it compares the local zone to the rest of the wafer using a statistical test appropriate to the variable type.
 
+### Five-minute walkthrough
+
+This is a complete, runnable Node.js script — no browser or DOM needed. It covers
+the full path from raw CSV rows to printed findings. Copy, adjust the field names
+to match your data, and run with `node analyse.mjs`.
+
+```js
+// analyse.mjs
+import { readFileSync } from 'node:fs';
+import { buildWaferMap }   from '@paulrobins/wafermap';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';  // /stats subpath — not root
+
+// ── 1. Parse CSV ────────────────────────────────────────────────────────────
+const lines  = readFileSync('data/wafers.csv', 'utf8').trim().split('\n');
+const header = lines[0].split(',');
+const col    = (row, name) => row[header.indexOf(name)];
+
+const rows = lines.slice(1).map(line => {
+  const r = line.split(',');
+  return {
+    wafer:  col(r, 'wafer'),           // e.g. "W01"
+    x:      Number(col(r, 'x')),       // die grid position — integer, not mm
+    y:      Number(col(r, 'y')),
+    hbin:   Number(col(r, 'hbin')),    // hard bin number
+    // testValues keys are integer test numbers, not column names:
+    testValues: { 1010: Number(col(r, 'testA')) },
+  };
+});
+
+// ── 2. Group rows by wafer ID ───────────────────────────────────────────────
+const byWafer = new Map();
+for (const row of rows) {
+  if (!byWafer.has(row.wafer)) byWafer.set(row.wafer, []);
+  byWafer.get(row.wafer).push(row);
+}
+
+// ── 3. Build + analyse each wafer ──────────────────────────────────────────
+for (const [waferId, waferRows] of byWafer) {
+  const result = buildWaferMap({
+    results:  waferRows,
+    passBins: [1],   // hbin=1 is pass
+    testDefs: [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
+    // waferConfig and dieConfig are optional — the library infers geometry from the grid
+  });
+
+  // analyzeWaferMap accepts the full WaferMapResult; passBins is inferred automatically.
+  const summary = analyzeWaferMap(result);
+
+  // findings is pre-sorted: 'unusual' first, then 'notable', then 'info'.
+  const top = summary.findings[0];
+  const yld = summary.stats.yieldPercent;
+
+  console.log(
+    `${waferId}  yield=${yld !== null ? (yld * 100).toFixed(1) + '%' : 'n/a'}` +
+    `  findings=${summary.findings.length}` +
+    (top ? `  [${top.severity}] ${top.summary}` : ''),
+  );
+}
+
+// Example output:
+//   W01  yield=87.3%  findings=3  [unusual] Ring 4 (edge) yield is lower than the rest of the wafer
+//   W02  yield=84.1%  findings=2  [notable] The NE quadrant shows reduced yield.
+//   W03  yield=91.0%  findings=1  [info] Mean TestA in Ring 3 (edge) is lower than the rest of the wafer.
+```
+
+**What each finding object looks like** — `summary.findings[0]` for reference:
+
+```js
+{
+  id:       'ring:Ring 4 (edge)',
+  level:    'wafer',
+  severity: 'unusual',            // 'unusual' > 'notable' > 'info'
+  variable: { kind: 'yield', label: 'Yield' },
+  comparison: { family: 'ring', left: 'Ring 4 (edge)', right: 'Rest of wafer' },
+  effect:   { direction: 'lower', absoluteDelta: -0.18, relativeDelta: -0.62 },
+  stats:    { method: 'z', pValue: 0.003, adjustedPValue: 0.009,
+              sampleSizeLeft: 48, sampleSizeRight: 412 },
+  summary:  'Ring 4 (edge) yield is lower than the rest of the wafer',
+  highlight: { kind: 'region', regionFamily: 'ring', keys: ['Ring 4 (edge)'] },
+}
+```
+
+Use `finding.summary` for display text. Use `finding.highlight` to programmatically
+select or colour dies associated with the finding.
+
 ### Basic usage
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';  // note: /stats subpath, not root
 
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
-const summary = analyzeWaferMap(result);
+const summary = analyzeWaferMap(result);   // passBins inferred from result — no need to repeat it
 
 renderWaferMap(canvas, result.wafer, result.dies, {
   statsSummary: summary,
 });
+```
+
+When you pass a `WaferMapResult` to `analyzeWaferMap`, the `passBins` you gave to
+`buildWaferMap` are carried through automatically — you only need to set `passBins`
+explicitly in `analyzeWaferMap` options if you want to override them.
+
+The `summary.findings` array is sorted by severity — `'unusual'` first, `'notable'`
+next, `'info'` last. To get the single highest-severity finding:
+
+```ts
+const top = summary.findings[0];  // highest severity; undefined when no findings
+if (top) {
+  console.log(`[${top.severity}] ${top.summary}`);
+  // e.g. "[unusual] Ring 4 (edge) yield is lower than the rest of the wafer"
+}
 ```
 
 A "Findings" button (notebook icon) appears in the toolbar when `statsSummary` is
@@ -848,6 +958,9 @@ for (const finding of summary.findings) {
   console.log(finding.stats.adjustedPValue);  // BH-adjusted p-value
 }
 ```
+
+`summary.findings` is sorted by severity — `'unusual'` first, then `'notable'`, then `'info'`.
+`findings[0]` is always the highest-severity finding; no manual sort needed.
 
 ### Updating findings after a data change
 
@@ -1520,6 +1633,61 @@ const lotStats = analyzeWaferLot(results);
 
 Only `renderWaferMap`, `renderWaferGallery`, and `toCanvas` require a browser
 environment.
+
+### Analyse wafers in Node.js without a browser (console / CI script)
+
+Because `buildWaferMap` and `analyzeWaferMap` have no DOM dependency you can run
+the full analysis pipeline in a plain Node.js script — useful for CI checks,
+batch processing, or quick exploration of a new dataset:
+
+```js
+// analyse-wafers.mjs — run with: node analyse-wafers.mjs
+import { readFileSync } from 'node:fs';
+import { buildWaferMap }    from '@paulrobins/wafermap';
+import { analyzeWaferMap }  from '@paulrobins/wafermap/stats';
+
+// --- 1. Parse CSV ---------------------------------------------------------
+const csv   = readFileSync('data/wafers.csv', 'utf8');
+const lines = csv.trim().split('\n');
+const header = lines[0].split(',');
+const col  = (row, name) => row[header.indexOf(name)];
+
+const rows = lines.slice(1).map(line => {
+  const r = line.split(',');
+  return { x: +col(r,'x'), y: +col(r,'y'), hbin: +col(r,'hbin'),
+           testValues: { 1010: +col(r,'testA') } };
+});
+
+// --- 2. Group by wafer ----------------------------------------------------
+const byWafer = Map.groupBy(rows, r => r.waferId);   // Node 21+
+// or: rows.reduce((m,r) => (m.set(r.waferId, [...(m.get(r.waferId) ?? []), r]), m), new Map())
+
+// --- 3. Build + analyse each wafer ----------------------------------------
+for (const [waferId, waferRows] of byWafer) {
+  const result  = buildWaferMap({ results: waferRows, passBins: [1] });
+  const summary = analyzeWaferMap(result);
+
+  const yld     = summary.stats.yieldPercent;
+  const top     = summary.findings[0];   // highest-severity finding (findings is pre-sorted)
+
+  console.log(
+    `${waferId}  yield=${yld !== null ? (yld * 100).toFixed(1) + '%' : 'n/a'}` +
+    `  findings=${summary.findings.length}` +
+    (top ? `  top=[${top.severity}] ${top.summary}` : ''),
+  );
+}
+```
+
+The `testValues` keys are **test numbers** (integers), not column names.  If you
+want human-readable names in the findings output, pass `testDefs`:
+
+```js
+const result = buildWaferMap({
+  results,
+  passBins: [1],
+  testDefs: [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
+});
+```
 
 ### Filter findings by severity, kind, or spatial family
 
