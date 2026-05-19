@@ -97,7 +97,7 @@
     // ── Single wafer ────────────────────────────────────────────────────────────
 
     const singleResult = buildWaferMap({
-      results:     makeResults({ seed: 3, quadrant: true, edgeFail: true }),
+      results:     makeResults({ seed: 3, edgeFail: true }),
       waferConfig: makeWaferConfig(0),
       dieConfig:   DIE_CONFIG,
       hbinDefs:    HBIN_DEFS,
@@ -129,9 +129,9 @@
 
     const waferResults = [
       buildWaferMap({ results: makeResults({ seed: 1 }),                         waferConfig: makeWaferConfig(0), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
-      buildWaferMap({ results: makeResults({ seed: 2, quadrant: true }),          waferConfig: makeWaferConfig(1), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 2, edgeFail: true }),          waferConfig: makeWaferConfig(1), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
       buildWaferMap({ results: makeResults({ seed: 3, edgeFail: true }),          waferConfig: makeWaferConfig(2), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
-      buildWaferMap({ results: makeResults({ seed: 4, quadrant: true }),          waferConfig: makeWaferConfig(3), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 4, cluster: true, edgeArc: true }), waferConfig: makeWaferConfig(3), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
       buildWaferMap({ results: makeResults({ seed: 5, center: true }),            waferConfig: makeWaferConfig(4), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
       buildWaferMap({ results: makeResults({ seed: 6, edgeFail: true, center: true }), waferConfig: makeWaferConfig(5), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
     ];

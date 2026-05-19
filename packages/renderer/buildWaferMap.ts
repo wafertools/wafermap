@@ -449,9 +449,44 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): Die
   const { results: waferResults, method, targetBin } = lotStack;
 
   // 1. Scalar numeric aggregations: mean, median, stddev, min, max, count.
-  // Reuses the robust union-based logic in core/aggregates.ts.
+  // Collect all unique testValues keys across all wafers, then run aggregateValues
+  // once per key and merge results back so multi-test data isn't silently dropped.
   if (method === 'mean' || method === 'median' || method === 'stddev' || method === 'min' || method === 'max' || method === 'count') {
-    return aggregateValues(waferResults, method as CoreAggregationMethod) as DieResult[];
+    const testKeys = new Set<number>();
+    for (const wafer of waferResults) {
+      for (const die of wafer) {
+        if (die.testValues) {
+          for (const k of Object.keys(die.testValues)) testKeys.add(Number(k));
+        }
+      }
+    }
+
+    // No testValues keys at all — fall back to paramIndex 0 (legacy values[] path).
+    if (testKeys.size === 0) {
+      return aggregateValues(waferResults, method as CoreAggregationMethod) as DieResult[];
+    }
+
+    // Aggregate each test key independently and merge into a single testValues map per die.
+    const keyList = [...testKeys];
+    const perKey = keyList.map(k => aggregateValues(waferResults, method as CoreAggregationMethod, k));
+
+    // Build a position → merged testValues map from the per-key results.
+    const mergedMap = new Map<string, { template: ReturnType<typeof aggregateValues>[number]; testValues: Record<number, number> }>();
+    for (let ki = 0; ki < keyList.length; ki++) {
+      const testKey = keyList[ki]!;
+      for (const die of perKey[ki]!) {
+        const pos = `${die.x},${die.y}`;
+        if (!mergedMap.has(pos)) mergedMap.set(pos, { template: die, testValues: {} });
+        const entry = mergedMap.get(pos)!;
+        const v = die.testValues?.[0];  // aggregateValues stores result at key 0
+        if (v !== undefined) entry.testValues[testKey] = v;
+      }
+    }
+
+    return [...mergedMap.values()].map(({ template, testValues }) => ({
+      ...template,
+      testValues: Object.keys(testValues).length > 0 ? testValues : undefined,
+    })) as DieResult[];
   }
 
   // 2. Bin occurrence aggregations: countBin, percent.
@@ -881,6 +916,7 @@ export function buildWaferMap(
     sbinDefs:     norm.sbinDefs,
     dataAxisFlip: { x: flipX, y: flipY },
     isLotStack:   norm.lotStackOpts !== undefined,
+    aggrMethod:   norm.lotStackOpts?.method,
   });
 
   return {

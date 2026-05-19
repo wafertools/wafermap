@@ -240,6 +240,7 @@ export function buildMetadataSection(meta: Record<string, unknown>): HTMLDivElem
 export function buildYieldSection(
   yieldSummary: YieldSummary,
   dataCoverage: { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number },
+  passBins: number[] = [1],
 ): HTMLDivElement {
   const wrap = el('div');
   wrap.appendChild(sectionTitle('Summary'));
@@ -250,12 +251,13 @@ export function buildYieldSection(
     cards.appendChild(statCard(String(yieldSummary.partialDies), 'Partial'));
   }
   if (yieldSummary.yieldPercent !== null) {
-    cards.appendChild(statCard(`${(yieldSummary.yieldPercent * 100).toFixed(1)}%`, 'Yield (Bin 1 pass)'));
+    const binLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
+    cards.appendChild(statCard(`${(yieldSummary.yieldPercent * 100).toFixed(1)}%`, `Yield (pass: ${binLabel})`));
   }
   wrap.appendChild(cards);
 
   if (yieldSummary.edgeExcludedDies > 0) {
-    wrap.appendChild(kvRow('Edge excluded', String(yieldSummary.edgeExcludedDies)));
+    wrap.appendChild(kvRow('Edge excluded (outer zone)', String(yieldSummary.edgeExcludedDies)));
   }
 
   return wrap;
@@ -279,7 +281,7 @@ export function buildBinSection(
   const sorted = [...binCounts.entries()].sort((a, b) => a[0] - b[0]);
 
   const wrap = el('div');
-  wrap.appendChild(sectionTitle('Bin Breakdown'));
+  wrap.appendChild(sectionTitle(mode === 'hard' ? 'Hard Bin Breakdown' : 'Soft Bin Breakdown'));
   for (const [bin, count] of sorted) {
     const def   = defMap?.get(bin);
     const label = def?.name ? `Bin ${bin} · ${def.name}` : `Bin ${bin}`;
@@ -321,7 +323,7 @@ function buildRegionYieldSection(
       if (passSet.has(b)) pass++;
     }
     if (!total) continue;
-    wrap.appendChild(progressRow(region.label, (pass / total) * 100));
+    wrap.appendChild(progressRow(`${region.label} (N=${total})`, (pass / total) * 100));
   }
   return wrap;
 }
@@ -416,7 +418,7 @@ export function buildTestSection(
       ).length;
       const specPass = vals.length - specFail;
       const specYield = vals.length > 0 ? ((specPass / vals.length) * 100).toFixed(1) + '%' : '—';
-      section.appendChild(kvRow('Spec yield', specYield));
+      section.appendChild(kvRow(`Spec yield (N=${vals.length})`, specYield));
     }
 
     content.appendChild(section);
@@ -468,6 +470,10 @@ export function buildFindingsSection(
   );
   for (const f of findings) grouped.get(f.severity)!.push(f);
 
+  // Flat ordered list for arrow-key navigation
+  const orderedFindings: StatsFinding[] = severityOrder.flatMap(s => grouped.get(s)!);
+  const rowMap = new Map<string, HTMLButtonElement>();
+
   let first = true;
   for (const severity of severityOrder) {
     const group = grouped.get(severity)!;
@@ -505,9 +511,15 @@ export function buildFindingsSection(
         marginBottom: '4px',
       });
       row.addEventListener('click', () => onFindingClick(finding, row));
+      rowMap.set(finding.id, row);
       content.appendChild(row);
     }
   }
+
+  // Expose ordered findings and row map for panel-level keyboard navigation.
+  outer.dataset.wmapFindingsNav = '1';
+  (outer as HTMLDivElement & { _wmapNav?: FindingsNavState })._wmapNav = { orderedFindings, rowMap };
+
   return outer;
 }
 
@@ -527,7 +539,7 @@ export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivEle
 
   if (waferYields.length) {
     const mean = waferYields.reduce((a, b) => a + b, 0) / waferYields.length;
-    cards.appendChild(statCard(`${(mean * 100).toFixed(1)}%`, 'Mean yield'));
+    cards.appendChild(statCard(`${(mean * 100).toFixed(1)}%`, 'Mean wafer yield'));
   }
   wrap.appendChild(cards);
 
@@ -614,7 +626,7 @@ function buildLotRegionYieldSection(
   for (const label of order) {
     const acc = totals.get(label);
     if (!acc || !acc.total) continue;
-    wrap.appendChild(progressRow(label, (acc.pass / acc.total) * 100));
+    wrap.appendChild(progressRow(`${label} (N=${acc.total})`, (acc.pass / acc.total) * 100));
   }
   return wrap;
 }
@@ -646,6 +658,11 @@ export function buildLotTestSection(
   fallbackFormat?: 'si' | 'engineering',
 ): HTMLDivElement | null {
   return buildTestSection(allDies, testDefs, fallbackFormat);
+}
+
+interface FindingsNavState {
+  orderedFindings: StatsFinding[];
+  rowMap: Map<string, HTMLButtonElement>;
 }
 
 // ── Panel container ───────────────────────────────────────────────────────────
@@ -744,9 +761,22 @@ export function renderWaferSummaryContent(
   const sections: (HTMLDivElement | null)[] = [];
 
   const meta = wafer.metadata as Record<string, unknown> | undefined;
-  if (meta) sections.push(buildMetadataSection(meta));
+  const lotStackStats = statsSummary?.stats.isLotStack ? statsSummary.stats : undefined;
+  const METHOD_LABELS: Record<string, string> = {
+    mean: 'mean', median: 'median', stddev: 'std dev', min: 'min', max: 'max',
+    count: 'count', countBin: 'occurrence count', percent: 'occurrence %',
+  };
+  const metaWithStack: Record<string, unknown> | undefined = lotStackStats
+    ? {
+        ...(meta ?? {}),
+        'Lot stack': lotStackStats.lotSize !== undefined
+          ? `${lotStackStats.lotSize} wafers · ${METHOD_LABELS[lotStackStats.aggregationMethod ?? ''] ?? lotStackStats.aggregationMethod ?? 'aggregated'}`
+          : METHOD_LABELS[lotStackStats.aggregationMethod ?? ''] ?? lotStackStats.aggregationMethod ?? 'aggregated',
+      }
+    : meta;
+  if (metaWithStack) sections.push(buildMetadataSection(metaWithStack));
 
-  sections.push(buildYieldSection(yieldSummary, dataCoverage));
+  sections.push(buildYieldSection(yieldSummary, dataCoverage, passBins));
 
   // Use hard bin mode as the primary bin display; fall back to soft if only soft present
   const hasHbin = dies.some(d => d.hbin != null);
@@ -798,6 +828,45 @@ export function renderWaferSummaryContent(
     if (!first) panel.appendChild(separator());
     first = false;
     panel.appendChild(s);
+  }
+
+  // Wire keyboard navigation on the persistent panel element.
+  // Remove the previous handler (if any) before attaching a new one so we
+  // don't accumulate listeners across re-renders.
+  type PanelWithNav = HTMLDivElement & { _wmapKeydown?: (e: KeyboardEvent) => void };
+  const panelWithNav = panel as PanelWithNav;
+  if (panelWithNav._wmapKeydown) {
+    panel.removeEventListener('keydown', panelWithNav._wmapKeydown);
+  }
+
+  // Find the findings section built in this render.
+  const navEl = panel.querySelector<HTMLDivElement>('[data-wmap-findings-nav]');
+  const nav = navEl ? (navEl as HTMLDivElement & { _wmapNav?: FindingsNavState })._wmapNav : undefined;
+
+  if (nav && onFindingClick) {
+    const { orderedFindings, rowMap } = nav;
+    panelWithNav._wmapKeydown = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      const activeIdx = orderedFindings.findIndex(f => f.id === activeFindingId);
+      let nextIdx: number;
+      if (activeIdx === -1) {
+        nextIdx = e.key === 'ArrowDown' ? 0 : orderedFindings.length - 1;
+      } else {
+        nextIdx = e.key === 'ArrowDown'
+          ? Math.min(activeIdx + 1, orderedFindings.length - 1)
+          : Math.max(activeIdx - 1, 0);
+      }
+      const nextFinding = orderedFindings[nextIdx];
+      const nextRow = rowMap.get(nextFinding.id);
+      if (nextRow) {
+        onFindingClick(nextFinding, nextRow);
+        nextRow.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    panel.addEventListener('keydown', panelWithNav._wmapKeydown);
+  } else {
+    panelWithNav._wmapKeydown = undefined;
   }
 }
 

@@ -8,7 +8,7 @@ function makeFinding(overrides) {
     level: 'wafer',
     severity: 'info',
     variable: { kind: 'yield', label: 'Yield' },
-    comparison: { family: 'ring', left: 'Ring 1', right: 'Rest of wafer' },
+    comparison: { family: 'ring', left: 'Ring 1', right: 'Rest of map' },
     effect: { direction: 'lower', absoluteDelta: -0.2 },
     stats: { method: 'two-proportion-z', sampleSizeLeft: 10, sampleSizeRight: 50 },
     summary: 'test finding',
@@ -21,9 +21,9 @@ const summary = {
   level: 'wafer',
   hasNotableFindings: false,
   findings: [
-    makeFinding({ id: '1', severity: 'info',    variable: { kind: 'yield',    label: 'Yield' }, comparison: { family: 'ring',     left: 'Ring 1', right: 'Rest of wafer' } }),
-    makeFinding({ id: '2', severity: 'notable', variable: { kind: 'hardBin',  label: 'Bin 2' }, comparison: { family: 'quadrant', left: 'NE', right: 'Rest of wafer' } }),
-    makeFinding({ id: '3', severity: 'unusual', variable: { kind: 'test',     label: 'Vth' },   comparison: { family: 'ring',     left: 'Ring 4', right: 'Rest of wafer' } }),
+    makeFinding({ id: '1', severity: 'info',    variable: { kind: 'yield',    label: 'Yield' }, comparison: { family: 'ring',     left: 'Ring 1', right: 'Rest of map' } }),
+    makeFinding({ id: '2', severity: 'notable', variable: { kind: 'hardBin',  label: 'Bin 2' }, comparison: { family: 'quadrant', left: 'NE', right: 'Rest of map' } }),
+    makeFinding({ id: '3', severity: 'unusual', variable: { kind: 'test',     label: 'Vth' },   comparison: { family: 'ring',     left: 'Ring 4', right: 'Rest of map' } }),
   ],
   stats: { totalDies: 100, analyzedDies: 90, excludedDies: 10, yieldPercent: 0.9, testsConsidered: [], hardBinsConsidered: [], softBinsConsidered: [] },
 };

@@ -216,8 +216,8 @@ export function renderSummaryReportHtml(
   const summaryMetrics = [
     { label: 'Total dies', value: String(dataCoverage.totalDies) },
     ...(yieldSummary.partialDies > 0 ? [{ label: 'Partial', value: String(yieldSummary.partialDies) }] : []),
-    ...(yieldSummary.yieldPercent !== null ? [{ label: 'Yield (Bin 1 pass)', value: `${(yieldSummary.yieldPercent * 100).toFixed(1)}%` }] : []),
-    ...(yieldSummary.edgeExcludedDies > 0 ? [{ label: 'Edge excluded', value: String(yieldSummary.edgeExcludedDies) }] : []),
+    ...(yieldSummary.yieldPercent !== null ? [{ label: `Yield (pass: ${passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`})`, value: `${(yieldSummary.yieldPercent * 100).toFixed(1)}%` }] : []),
+    ...(yieldSummary.edgeExcludedDies > 0 ? [{ label: 'Edge excluded (outer zone)', value: String(yieldSummary.edgeExcludedDies) }] : []),
   ];
 
   const sections = [

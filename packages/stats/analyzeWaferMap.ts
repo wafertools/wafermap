@@ -8,7 +8,8 @@ import type {
   StatsSeverity,
   StatsSummary,
 } from './types.js';
-import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, type StatsRegion } from './regions.js';
+import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, type StatsRegion } from './regions.js';
+import { buildClusterFindings } from './clusterDetection.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -27,6 +28,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   passBins: [1],
   significanceLevel: 0.05,
   minimumEffectSize: 0.15,
+  minimumRelativeEffect: 0.5,
   minimumSampleSize: 5,
   includePartial: false,
   includeEdgeExcluded: false,
@@ -35,6 +37,10 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   enableSoftBinAnalysis: true,
   enableTestValueAnalysis: true,
   enableReticlePositionAnalysis: true,
+  enableClusterAnalysis: true,
+  enableAngularAnalysis: true,
+  minimumClusterSize: 3,
+  sectorCount: 16,
 };
 
 function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
@@ -44,7 +50,34 @@ function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
 function isEligibleDie(die: Die, options: ResolvedOptions): die is EligibleDie {
   if (!options.includePartial && die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
-  return die.hbin !== undefined || die.sbin !== undefined;
+  return (
+    die.hbin !== undefined ||
+    die.sbin !== undefined ||
+    (die.testValues !== undefined && Object.keys(die.testValues).length > 0)
+  );
+}
+
+function makeClusterFailurePredicate(
+  isLotStack: boolean,
+  hasHbinData: boolean,
+  testDefs: TestDef[] | undefined,
+): ((die: Die) => boolean) | undefined {
+  if (!isLotStack || hasHbinData) return undefined;
+  const limited = (testDefs ?? []).filter(
+    td => td.limitLow !== undefined || td.limitHigh !== undefined,
+  );
+  if (limited.length === 0) return undefined;
+  return (die: Die): boolean => {
+    for (const td of limited) {
+      const tn = td.testNumber ?? td.index;
+      if (tn === undefined) continue;
+      const v = die.testValues?.[tn];
+      if (v === undefined) continue;
+      if (td.limitLow  !== undefined && v < td.limitLow)  return true;
+      if (td.limitHigh !== undefined && v > td.limitHigh) return true;
+    }
+    return false;
+  };
 }
 
 function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | null): StatsSummary['stats'] {
@@ -173,9 +206,11 @@ function adjustPValues(findings: RawFinding[]): RawFinding[] {
   return findings;
 }
 
-function severityForFinding(pValue: number, delta: number): StatsSeverity {
-  if (pValue <= 0.01 && Math.abs(delta) >= 0.25) return 'unusual';
-  if (pValue <= 0.05 && Math.abs(delta) >= 0.15) return 'notable';
+function severityForFinding(pValue: number, delta: number, relativeDelta?: number): StatsSeverity {
+  const absDelta = Math.abs(delta);
+  const absRel = relativeDelta !== undefined ? Math.abs(relativeDelta) : 0;
+  if (pValue <= 0.01 && (absDelta >= 0.25 || absRel >= 2.0)) return 'unusual';
+  if (pValue <= 0.05 && (absDelta >= 0.15 || absRel >= 1.0)) return 'notable';
   return 'info';
 }
 
@@ -185,13 +220,15 @@ function severityForScore(pValue: number, score: number): StatsSeverity {
   return 'info';
 }
 
-function summarizeYieldFinding(label: string, delta: number, family: 'ring' | 'quadrant' | 'reticle-position'): string {
-  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
+type RegionFamily = 'ring' | 'quadrant' | 'reticle-position' | 'sector';
+
+function summarizeYieldFinding(label: string, delta: number, family: RegionFamily): string {
+  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the map';
   const pp = (Math.abs(delta) * 100).toFixed(1);
   return `${label} yield is ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
 }
 
-function summarizeRegionLabel(label: string, family: 'ring' | 'quadrant' | 'reticle-position'): string {
+function summarizeRegionLabel(label: string, family: RegionFamily): string {
   if (family === 'quadrant') return `quadrant ${label}`;
   return label;
 }
@@ -200,10 +237,10 @@ function summarizeBinFinding(
   label: string,
   binLabel: string,
   delta: number,
-  family: 'ring' | 'quadrant' | 'reticle-position',
+  family: RegionFamily,
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
-  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
+  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the map';
   const pp = (Math.abs(delta) * 100).toFixed(1);
   return `${familyLabel} has ${binLabel} occurrence ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
 }
@@ -213,11 +250,11 @@ function summarizeTestFinding(
   testLabel: string,
   delta: number,
   relativeDelta: number | undefined,
-  family: 'ring' | 'quadrant' | 'reticle-position',
+  family: RegionFamily,
   unit?: string,
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
-  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the wafer';
+  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the map';
   const dir = delta > 0 ? 'higher' : 'lower';
   if (relativeDelta !== undefined && Number.isFinite(relativeDelta)) {
     const pct = (Math.abs(relativeDelta) * 100).toFixed(1);
@@ -279,7 +316,7 @@ function buildYieldFindings(
       comparison: {
         family: region.family,
         left: region.label,
-        right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
+        right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
       },
       effect: {
         direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -309,13 +346,16 @@ function buildYieldFindings(
     .filter((finding) => {
       const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
       const delta = Math.abs(finding.effect.absoluteDelta ?? 0);
-      return adjusted <= options.significanceLevel && delta >= options.minimumEffectSize;
+      const relDelta = Math.abs(finding.effect.relativeDelta ?? 0);
+      return adjusted <= options.significanceLevel &&
+        (delta >= options.minimumEffectSize || relDelta >= options.minimumRelativeEffect);
     })
     .map((finding) => ({
       ...finding,
       severity: severityForFinding(
         finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
         finding.effect.absoluteDelta ?? 0,
+        finding.effect.relativeDelta,
       ),
     }));
 }
@@ -372,7 +412,7 @@ function buildBinFindings(
         comparison: {
           family: region.family,
           left: region.label,
-          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
+          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
         },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -403,13 +443,16 @@ function buildBinFindings(
     .filter((finding) => {
       const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
       const delta = Math.abs(finding.effect.absoluteDelta ?? 0);
-      return adjusted <= options.significanceLevel && delta >= options.minimumEffectSize;
+      const relDelta = Math.abs(finding.effect.relativeDelta ?? 0);
+      return adjusted <= options.significanceLevel &&
+        (delta >= options.minimumEffectSize || relDelta >= options.minimumRelativeEffect);
     })
     .map((finding) => ({
       ...finding,
       severity: severityForFinding(
         finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
         finding.effect.absoluteDelta ?? 0,
+        finding.effect.relativeDelta,
       ),
     }));
 }
@@ -516,7 +559,7 @@ function buildTestValueFindings(
         comparison: {
           family: region.family,
           left: region.label,
-          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
+          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
         },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -625,7 +668,7 @@ function buildSpecLimitFindings(
           comparison: {
             family: region.family,
             left: region.label,
-            right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of wafer',
+            right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
           },
           effect: {
             direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -654,7 +697,10 @@ function buildSpecLimitFindings(
         ...findings
           .filter(f => {
             const adj = f.stats.adjustedPValue ?? f.stats.pValue ?? 1;
-            return adj <= options.significanceLevel && Math.abs(f.effect.absoluteDelta ?? 0) >= options.minimumEffectSize;
+            const delta = Math.abs(f.effect.absoluteDelta ?? 0);
+            const relDelta = Math.abs(f.effect.relativeDelta ?? 0);
+            return adj <= options.significanceLevel &&
+              (delta >= options.minimumEffectSize || relDelta >= options.minimumRelativeEffect);
           })
           .map(f => ({
             ...f,
@@ -676,6 +722,10 @@ export function analyzeWaferMap(
 ): StatsSummary {
   const resolved = { ...DEFAULT_OPTIONS, ...options };
   const result = normalizeInput(input);
+  const isLotStack  = result.scene.isLotStack;
+  const stackMethod = result.scene.aggrMethod;
+  const hasHbinData = !isLotStack ||
+    stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
   const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, resolved));
   const includedDies = result.dies.filter((die) => {
     if (!resolved.includePartial && die.partial) return false;
@@ -687,35 +737,25 @@ export function analyzeWaferMap(
   const reticlePositionRegions = resolved.enableReticlePositionAnalysis
     ? buildReticlePositionRegions(includedDies, result.reticleConfig)
     : [];
+  const sectorRegions = resolved.enableAngularAnalysis
+    ? buildSectorRegions(includedDies, result.wafer, resolved.sectorCount)
+    : [];
 
   const findings: RawFinding[] = [];
-  if (resolved.enableYieldAnalysis) {
+  if (resolved.enableYieldAnalysis && hasHbinData) {
     findings.push(
-      ...buildYieldFindings(
-        eligibleDies,
-        ringRegions,
-        resolved.passBins,
-        resolved,
-      ),
-      ...buildYieldFindings(
-        eligibleDies,
-        quadrantRegions,
-        resolved.passBins,
-        resolved,
-      ),
-      ...buildYieldFindings(
-        eligibleDies,
-        reticlePositionRegions,
-        resolved.passBins,
-        resolved,
-      ),
+      ...buildYieldFindings(eligibleDies, ringRegions, resolved.passBins, resolved),
+      ...buildYieldFindings(eligibleDies, quadrantRegions, resolved.passBins, resolved),
+      ...buildYieldFindings(eligibleDies, reticlePositionRegions, resolved.passBins, resolved),
+      ...buildYieldFindings(eligibleDies, sectorRegions, resolved.passBins, resolved),
     );
   }
-  if (resolved.enableHardBinAnalysis) {
+  if (resolved.enableHardBinAnalysis && hasHbinData) {
     findings.push(
       ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, sectorRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
     );
   }
   if (resolved.enableSoftBinAnalysis) {
@@ -724,22 +764,33 @@ export function analyzeWaferMap(
       ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
     );
   }
   const warnings: string[] = [];
   if (resolved.enableTestValueAnalysis) {
-    const ring = buildTestValueFindings(eligibleDies, ringRegions, result.scene.testDefs, resolved);
-    const quad = buildTestValueFindings(eligibleDies, quadrantRegions, result.scene.testDefs, resolved);
+    const ring    = buildTestValueFindings(eligibleDies, ringRegions, result.scene.testDefs, resolved);
+    const quad    = buildTestValueFindings(eligibleDies, quadrantRegions, result.scene.testDefs, resolved);
     const reticle = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.scene.testDefs, resolved);
-    findings.push(...ring.findings, ...quad.findings, ...reticle.findings);
+    const sector  = buildTestValueFindings(eligibleDies, sectorRegions, result.scene.testDefs, resolved);
+    findings.push(...ring.findings, ...quad.findings, ...reticle.findings, ...sector.findings);
     if (ring.warning) warnings.push(ring.warning);
 
     findings.push(...buildSpecLimitFindings(
       eligibleDies,
-      [ringRegions, quadrantRegions, reticlePositionRegions],
+      [ringRegions, quadrantRegions, reticlePositionRegions, sectorRegions],
       result.scene.testDefs,
       resolved,
     ));
+  }
+  if (resolved.enableClusterAnalysis) {
+    const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.scene.testDefs);
+    if (!isLotStack || hasHbinData || failPredicate !== undefined) {
+      findings.push(...buildClusterFindings(eligibleDies, result.wafer, {
+        ...resolved,
+        isFailingDie: failPredicate,
+      }));
+    }
   }
 
   findings.sort((left, right) => {
@@ -750,6 +801,10 @@ export function analyzeWaferMap(
   });
 
   const stats = collectStats(result.dies, eligibleDies.length, result.yield.yieldPercent);
+  if (isLotStack) {
+    stats.isLotStack = true;
+    if (stackMethod) stats.aggregationMethod = stackMethod;
+  }
   if (warnings.length > 0) stats.warnings = warnings;
   const specYield = computeTestSpecYield(result.dies, result.scene.testDefs);
   if (specYield) stats.testSpecYield = specYield;

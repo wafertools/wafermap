@@ -83,7 +83,7 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
   const body = marked.parse(md, { renderer, gfm: true, breaks: false });
 
   if (copyImages) {
-    const imgRe = /src="([^"]+\.png)"/g;
+    const imgRe = /src="([^"]+\.(?:png|svg))"/g;
     const copied = new Set();
     let match;
 
@@ -92,8 +92,10 @@ function buildMarkdownPage({ sourceName, outPath, title, navLinks = [], copyImag
       if (copied.has(name)) continue;
 
       const src = resolve(docsDir, name);
+      const dest = resolve(outDir, name);
       if (existsSync(src)) {
-        copyFileSync(src, resolve(outDir, name));
+        mkdirSync(dirname(dest), { recursive: true });
+        copyFileSync(src, dest);
         copied.add(name);
       } else {
         console.warn(`[build-docs] image not found: ${src}`);

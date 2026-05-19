@@ -4,6 +4,7 @@ import {
   buildRingRegions,
   buildQuadrantRegions,
   buildReticlePositionRegions,
+  buildSectorRegions,
 } from '../dist/packages/stats/regions.js';
 import { createWafer } from '../dist/packages/core/wafer.js';
 
@@ -142,4 +143,66 @@ test('buildReticlePositionRegions — same set of cell positions with different 
     baseline.map(r => r.key).sort(),
     shifted.map(r => r.key).sort(),
   );
+});
+
+// ── buildSectorRegions ────────────────────────────────────────────────────────
+
+// 8 dies spread around the wafer at ~mid-radius (avoids the centre exclusion zone).
+const sDies = [
+  die('e',   10, 0,  cx + r * 0.6,  cy),
+  die('ne',  7,  7,  cx + r * 0.4,  cy + r * 0.4),
+  die('n',   0,  10, cx,            cy + r * 0.6),
+  die('nw', -7,  7,  cx - r * 0.4,  cy + r * 0.4),
+  die('w',  -10, 0,  cx - r * 0.6,  cy),
+  die('sw', -7, -7,  cx - r * 0.4,  cy - r * 0.4),
+  die('s',   0, -10, cx,            cy - r * 0.6),
+  die('se',  7, -7,  cx + r * 0.4,  cy - r * 0.4),
+];
+const centerOnlyDie = die('ctr', 0, 0, cx, cy); // normalised radius = 0 → excluded
+
+test('buildSectorRegions — all regions have family "sector"', () => {
+  for (const region of buildSectorRegions(sDies, wafer, 16)) {
+    assert.equal(region.family, 'sector');
+  }
+});
+
+test('buildSectorRegions — keys start with "sector:"', () => {
+  for (const region of buildSectorRegions(sDies, wafer, 16)) {
+    assert.match(region.key, /^sector:/);
+  }
+});
+
+test('buildSectorRegions — each die assigned to exactly one sector', () => {
+  const regions = buildSectorRegions(sDies, wafer, 16);
+  const allKeys = regions.flatMap(r => r.dieKeys);
+  assert.equal(allKeys.length, sDies.length);
+  assert.equal(new Set(allKeys).size, sDies.length);
+});
+
+test('buildSectorRegions — die at normalised radius < 0.2 is excluded', () => {
+  const regions = buildSectorRegions([centerOnlyDie], wafer, 16);
+  assert.equal(regions.length, 0);
+});
+
+test('buildSectorRegions — sectorCount=8 produces at most 8 regions', () => {
+  const regions = buildSectorRegions(sDies, wafer, 8);
+  assert.ok(regions.length <= 8);
+  for (const region of regions) {
+    assert.equal(region.family, 'sector');
+  }
+});
+
+test('buildSectorRegions — sectorCount=4 uses compass quadrant names', () => {
+  const regions = buildSectorRegions(sDies, wafer, 4);
+  const labels = regions.map(r => r.label);
+  for (const label of labels) {
+    assert.match(label, /^Sector (N|E|S|W)$/);
+  }
+});
+
+test('buildSectorRegions — sorted by key lexicographically', () => {
+  const regions = buildSectorRegions(sDies, wafer, 16);
+  for (let i = 1; i < regions.length; i++) {
+    assert.ok(regions[i - 1].key <= regions[i].key, 'should be sorted');
+  }
 });

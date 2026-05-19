@@ -1,6 +1,6 @@
 {
   "name": "@paulrobins/wafermap",
-  "version": "0.11.2",
+  "version": "0.11.3",
   "description": "Browser-first wafer map visualization toolkit with a renderer abstraction and Plotly adapter.",
   "type": "module",
   "license": "MIT",
@@ -52,12 +52,12 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "node scripts/sync-icons.mjs && rm -rf dist && tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "check": "tsc --noEmit -p tsconfig.json",
-    "dev": "./.venv/bin/mkdocs serve -a localhost:8000",
+    "dev": "rm -rf docs/dist && cp -r dist docs/dist && ./.venv/bin/zensical serve --dev-addr localhost:8001",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "build:site": "rm -rf docs/dist && cp -r dist docs/ && ./.venv/bin/mkdocs build -d _site && cp -r docs/data _site/data && rm -rf docs/dist",
+    "build:site": "rm -rf docs/dist && cp -r dist docs/ && ${ZENSICAL:-.venv/bin/zensical} build --clean && cp -r docs/data site/data && rm -rf docs/dist",
     "prepack": "npm run build",
     "pack:check": "npm pack --dry-run",
     "prepublishOnly": "npm test"

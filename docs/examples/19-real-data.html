@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Real wafer data (WM-811K) — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    /* Override the fixed-height viewport fill used by other demos.
+       27 cards need a scrolling page, not a clipped flex container. */
+    html, body { height: auto; overflow-y: auto; }
+    .demo-page { min-height: 100vh; }
+    .demo-content { flex: 0 0 auto; overflow: visible; padding: 8px; align-items: flex-start; }
+    #gallery-container { width: 100%; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§19 — Real wafer data (WM-811K)</span>
+    <span class="demo-desc">
+      27 production wafer maps from the public WM-811K dataset · 9 defect types · statistical findings
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    <a href="https://www.kaggle.com/datasets/qingyi/wm811k-wafer-map" target="_blank" rel="noopener">WM-811K</a>
+    is a public dataset of 811,457 wafer maps from real 300 mm fabrication lines, labelled with
+    nine defect categories (edge ring, scratch, donut, local cluster, and so on).
+    The 27 maps below — three per defect type — are loaded directly into
+    <code>buildWaferMap</code> and <code>analyzeWaferMap</code> with no special configuration.
+    Each card label shows the WM-811K defect category and how many statistical findings the library detected.
+    Click the <strong>↗</strong> icon on any card to open a full interactive view with the findings panel.
+  </div>
+
+  <div class="demo-content">
+    <div id="gallery-container"></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }      from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/canvas-adapter';
+    import { analyzeWaferMap }    from 'wafermap/stats';
+
+    // Fixture produced by scripts/convert-wm811k.py from the public WM-811K pkl.
+    // Each record: { failureType, lotName, waferIndex, gridRows, gridCols, results[] }
+    // results[]: { x, y, hbin } — centred grid coordinates, hbin 1=pass 2=fail.
+    const resp = await fetch('./wm811k-sample.json');
+    if (!resp.ok) {
+      document.querySelector('.demo-intro').insertAdjacentHTML('beforeend',
+        `<p style="color:#c0392b;margin-top:8px"><strong>Fixture not found.</strong>
+        Run <code>python scripts/convert-wm811k.py LSWMD.pkl tests/fixtures/wm811k-sample.json</code>
+        then <code>cp tests/fixtures/wm811k-sample.json docs/examples/wm811k-sample.json</code>.</p>`);
+      throw new Error('wm811k-sample.json missing');
+    }
+    const fixture = await resp.json();
+
+    // Group by failure type for labelling.
+    const LABEL_NAMES = {
+      'Center':     'Center cluster',
+      'Donut':      'Donut',
+      'Edge-Loc':   'Edge location',
+      'Edge-Ring':  'Edge ring',
+      'Loc':        'Local cluster',
+      'Near-full':  'Near-full failure',
+      'Random':     'Random',
+      'Scratch':    'Scratch',
+      'none':       'No defect',
+    };
+
+    const items = fixture.map(sample => {
+      const result  = buildWaferMap({ results: sample.results, passBins: [1] });
+      const summary = analyzeWaferMap(result, { passBins: [1] });
+      const typeName = LABEL_NAMES[sample.failureType] ?? sample.failureType;
+      const nFindings = summary.findings.length;
+      const suffix = nFindings ? ` · ${nFindings} finding${nFindings > 1 ? 's' : ''}` : '';
+      return {
+        label:        `${typeName}${suffix}`,
+        wafer:        result.wafer,
+        dies:         result.dies,
+        statsSummary: summary,
+        sceneOptions: { plotMode: 'hardBin' },
+      };
+    });
+
+    renderWaferGallery(document.getElementById('gallery-container'), items);
+  </script>
+
+</body>
+</html>

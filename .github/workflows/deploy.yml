@@ -1,4 +1,4 @@
-name: Deploy demos to GitHub Pages
+name: Deploy docs to GitHub Pages
 
 on:
   push:
@@ -15,9 +15,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/configure-pages@v6
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -25,38 +30,27 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Create Python virtual environment
-        run: python -m venv .venv
+      - name: Install Zensical
+        run: pip install zensical
 
-      - name: Install MkDocs dependencies
-        run: |
-          ./.venv/bin/pip install --upgrade pip
-          ./.venv/bin/pip install mkdocs-material pymdown-extensions
-
-      - name: Install root dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build library (dist/)
+      - name: Build library
         run: npm run build
 
       - name: Build documentation site
         run: npm run build:site
+        env:
+          ZENSICAL: zensical
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: site
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v4
+        id: deployment

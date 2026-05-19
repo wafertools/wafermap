@@ -8,3 +8,6 @@ CLAUDE.md
 .vscode/
 scratch/
 .venv/
+tests/fixtures/*.pkl
+tests/fixtures/*.zip
+site/

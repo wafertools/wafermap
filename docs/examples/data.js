@@ -14,11 +14,14 @@
 
 /**
  * Repeatable pseudo-random float in [0, 1) from a 2-D position and seed.
- * Uses a simple sinusoidal hash — fast and sufficient for demo data.
+ * Uses a Wang-style integer hash — spatially uncorrelated, so adjacent dies
+ * don't produce correlated noise that could look like spurious clusters.
  */
 export function rng(i, j, seed = 1) {
-  const x = Math.sin(i * 127.1 + j * 311.7 + seed * 74.3) * 43758.5453;
-  return x - Math.floor(x);
+  let h = (((i + 1000) * 2654435761) ^ ((j + 1000) * 2246822519) ^ (seed * 3266489917)) >>> 0;
+  h = (Math.imul(h ^ (h >>> 16), 0x45d9f3b)) >>> 0;
+  h = (Math.imul(h ^ (h >>> 16), 0x45d9f3b)) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
 }
 
 // ── Data generator ────────────────────────────────────────────────────────────
@@ -34,6 +37,8 @@ export function rng(i, j, seed = 1) {
  * @param {boolean} [opts.quadrant=false]        NE quadrant has lower yield and higher Vth.
  * @param {boolean} [opts.center=false]          Small defect cluster at the wafer centre.
  * @param {boolean} [opts.reticlePattern=false]  Repeating field-position defect pattern.
+ * @param {boolean} [opts.cluster=false]         Tight failure cluster (~8 dies) simulating a particle/ESD event.
+ * @param {boolean} [opts.edgeArc=false]         Short failure arc near the wafer edge (~NNW) simulating handling damage.
  * @returns {Array<{x,y,hbin,sbin,testValues}>}
  */
 export function makeResults({
@@ -42,6 +47,8 @@ export function makeResults({
   quadrant        = false,
   center          = false,
   reticlePattern  = false,
+  cluster         = false,
+  edgeArc         = false,
 } = {}) {
   // Physical die pitch and wafer radius in mm.
   // Grid sweeps enough index steps to cover the full wafer in each direction.
@@ -69,15 +76,25 @@ export function makeResults({
       const n3 = rng(i, j, seed + 89);
       const roll = rng(i, j, seed + 200);
 
-      // Base pass probability: ~93% at centre, falls to ~68% at the edge
-      let pass = 0.93 * Math.exp(-t * 1.3)
-               + 0.68 * (1 - Math.exp(-t * 1.3))
-               + (n1 - 0.5) * 0.06;
+      // Base pass probability: ~97% at centre, falls to ~88% at the edge (~8% wafer-wide failure rate).
+      // The tighter noise term (0.04 vs previous 0.06) avoids spatially-correlated noise clusters
+      // that could produce false-positive cluster findings when no cluster pattern is injected.
+      let pass = 0.97 * Math.exp(-t * 1.3)
+               + 0.88 * (1 - Math.exp(-t * 1.3))
+               + (n1 - 0.5) * 0.04;
 
       // Optional failure patterns
-      if (edgeFail  && t > 0.72)            pass -= 0.32; // outer ring yield loss
-      if (quadrant  && i > 0 && j > 0)      pass -= 0.20; // NE quadrant drift
-      if (center    && t < 0.22)            pass -= 0.28; // centre defect cluster
+      if (edgeFail  && t > 0.72)            pass -= 0.22; // outer ring yield loss
+      if (quadrant  && i > 0 && j > 0)      pass -= 0.14; // NE quadrant drift
+      if (center    && t < 0.22)            pass -= 0.20; // centre defect cluster
+      if (cluster   && Math.hypot(i + 5, j + 3) < 2.5)  pass -= 0.80; // particle/ESD cluster (SW, away from NE drift)
+      if (edgeArc) {
+        // Short arc near the top-left edge (~NNW direction)
+        const dieAngle = Math.atan2(j * pitchY, i * pitchX);
+        const targetAngle = Math.atan2(1, -0.4); // ~NNW
+        const angleDiff = Math.abs(((dieAngle - targetAngle + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+        if (t > 0.78 && angleDiff < 0.44)         pass -= 0.65; // handling/chucking arc
+      }
       if (reticlePattern) {
         const reticleWidth = 4, reticleHeight = 3;
         const phaseX = ((1 % reticleWidth) + reticleWidth) % reticleWidth;

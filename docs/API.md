@@ -895,7 +895,7 @@ ctrl.destroy();
 
 ## 7 Statistics / Findings Engine
 
-Detects statistically significant spatial patterns in wafer test data — yield loss, bin accumulation, or test value shifts concentrated in specific rings, quadrants, reticle positions, or individual wafers.
+Detects statistically significant spatial patterns in wafer test data — yield loss, bin accumulation, or test value shifts concentrated in rings, quadrants, angular sectors, reticle positions, contiguous failure clusters, edge arcs, or individual wafers (lot level).
 
 ```ts
 import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
@@ -909,6 +909,19 @@ Analyses a single wafer and returns a `StatsSummary`.  Accepts either a `WaferMa
 const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result, { ringCount: 4 });
 ```
+
+**Lot-stack support** — pass a `WaferMapResult` built with `lotStack` directly to `analyzeWaferMap`.  Ring, quadrant, sector, and reticle-position analysis run on the averaged (or otherwise aggregated) test values.  When the active test has spec limits (`limitLow` / `limitHigh` in `testDefs`), dies that exceed those limits are used as the failure proxy for cluster and edge-arc detection.  If no spec limits are defined, cluster detection is skipped automatically.
+
+```ts
+const result = buildWaferMap({
+  lotStack:    { results: waferResults, method: 'mean' },
+  waferConfig, dieConfig, testDefs,
+});
+const summary = analyzeWaferMap(result, { ringCount: 4 });
+renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary, waferResult: result });
+```
+
+`summary.stats.isLotStack` is `true` and `summary.stats.aggregationMethod` is set (e.g. `'mean'`) so the host application can label the panel appropriately.
 
 ### 7.2 `analyzeWaferLot(items, options?)`
 
@@ -928,7 +941,14 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   ringCount?:                    number   // ring count for spatial analysis; should match renderer ringCount (default 4)
   passBins?:                     number[] // bins counted as pass; defaults to WaferMapInput.passBins, then [1]
   significanceLevel?:            number   // adjusted p-value threshold (default 0.05)
-  minimumEffectSize?:            number   // minimum |delta| or Cohen's d to report (default 0.15)
+  minimumEffectSize?:            number   // minimum absolute |delta| to report for proportion findings (default 0.15)
+                                          // a finding passes if it satisfies this threshold OR minimumRelativeEffect
+  minimumRelativeEffect?:        number   // minimum relative effect |delta / background| for proportion findings (default 0.5)
+                                          // catches meaningful signals on low-failure-rate wafers where the absolute
+                                          // delta is below minimumEffectSize but still represents a large relative
+                                          // deviation from background — e.g. background = 3%, delta = 2% is 67% above
+                                          // background. A finding passes if it satisfies this OR minimumEffectSize.
+                                          // Does not apply to test-value findings (those use Cohen's d via effectSize)
   minimumSampleSize?:            number   // minimum dies per region to test (default 5)
   includePartial?:               boolean  // include partial dies in analysis (default false)
   includeEdgeExcluded?:          boolean  // include edge-excluded dies (default false)
@@ -937,6 +957,10 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
   enableSoftBinAnalysis?:        boolean  // default true
   enableTestValueAnalysis?:      boolean  // default true
   enableReticlePositionAnalysis?: boolean // default true (only runs when reticleConfig is present)
+  enableAngularAnalysis?:        boolean  // 16-sector directional analysis (default true)
+  enableClusterAnalysis?:        boolean  // contiguous failure cluster + edge-arc detection (default true)
+  sectorCount?:                  number   // sectors for angular analysis: 4 | 8 | 16 | 32 (default 16)
+  minimumClusterSize?:           number   // min contiguous failing dies for a cluster finding (default 3)
   testNumbers?:                  number[] // restrict test-value analysis to these test numbers (keys from testValues)
                                           // when omitted: all tests analysed, up to 100 — beyond that a console.warn
                                           // fires and test-value analysis is skipped (pass testNumbers to override)
@@ -947,26 +971,51 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
 
 ### 7.3.1 Statistical rules & thresholds
 
-- Default thresholds and behaviour (these are the library defaults):
-  - significanceLevel: 0.05 (adjusted p-value after per-family correction)
-  - minimumEffectSize: 0.15 (absolute proportion delta for yield/bin, or Cohen-like d for tests)
-  - minimumSampleSize: 5 (minimum dies per region to consider a test)
-  - passBins: defaults to [1]
+**Default thresholds:**
 
-- Tests implemented by the engine:
-  - Yield / bin proportions: two-proportion z-test (per-region vs. rest of wafer)
-  - Test-value comparisons: Welch-style t (z-approx) with pooled SD → effect size estimate
+| Option | Default | Applies to |
+|--------|---------|------------|
+| `significanceLevel` | `0.05` | adjusted p-value threshold after per-family BH correction |
+| `minimumEffectSize` | `0.15` | absolute proportion delta for yield/bin findings |
+| `minimumRelativeEffect` | `0.5` | relative effect `\|delta / background\|` for yield/bin/cluster findings |
+| `minimumSampleSize` | `5` | minimum dies per region to run any test |
 
-- Multiple comparisons: p-values are adjusted per variable-family using a Benjamini–Hochberg style FDR procedure (grouping key: `variable.kind` + `comparison.family`). Only findings that pass both the adjusted p-value and the minimumEffectSize are emitted.
+**Effect size gate for proportion findings (yield, hard bin, soft bin, cluster, edge-arc):**
 
-- Severity mapping (how the `severity` field is derived):
-  - `unusual`: adjusted p ≤ 0.01 and large effect (proportion delta ≥ 0.25 or effect size ≥ 0.5)
-  - `notable`: adjusted p ≤ 0.05 and moderate effect (proportion delta ≥ 0.15 or effect size ≥ 0.15)
-  - `info`: all others
+A finding is kept when it passes the significance test AND satisfies at least one of:
+- absolute `|delta| ≥ minimumEffectSize` (0.15 by default), **or**
+- relative `|delta / background| ≥ minimumRelativeEffect` (0.5 by default)
 
-- Behavioural notes:
-  - Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the scene.
-  - Test-value analysis is auto-skipped if the data contains more than 100 distinct tests unless `testNumbers` is provided. A warning is emitted via `console.warn` and also surfaced in `summary.stats.warnings[]` for programmatic inspection.
+The relative criterion catches meaningful signals on low-failure-rate wafers where the absolute delta is small but still represents a large deviation from background. For example, with a 3% background failure rate a 2 percentage-point increase is a 67% relative elevation — statistically and practically significant even though 0.02 < 0.15.
+
+**Effect size gate for test-value findings:**
+
+Test-value findings use Cohen's d (pooled standard deviation), not a proportion delta. Only `minimumEffectSize` applies (`|effectSize| ≥ 0.15`); `minimumRelativeEffect` is not used for these findings.
+
+**Tests implemented:**
+
+- Yield / bin proportions: two-proportion z-test (per-region vs. rest of wafer)
+- Test-value comparisons: Welch-style t (z-approx) with pooled SD → Cohen's d effect size
+- Contiguous cluster / edge-arc: one-sided binomial test (cluster failure rate vs. wafer-wide background)
+
+**Multiple comparisons:** p-values are adjusted per variable-family using a Benjamini–Hochberg FDR procedure (grouping key: `variable.kind` + `comparison.family`). Only findings that pass both the adjusted p-value gate and the effect size gate are emitted.
+
+**Severity mapping** (how the `severity` field is derived):
+
+For proportion findings, severity uses whichever criterion — absolute or relative — is satisfied:
+
+| Severity | p-value | Absolute delta | Relative delta |
+|----------|---------|----------------|----------------|
+| `unusual` | ≤ 0.01 | ≥ 0.25 | ≥ 2.0× background |
+| `notable` | ≤ 0.05 | ≥ 0.15 | ≥ 1.0× background |
+| `info` | any other passing finding | | |
+
+For test-value findings (Cohen's d): `unusual` when d ≥ 0.5 at p ≤ 0.01; `notable` when d ≥ 0.15 at p ≤ 0.05.
+
+**Behavioural notes:**
+
+- Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the scene.
+- Test-value analysis is auto-skipped if the data contains more than 100 distinct tests unless `testNumbers` is provided. A warning is emitted via `console.warn` and also surfaced in `summary.stats.warnings[]` for programmatic inspection.
 
 ### 7.4 `StatsSummary`
 
@@ -985,6 +1034,8 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
     hardBinsConsidered:   number[]
     softBinsConsidered:   number[]
     warnings?:            string[]     // structured warnings, e.g. test-count cap exceeded
+    isLotStack?:          boolean      // true when this summary was produced from lot-aggregated (lotStack) data
+    aggregationMethod?:   string       // aggregation method used, e.g. 'mean', 'countBin' (present only when isLotStack is true)
     testSpecYield?: Array<{            // one entry per testDef that has at least one limit; absent when no testDefs with limits
       testNumber:   number
       label:        string            // testDef.name
@@ -1074,7 +1125,7 @@ The summary panel's "Summary report" button calls this automatically when `stats
     unit?:  string
   }
   comparison: {
-    family: 'ring' | 'quadrant' | 'reticle-position' | 'wafer'
+    family: 'ring' | 'quadrant' | 'reticle-position' | 'wafer' | 'sector' | 'cluster' | 'edge-arc'
     left:   string          // e.g. "Ring 3 (edge)", "NE", "Reticle cell (1, 0)"
     right:  string          // typically "Rest of wafer" or "Lot median"
   }
@@ -1102,13 +1153,26 @@ Describes what to visually emphasise when a finding is selected.
 
 ```ts
 type HighlightTarget =
-  | { kind: 'region';  regionFamily: string; keys: string[]; dieKeys?: string[] }
+  | { kind: 'region';  regionFamily: 'ring' | 'quadrant' | 'reticle-position' | 'sector';
+                        keys: string[]; dieKeys?: string[] }
   | { kind: 'bin';     bin: number; regionKeys?: string[]; dieKeys?: string[] }
   | { kind: 'wafer';   waferIndices: number[] }
   | { kind: 'dies';    dieKeys: string[] }
 ```
 
 `dieKeys` entries use the `"x,y"` format returned by `getDieKey`.
+
+**Highlight kind by finding family:**
+
+| `comparison.family`  | `highlight.kind` | Notes |
+|----------------------|------------------|-------|
+| `ring`               | `region`         | `regionFamily: 'ring'` |
+| `quadrant`           | `region`         | `regionFamily: 'quadrant'` |
+| `reticle-position`   | `region`         | `regionFamily: 'reticle-position'` |
+| `sector`             | `region`         | `regionFamily: 'sector'` |
+| `cluster`            | `dies`           | exact failing die keys |
+| `edge-arc`           | `dies`           | exact failing die keys |
+| `wafer`              | `wafer`          | lot-level only |
 
 ### 7.10 Integrating with `renderWaferMap` and `renderWaferGallery`
 
@@ -1136,7 +1200,45 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
-### 7.11 `filterFindings(source, filter)`
+### 7.11 Region builder utilities
+
+These are exported from `wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
+
+```ts
+import {
+  buildRingRegions,
+  buildQuadrantRegions,
+  buildReticlePositionRegions,
+  buildSectorRegions,
+} from '@paulrobins/wafermap/stats';
+
+buildRingRegions(dies, wafer, ringCount)
+// Returns StatsRegion[] with family: 'ring'; keys 'ring:1' ... 'ring:N'
+
+buildQuadrantRegions(dies, wafer, ringCount)
+// Returns StatsRegion[] with family: 'quadrant'; keys 'quadrant:NE' etc.
+
+buildReticlePositionRegions(dies, reticleConfig)
+// Returns StatsRegion[] with family: 'reticle-position'; keys 'reticle-position:cell:C,R'
+// Returns [] when reticleConfig is undefined
+
+buildSectorRegions(dies, wafer, sectorCount)
+// Returns StatsRegion[] with family: 'sector'; keys 'sector:N', 'sector:NNE', etc.
+// sectorCount: 4 | 8 | 16 | 32 (default 16 if invalid value passed)
+// Dies with normalised radius < 0.2 are excluded from sector membership (too close to centre)
+```
+
+Each `StatsRegion` has:
+```ts
+{
+  family:   'ring' | 'quadrant' | 'reticle-position' | 'sector'
+  key:      string   // unique region identifier
+  label:    string   // human-readable (e.g. "Ring 4 (edge)", "Sector NNW")
+  dieKeys:  string[] // "x,y" keys of dies in this region
+}
+```
+
+### 7.12 `filterFindings(source, filter)`
 
 Filters findings from a `StatsSummary` or `LotStatsSummary` by any combination of severity, kind, family, and level. All criteria are ANDed; each accepts a single value or an array.
 

@@ -315,6 +315,14 @@ export function renderWaferMap(
           applyFindingHighlightFromPanel(finding);
         }
         rerender();
+        // Restore focus to the active finding button so arrow keys work immediately.
+        if (summaryActiveFindingId) {
+          const id = summaryActiveFindingId;
+          const btns = el.querySelectorAll<HTMLButtonElement>('[data-wmap-finding]');
+          for (const btn of btns) {
+            if (btn.dataset.wmapFinding === id) { btn.focus({ preventScroll: true }); break; }
+          }
+        }
       },
     });
   }

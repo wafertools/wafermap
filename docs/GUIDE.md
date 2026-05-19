@@ -34,7 +34,6 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 </script>
 ```
 
----
 
 ## 2. Your first wafer map
 
@@ -72,8 +71,8 @@ HTML or JavaScript required.
 **→ [Demo: Your first wafer map](examples/01-first-map.html)**
 
 
-![alt text](image-1.png)  
----
+
+![](images/image-1.png)
 
 ## 3. Loading real data from a CSV
 
@@ -124,8 +123,10 @@ no unit conversion needed.
 
 Here we have toggled some toolbar options on: XY Axis indicator and Ring boundaries. 
 
-![alt text](image-2.png)
----
+
+![](images/image-2.png)
+
+For a real-world dataset, see [Demo: Real wafer defect data (WM-811K)](examples/19-real-data.html), which loads a sample from the WM-811K public dataset and lets you explore the spatial findings engine across known defect pattern types (Center, Donut, Edge-Loc, Scratch, etc.).
 
 ## 4. Adding die size and wafer geometry
 
@@ -198,9 +199,9 @@ buildWaferMap({
 
 **→ [Demo: Die size and wafer geometry](examples/04-geometry.html)**
 
-![alt text](image-3.png)
 
----
+![](images/image-3.png)
+
 
 
 ## 5. Working with bins
@@ -288,8 +289,8 @@ console.log(`${(yld.yieldPercent * 100).toFixed(1)}%`);
 
 **→ [Demo: Working with bins](examples/05-named-bins.html)**
 
-![alt text](image-4.png)
----
+
+![](images/image-4.png)
 
 ## 6. Working with test values
 
@@ -390,8 +391,8 @@ Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.sta
 
 **→ [Demo: Working with test values](examples/06-test-values.html)**
 
-![alt text](image-5.png)
----
+
+![](images/image-5.png)
 
 ## 7. Retests and enriching dies after build
 
@@ -460,8 +461,8 @@ renderWaferMap(canvas, result.wafer, enrichedDies, {
 
 **→ [Demo: Working with retested dies](examples/07-retests.html)**
 
-![alt text](image-6.png)
----
+
+![](images/image-6.png)
 
 ## 8. Controlling the display
 
@@ -560,7 +561,8 @@ renderWaferMap(canvas, wafer, dies, {
 ```
 **→ [Demo: Controlling the display](examples/08-display-control.html)**
 
-![alt text](image-7.png)
+
+![](images/image-7.png)
 
 ### Bin legend position
 
@@ -593,7 +595,66 @@ renderWaferGallery(container, items, {
 });
 ```
 
----
+### Toolbar reference
+
+The toolbar appears on hover over a single map, or as a persistent bar above the
+gallery grid.  Which buttons appear depends on the context and the current data.
+
+#### Single map toolbar
+
+![Single map toolbar](images/toolbar-single.png)
+
+| | Button | Condition | What it does |
+| --- | --- | --- | --- |
+| <img src="images/icons/download.svg" width="16" height="16"> | Download PNG | Always | Saves the current canvas at current zoom/rotation |
+| <img src="images/icons/zoomMode.svg" width="16" height="16"> | Zoom mode | Always | Drag to zoom into a region |
+| <img src="images/icons/pan.svg" width="16" height="16"> | Pan mode | Always | Drag to pan |
+| <img src="images/icons/boxSelect.svg" width="16" height="16"> | Box select | Only when `onSelect` is provided | Drag to select a group of dies |
+| <img src="images/icons/zoomIn.svg" width="16" height="16"> <img src="images/icons/zoomOut.svg" width="16" height="16"> <img src="images/icons/reset.svg" width="16" height="16"> | Zoom in / Zoom out / Reset | Always | Step zoom; Reset returns to fitted view |
+| <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, Spec Limit, and Stacked modes (only when map was built with `lotStack`) |
+| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Cycles through registered colour schemes |
+| <img src="images/icons/logScale.svg" width="16" height="16"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0 |
+| <img src="images/icons/specRange.svg" width="16" height="16"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh` | Toggles between spec-limit range (blue/red out-of-spec) and data range |
+| <img src="images/icons/rings.svg" width="16" height="16"> | Ring boundaries | Always | Overlays concentric ring zones |
+| <img src="images/icons/quadrants.svg" width="16" height="16"> | Quadrant boundaries | Always | Overlays NE/NW/SW/SE quadrant lines |
+| <img src="images/icons/labels.svg" width="16" height="16"> | Die labels | Always | Shows die index labels on each die |
+| <img src="images/icons/reticle.svg" width="16" height="16"> | Reticle overlay | Only when `sceneOptions.reticles` is present | Toggles stepper field grid |
+| <img src="images/icons/xyIndicator.svg" width="16" height="16"> | XY indicator | Always | Toggles the axis arrow overlay |
+| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Cycles legend position: default, compact, left, top, bottom, floating |
+| <img src="images/icons/rotateCW.svg" width="16" height="16"> | Rotate 90° CW | Always | Rotates the wafer display 90° clockwise |
+| <img src="images/icons/flipH.svg" width="16" height="16"> | Flip horizontal | Always | Mirrors the map left-right |
+| <img src="images/icons/flipV.svg" width="16" height="16"> | Flip vertical | Always | Mirrors the map top-bottom |
+| <img src="images/icons/findings.svg" width="16" height="16"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
+
+The full toolbar is shown when `toolbarControls` is `'full'` (default for `renderWaferMap`).
+Gallery card modals also use `'full'`.  Gallery cards themselves use `'view-only'`:
+only download, zoom/pan/select, and zoom in/out/reset are shown — mode and overlay
+controls are in the shared gallery bar instead.
+
+#### Gallery control bar
+
+![Gallery control bar](images/toolbar-gallery.png)
+
+The gallery control bar is always visible above the card grid.
+
+| | Button | Condition | What it does |
+| --- | --- | --- | --- |
+| <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Same mode menu as single map; stacked modes always available in the gallery |
+| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Applies to all cards |
+| <img src="images/icons/aggr.svg" width="16" height="16"> | Aggregation method (Σ) | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
+| <img src="images/icons/logScale.svg" width="16" height="16"> | Log scale | Value / stacked-values mode only | Applies to all cards |
+| <img src="images/icons/rings.svg" width="16" height="16"> | Ring boundaries | Always | Applies to all cards |
+| <img src="images/icons/quadrants.svg" width="16" height="16"> | Quadrant boundaries | Always | Applies to all cards |
+| <img src="images/icons/labels.svg" width="16" height="16"> | Die labels | Always | Applies to all cards |
+| <img src="images/icons/reticle.svg" width="16" height="16"> | Reticle overlay | Only when any item has `hasReticle: true` | Applies to all cards |
+| <img src="images/icons/xyIndicator.svg" width="16" height="16"> | XY indicator | Always | Applies to all cards |
+| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Applies to all cards |
+| <img src="images/icons/rotateCW.svg" width="16" height="16"> | Rotate 90° CW | Always | Applies to all cards |
+| <img src="images/icons/flipH.svg" width="16" height="16"> | Flip horizontal | Always | Applies to all cards |
+| <img src="images/icons/flipV.svg" width="16" height="16"> | Flip vertical | Always | Applies to all cards |
+| <img src="images/icons/downloadAll.svg" width="16" height="16"> | Download all | Always | Exports all cards as a single tiled PNG |
+| <img src="images/icons/findings.svg" width="16" height="16"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
+
 
 ## 9. Responding to user interaction
 
@@ -648,12 +709,12 @@ ctrl.clearSelection();
 ```
 **→ [Demo: Responding to user interaction](examples/09-interaction.html)**
 
-![alt text](image-8.png)
----
+
+![](images/image-8.png)
 
 ## 10. Adding statistical findings
 
-The statistics engine ('analyzeWaferMap') scans for spatial patterns in die rings, quadrants, and reticle positions. For rings and quadrants it compares each zone to the rest of the wafer, while reticle-position analysis compares each reticle cell to the other positions within the reticle grid.
+The statistics engine (`analyzeWaferMap`) scans for spatial patterns across five families: rings, quadrants, angular sectors, contiguous failure clusters, and edge arcs. For each family it compares the local zone to the rest of the wafer using a statistical test appropriate to the variable type.
 
 ### Basic usage
 
@@ -679,23 +740,40 @@ grouped by severity alongside yield, bin, and test statistics.
 
 By default the engine checks every combination of:
 
-- **Comparison families:** ring zones, quadrant zones, reticle-field positions (if a reticle config was used)
-- **Variables:** yield, hard bin rate per bin, soft bin rate per bin, mean test value per test
+- **Ring zones** — each concentric ring vs. the rest of the wafer
+- **Quadrant zones** — each of NE/NW/SE/SW vs. the rest of the wafer
+- **Angular sectors** — 16 compass-direction sectors (N, NNE, NE, …) vs. the rest of the wafer; finer directional resolution than quadrants, catching drift patterns a single quadrant would dilute
+- **Reticle-field positions** — each reticle cell vs. other cells (only when a `reticleConfig` was used)
+- **Failure clusters** — contiguous groups of failing dies that are denser than the wafer-wide background failure rate; each cluster highlighted as a specific set of dies
+- **Edge arcs** — failure clusters whose centroid is near the wafer perimeter and whose angular span is narrow; distinguished from full-ring edge effects (which ring analysis catches separately)
 
-Results below a significance threshold (adjusted p-value < 0.05) and a minimum
-effect size (15% by default) are suppressed.
+For each spatial family the engine tests: yield, hard bin rate per bin, soft bin rate per bin, and mean test value per test.
+
+**Angular sectors in detail.** Sector analysis divides the wafer into compass-named angular slices — N, NNE, NE, ENE, E, … (16 sectors by default).  Each sector is compared to the rest of the wafer independently, giving finer directional resolution than quadrants: a drift pattern concentrated in the NE corner shows up as a sector finding even if the wider NE quadrant is diluted by clean dies elsewhere in that quarter.  Dies within 0.2 normalised radius of the wafer centre are excluded from sector analysis (they are too close to the centre to be meaningfully attributed to a direction).  The number of sectors is controlled by `sectorCount` (4, 8, 16, or 32); the feature can be disabled entirely with `enableAngularAnalysis: false`.
+
+Findings are suppressed unless they pass both an adjusted p-value threshold and an effect size gate. The effect size gate uses two complementary criteria — absolute and relative — so that meaningful patterns are not missed on wafers with either high or low background failure rates.
 
 ### Interpreting findings and severity
 
-The findings list is ranked and filtered by statistical strength and effect size. Key points (implementation defaults):
+The findings list is ranked and filtered by statistical strength and effect size:
 
-- Adjusted p-values are used (default `significanceLevel` = 0.05) and p-values are corrected per-family using a Benjamini–Hochberg style FDR.
-- Minimum effect size (`minimumEffectSize`, default 0.15) is applied to the reported effect: for yield/bin this is the absolute proportion delta; for test values it is a Cohen-like effect size computed from pooled SD.
-- Minimum sample size per region defaults to 5 (`minimumSampleSize`). Findings failing any threshold are suppressed.
-- Severity mapping in the UI is derived from adjusted p-value and effect magnitude:
-  - `unusual`: adjusted p ≤ 0.01 and large effect (proportion delta ≥ 0.25 or effect size ≥ 0.5)
-  - `notable`: adjusted p ≤ 0.05 and moderate effect (proportion delta ≥ 0.15 or effect size ≥ 0.15)
-  - `info`: otherwise
+- **p-value correction:** adjusted p-values are used (default `significanceLevel` = 0.05), corrected per-family using a Benjamini–Hochberg FDR procedure.
+- **Effect size gate for yield/bin/cluster findings:** a finding passes if it satisfies at least one of:
+  - absolute `|delta| ≥ minimumEffectSize` (default 0.15, i.e. a 15 percentage-point difference), **or**
+  - relative `|delta / background| ≥ minimumRelativeEffect` (default 0.5, i.e. 50% above or below the wafer-wide background rate)
+
+  The relative criterion matters on low-failure-rate wafers. With a 2% background rate, a 2 percentage-point elevation is only 0.02 in absolute terms (below the 0.15 threshold) but represents a 100% relative deviation — clearly significant. Without the relative criterion that finding would be silently dropped.
+
+- **Effect size for test-value findings:** Cohen's d (pooled SD). Only `minimumEffectSize` applies; relative effect is not used for continuous measurements.
+- **Minimum sample size** per region defaults to 5 (`minimumSampleSize`). Regions smaller than this are not tested.
+
+**Severity** is derived from the adjusted p-value and the strongest satisfied effect criterion:
+
+| Severity | p-value | Absolute delta | or Relative delta |
+|----------|---------|----------------|-------------------|
+| `unusual` | ≤ 0.01 | ≥ 0.25 | ≥ 2.0× background |
+| `notable` | ≤ 0.05 | ≥ 0.15 | ≥ 1.0× background |
+| `info` | any other passing finding | | |
 
 Use the `summary`, `effect`, and `stats` fields on each `StatsFinding` to display numerical details to users.
 
@@ -715,14 +793,36 @@ const summary = analyzeWaferMap(result, {
   ringCount:                 4,      // must match the renderer's ringCount
   passBins:                  [1],
   significanceLevel:         0.05,   // adjusted p-value threshold
-  minimumEffectSize:         0.15,   // |delta| or Cohen's d
+  minimumEffectSize:         0.15,   // min absolute |delta| for proportion findings
+  minimumRelativeEffect:     0.5,    // min relative |delta / background| for proportion findings
+                                     // a finding passes if it satisfies either this OR minimumEffectSize
   minimumSampleSize:         5,      // min dies per region to test
   enableYieldAnalysis:       true,
   enableHardBinAnalysis:     true,
   enableSoftBinAnalysis:     true,
   enableTestValueAnalysis:   true,
   enableReticlePositionAnalysis: true,  // auto-disabled when no reticle config
+  enableAngularAnalysis:     true,   // 16-sector directional analysis
+  enableClusterAnalysis:     true,   // contiguous failure cluster + edge arc detection
+  sectorCount:               16,     // 4 | 8 | 16 | 32
+  minimumClusterSize:        3,      // min contiguous failing dies for a cluster finding
 });
+```
+
+#### Cluster and edge-arc highlights
+
+Cluster and edge-arc findings use `{ kind: 'dies' }` highlights — they identify the exact set of failing dies, not a region. Clicking one in the summary panel highlights those specific dies on the map:
+
+```ts
+const clusters = filterFindings(summary, { family: 'cluster' });
+const arcs     = filterFindings(summary, { family: 'edge-arc' });
+const sectors  = filterFindings(summary, { family: 'sector' });
+
+// Each cluster finding's highlight carries the exact die keys:
+for (const f of clusters) {
+  console.log(f.comparison.left);    // e.g. "Cluster at (3, 2)"
+  console.log(f.highlight.dieKeys);  // ['3,2', '4,2', '3,3', ...]
+}
 ```
 
 ### Reading findings in code
@@ -751,8 +851,8 @@ ctrl.setStatsSummary(newSummary);
 
 **→ [Demo: Statistical findings](examples/10-findings.html)**
 
-![alt text](image-13.png)
----
+
+![](images/image-13.png)
 
 ## 11. Summary panel
 
@@ -845,7 +945,6 @@ renderWaferGallery(container, items, {
 
 **→ [Demo: Summary panel](examples/11-summary-panel.html)**
 
----
 
 ## 12. Building a lot gallery
 
@@ -961,23 +1060,41 @@ renderWaferGallery(container, items, {
 
 ### Stacked lot maps
 
-The gallery toolbar includes three stacked modes that aggregate all wafers into a single view—one card per bin or per test parameter. 
+The gallery toolbar includes three stacked modes that aggregate the full lot into a
+single view — one card per bin or per test parameter.  Switch mode via the **mode
+picker** in the gallery control bar:
 
-**Zero-Config Discovery:** Even if you don't provide `testDefs` or `binDefs`, the gallery will automatically scan your lot data to discover unique tests and bins when you switch to a stacked mode. It generates default labels (e.g., "Test 1050" or "Bin 2") and populates the shared legend automatically.
-
-Selecting "Stacked Hard Bins" will produce one card per bin found in the data, where each die shows the count of wafers on which that bin appeared at that position.
+| Mode | What each card shows |
+| --- | --- |
+| **Stacked Test Values** | Per-die mean (or median, std dev, min, max) across all wafers |
+| **Stacked Hard Bins** | Per-die count of wafers on which that hard bin appeared |
+| **Stacked Soft Bins** | Per-die count of wafers on which that soft bin appeared |
 
 Switching to a stacked mode rebuilds the card set automatically; switching back
-restores the original per-wafer cards.  The aggregation method for
-**Stacked Test Values** defaults to `mean` and can be changed programmatically:
+restores the original per-wafer cards.
+
+**Aggregation method.** For Stacked Test Values the default aggregation is `mean`.
+Change it via the **Σ button** in the gallery control bar (visible only in this mode),
+or programmatically:
 
 ```ts
 ctrl.setOptions({ aggrMethod: 'median' });  // re-aggregates immediately
 ```
-**→ [Demo: Building a lot gallery](examples/12-gallery.html)**
 
-![alt text](image-9.png)
----
+**Zero-config discovery.** Even without `testDefs` or `binDefs`, the gallery scans
+the lot data to discover unique tests and bins when entering a stacked mode, and
+generates default labels (e.g. "Test 1050", "Bin 2") automatically.
+
+**Spatial findings.** Each stacked card automatically gets a spatial analysis
+summary — open the card modal and click the findings button to see ring, quadrant,
+sector, and cluster findings on the aggregated map.  No extra code is required.
+
+**→ [Demo: Building a lot gallery](examples/12-gallery.html)**  
+See also: [Demo: Lot-level findings with stacked modes](examples/13-lot-findings.html)
+
+
+![](images/image-9.png)
+
 
 ## 13. Lot-level statistical findings
 
@@ -1034,8 +1151,58 @@ ctrl.setLotStatsSummary(newLotSummary);
 
 **→ [Demo: Lot-level statistical findings](examples/13-lot-findings.html)**
 
-![alt text](image-10.png)
----
+
+![](images/image-10.png)
+
+### Advanced: standalone stacked map with programmatic findings access
+
+The gallery's stacked modes cover most use cases.  Use `buildWaferMap({ lotStack })`
+directly when you need one or more of:
+
+- A **standalone stacked map** (not inside a gallery — e.g. a dedicated lot-average view)
+- **Programmatic access to the findings** before rendering (to filter, store, or feed your own UI)
+- A **fixed aggregation method** set at build time rather than chosen interactively
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+
+// Aggregate six wafers into a single mean map
+const result = buildWaferMap({
+  lotStack:    { results: waferResults, method: 'mean' },
+  waferConfig, dieConfig,
+  testDefs,    // include limitLow/limitHigh to enable cluster detection
+});
+
+// Run spatial analysis on the aggregated result
+const summary = analyzeWaferMap(result, {
+  ringCount:   4,
+  testNumbers: [1060],   // optional: restrict to a specific test
+});
+
+// summary.stats.isLotStack        === true
+// summary.stats.aggregationMethod === 'mean'
+// summary.stats.lotSize           === 6
+
+renderWaferMap(canvas, result.wafer, result.dies, {
+  sceneOptions: { plotMode: 'value', testDefs, testIndex: 0 },
+  statsSummary: summary,
+  waferResult:  result,
+  summaryPanel: { defaultOpen: true },
+});
+```
+
+Systematic lot patterns (e.g. an NE-quadrant drift present on every wafer) survive
+averaging and emerge as clear findings on the lot-average map.  The summary panel
+labels the view as "N wafers · mean" so it is unambiguous to the reader.
+
+For cluster and edge-arc detection, dies that exceed a test's spec limits
+(`limitLow` / `limitHigh` in `testDefs`) are used as the failure proxy.  If no spec
+limits are defined, cluster detection is skipped automatically.
+
+**→ [Demo: Standalone stacked map with spatial analysis](examples/20-lot-stack-analysis.html)**
+
 
 ## 14. Reticle overlays
 
@@ -1092,8 +1259,8 @@ const items = waferResults.map(r => ({
 ```
 **→ [Demo: Reticle overlays](examples/14-reticle.html)**
 
-![alt text](image-11.png)
----
+
+![](images/image-11.png)
 
 ## 15. Processing large datasets with a Web Worker
 
@@ -1156,7 +1323,6 @@ wmWorker.terminate();
 
 **→ [Demo: Processing large datasets with a Web Worker](examples/15-worker.html)**
 
----
 
 ## 16. Custom colour schemes
 
@@ -1204,8 +1370,8 @@ call.  They are global and persist for the lifetime of the page.
 
 **→ [Demo: Custom colour schemes](examples/16-color-schemes.html)**
 
-![alt text](image-14.png)
----
+
+![](images/image-14.png)
 
 ## 17. Common patterns and tips
 
@@ -1226,7 +1392,8 @@ const result = buildWaferMap({
 // Use in gallery label:
 items.push({ wafer: result.wafer, dies: result.dies, label: `W${result.wafer.metadata.waferNumber}` });
 ```
-![alt text](image-12.png)
+
+![](images/image-12.png)
 
 ### Keep `ringCount` consistent between renderer and stats engine
 
@@ -1392,7 +1559,6 @@ const summary = analyzeWaferMap(result, { testNumbers: [1050, 1060, 1070] });
 // No warning — analysis runs on exactly these three tests
 ```
 
----
 
 ## 18. Plotly/SVG compatibility
 
@@ -1448,7 +1614,6 @@ document.getElementById('plotly-chart').on('plotly_click', ev => {
 
 **→ [Demo: Plotly compatibility](examples/17-plotly.html)**
 
----
 
 ## 19. Advanced: the rendering pipeline
 

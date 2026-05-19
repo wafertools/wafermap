@@ -9,6 +9,7 @@ import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
+import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, renderLotSummaryContent, renderWaferSummaryContent,
@@ -775,60 +776,104 @@ export function renderWaferGallery(
     if (!originalItems.length) return [];
     const allDies   = originalItems.map(item => item.dies);
     const baseWafer = originalItems[0].wafer;
+    const lotSize   = originalItems.length;
+
+    // Wafer object for stacked analysis: strip the per-wafer 'wafer' identity field
+    // (e.g. 'W01') so the summary panel doesn't claim this is a single wafer's data.
+    // Lot-level fields (lot, product, etc.) are preserved for context.
+    const stackedWafer = baseWafer.metadata
+      ? { ...baseWafer, metadata: (({ wafer: _w, waferId: _id, ...rest }) => rest)(baseWafer.metadata as Record<string, unknown>) as typeof baseWafer.metadata }
+      : baseWafer;
+
+    // Patch isLotStack / aggregationMethod / lotSize onto a summary produced from
+    // aggregated dies — analyzeWaferMap can't infer these from the die data alone.
+    function asLotStackSummary(
+      summary: import('../stats/types.js').StatsSummary,
+      aggregationMethod: string,
+    ): import('../stats/types.js').StatsSummary {
+      return {
+        ...summary,
+        stats: { ...summary.stats, isLotStack: true, aggregationMethod, lotSize },
+      };
+    }
 
     if (mode === 'stackedValues') {
       let defs = sharedOpts.testDefs;
 
       // If no testDefs provided, discover unique test numbers from the actual data
       if (!defs || defs.length === 0) {
-        const uniqueNums = [...new Set(originalItems.flatMap(it => 
+        const uniqueNums = [...new Set(originalItems.flatMap(it =>
           it.dies.flatMap(d => d.testValues ? Object.keys(d.testValues).map(Number) : [])
         ))].sort((a, b) => a - b);
-        
+
         defs = uniqueNums.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
       }
 
       const method = (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod;
-      return defs.map(def => ({
-        wafer: baseWafer,
-        dies:  aggregateValues(allDies, method, def.testNumber ?? def.index) as Die[],
-        label: `${def.name} · ${method}`,
-        sceneOptions: { testDefs: [{ index: 0, name: def.name, unit: def.unit }] },
-      }));
+      return defs.map(def => {
+        const dies = aggregateValues(allDies, method, def.testNumber ?? def.index) as Die[];
+        const cardTestDef = { index: 0, name: def.name, unit: def.unit };
+        return {
+          wafer: stackedWafer,
+          dies,
+          label: `${def.name} · ${method}`,
+          sceneOptions: { testDefs: [cardTestDef] },
+          statsSummary: asLotStackSummary(
+            analyzeWaferMap({ wafer: stackedWafer, dies, testDefs: [cardTestDef] }, { testNumbers: [0] }),
+            method,
+          ),
+        };
+      });
     }
 
     if (mode === 'stackedBins') {
       let defs = sharedOpts.hbinDefs;
       if (!defs || defs.length === 0) {
-        const uniqueBins = [...new Set(originalItems.flatMap(it => 
+        const uniqueBins = [...new Set(originalItems.flatMap(it =>
           it.dies.map(d => d.hbin).filter((b): b is number => b != null)
         ))].sort((a, b) => a - b);
         defs = uniqueBins.map(b => ({ bin: b, name: `Bin ${b}` }));
       }
 
-      return defs.map(def => ({
-        wafer: baseWafer,
-        dies:  aggregateBinCounts(allDies, def.bin, 'hard') as Die[],
-        label: `${def.bin} · ${def.name}`,
-        sceneOptions: { hbinDefs: [{ bin: def.bin, name: def.name }] },
-      }));
+      return defs.map(def => {
+        const dies = aggregateBinCounts(allDies, def.bin, 'hard') as Die[];
+        const hbinDefs = [{ bin: def.bin, name: def.name }];
+        return {
+          wafer: stackedWafer,
+          dies,
+          label: `${def.bin} · ${def.name}`,
+          sceneOptions: { hbinDefs },
+          statsSummary: asLotStackSummary(
+            analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs }),
+            'countBin',
+          ),
+        };
+      });
     }
 
     if (mode === 'stackedSoftBins') {
       let defs = sharedOpts.sbinDefs;
       if (!defs || defs.length === 0) {
-        const uniqueBins = [...new Set(originalItems.flatMap(it => 
+        const uniqueBins = [...new Set(originalItems.flatMap(it =>
           it.dies.map(d => d.sbin).filter((b): b is number => b != null)
         ))].sort((a, b) => a - b);
         defs = uniqueBins.map(b => ({ bin: b, name: `Bin ${b}` }));
       }
 
-      return defs.map(def => ({
-        wafer: baseWafer,
-        dies:  aggregateBinCounts(allDies, def.bin, 'soft') as Die[],
-        label: `${def.bin} · ${def.name}`,
-        sceneOptions: { sbinDefs: [{ bin: def.bin, name: def.name }] },
-      }));
+      return defs.map(def => {
+        const dies = aggregateBinCounts(allDies, def.bin, 'soft') as Die[];
+        const sbinDefs = [{ bin: def.bin, name: def.name }];
+        return {
+          wafer: stackedWafer,
+          dies,
+          label: `${def.bin} · ${def.name}`,
+          sceneOptions: { sbinDefs },
+          statsSummary: asLotStackSummary(
+            analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs }),
+            'countBin',
+          ),
+        };
+      });
     }
 
     return originalItems;
