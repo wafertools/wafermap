@@ -27,6 +27,7 @@ Live interactive demos. Each opens a standalone page with the full wafer map ren
 - [Lot-stack spatial analysis](20-lot-stack-analysis.html)
 - [Reticle overlays](14-reticle.html)
 - [Real wafer data (WM-811K)](19-real-data.html)
+- [Mixed patterns (MixedWM38)](21-mixedwm38.html)
 
 ## Compatibility and advanced
 

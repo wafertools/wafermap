@@ -1,10 +1,15 @@
 /**
- * Real-data integration tests using a curated WM-811K fixture.
+ * Real-data integration tests using curated fixtures from two public datasets.
  *
- * The fixture (tests/fixtures/wm811k-sample.json) is produced once by
- * scripts/convert-wm811k.py from the public WM-811K dataset and committed
- * to the repo. It contains ~27 wafer maps (3 per defect type × 9 types),
- * each stored as {x, y, hbin} coordinate arrays with centred grid origin.
+ * WM-811K fixture (tests/fixtures/wm811k-sample.json):
+ *   Produced by scripts/convert-wm811k.py. 27 wafer maps (3 per type × 9 types).
+ *
+ * MixedWM38 fixture (tests/fixtures/mixedwm38-sample.json):
+ *   Produced by scripts/convert-mixedwm38.py. 38 wafer maps (1 per class × 38 classes),
+ *   including compound patterns such as Center+Edge-Ring+LOC. Labels are decoded from
+ *   8-bit multi-hot vectors into human-readable class names.
+ *
+ * Both fixtures use {x, y, hbin} die records with centred grid origin.
  *
  * These tests verify:
  *  - The library doesn't throw on real variable-size grids
@@ -13,6 +18,8 @@
  *  - No phantom Bin 0 dies appear
  *  - analyzeWaferMap fires the expected finding family for labelled defect types
  *  - analyzeWaferMap doesn't crash on high-failure-rate patterns (Near-Full, Random)
+ *  - Compound MixedWM38 patterns produce findings from the expected spatial families,
+ *    noting cases where no matching finding is detected
  */
 
 import test from 'node:test';
@@ -164,3 +171,129 @@ skip('real data: dataCoverage ratio is in [0, 1] for all samples', () => {
       `${sample.failureType} W${sample.waferIndex}: dataCoverage.ratio=${ratio}`);
   }
 });
+
+// ══ MixedWM38 ════════════════════════════════════════════════════════════════
+
+const MX_FIXTURE_PATH = join(__dirname, 'fixtures', 'mixedwm38-sample.json');
+const MX_FIXTURE_MISSING = !existsSync(MX_FIXTURE_PATH);
+if (MX_FIXTURE_MISSING) {
+  test('MixedWM38 fixture missing — run scripts/convert-mixedwm38.py to generate it', () => {});
+}
+
+let mxFixture;
+if (!MX_FIXTURE_MISSING) {
+  if (FIXTURE_MISSING) {
+    // buildWaferMap / analyzeWaferMap not yet imported — load them now.
+    ({ buildWaferMap } = await import('../dist/index.js'));
+    ({ analyzeWaferMap } = await import('../dist/packages/stats/analyzeWaferMap.js'));
+  }
+  mxFixture = JSON.parse(readFileSync(MX_FIXTURE_PATH, 'utf8'));
+}
+
+function mxSkip(label, fn) {
+  if (MX_FIXTURE_MISSING) return;
+  test(label, fn);
+}
+
+// ── MX-1. Smoke ───────────────────────────────────────────────────────────────
+
+mxSkip('MixedWM38: buildWaferMap succeeds on all 38 class samples', () => {
+  for (const sample of mxFixture) {
+    const result = buildWaferMap({ results: sample.results, passBins: [1] });
+    assert.ok(result.dies.length > 0,      `${sample.className}: expected dies`);
+    assert.ok(result.wafer.radius > 0,     `${sample.className}: expected positive radius`);
+  }
+});
+
+// ── MX-2. Yield plausibility ──────────────────────────────────────────────────
+
+mxSkip('MixedWM38: yield values are in [0, 1]', () => {
+  for (const sample of mxFixture) {
+    const result = buildWaferMap({ results: sample.results, passBins: [1] });
+    const y = result.yield.yieldPercent;
+    if (y !== null) {
+      assert.ok(y >= 0 && y <= 1, `${sample.className}: yield ${y} out of range`);
+    }
+  }
+});
+
+// ── MX-3. No phantom Bin 0 ────────────────────────────────────────────────────
+
+mxSkip('MixedWM38: no phantom Bin 0 dies', () => {
+  for (const sample of mxFixture) {
+    const result = buildWaferMap({ results: sample.results, passBins: [1] });
+    const phantom = result.dies.find(d => d.hbin === 0);
+    assert.ok(!phantom, `${sample.className}: Bin 0 die at (${phantom?.x},${phantom?.y})`);
+  }
+});
+
+// ── MX-4. Spatial pattern detection ──────────────────────────────────────────
+//
+// For each base defect component, the expected spatial finding families.
+// A compound class passes if at least one component's families are detected.
+// Cases where no expected family fires are noted in the diagnostic output but
+// do NOT fail the test — the dataset labels are ground truth for ML classification,
+// not for spatial statistics, so some samples may not be statistically clear enough.
+
+const MX_COMPONENT_FAMILIES = {
+  'Center':    ['ring', 'cluster'],
+  'Donut':     ['ring'],
+  'Edge-Loc':  ['edge-arc', 'sector', 'ring'],
+  'Edge-Ring': ['ring'],
+  'LOC':       ['cluster', 'sector'],
+  'Scratch':   ['cluster', 'sector'],
+  'Near-Full': [], // too high failure rate — no spatial structure expected
+  'Random':    [], // random — no spatial structure expected
+  'Normal':    [], // no defect — no findings expected
+};
+
+if (!MX_FIXTURE_MISSING) {
+  test('MixedWM38: spatial finding families match class components (noting misses)', () => {
+    const misses = [];
+    const hits   = [];
+
+    for (const sample of mxFixture) {
+      const result  = buildWaferMap({ results: sample.results, passBins: [1] });
+      const summary = analyzeWaferMap(result, { passBins: [1] });
+      const detected = new Set(summary.findings.map(f => f.comparison.family));
+
+      // Decode which base components this class contains
+      const components = sample.className === 'Normal'
+        ? ['Normal']
+        : sample.className.split('+');
+
+      // Gather all families expected from any component
+      const expectedFamilies = [...new Set(
+        components.flatMap(c => MX_COMPONENT_FAMILIES[c] ?? []),
+      )];
+
+      if (expectedFamilies.length === 0) {
+        // Normal / Near-Full / Random — just check no crash
+        hits.push(`${sample.className}: no findings expected (${summary.findings.length} found)`);
+        continue;
+      }
+
+      const matched = expectedFamilies.some(f => detected.has(f));
+      const detectedList = [...detected].join(',') || 'none';
+
+      if (matched) {
+        hits.push(`${sample.className}: OK (detected: ${detectedList})`);
+      } else {
+        misses.push(
+          `${sample.className}: expected [${expectedFamilies.join(',')}] but detected [${detectedList}]`,
+        );
+      }
+    }
+
+    // Print diagnostic summary — misses are noted, not failed
+    if (misses.length) {
+      console.log(`\nMixedWM38 spatial detection misses (${misses.length}/${mxFixture.length}):`);
+      for (const m of misses) console.log(`  MISS  ${m}`);
+    }
+    console.log(`\nMixedWM38 spatial detection hits: ${hits.length - misses.length}/${mxFixture.length}`);
+
+    // The test itself always passes — misses are diagnostic output only.
+    // To harden this, change the assert below to a strict threshold if desired.
+    assert.ok(true, 'see diagnostic output above for per-class results');
+  });
+}

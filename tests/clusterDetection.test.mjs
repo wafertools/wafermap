@@ -186,6 +186,38 @@ test('sector analysis — sector findings present with angular analysis enabled'
   }
 });
 
+test('cluster detection — cluster covering ≥10% of wafer scores unusual', () => {
+  // A large contiguous cluster (radius=5 grid steps, ~16% of dies) on a clean
+  // background must score unusual. This verifies the size criterion is wired in —
+  // clusters of this scale are visually dominant and should top the findings list.
+  const results = makeClusterResults({ clusterX: 0, clusterY: 0, radius: 5 });
+
+  const result  = buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE });
+  const summary = analyzeWaferMap(result, {
+    passBins: [1],
+    enableClusterAnalysis: true,
+    enableAngularAnalysis: false,
+    enableYieldAnalysis: false,
+    enableHardBinAnalysis: false,
+    enableSoftBinAnalysis: false,
+    enableTestValueAnalysis: false,
+  });
+
+  const clusters = summary.findings.filter(f => f.comparison.family === 'cluster');
+  assert.ok(clusters.length >= 1, 'expected at least one cluster finding');
+
+  const largest = clusters.reduce((a, b) =>
+    (a.highlight.dieKeys?.length ?? 0) >= (b.highlight.dieKeys?.length ?? 0) ? a : b
+  );
+  const totalDies = result.dies.filter(d => !d.partial).length;
+  const fraction  = (largest.highlight.dieKeys?.length ?? 0) / totalDies;
+
+  assert.ok(fraction >= 0.10,
+    `largest cluster covers ${(fraction * 100).toFixed(1)}% of wafer — expected ≥10%`);
+  assert.equal(largest.severity, 'unusual',
+    `cluster covering ${(fraction * 100).toFixed(1)}% of wafer should score unusual, got ${largest.severity}`);
+});
+
 test('sector analysis — no sector findings when angular analysis disabled', () => {
   const result = buildWaferMap({ results: makeClusterResults(), waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {

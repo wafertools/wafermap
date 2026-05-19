@@ -9,10 +9,18 @@ function compassBearing(dx: number, dy: number): string {
   return COMPASS_16[Math.round((angle / (2 * Math.PI)) * 16) % 16];
 }
 
-function severityForCluster(pValue: number, delta: number, relativeDelta?: number): StatsSeverity {
+function severityForCluster(
+  pValue: number,
+  delta: number,
+  clusterFraction: number,
+  relativeDelta?: number,
+): StatsSeverity {
   const absRel = relativeDelta !== undefined ? Math.abs(relativeDelta) : 0;
-  if (pValue <= 0.01 && (delta >= 0.25 || absRel >= 2.0)) return 'unusual';
-  if (pValue <= 0.05 && (delta >= 0.15 || absRel >= 1.0)) return 'notable';
+  // Size criterion: large clusters are intrinsically unusual/notable regardless
+  // of rate contrast. A 700-die donut cluster covering 37% of the wafer is
+  // striking even when the background failure rate is already elevated.
+  if (pValue <= 0.01 && (delta >= 0.25 || absRel >= 2.0 || clusterFraction >= 0.10)) return 'unusual';
+  if (pValue <= 0.05 && (delta >= 0.15 || absRel >= 1.0 || clusterFraction >= 0.03)) return 'notable';
   return 'info';
 }
 
@@ -175,7 +183,8 @@ export function buildClusterFindings(
       ? `Edge arc ~${bearing}`
       : `Cluster at (${closestDie.x}, ${closestDie.y})`;
 
-    const severity = severityForCluster(pValue, delta, relativeDelta);
+    const clusterFraction = k / dies.length;
+    const severity = severityForCluster(pValue, delta, clusterFraction, relativeDelta);
     const dieKeys = [...clusterKeySet];
 
     findings.push({

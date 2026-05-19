@@ -32,6 +32,7 @@ nav = [
       { "Lot-stack spatial analysis"     = "examples/20-lot-stack-analysis.html" },
       { "Reticle overlays"               = "examples/14-reticle.html"         },
       { "Real wafer data (WM-811K)"      = "examples/19-real-data.html"       },
+      { "Mixed patterns (MixedWM38)"    = "examples/21-mixedwm38.html"       },
     ]},
     { "Compatibility and advanced" = [
       { "Plotly compatibility"           = "examples/17-plotly.html"          },

@@ -775,6 +775,15 @@ The findings list is ranked and filtered by statistical strength and effect size
 | `notable` | ≤ 0.05 | ≥ 0.15 | ≥ 1.0× background |
 | `info` | any other passing finding | | |
 
+**Cluster and edge-arc findings** have an additional size criterion applied after the rate-based gate above.  A large contiguous cluster is intrinsically striking even when the background failure rate is elevated (e.g. a 500-die donut ring that forms its own high background).  The size thresholds are:
+
+| Severity | Cluster size (% of eligible wafer dies) |
+|----------|-----------------------------------------|
+| `unusual` | ≥ 10% |
+| `notable` | ≥ 3% |
+
+A cluster qualifies for a severity level if it satisfies **either** the rate criterion **or** the size criterion (both require the p-value gate).
+
 Use the `summary`, `effect`, and `stats` fields on each `StatsFinding` to display numerical details to users.
 
 ### Clicking a finding highlights the map
