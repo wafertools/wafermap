@@ -55,10 +55,22 @@ export function toPlotly(scene: Scene, options: ToPlotlyOptions = {}): PlotlyOut
   const yLabel = (axisLabels.y ?? defaultYLabel) + unitSuffix;
   const { rectangles, hoverPoints, texts, overlays, plotMode, colorScheme, valueRange } = scene;
 
+  // For axis-aligned scenes (no rotation, no flip) generate the path from numeric coords.
+  // For rotated scenes scene.rotation is non-zero — path is pre-built on the rect (empty otherwise).
+  const isAxisAligned = scene.rotation === 0 && !scene.axisFlip.x && !scene.axisFlip.y;
+  function rectPath(r: { x: number; y: number; width: number; height: number; path: string }): string {
+    if (isAxisAligned) {
+      const x1 = r.x - r.width / 2, y1 = r.y - r.height / 2;
+      const x2 = r.x + r.width / 2, y2 = r.y + r.height / 2;
+      return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2} L ${x1} ${y2} Z`;
+    }
+    return r.path;
+  }
+
   const shapes = [
     ...rectangles.map((rectangle) => ({
       type: 'path',
-      path: rectangle.path,
+      path: rectPath(rectangle),
       fillcolor: rectangle.fill,
       line: { color: 'rgba(0,0,0,0.18)', width: 0.5 },
       layer: 'below',

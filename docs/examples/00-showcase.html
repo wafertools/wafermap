@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Showcase — wafermap</title>
+  <link rel="stylesheet" href="demo.css">
+  <link rel="stylesheet" href="showcase.css">
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js",
+    "wafermap/worker":         "../dist/packages/worker/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Showcase — load your own data</span>
+    <span class="demo-desc">CSV · JSON · automatic column detection · full interactive gallery</span>
+  </header>
+
+  <div class="demo-intro">
+    Load a CSV or JSON file containing die-level test results. Columns are detected automatically — review and adjust the mapping, then render an interactive gallery with statistical findings, stacked lot views, and parametric value maps, depending on what your data contains.
+  </div>
+
+  <div class="phase-host">
+
+  <!-- ── Phase 1: Upload ─────────────────────────────────────────────────── -->
+  <div id="phase-upload" class="phase active">
+    <div class="upload-card" id="drop-zone">
+      <div class="upload-icon">&#8659;</div>
+      <div class="upload-heading">Drop a file here</div>
+      <div class="upload-sub">
+        CSV or JSON with die-level test results.<br>
+        Columns are detected automatically — you can review them before rendering.
+      </div>
+      <div class="upload-actions">
+        <button class="btn-primary" id="btn-browse">Browse file&hellip;</button>
+        <button class="btn-secondary" id="btn-demo">Try demo data</button>
+      </div>
+      <div class="upload-limit">Maximum file size: 20 MB &nbsp;&middot;&nbsp; Rows beyond 500,000 are skipped</div>
+      <div class="upload-error" id="upload-error"></div>
+    </div>
+    <input type="file" id="file-input" accept=".csv,.json">
+  </div>
+
+  <!-- ── Phase 2: Column mapping ────────────────────────────────────────── -->
+  <div id="phase-mapping" class="phase">
+    <div class="mapping-body">
+
+      <div>
+        <div class="mapping-section-title">Map columns to die fields</div>
+        <table class="mapping-table" id="mapping-table">
+          <thead>
+            <tr>
+              <th>Column in file</th>
+              <th class="col-arrow"></th>
+              <th>Maps to</th>
+              <th>Display name <span style="font-weight:400;text-transform:none;letter-spacing:0">(test values only)</span></th>
+              <th class="split-cell">Split gallery <span style="font-weight:400;text-transform:none;letter-spacing:0">(display info only)</span></th>
+            </tr>
+          </thead>
+          <tbody id="mapping-rows"></tbody>
+        </table>
+      </div>
+
+    </div>
+    <div class="mapping-footer">
+      <button class="btn-secondary" id="btn-back-upload">&#8592; Back</button>
+      <div class="pass-bin-group">
+        <label for="pass-bin-input">Pass bin(s):</label>
+        <input type="text" id="pass-bin-input" class="pass-bin-input" value="1"
+               title="Comma-separated hard bin numbers counted as pass, e.g. 1 or 1,2">
+        <span style="color:var(--muted);font-size:11px">(hard bin numbers, comma-separated)</span>
+      </div>
+      <div class="mapping-file-info" id="mapping-file-info"></div>
+      <button class="btn-primary" id="btn-render">Render maps &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ── Phase 3: Gallery ───────────────────────────────────────────────── -->
+  <div id="phase-maps" class="phase">
+    <div class="maps-bar">
+      <button class="btn-secondary" id="btn-back-mapping">&#8592; Back</button>
+      <div class="capability-badges" id="capability-badges"></div>
+      <div class="maps-bar-info" id="maps-bar-info"></div>
+      <button class="help-btn" id="btn-help">? Toolbar guide</button>
+    </div>
+    <div class="lot-info-bar" id="lot-info-bar" style="display:none"></div>
+    <div class="truncation-banner" id="truncation-banner" style="display:none"></div>
+    <div class="maps-loading" id="maps-loading" style="display:none">
+      <div class="maps-loading-inner">
+        <div class="maps-spinner"></div>
+        <div class="maps-loading-msg" id="maps-loading-msg">Building wafer maps…</div>
+      </div>
+    </div>
+    <div class="maps-gallery" id="gallery-container"></div>
+  </div>
+
+  <!-- ── Long-format confirmation modal ───────────────────────────────── -->
+  <div class="help-overlay" id="longfmt-overlay"></div>
+  <div class="help-popout" id="longfmt-modal">
+    <div class="help-heading">
+      Long format detected
+      <button class="help-close" id="longfmt-cancel">&times;</button>
+    </div>
+    <div id="longfmt-body"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button class="btn-secondary" id="longfmt-cancel-btn" onclick="document.getElementById('longfmt-cancel').click()">Cancel</button>
+      <button class="btn-primary" id="longfmt-confirm">Pivot and render</button>
+    </div>
+  </div>
+
+  <!-- ── Help popout ────────────────────────────────────────────────────── -->
+  <div class="help-overlay" id="help-overlay"></div>
+  <div class="help-popout" id="help-popout">
+    <div class="help-heading">
+      Toolbar guide
+      <button class="help-close" id="help-close">&times;</button>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Plot mode</div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/mode.svg" width="16" height="16"></div><div class="help-row-text"><strong>Plot mode</strong>Switch between hard bin, soft bin, test value, spec limit, and stacked lot views. Only modes valid for your data are shown.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/aggr.svg" width="16" height="16"></div><div class="help-row-text"><strong>Aggregation</strong>In stacked mode, choose how values are combined across wafers: mean, median, min, max, std dev, count, or bin occurrence.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/specRange.svg" width="16" height="16"></div><div class="help-row-text"><strong>Colorbar range</strong>In test value mode, toggle whether the colorbar spans the data range or the spec limits.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/logScale.svg" width="16" height="16"></div><div class="help-row-text"><strong>Log scale</strong>Apply a logarithmic colour scale — useful for leakage currents and other exponentially distributed parameters.</div></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">View controls</div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/rotateCW.svg" width="16" height="16"></div><div class="help-row-text"><strong>Rotate</strong>Rotate the wafer 90° clockwise. All coordinates shown are always original die grid positions — never transformed.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/flipH.svg" width="16" height="16"></div><div class="help-row-text"><strong>Flip horizontal</strong>Mirror the wafer left–right.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/flipV.svg" width="16" height="16"></div><div class="help-row-text"><strong>Flip vertical</strong>Mirror the wafer top–bottom.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/zoomMode.svg" width="16" height="16"></div><div class="help-row-text"><strong>Zoom mode</strong>Drag to draw a zoom rectangle. Scroll wheel zooms at the cursor. Double-click resets.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/pan.svg" width="16" height="16"></div><div class="help-row-text"><strong>Pan mode</strong>Drag to move the view.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/reset.svg" width="16" height="16"></div><div class="help-row-text"><strong>Reset zoom</strong>Return to the default full-wafer view. Also triggered by double-clicking the canvas.</div></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Overlays</div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/rings.svg" width="16" height="16"></div><div class="help-row-text"><strong>Ring boundaries</strong>Show concentric ring zones used for spatial analysis.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/quadrants.svg" width="16" height="16"></div><div class="help-row-text"><strong>Quadrant boundaries</strong>Show NE / NW / SE / SW quadrant dividers.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/reticle.svg" width="16" height="16"></div><div class="help-row-text"><strong>Reticle grid</strong>Overlay the stepper field grid (shown when reticle data is present).</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/labels.svg" width="16" height="16"></div><div class="help-row-text"><strong>Die labels</strong>Show the bin number or test value on each die.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/xyIndicator.svg" width="16" height="16"></div><div class="help-row-text"><strong>Axis indicator</strong>Show the X/Y axis direction arrows.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/legend.svg" width="16" height="16"></div><div class="help-row-text"><strong>Legend</strong>Show or reposition the bin colour legend.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/palette.svg" width="16" height="16"></div><div class="help-row-text"><strong>Colour scheme</strong>Switch between colour palettes for test value and stacked modes.</div></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Analysis</div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/findings.svg" width="16" height="16"></div><div class="help-row-text"><strong>Summary panel</strong>Open yield stats, bin breakdown, and spatial findings (ring, quadrant, cluster anomalies) for this wafer. In the gallery bar, opens the lot-level findings panel.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/boxSelect.svg" width="16" height="16"></div><div class="help-row-text"><strong>Select dies</strong>Drag to select a region of dies. Ctrl+click to add individual dies. Selected dies are shown in the tooltip.</div></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Export</div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/download.svg" width="16" height="16"></div><div class="help-row-text"><strong>Download PNG</strong>Save the current wafer view as a PNG image.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/downloadAll.svg" width="16" height="16"></div><div class="help-row-text"><strong>Download all</strong>Save a composite PNG of the entire gallery.</div></div>
+    </div>
+  </div>
+
+  </div><!-- /.phase-host -->
+
+  <script type="module">
+    import { renderWaferGallery }   from 'wafermap/canvas-adapter';
+    import { createWafermapWorker } from 'wafermap/worker';
+    import {
+      MAX_ROWS, parsedRows, fileTruncated,
+      readMapping, parsePassBins, escHtml,
+      setGalleryCtrl, showPhase, initShowcase,
+      detectLongFormat, pivotLongFormat, showLongFormatModal,
+    } from './showcase.js';
+
+    // buildWaferMap runs in a Web Worker so the page stays responsive while processing.
+    const worker = createWafermapWorker(
+      new Worker('../dist/packages/worker/wafermap.worker.js', { type: 'module' })
+    );
+
+    const loadingEl  = document.getElementById('maps-loading');
+    const loadingMsg = document.getElementById('maps-loading-msg');
+    const container  = document.getElementById('gallery-container');
+
+    function setLoading(msg) {
+      if (msg) {
+        loadingMsg.textContent = msg;
+        loadingEl.style.display = '';
+        container.style.display = 'none';
+      } else {
+        loadingEl.style.display = 'none';
+        container.style.display = '';
+      }
+    }
+
+    async function _renderGallery() {
+      const mapping  = readMapping();
+      const passBins = parsePassBins();
+
+      if (!mapping.x || !mapping.y) {
+        alert('Please map at least an X position column and a Y position column.');
+        return;
+      }
+
+      // ── Long-format detection and pivot ──────────────────────────────────
+      let activeRows = parsedRows;
+      let longFmtTestNames = null; // Map<name, testNumber> if pivoted
+
+      const longFmtInfo = detectLongFormat(mapping);
+      if (longFmtInfo) {
+        const confirmed = await showLongFormatModal(longFmtInfo);
+        if (!confirmed) return;
+        const { wideRows, testNames } = pivotLongFormat(parsedRows, mapping);
+        activeRows = wideRows;
+        longFmtTestNames = testNames;
+      }
+
+      // ── Group rows by wafer ID + any split-by columns ────────────────────
+      const groups = new Map();
+      for (const row of activeRows) {
+        const wid = mapping.wafer ? (row[mapping.wafer] ?? 'W01') : 'W01';
+        const splitParts = mapping.splitBy.map(col => {
+          const v = row[col] ?? '';
+          return v !== '' ? `${col}: ${v}` : '';
+        }).filter(Boolean);
+        const key = splitParts.length ? `${wid} · ${splitParts.join(' · ')}` : wid;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+      }
+
+      const waferIds = [...groups.keys()];
+
+      // ── Capability detection ──────────────────────────────────────────────
+      const sample = groups.get(waferIds[0]) ?? [];
+      const hasHardBins   = mapping.hbin  != null && sample.some(r => r[mapping.hbin]  !== '' && !isNaN(Number(r[mapping.hbin])));
+      const hasSoftBins   = mapping.sbin  != null && sample.some(r => r[mapping.sbin]  !== '' && !isNaN(Number(r[mapping.sbin])));
+      const hasTestValues = mapping.tests.length > 0 || longFmtTestNames != null;
+      const hasMultiWafer = waferIds.length >= 2;
+
+      // Build testDefs — from wide-format mapping.tests or from pivoted long-format names
+      const testDefs = hasTestValues
+        ? (longFmtTestNames
+            ? [...longFmtTestNames.entries()].map(([name, testNumber]) => ({ testNumber, name }))
+            : mapping.tests.map(t => ({ testNumber: t.testNumber, name: t.name })))
+        : undefined;
+
+      const plotMode = hasHardBins ? 'hardBin' : hasSoftBins ? 'softBin' : hasTestValues ? 'value' : 'hardBin';
+
+      function buildResults(rows) {
+        return rows.map(row => {
+          const result = { x: Number(row[mapping.x]), y: Number(row[mapping.y]) };
+          if (hasHardBins) result.hbin = Number(row[mapping.hbin]);
+          if (hasSoftBins) result.sbin = Number(row[mapping.sbin]);
+          if (hasTestValues) {
+            result.testValues = {};
+            if (longFmtTestNames) {
+              // Pivoted rows store values as __test_<testNumber>
+              for (const [, testNumber] of longFmtTestNames) {
+                const v = Number(row[`__test_${testNumber}`]);
+                if (!isNaN(v)) result.testValues[testNumber] = v;
+              }
+            } else {
+              for (const t of mapping.tests) {
+                const v = Number(row[t.col]);
+                if (!isNaN(v)) result.testValues[t.testNumber] = v;
+              }
+            }
+          }
+          return result;
+        }).filter(r => !isNaN(r.x) && !isNaN(r.y));
+      }
+
+      // Switch to gallery phase so the spinner is visible while the worker runs
+      showPhase('phase-maps');
+      setLoading(`Building wafer maps… (0 / ${waferIds.length})`);
+
+      const waferMapResults = [];
+      const validWaferIds   = [];
+      for (let i = 0; i < waferIds.length; i++) {
+        const wid  = waferIds[i];
+        const rows = groups.get(wid);
+        const results = buildResults(rows);
+        if (!results.length) continue;
+        setLoading(`Building wafer maps… (${i + 1} / ${waferIds.length})`);
+        const lot = mapping.lot ? (rows[0]?.[mapping.lot] ?? undefined) : undefined;
+        waferMapResults.push(await worker.run({
+          results,
+          waferConfig: { metadata: { wafer: wid, ...(lot ? { lot } : {}) } },
+          ...(testDefs ? { testDefs } : {}),
+          passBins,
+        }));
+        validWaferIds.push(wid);
+      }
+
+      if (!waferMapResults.length) {
+        setLoading(null);
+        alert('No valid die results found. Check that the X and Y columns contain numbers.');
+        return;
+      }
+
+      setLoading('Analysing…');
+
+      const { waferSummaries, lotSummary } = await worker.runAnalysis(waferMapResults, { passBins }, hasMultiWafer);
+
+      const useLazy = validWaferIds.length >= 4;
+      const items = validWaferIds.map((wid, i) => {
+        const r    = waferMapResults[i];
+        const item = { wafer: r.wafer, dies: r.dies, label: wid, statsSummary: waferSummaries[i] };
+        return useLazy ? () => item : item;
+      });
+
+      // Capability badges
+      const badgesEl = document.getElementById('capability-badges');
+      badgesEl.innerHTML = '';
+      const caps = [];
+      if (hasHardBins)   caps.push({ label: 'Hard bins',   cls: 'badge-green' });
+      if (hasSoftBins)   caps.push({ label: 'Soft bins',   cls: 'badge-blue' });
+      if (hasTestValues) caps.push({ label: `${mapping.tests.length} test value${mapping.tests.length !== 1 ? 's' : ''}`, cls: 'badge-blue' });
+      if (hasMultiWafer) caps.push({ label: 'Lot analysis', cls: 'badge-blue' });
+      if (hasMultiWafer) caps.push({ label: 'Stacked view', cls: 'badge-muted' });
+      for (const cap of caps) {
+        const b = document.createElement('span');
+        b.className = `badge ${cap.cls}`;
+        b.textContent = cap.label;
+        badgesEl.appendChild(b);
+      }
+
+      // Info bar
+      const totalDies = waferMapResults.reduce((s, r) => s + r.dies.length, 0);
+      document.getElementById('maps-bar-info').textContent =
+        `${validWaferIds.length} wafer${validWaferIds.length !== 1 ? 's' : ''} · ${parsedRows.length.toLocaleString()} rows · ${totalDies.toLocaleString()} dies`;
+
+      // Truncation banner
+      const banner = document.getElementById('truncation-banner');
+      banner.textContent = fileTruncated ? `Large file: showing first ${MAX_ROWS.toLocaleString()} rows only.` : '';
+      banner.style.display = fileTruncated ? 'block' : 'none';
+
+      // Lot-level metadata info bar
+      const lotInfoBar = document.getElementById('lot-info-bar');
+      const lotInfoItems = [];
+      for (const col of mapping.meta) {
+        if (mapping.splitBy.includes(col)) continue;
+        const vals = [...new Set(parsedRows.map(r => r[col]).filter(v => v !== undefined && v !== ''))];
+        if (vals.length === 1) lotInfoItems.push({ label: col, value: vals[0] });
+      }
+      if (lotInfoItems.length) {
+        lotInfoBar.innerHTML = lotInfoItems.map(({ label, value }) =>
+          `<span class="lot-info-item"><span class="lot-info-label">${escHtml(label)}:</span> ${escHtml(String(value))}</span>`
+        ).join('');
+        lotInfoBar.style.display = 'flex';
+      } else {
+        lotInfoBar.style.display = 'none';
+      }
+
+      setLoading(null);
+      container.innerHTML = '';
+
+      const ctrl = renderWaferGallery(container, items, {
+        sceneOptions: {
+          plotMode,
+          ...(testDefs ? { testDefs } : {}),
+        },
+        ...(lotSummary ? { lotStatsSummary: lotSummary } : {}),
+        ...(lotSummary ? { summaryPanel: { defaultOpen: false } } : {}),
+      });
+      setGalleryCtrl(ctrl);
+    }
+
+    async function renderGallery() {
+      try { await _renderGallery(); }
+      catch (err) { setLoading(null); alert('Error rendering maps:\n\n' + err.message); console.error(err); }
+    }
+
+    initShowcase(renderGallery);
+  </script>
+
+</body>
+</html>

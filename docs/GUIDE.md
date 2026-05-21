@@ -13,9 +13,8 @@ Install the package:
 npm install @paulrobins/wafermap
 ```
 
-The preferred canvas renderers (`renderWaferMap`, `renderWaferGallery`) have no
-external dependencies. Plotly.js is only needed if you use the optional
-`toPlotly()` compatibility path.
+The preferred canvas renderers have no external dependencies. Plotly.js is only
+needed if you use the optional `toPlotly()` compatibility path.
 
 ### With a bundler (Vite, webpack, etc.)
 
@@ -30,8 +29,8 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 ```html
 <script type="module">
   import { buildWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/index.js';
-  // renderWaferMap, renderWaferGallery, and GalleryItemFactory all come from the same canvas-adapter URL:
-  import { renderWaferMap, renderWaferGallery } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/canvas-adapter/index.js';
+  // renderWaferMap handles both single maps and galleries — one import for both:
+  import { renderWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/canvas-adapter/index.js';
 </script>
 ```
 
@@ -41,12 +40,15 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 The minimal path is two function calls: `buildWaferMap` to process your data, then
 `renderWaferMap` to draw it.
 
+`renderWaferMap` creates and manages its own `<canvas>` — pass any block element
+sized to the desired display area:
+
 ```html
 <!-- Fixed size: -->
-<canvas id="map" style="width:500px; height:500px;"></canvas>
+<div id="map" style="width:500px; height:500px;"></div>
 
 <!-- Responsive square (fills its container, always square): -->
-<canvas id="map" style="width:100%; aspect-ratio:1;"></canvas>
+<div id="map" style="width:100%; aspect-ratio:1;"></div>
 ```
 
 ```ts
@@ -65,14 +67,15 @@ const { wafer, dies } = buildWaferMap([
 renderWaferMap(document.getElementById('map'), wafer, dies);
 
 // Optional: react to die clicks. The Die object has x, y, hbin, sbin, testValues.
-// renderWaferMap(canvas, wafer, dies, {
+// renderWaferMap(document.getElementById('map'), wafer, dies, {
 //   onClick: (die) => console.log(die.x, die.y, die.hbin),
 // });
 ```
 
 `renderWaferMap` returns immediately and mounts a self-contained interactive map.
 A toolbar appears on hover, giving users access to all display controls — no extra
-HTML or JavaScript required.
+HTML or JavaScript required. The toolbar includes an **expand** button (⛶) that
+opens the map in a full-screen modal without rebuilding the scene.
 
 > **`x` and `y` are always die grid positions (prober step coordinates) — integers
 > like −7, 0, 5.  They are NOT millimetre values.**  The library converts to physical
@@ -103,7 +106,7 @@ Parse the CSV and map each row to a `DieResult`. **All numeric fields must be ca
 import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
-async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
+async function loadAndRender(csvText: string, container: HTMLElement) {
   const rows = parseCsv(csvText);  // your CSV parser of choice
 
   const results = rows.map(r => ({
@@ -122,7 +125,7 @@ async function loadAndRender(csvText: string, canvas: HTMLCanvasElement) {
       { testNumber: 1030, name: 'TestC' },
     ],
   });
-  renderWaferMap(canvas, wafer, dies);
+  renderWaferMap(container, wafer, dies);
 }
 ```
 
@@ -230,7 +233,7 @@ const results = rows.map(r => ({
 }));
 
 const { wafer, dies } = buildWaferMap({ results });
-renderWaferMap(canvas, wafer, dies);
+renderWaferMap(container, wafer, dies);
 // Opens in 'hardBin' mode by default
 ```
 
@@ -250,7 +253,7 @@ const { wafer, dies } = buildWaferMap({
   ],
 });
 
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: { plotMode: 'hardBin', hbinDefs: wafer /* carries through */ },
 });
 ```
@@ -274,7 +277,7 @@ const { wafer, dies, scene } = buildWaferMap({
   sbinDefs: [ { bin: 10, name: 'Vth - Lo' }, { bin: 11, name: 'Vth - Hi' }, /* ... */ ],
 });
 
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: {
     hbinDefs: scene.hbinDefs,
     sbinDefs: scene.sbinDefs,
@@ -341,7 +344,7 @@ const { wafer, dies, scene } = buildWaferMap({
   ],
 });
 
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: {
     plotMode:  'value',
     activeTest: 0,          // show Idsat first
@@ -398,7 +401,7 @@ const testDefs = [
 const { wafer, dies, scene } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
 // Start in specLimit mode for Vth to see pass/fail/direction at a glance
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: {
     plotMode:  'specLimit',
     activeTest: 1060,
@@ -465,7 +468,7 @@ const enrichedDies = result.dies.map(die => {
   return { ...die, testValues: { 1050: Number(row.idsat), 1060: Number(row.vth) } };
 });
 
-renderWaferMap(canvas, result.wafer, enrichedDies, {
+renderWaferMap(container, result.wafer, enrichedDies, {
   sceneOptions: {
     testDefs: [
       { testNumber: 1050, name: 'Idsat', unit: 'A' },
@@ -491,7 +494,7 @@ renderWaferMap(canvas, result.wafer, enrichedDies, {
 Pass `sceneOptions` to `renderWaferMap` to set the initial state:
 
 ```ts
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: {
     plotMode:                'hardBin',
     colorScheme:             'color',       // 'color', 'greyscale', 'accessible', 'plasma', 'inferno'
@@ -515,7 +518,7 @@ All of these can also be changed by the user via the toolbar at any time.
 `renderWaferMap` returns a controller you can call from application code:
 
 ```ts
-const ctrl = renderWaferMap(canvas, wafer, dies, { sceneOptions: { plotMode: 'hardBin' } });
+const ctrl = renderWaferMap(container, wafer, dies, { sceneOptions: { plotMode: 'hardBin' } });
 
 // Switch display mode:
 ctrl.setOptions({ plotMode: 'value', activeTest: 1 });
@@ -539,7 +542,7 @@ ctrl.destroy();
 Use `onSceneOptionsChange` to keep your own UI elements in sync with the toolbar:
 
 ```ts
-const ctrl = renderWaferMap(canvas, wafer, dies, {
+const ctrl = renderWaferMap(container, wafer, dies, {
   sceneOptions: { plotMode: 'hardBin' },
   onSceneOptionsChange: (opts) => {
     modeDropdown.value     = opts.plotMode;
@@ -563,7 +566,7 @@ modeDropdown.addEventListener('change', () => {
 If you want a static display with no toolbar:
 
 ```ts
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   showToolbar: false,
   sceneOptions: { plotMode: 'hardBin' },
 });
@@ -573,7 +576,7 @@ Or keep the toolbar but remove the mode selector (useful when your app manages t
 mode externally):
 
 ```ts
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   showPlotModeSelector: false,
   sceneOptions: { plotMode: 'value' },
   onSceneOptionsChange: (opts) => syncMyModeUI(opts),
@@ -600,7 +603,7 @@ In `hardBin` and `softBin` modes, the bin legend can be placed in six positions 
 Set the initial position via `sceneOptions` — the user can change it at any time via the toolbar:
 
 ```ts
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: { plotMode: 'hardBin', legendPosition: 'bottom' },
 });
 ```
@@ -610,7 +613,7 @@ The Legend style button is automatically disabled when the map is in `value` or 
 For galleries, `legendPosition` is a top-level `GalleryOptions` field and applies to all cards:
 
 ```ts
-renderWaferGallery(container, items, {
+renderWaferMap(container, items, {
   legendPosition: 'compact',
 });
 ```
@@ -645,6 +648,7 @@ gallery grid.  Which buttons appear depends on the context and the current data.
 | <img src="images/icons/flipH.svg" width="16" height="16"> | Flip horizontal | Always | Mirrors the map left-right |
 | <img src="images/icons/flipV.svg" width="16" height="16"> | Flip vertical | Always | Mirrors the map top-bottom |
 | <img src="images/icons/findings.svg" width="16" height="16"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
+| <img src="images/icons/expand.svg" width="16" height="16"> | Expand (⛶) | Unless `toolbarControls: 'view-only'` | Opens the map in a full-screen modal; canvas reparented — no scene rebuild. `E` key shortcut. |
 
 The full toolbar is shown when `toolbarControls` is `'full'` (default for `renderWaferMap`).
 Gallery card modals also use `'full'`.  Gallery cards themselves use `'view-only'`:
@@ -681,7 +685,7 @@ The gallery control bar is always visible above the card grid.
 ### Click and hover callbacks
 
 ```ts
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   onClick: (die, event) => {
     console.log(`Clicked die (${die.x}, ${die.y})`);
     console.log('Hard bin:', die.hbin);
@@ -705,7 +709,7 @@ Provide `onSelect` to enable box-select mode.  A selection button appears in the
 toolbar automatically:
 
 ```ts
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   onSelect: (selectedDies) => {
     console.log(`${selectedDies.length} dies selected`);
     const passing = selectedDies.filter(d => d.hbin === 1).length;
@@ -831,7 +835,7 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';  // note: /stats s
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result);   // passBins inferred from result — no need to repeat it
 
-renderWaferMap(canvas, result.wafer, result.dies, {
+renderWaferMap(container, result.wafer, result.dies, {
   statsSummary: summary,
 });
 ```
@@ -1006,7 +1010,7 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result);
 
-renderWaferMap(canvas, result.wafer, result.dies, {
+renderWaferMap(container, result.wafer, result.dies, {
   statsSummary: summary,
 });
 ```
@@ -1015,7 +1019,7 @@ To start with the panel already open (no toolbar click required), add
 `summaryPanel: { defaultOpen: true }`:
 
 ```ts
-renderWaferMap(canvas, result.wafer, result.dies, {
+renderWaferMap(container, result.wafer, result.dies, {
   statsSummary: summary,
   summaryPanel: { defaultOpen: true },
 });
@@ -1026,7 +1030,7 @@ still toggle the panel closed via that button.  Combine with a `placement` to pi
 panel to a specific side of the canvas without the toggle behaviour:
 
 ```ts
-renderWaferMap(canvas, result.wafer, result.dies, {
+renderWaferMap(container, result.wafer, result.dies, {
   statsSummary: summary,
   summaryPanel: { placement: 'right' },   // always visible; no toggle
 });
@@ -1049,7 +1053,7 @@ The panel is divided into sections:
 ### Updating the panel after data changes
 
 ```ts
-const ctrl = renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+const ctrl = renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary });
 
 // After a data reload:
 ctrl.setDies(newDies);
@@ -1070,7 +1074,7 @@ const items = waferResults.map((r, i) => ({
   statsSummary: analyzeWaferMap(r),
 }));
 
-renderWaferGallery(container, items, {
+renderWaferMap(container, items, {
   sceneOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
 });
 ```
@@ -1080,15 +1084,15 @@ renderWaferGallery(container, items, {
 
 ## 12. Building a lot gallery
 
-`renderWaferGallery` renders multiple wafer maps in a responsive card grid.  All
-cards share a single control bar — changing mode, colour, rotate, or flip applies
-to every card at once.
+`renderWaferMap` renders multiple wafer maps in a responsive card grid when its
+second argument is an array of items.  All cards share a single control bar —
+changing mode, colour, rotate, or flip applies to every card at once.
 
 ### Basic gallery
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 // Build a result per wafer
 const waferResults = waferDatasets.map(data =>
@@ -1108,7 +1112,7 @@ const items = waferResults.map((r, i) => ({
   label: `Wafer ${i + 1}`,
 }));
 
-const ctrl = renderWaferGallery(
+const ctrl = renderWaferMap(
   document.getElementById('gallery'),
   items,
   { sceneOptions: { plotMode: 'hardBin' } },
@@ -1117,7 +1121,8 @@ const ctrl = renderWaferGallery(
 
 Cards reflow responsively as the container resizes.  Each card has an expand
 button (↗) in its header — clicking it opens a full-screen modal with the
-complete toolbar.
+complete toolbar; the card's live canvas is reparented into the modal, so there
+is no scene rebuild and the toolbar stays fully interactive.
 
 
 ### Sharing bin and test definitions across cards
@@ -1142,7 +1147,7 @@ const sharedSceneOptions = {
   ],
 };
 
-renderWaferGallery(container, items, { sceneOptions: sharedSceneOptions });
+renderWaferMap(container, items, { sceneOptions: sharedSceneOptions });
 ```
 
 ### Per-card overrides
@@ -1183,7 +1188,7 @@ ctrl.setItems(newItems);
 ctrl.setOptions({ plotMode: 'value', activeTest: 1 });
 
 // Track state changes back to your UI:
-renderWaferGallery(container, items, {
+renderWaferMap(container, items, {
   onSceneOptionsChange: (opts) => {
     myModeDropdown.value = opts.plotMode;
   },
@@ -1252,7 +1257,7 @@ const items = waferResults.map((r, i) => ({
   statsSummary: waferSummaries[i],   // shown when modal opens
 }));
 
-renderWaferGallery(container, items, {
+renderWaferMap(container, items, {
   sceneOptions:    { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
   lotStatsSummary: lotSummary,
 });
@@ -1274,7 +1279,7 @@ ring and quadrant statistics, test value summaries, and findings.
 ### Updating the lot summary at runtime
 
 ```ts
-const ctrl = renderWaferGallery(container, items, { lotStatsSummary });
+const ctrl = renderWaferMap(container, items, { lotStatsSummary });
 
 // After data changes:
 const newLotSummary = analyzeWaferLot(newResults);
@@ -1317,7 +1322,7 @@ const summary = analyzeWaferMap(result, {
 // summary.stats.aggregationMethod === 'mean'
 // summary.stats.lotSize           === 6
 
-renderWaferMap(canvas, result.wafer, result.dies, {
+renderWaferMap(container, result.wafer, result.dies, {
   sceneOptions: { plotMode: 'value', testDefs, activeTest: 0 },
   statsSummary: summary,
   waferResult:  result,
@@ -1355,7 +1360,7 @@ const { wafer, dies, reticles, reticleConfig } = buildWaferMap({
   },
 });
 
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: { reticles },   // pass the generated reticle geometry
 });
 // showReticle defaults to true when reticles are provided
@@ -1426,7 +1431,7 @@ const result = buildWaferMap({ results, waferConfig, dieConfig });
 const result = await wmWorker.run({ results, waferConfig, dieConfig });
 
 // Everything after is unchanged:
-renderWaferMap(canvas, result.wafer, result.dies);
+renderWaferMap(container, result.wafer, result.dies);
 ```
 
 ### Processing a lot in parallel
@@ -1448,10 +1453,10 @@ const waferResults = await Promise.all(
 wmWorker.terminate();
 ```
 
-> **Note:** `renderWaferMap` and `renderWaferGallery` require the DOM and must run on
-> the main thread. `analyzeWaferMap`/`analyzeWaferLot` and `buildWaferMap` are pure
-> functions with no DOM access — they can run in a Web Worker, Node.js, or any
-> server-side environment.
+> **Note:** `renderWaferMap` (both single-map and gallery overloads) requires the DOM
+> and must run on the main thread. `analyzeWaferMap`/`analyzeWaferLot` and
+> `buildWaferMap` are pure functions with no DOM access — they can run in a Web
+> Worker, Node.js, or any server-side environment.
 
 **→ [Demo: Processing large datasets with a Web Worker](examples/15-worker.html)**
 
@@ -1472,7 +1477,7 @@ const items = fixtures.map(sample => () => {
   return { label: sample.label, wafer: result.wafer, dies: result.dies, statsSummary: summary };
 });
 
-renderWaferGallery(container, items);
+renderWaferMap(container, items);
 ```
 
 The only visible difference is that each card's label is blank until its factory
@@ -1522,8 +1527,8 @@ listColorSchemes();  // [..., { name: 'my-brand', label: 'My Brand' }]
 ctrl.setOptions({ colorScheme: 'my-brand' });
 ```
 
-Register your schemes once, before any `renderWaferMap` or `renderWaferGallery`
-call.  They are global and persist for the lifetime of the page.
+Register your schemes once, before any `renderWaferMap` call.
+They are global and persist for the lifetime of the page.
 
 **→ [Demo: Custom colour schemes](examples/16-color-schemes.html)**
 
@@ -1560,7 +1565,7 @@ If you change `ringCount` in one place, change it in the other:
 ```ts
 const RING_COUNT = 4;
 
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: { ringCount: RING_COUNT },
 });
 
@@ -1575,7 +1580,7 @@ const summary = analyzeWaferMap(result, { ringCount: RING_COUNT });
 const result  = buildWaferMap({ results, waferConfig, dieConfig });
 const summary = analyzeWaferMap(result);     // reuses the already-built dies and scene
 
-renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary });
 ```
 
 ### Check yield programmatically before rendering
@@ -1587,7 +1592,7 @@ const { passDies, totalDies, yieldPercent } = result.yield;
 if (yieldPercent !== null && yieldPercent < 0.5) {
   banner.textContent = `⚠ Low yield: ${(yieldPercent * 100).toFixed(1)}%`;
 }
-renderWaferMap(canvas, result.wafer, result.dies);
+renderWaferMap(container, result.wafer, result.dies);
 ```
 
 ### Fit multiple maps to the same value range
@@ -1611,7 +1616,7 @@ const items = waferResults.map(r => ({
   sceneOptions: { valueRange: [min, max] },
 }));
 
-renderWaferGallery(container, items, { sceneOptions: { plotMode: 'value' } });
+renderWaferMap(container, items, { sceneOptions: { plotMode: 'value' } });
 ```
 
 ### Engineering vs SI format for unitless values
@@ -1621,8 +1626,8 @@ Values without a unit (no `TestDef.unit` supplied) are formatted using
 `'si'` for µ/n/p prefixes (e.g. `1.00 m`):
 
 ```ts
-renderWaferMap(canvas, wafer, dies, { fallbackFormat: 'si' });
-renderWaferGallery(container, items, { fallbackFormat: 'si' });
+renderWaferMap(container, wafer, dies, { fallbackFormat: 'si' });
+renderWaferMap(container, items, { fallbackFormat: 'si' });
 ```
 
 ### `buildWaferMap` is pure — safe to call on a server
@@ -1641,8 +1646,7 @@ const lotStats = analyzeWaferLot(results);
 // Serialise and send to the client...
 ```
 
-Only `renderWaferMap`, `renderWaferGallery`, and `toCanvas` require a browser
-environment.
+Only `renderWaferMap` and `toCanvas` require a browser environment.
 
 ### Analyse wafers in Node.js without a browser (console / CI script)
 
@@ -1803,7 +1807,7 @@ function renderPlotly() {
 }
 
 // Canvas toolbar drives both renderers.
-renderWaferMap(canvas, wafer, dies, {
+renderWaferMap(container, wafer, dies, {
   sceneOptions: sharedOpts,
   onSceneOptionsChange(opts) {
     Object.assign(sharedOpts, opts);
@@ -1829,7 +1833,7 @@ document.getElementById('plotly-chart').on('plotly_click', ev => {
 
 ## 19. Advanced: the rendering pipeline
 
-`renderWaferMap` and `renderWaferGallery` handle the full pipeline for you.  Use
+`renderWaferMap` handles the full pipeline for you.  Use
 the manual pipeline only when you need control they cannot provide — for example,
 to drive a custom canvas renderer, integrate with a non-DOM environment, or step
 through the geometry for debugging.

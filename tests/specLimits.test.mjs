@@ -152,9 +152,9 @@ test('testSpecYield — one-sided limit (limitHigh only)', () => {
 
 // ── stats.warnings — test count cap ──────────────────────────────────────────
 
-test('stats.warnings — populated when >100 tests present without testNumbers filter', () => {
+test('stats.warnings — populated when >250 tests present without testNumbers filter', () => {
   const testValues = {};
-  for (let i = 0; i < 101; i++) testValues[i] = Math.random();
+  for (let i = 0; i < 251; i++) testValues[i] = Math.random();
   const input = buildWaferMap({
     results: [{ x: 0, y: 0, hbin: 1, testValues }, { x: 1, y: 0, hbin: 1, testValues }],
     waferConfig, dieConfig,

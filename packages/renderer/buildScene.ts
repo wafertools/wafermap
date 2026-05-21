@@ -105,6 +105,10 @@ export interface Scene {
   waferRadius: number;
   /** Unit vector pointing toward the notch/flat in display space (post-transform). Null when no notch. */
   notchDir: { x: number; y: number } | null;
+  /** Bin → die count for the active bin mode (hardBin or softBin). Undefined in value modes. */
+  binCounts?: Map<number, number>;
+  /** Bounding box of all die centres in scene coordinates (mm). */
+  dieBounds: { minX: number; maxX: number; minY: number; maxY: number } | null;
 }
 
 export interface SceneOptions {
@@ -282,6 +286,14 @@ function boundaryPointAtAngle(wafer: Wafer, angle: number): Point {
 }
 
 function rectanglePath(center: Point, width: number, height: number, transform: TransformState): string {
+  // Fast path: axis-aligned rectangle (no rotation, no flip) — avoids 4× trig calls and array allocation.
+  if (!transform.rotation && !transform.flipX && !transform.flipY) {
+    const x1 = center.x - width / 2;
+    const y1 = center.y - height / 2;
+    const x2 = center.x + width / 2;
+    const y2 = center.y + height / 2;
+    return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2} L ${x1} ${y2} Z`;
+  }
   const corners = [
     transformVector(-width / 2, -height / 2, transform),
     transformVector(width / 2, -height / 2, transform),
@@ -294,6 +306,13 @@ function rectanglePath(center: Point, width: number, height: number, transform: 
 
 function formatValueLabel(values: number[], tickFmt: (v: number) => string): string {
   return values.map(tickFmt).join(' / ');
+}
+
+
+/** Build a 256-entry lookup table for a continuous colour mapper. */
+function buildColorLut(forValue: (t: number) => string, steps = 256): (t: number) => string {
+  const lut = Array.from({ length: steps }, (_, i) => forValue(i / (steps - 1)));
+  return (t: number) => lut[Math.min(steps - 1, Math.max(0, Math.round(t * (steps - 1))))];
 }
 
 
@@ -312,6 +331,8 @@ function buildHoverText(
   fallbackFormat?: 'si' | 'engineering',
   aggrMethod?: string,
   lotSize?: number,
+  hbinMap?: Map<number, BinDef> | null,
+  sbinMap?: Map<number, BinDef> | null,
 ): string {
   const lines: string[] = [`Die (${die.x}, ${die.y})`];
 
@@ -331,8 +352,8 @@ function buildHoverText(
     if (count !== undefined) {
       const pct     = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
       const defMap  = plotMode === 'stackedSoftBins'
-        ? (sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null)
-        : (hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null);
+        ? (sbinMap ?? (sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null))
+        : (hbinMap ?? (hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null));
       const binLabel = bin !== undefined
         ? (defMap?.get(bin)?.name ? `${bin} · ${defMap.get(bin)!.name}` : `Bin ${bin}`)
         : 'Bin';
@@ -371,16 +392,16 @@ function buildHoverText(
     }
 
     if (die.hbin !== undefined || die.sbin !== undefined) {
-      const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
-      const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
+      const hbinMap_ = hbinMap ?? (hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null);
+      const sbinMap_ = sbinMap ?? (sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null);
       const parts: string[] = [];
       if (die.hbin !== undefined) {
-        const name  = hbinMap?.get(die.hbin)?.name;
+        const name  = hbinMap_?.get(die.hbin)?.name;
         const value = name ? `${die.hbin} · ${name}` : String(die.hbin);
         parts.push(`HBin: ${value}`);
       }
       if (die.sbin !== undefined) {
-        const name  = sbinMap?.get(die.sbin)?.name;
+        const name  = sbinMap_?.get(die.sbin)?.name;
         const value = name ? `${die.sbin} · ${name}` : String(die.sbin);
         parts.push(`SBin: ${value}`);
       }
@@ -630,17 +651,20 @@ function pushDieRectangles(
   fallbackIndex: number,
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
+  needsPath?: boolean,
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
+  const makePath = needsPath
+    ? () => rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform)
+    : () => '';
 
   const getBin = (d: Die) => plotMode === 'softBin' ? d.sbin : d.hbin;
 
   if (die.partial) {
     rectangles.push({
       x: die.physX, y: die.physY, width: rw, height: rh,
-      fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata,
-      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
+      fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata, path: makePath(),
     });
     return;
   }
@@ -648,8 +672,7 @@ function pushDieRectangles(
   if (die.edgeExcluded) {
     rectangles.push({
       x: die.physX, y: die.physY, width: rw, height: rh,
-      fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata,
-      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
+      fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata, path: makePath(),
     });
     return;
   }
@@ -659,8 +682,7 @@ function pushDieRectangles(
       getBin(die) !== highlightBin) {
     rectangles.push({
       x: die.physX, y: die.physY, width: rw, height: rh,
-      fill: DIM_FILL, type: 'hardBin', metadata: die.metadata,
-      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
+      fill: DIM_FILL, type: 'hardBin', metadata: die.metadata, path: makePath(),
     });
     return;
   }
@@ -677,11 +699,7 @@ function pushDieRectangles(
     } else {
       fill = SPEC_PASS_FILL;
     }
-    rectangles.push({
-      x: die.physX, y: die.physY, width: rw, height: rh,
-      fill, type: 'value', metadata: die.metadata,
-      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
-    });
+    rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: 'value', metadata: die.metadata, path: makePath() });
     return;
   }
 
@@ -697,11 +715,7 @@ function pushDieRectangles(
     } else {
       fill = colorFns.forValue(normalize(value));
     }
-    rectangles.push({
-      x: die.physX, y: die.physY, width: rw, height: rh,
-      fill, type: 'value', metadata: die.metadata,
-      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
-    });
+    rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: 'value', metadata: die.metadata, path: makePath() });
     return;
   }
 
@@ -710,22 +724,14 @@ function pushDieRectangles(
     const fill = bin != null
       ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
       : '#d6d9dd';
-    rectangles.push({
-      x: die.physX, y: die.physY, width: rw, height: rh,
-      fill, type: plotMode, metadata: die.metadata,
-      path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
-    });
+    rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: plotMode, metadata: die.metadata, path: makePath() });
     return;
   }
 
   // stackedValues / stackedBins: aggregated scalar in testValues[0] (preferred) or values[0].
   const aggValue = getDieTestValue(die, 0, 0);
   const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
-  rectangles.push({
-    x: die.physX, y: die.physY, width: rw, height: rh,
-    fill, type: 'value', metadata: die.metadata,
-    path: rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform),
-  });
+  rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: 'value', metadata: die.metadata, path: makePath() });
 }
 
 function buildXYIndicatorOverlay(
@@ -817,7 +823,7 @@ export function buildScene(
   const scheme = getColorScheme(colorScheme);
 
   const colorFns: ColorFns = {
-    forValue: scheme.forValue,
+    forValue: buildColorLut(scheme.forValue),
     forBin:   scheme.forBin,
   };
 
@@ -932,9 +938,14 @@ export function buildScene(
       })
     : dies;
 
+  const hoverHbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
+  const hoverSbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
+  // Only generate SVG path strings when the transform has rotation/flip (needed by Plotly adapter).
+  // The canvas adapter uses x/y/width/height directly and never reads rect.path.
+  const needsPath = !!(transform.rotation || transform.flipX || transform.flipY);
   for (const tdie of transformedDies) {
-    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef);
-    hoverPoints.push({ x: tdie.physX, y: tdie.physY, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize) });
+    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, needsPath);
+    hoverPoints.push({ x: tdie.physX, y: tdie.physY, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize, hoverHbinMap, hoverSbinMap) });
   }
 
   const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, {
@@ -948,6 +959,32 @@ export function buildScene(
   if (showReticle) overlays.push(...buildReticleOverlays(reticles, wafer, transform));
   if (showProbePath) overlays.push(...buildProbeOverlay(dies));
   if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, transform, texts));
+
+  // Pre-compute die bounding box — avoids O(N) scan on every render call (pan/zoom).
+  let dieBounds: Scene['dieBounds'] = null;
+  if (hoverPoints.length) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of hoverPoints) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    dieBounds = { minX, maxX, minY, maxY };
+  }
+
+  // Pre-compute bin counts for the legend — avoids O(N) scan on every render.
+  let binCounts: Map<number, number> | undefined;
+  if (plotMode === 'hardBin' || plotMode === 'softBin' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
+    binCounts = new Map();
+    const useSoft = plotMode === 'softBin' || plotMode === 'stackedSoftBins';
+    for (const die of dies) {
+      if (die.partial) continue;
+      const bin = useSoft ? die.sbin : die.hbin;
+      if (bin == null) continue;
+      binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
+    }
+  }
 
   return {
     rectangles,
@@ -973,6 +1010,8 @@ export function buildScene(
     waferCenter: wafer.center,
     waferRadius: wafer.radius,
     notchDir,
+    binCounts,
+    dieBounds,
   };
 }
 

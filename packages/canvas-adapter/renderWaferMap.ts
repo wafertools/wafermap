@@ -169,11 +169,30 @@ export interface WaferCanvasController {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function renderWaferMap(
-  canvas: HTMLCanvasElement,
+  container: HTMLElement,
   wafer: Wafer,
   dies: Die[],
   options: MountOptions = {},
 ): WaferCanvasController {
+  // Accept a bare <canvas> for backward compatibility — wrap it in a div so the
+  // expand modal can reparent it cleanly. For all new call sites pass a <div>.
+  let canvas: HTMLCanvasElement;
+  let canvasWrap: HTMLDivElement;
+  if (container instanceof HTMLCanvasElement) {
+    canvas = container;
+    canvasWrap = document.createElement('div');
+    Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
+    canvas.parentElement?.insertBefore(canvasWrap, canvas);
+    canvasWrap.appendChild(canvas);
+  } else {
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    canvasWrap = document.createElement('div');
+    Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
+    canvas = document.createElement('canvas');
+    Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block' });
+    canvasWrap.appendChild(canvas);
+    container.appendChild(canvasWrap);
+  }
   const {
     onHover,
     onClick,
@@ -217,6 +236,7 @@ export function renderWaferMap(
   };
 
   let currentScene:   Scene;
+  let dieKeyIndex:    Map<string, number>;
   let fittedViewport: ViewportTransform | null = null;
   let viewport:       ViewportTransform | null = null;
   let binLegendRows:  BinLegendRow[] = [];
@@ -269,6 +289,7 @@ export function renderWaferMap(
         flipY:    so.flipY   ?? false,
       },
     } satisfies SceneOptions);
+    dieKeyIndex = new Map(currentScene.dies.map((d, i) => [`${d.x},${d.y}`, i]));
   }
 
   rebuildScene();
@@ -354,16 +375,12 @@ export function renderWaferMap(
 
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
-    // Add clearance to prevent the summary panel content from being obscured by the
-    // floating toolbar (position:absolute, top:4px, height ~32px → ~44px total).
     const clearance = showToolbar ? TOOLBAR_CLEARANCE : 0;
     summaryPanelEl = createSummaryPanelEl(placement, clearance);
-    const parent = canvas.parentElement;
-    if (parent) {
-      const next = canvas.nextSibling;
-      summaryPanelWrapper = wrapWithSummaryPanel(canvas, summaryPanelEl, placement);
-      parent.insertBefore(summaryPanelWrapper, next);
-    }
+    const parent = canvasWrap.parentElement;
+    const next = canvasWrap.nextSibling;
+    summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
+    parent?.insertBefore(summaryPanelWrapper, next);
     renderSummaryPanel();
   }
 
@@ -410,11 +427,8 @@ export function renderWaferMap(
   }
 
   if (showToolbar) {
-    const parent = canvas.parentElement;
-    if (parent) {
-      if (getComputedStyle(parent).position === 'static') {
-        parent.style.position = 'relative';
-      }
+    const parent = canvasWrap;
+    {
 
       toolbar = document.createElement('div');
       toolbar.dataset.wmapToolbar = '1';
@@ -680,9 +694,10 @@ export function renderWaferMap(
           const openOnMount = !!summaryPanelOpts?.defaultOpen;
           autoSummaryPanelEl = createSummaryPanelEl('right', clearance);
           autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
-          const next = canvas.nextSibling;
-          autoSummaryPanelWrapper = wrapWithSummaryPanel(canvas, autoSummaryPanelEl, 'right');
-          parent.insertBefore(autoSummaryPanelWrapper, next);
+          const parent = canvasWrap.parentElement;
+          const next = canvasWrap.nextSibling;
+          autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
+          parent?.insertBefore(autoSummaryPanelWrapper, next);
           renderAutoSummaryPanel();
         }
         if (currentStatsSummary) {
@@ -700,9 +715,14 @@ export function renderWaferMap(
           if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnFindings, true);
           refreshFindingsButton();
         }
+
+        // Expand button — reparents canvas into a modal for a larger view.
+        toolbar.appendChild(makeSep());
+        const btnExpand = makeBtn('expand', 'Expand (E)', openExpandModal);
+        toolbar.appendChild(btnExpand);
       }
 
-      canvas.insertAdjacentElement('afterend', toolbar);
+      canvasWrap.appendChild(toolbar);
 
       // ── Hover show/hide (with linger so clicks register) ─────────────────
       function showBar(): void {
@@ -726,6 +746,166 @@ export function renderWaferMap(
       toolbar.addEventListener('mouseenter', showBar);
       toolbar.addEventListener('mouseleave', hideBar);
     }
+  }
+
+  // ── Expand modal ──────────────────────────────────────────────────────────
+  let modalBackdrop: HTMLDivElement | null = null;
+  let modalOriginalParent: HTMLElement | null = null;
+  let modalFullscreenListener: (() => void) | null = null;
+
+  function closeExpandModal(): void {
+    if (!modalBackdrop) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {/* ignore */});
+    }
+    if (modalFullscreenListener) {
+      document.removeEventListener('fullscreenchange', modalFullscreenListener);
+      modalFullscreenListener = null;
+    }
+    document.removeEventListener('keydown', onModalKeyDown);
+    // Reparent canvas back to its original container.
+    if (modalOriginalParent) {
+      modalOriginalParent.appendChild(canvasWrap);
+      modalOriginalParent = null;
+    }
+    modalBackdrop.remove();
+    modalBackdrop = null;
+    document.body.style.overflow = savedBodyOverflow;
+    // Fit will recompute via ResizeObserver firing on reparent.
+  }
+
+  let savedBodyOverflow = '';
+
+  function onModalKeyDown(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && !document.fullscreenElement) closeExpandModal();
+    if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) {
+        (modalBackdrop?.querySelector('.wmap-modal-box') as HTMLElement | null)
+          ?.requestFullscreen().catch(() => {/* not supported */});
+      } else {
+        document.exitFullscreen();
+      }
+    }
+  }
+
+  function openExpandModal(): void {
+    if (modalBackdrop) closeExpandModal();
+
+    savedBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const backdrop = document.createElement('div');
+    backdrop.id = 'wmap-modal-backdrop';
+    Object.assign(backdrop.style, {
+      position:       'fixed',
+      inset:          '0',
+      background:     'rgba(0,0,0,0.6)',
+      display:        'flex',
+      alignItems:     'center',
+      justifyContent: 'center',
+      zIndex:         '9000',
+      backdropFilter: 'blur(3px)',
+    });
+
+    const box = document.createElement('div');
+    box.className = 'wmap-modal-box';
+    Object.assign(box.style, {
+      background:    '#fff',
+      borderRadius:  '12px',
+      overflow:      'hidden',
+      display:       'flex',
+      flexDirection: 'column',
+      width:         'min(90vw, 700px)',
+      height:        'min(90vh, 700px)',
+      boxShadow:     '0 20px 60px rgba(0,0,0,0.4)',
+      resize:        'both',
+      minWidth:      '320px',
+      minHeight:     '240px',
+      maxWidth:      '100vw',
+      maxHeight:     '100vh',
+    });
+
+    const modalHeader = document.createElement('div');
+    Object.assign(modalHeader.style, {
+      display:      'flex',
+      alignItems:   'center',
+      padding:      '10px 14px',
+      borderBottom: '1px solid #e2e5ea',
+      flexShrink:   '0',
+    });
+    const spacer = document.createElement('div');
+    spacer.style.flex = '1';
+    const btnStyle = {
+      border:     'none',
+      background: 'transparent',
+      cursor:     'pointer',
+      color:      '#888',
+      lineHeight: '1',
+      padding:    '0 4px',
+      fontSize:   '15px',
+      display:    'flex',
+      alignItems: 'center',
+    };
+
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.innerHTML = '&#x26F6;';
+    fullscreenBtn.title = 'Fullscreen (F)';
+    Object.assign(fullscreenBtn.style, { ...btnStyle, fontSize: '18px' });
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        box.requestFullscreen().catch(() => {/* not supported */});
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '\xD7';
+    closeBtn.title = 'Close (Esc)';
+    Object.assign(closeBtn.style, { ...btnStyle, fontSize: '20px', padding: '0 2px' });
+    closeBtn.addEventListener('click', closeExpandModal);
+
+    const onFullscreenChange = () => {
+      const isFs = document.fullscreenElement === box;
+      fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
+      fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
+      closeBtn.style.display = isFs ? 'none' : '';
+      if (isFs) {
+        box.style.borderRadius = '0';
+        box.style.resize = 'none';
+        box.style.width = '100%';
+        box.style.height = '100%';
+      } else {
+        box.style.borderRadius = '12px';
+        box.style.resize = 'both';
+        box.style.width = 'min(90vw, 700px)';
+        box.style.height = 'min(90vh, 700px)';
+      }
+    };
+
+    modalHeader.appendChild(spacer);
+    modalHeader.appendChild(fullscreenBtn);
+    modalHeader.appendChild(closeBtn);
+
+    const modalCanvasWrap = document.createElement('div');
+    Object.assign(modalCanvasWrap.style, { flex: '1', minHeight: '0', position: 'relative', overflow: 'hidden' });
+
+    // Reparent — move the live canvasWrap (canvas + toolbar) into the modal.
+    modalOriginalParent = canvasWrap.parentElement as HTMLElement;
+    modalCanvasWrap.appendChild(canvasWrap);
+
+    box.appendChild(modalHeader);
+    box.appendChild(modalCanvasWrap);
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
+
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeExpandModal(); });
+    document.addEventListener('keydown', onModalKeyDown);
+    modalFullscreenListener = onFullscreenChange;
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+
+    modalBackdrop = backdrop;
+    // ResizeObserver fires on reparent → render() recomputes fit automatically.
   }
 
   // ── Apply scene option changes ─────────────────────────────────────────────
@@ -759,6 +939,14 @@ export function renderWaferMap(
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  let rafPending = false;
+
+  function scheduleRender(): void {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => { rafPending = false; render(); });
+  }
+
   function render(): void {
     const vp = viewport ?? undefined;
     // Derive die pitch from the first die so axis labels show die grid indices.
@@ -820,34 +1008,40 @@ export function renderWaferMap(
     // Inset slightly so the ring sits just inside the die edge.
     const inset = Math.max(1, Math.min(3, dieHalfW * 0.08));
 
+    // Collect selected die screen rects — O(selected) via pre-built key→index map.
+    const hw = dieHalfW - inset;
+    const hh = dieHalfH - inset;
+    type SelRect = { sx: number; sy: number };
+    const selRects: SelRect[] = [];
+    for (const key of selectedKeys) {
+      const idx = dieKeyIndex.get(key);
+      if (idx === undefined) continue;
+      selRects.push({ sx: vp.originX + pts[idx].x * vp.ppm, sy: vp.originY - pts[idx].y * vp.ppm });
+    }
+    if (!selRects.length) return;
+
     ctx.save();
     ctx.setLineDash([]);
 
-    for (let i = 0; i < pts.length; i++) {
-      const die = currentScene.dies[i];
-      if (!die) continue;
-      const key = `${die.x},${die.y}`;
-      if (!selectedKeys.has(key)) continue;
+    // Amber tint — one batched fill pass.
+    ctx.fillStyle = 'rgba(255,210,0,0.18)';
+    ctx.beginPath();
+    for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
+    ctx.fill();
 
-      const sx = vp.originX + pts[i].x * vp.ppm;
-      const sy = vp.originY - pts[i].y * vp.ppm;
-      const hw = dieHalfW - inset;
-      const hh = dieHalfH - inset;
+    // White halo — one batched stroke pass.
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth   = 3;
+    ctx.beginPath();
+    for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
+    ctx.stroke();
 
-      // Subtle amber tint — colour-neutral enough to work over any die colour.
-      ctx.fillStyle = 'rgba(255,210,0,0.18)';
-      ctx.fillRect(sx - hw, sy - hh, hw * 2, hh * 2);
-
-      // White halo separates the outline from any background colour.
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth   = 3;
-      ctx.strokeRect(sx - hw, sy - hh, hw * 2, hh * 2);
-
-      // Amber inner stroke — visible against blue, green, purple, grey, and light fills.
-      ctx.strokeStyle = 'rgba(245,185,0,1)';
-      ctx.lineWidth   = 1.5;
-      ctx.strokeRect(sx - hw, sy - hh, hw * 2, hh * 2);
-    }
+    // Amber inner stroke — one batched stroke pass.
+    ctx.strokeStyle = 'rgba(245,185,0,1)';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
+    ctx.stroke();
 
     ctx.restore();
   }
@@ -950,7 +1144,7 @@ export function renderWaferMap(
 
     if (isBoxSelecting) {
       boxEnd = { x: cssPx, y: cssPy };
-      render();
+      scheduleRender();
       return;
     }
 
@@ -969,7 +1163,7 @@ export function renderWaferMap(
         x: legendOffsetStart.x + (cssPx - legendDragStart.x),
         y: legendOffsetStart.y + (cssPy - legendDragStart.y),
       };
-      render();
+      scheduleRender();
       return;
     }
 
@@ -982,7 +1176,7 @@ export function renderWaferMap(
         ppm:     vp.ppm,
         snapDist,
       };
-      render();
+      scheduleRender();
       return;
     }
 
@@ -990,7 +1184,8 @@ export function renderWaferMap(
     if (!vp) return;
     const mx  = (cssPx - vp.originX) / vp.ppm;
     const my  = (vp.originY - cssPy) / vp.ppm;
-    const die = hitTest(mx, my, vp.snapDist);
+    const hit = hitTest(mx, my, vp.snapDist);
+    const die = hit?.die ?? null;
 
     const legendRow = binLegendRows.find(row =>
       cssPx >= row.x && cssPx < row.x + row.w && cssPy >= row.y && cssPy < row.y + row.h,
@@ -1027,7 +1222,7 @@ export function renderWaferMap(
             }
           }
         } else {
-          const hp = currentScene.hoverPoints[currentScene.dies.indexOf(die)];
+          const hp = currentScene.hoverPoints[hit!.index];
           tooltip.style.display = 'block';
           tooltip.style.left    = `${e.clientX + 14}px`;
           tooltip.style.top     = `${e.clientY - 8}px`;
@@ -1160,7 +1355,8 @@ export function renderWaferMap(
 
     const vp = currentViewport();
     if (!vp) return;
-    const die = hitTest((cssPx - vp.originX) / vp.ppm, (vp.originY - cssPy) / vp.ppm, vp.snapDist);
+    const hit = hitTest((cssPx - vp.originX) / vp.ppm, (vp.originY - cssPy) / vp.ppm, vp.snapDist);
+    const die = hit?.die ?? null;
 
     if (die) {
       onClick?.(die, e);
@@ -1200,7 +1396,7 @@ export function renderWaferMap(
   }
 
   // ── Hit testing ────────────────────────────────────────────────────────────
-  function hitTest(mx: number, my: number, snapDist: number): Die | null {
+  function hitTest(mx: number, my: number, snapDist: number): { die: Die; index: number } | null {
     const pts  = currentScene.hoverPoints;
     const rcts = currentScene.rectangles;
 
@@ -1209,19 +1405,21 @@ export function renderWaferMap(
     for (let i = 0; i < rcts.length; i++) {
       const r = rcts[i];
       if (Math.abs(mx - r.x) <= r.width / 2 && Math.abs(my - r.y) <= r.height / 2) {
-        return currentScene.dies[i] ?? null;
+        const die = currentScene.dies[i];
+        return die ? { die, index: i } : null;
       }
     }
 
     // Second pass: nearest-centre fallback for clicks in the kerf gap.
     let bestDie: Die | null = null;
+    let bestIndex = -1;
     let bestDist = snapDist * snapDist;
     for (let i = 0; i < pts.length; i++) {
       const dx = pts[i].x - mx, dy = pts[i].y - my;
       const d2 = dx * dx + dy * dy;
-      if (d2 < bestDist) { bestDist = d2; bestDie = currentScene.dies[i] ?? null; }
+      if (d2 < bestDist) { bestDist = d2; bestDie = currentScene.dies[i] ?? null; bestIndex = i; }
     }
-    return bestDie;
+    return bestDie ? { die: bestDie, index: bestIndex } : null;
   }
 
   // ── ResizeObserver ─────────────────────────────────────────────────────────
@@ -1251,6 +1449,9 @@ export function renderWaferMap(
       onSelect?.([]);
       render();
     }
+    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only') {
+      openExpandModal();
+    }
   }
 
   canvas.style.cursor = 'grab';
@@ -1270,6 +1471,10 @@ export function renderWaferMap(
   canvas.addEventListener('click', onCanvasClick);
 
   // ── Initial render ─────────────────────────────────────────────────────────
+  // Reading clientWidth forces a synchronous layout flush, giving us the real
+  // size immediately even if the canvas was just appended. This avoids the
+  // async ResizeObserver round-trip (which would delay first paint by 1+ frames).
+  void canvas.clientWidth;
   render();
 
   // ── Controller ─────────────────────────────────────────────────────────────
@@ -1339,6 +1544,7 @@ export function renderWaferMap(
     },
 
     destroy(): void {
+      closeExpandModal();
       if (hideTimer) clearTimeout(hideTimer);
       tbGetOpenMenu?.()?.remove();
       if (tbCloseOpenMenu) document.removeEventListener('click', tbCloseOpenMenu, true);
@@ -1355,18 +1561,15 @@ export function renderWaferMap(
       dprMediaQuery.removeEventListener('change', onDprChange);
       tooltip?.remove();
       toolbar?.remove();
-      // Re-insert the canvas into its original DOM position before removing the
-      // wrapper — the canvas lives inside the wrapper, so removing the wrapper
-      // without this step would detach the canvas from the DOM, silently
-      // invalidating any caller reference to the element.
       if (summaryPanelWrapper) {
-        summaryPanelWrapper.parentElement?.insertBefore(canvas, summaryPanelWrapper);
+        summaryPanelWrapper.parentElement?.insertBefore(canvasWrap, summaryPanelWrapper);
         summaryPanelWrapper.remove();
       }
       if (autoSummaryPanelWrapper) {
-        autoSummaryPanelWrapper.parentElement?.insertBefore(canvas, autoSummaryPanelWrapper);
+        autoSummaryPanelWrapper.parentElement?.insertBefore(canvasWrap, autoSummaryPanelWrapper);
         autoSummaryPanelWrapper.remove();
       }
+      canvasWrap.remove();
       canvas.style.cursor = '';
     },
   };

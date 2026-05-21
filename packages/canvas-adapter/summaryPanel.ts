@@ -565,11 +565,12 @@ export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivEle
 
 export function buildPerWaferYieldSection(
   lotSummary: LotStatsSummary,
-  items: Array<{ label?: string }>,
+  items: Array<{ label?: string } | null>,
 ): HTMLDivElement | null {
   const waferData = lotSummary.perWafer
     .map(pw => ({
-      label: items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`,
+      label: (items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`)
+        .replace(/\s*·\s*\d+(\.\d+)?%$/, ''),
       yieldPct: pw.summary.stats.yieldPercent,
     }))
     .filter(w => w.yieldPct !== null) as Array<{ label: string; yieldPct: number }>;
@@ -705,7 +706,7 @@ export function createSummaryPanelEl(
 
 /** Wrap the canvas + panel in a flex container according to placement. */
 export function wrapWithSummaryPanel(
-  canvas: HTMLCanvasElement,
+  content: HTMLElement,
   panel: HTMLDivElement,
   placement: 'right' | 'left' | 'top' | 'bottom',
 ): HTMLDivElement {
@@ -720,17 +721,17 @@ export function wrapWithSummaryPanel(
     alignItems:    'flex-start',
   });
 
-  // Canvas takes all remaining space
-  canvas.style.flex     = '1 1 0';
-  canvas.style.minWidth = '0';
-  canvas.style.minHeight = '0';
+  // Content takes all remaining space
+  content.style.flex     = '1 1 0';
+  content.style.minWidth = '0';
+  content.style.minHeight = '0';
 
   if (placement === 'right' || placement === 'bottom') {
-    wrapper.appendChild(canvas);
+    wrapper.appendChild(content);
     wrapper.appendChild(panel);
   } else {
     wrapper.appendChild(panel);
-    wrapper.appendChild(canvas);
+    wrapper.appendChild(content);
   }
 
   return wrapper;
@@ -843,7 +844,7 @@ export function renderLotSummaryContent(
   panel: HTMLDivElement,
   params: {
     lotSummary:       LotStatsSummary;
-    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[] }>;
+    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[] } | null>;
     hbinDefs?:        BinDef[];
     sbinDefs?:        BinDef[];
     testDefs?:        TestDef[];
@@ -867,6 +868,7 @@ export function renderLotSummaryContent(
   const diesByWafer: Die[][] = [];
   const allDies: Die[] = [];
   for (const item of items) {
+    if (!item) { diesByWafer.push([]); continue; }
     if (item.wafer) allWafers.push(item.wafer);
     const wd = item.dies ?? [];
     diesByWafer.push(wd);
@@ -912,9 +914,9 @@ export function renderLotSummaryContent(
     openHtmlReport(renderLotSummaryReportHtml({
       lotSummary,
       items: items.map((item, i) => ({
-        label:  item.label ?? `W${i + 1}`,
-        wafer:  item.wafer,
-        dies:   item.dies,
+        label:  item?.label ?? `W${i + 1}`,
+        wafer:  item?.wafer,
+        dies:   item?.dies,
       })),
       hbinDefs, sbinDefs, testDefs,
       passBins,

@@ -189,7 +189,8 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
 
 .canvas-card.flex-1 { flex: 1; }
 
-.canvas-card canvas {
+.canvas-card canvas,
+.canvas-card > div[id] {
   width: 100%;
   flex: 1;
   min-height: 0;

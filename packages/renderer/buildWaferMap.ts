@@ -420,11 +420,16 @@ function resolveGridOriginOffset(
     return { offsetX: origin.offset.x, offsetY: origin.offset.y };
   }
   if (origin.type !== 'center') {
-    const xs = gridPoints.map(p => p.x);
-    const ys = gridPoints.map(p => p.y);
+    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    for (const p of gridPoints) {
+      if (p.x < xMin) xMin = p.x;
+      if (p.x > xMax) xMax = p.x;
+      if (p.y < yMin) yMin = p.y;
+      if (p.y > yMax) yMax = p.y;
+    }
     return {
-      offsetX: Math.round((Math.max(...xs) + Math.min(...xs)) / 2),
-      offsetY: Math.round((Math.max(...ys) + Math.min(...ys)) / 2),
+      offsetX: Math.round((xMax + xMin) / 2),
+      offsetY: Math.round((yMax + yMin) / 2),
     };
   }
   return { offsetX: ga.offsetX, offsetY: ga.offsetY };
@@ -853,10 +858,29 @@ export function buildWaferMap(
 
   if (waferDiameter === undefined) {
     if (ga.indices.length > 0) {
-      const physPoints = ga.indices.map(({ x, y }) => ({ x: x * pitchX, y: y * pitchY }));
-      const wi = inferWaferFromXY(physPoints);
-      waferDiameter = wi.diameter;
-      inference.wafer = { confidence: wi.confidence, method: wi.method };
+      if (units === 'mm') {
+        // pitchX/pitchY are real mm — physPoints are true physical positions.
+        const physPoints = ga.indices.map(({ x, y }) => ({ x: x * pitchX, y: y * pitchY }));
+        const wi = inferWaferFromXY(physPoints);
+        waferDiameter = wi.diameter;
+        inference.wafer = { confidence: wi.confidence, method: wi.method };
+      } else {
+        // pitchX/pitchY are normalized (no physical info). inferWaferFromXY would
+        // receive coordinates in normalized units and produce a meaningless diameter.
+        // Instead derive the diameter directly from the grid step extents: find the
+        // maximum physical radius across all grid positions and add one half-die of
+        // margin (the same 5% heuristic as inferWaferFromXY uses), then snap.
+        let maxPhysR = 0;
+        for (const { x, y } of ga.indices) {
+          const r = Math.sqrt((x * pitchX) ** 2 + (y * pitchY) ** 2);
+          if (r > maxPhysR) maxPhysR = r;
+        }
+        // Set the clip radius to cover the outermost step center plus a small
+        // clearance (half the shorter axis pitch) so clipDiesToWafer retains the
+        // outermost dies without generating extra empty slots beyond the data.
+        waferDiameter = (maxPhysR + Math.min(pitchX, pitchY) * 0.5) * 2;
+        inference.wafer = { confidence: pitchResult.confidence * 0.8, method: 'extent' };
+      }
     } else {
       waferDiameter = units === 'mm' ? 300 : 30;
       inference.wafer = { confidence: 0, method: 'default' };

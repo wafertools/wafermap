@@ -283,27 +283,49 @@ function buildYieldFindings(
 ): RawFinding[] {
   const passSet = new Set(passBins);
   const dieMap = new Map(eligibleDies.map((die) => [`${die.x},${die.y}`, die]));
-  const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
+  // Pre-build per-region die arrays once so "right" is all-regions minus left bucket.
+  // Pre-build per-region die arrays once; right = all other buckets (regions are non-overlapping).
+  const buckets = new Map<string, EligibleDie[]>();
+  for (const region of regionFamily) {
+    const bucket: EligibleDie[] = [];
+    for (const key of region.dieKeys) {
+      const d = dieMap.get(key);
+      if (d) bucket.push(d);
+    }
+    buckets.set(region.key, bucket);
+  }
+
+  // Pre-count pass dies per bucket.
+  const passCounts = new Map<string, number>();
+  const bucketSizes = new Map<string, number>();
+  for (const [regionKey, bucket] of buckets) {
+    let passes = 0;
+    for (const d of bucket) {
+      if (d.hbin !== undefined && passSet.has(d.hbin)) passes++;
+    }
+    passCounts.set(regionKey, passes);
+    bucketSizes.set(regionKey, bucket.length);
+  }
+
   const findings: RawFinding[] = [];
 
   for (const region of regionFamily) {
-    const left = region.dieKeys
-      .map((key) => dieMap.get(key))
-      .filter((die): die is EligibleDie => die !== undefined);
-    const leftKeySet = new Set(region.dieKeys);
-    const right = eligibleDies.filter((die) => {
-      const key = `${die.x},${die.y}`;
-      return !leftKeySet.has(key) && regionDieKeySet.has(key);
-    });
+    const leftSize = bucketSizes.get(region.key) ?? 0;
+    const leftPass = passCounts.get(region.key) ?? 0;
+    let rightSize = 0;
+    let rightPass = 0;
+    for (const [key, size] of bucketSizes) {
+      if (key === region.key) continue;
+      rightSize += size;
+      rightPass += passCounts.get(key) ?? 0;
+    }
 
-    if (left.length < options.minimumSampleSize || right.length < options.minimumSampleSize) continue;
+    if (leftSize < options.minimumSampleSize || rightSize < options.minimumSampleSize) continue;
 
-    const leftPass = left.filter((die) => die.hbin !== undefined && passSet.has(die.hbin)).length;
-    const rightPass = right.filter((die) => die.hbin !== undefined && passSet.has(die.hbin)).length;
-    const leftRate = leftPass / left.length;
-    const rightRate = rightPass / right.length;
+    const leftRate = leftPass / leftSize;
+    const rightRate = rightPass / rightSize;
     const delta = leftRate - rightRate;
-    const pValue = twoProportionPValue(leftPass, left.length, rightPass, right.length);
+    const pValue = twoProportionPValue(leftPass, leftSize, rightPass, rightSize);
 
     findings.push({
       id: `yield:${region.key}`,
@@ -327,8 +349,8 @@ function buildYieldFindings(
       stats: {
         method: 'two-proportion-z',
         pValue,
-        sampleSizeLeft: left.length,
-        sampleSizeRight: right.length,
+        sampleSizeLeft: leftSize,
+        sampleSizeRight: rightSize,
       },
       summary: summarizeYieldFinding(region.label, delta, region.family),
       highlight: {
@@ -375,29 +397,51 @@ function buildBinFindings(
       .map(getBin)
       .filter((bin): bin is number => bin !== undefined),
   )].sort((left, right) => left - right);
-  const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
+  const buckets = new Map<string, EligibleDie[]>();
+  for (const region of regionFamily) {
+    const bucket: EligibleDie[] = [];
+    for (const key of region.dieKeys) {
+      const d = dieMap.get(key);
+      if (d) bucket.push(d);
+    }
+    buckets.set(region.key, bucket);
+  }
+  // Pre-count bin occurrences per bucket to avoid O(N_bucket × bins) filter per region.
+  const binCounts = new Map<string, Map<number, number>>();
+  const bucketSizes = new Map<string, number>();
+  for (const [regionKey, bucket] of buckets) {
+    const counts = new Map<number, number>();
+    for (const d of bucket) {
+      const b = getBin(d);
+      if (b !== undefined) counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    binCounts.set(regionKey, counts);
+    bucketSizes.set(regionKey, bucket.length);
+  }
+
   const findings: RawFinding[] = [];
   const prefix = variableKind === 'hardBin' ? 'HBin' : 'SBin';
 
   for (const region of regionFamily) {
-    const left = region.dieKeys
-      .map((key) => dieMap.get(key))
-      .filter((die): die is EligibleDie => die !== undefined);
-    const leftKeySet = new Set(region.dieKeys);
-    const right = eligibleDies.filter((die) => {
-      const key = `${die.x},${die.y}`;
-      return !leftKeySet.has(key) && regionDieKeySet.has(key);
-    });
+    const leftSize = bucketSizes.get(region.key) ?? 0;
+    const leftCounts = binCounts.get(region.key)!;
+    let rightSize = 0;
+    const rightCounts = new Map<number, number>();
+    for (const [key, counts] of binCounts) {
+      if (key === region.key) continue;
+      rightSize += bucketSizes.get(key) ?? 0;
+      for (const [b, c] of counts) rightCounts.set(b, (rightCounts.get(b) ?? 0) + c);
+    }
 
-    if (left.length < options.minimumSampleSize || right.length < options.minimumSampleSize) continue;
+    if (leftSize < options.minimumSampleSize || rightSize < options.minimumSampleSize) continue;
 
     for (const bin of bins) {
-      const leftHits = left.filter((die) => getBin(die) === bin).length;
-      const rightHits = right.filter((die) => getBin(die) === bin).length;
-      const leftRate = leftHits / left.length;
-      const rightRate = rightHits / right.length;
+      const leftHits = leftCounts.get(bin) ?? 0;
+      const rightHits = rightCounts.get(bin) ?? 0;
+      const leftRate = leftHits / leftSize;
+      const rightRate = rightHits / rightSize;
       const delta = leftRate - rightRate;
-      const pValue = twoProportionPValue(leftHits, left.length, rightHits, right.length);
+      const pValue = twoProportionPValue(leftHits, leftSize, rightHits, rightSize);
       const binLabel = labelForBin(bin, defs, prefix);
 
       findings.push({
@@ -423,8 +467,8 @@ function buildBinFindings(
         stats: {
           method: 'two-proportion-z',
           pValue,
-          sampleSizeLeft: left.length,
-          sampleSizeRight: right.length,
+          sampleSizeLeft: leftSize,
+          sampleSizeRight: rightSize,
         },
         summary: summarizeBinFinding(region.label, binLabel, delta, region.family),
         highlight: {
@@ -488,7 +532,7 @@ function welchPValue(leftValues: number[], rightValues: number[]): { pValue: num
   };
 }
 
-const TEST_COUNT_WARN_THRESHOLD = 100;
+const TEST_COUNT_WARN_THRESHOLD = 250;
 
 function buildTestValueFindings(
   dies: Die[],
@@ -497,42 +541,62 @@ function buildTestValueFindings(
   options: ResolvedOptions,
 ): { findings: RawFinding[]; warning?: string } {
   const dieMap = new Map(dies.map((die) => [`${die.x},${die.y}`, die]));
-  const regionDieKeySet = new Set(regionFamily.flatMap((region) => region.dieKeys));
 
-  // Collect all test numbers present in the data.
-  const allTestNumbers = [...new Set(
-    dies.flatMap((die) => {
-      if (die.testValues) return Object.keys(die.testValues).map(Number);
-      return (die.values ?? []).map((v, i) => v !== undefined ? i : -1).filter(i => i >= 0);
-    }),
-  )].sort((a, b) => a - b);
+  // If the caller specifies exact test numbers, use them directly — skip the
+  // expensive scan of all die testValues keys, which is O(N × tests).
+  let activeTestNumbers: number[];
+  if (options.testNumbers) {
+    activeTestNumbers = options.testNumbers.slice().sort((a, b) => a - b);
+  } else {
+    // No filter provided: discover test numbers present in the data.
+    // Stop early once we exceed the cap — no need to scan all dies.
+    const testNumberSet = new Set<number>();
+    let cappedCount = 0;
+    outer: for (const die of dies) {
+      const keys = die.testValues
+        ? Object.keys(die.testValues)
+        : (die.values ?? []).map((v, i) => v !== undefined ? String(i) : null).filter(Boolean) as string[];
+      for (const k of keys) {
+        const n = Number(k);
+        if (!testNumberSet.has(n)) {
+          testNumberSet.add(n);
+          if (testNumberSet.size > TEST_COUNT_WARN_THRESHOLD) {
+            cappedCount = testNumberSet.size;
+            break outer;
+          }
+        }
+      }
+    }
 
-  // Auto-cap: if no filter and too many tests, warn and skip test value analysis.
-  if (!options.testNumbers && allTestNumbers.length > TEST_COUNT_WARN_THRESHOLD) {
-    const warning =
-      `[wafermap] analyzeWaferMap: ${allTestNumbers.length} tests found in die data. ` +
-      `Pass testNumbers: [...] in options to enable test value analysis for specific tests. ` +
-      `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`;
-    console.warn(warning);
-    return { findings: [], warning };
+    if (cappedCount > TEST_COUNT_WARN_THRESHOLD) {
+      const warning =
+        `[wafermap] analyzeWaferMap: more than ${TEST_COUNT_WARN_THRESHOLD} tests found in die data. ` +
+        `Pass testNumbers: [...] in options to enable test value analysis for specific tests. ` +
+        `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`;
+      console.warn(warning);
+      return { findings: [], warning };
+    }
+    activeTestNumbers = [...testNumberSet].sort((a, b) => a - b);
   }
 
-  // Apply testNumbers filter when provided.
-  const activeTestNumbers = options.testNumbers
-    ? allTestNumbers.filter(n => options.testNumbers!.includes(n))
-    : allTestNumbers;
+  const buckets = new Map<string, Die[]>();
+  for (const region of regionFamily) {
+    const bucket: Die[] = [];
+    for (const key of region.dieKeys) {
+      const d = dieMap.get(key);
+      if (d) bucket.push(d);
+    }
+    buckets.set(region.key, bucket);
+  }
 
   const findings: RawFinding[] = [];
 
   for (const region of regionFamily) {
-    const leftDies = region.dieKeys
-      .map((key) => dieMap.get(key))
-      .filter((die): die is Die => die !== undefined);
-    const leftKeySet = new Set(region.dieKeys);
-    const rightDies = dies.filter((die) => {
-      const key = `${die.x},${die.y}`;
-      return !leftKeySet.has(key) && regionDieKeySet.has(key);
-    });
+    const leftDies = buckets.get(region.key)!;
+    const rightDies: Die[] = [];
+    for (const [key, bucket] of buckets) {
+      if (key !== region.key) for (const d of bucket) rightDies.push(d);
+    }
 
     for (const testNumber of activeTestNumbers) {
       const readVal = (die: Die) => die.testValues?.[testNumber] ?? die.values?.[testNumber];
@@ -615,24 +679,30 @@ function buildSpecLimitFindings(
 
   const allFindings: RawFinding[] = [];
 
+  const dieMap = new Map(dies.map(d => [`${d.x},${d.y}`, d]));
+
   for (const td of limited) {
     const tn = td.testNumber ?? td.index;
     if (tn === undefined) continue;
 
     for (const regionFamily of regionFamilies) {
-      const dieMap = new Map(dies.map(d => [`${d.x},${d.y}`, d]));
-      const regionDieKeySet = new Set(regionFamily.flatMap(r => r.dieKeys));
+      const buckets = new Map<string, Die[]>();
+      for (const region of regionFamily) {
+        const bucket: Die[] = [];
+        for (const key of region.dieKeys) {
+          const d = dieMap.get(key);
+          if (d) bucket.push(d);
+        }
+        buckets.set(region.key, bucket);
+      }
       const findings: RawFinding[] = [];
 
       for (const region of regionFamily) {
-        const leftDies = region.dieKeys
-          .map(key => dieMap.get(key))
-          .filter((d): d is Die => d !== undefined);
-        const leftKeySet = new Set(region.dieKeys);
-        const rightDies = dies.filter(d => {
-          const key = `${d.x},${d.y}`;
-          return !leftKeySet.has(key) && regionDieKeySet.has(key);
-        });
+        const leftDies = buckets.get(region.key)!;
+        const rightDies: Die[] = [];
+        for (const [key, bucket] of buckets) {
+          if (key !== region.key) for (const d of bucket) rightDies.push(d);
+        }
 
         const hasValue = (d: Die) => (d.testValues?.[tn] ?? d.values?.[tn]) !== undefined;
         const isSpecFail = (d: Die) => {

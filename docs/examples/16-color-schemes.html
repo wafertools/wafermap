@@ -32,7 +32,7 @@
       overflow: hidden;
     }
 
-    .scheme-card canvas { flex: 1; min-height: 0; display: block; width: 100%; }
+    .scheme-card > div[id] { flex: 1; min-height: 0; }
 
     .scheme-caption {
       flex-shrink: 0;
@@ -93,7 +93,7 @@
 
       <!-- Built-in 'color' (default) -->
       <div class="scheme-card">
-        <canvas id="map-color"></canvas>
+        <div id="map-color"></div>
         <div class="scheme-caption">
           <div class="scheme-name">'color'  <span style="color:var(--muted); font-weight:400">(built-in default)</span></div>
           <div class="scheme-desc">Categorical palette — visually distinct bins, Viridis for continuous values.</div>
@@ -103,7 +103,7 @@
 
       <!-- Built-in 'plasma' -->
       <div class="scheme-card">
-        <canvas id="map-plasma"></canvas>
+        <div id="map-plasma"></div>
         <div class="scheme-caption">
           <div class="scheme-name">'plasma'  <span style="color:var(--muted); font-weight:400">(built-in)</span></div>
           <div class="scheme-desc">Plasma colormap — high-contrast gradient for continuous parametric data.</div>
@@ -113,7 +113,7 @@
 
       <!-- Custom registered scheme -->
       <div class="scheme-card">
-        <canvas id="map-custom"></canvas>
+        <div id="map-custom"></div>
         <div class="scheme-caption">
           <div class="scheme-name">'teal-rose'  <span style="color:var(--accent); font-weight:400">(custom)</span></div>
           <div class="scheme-desc">

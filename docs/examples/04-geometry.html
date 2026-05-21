@@ -21,7 +21,7 @@
       overflow: hidden;
     }
     .canvas-card { display: flex; flex-direction: column; }
-    .canvas-card canvas { flex: 1; min-height: 0; }
+    .canvas-card > div[id] { flex: 1; min-height: 0; }
     .card-caption { font-size: 11px; }
   </style>
 </head>
@@ -46,7 +46,7 @@
       <!-- Card A: nothing supplied → normalized units -->
       <div class="canvas-card">
         <div class="canvas-badge">A — grid positions only</div>
-        <canvas id="map-a"></canvas>
+        <div id="map-a"></div>
         <div class="card-caption">
           <strong>Neither provided.</strong>
           Pitch inferred by nearest-neighbour step analysis.
@@ -57,7 +57,7 @@
       <!-- Card B: die size only → mm, diameter inferred -->
       <div class="canvas-card">
         <div class="canvas-badge">B — die size provided</div>
-        <canvas id="map-b"></canvas>
+        <div id="map-b"></div>
         <div class="card-caption">
           <strong>dieConfig: { width: 8, height: 12 }</strong> — diameter inferred from
           grid extent × pitch. <code>units: 'mm'</code>
@@ -67,7 +67,7 @@
       <!-- Card C: diameter only → mm, pitch estimated -->
       <div class="canvas-card">
         <div class="canvas-badge">C — diameter provided</div>
-        <canvas id="map-c"></canvas>
+        <div id="map-c"></div>
         <div class="card-caption">
           <strong>waferConfig: { diameter: 300 }</strong> — die pitch estimated from
           diameter ÷ grid extent. Notch visible. <code>units: 'mm'</code>
@@ -77,7 +77,7 @@
       <!-- Card D: fully specified + edge exclusion -->
       <div class="canvas-card">
         <div class="canvas-badge">D — fully specified + edge exclusion</div>
-        <canvas id="map-d"></canvas>
+        <div id="map-d"></div>
         <div class="card-caption">
           <strong>diameter: 300, notch: bottom, edgeExclusion: 5 mm, die: 8×12 mm.</strong>
           Dimmed dies fall within the 5 mm exclusion band and are excluded from yield.

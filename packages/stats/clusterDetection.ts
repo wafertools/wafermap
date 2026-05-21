@@ -81,17 +81,23 @@ export function buildClusterFindings(
   const pitchX = firstDie ? firstDie.width  : 10;
   const pitchY = firstDie ? firstDie.height : 10;
 
-  // Connectivity threshold: dies are adjacent if within 1.1× a single grid step
-  // in either direction. Tight enough to separate isolated clusters from
-  // diffuse background failures even at high wafer-wide failure rates.
-  const connectX = pitchX * 1.1;
-  const connectY = pitchY * 1.1;
-
   // Neighbourhood radius for the statistical test: larger — captures all eligible
   // dies that could plausibly be associated with the cluster.
   const neighbourRadius = Math.max(pitchX, pitchY) * 1.5;
 
-  // Flood-fill connected components of failing dies using tight connectivity.
+  // Grid index for O(1) neighbour lookups by integer grid coordinate.
+  // Adjacency uses the die's integer x,y grid position (8-connected: |dx|<=1, |dy|<=1).
+  const failingByKey = new Map<string, Die>();
+  for (const d of failing) failingByKey.set(`${d.x},${d.y}`, d);
+
+  const allByKey = new Map<string, Die>();
+  for (const d of dies) allByKey.set(`${d.x},${d.y}`, d);
+
+  // Neighbourhood radius in grid steps (ceil to cover the physical radius).
+  const neighStepsX = Math.ceil(neighbourRadius / pitchX);
+  const neighStepsY = Math.ceil(neighbourRadius / pitchY);
+
+  // Flood-fill connected components of failing dies using 8-connected grid adjacency.
   const visited = new Set<string>();
   const components: Die[][] = [];
 
@@ -106,12 +112,13 @@ export function buildClusterFindings(
     while (queue.length > 0) {
       const current = queue.pop()!;
       component.push(current);
-      for (const candidate of failing) {
-        const ck = `${candidate.x},${candidate.y}`;
-        if (visited.has(ck)) continue;
-        // 8-connected adjacency: within one grid step in X and Y independently
-        if (Math.abs(candidate.physX - current.physX) <= connectX &&
-            Math.abs(candidate.physY - current.physY) <= connectY) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const ck = `${current.x + dx},${current.y + dy}`;
+          if (visited.has(ck)) continue;
+          const candidate = failingByKey.get(ck);
+          if (!candidate) continue;
           visited.add(ck);
           queue.push(candidate);
         }
@@ -130,11 +137,24 @@ export function buildClusterFindings(
     if (component.length < minimumClusterSize) continue;
 
     // Neighbourhood: all eligible dies within neighbourRadius of any cluster member.
+    // Use grid-step window around each cluster member for O(component × window) lookup.
     const clusterKeySet = new Set(component.map(d => `${d.x},${d.y}`));
-    const neighbourhood = dies.filter(d => {
-      if (clusterKeySet.has(`${d.x},${d.y}`)) return true;
-      return component.some(m => Math.hypot(d.physX - m.physX, d.physY - m.physY) <= neighbourRadius);
-    });
+    const neighbourKeySet = new Set<string>(clusterKeySet);
+    for (const m of component) {
+      for (let dy = -neighStepsY; dy <= neighStepsY; dy++) {
+        for (let dx = -neighStepsX; dx <= neighStepsX; dx++) {
+          const ck = `${m.x + dx},${m.y + dy}`;
+          if (neighbourKeySet.has(ck)) continue;
+          const candidate = allByKey.get(ck);
+          if (!candidate) continue;
+          // Exact physical distance check within the grid window.
+          if (Math.hypot(candidate.physX - m.physX, candidate.physY - m.physY) <= neighbourRadius) {
+            neighbourKeySet.add(ck);
+          }
+        }
+      }
+    }
+    const neighbourhood = [...neighbourKeySet].map(k => allByKey.get(k)!).filter(Boolean);
 
     const k = component.length;
     const n = neighbourhood.length;

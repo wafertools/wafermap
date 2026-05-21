@@ -47,7 +47,7 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result);
 
-renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary });
 // A "Findings" button now appears in the toolbar automatically.
 
 // Access findings directly — array is pre-sorted: 'unusual' first, then 'notable', then 'info'.
@@ -63,8 +63,8 @@ if (top) console.log(`[${top.severity}] ${top.summary}`);
 ```text
 buildWaferMap()            — data layer: prober results → wafer + dies (server-safe, no DOM)
     │
-    ├── renderWaferMap()       — single interactive canvas map with full toolbar  ← recommended
-    ├── renderWaferGallery()   — multi-map gallery with shared controls + click-to-modal  ← recommended
+    ├── renderWaferMap(container, wafer, dies) — single interactive canvas map  ← recommended
+    ├── renderWaferMap(container, items[])     — multi-map gallery (overload)   ← recommended
     │
     ├── toPlotly()             — optional Plotly SVG compatibility renderer
     └── toCanvas()             — direct canvas render without toolbar
@@ -540,18 +540,27 @@ const enrichedDies = result.dies.map(d => {
 
 ---
 
-## 5 `renderWaferMap(canvas, wafer, dies, options?)`
+## 5 `renderWaferMap(container, wafer, dies, options?)` — single map overload
 
 A fully self-contained interactive wafermap. Accepts `wafer` and `dies` directly,
 owns scene building internally, and provides a **built-in toolbar** that appears on
 hover — wafermap-specific controls always in the same place.
 
+`renderWaferMap` accepts any block `HTMLElement` as `container` — the function
+creates and manages its own `<canvas>` inside it. Passing an `HTMLCanvasElement`
+directly is deprecated but still works for one release.
+
 The toolbar gives users direct access to every display option without any app-level
 chrome: plot mode, colour scheme, ring and quadrant overlays, die labels, rotate,
-flip, zoom, box-select, and PNG download.
+flip, zoom, box-select, and PNG download. An **expand** button (⛶) in the toolbar
+opens the map in a full-screen modal using canvas reparenting — no second controller
+is created.
 
 ```ts
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+// Pass a <div> (or any block element) — renderWaferMap creates the canvas inside it.
+renderWaferMap(document.getElementById('map'), wafer, dies);
 ```
 
 ### 5.1 `WaferSceneOptions`
@@ -701,6 +710,7 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
+| Expand (⛶) | Open the map in a full-screen modal; canvas reparented — no scene rebuild. Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Not shown when `toolbarControls: 'view-only'`. |
 
 ### 5.7 Interactions
 
@@ -716,7 +726,8 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 | Hover over die | Any | Tooltip + `onHover` callback |
 | Click bin legend entry | Any | Toggle `highlightBin` — dims all non-matching bins |
 | Double-click | Any | Reset to fitted view |
-| Esc | Any | Clear selection |
+| Esc | Any | Clear selection; also closes the expand modal |
+| `E` key | Any (focus on canvas) | Open / close the expand modal |
 
 > **Note:** zoom/rotate/flip are visual-only transforms — they never mutate the
 > underlying `Die` data.  Selection stability is guaranteed: `die.x` and `die.y`
@@ -730,7 +741,7 @@ import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 
-const ctrl = renderWaferMap(canvas, wafer, dies, {
+const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
   sceneOptions: { plotMode: 'hardBin', colorScheme: 'default' },
   onClick:  (die)  => console.log(die.x, die.y, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
@@ -749,13 +760,28 @@ ctrl.destroy();
 
 ---
 
-## 6 `renderWaferGallery(container, items, options?)`
+## 6 `renderWaferMap(container, items, options?)` — gallery overload
+
+> **Unified API.** `renderWaferMap` is overloaded — when the second argument is an
+> array of `GalleryItem | GalleryItemFactory`, it builds a multi-card gallery instead
+> of a single map.  The deprecated `renderWaferGallery` export still works for one
+> release but will be removed.
 
 A multi-map gallery with a shared control bar, per-card view-only toolbars, and
 click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or
 flip in the gallery bar applies to every card instantly.
 
 ```ts
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+// Gallery overload — second argument is an array of items:
+renderWaferMap(document.getElementById('gallery'), items, galleryOptions);
+```
+
+`renderWaferGallery` is a deprecated alias:
+
+```ts
+// @deprecated — use renderWaferMap(container, items, opts) instead
 import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 ```
 
@@ -783,7 +809,7 @@ type GalleryItemFactory = () => GalleryItem
 ```
 
 A factory function accepted anywhere a `GalleryItem` is expected (in the `items` array passed to
-`renderWaferGallery` or `setItems`). When the gallery encounters a factory it inserts a placeholder
+`renderWaferMap` or `setItems`). When the gallery encounters a factory it inserts a placeholder
 card immediately and calls the factory in a deferred browser task (`setTimeout(0)`), swapping in
 the real card when it returns.
 
@@ -798,7 +824,7 @@ const items = fixtures.map(sample => () => {
   return { label: sample.label, wafer: result.wafer, dies: result.dies, statsSummary: summary };
 });
 
-renderWaferGallery(container, items);
+renderWaferMap(container, items);
 ```
 
 The placeholder card shows no label — if the label depends on computed data (e.g. a findings
@@ -918,7 +944,7 @@ items — the gallery re-aggregates automatically if a stacked mode is active.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 const items = waferIds.map(id => ({
   wafer: sharedWafer,
@@ -928,7 +954,7 @@ const items = waferIds.map(id => ({
   onSelect: (selected) => showSelectionPanel(id, selected),
 }));
 
-const ctrl = renderWaferGallery(document.getElementById('gallery'), items, {
+const ctrl = renderWaferMap(document.getElementById('gallery'), items, {
   sceneOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
   onSceneOptionsChange: (opts) => syncSidebarControls(opts),
   downloadFilename: 'lot-overview',
@@ -971,7 +997,7 @@ const result = buildWaferMap({
   waferConfig, dieConfig, testDefs,
 });
 const summary = analyzeWaferMap(result, { ringCount: 4 });
-renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary, waferResult: result });
+renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary, waferResult: result });
 ```
 
 `summary.stats.isLotStack` is `true` and `summary.stats.aggregationMethod` is set (e.g. `'mean'`) so the host application can label the panel appropriately.
@@ -1249,17 +1275,17 @@ type HighlightTarget =
 | `edge-arc`           | `dies`           | exact failing die keys |
 | `wafer`              | `wafer`          | lot-level only |
 
-### 7.10 Integrating with `renderWaferMap` and `renderWaferGallery`
+### 7.10 Integrating with `renderWaferMap`
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap, renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 
 // Single wafer with summary panel toggle:
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result, { ringCount: 4 });
-renderWaferMap(canvas, result.wafer, result.dies, { statsSummary: summary });
+renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary });
 
 // Lot gallery with lot-level summary panel toggle:
 const waferResults = waferDataSets.map(d => buildWaferMap(d));
@@ -1272,7 +1298,7 @@ const items = waferResults.map((r, i) => ({
   statsSummary:  analyzeWaferMap(r, { ringCount: 4 }),
 }));
 const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
-renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
+renderWaferMap(container, items, { lotStatsSummary: lotSummary });
 ```
 
 ### 7.11 Region builder utilities
@@ -1348,8 +1374,8 @@ UI responsive.  The `wafermap/worker` subpackage provides a thin wrapper around 
 pre-built worker script.
 
 **When to use it:** datasets with ~10,000+ rows, or many wafers processed at once.
-For small fixed datasets the overhead is not worth it.  `renderWaferMap` and `renderWaferGallery`
-are fast rendering operations and always run on the main thread regardless.
+For small fixed datasets the overhead is not worth it.  `renderWaferMap` is a fast
+rendering operation and always runs on the main thread regardless.
 
 ### 8.1 Setup
 
@@ -1391,7 +1417,7 @@ const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
 const { wafer, dies } = await worker.run({ results, waferConfig, dieConfig });
 
 // Everything after is unchanged:
-renderWaferMap(canvas, wafer, dies);
+renderWaferMap(container, wafer, dies);
 ```
 
 Multiple concurrent calls are safe — each resolves independently.  Run wafers in parallel with `Promise.all`:
@@ -1412,8 +1438,7 @@ Shuts down the underlying worker.  Any in-flight `run()` calls reject immediatel
 
 These APIs give you direct control over the rendering pipeline. Use them when you
 need to integrate with your own rendering loop, build a custom gallery, or export
-through Plotly. For most application development, prefer `renderWaferMap` and
-`renderWaferGallery` above.
+through Plotly. For most application development, prefer `renderWaferMap` above.
 
 ### 9.1 `toPlotly(scene, options?)`
 
@@ -1508,7 +1533,7 @@ canvas.addEventListener('mousemove', e => {
 
 ```ts
 import { buildWaferMap }                       from '@paulrobins/wafermap';
-import { renderWaferMap, renderWaferGallery }  from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap }                      from '@paulrobins/wafermap/canvas-adapter';
 import { toPlotly }                            from '@paulrobins/wafermap';
 import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats';
 import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
@@ -1522,7 +1547,7 @@ import { buildWaferMap }   from '@paulrobins/wafermap';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 ```
 
-Only `renderWaferMap`, `renderWaferGallery`, and `toCanvas` (all from `/canvas-adapter`) require a browser environment.
+Only `renderWaferMap` and `toCanvas` (both from `/canvas-adapter`) require a browser environment.
 
 ### 10.1 Helper exports
 

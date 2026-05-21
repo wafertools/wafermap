@@ -1,9 +1,16 @@
 import type { WaferMapInput, WaferMapResult } from '../renderer/buildWaferMap.js';
+import type { AnalyzeWaferMapOptions, LotStatsSummary, StatsSummary } from '../stats/index.js';
 import type { WorkerRequest, WorkerResponse } from './wafermap.worker.js';
 
 export interface WafermapWorker {
   /** Run buildWaferMap in the worker thread. Returns a promise that resolves with the result. */
   run(input: WaferMapInput): Promise<WaferMapResult>;
+  /** Run analyzeWaferMap (and optionally analyzeWaferLot) in the worker thread. */
+  runAnalysis(
+    results: WaferMapResult[],
+    options: AnalyzeWaferMapOptions,
+    hasMultiWafer: boolean,
+  ): Promise<{ waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }>;
   /** Terminate the underlying Worker. Call when the worker is no longer needed. */
   terminate(): void;
 }
@@ -28,7 +35,8 @@ export interface WafermapWorker {
  */
 export function createWafermapWorker(worker: Worker): WafermapWorker {
   let nextId = 0;
-  const pending = new Map<number, { resolve: (r: WaferMapResult) => void; reject: (e: Error) => void }>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pending = new Map<number, { resolve: (r: any) => void; reject: (e: Error) => void }>();
 
   worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
     const msg = ev.data;
@@ -36,10 +44,12 @@ export function createWafermapWorker(worker: Worker): WafermapWorker {
     const entry = pending.get(msg.id);
     if (!entry) return;
     pending.delete(msg.id);
-    if (msg.type === 'result') {
-      entry.resolve(msg.result);
-    } else {
+    if (msg.type === 'error') {
       entry.reject(new Error(msg.message));
+    } else if (msg.type === 'result') {
+      entry.resolve(msg.result);
+    } else if (msg.type === 'analyzed') {
+      entry.resolve({ waferSummaries: msg.waferSummaries, lotSummary: msg.lotSummary });
     }
   };
 
@@ -55,6 +65,17 @@ export function createWafermapWorker(worker: Worker): WafermapWorker {
         const id = nextId++;
         pending.set(id, { resolve, reject });
         worker.postMessage({ type: 'run', id, input } satisfies WorkerRequest);
+      });
+    },
+    runAnalysis(
+      results: WaferMapResult[],
+      options: AnalyzeWaferMapOptions,
+      hasMultiWafer: boolean,
+    ): Promise<{ waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }> {
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        pending.set(id, { resolve, reject });
+        worker.postMessage({ type: 'analyze', id, results, options, hasMultiWafer } satisfies WorkerRequest);
       });
     },
     terminate() {

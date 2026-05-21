@@ -122,10 +122,15 @@ export function resolveGridPitch(
     };
   }
 
-  const xs = gridPoints.map(p => p.x);
-  const ys = gridPoints.map(p => p.y);
-  const xRange = Math.max(...xs) - Math.min(...xs) + 1;
-  const yRange = Math.max(...ys) - Math.min(...ys) + 1;
+  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+  for (const p of gridPoints) {
+    if (p.x < xMin) xMin = p.x;
+    if (p.x > xMax) xMax = p.x;
+    if (p.y < yMin) yMin = p.y;
+    if (p.y > yMax) yMax = p.y;
+  }
+  const xRange = xMax - xMin + 1;
+  const yRange = yMax - yMin + 1;
 
   // Case 2: Width only — derive height from circular aspect ratio.
   if (hasWidth) {

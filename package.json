@@ -1,14 +1,19 @@
 {
   "name": "@paulrobins/wafermap",
   "version": "0.11.3",
-  "description": "Browser-first wafer map visualization toolkit with a renderer abstraction and Plotly adapter.",
+  "description": "Interactive wafer map visualization and yield analysis for semiconductor test data. Hard bins, soft bins, test values, retests, edge exclusion, reticle overlays, spatial statistics, failure clustering, and lot-level trend analysis — pure ES modules, no runtime dependencies, no server required.",
   "type": "module",
   "license": "MIT",
+  "author": {
+    "name": "Paul Robins",
+    "url": "https://telecasterer.github.io/wafermap/"
+  },
   "private": false,
   "files": [
     "dist",
-    "readme.md",
-    "LICENSE"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -63,11 +68,27 @@
     "prepublishOnly": "npm test"
   },
   "keywords": [
-    "wafer",
     "wafer-map",
-    "plotly",
+    "wafer",
     "semiconductor",
-    "visualization"
+    "yield-analysis",
+    "yield",
+    "bin-map",
+    "die-map",
+    "ate",
+    "prober",
+    "stdf",
+    "hard-bin",
+    "soft-bin",
+    "test-values",
+    "spatial-analysis",
+    "failure-clustering",
+    "reticle",
+    "lot-analysis",
+    "canvas",
+    "visualization",
+    "typescript",
+    "plotly"
   ],
   "devDependencies": {
     "jsdom": "^29.1.1",

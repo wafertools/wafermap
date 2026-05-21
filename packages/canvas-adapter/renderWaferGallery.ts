@@ -122,10 +122,13 @@ export function renderWaferGallery(
   };
 
   let cardControllers: WaferCanvasController[] = [];
+  let cardContainers: HTMLDivElement[] = [];  // canvasWrapper per card — used for modal reparenting
   let currentItems:  GalleryItem[] = [];
   let originalItems: GalleryItem[] = [];  // per-wafer source items; stacked modes aggregate from this
-  let modalController: WaferCanvasController | null = null;
+  let modalReparentedContainer: HTMLDivElement | null = null;  // container reparented into modal
+  let modalReparentedParent: HTMLElement | null = null;       // original parent to restore on close
   let savedBodyOverflow = '';
+  let modalFullscreenListener: (() => void) | null = null;
 
   let btnLotFindings: HTMLButtonElement | null = null;
   let activeLotFindingId: string | null = null;
@@ -147,10 +150,14 @@ export function renderWaferGallery(
   function applyCardHighlight(indices: number[]): void {
     highlightedCardIndices = new Set(indices);
     const cards = [...gridEl.querySelectorAll<HTMLElement>('.wmap-gallery-card')];
+    let firstHighlighted: HTMLElement | undefined;
     cards.forEach((card, i) => {
-      card.style.outline     = highlightedCardIndices.has(i) ? '3px solid #e07a20' : '';
-      card.style.outlineOffset = highlightedCardIndices.has(i) ? '-3px' : '';
+      const active = highlightedCardIndices.has(i);
+      card.style.outline       = active ? '3px solid #e07a20' : '';
+      card.style.outlineOffset = active ? '-3px' : '';
+      if (active && firstHighlighted === undefined) firstHighlighted = card;
     });
+    firstHighlighted?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   function clearCardHighlight(): void {
@@ -945,7 +952,7 @@ export function renderWaferGallery(
 
   // ── Card building ──────────────────────────────────────────────────────────
 
-  function buildCard(item: GalleryItem, cardIndex: number, totalItems: number): { card: HTMLDivElement; ctrl: WaferCanvasController } {
+  function buildCard(item: GalleryItem, cardIndex: number, totalItems: number): { card: HTMLDivElement; ctrl: WaferCanvasController; canvasWrapper: HTMLDivElement } {
     const card = document.createElement('div');
     card.className = 'wmap-gallery-card';
     Object.assign(card.style, {
@@ -994,8 +1001,7 @@ export function renderWaferGallery(
     header.appendChild(expandBtn);
     card.appendChild(header);
 
-    // Wrap canvas in a positioned container so the toolbar (position:absolute,
-    // top:4px) anchors within the canvas area, not the full card including header.
+    // Container div for renderWaferMap — the function creates the canvas inside it.
     const canvasWrapper = document.createElement('div');
     Object.assign(canvasWrapper.style, {
       position: 'relative',
@@ -1003,14 +1009,6 @@ export function renderWaferGallery(
       minHeight:'0',
       overflow: 'hidden',
     });
-
-    const canvas = document.createElement('canvas');
-    Object.assign(canvas.style, {
-      aspectRatio: '1',
-      width:       '100%',
-      display:     'block',
-    });
-    canvasWrapper.appendChild(canvas);
     card.appendChild(canvasWrapper);
 
     // Append to DOM before renderWaferMap so the canvas has a resolved CSS
@@ -1018,7 +1016,7 @@ export function renderWaferGallery(
     // render that the ResizeObserver would otherwise need to correct.
     gridEl.appendChild(card);
 
-    const ctrl = renderWaferMap(canvas, item.wafer, item.dies, {
+    const ctrl = renderWaferMap(canvasWrapper, item.wafer, item.dies, {
       sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
       toolbarControls: 'view-only',
       showTooltip:     true,
@@ -1031,7 +1029,7 @@ export function renderWaferGallery(
 
     // Only the expand button opens the modal — canvas clicks are handled
     // internally by renderWaferMap and stop propagation before reaching here.
-    expandBtn.addEventListener('click', () => openModal(item));
+    expandBtn.addEventListener('click', () => openModal(cardIndex, item));
 
     // Summary panel drill-down: clicking the card header area drills into wafer detail.
     if (gallerySummaryPanelEl) {
@@ -1047,7 +1045,7 @@ export function renderWaferGallery(
       });
     }
 
-    return { card, ctrl };
+    return { card, ctrl, canvasWrapper };
   }
 
   function buildCards(newItems: Array<GalleryItem | GalleryItemFactory>): void {
@@ -1056,6 +1054,7 @@ export function renderWaferGallery(
     currentItems = [];
     for (const ctrl of cardControllers) ctrl.destroy();
     cardControllers = [];
+    cardContainers = [];
     gridEl.innerHTML = '';
     rebuildLegend();
 
@@ -1084,11 +1083,13 @@ export function renderWaferGallery(
         gridEl.appendChild(placeholder);
         currentItems.push(null as unknown as GalleryItem); // slot reserved
         cardControllers.push(null as unknown as WaferCanvasController);
+        cardContainers.push(null as unknown as HTMLDivElement);
         factories.push({ index: i, factory: entry, placeholder });
       } else {
-        const { ctrl } = buildCard(entry, i, newItems.length);
+        const { ctrl, canvasWrapper } = buildCard(entry, i, newItems.length);
         currentItems.push(entry);
         cardControllers.push(ctrl);
+        cardContainers.push(canvasWrapper);
       }
     }
 
@@ -1100,8 +1101,9 @@ export function renderWaferGallery(
       const item = factory();
       currentItems[index] = item;
       originalItems[index] = item;
-      const { card, ctrl } = buildCard(item, index, newItems.length);
+      const { card, ctrl, canvasWrapper } = buildCard(item, index, newItems.length);
       cardControllers[index] = ctrl;
+      cardContainers[index] = canvasWrapper;
       placeholder.replaceWith(card);
       setTimeout(resolveNext, 0);
     }
@@ -1124,8 +1126,11 @@ export function renderWaferGallery(
 
   // ── Modal ──────────────────────────────────────────────────────────────────
 
-  function openModal(item: GalleryItem): void {
-    if (modalController) closeModal();
+  function openModal(cardIndex: number, item: GalleryItem): void {
+    if (modalReparentedContainer) closeModal();
+
+    const cardContainer = cardContainers[cardIndex];
+    if (!cardContainer) return;
 
     savedBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1153,6 +1158,11 @@ export function renderWaferGallery(
       width:         'min(90vw, 700px)',
       height:        'min(90vh, 700px)',
       boxShadow:     '0 20px 60px rgba(0,0,0,0.4)',
+      resize:        'both',
+      minWidth:      '320px',
+      minHeight:     '240px',
+      maxWidth:      '100vw',
+      maxHeight:     '100vh',
     });
 
     const modalHeader = document.createElement('div');
@@ -1168,73 +1178,117 @@ export function renderWaferGallery(
     Object.assign(modalTitle.style, { fontWeight: '700', fontSize: '14px' });
     const spacer = document.createElement('div');
     spacer.style.flex = '1';
+    const btnStyle = {
+      border:      'none',
+      background:  'transparent',
+      cursor:      'pointer',
+      color:       '#888',
+      lineHeight:  '1',
+      padding:     '0 4px',
+      fontSize:    '15px',
+      display:     'flex',
+      alignItems:  'center',
+    };
+
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.innerHTML = '&#x26F6;';
+    fullscreenBtn.title = 'Fullscreen (F)';
+    Object.assign(fullscreenBtn.style, { ...btnStyle, fontSize: '18px' });
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        box.requestFullscreen().catch(() => {/* not supported */});
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '\xD7';
     closeBtn.title = 'Close (Esc)';
-    Object.assign(closeBtn.style, {
-      border:       'none',
-      background:   'transparent',
-      fontSize:     '20px',
-      cursor:       'pointer',
-      color:        '#888',
-      lineHeight:   '1',
-      padding:      '0 2px',
-    });
+    Object.assign(closeBtn.style, { ...btnStyle, fontSize: '20px', padding: '0 2px' });
     closeBtn.addEventListener('click', closeModal);
+
+    const onFullscreenChange = () => {
+      const isFs = document.fullscreenElement === box;
+      fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
+      fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
+      closeBtn.style.display = isFs ? 'none' : '';
+      if (isFs) {
+        box.style.borderRadius = '0';
+        box.style.resize = 'none';
+        box.style.width = '100%';
+        box.style.height = '100%';
+      } else {
+        box.style.borderRadius = '12px';
+        box.style.resize = 'both';
+        box.style.width = 'min(90vw, 700px)';
+        box.style.height = 'min(90vh, 700px)';
+      }
+    };
+
     modalHeader.appendChild(modalTitle);
     modalHeader.appendChild(spacer);
+    modalHeader.appendChild(fullscreenBtn);
     modalHeader.appendChild(closeBtn);
 
     const modalCanvasWrap = document.createElement('div');
     Object.assign(modalCanvasWrap.style, {
-      flex:     '1',
+      flex:      '1',
       minHeight: '0',
-      position: 'relative',
+      position:  'relative',
+      overflow:  'hidden',
     });
 
-    const modalCanvas = document.createElement('canvas');
-    Object.assign(modalCanvas.style, {
-      width:   '100%',
-      height:  '100%',
-      display: 'block',
-    });
+    // Reparent the card's live container (canvas + toolbar) into the modal.
+    modalReparentedParent = cardContainer.parentElement as HTMLElement;
+    modalReparentedContainer = cardContainer;
+    // Switch the card controller to full toolbar now that it's in the modal.
+    cardControllers[cardIndex]?.setOptions({ ...sharedOpts, ...(item.sceneOptions ?? {}) });
+    modalCanvasWrap.appendChild(cardContainer);
 
-    modalCanvasWrap.appendChild(modalCanvas);
     box.appendChild(modalHeader);
     box.appendChild(modalCanvasWrap);
     backdrop.appendChild(box);
     document.body.appendChild(backdrop);
 
-    modalController = renderWaferMap(modalCanvas, item.wafer, item.dies, {
-      sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
-      toolbarControls: 'full',
-      showTooltip:     true,
-      legendPosition:     currentLegendStyle,
-      fallbackFormat:  options.fallbackFormat,
-      statsSummary:    item.statsSummary,
-      onClick:         item.onClick,
-      onSelect:        item.onSelect,
-    });
-
-    // Close on backdrop click (not box).
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) closeModal();
     });
 
     document.addEventListener('keydown', onModalKeyDown);
+    modalFullscreenListener = onFullscreenChange;
+    document.addEventListener('fullscreenchange', onFullscreenChange);
   }
 
   function onModalKeyDown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') {
+      if (!document.fullscreenElement) closeModal();
+      return;
+    }
+    if (e.key === 'f' || e.key === 'F') {
+      const box = document.getElementById('wmap-modal-backdrop')?.firstElementChild as HTMLElement | null;
+      if (!box) return;
+      if (!document.fullscreenElement) box.requestFullscreen().catch(() => {/* ignore */});
+      else document.exitFullscreen();
+    }
   }
 
   function closeModal(): void {
-    if (!modalController) return;
-    modalController.destroy();
-    modalController = null;
+    if (!modalReparentedContainer) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {/* ignore */});
+    // Reparent canvas back to its card.
+    if (modalReparentedParent) {
+      modalReparentedParent.appendChild(modalReparentedContainer);
+      modalReparentedParent = null;
+    }
+    modalReparentedContainer = null;
     document.getElementById('wmap-modal-backdrop')?.remove();
     document.body.style.overflow = savedBodyOverflow;
     document.removeEventListener('keydown', onModalKeyDown);
+    if (modalFullscreenListener) {
+      document.removeEventListener('fullscreenchange', modalFullscreenListener);
+      modalFullscreenListener = null;
+    }
   }
 
   // ── Gallery PNG download ───────────────────────────────────────────────────

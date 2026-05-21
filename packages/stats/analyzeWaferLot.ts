@@ -5,6 +5,7 @@ import type {
   LotStatsSummary,
   StatsFinding,
   StatsSeverity,
+  StatsSummary,
 } from './types.js';
 
 const OUTLIER_THRESHOLD = 1.3;
@@ -149,11 +150,11 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer']): Stats
 
 export function analyzeWaferLot(
   items: AnalyzeWaferLotInput,
-  options: AnalyzeWaferMapOptions = {},
+  options: AnalyzeWaferMapOptions & { perWaferSummaries?: StatsSummary[] } = {},
 ): LotStatsSummary {
   const perWafer = items.map((item, waferIndex) => ({
     waferIndex,
-    summary: analyzeWaferMap(item, options),
+    summary: options.perWaferSummaries?.[waferIndex] ?? analyzeWaferMap(item, options),
   }));
   const findings = [
     ...buildRepeatedPatternFindings(perWafer),

@@ -1,4 +1,4 @@
-import type { Scene } from '../renderer/buildScene.js';
+import type { Scene, SceneRect } from '../renderer/buildScene.js';
 import type { Die } from '../core/dies.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
@@ -123,18 +123,9 @@ export function toCanvas(
   const drawColorbar   = showColorbar && COLORBAR_MODES.has(scene.plotMode);
   const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(scene.plotMode);
 
-  function collectBinLegendEntries(): Array<[number, number]> {
-    const binCounts = new Map<number, number>();
-    for (const die of scene.dies) {
-      if (die.partial) continue;
-      const bin = scene.plotMode === 'softBin' ? die.sbin : die.hbin;
-      if (bin == null) continue;
-      binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
-    }
-    return [...binCounts.entries()].sort(([a], [b]) => a - b);
-  }
-
-  const binLegendEntries = drawBinLegend ? collectBinLegendEntries() : [];
+  const binLegendEntries: Array<[number, number]> = drawBinLegend && scene.binCounts
+    ? [...scene.binCounts.entries()].sort(([a], [b]) => a - b)
+    : [];
 
   const dpr     = window.devicePixelRatio ?? 1;
   const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
@@ -199,15 +190,11 @@ export function toCanvas(
   const halfW = firstRect ? firstRect.width  / 2 : 0;
   const halfH = firstRect ? firstRect.height / 2 : 0;
 
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const p of pts) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-  }
-  minX -= halfW; maxX += halfW;
-  minY -= halfH; maxY += halfH;
+  const bounds = scene.dieBounds;
+  const minX = (bounds?.minX ?? 0) - halfW;
+  const maxX = (bounds?.maxX ?? 0) + halfW;
+  const minY = (bounds?.minY ?? 0) - halfH;
+  const maxY = (bounds?.maxY ?? 0) + halfH;
 
   const dataW = maxX - minX;
   const dataH = maxY - minY;
@@ -230,13 +217,27 @@ export function toCanvas(
   ctx.save();
   ctx.setTransform(ppm * dpr, 0, 0, -ppm * dpr, originX * dpr, originY * dpr);
 
-  for (const rect of scene.rectangles) {
-    ctx.beginPath();
-    svgPathToCanvas(ctx, rect.path);
-    ctx.fillStyle = String(rect.fill);
-    ctx.fill();
+  // Batch rectangles by fill color — one beginPath/fill per unique color instead of per die.
+  // Uses ctx.rect() on pre-parsed SceneRect coords, eliminating svgPathToCanvas string parsing.
+  if (scene.rectangles.length > 0) {
+    const byColor = new Map<string, SceneRect[]>();
+    for (const rect of scene.rectangles) {
+      const fill = String(rect.fill);
+      let group = byColor.get(fill);
+      if (!group) { group = []; byColor.set(fill, group); }
+      group.push(rect);
+    }
+    for (const [fill, group] of byColor) {
+      ctx.beginPath();
+      for (const r of group) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    // Single stroke pass over all rects (constant color and width for all dies).
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 0.5 / (ppm * dpr);
+    ctx.beginPath();
+    for (const r of scene.rectangles) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
     ctx.stroke();
   }
 
