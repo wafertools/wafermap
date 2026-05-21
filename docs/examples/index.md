@@ -2,6 +2,8 @@
 
 Live interactive demos. Each opens a standalone page with the full wafer map rendered in the browser.
 
+- [**Showcase**](00-showcase.html) — overview of the full feature set
+
 ## Getting started
 
 - [Your first wafer map](01-first-map.html)

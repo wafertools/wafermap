@@ -155,6 +155,14 @@ export interface WaferCanvasController {
   setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the current stats summary used by the built-in findings panel. */
   setStatsSummary(summary: StatsSummary | undefined): void;
+  /** Show or hide the findings toolbar button without affecting the summary. */
+  setFindingsVisible(visible: boolean): void;
+  /** Show or hide the scene-control toolbar buttons (mode, orientation, etc). */
+  setSceneControlsVisible(visible: boolean): void;
+  /** Show or hide the expand toolbar button. */
+  setExpandVisible(visible: boolean): void;
+  /** Move the floating tooltip into a different parent (e.g. a fullscreen element). */
+  setTooltipParent(parent: HTMLElement): void;
   /**
    * Returns the current bin legend entries in `hardBin`/`softBin` modes, `null` in other modes.
    * Each entry includes the bin number, display name, and color.
@@ -391,9 +399,11 @@ export function renderWaferMap(
   }
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
-  let toolbar:      HTMLDivElement    | null = null;
-  let btnBoxSelect: HTMLButtonElement | null = null;
-  let btnFindings: HTMLButtonElement | null = null;
+  let toolbar:          HTMLDivElement    | null = null;
+  let sceneControlsEl:  HTMLDivElement    | null = null;
+  let btnBoxSelect:     HTMLButtonElement | null = null;
+  let btnFindings:      HTMLButtonElement | null = null;
+  let btnExpand:        HTMLButtonElement | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Set when toolbar is created — used by destroy() regardless of showToolbar.
@@ -487,8 +497,8 @@ export function renderWaferMap(
       toolbar.appendChild(makeSep());
 
       // Zoom level group: zoom in | zoom out | reset
-      const btnZoomIn  = makeBtn('zoomIn',  'Zoom in',                    () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.5));
-      const btnZoomOut = makeBtn('zoomOut', 'Zoom out',                   () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.5));
+      const btnZoomIn  = makeBtn('zoomIn',  'Zoom in',                    () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.25));
+      const btnZoomOut = makeBtn('zoomOut', 'Zoom out',                   () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.25));
       const btnReset   = makeBtn('reset',   'Reset zoom (double-click)',   () => resetZoom());
       toolbar.appendChild(btnZoomIn);
       toolbar.appendChild(btnZoomOut);
@@ -497,9 +507,14 @@ export function renderWaferMap(
       // Set initial active state — pan is default
       setActive(btnPanMode, true);
 
-      // Scene controls — hidden in 'view-only' mode (gallery bar owns them)
+      // Scene controls — hidden in 'view-only' mode (gallery bar owns them).
+      // Wrapped in sceneControlsEl so setSceneControlsVisible() can hide/show the
+      // whole group at once (used when reparenting a card into the expand modal).
       if (toolbarControls !== 'view-only') {
-        toolbar.appendChild(makeSep());
+        sceneControlsEl = document.createElement('div');
+        Object.assign(sceneControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
+        toolbar.appendChild(sceneControlsEl);
+        sceneControlsEl.appendChild(makeSep());
 
         // Mode dropdown: when testDefs are defined, show one entry per named test
         // plus the bin modes. Selecting a named test sets plotMode:'value' + activeTest.
@@ -660,22 +675,22 @@ export function renderWaferMap(
           setActive(btnFlipV, !!sceneOpts.flipY);
         });
 
-        if (showPlotModeSelector) toolbar.appendChild(btnMode);
-        toolbar.appendChild(btnPalette);
-        toolbar.appendChild(btnLogScale);
-        toolbar.appendChild(btnColorbarRange);
-        toolbar.appendChild(makeSep());
-        toolbar.appendChild(btnRings);
-        toolbar.appendChild(btnQuadrants);
-        toolbar.appendChild(btnLabels);
-        if (currentScene!.hasReticle) toolbar.appendChild(btnReticle);
-        toolbar.appendChild(btnXY);
-        toolbar.appendChild(makeSep());
-        toolbar.appendChild(btnLegendStyle);
-        toolbar.appendChild(makeSep());
-        toolbar.appendChild(btnRotate);
-        toolbar.appendChild(btnFlipH);
-        toolbar.appendChild(btnFlipV);
+        if (showPlotModeSelector) sceneControlsEl!.appendChild(btnMode);
+        sceneControlsEl!.appendChild(btnPalette);
+        sceneControlsEl!.appendChild(btnLogScale);
+        sceneControlsEl!.appendChild(btnColorbarRange);
+        sceneControlsEl!.appendChild(makeSep());
+        sceneControlsEl!.appendChild(btnRings);
+        sceneControlsEl!.appendChild(btnQuadrants);
+        sceneControlsEl!.appendChild(btnLabels);
+        if (currentScene!.hasReticle) sceneControlsEl!.appendChild(btnReticle);
+        sceneControlsEl!.appendChild(btnXY);
+        sceneControlsEl!.appendChild(makeSep());
+        sceneControlsEl!.appendChild(btnLegendStyle);
+        sceneControlsEl!.appendChild(makeSep());
+        sceneControlsEl!.appendChild(btnRotate);
+        sceneControlsEl!.appendChild(btnFlipH);
+        sceneControlsEl!.appendChild(btnFlipV);
 
         setActive(btnRings,     !!sceneOpts.showRingBoundaries);
         setActive(btnQuadrants, !!sceneOpts.showQuadrantBoundaries);
@@ -709,17 +724,17 @@ export function renderWaferMap(
             setActive(btnFindings!, !isOpen);
             refreshFindingsButton();
           });
-          toolbar.appendChild(makeSep());
-          toolbar.appendChild(btnFindings);
+          sceneControlsEl!.appendChild(makeSep());
+          sceneControlsEl!.appendChild(btnFindings);
           // Set button active state to match initial panel visibility
           if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnFindings, true);
           refreshFindingsButton();
         }
 
         // Expand button — reparents canvas into a modal for a larger view.
-        toolbar.appendChild(makeSep());
-        const btnExpand = makeBtn('expand', 'Expand (E)', openExpandModal);
-        toolbar.appendChild(btnExpand);
+        sceneControlsEl!.appendChild(makeSep());
+        btnExpand = makeBtn('expand', 'Expand (E)', openExpandModal);
+        sceneControlsEl!.appendChild(btnExpand);
       }
 
       canvasWrap.appendChild(toolbar);
@@ -775,6 +790,7 @@ export function renderWaferMap(
     }
     modalBackdrop.remove();
     modalBackdrop = null;
+    if (btnExpand) btnExpand.style.display = 'flex';
     document.body.style.overflow = savedBodyOverflow;
     // Fit will recompute via ResizeObserver firing on reparent.
   }
@@ -875,6 +891,11 @@ export function renderWaferMap(
       fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
       fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
       closeBtn.style.display = isFs ? 'none' : '';
+      // Move tooltip into the fullscreen element so it renders above it.
+      if (tooltip) {
+        if (isFs) box.appendChild(tooltip);
+        else document.body.appendChild(tooltip);
+      }
       if (isFs) {
         box.style.borderRadius = '0';
         box.style.resize = 'none';
@@ -929,6 +950,7 @@ export function renderWaferMap(
     document.addEventListener('fullscreenchange', onFullscreenChange);
 
     modalBackdrop = backdrop;
+    if (btnExpand) btnExpand.style.display = 'none';
     // ResizeObserver fires on reparent → render() recomputes fit automatically.
   }
 
@@ -1551,6 +1573,22 @@ export function renderWaferMap(
         renderAutoSummaryPanel();
       }
       refreshFindingsButton();
+    },
+
+    setFindingsVisible(visible: boolean): void {
+      if (btnFindings) btnFindings.style.display = visible ? 'flex' : 'none';
+    },
+
+    setSceneControlsVisible(visible: boolean): void {
+      if (sceneControlsEl) sceneControlsEl.style.display = visible ? 'flex' : 'none';
+    },
+
+    setExpandVisible(visible: boolean): void {
+      if (btnExpand) btnExpand.style.display = visible ? 'flex' : 'none';
+    },
+
+    setTooltipParent(parent: HTMLElement): void {
+      if (tooltip) parent.appendChild(tooltip);
     },
 
     getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null {

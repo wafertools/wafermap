@@ -681,6 +681,13 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
   setStatsSummary(summary: StatsSummary | undefined): void  // update the summary panel at runtime
   getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null
     // returns bin legend entries in hardBin/softBin modes; null in all other modes
+
+  // Toolbar visibility — for host containers that manage layout context (e.g. gallery cards).
+  // Not needed in typical standalone use.
+  setFindingsVisible(visible: boolean): void        // show/hide the findings toolbar button
+  setSceneControlsVisible(visible: boolean): void   // show/hide mode, orientation, findings, and expand buttons as a group
+  setExpandVisible(visible: boolean): void          // show/hide the expand toolbar button independently
+
   destroy(): void                                    // remove all listeners and DOM elements
 }
 ```
@@ -710,7 +717,7 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
-| Expand (⛶) | Open the map in a full-screen modal; canvas reparented — no scene rebuild. Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Not shown when `toolbarControls: 'view-only'`. |
+| Expand (⛶) | Open the map in a full-screen modal; canvas reparented — no scene rebuild. Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards and modals. |
 
 ### 5.7 Interactions
 

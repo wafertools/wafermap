@@ -655,6 +655,14 @@ function pushDieRectangles(
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
+  // For 90°/270° rotations the axis-aligned bounding box swaps width and height.
+  // rectanglePath handles rotation via transformVector (no swap needed there),
+  // but SceneRect width/height must reflect the post-rotation AABB for correct
+  // canvas drawing and hit-testing.
+  const normRot = ((transform.rotation % 360) + 360) % 360;
+  const swapAxes = normRot === 90 || normRot === 270;
+  const sw = swapAxes ? rh : rw;
+  const sh = swapAxes ? rw : rh;
   const makePath = needsPath
     ? () => rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform)
     : () => '';
@@ -663,7 +671,7 @@ function pushDieRectangles(
 
   if (die.partial) {
     rectangles.push({
-      x: die.physX, y: die.physY, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: sw, height: sh,
       fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata, path: makePath(),
     });
     return;
@@ -671,7 +679,7 @@ function pushDieRectangles(
 
   if (die.edgeExcluded) {
     rectangles.push({
-      x: die.physX, y: die.physY, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: sw, height: sh,
       fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata, path: makePath(),
     });
     return;
@@ -681,7 +689,7 @@ function pushDieRectangles(
       (plotMode === 'hardBin' || plotMode === 'softBin') &&
       getBin(die) !== highlightBin) {
     rectangles.push({
-      x: die.physX, y: die.physY, width: rw, height: rh,
+      x: die.physX, y: die.physY, width: sw, height: sh,
       fill: DIM_FILL, type: 'hardBin', metadata: die.metadata, path: makePath(),
     });
     return;
@@ -699,7 +707,7 @@ function pushDieRectangles(
     } else {
       fill = SPEC_PASS_FILL;
     }
-    rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: 'value', metadata: die.metadata, path: makePath() });
+    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata, path: makePath() });
     return;
   }
 
@@ -715,7 +723,7 @@ function pushDieRectangles(
     } else {
       fill = colorFns.forValue(normalize(value));
     }
-    rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: 'value', metadata: die.metadata, path: makePath() });
+    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata, path: makePath() });
     return;
   }
 
@@ -724,14 +732,14 @@ function pushDieRectangles(
     const fill = bin != null
       ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
       : '#d6d9dd';
-    rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: plotMode, metadata: die.metadata, path: makePath() });
+    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata, path: makePath() });
     return;
   }
 
   // stackedValues / stackedBins: aggregated scalar in testValues[0] (preferred) or values[0].
   const aggValue = getDieTestValue(die, 0, 0);
   const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
-  rectangles.push({ x: die.physX, y: die.physY, width: rw, height: rh, fill, type: 'value', metadata: die.metadata, path: makePath() });
+  rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata, path: makePath() });
 }
 
 function buildXYIndicatorOverlay(

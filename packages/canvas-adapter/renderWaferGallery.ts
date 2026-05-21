@@ -125,8 +125,9 @@ export function renderWaferGallery(
   let cardContainers: HTMLDivElement[] = [];  // canvasWrapper per card — used for modal reparenting
   let currentItems:  GalleryItem[] = [];
   let originalItems: GalleryItem[] = [];  // per-wafer source items; stacked modes aggregate from this
-  let modalReparentedContainer: HTMLDivElement | null = null;  // container reparented into modal
-  let modalReparentedParent: HTMLElement | null = null;       // original parent to restore on close
+  let modalReparentedContainer: HTMLDivElement | null = null;
+  let modalReparentedParent: HTMLElement | null = null;
+  let modalCardIndex = -1;
   let savedBodyOverflow = '';
   let modalFullscreenListener: (() => void) | null = null;
 
@@ -963,6 +964,7 @@ export function renderWaferGallery(
       display:       'flex',
       flexDirection: 'column',
       position:      'relative',
+      aspectRatio:   '1',
     });
 
     const header = document.createElement('div');
@@ -1018,14 +1020,18 @@ export function renderWaferGallery(
 
     const ctrl = renderWaferMap(canvasWrapper, item.wafer, item.dies, {
       sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
-      toolbarControls: 'view-only',
+      toolbarControls: 'full',
       showTooltip:     true,
       padding:         cardPadding,
       legendPosition:  currentLegendStyle,
       fallbackFormat:  currentFallbackFormat,
+      statsSummary:    item.statsSummary,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
     });
+    // In-gallery: hide scene controls (gallery bar owns them) and findings button.
+    ctrl.setSceneControlsVisible(false);
+    ctrl.setFindingsVisible(false);
 
     // Only the expand button opens the modal — canvas clicks are handled
     // internally by renderWaferMap and stop propagation before reaching here.
@@ -1213,6 +1219,7 @@ export function renderWaferGallery(
       fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
       fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
       closeBtn.style.display = isFs ? 'none' : '';
+      cardControllers[modalCardIndex]?.setTooltipParent(isFs ? box : document.body);
       if (isFs) {
         box.style.borderRadius = '0';
         box.style.resize = 'none';
@@ -1233,18 +1240,24 @@ export function renderWaferGallery(
 
     const modalCanvasWrap = document.createElement('div');
     Object.assign(modalCanvasWrap.style, {
-      flex:      '1',
-      minHeight: '0',
-      position:  'relative',
-      overflow:  'hidden',
+      flex:          '1',
+      minHeight:     '0',
+      position:      'relative',
+      overflow:      'hidden',
+      display:       'flex',
+      flexDirection: 'column',
     });
 
     // Reparent the card's live container (canvas + toolbar) into the modal.
     modalReparentedParent = cardContainer.parentElement as HTMLElement;
     modalReparentedContainer = cardContainer;
-    // Switch the card controller to full toolbar now that it's in the modal.
-    cardControllers[cardIndex]?.setOptions({ ...sharedOpts, ...(item.sceneOptions ?? {}) });
+    modalCardIndex = cardIndex;
+    // Show full toolbar in modal; suppress the per-canvas expand button (modal has its own chrome).
+    cardControllers[cardIndex]?.setSceneControlsVisible(true);
+    cardControllers[cardIndex]?.setExpandVisible(false);
     modalCanvasWrap.appendChild(cardContainer);
+    // Re-fit the canvas to the larger modal size.
+    cardControllers[cardIndex]?.resetZoom();
 
     box.appendChild(modalHeader);
     box.appendChild(modalCanvasWrap);
@@ -1281,6 +1294,9 @@ export function renderWaferGallery(
       modalReparentedParent.appendChild(modalReparentedContainer);
       modalReparentedParent = null;
     }
+    cardControllers[modalCardIndex]?.setSceneControlsVisible(false);
+    cardControllers[modalCardIndex]?.resetZoom();
+    modalCardIndex = -1;
     modalReparentedContainer = null;
     document.getElementById('wmap-modal-backdrop')?.remove();
     document.body.style.overflow = savedBodyOverflow;
