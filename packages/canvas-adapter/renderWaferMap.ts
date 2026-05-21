@@ -750,7 +750,10 @@ export function renderWaferMap(
 
   // ── Expand modal ──────────────────────────────────────────────────────────
   let modalBackdrop: HTMLDivElement | null = null;
+  // The element that was reparented into the modal and must be returned on close.
+  let modalReparentedEl: HTMLElement | null = null;
   let modalOriginalParent: HTMLElement | null = null;
+  let modalOriginalNext: ChildNode | null = null;
   let modalFullscreenListener: (() => void) | null = null;
 
   function closeExpandModal(): void {
@@ -763,10 +766,12 @@ export function renderWaferMap(
       modalFullscreenListener = null;
     }
     document.removeEventListener('keydown', onModalKeyDown);
-    // Reparent canvas back to its original container.
-    if (modalOriginalParent) {
-      modalOriginalParent.appendChild(canvasWrap);
+    // Reparent the element back to its original position in the DOM.
+    if (modalReparentedEl && modalOriginalParent) {
+      modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
+      modalReparentedEl = null;
       modalOriginalParent = null;
+      modalOriginalNext = null;
     }
     modalBackdrop.remove();
     modalBackdrop = null;
@@ -887,12 +892,31 @@ export function renderWaferMap(
     modalHeader.appendChild(fullscreenBtn);
     modalHeader.appendChild(closeBtn);
 
-    const modalCanvasWrap = document.createElement('div');
-    Object.assign(modalCanvasWrap.style, { flex: '1', minHeight: '0', position: 'relative', overflow: 'hidden' });
+    // Determine what to reparent. If a summary-panel wrapper exists, reparent the
+    // whole wrapper (canvas + panel side-by-side). Otherwise reparent just canvasWrap.
+    // The auto-mounted panel wrapper lives outside canvasWrap so its panel stays
+    // accessible (the findings button in the toolbar toggles it inside the modal).
+    const reparentRoot: HTMLElement =
+      summaryPanelWrapper ?? autoSummaryPanelWrapper ?? canvasWrap;
 
-    // Reparent — move the live canvasWrap (canvas + toolbar) into the modal.
-    modalOriginalParent = canvasWrap.parentElement as HTMLElement;
-    modalCanvasWrap.appendChild(canvasWrap);
+    modalReparentedEl    = reparentRoot;
+    modalOriginalParent  = reparentRoot.parentElement as HTMLElement;
+    modalOriginalNext    = reparentRoot.nextSibling;
+
+    const modalCanvasWrap = document.createElement('div');
+    Object.assign(modalCanvasWrap.style, {
+      flex:      '1',
+      minHeight: '0',
+      minWidth:  '0',
+      display:   'flex',
+      overflow:  'hidden',
+    });
+
+    // Give the reparented root the same flex fill it had in the original layout.
+    reparentRoot.style.flex      = '1';
+    reparentRoot.style.minWidth  = '0';
+    reparentRoot.style.minHeight = '0';
+    modalCanvasWrap.appendChild(reparentRoot);
 
     box.appendChild(modalHeader);
     box.appendChild(modalCanvasWrap);

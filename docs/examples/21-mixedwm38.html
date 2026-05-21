@@ -48,7 +48,7 @@
 
   <script type="module">
     import { buildWaferMap }      from 'wafermap';
-    import { renderWaferGallery } from 'wafermap/canvas-adapter';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
     import { analyzeWaferMap }    from 'wafermap/stats';
 
     // Fixture produced by scripts/convert-mixedwm38.py from the public MixedWM38 dataset.
@@ -78,7 +78,7 @@
       };
     });
 
-    renderWaferGallery(document.getElementById('gallery-container'), items);
+    renderWaferMap(document.getElementById('gallery-container'), items);
   </script>
 
 </body>

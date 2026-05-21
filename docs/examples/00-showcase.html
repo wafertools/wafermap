@@ -167,7 +167,7 @@
   </div><!-- /.phase-host -->
 
   <script type="module">
-    import { renderWaferGallery }   from 'wafermap/canvas-adapter';
+    import { renderWaferMap }       from 'wafermap/canvas-adapter';
     import { createWafermapWorker } from 'wafermap/worker';
     import {
       MAX_ROWS, parsedRows, fileTruncated,
@@ -358,7 +358,7 @@
       setLoading(null);
       container.innerHTML = '';
 
-      const ctrl = renderWaferGallery(container, items, {
+      const ctrl = renderWaferMap(container, items, {
         sceneOptions: {
           plotMode,
           ...(testDefs ? { testDefs } : {}),

@@ -39,7 +39,7 @@
 
   <script type="module">
     import { buildWaferMap }                    from 'wafermap';
-    import { renderWaferGallery }               from 'wafermap/canvas-adapter';
+    import { renderWaferMap }                   from 'wafermap/canvas-adapter';
     import { analyzeWaferMap, analyzeWaferLot } from 'wafermap/stats';
     import {
       makeResults, makeWaferConfig, DIE_CONFIG,
@@ -98,7 +98,7 @@
     //
     // Stacked modes work automatically — no onSceneOptionsChange wiring needed.
 
-    renderWaferGallery(
+    renderWaferMap(
       document.getElementById('gallery-container'),
       items,
       {

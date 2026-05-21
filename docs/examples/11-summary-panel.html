@@ -87,7 +87,7 @@
 
   <script type="module">
     import { buildWaferMap }       from 'wafermap';
-    import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
+    import { renderWaferMap } from 'wafermap/canvas-adapter';
     import { analyzeWaferMap, analyzeWaferLot }   from 'wafermap/stats';
     import {
       makeResults, makeWaferConfig, DIE_CONFIG,
@@ -147,7 +147,7 @@
       sceneOptions: { hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS },
     }));
 
-    renderWaferGallery(
+    renderWaferMap(
       document.getElementById('gallery-container'),
       galleryItems,
       {
@@ -158,7 +158,6 @@
           testDefs:  TEST_DEFS,
         },
         lotStatsSummary: lotSummary,
-        summaryPanel:    { placement: 'right' },
       },
     );
   </script>
