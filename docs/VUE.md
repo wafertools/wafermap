@@ -25,11 +25,13 @@ Your Vue app owns: fetching data, reactive state, component lifecycle, mount and
 
 ## Key rules
 
-- `renderWaferMap` and `renderWaferGallery` are **DOM-only** — call them inside `onMounted`, never in the `<script setup>` top level, which runs during SSR in Nuxt
-- Both renderers return a controller; always call `.destroy()` in `onUnmounted` to prevent resource leaks
+- `renderWaferMap` is **DOM-only** — call it inside `onMounted`, never in the `<script setup>` top level, which runs during SSR in Nuxt
+- It returns a controller; always call `.destroy()` in `onUnmounted` to prevent resource leaks
 - `buildWaferMap` is pure and safe to call anywhere — a Pinia store action, a composable, or a route loader
 
 ## Minimal single-map component
+
+`renderWaferMap` creates and manages its own `<canvas>` — pass a plain `<div>` sized to the desired display area:
 
 ```vue
 <script setup lang="ts">
@@ -39,14 +41,14 @@ import { renderWaferMap, type WaferCanvasController } from '@paulrobins/wafermap
 
 const props = defineProps<{ rows: DieResult[] }>();
 
-const canvasEl = ref<HTMLCanvasElement | null>(null);
+const containerEl = ref<HTMLDivElement | null>(null);
 let ctrl: WaferCanvasController | null = null;
 
 function mount() {
-  if (!canvasEl.value) return;
+  if (!containerEl.value) return;
   ctrl?.destroy();
-  const { wafer, dies } = buildWaferMap({ results: props.rows });
-  ctrl = renderWaferMap(canvasEl.value, wafer, dies, {
+  const result = buildWaferMap({ results: props.rows });
+  ctrl = renderWaferMap(containerEl.value, result, {
     sceneOptions: { plotMode: 'hardBin' },
   });
 }
@@ -59,7 +61,7 @@ watch(() => props.rows, mount);
 </script>
 
 <template>
-  <canvas ref="canvasEl" style="width: 100%; aspect-ratio: 1" />
+  <div ref="containerEl" style="width: 100%; aspect-ratio: 1" />
 </template>
 ```
 
@@ -78,13 +80,13 @@ const props = defineProps<{
   plotMode?: WaferSceneOptions['plotMode'];
 }>();
 
-const canvasEl = ref<HTMLCanvasElement | null>(null);
+const containerEl = ref<HTMLDivElement | null>(null);
 let ctrl: WaferCanvasController | null = null;
 
 onMounted(() => {
-  if (!canvasEl.value) return;
-  const { wafer, dies } = buildWaferMap({ results: props.rows });
-  ctrl = renderWaferMap(canvasEl.value, wafer, dies, {
+  if (!containerEl.value) return;
+  const result = buildWaferMap({ results: props.rows });
+  ctrl = renderWaferMap(containerEl.value, result, {
     sceneOptions: { plotMode: props.plotMode ?? 'hardBin' },
   });
 });
@@ -93,10 +95,10 @@ onUnmounted(() => ctrl?.destroy());
 
 // Data changed — full remount.
 watch(() => props.rows, () => {
-  if (!canvasEl.value) return;
+  if (!containerEl.value) return;
   ctrl?.destroy();
-  const { wafer, dies } = buildWaferMap({ results: props.rows });
-  ctrl = renderWaferMap(canvasEl.value, wafer, dies, {
+  const result = buildWaferMap({ results: props.rows });
+  ctrl = renderWaferMap(containerEl.value, result, {
     sceneOptions: { plotMode: props.plotMode ?? 'hardBin' },
   });
 });
@@ -108,17 +110,19 @@ watch(() => props.plotMode, (mode) => {
 </script>
 
 <template>
-  <canvas ref="canvasEl" style="width: 100%; aspect-ratio: 1" />
+  <div ref="containerEl" style="width: 100%; aspect-ratio: 1" />
 </template>
 ```
 
 ## Gallery component
 
+Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` with an optional `label` and per-card callbacks spread in. Factory functions keep the page responsive by building each card in a deferred task:
+
 ```vue
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferGallery, type GalleryController, type GalleryItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
 
 const props = defineProps<{
   wafers: Array<{ label: string; rows: DieResult[] }>;
@@ -132,12 +136,12 @@ onMounted(() => {
 
   // Factory functions keep the page responsive — each card is built in a
   // deferred task so the gallery shell appears immediately.
-  const factories: GalleryItemFactory[] = props.wafers.map((w) => () => {
-    const { wafer, dies } = buildWaferMap({ results: w.rows });
-    return { wafer, dies, label: w.label };
-  });
+  const factories: WaferMapDisplayItemFactory[] = props.wafers.map((w) => () => ({
+    ...buildWaferMap({ results: w.rows }),
+    label: w.label,
+  }));
 
-  ctrl = renderWaferGallery(containerEl.value, factories);
+  ctrl = renderWaferMap(containerEl.value, factories);
 });
 
 onUnmounted(() => ctrl?.destroy());
@@ -152,20 +156,18 @@ Call `ctrl.setItems(newFactories)` to replace the lot after mount, or `ctrl.setO
 
 ## Running buildWaferMap outside the component
 
-`buildWaferMap` has no DOM dependency — extract it to a Pinia store action, a composable, or a route loader and pass `wafer` and `dies` in as props:
+`buildWaferMap` has no DOM dependency — extract it to a Pinia store action, a composable, or a route loader and pass the result in as a prop:
 
 ```ts
 // stores/wafer.ts
 import { defineStore } from 'pinia';
-import { buildWaferMap } from '@paulrobins/wafermap';
+import { buildWaferMap, type WaferMapResult } from '@paulrobins/wafermap';
 
 export const useWaferStore = defineStore('wafer', {
-  state: () => ({ wafer: null, dies: [] }),
+  state: () => ({ result: null as WaferMapResult | null }),
   actions: {
     async load(rows) {
-      const result = buildWaferMap({ results: rows });
-      this.wafer = result.wafer;
-      this.dies  = result.dies;
+      this.result = buildWaferMap({ results: rows });
     },
   },
 });

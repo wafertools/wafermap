@@ -25,12 +25,14 @@ Your React app owns: fetching data, UI state, component lifecycle, mount and cle
 
 ## Key rules
 
-- `renderWaferMap` and `renderWaferGallery` are **DOM-only** — call them inside `useEffect`, never in the render body or on the server
-- Both renderers return a controller; always call `.destroy()` in the cleanup to prevent resource leaks
+- `renderWaferMap` is **DOM-only** — call it inside `useEffect`, never in the render body or on the server
+- It returns a controller; always call `.destroy()` in the cleanup to prevent resource leaks
 - Stabilise options objects with `useMemo` (or define them outside the component) so reference changes do not cause spurious re-mounts
 - Run `buildWaferMap` outside the component where possible — it is pure and can run in a loader, `queryFn`, or top-level `useMemo`
 
 ## Minimal single-map component
+
+`renderWaferMap` creates and manages its own `<canvas>` — pass a plain `<div>` sized to the desired display area:
 
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
@@ -43,10 +45,10 @@ interface WaferMapProps {
 }
 
 export function WaferMap({ rows, plotMode = 'hardBin' }: WaferMapProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Pure — run outside the effect so the result is stable when data doesn't change.
-  const { wafer, dies } = useMemo(
+  const result = useMemo(
     () => buildWaferMap({ results: rows }),
     [rows],
   );
@@ -58,52 +60,54 @@ export function WaferMap({ rows, plotMode = 'hardBin' }: WaferMapProps) {
   );
 
   useEffect(() => {
-    if (!canvasRef.current) return;
-    const ctrl = renderWaferMap(canvasRef.current, wafer, dies, { sceneOptions });
+    if (!containerRef.current) return;
+    const ctrl = renderWaferMap(containerRef.current, result, { sceneOptions });
     return () => ctrl.destroy();
-  }, [wafer, dies, sceneOptions]);
+  }, [result, sceneOptions]);
 
-  return <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1' }} />;
+  return <div ref={containerRef} style={{ width: '100%', aspectRatio: '1' }} />;
 }
 ```
 
 ## Updating options without remounting
 
-Hold the controller in a ref and call `ctrl.render(newOptions)` to update cheaply without tearing down the canvas:
+Hold the controller in a ref and call `ctrl.setOptions()` to update display options cheaply without tearing down the canvas:
 
 ```tsx
 export function WaferMap({ rows, plotMode = 'hardBin' }: WaferMapProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ctrlRef  = useRef<ReturnType<typeof renderWaferMap> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const ctrlRef = useRef<ReturnType<typeof renderWaferMap> | null>(null);
 
-  const { wafer, dies } = useMemo(
+  const result = useMemo(
     () => buildWaferMap({ results: rows }),
     [rows],
   );
 
   // Mount once when the underlying data changes.
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!containerRef.current) return;
     ctrlRef.current?.destroy();
-    ctrlRef.current = renderWaferMap(canvasRef.current, wafer, dies);
+    ctrlRef.current = renderWaferMap(containerRef.current, result);
     return () => { ctrlRef.current?.destroy(); ctrlRef.current = null; };
-  }, [wafer, dies]);
+  }, [result]);
 
   // Re-render cheaply when only display options change.
   useEffect(() => {
-    ctrlRef.current?.render({ plotMode });
+    ctrlRef.current?.setOptions({ plotMode });
   }, [plotMode]);
 
-  return <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1' }} />;
+  return <div ref={containerRef} style={{ width: '100%', aspectRatio: '1' }} />;
 }
 ```
 
 ## Gallery component
 
+Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` with an optional `label` and per-card callbacks spread in:
+
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferGallery, type GalleryItem } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferMapDisplayItem } from '@paulrobins/wafermap/canvas-adapter';
 
 interface WaferGalleryProps {
   datasets: { label: string; rows: DieResult[] }[];
@@ -112,17 +116,17 @@ interface WaferGalleryProps {
 export function WaferGallery({ datasets }: WaferGalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const items = useMemo<GalleryItem[]>(
-    () => datasets.map(({ label, rows }) => {
-      const { wafer, dies } = buildWaferMap({ results: rows });
-      return { wafer, dies, label };
-    }),
+  const items = useMemo<WaferMapDisplayItem[]>(
+    () => datasets.map(({ label, rows }) => ({
+      ...buildWaferMap({ results: rows }),
+      label,
+    })),
     [datasets],
   );
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const ctrl = renderWaferGallery(containerRef.current, items);
+    const ctrl = renderWaferMap(containerRef.current, items);
     return () => ctrl.destroy();
   }, [items]);
 
@@ -130,20 +134,20 @@ export function WaferGallery({ datasets }: WaferGalleryProps) {
 }
 ```
 
-## Large galleries — GalleryItemFactory
+## Large galleries — factory functions
 
 For large lots, pass factory functions instead of pre-built items. The gallery inserts placeholder cards immediately and calls each factory in a deferred browser task, keeping the page responsive:
 
 ```tsx
-import { renderWaferGallery, type GalleryItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
 
-const items = datasets.map(({ label, rows }): GalleryItemFactory => () => {
-  const { wafer, dies } = buildWaferMap({ results: rows });
-  return { wafer, dies, label };
-});
+const items = datasets.map(({ label, rows }): WaferMapDisplayItemFactory => () => ({
+  ...buildWaferMap({ results: rows }),
+  label,
+}));
 
 // In useEffect:
-const ctrl = renderWaferGallery(containerRef.current, items);
+const ctrl = renderWaferMap(containerRef.current, items);
 ```
 
 ## Running buildWaferMap in a loader
@@ -160,11 +164,11 @@ export async function loader() {
 }
 ```
 
-The component receives `wafer` and `dies` as loader data and passes them straight to `renderWaferMap` inside `useEffect`.
+The component receives the full `WaferMapResult` as loader data and passes it straight to `renderWaferMap` inside `useEffect`.
 
 ## Notes
 
-- **SSR / Next.js / Remix**: `renderWaferMap` and `renderWaferGallery` require the DOM. Gate them with `useEffect` or a dynamic import with `{ ssr: false }`. `buildWaferMap` is pure and safe to call on the server.
+- **SSR / Next.js / Remix**: `renderWaferMap` requires the DOM. Gate it with `useEffect` or a dynamic import with `{ ssr: false }`. `buildWaferMap` is pure and safe to call on the server.
 - **Never** reconstruct options objects inline in JSX (`sceneOptions={{ plotMode }}`); use `useMemo` so the reference is stable and effects don't re-run every render.
 - `buildWaferMap` has no DOM dependency — it is safe to call in a Web Worker, server loader, or React Query `queryFn`.
 
