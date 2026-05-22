@@ -167,7 +167,7 @@
           `<div style="font-size:11px; color:var(--muted); padding-top:2px">… and ${retested.length - 30} more</div>`);
       }
 
-      ctrl = renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
+      ctrl = renderWaferMap(document.getElementById('map'), result, {
         sceneOptions: { plotMode: 'hardBin', hbinDefs: HBIN_DEFS },
         onClick(die) {
           const bin  = HBIN_DEFS.find(b => b.bin === die.hbin);

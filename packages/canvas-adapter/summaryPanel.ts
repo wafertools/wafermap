@@ -743,8 +743,8 @@ export function renderWaferSummaryContent(
   params: {
     wafer:        Wafer;
     dies:         Die[];
-    yieldSummary: YieldSummary;
-    dataCoverage: { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number };
+    yieldSummary?: YieldSummary;
+    dataCoverage?: { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number };
     hbinDefs?:    BinDef[];
     sbinDefs?:    BinDef[];
     testDefs?:    TestDef[];
@@ -783,7 +783,7 @@ export function renderWaferSummaryContent(
     : meta;
   if (metaWithStack) sections.push(buildMetadataSection(metaWithStack));
 
-  sections.push(buildYieldSection(yieldSummary, dataCoverage, passBins));
+  if (yieldSummary && dataCoverage) sections.push(buildYieldSection(yieldSummary, dataCoverage, passBins));
 
   // Use hard bin mode as the primary bin display; fall back to soft if only soft present
   const hasHbin = dies.some(d => d.hbin != null);
@@ -818,16 +818,18 @@ export function renderWaferSummaryContent(
     display:       'block',
   }, 'Summary report');
   summaryReportBtn.type = 'button';
-  summaryReportBtn.addEventListener('click', () => {
-    openHtmlReport(renderSummaryReportHtml({
-      wafer, dies, yieldSummary, dataCoverage,
-      hbinDefs, sbinDefs, testDefs,
-      statsSummary,
-      passBins,
-      ringCount,
-    }));
-  });
-  panel.appendChild(summaryReportBtn);
+  if (yieldSummary && dataCoverage) {
+    summaryReportBtn.addEventListener('click', () => {
+      openHtmlReport(renderSummaryReportHtml({
+        wafer, dies, yieldSummary: yieldSummary!, dataCoverage: dataCoverage!,
+        hbinDefs, sbinDefs, testDefs,
+        statsSummary,
+        passBins,
+        ringCount,
+      }));
+    });
+    panel.appendChild(summaryReportBtn);
+  }
 
   let first = true;
   for (const s of sections) {

@@ -215,7 +215,7 @@
       { bin: 21, name: 'Leakage Fail' },
     ];
 
-    const { wafer, dies, scene } = buildWaferMap({
+    const result = buildWaferMap({
       results: makeResults({ seed: 9 }),
       waferConfig: WAFER_CONFIG,
       dieConfig: DIE_CONFIG,
@@ -224,10 +224,11 @@
       testDefs: TEST_DEFS,
       passBins: [1],
     });
+    const { scene } = result;
 
     // onSceneOptionsChange fires when the TOOLBAR changes options.
     // Calling ctrl.setOptions() does NOT re-fire it, preventing feedback loops.
-    const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
+    const ctrl = renderWaferMap(document.getElementById('map'), result, {
       sceneOptions: {
         plotMode: 'hardBin',
         hbinDefs: HBIN_DEFS,

@@ -1,0 +1,143 @@
+{
+  "batch_id": "BATCH-2024-001",
+  "test_timestamp": "2024-01-15T14:32:00Z",
+  "wafers": [
+    {
+      "wafer_id": "W01",
+      "lot_code": "LOT2024-01",
+      "wafer_diameter_mm": 300,
+      "process_node": "5nm",
+      "die_results": [
+        {
+          "die_id": "W01_0_0",
+          "location": {"x": 0, "y": 0},
+          "hard_bin": 1,
+          "soft_bin": 0,
+          "status": "PASS",
+          "parametric": {
+            "leakage_idd_ua": 2.1,
+            "vdd_drop_mv": 45,
+            "fmax_mhz": 2100
+          },
+          "test_time_sec": 12.3
+        },
+        {
+          "die_id": "W01_1_0",
+          "location": {"x": 1, "y": 0},
+          "hard_bin": 1,
+          "soft_bin": 0,
+          "status": "PASS",
+          "parametric": {
+            "leakage_idd_ua": 2.3,
+            "vdd_drop_mv": 48,
+            "fmax_mhz": 2098
+          },
+          "test_time_sec": 12.2
+        },
+        {
+          "die_id": "W01_2_2",
+          "location": {"x": 2, "y": 2},
+          "hard_bin": 2,
+          "soft_bin": 8,
+          "status": "FAIL",
+          "parametric": {
+            "leakage_idd_ua": 15.8,
+            "vdd_drop_mv": 92,
+            "fmax_mhz": 1850
+          },
+          "test_time_sec": 8.1,
+          "failure_code": "IDD_EXCESS"
+        },
+        {
+          "die_id": "W01_0_3",
+          "location": {"x": 0, "y": 3},
+          "hard_bin": 2,
+          "soft_bin": 8,
+          "status": "FAIL",
+          "parametric": {
+            "leakage_idd_ua": 14.2,
+            "vdd_drop_mv": 88,
+            "fmax_mhz": 1890
+          },
+          "test_time_sec": 7.9,
+          "failure_code": "IDD_EXCESS"
+        },
+        {
+          "die_id": "W01_m4_0",
+          "location": {"x": -4, "y": 0},
+          "hard_bin": 3,
+          "soft_bin": 0,
+          "status": "PASS",
+          "parametric": {
+            "leakage_idd_ua": 1.9,
+            "vdd_drop_mv": 12,
+            "fmax_mhz": 2110
+          },
+          "test_time_sec": 12.4
+        }
+      ]
+    },
+    {
+      "wafer_id": "W02",
+      "lot_code": "LOT2024-01",
+      "wafer_diameter_mm": 300,
+      "process_node": "5nm",
+      "die_results": [
+        {
+          "die_id": "W02_0_0",
+          "location": {"x": 0, "y": 0},
+          "hard_bin": 1,
+          "soft_bin": 0,
+          "status": "PASS",
+          "parametric": {
+            "leakage_idd_ua": 2.2,
+            "vdd_drop_mv": 46,
+            "fmax_mhz": 2100
+          },
+          "test_time_sec": 12.3
+        },
+        {
+          "die_id": "W02_1_0",
+          "location": {"x": 1, "y": 0},
+          "hard_bin": 1,
+          "soft_bin": 0,
+          "status": "PASS",
+          "parametric": {
+            "leakage_idd_ua": 2.4,
+            "vdd_drop_mv": 49,
+            "fmax_mhz": 2098
+          },
+          "test_time_sec": 12.2
+        },
+        {
+          "die_id": "W02_2_1",
+          "location": {"x": 2, "y": 1},
+          "hard_bin": 2,
+          "soft_bin": 8,
+          "status": "FAIL",
+          "parametric": {
+            "leakage_idd_ua": 15.3,
+            "vdd_drop_mv": 89,
+            "fmax_mhz": 1870
+          },
+          "test_time_sec": 8.0,
+          "failure_code": "IDD_EXCESS"
+        },
+        {
+          "die_id": "W02_m1_1",
+          "location": {"x": -1, "y": 1},
+          "hard_bin": 2,
+          "soft_bin": 8,
+          "status": "FAIL",
+          "parametric": {
+            "leakage_idd_ua": 14.5,
+            "vdd_drop_mv": 87,
+            "fmax_mhz": 1900
+          },
+          "test_time_sec": 7.8,
+          "failure_code": "IDD_EXCESS"
+        }
+      ]
+    }
+  ]
+}

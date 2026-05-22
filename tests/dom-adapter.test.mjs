@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import { buildWaferMap } from '../dist/index.js';
-import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
+import { renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
 
 function makeDies() {
   return [
@@ -186,15 +186,9 @@ function click(window, target) {
 test('renderWaferMap mounts toolbar controls and supports option/controller updates', () => {
   const { window, root, cleanup } = setupDom();
   try {
-    const wrapper = window.document.createElement('div');
-    wrapper.style.position = 'relative';
-    const canvas = window.document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    canvas.__clientWidth = 400;
-    canvas.__clientHeight = 400;
-    wrapper.appendChild(canvas);
-    root.appendChild(wrapper);
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
 
     const wafer = buildWaferMap({
       results: [
@@ -210,7 +204,7 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     const clickCalls = [];
     const selectCalls = [];
     const sceneCalls = [];
-    const ctrl = renderWaferMap(canvas, wafer.wafer, wafer.dies, {
+    const ctrl = renderWaferMap(container, wafer, {
       showTooltip: true,
       onHover: (die) => hoverCalls.push(die?.id ?? null),
       onClick: (die) => clickCalls.push(die.id),
@@ -218,13 +212,22 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
       onSceneOptionsChange: (opts) => sceneCalls.push(opts),
     });
 
-    assert.equal(wrapper.querySelector('[data-wmap-toolbar="1"]') !== null, true);
+    const canvas = container.querySelector('canvas');
+    assert.ok(canvas, 'canvas should be mounted inside container');
+    assert.equal(container.querySelector('[data-wmap-toolbar="1"]') !== null, true);
     assert.equal(ctrl.getOptions().plotMode, 'hardBin');
 
-    const buttons = [...wrapper.parentElement.querySelectorAll('button')];
-    const labelsBtn = buttons.find((btn) => btn.ariaLabel === 'Toggle die labels');
-    assert.ok(labelsBtn);
-    click(window, labelsBtn);
+    const buttons = [...root.querySelectorAll('button')];
+    const overlaysBtn = buttons.find((btn) => btn.ariaLabel === 'Overlays');
+    assert.ok(overlaysBtn, 'Overlays dropdown button should exist');
+    // Open the overlays menu and verify labels toggle is inside it.
+    click(window, overlaysBtn);
+    // The overlays menu rows are divs whose own text (not descendants) includes the label.
+    const labelsRow = [...window.document.querySelectorAll('div')].find((el) =>
+      el.children.length === 0 && el.textContent?.includes('Die labels'),
+    );
+    assert.ok(labelsRow, 'Die labels row should appear in overlays menu');
+    click(window, labelsRow);
     assert.equal(ctrl.getOptions().showText, true);
     assert.equal(sceneCalls.at(-1).showText, true);
 
@@ -239,16 +242,14 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     assert.equal(canvas.style.cursor, 'crosshair');
 
     ctrl.setSelection(wafer.dies.filter((die) => die.x === 0 && die.y === 0));
-    assert.equal(canvas.parentElement.querySelector('canvas') === canvas, true);
     ctrl.clearSelection();
 
     canvas.dispatchEvent(pointerEvent(window, 'pointermove', { clientX: 200, clientY: 200 }));
     assert.equal(hoverCalls.length > 0, true);
 
     ctrl.destroy();
-    assert.equal(wrapper.querySelector('[data-wmap-toolbar="1"]'), null);
+    assert.equal(container.querySelector('[data-wmap-toolbar="1"]'), null);
     assert.equal(window.document.body.querySelector('[data-wmap-toolbar="1"]'), null);
-    assert.equal(canvas.style.cursor, '');
     assert.equal(clickCalls.length >= 0, true);
     assert.equal(selectCalls.length >= 0, true);
   } finally {
@@ -273,11 +274,11 @@ test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () 
     });
 
     const items = [
-      { wafer: base.wafer, dies: base.dies, label: 'A' },
-      { wafer: base.wafer, dies: base.dies, label: 'B' },
+      { ...base, label: 'A' },
+      { ...base, label: 'B' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+    const ctrl = renderWaferMap(container, items, { cardPadding: 4 });
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 2);
     assert.equal(container.querySelectorAll('canvas').length >= 2, true);
     assert.equal(container.querySelectorAll('button').length > 0, true);
@@ -285,7 +286,7 @@ test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () 
     click(window, container.querySelector('[data-wmap-expand-btn]'));
     assert.ok(window.document.getElementById('wmap-modal-backdrop'));
 
-    ctrl.setItems([{ wafer: base.wafer, dies: base.dies, label: 'C' }]);
+    ctrl.setItems([{ ...base, label: 'C' }]);
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 1);
 
     ctrl.destroy();
@@ -316,12 +317,12 @@ test('renderWaferGallery restores original cards when leaving stacked mode', () 
     });
 
     const items = [
-      { wafer: base.wafer, dies: base.dies, label: 'A' },
-      { wafer: base.wafer, dies: base.dies, label: 'B' },
-      { wafer: base.wafer, dies: base.dies, label: 'C' },
+      { ...base, label: 'A' },
+      { ...base, label: 'B' },
+      { ...base, label: 'C' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, {
+    const ctrl = renderWaferMap(container, items, {
       sceneOptions: { plotMode: 'stackedBins', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
     });
 
@@ -357,12 +358,12 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
     });
 
     const items = [
-      { wafer: base.wafer, dies: base.dies, label: 'A' },
-      { wafer: base.wafer, dies: base.dies, label: 'B' },
-      { wafer: base.wafer, dies: base.dies, label: 'C' },
+      { ...base, label: 'A' },
+      { ...base, label: 'B' },
+      { ...base, label: 'C' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, {
+    const ctrl = renderWaferMap(container, items, {
       sceneOptions: { plotMode: 'stackedValues', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
     });
 
@@ -408,12 +409,12 @@ test('renderWaferGallery computes correct valueRange for stackedValues mode', ()
     });
 
     const items = [
-      { wafer: base.wafer, dies: base.dies, label: 'A' },
-      { wafer: base.wafer, dies: base.dies, label: 'B' },
-      { wafer: base.wafer, dies: base.dies, label: 'C' },
+      { ...base, label: 'A' },
+      { ...base, label: 'B' },
+      { ...base, label: 'C' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, {
+    const ctrl = renderWaferMap(container, items, {
       sceneOptions: { plotMode: 'hardBin', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
     });
 
@@ -433,15 +434,11 @@ test('renderWaferGallery computes correct valueRange for stackedValues mode', ()
 test('renderWaferMap handles empty scenes gracefully', () => {
   const { window, root, cleanup } = setupDom();
   try {
-    const canvas = window.document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    canvas.__clientWidth = 400;
-    canvas.__clientHeight = 400;
-    root.appendChild(canvas);
+    const container = window.document.createElement('div');
+    root.appendChild(container);
 
     const emptyWafer = buildWaferMap([]);
-    const ctrl = renderWaferMap(canvas, emptyWafer.wafer, emptyWafer.dies);
+    const ctrl = renderWaferMap(container, emptyWafer);
 
     assert.ok(ctrl);
     ctrl.destroy();
@@ -456,7 +453,7 @@ test('renderWaferGallery handles empty items array', () => {
     const container = window.document.createElement('div');
     root.appendChild(container);
 
-    const ctrl = renderWaferGallery(container, []);
+    const ctrl = renderWaferMap(container, []);
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 0);
 
     ctrl.destroy();

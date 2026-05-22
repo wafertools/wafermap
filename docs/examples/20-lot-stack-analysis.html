@@ -88,7 +88,7 @@
     console.log('aggregationMethod:', summary.stats.aggregationMethod); // 'mean'
     console.log('findings:', summary.findings.length);
 
-    renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
+    renderWaferMap(document.getElementById('map'), result, {
       sceneOptions: {
         plotMode: 'value',
         testDefs: TEST_DEFS,

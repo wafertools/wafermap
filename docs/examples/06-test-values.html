@@ -112,13 +112,14 @@
 
     // TEST_DEFS includes limitLow/limitHigh for Vth (1060) — the toolbar shows a spec-range
     // toggle button, and out-of-spec dies render in blue (below LSL) or red (above USL).
-    const { wafer, dies, scene } = buildWaferMap({
+    const result = buildWaferMap({
       results:     makeResults({ seed: 5, quadrant: true }),
       waferConfig: WAFER_CONFIG,
       dieConfig:   DIE_CONFIG,
       testDefs:    TEST_DEFS,
       passBins:    [1],
     });
+    const { dies, scene } = result;
 
     const patterns = [
       'Peaks at the wafer centre (~1.5 mA), falls toward the edge. The NE quadrant shows a ~7% suppression from process gradient.',
@@ -189,7 +190,7 @@
     // Mount in value mode — testDefs with limits wires up spec-range toolbar button automatically.
     // In 'value' mode, out-of-spec dies render in blue/red; toolbar bracket button toggles
     // colorbar between spec window [LSL, USL] and the actual data range.
-    const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
+    const ctrl = renderWaferMap(document.getElementById('map'), result, {
       sceneOptions: {
         plotMode:  'value',
         activeTest: TEST_DEFS[0].testNumber,

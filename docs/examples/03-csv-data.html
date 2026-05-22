@@ -161,7 +161,7 @@
         ctrl.setDies(result.dies);
         ctrl.setStatsSummary(summary);
       } else {
-        ctrl = renderWaferMap(canvasEl, result.wafer, result.dies, {
+        ctrl = renderWaferMap(canvasEl, result, {
           sceneOptions: { plotMode: 'hardBin' },
           statsSummary: summary,
         });

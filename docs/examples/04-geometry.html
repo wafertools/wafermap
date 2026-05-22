@@ -98,36 +98,36 @@
 
     // A — nothing supplied: normalized units, no physical scale
     {
-      const { wafer, dies } = buildWaferMap({ ...shared });
-      renderWaferMap(document.getElementById('map-a'), wafer, dies, opts);
+      const result = buildWaferMap({ ...shared });
+      renderWaferMap(document.getElementById('map-a'), result, opts);
     }
 
     // B — die size only: mm coordinates, diameter inferred from grid extent × pitch
     {
-      const { wafer, dies } = buildWaferMap({
+      const result = buildWaferMap({
         ...shared,
         dieConfig: { width: 8, height: 12 },
       });
-      renderWaferMap(document.getElementById('map-b'), wafer, dies, opts);
+      renderWaferMap(document.getElementById('map-b'), result, opts);
     }
 
     // C — diameter only: pitch estimated, notch rendered
     {
-      const { wafer, dies } = buildWaferMap({
+      const result = buildWaferMap({
         ...shared,
         waferConfig: { diameter: 300, notch: { type: 'bottom' } },
       });
-      renderWaferMap(document.getElementById('map-c'), wafer, dies, opts);
+      renderWaferMap(document.getElementById('map-c'), result, opts);
     }
 
     // D — fully specified with a 5 mm edge exclusion band
     {
-      const { wafer, dies } = buildWaferMap({
+      const result = buildWaferMap({
         ...shared,
         waferConfig: { diameter: 300, notch: { type: 'bottom' }, edgeExclusion: 5 },
         dieConfig:   { width: 8, height: 12 },
       });
-      renderWaferMap(document.getElementById('map-d'), wafer, dies, opts);
+      renderWaferMap(document.getElementById('map-d'), result, opts);
     }
   </script>
 

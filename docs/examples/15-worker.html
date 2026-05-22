@@ -137,7 +137,7 @@
     // toPlotly and renderWaferMap always run on the main thread — only
     // buildWaferMap is offloaded.  The returned WaferMapResult is identical
     // to what buildWaferMap would have returned directly.
-    renderWaferMap(document.getElementById('map'), result.wafer, result.dies, {
+    renderWaferMap(document.getElementById('map'), result, {
       sceneOptions: {
         plotMode: 'hardBin',
         hbinDefs: HBIN_DEFS,

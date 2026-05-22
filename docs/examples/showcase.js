@@ -24,18 +24,21 @@ const ROLE_OPTIONS = [
 
 // Auto-detection: column name patterns → role (checked in order; first match wins)
 const DETECTION_RULES = [
-  { role: 'x',         patterns: ['x', 'die_x', 'x_loc', 'xloc', 'col', 'column', 'step_x', 'stepx', 'diex', 'xstep', 'x_step', 'xcoord', 'x_coord', 'xpos', 'x_pos'] },
-  { role: 'y',         patterns: ['y', 'die_y', 'y_loc', 'yloc', 'row', 'step_y', 'stepy', 'diey', 'ystep', 'y_step', 'ycoord', 'y_coord', 'ypos', 'y_pos'] },
-  { role: 'hbin',      patterns: ['hbin', 'hard_bin', 'h_bin', 'hardbin', 'hb', 'bin', 'hard bin', 'hard_bin_num', 'hbin_num'] },
-  { role: 'sbin',      patterns: ['sbin', 'soft_bin', 's_bin', 'softbin', 'sb', 'soft bin', 'soft_bin_num', 'sbin_num'] },
+  { role: 'x',         patterns: ['x', 'die_x', 'x_loc', 'xloc', 'col', 'column', 'step_x', 'stepx', 'diex', 'xstep', 'x_step', 'xcoord', 'x_coord', 'xpos', 'x_pos', 'location.x', 'loc.x', 'coords.x', 'position.x', 'coord.x'] },
+  { role: 'y',         patterns: ['y', 'die_y', 'y_loc', 'yloc', 'row', 'step_y', 'stepy', 'diey', 'ystep', 'y_step', 'ycoord', 'y_coord', 'ypos', 'y_pos', 'location.y', 'loc.y', 'coords.y', 'position.y', 'coord.y'] },
+  { role: 'hbin',      patterns: ['hbin', 'hard_bin', 'h_bin', 'hardbin', 'hb', 'hbn', 'bin', 'hard bin', 'hard_bin_num', 'hbin_num', 'bin_high', 'binhigh'] },
+  { role: 'sbin',      patterns: ['sbin', 'soft_bin', 's_bin', 'softbin', 'sb', 'sbn', 'soft bin', 'soft_bin_num', 'sbin_num', 'bin_soft', 'binsoft'] },
   { role: 'wafer',     patterns: ['wafer', 'wafer_id', 'waferid', 'wafer_num', 'wafernum', 'wid', 'wafer_no', 'waferno', 'wfr', 'wfr_id', 'wfrid', 'wnum'] },
   { role: 'lot',       patterns: ['lot', 'lot_id', 'lotid', 'lot_num', 'lotnum', 'lot_no', 'lotno', 'lid', 'lot_number'] },
   { role: 'testname',  patterns: ['test_name', 'testname', 'test_nam', 'param', 'parameter', 'param_name', 'measurement', 'item', 'test_item', 'test_id', 'test_num', 'testnum', 'tnum', 'test_number'] },
-  { role: 'testvalue', patterns: ['result', 'value', 'val', 'measured', 'meas', 'reading', 'test_value', 'testvalue', 'test_result', 'testresult', 'data'] },
+  { role: 'testvalue', patterns: ['result', 'value', 'val', 'measured', 'meas', 'reading', 'test_value', 'testvalue', 'test_result', 'testresult', 'data', 'meas_value', 'measvalue', 'meas_val', 'measured_value'] },
   // STDF MIR/WIR/SDR fields and common ATE export column names — display as metadata, not test values
   { role: 'metadata', patterns: [
     'testdate', 'test_date', 'date', 'start_t', 'setup_t', 'finish_t', 'tst_date',
     'temp', 'temperature', 'tst_temp', 'chuck_temp', 'env_temp',
+    'lo_limit', 'hi_limit', 'low_limit', 'high_limit', 'lolimit', 'hilimit',
+    'limit_lo', 'limit_hi', 'limit_low', 'limit_high', 'lower_limit', 'upper_limit',
+    'spec_lo', 'spec_hi', 'spec_low', 'spec_high', 'min_val', 'max_val',
     'operator', 'oper', 'oper_nam', 'operator_id', 'operatorid',
     'testprogram', 'test_program', 'job_nam', 'job_rev', 'program', 'prog',
     'node', 'node_nam', 'tester', 'tstr_typ', 'tester_id', 'testerid',
@@ -55,12 +58,116 @@ const DETECTION_RULES = [
   ]},
 ];
 
+// Regex fallback rules — checked in order when exact match fails.
+// Each entry: { role, re } where re is tested against the lowercased, trimmed column name.
+const DETECTION_REGEXES = [
+  { role: 'x',       re: /^(?:die[_\s-]?x|x[_\s-]?(?:pos(?:ition)?|loc(?:ation)?|coord(?:inate)?|idx|index|step)|col(?:umn)?[_\s-]?(?:idx|index|num|pos)|step[_\s-]?x|chip[_\s-]?x|index[_\s-]?x|grid[_\s-]?x)$/ },
+  { role: 'y',       re: /^(?:die[_\s-]?y|y[_\s-]?(?:pos(?:ition)?|loc(?:ation)?|coord(?:inate)?|idx|index|step)|row[_\s-]?(?:idx|index|num|pos)|step[_\s-]?y|chip[_\s-]?y|index[_\s-]?y|grid[_\s-]?y)$/ },
+  { role: 'hbin',    re: /^(?:hard[_\s-]?bin(?:[_\s-]?(?:num|no|number))?|h[_\s-]?bin(?:[_\s-]?(?:num|no))?|bin[_\s-]?(?:num|no|number|code|result)|bin(?:_?num)?)$/ },
+  { role: 'sbin',    re: /^(?:soft[_\s-]?bin(?:[_\s-]?(?:num|no|number))?|s[_\s-]?bin(?:[_\s-]?(?:num|no))?)$/ },
+  { role: 'wafer',   re: /^(?:wafer[_\s-]?(?:id|num|no|number|name|idx|index)?|wfr[_\s-]?(?:id|num|no)?|wid|w[_\s-]?num|wafer)$/ },
+  { role: 'lot',     re: /^(?:lot[_\s-]?(?:id|num|no|number|name)?|lot)$/ },
+];
+
+// Token-based fuzzy matching — splits camelCase and separators into a token set,
+// then applies keyword rules. Catches names like "dieXPos", "WaferNumber", "SoftBinResult".
+function tokenize(colName) {
+  return colName
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[\s_\-.\/]+/)
+    .filter(Boolean);
+}
+
+// Tokens that, when present, suggest the column is structural/metadata rather than
+// a parametric test value (prevents waferIndex, gridRows, test_time_sec → test).
+const NON_TEST_TOKENS = new Set([
+  'index', 'idx', 'num', 'no', 'number', 'id',
+  'count', 'grid', 'rows', 'cols', 'size', 'width', 'height',
+  'bits', 'label', 'class', 'site', 'head', 'seq',
+  'order', 'rank', 'flag', 'code', 'type', 'ver', 'rev',
+  // physical dimensions — a column named wafer_diameter_mm is metadata, not a test value
+  'mm', 'um', 'nm', 'sec', 'ms', 'us', 'ns',
+  // timing / probe metadata
+  'time', 'duration', 'elapsed',
+  // die / wafer geometry
+  'diameter', 'radius', 'pitch',
+]);
+
+// Tokens that disqualify a column from being treated as a coordinate/bin/wafer/lot.
+// Prevents row_id → y, wafer_diameter_mm → wafer, bin_count → hbin, etc.
+const STRUCTURAL_DISQUALIFIERS = new Set([
+  'id', 'idx', 'index', 'count', 'total', 'num', 'number', 'no',
+  'diameter', 'radius', 'pitch', 'size', 'width', 'height', 'mm', 'um', 'nm',
+  'time', 'sec', 'ms', 'us', 'date', 'ts', 'timestamp',
+]);
+
+// Token-level rules — each receives the full token array.
+const TOKEN_RULES = [
+  {
+    role: 'x',
+    test: t => (t.includes('x') || t.includes('col') || t.includes('column')) &&
+               !t.includes('y') &&
+               !t.some(s => s === 'max' || s === 'min') &&
+               !t.some(s => STRUCTURAL_DISQUALIFIERS.has(s)),
+  },
+  {
+    role: 'y',
+    // 'row' alone is too broad (row_id, row_count) — require 'row' only when no disqualifiers present
+    test: t => (t.includes('y') || t.includes('row')) &&
+               !t.includes('x') &&
+               !t.some(s => s === 'max' || s === 'min') &&
+               !t.some(s => STRUCTURAL_DISQUALIFIERS.has(s)),
+  },
+  {
+    role: 'hbin',
+    test: t => (t.includes('hbin') || (t.includes('bin') && !t.includes('soft') && !t.includes('sbin'))) &&
+               !t.includes('sbin') &&
+               !t.some(s => STRUCTURAL_DISQUALIFIERS.has(s)),
+  },
+  {
+    role: 'sbin',
+    test: t => (t.includes('sbin') || (t.includes('bin') && (t.includes('soft') || t.includes('s')))) &&
+               !t.some(s => STRUCTURAL_DISQUALIFIERS.has(s)),
+  },
+  {
+    role: 'wafer',
+    test: t => (t.includes('wafer') || t.includes('wfr')) &&
+               !t.includes('lot') &&
+               !t.some(s => STRUCTURAL_DISQUALIFIERS.has(s)),
+  },
+  {
+    role: 'lot',
+    test: t => t.includes('lot') &&
+               !t.includes('sublot') && !t.includes('sub') &&
+               !t.some(s => STRUCTURAL_DISQUALIFIERS.has(s)),
+  },
+];
+
+// Returns true when a numeric column name looks structural, not parametric.
+// Used to prevent columns like gridRows, waferIndex defaulting to 'test'.
+function looksLikeNonTestNumeric(colName) {
+  const tokens = tokenize(colName);
+  return tokens.some(t => NON_TEST_TOKENS.has(t));
+}
+
 function detectRole(colName) {
   const key = colName.toLowerCase().trim();
+  // 1. Exact match
   for (const { role, patterns } of DETECTION_RULES) {
     if (patterns.includes(key)) return role;
   }
-  return null; // unknown — will be offered as test or ignored based on value type
+  // 2. Regex fallback — catches HARD_BIN, die_xpos, X_POSITION, etc.
+  for (const { role, re } of DETECTION_REGEXES) {
+    if (re.test(key)) return role;
+  }
+  // 3. Token-based fuzzy — handles camelCase variants like dieXPos, WaferNumber, SoftBinResult
+  const tokens = tokenize(colName);
+  for (const { role, test } of TOKEN_RULES) {
+    if (test(tokens)) return role;
+  }
+  return null; // unknown — caller decides test vs metadata based on value type
 }
 
 // ── Long-format detection ──────────────────────────────────────────────────
@@ -160,6 +267,7 @@ export function pivotLongFormat(rows, mapping) {
 // Handles quoted fields, \r\n, blank lines, and # comment lines.
 
 function parseCsv(text) {
+  text = text.replace(/^﻿/, ''); // strip Excel UTF-8 BOM
   const rows = [];
   let i = 0;
   const n = text.length;
@@ -271,16 +379,67 @@ function processText(text, name) {
   showPhase('phase-mapping');
 }
 
+// Flatten one level of nested objects into dot-prefixed keys (e.g. location.x, parametric.vth_mv).
+// Arrays within objects are left as-is (they are not die rows).
+function flattenRow(row) {
+  const out = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [k2, v2] of Object.entries(v)) {
+        out[`${k}.${k2}`] = v2;
+      }
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 function processJson(text) {
+  text = text.replace(/^﻿/, ''); // strip UTF-8 BOM (some tools prepend it even on JSON)
   let data;
   try { data = JSON.parse(text); } catch { showUploadError('Invalid JSON.'); return; }
 
-  const arr = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : null;
-  if (!arr) { showUploadError('JSON must be an array of objects, or { results: [...] }.'); return; }
+  // Accept: plain array, { results: [...] }, or any top-level object whose first array-valued
+  // property looks like a collection of wafer/die objects.
+  let arr;
+  if (Array.isArray(data)) {
+    arr = data;
+  } else if (typeof data === 'object' && data !== null) {
+    // Look for the first property that is a non-empty array of objects
+    for (const v of Object.values(data)) {
+      if (Array.isArray(v) && v.length > 0 && typeof v[0] === 'object') {
+        arr = v;
+        break;
+      }
+    }
+  }
+  if (!arr) { showUploadError('JSON must be an array of objects, or an object containing one.'); return; }
   if (!arr.length) { showUploadError('JSON array is empty.'); return; }
 
+  // Detect wafer-wrapper structure: array of wafer objects each containing a die results array.
+  // Support common key names: results, die_results, dies, data, measurements.
+  const DIE_ARRAY_KEYS = ['results', 'die_results', 'dies', 'data', 'measurements', 'records'];
+  const innerKey = DIE_ARRAY_KEYS.find(k => Array.isArray(arr[0]?.[k]));
+  if (innerKey) {
+    const flat = [];
+    for (const wafer of arr) {
+      const inner = wafer[innerKey];
+      const waferMeta = Object.fromEntries(Object.entries(wafer).filter(([k]) => k !== innerKey));
+      for (const die of inner) {
+        flat.push({ ...waferMeta, ...die });
+      }
+    }
+    arr = flat;
+  }
+
+  if (!arr.length) { showUploadError('JSON array is empty after flattening.'); return; }
+
+  // Flatten any nested objects one level deep (e.g. location: {x, y} → location.x, location.y).
+  arr = arr.map(flattenRow);
+
   parsedRows    = arr.slice(0, MAX_ROWS);
-  fileHeaders   = Object.keys(arr[0]);
+  fileHeaders   = [...new Set(arr.flatMap(r => Object.keys(r)))];
   fileTruncated = arr.length > MAX_ROWS;
   buildMappingUI();
   showPhase('phase-mapping');
@@ -305,7 +464,7 @@ function buildMappingUI() {
     if (a.role === null) {
       const val = sampleRow[a.col];
       const isNumeric = val !== undefined && val !== '' && !isNaN(Number(val));
-      a.role = isNumeric ? 'test' : 'metadata';
+      a.role = (isNumeric && !looksLikeNonTestNumeric(a.col)) ? 'test' : 'metadata';
     }
   }
 

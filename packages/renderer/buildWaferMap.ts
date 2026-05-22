@@ -783,11 +783,20 @@ export function buildWaferMap(
   const norm = normalizeInput(input);
   const { debug: _debug, ...sceneOpts } = options ?? {};
 
-  const results: DieResult[] = applyRetestPolicy(
-    norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts) : norm.results,
-    norm.retestPolicy,
-    norm.passBins,
-  );
+  const rawResults = norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts) : norm.results;
+
+  // Fail fast on string coordinates — common mistake when piping CSV without numeric casting
+  for (let i = 0; i < Math.min(5, rawResults.length); i++) {
+    const r = rawResults[i];
+    if (typeof r.x === 'string' || typeof r.y === 'string') {
+      throw new TypeError(
+        `buildWaferMap: x and y must be numbers, received strings. ` +
+        `Did you forget to cast CSV values? e.g. { x: +row.x, y: +row.y }`
+      );
+    }
+  }
+
+  const results: DieResult[] = applyRetestPolicy(rawResults, norm.retestPolicy, norm.passBins);
 
   const inference = {
     wafer:    { confidence: 1.0, method: 'provided' },

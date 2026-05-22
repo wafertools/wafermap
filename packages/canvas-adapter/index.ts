@@ -3,58 +3,44 @@ export type { ToCanvasOptions, ToCanvasResult, CanvasHitTarget, ViewportTransfor
 
 import { renderWaferMap as _renderWaferMap } from './renderWaferMap.js';
 import { renderWaferGallery as _renderWaferGallery } from './renderWaferGallery.js';
-import type { Wafer } from '../core/wafer.js';
-import type { Die } from '../core/dies.js';
-import type { MountOptions, WaferCanvasController } from './renderWaferMap.js';
-import type { GalleryItem, GalleryItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
+import type { WaferMapResult } from '../renderer/buildWaferMap.js';
+import type { RenderOptions, WaferCanvasController } from './renderWaferMap.js';
+import type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 
-export type { MountOptions, WaferCanvasController, WaferSceneOptions } from './renderWaferMap.js';
-export type { GalleryItem, GalleryItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
+export type { RenderOptions, MountOptions, WaferCanvasController, WaferSceneOptions } from './renderWaferMap.js';
+export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 export type { SummaryPanelOptions } from './summaryPanel.js';
 
 /**
  * Render a single interactive wafer map into `container`.
+ * Pass the `WaferMapResult` returned by `buildWaferMap` directly.
  * The function creates and manages its own `<canvas>` — pass any block element
  * (e.g. a `<div>`) sized to the desired display area.
- *
- * @deprecated Passing an `HTMLCanvasElement` directly still works for one release
- * but will be removed — pass a container `<div>` instead.
  */
 export function renderWaferMap(
   container: HTMLElement,
-  wafer: Wafer,
-  dies: Die[],
-  options?: MountOptions,
+  result: WaferMapResult,
+  options?: RenderOptions,
 ): WaferCanvasController;
 
 /**
  * Render an interactive wafer gallery (multiple cards) into `container`.
- * Equivalent to the deprecated `renderWaferGallery`.
+ * Pass an array of `WaferMapResult` objects, optionally with display overrides
+ * (`label`, `statsSummary`, `sceneOptions`, `onClick`, `onSelect`) spread in.
  */
 export function renderWaferMap(
   container: HTMLElement,
-  items: Array<GalleryItem | GalleryItemFactory>,
+  items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>,
   options?: GalleryOptions,
 ): GalleryController;
 
 export function renderWaferMap(
   container: HTMLElement,
-  waferOrItems: Wafer | Array<GalleryItem | GalleryItemFactory>,
-  dieOrOptions?: Die[] | MountOptions | GalleryOptions,
-  mountOptions?: MountOptions,
+  resultOrItems: WaferMapResult | Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>,
+  options?: RenderOptions | GalleryOptions,
 ): WaferCanvasController | GalleryController {
-  if (Array.isArray(waferOrItems)) {
-    return _renderWaferGallery(container, waferOrItems, dieOrOptions as GalleryOptions);
+  if (Array.isArray(resultOrItems)) {
+    return _renderWaferGallery(container, resultOrItems, options as GalleryOptions);
   }
-  if (Array.isArray(dieOrOptions)) {
-    return _renderWaferMap(container, waferOrItems as Wafer, dieOrOptions as Die[], mountOptions);
-  }
-  // Should not reach here with correct TS usage — satisfy runtime safety.
-  return _renderWaferMap(container, waferOrItems as Wafer, [], dieOrOptions as MountOptions);
+  return _renderWaferMap(container, resultOrItems, options as RenderOptions);
 }
-
-/** @deprecated Use renderWaferMap instead. */
-export const mountWaferCanvas = _renderWaferMap;
-
-/** @deprecated Use renderWaferMap instead. */
-export const renderWaferGallery = _renderWaferGallery;

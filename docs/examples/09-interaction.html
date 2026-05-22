@@ -101,7 +101,7 @@
     import { renderWaferMap } from 'wafermap/canvas-adapter';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, TEST_DEFS } from './data.js';
 
-    const { wafer, dies } = buildWaferMap({
+    const result = buildWaferMap({
       results:     makeResults({ seed: 6 }),
       waferConfig: WAFER_CONFIG,
       dieConfig:   DIE_CONFIG,
@@ -109,6 +109,7 @@
       testDefs:    TEST_DEFS,
       passBins:    [1],
     });
+    const { dies } = result;
 
     function fmtValue(v, unit) {
       if (v == null) return '—';
@@ -183,7 +184,7 @@
       document.getElementById('sel-bins').innerHTML = lines || '<span class="empty">—</span>';
     }
 
-    const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
+    const ctrl = renderWaferMap(document.getElementById('map'), result, {
       sceneOptions: {
         plotMode:  'hardBin',
         hbinDefs:  HBIN_DEFS,

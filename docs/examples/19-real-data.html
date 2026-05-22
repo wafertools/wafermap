@@ -82,9 +82,8 @@
       const nFindings = summary.findings.length;
       const suffix = nFindings ? ` · ${nFindings} finding${nFindings > 1 ? 's' : ''}` : '';
       return {
+        ...result,
         label:        `${typeName}${suffix}`,
-        wafer:        result.wafer,
-        dies:         result.dies,
         statsSummary: summary,
         sceneOptions: { plotMode: 'hardBin' },
       };

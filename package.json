@@ -31,10 +31,6 @@
       "types": "./dist/packages/renderer/index.d.ts",
       "import": "./dist/packages/renderer/index.js"
     },
-    "./plotly-adapter": {
-      "types": "./dist/packages/plotly-adapter/index.d.ts",
-      "import": "./dist/packages/plotly-adapter/index.js"
-    },
     "./stats": {
       "types": "./dist/packages/stats/index.d.ts",
       "import": "./dist/packages/stats/index.js"
@@ -87,8 +83,7 @@
     "lot-analysis",
     "canvas",
     "visualization",
-    "typescript",
-    "plotly"
+    "typescript"
   ],
   "devDependencies": {
     "jsdom": "^29.1.1",

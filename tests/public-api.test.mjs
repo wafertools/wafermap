@@ -26,7 +26,6 @@ import {
   registerColorScheme,
   softBinColor,
   transformDies,
-  toPlotly,
   valueToGreyscale,
   valueToViridis,
 } from '../dist/index.js';
@@ -290,15 +289,6 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
     testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
   });
   assert.equal(textOverlay.length, dies.length);
-
-  const plot = toPlotly(scene, { showAxes: true, diePitchMm: { x: 10, y: 10 } });
-  assert.ok(Array.isArray(plot.data));
-  assert.ok(Array.isArray(plot.layout.shapes));
-  assert.ok(plot.layout.shapes.every((shape) => shape.type === 'path'));
-  assert.equal(plot.data[0].type, 'scatter');
-  assert.ok(plot.data.some((trace) => trace.mode === 'text'));
-  assert.equal(plot.layout.xaxis.title.text, 'Die X');
-  assert.equal(plot.layout.yaxis.title.text, 'Die Y');
 });
 
 test('error conditions are properly validated', () => {

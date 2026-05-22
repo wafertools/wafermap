@@ -109,8 +109,7 @@
 
     renderWaferMap(
       document.getElementById('single-map'),
-      singleResult.wafer,
-      singleResult.dies,
+      singleResult,
       {
         sceneOptions: {
           plotMode: 'hardBin',
@@ -140,8 +139,7 @@
     const lotSummary     = analyzeWaferLot(waferResults);
 
     const galleryItems = waferResults.map((r, i) => ({
-      wafer:        r.wafer,
-      dies:         r.dies,
+      ...r,
       label:        r.wafer.metadata?.wafer ?? `W${i + 1}`,
       statsSummary: waferSummaries[i],
       sceneOptions: { hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS },

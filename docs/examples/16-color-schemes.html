@@ -175,7 +175,7 @@
 
     // ── Build the wafer once, render three times with different schemes ────────
 
-    const { wafer, dies } = buildWaferMap({
+    const result = buildWaferMap({
       results:     makeResults({ seed: 7 }),
       waferConfig: WAFER_CONFIG,
       dieConfig:   DIE_CONFIG,
@@ -186,13 +186,13 @@
     const sharedOpts = { sceneOptions: { plotMode: 'hardBin', hbinDefs: HBIN_DEFS }, showToolbar: false };
 
     renderWaferMap(document.getElementById('map-color'),
-      wafer, dies, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'color'     } });
+      result, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'color'     } });
 
     renderWaferMap(document.getElementById('map-plasma'),
-      wafer, dies, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'plasma'    } });
+      result, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'plasma'    } });
 
     renderWaferMap(document.getElementById('map-custom'),
-      wafer, dies, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'teal-rose' } });
+      result, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'teal-rose' } });
 
     // ── Render swatch rows for each scheme ────────────────────────────────────
 

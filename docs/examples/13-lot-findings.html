@@ -81,8 +81,7 @@
     const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 
     const items = waferResults.map((r, i) => ({
-      wafer:        r.wafer,
-      dies:         r.dies,
+      ...r,
       label:        `W${String(i + 1).padStart(2, '0')} · ${
         r.yield.yieldPercent != null
           ? (r.yield.yieldPercent * 100).toFixed(1) + '%'

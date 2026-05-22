@@ -26,14 +26,14 @@ import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
 // x,y are prober step positions (die grid indices), not mm.
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   results:   rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, testValues: { 1010: +r.testA } })),
   waferConfig: { diameter: 300, notch: { type: 'bottom' } },
   dieConfig:   { width: 10, height: 10 },
   testDefs: [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
 });
 
-renderWaferMap(document.getElementById('map'), wafer, dies);
+renderWaferMap(document.getElementById('map'), result);
 ```
 
 The map renders with a full built-in toolbar — no extra HTML or JavaScript needed.
@@ -47,7 +47,7 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result);
 
-renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary });
+renderWaferMap(container, result, { statsSummary: summary });
 // A "Findings" button now appears in the toolbar automatically.
 
 // Access findings directly — array is pre-sorted: 'unusual' first, then 'notable', then 'info'.
@@ -61,12 +61,11 @@ if (top) console.log(`[${top.severity}] ${top.summary}`);
 ## 3 API overview
 
 ```text
-buildWaferMap()            — data layer: prober results → wafer + dies (server-safe, no DOM)
+buildWaferMap()            — data layer: prober results → WaferMapResult (server-safe, no DOM)
     │
-    ├── renderWaferMap(container, wafer, dies) — single interactive canvas map  ← recommended
-    ├── renderWaferMap(container, items[])     — multi-map gallery (overload)   ← recommended
+    ├── renderWaferMap(container, result)   — single interactive canvas map  ← recommended
+    ├── renderWaferMap(container, items[])  — multi-map gallery (overload)   ← recommended
     │
-    ├── toPlotly()             — optional Plotly SVG compatibility renderer
     └── toCanvas()             — direct canvas render without toolbar
 ```
 
@@ -150,6 +149,7 @@ When a die position appears more than once in the `results` array (a retest), th
                   //   > 150 mm → V-notch ~3.5 mm wide, 1.25 mm deep  (SEMI M1)
   orientation?:   number         // degrees CCW to rotate the die grid on screen; default 0 (see note below)
   edgeExclusion?: number         // exclusion band width in mm measured inward from the wafer edge; dies in this band are dimmed
+                                 // how these dies affect yield is controlled by the top-level edgeDieYieldMode option (§4.1.10)
   metadata?:      WaferMetadata  // arbitrary lot/wafer-level data attached to the scene (lot ID, date, etc.)
 }
 ```
@@ -335,8 +335,8 @@ const { yieldPercent, yieldPercentGross } = result.yield;
 {
   wafer:         Wafer          // resolved wafer model (diameter, radius, center, notch, orientation)
   dies:          Die[]          // all dies inside the wafer boundary, with testValues/hbin/sbin attached
-  scene:         Scene          // renderer-agnostic scene — pass directly to toPlotly() if needed
-  reticles:      Reticle[]      // generated reticle geometry — pass as sceneOptions.reticles to renderWaferMap
+  scene:         Scene          // renderer-agnostic scene — used internally by renderWaferMap and toCanvas
+  reticles:      Reticle[]      // generated reticle geometry — wired automatically when passed as a WaferMapDisplayItem
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
   inference: {
@@ -402,7 +402,7 @@ automatically infers lower-left (`'LL'`) origin and centres the grid for display
 **Minimal — grid positions only (normalized units):**
 
 ```ts
-const { wafer, dies } = buildWaferMap([
+const result = buildWaferMap([
   { x: 0, y:  0, testValues: { 1050: 0.95 } },
   { x: 1, y:  0, testValues: { 1050: 0.87 } },
   { x: 0, y: -1, testValues: { 1050: 0.91 } },
@@ -413,7 +413,7 @@ const { wafer, dies } = buildWaferMap([
 **With die size — physical mm coordinates:**
 
 ```ts
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   results:   data,
   dieConfig: { width: 10, height: 10 },
 });
@@ -423,7 +423,7 @@ const { wafer, dies } = buildWaferMap({
 **Fully specified with notch:**
 
 ```ts
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   results:     data,
   waferConfig: { diameter: 300, notch: { type: 'bottom' }, orientation: 90 },
   dieConfig:   { width: 10, height: 10 },
@@ -433,18 +433,18 @@ const { wafer, dies } = buildWaferMap({
 **With bin data and edge exclusion:**
 
 ```ts
-const { wafer, dies, yield: yld } = buildWaferMap({
+const result = buildWaferMap({
   results:     csvRows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
   waferConfig: { diameter: 200, edgeExclusion: 3 },
   dieConfig:   { width: 8, height: 8 },
 });
-console.log(yld.yieldPercent);
+console.log(result.yield.yieldPercent);
 ```
 
 **Multiple tests and bins in a single pass:**
 
 ```ts
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   results: rows.map(r => ({
     x: +r.x, y: +r.y,
     testValues: { 1010: +r.testA, 1020: +r.testB, 1030: +r.testC },
@@ -463,7 +463,7 @@ const { wafer, dies } = buildWaferMap({
 **Reticle overlay phased to die (2, 1):**
 
 ```ts
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   results:   data,
   dieConfig: { width: 10, height: 10 },
   reticleConfig: { width: 4, height: 2, anchorDie: { x: 2, y: 1 } },
@@ -473,7 +473,7 @@ const { wafer, dies } = buildWaferMap({
 **Multi-wafer lot stack — count bin 2 failures across six wafers:**
 
 ```ts
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   waferConfig: { diameter: 300 },
   dieConfig:   { width: 10, height: 10 },
   lotStack: {
@@ -487,7 +487,7 @@ const { wafer, dies } = buildWaferMap({
 **Row-based prober (y increases downward, origin at upper-left):**
 
 ```ts
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   results:   data,
   dieConfig: { width: 10, height: 10, coordinateOrigin: { type: 'UL' } },
 });
@@ -498,7 +498,7 @@ const { wafer, dies } = buildWaferMap({
 ```ts
 // Raw results may include the same (x, y) more than once.
 // 'first' keeps the initial test; 'last' (default) keeps the most recent.
-const { wafer, dies } = buildWaferMap({
+const result = buildWaferMap({
   results:      rawResults,
   retestPolicy: 'first',
   waferConfig:  { diameter: 300, notch: { type: 'bottom' } },
@@ -506,7 +506,7 @@ const { wafer, dies } = buildWaferMap({
 });
 
 // die.retestCount is set (to the total count) whenever a position was retested.
-const retested = dies.filter(d => d.retestCount !== undefined);
+const retested = result.dies.filter(d => d.retestCount !== undefined);
 console.log(`${retested.length} die positions were retested`);
 // e.g. → "47 die positions were retested"
 // The built-in tooltip automatically shows "Retests: N" for retested dies.
@@ -540,11 +540,15 @@ const enrichedDies = result.dies.map(d => {
 
 ---
 
-## 5 `renderWaferMap(container, wafer, dies, options?)` — single map overload
+## 5 `renderWaferMap(container, result, options?)` — single map overload
 
-A fully self-contained interactive wafermap. Accepts `wafer` and `dies` directly,
+A fully self-contained interactive wafermap. Accepts a `WaferMapResult` directly,
 owns scene building internally, and provides a **built-in toolbar** that appears on
 hover — wafermap-specific controls always in the same place.
+
+```ts
+renderWaferMap(container: HTMLElement, result: WaferMapResult, options?: RenderOptions): WaferCanvasController
+```
 
 `renderWaferMap` accepts any block `HTMLElement` as `container` — the function
 creates and manages its own `<canvas>` inside it. Passing an `HTMLCanvasElement`
@@ -557,10 +561,11 @@ opens the map in a full-screen modal using canvas reparenting — no second cont
 is created.
 
 ```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
-// Pass a <div> (or any block element) — renderWaferMap creates the canvas inside it.
-renderWaferMap(document.getElementById('map'), wafer, dies);
+const result = buildWaferMap({ results, passBins });
+const ctrl = renderWaferMap(document.getElementById('map'), result, { showToolbar: true });
 ```
 
 ### 5.1 `WaferSceneOptions`
@@ -576,15 +581,15 @@ Scene display options controllable via the toolbar or programmatically:
   showQuadrantBoundaries?: boolean
   showReticle?:            boolean           // reticle field boundary overlay (requires reticles to be set)
   showXYIndicator?:        boolean           // axis-orientation arrows showing +X/+Y directions
-  reticles?:               Reticle[]         // pass result.reticles from buildWaferMap to enable the overlay
+  reticles?:               Reticle[]         // reticle field geometry — seeded automatically from result.reticles; override only to change it
   ringCount?:              number            // default 4
   highlightBin?:           number            // dim all other bins
   rotation?:               0 | 90 | 180 | 270
   flipX?:                  boolean
   flipY?:                  boolean
-  testDefs?:               TestDef[]         // named test definitions — drives mode dropdown entries
-  hbinDefs?:               BinDef[]          // hard bin names/colors (hbin, 0–32767 space)
-  sbinDefs?:               BinDef[]          // soft bin names/colors (sbin, 0–32767 space — independent)
+  testDefs?:               TestDef[]         // named test definitions — seeded automatically from result; override to rename or add limits
+  hbinDefs?:               BinDef[]          // hard bin names/colors — seeded automatically from result; override to rename or recolor
+  sbinDefs?:               BinDef[]          // soft bin names/colors — seeded automatically from result; override to rename or recolor
   activeTest?:              number            // toolbar cursor: the testNumber to show in 'value' mode (matches testDef.testNumber, NOT a positional array index)
                                             // defaults to 0, which falls back to the first test when no testDef has testNumber 0
   logScale?:               boolean           // override log₁₀ scale on/off for the active test; takes precedence over TestDef.logScale; silently falls back to linear when vMin ≤ 0
@@ -617,14 +622,14 @@ The `aggrMethod` and `lotSize` fields on `WaferSceneOptions` populate the method
 
 When `showAxes: true`, tick labels show die grid indices (integer i/j values). `renderWaferMap` derives `diePitchMm` automatically from the scene geometry, so axes always show grid indices. Only when calling `toCanvas` directly without supplying `diePitchMm` do axes fall back to mm values.
 
-### 5.4 `MountOptions`
+### 5.4 `RenderOptions`
 
 All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, etc. — see `toCanvas` options below), plus:
 
 ```ts
 {
   showAxes?:               boolean            // draw axis tick marks and die grid index labels (default false)
-  sceneOptions?:           WaferSceneOptions  // initial display state
+  sceneOptions?:           WaferSceneOptions  // initial display state; testDefs/hbinDefs/sbinDefs/reticles are pre-seeded from the result — only pass them here to override
   onHover?:                (die: Die | null, event: MouseEvent) => void
   onClick?:                (die: Die, event: MouseEvent) => void
   onSelect?:               (dies: Die[]) => void     // fires after box-select drag or click-select
@@ -637,11 +642,6 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // initial bin legend position (default 'default'); user can change via toolbar
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a summary panel toggle button to the toolbar
-  waferResult?:            { yield: YieldSummary; dataCoverage: { filledDies, totalDies, edgeExcludedDies, ratio } }
-                                            // supplies yield and coverage data to the summary panel's yield section;
-                                            // when omitted those sections are hidden. Pass result directly: waferResult: buildWaferMap(...)
-                                            // Note: toolbar yield display (the % shown in the toolbar) comes from passBins
-                                            // passed to buildWaferMap — waferResult is only needed for the summary panel
   summaryPanel?:           SummaryPanelOptions  // summary panel placement and open/closed initial state
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
@@ -651,6 +651,8 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
 ```
+
+> **`MountOptions`** is a deprecated alias for `RenderOptions` — it still works but will be removed in a future release. Use `RenderOptions` in new code.
 
 The box-select toolbar button is always shown. Providing `onSelect` lets your app react to selection changes; without it the selection is purely visual.
 
@@ -671,7 +673,8 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 
 ```ts
 {
-  setDies(dies: Die[]): void                        // replace die data, rebuild scene
+  setResult(result: WaferMapResult): void            // replace wafer geometry and die data, re-seed testDefs/hbinDefs/sbinDefs/reticles from new result, then re-render
+  setDies(dies: Die[]): void                        // replace die data only, rebuild scene
   setOptions(opts: Partial<WaferSceneOptions>): void // merge options, rebuild scene
   getOptions(): WaferSceneOptions                    // current options snapshot
   setSelection(dies: Die[]): void                    // programmatically highlight dies
@@ -746,16 +749,19 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
-const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
+const result = buildWaferMap({ results, waferConfig, dieConfig });
 
-const ctrl = renderWaferMap(document.getElementById('map'), wafer, dies, {
+const ctrl = renderWaferMap(document.getElementById('map'), result, {
   sceneOptions: { plotMode: 'hardBin', colorScheme: 'default' },
   onClick:  (die)  => console.log(die.x, die.y, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
   onSceneOptionsChange: (opts) => syncExternalUI(opts),
 });
 
-// Update dies after a data reload — zoom/pan preserved:
+// Replace wafer geometry and die data after a full data reload:
+ctrl.setResult(newResult);
+
+// Update dies only — when geometry is unchanged:
 ctrl.setDies(newDies);
 
 // Programmatically change display mode:
@@ -770,13 +776,16 @@ ctrl.destroy();
 ## 6 `renderWaferMap(container, items, options?)` — gallery overload
 
 > **Unified API.** `renderWaferMap` is overloaded — when the second argument is an
-> array of `GalleryItem | GalleryItemFactory`, it builds a multi-card gallery instead
-> of a single map.  The deprecated `renderWaferGallery` export still works for one
-> release but will be removed.
+> array of `WaferMapDisplayItem | WaferMapDisplayItemFactory`, it builds a multi-card gallery
+> instead of a single map.
 
 A multi-map gallery with a shared control bar, per-card view-only toolbars, and
 click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or
 flip in the gallery bar applies to every card instantly.
+
+```ts
+renderWaferMap(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
+```
 
 ```ts
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
@@ -785,37 +794,42 @@ import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 renderWaferMap(document.getElementById('gallery'), items, galleryOptions);
 ```
 
-`renderWaferGallery` is a deprecated alias:
+### 6.1 `WaferMapDisplayItem`
+
+A gallery item is a `WaferMapResult` with optional display overrides spread in:
 
 ```ts
-// @deprecated — use renderWaferMap(container, items, opts) instead
-import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
-```
-
-### 6.1 `GalleryItem`
-
-```ts
-{
-  wafer:          Wafer
-  dies:           Die[]
+type WaferMapDisplayItem = WaferMapResult & {
   label?:         string                               // card header text
   sceneOptions?:  Partial<WaferSceneOptions>           // per-card scene option overrides merged on top of shared options
-  hasReticle?:    boolean                              // set true when wafer was built with ReticleConfig — shows reticle toggle in bar
   statsSummary?:  StatsSummary                         // per-wafer stats — shown in the modal's summary panel when the card is expanded
   onClick?:       (die: Die, event: MouseEvent) => void
   onSelect?:      (dies: Die[]) => void
 }
 ```
 
-Pass `result.reticles` via `sceneOptions.reticles` when `hasReticle` is `true` so the overlay has geometry to draw.
-
-### 6.1.1 `GalleryItemFactory`
+Because `WaferMapDisplayItem` extends `WaferMapResult`, items are simply the result of `buildWaferMap` with any overrides spread in:
 
 ```ts
-type GalleryItemFactory = () => GalleryItem
+// Simplest form — result is a valid item as-is:
+items = results.map(r => r);
+
+// With display overrides:
+items = results.map((r, i) => ({ ...r, label: ids[i] }));
+
+// With per-card stats:
+items = results.map((r, i) => ({ ...r, label: ids[i], statsSummary: summaries[i] }));
 ```
 
-A factory function accepted anywhere a `GalleryItem` is expected (in the `items` array passed to
+Reticle overlays are wired automatically from `result.reticles` — no extra configuration needed.
+
+### 6.1.1 `WaferMapDisplayItemFactory`
+
+```ts
+type WaferMapDisplayItemFactory = () => WaferMapDisplayItem
+```
+
+A factory function accepted anywhere a `WaferMapDisplayItem` is expected (in the `items` array passed to
 `renderWaferMap` or `setItems`). When the gallery encounters a factory it inserts a placeholder
 card immediately and calls the factory in a deferred browser task (`setTimeout(0)`), swapping in
 the real card when it returns.
@@ -828,7 +842,7 @@ page being blank while all maps are built:
 const items = fixtures.map(sample => () => {
   const result  = buildWaferMap({ results: sample.results, passBins: [1] });
   const summary = analyzeWaferMap(result, { passBins: [1] });
-  return { label: sample.label, wafer: result.wafer, dies: result.dies, statsSummary: summary };
+  return { ...result, label: sample.label, statsSummary: summary };
 });
 
 renderWaferMap(container, items);
@@ -860,7 +874,7 @@ to be pre-built.
 
 ```ts
 {
-  setItems(items: Array<GalleryItem | GalleryItemFactory>): void  // rebuild all cards; factories resolved progressively
+  setItems(items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): void  // rebuild all cards; factories resolved progressively
   setOptions(opts: Partial<WaferSceneOptions>): void // sync shared options to all cards
   getOptions(): WaferSceneOptions
   setFallbackFormat(format: 'si' | 'engineering'): void
@@ -879,7 +893,7 @@ to be pre-built.
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
 | Labels | Toggle die labels on all cards |
-| Reticle | Toggle reticle overlay on all cards — only shown when at least one item has `hasReticle: true` |
+| Reticle | Toggle reticle overlay on all cards — only shown when at least one item has reticle geometry |
 | XY indicator | Toggle axis-orientation arrows on all cards |
 | Legend style | Dropdown: bin legend position for all cards — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating**. Disabled when not in a bin mode. |
 | Rotate | Rotate all cards 90° clockwise |
@@ -953,12 +967,12 @@ items — the gallery re-aggregates automatically if a stacked mode is active.
 import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
-const items = waferIds.map(id => ({
-  wafer: sharedWafer,
-  dies:  diesByWafer[id],
-  label: id,
-  onClick:  (die) => showDieDetail(die, id),
-  onSelect: (selected) => showSelectionPanel(id, selected),
+const results = waferIds.map(id => buildWaferMap({ results: dataByWafer[id], dieConfig }));
+const items = results.map((r, i) => ({
+  ...r,
+  label:    waferIds[i],
+  onClick:  (die) => showDieDetail(die, waferIds[i]),
+  onSelect: (selected) => showSelectionPanel(waferIds[i], selected),
 }));
 
 const ctrl = renderWaferMap(document.getElementById('gallery'), items, {
@@ -1004,7 +1018,7 @@ const result = buildWaferMap({
   waferConfig, dieConfig, testDefs,
 });
 const summary = analyzeWaferMap(result, { ringCount: 4 });
-renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary, waferResult: result });
+renderWaferMap(container, result, { statsSummary: summary });
 ```
 
 `summary.stats.isLotStack` is `true` and `summary.stats.aggregationMethod` is set (e.g. `'mean'`) so the host application can label the panel appropriately.
@@ -1180,7 +1194,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 ### 7.6 `renderFindingsReportHtml` / `openHtmlReport`
 
 ```ts
-import { renderFindingsReportHtml, openHtmlReport } from 'wafermap/stats';
+import { renderFindingsReportHtml, openHtmlReport } from '@paulrobins/wafermap/stats';
 
 const html = renderFindingsReportHtml(summary, { title?: string }): string
 openHtmlReport(html): void
@@ -1191,7 +1205,7 @@ Generates a standalone printable HTML **findings-only** report from a `StatsSumm
 ### 7.7 `renderSummaryReportHtml`
 
 ```ts
-import { renderSummaryReportHtml } from 'wafermap/stats';
+import { renderSummaryReportHtml } from '@paulrobins/wafermap/stats';
 
 const html = renderSummaryReportHtml(params, { title?: string }): string
 ```
@@ -1292,17 +1306,14 @@ import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 // Single wafer with summary panel toggle:
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result, { ringCount: 4 });
-renderWaferMap(container, result.wafer, result.dies, { statsSummary: summary });
+renderWaferMap(container, result, { statsSummary: summary });
 
 // Lot gallery with lot-level summary panel toggle:
 const waferResults = waferDataSets.map(d => buildWaferMap(d));
 const items = waferResults.map((r, i) => ({
-  wafer:         r.wafer,
-  dies:          r.dies,
-  label:         `Wafer ${i + 1}`,
-  hasReticle:    r.reticles.length > 0,
-  sceneOptions:  { reticles: r.reticles },
-  statsSummary:  analyzeWaferMap(r, { ringCount: 4 }),
+  ...r,
+  label:        `Wafer ${i + 1}`,
+  statsSummary: analyzeWaferMap(r, { ringCount: 4 }),
 }));
 const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 renderWaferMap(container, items, { lotStatsSummary: lotSummary });
@@ -1310,7 +1321,7 @@ renderWaferMap(container, items, { lotStatsSummary: lotSummary });
 
 ### 7.11 Region builder utilities
 
-These are exported from `wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
+These are exported from `@paulrobins/wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
 
 ```ts
 import {
@@ -1377,7 +1388,7 @@ interface FindingsFilter {
 ## 8 Web Worker
 
 For large datasets, `buildWaferMap` can be moved off the main thread to keep the
-UI responsive.  The `wafermap/worker` subpackage provides a thin wrapper around a
+UI responsive.  The `@paulrobins/wafermap/worker` subpackage provides a thin wrapper around a
 pre-built worker script.
 
 **When to use it:** datasets with ~10,000+ rows, or many wafers processed at once.
@@ -1418,19 +1429,19 @@ Identical input and output to `buildWaferMap` — just async.
 
 ```ts
 // Replaces:
-const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
+const result = buildWaferMap({ results, waferConfig, dieConfig });
 
 // With:
-const { wafer, dies } = await worker.run({ results, waferConfig, dieConfig });
+const result = await worker.run({ results, waferConfig, dieConfig });
 
 // Everything after is unchanged:
-renderWaferMap(container, wafer, dies);
+renderWaferMap(container, result);
 ```
 
 Multiple concurrent calls are safe — each resolves independently.  Run wafers in parallel with `Promise.all`:
 
 ```ts
-const results = await Promise.all(
+const waferResults = await Promise.all(
   waferIds.map(id => worker.run({ results: dataByWafer[id], dieConfig }))
 );
 ```
@@ -1444,46 +1455,10 @@ Shuts down the underlying worker.  Any in-flight `run()` calls reject immediatel
 ## 9 Optional compatibility APIs
 
 These APIs give you direct control over the rendering pipeline. Use them when you
-need to integrate with your own rendering loop, build a custom gallery, or export
-through Plotly. For most application development, prefer `renderWaferMap` above.
+need to integrate with your own rendering loop or build a custom pipeline.
+For most application development, prefer `renderWaferMap` above.
 
-### 9.1 `toPlotly(scene, options?)`
-
-Converts a scene into Plotly-compatible `{ data, layout }`.
-
-Plotly.js must be loaded separately, because the core package does not include a
-runtime Plotly dependency.
-
-```ts
-import { buildWaferMap, toPlotly } from '@paulrobins/wafermap';
-
-const result = buildWaferMap({ results, waferConfig, dieConfig });
-const { data, layout } = toPlotly(result.scene);
-Plotly.react('chart', data, layout, { responsive: true });
-```
-
-```ts
-interface ToPlotlyOptions {
-  showAxes?:          boolean                    // show X/Y axis tick marks and labels (default false)
-  showPhysicalUnits?: boolean                    // append "(mm)" to axis titles (default false)
-  showColorbar?:      boolean                    // show the continuous-value colorbar (default true)
-  diePitchMm?:        { x: number; y: number }  // show die grid indices on axis ticks
-  axisLabels?:        { x?: string; y?: string }
-}
-```
-
-**Connecting click drill-down:**
-
-```ts
-import { getDieAtPoint } from '@paulrobins/wafermap';
-
-document.getElementById('chart').on('plotly_click', (ev) => {
-  const die = getDieAtPoint(result.scene, ev);
-  if (die) console.log(die.x, die.y, die.values, die.hbin, die.sbin);
-});
-```
-
-### 9.2 `toCanvas(canvas, scene, options?)`
+### 9.1 `toCanvas(canvas, scene, options?)`
 
 Renders a scene directly onto an HTML `<canvas>` element using the 2D Canvas API.
 No toolbar is provided — this is a one-shot draw call.
@@ -1541,7 +1516,6 @@ canvas.addEventListener('mousemove', e => {
 ```ts
 import { buildWaferMap }                       from '@paulrobins/wafermap';
 import { renderWaferMap }                      from '@paulrobins/wafermap/canvas-adapter';
-import { toPlotly }                            from '@paulrobins/wafermap';
 import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats';
 import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
 ```
@@ -1564,7 +1538,7 @@ import { getDieKey, getDieAtPoint, getDieTestValue } from '@paulrobins/wafermap'
 
 `getDieKey(die)` — returns a stable `"x,y"` string for map lookups (see manual pipeline section below for details).
 
-`getDieAtPoint(scene, event)` — hit-tests a Plotly event against the scene (see manual pipeline section below).
+`getDieAtPoint(scene, event)` — hit-tests a pointer event against the scene (see manual pipeline section below).
 
 `getDieTestValue(die, testNumber, fallbackIndex?)` — reads a test value from a die by test number:
 
@@ -1578,7 +1552,7 @@ const v = getDieTestValue(die, 0, 0);
 
 Returns `undefined` when no value is present.  Use this in post-build code that reads test values from dies.
 
-Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/plotly-adapter`, `/canvas-adapter`, `/stats`, `/worker`, `/worker-script`
+Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/canvas-adapter`, `/stats`, `/worker`, `/worker-script`
 
 ---
 
@@ -1599,7 +1573,7 @@ createWafer(spec)
   ↓  (on each redraw)
   → transformDies(dies, interactiveTransform, wafer.center)
   → buildScene(wafer, dies, options)   → Scene
-  → toPlotly(scene)  or  toCanvas(canvas, scene)
+  → toCanvas(canvas, scene)
 ```
 
 In the manual pipeline, `die.x` and `die.y` are computed by `generateDies` as
@@ -1785,7 +1759,7 @@ interface SceneOptions {
   testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
   hbinDefs?:               BinDef[]    // named hard bin definitions (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
-  activeTest?:              number      // which values[] slot to display in 'value' mode; default 0
+  activeTest?:              number      // testNumber to display in 'value' mode (matches testDef.testNumber, NOT a positional index); defaults to first available test
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
   colorbarRangeMode?:      'spec' | 'data'  // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
                                             // 'data' spans actual data min/max; out-of-spec coloring applies in both modes
@@ -1809,15 +1783,13 @@ const die = map.get(getDieKey({ x: 3, y: -2 }));
 
 ---
 
-### 11.17 `getDieAtPoint(scene, plotlyEvent)`
+### 11.17 `getDieAtPoint(scene, event)`
 
-Returns the die that a Plotly click or hover event points to, or `null`.
+Returns the die that a pointer event points to, or `null`. Used in the manual pipeline with `toCanvas`; `renderWaferMap` handles hit-testing automatically.
 
 ```ts
-chart.on('plotly_click', ev => {
-  const die = getDieAtPoint(scene, ev);
-  if (die) console.log(die.x, die.y, die.values, die.hbin, die.sbin);
-});
+const die = getDieAtPoint(scene, { x: cssX, y: cssY });
+if (die) console.log(die.x, die.y, die.testValues, die.hbin, die.sbin);
 ```
 
 ---
@@ -1912,4 +1884,3 @@ Common named fields with an open index signature — any extra fields are accept
 ## 13 Current limitations
 
 - Ring segmentation uses equal-width radial bands.  Configurable breakpoints are planned.
-- Plotly types are not exposed as formal peer-typed interfaces.

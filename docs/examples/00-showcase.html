@@ -308,7 +308,7 @@
       const useLazy = validWaferIds.length >= 4;
       const items = validWaferIds.map((wid, i) => {
         const r    = waferMapResults[i];
-        const item = { wafer: r.wafer, dies: r.dies, label: wid, statsSummary: waferSummaries[i] };
+        const item = { ...r, label: wid, statsSummary: waferSummaries[i] };
         return useLazy ? () => item : item;
       });
 

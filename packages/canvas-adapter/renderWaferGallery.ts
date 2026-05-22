@@ -1,13 +1,12 @@
 import type { PlotMode } from '../renderer/buildScene.js';
 import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, type ModeEntry } from './toolbar.js';
-import type { Wafer } from '../core/wafer.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, buildCheckMenuEl, type ModeEntry } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
-import type { BinDef } from '../renderer/buildWaferMap.js';
+import type { BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
@@ -19,29 +18,37 @@ import {
 // ── Public types ───────────────────────────────────────────────────────────────
 
 /**
- * A factory function that builds a GalleryItem on demand.
- * The gallery calls each factory in a deferred task (`setTimeout(0)`) so the
- * browser stays responsive while large item sets are built progressively.
- * Use this instead of pre-building items when `buildWaferMap` / `analyzeWaferMap`
- * is expensive — the gallery shell and control bar appear immediately, and cards
- * are inserted one by one as each factory completes.
- * The placeholder card shows no label until the factory returns.
+ * A `WaferMapResult` with optional per-card display overrides.
+ * Pass a bare `WaferMapResult` for minimal usage, or spread it with overrides:
+ *
+ * ```ts
+ * renderWaferMap(container, [
+ *   result1,
+ *   { ...result2, label: 'W02', statsSummary: summary2 },
+ * ]);
+ * ```
  */
-export type GalleryItemFactory = () => GalleryItem;
-
-export interface GalleryItem {
-  wafer:        Wafer;
-  dies:         Die[];
-  label?:       string;
-  /** Set to true when the wafer was built with a ReticleConfig — shows the reticle toggle button. */
-  hasReticle?:  boolean;
+export type WaferMapDisplayItem = WaferMapResult & {
+  label?:        string;
   /** Per-card scene option overrides merged on top of the shared gallery options. */
   sceneOptions?: Partial<WaferSceneOptions>;
   /** Wafer-level stats summary — shown in the findings panel when this card is opened in the modal. */
   statsSummary?: import('../stats/types.js').StatsSummary;
-  onClick?:     (die: Die, event: MouseEvent) => void;
-  onSelect?:    (dies: Die[]) => void;
-}
+  onClick?:      (die: Die, event: MouseEvent) => void;
+  onSelect?:     (dies: Die[]) => void;
+};
+
+/**
+ * A factory function that builds a WaferMapDisplayItem on demand.
+ * The gallery calls each factory in a deferred task (`setTimeout(0)`) so the
+ * browser stays responsive while large item sets are built progressively.
+ */
+export type WaferMapDisplayItemFactory = () => WaferMapDisplayItem;
+
+/** @deprecated Use WaferMapDisplayItem instead. */
+export type GalleryItem = WaferMapDisplayItem;
+/** @deprecated Use WaferMapDisplayItemFactory instead. */
+export type GalleryItemFactory = WaferMapDisplayItemFactory;
 
 export interface GalleryOptions {
   /** Initial shared scene options applied to all cards. */
@@ -79,7 +86,7 @@ export interface GalleryOptions {
 
 export interface GalleryController {
   /** Replace all items — destroys existing cards and rebuilds the grid. Accepts pre-built items, factory functions, or a mix. */
-  setItems(items: Array<GalleryItem | GalleryItemFactory>): void;
+  setItems(items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): void;
   /** Merge shared scene option overrides across all cards. */
   setOptions(opts: Partial<WaferSceneOptions>): void;
   /** Return the current shared scene options. */
@@ -97,7 +104,7 @@ export interface GalleryController {
 
 export function renderWaferGallery(
   container: HTMLElement,
-  items: Array<GalleryItem | GalleryItemFactory>,
+  items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>,
   options: GalleryOptions = {},
 ): GalleryController {
   const cardPadding          = options.cardPadding          ?? 6;
@@ -123,8 +130,8 @@ export function renderWaferGallery(
 
   let cardControllers: WaferCanvasController[] = [];
   let cardContainers: HTMLDivElement[] = [];  // canvasWrapper per card — used for modal reparenting
-  let currentItems:  GalleryItem[] = [];
-  let originalItems: GalleryItem[] = [];  // per-wafer source items; stacked modes aggregate from this
+  let currentItems:  WaferMapDisplayItem[] = [];
+  let originalItems: WaferMapDisplayItem[] = [];  // per-wafer source items; stacked modes aggregate from this
   let modalReparentedContainer: HTMLDivElement | null = null;
   let modalReparentedParent: HTMLElement | null = null;
   let modalCardIndex = -1;
@@ -478,30 +485,39 @@ export function renderWaferGallery(
     v => updateShared({ colorScheme: v }),
   );
 
-  const btnRings = makeBtn('rings', 'Toggle ring boundaries', () => {
-    updateShared({ showRingBoundaries: !sharedOpts.showRingBoundaries });
-    setActive(btnRings, !!sharedOpts.showRingBoundaries);
-  });
+  const hasReticleInItems = items.some(it => typeof it !== 'function' && (it as WaferMapDisplayItem).reticles?.length > 0);
 
-  const btnQuadrants = makeBtn('quadrants', 'Toggle quadrant boundaries', () => {
-    updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries });
-    setActive(btnQuadrants, !!sharedOpts.showQuadrantBoundaries);
+  const buildOverlaysMenu = (btn: HTMLButtonElement) => buildCheckMenuEl(
+    btn.getBoundingClientRect(),
+    [
+      { label: 'Ring boundaries', active: !!sharedOpts.showRingBoundaries,     onClick: (e) => { e.stopPropagation(); updateShared({ showRingBoundaries:   !sharedOpts.showRingBoundaries   }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
+      { label: 'Quadrant lines',  active: !!sharedOpts.showQuadrantBoundaries, onClick: (e) => { e.stopPropagation(); updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
+      { label: 'Die labels',      active: !!sharedOpts.showText,               onClick: (e) => { e.stopPropagation(); updateShared({ showText:              !sharedOpts.showText              }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
+      { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: (e) => { e.stopPropagation(); updateShared({ showReticle:           !sharedOpts.showReticle           }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
+      { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: (e) => { e.stopPropagation(); updateShared({ showXYIndicator:      !sharedOpts.showXYIndicator      }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
+    ],
+    { makeMenuRow, makeMenuSection },
+  );
+  const btnOverlays = makeBtn('overlays', 'Overlays', () => {
+    const existing = getOpenMenu();
+    if (existing) { existing.remove(); setOpenMenu(null); return; }
+    const menu = buildOverlaysMenu(btnOverlays);
+    document.body.appendChild(menu);
+    setOpenMenu(menu);
   });
-
-  const btnLabels = makeBtn('labels', 'Toggle die labels', () => {
-    updateShared({ showText: !sharedOpts.showText });
-    setActive(btnLabels, !!sharedOpts.showText);
-  });
-
-  const btnReticle = makeBtn('reticle', 'Toggle reticle overlay', () => {
-    updateShared({ showReticle: !sharedOpts.showReticle });
-    setActive(btnReticle, !!sharedOpts.showReticle);
-  });
-
-  const btnXY = makeBtn('xyIndicator', 'Toggle XY axis indicator', () => {
-    updateShared({ showXYIndicator: !sharedOpts.showXYIndicator });
-    setActive(btnXY, !!sharedOpts.showXYIndicator);
-  });
+  function replaceOverlaysMenu(): void {
+    const current = getOpenMenu();
+    if (!current) return;
+    const updated = buildOverlaysMenu(btnOverlays);
+    current.replaceWith(updated);
+    setOpenMenu(updated);
+  }
+  function syncOverlaysBtn(): void {
+    const anyOn = !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
+                     sharedOpts.showText || sharedOpts.showReticle || sharedOpts.showXYIndicator);
+    setActive(btnOverlays, anyOn);
+  }
+  syncOverlaysBtn();
 
   const btnLegendStyle = makeDropdown(
     'legend',
@@ -559,20 +575,36 @@ export function renderWaferGallery(
   }
   syncLogScaleBtn();
 
-  const btnRotate = makeBtn('rotateCW', 'Rotate all 90\xB0 clockwise', () => {
-    const r = sharedOpts.rotation ?? 0;
-    updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] });
+  const buildOrientMenu = (btn: HTMLButtonElement) => buildCheckMenuEl(
+    btn.getBoundingClientRect(),
+    [
+      { section: 'Rotate' },
+      { label: 'Rotate 90° clockwise', active: false, onClick: (e) => { e.stopPropagation(); const r = sharedOpts.rotation ?? 0; updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] }); syncOrientBtn(); } },
+      { section: 'Flip' },
+      { label: 'Flip horizontal', active: !!sharedOpts.flipX, onClick: (e) => { e.stopPropagation(); updateShared({ flipX: !sharedOpts.flipX }); syncOrientBtn(); replaceOrientMenu(); } },
+      { label: 'Flip vertical',   active: !!sharedOpts.flipY, onClick: (e) => { e.stopPropagation(); updateShared({ flipY: !sharedOpts.flipY }); syncOrientBtn(); replaceOrientMenu(); } },
+    ],
+    { makeMenuRow, makeMenuSection },
+  );
+  const btnOrient = makeBtn('orient', 'Orientation', () => {
+    const existing = getOpenMenu();
+    if (existing) { existing.remove(); setOpenMenu(null); return; }
+    const menu = buildOrientMenu(btnOrient);
+    document.body.appendChild(menu);
+    setOpenMenu(menu);
   });
-
-  const btnFlipH = makeBtn('flipH', 'Flip all horizontal', () => {
-    updateShared({ flipX: !sharedOpts.flipX });
-    setActive(btnFlipH, !!sharedOpts.flipX);
-  });
-
-  const btnFlipV = makeBtn('flipV', 'Flip all vertical', () => {
-    updateShared({ flipY: !sharedOpts.flipY });
-    setActive(btnFlipV, !!sharedOpts.flipY);
-  });
+  function replaceOrientMenu(): void {
+    const current = getOpenMenu();
+    if (!current) return;
+    const updated = buildOrientMenu(btnOrient);
+    current.replaceWith(updated);
+    setOpenMenu(updated);
+  }
+  function syncOrientBtn(): void {
+    const nonDefault = !!(sharedOpts.rotation || sharedOpts.flipX || sharedOpts.flipY);
+    setActive(btnOrient, nonDefault);
+  }
+  syncOrientBtn();
 
   const btnDownloadAll = makeBtn('downloadAll', 'Download gallery PNG', downloadGalleryPng);
 
@@ -581,17 +613,11 @@ export function renderWaferGallery(
   barEl.appendChild(btnAggrMethod);
   barEl.appendChild(btnLogScale);
   barEl.appendChild(makeSep());
-  barEl.appendChild(btnRings);
-  barEl.appendChild(btnQuadrants);
-  barEl.appendChild(btnLabels);
-  if (items.some(it => typeof it !== 'function' && it.hasReticle)) barEl.appendChild(btnReticle);
-  barEl.appendChild(btnXY);
+  barEl.appendChild(btnOverlays);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnLegendStyle);
   barEl.appendChild(makeSep());
-  barEl.appendChild(btnRotate);
-  barEl.appendChild(btnFlipH);
-  barEl.appendChild(btnFlipV);
+  barEl.appendChild(btnOrient);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnDownloadAll);
 
@@ -608,15 +634,6 @@ export function renderWaferGallery(
     barEl.appendChild(makeSep());
     barEl.appendChild(btnLotFindings);
   }
-
-  // Sync initial toggle states.
-  setActive(btnRings,     !!sharedOpts.showRingBoundaries);
-  setActive(btnQuadrants, !!sharedOpts.showQuadrantBoundaries);
-  setActive(btnLabels,    !!sharedOpts.showText);
-  setActive(btnReticle,   !!sharedOpts.showReticle);
-  setActive(btnXY,        !!sharedOpts.showXYIndicator);
-  setActive(btnFlipH,     !!sharedOpts.flipX);
-  setActive(btnFlipV,     !!sharedOpts.flipY);
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
 
@@ -789,9 +806,9 @@ export function renderWaferGallery(
 
   // ── Stacked-mode aggregation helpers ──────────────────────────────────────
 
-  // Build lot-aggregated GalleryItems from originalItems for a stacked mode.
+  // Build lot-aggregated WaferMapDisplayItems from originalItems for a stacked mode.
   // One card per bin (stackedBins/stackedSoftBins) or per test parameter (stackedValues).
-  function buildStackedItems(mode: PlotMode): GalleryItem[] {
+  function buildStackedItems(mode: PlotMode): WaferMapDisplayItem[] {
     if (!originalItems.length) return [];
     const allDies   = originalItems.map(item => item.dies);
     const baseWafer = originalItems[0].wafer;
@@ -841,7 +858,7 @@ export function renderWaferGallery(
             analyzeWaferMap({ wafer: stackedWafer, dies, testDefs: [cardTestDef] }, { testNumbers: [0] }),
             method,
           ),
-        };
+        } as WaferMapDisplayItem;
       });
     }
 
@@ -866,7 +883,7 @@ export function renderWaferGallery(
             analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs }),
             'countBin',
           ),
-        };
+        } as WaferMapDisplayItem;
       });
     }
 
@@ -891,7 +908,7 @@ export function renderWaferGallery(
             analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs }),
             'countBin',
           ),
-        };
+        } as WaferMapDisplayItem;
       });
     }
 
@@ -953,7 +970,7 @@ export function renderWaferGallery(
 
   // ── Card building ──────────────────────────────────────────────────────────
 
-  function buildCard(item: GalleryItem, cardIndex: number, totalItems: number): { card: HTMLDivElement; ctrl: WaferCanvasController; canvasWrapper: HTMLDivElement } {
+  function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferCanvasController; canvasWrapper: HTMLDivElement } {
     const card = document.createElement('div');
     card.className = 'wmap-gallery-card';
     Object.assign(card.style, {
@@ -1018,7 +1035,7 @@ export function renderWaferGallery(
     // render that the ResizeObserver would otherwise need to correct.
     gridEl.appendChild(card);
 
-    const ctrl = renderWaferMap(canvasWrapper, item.wafer, item.dies, {
+    const ctrl = renderWaferMap(canvasWrapper, item, {
       sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,
@@ -1054,7 +1071,7 @@ export function renderWaferGallery(
     return { card, ctrl, canvasWrapper };
   }
 
-  function buildCards(newItems: Array<GalleryItem | GalleryItemFactory>): void {
+  function buildCards(newItems: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): void {
     getOpenMenu()?.remove(); setOpenMenu(null);
     clearLotFindingHighlight();
     currentItems = [];
@@ -1065,7 +1082,7 @@ export function renderWaferGallery(
     rebuildLegend();
 
     // Separate pre-built items from factories.
-    const factories: Array<{ index: number; factory: GalleryItemFactory; placeholder: HTMLDivElement }> = [];
+    const factories: Array<{ index: number; factory: WaferMapDisplayItemFactory; placeholder: HTMLDivElement }> = [];
 
     for (let i = 0; i < newItems.length; i++) {
       const entry = newItems[i];
@@ -1087,7 +1104,7 @@ export function renderWaferGallery(
         Object.assign(spinner.style, { color: '#bbb', fontSize: '18px' });
         placeholder.appendChild(spinner);
         gridEl.appendChild(placeholder);
-        currentItems.push(null as unknown as GalleryItem); // slot reserved
+        currentItems.push(null as unknown as WaferMapDisplayItem); // slot reserved
         cardControllers.push(null as unknown as WaferCanvasController);
         cardContainers.push(null as unknown as HTMLDivElement);
         factories.push({ index: i, factory: entry, placeholder });
@@ -1117,7 +1134,7 @@ export function renderWaferGallery(
   }
 
   // Pre-populate originalItems with resolved items (factories fill slots as they run).
-  originalItems = items.map(it => (typeof it === 'function' ? null : it) as GalleryItem);
+  originalItems = items.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
   // If the initial plotMode is already a stacked mode, aggregate immediately.
   if (STACKED_MODES.has(sharedOpts.plotMode!) && originalItems.length > 0) {
     const extra = stackedSharedOpts(sharedOpts.plotMode!);
@@ -1132,7 +1149,7 @@ export function renderWaferGallery(
 
   // ── Modal ──────────────────────────────────────────────────────────────────
 
-  function openModal(cardIndex: number, item: GalleryItem): void {
+  function openModal(cardIndex: number, item: WaferMapDisplayItem): void {
     if (modalReparentedContainer) closeModal();
 
     const cardContainer = cardContainers[cardIndex];
@@ -1254,6 +1271,7 @@ export function renderWaferGallery(
     modalCardIndex = cardIndex;
     // Show full toolbar in modal; suppress the per-canvas expand button (modal has its own chrome).
     cardControllers[cardIndex]?.setSceneControlsVisible(true);
+    cardControllers[cardIndex]?.setFindingsVisible(true);
     cardControllers[cardIndex]?.setExpandVisible(false);
     modalCanvasWrap.appendChild(cardContainer);
     // Re-fit the canvas to the larger modal size.
@@ -1295,6 +1313,7 @@ export function renderWaferGallery(
       modalReparentedParent = null;
     }
     cardControllers[modalCardIndex]?.setSceneControlsVisible(false);
+    cardControllers[modalCardIndex]?.setFindingsVisible(false);
     cardControllers[modalCardIndex]?.resetZoom();
     modalCardIndex = -1;
     modalReparentedContainer = null;
@@ -1356,8 +1375,8 @@ export function renderWaferGallery(
   // ── Controller ─────────────────────────────────────────────────────────────
 
   return {
-    setItems(newItems: Array<GalleryItem | GalleryItemFactory>): void {
-      originalItems = newItems.map(it => (typeof it === 'function' ? null : it) as GalleryItem);
+    setItems(newItems: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): void {
+      originalItems = newItems.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
       const mode = sharedOpts.plotMode!;
       if (STACKED_MODES.has(mode)) {
         // Refresh lotSize and valueRange in case the wafer count changed.

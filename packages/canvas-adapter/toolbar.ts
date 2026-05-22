@@ -105,16 +105,19 @@ export function buildModeMenuEl(
   const { makeMenuRow, makeMenuSection } = helpers;
 
   const menu = document.createElement('div');
+  const modeMinWidth = 180;
+  const modeFitsRight = anchorRect.left + modeMinWidth <= (window.innerWidth ?? Infinity);
+  const modeLeft = modeFitsRight ? anchorRect.left : Math.max(4, anchorRect.right - modeMinWidth);
   Object.assign(menu.style, {
     position:      'fixed',
     top:           `${anchorRect.bottom + 4}px`,
-    left:          `${anchorRect.left}px`,
+    left:          `${modeLeft}px`,
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
     borderRadius:  '4px',
     boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
     zIndex:        '9998',
-    minWidth:      '180px',
+    minWidth:      `${modeMinWidth}px`,
     padding:       '4px 0',
     pointerEvents: 'auto',
   });
@@ -197,6 +200,57 @@ export function buildModeMenuEl(
     }
   }
 
+  return menu;
+}
+
+export type CheckMenuRow =
+  | { section: string }
+  | { label: string; active: boolean; enabled?: boolean; onClick: (e: MouseEvent) => void };
+
+/**
+ * Build a checkbox-style dropdown menu (for overlays/orientation groups).
+ * Each row with an `onClick` is a toggleable item; rows with `section` are headers.
+ * Stays open after each click so the user can toggle multiple items.
+ */
+export function buildCheckMenuEl(
+  anchorRect: DOMRect,
+  rows: CheckMenuRow[],
+  helpers: Pick<ToolbarHelpers, 'makeMenuRow' | 'makeMenuSection'>,
+): HTMLDivElement {
+  const { makeMenuRow, makeMenuSection } = helpers;
+  const menu = document.createElement('div');
+  const minWidth = 168;
+  // Prefer left-aligned; flip to right-aligned when button is near the right edge.
+  const fitsRight = anchorRect.left + minWidth <= (window.innerWidth ?? Infinity);
+  const leftPx  = fitsRight ? anchorRect.left : Math.max(4, anchorRect.right - minWidth);
+  Object.assign(menu.style, {
+    position:      'fixed',
+    top:           `${anchorRect.bottom + 4}px`,
+    left:          `${leftPx}px`,
+    background:    CLR.menuBg,
+    border:        `1px solid ${CLR.menuBorder}`,
+    borderRadius:  '4px',
+    boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+    zIndex:        '9998',
+    minWidth:      `${minWidth}px`,
+    padding:       '4px 0',
+    pointerEvents: 'auto',
+  });
+  for (const row of rows) {
+    if ('section' in row) {
+      menu.appendChild(makeMenuSection(row.section));
+    } else {
+      const enabled = row.enabled !== false;
+      if (!enabled) continue;
+      const el = makeMenuRow(
+        (row.active ? '✓ ' : '  ') + row.label,
+        row.active,
+        false,
+        (e) => { e.stopPropagation(); row.onClick(e); },
+      );
+      menu.appendChild(el);
+    }
+  }
   return menu;
 }
 
@@ -333,16 +387,19 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       if (openMenu) { openMenu.remove(); openMenu = null; return; }
       const menu = document.createElement('div');
       const btnRect = btn.getBoundingClientRect();
+      const ddMinWidth = 148;
+      const ddFitsRight = btnRect.left + ddMinWidth <= (window.innerWidth ?? Infinity);
+      const ddLeft = ddFitsRight ? btnRect.left : Math.max(4, btnRect.right - ddMinWidth);
       Object.assign(menu.style, {
         position:      'fixed',
         top:           `${btnRect.bottom + 4}px`,
-        left:          `${btnRect.left}px`,
+        left:          `${ddLeft}px`,
         background:    CLR.menuBg,
         border:        `1px solid ${CLR.menuBorder}`,
         borderRadius:  '4px',
         boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
         zIndex:        '9998',
-        minWidth:      '148px',
+        minWidth:      `${ddMinWidth}px`,
         padding:       '4px 0',
         pointerEvents: 'auto',
       });
