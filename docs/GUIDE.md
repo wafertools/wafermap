@@ -76,7 +76,7 @@ renderWaferMap(document.getElementById('map'), result, {
 
 `renderWaferMap` returns immediately and mounts a self-contained interactive map.
 A toolbar appears on hover, giving users access to all display controls — no extra
-HTML or JavaScript required. The toolbar includes an **expand** button (⛶) that
+HTML or JavaScript required (`showToolbar` defaults to `true`). The toolbar includes an **expand** button (⛶) that
 opens the map in a full-screen modal without rebuilding the scene.
 
 > **`x` and `y` are always die grid positions (prober step coordinates) — integers
@@ -1084,6 +1084,13 @@ renderWaferMap(container, items, {
 second argument is an array of items.  All cards share a single control bar —
 changing mode, colour, rotate, or flip applies to every card at once.
 
+The gallery container needs a width but **not** a fixed height — the grid grows
+to fit its cards automatically.  `width: 100%` is the typical choice:
+
+```html
+<div id="gallery" style="width: 100%;"></div>
+```
+
 ### Basic gallery
 
 ```ts
@@ -1522,210 +1529,134 @@ They are global and persist for the lifetime of the page.
 
 ![](images/image-14.png)
 
-## 17. Common patterns and tips
+## 17. Recipes
 
-### Show wafer metadata in the card header
+Short, task-focused examples for common integration questions.
 
-Pass `metadata` via `waferConfig` so values appear in hover tooltips and can be
-used for card labels:
+### Render a static thumbnail (no toolbar)
+
+Pass `showToolbar: false` for embedded widgets, report thumbnails, or any context
+where the interactive toolbar would be intrusive:
 
 ```ts
-const result = buildWaferMap({
-  results,
-  waferConfig: {
-    diameter: 300,
-    metadata: { lot: 'LOT123', waferNumber: 3, testDate: '2026-05-01' },
-  },
-});
-
-// Use in gallery label:
-items.push({ ...result, label: `W${result.wafer.metadata.waferNumber}` });
+renderWaferMap(container, result, { showToolbar: false });
 ```
 
-![](images/image-12.png)
+The map still renders at full quality with tooltips disabled. To re-enable
+tooltips while keeping the toolbar hidden, pair with `showTooltips: true`.
 
-### Keep `ringCount` consistent between renderer and stats engine
+### Build a gallery from a CSV grouped by wafer ID
 
-The stats engine partitions dies into rings using the same count as the renderer.
-If you change `ringCount` in one place, change it in the other:
+The typical first integration: parse a multi-wafer CSV, group rows by wafer, and
+render them all as a gallery.
 
 ```ts
-const RING_COUNT = 4;
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
 
-renderWaferMap(container, result, {
-  sceneOptions: { ringCount: RING_COUNT },
+// 1. Parse — cast all numeric fields; CSV parsers return strings
+const rows = csvText.trim().split('\n').slice(1).map(line => {
+  const [lot, wafer, x, y, hbin, sbin, testA, testB] = line.split(',');
+  return { wafer, x: +x, y: +y, hbin: +hbin, sbin: +sbin,
+           testValues: { 1010: +testA, 1020: +testB } };
 });
 
-const summary = analyzeWaferMap(result, { ringCount: RING_COUNT });
+// 2. Group by wafer ID — build results as items in one pass
+const byWafer = Map.groupBy(rows, r => r.wafer);  // Node 21+ / modern browsers
+// or: rows.reduce((m, r) => (m.set(r.wafer, [...(m.get(r.wafer) ?? []), r]), m), new Map())
+
+const items = [...byWafer.entries()].map(([waferId, waferRows]) => ({
+  ...buildWaferMap({ results: waferRows, passBins: [1] }),
+  label: waferId,
+}));
+
+// 3. Render — one call, shared toolbar across all cards
+renderWaferMap(document.getElementById('gallery'), items);
 ```
 
-### Re-use a single `buildWaferMap` result for both rendering and analysis
+### Re-use a single result for both rendering and analysis
 
-`analyzeWaferMap` accepts a `WaferMapResult` directly — no need to rebuild:
+`analyzeWaferMap` accepts a `WaferMapResult` directly — no need to call
+`buildWaferMap` twice:
 
 ```ts
-const result  = buildWaferMap({ results, waferConfig, dieConfig });
-const summary = analyzeWaferMap(result);     // reuses the already-built dies and scene
+const result  = buildWaferMap({ results, passBins: [1] });
+const summary = analyzeWaferMap(result);
 
+// summary panel and findings button appear automatically
 renderWaferMap(container, result, { statsSummary: summary });
-```
-
-### Check yield programmatically before rendering
-
-```ts
-const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
-const { passDies, totalDies, yieldPercent } = result.yield;
-
-if (yieldPercent !== null && yieldPercent < 0.5) {
-  banner.textContent = `⚠ Low yield: ${(yieldPercent * 100).toFixed(1)}%`;
-}
-renderWaferMap(container, result);
 ```
 
 ### Fit multiple maps to the same value range
 
 When showing several wafers side-by-side in value mode, lock them all to the same
-colour scale so the maps are visually comparable:
+colour scale so differences in the data are visible rather than hidden by
+per-wafer auto-scaling:
 
 ```ts
-// Compute the range across all wafers first
+// Compute the shared range across all wafers first
 let min = Infinity, max = -Infinity;
 for (const r of waferResults) {
   for (const die of r.dies) {
-    const v = die.testValues?.[1050];  // test number 1050 = Idsat
+    const v = die.testValues?.[1050];
     if (v !== undefined) { min = Math.min(min, v); max = Math.max(max, v); }
   }
 }
 
-const items = waferResults.map(r => ({
+// Apply it as a per-card override so the shared gallery scale doesn't override it
+const items = waferResults.map((r, i) => ({
   ...r,
+  label: waferIds[i],
   sceneOptions: { valueRange: [min, max] },
 }));
 
 renderWaferMap(container, items, { sceneOptions: { plotMode: 'value' } });
 ```
 
-### Engineering vs SI format for unitless values
+### Keep `ringCount` consistent between renderer and stats engine
 
-Values without a unit (no `TestDef.unit` supplied) are formatted using
-`fallbackFormat`.  The default is `'engineering'` (e.g. `1.00E-3`).  Switch to
-`'si'` for µ/n/p prefixes (e.g. `1.00 m`):
-
-```ts
-renderWaferMap(container, result, { fallbackFormat: 'si' });
-renderWaferMap(container, items, { fallbackFormat: 'si' });
-```
-
-### `buildWaferMap` is pure — safe to call on a server
-
-`buildWaferMap` and `analyzeWaferMap`/`analyzeWaferLot` have no DOM access and no
-side effects.  You can run them in Node.js, Deno, or any server-side environment to
-pre-compute results and stream them to the browser:
+The stats engine partitions dies into rings independently of the renderer. If you
+change `ringCount`, change it in both places or the ring boundaries shown on the
+map won't match the ring findings:
 
 ```ts
-// server.ts (Node.js)
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { analyzeWaferLot } from '@paulrobins/wafermap/stats';
+const RING_COUNT = 4;
 
-const results  = waferResults.map(r => buildWaferMap(r));
-const lotStats = analyzeWaferLot(results);
-// Serialise and send to the client...
-```
-
-Only `renderWaferMap` and `toCanvas` require a browser environment.
-
-### Analyse wafers in Node.js without a browser (console / CI script)
-
-Because `buildWaferMap` and `analyzeWaferMap` have no DOM dependency you can run
-the full analysis pipeline in a plain Node.js script — useful for CI checks,
-batch processing, or quick exploration of a new dataset:
-
-```js
-// analyse-wafers.mjs — run with: node analyse-wafers.mjs
-import { readFileSync } from 'node:fs';
-import { buildWaferMap }    from '@paulrobins/wafermap';
-import { analyzeWaferMap }  from '@paulrobins/wafermap/stats';
-
-// --- 1. Parse CSV ---------------------------------------------------------
-const csv   = readFileSync('data/wafers.csv', 'utf8');
-const lines = csv.trim().split('\n');
-const header = lines[0].split(',');
-const col  = (row, name) => row[header.indexOf(name)];
-
-const rows = lines.slice(1).map(line => {
-  const r = line.split(',');
-  return { waferId: col(r,'wafer'), x: +col(r,'x'), y: +col(r,'y'), hbin: +col(r,'hbin'),
-           testValues: { 1010: +col(r,'testA') } };
-});
-
-// --- 2. Group by wafer ----------------------------------------------------
-const byWafer = Map.groupBy(rows, r => r.waferId);   // Node 21+
-// or: rows.reduce((m,r) => (m.set(r.waferId, [...(m.get(r.waferId) ?? []), r]), m), new Map())
-
-// --- 3. Build + analyse each wafer ----------------------------------------
-for (const [waferId, waferRows] of byWafer) {
-  const result  = buildWaferMap({ results: waferRows, passBins: [1] });
-  const summary = analyzeWaferMap(result);
-
-  const yld     = summary.stats.yieldPercent;
-  const top     = summary.findings[0];   // highest-severity finding (findings is pre-sorted)
-
-  console.log(
-    `${waferId}  yield=${yld !== null ? (yld * 100).toFixed(1) + '%' : 'n/a'}` +
-    `  findings=${summary.findings.length}` +
-    (top ? `  top=[${top.severity}] ${top.summary}` : ''),
-  );
-}
-```
-
-The `testValues` keys are **test numbers** (integers), not column names.  If you
-want human-readable names in the findings output, pass `testDefs`:
-
-```js
-const result = buildWaferMap({
-  results,
-  passBins: [1],
-  testDefs: [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
+const summary = analyzeWaferMap(result, { ringCount: RING_COUNT });
+renderWaferMap(container, result, {
+  statsSummary: summary,
+  sceneOptions: { ringCount: RING_COUNT },
 });
 ```
 
-### Filter findings by severity, kind, or spatial family
+### Sync toolbar state to your own UI controls
 
-`filterFindings` is a pure utility that slices the `findings` array from any `StatsSummary` or `LotStatsSummary`. All criteria are ANDed; each accepts a single value or an array:
+`onSceneOptionsChange` fires whenever the toolbar changes a display option. Use
+it to reflect the map's current state in external controls — a mode dropdown, a
+rotation indicator, or a URL query string:
 
 ```ts
-import { filterFindings } from '@paulrobins/wafermap/stats';
-
-// Only ring or quadrant findings with unusual severity:
-const critical = filterFindings(summary, {
-  severity: 'unusual',
-  family:   ['ring', 'quadrant'],
+const ctrl = renderWaferMap(container, result, {
+  sceneOptions: { plotMode: 'hardBin' },
+  onSceneOptionsChange: (opts) => {
+    modeDropdown.value = opts.plotMode;
+    urlParams.set('mode', opts.plotMode);
+    history.replaceState(null, '', '?' + urlParams);
+  },
 });
 
-// All yield findings regardless of severity:
-const yieldFindings = filterFindings(summary, { kind: 'yield' });
+// Drive the map from external controls in the other direction:
+modeDropdown.addEventListener('change', () => {
+  ctrl.setOptions({ plotMode: modeDropdown.value });
+});
 ```
-
-### Plot per-wafer yield as a trend chart using `lotYieldSeries`
-
-`LotStatsSummary.lotYieldSeries` gives you one `{ waferIndex, yieldPercent }` entry per wafer — ready to feed a line chart without extra data wrangling:
-
-```ts
-const lotSummary = analyzeWaferLot(waferResults);
-
-// lotYieldSeries is sorted by waferIndex
-const labels = lotSummary.lotYieldSeries.map(e => `W${e.waferIndex + 1}`);
-const values = lotSummary.lotYieldSeries.map(e =>
-  e.yieldPercent !== null ? (e.yieldPercent * 100).toFixed(1) : null
-);
-// Feed labels/values into any charting library
-```
-
-`yieldPercent` is `null` for a wafer that had no bin data at all.
 
 ### Use gross die yield (edge dies in denominator)
 
-By default, edge-excluded dies are removed from both the numerator and denominator. Set `edgeDieYieldMode: 'denominator-only'` to compute gross die yield — edge dies count in the denominator but never as pass:
+By default, edge-excluded dies are removed from both the numerator and
+denominator — they don't affect yield either way. Set
+`edgeDieYieldMode: 'denominator-only'` to compute gross die yield instead —
+edge dies count against yield but can never pass:
 
 ```ts
 const result = buildWaferMap({
@@ -1737,28 +1668,65 @@ const result = buildWaferMap({
 });
 
 const { yieldPercent, yieldPercentGross } = result.yield;
-// yieldPercent      — standard yield, edge dies excluded entirely
-// yieldPercentGross — gross die yield, edge dies in denominator
+// yieldPercent      — standard yield: edge dies excluded from both sides
+// yieldPercentGross — gross die yield: edge dies in denominator only
 ```
 
-### Check for structured warnings from the stats engine
+### Filter findings by severity, kind, or spatial family
 
-When `analyzeWaferMap` encounters an unusual condition (e.g. more than 100 distinct tests in the data without a `testNumbers` filter), it records a structured warning in `summary.stats.warnings[]` in addition to logging to the console:
+`filterFindings` slices the `findings` array from any `StatsSummary` or
+`LotStatsSummary`. All criteria are ANDed; each accepts a single value or an
+array:
 
 ```ts
-const summary = analyzeWaferMap(result);
+import { filterFindings } from '@paulrobins/wafermap/stats';
 
-if (summary.stats.warnings?.length) {
-  console.warn('Stats warnings:', summary.stats.warnings);
-  // e.g. "101 tests found — test-value analysis skipped. Pass testNumbers to override."
+// Only ring or quadrant findings at unusual severity:
+const critical = filterFindings(summary, {
+  severity: 'unusual',
+  family:   ['ring', 'quadrant'],
+});
+
+// All yield findings regardless of severity:
+const yieldFindings = filterFindings(summary, { kind: 'yield' });
+```
+
+### Analyse a lot in Node.js without a browser
+
+`buildWaferMap` and `analyzeWaferMap` have no DOM dependency — run them in a
+plain Node.js script for CI checks, batch processing, or quick dataset
+exploration:
+
+```js
+// analyse-lot.mjs  —  node analyse-lot.mjs
+import { readFileSync } from 'node:fs';
+import { buildWaferMap }   from '@paulrobins/wafermap';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+
+const csv    = readFileSync('data/wafers.csv', 'utf8');
+const lines  = csv.trim().split('\n');
+const header = lines[0].split(',');
+const col    = (row, name) => row[header.indexOf(name)];
+
+const rows = lines.slice(1).map(line => {
+  const r = line.split(',');
+  return { wafer: col(r,'wafer'), x: +col(r,'x'), y: +col(r,'y'),
+           hbin: +col(r,'hbin'), testValues: { 1010: +col(r,'testA') } };
+});
+
+const byWafer = Map.groupBy(rows, r => r.wafer);
+
+for (const [waferId, waferRows] of byWafer) {
+  const result  = buildWaferMap({ results: waferRows, passBins: [1] });
+  const summary = analyzeWaferMap(result);
+  const yld     = summary.stats.yieldPercent;
+  const top     = summary.findings[0];
+  console.log(
+    `${waferId}  yield=${yld !== null ? (yld * 100).toFixed(1) + '%' : 'n/a'}` +
+    `  findings=${summary.findings.length}` +
+    (top ? `  top=[${top.severity}] ${top.summary}` : ''),
+  );
 }
-```
-
-To suppress the warning and run analysis on a specific subset, pass `testNumbers`:
-
-```ts
-const summary = analyzeWaferMap(result, { testNumbers: [1050, 1060, 1070] });
-// No warning — analysis runs on exactly these three tests
 ```
 
 

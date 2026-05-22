@@ -5,9 +5,10 @@ site_author = "Paul Robins"
 repo_url    = "https://github.com/telecasterer/wafermap"
 
 nav = [
-  { "Home"              = "index.md"  },
-  { "User Guide"        = "GUIDE.md"  },
-  { "API Reference"     = "API.md"    },
+  { "Home"              = "index.md"      },
+  { "Quick Start"       = "QUICKSTART.md" },
+  { "User Guide"        = "GUIDE.md"      },
+  { "API Reference"     = "API.md"        },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
     { "Getting started" = [
@@ -44,6 +45,7 @@ nav = [
     { "React"     = "REACT.md"     },
     { "Vue 3"     = "VUE.md"       },
   ]},
+  { "Glossary"          = "GLOSSARY.md"   },
 ]
 
 [project.theme]

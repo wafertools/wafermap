@@ -34,11 +34,11 @@ renderWaferMap(document.getElementById('map'), result);
 
 ## Docs
 
+- [Quick start](https://telecasterer.github.io/wafermap/quickstart/)
 - [Guide](https://telecasterer.github.io/wafermap/guide/)
-- [API Reference](docs/API.md)
+- [API Reference](https://telecasterer.github.io/wafermap/api/)
+- [Glossary](https://telecasterer.github.io/wafermap/glossary/)
 - [Demo catalog](https://telecasterer.github.io/wafermap/)
-
-The docs site is the canonical home for examples, usage notes, and API details.
 
 ## Local preview
 
@@ -47,5 +47,5 @@ npm install
 npm run dev
 ```
 
-This starts MkDocs and serves the documentation site from `docs/`, including the
+Serves the documentation site locally from `docs/`, including the
 example pages under `docs/examples/`.

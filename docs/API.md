@@ -778,6 +778,12 @@ ctrl.destroy();
 > **Unified API.** `renderWaferMap` is overloaded — when the second argument is an
 > array of `WaferMapDisplayItem | WaferMapDisplayItemFactory`, it builds a multi-card gallery
 > instead of a single map.
+>
+> **Array of one:** a single-item array containing a pre-built item (not a factory) is
+> coerced to the single-map path — no gallery chrome is shown and the return value
+> behaves as a `WaferCanvasController`. For a predictable static type, pass the result
+> directly: `renderWaferMap(container, items[0])`. A single-item array containing a
+> factory is not coerced and renders as a one-card gallery.
 
 A multi-map gallery with a shared control bar, per-card view-only toolbars, and
 click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or

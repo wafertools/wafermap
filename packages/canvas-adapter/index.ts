@@ -40,6 +40,9 @@ export function renderWaferMap(
   options?: RenderOptions | GalleryOptions,
 ): WaferCanvasController | GalleryController {
   if (Array.isArray(resultOrItems)) {
+    if (resultOrItems.length === 1 && typeof resultOrItems[0] !== 'function') {
+      return _renderWaferMap(container, resultOrItems[0], options as RenderOptions);
+    }
     return _renderWaferGallery(container, resultOrItems, options as GalleryOptions);
   }
   return _renderWaferMap(container, resultOrItems, options as RenderOptions);
