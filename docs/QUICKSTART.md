@@ -18,10 +18,6 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 <head>
   <meta charset="utf-8">
   <title>My first wafer map</title>
-  <script type="importmap">{ "imports": {
-    "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
-  } }</script>
 </head>
 <body>
   <!-- A wafer is a circular silicon substrate; dies (individual chips) are arranged in a grid across it. -->
@@ -29,8 +25,8 @@ Copy this into an HTML file and open it in a browser. No bundler required.
   <div id="map" style="width:600px; height:600px;"></div>
 
   <script type="module">
-    import { buildWaferMap }  from 'wafermap';
-    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { buildWaferMap }  from 'https://esm.sh/@paulrobins/wafermap';
+    import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/canvas-adapter';
 
     // x, y are integer die grid positions output by the prober — NOT millimetres.
     // hbin is the hard bin: the pass/fail category assigned by the test equipment.

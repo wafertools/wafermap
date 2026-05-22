@@ -27,9 +27,9 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 
 ```html
 <script type="module">
-  import { buildWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/index.js';
+  import { buildWaferMap } from 'https://esm.sh/@paulrobins/wafermap';
   // renderWaferMap handles both single maps and galleries — one import for both:
-  import { renderWaferMap } from 'https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/canvas-adapter/index.js';
+  import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/canvas-adapter';
 </script>
 ```
 
@@ -64,11 +64,14 @@ const result = buildWaferMap([
 ]);
 
 renderWaferMap(document.getElementById('map'), result);
+```
 
-// Optional: react to die clicks. The Die object has x, y, hbin, sbin, testValues.
-// renderWaferMap(document.getElementById('map'), result, {
-//   onClick: (die) => console.log(die.x, die.y, die.hbin),
-// });
+To respond to die clicks, pass an `onClick` callback — the `Die` object has `x`, `y`, `hbin`, `sbin`, and `testValues`:
+
+```ts
+renderWaferMap(document.getElementById('map'), result, {
+  onClick: (die) => console.log(die.x, die.y, die.hbin),
+});
 ```
 
 `renderWaferMap` returns immediately and mounts a self-contained interactive map.
