@@ -44,12 +44,12 @@
     <span class="demo-title">§18 — Advanced: the rendering pipeline</span>
     <span class="demo-desc">
       createWafer · generateDies · clipDiesToWafer · applyOrientation · applyProbeSequence
-      · transformDies · generateReticleGrid · buildScene · toCanvas
+      · transformDies · generateReticleGrid · buildView · toCanvas
     </span>
   </header>
 
   <div class="demo-intro">
-    The manual pipeline gives you full control over every step: <code>createWafer</code> → <code>generateDies</code> → <code>clipDiesToWafer</code> → <code>applyOrientation</code> → <code>applyProbeSequence</code> → enrich with test data → <code>generateReticleGrid</code> → <code>buildScene</code> → <code>toCanvas</code>.
+    The manual pipeline gives you full control over every step: <code>createWafer</code> → <code>generateDies</code> → <code>clipDiesToWafer</code> → <code>applyOrientation</code> → <code>applyProbeSequence</code> → enrich with test data → <code>generateReticleGrid</code> → <code>buildView</code> → <code>toCanvas</code>.
     Use this when you need to intercept or customise individual stages — for example to inject custom enrichment, apply a non-standard probe path, or integrate with a server-side pipeline.
     For most use cases <code>buildWaferMap</code> + <code>renderWaferMap</code> is simpler. Controls above drive <code>toCanvas</code> directly — no built-in toolbar.
   </div>
@@ -95,7 +95,7 @@
       applyProbeSequence,
       transformDies,
       generateReticleGrid,
-      buildScene,
+      buildView,
     } from 'wafermap';
     import { toCanvas } from 'wafermap/canvas-adapter';
     import {
@@ -166,8 +166,8 @@
     // ── Redraw ─────────────────────────────────────────────────────────────────
     //
     // transformDies applies the interactive rotation/flip on top of the
-    // already-oriented base dies.  buildScene then converts the dies and
-    // options into a renderer-agnostic Scene.  toCanvas draws it directly
+    // already-oriented base dies.  buildView then converts the dies and
+    // options into a renderer-agnostic View.  toCanvas draws it directly
     // onto the canvas element — no DOM scaffolding or toolbar is added.
     function redraw() {
       const interactiveTransform = {
@@ -178,7 +178,7 @@
 
       const currentDies = transformDies(enriched, interactiveTransform, wafer.center);
 
-      const scene = buildScene(wafer, currentDies, {
+      const view = buildView(wafer, currentDies, {
         plotMode:               'hardBin',
         hbinDefs:               HBIN_DEFS,
         reticles,
@@ -190,7 +190,7 @@
         interactiveTransform,
       });
 
-      toCanvas(document.getElementById('map'), scene);
+      toCanvas(document.getElementById('map'), view);
 
       document.getElementById('rot-badge').textContent = `${state.rotation}°`;
       document.getElementById('btn-flipx').classList.toggle('active', state.flipX);

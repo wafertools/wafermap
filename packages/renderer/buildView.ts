@@ -14,14 +14,23 @@ type BinDefMap = Map<number, BinDef>;
 /** Resolve a toolbar activeTest cursor to the canonical test number for getDieTestValue. */
 function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
   if (testDefs?.length) {
-    const def = testDefs.find(t => (t.index ?? t.testNumber) === activeTest)
-             ?? testDefs[0]; // default to first test when activeTest doesn't match any def
+    const def = findTestDef(testDefs, activeTest) ?? testDefs[0];
     return {
       testNumber:    def.testNumber ?? def.index ?? activeTest,
       fallbackIndex: def.index     ?? activeTest,
     };
   }
   return { testNumber: activeTest, fallbackIndex: activeTest };
+}
+
+/** Find a TestDef by its testNumber (or legacy index field). Returns undefined when testDefs is absent or no match. */
+export function findTestDef(testDefs: TestDef[] | undefined, testNumber: number): TestDef | undefined {
+  return testDefs?.find(t => (t.testNumber ?? t.index) === testNumber);
+}
+
+/** Return sorted unique test numbers present across a set of dies (from testValues keys). */
+export function getUniqueTestNumbers(dies: Die[]): number[] {
+  return [...new Set(dies.flatMap(d => d.testValues ? Object.keys(d.testValues).map(Number) : []))].sort((a, b) => a - b);
 }
 
 export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'specLimit';
@@ -31,7 +40,7 @@ interface Point {
   y: number;
 }
 
-export interface SceneRect {
+export interface ViewRect {
   x: number;
   y: number;
   width: number;
@@ -40,10 +49,9 @@ export interface SceneRect {
   type: 'hardBin' | 'softBin' | 'value' | 'stacked';
   stack?: number[];
   metadata?: DieMetadata;
-  path: string;
 }
 
-export interface SceneText {
+export interface ViewText {
   x: number;
   y: number;
   text: string;
@@ -52,25 +60,25 @@ export interface SceneText {
   align: 'center';
 }
 
-export interface SceneHoverPoint {
+export interface ViewHoverPoint {
   x: number;
   y: number;
-  text: string;
 }
 
-export interface SceneOverlay {
+export interface ViewOverlay {
   kind: 'wafer-boundary' | 'reticle' | 'probe-path' | 'ring-boundary' | 'quadrant-boundary' | 'xy-indicator';
-  path: string;
+  points: Point[][];
+  closed: boolean;
   lineColor: string;
   lineWidth: number;
   fill?: string;
 }
 
-export interface Scene {
-  rectangles: SceneRect[];
-  hoverPoints: SceneHoverPoint[];
-  texts: SceneText[];
-  overlays: SceneOverlay[];
+export interface View {
+  rectangles: ViewRect[];
+  hoverPoints: ViewHoverPoint[];
+  texts: ViewText[];
+  overlays: ViewOverlay[];
   plotMode: PlotMode;
   colorScheme: string;
   metadata: WaferMetadata | null;
@@ -111,7 +119,7 @@ export interface Scene {
   dieBounds: { minX: number; maxX: number; minY: number; maxY: number } | null;
 }
 
-export interface SceneOptions {
+export interface ViewOptions {
   plotMode?: PlotMode;
   showText?: boolean;
   showReticle?: boolean;
@@ -213,7 +221,7 @@ const NO_DATA_FILL     = '#d6d9dd';
 
 function normalizeTransform(
   wafer: Wafer,
-  interactiveTransform: SceneOptions['interactiveTransform']
+  interactiveTransform: ViewOptions['interactiveTransform']
 ): TransformState {
   return {
     rotation: wafer.orientation + (interactiveTransform?.rotation ?? 0),
@@ -235,14 +243,22 @@ function transformVector(dx: number, dy: number, transform: TransformState): Poi
   return { x, y };
 }
 
-function toPath(points: Point[]): string {
-  return `${points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')} Z`;
+function polyline(points: Point[], close = false): { points: Point[][]; closed: boolean } {
+  return { points: [points], closed: close };
 }
 
-function polylinePath(points: Point[], close = false): string {
-  if (!points.length) return '';
-  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
-  return close ? `${path} Z` : path;
+function rectPoints(center: Point, width: number, height: number, transform: TransformState): Point[][] {
+  if (!transform.rotation && !transform.flipX && !transform.flipY) {
+    const x1 = center.x - width / 2, y1 = center.y - height / 2;
+    const x2 = center.x + width / 2, y2 = center.y + height / 2;
+    return [[{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }]];
+  }
+  return [[
+    transformVector(-width / 2, -height / 2, transform),
+    transformVector( width / 2, -height / 2, transform),
+    transformVector( width / 2,  height / 2, transform),
+    transformVector(-width / 2,  height / 2, transform),
+  ].map(c => ({ x: center.x + c.x, y: center.y + c.y }))];
 }
 
 function transformPoint(point: Point, center: Point, transform: TransformState): Point {
@@ -285,24 +301,6 @@ function boundaryPointAtAngle(wafer: Wafer, angle: number): Point {
   return { x, y };
 }
 
-function rectanglePath(center: Point, width: number, height: number, transform: TransformState): string {
-  // Fast path: axis-aligned rectangle (no rotation, no flip) — avoids 4× trig calls and array allocation.
-  if (!transform.rotation && !transform.flipX && !transform.flipY) {
-    const x1 = center.x - width / 2;
-    const y1 = center.y - height / 2;
-    const x2 = center.x + width / 2;
-    const y2 = center.y + height / 2;
-    return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2} L ${x1} ${y2} Z`;
-  }
-  const corners = [
-    transformVector(-width / 2, -height / 2, transform),
-    transformVector(width / 2, -height / 2, transform),
-    transformVector(width / 2, height / 2, transform),
-    transformVector(-width / 2, height / 2, transform),
-  ].map((corner) => ({ x: center.x + corner.x, y: center.y + corner.y }));
-
-  return toPath(corners);
-}
 
 function formatValueLabel(values: number[], tickFmt: (v: number) => string): string {
   return values.map(tickFmt).join(' / ');
@@ -322,7 +320,7 @@ function fontSizeForDie(die: Die, text: string): number {
   return Math.max(8, Math.min(16, Math.round(Math.min(minSide * 0.55, widthBudget * 1.8))));
 }
 
-function buildHoverText(
+export function buildHoverText(
   die: Die,
   plotMode: PlotMode,
   testDefs?: TestDef[],
@@ -331,9 +329,9 @@ function buildHoverText(
   fallbackFormat?: 'si' | 'engineering',
   aggrMethod?: string,
   lotSize?: number,
-  hbinMap?: Map<number, BinDef> | null,
-  sbinMap?: Map<number, BinDef> | null,
 ): string {
+  const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
+  const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
   const lines: string[] = [`Die (${die.x}, ${die.y})`];
 
   if (plotMode === 'stackedValues') {
@@ -351,9 +349,7 @@ function buildHoverText(
     const bin   = plotMode === 'stackedSoftBins' ? die.sbin : die.hbin;
     if (count !== undefined) {
       const pct     = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
-      const defMap  = plotMode === 'stackedSoftBins'
-        ? (sbinMap ?? (sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null))
-        : (hbinMap ?? (hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null));
+      const defMap  = plotMode === 'stackedSoftBins' ? sbinMap : hbinMap;
       const binLabel = bin !== undefined
         ? (defMap?.get(bin)?.name ? `${bin} · ${defMap.get(bin)!.name}` : `Bin ${bin}`)
         : 'Bin';
@@ -392,16 +388,14 @@ function buildHoverText(
     }
 
     if (die.hbin !== undefined || die.sbin !== undefined) {
-      const hbinMap_ = hbinMap ?? (hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null);
-      const sbinMap_ = sbinMap ?? (sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null);
       const parts: string[] = [];
       if (die.hbin !== undefined) {
-        const name  = hbinMap_?.get(die.hbin)?.name;
+        const name  = hbinMap?.get(die.hbin)?.name;
         const value = name ? `${die.hbin} · ${name}` : String(die.hbin);
         parts.push(`HBin: ${value}`);
       }
       if (die.sbin !== undefined) {
-        const name  = sbinMap_?.get(die.sbin)?.name;
+        const name  = sbinMap?.get(die.sbin)?.name;
         const value = name ? `${die.sbin} · ${name}` : String(die.sbin);
         parts.push(`SBin: ${value}`);
       }
@@ -441,11 +435,11 @@ export function generateTextOverlay(
     testDefs?: TestDef[];
     fallbackFormat?: 'si' | 'engineering';
   },
-): SceneText[] {
+): ViewText[] {
   const { plotMode, colorFns, normalize, activeTest, valueRange, testDefs, fallbackFormat } = options;
 
   // Build a tick formatter matched to the colorbar scale so die labels are consistent.
-  const testDef = testDefs?.find(t => (t.index ?? t.testNumber) === activeTest);
+  const testDef = findTestDef(testDefs, activeTest);
   const { tickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
   const { testNumber: tn, fallbackIndex: fi } = resolveTestNumber(activeTest, testDefs);
 
@@ -501,7 +495,7 @@ function notchAngle(type: 'top' | 'bottom' | 'left' | 'right'): number {
  *   spliced into the uniform circle trace so the notch renders as a sharp
  *   triangular indentation (~3.5 mm wide, ~1.25 mm deep — SEMI M1 standard).
  */
-function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 720): SceneOverlay[] {
+function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 720): ViewOverlay[] {
   const { center, radius, notch } = wafer;
 
   // Determine rendering style from diameter — same threshold used in resolveNotch.
@@ -514,7 +508,7 @@ function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 7
       const angle = (2 * Math.PI * index) / steps;
       points.push(transformPoint(boundaryPointAtAngle(wafer, angle), center, transform));
     }
-    return [{ kind: 'wafer-boundary', path: polylinePath(points, true), lineColor: '#111111', lineWidth: 2 }];
+    return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#111111', lineWidth: 2 }];
   }
 
   // V-notch: build circle, then splice in the triangular indentation.
@@ -556,11 +550,11 @@ function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 7
     points.push(transformPoint({ x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) }, center, transform));
   }
 
-  return [{ kind: 'wafer-boundary', path: polylinePath(points, true), lineColor: '#111111', lineWidth: 2 }];
+  return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#111111', lineWidth: 2 }];
 }
 
-function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: number, steps = 360): SceneOverlay[] {
-  const overlays: SceneOverlay[] = [];
+function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: number, steps = 360): ViewOverlay[] {
+  const overlays: ViewOverlay[] = [];
   const safeRingCount = Math.max(1, Math.floor(ringCount));
 
   for (let ring = 1; ring < safeRingCount; ring++) {
@@ -578,7 +572,7 @@ function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: n
 
     overlays.push({
       kind: 'ring-boundary',
-      path: polylinePath(points, true),
+      ...polyline(points, true),
       lineColor: 'rgba(255,255,255,0.7)',
       lineWidth: 1.5,
     });
@@ -587,7 +581,7 @@ function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: n
   return overlays;
 }
 
-function buildQuadrantOverlays(wafer: Wafer, transform: TransformState): SceneOverlay[] {
+function buildQuadrantOverlays(wafer: Wafer, transform: TransformState): ViewOverlay[] {
   const angles = [0, Math.PI / 2];
 
   return angles.map((angle) => {
@@ -595,14 +589,14 @@ function buildQuadrantOverlays(wafer: Wafer, transform: TransformState): SceneOv
     const end = transformPoint(boundaryPointAtAngle(wafer, angle + Math.PI), wafer.center, transform);
     return {
       kind: 'quadrant-boundary',
-      path: polylinePath([start, end]),
+      ...polyline([start, end]),
       lineColor: 'rgba(255,255,255,0.7)',
       lineWidth: 1.5,
     };
   });
 }
 
-function buildReticleOverlays(reticles: Reticle[], wafer: Wafer, transform: TransformState): SceneOverlay[] {
+function buildReticleOverlays(reticles: Reticle[], wafer: Wafer, transform: TransformState): ViewOverlay[] {
   return reticles.map((reticle) => {
     const rotatedCenter = transform.rotation
       ? rotatePoint(reticle.x, reticle.y, transform.rotation, wafer.center.x, wafer.center.y)
@@ -615,7 +609,8 @@ function buildReticleOverlays(reticles: Reticle[], wafer: Wafer, transform: Tran
 
     return {
       kind: 'reticle',
-      path: rectanglePath(transformedCenter, reticle.width, reticle.height, transform),
+      points: rectPoints(transformedCenter, reticle.width, reticle.height, transform),
+      closed: true,
       lineColor: 'rgba(0,100,220,0.45)',
       lineWidth: 1,
       fill: 'rgba(0,0,0,0)',
@@ -623,7 +618,7 @@ function buildReticleOverlays(reticles: Reticle[], wafer: Wafer, transform: Tran
   });
 }
 
-function buildProbeOverlay(dies: Die[]): SceneOverlay[] {
+function buildProbeOverlay(dies: Die[]): ViewOverlay[] {
   const ordered = dies
     .filter((die) => die.probeIndex !== undefined)
     .sort((left, right) => (left.probeIndex ?? 0) - (right.probeIndex ?? 0));
@@ -632,14 +627,14 @@ function buildProbeOverlay(dies: Die[]): SceneOverlay[] {
 
   return [{
     kind: 'probe-path',
-    path: polylinePath(ordered.map((die) => ({ x: die.physX, y: die.physY }))),
+    ...polyline(ordered.map(die => ({ x: die.physX, y: die.physY }))),
     lineColor: 'rgba(220,80,0,0.55)',
     lineWidth: 1,
   }];
 }
 
 function pushDieRectangles(
-  rectangles: SceneRect[],
+  rectangles: ViewRect[],
   die: Die,
   plotMode: PlotMode,
   transform: TransformState,
@@ -651,28 +646,23 @@ function pushDieRectangles(
   fallbackIndex: number,
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
-  needsPath?: boolean,
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
   // For 90°/270° rotations the axis-aligned bounding box swaps width and height.
-  // rectanglePath handles rotation via transformVector (no swap needed there),
-  // but SceneRect width/height must reflect the post-rotation AABB for correct
+  // ViewRect width/height must reflect the post-rotation AABB for correct
   // canvas drawing and hit-testing.
   const normRot = ((transform.rotation % 360) + 360) % 360;
   const swapAxes = normRot === 90 || normRot === 270;
   const sw = swapAxes ? rh : rw;
   const sh = swapAxes ? rw : rh;
-  const makePath = needsPath
-    ? () => rectanglePath({ x: die.physX, y: die.physY }, rw, rh, transform)
-    : () => '';
 
   const getBin = (d: Die) => plotMode === 'softBin' ? d.sbin : d.hbin;
 
   if (die.partial) {
     rectangles.push({
       x: die.physX, y: die.physY, width: sw, height: sh,
-      fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata, path: makePath(),
+      fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata,
     });
     return;
   }
@@ -680,7 +670,7 @@ function pushDieRectangles(
   if (die.edgeExcluded) {
     rectangles.push({
       x: die.physX, y: die.physY, width: sw, height: sh,
-      fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata, path: makePath(),
+      fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata,
     });
     return;
   }
@@ -690,7 +680,7 @@ function pushDieRectangles(
       getBin(die) !== highlightBin) {
     rectangles.push({
       x: die.physX, y: die.physY, width: sw, height: sh,
-      fill: DIM_FILL, type: 'hardBin', metadata: die.metadata, path: makePath(),
+      fill: DIM_FILL, type: 'hardBin', metadata: die.metadata,
     });
     return;
   }
@@ -707,7 +697,7 @@ function pushDieRectangles(
     } else {
       fill = SPEC_PASS_FILL;
     }
-    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata, path: makePath() });
+    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
     return;
   }
 
@@ -723,7 +713,7 @@ function pushDieRectangles(
     } else {
       fill = colorFns.forValue(normalize(value));
     }
-    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata, path: makePath() });
+    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
     return;
   }
 
@@ -732,21 +722,21 @@ function pushDieRectangles(
     const fill = bin != null
       ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
       : '#d6d9dd';
-    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata, path: makePath() });
+    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata });
     return;
   }
 
   // stackedValues / stackedBins: aggregated scalar in testValues[0] (preferred) or values[0].
   const aggValue = getDieTestValue(die, 0, 0);
   const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
-  rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata, path: makePath() });
+  rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
 }
 
 function buildXYIndicatorOverlay(
   wafer: Wafer,
   transform: TransformState,
-  texts: SceneText[]
-): SceneOverlay[] {
+  texts: ViewText[]
+): ViewOverlay[] {
   // Anchor is fixed at the bottom-left corner in data space (outside the wafer circle).
   // 0.9 per axis → distance ≈ 1.27 × radius: outside the circle but inside the chart area.
   // Do NOT transform the anchor — it stays in the corner regardless of wafer rotation/flip.
@@ -770,8 +760,8 @@ function buildXYIndicatorOverlay(
   );
 
   return [
-    { kind: 'xy-indicator', path: polylinePath([anchor, xTip]), lineColor: '#cc3300', lineWidth: 2 },
-    { kind: 'xy-indicator', path: polylinePath([anchor, yTip]), lineColor: '#0044cc', lineWidth: 2 },
+    { kind: 'xy-indicator', ...polyline([anchor, xTip]), lineColor: '#cc3300', lineWidth: 2 },
+    { kind: 'xy-indicator', ...polyline([anchor, yTip]), lineColor: '#0044cc', lineWidth: 2 },
   ];
 }
 
@@ -779,14 +769,14 @@ function buildXYIndicatorOverlay(
  * Build a renderer-agnostic scene from a wafer, dies, and display options.
  *
  * ```ts
- * buildScene(wafer, dies, { plotMode: 'hardBin', reticles })
+ * buildView(wafer, dies, { plotMode: 'hardBin', reticles })
  * ```
  */
-export function buildScene(
+export function buildView(
   wafer: Wafer,
   dies: Die[],
-  options: SceneOptions = {},
-): Scene {
+  options: ViewOptions = {},
+): View {
   const reticles = options.reticles ?? [];
 
   const {
@@ -859,7 +849,7 @@ export function buildScene(
   }
 
   // Resolve active test def now — needed for limit-based range defaulting below.
-  const activeTestDef = testDefs?.find(t => (t.index ?? t.testNumber) === activeTest);
+  const activeTestDef = findTestDef(testDefs, activeTest);
 
   // Compute value range for normalization.
   // For stackedValues/stackedBins the aggregated scalar sits at testNumber=0.
@@ -935,8 +925,8 @@ export function buildScene(
   const minDim = dies.reduce((m, d) => Math.min(m, d.width, d.height), Infinity);
   const gap = Number.isFinite(minDim) ? Math.min(dieGap, minDim * 0.12) : dieGap;
 
-  const rectangles: SceneRect[] = [];
-  const hoverPoints: SceneHoverPoint[] = [];
+  const rectangles: ViewRect[] = [];
+  const hoverPoints: ViewHoverPoint[] = [];
   // Pre-transformed dies — positions rotated/flipped around wafer centre.
   // Only the physX/physY centre moves; die.x/y/width/height/hbin/sbin/values are unchanged.
   const transformedDies = (transform.rotation || transform.flipX || transform.flipY)
@@ -946,17 +936,12 @@ export function buildScene(
       })
     : dies;
 
-  const hoverHbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
-  const hoverSbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
-  // Only generate SVG path strings when the transform has rotation/flip (needed by Plotly adapter).
-  // The canvas adapter uses x/y/width/height directly and never reads rect.path.
-  const needsPath = !!(transform.rotation || transform.flipX || transform.flipY);
   for (const tdie of transformedDies) {
-    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, needsPath);
-    hoverPoints.push({ x: tdie.physX, y: tdie.physY, text: buildHoverText(tdie, plotMode, testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize, hoverHbinMap, hoverSbinMap) });
+    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef);
+    hoverPoints.push({ x: tdie.physX, y: tdie.physY });
   }
 
-  const texts: SceneText[] = showText ? generateTextOverlay(transformedDies, {
+  const texts: ViewText[] = showText ? generateTextOverlay(transformedDies, {
     plotMode, colorFns, normalize, activeTest,
     valueRange: [vMin, vMax], testDefs, fallbackFormat,
   }) : [];
@@ -969,7 +954,7 @@ export function buildScene(
   if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, transform, texts));
 
   // Pre-compute die bounding box — avoids O(N) scan on every render call (pan/zoom).
-  let dieBounds: Scene['dieBounds'] = null;
+  let dieBounds: View['dieBounds'] = null;
   if (hoverPoints.length) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const p of hoverPoints) {
@@ -1038,31 +1023,3 @@ export function getDieKey(die: { x: number; y: number }): string {
   return `${die.x},${die.y}`;
 }
 
-/**
- * Return the die that a Plotly click or hover event points to.
- *
- * The hover scatter trace stores one point per die, indexed parallel to
- * `scene.dies`.  Pass the raw Plotly event object directly.
- *
- * ```ts
- * chart.on('plotly_click', ev => {
- *   const die = getDieAtPoint(scene, ev);
- *   if (die) console.log(die.x, die.y, die.values, die.hbin, die.sbin);
- * });
- * ```
- *
- * Returns `null` when the event doesn't resolve to a known die (e.g. click on
- * an overlay trace rather than the hover trace).
- */
-export function getDieAtPoint(
-  scene: Scene,
-  plotlyEvent: { points?: Array<{ pointIndex?: number; curveNumber?: number }> },
-): Die | null {
-  const pt = plotlyEvent.points?.[0];
-  if (!pt) return null;
-  // The hover scatter is always trace 0.  Other traces (text, colorbar ref) are not dies.
-  if (pt.curveNumber !== 0) return null;
-  const idx = pt.pointIndex;
-  if (idx === undefined || idx < 0 || idx >= scene.dies.length) return null;
-  return scene.dies[idx];
-}

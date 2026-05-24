@@ -1,8 +1,8 @@
-import type { Scene, SceneRect } from '../renderer/buildScene.js';
+import type { View, ViewRect } from '../renderer/buildView.js';
+import { findTestDef } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
-import { svgPathToCanvas } from './svgPathToCanvas.js';
 
 export interface ToCanvasOptions {
   /** Padding in CSS pixels inside the canvas edge. Default 16. */
@@ -101,7 +101,7 @@ const BIN_FLOATING_PADDING =  8;  // px padding around floating legend box
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
-  scene: Scene,
+  view: View,
   options: ToCanvasOptions = {},
 ): ToCanvasResult {
   const {
@@ -120,11 +120,11 @@ export function toCanvas(
     minRightReserve,
   } = options;
 
-  const drawColorbar   = showColorbar && COLORBAR_MODES.has(scene.plotMode);
-  const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(scene.plotMode);
+  const drawColorbar   = showColorbar && COLORBAR_MODES.has(view.plotMode);
+  const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(view.plotMode);
 
-  const binLegendEntries: Array<[number, number]> = drawBinLegend && scene.binCounts
-    ? [...scene.binCounts.entries()].sort(([a], [b]) => a - b)
+  const binLegendEntries: Array<[number, number]> = drawBinLegend && view.binCounts
+    ? [...view.binCounts.entries()].sort(([a], [b]) => a - b)
     : [];
 
   const dpr     = window.devicePixelRatio ?? 1;
@@ -180,17 +180,17 @@ export function toCanvas(
   ctx.fillRect(0, 0, cssW, cssH);
 
   // ── Compute data bounding box ───────────────────────────────────────────────
-  const pts = scene.hoverPoints;
+  const pts = view.hoverPoints;
   if (!pts.length) {
     const vp: ViewportTransform = { originX: 0, originY: 0, ppm: 1, snapDist: 1 };
     return { hitTarget: { getDieAtPoint: () => null }, viewport: vp, binLegendRows: [] };
   }
 
-  const firstRect = scene.rectangles[0];
+  const firstRect = view.rectangles[0];
   const halfW = firstRect ? firstRect.width  / 2 : 0;
   const halfH = firstRect ? firstRect.height / 2 : 0;
 
-  const bounds = scene.dieBounds;
+  const bounds = view.dieBounds;
   const minX = (bounds?.minX ?? 0) - halfW;
   const maxX = (bounds?.maxX ?? 0) + halfW;
   const minY = (bounds?.minY ?? 0) - halfH;
@@ -218,10 +218,10 @@ export function toCanvas(
   ctx.setTransform(ppm * dpr, 0, 0, -ppm * dpr, originX * dpr, originY * dpr);
 
   // Batch rectangles by fill color — one beginPath/fill per unique color instead of per die.
-  // Uses ctx.rect() on pre-parsed SceneRect coords, eliminating svgPathToCanvas string parsing.
-  if (scene.rectangles.length > 0) {
-    const byColor = new Map<string, SceneRect[]>();
-    for (const rect of scene.rectangles) {
+  // Uses ctx.rect() on pre-parsed ViewRect coords, eliminating svgPathToCanvas string parsing.
+  if (view.rectangles.length > 0) {
+    const byColor = new Map<string, ViewRect[]>();
+    for (const rect of view.rectangles) {
       const fill = String(rect.fill);
       let group = byColor.get(fill);
       if (!group) { group = []; byColor.set(fill, group); }
@@ -237,14 +237,20 @@ export function toCanvas(
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 0.5 / (ppm * dpr);
     ctx.beginPath();
-    for (const r of scene.rectangles) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
+    for (const r of view.rectangles) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
     ctx.stroke();
   }
 
   // ── Draw overlays ──────────────────────────────────────────────────────────
-  for (const overlay of scene.overlays) {
+  for (const overlay of view.overlays) {
     ctx.beginPath();
-    svgPathToCanvas(ctx, overlay.path);
+    for (const polyline of overlay.points) {
+      for (let i = 0; i < polyline.length; i++) {
+        if (i === 0) ctx.moveTo(polyline[i].x, polyline[i].y);
+        else ctx.lineTo(polyline[i].x, polyline[i].y);
+      }
+      if (overlay.closed) ctx.closePath();
+    }
     if (overlay.fill && !overlay.fill.startsWith('rgba(0,0,0,0)')) {
       ctx.fillStyle = overlay.fill;
       ctx.fill();
@@ -259,12 +265,12 @@ export function toCanvas(
   // ── Draw notch orientation arrow (fixed px, screen space) ─────────────────
   // Arrow points inward toward the wafer. Clipped to the wafer draw area so it
   // never overlaps the toolbar, legend, or canvas edge.
-  if (scene.notchDir) {
-    const cx = originX + scene.waferCenter.x * ppm;
-    const cy = originY - scene.waferCenter.y * ppm;
-    const nx =  scene.notchDir.x;
-    const ny = -scene.notchDir.y;  // canvas Y is inverted relative to data Y
-    const r_px = scene.waferRadius * ppm;
+  if (view.notchDir) {
+    const cx = originX + view.waferCenter.x * ppm;
+    const cy = originY - view.waferCenter.y * ppm;
+    const nx =  view.notchDir.x;
+    const ny = -view.notchDir.y;  // canvas Y is inverted relative to data Y
+    const r_px = view.waferRadius * ppm;
     const OFFSET = 4;   // px gap between wafer edge and arrow tip
     const ARROW_L = 9;  // px arrow length (tip to base)
     const ARROW_W = 5;  // px half-width at base
@@ -297,7 +303,7 @@ export function toCanvas(
   ctx.save();
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
-  for (const text of scene.texts) {
+  for (const text of view.texts) {
     const sx = originX + text.x * ppm;
     const sy = originY - text.y * ppm;
     ctx.font      = `${text.fontSize}px system-ui, sans-serif`;
@@ -308,28 +314,28 @@ export function toCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, scene.axisFlip, scene.rotation);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.axisFlip, view.rotation);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
   if (drawColorbar) {
-    const scheme    = getColorScheme(scene.colorScheme);
+    const scheme    = getColorScheme(view.colorScheme);
     const labelGap  = 20;
     // Bar occupies ~75% of the usable height below the top clearance, centred in that area.
     const cbUsableH = drawH - topClearance;
     const cbH       = Math.round(cbUsableH * 0.75);
     const cbY       = padding + topClearance + Math.round((cbUsableH - cbH) / 2);
     const cbX       = cssW - padding - colorbarWidth - labelGap;
-    const [vMin, vMax] = scene.valueRange;
+    const [vMin, vMax] = view.valueRange;
     const vRange    = vMax - vMin;
 
-    // Pre-compute log constants (only valid when scene.logScale is true).
-    const logMin   = scene.logScale && vMin > 0 ? Math.log10(vMin) : 0;
-    const logRange = scene.logScale && vMax > 0 ? Math.log10(vMax) - logMin : 1;
+    // Pre-compute log constants (only valid when view.logScale is true).
+    const logMin   = view.logScale && vMin > 0 ? Math.log10(vMin) : 0;
+    const logRange = view.logScale && vMax > 0 ? Math.log10(vMax) - logMin : 1;
 
     // Pixel position of a value along the colorbar (0 = top, cbH = bottom).
     const tickPy = (v: number): number =>
-      scene.logScale
+      view.logScale
         ? (1 - (Math.log10(v) - logMin) / logRange) * cbH
         : (1 - (v - vMin) / vRange) * cbH;
 
@@ -357,7 +363,7 @@ export function toCanvas(
     const minPixels     = 36;  // minimum px between tick centres
     const endpointGuard = 14;
 
-    const ticks: number[] = scene.logScale && logRange > 0
+    const ticks: number[] = view.logScale && logRange > 0
       ? logTicks(vMin, vMax, cbH, minPixels, endpointGuard, logMin, logRange)
       : (() => {
           const step  = vRange > 0 ? niceStep(vRange * minPixels / cbH) : 0;
@@ -372,9 +378,9 @@ export function toCanvas(
           return ts;
         })();
 
-    const testDef = scene.testDefs?.find(t => (t.index ?? t.testNumber) === scene.activeTest);
-    const isCountMode = scene.plotMode === 'stackedBins' || scene.plotMode === 'stackedSoftBins';
-    const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (scene.activeTest != null ? `Test ${scene.activeTest}` : undefined));
+    const testDef = findTestDef(view.testDefs, view.activeTest!);
+    const isCountMode = view.plotMode === 'stackedBins' || view.plotMode === 'stackedSoftBins';
+    const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (view.activeTest != null ? `Test ${view.activeTest}` : undefined));
     const cbUnit  = isCountMode ? undefined : testDef?.unit;
     const { tickFmt, axisLabel } = fmtColorbarAxis(
       vMax, cbName, cbUnit, fallbackFormat,
@@ -407,7 +413,7 @@ export function toCanvas(
     ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
 
     // Axis label below the bar, right-aligned — e.g. "Idsat (mA)" or "Idsat (mA) · mean".
-    const aggrSuffix = scene.plotMode === 'stackedValues' && scene.aggrMethod ? ` · ${scene.aggrMethod}` : '';
+    const aggrSuffix = view.plotMode === 'stackedValues' && view.aggrMethod ? ` · ${view.aggrMethod}` : '';
     const cbLabel = axisLabel ? axisLabel + aggrSuffix : null;
     if (cbLabel) {
       ctx.save();
@@ -420,7 +426,7 @@ export function toCanvas(
     }
 
     // Log scale annotation below the axis label.
-    if (scene.logScale) {
+    if (view.logScale) {
       ctx.save();
       ctx.fillStyle    = '#555';
       ctx.font         = '9px system-ui, sans-serif';
@@ -436,11 +442,11 @@ export function toCanvas(
   let legendBox: { x: number; y: number; w: number; h: number } | undefined;
 
   if (drawBinLegend) {
-    const scheme = getColorScheme(scene.colorScheme);
+    const scheme = getColorScheme(view.colorScheme);
 
     const entries = binLegendEntries;
 
-    const activeDefs = scene.plotMode === 'softBin' ? scene.sbinDefs : scene.hbinDefs;
+    const activeDefs = view.plotMode === 'softBin' ? view.sbinDefs : view.hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
     type LegendEntry = {
@@ -671,10 +677,10 @@ export function toCanvas(
       const my = (originY - py) / ppm;
 
       // First pass: exact rectangle containment.
-      for (let i = 0; i < scene.rectangles.length; i++) {
-        const r = scene.rectangles[i];
+      for (let i = 0; i < view.rectangles.length; i++) {
+        const r = view.rectangles[i];
         if (Math.abs(mx - r.x) <= r.width / 2 && Math.abs(my - r.y) <= r.height / 2) {
-          return scene.dies[i] ?? null;
+          return view.dies[i] ?? null;
         }
       }
 
@@ -688,7 +694,7 @@ export function toCanvas(
         const d2 = dx * dx + dy * dy;
         if (d2 < bestDist) {
           bestDist = d2;
-          bestDie  = scene.dies[i] ?? null;
+          bestDie  = view.dies[i] ?? null;
         }
       }
       return bestDie;

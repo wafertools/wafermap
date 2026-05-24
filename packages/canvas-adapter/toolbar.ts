@@ -1,7 +1,7 @@
 // ── Shared toolbar utilities ───────────────────────────────────────────────────
 // Internal module. Do not re-export from index.ts.
 
-import type { PlotMode } from '../renderer/buildScene.js';
+import type { PlotMode } from '../renderer/buildView.js';
 import { ICONS } from './icons.js';
 
 // ── Colours ────────────────────────────────────────────────────────────────────
@@ -78,6 +78,17 @@ export interface ToolbarHelpers {
     getItems: () => Array<{ value: T; label: string }>,
     getCurrent: () => T,
     onPick: (v: T) => void,
+  ): HTMLButtonElement;
+  /**
+   * Create a button that opens a persistent checkbox-style dropdown menu.
+   * `getRows` is called fresh on each open/replace so active state is always current.
+   * `onSync` is called after each row click to update the button's active highlight.
+   */
+  makeCheckMenuBtn(
+    iconKey: string,
+    label: string,
+    getRows: () => CheckMenuRow[],
+    onSync: (btn: HTMLButtonElement) => void,
   ): HTMLButtonElement;
   closeOpenMenu(e: MouseEvent): void;
   /** Read/write the shared open-menu slot — used by custom menus that can't go through makeDropdown. */
@@ -166,7 +177,7 @@ export function buildModeMenuEl(
             pickEntry(entry, menu);
           }));
         }
-        document.body.appendChild(subMenu);
+        (document.fullscreenElement ?? document.body).appendChild(subMenu);
         document.addEventListener('click', closeSub, { once: true });
       };
       cascadeRow.addEventListener('mouseenter', openSub);
@@ -242,12 +253,34 @@ export function buildCheckMenuEl(
     } else {
       const enabled = row.enabled !== false;
       if (!enabled) continue;
-      const el = makeMenuRow(
-        (row.active ? '✓ ' : '  ') + row.label,
-        row.active,
-        false,
-        (e) => { e.stopPropagation(); row.onClick(e); },
-      );
+      const el = document.createElement('div');
+      Object.assign(el.style, {
+        display:    'flex',
+        alignItems: 'center',
+        gap:        '6px',
+        padding:    '6px 14px',
+        fontSize:   '12px',
+        cursor:     'pointer',
+        color:      row.active ? CLR.iconActive : '#333',
+        fontWeight: row.active ? '700' : '400',
+        background: row.active ? CLR.menuActive : 'transparent',
+        whiteSpace: 'nowrap',
+      });
+      const tick = document.createElement('span');
+      Object.assign(tick.style, {
+        width:      '12px',
+        flexShrink: '0',
+        color:      CLR.iconActive,
+        visibility: row.active ? 'visible' : 'hidden',
+      });
+      tick.textContent = '✓';
+      const lbl = document.createElement('span');
+      lbl.textContent = row.label;
+      el.appendChild(tick);
+      el.appendChild(lbl);
+      el.addEventListener('mouseenter', () => { if (!row.active) el.style.background = CLR.menuHover; });
+      el.addEventListener('mouseleave', () => { el.style.background = row.active ? CLR.menuActive : 'transparent'; });
+      el.addEventListener('click', (e) => { e.stopPropagation(); row.onClick(e); });
       menu.appendChild(el);
     }
   }
@@ -256,6 +289,9 @@ export function buildCheckMenuEl(
 
 export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   let openMenu: HTMLDivElement | null = null;
+  // In fullscreen mode, menus must be appended inside the fullscreen element —
+  // anything outside it is hidden by the browser's fullscreen stacking context.
+  const menuRoot = (): Element => document.fullscreenElement ?? document.body;
 
   function makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -430,9 +466,46 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         });
         menu.appendChild(row);
       }
-      document.body.appendChild(menu);
+      menuRoot().appendChild(menu);
       openMenu = menu;
     });
+    return btn;
+  }
+
+  function makeCheckMenuBtn(
+    iconKey: string,
+    label: string,
+    getRows: () => CheckMenuRow[],
+    onSync: (btn: HTMLButtonElement) => void,
+  ): HTMLButtonElement {
+    function buildMenu(): HTMLDivElement {
+      return buildCheckMenuEl(
+        btn.getBoundingClientRect(),
+        getRows().map(row => {
+          if ('section' in row) return row;
+          return {
+            ...row,
+            onClick: (e: MouseEvent) => {
+              row.onClick(e);
+              onSync(btn);
+              const current = openMenu;
+              if (!current) return;
+              const updated = buildMenu();
+              current.replaceWith(updated);
+              openMenu = updated;
+            },
+          };
+        }),
+        { makeMenuRow, makeMenuSection },
+      );
+    }
+    const btn = makeBtn(iconKey, label, () => {
+      if (openMenu) { openMenu.remove(); openMenu = null; return; }
+      const menu = buildMenu();
+      menuRoot().appendChild(menu);
+      openMenu = menu;
+    });
+    onSync(btn);
     return btn;
   }
 
@@ -444,8 +517,175 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   }
 
   return {
-    makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu,
+    makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown,
+    makeCheckMenuBtn, closeOpenMenu,
     getOpenMenu: () => openMenu,
     setOpenMenu: (m) => { openMenu = m; },
   };
+}
+
+// ── Shared expand modal ────────────────────────────────────────────────────────
+
+export interface ModalOptions {
+  /** Optional title shown in the header left. */
+  title?: string;
+  /** Called when fullscreen state changes — use to reparent tooltips etc. */
+  onFullscreenChange?: (isFs: boolean, box: HTMLElement) => void;
+  /** Called when the modal is closed. */
+  onClose: () => void;
+}
+
+export interface ModalHandle {
+  backdrop: HTMLDivElement;
+  box: HTMLDivElement;
+  /** Flex container inside the box for the canvas/content area. */
+  contentWrap: HTMLDivElement;
+  /** Close the modal — removes DOM, restores scroll, removes all listeners, fires onClose. */
+  close: () => void;
+}
+
+/**
+ * Create and open a resizable, fullscreen-capable expand modal.
+ * Mounts itself into document.body. Call `handle.close()` to tear down cleanly.
+ */
+export function openModal(opts: ModalOptions): ModalHandle {
+  const savedOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+
+  const backdrop = document.createElement('div') as HTMLDivElement;
+  backdrop.id = 'wmap-modal-backdrop';
+  Object.assign(backdrop.style, {
+    position:       'fixed',
+    inset:          '0',
+    background:     'rgba(0,0,0,0.6)',
+    display:        'flex',
+    alignItems:     'center',
+    justifyContent: 'center',
+    zIndex:         '9000',
+    backdropFilter: 'blur(3px)',
+  });
+
+  const box = document.createElement('div') as HTMLDivElement;
+  box.className = 'wmap-modal-box';
+  Object.assign(box.style, {
+    background:    '#fff',
+    borderRadius:  '12px',
+    overflow:      'hidden',
+    display:       'flex',
+    flexDirection: 'column',
+    width:         'min(90vw, 700px)',
+    height:        'min(90vh, 700px)',
+    boxShadow:     '0 20px 60px rgba(0,0,0,0.4)',
+    resize:        'both',
+    minWidth:      '320px',
+    minHeight:     '240px',
+    maxWidth:      '100vw',
+    maxHeight:     '100vh',
+  });
+
+  const header = document.createElement('div');
+  Object.assign(header.style, {
+    display:      'flex',
+    alignItems:   'center',
+    padding:      '10px 14px',
+    borderBottom: '1px solid #e2e5ea',
+    flexShrink:   '0',
+  });
+
+  const btnStyle: Partial<CSSStyleDeclaration> = {
+    border:      'none',
+    background:  'transparent',
+    cursor:      'pointer',
+    color:       '#888',
+    lineHeight:  '1',
+    padding:     '0 4px',
+    fontSize:    '15px',
+    display:     'flex',
+    alignItems:  'center',
+  };
+
+  if (opts.title) {
+    const titleEl = document.createElement('span');
+    titleEl.textContent = opts.title;
+    Object.assign(titleEl.style, { fontWeight: '700', fontSize: '14px' });
+    header.appendChild(titleEl);
+  }
+
+  const spacer = document.createElement('div');
+  spacer.style.flex = '1';
+  header.appendChild(spacer);
+
+  const fullscreenBtn = document.createElement('button');
+  fullscreenBtn.innerHTML = '&#x26F6;';
+  fullscreenBtn.title = 'Fullscreen (F)';
+  Object.assign(fullscreenBtn.style, { ...btnStyle, fontSize: '18px' });
+  fullscreenBtn.addEventListener('click', () => {
+    if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
+    else document.exitFullscreen();
+  });
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '\xD7';
+  closeBtn.title = 'Close (Esc)';
+  Object.assign(closeBtn.style, { ...btnStyle, fontSize: '20px', padding: '0 2px' });
+  closeBtn.addEventListener('click', close);
+
+  header.appendChild(fullscreenBtn);
+  header.appendChild(closeBtn);
+
+  const onFsChange = () => {
+    const isFs = document.fullscreenElement === box;
+    fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
+    fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
+    closeBtn.style.display = isFs ? 'none' : '';
+    if (isFs) {
+      box.style.borderRadius = '0';
+      box.style.resize = 'none';
+      box.style.width = '100%';
+      box.style.height = '100%';
+    } else {
+      box.style.borderRadius = '12px';
+      box.style.resize = 'both';
+      box.style.width = 'min(90vw, 700px)';
+      box.style.height = 'min(90vh, 700px)';
+    }
+    opts.onFullscreenChange?.(isFs, box);
+  };
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && !document.fullscreenElement) { close(); return; }
+    if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
+      else document.exitFullscreen();
+    }
+  };
+
+  function close() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('fullscreenchange', onFsChange);
+    backdrop.remove();
+    document.body.style.overflow = savedOverflow;
+    opts.onClose();
+  }
+
+  const contentWrap = document.createElement('div') as HTMLDivElement;
+  Object.assign(contentWrap.style, {
+    flex:      '1',
+    minHeight: '0',
+    minWidth:  '0',
+    display:   'flex',
+    overflow:  'hidden',
+  });
+
+  box.appendChild(header);
+  box.appendChild(contentWrap);
+  backdrop.appendChild(box);
+  document.body.appendChild(backdrop);
+
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('fullscreenchange', onFsChange);
+
+  return { backdrop, box, contentWrap, close };
 }

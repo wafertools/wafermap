@@ -119,7 +119,7 @@
       testDefs:    TEST_DEFS,
       passBins:    [1],
     });
-    const { dies, scene } = result;
+    const { dies, view } = result;
 
     const patterns = [
       'Peaks at the wafer centre (~1.5 mA), falls toward the edge. The NE quadrant shows a ~7% suppression from process gradient.',
@@ -191,10 +191,10 @@
     // In 'value' mode, out-of-spec dies render in blue/red; toolbar bracket button toggles
     // colorbar between spec window [LSL, USL] and the actual data range.
     const ctrl = renderWaferMap(document.getElementById('map'), result, {
-      sceneOptions: {
+      viewOptions: {
         plotMode:  'value',
         activeTest: TEST_DEFS[0].testNumber,
-        testDefs:  scene.testDefs,
+        testDefs:  view.testDefs,
       },
     });
 

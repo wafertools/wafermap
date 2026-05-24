@@ -26,7 +26,7 @@ export interface DieLike {
  * @example Compute mean test value across a lot:
  * ```ts
  * const lotMean = aggregateValues(diesByWafer, 'mean');
- * const scene = buildScene(wafer, lotMean, { plotMode: 'value' });
+ * const scene = buildView(wafer, lotMean, { plotMode: 'value' });
  * ```
  */
 export function aggregateValues(

@@ -13,7 +13,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
-import { buildScene } from '../dist/packages/renderer/buildScene.js';
+import { buildView } from '../dist/packages/renderer/buildView.js';
 import { analyzeWaferMap, analyzeWaferLot } from '../dist/packages/stats/index.js';
 
 // ── Wafer generators ────────────────────────────────────────────────────────
@@ -162,45 +162,45 @@ test('analyzeWaferLot — 6-wafer lot completes within budget', () => {
   assert.ok(ms < 200, `analyzeWaferLot took ${ms.toFixed(0)}ms (budget 200ms)`);
 });
 
-// ── buildScene ───────────────────────────────────────────────────────────────
+// ── buildView ───────────────────────────────────────────────────────────────
 
-test('buildScene hardBin — 300mm/8mm (~4300 dies) completes within budget', () => {
+test('buildView hardBin — 300mm/8mm (~4300 dies) completes within budget', () => {
   const { results } = makeWafer({ pitchX: 8, pitchY: 8 });
   const wmr = buildWaferMap({ results, passBins: [1] });
-  const ms = time(() => buildScene(wmr.wafer, wmr.dies, { plotMode: 'hardBin' }));
+  const ms = time(() => buildView(wmr.wafer, wmr.dies, { plotMode: 'hardBin' }));
   // ~10ms measured; budget 200ms
-  assert.ok(ms < 200, `buildScene hardBin took ${ms.toFixed(0)}ms (budget 200ms, ${wmr.dies.length} dies)`);
+  assert.ok(ms < 200, `buildView hardBin took ${ms.toFixed(0)}ms (budget 200ms, ${wmr.dies.length} dies)`);
 });
 
-test('buildScene value mode — no more than 2× slower than hardBin', () => {
+test('buildView value mode — no more than 2× slower than hardBin', () => {
   // Pre-optimisation: value mode was ~3× slower due to per-die string allocation in lerpKp.
   // Post-optimisation: LUT eliminates per-die allocation; both modes should be near identical.
   const { results, testDefs } = makeWafer({ pitchX: 8, pitchY: 8, tests: 1 });
   const wmr = buildWaferMap({ results, passBins: [1], testDefs });
   // Warmup
-  buildScene(wmr.wafer, wmr.dies, { plotMode: 'hardBin', testDefs, activeTest: 1000 });
-  buildScene(wmr.wafer, wmr.dies, { plotMode: 'value', testDefs, activeTest: 1000 });
-  const tHardBin = time(() => buildScene(wmr.wafer, wmr.dies, { plotMode: 'hardBin', testDefs, activeTest: 1000 }));
-  const tValue   = time(() => buildScene(wmr.wafer, wmr.dies, { plotMode: 'value',   testDefs, activeTest: 1000 }));
+  buildView(wmr.wafer, wmr.dies, { plotMode: 'hardBin', testDefs, activeTest: 1000 });
+  buildView(wmr.wafer, wmr.dies, { plotMode: 'value', testDefs, activeTest: 1000 });
+  const tHardBin = time(() => buildView(wmr.wafer, wmr.dies, { plotMode: 'hardBin', testDefs, activeTest: 1000 }));
+  const tValue   = time(() => buildView(wmr.wafer, wmr.dies, { plotMode: 'value',   testDefs, activeTest: 1000 }));
   const ratio = tValue / Math.max(tHardBin, 0.1);
   assert.ok(ratio < 2.0, `value mode is ${ratio.toFixed(2)}× slower than hardBin (limit 2×) — color LUT may have regressed`);
 });
 
-test('buildScene — complexity is sub-quadratic (2× die count ≤ 4× time)', () => {
+test('buildView — complexity is sub-quadratic (2× die count ≤ 4× time)', () => {
   const small = makeWafer({ pitchX: 8, pitchY: 8 });
   const large = makeWafer({ pitchX: 4, pitchY: 4 });
   const wmrSmall = buildWaferMap({ results: small.results, passBins: [1] });
   const wmrLarge = buildWaferMap({ results: large.results, passBins: [1] });
   // Warmup
-  buildScene(wmrSmall.wafer, wmrSmall.dies, { plotMode: 'hardBin' });
-  buildScene(wmrLarge.wafer, wmrLarge.dies, { plotMode: 'hardBin' });
-  const tSmall = time(() => buildScene(wmrSmall.wafer, wmrSmall.dies, { plotMode: 'hardBin' }));
-  const tLarge = time(() => buildScene(wmrLarge.wafer, wmrLarge.dies, { plotMode: 'hardBin' }));
+  buildView(wmrSmall.wafer, wmrSmall.dies, { plotMode: 'hardBin' });
+  buildView(wmrLarge.wafer, wmrLarge.dies, { plotMode: 'hardBin' });
+  const tSmall = time(() => buildView(wmrSmall.wafer, wmrSmall.dies, { plotMode: 'hardBin' }));
+  const tLarge = time(() => buildView(wmrLarge.wafer, wmrLarge.dies, { plotMode: 'hardBin' }));
   const dieRatio = wmrLarge.dies.length / wmrSmall.dies.length;
   const timeRatio = tLarge / Math.max(tSmall, 0.1);
   assert.ok(
     timeRatio < dieRatio * dieRatio,
-    `buildScene time ratio ${timeRatio.toFixed(1)}× for ${dieRatio.toFixed(1)}× more dies — super-linear regression detected`,
+    `buildView time ratio ${timeRatio.toFixed(1)}× for ${dieRatio.toFixed(1)}× more dies — super-linear regression detected`,
   );
 });
 

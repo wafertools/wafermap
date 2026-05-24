@@ -1,5 +1,5 @@
 // ── Summary panel — shared DOM section builders ───────────────────────────────
-// Pure DOM construction — no canvas, no toolbar state, no Plotly.
+// Pure DOM construction — no canvas, no toolbar state.
 // Imported by renderWaferMap and renderWaferGallery.
 
 import type { Wafer } from '../core/wafer.js';
@@ -11,6 +11,7 @@ import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFinding
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
+import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { CLR } from './toolbar.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
@@ -366,9 +367,7 @@ export function buildTestSection(
       .map(def => ({ testNumber: def.testNumber ?? def.index!, name: def.name, unit: def.unit, limitLow: def.limitLow, limitHigh: def.limitHigh }))
       .filter(e => e.testNumber !== undefined);
   } else {
-    const testNumbers = [...new Set(activeDies.flatMap(d =>
-      d.testValues ? Object.keys(d.testValues).map(Number) : []
-    ))].sort((a, b) => a - b);
+    const testNumbers = getUniqueTestNumbers(activeDies);
     entries = testNumbers.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
   }
 

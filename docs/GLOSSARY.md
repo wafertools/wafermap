@@ -6,7 +6,7 @@ Quick-reference definitions for semiconductor and library terms used in `@paulro
 
 ### Wafer
 
-A circular silicon substrate, typically 200 mm or 300 mm in diameter, on which hundreds or thousands of identical chips are fabricated simultaneously. The library models a wafer as a circle with a defined diameter, edge exclusion zone, and orientation mark. *Library mapping: `WaferOptions` (`buildWaferMap` input).*
+A circular silicon substrate, typically 200 mm or 300 mm in diameter, on which hundreds or thousands of identical chips are fabricated simultaneously. The library models a wafer as a circle with a defined diameter, edge exclusion zone, and orientation mark. *Library mapping: `WaferConfig` (`buildWaferMap` input).*
 
 ### Die
 
@@ -22,7 +22,7 @@ The logical classification assigned by the test program, representing the specif
 
 ### Pass bin / passBins
 
-The bin number(s) considered a passing result for yield calculation. The library defaults to `[1]` (hard bin 1 = pass), but this must match your actual test program — some programs use a different bin for pass, or multiple passing bins. Setting this incorrectly will produce wrong yield numbers. *Library mapping: `WaferMapOptions.passBins`.*
+The bin number(s) considered a passing result for yield calculation. The library defaults to `[1]` (hard bin 1 = pass), but this must match your actual test program — some programs use a different bin for pass, or multiple passing bins. Setting this incorrectly will produce wrong yield numbers. *Library mapping: `WaferMapInput.passBins`.*
 
 ### Yield
 
@@ -30,11 +30,11 @@ The fraction of tested dies that pass, expressed as a percentage. The library co
 
 ### Edge exclusion
 
-A ring of dies around the wafer perimeter that are excluded from yield calculations. Dies near the edge are mechanically stressed during handling and may be partially outside the lithography field, making their results unreliable for lot disposition. The exclusion width is specified in millimetres. *Library mapping: `WaferOptions.edgeExclusion`.*
+A ring of dies around the wafer perimeter that are excluded from yield calculations. Dies near the edge are mechanically stressed during handling and may be partially outside the lithography field, making their results unreliable for lot disposition. The exclusion width is specified in millimetres. *Library mapping: `WaferConfig.edgeExclusion`.*
 
 ### Notch / flat
 
-The orientation mark cut into the wafer edge so that handlers, probers, and inspection tools can align the wafer consistently. A notch is a small V-shaped cut; a flat is a longer straight edge (older convention). The library uses this to orient the wafer map correctly on screen. *Library mapping: `WaferOptions.notch`, `WaferNotch`.*
+The orientation mark cut into the wafer edge so that handlers, probers, and inspection tools can align the wafer consistently. A notch is a small V-shaped cut; a flat is a longer straight edge (older convention). The library uses this to orient the wafer map correctly on screen. *Library mapping: `WaferConfig.notch`, `WaferNotch`.*
 
 ### Prober
 
@@ -50,27 +50,27 @@ A continuous numeric measurement recorded for one die on one parametric test —
 
 ### TestDef
 
-Metadata describing one parametric test: a stable integer ID (`testNumber`), a human-readable name, an SI unit string, and optional spec limits. `TestDef` entries drive tooltip labels, the plot-mode dropdown, and spec-limit colouring in the rendered map. *Library mapping: `TestDef`, `WaferMapOptions.testDefs`.*
+Metadata describing one parametric test: a stable integer ID (`testNumber`), a human-readable name, an SI unit string, and optional spec limits. `TestDef` entries drive tooltip labels, the plot-mode dropdown, and spec-limit colouring in the rendered map. *Library mapping: `TestDef`, `WaferMapInput.testDefs`.*
 
 ### Spec limit
 
-The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) when the map is in `specLimit` plot mode. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `SceneOptions.plotMode: 'specLimit'`.*
+The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) when the map is in `specLimit` plot mode. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.plotMode: 'specLimit'`.*
 
 ### Reticle
 
-The rectangular exposure field used in photolithography, typically containing a fixed grid of die sites. One reticle field is stepped across the wafer repeatedly to pattern the full surface. The library can overlay the reticle grid and attribute findings to specific reticle positions, which is useful for identifying systematic defects tied to a particular mask location. *Library mapping: `WaferMapOptions.reticleConfig`, `ReticleConfig`.*
+The rectangular exposure field used in photolithography, typically containing a fixed grid of die sites. One reticle field is stepped across the wafer repeatedly to pattern the full surface. The library can overlay the reticle grid and attribute findings to specific reticle positions, which is useful for identifying systematic defects tied to a particular mask location. *Library mapping: `WaferMapInput.reticleConfig`, `ReticleConfig`.*
 
 ### Lot
 
-A batch of wafers processed together through the fabrication line, typically 25 wafers. All wafers in a lot share the same process conditions and are usually tested together. The library's lot stack feature lets you combine multiple wafers from a lot into a single aggregated map. *Library mapping: `WaferMapOptions.lotStack`, `LotStackConfig`.*
+A batch of wafers processed together through the fabrication line, typically 25 wafers. All wafers in a lot share the same process conditions and are usually tested together. The library's lot stack feature lets you combine multiple wafers from a lot into a single aggregated map. *Library mapping: `WaferMapInput.lotStack`, `LotStackConfig`.*
 
 ### Lot stack
 
-An aggregated wafer map computed from multiple individual wafers, showing a per-die statistic across the lot (mean, median, bin count, etc.). Lot stacking reveals systematic spatial patterns — for example, a recurring hot spot at the same reticle position across all wafers — that would not be visible on any single wafer. *Library mapping: `LotStackConfig`, `SceneOptions.plotMode: 'stackedValues' | 'stackedBins'`.*
+An aggregated wafer map computed from multiple individual wafers, showing a per-die statistic across the lot (mean, median, bin count, etc.). Lot stacking reveals systematic spatial patterns — for example, a recurring hot spot at the same reticle position across all wafers — that would not be visible on any single wafer. *Library mapping: `LotStackConfig`, `WaferViewOptions.plotMode: 'stackedValues' | 'stackedBins' | 'stackedSoftBins'`.*
 
 ### Retest / retest policy
 
-Some probers contact a die more than once, either due to contact failures (a retry) or deliberate multi-touch sequences. The retest policy controls which result the library keeps when a die has multiple records: `'last'` (default, keeps the final probe), `'first'` (keeps the earliest probe), `'best'` (keeps the passing result or the best bin), or `'worst'`. *Library mapping: `WaferMapOptions.retestPolicy`, `Die.retestCount`.*
+Some probers contact a die more than once, either due to contact failures (a retry) or deliberate multi-touch sequences. The retest policy controls which result the library keeps when a die has multiple records: `'last'` (default, keeps the final probe), `'first'` (keeps the earliest probe), `'best'` (keeps the passing result or the best bin), or `'worst'`. *Library mapping: `WaferMapInput.retestPolicy`, `Die.retestCount`.*
 
 ### STDF
 

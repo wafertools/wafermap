@@ -209,7 +209,7 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
       onHover: (die) => hoverCalls.push(die?.id ?? null),
       onClick: (die) => clickCalls.push(die.id),
       onSelect: (dies) => selectCalls.push(dies.map((die) => die.id)),
-      onSceneOptionsChange: (opts) => sceneCalls.push(opts),
+      onViewOptionsChange: (opts) => sceneCalls.push(opts),
     });
 
     const canvas = container.querySelector('canvas');
@@ -222,9 +222,10 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     assert.ok(overlaysBtn, 'Overlays dropdown button should exist');
     // Open the overlays menu and verify labels toggle is inside it.
     click(window, overlaysBtn);
-    // The overlays menu rows are divs whose own text (not descendants) includes the label.
+    // Each overlays menu row is a flex div containing a tick span and a label span.
+    // Find the row whose label span text matches.
     const labelsRow = [...window.document.querySelectorAll('div')].find((el) =>
-      el.children.length === 0 && el.textContent?.includes('Die labels'),
+      [...el.children].some((ch) => ch.children.length === 0 && ch.textContent === 'Die labels'),
     );
     assert.ok(labelsRow, 'Die labels row should appear in overlays menu');
     click(window, labelsRow);
@@ -323,11 +324,11 @@ test('renderWaferGallery restores original cards when leaving stacked mode', () 
     ];
 
     const ctrl = renderWaferMap(container, items, {
-      sceneOptions: { plotMode: 'stackedBins', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
+      viewOptions: { plotMode: 'stackedBins', hbinDefs: base.view.hbinDefs, sbinDefs: base.view.sbinDefs, testDefs: base.view.testDefs },
     });
 
     const stackedCards = container.querySelectorAll('.wmap-gallery-card').length;
-    assert.equal(stackedCards, (base.scene.hbinDefs ?? []).length);
+    assert.equal(stackedCards, (base.view.hbinDefs ?? []).length);
 
     ctrl.setOptions({ plotMode: 'hardBin' });
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, items.length);
@@ -364,7 +365,7 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
     ];
 
     const ctrl = renderWaferMap(container, items, {
-      sceneOptions: { plotMode: 'stackedValues', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
+      viewOptions: { plotMode: 'stackedValues', hbinDefs: base.view.hbinDefs, sbinDefs: base.view.sbinDefs, testDefs: base.view.testDefs },
     });
 
     // Initially in stacked mode
@@ -415,7 +416,7 @@ test('renderWaferGallery computes correct valueRange for stackedValues mode', ()
     ];
 
     const ctrl = renderWaferMap(container, items, {
-      sceneOptions: { plotMode: 'hardBin', hbinDefs: base.scene.hbinDefs, sbinDefs: base.scene.sbinDefs, testDefs: base.scene.testDefs },
+      viewOptions: { plotMode: 'hardBin', hbinDefs: base.view.hbinDefs, sbinDefs: base.view.sbinDefs, testDefs: base.view.testDefs },
     });
 
     // Switch to stackedValues mode

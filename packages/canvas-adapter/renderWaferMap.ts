@@ -1,12 +1,12 @@
-import type { Scene, SceneOptions, PlotMode } from '../renderer/buildScene.js';
-import { buildScene } from '../renderer/buildScene.js';
+import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
+import { buildView, buildHoverText, findTestDef, getUniqueTestNumbers } from '../renderer/buildView.js';
 import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
-import { CLR, ROTATIONS, MODE_LABELS, createTooltip, createToolbarHelpers, buildModeMenuEl, buildCheckMenuEl, type ModeEntry } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, type ModeEntry } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -17,9 +17,9 @@ import { hardBinColor, softBinColor } from '../renderer/colorMap.js';
 
 /**
  * All scene-level options that the toolbar can control.
- * These map directly to SceneOptions — toolbar state IS the scene config.
+ * These map directly to ViewOptions — toolbar state IS the scene config.
  */
-export interface WaferSceneOptions {
+export interface WaferViewOptions {
   plotMode?:               PlotMode;
   colorScheme?:            string;
   showText?:               boolean;
@@ -86,7 +86,7 @@ export interface WaferSceneOptions {
 
 export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport'> {
   /** Initial scene display options. All are overridable via the toolbar. */
-  sceneOptions?: WaferSceneOptions;
+  viewOptions?: WaferViewOptions;
   /** Called when the user hovers over a die. Null when leaving a die. */
   onHover?: (die: Die | null, event: MouseEvent) => void;
   /** Called when the user clicks a die. */
@@ -94,13 +94,19 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport'> {
   /** Called when the user completes a box-select. */
   onSelect?: (dies: Die[]) => void;
   /** Called whenever the toolbar changes a scene option. */
-  onSceneOptionsChange?: (opts: WaferSceneOptions) => void;
+  onViewOptionsChange?: (opts: WaferViewOptions) => void;
   /** Show built-in floating tooltip on hover. Default true. */
   showTooltip?: boolean;
   /** Show the built-in toolbar. Default true. */
   showToolbar?: boolean;
   /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
+  /**
+   * Bin numbers treated as pass for yield calculation in the summary panel.
+   * Defaults to `[1]`. Must match the `passBins` passed to `analyzeWaferMap` / `buildWaferMap`
+   * to ensure the summary panel yield label is consistent with the rest of the display.
+   */
+  passBins?: number[];
   /**
    * 'full' (default) shows all toolbar controls.
    * 'view-only' shows only zoom, reset, box-select, and download — used by gallery cards.
@@ -138,9 +144,9 @@ export interface WaferCanvasController {
   /** Replace the wafer map result entirely — updates both wafer geometry and die data, preserves zoom/pan. */
   setResult(result: WaferMapResult): void;
   /** Merge scene option overrides — rebuilds scene, preserves zoom/pan. */
-  setOptions(opts: Partial<WaferSceneOptions>): void;
+  setOptions(opts: Partial<WaferViewOptions>): void;
   /** Return current scene options snapshot. */
-  getOptions(): WaferSceneOptions;
+  getOptions(): WaferViewOptions;
   /** Programmatically set the selected dies (renders highlight overlay). */
   setSelection(dies: Die[]): void;
   /** Clear the current selection. */
@@ -154,7 +160,7 @@ export interface WaferCanvasController {
   /** Show or hide the findings toolbar button without affecting the summary. */
   setFindingsVisible(visible: boolean): void;
   /** Show or hide the scene-control toolbar buttons (mode, orientation, etc). */
-  setSceneControlsVisible(visible: boolean): void;
+  setViewControlsVisible(visible: boolean): void;
   /** Show or hide the expand toolbar button. */
   setExpandVisible(visible: boolean): void;
   /** Move the floating tooltip into a different parent (e.g. a fullscreen element). */
@@ -189,7 +195,7 @@ export function renderWaferMap(
     onHover,
     onClick,
     onSelect,
-    onSceneOptionsChange,
+    onViewOptionsChange,
     showTooltip          = true,
     showToolbar          = true,
     toolbarControls      = 'full',
@@ -198,7 +204,8 @@ export function renderWaferMap(
     maxZoom              = 20,
     summaryPanel:        summaryPanelOpts,
     renderTooltip,
-    sceneOptions: initialSceneOptions = {},
+    passBins             = [1],
+    viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
 
@@ -211,7 +218,7 @@ export function renderWaferMap(
   let currentDies     = result.dies;
   // Selected die keys ("i,j") — key-based so references survive scene rebuilds.
   let selectedKeys    = new Set<string>();
-  let sceneOpts: WaferSceneOptions = {
+  let viewOpts: WaferViewOptions = {
     plotMode:               'hardBin',
     colorScheme:            'default',
     showText:               false,
@@ -223,17 +230,17 @@ export function renderWaferMap(
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
-    // legendPosition can come from sceneOptions or the top-level drawOptions.
+    // legendPosition can come from viewOptions or the top-level drawOptions.
     legendPosition:         drawOptions.legendPosition ?? 'default',
-    // Seed from result so callers don't need to round-trip through result.scene.*
-    testDefs:               result.scene?.testDefs,
-    hbinDefs:               result.scene?.hbinDefs,
-    sbinDefs:               result.scene?.sbinDefs,
+    // Seed from result so callers don't need to round-trip through result.view.*
+    testDefs:               result.view?.testDefs,
+    hbinDefs:               result.view?.hbinDefs,
+    sbinDefs:               result.view?.sbinDefs,
     reticles:               result.reticles?.length ? result.reticles : undefined,
-    ...initialSceneOptions,
+    ...initialViewOptions,
   };
 
-  let currentScene:   Scene;
+  let currentView:   View;
   let dieKeyIndex:    Map<string, number>;
   let fittedViewport: ViewportTransform | null = null;
   let viewport:       ViewportTransform | null = null;
@@ -256,10 +263,10 @@ export function renderWaferMap(
   let boxStart        = { x: 0, y: 0 };
   let boxEnd          = { x: 0, y: 0 };
 
-  // ── Scene rebuild ──────────────────────────────────────────────────────────
-  function rebuildScene(): void {
-    const so = sceneOpts;
-    currentScene = buildScene(wafer, currentDies, {
+  // ── View rebuild ──────────────────────────────────────────────────────────
+  function rebuildView(): void {
+    const so = viewOpts;
+    currentView = buildView(wafer, currentDies, {
       plotMode:               so.plotMode,
       colorScheme:            so.colorScheme,
       showText:               so.showText,
@@ -286,11 +293,11 @@ export function renderWaferMap(
         flipX:    so.flipX   ?? false,
         flipY:    so.flipY   ?? false,
       },
-    } satisfies SceneOptions);
-    dieKeyIndex = new Map(currentScene.dies.map((d, i) => [`${d.x},${d.y}`, i]));
+    } satisfies ViewOptions);
+    dieKeyIndex = new Map(currentView.dies.map((d, i) => [`${d.x},${d.y}`, i]));
   }
 
-  rebuildScene();
+  rebuildView();
 
   // ── Summary panel ──────────────────────────────────────────────────────────
   let summaryPanelEl: HTMLDivElement | null = null;
@@ -306,12 +313,12 @@ export function renderWaferMap(
       dies:         currentDies,
       yieldSummary: currentResult.yield,
       dataCoverage: currentResult.dataCoverage,
-      hbinDefs:        sceneOpts.hbinDefs,
-      sbinDefs:        sceneOpts.sbinDefs,
-      testDefs:        sceneOpts.testDefs,
+      hbinDefs:        viewOpts.hbinDefs,
+      sbinDefs:        viewOpts.sbinDefs,
+      testDefs:        viewOpts.testDefs,
       statsSummary:    currentStatsSummary,
-      passBins:        [1],
-      ringCount:       sceneOpts.ringCount ?? 4,
+      passBins,
+      ringCount:       viewOpts.ringCount ?? 4,
       fallbackFormat:  currentFallbackFormat,
       activeFindingId: summaryActiveFindingId,
       onFindingClick: (finding, _row) => {
@@ -442,7 +449,7 @@ export function renderWaferMap(
       // ── Toolbar helpers ──────────────────────────────────────────────────
       // Use shared tooltip if available, otherwise create one for the toolbar.
       const tbTooltip = tooltip ?? createTooltip();
-      const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tbTooltip);
+      const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tbTooltip);
       tbCloseOpenMenu = closeOpenMenu;
       tbGetOpenMenu   = getOpenMenu;
       // Single persistent listener — closes any open dropdown on outside click.
@@ -484,8 +491,8 @@ export function renderWaferMap(
       // Set initial active state — pan is default
       setActive(btnPanMode, true);
 
-      // Scene controls — hidden in 'view-only' mode (gallery bar owns them).
-      // Wrapped in sceneControlsEl so setSceneControlsVisible() can hide/show the
+      // View controls — hidden in 'view-only' mode (gallery bar owns them).
+      // Wrapped in sceneControlsEl so setViewControlsVisible() can hide/show the
       // whole group at once (used when reparenting a card into the expand modal).
       if (toolbarControls !== 'view-only') {
         sceneControlsEl = document.createElement('div');
@@ -497,8 +504,8 @@ export function renderWaferMap(
         // plus the bin modes. Selecting a named test sets plotMode:'value' + activeTest.
         // Selecting a bin mode sets plotMode to that mode and clears activeTest.
         function isCurrentEntry(e: ModeEntry): boolean {
-          if (e.plotMode !== (sceneOpts.plotMode ?? 'hardBin')) return false;
-          if (e.plotMode === 'value') return (sceneOpts.activeTest ?? 0) === (e.activeTest ?? 0);
+          if (e.plotMode !== (viewOpts.plotMode ?? 'hardBin')) return false;
+          if (e.plotMode === 'value') return (viewOpts.activeTest ?? 0) === (e.activeTest ?? 0);
           return true;
         }
 
@@ -518,8 +525,8 @@ export function renderWaferMap(
           if (openMenu) { openMenu.remove(); setOpenMenu(null); return; }
 
           // Only include modes for which data is actually present.
-          const dies     = currentScene.dies;
-          const testDefs = currentScene.testDefs;
+          const dies     = currentView.dies;
+          const testDefs = currentView.testDefs;
           const hasValues = dies.some(d =>
             (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
             (d.values?.length ?? 0) > 0
@@ -535,9 +542,7 @@ export function renderWaferMap(
                     label: t.unit ? `${t.name} (${t.unit})` : t.name,
                     logScale: t.logScale,
                   }))
-                : [...new Set(dies.flatMap(d =>
-                    d.testValues ? Object.keys(d.testValues).map(Number) : []
-                  ))].sort((a, b) => a - b).map(tn => ({
+                : getUniqueTestNumbers(dies).map(tn => ({
                     plotMode: 'value' as PlotMode,
                     activeTest: tn,
                     label: `Test ${tn}`,
@@ -548,7 +553,7 @@ export function renderWaferMap(
             ...(hasSbin ? [{ plotMode: 'softBin' as PlotMode, label: MODE_LABELS.softBin }] : []),
           ];
           // Stacked modes are only valid for lot-aggregated data — the scene knows this via isLotStack.
-          const stackedEntries: ModeEntry[] = currentScene.isLotStack ? [
+          const stackedEntries: ModeEntry[] = currentView.isLotStack ? [
             ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
             ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
             ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
@@ -559,7 +564,7 @@ export function renderWaferMap(
             testEntries, binEntries, stackedEntries,
             isCurrentEntry, pickEntry,
             { makeMenuRow, makeMenuSection },
-            sceneOpts.plotMode ?? 'hardBin',
+            viewOpts.plotMode ?? 'hardBin',
           );
           document.body.appendChild(menu);
           setOpenMenu(menu);
@@ -567,49 +572,27 @@ export function renderWaferMap(
         const btnPalette = makeDropdown(
           'palette', 'Colour scheme',
           () => listColorSchemes().map(s => ({ value: s.name, label: s.label })),
-          () => sceneOpts.colorScheme ?? 'default',
+          () => viewOpts.colorScheme ?? 'default',
           v => applyOpts({ colorScheme: v }),
         );
-        const btnOverlays = makeBtn('overlays', 'Overlays', () => {
-          const existing = getOpenMenu();
-          if (existing) { existing.remove(); setOpenMenu(null); return; }
-          const hasReticleNow = !!currentScene!.hasReticle;
-          const menu = buildCheckMenuEl(
-            btnOverlays.getBoundingClientRect(),
-            [
-              { label: 'Ring boundaries',   active: !!sceneOpts.showRingBoundaries,   onClick: () => { applyOpts({ showRingBoundaries:   !sceneOpts.showRingBoundaries   }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-              { label: 'Quadrant lines',     active: !!sceneOpts.showQuadrantBoundaries, onClick: () => { applyOpts({ showQuadrantBoundaries: !sceneOpts.showQuadrantBoundaries }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-              { label: 'Die labels',         active: !!sceneOpts.showText,             onClick: () => { applyOpts({ showText:              !sceneOpts.showText              }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-              { label: 'Reticle grid',       active: !!sceneOpts.showReticle,          enabled: hasReticleNow, onClick: () => { applyOpts({ showReticle:           !sceneOpts.showReticle           }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-              { label: 'XY indicator',       active: !!sceneOpts.showXYIndicator,      onClick: () => { applyOpts({ showXYIndicator:      !sceneOpts.showXYIndicator      }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-            ],
-            { makeMenuRow, makeMenuSection },
-          );
-          function refreshOverlaysMenu(): void {
-            const updated = buildCheckMenuEl(
-              btnOverlays.getBoundingClientRect(),
-              [
-                { label: 'Ring boundaries',   active: !!sceneOpts.showRingBoundaries,     onClick: () => { applyOpts({ showRingBoundaries:   !sceneOpts.showRingBoundaries   }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-                { label: 'Quadrant lines',     active: !!sceneOpts.showQuadrantBoundaries, onClick: () => { applyOpts({ showQuadrantBoundaries: !sceneOpts.showQuadrantBoundaries }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-                { label: 'Die labels',         active: !!sceneOpts.showText,               onClick: () => { applyOpts({ showText:              !sceneOpts.showText              }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-                { label: 'Reticle grid',       active: !!sceneOpts.showReticle,            enabled: hasReticleNow, onClick: () => { applyOpts({ showReticle:           !sceneOpts.showReticle           }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-                { label: 'XY indicator',       active: !!sceneOpts.showXYIndicator,        onClick: () => { applyOpts({ showXYIndicator:      !sceneOpts.showXYIndicator      }); syncOverlaysBtnFn?.(); refreshOverlaysMenu(); } },
-              ],
-              { makeMenuRow, makeMenuSection },
-            );
-            menu.replaceWith(updated);
-            setOpenMenu(updated);
-          }
-          document.body.appendChild(menu);
-          setOpenMenu(menu);
-        });
-        let syncOverlaysBtnFn: (() => void) | undefined;
-        syncOverlaysBtnFn = () => {
-          const anyOn = !!(sceneOpts.showRingBoundaries || sceneOpts.showQuadrantBoundaries ||
-                           sceneOpts.showText || sceneOpts.showReticle || sceneOpts.showXYIndicator);
-          setActive(btnOverlays, anyOn);
-        };
-        syncOverlaysBtnFn();
+        const btnOverlays = makeCheckMenuBtn(
+          'overlays', 'Overlays',
+          () => {
+            const hasReticleNow = !!currentView!.hasReticle;
+            return [
+              { label: 'Ring boundaries', active: !!viewOpts.showRingBoundaries,     onClick: () => applyOpts({ showRingBoundaries:   !viewOpts.showRingBoundaries   }) },
+              { label: 'Quadrant lines',  active: !!viewOpts.showQuadrantBoundaries, onClick: () => applyOpts({ showQuadrantBoundaries: !viewOpts.showQuadrantBoundaries }) },
+              { label: 'Die labels',      active: !!viewOpts.showText,               onClick: () => applyOpts({ showText:              !viewOpts.showText              }) },
+              { label: 'Reticle grid',    active: !!viewOpts.showReticle,            enabled: hasReticleNow, onClick: () => applyOpts({ showReticle: !viewOpts.showReticle }) },
+              { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:      !viewOpts.showXYIndicator      }) },
+            ];
+          },
+          (btn) => {
+            const anyOn = !!(viewOpts.showRingBoundaries || viewOpts.showQuadrantBoundaries ||
+                             viewOpts.showText || viewOpts.showReticle || viewOpts.showXYIndicator);
+            setActive(btn, anyOn);
+          },
+        );
         const btnLegendStyle = makeDropdown(
           'legend', 'Legend style',
           () => [
@@ -620,37 +603,37 @@ export function renderWaferMap(
             { value: 'bottom'   as const, label: 'Bottom' },
             { value: 'floating' as const, label: 'Floating' },
           ],
-          () => sceneOpts.legendPosition ?? 'default',
+          () => viewOpts.legendPosition ?? 'default',
           (v) => applyOpts({ legendPosition: v }),
         );
         syncLegendStyleBtnFn = () => {
-          const isBinMode = sceneOpts.plotMode === 'hardBin' || sceneOpts.plotMode === 'softBin';
+          const isBinMode = viewOpts.plotMode === 'hardBin' || viewOpts.plotMode === 'softBin';
           btnLegendStyle.style.display = isBinMode ? '' : 'none';
         };
         syncLegendStyleBtnFn();
 
         const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
-          applyOpts({ logScale: !sceneOpts.logScale });
+          applyOpts({ logScale: !viewOpts.logScale });
         });
         syncLogScaleBtnFn = () => {
-          const isValueMode = sceneOpts.plotMode === 'value' || sceneOpts.plotMode === 'stackedValues';
+          const isValueMode = viewOpts.plotMode === 'value' || viewOpts.plotMode === 'stackedValues';
           btnLogScale.style.display = isValueMode ? '' : 'none';
-          setActive(btnLogScale, !!sceneOpts.logScale);
+          setActive(btnLogScale, !!viewOpts.logScale);
         };
         syncLogScaleBtnFn();
 
         const activeTestDefHasLimits = () => {
-          const td = sceneOpts.testDefs?.find(t => (t.index ?? t.testNumber) === sceneOpts.activeTest);
+          const td = findTestDef(viewOpts.testDefs, viewOpts.activeTest!);
           return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
         };
         const btnColorbarRange = makeBtn('specRange', 'Colorbar range: spec limits', () => {
-          const next = sceneOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
+          const next = viewOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
           applyOpts({ colorbarRangeMode: next });
         });
         syncColorbarRangeBtnFn = () => {
-          const visible = sceneOpts.plotMode === 'value' && activeTestDefHasLimits();
+          const visible = viewOpts.plotMode === 'value' && activeTestDefHasLimits();
           btnColorbarRange.style.display = visible ? '' : 'none';
-          const isSpec = (sceneOpts.colorbarRangeMode ?? 'spec') === 'spec';
+          const isSpec = (viewOpts.colorbarRangeMode ?? 'spec') === 'spec';
           setActive(btnColorbarRange, isSpec);
           btnColorbarRange.ariaLabel = isSpec
             ? 'Colorbar range: spec limits (click for data range)'
@@ -658,38 +641,20 @@ export function renderWaferMap(
         };
         syncColorbarRangeBtnFn();
 
-        const buildOrientMenu = (btn: HTMLButtonElement) => buildCheckMenuEl(
-          btn.getBoundingClientRect(),
-          [
+        const btnOrient = makeCheckMenuBtn(
+          'orient', 'Orientation',
+          () => [
             { section: 'Rotate' },
-            { label: 'Rotate 90° clockwise', active: false, onClick: (e) => { e.stopPropagation(); const r = sceneOpts.rotation ?? 0; applyOpts({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] }); syncOrientBtnFn?.(); } },
+            { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = viewOpts.rotation ?? 0; applyOpts({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] }); } },
             { section: 'Flip' },
-            { label: 'Flip horizontal', active: !!sceneOpts.flipX, onClick: (e) => { e.stopPropagation(); applyOpts({ flipX: !sceneOpts.flipX }); syncOrientBtnFn?.(); replaceOrientMenu(); } },
-            { label: 'Flip vertical',   active: !!sceneOpts.flipY, onClick: (e) => { e.stopPropagation(); applyOpts({ flipY: !sceneOpts.flipY }); syncOrientBtnFn?.(); replaceOrientMenu(); } },
+            { label: 'Flip horizontal', active: !!viewOpts.flipX, onClick: () => applyOpts({ flipX: !viewOpts.flipX }) },
+            { label: 'Flip vertical',   active: !!viewOpts.flipY, onClick: () => applyOpts({ flipY: !viewOpts.flipY }) },
           ],
-          { makeMenuRow, makeMenuSection },
+          (btn) => {
+            const nonDefault = !!(viewOpts.rotation || viewOpts.flipX || viewOpts.flipY);
+            setActive(btn, nonDefault);
+          },
         );
-        const btnOrient = makeBtn('orient', 'Orientation', () => {
-          const existing = getOpenMenu();
-          if (existing) { existing.remove(); setOpenMenu(null); return; }
-          const menu = buildOrientMenu(btnOrient);
-          document.body.appendChild(menu);
-          setOpenMenu(menu);
-        });
-        function replaceOrientMenu(): void {
-          const current = getOpenMenu();
-          if (!current) return;
-          const updated = buildOrientMenu(btnOrient);
-          current.replaceWith(updated);
-          setOpenMenu(updated);
-        }
-        let syncOrientBtnFn: (() => void) | undefined;
-        syncOrientBtnFn = () => {
-          const nonDefault = !!(sceneOpts.rotation || sceneOpts.flipX || sceneOpts.flipY);
-          setActive(btnOrient, nonDefault);
-        };
-        syncOrientBtnFn();
-
         if (showPlotModeSelector) sceneControlsEl!.appendChild(btnMode);
         sceneControlsEl!.appendChild(btnPalette);
         sceneControlsEl!.appendChild(btnLogScale);
@@ -765,194 +730,51 @@ export function renderWaferMap(
   }
 
   // ── Expand modal ──────────────────────────────────────────────────────────
-  let modalBackdrop: HTMLDivElement | null = null;
+  let modalHandle: ReturnType<typeof openModal> | null = null;
   // The element that was reparented into the modal and must be returned on close.
   let modalReparentedEl: HTMLElement | null = null;
   let modalOriginalParent: HTMLElement | null = null;
   let modalOriginalNext: ChildNode | null = null;
-  let modalFullscreenListener: (() => void) | null = null;
-
-  function closeExpandModal(): void {
-    if (!modalBackdrop) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {/* ignore */});
-    }
-    if (modalFullscreenListener) {
-      document.removeEventListener('fullscreenchange', modalFullscreenListener);
-      modalFullscreenListener = null;
-    }
-    document.removeEventListener('keydown', onModalKeyDown);
-    // Reparent the element back to its original position in the DOM.
-    if (modalReparentedEl && modalOriginalParent) {
-      modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
-      modalReparentedEl = null;
-      modalOriginalParent = null;
-      modalOriginalNext = null;
-    }
-    modalBackdrop.remove();
-    modalBackdrop = null;
-    if (btnExpand) btnExpand.style.display = 'flex';
-    document.body.style.overflow = savedBodyOverflow;
-    // Fit will recompute via ResizeObserver firing on reparent.
-  }
-
-  let savedBodyOverflow = '';
-
-  function onModalKeyDown(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && !document.fullscreenElement) closeExpandModal();
-    if (e.key === 'f' || e.key === 'F') {
-      if (!document.fullscreenElement) {
-        (modalBackdrop?.querySelector('.wmap-modal-box') as HTMLElement | null)
-          ?.requestFullscreen().catch(() => {/* not supported */});
-      } else {
-        document.exitFullscreen();
-      }
-    }
-  }
 
   function openExpandModal(): void {
-    if (modalBackdrop) closeExpandModal();
-
-    savedBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    const backdrop = document.createElement('div');
-    backdrop.id = 'wmap-modal-backdrop';
-    Object.assign(backdrop.style, {
-      position:       'fixed',
-      inset:          '0',
-      background:     'rgba(0,0,0,0.6)',
-      display:        'flex',
-      alignItems:     'center',
-      justifyContent: 'center',
-      zIndex:         '9000',
-      backdropFilter: 'blur(3px)',
-    });
-
-    const box = document.createElement('div');
-    box.className = 'wmap-modal-box';
-    Object.assign(box.style, {
-      background:    '#fff',
-      borderRadius:  '12px',
-      overflow:      'hidden',
-      display:       'flex',
-      flexDirection: 'column',
-      width:         'min(90vw, 700px)',
-      height:        'min(90vh, 700px)',
-      boxShadow:     '0 20px 60px rgba(0,0,0,0.4)',
-      resize:        'both',
-      minWidth:      '320px',
-      minHeight:     '240px',
-      maxWidth:      '100vw',
-      maxHeight:     '100vh',
-    });
-
-    const modalHeader = document.createElement('div');
-    Object.assign(modalHeader.style, {
-      display:      'flex',
-      alignItems:   'center',
-      padding:      '10px 14px',
-      borderBottom: '1px solid #e2e5ea',
-      flexShrink:   '0',
-    });
-    const spacer = document.createElement('div');
-    spacer.style.flex = '1';
-    const btnStyle = {
-      border:     'none',
-      background: 'transparent',
-      cursor:     'pointer',
-      color:      '#888',
-      lineHeight: '1',
-      padding:    '0 4px',
-      fontSize:   '15px',
-      display:    'flex',
-      alignItems: 'center',
-    };
-
-    const fullscreenBtn = document.createElement('button');
-    fullscreenBtn.innerHTML = '&#x26F6;';
-    fullscreenBtn.title = 'Fullscreen (F)';
-    Object.assign(fullscreenBtn.style, { ...btnStyle, fontSize: '18px' });
-    fullscreenBtn.addEventListener('click', () => {
-      if (!document.fullscreenElement) {
-        box.requestFullscreen().catch(() => {/* not supported */});
-      } else {
-        document.exitFullscreen();
-      }
-    });
-
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '\xD7';
-    closeBtn.title = 'Close (Esc)';
-    Object.assign(closeBtn.style, { ...btnStyle, fontSize: '20px', padding: '0 2px' });
-    closeBtn.addEventListener('click', closeExpandModal);
-
-    const onFullscreenChange = () => {
-      const isFs = document.fullscreenElement === box;
-      fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
-      fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
-      closeBtn.style.display = isFs ? 'none' : '';
-      // Move tooltip into the fullscreen element so it renders above it.
-      if (tooltip) {
-        if (isFs) box.appendChild(tooltip);
-        else document.body.appendChild(tooltip);
-      }
-      if (isFs) {
-        box.style.borderRadius = '0';
-        box.style.resize = 'none';
-        box.style.width = '100%';
-        box.style.height = '100%';
-      } else {
-        box.style.borderRadius = '12px';
-        box.style.resize = 'both';
-        box.style.width = 'min(90vw, 700px)';
-        box.style.height = 'min(90vh, 700px)';
-      }
-    };
-
-    modalHeader.appendChild(spacer);
-    modalHeader.appendChild(fullscreenBtn);
-    modalHeader.appendChild(closeBtn);
+    if (modalHandle) { modalHandle.close(); modalHandle = null; }
 
     // Determine what to reparent. If a summary-panel wrapper exists, reparent the
     // whole wrapper (canvas + panel side-by-side). Otherwise reparent just canvasWrap.
-    // The auto-mounted panel wrapper lives outside canvasWrap so its panel stays
-    // accessible (the findings button in the toolbar toggles it inside the modal).
     const reparentRoot: HTMLElement =
       summaryPanelWrapper ?? autoSummaryPanelWrapper ?? canvasWrap;
 
-    modalReparentedEl    = reparentRoot;
-    modalOriginalParent  = reparentRoot.parentElement as HTMLElement;
-    modalOriginalNext    = reparentRoot.nextSibling;
+    modalReparentedEl   = reparentRoot;
+    modalOriginalParent = reparentRoot.parentElement as HTMLElement;
+    modalOriginalNext   = reparentRoot.nextSibling;
 
-    const modalCanvasWrap = document.createElement('div');
-    Object.assign(modalCanvasWrap.style, {
-      flex:      '1',
-      minHeight: '0',
-      minWidth:  '0',
-      display:   'flex',
-      overflow:  'hidden',
+    const handle = openModal({
+      onFullscreenChange: (isFs, box) => {
+        if (tooltip) {
+          if (isFs) box.appendChild(tooltip);
+          else document.body.appendChild(tooltip);
+        }
+      },
+      onClose: () => {
+        if (modalReparentedEl && modalOriginalParent) {
+          modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
+          modalReparentedEl   = null;
+          modalOriginalParent = null;
+          modalOriginalNext   = null;
+        }
+        modalHandle = null;
+        if (btnExpand) btnExpand.style.display = 'flex';
+        // Fit will recompute via ResizeObserver firing on reparent.
+      },
     });
 
-    // Give the reparented root the same flex fill it had in the original layout.
     reparentRoot.style.flex      = '1';
     reparentRoot.style.minWidth  = '0';
     reparentRoot.style.minHeight = '0';
-    modalCanvasWrap.appendChild(reparentRoot);
+    handle.contentWrap.appendChild(reparentRoot);
 
-    box.appendChild(modalHeader);
-    box.appendChild(modalCanvasWrap);
-    backdrop.appendChild(box);
-    document.body.appendChild(backdrop);
-
-    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeExpandModal(); });
-    document.addEventListener('keydown', onModalKeyDown);
-    modalFullscreenListener = onFullscreenChange;
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-
-    modalBackdrop = backdrop;
+    modalHandle = handle;
     if (btnExpand) btnExpand.style.display = 'none';
-    // ResizeObserver fires on reparent → render() recomputes fit automatically.
   }
 
   // ── Apply scene option changes ─────────────────────────────────────────────
@@ -960,9 +782,9 @@ export function renderWaferMap(
   // Rebuild and redraw without firing the external callback.
   // Used by ctrl.setOptions() so programmatic updates don't re-fire the callback
   // (consistent with renderWaferGallery behaviour and documented API contract).
-  function syncOpts(partial: Partial<WaferSceneOptions>): void {
-    const prevMode = sceneOpts.plotMode;
-    sceneOpts = { ...sceneOpts, ...partial };
+  function syncOpts(partial: Partial<WaferViewOptions>): void {
+    const prevMode = viewOpts.plotMode;
+    viewOpts = { ...viewOpts, ...partial };
     // Changing plot mode changes the colorbar/legend width, which shifts the
     // auto-fit viewport's originX. Invalidate fittedViewport so it is
     // recomputed for the new mode before drawSelectionOverlay reads it.
@@ -971,18 +793,18 @@ export function renderWaferMap(
     }
     // legendPosition only affects canvas layout — skip the scene rebuild.
     const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendPosition');
-    if (!onlyLegendStyle) rebuildScene();
+    if (!onlyLegendStyle) rebuildView();
     syncLegendStyleBtnFn?.();
     syncLogScaleBtnFn?.();
     syncColorbarRangeBtnFn?.();
     render();
   }
 
-  // Rebuild, redraw, and fire onSceneOptionsChange.
+  // Rebuild, redraw, and fire onViewOptionsChange.
   // Used by all toolbar interactions.
-  function applyOpts(partial: Partial<WaferSceneOptions>): void {
+  function applyOpts(partial: Partial<WaferViewOptions>): void {
     syncOpts(partial);
-    onSceneOptionsChange?.(sceneOpts);
+    onViewOptionsChange?.(viewOpts);
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -997,7 +819,7 @@ export function renderWaferMap(
   function render(): void {
     const vp = viewport ?? undefined;
     // Derive die pitch from the first die so axis labels show die grid indices.
-    const firstDie = currentScene.dies[0];
+    const firstDie = currentView.dies[0];
     const diePitchMm = firstDie
       ? { x: firstDie.width, y: firstDie.height }
       : drawOptions.diePitchMm;
@@ -1005,9 +827,9 @@ export function renderWaferMap(
     // Hold the right-side reserve constant across mode switches so the wafer
     // doesn't resize when toggling between value and bin modes.
     const cssW = Math.floor(canvas.clientWidth || canvas.width);
-    const hasBinData = !!(currentScene.hbinDefs?.length || currentScene.sbinDefs?.length ||
-      currentScene.dies.some(d => d.hbin != null || d.sbin != null));
-    const legendPos = sceneOpts.legendPosition ?? 'default';
+    const hasBinData = !!(currentView.hbinDefs?.length || currentView.sbinDefs?.length ||
+      currentView.dies.some(d => d.hbin != null || d.sbin != null));
+    const legendPos = viewOpts.legendPosition ?? 'default';
     const isRightLegend = legendPos === 'default' || legendPos === 'compact';
     const colorbarReserve = (drawOptions.colorbarWidth ?? 16) + 28;
     const stableRight = hasBinData && isRightLegend
@@ -1020,7 +842,7 @@ export function renderWaferMap(
             : Math.max(BIN_LEGEND_W, colorbarReserve)
       : undefined;
 
-    const result = toCanvas(canvas, currentScene, {
+    const result = toCanvas(canvas, currentView, {
       ...drawOptions,
       topClearance:    showToolbar ? TOOLBAR_CLEARANCE : 0,
       minRightReserve: stableRight,
@@ -1030,7 +852,7 @@ export function renderWaferMap(
       fallbackFormat: currentFallbackFormat,
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
       viewport: vp,
-      activeBin: sceneOpts.highlightBin,
+      activeBin: viewOpts.highlightBin,
     });
 
     binLegendRows = result.binLegendRows;
@@ -1047,9 +869,9 @@ export function renderWaferMap(
     const vp = currentViewport();
     if (!vp) return;
     const ctx = canvas.getContext('2d')!;
-    const pts = currentScene.hoverPoints;
+    const pts = currentView.hoverPoints;
 
-    const firstRect = currentScene.rectangles[0];
+    const firstRect = currentView.rectangles[0];
     const dieHalfW  = firstRect ? (firstRect.width  / 2) * vp.ppm : vp.ppm * 0.5;
     const dieHalfH  = firstRect ? (firstRect.height / 2) * vp.ppm : vp.ppm * 0.5;
     // Inset slightly so the ring sits just inside the die edge.
@@ -1166,7 +988,7 @@ export function renderWaferMap(
     const px   = e.clientX - rect.left;
     const py   = e.clientY - rect.top;
 
-    if (legendBoxRect && sceneOpts.legendPosition === 'floating' && pointInRect(px, py, legendBoxRect)) {
+    if (legendBoxRect && viewOpts.legendPosition === 'floating' && pointInRect(px, py, legendBoxRect)) {
       legendDragPending = true;
       legendDragStart = { x: px, y: py };
       legendOffsetStart = { ...legendOffset };
@@ -1269,11 +1091,19 @@ export function renderWaferMap(
             }
           }
         } else {
-          const hp = currentScene.hoverPoints[hit!.index];
           tooltip.style.display = 'block';
           tooltip.style.left    = `${e.clientX + 14}px`;
           tooltip.style.top     = `${e.clientY - 8}px`;
-          tooltip.innerHTML     = hp?.text ?? `Die (${die.x}, ${die.y})`;
+          tooltip.innerHTML     = buildHoverText(
+            die,
+            viewOpts.plotMode ?? 'value',
+            viewOpts.testDefs,
+            viewOpts.hbinDefs,
+            viewOpts.sbinDefs,
+            currentFallbackFormat,
+            viewOpts.aggrMethod,
+            viewOpts.lotSize,
+          );
         }
       } else {
         tooltip.style.display = 'none';
@@ -1339,12 +1169,12 @@ export function renderWaferMap(
         const x2mm = (Math.max(boxStart.x, boxEnd.x) - vp.originX) / vp.ppm;
         const y1mm = (vp.originY - Math.max(boxStart.y, boxEnd.y)) / vp.ppm;
         const y2mm = (vp.originY - Math.min(boxStart.y, boxEnd.y)) / vp.ppm;
-        const pts = currentScene.hoverPoints;
+        const pts = currentView.hoverPoints;
         const boxDies: Die[] = [];
         for (let i = 0; i < pts.length; i++) {
           if (pts[i].x >= x1mm && pts[i].x <= x2mm &&
               pts[i].y >= y1mm && pts[i].y <= y2mm) {
-            const d = currentScene.dies[i];
+            const d = currentView.dies[i];
             if (d) boxDies.push(d);
           }
         }
@@ -1390,7 +1220,7 @@ export function renderWaferMap(
     // Check bin legend hit first — legend rows take priority over die clicks.
     for (const row of binLegendRows) {
       if (cssPx >= row.x && cssPx < row.x + row.w && cssPy >= row.y && cssPy < row.y + row.h) {
-        const next = sceneOpts.highlightBin === row.bin ? undefined : row.bin;
+        const next = viewOpts.highlightBin === row.bin ? undefined : row.bin;
         applyOpts({ highlightBin: next });
         return;
       }
@@ -1428,9 +1258,9 @@ export function renderWaferMap(
 
   function selectionAsDies(): Die[] {
     const result: Die[] = [];
-    const pts = currentScene.hoverPoints;
+    const pts = currentView.hoverPoints;
     for (let i = 0; i < pts.length; i++) {
-      const d = currentScene.dies[i];
+      const d = currentView.dies[i];
       if (d && selectedKeys.has(`${d.x},${d.y}`)) result.push(d);
     }
     return result;
@@ -1444,15 +1274,15 @@ export function renderWaferMap(
 
   // ── Hit testing ────────────────────────────────────────────────────────────
   function hitTest(mx: number, my: number, snapDist: number): { die: Die; index: number } | null {
-    const pts  = currentScene.hoverPoints;
-    const rcts = currentScene.rectangles;
+    const pts  = currentView.hoverPoints;
+    const rcts = currentView.rectangles;
 
     // First pass: exact rectangle containment — handles partial dies whose
     // centres lie outside the wafer and would otherwise snap to a neighbour.
     for (let i = 0; i < rcts.length; i++) {
       const r = rcts[i];
       if (Math.abs(mx - r.x) <= r.width / 2 && Math.abs(my - r.y) <= r.height / 2) {
-        const die = currentScene.dies[i];
+        const die = currentView.dies[i];
         return die ? { die, index: i } : null;
       }
     }
@@ -1464,7 +1294,7 @@ export function renderWaferMap(
     for (let i = 0; i < pts.length; i++) {
       const dx = pts[i].x - mx, dy = pts[i].y - my;
       const d2 = dx * dx + dy * dy;
-      if (d2 < bestDist) { bestDist = d2; bestDie = currentScene.dies[i] ?? null; bestIndex = i; }
+      if (d2 < bestDist) { bestDist = d2; bestDie = currentView.dies[i] ?? null; bestIndex = i; }
     }
     return bestDie ? { die: bestDie, index: bestIndex } : null;
   }
@@ -1534,7 +1364,7 @@ export function renderWaferMap(
   return {
     setDies(newDies: Die[]): void {
       currentDies = newDies;
-      rebuildScene();
+      rebuildView();
       render();
       if (summaryPanelEl) renderSummaryPanel();
     },
@@ -1543,22 +1373,22 @@ export function renderWaferMap(
       currentResult = newResult;
       wafer         = newResult.wafer;
       currentDies   = newResult.dies;
-      // Re-seed defs from new result unless the caller explicitly set them in sceneOptions
-      if (!initialSceneOptions.testDefs) sceneOpts = { ...sceneOpts, testDefs: newResult.scene?.testDefs };
-      if (!initialSceneOptions.hbinDefs) sceneOpts = { ...sceneOpts, hbinDefs: newResult.scene?.hbinDefs };
-      if (!initialSceneOptions.sbinDefs) sceneOpts = { ...sceneOpts, sbinDefs: newResult.scene?.sbinDefs };
-      if (!initialSceneOptions.reticles) sceneOpts = { ...sceneOpts, reticles: newResult.reticles?.length ? newResult.reticles : undefined };
-      rebuildScene();
+      // Re-seed defs from new result unless the caller explicitly set them in viewOptions
+      if (!initialViewOptions.testDefs) viewOpts = { ...viewOpts, testDefs: newResult.view?.testDefs };
+      if (!initialViewOptions.hbinDefs) viewOpts = { ...viewOpts, hbinDefs: newResult.view?.hbinDefs };
+      if (!initialViewOptions.sbinDefs) viewOpts = { ...viewOpts, sbinDefs: newResult.view?.sbinDefs };
+      if (!initialViewOptions.reticles) viewOpts = { ...viewOpts, reticles: newResult.reticles?.length ? newResult.reticles : undefined };
+      rebuildView();
       render();
       if (summaryPanelEl) renderSummaryPanel();
     },
 
-    setOptions(partial: Partial<WaferSceneOptions>): void {
+    setOptions(partial: Partial<WaferViewOptions>): void {
       syncOpts(partial);
     },
 
-    getOptions(): WaferSceneOptions {
-      return { ...sceneOpts };
+    getOptions(): WaferViewOptions {
+      return { ...viewOpts };
     },
 
     resetZoom,
@@ -1576,7 +1406,7 @@ export function renderWaferMap(
 
     setFallbackFormat(format: 'si' | 'engineering'): void {
       currentFallbackFormat = format;
-      rebuildScene();
+      rebuildView();
       render();
     },
 
@@ -1594,7 +1424,7 @@ export function renderWaferMap(
       if (btnFindings) btnFindings.style.display = visible ? 'flex' : 'none';
     },
 
-    setSceneControlsVisible(visible: boolean): void {
+    setViewControlsVisible(visible: boolean): void {
       if (sceneControlsEl) sceneControlsEl.style.display = visible ? 'flex' : 'none';
     },
 
@@ -1607,10 +1437,10 @@ export function renderWaferMap(
     },
 
     getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null {
-      const mode = sceneOpts.plotMode;
+      const mode = viewOpts.plotMode;
       if (mode !== 'hardBin' && mode !== 'softBin') return null;
       const isHard = mode === 'hardBin';
-      const defs = isHard ? sceneOpts.hbinDefs : sceneOpts.sbinDefs;
+      const defs = isHard ? viewOpts.hbinDefs : viewOpts.sbinDefs;
       const bins = [...new Set(currentDies.map(d => isHard ? d.hbin : d.sbin).filter((b): b is number => b !== undefined))].sort((a, b) => a - b);
       if (!bins.length) return null;
       return bins.map(bin => {
@@ -1621,7 +1451,7 @@ export function renderWaferMap(
     },
 
     destroy(): void {
-      closeExpandModal();
+      modalHandle?.close();
       if (hideTimer) clearTimeout(hideTimer);
       tbGetOpenMenu?.()?.remove();
       if (tbCloseOpenMenu) document.removeEventListener('click', tbCloseOpenMenu, true);

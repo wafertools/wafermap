@@ -118,7 +118,7 @@
     // Mount the renderer — pass reticles so the overlay has geometry to draw.
     // Reticle-position findings appear in the built-in summary panel (defaultOpen: true).
     const ctrl = renderWaferMap(document.getElementById('map'), result, {
-      sceneOptions: {
+      viewOptions: {
         plotMode:    'hardBin',
         hbinDefs:    HBIN_DEFS,
         reticles:    result.reticles,   // field boundary geometry from buildWaferMap

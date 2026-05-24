@@ -44,7 +44,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
 };
 
 function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
-  return 'wafer' in input && 'dies' in input && 'scene' in input ? input : buildWaferMap(input);
+  return 'wafer' in input && 'dies' in input && 'view' in input ? input : buildWaferMap(input);
 }
 
 function isEligibleDie(die: Die, options: ResolvedOptions): die is EligibleDie {
@@ -59,10 +59,10 @@ function isEligibleDie(die: Die, options: ResolvedOptions): die is EligibleDie {
 
 function makeClusterFailurePredicate(
   isLotStack: boolean,
-  hasHbinData: boolean,
+  hasBinData: boolean,
   testDefs: TestDef[] | undefined,
 ): ((die: Die) => boolean) | undefined {
-  if (!isLotStack || hasHbinData) return undefined;
+  if (!isLotStack || hasBinData) return undefined;
   const limited = (testDefs ?? []).filter(
     td => td.limitLow !== undefined || td.limitHigh !== undefined,
   );
@@ -792,8 +792,8 @@ export function analyzeWaferMap(
 ): StatsSummary {
   const resolved = { ...DEFAULT_OPTIONS, ...options };
   const result = normalizeInput(input);
-  const isLotStack  = result.scene.isLotStack;
-  const stackMethod = result.scene.aggrMethod;
+  const isLotStack  = result.view.isLotStack;
+  const stackMethod = result.view.aggrMethod;
   const hasHbinData = !isLotStack ||
     stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
   const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, resolved));
@@ -822,39 +822,39 @@ export function analyzeWaferMap(
   }
   if (resolved.enableHardBinAnalysis && hasHbinData) {
     findings.push(
-      ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
-      ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
-      ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
-      ...buildBinFindings(eligibleDies, sectorRegions, 'hard', result.scene.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, sectorRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
     );
   }
   if (resolved.enableSoftBinAnalysis) {
     const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined);
     findings.push(
-      ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
-      ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
-      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
-      ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.scene.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
     );
   }
   const warnings: string[] = [];
   if (resolved.enableTestValueAnalysis) {
-    const ring    = buildTestValueFindings(eligibleDies, ringRegions, result.scene.testDefs, resolved);
-    const quad    = buildTestValueFindings(eligibleDies, quadrantRegions, result.scene.testDefs, resolved);
-    const reticle = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.scene.testDefs, resolved);
-    const sector  = buildTestValueFindings(eligibleDies, sectorRegions, result.scene.testDefs, resolved);
+    const ring    = buildTestValueFindings(eligibleDies, ringRegions, result.view.testDefs, resolved);
+    const quad    = buildTestValueFindings(eligibleDies, quadrantRegions, result.view.testDefs, resolved);
+    const reticle = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.view.testDefs, resolved);
+    const sector  = buildTestValueFindings(eligibleDies, sectorRegions, result.view.testDefs, resolved);
     findings.push(...ring.findings, ...quad.findings, ...reticle.findings, ...sector.findings);
     if (ring.warning) warnings.push(ring.warning);
 
     findings.push(...buildSpecLimitFindings(
       eligibleDies,
       [ringRegions, quadrantRegions, reticlePositionRegions, sectorRegions],
-      result.scene.testDefs,
+      result.view.testDefs,
       resolved,
     ));
   }
   if (resolved.enableClusterAnalysis) {
-    const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.scene.testDefs);
+    const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.view.testDefs);
     if (!isLotStack || hasHbinData || failPredicate !== undefined) {
       findings.push(...buildClusterFindings(eligibleDies, result.wafer, {
         ...resolved,
@@ -876,7 +876,7 @@ export function analyzeWaferMap(
     if (stackMethod) stats.aggregationMethod = stackMethod;
   }
   if (warnings.length > 0) stats.warnings = warnings;
-  const specYield = computeTestSpecYield(result.dies, result.scene.testDefs);
+  const specYield = computeTestSpecYield(result.dies, result.view.testDefs);
   if (specYield) stats.testSpecYield = specYield;
 
   return {

@@ -12,15 +12,9 @@ export interface ColorScheme {
   forBin: (bin: number) => string;
   /**
    * Return a CSS colour string for a continuous value t ∈ [0, 1].
-   * Values are pre-normalized by buildScene before this is called.
+   * Values are pre-normalized by buildView before this is called.
    */
   forValue: (t: number) => string;
-  /**
-   * Plotly colorscale for the continuous colorbar.
-   * Either a named Plotly colorscale string (e.g. 'Viridis', 'Plasma') or
-   * an explicit [[stop, color], …] array.  Should visually match forValue.
-   */
-  plotlyColorscale: string | Array<[number, string]>;
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────────
@@ -32,7 +26,7 @@ interface SchemeRecord extends ColorScheme {
 const registry = new Map<string, SchemeRecord>();
 
 /**
- * Register a named colour scheme, making it available to buildScene via the
+ * Register a named colour scheme, making it available to buildView via the
  * colorScheme option.  Call this once at app startup before rendering.
  *
  * `forBin` and `forValue` must return valid CSS color strings — invalid values
@@ -43,7 +37,6 @@ const registry = new Map<string, SchemeRecord>();
  *   label: 'My Brand',
  *   forBin: (bin) => MY_BRAND_BINS[bin] ?? '#ccc',
  *   forValue: (t) => `hsl(${200 + t * 60}, 70%, ${30 + t * 40}%)`,
- *   plotlyColorscale: [[0, '#3311aa'], [1, '#ffdd00']],
  * });
  */
 export function registerColorScheme(name: string, scheme: ColorScheme): void {
@@ -82,7 +75,6 @@ registerColorScheme('viridis', {
   label: 'Viridis',
   forBin: binArray(HARD_BIN_COLORS),
   forValue: (t) => lerpKp(VIRIDIS, t),
-  plotlyColorscale: 'Viridis',
 });
 
 /**
@@ -93,7 +85,6 @@ registerColorScheme('default', {
   label: 'Default',
   forBin: binArray(HARD_BIN_COLORS),
   forValue: (t) => lerpKp(VIRIDIS, t),
-  plotlyColorscale: 'Viridis',
 });
 
 // 'color' kept as an alias so existing code that passed colorScheme:'color' still works.
@@ -107,7 +98,6 @@ registerColorScheme('greyscale', {
   label: 'Greyscale',
   forBin: binArray(HARD_BIN_GREY),
   forValue: valueToGreyscale,
-  plotlyColorscale: [[0, 'rgb(30,30,30)'], [1, 'rgb(230,230,230)']],
 });
 
 /**
@@ -145,9 +135,8 @@ const CIVIDIS: readonly [number, number, number][] = [
 
 registerColorScheme('accessible', {
   label: 'Accessible (Okabe-Ito / Cividis)',
-  forBin:           binArray(OKABE_ITO),
-  forValue:         (t) => lerpKp(CIVIDIS, t),
-  plotlyColorscale: 'Cividis',
+  forBin:  binArray(OKABE_ITO),
+  forValue: (t) => lerpKp(CIVIDIS, t),
 });
 
 /**
@@ -185,7 +174,6 @@ registerColorScheme('plasma', {
   label: 'Plasma',
   forBin: binArray(PLASMA_BINS),
   forValue: (t) => lerpKp(PLASMA_KP, t),
-  plotlyColorscale: 'Plasma',
 });
 
 /**
@@ -223,5 +211,4 @@ registerColorScheme('inferno', {
   label: 'Inferno',
   forBin: binArray(INFERNO_BINS),
   forValue: (t) => lerpKp(INFERNO_KP, t),
-  plotlyColorscale: 'Inferno',
 });

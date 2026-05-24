@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildWaferMap, aggregateValues, buildScene, createWafer } from '../dist/index.js';
+import { buildWaferMap, aggregateValues, buildView, createWafer } from '../dist/index.js';
 
 function approxEqual(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} != ${expected}`);
@@ -36,8 +36,8 @@ test('buildWaferMap applies retest policy and chooses plot mode from the data', 
     retestPolicy: 'last',
   });
 
-  assert.equal(first.scene.plotMode, 'value');
-  assert.equal(last.scene.plotMode, 'value');
+  assert.equal(first.view.plotMode, 'value');
+  assert.equal(last.view.plotMode, 'value');
 
   assert.deepEqual(findDie(first, 0, 0)?.testValues, { 0: 0.4 });
   assert.equal(findDie(first, 0, 0)?.hbin, 1);
@@ -74,9 +74,9 @@ test('buildWaferMap accepts explicit dies and enables reticles by default when c
 
   assert.equal(result.units, 'mm');
   assert.equal(result.wafer.metadata?.lot, 'LOT-9');
-  assert.equal(result.scene.metadata?.lot, 'LOT-9');
+  assert.equal(result.view.metadata?.lot, 'LOT-9');
   assert.deepEqual(findDie(result, 0, 0)?.testValues, { 0: 1.23 });
-  assert.ok(result.scene.overlays.some((overlay) => overlay.kind === 'reticle'));
+  assert.ok(result.view.overlays.some((overlay) => overlay.kind === 'reticle'));
   assert.equal(result.dataCoverage.totalDies, 2);
 });
 
@@ -101,7 +101,7 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.equal(mean.scene.plotMode, 'value');
+  assert.equal(mean.view.plotMode, 'value');
   assert.deepEqual(mean.dies.filter((die) => die.testValues).map((die) => die.testValues?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [3, 9]);
 
   const median = buildWaferMap({
@@ -123,7 +123,7 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.equal(countBin.scene.plotMode, 'value');
+  assert.equal(countBin.view.plotMode, 'value');
   assert.deepEqual(countBin.dies.filter((die) => die.testValues).map((die) => die.testValues?.[0]).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
 
   const percent = buildWaferMap({
@@ -138,7 +138,7 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.equal(mode.scene.plotMode, 'hardBin');
+  assert.equal(mode.view.plotMode, 'hardBin');
   assert.deepEqual(mode.dies.filter((die) => die.hbin !== undefined).map((die) => die.hbin).sort((a, b) => (a ?? 0) - (b ?? 0)), [2, 2]);
 });
 
@@ -156,7 +156,7 @@ test('buildWaferMap marks edge-excluded dies and falls back to hardBin mode when
     dieConfig: { width: 10, height: 10 },
   });
 
-  assert.equal(result.scene.plotMode, 'hardBin');
+  assert.equal(result.view.plotMode, 'hardBin');
   assert.ok(result.dies.some((die) => die.edgeExcluded));
   assert.ok(result.dataCoverage.edgeExcludedDies > 0);
   assert.equal(result.dataCoverage.filledDies, 2);
@@ -217,7 +217,7 @@ test('aggregateValues reads from non-zero testNumber keys and stores result at i
   const result = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 1050);
   const d00 = result.find((d) => d.i === 0 && d.j === 0);
   const d10 = result.find((d) => d.i === 1 && d.j === 0);
-  // Mean of 1.0 and 3.0 = 2.0; stored at testValues[0] for buildScene consumption
+  // Mean of 1.0 and 3.0 = 2.0; stored at testValues[0] for buildView consumption
   assert.deepEqual(d00?.testValues, { 0: 2.0 });
   // Mean of 3.0 and 5.0 = 4.0
   assert.deepEqual(d10?.testValues, { 0: 4.0 });
@@ -230,10 +230,10 @@ test('aggregateValues with paramIndex=1060 stores correct mean at index 0', () =
   assert.deepEqual(d00?.testValues, { 0: 1.5 });
 });
 
-test('buildScene stackedValues mode produces non-grey fills when dies have testValues[0]', () => {
+test('buildView stackedValues mode produces non-grey fills when dies have testValues[0]', () => {
   const wafer = createWafer({ diameter: 40 });
   const aggregated = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 1050);
-  const scene = buildScene(wafer, aggregated, {
+  const scene = buildView(wafer, aggregated, {
     plotMode: 'stackedValues',
     testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
   });
@@ -242,12 +242,12 @@ test('buildScene stackedValues mode produces non-grey fills when dies have testV
   assert.ok(fills.every((f) => f !== '#d6d9dd'), `Expected no grey fills, got: ${fills.join(', ')}`);
 });
 
-test('buildScene stackedValues mode produces grey fills when aggregation used wrong paramIndex', () => {
+test('buildView stackedValues mode produces grey fills when aggregation used wrong paramIndex', () => {
   // Regression guard: if aggregateValues is called with paramIndex=0 on dies keyed by 1050,
-  // all values are missing and buildScene must render grey (no-data) — this is the bug state.
+  // all values are missing and buildView must render grey (no-data) — this is the bug state.
   const wafer = createWafer({ diameter: 40 });
   const badAggregated = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 0);
-  const scene = buildScene(wafer, badAggregated, {
+  const scene = buildView(wafer, badAggregated, {
     plotMode: 'stackedValues',
     testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
   });

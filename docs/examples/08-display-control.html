@@ -63,12 +63,12 @@
     <div class="demo-sep"></div>
     <span class="demo-title">§8 — Controlling the display</span>
     <span class="demo-desc">
-      setOptions · onSceneOptionsChange · toolbar ↔ external controls stay in sync
+      setOptions · onViewOptionsChange · toolbar ↔ external controls stay in sync
     </span>
   </header>
 
   <div class="demo-intro">
-    Use <code>ctrl.setOptions()</code> to drive the map programmatically, and <code>onSceneOptionsChange</code> to receive toolbar changes back into your app.
+    Use <code>ctrl.setOptions()</code> to drive the map programmatically, and <code>onViewOptionsChange</code> to receive toolbar changes back into your app.
     The external controls in the sidebar stay in sync with the toolbar — change either one and both update.
     The programmatic action buttons demonstrate <code>resetZoom()</code> and <code>highlightBin</code>.
   </div>
@@ -154,9 +154,9 @@
 
         <div class="section-divider"></div>
 
-        <!-- ── Live state readout — updated by onSceneOptionsChange ── -->
+        <!-- ── Live state readout — updated by onViewOptionsChange ── -->
         <div class="section">
-          <div class="section-heading">Live state (from onSceneOptionsChange)</div>
+          <div class="section-heading">Live state (from onViewOptionsChange)</div>
           <table class="kv">
             <tr>
               <td>plotMode</td>
@@ -224,18 +224,18 @@
       testDefs: TEST_DEFS,
       passBins: [1],
     });
-    const { scene } = result;
+    const { view } = result;
 
-    // onSceneOptionsChange fires when the TOOLBAR changes options.
+    // onViewOptionsChange fires when the TOOLBAR changes options.
     // Calling ctrl.setOptions() does NOT re-fire it, preventing feedback loops.
     const ctrl = renderWaferMap(document.getElementById('map'), result, {
-      sceneOptions: {
+      viewOptions: {
         plotMode: 'hardBin',
         hbinDefs: HBIN_DEFS,
         sbinDefs: SBIN_DEFS,
-        testDefs: scene.testDefs,
+        testDefs: view.testDefs,
       },
-      onSceneOptionsChange(opts) {
+      onViewOptionsChange(opts) {
         // Mirror every toolbar change into the external controls
         syncExternalControls(opts);
         updateStateDisplay(opts);

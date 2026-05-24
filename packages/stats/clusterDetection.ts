@@ -56,7 +56,7 @@ interface ClusterOptions {
   ringCount: number;
   includePartial: boolean;
   includeEdgeExcluded: boolean;
-  /** Optional override for the failure predicate. Default: hbin not in passBins. */
+  /** Optional override for the failure predicate. Default: hard bin, then soft bin, not in passBins. */
   isFailingDie?: (die: Die) => boolean;
 }
 
@@ -71,7 +71,10 @@ export function buildClusterFindings(
   // Caller passes pre-filtered eligible dies; enforce minimum sample size.
   if (dies.length < minimumSampleSize) return [];
 
-  const defaultIsFailingDie = (d: Die) => d.hbin === undefined || !passSet.has(d.hbin);
+  const defaultIsFailingDie = (d: Die) => {
+    const bin = d.hbin ?? d.sbin;
+    return bin === undefined || !passSet.has(bin);
+  };
   const isFailingFn = options.isFailingDie ?? defaultIsFailingDie;
   const failing = dies.filter(isFailingFn);
   const pBg = failing.length / dies.length;

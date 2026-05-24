@@ -132,22 +132,16 @@
 
     <div class="help-section">
       <div class="help-section-title">View controls</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/rotateCW.svg" width="16" height="16"></div><div class="help-row-text"><strong>Rotate</strong>Rotate the wafer 90° clockwise. All coordinates shown are always original die grid positions — never transformed.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/flipH.svg" width="16" height="16"></div><div class="help-row-text"><strong>Flip horizontal</strong>Mirror the wafer left–right.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/flipV.svg" width="16" height="16"></div><div class="help-row-text"><strong>Flip vertical</strong>Mirror the wafer top–bottom.</div></div>
       <div class="help-row"><div class="help-icon"><img src="../images/icons/zoomMode.svg" width="16" height="16"></div><div class="help-row-text"><strong>Zoom mode</strong>Drag to draw a zoom rectangle. Scroll wheel zooms at the cursor. Double-click resets.</div></div>
       <div class="help-row"><div class="help-icon"><img src="../images/icons/pan.svg" width="16" height="16"></div><div class="help-row-text"><strong>Pan mode</strong>Drag to move the view.</div></div>
       <div class="help-row"><div class="help-icon"><img src="../images/icons/reset.svg" width="16" height="16"></div><div class="help-row-text"><strong>Reset zoom</strong>Return to the default full-wafer view. Also triggered by double-clicking the canvas.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/orient.svg" width="16" height="16"></div><div class="help-row-text"><strong>Orientation</strong>Dropdown menu: rotate 90° clockwise, flip horizontal, or flip vertical. All coordinates shown are always original die grid positions.</div></div>
     </div>
 
     <div class="help-section">
       <div class="help-section-title">Overlays</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/rings.svg" width="16" height="16"></div><div class="help-row-text"><strong>Ring boundaries</strong>Show concentric ring zones used for spatial analysis.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/quadrants.svg" width="16" height="16"></div><div class="help-row-text"><strong>Quadrant boundaries</strong>Show NE / NW / SE / SW quadrant dividers.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/reticle.svg" width="16" height="16"></div><div class="help-row-text"><strong>Reticle grid</strong>Overlay the stepper field grid (shown when reticle data is present).</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/labels.svg" width="16" height="16"></div><div class="help-row-text"><strong>Die labels</strong>Show the bin number or test value on each die.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/xyIndicator.svg" width="16" height="16"></div><div class="help-row-text"><strong>Axis indicator</strong>Show the X/Y axis direction arrows.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/legend.svg" width="16" height="16"></div><div class="help-row-text"><strong>Legend</strong>Show or reposition the bin colour legend.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/overlays.svg" width="16" height="16"></div><div class="help-row-text"><strong>Overlays</strong>Dropdown menu: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticle data is present), XY axis indicator. Multiple overlays can be active at once.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/legend.svg" width="16" height="16"></div><div class="help-row-text"><strong>Legend style</strong>Dropdown menu: reposition the bin colour legend (default, compact, left, top, bottom, floating).</div></div>
       <div class="help-row"><div class="help-icon"><img src="../images/icons/palette.svg" width="16" height="16"></div><div class="help-row-text"><strong>Colour scheme</strong>Switch between colour palettes for test value and stacked modes.</div></div>
     </div>
 
@@ -359,7 +353,7 @@
       container.innerHTML = '';
 
       const ctrl = renderWaferMap(container, items, {
-        sceneOptions: {
+        viewOptions: {
           plotMode,
           ...(testDefs ? { testDefs } : {}),
         },

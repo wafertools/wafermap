@@ -1,4 +1,11 @@
-export * from './buildScene.js';
+export * from './buildView.js';
 export * from './buildWaferMap.js';
-export * from './colorMap.js';
+export {
+  hardBinColor,
+  hardBinGreyscale,
+  valueToViridis,
+  valueToGreyscale,
+  softBinColor,
+  contrastTextColor,
+} from './colorMap.js';
 export * from './colorSchemes.js';

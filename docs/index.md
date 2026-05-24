@@ -32,8 +32,14 @@ renderWaferMap(document.getElementById('map'), result);
 
 **Integration.** Pure ES modules, no server, no runtime dependencies. Works in React, Svelte, Vue, plain HTML, or a Web Worker.
 
-## Documentation
+## Start here
 
-- [User Guide](GUIDE.md) — walkthroughs, usage patterns, and practical integration advice.
-- [API Reference](API.md) — the full public API and configuration reference.
-- [SvelteKit integration](SVELTEKIT.md)
+- [Quick Start](QUICKSTART.md) — up and running in 5 minutes
+- [SvelteKit integration](SVELTEKIT.md) · [React](REACT.md) · [Vue](VUE.md)
+- [Troubleshooting](TROUBLESHOOTING.md) — common mistakes and fixes
+
+## Reference
+
+- [User Guide](GUIDE.md) — walkthroughs, usage patterns, and practical integration advice
+- [API Reference](API.md) — full public API and configuration reference
+- [Examples](examples/index.md) — live interactive demos

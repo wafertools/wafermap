@@ -6,7 +6,8 @@ import {
   aggregateValues,
   applyOrientation,
   applyProbeSequence,
-  buildScene,
+  buildHoverText,
+  buildView,
   classifyDie,
   clipDiesToWafer,
   contrastTextColor,
@@ -15,7 +16,6 @@ import {
   generateReticleGrid,
   generateTextOverlay,
   getColorScheme,
-  getDieAtPoint,
   getDieKey,
   getRingLabel,
   getUniqueBins,
@@ -223,13 +223,12 @@ test('aggregation, inference, classification, formatting, and color helpers are 
     label: 'Custom Suite',
     forBin: (bin) => `bin-${bin}`,
     forValue: (t) => `value-${t.toFixed(2)}`,
-    plotlyColorscale: [[0, '#000000'], [1, '#ffffff']],
   });
   assert.equal(getColorScheme('custom-suite').label, 'Custom Suite');
   assert.ok(listColorSchemes().some((scheme) => scheme.name === 'custom-suite'));
 });
 
-test('renderer scene assembly and Plotly conversion preserve the public contract', () => {
+test('renderer scene assembly preserves the public contract', () => {
   const wafer = createWafer({
     diameter: 60,
     metadata: {
@@ -244,7 +243,7 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
   const dies = applyProbeSequence(buildSampleDies(), { type: 'snake' });
   const reticles = generateReticleGrid(wafer, { width: 2, height: 2, diePitchX: 10, diePitchY: 10 });
 
-  const scene = buildScene(wafer, dies, {
+  const scene = buildView(wafer, dies, {
     plotMode: 'hardBin',
     showText: true,
     showReticle: true,
@@ -267,8 +266,10 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
   assert.ok(scene.rectangles.some((rect) => rect.fill === '#e8e9ea'));
   assert.ok(scene.texts.some((text) => text.text === '+X'));
   assert.ok(scene.texts.some((text) => text.text === '+Y'));
-  assert.ok(scene.hoverPoints.every((point) => point.text.includes('Die (')));
-  assert.ok(scene.hoverPoints[0].text.includes('HBin: 1'));
+  const firstDie = scene.dies[0];
+  const hoverText = buildHoverText(firstDie, 'hardBin', scene.hbinDefs, scene.hbinDefs, scene.sbinDefs);
+  assert.ok(hoverText.includes('Die ('));
+  assert.ok(hoverText.includes('HBin:'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'wafer-boundary'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'reticle'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'probe-path'));
@@ -277,8 +278,6 @@ test('renderer scene assembly and Plotly conversion preserve the public contract
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'xy-indicator'));
 
   assert.equal(getDieKey({ x: 3, y: -2 }), '3,-2');
-  assert.equal(getDieAtPoint(scene, { points: [{ curveNumber: 0, pointIndex: 2 }] })?.id, '1_0');
-  assert.equal(getDieAtPoint(scene, { points: [{ curveNumber: 1, pointIndex: 1 }] }), null);
 
   const textOverlay = generateTextOverlay(dies, {
     plotMode: 'value',

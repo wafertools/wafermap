@@ -7,7 +7,7 @@ import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { RenderOptions, WaferCanvasController } from './renderWaferMap.js';
 import type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 
-export type { RenderOptions, MountOptions, WaferCanvasController, WaferSceneOptions } from './renderWaferMap.js';
+export type { RenderOptions, MountOptions, WaferCanvasController, WaferViewOptions } from './renderWaferMap.js';
 export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 export type { SummaryPanelOptions } from './summaryPanel.js';
 
@@ -26,7 +26,7 @@ export function renderWaferMap(
 /**
  * Render an interactive wafer gallery (multiple cards) into `container`.
  * Pass an array of `WaferMapResult` objects, optionally with display overrides
- * (`label`, `statsSummary`, `sceneOptions`, `onClick`, `onSelect`) spread in.
+ * (`label`, `statsSummary`, `viewOptions`, `onClick`, `onSelect`) spread in.
  */
 export function renderWaferMap(
   container: HTMLElement,

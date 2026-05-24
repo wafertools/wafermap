@@ -4,6 +4,28 @@ This guide walks through building wafer map visualisations in a real application
 from a single interactive map up to a multi-wafer gallery with statistical findings.
 It focuses on practical patterns; for the full type reference see [API Reference](API.md).
 
+| Section | |
+|---|---|
+| [1. Installation and setup](#1-installation-and-setup) | npm install, bundler and CDN setup |
+| [2. Your first wafer map](#2-your-first-wafer-map) | Minimal two-call example |
+| [3. Loading real data from a CSV](#3-loading-real-data-from-a-csv) | Parse and map columnar data |
+| [4. Adding die size and wafer geometry](#4-adding-die-size-and-wafer-geometry) | Physical dimensions, diameter, notch |
+| [5. Working with bins](#5-working-with-bins) | Hard bins, soft bins, named bins, yield |
+| [6. Working with test values](#6-working-with-test-values) | Parametric data, spec limits, colorbar |
+| [7. Retests and enriching dies after build](#7-retests-and-enriching-dies-after-build) | Retest policy, probe sequence |
+| [8. Controlling the display](#8-controlling-the-display) | Rotation, flip, plot mode, colour scheme |
+| [9. Responding to user interaction](#9-responding-to-user-interaction) | Hover, click, box-select callbacks |
+| [10. Adding statistical findings](#10-adding-statistical-findings) | analyzeWaferMap, findings panel |
+| [11. Summary panel](#11-summary-panel) | Persistent metadata and stats sidebar |
+| [12. Building a lot gallery](#12-building-a-lot-gallery) | Card grid, shared controls, drill-down |
+| [13. Lot-level statistical findings](#13-lot-level-statistical-findings) | Cross-wafer trends, analyzeWaferLot |
+| [14. Reticle overlays](#14-reticle-overlays) | Photolithography field grid |
+| [15. Processing large datasets with a Web Worker](#15-processing-large-datasets-with-a-web-worker) | Off-main-thread build |
+| [16. Custom colour schemes](#16-custom-colour-schemes) | registerColorScheme |
+| [17. Recipes](#17-recipes) | Copy-paste patterns |
+| [18. Advanced: the rendering pipeline](#18-advanced-the-rendering-pipeline) | buildView, toCanvas |
+
+> **Stuck?** See [Troubleshooting](TROUBLESHOOTING.md) for common mistakes.
 
 ## 1. Installation and setup
 
@@ -77,7 +99,7 @@ renderWaferMap(document.getElementById('map'), result, {
 `renderWaferMap` returns immediately and mounts a self-contained interactive map.
 A toolbar appears on hover, giving users access to all display controls — no extra
 HTML or JavaScript required (`showToolbar` defaults to `true`). The toolbar includes an **expand** button (⛶) that
-opens the map in a full-screen modal without rebuilding the scene.
+opens the map in a full-screen modal without rebuilding the view.
 
 > **`x` and `y` are always die grid positions (prober step coordinates) — integers
 > like −7, 0, 5.  They are NOT millimetre values.**  The library converts to physical
@@ -256,7 +278,7 @@ const result = buildWaferMap({
 });
 
 renderWaferMap(container, result, {
-  sceneOptions: { plotMode: 'hardBin' },
+  viewOptions: { plotMode: 'hardBin' },
 });
 ```
 
@@ -343,7 +365,7 @@ const result = buildWaferMap({
 });
 
 renderWaferMap(container, result, {
-  sceneOptions: {
+  viewOptions: {
     plotMode:   'value',
     activeTest: 1050,   // testNumber for Idsat — NOT a positional index
     // testDefs inherited automatically from the result
@@ -400,7 +422,7 @@ const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
 // Start in specLimit mode for Vth to see pass/fail/direction at a glance
 renderWaferMap(container, result, {
-  sceneOptions: {
+  viewOptions: {
     plotMode:   'specLimit',
     activeTest: 1060,
     // testDefs inherited automatically from the result
@@ -467,7 +489,7 @@ const enrichedDies = result.dies.map(die => {
 });
 
 renderWaferMap(container, { ...result, dies: enrichedDies }, {
-  sceneOptions: {
+  viewOptions: {
     testDefs: [
       { testNumber: 1050, name: 'Idsat', unit: 'A' },
       { testNumber: 1060, name: 'Vth',   unit: 'V' },
@@ -489,11 +511,11 @@ renderWaferMap(container, { ...result, dies: enrichedDies }, {
 
 ### Initial display options
 
-Pass `sceneOptions` to `renderWaferMap` to set the initial state:
+Pass `viewOptions` to `renderWaferMap` to set the initial state:
 
 ```ts
 renderWaferMap(container, result, {
-  sceneOptions: {
+  viewOptions: {
     plotMode:                'hardBin',
     colorScheme:             'default',     // 'default', 'greyscale', 'accessible', 'plasma', 'inferno'
     showRingBoundaries:      true,
@@ -516,7 +538,7 @@ All of these can also be changed by the user via the toolbar at any time.
 `renderWaferMap` returns a controller you can call from application code:
 
 ```ts
-const ctrl = renderWaferMap(container, result, { sceneOptions: { plotMode: 'hardBin' } });
+const ctrl = renderWaferMap(container, result, { viewOptions: { plotMode: 'hardBin' } });
 
 // Switch display mode (activeTest is a testNumber, e.g. from testDefs):
 ctrl.setOptions({ plotMode: 'value', activeTest: 1050 });
@@ -537,12 +559,12 @@ ctrl.destroy();
 
 ### Syncing with external UI controls
 
-Use `onSceneOptionsChange` to keep your own UI elements in sync with the toolbar:
+Use `onViewOptionsChange` to keep your own UI elements in sync with the toolbar:
 
 ```ts
 const ctrl = renderWaferMap(container, result, {
-  sceneOptions: { plotMode: 'hardBin' },
-  onSceneOptionsChange: (opts) => {
+  viewOptions: { plotMode: 'hardBin' },
+  onViewOptionsChange: (opts) => {
     modeDropdown.value     = opts.plotMode;
     schemeDropdown.value   = opts.colorScheme;
     ringsCheckbox.checked  = opts.showRingBoundaries ?? false;
@@ -555,7 +577,7 @@ modeDropdown.addEventListener('change', () => {
 });
 ```
 
-> `onSceneOptionsChange` fires only when the toolbar changes options.  Calling
+> `onViewOptionsChange` fires only when the toolbar changes options.  Calling
 > `ctrl.setOptions()` programmatically does NOT re-fire it, so there is no
 > feedback loop.
 
@@ -566,7 +588,7 @@ If you want a static display with no toolbar:
 ```ts
 renderWaferMap(container, result, {
   showToolbar: false,
-  sceneOptions: { plotMode: 'hardBin' },
+  viewOptions: { plotMode: 'hardBin' },
 });
 ```
 
@@ -576,8 +598,8 @@ mode externally):
 ```ts
 renderWaferMap(container, result, {
   showPlotModeSelector: false,
-  sceneOptions: { plotMode: 'value' },
-  onSceneOptionsChange: (opts) => syncMyModeUI(opts),
+  viewOptions: { plotMode: 'value' },
+  onViewOptionsChange: (opts) => syncMyModeUI(opts),
 });
 ```
 **→ [Demo: Controlling the display](examples/08-display-control.html)**
@@ -598,11 +620,11 @@ In `hardBin` and `softBin` modes, the bin legend can be placed in six positions 
 | `'bottom'` | Horizontal strip below the wafer (multi-column, auto-fitted) |
 | `'floating'` | Draggable overlay, initially bottom-right (full labels + counts) |
 
-Set the initial position via `sceneOptions` — the user can change it at any time via the toolbar:
+Set the initial position via `viewOptions` — the user can change it at any time via the toolbar:
 
 ```ts
 renderWaferMap(container, result, {
-  sceneOptions: { plotMode: 'hardBin', legendPosition: 'bottom' },
+  viewOptions: { plotMode: 'hardBin', legendPosition: 'bottom' },
 });
 ```
 
@@ -629,29 +651,22 @@ gallery grid.  Which buttons appear depends on the context and the current data.
 | --- | --- | --- | --- |
 | <img src="images/icons/download.svg" width="16" height="16"> | Download PNG | Always | Saves the current canvas at current zoom/rotation |
 | <img src="images/icons/zoomMode.svg" width="16" height="16"> | Zoom mode | Always | Drag to zoom into a region |
+| <img src="images/icons/zoomIn.svg" width="16" height="16"> <img src="images/icons/zoomOut.svg" width="16" height="16"> <img src="images/icons/reset.svg" width="16" height="16"> | Zoom in / Zoom out / Reset | Always | Step zoom; Reset returns to fitted view |
 | <img src="images/icons/pan.svg" width="16" height="16"> | Pan mode | Always | Drag to pan |
 | <img src="images/icons/boxSelect.svg" width="16" height="16"> | Box select | Always | Drag to select a group of dies; fires `onSelect` when provided |
-| <img src="images/icons/zoomIn.svg" width="16" height="16"> <img src="images/icons/zoomOut.svg" width="16" height="16"> <img src="images/icons/reset.svg" width="16" height="16"> | Zoom in / Zoom out / Reset | Always | Step zoom; Reset returns to fitted view |
 | <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, Spec Limit, and Stacked modes (only when map was built with `lotStack`) |
-| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Cycles through registered colour schemes |
+| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Opens colour scheme picker |
 | <img src="images/icons/logScale.svg" width="16" height="16"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0 |
 | <img src="images/icons/specRange.svg" width="16" height="16"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh` | Toggles between spec-limit range (blue/red out-of-spec) and data range |
-| <img src="images/icons/rings.svg" width="16" height="16"> | Ring boundaries | Always | Overlays concentric ring zones |
-| <img src="images/icons/quadrants.svg" width="16" height="16"> | Quadrant boundaries | Always | Overlays NE/NW/SW/SE quadrant lines |
-| <img src="images/icons/labels.svg" width="16" height="16"> | Die labels | Always | Shows die index labels on each die |
-| <img src="images/icons/reticle.svg" width="16" height="16"> | Reticle overlay | Only when `sceneOptions.reticles` is present | Toggles stepper field grid |
-| <img src="images/icons/xyIndicator.svg" width="16" height="16"> | XY indicator | Always | Toggles the axis arrow overlay |
-| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Cycles legend position: default, compact, left, top, bottom, floating |
-| <img src="images/icons/rotateCW.svg" width="16" height="16"> | Rotate 90° CW | Always | Rotates the wafer display 90° clockwise |
-| <img src="images/icons/flipH.svg" width="16" height="16"> | Flip horizontal | Always | Mirrors the map left-right |
-| <img src="images/icons/flipV.svg" width="16" height="16"> | Flip vertical | Always | Mirrors the map top-bottom |
+| <img src="images/icons/overlays.svg" width="16" height="16"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator |
+| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
+| <img src="images/icons/orient.svg" width="16" height="16"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="16" height="16"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
-| <img src="images/icons/expand.svg" width="16" height="16"> | Expand (⛶) | Unless `toolbarControls: 'view-only'` | Opens the map in a full-screen modal; canvas reparented — no scene rebuild. `E` key shortcut. |
+| <img src="images/icons/expand.svg" width="16" height="16"> | Expand | Always | Opens the map in a full-screen modal; canvas reparented — no view rebuild. `E` key shortcut. |
 
-The full toolbar is shown when `toolbarControls` is `'full'` (default for `renderWaferMap`).
-Gallery card modals also use `'full'`.  Gallery cards themselves use `'view-only'`:
-only download, zoom/pan/select, and zoom in/out/reset are shown — mode and overlay
-controls are in the shared gallery bar instead.
+The full toolbar is shown when `toolbarControls` is `'full'` (default). Gallery card modals
+also use `'full'`. In the gallery, cards show only the navigation controls (download, zoom,
+pan, select) — the view controls (mode, overlays, orient, etc.) live in the shared gallery bar.
 
 #### Gallery control bar
 
@@ -662,18 +677,12 @@ The gallery control bar is always visible above the card grid.
 | | Button | Condition | What it does |
 | --- | --- | --- | --- |
 | <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Same mode menu as single map; stacked modes always available in the gallery |
-| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Applies to all cards |
-| <img src="images/icons/aggr.svg" width="16" height="16"> | Aggregation method (Σ) | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
+| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Colour scheme picker; applies to all cards |
+| <img src="images/icons/aggr.svg" width="16" height="16"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
 | <img src="images/icons/logScale.svg" width="16" height="16"> | Log scale | Value / stacked-values mode only | Applies to all cards |
-| <img src="images/icons/rings.svg" width="16" height="16"> | Ring boundaries | Always | Applies to all cards |
-| <img src="images/icons/quadrants.svg" width="16" height="16"> | Quadrant boundaries | Always | Applies to all cards |
-| <img src="images/icons/labels.svg" width="16" height="16"> | Die labels | Always | Applies to all cards |
-| <img src="images/icons/reticle.svg" width="16" height="16"> | Reticle overlay | Only when any item has `reticles.length > 0` | Applies to all cards |
-| <img src="images/icons/xyIndicator.svg" width="16" height="16"> | XY indicator | Always | Applies to all cards |
-| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Applies to all cards |
-| <img src="images/icons/rotateCW.svg" width="16" height="16"> | Rotate 90° CW | Always | Applies to all cards |
-| <img src="images/icons/flipH.svg" width="16" height="16"> | Flip horizontal | Always | Applies to all cards |
-| <img src="images/icons/flipV.svg" width="16" height="16"> | Flip vertical | Always | Applies to all cards |
+| <img src="images/icons/overlays.svg" width="16" height="16"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator — applies to all cards |
+| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position; applies to all cards |
+| <img src="images/icons/orient.svg" width="16" height="16"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | <img src="images/icons/downloadAll.svg" width="16" height="16"> | Download all | Always | Exports all cards as a single tiled PNG |
 | <img src="images/icons/findings.svg" width="16" height="16"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
 
@@ -1071,7 +1080,7 @@ const items = waferResults.map((r, i) => ({
 }));
 
 renderWaferMap(container, items, {
-  sceneOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
+  viewOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
 });
 ```
 
@@ -1117,23 +1126,23 @@ const items = waferResults.map((r, i) => ({
 const ctrl = renderWaferMap(
   document.getElementById('gallery'),
   items,
-  { sceneOptions: { plotMode: 'hardBin' } },
+  { viewOptions: { plotMode: 'hardBin' } },
 );
 ```
 
 Cards reflow responsively as the container resizes.  Each card has an expand
 button (↗) in its header — clicking it opens a full-screen modal with the
 complete toolbar; the card's live canvas is reparented into the modal, so there
-is no scene rebuild and the toolbar stays fully interactive.
+is no view rebuild and the toolbar stays fully interactive.
 
 
 ### Sharing bin and test definitions across cards
 
-Pass `hbinDefs`, `sbinDefs`, and `testDefs` through `sceneOptions` so the shared
+Pass `hbinDefs`, `sbinDefs`, and `testDefs` through `viewOptions` so the shared
 bin legend and tooltips use the correct names on every card:
 
 ```ts
-const sharedSceneOptions = {
+const sharedViewOptions = {
   plotMode:  'hardBin',
   hbinDefs: [
     { bin: 1, name: 'Pass',  color: '#2ecc71' },
@@ -1149,12 +1158,12 @@ const sharedSceneOptions = {
   ],
 };
 
-renderWaferMap(container, items, { sceneOptions: sharedSceneOptions });
+renderWaferMap(container, items, { viewOptions: sharedViewOptions });
 ```
 
 ### Per-card overrides
 
-Each `WaferMapDisplayItem` can override any `sceneOptions` field.  The per-card value is
+Each `WaferMapDisplayItem` can override any `viewOptions` field.  The per-card value is
 merged on top of the shared options.  Use this sparingly — the main purpose is
 providing per-card reticle geometry:
 
@@ -1189,7 +1198,7 @@ ctrl.setOptions({ plotMode: 'value', activeTest: 1050 });
 
 // Track state changes back to your UI:
 renderWaferMap(container, items, {
-  onSceneOptionsChange: (opts) => {
+  onViewOptionsChange: (opts) => {
     myModeDropdown.value = opts.plotMode;
   },
 });
@@ -1257,7 +1266,7 @@ const items = waferResults.map((r, i) => ({
 }));
 
 renderWaferMap(container, items, {
-  sceneOptions:    { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
+  viewOptions:    { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
   lotStatsSummary: lotSummary,
 });
 ```
@@ -1322,7 +1331,7 @@ const summary = analyzeWaferMap(result, {
 // summary.stats.lotSize           === 6
 
 renderWaferMap(container, result, {
-  sceneOptions: { plotMode: 'value', testDefs, activeTest: 1060 },
+  viewOptions: { plotMode: 'value', testDefs, activeTest: 1060 },
   statsSummary: summary,
   summaryPanel: { defaultOpen: true },
 });
@@ -1359,7 +1368,7 @@ const result = buildWaferMap({
 });
 
 renderWaferMap(container, result, {
-  sceneOptions: { reticles: result.reticles },   // pass the generated reticle geometry
+  viewOptions: { reticles: result.reticles },   // pass the generated reticle geometry
 });
 // showReticle defaults to true when reticles are provided
 ```
@@ -1507,11 +1516,6 @@ registerColorScheme('my-brand', {
     return `rgb(${r},${g},${b})`;
   },
 
-  plotlyColorscale: [
-    [0,   '#000050'],
-    [0.5, '#0064c8'],
-    [1,   '#b4ffff'],
-  ],
 });
 
 // The scheme now appears in every toolbar colour picker automatically:
@@ -1607,10 +1611,10 @@ for (const r of waferResults) {
 const items = waferResults.map((r, i) => ({
   ...r,
   label: waferIds[i],
-  sceneOptions: { valueRange: [min, max] },
+  viewOptions: { valueRange: [min, max] },
 }));
 
-renderWaferMap(container, items, { sceneOptions: { plotMode: 'value' } });
+renderWaferMap(container, items, { viewOptions: { plotMode: 'value' } });
 ```
 
 ### Keep `ringCount` consistent between renderer and stats engine
@@ -1625,20 +1629,20 @@ const RING_COUNT = 4;
 const summary = analyzeWaferMap(result, { ringCount: RING_COUNT });
 renderWaferMap(container, result, {
   statsSummary: summary,
-  sceneOptions: { ringCount: RING_COUNT },
+  viewOptions: { ringCount: RING_COUNT },
 });
 ```
 
 ### Sync toolbar state to your own UI controls
 
-`onSceneOptionsChange` fires whenever the toolbar changes a display option. Use
+`onViewOptionsChange` fires whenever the toolbar changes a display option. Use
 it to reflect the map's current state in external controls — a mode dropdown, a
 rotation indicator, or a URL query string:
 
 ```ts
 const ctrl = renderWaferMap(container, result, {
-  sceneOptions: { plotMode: 'hardBin' },
-  onSceneOptionsChange: (opts) => {
+  viewOptions: { plotMode: 'hardBin' },
+  onViewOptionsChange: (opts) => {
     modeDropdown.value = opts.plotMode;
     urlParams.set('mode', opts.plotMode);
     history.replaceState(null, '', '?' + urlParams);
@@ -1746,7 +1750,7 @@ import {
   applyProbeSequence,
   transformDies,
   generateReticleGrid,
-  buildScene,
+  buildView,
   getDieKey,
 } from '@paulrobins/wafermap';
 import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
@@ -1776,8 +1780,8 @@ const reticles = generateReticleGrid(wafer, { width: 4, height: 3, diePitchX: 8,
 // 7. Apply interactive transforms (rotation, flip) on top of the base orientation
 const currentDies = transformDies(enriched, { rotation: 90, flipX: false, flipY: false }, wafer.center);
 
-// 8. Build a renderer-agnostic Scene
-const scene = buildScene(wafer, currentDies, {
+// 8. Build a renderer-agnostic View
+const view = buildView(wafer, currentDies, {
   plotMode: 'hardBin',
   reticles,
   showProbePath: true,
@@ -1785,7 +1789,7 @@ const scene = buildScene(wafer, currentDies, {
 });
 
 // 9. Draw to a canvas element (no toolbar, no DOM scaffolding)
-toCanvas(document.getElementById('map'), scene);
+toCanvas(document.getElementById('map'), view);
 ```
 
 **→ [Demo: Advanced — the rendering pipeline](examples/18-pipeline.html)**

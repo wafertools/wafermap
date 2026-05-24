@@ -2,7 +2,7 @@ import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert';
 import { renderWaferGallery } from '../packages/canvas-adapter/renderWaferGallery.js';
 import type { GalleryItem, GalleryController } from '../packages/canvas-adapter/renderWaferGallery.js';
-import type { WaferCanvasController, WaferSceneOptions } from '../packages/canvas-adapter/renderWaferMap.js';
+import type { WaferCanvasController, WaferViewOptions } from '../packages/canvas-adapter/renderWaferMap.js';
 import type { Die } from '../packages/core/dies.js';
 import type { Wafer } from '../packages/core/wafer.js';
 
@@ -31,7 +31,7 @@ const mockRenderWaferMap = mock.fn((
   return {
     setDies: mock.fn(() => {}),
     setOptions: mock.fn(() => {}),
-    getOptions: mock.fn(() => options.sceneOptions), // Return the options it was initialized with
+    getOptions: mock.fn(() => options.viewOptions), // Return the options it was initialized with
     setSelection: mock.fn(() => {}),
     clearSelection: mock.fn(() => {}),
     resetZoom: mock.fn(() => {}),
@@ -114,7 +114,7 @@ mock.module('../packages/core/aggregates.js', {
 mock.module('../packages/renderer/colorSchemes.js', {
   listColorSchemes: mock.fn(() => [{ name: 'color', label: 'Color' }]),
   getColorScheme: mock.fn(() => ({
-    label: 'Color', forBin: () => '#000', forValue: () => '#000', plotlyColorscale: 'Viridis',
+    label: 'Color', forBin: () => '#000', forValue: () => '#000',
   })),
 });
 
@@ -154,11 +154,11 @@ describe('renderWaferGallery stacked modes with definition discovery', () => {
     // Expect 2 cards for the 2 discovered test numbers (100, 200)
     assert.strictEqual(capturedRenderWaferMapCalls.length, 2);
 
-    const firstCardOptions = capturedRenderWaferMapCalls[0].options.sceneOptions;
+    const firstCardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
     assert.strictEqual(firstCardOptions.plotMode, 'stackedValues');
     assert.deepStrictEqual(firstCardOptions.testDefs, [{ index: 0, name: 'Test 100' }]);
 
-    const secondCardOptions = capturedRenderWaferMapCalls[1].options.sceneOptions;
+    const secondCardOptions = capturedRenderWaferMapCalls[1].options.viewOptions;
     assert.strictEqual(secondCardOptions.plotMode, 'stackedValues');
     assert.deepStrictEqual(secondCardOptions.testDefs, [{ index: 0, name: 'Test 200' }]);
   });
@@ -169,15 +169,15 @@ describe('renderWaferGallery stacked modes with definition discovery', () => {
     // Expect 3 cards for the 3 discovered hard bins (1, 2, 3)
     assert.strictEqual(capturedRenderWaferMapCalls.length, 3);
 
-    const firstCardOptions = capturedRenderWaferMapCalls[0].options.sceneOptions;
+    const firstCardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
     assert.strictEqual(firstCardOptions.plotMode, 'stackedBins');
     assert.deepStrictEqual(firstCardOptions.hbinDefs, [{ bin: 1, name: 'Bin 1' }]);
 
-    const secondCardOptions = capturedRenderWaferMapCalls[1].options.sceneOptions;
+    const secondCardOptions = capturedRenderWaferMapCalls[1].options.viewOptions;
     assert.strictEqual(secondCardOptions.plotMode, 'stackedBins');
     assert.deepStrictEqual(secondCardOptions.hbinDefs, [{ bin: 2, name: 'Bin 2' }]);
 
-    const thirdCardOptions = capturedRenderWaferMapCalls[2].options.sceneOptions;
+    const thirdCardOptions = capturedRenderWaferMapCalls[2].options.viewOptions;
     assert.strictEqual(thirdCardOptions.plotMode, 'stackedBins');
     assert.deepStrictEqual(thirdCardOptions.hbinDefs, [{ bin: 3, name: 'Bin 3' }]);
   });
@@ -188,15 +188,15 @@ describe('renderWaferGallery stacked modes with definition discovery', () => {
     // Expect 3 cards for the 3 discovered soft bins (10, 11, 12)
     assert.strictEqual(capturedRenderWaferMapCalls.length, 3);
 
-    const firstCardOptions = capturedRenderWaferMapCalls[0].options.sceneOptions;
+    const firstCardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
     assert.strictEqual(firstCardOptions.plotMode, 'stackedSoftBins');
     assert.deepStrictEqual(firstCardOptions.sbinDefs, [{ bin: 10, name: 'Bin 10' }]);
 
-    const secondCardOptions = capturedRenderWaferMapCalls[1].options.sceneOptions;
+    const secondCardOptions = capturedRenderWaferMapCalls[1].options.viewOptions;
     assert.strictEqual(secondCardOptions.plotMode, 'stackedSoftBins');
     assert.deepStrictEqual(secondCardOptions.sbinDefs, [{ bin: 11, name: 'Bin 11' }]);
 
-    const thirdCardOptions = capturedRenderWaferMapCalls[2].options.sceneOptions;
+    const thirdCardOptions = capturedRenderWaferMapCalls[2].options.viewOptions;
     assert.strictEqual(thirdCardOptions.plotMode, 'stackedSoftBins');
     assert.deepStrictEqual(thirdCardOptions.sbinDefs, [{ bin: 12, name: 'Bin 12' }]);
   });
@@ -207,7 +207,7 @@ describe('renderWaferGallery stacked modes with definition discovery', () => {
 
     // Should only create 1 card for the provided testDef
     assert.strictEqual(capturedRenderWaferMapCalls.length, 1);
-    const cardOptions = capturedRenderWaferMapCalls[0].options.sceneOptions;
+    const cardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
     assert.deepStrictEqual(cardOptions.testDefs, [{ index: 0, name: 'Custom Test A', unit: 'V' }]);
   });
 

@@ -183,16 +183,16 @@
       passBins:    [1],
     });
 
-    const sharedOpts = { sceneOptions: { plotMode: 'hardBin', hbinDefs: HBIN_DEFS }, showToolbar: false };
+    const sharedOpts = { viewOptions: { plotMode: 'hardBin', hbinDefs: HBIN_DEFS }, showToolbar: false };
 
     renderWaferMap(document.getElementById('map-color'),
-      result, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'color'     } });
+      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'color'     } });
 
     renderWaferMap(document.getElementById('map-plasma'),
-      result, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'plasma'    } });
+      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'plasma'    } });
 
     renderWaferMap(document.getElementById('map-custom'),
-      result, { ...sharedOpts, sceneOptions: { ...sharedOpts.sceneOptions, colorScheme: 'teal-rose' } });
+      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'teal-rose' } });
 
     // ── Render swatch rows for each scheme ────────────────────────────────────
 

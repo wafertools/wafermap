@@ -1,11 +1,12 @@
-import type { PlotMode } from '../renderer/buildScene.js';
+import type { PlotMode } from '../renderer/buildView.js';
+import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, buildCheckMenuEl, type ModeEntry } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, type ModeEntry } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
-import type { WaferSceneOptions, WaferCanvasController } from './renderWaferMap.js';
+import type { WaferViewOptions, WaferCanvasController } from './renderWaferMap.js';
 import type { BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
@@ -31,7 +32,7 @@ import {
 export type WaferMapDisplayItem = WaferMapResult & {
   label?:        string;
   /** Per-card scene option overrides merged on top of the shared gallery options. */
-  sceneOptions?: Partial<WaferSceneOptions>;
+  viewOptions?: Partial<WaferViewOptions>;
   /** Wafer-level stats summary — shown in the findings panel when this card is opened in the modal. */
   statsSummary?: import('../stats/types.js').StatsSummary;
   onClick?:      (die: Die, event: MouseEvent) => void;
@@ -52,9 +53,9 @@ export type GalleryItemFactory = WaferMapDisplayItemFactory;
 
 export interface GalleryOptions {
   /** Initial shared scene options applied to all cards. */
-  sceneOptions?:         WaferSceneOptions;
+  viewOptions?:         WaferViewOptions;
   /** Called whenever a shared gallery option changes. */
-  onSceneOptionsChange?: (opts: WaferSceneOptions) => void;
+  onViewOptionsChange?: (opts: WaferViewOptions) => void;
   /** Legend position for bin modes. Default 'default'. */
   legendPosition?:       'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /** Padding inside each card canvas in CSS pixels. Default 6. */
@@ -82,15 +83,21 @@ export interface GalleryOptions {
    * When active, the findings drawer is suppressed.
    */
   summaryPanel?:           SummaryPanelOptions;
+  /**
+   * Bin numbers treated as pass for yield calculation in the summary panel.
+   * Defaults to `[1]`. Must match the `passBins` passed to `analyzeWaferLot` / `buildWaferMap`
+   * to ensure the summary panel yield label is consistent with the rest of the display.
+   */
+  passBins?:               number[];
 }
 
 export interface GalleryController {
   /** Replace all items — destroys existing cards and rebuilds the grid. Accepts pre-built items, factory functions, or a mix. */
   setItems(items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): void;
   /** Merge shared scene option overrides across all cards. */
-  setOptions(opts: Partial<WaferSceneOptions>): void;
+  setOptions(opts: Partial<WaferViewOptions>): void;
   /** Return the current shared scene options. */
-  getOptions(): WaferSceneOptions;
+  getOptions(): WaferViewOptions;
   /** Update the fallback format for unitless values across all cards. */
   setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the lot-level stats summary used by the built-in findings panel. */
@@ -111,11 +118,12 @@ export function renderWaferGallery(
   const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
   const showPlotModeSelector = options.showPlotModeSelector ?? true;
   const summaryPanelOpts     = options.summaryPanel;
+  const passBins             = options.passBins             ?? [1];
   let currentFallbackFormat  = options.fallbackFormat;
   let currentLotStats        = options.lotStatsSummary;
   let currentLegendStyle     = options.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 
-  let sharedOpts: WaferSceneOptions = {
+  let sharedOpts: WaferViewOptions = {
     plotMode:               'hardBin',
     colorScheme:            'default',
     showText:               false,
@@ -125,18 +133,19 @@ export function renderWaferGallery(
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
-    ...options.sceneOptions,
+    ...options.viewOptions,
   };
 
   let cardControllers: WaferCanvasController[] = [];
   let cardContainers: HTMLDivElement[] = [];  // canvasWrapper per card — used for modal reparenting
   let currentItems:  WaferMapDisplayItem[] = [];
-  let originalItems: WaferMapDisplayItem[] = [];  // per-wafer source items; stacked modes aggregate from this
+  let originalItems: (WaferMapDisplayItem | null)[] = [];  // per-wafer source items; null = factory not yet resolved
+  let buildGeneration = 0;  // incremented on each buildCards call; stale factory callbacks check this
   let modalReparentedContainer: HTMLDivElement | null = null;
   let modalReparentedParent: HTMLElement | null = null;
   let modalCardIndex = -1;
-  let savedBodyOverflow = '';
-  let modalFullscreenListener: (() => void) | null = null;
+  let modalHandleGallery: ReturnType<typeof openModal> | null = null;
+
 
   let btnLotFindings: HTMLButtonElement | null = null;
   let activeLotFindingId: string | null = null;
@@ -152,7 +161,7 @@ export function renderWaferGallery(
   // ── Toolbar helpers ────────────────────────────────────────────────────────
 
   const tooltip = createTooltip();
-  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tooltip);
+  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tooltip);
   document.addEventListener('click', closeOpenMenu, true);
 
   function applyCardHighlight(indices: number[]): void {
@@ -173,7 +182,7 @@ export function renderWaferGallery(
   }
 
   function clearDieZoneHighlight(): void {
-    for (const ctrl of cardControllers) ctrl.clearSelection();
+    for (const ctrl of cardControllers) if (ctrl) ctrl.clearSelection();
   }
 
   function applyDieZoneHighlight(dieKeys: string[], cardIndices?: number[]): void {
@@ -204,7 +213,7 @@ export function renderWaferGallery(
         hbinDefs:   sharedOpts.hbinDefs,
         sbinDefs:   sharedOpts.sbinDefs,
         testDefs:   sharedOpts.testDefs,
-        passBins:       [1],
+        passBins,
         ringCount:      sharedOpts.ringCount,
         fallbackFormat: currentFallbackFormat,
         activeFindingId: gallerySummaryActiveFindingId,
@@ -271,6 +280,7 @@ export function renderWaferGallery(
         sbinDefs:       sharedOpts.sbinDefs,
         testDefs:       sharedOpts.testDefs,
         statsSummary:   waferSummary,
+        passBins,
         fallbackFormat: currentFallbackFormat,
         activeFindingId: gallerySummaryActiveFindingId,
         onFindingClick: (finding, _row) => {
@@ -413,7 +423,7 @@ export function renderWaferGallery(
 
     // Use originalItems (per-wafer source) — currentItems may be aggregated cards
     // in stacked modes, which don't accurately reflect the full data availability.
-    const dies      = originalItems.flatMap(it => it.dies);
+    const dies      = originalItems.flatMap(it => it?.dies ?? []);
     const testDefs  = sharedOpts.testDefs;
     const hasValues = dies.some(d =>
       (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
@@ -449,9 +459,7 @@ export function renderWaferGallery(
               label: t.unit ? `${t.name} (${t.unit})` : t.name,
               logScale: t.logScale,
             }))
-          : [...new Set(dies.flatMap(d =>
-              d.testValues ? Object.keys(d.testValues).map(Number) : []
-            ))].sort((a, b) => a - b).map(tn => ({
+          : getUniqueTestNumbers(dies).map(tn => ({
               plotMode: 'value' as PlotMode,
               activeTest: tn,
               label: `Test ${tn}`,
@@ -487,38 +495,21 @@ export function renderWaferGallery(
 
   const hasReticleInItems = items.some(it => typeof it !== 'function' && (it as WaferMapDisplayItem).reticles?.length > 0);
 
-  const buildOverlaysMenu = (btn: HTMLButtonElement) => buildCheckMenuEl(
-    btn.getBoundingClientRect(),
-    [
-      { label: 'Ring boundaries', active: !!sharedOpts.showRingBoundaries,     onClick: (e) => { e.stopPropagation(); updateShared({ showRingBoundaries:   !sharedOpts.showRingBoundaries   }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
-      { label: 'Quadrant lines',  active: !!sharedOpts.showQuadrantBoundaries, onClick: (e) => { e.stopPropagation(); updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
-      { label: 'Die labels',      active: !!sharedOpts.showText,               onClick: (e) => { e.stopPropagation(); updateShared({ showText:              !sharedOpts.showText              }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
-      { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: (e) => { e.stopPropagation(); updateShared({ showReticle:           !sharedOpts.showReticle           }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
-      { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: (e) => { e.stopPropagation(); updateShared({ showXYIndicator:      !sharedOpts.showXYIndicator      }); syncOverlaysBtn(); replaceOverlaysMenu(); } },
+  const btnOverlays = makeCheckMenuBtn(
+    'overlays', 'Overlays',
+    () => [
+      { label: 'Ring boundaries', active: !!sharedOpts.showRingBoundaries,     onClick: () => updateShared({ showRingBoundaries:   !sharedOpts.showRingBoundaries   }) },
+      { label: 'Quadrant lines',  active: !!sharedOpts.showQuadrantBoundaries, onClick: () => updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries }) },
+      { label: 'Die labels',      active: !!sharedOpts.showText,               onClick: () => updateShared({ showText:              !sharedOpts.showText              }) },
+      { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: () => updateShared({ showReticle: !sharedOpts.showReticle }) },
+      { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: () => updateShared({ showXYIndicator:      !sharedOpts.showXYIndicator      }) },
     ],
-    { makeMenuRow, makeMenuSection },
+    (btn) => {
+      const anyOn = !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
+                       sharedOpts.showText || sharedOpts.showReticle || sharedOpts.showXYIndicator);
+      setActive(btn, anyOn);
+    },
   );
-  const btnOverlays = makeBtn('overlays', 'Overlays', () => {
-    const existing = getOpenMenu();
-    if (existing) { existing.remove(); setOpenMenu(null); return; }
-    const menu = buildOverlaysMenu(btnOverlays);
-    document.body.appendChild(menu);
-    setOpenMenu(menu);
-  });
-  function replaceOverlaysMenu(): void {
-    const current = getOpenMenu();
-    if (!current) return;
-    const updated = buildOverlaysMenu(btnOverlays);
-    current.replaceWith(updated);
-    setOpenMenu(updated);
-  }
-  function syncOverlaysBtn(): void {
-    const anyOn = !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
-                     sharedOpts.showText || sharedOpts.showReticle || sharedOpts.showXYIndicator);
-    setActive(btnOverlays, anyOn);
-  }
-  syncOverlaysBtn();
-
   const btnLegendStyle = makeDropdown(
     'legend',
     'Legend style',
@@ -533,7 +524,7 @@ export function renderWaferGallery(
     () => currentLegendStyle,
     (v) => {
       currentLegendStyle = v;
-      for (const ctrl of cardControllers) ctrl.setOptions({ legendPosition: currentLegendStyle });
+      for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ legendPosition: currentLegendStyle });
     },
   );
 
@@ -575,37 +566,20 @@ export function renderWaferGallery(
   }
   syncLogScaleBtn();
 
-  const buildOrientMenu = (btn: HTMLButtonElement) => buildCheckMenuEl(
-    btn.getBoundingClientRect(),
-    [
+  const btnOrient = makeCheckMenuBtn(
+    'orient', 'Orientation',
+    () => [
       { section: 'Rotate' },
-      { label: 'Rotate 90° clockwise', active: false, onClick: (e) => { e.stopPropagation(); const r = sharedOpts.rotation ?? 0; updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] }); syncOrientBtn(); } },
+      { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = sharedOpts.rotation ?? 0; updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] }); } },
       { section: 'Flip' },
-      { label: 'Flip horizontal', active: !!sharedOpts.flipX, onClick: (e) => { e.stopPropagation(); updateShared({ flipX: !sharedOpts.flipX }); syncOrientBtn(); replaceOrientMenu(); } },
-      { label: 'Flip vertical',   active: !!sharedOpts.flipY, onClick: (e) => { e.stopPropagation(); updateShared({ flipY: !sharedOpts.flipY }); syncOrientBtn(); replaceOrientMenu(); } },
+      { label: 'Flip horizontal', active: !!sharedOpts.flipX, onClick: () => updateShared({ flipX: !sharedOpts.flipX }) },
+      { label: 'Flip vertical',   active: !!sharedOpts.flipY, onClick: () => updateShared({ flipY: !sharedOpts.flipY }) },
     ],
-    { makeMenuRow, makeMenuSection },
+    (btn) => {
+      const nonDefault = !!(sharedOpts.rotation || sharedOpts.flipX || sharedOpts.flipY);
+      setActive(btn, nonDefault);
+    },
   );
-  const btnOrient = makeBtn('orient', 'Orientation', () => {
-    const existing = getOpenMenu();
-    if (existing) { existing.remove(); setOpenMenu(null); return; }
-    const menu = buildOrientMenu(btnOrient);
-    document.body.appendChild(menu);
-    setOpenMenu(menu);
-  });
-  function replaceOrientMenu(): void {
-    const current = getOpenMenu();
-    if (!current) return;
-    const updated = buildOrientMenu(btnOrient);
-    current.replaceWith(updated);
-    setOpenMenu(updated);
-  }
-  function syncOrientBtn(): void {
-    const nonDefault = !!(sharedOpts.rotation || sharedOpts.flipX || sharedOpts.flipY);
-    setActive(btnOrient, nonDefault);
-  }
-  syncOrientBtn();
-
   const btnDownloadAll = makeBtn('downloadAll', 'Download gallery PNG', downloadGalleryPng);
 
   if (showPlotModeSelector) barEl.appendChild(btnMode);
@@ -809,10 +783,11 @@ export function renderWaferGallery(
   // Build lot-aggregated WaferMapDisplayItems from originalItems for a stacked mode.
   // One card per bin (stackedBins/stackedSoftBins) or per test parameter (stackedValues).
   function buildStackedItems(mode: PlotMode): WaferMapDisplayItem[] {
-    if (!originalItems.length) return [];
-    const allDies   = originalItems.map(item => item.dies);
-    const baseWafer = originalItems[0].wafer;
-    const lotSize   = originalItems.length;
+    const resolvedItems = originalItems.filter((it): it is WaferMapDisplayItem => it !== null);
+    if (!resolvedItems.length) return [];
+    const allDies   = resolvedItems.map(item => item.dies);
+    const baseWafer = resolvedItems[0].wafer;
+    const lotSize   = resolvedItems.length;
 
     // Wafer object for stacked analysis: strip the per-wafer 'wafer' identity field
     // (e.g. 'W01') so the summary panel doesn't claim this is a single wafer's data.
@@ -838,9 +813,7 @@ export function renderWaferGallery(
 
       // If no testDefs provided, discover unique test numbers from the actual data
       if (!defs || defs.length === 0) {
-        const uniqueNums = [...new Set(originalItems.flatMap(it =>
-          it.dies.flatMap(d => d.testValues ? Object.keys(d.testValues).map(Number) : [])
-        ))].sort((a, b) => a - b);
+        const uniqueNums = getUniqueTestNumbers(resolvedItems.flatMap(it => it.dies));
 
         defs = uniqueNums.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
       }
@@ -853,7 +826,7 @@ export function renderWaferGallery(
           wafer: stackedWafer,
           dies,
           label: `${def.name} · ${method}`,
-          sceneOptions: { testDefs: [cardTestDef] },
+          viewOptions: { testDefs: [cardTestDef] },
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, testDefs: [cardTestDef] }, { testNumbers: [0] }),
             method,
@@ -865,7 +838,7 @@ export function renderWaferGallery(
     if (mode === 'stackedBins') {
       let defs = sharedOpts.hbinDefs;
       if (!defs || defs.length === 0) {
-        const uniqueBins = [...new Set(originalItems.flatMap(it =>
+        const uniqueBins = [...new Set(resolvedItems.flatMap(it =>
           it.dies.map(d => d.hbin).filter((b): b is number => b != null)
         ))].sort((a, b) => a - b);
         defs = uniqueBins.map(b => ({ bin: b, name: `Bin ${b}` }));
@@ -878,7 +851,7 @@ export function renderWaferGallery(
           wafer: stackedWafer,
           dies,
           label: `${def.bin} · ${def.name}`,
-          sceneOptions: { hbinDefs },
+          viewOptions: { hbinDefs },
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs }),
             'countBin',
@@ -890,7 +863,7 @@ export function renderWaferGallery(
     if (mode === 'stackedSoftBins') {
       let defs = sharedOpts.sbinDefs;
       if (!defs || defs.length === 0) {
-        const uniqueBins = [...new Set(originalItems.flatMap(it =>
+        const uniqueBins = [...new Set(resolvedItems.flatMap(it =>
           it.dies.map(d => d.sbin).filter((b): b is number => b != null)
         ))].sort((a, b) => a - b);
         defs = uniqueBins.map(b => ({ bin: b, name: `Bin ${b}` }));
@@ -903,7 +876,7 @@ export function renderWaferGallery(
           wafer: stackedWafer,
           dies,
           label: `${def.bin} · ${def.name}`,
-          sceneOptions: { sbinDefs },
+          viewOptions: { sbinDefs },
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs }),
             'countBin',
@@ -912,11 +885,11 @@ export function renderWaferGallery(
       });
     }
 
-    return originalItems;
+    return resolvedItems;
   }
 
   // Extra shared options required for stacked modes (colour scale / lot size metadata).
-  function stackedSharedOpts(mode: PlotMode): Partial<WaferSceneOptions> {
+  function stackedSharedOpts(mode: PlotMode): Partial<WaferViewOptions> {
     const lotSize = originalItems.length;
     if (mode === 'stackedBins' || mode === 'stackedSoftBins')
       return { valueRange: [0, lotSize] as [number, number], lotSize };
@@ -929,34 +902,49 @@ export function renderWaferGallery(
 
   // Called from toolbar interactions — updates state, handles stacked-mode card rebuilds,
   // propagates to cards, fires callback.
-  // fireCallback=true (default) fires onSceneOptionsChange — used for toolbar interactions.
+  // fireCallback=true (default) fires onViewOptionsChange — used for toolbar interactions.
   // fireCallback=false is used by the public setOptions API to avoid re-entrant callbacks.
-  function updateShared(partial: Partial<WaferSceneOptions>, { fireCallback = true } = {}): void {
+  function updateShared(partial: Partial<WaferViewOptions>, { fireCallback = true } = {}): void {
     const prevMode = sharedOpts.plotMode;
     sharedOpts = { ...sharedOpts, ...partial };
     const newMode    = sharedOpts.plotMode!;
     const nowStacked = STACKED_MODES.has(newMode);
     const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
+    const hasPendingFactories = cardControllers.some(ctrl => ctrl === null);
 
     if (partial.plotMode !== undefined) {
       if (nowStacked) {
-        // Switching into a stacked mode — aggregate internally and apply extra scene opts.
+        // Switching into a stacked mode — aggregate immediately unless some
+        // factory-backed cards are still resolving, in which case keep the raw
+        // gallery alive and let the final factory resolve promote it.
         const extra = stackedSharedOpts(newMode);
         sharedOpts = { ...sharedOpts, ...extra };
-        buildCards(buildStackedItems(newMode));
+        if (hasPendingFactories) {
+          for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
+        } else {
+          buildCards(buildStackedItems(newMode));
+        }
       } else if (wasStacked) {
         // Clear stacked-specific options when leaving stacked mode
         const { valueRange, lotSize, aggrMethod, ...cleanOpts } = sharedOpts;
         sharedOpts = cleanOpts;
-        buildCards(originalItems);
+        if (hasPendingFactories) {
+          for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
+        } else {
+          buildCards(originalItems.filter((it): it is WaferMapDisplayItem => it !== null));
+        }
       } else {
-        for (const ctrl of cardControllers) ctrl.setOptions(partial);
+        for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
       }
     } else if (partial.aggrMethod !== undefined && newMode === 'stackedValues') {
       // Aggregation method changed while in stackedValues — re-aggregate.
-      buildCards(buildStackedItems('stackedValues'));
+      if (hasPendingFactories) {
+        for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
+      } else {
+        buildCards(buildStackedItems('stackedValues'));
+      }
     } else {
-      for (const ctrl of cardControllers) ctrl.setOptions(partial);
+      for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
     }
 
     rebuildLegend();
@@ -964,7 +952,7 @@ export function renderWaferGallery(
     syncLegendStyleBtn();
     if (fireCallback) {
       syncLogScaleBtn();
-      options.onSceneOptionsChange?.(sharedOpts);
+      options.onViewOptionsChange?.(sharedOpts);
     }
   }
 
@@ -1036,7 +1024,7 @@ export function renderWaferGallery(
     gridEl.appendChild(card);
 
     const ctrl = renderWaferMap(canvasWrapper, item, {
-      sceneOptions:    item.sceneOptions ? { ...sharedOpts, ...item.sceneOptions } : sharedOpts,
+      viewOptions:    item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,
       padding:         cardPadding,
@@ -1047,12 +1035,12 @@ export function renderWaferGallery(
       onSelect:        item.onSelect,
     });
     // In-gallery: hide scene controls (gallery bar owns them) and findings button.
-    ctrl.setSceneControlsVisible(false);
+    ctrl.setViewControlsVisible(false);
     ctrl.setFindingsVisible(false);
 
     // Only the expand button opens the modal — canvas clicks are handled
     // internally by renderWaferMap and stop propagation before reaching here.
-    expandBtn.addEventListener('click', () => openModal(cardIndex, item));
+    expandBtn.addEventListener('click', () => openModalForCard(cardIndex, item));
 
     // Summary panel drill-down: clicking the card header area drills into wafer detail.
     if (gallerySummaryPanelEl) {
@@ -1075,7 +1063,7 @@ export function renderWaferGallery(
     getOpenMenu()?.remove(); setOpenMenu(null);
     clearLotFindingHighlight();
     currentItems = [];
-    for (const ctrl of cardControllers) ctrl.destroy();
+    for (const ctrl of cardControllers) if (ctrl) ctrl.destroy();
     cardControllers = [];
     cardContainers = [];
     gridEl.innerHTML = '';
@@ -1117,9 +1105,19 @@ export function renderWaferGallery(
     }
 
     // Resolve factories one per task to keep the main thread responsive.
+    // Capture the generation at the time buildCards was called — if buildCards runs
+    // again (mode switch, destroy) the generation increments and stale callbacks bail out.
+    const generation = ++buildGeneration;
     let fi = 0;
     function resolveNext(): void {
-      if (fi >= factories.length) return;
+      if (generation !== buildGeneration) return; // stale — gallery was rebuilt or destroyed
+      if (fi >= factories.length) {
+        if (STACKED_MODES.has(sharedOpts.plotMode!)) {
+          const mode = sharedOpts.plotMode!;
+          buildCards(buildStackedItems(mode));
+        }
+        return;
+      }
       const { index, factory, placeholder } = factories[fi++];
       const item = factory();
       currentItems[index] = item;
@@ -1149,181 +1147,56 @@ export function renderWaferGallery(
 
   // ── Modal ──────────────────────────────────────────────────────────────────
 
-  function openModal(cardIndex: number, item: WaferMapDisplayItem): void {
+  function openModalForCard(cardIndex: number, item: WaferMapDisplayItem): void {
     if (modalReparentedContainer) closeModal();
 
     const cardContainer = cardContainers[cardIndex];
     if (!cardContainer) return;
 
-    savedBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    const backdrop = document.createElement('div');
-    backdrop.id = 'wmap-modal-backdrop';
-    Object.assign(backdrop.style, {
-      position:       'fixed',
-      inset:          '0',
-      background:     'rgba(0,0,0,0.6)',
-      display:        'flex',
-      alignItems:     'center',
-      justifyContent: 'center',
-      zIndex:         '9000',
-      backdropFilter: 'blur(3px)',
-    });
-
-    const box = document.createElement('div');
-    Object.assign(box.style, {
-      background:    '#fff',
-      borderRadius:  '12px',
-      overflow:      'hidden',
-      display:       'flex',
-      flexDirection: 'column',
-      width:         'min(90vw, 700px)',
-      height:        'min(90vh, 700px)',
-      boxShadow:     '0 20px 60px rgba(0,0,0,0.4)',
-      resize:        'both',
-      minWidth:      '320px',
-      minHeight:     '240px',
-      maxWidth:      '100vw',
-      maxHeight:     '100vh',
-    });
-
-    const modalHeader = document.createElement('div');
-    Object.assign(modalHeader.style, {
-      display:       'flex',
-      alignItems:    'center',
-      padding:       '10px 14px',
-      borderBottom:  '1px solid #e2e5ea',
-      flexShrink:    '0',
-    });
-    const modalTitle = document.createElement('span');
-    modalTitle.textContent = item.label ?? '';
-    Object.assign(modalTitle.style, { fontWeight: '700', fontSize: '14px' });
-    const spacer = document.createElement('div');
-    spacer.style.flex = '1';
-    const btnStyle = {
-      border:      'none',
-      background:  'transparent',
-      cursor:      'pointer',
-      color:       '#888',
-      lineHeight:  '1',
-      padding:     '0 4px',
-      fontSize:    '15px',
-      display:     'flex',
-      alignItems:  'center',
-    };
-
-    const fullscreenBtn = document.createElement('button');
-    fullscreenBtn.innerHTML = '&#x26F6;';
-    fullscreenBtn.title = 'Fullscreen (F)';
-    Object.assign(fullscreenBtn.style, { ...btnStyle, fontSize: '18px' });
-    fullscreenBtn.addEventListener('click', () => {
-      if (!document.fullscreenElement) {
-        box.requestFullscreen().catch(() => {/* not supported */});
-      } else {
-        document.exitFullscreen();
-      }
-    });
-
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '\xD7';
-    closeBtn.title = 'Close (Esc)';
-    Object.assign(closeBtn.style, { ...btnStyle, fontSize: '20px', padding: '0 2px' });
-    closeBtn.addEventListener('click', closeModal);
-
-    const onFullscreenChange = () => {
-      const isFs = document.fullscreenElement === box;
-      fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
-      fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
-      closeBtn.style.display = isFs ? 'none' : '';
-      cardControllers[modalCardIndex]?.setTooltipParent(isFs ? box : document.body);
-      if (isFs) {
-        box.style.borderRadius = '0';
-        box.style.resize = 'none';
-        box.style.width = '100%';
-        box.style.height = '100%';
-      } else {
-        box.style.borderRadius = '12px';
-        box.style.resize = 'both';
-        box.style.width = 'min(90vw, 700px)';
-        box.style.height = 'min(90vh, 700px)';
-      }
-    };
-
-    modalHeader.appendChild(modalTitle);
-    modalHeader.appendChild(spacer);
-    modalHeader.appendChild(fullscreenBtn);
-    modalHeader.appendChild(closeBtn);
-
-    const modalCanvasWrap = document.createElement('div');
-    Object.assign(modalCanvasWrap.style, {
-      flex:          '1',
-      minHeight:     '0',
-      position:      'relative',
-      overflow:      'hidden',
-      display:       'flex',
-      flexDirection: 'column',
-    });
-
-    // Reparent the card's live container (canvas + toolbar) into the modal.
-    modalReparentedParent = cardContainer.parentElement as HTMLElement;
+    modalReparentedParent    = cardContainer.parentElement as HTMLElement;
     modalReparentedContainer = cardContainer;
-    modalCardIndex = cardIndex;
-    // Show full toolbar in modal; suppress the per-canvas expand button (modal has its own chrome).
-    cardControllers[cardIndex]?.setSceneControlsVisible(true);
+    modalCardIndex           = cardIndex;
+
+    cardControllers[cardIndex]?.setViewControlsVisible(true);
     cardControllers[cardIndex]?.setFindingsVisible(true);
     cardControllers[cardIndex]?.setExpandVisible(false);
-    modalCanvasWrap.appendChild(cardContainer);
-    // Re-fit the canvas to the larger modal size.
     cardControllers[cardIndex]?.resetZoom();
 
-    box.appendChild(modalHeader);
-    box.appendChild(modalCanvasWrap);
-    backdrop.appendChild(box);
-    document.body.appendChild(backdrop);
-
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) closeModal();
+    const handle = openModal({
+      title: item.label ?? '',
+      onFullscreenChange: (isFs, box) => {
+        cardControllers[modalCardIndex]?.setTooltipParent(isFs ? box : document.body);
+      },
+      onClose: () => {
+        modalHandleGallery = null;
+        closeModal();
+      },
     });
 
-    document.addEventListener('keydown', onModalKeyDown);
-    modalFullscreenListener = onFullscreenChange;
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-  }
-
-  function onModalKeyDown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') {
-      if (!document.fullscreenElement) closeModal();
-      return;
-    }
-    if (e.key === 'f' || e.key === 'F') {
-      const box = document.getElementById('wmap-modal-backdrop')?.firstElementChild as HTMLElement | null;
-      if (!box) return;
-      if (!document.fullscreenElement) box.requestFullscreen().catch(() => {/* ignore */});
-      else document.exitFullscreen();
-    }
+    modalHandleGallery = handle;
+    handle.contentWrap.style.flexDirection = 'column';
+    handle.contentWrap.appendChild(cardContainer);
   }
 
   function closeModal(): void {
     if (!modalReparentedContainer) return;
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {/* ignore */});
-    // Reparent canvas back to its card.
+    // If the modal handle is still live (caller-initiated close, not from onClose),
+    // route through handle.close() so listeners and scroll lock are cleaned up.
+    if (modalHandleGallery) {
+      const h = modalHandleGallery;
+      modalHandleGallery = null;
+      h.close();
+      return;
+    }
     if (modalReparentedParent) {
       modalReparentedParent.appendChild(modalReparentedContainer);
       modalReparentedParent = null;
     }
-    cardControllers[modalCardIndex]?.setSceneControlsVisible(false);
+    cardControllers[modalCardIndex]?.setViewControlsVisible(false);
     cardControllers[modalCardIndex]?.setFindingsVisible(false);
     cardControllers[modalCardIndex]?.resetZoom();
-    modalCardIndex = -1;
+    modalCardIndex           = -1;
     modalReparentedContainer = null;
-    document.getElementById('wmap-modal-backdrop')?.remove();
-    document.body.style.overflow = savedBodyOverflow;
-    document.removeEventListener('keydown', onModalKeyDown);
-    if (modalFullscreenListener) {
-      document.removeEventListener('fullscreenchange', modalFullscreenListener);
-      modalFullscreenListener = null;
-    }
   }
 
   // ── Gallery PNG download ───────────────────────────────────────────────────
@@ -1379,26 +1252,33 @@ export function renderWaferGallery(
       originalItems = newItems.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
       const mode = sharedOpts.plotMode!;
       if (STACKED_MODES.has(mode)) {
-        // Refresh lotSize and valueRange in case the wafer count changed.
-        const extra = stackedSharedOpts(mode);
-        sharedOpts = { ...sharedOpts, ...extra };
-        buildCards(buildStackedItems(mode));
+        // If factories are still pending, keep the raw gallery build alive and let
+        // the final factory resolution promote the gallery into stacked mode.
+        const hasPendingFactories = newItems.some(it => typeof it === 'function');
+        if (hasPendingFactories) {
+          buildCards(newItems);
+        } else {
+          // Refresh lotSize and valueRange in case the wafer count changed.
+          const extra = stackedSharedOpts(mode);
+          sharedOpts = { ...sharedOpts, ...extra };
+          buildCards(buildStackedItems(mode));
+        }
       } else {
         buildCards(newItems);
       }
     },
 
-    setOptions(partial: Partial<WaferSceneOptions>): void {
+    setOptions(partial: Partial<WaferViewOptions>): void {
       updateShared(partial, { fireCallback: false });
     },
 
-    getOptions(): WaferSceneOptions {
+    getOptions(): WaferViewOptions {
       return { ...sharedOpts };
     },
 
     setFallbackFormat(format: 'si' | 'engineering'): void {
       currentFallbackFormat = format;
-      for (const ctrl of cardControllers) ctrl.setFallbackFormat(format);
+      for (const ctrl of cardControllers) if (ctrl) ctrl.setFallbackFormat(format);
     },
 
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {
@@ -1408,8 +1288,9 @@ export function renderWaferGallery(
     },
 
     destroy(): void {
+      buildGeneration++; // cancel any pending factory resolvers
       closeModal();
-      for (const ctrl of cardControllers) ctrl.destroy();
+      for (const ctrl of cardControllers) if (ctrl) ctrl.destroy();
       cardControllers = [];
       getOpenMenu()?.remove();
       document.removeEventListener('click', closeOpenMenu, true);

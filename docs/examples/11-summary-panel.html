@@ -111,7 +111,7 @@
       document.getElementById('single-map'),
       singleResult,
       {
-        sceneOptions: {
+        viewOptions: {
           plotMode: 'hardBin',
           hbinDefs: HBIN_DEFS,
           sbinDefs: SBIN_DEFS,
@@ -142,14 +142,14 @@
       ...r,
       label:        r.wafer.metadata?.wafer ?? `W${i + 1}`,
       statsSummary: waferSummaries[i],
-      sceneOptions: { hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS },
+      viewOptions: { hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS },
     }));
 
     renderWaferMap(
       document.getElementById('gallery-container'),
       galleryItems,
       {
-        sceneOptions: {
+        viewOptions: {
           plotMode:  'hardBin',
           hbinDefs:  HBIN_DEFS,
           sbinDefs:  SBIN_DEFS,

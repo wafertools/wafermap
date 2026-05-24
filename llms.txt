@@ -1,8 +1,7 @@
 # wafermap
 
 Browser-first wafer map visualization toolkit for semiconductor test data.
-Primary entry point: build wafer models with `buildWaferMap()`, then render with a canvas. 
-A Plotly adapter is also supported but not the recommended output.
+Primary entry point: build wafer models with `buildWaferMap()`, then render with a canvas.
 
 ## Core docs
 - [Developer Guide](docs/GUIDE.md) - end-to-end usage, CSV loading, display controls, stats, galleries, and worker usage.
@@ -14,7 +13,6 @@ A Plotly adapter is also supported but not the recommended output.
 - `@paulrobins/wafermap`
 - `@paulrobins/wafermap/canvas-adapter`
 - `@paulrobins/wafermap/stats`
-- `@paulrobins/wafermap/plotly-adapter`
 - `@paulrobins/wafermap/worker`
 - `@paulrobins/wafermap/worker-script`
 

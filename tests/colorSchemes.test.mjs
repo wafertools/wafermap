@@ -93,7 +93,6 @@ test('registerColorScheme — custom scheme is retrievable and listed', () => {
     label: 'Test Custom',
     forBin: () => '#aabbcc',
     forValue: () => '#ddeeff',
-    plotlyColorscale: 'Blues',
   });
   assert.equal(getColorScheme('test-custom-scheme').label, 'Test Custom');
   const listed = listColorSchemes().find(s => s.name === 'test-custom-scheme');

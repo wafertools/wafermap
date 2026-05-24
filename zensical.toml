@@ -36,7 +36,6 @@ nav = [
       { "Mixed patterns (MixedWM38)"    = "examples/21-mixedwm38.html"       },
     ]},
     { "Compatibility and advanced" = [
-      { "Plotly compatibility"           = "examples/17-plotly.html"          },
       { "Rendering pipeline"             = "examples/18-pipeline.html"        },
     ]},
   ]},
@@ -52,6 +51,7 @@ nav = [
 features = [
   "navigation.tabs",
   "navigation.sections",
+  "content.code.copy",
 ]
 
 [project.markdown_extensions.toc]

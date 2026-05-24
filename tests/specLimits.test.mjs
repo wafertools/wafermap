@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/packages/renderer/buildWaferMap.js';
-import { buildScene } from '../dist/packages/renderer/buildScene.js';
+import { buildView } from '../dist/packages/renderer/buildView.js';
 import { analyzeWaferMap } from '../dist/packages/stats/analyzeWaferMap.js';
 
 // Use a standard 300 mm wafer, 10 mm dies, so (0,0) is safely in the centre.
@@ -12,7 +12,7 @@ function makeResult(x, y, value, hbin = 1) {
   return { x, y, hbin, testValues: { 1010: value } };
 }
 
-// ── buildScene: colorbar default range from spec limits ───────────────────────
+// ── buildView: colorbar default range from spec limits ───────────────────────
 
 test('specLimit — colorbar range defaults to [limitLow, limitHigh] when both defined', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
@@ -20,7 +20,7 @@ test('specLimit — colorbar range defaults to [limitLow, limitHigh] when both d
     results: [makeResult(0, 0, 0.5), makeResult(1, 0, 1.5), makeResult(0, 1, 2.5)],
     waferConfig, dieConfig, testDefs,
   });
-  const scene = buildScene(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
   assert.equal(scene.valueRange[0], 0.2);
   assert.equal(scene.valueRange[1], 3.0);
 });
@@ -31,7 +31,7 @@ test('specLimit — explicit valueRange overrides limit-based default', () => {
     results: [makeResult(0, 0, 1.0), makeResult(1, 0, 2.0)],
     waferConfig, dieConfig, testDefs,
   });
-  const scene = buildScene(wafer, dies, {
+  const scene = buildView(wafer, dies, {
     plotMode: 'value', testDefs, activeTest: 1010, valueRange: [0.0, 5.0],
   });
   assert.equal(scene.valueRange[0], 0.0);
@@ -44,7 +44,7 @@ test('specLimit — only limitLow defined: low end is limitLow, high end is data
     results: [makeResult(0, 0, 1.0), makeResult(1, 0, 4.0)],
     waferConfig, dieConfig, testDefs,
   });
-  const scene = buildScene(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
   assert.equal(scene.valueRange[0], 0.5);
   assert.equal(scene.valueRange[1], 4.0);
 });
@@ -60,7 +60,7 @@ test('specLimit mode — rectangles are colored by pass/fail category', () => {
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
-  const scene = buildScene(wafer, dies, { plotMode: 'specLimit', testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'specLimit', testDefs, activeTest: 1010 });
 
   const getRectForDie = (x, y) => {
     const die = scene.dies.find(d => d.x === x && d.y === y);
@@ -89,7 +89,7 @@ test('specLimit mode — die with no value gets no-data fill', () => {
     { x: 1, y: 0, hbin: 1 }, // no testValues
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
-  const scene = buildScene(wafer, dies, { plotMode: 'specLimit', testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'specLimit', testDefs, activeTest: 1010 });
 
   const noDataDie = scene.dies.find(d => d.x === 1 && d.y === 0);
   const noDataRect = noDataDie && scene.rectangles.find(
@@ -183,7 +183,7 @@ test('colorbarRangeMode spec — valueRange clamps to [limitLow, limitHigh]', ()
     results: [makeResult(0, 0, 0.5), makeResult(1, 0, 2.0), makeResult(-1, 0, 4.0)],
     waferConfig, dieConfig, testDefs,
   });
-  const scene = buildScene(wafer, dies, {
+  const scene = buildView(wafer, dies, {
     plotMode: 'value', testDefs, activeTest: 1010, colorbarRangeMode: 'spec',
   });
   assert.equal(scene.valueRange[0], 1.0);
@@ -196,7 +196,7 @@ test('colorbarRangeMode data — valueRange uses data min/max even with limits',
     results: [makeResult(0, 0, 0.5), makeResult(1, 0, 2.0), makeResult(-1, 0, 4.0)],
     waferConfig, dieConfig, testDefs,
   });
-  const scene = buildScene(wafer, dies, {
+  const scene = buildView(wafer, dies, {
     plotMode: 'value', testDefs, activeTest: 1010, colorbarRangeMode: 'data',
   });
   assert.equal(scene.valueRange[0], 0.5);
@@ -213,7 +213,7 @@ test('value mode — out-of-spec dies colored with fail-low/fail-high colors', (
     makeResult(-1, 0, 4.0),  // above limitHigh
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
-  const scene = buildScene(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
 
   const getRectForDie = (x, y) => {
     const die = scene.dies.find(d => d.x === x && d.y === y);

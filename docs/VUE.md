@@ -49,7 +49,7 @@ function mount() {
   ctrl?.destroy();
   const result = buildWaferMap({ results: props.rows });
   ctrl = renderWaferMap(containerEl.value, result, {
-    sceneOptions: { plotMode: 'hardBin' },
+    viewOptions: { plotMode: 'hardBin' },
   });
 }
 
@@ -73,11 +73,11 @@ When only display options change (plot mode, colour scheme, rotation), call `ctr
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferCanvasController, type WaferSceneOptions } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferCanvasController, type WaferViewOptions } from '@paulrobins/wafermap/canvas-adapter';
 
 const props = defineProps<{
   rows: DieResult[];
-  plotMode?: WaferSceneOptions['plotMode'];
+  plotMode?: WaferViewOptions['plotMode'];
 }>();
 
 const containerEl = ref<HTMLDivElement | null>(null);
@@ -87,7 +87,7 @@ onMounted(() => {
   if (!containerEl.value) return;
   const result = buildWaferMap({ results: props.rows });
   ctrl = renderWaferMap(containerEl.value, result, {
-    sceneOptions: { plotMode: props.plotMode ?? 'hardBin' },
+    viewOptions: { plotMode: props.plotMode ?? 'hardBin' },
   });
 });
 
@@ -99,7 +99,7 @@ watch(() => props.rows, () => {
   ctrl?.destroy();
   const result = buildWaferMap({ results: props.rows });
   ctrl = renderWaferMap(containerEl.value, result, {
-    sceneOptions: { plotMode: props.plotMode ?? 'hardBin' },
+    viewOptions: { plotMode: props.plotMode ?? 'hardBin' },
   });
 });
 
@@ -153,6 +153,45 @@ onUnmounted(() => ctrl?.destroy());
 ```
 
 Call `ctrl.setItems(newFactories)` to replace the lot after mount, or `ctrl.setOptions({ plotMode: 'value' })` to change display options across all cards without rebuilding.
+
+## Adding statistical findings
+
+`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Findings** button appears in the toolbar automatically.
+
+```vue
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { renderWaferMap, type WaferCanvasController } from '@paulrobins/wafermap/canvas-adapter';
+
+const props = defineProps<{ rows: DieResult[] }>();
+const containerEl = ref<HTMLDivElement | null>(null);
+let ctrl: WaferCanvasController | null = null;
+
+onMounted(() => {
+  if (!containerEl.value) return;
+  const result  = buildWaferMap({ results: props.rows });
+  const summary = analyzeWaferMap(result);
+  ctrl = renderWaferMap(containerEl.value, result, { statsSummary: summary });
+});
+
+onUnmounted(() => ctrl?.destroy());
+</script>
+
+<template>
+  <div ref="containerEl" style="width: 100%; aspect-ratio: 1" />
+</template>
+```
+
+To show a persistent summary panel instead of the toolbar button, add a `summaryPanel` option:
+
+```ts
+ctrl = renderWaferMap(containerEl.value, result, {
+  statsSummary: summary,
+  summaryPanel: { position: 'right' },
+});
+```
 
 ## Running buildWaferMap outside the component
 

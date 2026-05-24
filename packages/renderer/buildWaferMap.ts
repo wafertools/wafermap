@@ -9,7 +9,7 @@ import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
 import { generateReticleGrid } from '../core/reticle.js';
-import { buildScene, type Scene, type SceneOptions, type PlotMode } from './buildScene.js';
+import { buildView, type View, type ViewOptions, type PlotMode } from './buildView.js';
 import { modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 
@@ -284,8 +284,8 @@ export interface WaferMapInput {
   edgeDieYieldMode?: 'exclude' | 'denominator-only';
 }
 
-/** Options forwarded to {@link buildScene}. */
-export interface WaferMapOptions extends SceneOptions {
+/** Options forwarded to {@link buildView}. */
+export interface WaferMapOptions extends ViewOptions {
   debug?: boolean;
 }
 
@@ -315,7 +315,7 @@ export interface YieldSummary {
 export interface WaferMapResult {
   wafer: Wafer;
   dies: Die[];
-  scene: Scene;
+  view: View;
   /** Reticle configuration used to generate the overlay and reticle-local groupings. */
   reticleConfig?: ReticleConfig;
   /**
@@ -344,7 +344,7 @@ export interface WaferMapResult {
   };
   /** Yield statistics computed against `passBins`. */
   yield: YieldSummary;
-  /** Generated reticle geometry — pass as `sceneOptions.reticles` to `renderWaferMap` to show the reticle overlay. */
+  /** Generated reticle geometry — pass as `viewOptions.reticles` to `renderWaferMap` to show the reticle overlay. */
   reticles: Reticle[];
 }
 
@@ -566,7 +566,7 @@ function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclud
 
   for (const die of fullDies) {
     if (die.edgeExcluded) continue;
-    const bin = die.hbin;
+    const bin = die.hbin ?? die.sbin;
     if (bin !== undefined) {
       hasBinData = true;
       if (passBinSet.has(bin)) passDies++;
@@ -718,7 +718,7 @@ function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
   return { ...die, ...base };
 }
 
-function autoPlotMode(results: DieResult[], opts: SceneOptions): PlotMode {
+function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
   if (opts.plotMode) return opts.plotMode;
   const hasValues = results.some(d => (d.testValues && Object.keys(d.testValues).length > 0) || (d.values?.length ?? 0) > 0);
   return hasValues ? 'value' : 'hardBin';
@@ -740,8 +740,7 @@ function autoPlotMode(results: DieResult[], opts: SceneOptions): PlotMode {
  *   { x:  1, y:  0, values: [0.87] },
  *   { x:  0, y: -1, values: [0.91] },
  * ]);
- * const { data, layout } = toPlotly(result.scene);
- * Plotly.react('chart', data, layout);
+ * renderWaferMap(document.getElementById('map'), result);
  * ```
  *
  * @example Multiple tests and bins supplied directly:
@@ -781,7 +780,7 @@ export function buildWaferMap(
   options?: WaferMapOptions,
 ): WaferMapResult {
   const norm = normalizeInput(input);
-  const { debug: _debug, ...sceneOpts } = options ?? {};
+  const { debug: _debug, ...viewOpts } = options ?? {};
 
   const rawResults = norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts) : norm.results;
 
@@ -826,13 +825,13 @@ export function buildWaferMap(
     });
 
     const reticles    = buildReticles(norm.reticleOpts, wafer, 1, 1);
-    const showReticle = sceneOpts.showReticle ?? (norm.reticleOpts !== undefined);
+    const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
-    const scene = buildScene(wafer, dies, {
-      ...sceneOpts,
+    const view = buildView(wafer, dies, {
+      ...viewOpts,
       reticles,
       showReticle,
-      plotMode:   autoPlotMode(results, sceneOpts),
+      plotMode:   autoPlotMode(results, viewOpts),
       testDefs:   norm.testDefs,
       hbinDefs:   norm.hbinDefs,
       sbinDefs:   norm.sbinDefs,
@@ -840,7 +839,7 @@ export function buildWaferMap(
     });
 
     return {
-      wafer, dies, scene, reticleConfig: norm.reticleOpts, units: 'mm', inference,
+      wafer, dies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
       dataCoverage: computeCoverage(dies),
       yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
       reticles,
@@ -937,13 +936,13 @@ export function buildWaferMap(
   }
 
   const reticles    = buildReticles(norm.reticleOpts, wafer, pitchX, pitchY);
-  const showReticle = sceneOpts.showReticle ?? (norm.reticleOpts !== undefined);
+  const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
-  const scene = buildScene(wafer, dies, {
-    ...sceneOpts,
+  const view = buildView(wafer, dies, {
+    ...viewOpts,
     reticles,
     showReticle,
-    plotMode:     autoPlotMode(results, sceneOpts),
+    plotMode:     autoPlotMode(results, viewOpts),
     testDefs:     norm.testDefs,
     hbinDefs:     norm.hbinDefs,
     sbinDefs:     norm.sbinDefs,
@@ -953,7 +952,7 @@ export function buildWaferMap(
   });
 
   return {
-    wafer, dies, scene, reticleConfig: norm.reticleOpts, units, inference,
+    wafer, dies, view, reticleConfig: norm.reticleOpts, units, inference,
     dataCoverage: computeCoverage(dies),
     yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
     reticles,

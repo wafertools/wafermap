@@ -37,11 +37,11 @@ Your React app owns: fetching data, UI state, component lifecycle, mount and cle
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferSceneOptions } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferViewOptions } from '@paulrobins/wafermap/canvas-adapter';
 
 interface WaferMapProps {
   rows: DieResult[];
-  plotMode?: WaferSceneOptions['plotMode'];
+  plotMode?: WaferViewOptions['plotMode'];
 }
 
 export function WaferMap({ rows, plotMode = 'hardBin' }: WaferMapProps) {
@@ -54,16 +54,16 @@ export function WaferMap({ rows, plotMode = 'hardBin' }: WaferMapProps) {
   );
 
   // Stabilise so a new object on every render doesn't re-mount the canvas.
-  const sceneOptions = useMemo<Partial<WaferSceneOptions>>(
+  const viewOptions = useMemo<Partial<WaferViewOptions>>(
     () => ({ plotMode }),
     [plotMode],
   );
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const ctrl = renderWaferMap(containerRef.current, result, { sceneOptions });
+    const ctrl = renderWaferMap(containerRef.current, result, { viewOptions });
     return () => ctrl.destroy();
-  }, [result, sceneOptions]);
+  }, [result, viewOptions]);
 
   return <div ref={containerRef} style={{ width: '100%', aspectRatio: '1' }} />;
 }
@@ -150,6 +150,42 @@ const items = datasets.map(({ label, rows }): WaferMapDisplayItemFactory => () =
 const ctrl = renderWaferMap(containerRef.current, items);
 ```
 
+## Adding statistical findings
+
+`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Findings** button appears in the toolbar automatically; no extra HTML needed.
+
+```tsx
+import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+
+export function WaferMap({ rows }: { rows: DieResult[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const result = useMemo(() => buildWaferMap({ results: rows }), [rows]);
+  const summary = useMemo(() => analyzeWaferMap(result), [result]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ctrl = renderWaferMap(containerRef.current, result, {
+      statsSummary: summary,
+    });
+    return () => ctrl.destroy();
+  }, [result, summary]);
+
+  return <div ref={containerRef} style={{ width: '100%', aspectRatio: '1' }} />;
+}
+```
+
+To show a persistent summary panel instead of the toolbar button, add a `summaryPanel` option:
+
+```tsx
+renderWaferMap(containerRef.current, result, {
+  statsSummary: summary,
+  summaryPanel: { position: 'right' },
+});
+```
+
 ## Running buildWaferMap in a loader
 
 For React Router or TanStack Router, run `buildWaferMap` in the route loader so the result is ready before the component mounts:
@@ -169,7 +205,7 @@ The component receives the full `WaferMapResult` as loader data and passes it st
 ## Notes
 
 - **SSR / Next.js / Remix**: `renderWaferMap` requires the DOM. Gate it with `useEffect` or a dynamic import with `{ ssr: false }`. `buildWaferMap` is pure and safe to call on the server.
-- **Never** reconstruct options objects inline in JSX (`sceneOptions={{ plotMode }}`); use `useMemo` so the reference is stable and effects don't re-run every render.
+- **Never** reconstruct options objects inline in JSX (`viewOptions={{ plotMode }}`); use `useMemo` so the reference is stable and effects don't re-run every render.
 - `buildWaferMap` has no DOM dependency — it is safe to call in a Web Worker, server loader, or React Query `queryFn`.
 
 ## Further reading

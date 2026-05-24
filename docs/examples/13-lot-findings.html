@@ -95,13 +95,13 @@
     // lotStatsSummary adds a Findings button to the gallery bar that opens the
     // lot findings drawer. Cards reflow to use the remaining width.
     //
-    // Stacked modes work automatically — no onSceneOptionsChange wiring needed.
+    // Stacked modes work automatically — no onViewOptionsChange wiring needed.
 
     renderWaferMap(
       document.getElementById('gallery-container'),
       items,
       {
-        sceneOptions: {
+        viewOptions: {
           plotMode:  'hardBin',
           hbinDefs:  HBIN_DEFS,
           sbinDefs:  SBIN_DEFS,
