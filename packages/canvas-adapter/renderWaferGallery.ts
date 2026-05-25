@@ -1145,7 +1145,6 @@ export function renderWaferGallery(
     cardControllers = [];
     cardContainers = [];
     gridEl.innerHTML = '';
-    rebuildLegend();
 
     currentItemCount = newItems.length;
     // Size columns from pre-built items; factories will update after resolution.
@@ -1186,6 +1185,9 @@ export function renderWaferGallery(
       }
     }
 
+    // All sync items are now in currentItems — legend can be built from them.
+    rebuildLegend();
+
     // Resolve factories one per task to keep the main thread responsive.
     // Capture the generation at the time buildCards was called — if buildCards runs
     // again (mode switch, destroy) the generation increments and stale callbacks bail out.
@@ -1209,6 +1211,7 @@ export function renderWaferGallery(
       cardControllers[index] = ctrl;
       cardContainers[index] = canvasWrapper;
       placeholder.replaceWith(card);
+      rebuildLegend();
       setTimeout(resolveNext, 0);
     }
     if (factories.length > 0) setTimeout(resolveNext, 0);

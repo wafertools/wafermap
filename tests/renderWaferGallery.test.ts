@@ -1,226 +1,326 @@
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert';
 import { renderWaferGallery } from '../packages/canvas-adapter/renderWaferGallery.js';
-import type { GalleryItem, GalleryController } from '../packages/canvas-adapter/renderWaferGallery.js';
-import type { WaferCanvasController, WaferViewOptions } from '../packages/canvas-adapter/renderWaferMap.js';
+import type { WaferMapDisplayItem, GalleryController } from '../packages/canvas-adapter/renderWaferGallery.js';
+import type { WaferCanvasController } from '../packages/canvas-adapter/renderWaferMap.js';
 import type { Die } from '../packages/core/dies.js';
 import type { Wafer } from '../packages/core/wafer.js';
 
-// --- Mocks for renderWaferGallery dependencies ---
+// ── Shared mock fixtures ──────────────────────────────────────────────────────
 
-// Mock Wafer object
 const mockWafer: Wafer = {
   diameter: 300, radius: 150, center: { x: 0, y: 0 }, orientation: 0,
 };
 
-// Mock renderWaferMap function
-let capturedRenderWaferMapCalls: Array<{
-  canvas: HTMLCanvasElement;
-  wafer: Wafer;
-  dies: Die[];
-  options: any; // WaferCanvasController options
-}> = [];
+const mockView = {} as any;
 
-const mockRenderWaferMap = mock.fn((
-  canvas: HTMLCanvasElement,
-  wafer: Wafer,
-  dies: Die[],
-  options: any,
-): WaferCanvasController => {
-  capturedRenderWaferMapCalls.push({ canvas, wafer, dies, options });
+const mockInference = {
+  wafer:    { confidence: 1, method: 'provided' },
+  diePitch: { confidence: 1, units: 'mm' as const },
+  grid:     { confidence: 1 },
+};
+
+const mockDataCoverage = { filledDies: 2, totalDies: 2, edgeExcludedDies: 0, ratio: 1 };
+
+const mockYield = { yieldPercent: 0.5, passDies: 1, failDies: 1, totalDies: 2, edgeExcludedDies: 0, partialDies: 0 };
+
+function makeMockController(): WaferCanvasController {
   return {
-    setDies: mock.fn(() => {}),
-    setOptions: mock.fn(() => {}),
-    getOptions: mock.fn(() => options.viewOptions), // Return the options it was initialized with
-    setSelection: mock.fn(() => {}),
-    clearSelection: mock.fn(() => {}),
-    resetZoom: mock.fn(() => {}),
-    setFallbackFormat: mock.fn(() => {}),
-    setStatsSummary: mock.fn(() => {}),
-    destroy: mock.fn(() => {}),
+    setDies:              mock.fn(),
+    setResult:            mock.fn(),
+    setOptions:           mock.fn(),
+    getOptions:           mock.fn(() => ({})),
+    setSelection:         mock.fn(),
+    clearSelection:       mock.fn(),
+    resetZoom:            mock.fn(),
+    setFallbackFormat:    mock.fn(),
+    setStatsSummary:      mock.fn(),
+    setFindingsVisible:   mock.fn(),
+    setViewControlsVisible: mock.fn(),
+    setExpandVisible:     mock.fn(),
+    setTooltipParent:     mock.fn(),
+    getActiveLegend:      mock.fn(() => null),
+    destroy:              mock.fn(),
   };
+}
+
+// ── Module mocks ──────────────────────────────────────────────────────────────
+
+let capturedRenderWaferMapCalls: Array<{ container: HTMLElement; result: any; options: any }> = [];
+
+mock.module('../packages/canvas-adapter/renderWaferMap.js', {
+  namedExports: {
+    renderWaferMap: mock.fn((container: HTMLElement, result: any, options: any): WaferCanvasController => {
+      capturedRenderWaferMapCalls.push({ container, result, options });
+      return makeMockController();
+    }),
+  },
 });
 
-// Mock other internal dependencies that renderWaferGallery uses
-mock.module('../packages/canvas-adapter/renderWaferMap.js', { renderWaferMap: mockRenderWaferMap });
 mock.module('../packages/canvas-adapter/toolbar.js', {
-  createTooltip: mock.fn(() => document.createElement('div')),
-  createToolbarHelpers: mock.fn(() => ({
-    makeBtn: mock.fn(() => document.createElement('button')),
-    setActive: mock.fn(() => {}),
-    makeSep: mock.fn(() => document.createElement('div')),
-    makeMenuRow: mock.fn(() => document.createElement('div')),
-    makeMenuSection: mock.fn(() => document.createElement('div')),
-    makeDropdown: mock.fn(() => document.createElement('button')),
-    closeOpenMenu: mock.fn(() => {}),
-    getOpenMenu: mock.fn(() => null),
-    setOpenMenu: mock.fn(() => {}),
-  })),
-  CLR: { icon: '#000', menuBorder: '#000' },
-  ROTATIONS: [0, 90, 180, 270],
-  INLINE_TEST_LIMIT: 6,
-  MODE_LABELS: {
-    value: 'Test Value', hardBin: 'Hard Bin', softBin: 'Soft Bin',
-    stackedValues: 'Stacked Test Values', stackedBins: 'Stacked Hard Bins', stackedSoftBins: 'Stacked Soft Bins'
+  namedExports: {
+    createTooltip: mock.fn(() => document.createElement('div')),
+    createToolbarHelpers: mock.fn(() => ({
+      makeBtn:        mock.fn(() => document.createElement('button')),
+      setActive:      mock.fn(),
+      makeSep:        mock.fn(() => document.createElement('div')),
+      makeMenuRow:    mock.fn(() => document.createElement('div')),
+      makeMenuSection: mock.fn(() => document.createElement('div')),
+      makeDropdown:   mock.fn(() => document.createElement('button')),
+      makeCheckMenuBtn: mock.fn(() => document.createElement('button')),
+      closeOpenMenu:  mock.fn(),
+      getOpenMenu:    mock.fn(() => null),
+      setOpenMenu:    mock.fn(),
+    })),
+    buildModeMenuEl:   mock.fn(() => document.createElement('div')),
+    buildCheckMenuEl:  mock.fn(() => document.createElement('div')),
+    openModal:         mock.fn(() => ({ close: mock.fn() })),
+    CLR: {
+      icon: '#506784', iconHover: '#2a3f5f', iconActive: '#1a66cc',
+      bgHover: '#edf0f8', bgActive: '#dce8f8', separator: 'rgba(0,0,0,0.12)',
+      menuBg: '#fff', menuBorder: 'rgba(0,0,0,0.12)', menuHover: '#f0f4fc', menuActive: '#dce8f8',
+    },
+    ROTATIONS:         [0, 90, 180, 270],
+    INLINE_TEST_LIMIT: 6,
+    MODE_LABELS: {
+      value: 'Test Value', hardBin: 'Hard Bin', softBin: 'Soft Bin',
+      stackedValues: 'Stacked Test Values', stackedBins: 'Stacked Hard Bins', stackedSoftBins: 'Stacked Soft Bins',
+    },
+    BIN_LEGEND_MODES:  new Set(['hardBin', 'softBin']),
+    STACKED_MODES:     new Set(['stackedValues', 'stackedBins', 'stackedSoftBins']),
   },
-  BIN_LEGEND_MODES: new Set(['hardBin', 'softBin']),
-  STACKED_MODES: new Set(['stackedValues', 'stackedBins', 'stackedSoftBins']),
 });
+
 mock.module('../packages/canvas-adapter/summaryPanel.js', {
-  createSummaryPanelEl: mock.fn(() => document.createElement('div')),
-  wrapWithSummaryPanel: mock.fn((canvas: HTMLElement, panel: HTMLElement, placement: string) => {
-    const wrapper = document.createElement('div');
-    wrapper.appendChild(canvas);
-    wrapper.appendChild(panel);
-    return wrapper;
-  }),
-  renderLotSummaryContent: mock.fn(() => {}),
-  renderWaferSummaryContent: mock.fn(() => {}),
-  buildWaferDetailHeader: mock.fn(() => document.createElement('div')),
+  namedExports: {
+    createSummaryPanelEl:      mock.fn(() => document.createElement('div')),
+    wrapWithSummaryPanel:      mock.fn((_c: HTMLElement, _p: HTMLElement) => document.createElement('div')),
+    renderLotSummaryContent:   mock.fn(),
+    renderWaferSummaryContent: mock.fn(),
+    buildWaferDetailHeader:    mock.fn(() => document.createElement('div')),
+  },
 });
+
 mock.module('../packages/core/aggregates.js', {
-  aggregateValues: mock.fn((diesByWafer: Die[][], method: string, paramIndex?: number) => {
-    const aggregatedDies: Die[] = [];
-    const allDies = diesByWafer.flat();
-    const uniqueCoords = new Set(allDies.map(d => `${d.x},${d.y}`));
-    for (const coord of uniqueCoords) {
-      const [x, y] = coord.split(',').map(Number);
-      const templateDie = allDies.find(d => d.x === x && d.y === y);
-      if (templateDie) {
-        aggregatedDies.push({ ...templateDie, testValues: { 0: 100 } });
-      }
-    }
-    return aggregatedDies;
-  }),
-  aggregateBinCounts: mock.fn((diesByWafer: Die[][], targetBin: number, binSpace: string) => {
-    const aggregatedDies: Die[] = [];
-    const allDies = diesByWafer.flat();
-    const uniqueCoords = new Set(allDies.map(d => `${d.x},${d.y}`));
-    for (const coord of uniqueCoords) {
-      const [x, y] = coord.split(',').map(Number);
-      const templateDie = allDies.find(d => d.x === x && d.y === y);
-      if (templateDie) {
-        aggregatedDies.push({
-          ...templateDie,
-          testValues: { 0: 2 },
-          hbin: binSpace === 'hard' ? targetBin : undefined,
-          sbin: binSpace === 'soft' ? targetBin : undefined,
-        });
-      }
-    }
-    return aggregatedDies;
-  }),
+  namedExports: {
+    aggregateValues: mock.fn((diesByWafer: Die[][]) => {
+      const allDies = diesByWafer.flat();
+      const seen = new Set<string>();
+      return allDies.filter(d => {
+        const k = `${d.x},${d.y}`;
+        return seen.has(k) ? false : (seen.add(k), true);
+      }).map(d => ({ ...d, testValues: { 0: 100 } }));
+    }),
+    aggregateBinCounts: mock.fn((diesByWafer: Die[][], targetBin: number, binSpace: string) => {
+      const allDies = diesByWafer.flat();
+      const seen = new Set<string>();
+      return allDies.filter(d => {
+        const k = `${d.x},${d.y}`;
+        return seen.has(k) ? false : (seen.add(k), true);
+      }).map(d => ({
+        ...d,
+        testValues: { 0: 2 },
+        hbin: binSpace === 'hard' ? targetBin : undefined,
+        sbin: binSpace === 'soft' ? targetBin : undefined,
+      }));
+    }),
+  },
 });
+
 mock.module('../packages/renderer/colorSchemes.js', {
-  listColorSchemes: mock.fn(() => [{ name: 'color', label: 'Color' }]),
-  getColorScheme: mock.fn(() => ({
-    label: 'Color', forBin: () => '#000', forValue: () => '#000',
-  })),
+  namedExports: {
+    listColorSchemes: mock.fn(() => [{ name: 'color', label: 'Color' }]),
+    getColorScheme:   mock.fn(() => ({ label: 'Color', forBin: () => '#4caf50', forValue: () => '#000' })),
+  },
 });
+
+// ── Shared test items ─────────────────────────────────────────────────────────
+
+// Two wafers: bins 1+2 on W1, bins 1+3 on W2 — combined unique hbins: 1, 2, 3
+const ITEMS: WaferMapDisplayItem[] = [
+  {
+    wafer: mockWafer, view: mockView, units: 'mm', inference: mockInference,
+    dataCoverage: mockDataCoverage, yield: mockYield, reticles: [],
+    label: 'W01',
+    dies: [
+      { id: '0_0', x: 0, y: 0, hbin: 1, sbin: 10, testValues: { 100: 10 }, width: 10, height: 10, physX: 0,  physY: 0  },
+      { id: '1_0', x: 1, y: 0, hbin: 2, sbin: 11, testValues: { 100: 15 }, width: 10, height: 10, physX: 10, physY: 0  },
+    ],
+  },
+  {
+    wafer: mockWafer, view: mockView, units: 'mm', inference: mockInference,
+    dataCoverage: mockDataCoverage, yield: mockYield, reticles: [],
+    label: 'W02',
+    dies: [
+      { id: '0_0', x: 0, y: 0, hbin: 1, sbin: 10, testValues: { 100: 12 }, width: 10, height: 10, physX: 0,  physY: 0  },
+      { id: '1_0', x: 1, y: 0, hbin: 3, sbin: 12, testValues: { 100: 18 }, width: 10, height: 10, physX: 10, physY: 0  },
+    ],
+  },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Returns all direct child divs of the legend element (the bin entries). */
+function getLegendEntries(container: HTMLElement): HTMLElement[] {
+  // legendEl is the second child of container (after barEl)
+  const legendEl = container.children[1] as HTMLElement;
+  return Array.from(legendEl.children) as HTMLElement[];
+}
+
+function getLegendEl(container: HTMLElement): HTMLElement {
+  return container.children[1] as HTMLElement;
+}
+
+function getLabelText(entry: HTMLElement): string {
+  return (entry.children[1] as HTMLElement).textContent ?? '';
+}
+
+// ── Tests: stacked mode definition discovery ──────────────────────────────────
 
 describe('renderWaferGallery stacked modes with definition discovery', () => {
   let container: HTMLElement;
-  let galleryController: GalleryController;
-
-  const mockItems: GalleryItem[] = [
-    {
-      wafer: mockWafer,
-      dies: [
-        { id: '0_0', x: 0, y: 0, testValues: { 100: 10, 200: 20 }, hbin: 1, sbin: 10, width: 10, height: 10, physX: 0, physY: 0 },
-        { id: '1_0', x: 1, y: 0, testValues: { 100: 15, 200: 25 }, hbin: 2, sbin: 11, width: 10, height: 10, physX: 10, physY: 0 },
-      ],
-      label: 'Wafer 1',
-    },
-    {
-      wafer: mockWafer,
-      dies: [
-        { id: '0_0', x: 0, y: 0, testValues: { 100: 12, 200: 22 }, hbin: 1, sbin: 10, width: 10, height: 10, physX: 0, physY: 0 },
-        { id: '1_0', x: 1, y: 0, testValues: { 100: 18, 200: 28 }, hbin: 3, sbin: 12, width: 10, height: 10, physX: 10, physY: 0 },
-      ],
-      label: 'Wafer 2',
-    },
-  ];
+  let ctrl: GalleryController;
 
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
-    capturedRenderWaferMapCalls = []; // Reset mock calls
-    galleryController = renderWaferGallery(container, mockItems, {});
+    capturedRenderWaferMapCalls = [];
+    ctrl = renderWaferGallery(container, ITEMS, {});
   });
 
-  it('should discover testDefs for stackedValues mode when not provided', () => {
-    galleryController.setOptions({ plotMode: 'stackedValues' });
-
-    // Expect 2 cards for the 2 discovered test numbers (100, 200)
+  it('discovers testDefs for stackedValues mode when not provided', () => {
+    ctrl.setOptions({ plotMode: 'stackedValues' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 2);
-
-    const firstCardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
-    assert.strictEqual(firstCardOptions.plotMode, 'stackedValues');
-    assert.deepStrictEqual(firstCardOptions.testDefs, [{ index: 0, name: 'Test 100' }]);
-
-    const secondCardOptions = capturedRenderWaferMapCalls[1].options.viewOptions;
-    assert.strictEqual(secondCardOptions.plotMode, 'stackedValues');
-    assert.deepStrictEqual(secondCardOptions.testDefs, [{ index: 0, name: 'Test 200' }]);
+    const opts0 = capturedRenderWaferMapCalls[0].options.viewOptions;
+    assert.strictEqual(opts0.plotMode, 'stackedValues');
+    assert.deepStrictEqual(opts0.testDefs, [{ index: 0, name: 'Test 100' }]);
+    const opts1 = capturedRenderWaferMapCalls[1].options.viewOptions;
+    assert.deepStrictEqual(opts1.testDefs, [{ index: 0, name: 'Test 100' }]);
   });
 
-  it('should discover hbinDefs for stackedBins mode when not provided', () => {
-    galleryController.setOptions({ plotMode: 'stackedBins' });
-
-    // Expect 3 cards for the 3 discovered hard bins (1, 2, 3)
+  it('discovers hbinDefs for stackedBins mode when not provided', () => {
+    ctrl.setOptions({ plotMode: 'stackedBins' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 3);
-
-    const firstCardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
-    assert.strictEqual(firstCardOptions.plotMode, 'stackedBins');
-    assert.deepStrictEqual(firstCardOptions.hbinDefs, [{ bin: 1, name: 'Bin 1' }]);
-
-    const secondCardOptions = capturedRenderWaferMapCalls[1].options.viewOptions;
-    assert.strictEqual(secondCardOptions.plotMode, 'stackedBins');
-    assert.deepStrictEqual(secondCardOptions.hbinDefs, [{ bin: 2, name: 'Bin 2' }]);
-
-    const thirdCardOptions = capturedRenderWaferMapCalls[2].options.viewOptions;
-    assert.strictEqual(thirdCardOptions.plotMode, 'stackedBins');
-    assert.deepStrictEqual(thirdCardOptions.hbinDefs, [{ bin: 3, name: 'Bin 3' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.hbinDefs, [{ bin: 1, name: 'Bin 1' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].options.viewOptions.hbinDefs, [{ bin: 2, name: 'Bin 2' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[2].options.viewOptions.hbinDefs, [{ bin: 3, name: 'Bin 3' }]);
   });
 
-  it('should discover sbinDefs for stackedSoftBins mode when not provided', () => {
-    galleryController.setOptions({ plotMode: 'stackedSoftBins' });
-
-    // Expect 3 cards for the 3 discovered soft bins (10, 11, 12)
+  it('discovers sbinDefs for stackedSoftBins mode when not provided', () => {
+    ctrl.setOptions({ plotMode: 'stackedSoftBins' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 3);
-
-    const firstCardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
-    assert.strictEqual(firstCardOptions.plotMode, 'stackedSoftBins');
-    assert.deepStrictEqual(firstCardOptions.sbinDefs, [{ bin: 10, name: 'Bin 10' }]);
-
-    const secondCardOptions = capturedRenderWaferMapCalls[1].options.viewOptions;
-    assert.strictEqual(secondCardOptions.plotMode, 'stackedSoftBins');
-    assert.deepStrictEqual(secondCardOptions.sbinDefs, [{ bin: 11, name: 'Bin 11' }]);
-
-    const thirdCardOptions = capturedRenderWaferMapCalls[2].options.viewOptions;
-    assert.strictEqual(thirdCardOptions.plotMode, 'stackedSoftBins');
-    assert.deepStrictEqual(thirdCardOptions.sbinDefs, [{ bin: 12, name: 'Bin 12' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.sbinDefs, [{ bin: 10, name: 'Bin 10' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].options.viewOptions.sbinDefs, [{ bin: 11, name: 'Bin 11' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[2].options.viewOptions.sbinDefs, [{ bin: 12, name: 'Bin 12' }]);
   });
 
-  it('should use provided definitions over discovery if available', () => {
+  it('uses provided definitions over discovery', () => {
     const customTestDefs = [{ testNumber: 100, name: 'Custom Test A', unit: 'V' }];
-    galleryController.setOptions({ plotMode: 'stackedValues', testDefs: customTestDefs });
-
-    // Should only create 1 card for the provided testDef
+    ctrl.setOptions({ plotMode: 'stackedValues', testDefs: customTestDefs });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 1);
-    const cardOptions = capturedRenderWaferMapCalls[0].options.viewOptions;
-    assert.deepStrictEqual(cardOptions.testDefs, [{ index: 0, name: 'Custom Test A', unit: 'V' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.testDefs, [{ index: 0, name: 'Custom Test A', unit: 'V' }]);
   });
 
-  it('should revert to original items when switching from stacked mode', () => {
-    galleryController.setOptions({ plotMode: 'stackedValues' });
-    assert.strictEqual(capturedRenderWaferMapCalls.length, 2); // 2 tests discovered
-
-    capturedRenderWaferMapCalls = []; // Clear calls
-    galleryController.setOptions({ plotMode: 'hardBin' });
-
-    // Should revert to the original 2 items
+  it('reverts to original items when leaving stacked mode', () => {
+    ctrl.setOptions({ plotMode: 'stackedValues' });
+    capturedRenderWaferMapCalls = [];
+    ctrl.setOptions({ plotMode: 'hardBin' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 2);
-    assert.strictEqual(capturedRenderWaferMapCalls[0].dies, mockItems[0].dies);
-    assert.strictEqual(capturedRenderWaferMapCalls[1].dies, mockItems[1].dies);
+    assert.strictEqual(capturedRenderWaferMapCalls[0].result.dies, ITEMS[0].dies);
+    assert.strictEqual(capturedRenderWaferMapCalls[1].result.dies, ITEMS[1].dies);
+  });
+});
+
+// ── Tests: shared bin legend ──────────────────────────────────────────────────
+
+describe('renderWaferGallery shared bin legend', () => {
+  let container: HTMLElement;
+  let ctrl: GalleryController;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    capturedRenderWaferMapCalls = [];
+    ctrl = renderWaferGallery(container, ITEMS, { viewOptions: { plotMode: 'hardBin' } });
+  });
+
+  it('renders an entry for each unique hard bin across all wafers', () => {
+    const entries = getLegendEntries(container);
+    // ITEMS has hbins 1, 2 (W01) and 1, 3 (W02) → unique sorted: 1, 2, 3
+    assert.strictEqual(entries.length, 3);
+    assert.strictEqual(getLabelText(entries[0]), 'Bin 1');
+    assert.strictEqual(getLabelText(entries[1]), 'Bin 2');
+    assert.strictEqual(getLabelText(entries[2]), 'Bin 3');
+  });
+
+  it('is visible in hardBin mode', () => {
+    assert.strictEqual(getLegendEl(container).style.display, 'flex');
+  });
+
+  it('is hidden in value mode', () => {
+    ctrl.setOptions({ plotMode: 'value' });
+    assert.strictEqual(getLegendEl(container).style.display, 'none');
+  });
+
+  it('is hidden in stacked modes', () => {
+    ctrl.setOptions({ plotMode: 'stackedBins' });
+    assert.strictEqual(getLegendEl(container).style.display, 'none');
+  });
+
+  it('shows soft bin entries when in softBin mode', () => {
+    ctrl.setOptions({ plotMode: 'softBin' });
+    const entries = getLegendEntries(container);
+    // ITEMS has sbins 10 (both wafers), 11 (W01), 12 (W02) → unique sorted: 10, 11, 12
+    assert.strictEqual(entries.length, 3);
+    assert.strictEqual(getLabelText(entries[0]), 'Bin 10');
+    assert.strictEqual(getLabelText(entries[1]), 'Bin 11');
+    assert.strictEqual(getLabelText(entries[2]), 'Bin 12');
+  });
+
+  it('uses binDef names when provided', () => {
+    const hbinDefs = [
+      { bin: 1, name: 'Pass' },
+      { bin: 2, name: 'Contact Open' },
+      { bin: 3, name: 'Leakage' },
+    ];
+    ctrl.setOptions({ hbinDefs });
+    const entries = getLegendEntries(container);
+    assert.strictEqual(getLabelText(entries[0]), '1 · Pass');
+    assert.strictEqual(getLabelText(entries[1]), '2 · Contact Open');
+    assert.strictEqual(getLabelText(entries[2]), '3 · Leakage');
+  });
+
+  it('clicking a bin entry highlights it in the legend', () => {
+    getLegendEntries(container)[1].click(); // click bin 2
+    const entries = getLegendEntries(container);
+    const lbl1 = entries[1].children[1] as HTMLElement;
+    assert.strictEqual(lbl1.style.fontWeight, '700', 'clicked bin label should be bold');
+    // Other entries should remain inactive
+    assert.strictEqual((entries[0].children[1] as HTMLElement).style.fontWeight, '400');
+    assert.strictEqual((entries[2].children[1] as HTMLElement).style.fontWeight, '400');
+  });
+
+  it('clicking the active bin again deselects it', () => {
+    const entries = getLegendEntries(container);
+    entries[0].click(); // select bin 1
+    getLegendEntries(container)[0].click(); // deselect bin 1
+
+    const updatedEntries = getLegendEntries(container);
+    const lbl0 = updatedEntries[0].children[1] as HTMLElement;
+    assert.strictEqual(lbl0.style.fontWeight, '400');
+  });
+
+  it('active bin entry gets a highlighted swatch border', () => {
+    getLegendEntries(container)[0].click(); // select bin 1
+    const swatch = getLegendEntries(container)[0].children[0] as HTMLElement;
+    assert.ok(swatch.style.border.includes('#1a66cc'), 'active swatch should have blue border');
+  });
+
+  it('rebuilds correctly after switching mode and back', () => {
+    ctrl.setOptions({ plotMode: 'value' });
+    assert.strictEqual(getLegendEl(container).style.display, 'none');
+    ctrl.setOptions({ plotMode: 'hardBin' });
+    assert.strictEqual(getLegendEl(container).style.display, 'flex');
+    assert.strictEqual(getLegendEntries(container).length, 3);
   });
 });
