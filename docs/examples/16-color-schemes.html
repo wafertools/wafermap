@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Custom colour schemes — wafermap guide</title>
   <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
     "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
@@ -67,6 +68,20 @@
       height: 16px;
       border-radius: 4px;
       border: 1px solid rgba(0,0,0,.08);
+    }
+
+    @media (max-width: 640px) {
+      .scheme-grid {
+        grid-template-columns: 1fr;
+        overflow: visible;
+        flex: none;
+        height: auto;
+      }
+      .scheme-card {
+        height: 70vw;
+        min-height: 240px;
+        max-height: 420px;
+      }
     }
   </style>
 </head>

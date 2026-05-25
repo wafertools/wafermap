@@ -39,42 +39,86 @@ html, body {
 .demo-header {
   flex-shrink: 0;
   background: #0f172a;
-  color: #e2e8f0;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 0 20px;
-  height: 48px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  padding: 10px 20px 11px;
+  row-gap: 3px;
 }
 
+/* Col 1 row 1: logo */
 .demo-logo {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -.02em;
-  color: #f8fafc;
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: #64748b;
   white-space: nowrap;
   text-decoration: none;
+  align-self: end;
 }
-.demo-logo em { color: #60a5fa; font-style: normal; }
+.demo-logo em { color: #3b82f6; font-style: normal; }
 
-.demo-sep {
-  width: 1px;
-  height: 18px;
-  background: #1e3a5f;
-  flex-shrink: 0;
-}
-
+/* Col 1 row 2: title */
 .demo-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #cbd5e1;
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -.02em;
+  line-height: 1.2;
+  align-self: start;
 }
 
-.demo-desc {
-  font-size: 12px;
-  color: #92a2b9;
-  margin-left: auto;
+/* Col 2 rows 1-2: nav — vertically centred across both rows */
+.demo-nav {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 20px;
+  align-self: center;
 }
+
+.demo-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s;
+  line-height: 1;
+}
+.demo-nav-btn:hover {
+  background: #1e3a5f;
+  color: #f1f5f9;
+  border-color: #475569;
+}
+
+/* desc stays in the HTML but moves below the title as a subtitle */
+.demo-desc {
+  grid-column: 1;
+  grid-row: 3;
+  font-size: 12px;
+  color: #475569;
+  margin-top: 2px;
+  display: none; /* hidden — description lives in .demo-intro instead */
+}
+
+/* Sep no longer needed */
+.demo-sep { display: none; }
 
 /* ── Intro bar ───────────────────────────────────────────────────────────── */
 
@@ -82,14 +126,14 @@ html, body {
   flex-shrink: 0;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 10px 20px;
-  font-size: 12px;
-  line-height: 1.6;
+  padding: 11px 20px;
+  font-size: 13px;
+  line-height: 1.65;
   color: var(--text-2);
 }
 
 .demo-intro strong { color: var(--text); font-weight: 600; }
-.demo-intro code   { font-family: var(--mono); font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+.demo-intro code   { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; }
 
 /* ── Controls bar ────────────────────────────────────────────────────────── */
 
@@ -387,4 +431,67 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
   gap: 14px;
   flex: 1;
   overflow: hidden;
+}
+
+/* ── Mobile — stack vertically, allow page scroll ───────────────────────── */
+
+@media (max-width: 640px) {
+  html, body { overflow: auto; height: auto; }
+
+  .demo-page { height: auto; min-height: 100dvh; }
+
+  .demo-header {
+    padding: 10px 14px 11px;
+    row-gap: 3px;
+  }
+  .demo-nav { padding-left: 12px; gap: 4px; }
+  .demo-nav-btn { height: 26px; padding: 0 9px; font-size: 11px; }
+
+  .demo-intro { padding: 10px 14px; }
+
+  .demo-controls {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 8px 14px;
+    gap: 8px;
+  }
+
+  .demo-content {
+    flex-direction: column;
+    overflow: visible;
+    padding: 10px;
+    gap: 10px;
+  }
+
+  /* Single-canvas card: fixed height on the card so absolute children anchor correctly */
+  .canvas-card.flex-1 {
+    flex: none;
+    height: 70vw;
+    min-height: 260px;
+    max-height: 480px;
+  }
+
+  /* Panel goes full-width below the canvas */
+  .demo-panel { width: 100%; flex-shrink: 0; }
+  .demo-panel-scroll { max-height: none; overflow-y: visible; }
+
+  /* Multi-canvas grids: collapse to single column */
+  .canvas-grid-2,
+  .canvas-grid-3,
+  .canvas-grid-4 {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    overflow: visible;
+    flex: none;
+    height: auto;
+  }
+
+  /* Fixed height on each grid card so absolute children (overlays, etc.) anchor correctly */
+  .canvas-grid-2 .canvas-card,
+  .canvas-grid-3 .canvas-card,
+  .canvas-grid-4 .canvas-card {
+    height: 70vw;
+    min-height: 240px;
+    max-height: 420px;
+  }
 }
