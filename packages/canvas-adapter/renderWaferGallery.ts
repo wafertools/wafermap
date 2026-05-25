@@ -89,6 +89,12 @@ export interface GalleryOptions {
    * to ensure the summary panel yield label is consistent with the rest of the display.
    */
   passBins?:               number[];
+  /**
+   * Fix the number of columns in the gallery grid. When set, overrides the
+   * auto-computed minimum card width and the toolbar columns control.
+   * Omit (default) to let the gallery auto-size cards based on die pitch.
+   */
+  columns?:                number;
 }
 
 export interface GalleryController {
@@ -102,6 +108,11 @@ export interface GalleryController {
   setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the lot-level stats summary used by the built-in findings panel. */
   setLotStatsSummary(summary: LotStatsSummary | undefined): void;
+  /**
+   * Set the number of columns in the gallery grid. Pass `undefined` to restore
+   * the auto-computed layout based on die pitch.
+   */
+  setColumns(columns: number | undefined): void;
   /** Remove all DOM and event listeners. */
   destroy(): void;
 }
@@ -116,6 +127,7 @@ export function renderWaferGallery(
 ): GalleryController {
   const cardPadding          = options.cardPadding          ?? 6;
   const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
+  let currentColumns         = options.columns;
   const showPlotModeSelector = options.showPlotModeSelector ?? true;
   const summaryPanelOpts     = options.summaryPanel;
   const passBins             = options.passBins             ?? [1];
@@ -582,6 +594,21 @@ export function renderWaferGallery(
   );
   const btnDownloadAll = makeBtn('downloadAll', 'Download gallery PNG', downloadGalleryPng);
 
+  type ColsValue = '1' | '2' | '3' | '4' | '5' | 'auto';
+  const btnColumns = makeDropdown(
+    'columns', 'Columns',
+    () => [
+      { value: 'auto' as ColsValue, label: 'Auto' },
+      { value: '1'    as ColsValue, label: '1 column' },
+      { value: '2'    as ColsValue, label: '2 columns' },
+      { value: '3'    as ColsValue, label: '3 columns' },
+      { value: '4'    as ColsValue, label: '4 columns' },
+      { value: '5'    as ColsValue, label: '5 columns' },
+    ],
+    () => (currentColumns != null ? String(currentColumns) as ColsValue : 'auto'),
+    (v) => setColumnsState(v === 'auto' ? undefined : Number(v)),
+  );
+
   if (showPlotModeSelector) barEl.appendChild(btnMode);
   barEl.appendChild(btnPalette);
   barEl.appendChild(btnAggrMethod);
@@ -592,6 +619,8 @@ export function renderWaferGallery(
   barEl.appendChild(btnLegendStyle);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnOrient);
+  barEl.appendChild(makeSep());
+  barEl.appendChild(btnColumns);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnDownloadAll);
 
@@ -641,12 +670,61 @@ export function renderWaferGallery(
 
   // ── Grid container ─────────────────────────────────────────────────────────
 
+  const TARGET_DIE_PX = 4;   // minimum readable die pixel size at gallery scale
+  const MIN_CARD_PX   = 240; // absolute floor
+  const MAX_CARD_PX   = 480; // cap to avoid monopolising width on dense grids
+
+  // Compute the minimum card width (px) so that each die is at least TARGET_DIE_PX wide.
+  // Uses die.width (mm) and wafer.radius from the first item that has die data.
+  function computeMinCardPx(its: (WaferMapDisplayItem | null)[]): number {
+    const result = its.find(it => it != null && it.dies?.length > 0);
+    if (!result) return MIN_CARD_PX;
+    const diePitchMm  = result.dies[0].width;
+    const waferDiamMm = result.wafer.radius * 2;
+    const minPpm      = TARGET_DIE_PX / diePitchMm;
+    const minCanvasPx = waferDiamMm * minPpm;
+    // card chrome: cardPadding on each side + bin legend reserve + 2px border
+    const chrome = cardPadding * 2 + 110 + 2;
+    return Math.min(MAX_CARD_PX, Math.max(MIN_CARD_PX, Math.ceil(minCanvasPx + chrome)));
+  }
+
+  let currentMinCardPx = MIN_CARD_PX;
+  let currentItemCount = 0;
+
+  function applyGridColumns(its: (WaferMapDisplayItem | null)[]): void {
+    if (currentColumns != null) return; // fixed column count overrides auto-sizing
+    const newMin = computeMinCardPx(its);
+    if (newMin > currentMinCardPx) currentMinCardPx = newMin;
+    applyGridTemplate();
+  }
+
+  function setColumnsState(cols: number | undefined): void {
+    currentColumns = cols;
+    applyGridTemplate();
+  }
+
+  function applyGridTemplate(): void {
+    if (currentColumns != null) {
+      gridEl.style.gridTemplateColumns = `repeat(${currentColumns}, 1fr)`;
+      return;
+    }
+    // Compute how many columns fit given the container width and min card size,
+    // then cap at the actual item count so there are no empty column tracks.
+    const containerW = gridEl.parentElement?.clientWidth ?? gridEl.clientWidth;
+    const gap = 12;
+    const fitsInContainer = containerW > 0
+      ? Math.max(1, Math.floor((containerW + gap) / (currentMinCardPx + gap)))
+      : currentItemCount;
+    const cols = Math.min(fitsInContainer, Math.max(1, currentItemCount));
+    gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  }
+
   const gridEl = document.createElement('div');
   Object.assign(gridEl.style, {
     flex:                    '1 1 0',
     minWidth:                '0',
     display:                 'grid',
-    gridTemplateColumns:     'repeat(auto-fill, minmax(240px, 1fr))',
+    gridTemplateColumns:     `repeat(1, 1fr)`,
     gap:                     '12px',
   });
 
@@ -1069,6 +1147,10 @@ export function renderWaferGallery(
     gridEl.innerHTML = '';
     rebuildLegend();
 
+    currentItemCount = newItems.length;
+    // Size columns from pre-built items; factories will update after resolution.
+    applyGridColumns(newItems.map(it => (typeof it === 'function' ? null : it)));
+
     // Separate pre-built items from factories.
     const factories: Array<{ index: number; factory: WaferMapDisplayItemFactory; placeholder: HTMLDivElement }> = [];
 
@@ -1122,6 +1204,7 @@ export function renderWaferGallery(
       const item = factory();
       currentItems[index] = item;
       originalItems[index] = item;
+      applyGridColumns([item]);
       const { card, ctrl, canvasWrapper } = buildCard(item, index, newItems.length);
       cardControllers[index] = ctrl;
       cardContainers[index] = canvasWrapper;
@@ -1141,6 +1224,13 @@ export function renderWaferGallery(
   } else {
     buildCards(items);
   }
+
+  // Recompute column count when the gallery body width changes (window resize,
+  // summary panel open/close, etc.). Only active in auto mode (currentColumns == null).
+  const gridResizeObserver = new ResizeObserver(() => {
+    if (currentColumns == null) applyGridTemplate();
+  });
+  gridResizeObserver.observe(bodyEl);
 
   // Initial gallery summary panel render
   if (gallerySummaryPanelEl) renderGallerySummaryPanel();
@@ -1287,12 +1377,17 @@ export function renderWaferGallery(
       refreshLotFindingsButton();
     },
 
+    setColumns(cols: number | undefined): void {
+      setColumnsState(cols);
+    },
+
     destroy(): void {
       buildGeneration++; // cancel any pending factory resolvers
       closeModal();
       for (const ctrl of cardControllers) if (ctrl) ctrl.destroy();
       cardControllers = [];
       getOpenMenu()?.remove();
+      gridResizeObserver.disconnect();
       document.removeEventListener('click', closeOpenMenu, true);
       tooltip.remove();
       barEl.remove();

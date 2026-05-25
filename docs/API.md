@@ -886,6 +886,7 @@ to be pre-built.
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
   lotStatsSummary?:        LotStatsSummary   // precomputed lot-level stats — adds a summary panel toggle button to the control bar
+  columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
 }
 ```
 
@@ -898,6 +899,7 @@ to be pre-built.
   getOptions(): WaferViewOptions
   setFallbackFormat(format: 'si' | 'engineering'): void
   setLotStatsSummary(summary: LotStatsSummary | undefined): void  // update the lot summary panel at runtime
+  setColumns(columns: number | undefined): void  // override or restore auto column count at runtime
   destroy(): void
 }
 ```
@@ -915,9 +917,8 @@ to be pre-built.
 | Reticle | Toggle reticle overlay on all cards — only shown when at least one item has reticle geometry |
 | XY indicator | Toggle axis-orientation arrows on all cards |
 | Legend style | Dropdown: bin legend position for all cards — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating**. Disabled when not in a bin mode. |
-| Rotate | Rotate all cards 90° clockwise |
-| Flip H | Flip all cards horizontally |
-| Flip V | Flip all cards vertically |
+| Orientation | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
+| Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide and all available width is used. |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
 | Findings | Toggle lot summary panel — only shown when `lotStatsSummary` is provided |
 
