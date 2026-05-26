@@ -1,6 +1,7 @@
 # API Reference
 
 This document describes the public API exposed by `wafermap`.
+For the system-level overview and recommended entry points, see [Architecture](ARCHITECTURE.md).
 
 ---
 
@@ -59,6 +60,10 @@ if (top) console.log(`[${top.severity}] ${top.summary}`);
 ---
 
 ## 3 API overview
+
+If you want the shortest path to the right entry point before diving into the
+type details, see [Architecture](ARCHITECTURE.md). It explains which layer to
+use for data construction, rendering, analysis, and worker offloading.
 
 ```text
 buildWaferMap()            — data layer: prober results → WaferMapResult (server-safe, no DOM)

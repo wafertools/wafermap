@@ -3,29 +3,14 @@
 This guide walks through building wafer map visualisations in a real application,
 from a single interactive map up to a multi-wafer gallery with statistical findings.
 It focuses on practical patterns; for the full type reference see [API Reference](API.md).
+For a visual overview of how the library fits together, see [Architecture](ARCHITECTURE.md).
 
-| Section | |
-|---|---|
-| [1. Installation and setup](#1-installation-and-setup) | npm install, bundler and CDN setup |
-| [2. Your first wafer map](#2-your-first-wafer-map) | Minimal two-call example |
-| [3. Loading real data from a CSV](#3-loading-real-data-from-a-csv) | Parse and map columnar data |
-| [4. Adding die size and wafer geometry](#4-adding-die-size-and-wafer-geometry) | Physical dimensions, diameter, notch |
-| [5. Working with bins](#5-working-with-bins) | Hard bins, soft bins, named bins, yield |
-| [6. Working with test values](#6-working-with-test-values) | Parametric data, spec limits, colorbar |
-| [7. Retests and enriching dies after build](#7-retests-and-enriching-dies-after-build) | Retest policy, probe sequence |
-| [8. Controlling the display](#8-controlling-the-display) | Rotation, flip, plot mode, colour scheme |
-| [9. Responding to user interaction](#9-responding-to-user-interaction) | Hover, click, box-select callbacks |
-| [10. Adding statistical findings](#10-adding-statistical-findings) | analyzeWaferMap, findings panel |
-| [11. Summary panel](#11-summary-panel) | Persistent metadata and stats sidebar |
-| [12. Building a lot gallery](#12-building-a-lot-gallery) | Card grid, shared controls, drill-down |
-| [13. Lot-level statistical findings](#13-lot-level-statistical-findings) | Cross-wafer trends, analyzeWaferLot |
-| [14. Reticle overlays](#14-reticle-overlays) | Photolithography field grid |
-| [15. Processing large datasets with a Web Worker](#15-processing-large-datasets-with-a-web-worker) | Off-main-thread build |
-| [16. Custom colour schemes](#16-custom-colour-schemes) | registerColorScheme |
-| [17. Recipes](#17-recipes) | Copy-paste patterns |
-| [18. Advanced: the rendering pipeline](#18-advanced-the-rendering-pipeline) | buildView, toCanvas |
+## Architecture at a glance
 
-> **Stuck?** See [Troubleshooting](TROUBLESHOOTING.md) for common mistakes.
+If you are trying to understand the shape of the library before choosing an API,
+start with [Architecture](ARCHITECTURE.md). It shows the top-level flow from raw
+wafer data to built maps, rendered views, analysis summaries, and worker-based
+execution.
 
 ## 1. Installation and setup
 

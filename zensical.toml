@@ -8,6 +8,7 @@ nav = [
   { "Home"              = "index.md"      },
   { "Quick Start"       = "QUICKSTART.md" },
   { "User Guide"        = "GUIDE.md"      },
+  { "Architecture"      = "ARCHITECTURE.md" },
   { "API Reference"     = "API.md"        },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
@@ -63,3 +64,6 @@ line_spans          = "__span"
 pygments_lang_class = true
 
 [project.markdown_extensions.pymdownx.superfences]
+custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }
+]
