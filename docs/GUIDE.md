@@ -50,8 +50,7 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 ```html
 <script type="module">
   import { buildWaferMap } from 'https://esm.sh/@paulrobins/wafermap';
-  // renderWaferMap handles both single maps and galleries — one import for both:
-  import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/canvas-adapter';
+  import { renderWaferMap, renderWaferGallery } from 'https://esm.sh/@paulrobins/wafermap/canvas-adapter';
 </script>
 ```
 
@@ -401,7 +400,7 @@ Add `limitLow` and/or `limitHigh` to a `TestDef` to specify the engineering spec
 
 The toolbar also gains a **bracket button** (⌥) that toggles the colorbar range between the spec window `[limitLow, limitHigh]` and the actual data range. The default is the spec window so the colorbar always shows where the limits are relative to the data.
 
-**In `specLimit` mode** — a dedicated categorical view:
+**With `colorBySpec: true`** — a categorical pass/fail view instead of the continuous gradient:
 - Pass (in spec): green (`#2ecc71`)
 - Fail low (below LSL): blue (`#3498db`)
 - Fail high (above USL): red (`#e74c3c`)
@@ -420,11 +419,12 @@ const testDefs = [
 
 const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
-// Start in specLimit mode for Vth to see pass/fail/direction at a glance
+// Enable pass/fail colouring for Vth to see spec status at a glance
 renderWaferMap(container, result, {
   viewOptions: {
-    plotMode:   'specLimit',
-    activeTest: 1060,
+    plotMode:    'value',
+    colorBySpec: true,
+    activeTest:  1060,
     // testDefs inherited automatically from the result
   },
 });
@@ -654,11 +654,11 @@ gallery grid.  Which buttons appear depends on the context and the current data.
 | <img src="images/icons/zoomIn.svg" width="16" height="16"> <img src="images/icons/zoomOut.svg" width="16" height="16"> <img src="images/icons/reset.svg" width="16" height="16"> | Zoom in / Zoom out / Reset | Always | Step zoom; Reset returns to fitted view |
 | <img src="images/icons/pan.svg" width="16" height="16"> | Pan mode | Always | Drag to pan |
 | <img src="images/icons/boxSelect.svg" width="16" height="16"> | Box select | Always | Drag to select a group of dies; fires `onSelect` when provided |
-| <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, Spec Limit, and Stacked modes (only when map was built with `lotStack`) |
+| <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, and Stacked modes (only when map was built with `lotStack`) |
 | <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Opens colour scheme picker |
 | <img src="images/icons/logScale.svg" width="16" height="16"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0 |
-| <img src="images/icons/specRange.svg" width="16" height="16"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh` | Toggles between spec-limit range (blue/red out-of-spec) and data range |
-| <img src="images/icons/overlays.svg" width="16" height="16"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator |
+| <img src="images/icons/specRange.svg" width="16" height="16"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, Spec pass/fail off | Toggles between spec-limit range (blue/red out-of-spec) and data range |
+| <img src="images/icons/overlays.svg" width="16" height="16"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Spec pass/fail (value mode, test has limits) |
 | <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="16" height="16"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="16" height="16"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
@@ -1080,8 +1080,8 @@ const items = waferResults.map((r, i) => ({
   statsSummary: analyzeWaferMap(r),
 }));
 
-renderWaferMap(container, items, {
-  viewOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
+renderWaferGallery(container, items, {
+  viewOptions: { plotMode: 'hardBin' },
 });
 ```
 
@@ -1090,8 +1090,7 @@ renderWaferMap(container, items, {
 
 ## 12. Building a lot gallery
 
-`renderWaferMap` renders multiple wafer maps in a responsive card grid when its
-second argument is an array of items.  All cards share a single control bar —
+`renderWaferGallery` renders multiple wafer maps in a responsive card grid.  All cards share a single control bar —
 changing mode, colour, rotate, or flip applies to every card at once.
 
 The gallery container needs a width but **not** a fixed height — the grid grows
@@ -1105,7 +1104,7 @@ to fit its cards automatically.  `width: 100%` is the typical choice:
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 
 // Build a result per wafer
 const waferResults = waferDatasets.map(data =>
@@ -1124,7 +1123,7 @@ const items = waferResults.map((r, i) => ({
   label: `Wafer ${i + 1}`,
 }));
 
-const ctrl = renderWaferMap(
+const ctrl = renderWaferGallery(
   document.getElementById('gallery'),
   items,
   { viewOptions: { plotMode: 'hardBin' } },
@@ -1139,27 +1138,30 @@ is no view rebuild and the toolbar stays fully interactive.
 
 ### Sharing bin and test definitions across cards
 
-Pass `hbinDefs`, `sbinDefs`, and `testDefs` through `viewOptions` so the shared
-bin legend and tooltips use the correct names on every card:
+Pass `hbinDefs`, `sbinDefs`, and `testDefs` to `buildWaferMap` — they are stored
+on each `WaferMapResult` and flow automatically to the gallery's shared legend and
+tooltips:
 
 ```ts
-const sharedViewOptions = {
-  plotMode:  'hardBin',
-  hbinDefs: [
-    { bin: 1, name: 'Pass',  color: '#2ecc71' },
-    { bin: 2, name: 'Fail',  color: '#e74c3c' },
-  ],
-  sbinDefs: [
-    { bin: 10, name: 'Vth - Lo' },
-    { bin: 11, name: 'Vth - Hi' },
-  ],
-  testDefs: [
-    { testNumber: 1050, name: 'Idsat', unit: 'A' },
-    { testNumber: 1060, name: 'Vth',   unit: 'V' },
-  ],
-};
+const waferResults = waferDatasets.map(data =>
+  buildWaferMap({
+    results: data.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin, sbin: +r.sbin })),
+    hbinDefs: [
+      { bin: 1, name: 'Pass',  color: '#2ecc71' },
+      { bin: 2, name: 'Fail',  color: '#e74c3c' },
+    ],
+    sbinDefs: [
+      { bin: 10, name: 'Vth - Lo' },
+      { bin: 11, name: 'Vth - Hi' },
+    ],
+    testDefs: [
+      { testNumber: 1050, name: 'Idsat', unit: 'A' },
+      { testNumber: 1060, name: 'Vth',   unit: 'V' },
+    ],
+  })
+);
 
-renderWaferMap(container, items, { viewOptions: sharedViewOptions });
+renderWaferGallery(container, items, { viewOptions: { plotMode: 'hardBin' } });
 ```
 
 ### Per-card overrides
@@ -1198,7 +1200,7 @@ ctrl.setItems(newItems);
 ctrl.setOptions({ plotMode: 'value', activeTest: 1050 });
 
 // Track state changes back to your UI:
-renderWaferMap(container, items, {
+renderWaferGallery(container, items, {
   onViewOptionsChange: (opts) => {
     myModeDropdown.value = opts.plotMode;
   },
@@ -1266,8 +1268,8 @@ const items = waferResults.map((r, i) => ({
   statsSummary: waferSummaries[i],   // shown when modal opens
 }));
 
-renderWaferMap(container, items, {
-  viewOptions:    { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
+renderWaferGallery(container, items, {
+  viewOptions:    { plotMode: 'hardBin' },
   lotStatsSummary: lotSummary,
 });
 ```
@@ -1288,7 +1290,7 @@ ring and quadrant statistics, test value summaries, and findings.
 ### Updating the lot summary at runtime
 
 ```ts
-const ctrl = renderWaferMap(container, items, { lotStatsSummary });
+const ctrl = renderWaferGallery(container, items, { lotStatsSummary });
 
 // After data changes:
 const newLotSummary = analyzeWaferLot(newResults);
@@ -1332,7 +1334,7 @@ const summary = analyzeWaferMap(result, {
 // summary.stats.lotSize           === 6
 
 renderWaferMap(container, result, {
-  viewOptions: { plotMode: 'value', testDefs, activeTest: 1060 },
+  viewOptions: { plotMode: 'value', activeTest: 1060 },
   statsSummary: summary,
   summaryPanel: { defaultOpen: true },
 });
@@ -1368,10 +1370,8 @@ const result = buildWaferMap({
   },
 });
 
-renderWaferMap(container, result, {
-  viewOptions: { reticles: result.reticles },   // pass the generated reticle geometry
-});
-// showReticle defaults to true when reticles are provided
+renderWaferMap(container, result);
+// showReticle defaults to true when result.reticles is non-empty
 ```
 
 The toolbar shows a Reticle toggle button whenever `reticles` is non-empty.
@@ -1458,10 +1458,10 @@ const waferResults = await Promise.all(
 wmWorker.terminate();
 ```
 
-> **Note:** `renderWaferMap` (both single-map and gallery overloads) requires the DOM
-> and must run on the main thread. `analyzeWaferMap`/`analyzeWaferLot` and
-> `buildWaferMap` are pure functions with no DOM access — they can run in a Web
-> Worker, Node.js, or any server-side environment.
+> **Note:** `renderWaferMap` and `renderWaferGallery` require the DOM and must run
+> on the main thread. `analyzeWaferMap`/`analyzeWaferLot` and `buildWaferMap` are
+> pure functions with no DOM access — they can run in a Web Worker, Node.js, or any
+> server-side environment.
 
 **→ [Demo: Processing large datasets with a Web Worker](examples/15-worker.html)**
 
@@ -1482,7 +1482,7 @@ const items = fixtures.map(sample => () => {
   return { ...result, label: sample.label, statsSummary: summary };
 });
 
-renderWaferMap(container, items);
+renderWaferGallery(container, items);
 ```
 
 The only visible difference is that each card's label is blank until its factory
@@ -1557,7 +1557,7 @@ render them all as a gallery.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 
 // 1. Parse — cast all numeric fields; CSV parsers return strings
 const rows = csvText.trim().split('\n').slice(1).map(line => {
@@ -1576,7 +1576,7 @@ const items = [...byWafer.entries()].map(([waferId, waferRows]) => ({
 }));
 
 // 3. Render — one call, shared toolbar across all cards
-renderWaferMap(document.getElementById('gallery'), items);
+renderWaferGallery(document.getElementById('gallery'), items);
 ```
 
 ### Re-use a single result for both rendering and analysis
@@ -1615,7 +1615,7 @@ const items = waferResults.map((r, i) => ({
   viewOptions: { valueRange: [min, max] },
 }));
 
-renderWaferMap(container, items, { viewOptions: { plotMode: 'value' } });
+renderWaferGallery(container, items, { viewOptions: { plotMode: 'value' } });
 ```
 
 ### Keep `ringCount` consistent between renderer and stats engine
@@ -1643,10 +1643,12 @@ rotation indicator, or a URL query string:
 ```ts
 const ctrl = renderWaferMap(container, result, {
   viewOptions: { plotMode: 'hardBin' },
-  onViewOptionsChange: (opts) => {
+  onViewOptionsChange: (opts, changed, category) => {
     modeDropdown.value = opts.plotMode;
-    urlParams.set('mode', opts.plotMode);
-    history.replaceState(null, '', '?' + urlParams);
+    if (category !== 'state') {
+      urlParams.set('mode', opts.plotMode);
+      history.replaceState(null, '', '?' + urlParams);
+    }
   },
 });
 

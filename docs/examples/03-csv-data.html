@@ -132,6 +132,7 @@
 
       // buildWaferMap infers die pitch from the grid when dieConfig is omitted.
       // Supplying waferConfig.diameter is enough for units: 'mm'.
+      // CSV data uses prober step positions (all x,y ≥ 0) — declare LL origin explicitly.
       const result = buildWaferMap({
         results,
         waferConfig: {
@@ -139,6 +140,7 @@
           notch:    { type: 'bottom' },
           metadata: waferMeta,
         },
+        dieConfig: { coordinateOrigin: { type: 'LL' } },
         testDefs: [
           { testNumber: 1010, name: 'TestA' },
           { testNumber: 1020, name: 'TestB' },

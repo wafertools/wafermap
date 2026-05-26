@@ -44,6 +44,10 @@ export interface ToCanvasOptions {
   topClearance?: number;
   /** Minimum right-side reserve in CSS pixels. Ensures the wafer draw width stays stable across plot mode switches. */
   minRightReserve?: number;
+  /** Named hard bin definitions — used to label the bin legend. */
+  hbinDefs?: import('../renderer/buildWaferMap.js').BinDef[];
+  /** Named soft bin definitions — used to label the bin legend. */
+  sbinDefs?: import('../renderer/buildWaferMap.js').BinDef[];
 }
 
 /** Internal viewport state shared between toCanvas and mountWaferCanvas. */
@@ -118,9 +122,11 @@ export function toCanvas(
     fallbackFormat,
     topClearance  = 0,
     minRightReserve,
+    hbinDefs,
+    sbinDefs,
   } = options;
 
-  const drawColorbar   = showColorbar && COLORBAR_MODES.has(view.plotMode);
+  const drawColorbar   = showColorbar && COLORBAR_MODES.has(view.plotMode) && !view.colorBySpec;
   const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(view.plotMode);
 
   const binLegendEntries: Array<[number, number]> = drawBinLegend && view.binCounts
@@ -446,7 +452,7 @@ export function toCanvas(
 
     const entries = binLegendEntries;
 
-    const activeDefs = view.plotMode === 'softBin' ? view.sbinDefs : view.hbinDefs;
+    const activeDefs = view.plotMode === 'softBin' ? sbinDefs : hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
     type LegendEntry = {

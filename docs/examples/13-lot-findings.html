@@ -40,7 +40,7 @@
 
   <script type="module">
     import { buildWaferMap }                    from 'wafermap';
-    import { renderWaferMap }                   from 'wafermap/canvas-adapter';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
     import { analyzeWaferMap, analyzeWaferLot } from 'wafermap/stats';
     import {
       makeResults, makeWaferConfig, DIE_CONFIG,
@@ -98,14 +98,12 @@
     //
     // Stacked modes work automatically — no onViewOptionsChange wiring needed.
 
-    renderWaferMap(
+    renderWaferGallery(
       document.getElementById('gallery-container'),
       items,
       {
         viewOptions: {
           plotMode:  'hardBin',
-          hbinDefs:  HBIN_DEFS,
-          sbinDefs:  SBIN_DEFS,
           testDefs:  TEST_DEFS,
         },
         lotStatsSummary: lotSummary,

@@ -100,7 +100,7 @@
     } from 'wafermap';
     import { toCanvas } from 'wafermap/canvas-adapter';
     import {
-      makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS,
+      makeResults, WAFER_CONFIG, DIE_CONFIG,
     } from './data.js';
 
     // ── Step 1: create the wafer geometry ──────────────────────────────────────
@@ -181,7 +181,6 @@
 
       const view = buildView(wafer, currentDies, {
         plotMode:               'hardBin',
-        hbinDefs:               HBIN_DEFS,
         reticles,
         showProbePath:          state.showProbePath,
         showReticle:            state.showReticle,

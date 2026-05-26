@@ -122,7 +122,7 @@ Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` wi
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
 
 const props = defineProps<{
   wafers: Array<{ label: string; rows: DieResult[] }>;
@@ -141,7 +141,7 @@ onMounted(() => {
     label: w.label,
   }));
 
-  ctrl = renderWaferMap(containerEl.value, factories);
+  ctrl = renderWaferGallery(containerEl.value, factories);
 });
 
 onUnmounted(() => ctrl?.destroy());
@@ -189,7 +189,7 @@ To show a persistent summary panel instead of the toolbar button, add a `summary
 ```ts
 ctrl = renderWaferMap(containerEl.value, result, {
   statsSummary: summary,
-  summaryPanel: { position: 'right' },
+  summaryPanel: { placement: 'right' },
 });
 ```
 

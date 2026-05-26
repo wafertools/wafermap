@@ -49,9 +49,9 @@ test('specLimit — only limitLow defined: low end is limitLow, high end is data
   assert.equal(scene.valueRange[1], 4.0);
 });
 
-// ── specLimit plot mode ───────────────────────────────────────────────────────
+// ── colorBySpec view option ───────────────────────────────────────────────────
 
-test('specLimit mode — rectangles are colored by pass/fail category', () => {
+test('colorBySpec — rectangles are colored by pass/fail category', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
     makeResult(0, 0, 1.0),  // within limits → pass (green)
@@ -60,7 +60,7 @@ test('specLimit mode — rectangles are colored by pass/fail category', () => {
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
-  const scene = buildView(wafer, dies, { plotMode: 'specLimit', testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'value', colorBySpec: true, testDefs, activeTest: 1010 });
 
   const getRectForDie = (x, y) => {
     const die = scene.dies.find(d => d.x === x && d.y === y);
@@ -81,15 +81,14 @@ test('specLimit mode — rectangles are colored by pass/fail category', () => {
   assert.equal(failHRect.fill, '#e74c3c', 'fail-high color should be red');
 });
 
-test('specLimit mode — die with no value gets no-data fill', () => {
+test('colorBySpec — die with no value gets no-data fill', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
-  // One die has testValues, one does not
   const results = [
     { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0 } },
     { x: 1, y: 0, hbin: 1 }, // no testValues
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
-  const scene = buildView(wafer, dies, { plotMode: 'specLimit', testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'value', colorBySpec: true, testDefs, activeTest: 1010 });
 
   const noDataDie = scene.dies.find(d => d.x === 1 && d.y === 0);
   const noDataRect = noDataDie && scene.rectangles.find(

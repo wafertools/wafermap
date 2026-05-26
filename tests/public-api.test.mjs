@@ -243,6 +243,8 @@ test('renderer scene assembly preserves the public contract', () => {
   const dies = applyProbeSequence(buildSampleDies(), { type: 'snake' });
   const reticles = generateReticleGrid(wafer, { width: 2, height: 2, diePitchX: 10, diePitchY: 10 });
 
+  const hbinDefs = [{ bin: 1, name: 'Pass', color: '#00aa00' }];
+  const sbinDefs = [{ bin: 2, name: 'SoftFail', color: '#aa0000' }];
   const scene = buildView(wafer, dies, {
     plotMode: 'hardBin',
     showText: true,
@@ -255,9 +257,7 @@ test('renderer scene assembly preserves the public contract', () => {
     reticles,
     highlightBin: 1,
     testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
-    hbinDefs: [{ bin: 1, name: 'Pass', color: '#00aa00' }],
-    sbinDefs: [{ bin: 2, name: 'SoftFail', color: '#aa0000' }],
-  });
+  }, { hbinDefs, sbinDefs });
 
   assert.equal(scene.metadata?.lot, 'LOT-001');
   assert.equal(scene.valueRange[0], 0.6);
@@ -267,7 +267,7 @@ test('renderer scene assembly preserves the public contract', () => {
   assert.ok(scene.texts.some((text) => text.text === '+X'));
   assert.ok(scene.texts.some((text) => text.text === '+Y'));
   const firstDie = scene.dies[0];
-  const hoverText = buildHoverText(firstDie, 'hardBin', scene.hbinDefs, scene.hbinDefs, scene.sbinDefs);
+  const hoverText = buildHoverText(firstDie, 'hardBin', undefined, hbinDefs, sbinDefs);
   assert.ok(hoverText.includes('Die ('));
   assert.ok(hoverText.includes('HBin:'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'wafer-boundary'));

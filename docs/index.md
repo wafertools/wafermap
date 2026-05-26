@@ -26,7 +26,7 @@ renderWaferMap(document.getElementById('map'), result);
 
 **Geometry.** Pass full physical dimensions or raw prober step positions — die pitch, wafer diameter, and coordinate origin are inferred when not supplied. Retest policy (`last`, `first`, `best`, `worst`), edge exclusion, and reticle overlays are supported directly.
 
-**Rendering.** `renderWaferMap` produces an interactive canvas map with toolbar, zoom/pan, tooltips, die selection, and summary panel. Pass an array of results to render a full lot as a card grid with shared controls and click-to-expand.
+**Rendering.** `renderWaferMap` produces an interactive canvas map with toolbar, zoom/pan, tooltips, die selection, and summary panel. `renderWaferGallery` renders a full lot as a responsive card grid with shared controls and click-to-expand.
 
 **Analysis.** `analyzeWaferMap` runs spatial analysis across rings, quadrants, sectors, and reticle positions, and detects contiguous failure clusters and edge arcs. `analyzeWaferLot` adds lot-level trend series and cross-wafer patterns. Results wire directly into the summary panel.
 

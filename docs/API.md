@@ -63,8 +63,8 @@ if (top) console.log(`[${top.severity}] ${top.summary}`);
 ```text
 buildWaferMap()            — data layer: prober results → WaferMapResult (server-safe, no DOM)
     │
-    ├── renderWaferMap(container, result)   — single interactive canvas map  ← recommended
-    ├── renderWaferMap(container, items[])  — multi-map gallery (overload)   ← recommended
+    ├── renderWaferMap(container, result)    — single interactive canvas map  ← recommended
+    ├── renderWaferGallery(container, items) — multi-map gallery               ← recommended
     │
     └── toCanvas()             — direct canvas render without toolbar
 ```
@@ -72,11 +72,11 @@ buildWaferMap()            — data layer: prober results → WaferMapResult (se
 | Section | Description |
 |---|---|
 | [4 `buildWaferMap`](#4-buildwafermapinput) | Data layer — primary entry point |
-| [5 `renderWaferMap` (single map)](#5-renderwafermapcontainer-result-options-single-map-overload) | Interactive canvas map with toolbar |
-| [6 `renderWaferMap` (gallery)](#6-renderwafermapcontainer-items-options-gallery-overload) | Multi-map card grid |
+| [5 `renderWaferMap`](#5-renderwafermapcontainer-result-options) | Interactive canvas map with toolbar |
+| [6 `renderWaferGallery`](#6-renderwafergallerycontainer-items-options-gallery) | Multi-map card grid |
 | [7 Statistics / Findings](#7-statistics-findings-engine) | `analyzeWaferMap`, `analyzeWaferLot` |
 | [8 Web Worker](#8-web-worker) | Off-main-thread rendering |
-| [9 Compatibility APIs](#9-optional-compatibility-apis) | `toCanvas` |
+| [9 Low-level canvas API](#9-low-level-canvas-api) | `toCanvas` |
 | [10 Package surface](#10-package-surface) | Subpath exports |
 | [11 Advanced Pipeline](#11-advanced-manual-pipeline) | `buildView`, low-level API |
 | [12 Important types](#12-important-types) | Key interfaces |
@@ -179,7 +179,7 @@ When a die position appears more than once in the `results` array (a retest), th
   coordinateOrigin?:   {
     // where the prober places coordinate (0,0) on the wafer grid
     type: 'center'           // default — grid already centred; centroid offset applied automatically
-        | 'LL'               // (0,0) at lower-left corner; auto-detected when all input x,y ≥ 0
+        | 'LL'               // (0,0) at lower-left corner (standard STDF/KLA output)
         | 'UL'               // (0,0) at upper-left corner — positive Y runs downward (flips display Y)
         | 'LR'               // (0,0) at lower-right corner — positive X runs leftward (flips display X)
         | 'UR'               // (0,0) at upper-right corner — both axes flipped
@@ -291,7 +291,7 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
   logScale?:   boolean // when true, value normalization and the colorbar use log₁₀ scale for this test
                        // silently falls back to linear when any die value is ≤ 0; default false
   limitLow?:   number  // lower specification limit in the same units as the test value
-                       // values below this are out-of-spec; drives specLimit plot mode and spec yield stats
+                       // values below this are out-of-spec; drives out-of-spec coloring and spec yield stats
   limitHigh?:  number  // upper specification limit in the same units as the test value
                        // values above this are out-of-spec
                        // both limits are optional independently — one-sided limits are valid
@@ -348,7 +348,12 @@ const { yieldPercent, yieldPercentGross } = result.yield;
 {
   wafer:         Wafer          // resolved wafer model (diameter, radius, center, notch, orientation)
   dies:          Die[]          // all dies inside the wafer boundary, with testValues/hbin/sbin attached
-  view:          View           // renderer-agnostic view — used internally by renderWaferMap and toCanvas
+  plotMode:      PlotMode       // the plot mode chosen by buildWaferMap ('hardBin', 'value', etc.)
+  metadata:      WaferMetadata | null  // wafer metadata from waferConfig.metadata
+  isLotStack:    boolean        // true when built from lotStack input
+  hbinDefs?:     BinDef[]       // named hard bin definitions passed to buildWaferMap
+  sbinDefs?:     BinDef[]       // named soft bin definitions passed to buildWaferMap
+  testDefs?:     TestDef[]      // named test definitions passed to buildWaferMap
   reticles:      Reticle[]      // generated reticle geometry — wired automatically when passed as a WaferMapDisplayItem
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
@@ -364,6 +369,8 @@ const { yieldPercent, yieldPercentGross } = result.yield;
     ratio:            number   // filledDies / totalDies ∈ [0, 1]
   }
   yield: YieldSummary   // pass/fail statistics computed against passBins
+  /** @internal — renderer-agnostic draw list; consumed by renderWaferMap and toCanvas */
+  view:          View
 }
 ```
 
@@ -407,8 +414,7 @@ The library adapts to whatever geometry context you provide.  Four distinct leve
 standard sizes (25 / 50 / 75 / 450 mm) are tried next (±20%); remaining values
 are rounded to the nearest 10 mm.
 
-**Origin auto-detection:** when all input coordinates are ≥ 0, the library
-automatically infers lower-left (`'LL'`) origin and centres the grid for display.
+**Origin:** defaults to `'center'` (centroid offset applied automatically). Set `coordinateOrigin: { type: 'LL' }` explicitly for standard STDF/KLA output where (0,0) is at the lower-left corner.
 
 ### 4.4 Examples
 
@@ -553,7 +559,7 @@ const enrichedDies = result.dies.map(d => {
 
 ---
 
-## 5 `renderWaferMap(container, result, options?)` — single map overload
+## 5 `renderWaferMap(container, result, options?)`
 
 A fully self-contained interactive wafermap. Accepts a `WaferMapResult` directly,
 owns view building internally, and provides a **built-in toolbar** that appears on
@@ -583,40 +589,72 @@ const ctrl = renderWaferMap(document.getElementById('map'), result, { showToolba
 
 ### 5.1 `WaferViewOptions`
 
-View display options controllable via the toolbar or programmatically:
+`viewOptions` controls the initial display state of the map — which plot mode to show, the
+colour scheme, overlays, orientation, and so on. Every field is optional; the toolbar lets
+users change all of them at runtime. Pass `viewOptions` inside `RenderOptions`:
 
 ```ts
-{
-  plotMode?:               PlotMode          // default 'hardBin'; 'specLimit' requires testDefs with limitLow/limitHigh
-  colorScheme?:            string            // default 'default' (see note on 'color' alias below)
-  showText?:               boolean           // die index labels
-  showRingBoundaries?:     boolean
-  showQuadrantBoundaries?: boolean
-  showReticle?:            boolean           // reticle field boundary overlay (requires reticles to be set)
-  showXYIndicator?:        boolean           // axis-orientation arrows showing +X/+Y directions
-  reticles?:               Reticle[]         // reticle field geometry — seeded automatically from result.reticles; override only to change it
-  ringCount?:              number            // default 4
-  highlightBin?:           number            // dim all other bins
-  rotation?:               0 | 90 | 180 | 270
-  flipX?:                  boolean
-  flipY?:                  boolean
-  testDefs?:               TestDef[]         // named test definitions — seeded automatically from result; override to rename or add limits
-  hbinDefs?:               BinDef[]          // hard bin names/colors — seeded automatically from result; override to rename or recolor
-  sbinDefs?:               BinDef[]          // soft bin names/colors — seeded automatically from result; override to rename or recolor
-  activeTest?:              number            // toolbar cursor: the testNumber to show in 'value' mode (matches testDef.testNumber, NOT a positional array index)
-                                            // defaults to 0, which falls back to the first test when no testDef has testNumber 0
-  logScale?:               boolean           // override log₁₀ scale on/off for the active test; takes precedence over TestDef.logScale; silently falls back to linear when vMin ≤ 0
-  colorbarRangeMode?:      'spec' | 'data'   // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
-                                            // set 'data' to span actual data min/max regardless of limits
-                                            // out-of-spec die coloring (blue/red) applies in both modes
-  valueRange?:             [number, number]  // explicit [min, max] for value colour normalization; overrides colorbarRangeMode when set
-  aggrMethod?:             string            // aggregation method label shown in hover tooltips for 'stackedValues' mode (e.g. 'mean', 'median')
-  lotSize?:                number            // total wafers in lot — used to compute bin occurrence percentage in 'stackedBins'/'stackedSoftBins' hover tooltips
-  legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
-                                            // bin legend position/style; default 'default' (auto-adapts: compact below 280 px, floating below 180 px)
-                                            // only applies in hardBin/softBin modes
-}
+renderWaferMap(container, result, {
+  viewOptions: {
+    plotMode:    'value',
+    activeTest:  1060,       // testNumber to show (must match a testDef.testNumber)
+    colorScheme: 'viridis',
+    showText:    true,
+  },
+});
 ```
+
+To read or update options programmatically after mount, use the controller:
+
+```ts
+const ctrl = renderWaferMap(container, result, options);
+
+ctrl.getOptions();                         // → current WaferViewOptions snapshot
+ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
+```
+
+#### Field reference
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` |
+| `colorScheme` | `string` | `'default'` | Built-in: `'default'` `'viridis'` `'plasma'` `'cool'` `'warm'` `'red-blue'`. Custom schemes via `registerColorScheme()`. |
+| `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
+| `colorBySpec` | `boolean` | `false` | In `value` mode: replace the gradient with categorical pass/fail colours when the active test has spec limits. Toggled via the Overlays toolbar menu. |
+| `highlightBin` | `number` | — | Dim all bins except this one |
+| `valueRange` | `[number, number]` | auto | Explicit `[min, max]` for value colour normalization; overrides `colorbarRangeMode` |
+| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | When the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans actual data min/max. Out-of-spec die coloring (blue/red) applies in both modes. |
+| `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
+| `aggrMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
+| `lotSize` | `number` | — | Total wafers in lot — percentage denominator in `stackedBins`/`stackedSoftBins` tooltips |
+| `rotation` | `0 \| 90 \| 180 \| 270` | `0` | Clockwise rotation in degrees |
+| `flipX` | `boolean` | `false` | |
+| `flipY` | `boolean` | `false` | |
+| `showText` | `boolean` | `false` | Die index labels |
+| `showRingBoundaries` | `boolean` | `false` | |
+| `showQuadrantBoundaries` | `boolean` | `false` | |
+| `showReticle` | `boolean` | `false` | Reticle field boundary overlay (requires `reticles` on the result) |
+| `showXYIndicator` | `boolean` | `false` | Axis-orientation arrows showing +X/+Y directions |
+| `ringCount` | `number` | `4` | |
+| `legendPosition` | `'default' \| 'compact' \| 'left' \| 'top' \| 'bottom' \| 'floating'` | `'default'` | Bin legend position. `'default'` auto-adapts: compact below 280 px, floating below 180 px |
+
+#### Persisting user preferences
+
+`WaferViewOptions` is the intersection of two named sub-types:
+- **`WaferPreferences`** — stable settings worth saving (colour scheme, rotation, overlays, legend position, log scale, colorbar range mode)
+- **`WaferDisplayState`** — transient session state (plot mode, active test, value range, highlight bin)
+
+The `onViewOptionsChange` callback receives a `category` hint (`'preference' | 'state' | 'mixed'`) so you can decide what to persist without filtering keys manually:
+
+```ts
+renderWaferMap(container, result, {
+  onViewOptionsChange: (opts, changed, category) => {
+    if (category === 'preference') saveToLocalStorage(opts);
+  },
+});
+```
+
+Use `=== 'preference'` (not `!== 'state'`) so that `'mixed'` events — which may include transient fields like `plotMode` or `activeTest` — do not get written to storage.
 
 > **`colorScheme` note:** `'color'` is a deprecated alias for `'default'` — it works but does not appear in `listColorSchemes()` output. Use `'default'` in new code.
 
@@ -642,11 +680,14 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 ```ts
 {
   showAxes?:               boolean            // draw axis tick marks and die grid index labels (default false)
-  viewOptions?:           WaferViewOptions  // initial display state; testDefs/hbinDefs/sbinDefs/reticles are pre-seeded from the result — only pass them here to override
+  viewOptions?:           WaferViewOptions  // initial display state; plotMode, testDefs, hbinDefs, sbinDefs, and reticles are pre-seeded from the result automatically
   onHover?:                (die: Die | null, event: MouseEvent) => void
   onClick?:                (die: Die, event: MouseEvent) => void
   onSelect?:               (dies: Die[]) => void     // fires after box-select drag or click-select
-  onViewOptionsChange?:   (opts: WaferViewOptions) => void  // mirrors toolbar changes
+  onViewOptionsChange?:   (opts: WaferViewOptions, changed: (keyof WaferViewOptions)[], category: 'preference' | 'state' | 'mixed') => void
+                          // mirrors toolbar changes; changed lists the keys that were modified;
+                          // category is 'preference' when all changed keys are WaferPreferences,
+                          // 'state' when all are WaferDisplayState, 'mixed' when both
   showTooltip?:            boolean   // default true
   showToolbar?:            boolean   // default true
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
@@ -684,9 +725,14 @@ The panel's **Test Values** section shows Min/Mean/Max for each test. Test names
 
 ### 5.5 `WaferCanvasController`
 
+Choose the right update method:
+- `setResult` — new wafer loaded (different geometry, dies, and/or test data). Re-seeds bin defs, testDefs, and reticles from the new result automatically.
+- `setDies` — same wafer geometry, die values updated (faster than `setResult` — skips geometry rebuild).
+- `setOptions` — display-only change: plot mode, colour scheme, zoom, etc. No data reload.
+
 ```ts
 {
-  setResult(result: WaferMapResult): void            // replace wafer geometry and die data, re-seed testDefs/hbinDefs/sbinDefs/reticles from new result, then re-render
+  setResult(result: WaferMapResult): void            // replace wafer geometry and die data
   setDies(dies: Die[]): void                        // replace die data only, rebuild view
   setOptions(opts: Partial<WaferViewOptions>): void // merge options, rebuild view
   getOptions(): WaferViewOptions                    // current options snapshot
@@ -768,7 +814,10 @@ const ctrl = renderWaferMap(document.getElementById('map'), result, {
   viewOptions: { plotMode: 'hardBin', colorScheme: 'default' },
   onClick:  (die)  => console.log(die.x, die.y, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
-  onViewOptionsChange: (opts) => syncExternalUI(opts),
+  onViewOptionsChange: (opts, changed, category) => {
+    if (category === 'preference') savePreferences(opts);
+    syncExternalUI(opts, changed);
+  },
 });
 
 // Replace wafer geometry and die data after a full data reload:
@@ -786,48 +835,45 @@ ctrl.destroy();
 
 ---
 
-## 6 `renderWaferMap(container, items, options?)` — gallery overload
-
-> **Unified API.** `renderWaferMap` is overloaded — when the second argument is an
-> array of `WaferMapDisplayItem | WaferMapDisplayItemFactory`, it builds a multi-card gallery
-> instead of a single map.
->
-> **Array of one:** a single-item array containing a pre-built item (not a factory) is
-> coerced to the single-map path — no gallery chrome is shown and the return value
-> behaves as a `WaferCanvasController`. For a predictable static type, pass the result
-> directly: `renderWaferMap(container, items[0])`. A single-item array containing a
-> factory is not coerced and renders as a one-card gallery.
+## 6 `renderWaferGallery(container, items, options?)` — gallery
 
 A multi-map gallery with a shared control bar, per-card view-only toolbars, and
 click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or
 flip in the gallery bar applies to every card instantly.
 
 ```ts
-renderWaferMap(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
+renderWaferGallery(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
 ```
 
 ```ts
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
 
-// Gallery overload — second argument is an array of items:
-renderWaferMap(document.getElementById('gallery'), items, galleryOptions);
+renderWaferGallery(document.getElementById('gallery'), items, galleryOptions);
 ```
 
 ### 6.1 `WaferMapDisplayItem`
 
-A gallery item is a `WaferMapResult` with optional display overrides spread in:
+A gallery item. `WaferMapResult` satisfies this interface structurally, so `buildWaferMap` results can be passed directly with no conversion. Only `wafer` and `dies` are required — everything else is optional, which allows synthesized items (e.g. stacked-mode aggregates) to be constructed without the full result shape.
 
 ```ts
-type WaferMapDisplayItem = WaferMapResult & {
-  label?:         string                               // card header text
-  viewOptions?:  Partial<WaferViewOptions>           // per-card view option overrides merged on top of shared options
-  statsSummary?:  StatsSummary                         // per-wafer stats — shown in the modal's summary panel when the card is expanded
+interface WaferMapDisplayItem {
+  wafer:         Wafer                                // required — wafer geometry
+  dies:          Die[]                                // required — die data
+
+  hbinDefs?:     BinDef[]                             // hard bin names/colors
+  sbinDefs?:     BinDef[]                             // soft bin names/colors
+  testDefs?:     TestDef[]                            // named test definitions
+  reticles?:     Reticle[]                            // reticle field geometry
+
+  label?:        string                               // card header text
+  viewOptions?:  Partial<WaferViewOptions>            // per-card overrides merged on top of shared options
+  statsSummary?:  StatsSummary                        // shown in the modal's summary panel when the card is expanded
   onClick?:       (die: Die, event: MouseEvent) => void
   onSelect?:      (dies: Die[]) => void
 }
 ```
 
-Because `WaferMapDisplayItem` extends `WaferMapResult`, items are simply the result of `buildWaferMap` with any overrides spread in:
+Items are typically `buildWaferMap` results with display overrides spread in:
 
 ```ts
 // Simplest form — result is a valid item as-is:
@@ -864,7 +910,7 @@ const items = fixtures.map(sample => () => {
   return { ...result, label: sample.label, statsSummary: summary };
 });
 
-renderWaferMap(container, items);
+renderWaferGallery(container, items);
 ```
 
 The placeholder card shows no label — if the label depends on computed data (e.g. a findings
@@ -877,7 +923,8 @@ to be pre-built.
 ```ts
 {
   viewOptions?:           WaferViewOptions  // initial shared state
-  onViewOptionsChange?:   (opts: WaferViewOptions) => void
+  onViewOptionsChange?:   (opts: WaferViewOptions, changed: (keyof WaferViewOptions)[], category: 'preference' | 'state' | 'mixed') => void
+                          // mirrors control bar changes; same category semantics as renderWaferMap
   legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
                                             // initial bin legend position for all cards (default 'default'); user can change via gallery bar
                                             // 'default' auto-adapts: compact below 280 px card width, floating below 180 px
@@ -950,10 +997,10 @@ control bar and the card grid — one coloured swatch + label per unique bin acr
 all items. The legend is hidden for `value`, `stackedValues`, `stackedBins`, and `stackedSoftBins`
 (those modes use a per-card colorbar instead).
 
-When `hbinDefs` or `sbinDefs` are provided via `viewOptions`, the legend uses the
-correct definition array for the active mode — `hbinDefs` for hardBin, `sbinDefs`
-for softBin. Because hard and soft bin number spaces are independent (STDF V4: both
-0–32767), the two arrays are kept separate and never merged.
+The legend uses bin definitions from the gallery items — `hbinDefs` for hardBin
+mode, `sbinDefs` for softBin mode. Because hard and soft bin number spaces are
+independent (STDF V4: both 0–32767), the two arrays are kept separate and never
+merged.
 
 Clicking a bin entry calls `setOptions({ highlightBin: bin })`, which dims all
 non-matching bins on every card simultaneously. Clicking the active entry clears
@@ -967,8 +1014,7 @@ The toolbar includes three lot-aggregation modes: **Stacked Hard Bins**,
 **Stacked Soft Bins**, and **Stacked Test Values**.  The gallery handles
 aggregation internally. 
 
-If `hbinDefs`, `sbinDefs`, or `testDefs` are omitted from `viewOptions`, the gallery 
-automatically discovers unique values from the input dies to generate the cards and legend.
+Bin and test definitions are read from the gallery items automatically — no need to pass them in `viewOptions`. The gallery discovers unique values from the input dies to generate the cards and legend.
 
 - **`stackedBins` / `stackedSoftBins`** — one card per bin; each die shows the
   count of wafers on which that bin appeared at that position.
@@ -995,9 +1041,9 @@ const items = results.map((r, i) => ({
   onSelect: (selected) => showSelectionPanel(waferIds[i], selected),
 }));
 
-const ctrl = renderWaferMap(document.getElementById('gallery'), items, {
-  viewOptions: { plotMode: 'hardBin', hbinDefs, sbinDefs, testDefs },
-  onViewOptionsChange: (opts) => syncSidebarControls(opts),
+const ctrl = renderWaferGallery(document.getElementById('gallery'), items, {
+  viewOptions: { plotMode: 'hardBin' },
+  onViewOptionsChange: (opts, changed, category) => syncSidebarControls(opts, changed, category),
   downloadFilename: 'lot-overview',
 });
 
@@ -1015,7 +1061,9 @@ ctrl.destroy();
 
 ## 7 Statistics / Findings Engine
 
-Detects statistically significant spatial patterns in wafer test data — yield loss, bin accumulation, or test value shifts concentrated in rings, quadrants, angular sectors, reticle positions, contiguous failure clusters, edge arcs, or individual wafers (lot level).
+The stats engine detects statistically significant spatial patterns in wafer test data — yield loss, bin accumulation, or test value shifts concentrated in rings, quadrants, angular sectors, reticle positions, contiguous failure clusters, and edge arcs. It is pure (no DOM) and can run in Node.js.
+
+Use `analyzeWaferMap` for a single wafer. Use `analyzeWaferLot` when you have a full lot and want cross-wafer patterns and outlier detection on top.
 
 ```ts
 import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
@@ -1023,79 +1071,100 @@ import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 
 ### 7.1 `analyzeWaferMap(input, options?)`
 
-Analyses a single wafer and returns a `StatsSummary`.  Accepts either a `WaferMapInput` object or the `WaferMapResult` returned by `buildWaferMap`.
+Analyses a single wafer and returns a `StatsSummary`. Accepts either a `WaferMapInput` object or the `WaferMapResult` returned by `buildWaferMap` — passing the result is preferred because `passBins` and `testDefs` are inferred automatically.
 
 ```ts
-const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
-const summary = analyzeWaferMap(result, { ringCount: 4 });
+const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const summary = analyzeWaferMap(result);
+
+// findings is pre-sorted: 'unusual' first, then 'notable', then 'info'
+console.log(summary.findings[0]?.summary);
+// e.g. "Ring 4 (edge) yield is 18.3 pp lower than the rest of the wafer"
+
+// Pass to renderWaferMap to add a findings panel to the toolbar:
+renderWaferMap(container, result, { statsSummary: summary });
 ```
 
-**Lot-stack support** — pass a `WaferMapResult` built with `lotStack` directly to `analyzeWaferMap`.  Ring, quadrant, sector, and reticle-position analysis run on the averaged (or otherwise aggregated) test values.  When the active test has spec limits (`limitLow` / `limitHigh` in `testDefs`), dies that exceed those limits are used as the failure proxy for cluster and edge-arc detection.  If no spec limits are defined, cluster detection is skipped automatically.
+**Analysing a lot-stack result** — pass a `WaferMapResult` built with `lotStack` directly. Ring, quadrant, sector, and reticle-position analysis run on the aggregated test values. When the active test has spec limits (`limitLow` / `limitHigh` in `testDefs`), out-of-spec dies are used as the failure proxy for cluster and edge-arc detection. If no spec limits are defined, cluster detection is skipped automatically.
 
 ```ts
 const result = buildWaferMap({
   lotStack:    { results: waferResults, method: 'mean' },
   waferConfig, dieConfig, testDefs,
 });
-const summary = analyzeWaferMap(result, { ringCount: 4 });
+const summary = analyzeWaferMap(result);
 renderWaferMap(container, result, { statsSummary: summary });
+// summary.stats.isLotStack === true
+// summary.stats.aggregationMethod === 'mean'
 ```
-
-`summary.stats.isLotStack` is `true` and `summary.stats.aggregationMethod` is set (e.g. `'mean'`) so the host application can label the panel appropriately.
 
 ### 7.2 `analyzeWaferLot(items, options?)`
 
-Analyses an array of wafers and returns a `LotStatsSummary`.  Each element is a `WaferMapInput` or `WaferMapResult`.  In addition to per-wafer findings, the lot summary includes:
+Analyses an array of wafers together and returns a `LotStatsSummary`. Use this when you have a full lot and want findings that span wafers — patterns on a single wafer are available in `perWafer[i].summary`, while lot-level findings cover the whole lot.
 
-- **Repeated-pattern findings** — patterns present on ≥ 2 wafers
+Each element is a `WaferMapInput` or `WaferMapResult`. In addition to per-wafer analysis, the lot summary adds:
+
+- **Repeated-pattern findings** — ring, quadrant, or sector patterns present on ≥ 2 wafers
 - **Inter-wafer yield outliers** — wafers whose yield is a statistical outlier within the lot
 
 ```ts
-const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
+const waferResults = waferDataSets.map(d => buildWaferMap(d));
+const lotSummary   = analyzeWaferLot(waferResults);
+
+// Per-wafer findings:
+console.log(lotSummary.perWafer[0].summary.findings);
+
+// Lot-level findings (repeated patterns + outliers):
+console.log(lotSummary.findings);
+
+// Pass to renderWaferGallery to add a lot summary panel to the gallery bar:
+renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
 ### 7.3 `AnalyzeWaferMapOptions`
 
+Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses work well with defaults — `ringCount` is the one option most users adjust (it should match the `ringCount` used in the renderer so ring labels are consistent).
+
 ```ts
 {
-  ringCount?:                    number   // ring count for spatial analysis; should match renderer ringCount (default 4)
-  passBins?:                     number[] // bins counted as pass; defaults to WaferMapInput.passBins, then [1]
-                                          // when you pass a WaferMapResult to analyzeWaferMap, this is inferred
-                                          // automatically — you only need to set it explicitly when passing a raw
-                                          // WaferMapInput or when you want to override the buildWaferMap value
-  significanceLevel?:            number   // adjusted p-value threshold (default 0.05)
-  minimumEffectSize?:            number   // minimum absolute |delta| to report for proportion findings (default 0.15)
-                                          // a finding passes if it satisfies this threshold OR minimumRelativeEffect
-  minimumRelativeEffect?:        number   // minimum relative effect |delta / background| for proportion findings (default 0.5)
-                                          // catches meaningful signals on low-failure-rate wafers where the absolute
-                                          // delta is below minimumEffectSize but still represents a large relative
-                                          // deviation from background — e.g. background = 3%, delta = 2% is 67% above
-                                          // background. A finding passes if it satisfies this OR minimumEffectSize.
-                                          // Does not apply to test-value findings (those use Cohen's d via effectSize)
-  minimumSampleSize?:            number   // minimum dies per region to test (default 5)
-  includePartial?:               boolean  // include partial dies in analysis (default false)
-  includeEdgeExcluded?:          boolean  // include edge-excluded dies (default false)
-  enableYieldAnalysis?:          boolean  // default true
-  enableHardBinAnalysis?:        boolean  // default true
-  enableSoftBinAnalysis?:        boolean  // default true
-  enableTestValueAnalysis?:      boolean  // default true
-  enableReticlePositionAnalysis?: boolean // default true (only runs when reticleConfig is present)
-  enableAngularAnalysis?:        boolean  // compass-sector directional analysis (default true); see sectorCount
-  enableClusterAnalysis?:        boolean  // contiguous failure cluster + edge-arc detection (default true)
-  sectorCount?:                  number   // sectors for angular analysis: 4 | 8 | 16 | 32 (default 16)
-                                          // sectors are compass-named: N, NNE, NE, ENE, E, …
-                                          // dies within 0.2 normalised radius of the wafer centre are excluded
-                                          // (too close to centre to be meaningfully attributed to a direction)
-  minimumClusterSize?:           number   // min contiguous failing dies for a cluster finding (default 3)
-  testNumbers?:                  number[] // restrict test-value analysis to these test numbers (keys from testValues)
-                                          // when omitted: all tests analysed, up to 100 — beyond that a console.warn
-                                          // fires and test-value analysis is skipped (pass testNumbers to override)
+  // ── Common ────────────────────────────────────────────────────────────────
+  ringCount?:   number    // rings for spatial analysis; match the renderer (default 4)
+  passBins?:    number[]  // pass bins; inferred automatically when a WaferMapResult is passed;
+                          // only set explicitly when passing a raw WaferMapInput or overriding
+
+  // ── Detection toggles ─────────────────────────────────────────────────────
+  enableYieldAnalysis?:           boolean  // default true
+  enableHardBinAnalysis?:         boolean  // default true
+  enableSoftBinAnalysis?:         boolean  // default true
+  enableTestValueAnalysis?:       boolean  // default true
+  enableReticlePositionAnalysis?: boolean  // default true (only runs when reticleConfig is present)
+  enableAngularAnalysis?:         boolean  // compass-sector directional analysis (default true)
+  enableClusterAnalysis?:         boolean  // contiguous cluster + edge-arc detection (default true)
+
+  // ── Test-value scope ──────────────────────────────────────────────────────
+  testNumbers?:   number[]  // restrict test-value analysis to these test numbers;
+                            // when omitted: all tests up to 100 — beyond that analysis is skipped
+                            // and a warning appears in summary.stats.warnings[]
+
+  // ── Statistical thresholds (rarely need changing) ─────────────────────────
+  significanceLevel?:       number  // adjusted p-value threshold (default 0.05)
+  minimumEffectSize?:       number  // minimum absolute |delta| for proportion findings (default 0.15)
+  minimumRelativeEffect?:   number  // minimum relative |delta / background| (default 0.5);
+                                    // catches signals on low-failure-rate wafers where absolute delta
+                                    // is small but represents a large relative deviation
+  minimumSampleSize?:       number  // minimum dies per region to run any test (default 5)
+  minimumClusterSize?:      number  // min contiguous failing dies for a cluster finding (default 3)
+  sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 | 32 (default 16)
+
+  // ── Population ────────────────────────────────────────────────────────────
+  includePartial?:      boolean  // include partial dies (default false)
+  includeEdgeExcluded?: boolean  // include edge-excluded dies (default false)
 }
 ```
 
-Both `analyzeWaferMap` and `analyzeWaferLot` accept `AnalyzeWaferMapOptions`.
-
 ### 7.3.1 Statistical rules & thresholds
+
+A finding is emitted only when it clears two independent gates: it must be statistically significant (p-value ≤ 0.05 after multiple-comparison correction) **and** large enough to matter in practice (either an absolute 15 pp delta, or a 50% elevation above the background failure rate). Severity is then assigned based on how extreme the finding is. You can usually ignore this section — it explains why a particular pattern did or didn't produce a finding.
 
 **Default thresholds:**
 
@@ -1335,7 +1404,7 @@ const items = waferResults.map((r, i) => ({
   statsSummary: analyzeWaferMap(r, { ringCount: 4 }),
 }));
 const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
-renderWaferMap(container, items, { lotStatsSummary: lotSummary });
+renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
 ### 7.11 Region builder utilities
@@ -1471,11 +1540,13 @@ Shuts down the underlying worker.  Any in-flight `run()` calls reject immediatel
 
 ---
 
-## 9 Optional compatibility APIs
+## 9 Low-level canvas API
 
-These APIs give you direct control over the rendering pipeline. Use them when you
-need to integrate with your own rendering loop or build a custom pipeline.
-For most use cases, prefer `renderWaferMap` above.
+`toCanvas` is the one-shot draw primitive that `renderWaferMap` is built on. You need it when:
+- building a custom rendering loop (custom zoom/pan, animation, non-standard hit-testing)
+- generating wafer map images server-side or in a headless environment
+
+For all other use cases, `renderWaferMap` is simpler and handles DPI, resize, and interaction automatically.
 
 ### 9.1 `toCanvas(canvas, view, options?)`
 
@@ -1575,16 +1646,31 @@ Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/canva
 
 ## 11 Advanced / Manual Pipeline
 
-For full control over each pipeline stage, use the low-level functions directly.
-These are the building blocks that `buildWaferMap` uses internally.
+You only need this section if you are building a custom rendering pipeline — for example, rendering to SVG or WebGL, generating images server-side, or inserting custom geometry processing steps between wafer creation and rendering. For everything else, use `buildWaferMap` + `renderWaferMap`.
 
-The [Advanced pipeline demo](examples/18-pipeline.html) is the reference for this path. Prefer `buildWaferMap` for all other use cases.
+The [Advanced pipeline demo](examples/18-pipeline.html) is the reference for this path.
+
+**Minimal working example:**
+
+```ts
+import { createWafer, generateDies, clipDiesToWafer } from '@paulrobins/wafermap/core';
+import { buildView } from '@paulrobins/wafermap/renderer';
+import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+
+const wafer = createWafer({ diameter: 300 });
+const dies  = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer);
+// attach your data: dies.forEach(d => { d.hbin = ...; })
+const view  = buildView(wafer, dies, { plotMode: 'hardBin' });
+toCanvas(canvas, view);
+```
+
+**Full pipeline** (with orientation and interactive transforms):
 
 ```text
 createWafer(spec)
   → generateDies(wafer, dieSpec)
   → clipDiesToWafer(dies, wafer, dieSpec)
-  → [attach values / hbin / sbin / metadata to each die, keyed by die.x, die.y]
+  → [attach values / hbin / sbin / metadata to each die]
   → applyProbeSequence(dies, config)              // optional
   → applyOrientation(dies, wafer)
   ↓  (on each redraw)
@@ -1593,8 +1679,7 @@ createWafer(spec)
   → toCanvas(canvas, view)
 ```
 
-In the manual pipeline, `die.x` and `die.y` are computed by `generateDies` as
-integer grid indices centred at the wafer origin.
+In the manual pipeline, `die.x` and `die.y` are integer grid indices centred at the wafer origin, computed by `generateDies`.
 
 ### 11.1 `createWafer(spec)`
 
@@ -1759,7 +1844,8 @@ Builds the renderer-agnostic view.
 
 ```ts
 interface ViewOptions {
-  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'specLimit'
+  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
+  colorBySpec?:            boolean           // colours in-spec dies with fixed pass colour instead of gradient; only in 'value' mode with limits
   showText?:               boolean
   showReticle?:            boolean
   showProbePath?:          boolean

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import { buildWaferMap } from '../dist/index.js';
-import { renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
+import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
 
 function makeDies() {
   return [
@@ -279,7 +279,7 @@ test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () 
       { ...base, label: 'B' },
     ];
 
-    const ctrl = renderWaferMap(container, items, { cardPadding: 4 });
+    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 2);
     assert.equal(container.querySelectorAll('canvas').length >= 2, true);
     assert.equal(container.querySelectorAll('button').length > 0, true);
@@ -323,12 +323,12 @@ test('renderWaferGallery restores original cards when leaving stacked mode', () 
       { ...base, label: 'C' },
     ];
 
-    const ctrl = renderWaferMap(container, items, {
-      viewOptions: { plotMode: 'stackedBins', hbinDefs: base.view.hbinDefs, sbinDefs: base.view.sbinDefs, testDefs: base.view.testDefs },
+    const ctrl = renderWaferGallery(container, items, {
+      viewOptions: { plotMode: 'stackedBins' },
     });
 
     const stackedCards = container.querySelectorAll('.wmap-gallery-card').length;
-    assert.equal(stackedCards, (base.view.hbinDefs ?? []).length);
+    assert.equal(stackedCards, (base.hbinDefs ?? []).length);
 
     ctrl.setOptions({ plotMode: 'hardBin' });
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, items.length);
@@ -364,8 +364,8 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
       { ...base, label: 'C' },
     ];
 
-    const ctrl = renderWaferMap(container, items, {
-      viewOptions: { plotMode: 'stackedValues', hbinDefs: base.view.hbinDefs, sbinDefs: base.view.sbinDefs, testDefs: base.view.testDefs },
+    const ctrl = renderWaferGallery(container, items, {
+      viewOptions: { plotMode: 'stackedValues' },
     });
 
     // Initially in stacked mode
@@ -415,8 +415,8 @@ test('renderWaferGallery computes correct valueRange for stackedValues mode', ()
       { ...base, label: 'C' },
     ];
 
-    const ctrl = renderWaferMap(container, items, {
-      viewOptions: { plotMode: 'hardBin', hbinDefs: base.view.hbinDefs, sbinDefs: base.view.sbinDefs, testDefs: base.view.testDefs },
+    const ctrl = renderWaferGallery(container, items, {
+      viewOptions: { plotMode: 'hardBin' },
     });
 
     // Switch to stackedValues mode
@@ -454,7 +454,7 @@ test('renderWaferGallery handles empty items array', () => {
     const container = window.document.createElement('div');
     root.appendChild(container);
 
-    const ctrl = renderWaferMap(container, []);
+    const ctrl = renderWaferGallery(container, []);
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 0);
 
     ctrl.destroy();

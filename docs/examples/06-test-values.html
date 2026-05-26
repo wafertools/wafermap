@@ -23,7 +23,8 @@
   <div class="demo-intro">
     Continuous parametric data stored in <code>die.testValues</code> as a <code>testNumber → value</code> map.
     <code>testDefs</code> gives each test a name and unit — the toolbar mode menu, tooltips, and colorbar all update automatically.
-    Vth has spec limits defined (<code>limitLow</code> / <code>limitHigh</code>): out-of-spec dies appear in blue/red in both <strong>Test Value</strong> mode and the dedicated <strong>Spec Limit</strong> mode.
+    Vth has spec limits defined (<code>limitLow</code> / <code>limitHigh</code>): out-of-spec dies appear in blue/red in <strong>Test Value</strong> mode.
+    Enable <strong>Spec pass/fail</strong> (via the Overlays menu or the button below) to replace the gradient with categorical pass·fail-low·fail-high colouring. The button is disabled for tests without limits.
     Use the toolbar bracket button to switch the colorbar between the spec window and the full data range.
   </div>
 
@@ -33,7 +34,7 @@
       <span class="ctrl-label">Test</span>
       <select id="sel-test">
         <option value="1050">Idsat  (drive current)</option>
-        <option value="1060">Vth    (threshold voltage)</option>
+        <option value="1060" selected>Vth    (threshold voltage)</option>
         <option value="1070">Ioff   (off-state leakage)</option>
       </select>
     </div>
@@ -41,12 +42,8 @@
     <div class="ctrl-group">
       <span class="ctrl-label">Mode</span>
       <button class="toggle-btn active" id="btn-value">Test Value</button>
-      <button class="toggle-btn"        id="btn-speclimit">Spec Limit</button>
+      <button class="toggle-btn"        id="btn-speclimit">Spec pass/fail</button>
     </div>
-    <div class="ctrl-sep"></div>
-    <span style="font-size:12px; color:var(--muted)">
-      Spec Limit mode only available when the test has limits defined (Vth)
-    </span>
   </div>
 
   <div class="demo-content">
@@ -120,7 +117,7 @@
       testDefs:    TEST_DEFS,
       passBins:    [1],
     });
-    const { dies, view } = result;
+    const { dies } = result;
 
     const patterns = [
       'Peaks at the wafer centre (~1.5 mA), falls toward the edge. The NE quadrant shows a ~7% suppression from process gradient.',
@@ -186,52 +183,60 @@
       document.getElementById('pattern-box').textContent = patterns[idx];
     }
 
-    let plotMode = 'value';
+    const VTH_TEST = 1060; // only test with spec limits — start here so the demo is self-explanatory
 
-    // Mount in value mode — testDefs with limits wires up spec-range toolbar button automatically.
-    // In 'value' mode, out-of-spec dies render in blue/red; toolbar bracket button toggles
-    // colorbar between spec window [LSL, USL] and the actual data range.
+    // Mount in value mode on Vth so out-of-spec dies (blue/red) are visible immediately.
+    // The Overlays menu exposes a "Spec pass/fail" toggle (colorBySpec) when the active
+    // test has limits defined.
     const ctrl = renderWaferMap(document.getElementById('map'), result, {
       viewOptions: {
-        plotMode:  'value',
-        activeTest: TEST_DEFS[0].testNumber,
-        testDefs:  view.testDefs,
+        plotMode:   'value',
+        activeTest: VTH_TEST,
       },
     });
 
-    updatePanel(TEST_DEFS[0].testNumber);
+    updatePanel(VTH_TEST);
+
+    function testHasLimits(testNumber) {
+      const def = TEST_DEFS.find(t => t.testNumber === testNumber);
+      return !!(def?.limitLow != null || def?.limitHigh != null);
+    }
+
+    function syncSpecBtn(hasLimits, colorBySpec) {
+      const btn = document.getElementById('btn-speclimit');
+      btn.disabled = !hasLimits;
+      btn.style.opacity = hasLimits ? '' : '0.38';
+      btn.title = hasLimits ? '' : 'No spec limits defined for this test';
+      btn.classList.toggle('active', !!colorBySpec && hasLimits);
+    }
+
+    syncSpecBtn(testHasLimits(VTH_TEST), false);
 
     document.getElementById('sel-test').addEventListener('change', e => {
       const testNumber = Number(e.target.value);
-      const def = TEST_DEFS.find(t => t.testNumber === testNumber);
-      // Spec Limit mode only works when the test has at least one limit
-      if (plotMode === 'specLimit' && !def?.limitLow && !def?.limitHigh) {
-        plotMode = 'value';
-        document.getElementById('btn-value').classList.add('active');
-        document.getElementById('btn-speclimit').classList.remove('active');
+      const hasLimits = testHasLimits(testNumber);
+      // Clear colorBySpec when switching to a test without limits
+      if (hasLimits) {
+        ctrl.setOptions({ activeTest: testNumber });
+      } else {
+        ctrl.setOptions({ activeTest: testNumber, colorBySpec: false });
       }
-      ctrl.setOptions({ plotMode, activeTest: testNumber });
       updatePanel(testNumber);
+      syncSpecBtn(hasLimits, ctrl.getOptions().colorBySpec);
     });
 
     document.getElementById('btn-value').addEventListener('click', () => {
-      plotMode = 'value';
       document.getElementById('btn-value').classList.add('active');
-      document.getElementById('btn-speclimit').classList.remove('active');
-      ctrl.setOptions({ plotMode: 'value' });
+      ctrl.setOptions({ colorBySpec: false });
     });
 
     document.getElementById('btn-speclimit').addEventListener('click', () => {
       const testNumber = Number(document.getElementById('sel-test').value);
-      const def = TEST_DEFS.find(t => t.testNumber === testNumber);
-      if (!def?.limitLow && !def?.limitHigh) return; // no limits on this test
-      plotMode = 'specLimit';
-      document.getElementById('btn-speclimit').classList.add('active');
-      document.getElementById('btn-value').classList.remove('active');
-      ctrl.setOptions({ plotMode: 'specLimit', activeTest: testNumber });
+      if (!testHasLimits(testNumber)) return;
+      ctrl.setOptions({ colorBySpec: true });
     });
 
-    // Keep the external selector in sync with the toolbar test picker
+    // Keep the external selector and mode buttons in sync with the toolbar test picker
     ctrl.getOptions && (function sync() {
       requestAnimationFrame(sync);
       const o = ctrl.getOptions();
@@ -241,11 +246,9 @@
           sel.value = String(o.activeTest);
           updatePanel(o.activeTest);
         }
-        if (o.plotMode !== plotMode) {
-          plotMode = o.plotMode;
-          document.getElementById('btn-value').classList.toggle('active', plotMode === 'value');
-          document.getElementById('btn-speclimit').classList.toggle('active', plotMode === 'specLimit');
-        }
+        const hasLimits = testHasLimits(o.activeTest);
+        document.getElementById('btn-value').classList.toggle('active', !o.colorBySpec);
+        syncSpecBtn(hasLimits, o.colorBySpec);
       }
     })();
   </script>

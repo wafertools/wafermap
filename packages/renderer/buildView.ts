@@ -12,7 +12,7 @@ import { fmt, fmtColorbarAxis } from './fmt.js';
 type BinDefMap = Map<number, BinDef>;
 
 /** Resolve a toolbar activeTest cursor to the canonical test number for getDieTestValue. */
-function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
+export function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
   if (testDefs?.length) {
     const def = findTestDef(testDefs, activeTest) ?? testDefs[0];
     return {
@@ -33,7 +33,7 @@ export function getUniqueTestNumbers(dies: Die[]): number[] {
   return [...new Set(dies.flatMap(d => d.testValues ? Object.keys(d.testValues).map(Number) : []))].sort((a, b) => a - b);
 }
 
-export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'specLimit';
+export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins';
 
 interface Point {
   x: number;
@@ -87,10 +87,6 @@ export interface View {
   valueRange: [number, number];
   /** Named test definitions — populated when `testDefs` is passed to `buildWaferMap`. */
   testDefs?: TestDef[];
-  /** Named hard bin definitions (for `die.hbin`). Independent number space from soft bins. */
-  hbinDefs?: BinDef[];
-  /** Named soft bin definitions (for `die.sbin`). Independent number space from hard bins. */
-  sbinDefs?: BinDef[];
   /** Which `values[]` index is being displayed (for `value` plot mode). Default 0. */
   activeTest: number;
   /** True when log₁₀ scale is both requested and valid (vMin > 0). */
@@ -107,6 +103,8 @@ export interface View {
   hasReticle: boolean;
   /** True when the scene was built from lot-aggregated data (lotStack). Controls toolbar stacked-mode visibility. */
   isLotStack: boolean;
+  /** True when value-mode dies are coloured by spec pass/fail rather than the continuous gradient. */
+  colorBySpec: boolean;
   /** Wafer centre in scene/display mm coordinates (the rotation pivot). */
   waferCenter: { x: number; y: number };
   /** Wafer radius in mm. */
@@ -152,16 +150,6 @@ export interface ViewOptions {
   /** Named test definitions — one per `values[]` entry. */
   testDefs?: TestDef[];
   /**
-   * Named hard bin definitions — one per distinct `die.hbin` value.
-   * Hard and soft bin number spaces are independent (STDF V4: both 0–32767).
-   */
-  hbinDefs?: BinDef[];
-  /**
-   * Named soft bin definitions — one per distinct `die.sbin` value.
-   * Soft bins are the logical test-program classification; hard bins are the physical sort result.
-   */
-  sbinDefs?: BinDef[];
-  /**
    * Which `values[]` index to display in `value` plot mode. Default `0`.
    * When `testDefs` is provided, the toolbar mode dropdown offers one item per test.
    */
@@ -197,6 +185,13 @@ export interface ViewOptions {
   dataAxisFlip?: { x: boolean; y: boolean };
   /** Set to true when the scene is built from lot-aggregated data (lotStack). */
   isLotStack?: boolean;
+  /**
+   * When true and `plotMode` is `'value'`, colours dies by spec pass/fail rather
+   * than the continuous value gradient. In-spec dies use a fixed pass colour;
+   * out-of-spec dies use the standard blue/red fail colours. Only meaningful when
+   * the active test has `limitLow` or `limitHigh` defined.
+   */
+  colorBySpec?: boolean;
 }
 
 
@@ -646,6 +641,7 @@ function pushDieRectangles(
   fallbackIndex: number,
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
+  colorBySpec?: boolean,
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -685,22 +681,6 @@ function pushDieRectangles(
     return;
   }
 
-  if (plotMode === 'specLimit') {
-    const value = getDieTestValue(die, testNumber, fallbackIndex);
-    let fill: string;
-    if (value === undefined) {
-      fill = NO_DATA_FILL;
-    } else if (activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) {
-      fill = SPEC_FAIL_LOW;
-    } else if (activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) {
-      fill = SPEC_FAIL_HIGH;
-    } else {
-      fill = SPEC_PASS_FILL;
-    }
-    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
-    return;
-  }
-
   if (plotMode === 'value') {
     const value = getDieTestValue(die, testNumber, fallbackIndex);
     let fill: string;
@@ -710,6 +690,8 @@ function pushDieRectangles(
       fill = SPEC_FAIL_LOW;
     } else if (activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) {
       fill = SPEC_FAIL_HIGH;
+    } else if (colorBySpec) {
+      fill = SPEC_PASS_FILL;
     } else {
       fill = colorFns.forValue(normalize(value));
     }
@@ -776,6 +758,7 @@ export function buildView(
   wafer: Wafer,
   dies: Die[],
   options: ViewOptions = {},
+  binDefs?: { hbinDefs?: BinDef[]; sbinDefs?: BinDef[] },
 ): View {
   const reticles = options.reticles ?? [];
 
@@ -794,8 +777,6 @@ export function buildView(
     interactiveTransform,
     valueRange: explicitRange,
     testDefs,
-    hbinDefs,
-    sbinDefs,
     activeTest = 0,
     fallbackFormat = 'engineering' as const,
     aggrMethod,
@@ -804,7 +785,11 @@ export function buildView(
     isLotStack = false,
     logScale: logScaleOption,
     colorbarRangeMode = 'spec' as const,
+    colorBySpec = false,
   } = options;
+
+  const hbinDefs = binDefs?.hbinDefs;
+  const sbinDefs = binDefs?.sbinDefs;
 
   // Total effective axis flip for display: data-pipeline flip XOR interactive flip.
   const axisFlip = {
@@ -849,7 +834,8 @@ export function buildView(
   }
 
   // Resolve active test def now — needed for limit-based range defaulting below.
-  const activeTestDef = findTestDef(testDefs, activeTest);
+  // Use the resolved testNumber (not the raw cursor) so testDefs with non-zero numbers work on first render.
+  const activeTestDef = findTestDef(testDefs, activeTestNumber);
 
   // Compute value range for normalization.
   // For stackedValues/stackedBins the aggregated scalar sits at testNumber=0.
@@ -937,7 +923,7 @@ export function buildView(
     : dies;
 
   for (const tdie of transformedDies) {
-    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef);
+    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
     hoverPoints.push({ x: tdie.physX, y: tdie.physY });
   }
 
@@ -990,8 +976,6 @@ export function buildView(
     dies,
     valueRange: [vMin, vMax],
     testDefs,
-    hbinDefs,
-    sbinDefs,
     activeTest,
     logScale,
     aggrMethod,
@@ -1000,6 +984,7 @@ export function buildView(
     rotation: ((transform.rotation % 360) + 360) % 360,
     hasReticle: reticles.length > 0,
     isLotStack,
+    colorBySpec,
     waferCenter: wafer.center,
     waferRadius: wafer.radius,
     notchDir,

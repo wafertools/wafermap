@@ -88,7 +88,7 @@
 
   <script type="module">
     import { buildWaferMap }       from 'wafermap';
-    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
     import { analyzeWaferMap, analyzeWaferLot }   from 'wafermap/stats';
     import {
       makeResults, makeWaferConfig, DIE_CONFIG,
@@ -112,16 +112,9 @@
       document.getElementById('single-map'),
       singleResult,
       {
-        viewOptions: {
-          plotMode: 'hardBin',
-          hbinDefs: HBIN_DEFS,
-          sbinDefs: SBIN_DEFS,
-          testDefs: TEST_DEFS,
-        },
-        statsSummary:  singleStats,
-        waferResult:   { yield: singleResult.yield, dataCoverage: singleResult.dataCoverage },
-        summaryPanel:  { placement: 'right' },
-        showToolbar:   true,
+        viewOptions:  { plotMode: 'hardBin' },
+        statsSummary: singleStats,
+        summaryPanel: { placement: 'right' },
       },
     );
 
@@ -143,19 +136,13 @@
       ...r,
       label:        r.wafer.metadata?.wafer ?? `W${i + 1}`,
       statsSummary: waferSummaries[i],
-      viewOptions: { hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS },
     }));
 
-    renderWaferMap(
+    renderWaferGallery(
       document.getElementById('gallery-container'),
       galleryItems,
       {
-        viewOptions: {
-          plotMode:  'hardBin',
-          hbinDefs:  HBIN_DEFS,
-          sbinDefs:  SBIN_DEFS,
-          testDefs:  TEST_DEFS,
-        },
+        viewOptions:     { plotMode: 'hardBin' },
         lotStatsSummary: lotSummary,
       },
     );

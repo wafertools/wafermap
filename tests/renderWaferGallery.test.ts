@@ -141,6 +141,7 @@ const ITEMS: WaferMapDisplayItem[] = [
   {
     wafer: mockWafer, view: mockView, units: 'mm', inference: mockInference,
     dataCoverage: mockDataCoverage, yield: mockYield, reticles: [],
+    plotMode: 'hardBin', metadata: null, isLotStack: false,
     label: 'W01',
     dies: [
       { id: '0_0', x: 0, y: 0, hbin: 1, sbin: 10, testValues: { 100: 10 }, width: 10, height: 10, physX: 0,  physY: 0  },
@@ -150,6 +151,7 @@ const ITEMS: WaferMapDisplayItem[] = [
   {
     wafer: mockWafer, view: mockView, units: 'mm', inference: mockInference,
     dataCoverage: mockDataCoverage, yield: mockYield, reticles: [],
+    plotMode: 'hardBin', metadata: null, isLotStack: false,
     label: 'W02',
     dies: [
       { id: '0_0', x: 0, y: 0, hbin: 1, sbin: 10, testValues: { 100: 12 }, width: 10, height: 10, physX: 0,  physY: 0  },
@@ -191,34 +193,37 @@ describe('renderWaferGallery stacked modes with definition discovery', () => {
   it('discovers testDefs for stackedValues mode when not provided', () => {
     ctrl.setOptions({ plotMode: 'stackedValues' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 2);
-    const opts0 = capturedRenderWaferMapCalls[0].options.viewOptions;
-    assert.strictEqual(opts0.plotMode, 'stackedValues');
-    assert.deepStrictEqual(opts0.testDefs, [{ index: 0, name: 'Test 100' }]);
-    const opts1 = capturedRenderWaferMapCalls[1].options.viewOptions;
-    assert.deepStrictEqual(opts1.testDefs, [{ index: 0, name: 'Test 100' }]);
+    // testDefs now live on result.testDefs, not viewOptions
+    assert.strictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.plotMode, 'stackedValues');
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.testDefs, [{ index: 0, name: 'Test 100' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].result.testDefs, [{ index: 0, name: 'Test 100' }]);
   });
 
   it('discovers hbinDefs for stackedBins mode when not provided', () => {
     ctrl.setOptions({ plotMode: 'stackedBins' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 3);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.hbinDefs, [{ bin: 1, name: 'Bin 1' }]);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].options.viewOptions.hbinDefs, [{ bin: 2, name: 'Bin 2' }]);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[2].options.viewOptions.hbinDefs, [{ bin: 3, name: 'Bin 3' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.hbinDefs, [{ bin: 1, name: 'Bin 1' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].result.hbinDefs, [{ bin: 2, name: 'Bin 2' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[2].result.hbinDefs, [{ bin: 3, name: 'Bin 3' }]);
   });
 
   it('discovers sbinDefs for stackedSoftBins mode when not provided', () => {
     ctrl.setOptions({ plotMode: 'stackedSoftBins' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 3);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.sbinDefs, [{ bin: 10, name: 'Bin 10' }]);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].options.viewOptions.sbinDefs, [{ bin: 11, name: 'Bin 11' }]);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[2].options.viewOptions.sbinDefs, [{ bin: 12, name: 'Bin 12' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.sbinDefs, [{ bin: 10, name: 'Bin 10' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].result.sbinDefs, [{ bin: 11, name: 'Bin 11' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[2].result.sbinDefs, [{ bin: 12, name: 'Bin 12' }]);
   });
 
-  it('uses provided definitions over discovery', () => {
-    const customTestDefs = [{ testNumber: 100, name: 'Custom Test A', unit: 'V' }];
-    ctrl.setOptions({ plotMode: 'stackedValues', testDefs: customTestDefs });
+  it('uses item-level testDefs when items carry them', () => {
+    // Provide items with testDefs on the result — these take priority over auto-discovery
+    const customTestDefs = [{ testNumber: 100, name: 'Custom Test A', unit: 'V' as const }];
+    const itemsWithDefs: WaferMapDisplayItem[] = ITEMS.map(it => ({ ...it, testDefs: customTestDefs }));
+    const c2 = renderWaferGallery(document.createElement('div'), itemsWithDefs, {});
+    capturedRenderWaferMapCalls = [];
+    c2.setOptions({ plotMode: 'stackedValues' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 1);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.testDefs, [{ index: 0, name: 'Custom Test A', unit: 'V' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.testDefs, [{ index: 0, name: 'Custom Test A', unit: 'V' }]);
   });
 
   it('reverts to original items when leaving stacked mode', () => {
@@ -277,14 +282,17 @@ describe('renderWaferGallery shared bin legend', () => {
     assert.strictEqual(getLabelText(entries[2]), 'Bin 12');
   });
 
-  it('uses binDef names when provided', () => {
+  it('uses binDef names from items when provided', () => {
+    // hbinDefs now live on WaferMapResult items, not in viewOptions
     const hbinDefs = [
       { bin: 1, name: 'Pass' },
       { bin: 2, name: 'Contact Open' },
       { bin: 3, name: 'Leakage' },
     ];
-    ctrl.setOptions({ hbinDefs });
-    const entries = getLegendEntries(container);
+    const itemsWithDefs: WaferMapDisplayItem[] = ITEMS.map(it => ({ ...it, hbinDefs }));
+    const innerContainer = document.createElement('div');
+    renderWaferGallery(innerContainer, itemsWithDefs, { viewOptions: { plotMode: 'hardBin' } });
+    const entries = getLegendEntries(innerContainer);
     assert.strictEqual(getLabelText(entries[0]), '1 · Pass');
     assert.strictEqual(getLabelText(entries[1]), '2 · Contact Open');
     assert.strictEqual(getLabelText(entries[2]), '3 · Leakage');

@@ -32,7 +32,6 @@ export const MODE_LABELS: Record<PlotMode, string> = {
   stackedValues:   'Stacked Test Values',
   stackedBins:     'Stacked Hard Bins',
   stackedSoftBins: 'Stacked Soft Bins',
-  specLimit:       'Spec Limit',
 };
 
 export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardBin', 'softBin']);

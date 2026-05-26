@@ -822,19 +822,19 @@ export function analyzeWaferMap(
   }
   if (resolved.enableHardBinAnalysis && hasHbinData) {
     findings.push(
-      ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
-      ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
-      ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
-      ...buildBinFindings(eligibleDies, sectorRegions, 'hard', result.view.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, sectorRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
     );
   }
   if (resolved.enableSoftBinAnalysis) {
     const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined);
     findings.push(
-      ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
-      ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
-      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
-      ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.view.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.sbinDefs, 'softBin', resolved),
     );
   }
   const warnings: string[] = [];

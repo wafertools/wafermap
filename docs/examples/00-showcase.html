@@ -124,7 +124,7 @@
 
     <div class="help-section">
       <div class="help-section-title">Plot mode</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/mode.svg" width="16" height="16"></div><div class="help-row-text"><strong>Plot mode</strong>Switch between hard bin, soft bin, test value, spec limit, and stacked lot views. Only modes valid for your data are shown.</div></div>
+      <div class="help-row"><div class="help-icon"><img src="../images/icons/mode.svg" width="16" height="16"></div><div class="help-row-text"><strong>Plot mode</strong>Switch between hard bin, soft bin, test value, and stacked lot views. Only modes valid for your data are shown.</div></div>
       <div class="help-row"><div class="help-icon"><img src="../images/icons/aggr.svg" width="16" height="16"></div><div class="help-row-text"><strong>Aggregation</strong>In stacked mode, choose how values are combined across wafers: mean, median, min, max, std dev, count, or bin occurrence.</div></div>
       <div class="help-row"><div class="help-icon"><img src="../images/icons/specRange.svg" width="16" height="16"></div><div class="help-row-text"><strong>Colorbar range</strong>In test value mode, toggle whether the colorbar spans the data range or the spec limits.</div></div>
       <div class="help-row"><div class="help-icon"><img src="../images/icons/logScale.svg" width="16" height="16"></div><div class="help-row-text"><strong>Log scale</strong>Apply a logarithmic colour scale — useful for leakage currents and other exponentially distributed parameters.</div></div>
@@ -162,7 +162,7 @@
   </div><!-- /.phase-host -->
 
   <script type="module">
-    import { renderWaferMap }       from 'wafermap/canvas-adapter';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
     import { createWafermapWorker } from 'wafermap/worker';
     import {
       MAX_ROWS, parsedRows, fileTruncated,
@@ -244,6 +244,13 @@
 
       const plotMode = hasHardBins ? 'hardBin' : hasSoftBins ? 'softBin' : hasTestValues ? 'value' : 'hardBin';
 
+      // Detect coordinate origin from the data — if all sampled x and y values are
+      // non-negative, treat as lower-left (prober step) coordinates, otherwise center.
+      const allXY = activeRows.slice(0, 200).map(r => ({ x: Number(r[mapping.x]), y: Number(r[mapping.y]) })).filter(p => !isNaN(p.x) && !isNaN(p.y));
+      const coordinateOrigin = allXY.length > 0 && allXY.every(p => p.x >= 0 && p.y >= 0)
+        ? { type: 'LL' }
+        : { type: 'center' };
+
       function buildResults(rows) {
         return rows.map(row => {
           const result = { x: Number(row[mapping.x]), y: Number(row[mapping.y]) };
@@ -284,6 +291,7 @@
         waferMapResults.push(await worker.run({
           results,
           waferConfig: { metadata: { wafer: wid, ...(lot ? { lot } : {}) } },
+          dieConfig: { coordinateOrigin },
           ...(testDefs ? { testDefs } : {}),
           passBins,
         }));
@@ -353,7 +361,7 @@
       setLoading(null);
       container.innerHTML = '';
 
-      const ctrl = renderWaferMap(container, items, {
+      const ctrl = renderWaferGallery(container, items, {
         viewOptions: {
           plotMode,
           ...(testDefs ? { testDefs } : {}),

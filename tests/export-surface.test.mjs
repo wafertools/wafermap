@@ -23,6 +23,7 @@ const SNAPSHOTS = {
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'listColorSchemes',
     'mapDataToDies', 'openHtmlReport', 'registerColorScheme',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
+    'resolveTestNumber',
     'softBinColor', 'transformDies', 'valueToGreyscale', 'valueToViridis',
   ],
   './core': [
@@ -39,6 +40,7 @@ const SNAPSHOTS = {
     'getUniqueTestNumbers',
     'hardBinColor', 'hardBinGreyscale',
     'listColorSchemes', 'registerColorScheme',
+    'resolveTestNumber',
     'softBinColor', 'valueToGreyscale', 'valueToViridis',
   ],
   './stats': [
@@ -49,7 +51,7 @@ const SNAPSHOTS = {
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
   ],
   './canvas-adapter': [
-    'renderWaferMap', 'toCanvas',
+    'renderWaferMap', 'renderWaferGallery', 'toCanvas',
   ],
 };
 

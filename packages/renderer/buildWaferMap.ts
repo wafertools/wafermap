@@ -102,7 +102,6 @@ export interface DieConfig {
    * - `'UR'`      — (0,0) at upper-right; positive x left, positive y down.
    * - `'custom'`  — apply explicit `offset` (in grid steps) to centre the grid.
    *
-   * Auto-detected as `'LL'` when all input coordinates are ≥ 0 (standard STDF/KLA output).
    */
   coordinateOrigin?: {
     type: 'center' | 'LL' | 'UL' | 'LR' | 'UR' | 'custom';
@@ -315,6 +314,19 @@ export interface YieldSummary {
 export interface WaferMapResult {
   wafer: Wafer;
   dies: Die[];
+  /**
+   * The initial plot mode selected by `buildWaferMap` — `'value'` when test values are
+   * present, `'hardBin'` otherwise. Used to initialise the toolbar to the most useful mode.
+   */
+  plotMode: PlotMode;
+  /** Wafer metadata copied from `waferConfig.metadata`, or `null` if none was provided. */
+  metadata: import('../core/metadata.js').WaferMetadata | null;
+  /** `true` when the result was built from a `lotStack` aggregation. */
+  isLotStack: boolean;
+  /**
+   * @internal Renderer-agnostic draw list consumed by `renderWaferMap` and `toCanvas`.
+   * Not part of the public API — access the named fields on `WaferMapResult` instead.
+   */
   view: View;
   /** Reticle configuration used to generate the overlay and reticle-local groupings. */
   reticleConfig?: ReticleConfig;
@@ -346,6 +358,12 @@ export interface WaferMapResult {
   yield: YieldSummary;
   /** Generated reticle geometry — pass as `viewOptions.reticles` to `renderWaferMap` to show the reticle overlay. */
   reticles: Reticle[];
+  /** Named hard bin definitions passed to `buildWaferMap`. Consumed automatically by the renderer — no need to pass again to `renderWaferMap`. */
+  hbinDefs?: BinDef[];
+  /** Named soft bin definitions passed to `buildWaferMap`. Consumed automatically by the renderer — no need to pass again to `renderWaferMap`. */
+  sbinDefs?: BinDef[];
+  /** Named test definitions passed to `buildWaferMap`. Consumed automatically by the renderer — no need to pass again to `renderWaferMap`. */
+  testDefs?: TestDef[];
 }
 
 // ── Internal normalized model ─────────────────────────────────────────────────
@@ -401,13 +419,10 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
 // ── Grid origin & axis helpers ────────────────────────────────────────────────
 
 function detectOrigin(
-  results: DieResult[],
+  _results: DieResult[],
   dieOpts: DieConfig | undefined,
 ): NonNullable<DieConfig['coordinateOrigin']> {
   if (dieOpts?.coordinateOrigin) return dieOpts.coordinateOrigin;
-  if (results.length > 0 && results.every(p => p.x >= 0 && p.y >= 0)) {
-    return { type: 'LL' };
-  }
   return { type: 'center' };
 }
 
@@ -833,16 +848,20 @@ export function buildWaferMap(
       showReticle,
       plotMode:   autoPlotMode(results, viewOpts),
       testDefs:   norm.testDefs,
-      hbinDefs:   norm.hbinDefs,
-      sbinDefs:   norm.sbinDefs,
       isLotStack: false,
-    });
+    }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs });
 
     return {
       wafer, dies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
+      plotMode: view.plotMode,
+      metadata: view.metadata,
+      isLotStack: false,
       dataCoverage: computeCoverage(dies),
       yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
       reticles,
+      hbinDefs: norm.hbinDefs,
+      sbinDefs: norm.sbinDefs,
+      testDefs: norm.testDefs,
     };
   }
 
@@ -944,17 +963,21 @@ export function buildWaferMap(
     showReticle,
     plotMode:     autoPlotMode(results, viewOpts),
     testDefs:     norm.testDefs,
-    hbinDefs:     norm.hbinDefs,
-    sbinDefs:     norm.sbinDefs,
     dataAxisFlip: { x: flipX, y: flipY },
     isLotStack:   norm.lotStackOpts !== undefined,
     aggrMethod:   norm.lotStackOpts?.method,
-  });
+  }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs });
 
   return {
     wafer, dies, view, reticleConfig: norm.reticleOpts, units, inference,
+    plotMode: view.plotMode,
+    metadata: view.metadata,
+    isLotStack: norm.lotStackOpts !== undefined,
     dataCoverage: computeCoverage(dies),
     yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
     reticles,
+    hbinDefs: norm.hbinDefs,
+    sbinDefs: norm.sbinDefs,
+    testDefs: norm.testDefs,
   };
 }

@@ -107,7 +107,7 @@ Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` wi
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferMapDisplayItem } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery, type WaferMapDisplayItem } from '@paulrobins/wafermap/canvas-adapter';
 
 interface WaferGalleryProps {
   datasets: { label: string; rows: DieResult[] }[];
@@ -126,7 +126,7 @@ export function WaferGallery({ datasets }: WaferGalleryProps) {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const ctrl = renderWaferMap(containerRef.current, items);
+    const ctrl = renderWaferGallery(containerRef.current, items);
     return () => ctrl.destroy();
   }, [items]);
 
@@ -139,7 +139,7 @@ export function WaferGallery({ datasets }: WaferGalleryProps) {
 For large lots, pass factory functions instead of pre-built items. The gallery inserts placeholder cards immediately and calls each factory in a deferred browser task, keeping the page responsive:
 
 ```tsx
-import { renderWaferMap, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
 
 const items = datasets.map(({ label, rows }): WaferMapDisplayItemFactory => () => ({
   ...buildWaferMap({ results: rows }),
@@ -147,7 +147,7 @@ const items = datasets.map(({ label, rows }): WaferMapDisplayItemFactory => () =
 }));
 
 // In useEffect:
-const ctrl = renderWaferMap(containerRef.current, items);
+const ctrl = renderWaferGallery(containerRef.current, items);
 ```
 
 ## Adding statistical findings
@@ -182,7 +182,7 @@ To show a persistent summary panel instead of the toolbar button, add a `summary
 ```tsx
 renderWaferMap(containerRef.current, result, {
   statsSummary: summary,
-  summaryPanel: { position: 'right' },
+  summaryPanel: { placement: 'right' },
 });
 ```
 

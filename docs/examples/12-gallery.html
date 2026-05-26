@@ -22,12 +22,12 @@
     <div class="demo-sep"></div>
     <span class="demo-title">§12 — Building a lot gallery</span>
     <span class="demo-desc">
-      renderWaferMap (gallery overload) · shared controls · stacked modes · click ↗ to open modal
+      renderWaferGallery · shared controls · stacked modes · click ↗ to open modal
     </span>
   </header>
 
   <div class="demo-intro">
-    <code>renderWaferMap(container, items)</code> renders a lot of wafers in a responsive card grid with shared controls.
+    <code>renderWaferGallery(container, items)</code> renders a lot of wafers in a responsive card grid with shared controls.
     All cards update together when you change mode, colour, rotation, or flip in the shared toolbar.
     Switch to a <strong>stacked mode</strong> (toolbar mode picker) to aggregate the lot — one card per bin or test parameter.
     Click the <strong>↗ expand</strong> icon on any card to open it as a full interactive map.
@@ -39,7 +39,7 @@
 
   <script type="module">
     import { buildWaferMap }      from 'wafermap';
-    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { renderWaferGallery } from 'wafermap/canvas-adapter';
     import {
       makeResults, makeWaferConfig, DIE_CONFIG,
       HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
@@ -84,14 +84,12 @@
     // Switching to a stacked mode rebuilds the cards as one card per bin or
     // test parameter, aggregated across the full lot.
 
-    renderWaferMap(
+    renderWaferGallery(
       document.getElementById('gallery-container'),
       items,
       {
         viewOptions: {
           plotMode: 'hardBin',
-          hbinDefs: HBIN_DEFS,
-          sbinDefs: SBIN_DEFS,
           testDefs: TEST_DEFS,
         },
       },

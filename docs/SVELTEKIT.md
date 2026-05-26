@@ -25,7 +25,7 @@ Your SvelteKit app owns: fetching or loading wafer data, UI state, Svelte compon
 1. Load your test data — rows with `x`, `y` (die grid positions), `hbin`, `sbin`, `testValues`
 2. Call `buildWaferMap({ results, waferConfig?, dieConfig? })` — handles geometry automatically
 3. Render with `renderWaferMap(...)` inside `onMount`
-4. Pass an array of results to `renderWaferMap(...)` when you need a multi-wafer gallery
+4. Use `renderWaferGallery(...)` inside `onMount` when you need a multi-wafer gallery
 
 `x` and `y` in your data are **die grid positions** (prober step coordinates — integers like −7, 0, 5), not millimetre values. Pass `dieConfig: { width, height }` in mm to supply physical die dimensions; omit it and the library estimates them from the grid layout.
 
@@ -97,7 +97,7 @@ Pass an array of results (or factory functions for large lots) to render a card 
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { renderWaferMap, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+  import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
 
   export let wafers: Array<{ label: string; rows: DieResult[] }> = [];
 
@@ -112,7 +112,7 @@ Pass an array of results (or factory functions for large lots) to render a card 
       ...buildWaferMap({ results: w.rows }),
       label: w.label,
     }));
-    ctrl = renderWaferMap(host, factories);
+    ctrl = renderWaferGallery(host, factories);
   });
 
   onDestroy(() => ctrl?.destroy());
@@ -155,7 +155,7 @@ To show a persistent summary panel instead of the toolbar button, add a `summary
 ```ts
 ctrl = renderWaferMap(host, result, {
   statsSummary: summary,
-  summaryPanel: { position: 'right' },
+  summaryPanel: { placement: 'right' },
 });
 ```
 

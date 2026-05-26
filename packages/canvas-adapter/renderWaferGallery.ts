@@ -7,7 +7,8 @@ import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferViewOptions, WaferCanvasController } from './renderWaferMap.js';
-import type { BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
+import { classifyChanged } from './renderWaferMap.js';
+import type { BinDef } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
@@ -19,25 +20,39 @@ import {
 // ── Public types ───────────────────────────────────────────────────────────────
 
 /**
- * A `WaferMapResult` with optional per-card display overrides.
- * Pass a bare `WaferMapResult` for minimal usage, or spread it with overrides:
+ * The data and display overrides for a single gallery card.
+ *
+ * `WaferMapResult` satisfies this interface structurally, so you can pass
+ * `buildWaferMap(...)` results directly. Spread in display overrides as needed:
  *
  * ```ts
- * renderWaferMap(container, [
+ * renderWaferGallery(container, [
  *   result1,
  *   { ...result2, label: 'W02', statsSummary: summary2 },
  * ]);
  * ```
  */
-export type WaferMapDisplayItem = WaferMapResult & {
+export interface WaferMapDisplayItem {
+  // Required — the geometry and die data the gallery needs to render a card.
+  wafer: import('../core/wafer.js').Wafer;
+  dies:  Die[];
+
+  // Definitions carried from buildWaferMap — all optional for synthetic items.
+  hbinDefs?:  import('../renderer/buildWaferMap.js').BinDef[];
+  sbinDefs?:  import('../renderer/buildWaferMap.js').BinDef[];
+  testDefs?:  import('../renderer/buildWaferMap.js').TestDef[];
+  reticles?:  import('../core/reticle.js').Reticle[];
+
+  // Per-card display overrides.
   label?:        string;
-  /** Per-card scene option overrides merged on top of the shared gallery options. */
-  viewOptions?: Partial<WaferViewOptions>;
-  /** Wafer-level stats summary — shown in the findings panel when this card is opened in the modal. */
+  /** Merged on top of the shared gallery options for this card only. */
+  viewOptions?:  Partial<WaferViewOptions>;
+  /** Shown in the findings panel when this card is opened in the modal. */
   statsSummary?: import('../stats/types.js').StatsSummary;
   onClick?:      (die: Die, event: MouseEvent) => void;
   onSelect?:     (dies: Die[]) => void;
-};
+
+}
 
 /**
  * A factory function that builds a WaferMapDisplayItem on demand.
@@ -55,7 +70,11 @@ export interface GalleryOptions {
   /** Initial shared scene options applied to all cards. */
   viewOptions?:         WaferViewOptions;
   /** Called whenever a shared gallery option changes. */
-  onViewOptionsChange?: (opts: WaferViewOptions) => void;
+  onViewOptionsChange?: (
+    opts:     WaferViewOptions,
+    changed:  (keyof WaferViewOptions)[],
+    category: 'preference' | 'state' | 'mixed',
+  ) => void;
   /** Legend position for bin modes. Default 'default'. */
   legendPosition?:       'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /** Padding inside each card canvas in CSS pixels. Default 6. */
@@ -117,6 +136,13 @@ export interface GalleryController {
   destroy(): void;
 }
 
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function deduplicateDefs(defs: BinDef[]): BinDef[] {
+  const seen = new Set<number>();
+  return defs.filter(d => seen.has(d.bin) ? false : (seen.add(d.bin), true));
+}
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -219,12 +245,15 @@ export function renderWaferGallery(
         gallerySummaryPanelEl.innerHTML = '';
         return;
       }
+      // Collect bin defs from items (they now live on WaferMapResult, not sharedOpts).
+      const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
+      const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
       renderLotSummaryContent(gallerySummaryPanelEl, {
         lotSummary: currentLotStats,
         items:      originalItems,
-        hbinDefs:   sharedOpts.hbinDefs,
-        sbinDefs:   sharedOpts.sbinDefs,
-        testDefs:   sharedOpts.testDefs,
+        hbinDefs:   lotHbinDefs.length ? lotHbinDefs : undefined,
+        sbinDefs:   lotSbinDefs.length ? lotSbinDefs : undefined,
+        testDefs:   originalItems.find(it => it?.testDefs?.length)?.testDefs,
         passBins,
         ringCount:      sharedOpts.ringCount,
         fallbackFormat: currentFallbackFormat,
@@ -288,9 +317,9 @@ export function renderWaferGallery(
           edgeExcludedDies: item.dies.filter(d => d.edgeExcluded).length,
           ratio:            1,
         },
-        hbinDefs:       sharedOpts.hbinDefs,
-        sbinDefs:       sharedOpts.sbinDefs,
-        testDefs:       sharedOpts.testDefs,
+        hbinDefs:       item.hbinDefs,
+        sbinDefs:       item.sbinDefs,
+        testDefs:       item.testDefs,
         statsSummary:   waferSummary,
         passBins,
         fallbackFormat: currentFallbackFormat,
@@ -436,7 +465,7 @@ export function renderWaferGallery(
     // Use originalItems (per-wafer source) — currentItems may be aggregated cards
     // in stacked modes, which don't accurately reflect the full data availability.
     const dies      = originalItems.flatMap(it => it?.dies ?? []);
-    const testDefs  = sharedOpts.testDefs;
+    const testDefs  = originalItems.find(it => it?.testDefs?.length)?.testDefs;
     const hasValues = dies.some(d =>
       (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
       (d.values?.length ?? 0) > 0
@@ -505,7 +534,7 @@ export function renderWaferGallery(
     v => updateShared({ colorScheme: v }),
   );
 
-  const hasReticleInItems = items.some(it => typeof it !== 'function' && (it as WaferMapDisplayItem).reticles?.length > 0);
+  const hasReticleInItems = items.some(it => typeof it !== 'function' && ((it as WaferMapDisplayItem).reticles?.length ?? 0) > 0);
 
   const btnOverlays = makeCheckMenuBtn(
     'overlays', 'Overlays',
@@ -784,6 +813,7 @@ export function renderWaferGallery(
     // Collect unique bins — use hbin or sbin depending on active mode.
     const binSet = new Set<number>();
     for (const item of currentItems) {
+      if (!item) continue;  // factory not yet resolved
       for (const die of item.dies) {
         if (die.partial) continue;
         const b = mode === 'softBin' ? die.sbin : die.hbin;
@@ -801,8 +831,17 @@ export function renderWaferGallery(
     const scheme    = getColorScheme(sharedOpts.colorScheme);
     const activeBin = sharedOpts.highlightBin;
     // Hard and soft bins have independent number spaces — pick the correct defs for the active mode.
-    const activeDefs = mode === 'softBin' ? sharedOpts.sbinDefs : sharedOpts.hbinDefs;
-    const binDefMap  = activeDefs ? new Map((activeDefs as BinDef[]).map(d => [d.bin, d])) : null;
+    // Collect from items (defs now live on WaferMapResult, not on sharedOpts).
+    const itemDefs = mode === 'softBin'
+      ? currentItems.flatMap(it => it?.sbinDefs ?? [])
+      : currentItems.flatMap(it => it?.hbinDefs ?? []);
+    // Deduplicate by bin number, first occurrence wins.
+    const seenBins = new Set<number>();
+    const activeDefs: BinDef[] = [];
+    for (const d of itemDefs) {
+      if (!seenBins.has(d.bin)) { seenBins.add(d.bin); activeDefs.push(d); }
+    }
+    const binDefMap = activeDefs.length > 0 ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
     for (const bin of bins) {
       const isActive = activeBin === bin;
@@ -887,9 +926,10 @@ export function renderWaferGallery(
     }
 
     if (mode === 'stackedValues') {
-      let defs = sharedOpts.testDefs;
+      // Collect testDefs from items (now on WaferMapResult, not sharedOpts).
+      let defs = resolvedItems.find(it => it.testDefs?.length)?.testDefs;
 
-      // If no testDefs provided, discover unique test numbers from the actual data
+      // If no testDefs on items, discover unique test numbers from the actual data
       if (!defs || defs.length === 0) {
         const uniqueNums = getUniqueTestNumbers(resolvedItems.flatMap(it => it.dies));
 
@@ -903,18 +943,18 @@ export function renderWaferGallery(
         return {
           wafer: stackedWafer,
           dies,
+          testDefs: [cardTestDef],
           label: `${def.name} · ${method}`,
-          viewOptions: { testDefs: [cardTestDef] },
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, testDefs: [cardTestDef] }, { testNumbers: [0] }),
             method,
           ),
-        } as WaferMapDisplayItem;
+        };
       });
     }
 
     if (mode === 'stackedBins') {
-      let defs = sharedOpts.hbinDefs;
+      let defs = deduplicateDefs(resolvedItems.flatMap(it => it.hbinDefs ?? []));
       if (!defs || defs.length === 0) {
         const uniqueBins = [...new Set(resolvedItems.flatMap(it =>
           it.dies.map(d => d.hbin).filter((b): b is number => b != null)
@@ -924,22 +964,22 @@ export function renderWaferGallery(
 
       return defs.map(def => {
         const dies = aggregateBinCounts(allDies, def.bin, 'hard') as Die[];
-        const hbinDefs = [{ bin: def.bin, name: def.name }];
+        const itemHbinDefs = [{ bin: def.bin, name: def.name }];
         return {
           wafer: stackedWafer,
           dies,
+          hbinDefs: itemHbinDefs,
           label: `${def.bin} · ${def.name}`,
-          viewOptions: { hbinDefs },
           statsSummary: asLotStackSummary(
-            analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs }),
+            analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs: itemHbinDefs }),
             'countBin',
           ),
-        } as WaferMapDisplayItem;
+        };
       });
     }
 
     if (mode === 'stackedSoftBins') {
-      let defs = sharedOpts.sbinDefs;
+      let defs = deduplicateDefs(resolvedItems.flatMap(it => it.sbinDefs ?? []));
       if (!defs || defs.length === 0) {
         const uniqueBins = [...new Set(resolvedItems.flatMap(it =>
           it.dies.map(d => d.sbin).filter((b): b is number => b != null)
@@ -949,17 +989,17 @@ export function renderWaferGallery(
 
       return defs.map(def => {
         const dies = aggregateBinCounts(allDies, def.bin, 'soft') as Die[];
-        const sbinDefs = [{ bin: def.bin, name: def.name }];
+        const itemSbinDefs = [{ bin: def.bin, name: def.name }];
         return {
           wafer: stackedWafer,
           dies,
+          sbinDefs: itemSbinDefs,
           label: `${def.bin} · ${def.name}`,
-          viewOptions: { sbinDefs },
           statsSummary: asLotStackSummary(
-            analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs }),
+            analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs: itemSbinDefs }),
             'countBin',
           ),
-        } as WaferMapDisplayItem;
+        };
       });
     }
 
@@ -1030,7 +1070,8 @@ export function renderWaferGallery(
     syncLegendStyleBtn();
     if (fireCallback) {
       syncLogScaleBtn();
-      options.onViewOptionsChange?.(sharedOpts);
+      const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
+      options.onViewOptionsChange?.(sharedOpts, changed, classifyChanged(changed));
     }
   }
 
@@ -1101,7 +1142,7 @@ export function renderWaferGallery(
     // render that the ResizeObserver would otherwise need to correct.
     gridEl.appendChild(card);
 
-    const ctrl = renderWaferMap(canvasWrapper, item, {
+    const ctrl = renderWaferMap(canvasWrapper, item as import('../renderer/buildWaferMap.js').WaferMapResult, {
       viewOptions:    item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,

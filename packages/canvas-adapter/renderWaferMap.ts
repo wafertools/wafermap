@@ -1,5 +1,5 @@
 import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
-import { buildView, buildHoverText, findTestDef, getUniqueTestNumbers } from '../renderer/buildView.js';
+import { buildView, buildHoverText, findTestDef, resolveTestNumber, getUniqueTestNumbers } from '../renderer/buildView.js';
 import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
@@ -16,41 +16,23 @@ import { hardBinColor, softBinColor } from '../renderer/colorMap.js';
 // ── Public types ───────────────────────────────────────────────────────────────
 
 /**
- * All scene-level options that the toolbar can control.
- * These map directly to ViewOptions — toolbar state IS the scene config.
+ * Stable display preferences — worth persisting to localStorage or a user profile.
+ * These describe how the user wants to view wafer maps in general.
  */
-export interface WaferViewOptions {
-  plotMode?:               PlotMode;
+export interface WaferPreferences {
   colorScheme?:            string;
+  /** Interactive rotation in degrees (0 | 90 | 180 | 270). */
+  rotation?:               0 | 90 | 180 | 270;
+  flipX?:                  boolean;
+  flipY?:                  boolean;
   showText?:               boolean;
   showRingBoundaries?:     boolean;
   showQuadrantBoundaries?: boolean;
   showReticle?:            boolean;
   showXYIndicator?:        boolean;
-  /** Reticle geometry to overlay — pass `result.reticles` from `buildWaferMap`. */
-  reticles?:               Reticle[];
   ringCount?:              number;
-  highlightBin?:           number;
-  /** Interactive rotation in degrees (0 | 90 | 180 | 270). */
-  rotation?:               0 | 90 | 180 | 270;
-  flipX?:                  boolean;
-  flipY?:                  boolean;
-  /**
-   * Which `values[]` index to display in `value` plot mode. Default `0`.
-   * Controlled by the mode dropdown when `testDefs` are defined.
-   */
-  activeTest?:              number;
-  /** Named test definitions — one per `values[]` entry. Shown in mode dropdown and tooltip. */
-  testDefs?:               TestDef[];
-  /** Named hard bin definitions — one per distinct `die.hbin` value. Independent number space from soft bins. */
-  hbinDefs?:               BinDef[];
-  /** Named soft bin definitions — one per distinct `die.sbin` value. Independent number space from hard bins. */
-  sbinDefs?:               BinDef[];
-  /**
-   * Explicit [min, max] for value colour normalization. When omitted the range
-   * is auto-computed from the die values present in the scene.
-   */
-  valueRange?:             [number, number];
+  /** Legend position for bin modes. Default 'default'. */
+  legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /**
    * When true, apply log₁₀ scale to value normalization and the colorbar.
    * Overrides the per-test TestDef.logScale default.
@@ -63,26 +45,54 @@ export interface WaferViewOptions {
    * `'data'`: colorbar spans actual data min/max; out-of-spec coloring still applies.
    */
   colorbarRangeMode?:      'spec' | 'data';
+}
+
+/**
+ * Transient display state — describes the current view session, not worth persisting.
+ * Changes frequently as the user navigates tests and modes.
+ */
+export interface WaferDisplayState {
+  plotMode?:     PlotMode;
+  /**
+   * When true and `plotMode` is `'value'`, colours in-spec dies with a fixed pass colour
+   * instead of the continuous gradient. Out-of-spec dies (blue/red) are unaffected.
+   * Only meaningful when the active test has `limitLow` or `limitHigh` defined.
+   * Toggled by the Overlays toolbar menu when the active test has limits.
+   */
+  colorBySpec?:  boolean;
+  /**
+   * Which test number to display in `value` plot mode. Default `0`.
+   * Controlled by the mode dropdown when the result has testDefs.
+   */
+  activeTest?:   number;
+  highlightBin?: number;
+  /**
+   * Explicit [min, max] for value colour normalization. When omitted the range
+   * is auto-computed from the die values present in the scene.
+   */
+  valueRange?:   [number, number];
   /**
    * Aggregation method for `stackedValues` mode.
    * Drives both the per-die aggregation and the hover tooltip label.
    * Accepted values: `'mean'` | `'median'` | `'stddev'` | `'min'` | `'max'` | `'count'`.
    * Defaults to `'mean'` when not set.
    */
-  aggrMethod?:             string;
+  aggrMethod?:   string;
   /**
    * Total number of wafers in the lot — used to compute bin occurrence percentage
    * in `stackedBins` hover tooltips.
    */
-  lotSize?:                number;
-  /**
-   * Axis flip baked in by the data pipeline (LL/LR/UL/UR origins or explicit
-   * `xAxisDirection`/`yAxisDirection`). Passed through to axis tick label computation.
-   */
-  dataAxisFlip?:           { x: boolean; y: boolean };
-  /** Legend position for bin modes. Default 'default'. */
-  legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  lotSize?:      number;
 }
+
+/**
+ * All scene-level options that the toolbar can control.
+ * Combines stable {@link WaferPreferences} with transient {@link WaferDisplayState}.
+ * The flat shape is unchanged — callers set any field directly.
+ * Use the `category` hint in {@link RenderOptions.onViewOptionsChange} to decide
+ * whether a change is worth persisting.
+ */
+export type WaferViewOptions = WaferPreferences & WaferDisplayState;
 
 export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport'> {
   /** Initial scene display options. All are overridable via the toolbar. */
@@ -93,8 +103,18 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport'> {
   onClick?: (die: Die, event: MouseEvent) => void;
   /** Called when the user completes a box-select. */
   onSelect?: (dies: Die[]) => void;
-  /** Called whenever the toolbar changes a scene option. */
-  onViewOptionsChange?: (opts: WaferViewOptions) => void;
+  /**
+   * Called whenever the toolbar changes a scene option.
+   * `changed` lists the keys that changed.
+   * `category` is `'preference'` when all changed keys are {@link WaferPreferences},
+   * `'state'` when all are {@link WaferDisplayState}, or `'mixed'` when both.
+   * Use `category !== 'state'` to decide whether to persist the new options.
+   */
+  onViewOptionsChange?: (
+    opts:     WaferViewOptions,
+    changed:  (keyof WaferViewOptions)[],
+    category: 'preference' | 'state' | 'mixed',
+  ) => void;
   /** Show built-in floating tooltip on hover. Default true. */
   showTooltip?: boolean;
   /** Show the built-in toolbar. Default true. */
@@ -176,6 +196,20 @@ export interface WaferCanvasController {
 
 
 
+// Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
+const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
+  'colorScheme', 'rotation', 'flipX', 'flipY',
+  'showText', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
+  'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode',
+]);
+
+export function classifyChanged(keys: (keyof WaferViewOptions)[]): 'preference' | 'state' | 'mixed' {
+  const hasPref  = keys.some(k => PREFERENCE_KEYS.has(k));
+  const hasState = keys.some(k => !PREFERENCE_KEYS.has(k));
+  if (hasPref && hasState) return 'mixed';
+  return hasPref ? 'preference' : 'state';
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function renderWaferMap(
@@ -218,6 +252,13 @@ export function renderWaferMap(
   let currentDies     = result.dies;
   // Selected die keys ("i,j") — key-based so references survive scene rebuilds.
   let selectedKeys    = new Set<string>();
+  // Data-derived state from the result — callers no longer pass these via viewOptions.
+  let hbinDefs: BinDef[]    | undefined = result.hbinDefs;
+  let sbinDefs: BinDef[]    | undefined = result.sbinDefs;
+  let testDefs: TestDef[]   | undefined = result.testDefs;
+  let reticles: Reticle[]   | undefined = result.reticles?.length ? result.reticles : undefined;
+  let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.axisFlip;
+
   let viewOpts: WaferViewOptions = {
     plotMode:               'hardBin',
     colorScheme:            'default',
@@ -232,11 +273,6 @@ export function renderWaferMap(
     flipY:                  false,
     // legendPosition can come from viewOptions or the top-level drawOptions.
     legendPosition:         drawOptions.legendPosition ?? 'default',
-    // Seed from result so callers don't need to round-trip through result.view.*
-    testDefs:               result.view?.testDefs,
-    hbinDefs:               result.view?.hbinDefs,
-    sbinDefs:               result.view?.sbinDefs,
-    reticles:               result.reticles?.length ? result.reticles : undefined,
     ...initialViewOptions,
   };
 
@@ -274,26 +310,25 @@ export function renderWaferMap(
       showQuadrantBoundaries: so.showQuadrantBoundaries,
       showReticle:            so.showReticle,
       showXYIndicator:        so.showXYIndicator,
-      reticles:               so.reticles,
+      reticles,
       ringCount:              so.ringCount,
       highlightBin:           so.highlightBin,
       activeTest:              so.activeTest,
-      testDefs:               so.testDefs,
-      hbinDefs:               so.hbinDefs,
-      sbinDefs:               so.sbinDefs,
+      testDefs,
       valueRange:             so.valueRange,
       logScale:               so.logScale,
       aggrMethod:             so.aggrMethod,
       lotSize:                so.lotSize,
-      dataAxisFlip:           so.dataAxisFlip,
+      dataAxisFlip,
       colorbarRangeMode:      so.colorbarRangeMode,
+      colorBySpec:            so.colorBySpec,
       fallbackFormat:         currentFallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
         flipX:    so.flipX   ?? false,
         flipY:    so.flipY   ?? false,
       },
-    } satisfies ViewOptions);
+    } satisfies ViewOptions, { hbinDefs, sbinDefs });
     dieKeyIndex = new Map(currentView.dies.map((d, i) => [`${d.x},${d.y}`, i]));
   }
 
@@ -313,9 +348,9 @@ export function renderWaferMap(
       dies:         currentDies,
       yieldSummary: currentResult.yield,
       dataCoverage: currentResult.dataCoverage,
-      hbinDefs:        viewOpts.hbinDefs,
-      sbinDefs:        viewOpts.sbinDefs,
-      testDefs:        viewOpts.testDefs,
+      hbinDefs,
+      sbinDefs,
+      testDefs,
       statsSummary:    currentStatsSummary,
       passBins,
       ringCount:       viewOpts.ringCount ?? 4,
@@ -512,9 +547,10 @@ export function renderWaferMap(
         function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
           if (entry.activeTest !== undefined) {
             // Apply test's logScale default when switching tests.
-            applyOpts({ plotMode: 'value', activeTest: entry.activeTest, logScale: entry.logScale });
+            applyOpts({ plotMode: entry.plotMode, activeTest: entry.activeTest, logScale: entry.logScale });
           } else {
-            applyOpts({ plotMode: entry.plotMode, activeTest: undefined });
+            // Switching to a bin/stacked mode — clear colorBySpec (only valid in value mode).
+            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false });
           }
           menu.remove();
           setOpenMenu(null);
@@ -579,12 +615,17 @@ export function renderWaferMap(
           'overlays', 'Overlays',
           () => {
             const hasReticleNow = !!currentView!.hasReticle;
+            const isValueMode   = (viewOpts.plotMode ?? 'hardBin') === 'value';
+            const { testNumber: resolvedTest } = resolveTestNumber(viewOpts.activeTest ?? 0, currentView.testDefs);
+            const activeTestDef = findTestDef(currentView.testDefs, resolvedTest);
+            const hasLimits     = isValueMode && (activeTestDef?.limitLow !== undefined || activeTestDef?.limitHigh !== undefined);
             return [
               { label: 'Ring boundaries', active: !!viewOpts.showRingBoundaries,     onClick: () => applyOpts({ showRingBoundaries:   !viewOpts.showRingBoundaries   }) },
               { label: 'Quadrant lines',  active: !!viewOpts.showQuadrantBoundaries, onClick: () => applyOpts({ showQuadrantBoundaries: !viewOpts.showQuadrantBoundaries }) },
               { label: 'Die labels',      active: !!viewOpts.showText,               onClick: () => applyOpts({ showText:              !viewOpts.showText              }) },
               { label: 'Reticle grid',    active: !!viewOpts.showReticle,            enabled: hasReticleNow, onClick: () => applyOpts({ showReticle: !viewOpts.showReticle }) },
               { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:      !viewOpts.showXYIndicator      }) },
+              { label: 'Spec pass/fail',  active: !!viewOpts.colorBySpec,            enabled: hasLimits,    onClick: () => applyOpts({ colorBySpec: !viewOpts.colorBySpec }) },
             ];
           },
           (btn) => {
@@ -623,7 +664,8 @@ export function renderWaferMap(
         syncLogScaleBtnFn();
 
         const activeTestDefHasLimits = () => {
-          const td = findTestDef(viewOpts.testDefs, viewOpts.activeTest!);
+          const { testNumber: resolvedTest } = resolveTestNumber(viewOpts.activeTest ?? 0, testDefs);
+          const td = findTestDef(testDefs, resolvedTest);
           return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
         };
         const btnColorbarRange = makeBtn('specRange', 'Colorbar range: spec limits', () => {
@@ -631,7 +673,7 @@ export function renderWaferMap(
           applyOpts({ colorbarRangeMode: next });
         });
         syncColorbarRangeBtnFn = () => {
-          const visible = viewOpts.plotMode === 'value' && activeTestDefHasLimits();
+          const visible = viewOpts.plotMode === 'value' && activeTestDefHasLimits() && !viewOpts.colorBySpec;
           btnColorbarRange.style.display = visible ? '' : 'none';
           const isSpec = (viewOpts.colorbarRangeMode ?? 'spec') === 'spec';
           setActive(btnColorbarRange, isSpec);
@@ -804,7 +846,8 @@ export function renderWaferMap(
   // Used by all toolbar interactions.
   function applyOpts(partial: Partial<WaferViewOptions>): void {
     syncOpts(partial);
-    onViewOptionsChange?.(viewOpts);
+    const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
+    onViewOptionsChange?.(viewOpts, changed, classifyChanged(changed));
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -827,7 +870,7 @@ export function renderWaferMap(
     // Hold the right-side reserve constant across mode switches so the wafer
     // doesn't resize when toggling between value and bin modes.
     const cssW = Math.floor(canvas.clientWidth || canvas.width);
-    const hasBinData = !!(currentView.hbinDefs?.length || currentView.sbinDefs?.length ||
+    const hasBinData = !!(hbinDefs?.length || sbinDefs?.length ||
       currentView.dies.some(d => d.hbin != null || d.sbin != null));
     const legendPos = viewOpts.legendPosition ?? 'default';
     const isRightLegend = legendPos === 'default' || legendPos === 'compact';
@@ -853,6 +896,8 @@ export function renderWaferMap(
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
       viewport: vp,
       activeBin: viewOpts.highlightBin,
+      hbinDefs,
+      sbinDefs,
     });
 
     binLegendRows = result.binLegendRows;
@@ -1097,9 +1142,9 @@ export function renderWaferMap(
           tooltip.innerHTML     = buildHoverText(
             die,
             viewOpts.plotMode ?? 'value',
-            viewOpts.testDefs,
-            viewOpts.hbinDefs,
-            viewOpts.sbinDefs,
+            testDefs,
+            hbinDefs,
+            sbinDefs,
             currentFallbackFormat,
             viewOpts.aggrMethod,
             viewOpts.lotSize,
@@ -1373,11 +1418,11 @@ export function renderWaferMap(
       currentResult = newResult;
       wafer         = newResult.wafer;
       currentDies   = newResult.dies;
-      // Re-seed defs from new result unless the caller explicitly set them in viewOptions
-      if (!initialViewOptions.testDefs) viewOpts = { ...viewOpts, testDefs: newResult.view?.testDefs };
-      if (!initialViewOptions.hbinDefs) viewOpts = { ...viewOpts, hbinDefs: newResult.view?.hbinDefs };
-      if (!initialViewOptions.sbinDefs) viewOpts = { ...viewOpts, sbinDefs: newResult.view?.sbinDefs };
-      if (!initialViewOptions.reticles) viewOpts = { ...viewOpts, reticles: newResult.reticles?.length ? newResult.reticles : undefined };
+      hbinDefs      = newResult.hbinDefs;
+      sbinDefs      = newResult.sbinDefs;
+      testDefs      = newResult.testDefs;
+      reticles      = newResult.reticles?.length ? newResult.reticles : undefined;
+      dataAxisFlip  = newResult.view?.axisFlip;
       rebuildView();
       render();
       if (summaryPanelEl) renderSummaryPanel();
@@ -1440,7 +1485,7 @@ export function renderWaferMap(
       const mode = viewOpts.plotMode;
       if (mode !== 'hardBin' && mode !== 'softBin') return null;
       const isHard = mode === 'hardBin';
-      const defs = isHard ? viewOpts.hbinDefs : viewOpts.sbinDefs;
+      const defs = isHard ? hbinDefs : sbinDefs;
       const bins = [...new Set(currentDies.map(d => isHard ? d.hbin : d.sbin).filter((b): b is number => b !== undefined))].sort((a, b) => a - b);
       if (!bins.length) return null;
       return bins.map(bin => {

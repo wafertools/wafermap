@@ -69,7 +69,7 @@ test('scene.isLotStack is false for single-wafer buildWaferMap', () => {
     waferConfig: { diameter: 300 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.equal(result.view.isLotStack, false);
+  assert.equal(result.isLotStack, false);
 });
 
 test('scene.isLotStack is true when lotStack is passed', () => {
@@ -84,7 +84,7 @@ test('scene.isLotStack is true when lotStack is passed', () => {
     waferConfig: { diameter: 300 },
     dieConfig: { width: 10, height: 10 },
   });
-  assert.equal(result.view.isLotStack, true);
+  assert.equal(result.isLotStack, true);
 });
 
 test('buildView isLotStack defaults to false', () => {
