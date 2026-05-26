@@ -8,7 +8,7 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
   } }</script>
   <style>
     .demo-content { flex-direction: column; gap: 0; padding: 0; }
@@ -144,7 +144,7 @@
 
   <script type="module">
     import { buildWaferMap, registerColorScheme } from 'wafermap';
-    import { renderWaferMap }                     from 'wafermap/canvas-adapter';
+    import { renderWaferMap }                     from 'wafermap/render';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG } from './data.js';
 
     // Bin definitions WITHOUT explicit colors — so each scheme's forBin() controls

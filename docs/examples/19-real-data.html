@@ -8,7 +8,7 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
     "wafermap/stats":          "../dist/packages/stats/index.js"
   } }</script>
   <style>
@@ -47,7 +47,7 @@
 
   <script type="module">
     import { buildWaferMap }      from 'wafermap';
-    import { renderWaferGallery } from 'wafermap/canvas-adapter';
+    import { renderWaferGallery } from 'wafermap/render';
     import { analyzeWaferMap }    from 'wafermap/stats';
 
     // Fixture produced by scripts/convert-wm811k.py from the public WM-811K pkl.

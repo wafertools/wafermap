@@ -119,7 +119,7 @@ export interface View {
 
 export interface ViewOptions {
   plotMode?: PlotMode;
-  showText?: boolean;
+  showDieLabels?: boolean;
   showReticle?: boolean;
   showProbePath?: boolean;
   ringCount?: number;
@@ -171,7 +171,7 @@ export interface ViewOptions {
    * Aggregation method label shown in hover tooltips for `stackedValues` mode.
    * E.g. `'mean'`, `'median'`, `'stddev'`, `'min'`, `'max'`.
    */
-  aggrMethod?: string;
+  aggregationMethod?: string;
   /**
    * Total number of wafers in the lot — used to compute bin occurrence percentage
    * in `stackedBins` hover tooltips.
@@ -764,7 +764,7 @@ export function buildView(
 
   const {
     plotMode = 'value',
-    showText = false,
+    showDieLabels = false,
     showReticle = false,
     showProbePath = false,
     ringCount = 4,
@@ -779,7 +779,7 @@ export function buildView(
     testDefs,
     activeTest = 0,
     fallbackFormat = 'engineering' as const,
-    aggrMethod,
+    aggregationMethod,
     lotSize,
     dataAxisFlip,
     isLotStack = false,
@@ -927,7 +927,7 @@ export function buildView(
     hoverPoints.push({ x: tdie.physX, y: tdie.physY });
   }
 
-  const texts: ViewText[] = showText ? generateTextOverlay(transformedDies, {
+  const texts: ViewText[] = showDieLabels ? generateTextOverlay(transformedDies, {
     plotMode, colorFns, normalize, activeTest,
     valueRange: [vMin, vMax], testDefs, fallbackFormat,
   }) : [];
@@ -978,7 +978,7 @@ export function buildView(
     testDefs,
     activeTest,
     logScale,
-    aggrMethod,
+    aggrMethod: aggregationMethod,
     lotSize,
     axisFlip,
     rotation: ((transform.rotation % 360) + 360) % 360,

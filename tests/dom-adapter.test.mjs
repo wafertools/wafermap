@@ -229,8 +229,8 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     );
     assert.ok(labelsRow, 'Die labels row should appear in overlays menu');
     click(window, labelsRow);
-    assert.equal(ctrl.getOptions().showText, true);
-    assert.equal(sceneCalls.at(-1).showText, true);
+    assert.equal(ctrl.getOptions().showDieLabels, true);
+    assert.equal(sceneCalls.at(-1).showDieLabels, true);
 
     const panBtn = buttons.find((btn) => btn.ariaLabel === 'Pan (drag to move)');
     assert.ok(panBtn);
@@ -379,7 +379,7 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
     const opts = ctrl.getOptions();
     assert.equal(opts.valueRange, undefined);
     assert.equal(opts.lotSize, undefined);
-    assert.equal(opts.aggrMethod, undefined);
+    assert.equal(opts.aggregationMethod, undefined);
     assert.equal(opts.plotMode, 'value');
     assert.equal(opts.activeTest, 0);
 

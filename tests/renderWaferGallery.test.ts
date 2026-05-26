@@ -2,7 +2,7 @@ import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert';
 import { renderWaferGallery } from '../packages/canvas-adapter/renderWaferGallery.js';
 import type { WaferMapDisplayItem, GalleryController } from '../packages/canvas-adapter/renderWaferGallery.js';
-import type { WaferCanvasController } from '../packages/canvas-adapter/renderWaferMap.js';
+import type { WaferMapController } from '../packages/canvas-adapter/renderWaferMap.js';
 import type { Die } from '../packages/core/dies.js';
 import type { Wafer } from '../packages/core/wafer.js';
 
@@ -24,7 +24,7 @@ const mockDataCoverage = { filledDies: 2, totalDies: 2, edgeExcludedDies: 0, rat
 
 const mockYield = { yieldPercent: 0.5, passDies: 1, failDies: 1, totalDies: 2, edgeExcludedDies: 0, partialDies: 0 };
 
-function makeMockController(): WaferCanvasController {
+function makeMockController(): WaferMapController {
   return {
     setDies:              mock.fn(),
     setResult:            mock.fn(),
@@ -50,7 +50,7 @@ let capturedRenderWaferMapCalls: Array<{ container: HTMLElement; result: any; op
 
 mock.module('../packages/canvas-adapter/renderWaferMap.js', {
   namedExports: {
-    renderWaferMap: mock.fn((container: HTMLElement, result: any, options: any): WaferCanvasController => {
+    renderWaferMap: mock.fn((container: HTMLElement, result: any, options: any): WaferMapController => {
       capturedRenderWaferMapCalls.push({ container, result, options });
       return makeMockController();
     }),

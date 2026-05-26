@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="showcase.css">
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
     "wafermap/stats":          "../dist/packages/stats/index.js",
     "wafermap/worker":         "../dist/packages/worker/index.js"
   } }</script>
@@ -162,7 +162,7 @@
   </div><!-- /.phase-host -->
 
   <script type="module">
-    import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/render';
     import { createWafermapWorker } from 'wafermap/worker';
     import {
       MAX_ROWS, parsedRows, fileTruncated,

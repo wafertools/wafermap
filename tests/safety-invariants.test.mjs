@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildWaferMap, buildView, buildHoverText, createWafer } from '../dist/index.js';
+import { buildWaferMap, buildHoverText, createWafer } from '../dist/index.js';
+import { buildView } from '../dist/packages/renderer/buildView.js';
 
 // ── Coordinate correctness ────────────────────────────────────────────────────
 // All coordinates shown to the user must be original die grid coords (die.x/die.y),

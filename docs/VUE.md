@@ -37,12 +37,12 @@ Your Vue app owns: fetching data, reactive state, component lifecycle, mount and
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferCanvasController } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
 
 const props = defineProps<{ rows: DieResult[] }>();
 
 const containerEl = ref<HTMLDivElement | null>(null);
-let ctrl: WaferCanvasController | null = null;
+let ctrl: WaferMapController | null = null;
 
 function mount() {
   if (!containerEl.value) return;
@@ -73,7 +73,7 @@ When only display options change (plot mode, colour scheme, rotation), call `ctr
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferCanvasController, type WaferViewOptions } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferMapController, type WaferViewOptions } from '@paulrobins/wafermap/render';
 
 const props = defineProps<{
   rows: DieResult[];
@@ -81,7 +81,7 @@ const props = defineProps<{
 }>();
 
 const containerEl = ref<HTMLDivElement | null>(null);
-let ctrl: WaferCanvasController | null = null;
+let ctrl: WaferMapController | null = null;
 
 onMounted(() => {
   if (!containerEl.value) return;
@@ -122,7 +122,7 @@ Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` wi
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/render';
 
 const props = defineProps<{
   wafers: Array<{ label: string; rows: DieResult[] }>;
@@ -163,11 +163,11 @@ Call `ctrl.setItems(newFactories)` to replace the lot after mount, or `ctrl.setO
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-import { renderWaferMap, type WaferCanvasController } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
 
 const props = defineProps<{ rows: DieResult[] }>();
 const containerEl = ref<HTMLDivElement | null>(null);
-let ctrl: WaferCanvasController | null = null;
+let ctrl: WaferMapController | null = null;
 
 onMounted(() => {
   if (!containerEl.value) return;

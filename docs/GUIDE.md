@@ -26,7 +26,7 @@ The preferred canvas renderers have no external dependencies.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 ```
 
@@ -35,7 +35,7 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 ```html
 <script type="module">
   import { buildWaferMap } from 'https://esm.sh/@paulrobins/wafermap';
-  import { renderWaferMap, renderWaferGallery } from 'https://esm.sh/@paulrobins/wafermap/canvas-adapter';
+  import { renderWaferMap, renderWaferGallery } from 'https://esm.sh/@paulrobins/wafermap/render';
 </script>
 ```
 
@@ -58,7 +58,7 @@ sized to the desired display area:
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 // Minimum input: x/y die grid positions. The library infers everything else.
 const result = buildWaferMap([
@@ -112,7 +112,7 @@ Parse the CSV and map each row to a `DieResult`. **All numeric fields must be ca
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 async function loadAndRender(csvText: string, container: HTMLElement) {
   const rows = parseCsv(csvText);  // your CSV parser of choice
@@ -505,7 +505,7 @@ renderWaferMap(container, result, {
     colorScheme:             'default',     // 'default', 'greyscale', 'accessible', 'plasma', 'inferno'
     showRingBoundaries:      true,
     showQuadrantBoundaries:  false,
-    showText:                false,         // die index labels
+    showDieLabels:           false,         // die index labels
     showXYIndicator:         true,
     ringCount:               4,
     rotation:                0,             // 0, 90, 180, 270
@@ -821,7 +821,7 @@ select or colour dies associated with the finding.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';  // note: /stats subpath, not root
 
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
@@ -996,7 +996,7 @@ automatically.  The panel is hidden by default; clicking the button toggles it o
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
@@ -1089,7 +1089,7 @@ to fit its cards automatically.  `width: 100%` is the typical choice:
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery } from '@paulrobins/wafermap/render';
 
 // Build a result per wafer
 const waferResults = waferDatasets.map(data =>
@@ -1212,7 +1212,7 @@ Change it via the **Σ button** in the gallery control bar (visible only in this
 or programmatically:
 
 ```ts
-ctrl.setOptions({ aggrMethod: 'median' });  // re-aggregates immediately
+ctrl.setOptions({ aggregationMethod: 'median' });  // re-aggregates immediately
 ```
 
 **Zero-config discovery.** Even without `testDefs` or `binDefs`, the gallery scans
@@ -1298,7 +1298,7 @@ directly when you need one or more of:
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 
 // Aggregate six wafers into a single mean map
@@ -1542,7 +1542,7 @@ render them all as a gallery.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery } from '@paulrobins/wafermap/render';
 
 // 1. Parse — cast all numeric fields; CSV parsers return strings
 const rows = csvText.trim().split('\n').slice(1).map(line => {
@@ -1738,10 +1738,10 @@ import {
   applyProbeSequence,
   transformDies,
   generateReticleGrid,
-  buildView,
   getDieKey,
 } from '@paulrobins/wafermap';
-import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+import { buildView } from '@paulrobins/wafermap/renderer';
+import { toCanvas } from '@paulrobins/wafermap/render';
 
 // 1. Create the wafer geometry
 const wafer = createWafer({ diameter: 300, notch: { type: 'bottom' } });

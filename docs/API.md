@@ -24,7 +24,7 @@ Physical mm positions appear only on the `Die` output objects (`die.physX`, `die
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 // x,y are prober step positions (die grid indices), not mm.
 const result = buildWaferMap({
@@ -65,13 +65,22 @@ If you want the shortest path to the right entry point before diving into the
 type details, see [Architecture](ARCHITECTURE.md). It explains which layer to
 use for data construction, rendering, analysis, and worker offloading.
 
-```text
-buildWaferMap()            — data layer: prober results → WaferMapResult (server-safe, no DOM)
-    │
-    ├── renderWaferMap(container, result)    — single interactive canvas map  ← recommended
-    ├── renderWaferGallery(container, items) — multi-map gallery               ← recommended
-    │
-    └── toCanvas()             — direct canvas render without toolbar
+```mermaid
+graph TD
+    bwm["buildWaferMap()<br/>data layer — no DOM"]
+    rwm["renderWaferMap()"]
+    rg["renderWaferGallery()"]
+    tc["toCanvas()"]
+    awm["analyzeWaferMap()"]
+    awl["analyzeWaferLot()"]
+    wk["createWafermapWorker()"]
+
+    bwm --> rwm
+    bwm --> rg
+    bwm --> tc
+    bwm --> awm
+    bwm --> awl
+    bwm --> wk
 ```
 
 | Section | Description |
@@ -110,24 +119,44 @@ import { buildWaferMap } from '@paulrobins/wafermap';
 // Array form — shorthand, equivalent to passing { results }
 buildWaferMap(results: DieResult[])
 
-// Object form — use this when you need geometry hints or other options
-buildWaferMap({
-  results?:      DieResult[],      // per-die measurements from the prober
-  waferConfig?:  WaferConfig,     // physical wafer geometry (diameter, notch, orientation…)
-  dieConfig?:    DieConfig,       // die size and coordinate conventions
-  dies?:         Die[],            // pre-built die array; skips geometry generation
-  reticleConfig?: ReticleConfig,   // stepper field grid overlay
-  lotStack?:     LotStackConfig,   // collapse multiple wafers into one aggregated map
-  passBins?:     number[],         // bins counted as pass for yield (default [1])
-  retestPolicy?: 'last' | 'first' | 'best' | 'worst', // how to handle multiple results at the same (x,y); default 'last'
-  edgeDieYieldMode?: 'exclude' | 'denominator-only', // default 'exclude'
-  testDefs?:     TestDef[],        // named test definitions — one per testValues entry
-  hbinDefs?:     BinDef[],         // named hard bin definitions — one per distinct hbin value
-  sbinDefs?:     BinDef[],         // named soft bin definitions — one per distinct sbin value
-})
+// Object form — use when you need geometry hints or other options.
+// WaferMapInput is a union: pass either results OR lotStack, never both.
+buildWaferMap(input: WaferMapInput)
 ```
 
-All fields are optional.  Supply what you know; the library handles the rest.
+`WaferMapInput` is a discriminated union:
+
+```ts
+// Shared base (WaferMapInputBase) — all fields are optional:
+type WaferMapInputBase = {
+  waferConfig?:      WaferConfig,      // physical wafer geometry (diameter, notch, orientation…)
+  dieConfig?:        DieConfig,        // die size and coordinate conventions
+  dies?:             Die[],            // pre-built die array; skips geometry generation
+  reticleConfig?:    ReticleConfig,    // stepper field grid overlay
+  passBins?:         number[],         // bins counted as pass for yield (default [1])
+  retestPolicy?:     'last' | 'first' | 'best' | 'worst', // how to handle multiple results at the same (x,y); default 'last'
+  edgeDieYieldMode?: 'exclude' | 'denominator-only', // default 'exclude'
+  testDefs?:         TestDef[],        // named test definitions — one per testValues entry
+  hbinDefs?:         BinDef[],         // named hard bin definitions — one per distinct hbin value
+  sbinDefs?:         BinDef[],         // named soft bin definitions — one per distinct sbin value
+}
+
+// Single-wafer variant (WaferMapInputSingle):
+type WaferMapInputSingle = WaferMapInputBase & {
+  results?:  DieResult[]   // per-die measurements from the prober
+  lotStack?: never          // passing both results and lotStack is a type error
+}
+
+// Lot-stack variant (WaferMapInputLotStack):
+type WaferMapInputLotStack = WaferMapInputBase & {
+  lotStack:  LotStackConfig  // collapse multiple wafers into one aggregated map
+  results?:  never            // passing both results and lotStack is a type error and runtime error
+}
+
+type WaferMapInput = WaferMapInputSingle | WaferMapInputLotStack
+```
+
+All fields are optional.  Supply what you know; the library handles the rest. Passing both `results` and `lotStack` on the same object is a type error and is rejected at runtime.
 
 #### 4.1.1 `DieResult`
 
@@ -374,8 +403,6 @@ const { yieldPercent, yieldPercentGross } = result.yield;
     ratio:            number   // filledDies / totalDies ∈ [0, 1]
   }
   yield: YieldSummary   // pass/fail statistics computed against passBins
-  /** @internal — renderer-agnostic draw list; consumed by renderWaferMap and toCanvas */
-  view:          View
 }
 ```
 
@@ -571,7 +598,7 @@ owns view building internally, and provides a **built-in toolbar** that appears 
 hover — wafermap-specific controls always in the same place.
 
 ```ts
-renderWaferMap(container: HTMLElement, result: WaferMapResult, options?: RenderOptions): WaferCanvasController
+renderWaferMap(container: HTMLElement, result: WaferMapResult, options?: RenderOptions): WaferMapController
 ```
 
 `renderWaferMap` accepts any block `HTMLElement` as `container` — the function
@@ -586,7 +613,7 @@ is created.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 const result = buildWaferMap({ results, passBins });
 const ctrl = renderWaferMap(document.getElementById('map'), result, { showToolbar: true });
@@ -601,10 +628,10 @@ users change all of them at runtime. Pass `viewOptions` inside `RenderOptions`:
 ```ts
 renderWaferMap(container, result, {
   viewOptions: {
-    plotMode:    'value',
-    activeTest:  1060,       // testNumber to show (must match a testDef.testNumber)
-    colorScheme: 'viridis',
-    showText:    true,
+    plotMode:      'value',
+    activeTest:    1060,       // testNumber to show (must match a testDef.testNumber)
+    colorScheme:   'viridis',
+    showDieLabels: true,
   },
 });
 ```
@@ -630,12 +657,12 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `valueRange` | `[number, number]` | auto | Explicit `[min, max]` for value colour normalization; overrides `colorbarRangeMode` |
 | `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | When the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans actual data min/max. Out-of-spec die coloring (blue/red) applies in both modes. |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
-| `aggrMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
+| `aggregationMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
 | `lotSize` | `number` | — | Total wafers in lot — percentage denominator in `stackedBins`/`stackedSoftBins` tooltips |
 | `rotation` | `0 \| 90 \| 180 \| 270` | `0` | Clockwise rotation in degrees |
 | `flipX` | `boolean` | `false` | |
 | `flipY` | `boolean` | `false` | |
-| `showText` | `boolean` | `false` | Die index labels |
+| `showDieLabels` | `boolean` | `false` | Die index labels |
 | `showRingBoundaries` | `boolean` | `false` | |
 | `showQuadrantBoundaries` | `boolean` | `false` | |
 | `showReticle` | `boolean` | `false` | Reticle field boundary overlay (requires `reticles` on the result) |
@@ -672,7 +699,7 @@ Use `=== 'preference'` (not `!== 'state'`) so that `'mixed'` events — which ma
 | `stackedBins` | Die (x, y) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
 | `stackedSoftBins` | Same as `stackedBins` but uses `sbinDefs` for name lookup |
 
-The `aggrMethod` and `lotSize` fields on `WaferViewOptions` populate the method label and percentage denominator respectively.
+The `aggregationMethod` and `lotSize` fields on `WaferViewOptions` populate the method label and percentage denominator respectively.
 
 ### 5.3 Axis labels
 
@@ -685,7 +712,7 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 ```ts
 {
   showAxes?:               boolean            // draw axis tick marks and die grid index labels (default false)
-  viewOptions?:           WaferViewOptions  // initial display state; plotMode, testDefs, hbinDefs, sbinDefs, and reticles are pre-seeded from the result automatically
+  viewOptions?:           WaferViewOptions  // initial display state; plotMode, testDefs, and reticles are pre-seeded from the result automatically
   onHover?:                (die: Die | null, event: MouseEvent) => void
   onClick?:                (die: Die, event: MouseEvent) => void
   onSelect?:               (dies: Die[]) => void     // fires after box-select drag or click-select
@@ -728,7 +755,7 @@ When `statsSummary` is provided, a summary panel toggle button (notebook icon) a
 
 The panel's **Test Values** section shows Min/Mean/Max for each test. Test names come from `testDefs` when provided; without `testDefs` each test is labelled `Test {N}` using its testNumber. The section appears whenever dies have `testValues`, regardless of whether `testDefs` is supplied.
 
-### 5.5 `WaferCanvasController`
+### 5.5 `WaferMapController`
 
 Choose the right update method:
 - `setResult` — new wafer loaded (different geometry, dies, and/or test data). Re-seeds bin defs, testDefs, and reticles from the new result automatically.
@@ -758,6 +785,8 @@ Choose the right update method:
   destroy(): void                                    // remove all listeners and DOM elements
 }
 ```
+
+> **`WaferCanvasController`** is a deprecated alias for `WaferMapController` — it still works but will be removed in a future release. Use `WaferMapController` in new code.
 
 ### 5.6 Toolbar buttons (full mode)
 
@@ -811,7 +840,7 @@ Choose the right update method:
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig });
 
@@ -851,7 +880,7 @@ renderWaferGallery(container: HTMLElement, items: Array<WaferMapDisplayItem | Wa
 ```
 
 ```ts
-import { renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery } from '@paulrobins/wafermap/render';
 
 renderWaferGallery(document.getElementById('gallery'), items, galleryOptions);
 ```
@@ -1025,8 +1054,8 @@ Bin and test definitions are read from the gallery items automatically — no ne
   count of wafers on which that bin appeared at that position.
 - **`stackedValues`** — one card per test parameter; each die shows the lot
   aggregate (mean by default) of that parameter.  The aggregation method is
-  `sharedOpts.aggrMethod` (default `'mean'`); change it with
-  `ctrl.setOptions({ aggrMethod: 'median' })`.
+  `sharedOpts.aggregationMethod` (default `'mean'`); change it with
+  `ctrl.setOptions({ aggregationMethod: 'median' })`.
 
 Switching to a stacked mode rebuilds the cards; switching back restores the
 original per-wafer cards.  `ctrl.setItems(newItems)` always accepts per-wafer
@@ -1036,7 +1065,7 @@ items — the gallery re-aggregates automatically if a stacked mode is active.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 const results = waferIds.map(id => buildWaferMap({ results: dataByWafer[id], dieConfig }));
 const items = results.map((r, i) => ({
@@ -1393,7 +1422,7 @@ type HighlightTarget =
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 
 // Single wafer with summary panel toggle:
@@ -1559,7 +1588,7 @@ Renders a view directly onto an HTML `<canvas>` element using the 2D Canvas API.
 No toolbar is provided — this is a one-shot draw call.
 
 ```ts
-import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+import { toCanvas } from '@paulrobins/wafermap/render';
 ```
 
 ```ts
@@ -1589,6 +1618,8 @@ Returns `{ hitTarget, viewport, binLegendRows }`:
 - `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardBin/softBin)
 
 ```ts
+import { buildView } from '@paulrobins/wafermap/renderer';
+
 const result  = buildWaferMap({ results, waferConfig, dieConfig });
 const view   = buildView(result.wafer, result.dies, { plotMode: 'hardBin' });
 const { hitTarget } = toCanvas(canvas, view);
@@ -1600,6 +1631,8 @@ canvas.addEventListener('mousemove', e => {
 });
 ```
 
+> `hitTarget` is a `HitTarget` object. **`CanvasHitTarget`** is a deprecated alias — use `HitTarget` in new code.
+
 `toCanvas` reads `window.devicePixelRatio` automatically and snaps canvas dimensions to integer CSS pixels to prevent sub-pixel interpolation blur.  Set canvas size in CSS only; do not set `canvas.width`/`canvas.height` directly.
 
 `renderWaferMap` additionally watches for `devicePixelRatio` changes (browser zoom, moving between displays) via a `matchMedia` listener and re-renders automatically.
@@ -1610,7 +1643,7 @@ canvas.addEventListener('mousemove', e => {
 
 ```ts
 import { buildWaferMap }                       from '@paulrobins/wafermap';
-import { renderWaferMap }                      from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap }                      from '@paulrobins/wafermap/render';
 import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats';
 import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
 ```
@@ -1623,7 +1656,9 @@ import { buildWaferMap }   from '@paulrobins/wafermap';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 ```
 
-Only `renderWaferMap` and `toCanvas` (both from `/canvas-adapter`) require a browser environment.
+Only `renderWaferMap` and `toCanvas` (both from `/render`) require a browser environment.
+
+> **`buildView` and `View`** are no longer exported from the root `@paulrobins/wafermap` package. They are available from `@paulrobins/wafermap/renderer` for advanced use (see §11 Manual Pipeline). If you were importing them from the root, update your import path.
 
 ### 10.1 Helper exports
 
@@ -1645,7 +1680,7 @@ const v = getDieTestValue(die, 0, 0);
 
 Returns `undefined` when no value is present.  Use this in post-build code that reads test values from dies.
 
-Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/canvas-adapter`, `/stats`, `/worker`, `/worker-script`
+Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
 
 ---
 
@@ -1660,7 +1695,7 @@ The [Advanced pipeline demo](examples/18-pipeline.html) is the reference for thi
 ```ts
 import { createWafer, generateDies, clipDiesToWafer } from '@paulrobins/wafermap/core';
 import { buildView } from '@paulrobins/wafermap/renderer';
-import { toCanvas } from '@paulrobins/wafermap/canvas-adapter';
+import { toCanvas } from '@paulrobins/wafermap/render';
 
 const wafer = createWafer({ diameter: 300 });
 const dies  = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer);
@@ -1671,17 +1706,22 @@ toCanvas(canvas, view);
 
 **Full pipeline** (with orientation and interactive transforms):
 
-```text
-createWafer(spec)
-  → generateDies(wafer, dieSpec)
-  → clipDiesToWafer(dies, wafer, dieSpec)
-  → [attach values / hbin / sbin / metadata to each die]
-  → applyProbeSequence(dies, config)              // optional
-  → applyOrientation(dies, wafer)
-  ↓  (on each redraw)
-  → transformDies(dies, interactiveTransform, wafer.center)
-  → buildView(wafer, dies, options)   → View
-  → toCanvas(canvas, view)
+```mermaid
+graph TD
+    cw["createWafer(spec)"]
+    gd["generateDies(wafer, dieSpec)"]
+    cd["clipDiesToWafer(dies, wafer, dieSpec)"]
+    av["attach values / hbin / sbin / metadata"]
+    ps["applyProbeSequence(dies, config)"]
+    ao["applyOrientation(dies, wafer)"]
+    td["transformDies(dies, interactiveTransform, wafer.center)"]
+    bv["buildView(wafer, dies, options)"]
+    tc["toCanvas(canvas, view)"]
+
+    cw --> gd --> cd --> av --> ao
+    av -. "optional" .-> ps --> ao
+    ao -. "on each redraw" .-> td
+    td --> bv --> tc
 ```
 
 In the manual pipeline, `die.x` and `die.y` are integer grid indices centred at the wafer origin, computed by `generateDies`.
@@ -1851,7 +1891,7 @@ Builds the renderer-agnostic view.
 interface ViewOptions {
   plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
   colorBySpec?:            boolean           // colours in-spec dies with fixed pass colour instead of gradient; only in 'value' mode with limits
-  showText?:               boolean
+  showDieLabels?:          boolean
   showReticle?:            boolean
   showProbePath?:          boolean
   showRingBoundaries?:     boolean
@@ -1871,12 +1911,12 @@ interface ViewOptions {
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
   colorbarRangeMode?:      'spec' | 'data'  // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
                                             // 'data' spans actual data min/max; out-of-spec coloring applies in both modes
-  aggrMethod?:             string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
+  aggregationMethod?:      string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
   lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
 }
 ```
 
-Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggrMethod`, `lotSize`.
+Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggregationMethod`, `lotSize`.
 
 `hoverPoints` is `{ x, y }[]` — one entry per die, in physical mm coordinates. Used internally by `renderWaferMap` for hit-testing; you rarely need it directly when using `toCanvas` (use `hitTarget.getDieAtPoint` instead).
 
@@ -1896,7 +1936,7 @@ const html = buildHoverText(
   hbinDefs,        // optional
   sbinDefs,        // optional
   'si',            // fallbackFormat — 'si' | 'engineering', optional
-  'mean',          // aggrMethod — for stacked modes, optional
+  'mean',          // aggregationMethod — for stacked modes, optional
   6,               // lotSize — for stacked bin percentage, optional
 );
 tooltipEl.innerHTML = html;

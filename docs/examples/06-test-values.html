@@ -8,7 +8,7 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
   } }</script>
 </head>
 <body class="demo-page">
@@ -105,7 +105,7 @@
 
   <script type="module">
     import { buildWaferMap }  from 'wafermap';
-    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { renderWaferMap } from 'wafermap/render';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS, HBIN_DEFS } from './data.js';
 
     // TEST_DEFS includes limitLow/limitHigh for Vth (1060) — the toolbar shows a spec-range

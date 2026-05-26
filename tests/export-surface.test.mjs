@@ -15,7 +15,7 @@ const SNAPSHOTS = {
     'applyOrientation', 'applyProbeSequence',
     'buildHoverText',
     'buildQuadrantRegions', 'buildReticlePositionRegions', 'buildRingRegions',
-    'buildView', 'buildSectorRegions', 'buildWaferMap',
+    'buildSectorRegions', 'buildWaferMap',
     'classifyDie', 'clipDiesToWafer', 'contrastTextColor', 'createWafer',
     'filterFindings', 'findTestDef', 'generateDies', 'generateReticleGrid', 'generateTextOverlay',
     'getColorScheme', 'getDieKey', 'getDieTestValue',
@@ -34,7 +34,7 @@ const SNAPSHOTS = {
     'isInsideWafer', 'mapDataToDies', 'transformDies',
   ],
   './renderer': [
-    'buildHoverText', 'buildView', 'buildWaferMap',
+    'buildHoverText', 'buildWaferMap',
     'contrastTextColor', 'findTestDef', 'generateTextOverlay',
     'getColorScheme', 'getDieKey', 'getDieTestValue',
     'getUniqueTestNumbers',
@@ -50,17 +50,17 @@ const SNAPSHOTS = {
     'filterFindings', 'openHtmlReport',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
   ],
-  './canvas-adapter': [
+  './render': [
     'renderWaferMap', 'renderWaferGallery', 'toCanvas',
   ],
 };
 
 const MODULES = {
-  '.'              : rootApi,
-  './core'         : coreApi,
-  './renderer'     : rendererApi,
-  './stats'        : statsApi,
-  './canvas-adapter': canvasApi,
+  '.'          : rootApi,
+  './core'     : coreApi,
+  './renderer' : rendererApi,
+  './stats'    : statsApi,
+  './render'   : canvasApi,
 };
 
 for (const [subpath, expected] of Object.entries(SNAPSHOTS)) {

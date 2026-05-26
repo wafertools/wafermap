@@ -24,7 +24,7 @@ npm install @paulrobins/wafermap
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 const result = buildWaferMap({
   results: rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin })),

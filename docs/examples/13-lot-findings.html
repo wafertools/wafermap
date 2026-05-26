@@ -8,7 +8,7 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
     "wafermap/stats":          "../dist/packages/stats/index.js"
   } }</script>
   <style>
@@ -40,7 +40,7 @@
 
   <script type="module">
     import { buildWaferMap }                    from 'wafermap';
-    import { renderWaferMap, renderWaferGallery } from 'wafermap/canvas-adapter';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/render';
     import { analyzeWaferMap, analyzeWaferLot } from 'wafermap/stats';
     import {
       makeResults, makeWaferConfig, DIE_CONFIG,

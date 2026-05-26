@@ -1,4 +1,19 @@
-export * from './buildView.js';
+export {
+  resolveTestNumber,
+  findTestDef,
+  getUniqueTestNumbers,
+  generateTextOverlay,
+  getDieKey,
+  buildHoverText,
+} from './buildView.js';
+export type {
+  PlotMode,
+  ViewRect,
+  ViewText,
+  ViewHoverPoint,
+  ViewOverlay,
+  ViewOptions,
+} from './buildView.js';
 export * from './buildWaferMap.js';
 export {
   hardBinColor,

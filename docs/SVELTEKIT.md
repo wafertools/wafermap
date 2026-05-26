@@ -37,12 +37,12 @@ Your SvelteKit app owns: fetching or loading wafer data, UI state, Svelte compon
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { renderWaferMap, type WaferCanvasController } from '@paulrobins/wafermap/canvas-adapter';
+  import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
 
   export let rows: DieResult[] = [];
 
   let host: HTMLDivElement | null = null;
-  let ctrl: WaferCanvasController | null = null;
+  let ctrl: WaferMapController | null = null;
 
   onMount(() => {
     if (!host) return;
@@ -66,13 +66,13 @@ Hold the controller and call `ctrl.setOptions()` to update display options witho
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { renderWaferMap, type WaferCanvasController, type WaferViewOptions } from '@paulrobins/wafermap/canvas-adapter';
+  import { renderWaferMap, type WaferMapController, type WaferViewOptions } from '@paulrobins/wafermap/render';
 
   export let rows: DieResult[] = [];
   export let plotMode: WaferViewOptions['plotMode'] = 'hardBin';
 
   let host: HTMLDivElement | null = null;
-  let ctrl: WaferCanvasController | null = null;
+  let ctrl: WaferMapController | null = null;
 
   onMount(() => {
     if (!host) return;
@@ -97,7 +97,7 @@ Pass an array of results (or factory functions for large lots) to render a card 
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+  import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/render';
 
   export let wafers: Array<{ label: string; rows: DieResult[] }> = [];
 
@@ -130,12 +130,12 @@ Pass an array of results (or factory functions for large lots) to render a card 
   import { onDestroy, onMount } from 'svelte';
   import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
   import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-  import { renderWaferMap, type WaferCanvasController } from '@paulrobins/wafermap/canvas-adapter';
+  import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
 
   export let rows: DieResult[] = [];
 
   let host: HTMLDivElement | null = null;
-  let ctrl: WaferCanvasController | null = null;
+  let ctrl: WaferMapController | null = null;
 
   onMount(() => {
     if (!host) return;

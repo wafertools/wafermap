@@ -7,7 +7,6 @@ import {
   applyOrientation,
   applyProbeSequence,
   buildHoverText,
-  buildView,
   classifyDie,
   clipDiesToWafer,
   contrastTextColor,
@@ -29,6 +28,7 @@ import {
   valueToGreyscale,
   valueToViridis,
 } from '../dist/index.js';
+import { buildView } from '../dist/packages/renderer/buildView.js';
 import { fmt, fmtColorbarAxis } from '../dist/packages/renderer/fmt.js';
 import {
   assignGridIndices,
@@ -247,7 +247,7 @@ test('renderer scene assembly preserves the public contract', () => {
   const sbinDefs = [{ bin: 2, name: 'SoftFail', color: '#aa0000' }];
   const scene = buildView(wafer, dies, {
     plotMode: 'hardBin',
-    showText: true,
+    showDieLabels: true,
     showReticle: true,
     showProbePath: true,
     showRingBoundaries: true,

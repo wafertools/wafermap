@@ -8,7 +8,7 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
   } }</script>
   <style>
     /* Highlight retested dies in the panel list */
@@ -100,7 +100,7 @@
 
   <script type="module">
     import { buildWaferMap } from 'wafermap';
-    import { renderWaferMap }           from 'wafermap/canvas-adapter';
+    import { renderWaferMap }           from 'wafermap/render';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS } from './data.js';
 
     // Build a dataset with deliberate retests:

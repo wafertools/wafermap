@@ -26,7 +26,7 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 
   <script type="module">
     import { buildWaferMap }  from 'https://esm.sh/@paulrobins/wafermap';
-    import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/canvas-adapter';
+    import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/render';
 
     // x, y are integer die grid positions output by the prober — NOT millimetres.
     // hbin is the hard bin: the pass/fail category assigned by the test equipment.

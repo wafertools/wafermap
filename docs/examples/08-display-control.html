@@ -9,7 +9,7 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
   } }</script>
   <style>
     /* Wider panel for the external controls */
@@ -189,7 +189,7 @@
 
   <script type="module">
     import { buildWaferMap } from 'wafermap';
-    import { renderWaferMap } from 'wafermap/canvas-adapter';
+    import { renderWaferMap } from 'wafermap/render';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS } from './data.js';
 
     // ── Shared definitions ────────────────────────────────────────────────────────
@@ -264,7 +264,7 @@
 
       document.getElementById('ext-rings').checked = opts.showRingBoundaries ?? false;
       document.getElementById('ext-quads').checked = opts.showQuadrantBoundaries ?? false;
-      document.getElementById('ext-labels').checked = opts.showText ?? false;
+      document.getElementById('ext-labels').checked = opts.showDieLabels ?? false;
     }
 
     function updateStateDisplay(opts) {
@@ -306,7 +306,7 @@
     });
 
     document.getElementById('ext-labels').addEventListener('change', e => {
-      ctrl.setOptions({ showText: e.target.checked });
+      ctrl.setOptions({ showDieLabels: e.target.checked });
     });
 
     // ── Programmatic action buttons ──────────────────────────────────────────

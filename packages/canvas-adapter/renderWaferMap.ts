@@ -25,7 +25,7 @@ export interface WaferPreferences {
   rotation?:               0 | 90 | 180 | 270;
   flipX?:                  boolean;
   flipY?:                  boolean;
-  showText?:               boolean;
+  showDieLabels?:          boolean;
   showRingBoundaries?:     boolean;
   showQuadrantBoundaries?: boolean;
   showReticle?:            boolean;
@@ -77,7 +77,7 @@ export interface WaferDisplayState {
    * Accepted values: `'mean'` | `'median'` | `'stddev'` | `'min'` | `'max'` | `'count'`.
    * Defaults to `'mean'` when not set.
    */
-  aggrMethod?:   string;
+  aggregationMethod?:   string;
   /**
    * Total number of wafers in the lot — used to compute bin occurrence percentage
    * in `stackedBins` hover tooltips.
@@ -94,7 +94,7 @@ export interface WaferDisplayState {
  */
 export type WaferViewOptions = WaferPreferences & WaferDisplayState;
 
-export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport'> {
+export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinDefs' | 'sbinDefs'> {
   /** Initial scene display options. All are overridable via the toolbar. */
   viewOptions?: WaferViewOptions;
   /** Called when the user hovers over a die. Null when leaving a die. */
@@ -158,7 +158,7 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport'> {
 /** @deprecated Use RenderOptions instead. */
 export type MountOptions = RenderOptions;
 
-export interface WaferCanvasController {
+export interface WaferMapController {
   /** Update the die data (e.g. after a data reload) — rebuilds scene, preserves zoom/pan. */
   setDies(dies: Die[]): void;
   /** Replace the wafer map result entirely — updates both wafer geometry and die data, preserves zoom/pan. */
@@ -194,12 +194,13 @@ export interface WaferCanvasController {
   destroy(): void;
 }
 
-
+/** @deprecated Use WaferMapController instead. */
+export type WaferCanvasController = WaferMapController;
 
 // Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
   'colorScheme', 'rotation', 'flipX', 'flipY',
-  'showText', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
+  'showDieLabels', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
   'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode',
 ]);
 
@@ -216,7 +217,7 @@ export function renderWaferMap(
   container: HTMLElement,
   result: WaferMapResult,
   options: RenderOptions = {},
-): WaferCanvasController {
+): WaferMapController {
   if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
   const canvasWrap = document.createElement('div');
   Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
@@ -262,7 +263,7 @@ export function renderWaferMap(
   let viewOpts: WaferViewOptions = {
     plotMode:               'hardBin',
     colorScheme:            'default',
-    showText:               false,
+    showDieLabels:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
     showReticle:            false,
@@ -305,7 +306,7 @@ export function renderWaferMap(
     currentView = buildView(wafer, currentDies, {
       plotMode:               so.plotMode,
       colorScheme:            so.colorScheme,
-      showText:               so.showText,
+      showDieLabels:               so.showDieLabels,
       showRingBoundaries:     so.showRingBoundaries,
       showQuadrantBoundaries: so.showQuadrantBoundaries,
       showReticle:            so.showReticle,
@@ -317,7 +318,7 @@ export function renderWaferMap(
       testDefs,
       valueRange:             so.valueRange,
       logScale:               so.logScale,
-      aggrMethod:             so.aggrMethod,
+      aggregationMethod:      so.aggregationMethod,
       lotSize:                so.lotSize,
       dataAxisFlip,
       colorbarRangeMode:      so.colorbarRangeMode,
@@ -622,7 +623,7 @@ export function renderWaferMap(
             return [
               { label: 'Ring boundaries', active: !!viewOpts.showRingBoundaries,     onClick: () => applyOpts({ showRingBoundaries:   !viewOpts.showRingBoundaries   }) },
               { label: 'Quadrant lines',  active: !!viewOpts.showQuadrantBoundaries, onClick: () => applyOpts({ showQuadrantBoundaries: !viewOpts.showQuadrantBoundaries }) },
-              { label: 'Die labels',      active: !!viewOpts.showText,               onClick: () => applyOpts({ showText:              !viewOpts.showText              }) },
+              { label: 'Die labels',      active: !!viewOpts.showDieLabels,               onClick: () => applyOpts({ showDieLabels:              !viewOpts.showDieLabels              }) },
               { label: 'Reticle grid',    active: !!viewOpts.showReticle,            enabled: hasReticleNow, onClick: () => applyOpts({ showReticle: !viewOpts.showReticle }) },
               { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:      !viewOpts.showXYIndicator      }) },
               { label: 'Spec pass/fail',  active: !!viewOpts.colorBySpec,            enabled: hasLimits,    onClick: () => applyOpts({ colorBySpec: !viewOpts.colorBySpec }) },
@@ -630,7 +631,7 @@ export function renderWaferMap(
           },
           (btn) => {
             const anyOn = !!(viewOpts.showRingBoundaries || viewOpts.showQuadrantBoundaries ||
-                             viewOpts.showText || viewOpts.showReticle || viewOpts.showXYIndicator);
+                             viewOpts.showDieLabels || viewOpts.showReticle || viewOpts.showXYIndicator);
             setActive(btn, anyOn);
           },
         );
@@ -1146,7 +1147,7 @@ export function renderWaferMap(
             hbinDefs,
             sbinDefs,
             currentFallbackFormat,
-            viewOpts.aggrMethod,
+            viewOpts.aggregationMethod,
             viewOpts.lotSize,
           );
         }

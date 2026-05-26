@@ -37,7 +37,7 @@ Your React app owns: fetching data, UI state, component lifecycle, mount and cle
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferViewOptions } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, type WaferViewOptions } from '@paulrobins/wafermap/render';
 
 interface WaferMapProps {
   rows: DieResult[];
@@ -107,7 +107,7 @@ Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` wi
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferGallery, type WaferMapDisplayItem } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery, type WaferMapDisplayItem } from '@paulrobins/wafermap/render';
 
 interface WaferGalleryProps {
   datasets: { label: string; rows: DieResult[] }[];
@@ -139,7 +139,7 @@ export function WaferGallery({ datasets }: WaferGalleryProps) {
 For large lots, pass factory functions instead of pre-built items. The gallery inserts placeholder cards immediately and calls each factory in a deferred browser task, keeping the page responsive:
 
 ```tsx
-import { renderWaferGallery, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferGallery, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/render';
 
 const items = datasets.map(({ label, rows }): WaferMapDisplayItemFactory => () => ({
   ...buildWaferMap({ results: rows }),
@@ -157,7 +157,7 @@ const ctrl = renderWaferGallery(containerRef.current, items);
 ```tsx
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
 import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-import { renderWaferMap } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
 
 export function WaferMap({ rows }: { rows: DieResult[] }) {
   const containerRef = useRef<HTMLDivElement>(null);

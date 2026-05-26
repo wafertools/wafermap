@@ -216,14 +216,13 @@ export interface BinDef {
 }
 
 /** Input accepted by {@link buildWaferMap}.  All fields are optional. */
-export interface WaferMapInput {
-  /** Per-die test results from the prober. */
-  results?: DieResult[];
+/** Fields common to both single-wafer and lot-stack inputs. */
+export interface WaferMapInputBase {
   /** Wafer geometry — diameter, notch direction, orientation, edge exclusion. */
   waferConfig?: WaferConfig;
   /** Die size and coordinate-system conventions. */
   dieConfig?: DieConfig;
-  /** Pre-built die array.  When supplied, geometry generation is skipped. */
+  /** Pre-built die array. When supplied, geometry generation is skipped. */
   dies?: Die[];
   /**
    * Reticle (stepper field) overlay.
@@ -236,8 +235,6 @@ export interface WaferMapInput {
    * Set to an empty array to suppress yield calculation.
    */
   passBins?: number[];
-  /** Lot-level stacking — collapse results from several wafers into a single map. */
-  lotStack?: LotStackConfig;
   /**
    * How to handle multiple `DieResult` entries for the same die position (retests).
    *
@@ -282,6 +279,27 @@ export interface WaferMapInput {
    */
   edgeDieYieldMode?: 'exclude' | 'denominator-only';
 }
+
+/** Single-wafer input — pass one wafer's die results directly. */
+export interface WaferMapInputSingle extends WaferMapInputBase {
+  /** Per-die test results from the prober. */
+  results?: DieResult[];
+  lotStack?: never;
+}
+
+/** Lot-stack input — collapse results from multiple wafers into a single aggregated map. */
+export interface WaferMapInputLotStack extends WaferMapInputBase {
+  /** Lot-level stacking — collapse results from several wafers into a single map. */
+  lotStack: LotStackConfig;
+  results?: never;
+}
+
+/**
+ * Input accepted by {@link buildWaferMap}.
+ * Use {@link WaferMapInputSingle} for a single wafer or {@link WaferMapInputLotStack}
+ * for an aggregated lot-stack map. Passing both `results` and `lotStack` is a type error.
+ */
+export type WaferMapInput = WaferMapInputSingle | WaferMapInputLotStack;
 
 /** Options forwarded to {@link buildView}. */
 export interface WaferMapOptions extends ViewOptions {
@@ -384,9 +402,12 @@ interface Normalized {
 }
 
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
+  if (!Array.isArray(input) && 'results' in input && input.results !== undefined && 'lotStack' in input && input.lotStack !== undefined) {
+    throw new Error('buildWaferMap: pass either `results` or `lotStack`, not both.');
+  }
   if (Array.isArray(input)) {
     return {
-      results:          input,
+      results:          input as DieResult[],
       waferOpts:        undefined,
       dieOpts:          undefined,
       explicitDies:     undefined,
@@ -965,7 +986,7 @@ export function buildWaferMap(
     testDefs:     norm.testDefs,
     dataAxisFlip: { x: flipX, y: flipY },
     isLotStack:   norm.lotStackOpts !== undefined,
-    aggrMethod:   norm.lotStackOpts?.method,
+    aggregationMethod: norm.lotStackOpts?.method,
   }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs });
 
   return {

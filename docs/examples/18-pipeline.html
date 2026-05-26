@@ -7,8 +7,9 @@
   <link rel="stylesheet" href="demo.css">
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
-    "wafermap":                "../dist/index.js",
-    "wafermap/canvas-adapter": "../dist/packages/canvas-adapter/index.js"
+    "wafermap":          "../dist/index.js",
+    "wafermap/render":   "../dist/packages/canvas-adapter/index.js",
+    "wafermap/renderer": "../dist/packages/renderer/index.js"
   } }</script>
   <style>
     .demo-controls { flex-wrap: wrap; gap: 8px 14px; }
@@ -96,9 +97,9 @@
       applyProbeSequence,
       transformDies,
       generateReticleGrid,
-      buildView,
     } from 'wafermap';
-    import { toCanvas } from 'wafermap/canvas-adapter';
+    import { buildView } from 'wafermap/renderer';
+    import { toCanvas } from 'wafermap/render';
     import {
       makeResults, WAFER_CONFIG, DIE_CONFIG,
     } from './data.js';
@@ -159,7 +160,7 @@
       flipY:                  false,
       showProbePath:          false,
       showReticle:            false,
-      showText:               false,
+      showDieLabels:          false,
       showRingBoundaries:     false,
       showQuadrantBoundaries: false,
     };
@@ -184,7 +185,7 @@
         reticles,
         showProbePath:          state.showProbePath,
         showReticle:            state.showReticle,
-        showText:               state.showText,
+        showDieLabels:          state.showDieLabels,
         showRingBoundaries:     state.showRingBoundaries,
         showQuadrantBoundaries: state.showQuadrantBoundaries,
         interactiveTransform,
@@ -220,7 +221,7 @@
     for (const [id, key] of [
       ['chk-probe',     'showProbePath'],
       ['chk-reticle',   'showReticle'],
-      ['chk-text',      'showText'],
+      ['chk-text',      'showDieLabels'],
       ['chk-rings',     'showRingBoundaries'],
       ['chk-quadrants', 'showQuadrantBoundaries'],
     ]) {

@@ -58,10 +58,13 @@ export interface ViewportTransform {
   snapDist: number;   // mm radius for getDieAtPoint proximity test
 }
 
-export interface CanvasHitTarget {
+export interface HitTarget {
   /** Given a CSS-pixel position on the canvas, return the die at that point or null. */
   getDieAtPoint(x: number, y: number): Die | null;
 }
+
+/** @deprecated Use HitTarget instead. */
+export type CanvasHitTarget = HitTarget;
 
 /** A hit-testable row in the bin legend — one entry per unique bin. */
 export interface BinLegendRow {
@@ -78,7 +81,7 @@ export interface BinLegendRow {
 }
 
 export interface ToCanvasResult {
-  hitTarget:      CanvasHitTarget;
+  hitTarget:      HitTarget;
   /** The fitted viewport — useful as initial state for mountWaferCanvas. */
   viewport:       ViewportTransform;
   /** Non-empty only when a bin legend was drawn (hardbin / softbin modes). */
@@ -677,7 +680,7 @@ export function toCanvas(
   // ── Build viewport and hit target ──────────────────────────────────────────
   const viewport: ViewportTransform = { originX, originY, ppm, snapDist };
 
-  const hitTarget: CanvasHitTarget = {
+  const hitTarget: HitTarget = {
     getDieAtPoint(px: number, py: number): Die | null {
       const mx = (px - originX) / ppm;
       const my = (originY - py) / ppm;

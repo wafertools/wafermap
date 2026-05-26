@@ -6,7 +6,7 @@ import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
-import type { WaferViewOptions, WaferCanvasController } from './renderWaferMap.js';
+import type { WaferViewOptions, WaferMapController } from './renderWaferMap.js';
 import { classifyChanged } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
@@ -164,7 +164,7 @@ export function renderWaferGallery(
   let sharedOpts: WaferViewOptions = {
     plotMode:               'hardBin',
     colorScheme:            'default',
-    showText:               false,
+    showDieLabels:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
     ringCount:              4,
@@ -174,7 +174,7 @@ export function renderWaferGallery(
     ...options.viewOptions,
   };
 
-  let cardControllers: WaferCanvasController[] = [];
+  let cardControllers: WaferMapController[] = [];
   let cardContainers: HTMLDivElement[] = [];  // canvasWrapper per card — used for modal reparenting
   let currentItems:  WaferMapDisplayItem[] = [];
   let originalItems: (WaferMapDisplayItem | null)[] = [];  // per-wafer source items; null = factory not yet resolved
@@ -541,13 +541,13 @@ export function renderWaferGallery(
     () => [
       { label: 'Ring boundaries', active: !!sharedOpts.showRingBoundaries,     onClick: () => updateShared({ showRingBoundaries:   !sharedOpts.showRingBoundaries   }) },
       { label: 'Quadrant lines',  active: !!sharedOpts.showQuadrantBoundaries, onClick: () => updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries }) },
-      { label: 'Die labels',      active: !!sharedOpts.showText,               onClick: () => updateShared({ showText:              !sharedOpts.showText              }) },
+      { label: 'Die labels',      active: !!sharedOpts.showDieLabels,               onClick: () => updateShared({ showDieLabels:              !sharedOpts.showDieLabels              }) },
       { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: () => updateShared({ showReticle: !sharedOpts.showReticle }) },
       { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: () => updateShared({ showXYIndicator:      !sharedOpts.showXYIndicator      }) },
     ],
     (btn) => {
       const anyOn = !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
-                       sharedOpts.showText || sharedOpts.showReticle || sharedOpts.showXYIndicator);
+                       sharedOpts.showDieLabels || sharedOpts.showReticle || sharedOpts.showXYIndicator);
       setActive(btn, anyOn);
     },
   );
@@ -587,8 +587,8 @@ export function renderWaferGallery(
   const btnAggrMethod = makeDropdown(
     'aggr', 'Aggregation method',
     () => AGGR_METHOD_ITEMS,
-    () => sharedOpts.aggrMethod ?? 'mean',
-    v => updateShared({ aggrMethod: v }),
+    () => sharedOpts.aggregationMethod ?? 'mean',
+    v => updateShared({ aggregationMethod: v }),
   );
   function syncAggrMethodBtn(): void {
     const isStackedValues = sharedOpts.plotMode === 'stackedValues';
@@ -936,7 +936,7 @@ export function renderWaferGallery(
         defs = uniqueNums.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
       }
 
-      const method = (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod;
+      const method = (sharedOpts.aggregationMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => {
         const dies = aggregateValues(allDies, method, def.testNumber ?? def.index) as Die[];
         const cardTestDef = { index: 0, name: def.name, unit: def.unit };
@@ -1012,7 +1012,7 @@ export function renderWaferGallery(
     if (mode === 'stackedBins' || mode === 'stackedSoftBins')
       return { valueRange: [0, lotSize] as [number, number], lotSize };
     if (mode === 'stackedValues')
-      return { aggrMethod: (sharedOpts.aggrMethod ?? 'mean') as AggregationMethod, valueRange: undefined, lotSize: undefined };
+      return { aggregationMethod: (sharedOpts.aggregationMethod ?? 'mean') as AggregationMethod, valueRange: undefined, lotSize: undefined };
     return {};
   }
 
@@ -1044,7 +1044,7 @@ export function renderWaferGallery(
         }
       } else if (wasStacked) {
         // Clear stacked-specific options when leaving stacked mode
-        const { valueRange, lotSize, aggrMethod, ...cleanOpts } = sharedOpts;
+        const { valueRange, lotSize, aggregationMethod, ...cleanOpts } = sharedOpts;
         sharedOpts = cleanOpts;
         if (hasPendingFactories) {
           for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
@@ -1054,7 +1054,7 @@ export function renderWaferGallery(
       } else {
         for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
       }
-    } else if (partial.aggrMethod !== undefined && newMode === 'stackedValues') {
+    } else if (partial.aggregationMethod !== undefined && newMode === 'stackedValues') {
       // Aggregation method changed while in stackedValues — re-aggregate.
       if (hasPendingFactories) {
         for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
@@ -1077,7 +1077,7 @@ export function renderWaferGallery(
 
   // ── Card building ──────────────────────────────────────────────────────────
 
-  function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferCanvasController; canvasWrapper: HTMLDivElement } {
+  function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferMapController; canvasWrapper: HTMLDivElement } {
     const card = document.createElement('div');
     card.className = 'wmap-gallery-card';
     Object.assign(card.style, {
@@ -1215,7 +1215,7 @@ export function renderWaferGallery(
         placeholder.appendChild(spinner);
         gridEl.appendChild(placeholder);
         currentItems.push(null as unknown as WaferMapDisplayItem); // slot reserved
-        cardControllers.push(null as unknown as WaferCanvasController);
+        cardControllers.push(null as unknown as WaferMapController);
         cardContainers.push(null as unknown as HTMLDivElement);
         factories.push({ index: i, factory: entry, placeholder });
       } else {

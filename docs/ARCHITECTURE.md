@@ -217,7 +217,7 @@ Use these imports as your default decision tree:
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap, renderWaferGallery } from '@paulrobins/wafermap/canvas-adapter';
+import { renderWaferMap, renderWaferGallery } from '@paulrobins/wafermap/render';
 import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 import { createWafermapWorker } from '@paulrobins/wafermap/worker';
 ```
