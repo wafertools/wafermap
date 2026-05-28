@@ -301,7 +301,8 @@ const result = buildWaferMap({
   passBins: [1, 100],   // bins 1 and 100 are both counted as pass
 });
 
-console.log(`${(result.yield.yieldPercent * 100).toFixed(1)}%`);
+const yld = result.yield.yieldPercent;
+console.log(yld !== null ? `${(yld * 100).toFixed(1)}%` : 'n/a');
 ```
 
 **→ [Demo: Working with bins](examples/05-named-bins.html)**
@@ -478,14 +479,13 @@ const enrichedDies = result.dies.map(die => {
   return { ...die, testValues: { 1050: Number(row.idsat), 1060: Number(row.vth) } };
 });
 
-renderWaferMap(container, { ...result, dies: enrichedDies }, {
-  viewOptions: {
-    testDefs: [
-      { testNumber: 1050, name: 'Idsat', unit: 'A' },
-      { testNumber: 1060, name: 'Vth',   unit: 'V' },
-    ],
-  },
-});
+// testDefs must be on the result so the stats engine and tooltips can read them
+const testDefs = [
+  { testNumber: 1050, name: 'Idsat', unit: 'A' },
+  { testNumber: 1060, name: 'Vth',   unit: 'V' },
+];
+
+renderWaferMap(container, { ...result, dies: enrichedDies, testDefs });
 ```
 
 > Always use `getDieKey(die)` for lookups rather than manually formatting `"${die.x},${die.y}"` —
@@ -1342,7 +1342,6 @@ const summary = analyzeWaferMap(result, {
 
 // summary.stats.isLotStack        === true
 // summary.stats.aggregationMethod === 'mean'
-// summary.stats.lotSize           === 6
 
 renderWaferMap(container, result, {
   viewOptions: { plotMode: 'value', activeTest: 1060 },
@@ -1559,7 +1558,7 @@ renderWaferMap(container, result, { showToolbar: false });
 ```
 
 The map still renders at full quality with tooltips disabled. To re-enable
-tooltips while keeping the toolbar hidden, pair with `showTooltips: true`.
+tooltips while keeping the toolbar hidden, pair with `showTooltip: true`.
 
 ### Build a gallery from a CSV grouped by wafer ID
 

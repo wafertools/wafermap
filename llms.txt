@@ -11,7 +11,7 @@ Primary entry point: build wafer models with `buildWaferMap()`, then render with
 
 ## Public package entry points
 - `@paulrobins/wafermap`
-- `@paulrobins/wafermap/canvas-adapter`
+- `@paulrobins/wafermap/render`
 - `@paulrobins/wafermap/stats`
 - `@paulrobins/wafermap/worker`
 - `@paulrobins/wafermap/worker-script`

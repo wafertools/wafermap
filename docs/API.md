@@ -1105,6 +1105,12 @@ import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
 
 ### 7.1 `analyzeWaferMap(input, options?)`
 
+```ts
+analyzeWaferMap(input: WaferMapResult | WaferMapInput, options?: AnalyzeWaferMapOptions): StatsSummary
+```
+
+`WaferMapResult` → §4.2 · `WaferMapInput` → §4.1 · `AnalyzeWaferMapOptions` → §7.3 · `StatsSummary` → §7.4
+
 Analyses a single wafer and returns a `StatsSummary`. Accepts either a `WaferMapInput` object or the `WaferMapResult` returned by `buildWaferMap` — passing the result is preferred because `passBins` and `testDefs` are inferred automatically.
 
 ```ts
@@ -1133,6 +1139,12 @@ renderWaferMap(container, result, { statsSummary: summary });
 ```
 
 ### 7.2 `analyzeWaferLot(items, options?)`
+
+```ts
+analyzeWaferLot(items: Array<WaferMapResult | WaferMapInput>, options?: AnalyzeWaferMapOptions): LotStatsSummary
+```
+
+`WaferMapResult` → §4.2 · `WaferMapInput` → §4.1 · `AnalyzeWaferMapOptions` → §7.3 · `LotStatsSummary` → §7.5
 
 Analyses an array of wafers together and returns a `LotStatsSummary`. Use this when you have a full lot and want findings that span wafers — patterns on a single wafer are available in `perWafer[i].summary`, while lot-level findings cover the whole lot.
 
@@ -1319,36 +1331,40 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 ```ts
 import { renderFindingsReportHtml } from '@paulrobins/wafermap/stats';
 
-const html = renderFindingsReportHtml(summary, { title?: string }): string
+renderFindingsReportHtml(summary: StatsSummary | LotStatsSummary, options?: { title?: string }): string
 ```
 
 Generates a standalone printable HTML **findings-only** report from a `StatsSummary` or `LotStatsSummary`. Includes wafer/lot identity fields, yield and die count stats, and a severity-coded findings table. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
+
+`StatsSummary` → §7.4 · `LotStatsSummary` → §7.5
 
 ### 7.7 `renderSummaryReportHtml`
 
 ```ts
 import { renderSummaryReportHtml } from '@paulrobins/wafermap/stats';
 
-const html = renderSummaryReportHtml(params, { title?: string }): string
+renderSummaryReportHtml(params: SummaryReportParams, options?: { title?: string }): string
 ```
 
 Generates a standalone printable HTML **full summary report** — a snapshot of everything shown in the summary panel: metadata, yield, bin breakdown, ring yield, quadrant yield, test value statistics (min/mean/median/stddev/max per test, labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
 
 ```ts
-// Params mirror renderWaferSummaryContent (minus DOM callbacks):
+// SummaryReportParams
 {
-  wafer:        Wafer;
-  dies:         Die[];
-  yieldSummary: YieldSummary;
-  dataCoverage: { filledDies, totalDies, edgeExcludedDies, ratio };
-  hbinDefs?:    BinDef[];
-  sbinDefs?:    BinDef[];
-  testDefs?:    TestDef[];
-  statsSummary?: StatsSummary;
-  passBins?:    number[];   // default [1]
-  ringCount?:   number;     // default 4
+  wafer:         Wafer
+  dies:          Die[]
+  yieldSummary:  YieldSummary
+  dataCoverage:  { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number }
+  hbinDefs?:     BinDef[]
+  sbinDefs?:     BinDef[]
+  testDefs?:     TestDef[]
+  statsSummary?: StatsSummary
+  passBins?:     number[]   // default [1]
+  ringCount?:    number     // default 4
 }
 ```
+
+`Wafer` → §12.2 · `Die` → §12.1 · `YieldSummary` → §4.2.1 · `BinDef` → §4.1.9 · `TestDef` → §4.1.8 · `StatsSummary` → §7.4
 
 The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided.
 
@@ -1453,23 +1469,26 @@ import {
   buildSectorRegions,
 } from '@paulrobins/wafermap/stats';
 
-buildRingRegions(dies, wafer, ringCount)
-// Returns StatsRegion[] with family: 'ring'; keys 'ring:1' ... 'ring:N'
+buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[]
+// family: 'ring'; keys 'ring:1' ... 'ring:N'
 
-buildQuadrantRegions(dies, wafer, ringCount)
-// Returns StatsRegion[] with family: 'quadrant'; keys 'quadrant:NE' etc.
+buildQuadrantRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[]
+// family: 'quadrant'; keys 'quadrant:NE' etc.
 
-buildReticlePositionRegions(dies, reticleConfig)
-// Returns StatsRegion[] with family: 'reticle-position'; keys 'reticle-position:cell:C,R'
-// Returns [] when reticleConfig is undefined
+buildReticlePositionRegions(dies: Die[], reticleConfig: ReticleConfig | undefined): StatsRegion[]
+// family: 'reticle-position'; keys 'reticle-position:cell:C,R'
+// returns [] when reticleConfig is undefined
 
-buildSectorRegions(dies, wafer, sectorCount)
-// Returns StatsRegion[] with family: 'sector'; keys 'sector:N', 'sector:NNE', etc.
+buildSectorRegions(dies: Die[], wafer: Wafer, sectorCount: number): StatsRegion[]
+// family: 'sector'; keys 'sector:N', 'sector:NNE', etc.
 // sectorCount: 4 | 8 | 16 | 32 (default 16 if invalid value passed)
-// Dies with normalised radius < 0.2 are excluded from sector membership (too close to centre)
+// dies with normalised radius < 0.2 are excluded (too close to centre)
 ```
 
+`Die` → §12.1 · `Wafer` → §12.2 · `ReticleConfig` → §4.1.4
+
 Each `StatsRegion` has:
+
 ```ts
 {
   family:   'ring' | 'quadrant' | 'reticle-position' | 'sector'
@@ -1481,7 +1500,13 @@ Each `StatsRegion` has:
 
 ### 7.12 `filterFindings(source, filter)`
 
+```ts
+filterFindings(source: StatsSummary | LotStatsSummary, filter: FindingsFilter): StatsFinding[]
+```
+
 Filters findings from a `StatsSummary` or `LotStatsSummary` by any combination of severity, kind, family, and level. All criteria are ANDed; each accepts a single value or an array.
+
+`StatsSummary` → §7.4 · `LotStatsSummary` → §7.5 · `StatsFinding` → §7.8
 
 ```ts
 import { filterFindings } from '@paulrobins/wafermap/stats';
@@ -1536,16 +1561,29 @@ Create the worker once and reuse it for all calls.
 
 ### 8.2 `createWafermapWorker(worker)`
 
+```ts
+createWafermapWorker(worker: Worker): WafermapWorker
+```
+
 Returns a `WafermapWorker`:
 
 ```ts
+// WafermapWorker
 {
   run(input: WaferMapInput): Promise<WaferMapResult>
   terminate(): void
 }
 ```
 
+`WaferMapInput` → §4.1 · `WaferMapResult` → §4.2
+
 ### 8.3 `worker.run(input)`
+
+```ts
+worker.run(input: WaferMapInput): Promise<WaferMapResult>
+```
+
+`WaferMapInput` → §4.1 · `WaferMapResult` → §4.2
 
 Identical input and output to `buildWaferMap` — just async.
 
@@ -1570,6 +1608,10 @@ const waferResults = await Promise.all(
 
 ### 8.4 `worker.terminate()`
 
+```ts
+worker.terminate(): void
+```
+
 Shuts down the underlying worker.  Any in-flight `run()` calls reject immediately.
 
 ---
@@ -1583,6 +1625,12 @@ Shuts down the underlying worker.  Any in-flight `run()` calls reject immediatel
 For all other use cases, `renderWaferMap` is simpler and handles DPI, resize, and interaction automatically.
 
 ### 9.1 `toCanvas(canvas, view, options?)`
+
+```ts
+toCanvas(canvas: HTMLCanvasElement, view: View, options?: ToCanvasOptions): { hitTarget: HitTarget; viewport: Viewport; binLegendRows: BinLegendRow[] }
+```
+
+`View` is returned by `buildView` (§11.15).
 
 Renders a view directly onto an HTML `<canvas>` element using the 2D Canvas API.
 No toolbar is provided — this is a one-shot draw call.
@@ -1666,9 +1714,14 @@ Only `renderWaferMap` and `toCanvas` (both from `/render`) require a browser env
 import { getDieKey, getDieTestValue } from '@paulrobins/wafermap';
 ```
 
-`getDieKey(die)` — returns a stable `"x,y"` string for map lookups (see manual pipeline section below for details).
+```ts
+getDieKey(die: { x: number; y: number }): string
+getDieTestValue(die: Die, testNumber: number, fallbackIndex?: number): number | undefined
+```
 
-`getDieTestValue(die, testNumber, fallbackIndex?)` — reads a test value from a die by test number:
+`getDieKey` returns a stable `"x,y"` string for map lookups (see §11.17 for details). `Die` → §12.1
+
+`getDieTestValue` reads a test value from a die by test number:
 
 ```ts
 // Preferred — reads from die.testValues
@@ -1728,6 +1781,10 @@ In the manual pipeline, `die.x` and `die.y` are integer grid indices centred at 
 
 ### 11.1 `createWafer(spec)`
 
+```ts
+createWafer(spec: WaferSpec): Wafer
+```
+
 Creates a wafer model.  `diameter` is required.  Accepts a `WaferSpec`:
 
 ```ts
@@ -1746,6 +1803,12 @@ Returns `Wafer` with `diameter`, `radius`, `center`, `notch` (with computed `len
 
 ### 11.2 `generateDies(wafer, spec)`
 
+```ts
+generateDies(wafer: Wafer, spec: DieSpec): Die[]
+```
+
+`Wafer` → §12.2 · `Die` → §12.1
+
 Creates a rectangular die grid centred on the wafer.  Accepts a `DieSpec`:
 
 ```ts
@@ -1763,64 +1826,120 @@ Returns `Die[]` with `id`, `x` (grid), `y` (grid), `physX` (mm), `physY` (mm), `
 
 ### 11.3 `clipDiesToWafer(dies, wafer, spec?)`
 
+```ts
+clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieSpec): Die[]
+```
+
 Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone).
 
 - Removes dies entirely outside the wafer.
 - Sets `insideWafer: true` on included dies.
-- Sets `partial: true` on dies that straddle the boundary (requires `spec` for 4-corner test).
+- Sets `partial: true` on dies that straddle the boundary (requires `dieConfig` for 4-corner test).
+
+`Die` → §12.1 · `Wafer` → §12.2 · `DieSpec` → §11.2
 
 ---
 
 ### 11.4 `isInsideWafer(x, y, wafer)`
 
-Returns `true` when the point (x, y) falls inside the wafer boundary.
+```ts
+isInsideWafer(x: number, y: number, wafer: Wafer): boolean
+```
+
+Returns `true` when the point (x, y) in physical mm falls inside the wafer boundary.
+
+`Wafer` → §12.2
 
 ---
 
 ### 11.5 `mapDataToDies(dies, data, options)`
 
-Maps row data onto dies, attaching `values` and/or bin fields.
+```ts
+mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions): Die[]
+```
+
+Maps row data onto dies by matching grid coordinates. `DataRow` is `Record<string, string | number>`.
 
 ```ts
+// MapOptions
 {
-  matchBy:     'xy' | 'ij'
-  valueField?: string
-  binField?:   string
+  matchBy?:    'xy' | 'ij'   // field pair to match on: x/y or i/j (default 'xy')
+  xField?:     string        // field name for x coordinate (default 'x')
+  yField?:     string        // field name for y coordinate (default 'y')
+  iField?:     string        // field name for i coordinate (used when matchBy = 'ij')
+  jField?:     string        // field name for j coordinate
+  valueField:  string        // field name for the value to attach
 }
 ```
+
+`Die` → §12.1
 
 ---
 
 ### 11.6 `applyOrientation(dies, wafer)`
 
-Rotates die coordinates by `wafer.orientation` around `wafer.center`.
+```ts
+applyOrientation(dies: Die[], wafer: Wafer): Die[]
+```
+
+Rotates die physical coordinates (`physX`, `physY`) by `wafer.orientation` (degrees CCW) around `wafer.center`. Call once after `clipDiesToWafer` and before `transformDies`.
+
+`Die` → §12.1 · `Wafer` → §12.2
 
 ---
 
 ### 11.7 `transformDies(dies, options, center?)`
 
-Applies interactive display transforms (rotation + flip) around `center`.
+```ts
+transformDies(dies: Die[], options: TransformOptions, center?: { x: number; y: number }): Die[]
+```
+
+Applies interactive display transforms (rotation + flip) around `center` (defaults to `wafer.center`). Call on each redraw when the user rotates or flips.
 
 ```ts
+// TransformOptions
 {
-  rotation?: number
+  rotation?: number   // clockwise degrees: 0 | 90 | 180 | 270
   flipX?:    boolean
   flipY?:    boolean
 }
 ```
 
+`Die` → §12.1
+
 ---
 
 ### 11.8 `applyProbeSequence(dies, config)`
 
-Assigns `probeIndex` to dies in the requested order.
+```ts
+applyProbeSequence(dies: Die[], config: ProbeSequenceConfig): Die[]
+```
 
-Supported strategies: `'row'`, `'column'`, `'snake'`, `'custom'`
-(for `'custom'` provide `customOrder: string[]` of die IDs).
+Assigns `probeIndex` to each die according to the chosen scan strategy. Returns a new `Die[]` with `probeIndex` populated. Set `showProbePath: true` in `buildView` options to draw the path as an overlay.
+
+```ts
+// ProbeSequenceConfig
+{
+  type:          'row' | 'column' | 'snake' | 'custom'
+  //   row    — left→right, top→bottom
+  //   snake  — alternating direction per row (boustrophedon)
+  //   column — top→bottom, left→right
+  //   custom — explicit die ID ordering via customOrder
+  customOrder?:  string[]   // ordered die IDs — required when type = 'custom'
+}
+```
+
+`Die` → §12.1
 
 ---
 
 ### 11.9 `generateReticleGrid(wafer, spec)`
+
+```ts
+generateReticleGrid(wafer: Wafer, spec: ReticleSpec): Reticle[]
+```
+
+`Wafer` → §12.2
 
 Generates reticle rectangles covering the wafer area.  Accepts a `ReticleSpec`:
 
@@ -1840,27 +1959,43 @@ Generates reticle rectangles covering the wafer area.  Accepts a `ReticleSpec`:
 
 ### 11.10 `classifyDie(die, wafer, options?)`
 
-Returns `{ ring: number; quadrant: 'NE' | 'NW' | 'SW' | 'SE' }`.
+```ts
+classifyDie(die: Die, wafer: Wafer, options?: { ringCount?: number }): { ring: number; quadrant: 'NE' | 'NW' | 'SW' | 'SE' }
+```
 
-`ring` runs 1 (innermost) to `ringCount` (edge, default 4).
+`ring` runs 1 (innermost) to `ringCount` (outermost/edge). Default `ringCount` is 4.
+
+`Die` → §12.1 · `Wafer` → §12.2
 
 ---
 
 ### 11.11 `getRingLabel(ring, ringCount)`
 
-Returns a human-readable label for a ring index.
+```ts
+getRingLabel(ring: number, ringCount: number): string
+```
+
+Returns a human-readable label for a ring index, e.g. `"Ring 1 (centre)"`, `"Ring 4 (edge)"`.
 
 ---
 
 ### 11.12 `getUniqueBins(dies, binSpace?)`
 
-Returns all distinct bin values, sorted ascending.
+```ts
+getUniqueBins(dies: Die[], binSpace?: 'hard' | 'soft'): number[]
+```
 
-`binSpace?: 'hard' | 'soft'` — selects which field to read (`'hard'` reads `die.hbin`, `'soft'` reads `die.sbin`; default `'hard'`).
+Returns all distinct bin values present in `dies`, sorted ascending. `binSpace` selects which field to read: `'hard'` reads `die.hbin` (default), `'soft'` reads `die.sbin`.
+
+`Die` → §12.1
 
 ---
 
 ### 11.13 `aggregateBinCounts(diesByWafer, targetBin, binSpace?)`
+
+```ts
+aggregateBinCounts(diesByWafer: Die[][], targetBin: number, binSpace?: 'hard' | 'soft'): Die[]
+```
 
 Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
 
@@ -1871,21 +2006,31 @@ Returns one `Die` per unique `(x, y)` with `testValues[0]` = count, and `hbin: t
 
 Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for correct colorbar and percentage tooltips.
 
+`Die` → §12.1
+
 ---
 
 ### 11.14 `aggregateValues(diesByWafer, method, paramIndex?)`
 
-`method` = `'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count'`
+```ts
+aggregateValues(diesByWafer: Die[][], method: 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count', paramIndex?: number): Die[]
+```
 
 `paramIndex` — the `testValues` key to read from each source die (e.g. a `testNumber` like `1050`). Defaults to `0`.
 
 Returns one `Die` per unique `(x, y)` with the aggregated scalar stored at `testValues[0]`, ready for `buildView` in `stackedValues` mode.
 
+`Die` → §12.1
+
 ---
 
 ### 11.15 `buildView(wafer, dies, options?)`
 
-Builds the renderer-agnostic view.
+```ts
+buildView(wafer: Wafer, dies: Die[], options?: ViewOptions): View
+```
+
+Builds the renderer-agnostic view. `Wafer` → §12.2 · `Die` → §12.1
 
 ```ts
 interface ViewOptions {
@@ -1924,21 +2069,27 @@ Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`
 
 ### 11.16 `buildHoverText(die, plotMode, ...)`
 
+```ts
+buildHoverText(
+  die:               Die,
+  plotMode:          PlotMode,
+  testDefs?:         TestDef[],
+  hbinDefs?:         BinDef[],
+  sbinDefs?:         BinDef[],
+  fallbackFormat?:   'si' | 'engineering',
+  aggregationMethod?: string,
+  lotSize?:          number,
+): string
+```
+
 Builds the HTML tooltip string for a single die. Exported so custom `toCanvas` pipelines can generate the same tooltip content as `renderWaferMap` without re-implementing the formatting logic.
+
+`Die` → §12.1 · `TestDef` → §4.1.8 · `BinDef` → §4.1.9
 
 ```ts
 import { buildHoverText } from '@paulrobins/wafermap/renderer';
 
-const html = buildHoverText(
-  die,
-  'hardBin',       // plotMode
-  testDefs,        // optional
-  hbinDefs,        // optional
-  sbinDefs,        // optional
-  'si',            // fallbackFormat — 'si' | 'engineering', optional
-  'mean',          // aggregationMethod — for stacked modes, optional
-  6,               // lotSize — for stacked bin percentage, optional
-);
+const html = buildHoverText(die, 'hardBin', testDefs, hbinDefs, sbinDefs);
 tooltipEl.innerHTML = html;
 ```
 
@@ -1948,7 +2099,11 @@ Called automatically by `renderWaferMap` on hover. Only needed when building a c
 
 ### 11.17 `getDieKey(die)`
 
-Returns a stable string key `"x,y"` for a die.  Always prefer this over ad-hoc template literals.
+```ts
+getDieKey(die: { x: number; y: number }): string
+```
+
+Returns a stable `"x,y"` string key for a die. Always prefer this over ad-hoc template literals — it guarantees a consistent format across grid offset corrections.
 
 ```ts
 const map = new Map(result.dies.map(d => [getDieKey(d), d]));
@@ -1959,14 +2114,33 @@ const die = map.get(getDieKey({ x: 3, y: -2 }));
 
 ### 11.18 Color helpers
 
-| Function | Description |
-| -------- | ----------- |
-| `hardBinColor(bin)` | Categorical colour for hard bin 0–14 |
-| `hardBinGreyscale(bin)` | Greyscale variant |
-| `softBinColor(bin, maxBin?)` | Maps bin to Viridis position |
-| `valueToViridis(t)` | Maps `t ∈ [0,1]` to Viridis RGB string |
-| `valueToGreyscale(t)` | Maps `t ∈ [0,1]` to grey RGB string |
-| `contrastTextColor(cssColor)` | Returns `'#000000'` or `'#ffffff'` for WCAG contrast |
+| Signature | Returns | Description |
+| --------- | ------- | ----------- |
+| `hardBinColor(bin: number)` | `string` | Categorical CSS colour for hard bin 0–14; cycles for values above 14 |
+| `hardBinGreyscale(bin: number)` | `string` | Greyscale variant of `hardBinColor` |
+| `softBinColor(bin: number, maxBin?: number)` | `string` | Maps bin to a Viridis position; `maxBin` sets the scale ceiling |
+| `valueToViridis(t: number)` | `string` | Maps `t ∈ [0,1]` to a Viridis RGB CSS string |
+| `valueToGreyscale(t: number)` | `string` | Maps `t ∈ [0,1]` to a grey RGB CSS string |
+| `contrastTextColor(cssColor: string)` | `'#000000' \| '#ffffff'` | Returns the WCAG-contrast text colour for a given background |
+
+#### Color scheme registry
+
+```ts
+registerColorScheme(name: string, scheme: ColorScheme): void
+getColorScheme(name?: string): ColorScheme
+listColorSchemes(): Array<{ name: string; label: string }>
+```
+
+```ts
+// ColorScheme
+{
+  label:    string                      // display name shown in the toolbar palette dropdown
+  forBin:   (bin: number) => string     // CSS colour for a bin value
+  forValue: (t: number) => string       // CSS colour for a normalised value t ∈ [0,1]
+}
+```
+
+`registerColorScheme` registers a custom palette under `name`; it is then selectable via `colorScheme: name` in view options and appears in the toolbar. `getColorScheme` returns the scheme for `name` (defaults to `'default'`). `listColorSchemes` returns all registered schemes in registration order.
 
 ---
 
