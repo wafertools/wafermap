@@ -7,6 +7,7 @@ export {
   buildHoverText,
 } from './buildView.js';
 export type {
+  View,
   PlotMode,
   ViewRect,
   ViewText,

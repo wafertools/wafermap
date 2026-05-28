@@ -65,7 +65,10 @@
     "build:site": "rm -rf docs/dist && cp -r dist docs/ && ${ZENSICAL:-.venv/bin/zensical} build --clean && cp -r docs/data site/data && rm -rf docs/dist",
     "prepack": "npm run build",
     "pack:check": "npm pack --dry-run",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "screenshots": "node scripts/capture-screenshots.mjs",
+    "screenshots:list": "node scripts/capture-screenshots.mjs --list",
+    "build:images": "npm run build && node scripts/capture-screenshots.mjs"
   },
   "keywords": [
     "wafer-map",
@@ -92,6 +95,7 @@
   "devDependencies": {
     "jsdom": "^29.1.1",
     "marked": "^18.0.3",
+    "playwright": "^1.60.0",
     "serve": "^14.2.0",
     "typescript": "^5.6.3"
   }

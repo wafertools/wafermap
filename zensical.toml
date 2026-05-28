@@ -1,4 +1,5 @@
 [project]
+extra_css   = ["stylesheets/extra.css"]
 site_name   = "Wafermap"
 site_url    = "https://telecasterer.github.io/wafermap/"
 site_author = "Paul Robins"

@@ -44,22 +44,37 @@ export function createTooltip(): HTMLDivElement {
   Object.assign(el.style, {
     position:     'fixed',
     pointerEvents:'none',
-    background:   'rgba(45, 45, 55, 0.88)',
-    color:        '#f7f7f7',
-    padding:      '6px 10px',
+    background:   'rgba(30, 32, 40, 0.93)',
+    color:        '#f0f0f2',
+    border:       '1px solid rgba(255,255,255,0.10)',
+    padding:      '7px 11px',
     borderRadius: '5px',
-    fontSize:     '12px',
-    lineHeight:   '1.5',
-    maxWidth:     '220px',
-    marginTop:    '4px',
+    fontSize:     '13px',
+    lineHeight:   '1.55',
+    maxWidth:     '280px',
     whiteSpace:   'pre-wrap',
     zIndex:       '9999',
     display:      'none',
     fontFamily:   'system-ui, sans-serif',
-    boxShadow:    '0 2px 8px rgba(0,0,0,0.35)',
+    boxShadow:    '0 3px 10px rgba(0,0,0,0.45)',
   });
   document.body.appendChild(el);
   return el;
+}
+
+export function positionTooltip(tooltip: HTMLDivElement, clientX: number, clientY: number): void {
+  tooltip.style.left = '0';
+  tooltip.style.top  = '0';
+  const tw     = tooltip.offsetWidth;
+  const th     = tooltip.offsetHeight;
+  const margin = 8;
+  let x = clientX + 14;
+  let y = clientY - 8;
+  if (x + tw + margin > window.innerWidth)  x = clientX - tw - 6;
+  if (y + th + margin > window.innerHeight) y = window.innerHeight - th - margin;
+  if (y < margin) y = margin;
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top  = `${y}px`;
 }
 
 // ── Toolbar factory ────────────────────────────────────────────────────────────
@@ -313,20 +328,6 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       transition:     'background 0.12s, color 0.12s',
       flexShrink:     '0',
     });
-    function positionTooltip(clientX: number, clientY: number): void {
-      tooltip.style.left = '0';
-      tooltip.style.top  = '0';
-      const tw = tooltip.offsetWidth;
-      const th = tooltip.offsetHeight;
-      const margin = 8;
-      let x = clientX + 14;
-      let y = clientY - 8;
-      if (x + tw + margin > window.innerWidth)  x = clientX - tw - 6;
-      if (y + th + margin > window.innerHeight) y = window.innerHeight - th - margin;
-      if (y < margin) y = margin;
-      tooltip.style.left = `${x}px`;
-      tooltip.style.top  = `${y}px`;
-    }
     btn.addEventListener('mouseenter', (e) => {
       if (!btn.dataset.active) {
         btn.style.background = CLR.bgHover;
@@ -334,10 +335,10 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       }
       tooltip.innerHTML     = label;
       tooltip.style.display = 'block';
-      positionTooltip(e.clientX, e.clientY);
+      positionTooltip(tooltip, e.clientX, e.clientY);
     });
     btn.addEventListener('mousemove', (e) => {
-      if (tooltip.style.display === 'block') positionTooltip(e.clientX, e.clientY);
+      if (tooltip.style.display === 'block') positionTooltip(tooltip, e.clientX, e.clientY);
     });
     btn.addEventListener('mouseleave', () => {
       if (!btn.dataset.active) {
@@ -441,6 +442,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       for (const item of getItems()) {
         const row = document.createElement('div');
         row.textContent = item.label;
+        row.dataset.wmapDropdownValue = item.value;
         const isActive = item.value === getCurrent();
         Object.assign(row.style, {
           padding:    '6px 14px',

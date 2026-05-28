@@ -6,7 +6,7 @@ import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
-import { CLR, ROTATIONS, MODE_LABELS, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, type ModeEntry } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, type ModeEntry } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -464,7 +464,7 @@ export function renderWaferMap(
     {
 
       toolbar = document.createElement('div');
-      toolbar.dataset.wmapToolbar = '1';
+      toolbar.dataset.wmapToolbar = 'single';
       Object.assign(toolbar.style, {
         position:      'absolute',
         top:           '4px',
@@ -477,9 +477,9 @@ export function renderWaferMap(
         borderRadius:  '4px',
         boxShadow:     '0 1px 4px rgba(0,0,0,0.12)',
         zIndex:        '1001',
-        opacity:       '0',
+        opacity:       '0.35',
         transition:    'opacity 0.2s ease',
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
       });
 
       // ── Toolbar helpers ──────────────────────────────────────────────────
@@ -752,15 +752,13 @@ export function renderWaferMap(
       function showBar(): void {
         if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
         if (toolbar) {
-          toolbar.style.opacity      = '1';
-          toolbar.style.pointerEvents = 'auto';
+          toolbar.style.opacity = '1';
         }
       }
       function hideBar(): void {
         hideTimer = setTimeout(() => {
           if (toolbar) {
-            toolbar.style.opacity      = '0';
-            toolbar.style.pointerEvents = 'none';
+            toolbar.style.opacity = '0.35';
           }
         }, 600);
       }
@@ -1108,10 +1106,9 @@ export function renderWaferMap(
     if (legendRow) {
       canvas.style.cursor = 'pointer';
       if (tooltip) {
+        tooltip.innerHTML     = legendRow.label ?? `Bin ${legendRow.bin}`;
         tooltip.style.display = 'block';
-        tooltip.style.left = `${e.clientX + 14}px`;
-        tooltip.style.top = `${e.clientY - 8}px`;
-        tooltip.innerHTML = legendRow.label ?? `Bin ${legendRow.bin}`;
+        positionTooltip(tooltip, e.clientX, e.clientY);
       }
       onHover?.(null, e);
       return;
@@ -1126,21 +1123,17 @@ export function renderWaferMap(
           if (content === null) {
             tooltip.style.display = 'none';
           } else {
-            tooltip.style.display = 'block';
-            tooltip.style.left    = `${e.clientX + 14}px`;
-            tooltip.style.top     = `${e.clientY - 8}px`;
             if (typeof content === 'string') {
               tooltip.innerHTML = content;
             } else {
               tooltip.innerHTML = '';
               tooltip.appendChild(content);
             }
+            tooltip.style.display = 'block';
+            positionTooltip(tooltip, e.clientX, e.clientY);
           }
         } else {
-          tooltip.style.display = 'block';
-          tooltip.style.left    = `${e.clientX + 14}px`;
-          tooltip.style.top     = `${e.clientY - 8}px`;
-          tooltip.innerHTML     = buildHoverText(
+          tooltip.innerHTML = buildHoverText(
             die,
             viewOpts.plotMode ?? 'value',
             testDefs,
@@ -1150,6 +1143,8 @@ export function renderWaferMap(
             viewOpts.aggregationMethod,
             viewOpts.lotSize,
           );
+          tooltip.style.display = 'block';
+          positionTooltip(tooltip, e.clientX, e.clientY);
         }
       } else {
         tooltip.style.display = 'none';

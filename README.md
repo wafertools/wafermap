@@ -1,6 +1,6 @@
 # wafermap
 
-<img src="docs/images/image-5.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
+<img src="docs/images/image.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
 
 Browser-first wafer map visualization for semiconductor test data.
 

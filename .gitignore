@@ -12,3 +12,4 @@ tests/fixtures/*.pkl
 tests/fixtures/*.zip
 tests/fixtures/*.npz
 site/
+docs/examples/presentation.html

@@ -6,7 +6,7 @@ hide:
 
 # wafermap
 
-<img src="images/image-5.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
+<img src="images/image.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
 
 A JavaScript library for rendering interactive wafer maps from semiconductor test data. Hard bins, soft bins, test values, retest runs, edge exclusion, and spec limits are native inputs — no pre-processing required.
 

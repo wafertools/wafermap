@@ -214,7 +214,7 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
 
     const canvas = container.querySelector('canvas');
     assert.ok(canvas, 'canvas should be mounted inside container');
-    assert.equal(container.querySelector('[data-wmap-toolbar="1"]') !== null, true);
+    assert.equal(container.querySelector('[data-wmap-toolbar="single"]') !== null, true);
     assert.equal(ctrl.getOptions().plotMode, 'hardBin');
 
     const buttons = [...root.querySelectorAll('button')];

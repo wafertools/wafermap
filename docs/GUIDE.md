@@ -93,7 +93,7 @@ opens the map in a full-screen modal without rebuilding the view.
 
 
 
-![](images/image-1.png)
+![](images/image-2.png)
 
 ## 3. Loading real data from a CSV
 
@@ -145,7 +145,7 @@ no unit conversion needed.
 Here we have toggled some toolbar options on: XY Axis indicator and Ring boundaries. 
 
 
-![](images/image-2.png)
+![](images/image-3.png)
 
 For a real-world dataset, see [Demo: Real wafer defect data (WM-811K)](examples/19-real-data.html), which loads a sample from the WM-811K public dataset and lets you explore the spatial findings engine across known defect pattern types (Center, Donut, Edge-Loc, Scratch, etc.).
 
@@ -221,7 +221,7 @@ buildWaferMap({
 **→ [Demo: Die size and wafer geometry](examples/04-geometry.html)**
 
 
-![](images/image-3.png)
+![](images/image-4.png)
 
 
 
@@ -307,7 +307,7 @@ console.log(`${(result.yield.yieldPercent * 100).toFixed(1)}%`);
 **→ [Demo: Working with bins](examples/05-named-bins.html)**
 
 
-![](images/image-4.png)
+![](images/image-5.png)
 
 ## 6. Working with test values
 
@@ -420,7 +420,12 @@ Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.sta
 **→ [Demo: Working with test values](examples/06-test-values.html)**
 
 
-![](images/image-5.png)
+![](images/image-6.png)
+
+The same map with the view option 'Spec pass/fail' selected. Now the map shows the dies in spec limits in green and the dies out of limits in red, for the given test.
+
+![](images/image-6a.png)
+
 
 ## 7. Retests and enriching dies after build
 
@@ -490,7 +495,7 @@ renderWaferMap(container, { ...result, dies: enrichedDies }, {
 **→ [Demo: Working with retested dies](examples/07-retests.html)**
 
 
-![](images/image-6.png)
+![](images/image-7.png)
 
 ## 8. Controlling the display
 
@@ -590,7 +595,7 @@ renderWaferMap(container, result, {
 **→ [Demo: Controlling the display](examples/08-display-control.html)**
 
 
-![](images/image-7.png)
+![](images/image-8.png)
 
 ### Bin legend position
 
@@ -609,17 +614,19 @@ Set the initial position via `viewOptions` — the user can change it at any tim
 
 ```ts
 renderWaferMap(container, result, {
-  viewOptions: { plotMode: 'hardBin', legendPosition: 'bottom' },
+  viewOptions: { plotMode: 'hardBin', legendPosition: 'floating' },
 });
 ```
+![](images/image-8a.png)
+
 
 The Legend style button is automatically disabled when the map is in `value` or stacked mode, since those modes use a continuous colorbar instead of a bin legend.
 
 For galleries, `legendPosition` is a top-level `GalleryOptions` field and applies to all cards:
 
 ```ts
-renderWaferMap(container, items, {
-  legendPosition: 'compact',
+renderWaferGallery(container, items, {
+  legendPosition: 'floating',
 });
 ```
 
@@ -726,7 +733,21 @@ ctrl.clearSelection();
 **→ [Demo: Responding to user interaction](examples/09-interaction.html)**
 
 
-![](images/image-8.png)
+![](images/image-9.png)
+
+### Bin legend filter
+
+In `hardBin` and `softBin` modes, clicking any row in the bin legend dims all dies that do not belong to that bin — making it easy to isolate a single failure category across the wafer. Click the same row again to clear the filter.
+
+```ts
+// Equivalent programmatic control:
+ctrl.setOptions({ highlightBin: 2 });   // isolate bin 2
+ctrl.setOptions({ highlightBin: undefined }); // clear
+```
+
+The filter also works in gallery view — clicking a legend row in the gallery toolbar highlights that bin across every card simultaneously.
+
+![Bin legend filter — bin 2 selected, all other bins dimmed](images/image-5a.png)
 
 ## 10. Adding statistical findings
 
@@ -950,6 +971,8 @@ for (const f of clusters) {
 }
 ```
 
+![Cluster finding highlight — specific failing dies lit amber](images/image-10a.png)
+
 ### Reading findings in code
 
 Each finding is a `StatsFinding` with a human-readable `summary` and structured
@@ -980,7 +1003,7 @@ ctrl.setStatsSummary(newSummary);
 **→ [Demo: Statistical findings](examples/10-findings.html)**
 
 
-![](images/image-13.png)
+![](images/image-10.png)
 
 ## 11. Summary panel
 
@@ -1072,6 +1095,8 @@ renderWaferGallery(container, items, {
 
 **→ [Demo: Summary panel](examples/11-summary-panel.html)**
 
+
+![](images/image-11.png)
 
 ## 12. Building a lot gallery
 
@@ -1226,8 +1251,9 @@ sector, and cluster findings on the aggregated map.  No extra code is required.
 **→ [Demo: Building a lot gallery](examples/12-gallery.html)**  
 See also: [Demo: Lot-level findings with stacked modes](examples/13-lot-findings.html)
 
+![Gallery in Stacked Hard Bins mode — one card per bin aggregated across the lot](images/image-12a.png)
 
-![](images/image-9.png)
+![Gallery in per-wafer Hard Bin mode — one card per wafer](images/image-12.png)
 
 
 ## 13. Lot-level statistical findings
@@ -1285,7 +1311,7 @@ ctrl.setLotStatsSummary(newLotSummary);
 **→ [Demo: Lot-level statistical findings](examples/13-lot-findings.html)**
 
 
-![](images/image-10.png)
+![](images/image-13.png)
 
 ### Advanced: standalone stacked map with programmatic findings access
 
@@ -1387,7 +1413,7 @@ const items = waferResults.map((r, i) => ({ ...r, label: `W${i + 1}` }));
 **→ [Demo: Reticle overlays](examples/14-reticle.html)**
 
 
-![](images/image-11.png)
+![](images/image-14.png)
 
 ## 15. Processing large datasets with a Web Worker
 
@@ -1517,7 +1543,7 @@ They are global and persist for the lifetime of the page.
 **→ [Demo: Custom colour schemes](examples/16-color-schemes.html)**
 
 
-![](images/image-14.png)
+![](images/image-16.png)
 
 ## 17. Recipes
 

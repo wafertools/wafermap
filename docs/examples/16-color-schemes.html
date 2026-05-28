@@ -198,7 +198,7 @@
       passBins:    [1],
     });
 
-    const sharedOpts = { viewOptions: { plotMode: 'hardBin' }, showToolbar: false };
+    const sharedOpts = { viewOptions: { plotMode: 'hardBin' }, showToolbar: true };
 
     renderWaferMap(document.getElementById('map-color'),
       result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'color'     } });

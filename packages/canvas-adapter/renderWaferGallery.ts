@@ -442,8 +442,9 @@ export function renderWaferGallery(
   // ── Gallery control bar ────────────────────────────────────────────────────
 
   const barEl = document.createElement('div');
+  barEl.dataset.wmapToolbar = 'gallery';
   Object.assign(barEl.style, {
-    display:       'flex',
+    display:       'inline-flex',
     flexDirection: 'row',
     alignItems:    'center',
     gap:           '0',

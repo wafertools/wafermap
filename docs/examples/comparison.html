@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>wafermap vs Plotly.js — Performance &amp; Feature Comparison</title>
+
+  <script type="importmap">{ "imports": {
+    "wafermap":       "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  }}</script>
+
+  <!-- Plotly full bundle required for scattergl (WebGL) -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 14px;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 0 0 60px;
+    }
+
+    /* ── Header ──────────────────────────────────────────── */
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 18px 32px;
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+    header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    header h1 span { color: #94a3b8; font-weight: 400; margin: 0 4px; }
+    header p { font-size: 13px; color: #64748b; }
+
+    /* ── Controls ────────────────────────────────────────── */
+    .controls {
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .scenario-tabs { display: flex; gap: 4px; }
+    .tab {
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background: #f8fafc;
+      color: #64748b;
+      cursor: pointer;
+    }
+    .tab.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+
+    #run-btn {
+      padding: 7px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #0d9488;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #run-btn:hover { background: #0f766e; }
+    #run-btn:disabled { background: #94a3b8; cursor: default; }
+
+    .run-note { font-size: 12px; color: #94a3b8; }
+    .run-count { font-size: 12px; color: #0d9488; font-weight: 600; }
+
+    /* ── Comparison grid ─────────────────────────────────── */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      padding: 24px 32px;
+      gap: 24px;
+      max-width: 1280px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .lib-name { font-size: 14px; font-weight: 700; color: #0f172a; }
+    .lib-size {
+      font-size: 11px;
+      color: #94a3b8;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      background: #f1f5f9;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .render-area {
+      width: 100%;
+      aspect-ratio: 1;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      font-size: 13px;
+      position: relative;
+    }
+    .render-area > * { width: 100% !important; height: 100% !important; }
+
+    /* ── Timing card ─────────────────────────────────────── */
+    .timing-card {
+      padding: 12px 16px;
+      border-top: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+    .timing-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+      font-size: 13px;
+      color: #64748b;
+    }
+    .timing-row .label { color: #64748b; }
+    .timing-row .val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #0f172a;
+      font-weight: 600;
+    }
+    .timing-row.total {
+      border-top: 1px solid #e2e8f0;
+      margin-top: 4px;
+      padding-top: 6px;
+    }
+    .timing-row.total .label { color: #0f172a; font-weight: 700; }
+    .timing-row.total .val { color: #0d9488; font-size: 14px; }
+    .timing-row .val.pending { color: #94a3b8; font-weight: 400; }
+
+    .panel-footer {
+      padding: 8px 16px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .panel-footer code {
+      font-family: monospace;
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: #475569;
+    }
+    .panel-footer .warning {
+      color: #b45309;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    /* ── Notes section (after first run) ────────────────── */
+    .notes-bar {
+      margin: 0 32px;
+      padding: 10px 16px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #78350f;
+      display: none;
+    }
+    .notes-bar.visible { display: block; }
+
+    /* ── Feature table ───────────────────────────────────── */
+    .feature-section {
+      padding: 32px 32px 0;
+    }
+    .feature-section h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+    .feature-section p {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 16px;
+    }
+
+    .feature-table {
+      width: 100%;
+      max-width: 900px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .feature-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .feature-table th:first-child { width: 40%; }
+    .feature-table td {
+      padding: 7px 12px;
+      border: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    .feature-table tr:nth-child(even) td { background: #f8fafc; }
+
+    .feature-table .group td {
+      background: #e2e8f0;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+    }
+
+    .yes  { color: #15803d; font-weight: 600; }
+    .part { color: #b45309; font-weight: 600; }
+    .no   { color: #94a3b8; }
+    .note { font-size: 11px; color: #94a3b8; display: block; margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>@paulrobins/wafermap <span>vs</span> Plotly.js</h1>
+  <p>Rendering the same wafer data in both libraries. Timings from <code>performance.now()</code> — data fetch excluded.</p>
+</header>
+
+<div class="controls">
+  <div class="scenario-tabs">
+    <button class="tab active" data-scenario="bins">Bin map — 2,460 dies (WM-811K)</button>
+    <button class="tab" data-scenario="values">Test values — 665 dies</button>
+  </div>
+  <button id="run-btn">▶ Run benchmark</button>
+  <span class="run-count" id="run-count" style="display:none"></span>
+  <span class="run-note">Click Run to load data and time both renders. Click again for a warmer run.</span>
+</div>
+
+<div class="comparison-grid">
+
+  <div class="panel">
+    <div class="panel-header">
+      <span class="lib-name">@paulrobins/wafermap</span>
+      <span class="lib-size">~91 KB gzip (full stack)</span>
+    </div>
+    <div class="render-area" id="wmap-area">
+      <div id="wmap-container" style="width:100%;height:100%;"></div>
+    </div>
+    <div class="timing-card">
+      <div class="timing-row">
+        <span class="label">buildWaferMap()</span>
+        <span class="val pending" id="t-build">—</span>
+      </div>
+      <div class="timing-row">
+        <span class="label">renderWaferMap()</span>
+        <span class="val pending" id="t-render-wmap">—</span>
+      </div>
+      <div class="timing-row total">
+        <span class="label">Total</span>
+        <span class="val pending" id="t-total-wmap">—</span>
+      </div>
+    </div>
+    <div class="panel-footer" id="wmap-footer">
+      <code>buildWaferMap({ results })</code> then <code>renderWaferMap(el, result)</code>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <span class="lib-name">Plotly.js</span>
+      <span class="lib-size">~1.1 MB gzip (full bundle)</span>
+    </div>
+    <div class="render-area" id="plotly-area">
+      <div id="plotly-container" style="width:100%;height:100%;"></div>
+    </div>
+    <div class="timing-card">
+      <div class="timing-row">
+        <span class="label">Data preparation</span>
+        <span class="val pending" id="t-prep">—</span>
+      </div>
+      <div class="timing-row">
+        <span class="label">Plotly.newPlot() (awaited)</span>
+        <span class="val pending" id="t-render-plotly">—</span>
+      </div>
+      <div class="timing-row total">
+        <span class="label">Total</span>
+        <span class="val pending" id="t-total-plotly">—</span>
+      </div>
+    </div>
+    <div class="panel-footer" id="plotly-footer">
+      <span>scattergl (WebGL) + manual wafer circle shape</span>
+      <span class="warning" id="plotly-warning"></span>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes-bar" id="notes-bar">
+  First run timings include JS engine warm-up. Click <strong>Run benchmark</strong> again for more representative numbers.
+</div>
+
+<div class="feature-section">
+  <h2>Feature comparison</h2>
+  <p>What each library handles natively vs what requires manual implementation.</p>
+  <table class="feature-table">
+    <thead>
+      <tr>
+        <th>Feature</th>
+        <th>@paulrobins/wafermap</th>
+        <th>Plotly.js</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="group"><td colspan="3">Geometry</td></tr>
+      <tr>
+        <td>Circular wafer boundary</td>
+        <td class="yes">✓ Native<span class="note">Computed from die pitch and wafer diameter</span></td>
+        <td class="part">△ Shape overlay only<span class="note">Circle drawn on top — dies outside are not clipped</span></td>
+      </tr>
+      <tr>
+        <td>Die coordinates → wafer grid</td>
+        <td class="yes">✓ Native<span class="note">Prober step positions accepted directly</span></td>
+        <td class="part">△ Manual<span class="note">x/y used as scatter coordinates; no grid semantics</span></td>
+      </tr>
+      <tr>
+        <td>Die pitch and sizing</td>
+        <td class="yes">✓ Inferred automatically</td>
+        <td class="no">✗ Fixed pixel marker size<span class="note">Gaps or overlaps depending on zoom</span></td>
+      </tr>
+      <tr>
+        <td>Edge exclusion ring</td>
+        <td class="yes">✓ Native</td>
+        <td class="no">✗ Manual pre-filter</td>
+      </tr>
+      <tr>
+        <td>Wafer notch / orientation</td>
+        <td class="yes">✓ Native (rotate, flip)</td>
+        <td class="no">✗ Manual coordinate transform</td>
+      </tr>
+
+      <tr class="group"><td colspan="3">Data handling</td></tr>
+      <tr>
+        <td>Hard bin (categorical pass/fail)</td>
+        <td class="yes">✓ Native — named, colour-mapped</td>
+        <td class="part">△ Numeric colorscale only<span class="note">No bin names, no pass/fail semantics</span></td>
+      </tr>
+      <tr>
+        <td>Soft bin mode</td>
+        <td class="yes">✓ Native</td>
+        <td class="no">✗ Separate manual trace</td>
+      </tr>
+      <tr>
+        <td>Multiple test values per die</td>
+        <td class="yes">✓ Native — test selector in toolbar</td>
+        <td class="no">✗ One value per trace; manual UI to switch</td>
+      </tr>
+      <tr>
+        <td>Spec limits + out-of-spec colour</td>
+        <td class="yes">✓ Native — blue/red overlay</td>
+        <td class="no">✗ Manual pre-classification</td>
+      </tr>
+      <tr>
+        <td>Retest policy (best / worst / last)</td>
+        <td class="yes">✓ Native</td>
+        <td class="no">✗ Manual pre-process</td>
+      </tr>
+
+      <tr class="group"><td colspan="3">Interactivity</td></tr>
+      <tr>
+        <td>Zoom / pan</td>
+        <td class="yes">✓</td>
+        <td class="yes">✓</td>
+      </tr>
+      <tr>
+        <td>Die tooltip</td>
+        <td class="yes">✓ Native — bin, soft bin, all test values</td>
+        <td class="part">△ Custom template<span class="note">Only values passed to the trace</span></td>
+      </tr>
+      <tr>
+        <td>Box-select → sub-region yield</td>
+        <td class="yes">✓ Native</td>
+        <td class="no">✗ Manual selected-point callback</td>
+      </tr>
+      <tr>
+        <td>PNG export</td>
+        <td class="yes">✓ Toolbar button</td>
+        <td class="yes">✓ Modebar button</td>
+      </tr>
+
+      <tr class="group"><td colspan="3">Analysis</td></tr>
+      <tr>
+        <td>Ring yield differential</td>
+        <td class="yes">✓ Built-in (analyzeWaferMap)</td>
+        <td class="no">✗ Not available</td>
+      </tr>
+      <tr>
+        <td>Failure cluster detection</td>
+        <td class="yes">✓ Built-in</td>
+        <td class="no">✗ Not available</td>
+      </tr>
+      <tr>
+        <td>Quadrant / sector analysis</td>
+        <td class="yes">✓ Built-in</td>
+        <td class="no">✗ Not available</td>
+      </tr>
+      <tr>
+        <td>Reticle / stepper overlay</td>
+        <td class="yes">✓ Built-in</td>
+        <td class="no">✗ Not available</td>
+      </tr>
+      <tr>
+        <td>Lot-level gallery + findings</td>
+        <td class="yes">✓ Built-in (renderWaferGallery + analyzeWaferLot)</td>
+        <td class="no">✗ Manual layout + no lot analysis</td>
+      </tr>
+
+      <tr class="group"><td colspan="3">Integration</td></tr>
+      <tr>
+        <td>Library size (gzip)</td>
+        <td class="yes">~91 KB (full stack)</td>
+        <td class="part">~1.1 MB (full bundle)<span class="note">~300 KB with plotly-basic (no WebGL)</span></td>
+      </tr>
+      <tr>
+        <td>Zero runtime dependencies</td>
+        <td class="yes">✓</td>
+        <td class="yes">✓</td>
+      </tr>
+      <tr>
+        <td>React / Vue / Svelte / vanilla JS</td>
+        <td class="yes">✓</td>
+        <td class="yes">✓</td>
+      </tr>
+      <tr>
+        <td>Web Worker support</td>
+        <td class="yes">✓ (buildWaferMap runs off main thread)</td>
+        <td class="no">✗</td>
+      </tr>
+      <tr>
+        <td>Lines of code (basic wafer map)</td>
+        <td class="yes">2</td>
+        <td class="part">~25–30<span class="note">Scatter trace + layout + circle shape + color mapping</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script type="module">
+  import { buildWaferMap }  from 'wafermap';
+  import { renderWaferMap } from 'wafermap/render';
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let scenario = 'bins';
+  let runIndex = 0;
+
+  // ── Data cache (fetched once per scenario) ─────────────────────────────────
+  const cache = {};
+
+  async function loadBins() {
+    if (cache.bins) return cache.bins;
+    const resp = await fetch('./wm811k-sample.json');
+    const fixture = await resp.json();
+    // Use the first entry (Center defect, 2,460 dies) — largest wafer in the set
+    cache.bins = fixture[0].results;
+    return cache.bins;
+  }
+
+  async function loadValues() {
+    if (cache.values) return cache.values;
+    const resp = await fetch('../data/large-test.csv');
+    const text = await resp.text();
+    const lines = text.trim().split('\n');
+    const header = lines[0].split(',');
+    const waferCol = header.indexOf('wafer');
+    const xCol     = header.indexOf('x');
+    const yCol     = header.indexOf('y');
+    const hbinCol  = header.indexOf('hbin');
+    const sbinCol  = header.indexOf('sbin');
+    const tACol    = header.indexOf('testA');
+    const tBCol    = header.indexOf('testB');
+    const tCCol    = header.indexOf('testC');
+
+    const results = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      if (cols[waferCol] !== 'W01') continue;
+      results.push({
+        x:    +cols[xCol],
+        y:    +cols[yCol],
+        hbin: +cols[hbinCol],
+        sbin: +cols[sbinCol],
+        testValues: {
+          1050: +cols[tACol],
+          1060: +cols[tBCol],
+          1070: +cols[tCCol],
+        },
+      });
+    }
+    cache.values = results;
+    return cache.values;
+  }
+
+  // ── wafermap benchmark ─────────────────────────────────────────────────────
+  function runWafermap(results, isValues) {
+    const el = document.getElementById('wmap-container');
+    el.innerHTML = '';
+
+    const buildOpts = isValues
+      ? {
+          results,
+          passBins: [1],
+          testDefs: [
+            { testNumber: 1050, name: 'testA', unit: 'V' },
+            { testNumber: 1060, name: 'testB', unit: 'V' },
+            { testNumber: 1070, name: 'testC', unit: 'V' },
+          ],
+        }
+      : { results, passBins: [1] };
+
+    const t0 = performance.now();
+    const result = buildWaferMap(buildOpts);
+    const t1 = performance.now();
+
+    const renderOpts = isValues ? { plotMode: 'value', activeTest: 1050 } : {};
+    renderWaferMap(el, result, renderOpts);
+    const t2 = performance.now();
+
+    return { build: t1 - t0, render: t2 - t1, total: t2 - t0 };
+  }
+
+  // ── Plotly benchmark ───────────────────────────────────────────────────────
+  async function runPlotly(results, isValues) {
+    const el = document.getElementById('plotly-container');
+
+    const t0 = performance.now();
+
+    const x = results.map(r => r.x);
+    const y = results.map(r => r.y);
+    const maxR = Math.max(...results.map(r => Math.sqrt(r.x * r.x + r.y * r.y)));
+
+    let markerColor, colorscale, showscale, colorbarTitle;
+
+    if (isValues) {
+      markerColor  = results.map(r => r.testValues[1050]);
+      colorscale   = 'Viridis';
+      showscale    = true;
+      colorbarTitle = 'testA';
+    } else {
+      // Map bins to a categorical colorscale
+      const bins     = [...new Set(results.map(r => r.hbin))].sort((a, b) => a - b);
+      const binCount = bins.length;
+      const COLORS   = ['#22c55e', '#ef4444', '#f97316', '#a855f7', '#06b6d4'];
+      const passColor = COLORS[0];
+      colorscale = bins.map((b, i) => {
+        const t = binCount > 1 ? i / (binCount - 1) : 0;
+        return [t, b === 1 ? passColor : COLORS[1 + (i % (COLORS.length - 1))]];
+      });
+      if (bins.length === 1) colorscale = [[0, passColor], [1, passColor]];
+      markerColor  = results.map(r => r.hbin);
+      showscale    = false;
+      colorbarTitle = '';
+    }
+
+    const hoverText = isValues
+      ? results.map(r => `x: ${r.x}, y: ${r.y}<br>testA: ${r.testValues[1050].toFixed(4)}`)
+      : results.map(r => `x: ${r.x}, y: ${r.y}<br>HBin: ${r.hbin}`);
+
+    const trace = {
+      type: 'scattergl',
+      mode: 'markers',
+      x,
+      y,
+      text: hoverText,
+      hoverinfo: 'text',
+      marker: {
+        color:     markerColor,
+        colorscale,
+        showscale,
+        colorbar:  showscale ? { title: colorbarTitle, thickness: 14, len: 0.8 } : undefined,
+        size:      7,
+        symbol:    'square',
+        line:      { width: 0 },
+      },
+    };
+
+    const layout = {
+      margin:  { l: 30, r: showscale ? 80 : 30, t: 10, b: 30 },
+      xaxis: {
+        scaleanchor: 'y',
+        scaleratio:  1,
+        zeroline:    false,
+        showgrid:    false,
+        tickfont:    { size: 10 },
+      },
+      yaxis: {
+        zeroline:  false,
+        showgrid:  false,
+        tickfont:  { size: 10 },
+      },
+      shapes: [{
+        type:      'circle',
+        xref:      'x',
+        yref:      'y',
+        x0:        -(maxR + 0.6),
+        y0:        -(maxR + 0.6),
+        x1:        maxR + 0.6,
+        y1:        maxR + 0.6,
+        line:      { color: '#64748b', width: 2 },
+        fillcolor: 'rgba(0,0,0,0)',
+        layer:     'above',
+      }],
+      paper_bgcolor: '#f8fafc',
+      plot_bgcolor:  '#f8fafc',
+      showlegend:    false,
+      autosize:      true,
+    };
+
+    const t1 = performance.now();
+
+    await Plotly.newPlot(el, [trace], layout, {
+      responsive:     true,
+      displayModeBar: true,
+    });
+
+    const t2 = performance.now();
+
+    return { prep: t1 - t0, render: t2 - t1, total: t2 - t0 };
+  }
+
+  // ── UI helpers ─────────────────────────────────────────────────────────────
+  function ms(v) { return `${v.toFixed(1)} ms`; }
+
+  function setTiming(id, v) {
+    const el = document.getElementById(id);
+    el.textContent = ms(v);
+    el.classList.remove('pending');
+  }
+
+  function resetTimings() {
+    for (const id of ['t-build','t-render-wmap','t-total-wmap','t-prep','t-render-plotly','t-total-plotly']) {
+      const el = document.getElementById(id);
+      el.textContent = '…';
+      el.classList.add('pending');
+    }
+  }
+
+  // ── Run ────────────────────────────────────────────────────────────────────
+  async function run() {
+    const btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Running…';
+    resetTimings();
+
+    const isValues = scenario === 'values';
+    const results  = isValues ? await loadValues() : await loadBins();
+
+    // wafermap — runs synchronously
+    const wm = runWafermap(results, isValues);
+    setTiming('t-build',       wm.build);
+    setTiming('t-render-wmap', wm.render);
+    setTiming('t-total-wmap',  wm.total);
+
+    // Plotly — async
+    const pl = await runPlotly(results, isValues);
+    setTiming('t-prep',          pl.prep);
+    setTiming('t-render-plotly', pl.render);
+    setTiming('t-total-plotly',  pl.total);
+
+    // Update footer warnings
+    document.getElementById('plotly-warning').textContent =
+      'Note: wafer circle is a visual overlay — dies outside the boundary are not clipped.';
+
+    runIndex++;
+    const countEl = document.getElementById('run-count');
+    countEl.textContent = `Run #${runIndex}`;
+    countEl.style.display = '';
+
+    document.getElementById('notes-bar').classList.toggle('visible', runIndex === 1);
+
+    btn.disabled  = false;
+    btn.textContent = '▶ Run again';
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      scenario = tab.dataset.scenario;
+      // Clear renders and timings on tab switch
+      document.getElementById('wmap-container').innerHTML  = '';
+      document.getElementById('plotly-container').innerHTML = '';
+      runIndex = 0;
+      document.getElementById('run-count').style.display   = 'none';
+      document.getElementById('notes-bar').classList.remove('visible');
+      resetTimings();
+      document.getElementById('run-btn').textContent = '▶ Run benchmark';
+    });
+  });
+
+  document.getElementById('run-btn').addEventListener('click', run);
+</script>
+</body>
+</html>
