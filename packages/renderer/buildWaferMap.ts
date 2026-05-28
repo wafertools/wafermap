@@ -1,10 +1,10 @@
 import type { Die, DieSpec } from '../core/dies.js';
-import type { WaferMetadata } from '../core/metadata.js';
+import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import type { Wafer, WaferSpec } from '../core/wafer.js';
 import type { Reticle, ReticleSpec } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
 import { generateDies } from '../core/dies.js';
-import { clipDiesToWafer, applyOrientation, transformDies } from '../core/transforms.js';
+import { clipDiesToWafer, isInsideWafer, applyOrientation, transformDies } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
@@ -49,6 +49,8 @@ export interface DieResult {
    * Only present when the die was tested more than once.
    */
   retestCount?: number;
+  /** Per-die metadata — all fields appear automatically in hover tooltips. See `DieMetadata → §12.4`. */
+  metadata?: DieMetadata;
 }
 
 
@@ -401,6 +403,13 @@ interface Normalized {
   edgeDieYieldMode:  'exclude' | 'denominator-only';
 }
 
+function percentile98(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.floor(sorted.length * 0.98);
+  return sorted[Math.min(idx, sorted.length - 1)];
+}
+
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
   if (!Array.isArray(input) && 'results' in input && input.results !== undefined && 'lotStack' in input && input.lotStack !== undefined) {
     throw new Error('buildWaferMap: pass either `results` or `lotStack`, not both.');
@@ -726,6 +735,7 @@ function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
   if (pt.hbin        !== undefined) base.hbin        = pt.hbin;
   if (pt.sbin        !== undefined) base.sbin        = pt.sbin;
   if (pt.retestCount !== undefined) base.retestCount = pt.retestCount;
+  if (pt.metadata    !== undefined) base.metadata    = pt.metadata;
 
   // Preferred path: testValues map supplied directly — use as-is.
   if (pt.testValues) {
@@ -902,6 +912,20 @@ export function buildWaferMap(
 
   const { flipX, flipY } = resolveAxisFlips(norm.dieOpts, origin);
 
+  // For grids with an even column count the col midpoint is a half-integer (e.g. 0.5
+  // for a 26-wide grid). Subtract it from physX/Y so the die extent is symmetric
+  // around (0,0), keeping the rendered circle and canvas viewport correctly centred.
+  let colMidX = 0, colMidY = 0;
+  if (ga.indices.length > 0) {
+    let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+    for (const { x, y } of ga.indices) {
+      if (x < cMin) cMin = x; if (x > cMax) cMax = x;
+      if (y < rMin) rMin = y; if (y > rMax) rMax = y;
+    }
+    colMidX = ((cMin + cMax) / 2) * pitchX;
+    colMidY = ((rMin + rMax) / 2) * pitchY;
+  }
+
   let waferDiameter = norm.waferOpts?.diameter;
 
   if (waferDiameter === undefined) {
@@ -918,15 +942,25 @@ export function buildWaferMap(
         // Instead derive the diameter directly from the grid step extents: find the
         // maximum physical radius across all grid positions and add one half-die of
         // margin (the same 5% heuristic as inferWaferFromXY uses), then snap.
-        let maxPhysR = 0;
-        for (const { x, y } of ga.indices) {
-          const r = Math.sqrt((x * pitchX) ** 2 + (y * pitchY) ** 2);
-          if (r > maxPhysR) maxPhysR = r;
-        }
-        // Set the clip radius to cover the outermost step center plus a small
-        // clearance (half the shorter axis pitch) so clipDiesToWafer retains the
-        // outermost dies without generating extra empty slots beyond the data.
-        waferDiameter = (maxPhysR + Math.min(pitchX, pitchY) * 0.5) * 2;
+        // Use p98 rather than raw max: rectangular-masked grids have corner-adjacent
+        // positions that inflate maxR beyond the actual circular boundary.
+        // Radii are measured from the fractional data centroid (not from the rounded
+        // integer offset) so the boundary matches the actual data distribution.
+        // Compute the furthest corner distance for each data die — this is the radius
+        // the circle must reach to fully enclose that die. Using corners (not centres)
+        // handles asymmetric grids where one side extends further from (0,0) than the other.
+        // p98 of corner distances excludes rectangular-corner outliers in dense grids.
+        const hpx = pitchX / 2, hpy = pitchY / 2;
+        const cornerRadii = ga.indices.map(({ x, y }) => {
+          const px = x * pitchX - colMidX, py = y * pitchY - colMidY;
+          return Math.max(
+            Math.sqrt((px - hpx) ** 2 + (py - hpy) ** 2),
+            Math.sqrt((px + hpx) ** 2 + (py - hpy) ** 2),
+            Math.sqrt((px + hpx) ** 2 + (py + hpy) ** 2),
+            Math.sqrt((px - hpx) ** 2 + (py + hpy) ** 2),
+          );
+        });
+        waferDiameter = percentile98(cornerRadii) * 2;
         inference.wafer = { confidence: pitchResult.confidence * 0.8, method: 'extent' };
       }
     } else {
@@ -943,16 +977,29 @@ export function buildWaferMap(
   });
 
   const dieConfigGeom = { width: pitchX, height: pitchY };
-  const allDies   = generateDies(wafer, dieConfigGeom);
-  let dies        = clipDiesToWafer(allDies, wafer, dieConfigGeom);
+  const hw = pitchX / 2, hh = pitchY / 2;
 
-  if (results.length > 0) {
-    const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
-    dies = dies.map(die => {
-      const pt = lookup.get(`${die.x + offsetX},${die.y + offsetY}`);
-      return pt ? attachData(die, pt, norm.testDefs) : die;
-    });
-  }
+  // Build dies directly from data positions — never generate positions without data.
+  // partial flag is set when any die corner falls outside the wafer circle.
+  let dies: Die[] = results.map(pt => {
+    const col = Math.round(pt.x) - offsetX;
+    const row = Math.round(pt.y) - offsetY;
+    const physX = col * pitchX - colMidX;
+    const physY = row * pitchY - colMidY;
+    const corners: [number,number][] = [
+      [physX-hw, physY-hh], [physX+hw, physY-hh],
+      [physX+hw, physY+hh], [physX-hw, physY+hh],
+    ];
+    const base: Die = {
+      id: `${col}_${row}`,
+      x: col, y: row,
+      physX, physY,
+      width: pitchX, height: pitchY,
+      insideWafer: true,
+      partial: corners.filter(([cx, cy]) => isInsideWafer(cx, cy, wafer)).length < 4,
+    };
+    return attachData(base, pt, norm.testDefs);
+  });
 
   // Shift x/y from centred grid indices to original input coordinates.
   // die.physX/physY remain unchanged — only the public identity fields move.

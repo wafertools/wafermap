@@ -316,6 +316,7 @@ export const CAPTURES = [
     wait: 1500,
     setup: [
       ['openPanel'],
+      ['wait', 400],
       ['clickFindingByText', 'Failure cluster'],
       ['showCursorOn', '[data-wmap-finding-active]']
     ],

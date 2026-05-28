@@ -5,7 +5,6 @@ export interface DieMetadata {
   testProgram?: string;
   temperature?: number;
   [key: string]: unknown;
-  customFields?: Record<string, unknown>;
 }
 
 export interface WaferMetadata {

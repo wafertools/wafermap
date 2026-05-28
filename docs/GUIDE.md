@@ -491,6 +491,63 @@ renderWaferMap(container, { ...result, dies: enrichedDies, testDefs });
 > Always use `getDieKey(die)` for lookups rather than manually formatting `"${die.x},${die.y}"` —
 > it guarantees the correct format after any grid offset correction.
 
+### Per-die metadata
+
+Attach structured data to individual dies using the `metadata` field on each `DieResult`. The named fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) cover the most common identifiers; any additional key you add is accepted via the open index signature:
+
+```ts
+const result = buildWaferMap({
+  results: rows.map(r => ({
+    x:    Number(r.x),
+    y:    Number(r.y),
+    hbin: Number(r.hbin),
+    metadata: {
+      lotId:       r.lot,
+      waferId:     r.wafer,
+      deviceType:  'NMOS-A',
+      testProgram: 'NM_v3.2',
+      // custom fields — any key accepted, shown in tooltip automatically
+      probeCard:   r.probe_card,
+      inkDate:     r.ink_date,
+    },
+  })),
+  dieConfig: { width: 10, height: 10 },
+});
+```
+
+**All metadata fields appear automatically in hover tooltips** — no extra configuration needed. The tooltip renders each field as `key: value`, in the order: named fields first, then custom fields. `null` and `undefined` values are skipped.
+
+Read metadata back from the die in any callback:
+
+```ts
+renderWaferMap(container, result, {
+  onClick: (die) => {
+    console.log(die.metadata?.lotId);      // named field
+    console.log(die.metadata?.probeCard);  // custom field
+  },
+});
+```
+
+### Wafer-level metadata
+
+Custom fields work the same way on `waferConfig.metadata` (`WaferMetadata → §12.3`). They appear in the summary panel header alongside the named fields:
+
+```ts
+const result = buildWaferMap({
+  results: rows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
+  dieConfig: { width: 10, height: 10 },
+  waferConfig: {
+    metadata: {
+      lot:      'LOT123',
+      waferId:  1,
+      testDate: '2026-04-23',
+      // custom fields — shown in summary panel header
+      equipmentId: 'P-01',
+      recipe:      'NMOS-R2',
+    },
+  },
+});
+```
 
 **→ [Demo: Working with retested dies](examples/07-retests.html)**
 

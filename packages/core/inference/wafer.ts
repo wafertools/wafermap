@@ -1,3 +1,10 @@
+function percentile98(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.floor(sorted.length * 0.98);
+  return sorted[Math.min(idx, sorted.length - 1)];
+}
+
 const STANDARD_DIAMETERS = [25, 50, 75, 100, 150, 200, 300, 450];
 // Industry-standard sizes used in high-volume manufacturing today — snap to
 // these first with a tighter tolerance before trying the full standard list.
@@ -23,20 +30,18 @@ export function inferWaferFromXY(points: Array<{ x: number; y: number }>): Wafer
   const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
   const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
 
-  const maxDist = points.reduce((m, p) => {
-    const d = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2);
-    return d > m ? d : m;
-  }, 0);
+  // Use p98 rather than raw max: rectangular-masked datasets have corner-adjacent
+  // die positions that push maxR well beyond the actual circular boundary, causing
+  // the inferred circle to extend into empty grid space (grey no-data dies).
+  // For fully circular data p98 ≈ max, so behaviour is unchanged for standard wafers.
+  const radii = points.map(p => Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2));
+  const boundaryR = percentile98(radii);
 
   // Die centers sit inside the wafer boundary — add a 5% buffer to account for
   // the half-die extent between the outermost die center and the wafer edge.
-  const estimatedDiameter = maxDist * 2 * 1.05;
+  const estimatedDiameter = boundaryR * 2 * 1.05;
 
   const snapped = snapToStandardDiameter(estimatedDiameter);
-
-  // Confidence: low coefficient of variation of radial distances = more
-  // circular/complete coverage = higher confidence in the inferred center.
-  const radii = points.map(p => Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2));
   const meanR = radii.reduce((s, r) => s + r, 0) / radii.length;
   const stdR = Math.sqrt(radii.reduce((s, r) => s + (r - meanR) ** 2, 0) / radii.length);
   const cv = meanR > 0 ? stdR / meanR : 1;

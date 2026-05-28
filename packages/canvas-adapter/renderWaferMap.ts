@@ -45,6 +45,12 @@ export interface WaferPreferences {
    * `'data'`: colorbar spans actual data min/max; out-of-spec coloring still applies.
    */
   colorbarRangeMode?:      'spec' | 'data';
+  /**
+   * When true (default), partial (edge) dies are rendered in muted grey.
+   * Set to false to hide them entirely, matching real prober behaviour where
+   * positions outside the wafer circle are never tested.
+   */
+  showPartialDies?:        boolean;
 }
 
 /**
@@ -200,7 +206,7 @@ export type WaferCanvasController = WaferMapController;
 // Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
   'colorScheme', 'rotation', 'flipX', 'flipY',
-  'showDieLabels', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
+  'showDieLabels', 'showPartialDies', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
   'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode',
 ]);
 
@@ -264,6 +270,7 @@ export function renderWaferMap(
     plotMode:               'hardBin',
     colorScheme:            'default',
     showDieLabels:               false,
+    showPartialDies:        true,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
     showReticle:            false,
@@ -307,6 +314,7 @@ export function renderWaferMap(
       plotMode:               so.plotMode,
       colorScheme:            so.colorScheme,
       showDieLabels:               so.showDieLabels,
+      showPartialDies:        so.showPartialDies,
       showRingBoundaries:     so.showRingBoundaries,
       showQuadrantBoundaries: so.showQuadrantBoundaries,
       showReticle:            so.showReticle,

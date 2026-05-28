@@ -192,6 +192,13 @@ export interface ViewOptions {
    * the active test has `limitLow` or `limitHigh` defined.
    */
   colorBySpec?: boolean;
+  /**
+   * When true (default), partial (edge) dies — positions that only partially
+   * overlap the wafer circle — are rendered in a muted grey.
+   * Set to false to hide them entirely, matching real prober behaviour where
+   * edge positions are never tested.
+   */
+  showPartialDies?: boolean;
 }
 
 
@@ -404,14 +411,8 @@ export function buildHoverText(
 
   if (die.metadata) {
     for (const [key, value] of Object.entries(die.metadata)) {
-      if (value === undefined || value === null || key === 'customFields') continue;
+      if (value === undefined || value === null) continue;
       lines.push(`${key}: ${String(value)}`);
-    }
-    if (die.metadata.customFields) {
-      for (const [key, value] of Object.entries(die.metadata.customFields)) {
-        if (value === undefined || value === null) continue;
-        lines.push(`${key}: ${String(value)}`);
-      }
     }
   }
 
@@ -503,7 +504,7 @@ function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 7
       const angle = (2 * Math.PI * index) / steps;
       points.push(transformPoint(boundaryPointAtAngle(wafer, angle), center, transform));
     }
-    return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#111111', lineWidth: 2 }];
+    return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#888888', lineWidth: 1 }];
   }
 
   // V-notch: build circle, then splice in the triangular indentation.
@@ -545,7 +546,7 @@ function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 7
     points.push(transformPoint({ x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) }, center, transform));
   }
 
-  return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#111111', lineWidth: 2 }];
+  return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#888888', lineWidth: 1 }];
 }
 
 function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: number, steps = 360): ViewOverlay[] {
@@ -786,6 +787,7 @@ export function buildView(
     logScale: logScaleOption,
     colorbarRangeMode = 'spec' as const,
     colorBySpec = false,
+    showPartialDies = true,
   } = options;
 
   const hbinDefs = binDefs?.hbinDefs;
@@ -923,8 +925,11 @@ export function buildView(
     : dies;
 
   for (const tdie of transformedDies) {
-    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
+    // Always add to hoverPoints so dieBounds covers the full die extent —
+    // the viewport must fit the whole wafer regardless of showPartialDies.
     hoverPoints.push({ x: tdie.physX, y: tdie.physY });
+    if (tdie.partial && !showPartialDies) continue;
+    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(transformedDies, {
@@ -939,18 +944,16 @@ export function buildView(
   if (showProbePath) overlays.push(...buildProbeOverlay(dies));
   if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, transform, texts));
 
-  // Pre-compute die bounding box — avoids O(N) scan on every render call (pan/zoom).
-  let dieBounds: View['dieBounds'] = null;
-  if (hoverPoints.length) {
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of hoverPoints) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    }
-    dieBounds = { minX, maxX, minY, maxY };
-  }
+  // Pre-compute bounding box for viewport fitting.
+  // Use the wafer circle (center ± radius) rather than die extents so the viewport
+  // is always sized to the drawn boundary, regardless of showPartialDies or how
+  // many partial dies are present. This keeps the wafer consistently sized on screen.
+  const dieBounds: View['dieBounds'] = hoverPoints.length > 0 ? {
+    minX: wafer.center.x - wafer.radius,
+    maxX: wafer.center.x + wafer.radius,
+    minY: wafer.center.y - wafer.radius,
+    maxY: wafer.center.y + wafer.radius,
+  } : null;
 
   // Pre-compute bin counts for the legend — avoids O(N) scan on every render.
   let binCounts: Map<number, number> | undefined;

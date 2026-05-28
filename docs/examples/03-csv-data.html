@@ -24,7 +24,8 @@
   <div class="demo-intro">
     Loads <code>dummy-fulldata.csv</code> (lot, wafer, x, y, hbin, sbin, test columns) and maps each row to a <code>DieResult</code>.
     Select a wafer from the dropdown — the map re-renders instantly. Metadata about the CSV file appears in the sidebar.
-    The toolbar notebook icon opens the built-in summary panel showing yield and bin breakdown.
+    Each die carries a <code>siteId</code> metadata field — the prober sequence index from the CSV, assigned in a snake pattern (LL corner, alternating column direction). Hover any die to see it in the tooltip.
+    The toolbar notebook icon opens the built-in summary panel showing yield, bin breakdown, and wafer-level custom metadata.
   </div>
 
   <!-- Wafer selector and file info -->
@@ -49,11 +50,12 @@
         <div class="section">
           <div class="section-heading">Source file</div>
           <table class="kv">
-            <tr><td>Lot</td>      <td id="meta-lot">—</td></tr>
-            <tr><td>Wafer</td>    <td id="meta-wafer">—</td></tr>
-            <tr><td>Rows</td>     <td id="meta-rows">—</td></tr>
-            <tr><td>Test date</td><td id="meta-date">—</td></tr>
-            <tr><td>Temp</td>     <td id="meta-temp">—</td></tr>
+            <tr><td>Lot</td>          <td id="meta-lot">—</td></tr>
+            <tr><td>Wafer</td>        <td id="meta-wafer">—</td></tr>
+            <tr><td>Rows</td>         <td id="meta-rows">—</td></tr>
+            <tr><td>Test date</td>    <td id="meta-date">—</td></tr>
+            <tr><td>Temp</td>         <td id="meta-temp">—</td></tr>
+            <tr><td>Probe station</td><td id="meta-probe">ESC-4</td></tr>
           </table>
         </div>
 
@@ -111,6 +113,7 @@
       const rows = allRows.filter(r => r.wafer === waferId);
 
       // Map CSV rows to DieResult — x/y are prober step positions, not mm
+      // metadata fields appear automatically in die hover tooltips
       const results = rows.map(r => ({
         x:          Number(r.x),
         y:          Number(r.y),
@@ -121,13 +124,18 @@
           1020: Number(r.testB),
           1030: Number(r.testC),
         },
+        metadata: {
+          siteId: Number(r.siteId),  // prober sequence index, snake pattern LL→TR (from CSV)
+        },
       }));
 
+      // waferConfig.metadata custom fields appear in the summary panel header
       const waferMeta = {
-        lot:      rows[0]?.lot,
-        wafer:    waferId,
-        testDate: rows[0]?.testdate,
-        temp:     rows[0]?.temp ? `${rows[0].temp} °C` : '—',
+        lot:          rows[0]?.lot,
+        wafer:        waferId,
+        testDate:     rows[0]?.testdate,
+        temp:         rows[0]?.temp ? `${rows[0].temp} °C` : '—',
+        probeStation: 'ESC-4',      // custom field — shown in summary panel header
       };
 
       // buildWaferMap infers die pitch from the grid when dieConfig is omitted.
@@ -165,7 +173,7 @@
         ctrl.setStatsSummary(summary);
       } else {
         ctrl = renderWaferMap(canvasEl, result, {
-          viewOptions: { plotMode: 'hardBin' },
+          viewOptions: { plotMode: 'hardBin', showPartialDies: false },
           statsSummary: summary,
         });
       }

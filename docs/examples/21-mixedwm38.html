@@ -78,7 +78,9 @@
       };
     });
 
-    renderWaferGallery(document.getElementById('gallery-container'), items);
+    renderWaferGallery(document.getElementById('gallery-container'), items, {
+      viewOptions: { showPartialDies: false },
+    });
   </script>
 
 </body>

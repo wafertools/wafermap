@@ -663,6 +663,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `flipX` | `boolean` | `false` | |
 | `flipY` | `boolean` | `false` | |
 | `showDieLabels` | `boolean` | `false` | Die index labels |
+| `showPartialDies` | `boolean` | `true` | Render partial (edge) dies in muted grey. Set to `false` to hide them, matching real prober behaviour where edge positions outside the wafer circle are never tested. |
 | `showRingBoundaries` | `boolean` | `false` | |
 | `showQuadrantBoundaries` | `boolean` | `false` | |
 | `showReticle` | `boolean` | `false` | Reticle field boundary overlay (requires `reticles` on the result) |
@@ -2037,6 +2038,7 @@ interface ViewOptions {
   plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
   colorBySpec?:            boolean           // colours in-spec dies with fixed pass colour instead of gradient; only in 'value' mode with limits
   showDieLabels?:          boolean
+  showPartialDies?:        boolean   // default true; set false to hide edge dies outside the wafer circle
   showReticle?:            boolean
   showProbePath?:          boolean
   showRingBoundaries?:     boolean
@@ -2186,7 +2188,7 @@ listColorSchemes(): Array<{ name: string; label: string }>
 
 ### 12.3 `WaferMetadata`
 
-Common named fields with an open index signature — any extra fields are accepted:
+Named fields with an open index signature — any extra key is accepted and displayed alongside the named fields in the summary panel header.
 
 ```ts
 {
@@ -2197,12 +2199,25 @@ Common named fields with an open index signature — any extra fields are accept
   operator?:    string
   testProgram?: string
   temperature?: number          // chuck temperature in °C
-  [key: string]: unknown        // any additional fields accepted
+  [key: string]: unknown        // custom fields — shown in summary panel header
 }
-// e.g. { lot: 'LOT123', waferId: 1, testDate: '2026-04-23', temperature: 25 }
+```
+
+Custom fields are added at the top level, exactly like the named fields:
+
+```ts
+waferConfig: {
+  metadata: {
+    lot: 'LOT123', waferId: 1, testDate: '2026-04-23',
+    equipmentId: 'P-01',  // custom — displayed in summary panel header
+    recipe: 'NMOS-R2',    // custom
+  }
+}
 ```
 
 ### 12.4 `DieMetadata`
+
+Named fields with an open index signature — any extra key is accepted and rendered automatically in die hover tooltips.
 
 ```ts
 {
@@ -2211,8 +2226,30 @@ Common named fields with an open index signature — any extra fields are accept
   deviceType?:   string
   testProgram?:  string
   temperature?:  number
-  customFields?: Record<string, unknown>
-  [key: string]: unknown
+  [key: string]: unknown   // custom fields — shown in hover tooltip automatically
+}
+```
+
+All metadata fields — named and custom — appear in the hover tooltip with no extra configuration. The tooltip renders them as `key: value` lines, skipping `null` and `undefined` values. Named fields appear first in the order they are declared; custom fields follow in the order they appear on the object.
+
+```ts
+// In DieResult input:
+{
+  x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin),
+  metadata: {
+    lotId:       r.lot,
+    waferId:     r.wafer,
+    deviceType:  'NMOS-A',
+    testProgram: 'NM_v3.2',
+    probeCard:   'PC-42',    // custom — shown in tooltip automatically
+    inkDate:     r.inkDate,  // custom
+  },
+}
+
+// In onClick or onHover callback:
+onClick: (die) => {
+  const lotId     = die.metadata?.lotId;
+  const probeCard = die.metadata?.probeCard;
 }
 ```
 
