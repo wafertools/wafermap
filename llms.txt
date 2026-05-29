@@ -4,8 +4,8 @@ Browser-first wafer map visualization toolkit for semiconductor test data.
 Primary entry point: build wafer models with `buildWaferMap()`, then render with a canvas.
 
 ## Core docs
-- [Developer Guide](docs/GUIDE.md) - end-to-end usage, CSV loading, display controls, stats, galleries, and worker usage.
-- [API Reference](docs/API.md) - public API, input types, coordinate system rules, and configuration details.
+- [Developer Guide](docs/guide.md) - end-to-end usage, CSV loading, display controls, stats, galleries, and worker usage.
+- [API Reference](docs/api.md) - public API, input types, coordinate system rules, and configuration details.
 - [README](README.md) - package overview and quick start.
 - [Examples](examples/) - runnable demo applications.
 
@@ -20,7 +20,7 @@ Primary entry point: build wafer models with `buildWaferMap()`, then render with
 - `x` and `y` in `DieResult` are die grid positions (prober step integers), not millimetres.
 - Use `testValues: Record<number, number>` (keyed by stable test number) rather than the deprecated `values: number[]` (positional array). Example: `testValues: { 1050: 0.95 }`.
 - Hard bins go in `hbin`; soft bins go in `sbin`. Their number spaces are independent. Never merge them, and never fall back to `?? 0` — a missing bin is not bin 0.
-- All coordinates shown to the user (axis ticks, tooltips) must be original die grid positions (`die.i` / `die.j`), not post-transform display coordinates.
+- All coordinates shown to the user (axis ticks, tooltips) must be original die grid positions (`die.x` / `die.y`), not post-transform display coordinates.
 - `buildWaferMap()` is pure and server-safe; renderers require the DOM.
 - Recommended path for most users: `buildWaferMap()` + `renderWaferMap()`.
 

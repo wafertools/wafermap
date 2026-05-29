@@ -59,6 +59,22 @@ export interface WaferConfig {
   /** Wafer diameter in mm.  Inferred from grid extent × pitch when omitted. */
   diameter?: number;
   /**
+   * The prober coordinate `(x, y)` that lies at the physical centre of the
+   * wafer.  Supply this for **partial or sparse** data (a half wafer, a single
+   * quadrant, an edge ring, a small cluster) or whenever the prober origin is
+   * not the wafer centre.
+   *
+   * When omitted, the centre is inferred as the midpoint of the observed die
+   * positions — correct only when the data spans a full, roughly symmetric
+   * wafer.  For partial data that assumption is wrong: the data midpoint is not
+   * the wafer centre, so dies would be mis-positioned relative to the true
+   * boundary and notch.  Setting this anchors placement to the real centre.
+   *
+   * Note: this does not change the public `die.x` / `die.y` labels — those are
+   * always the original prober coordinates.  It only fixes physical placement.
+   */
+  center?: { x: number; y: number };
+  /**
    * Orientation mark direction.  Standard dimensions are derived automatically
    * from the wafer diameter:
    * - ≤ 100 mm → 32.5 mm orientation flat (SEMI M1)
@@ -245,6 +261,13 @@ export interface WaferMapInputBase {
    *              is the authoritative result.
    * - `'first'` — keep the earliest result. Useful when the first touch is canonical
    *              or when the array is already sorted best-first.
+   * - `'best'`  — keep the result with the best hard bin outcome. Pass beats fail
+   *              (determined by `passBins`); within the same category, the lower hbin
+   *              number wins. Requires `hbin` on each result — if either record in a
+   *              comparison has no `hbin`, the existing record is kept. `sbin` and
+   *              `testValues` are not used as ordering criteria.
+   * - `'worst'` — inverse of `'best'`: fail beats pass; higher hbin number wins within
+   *              each category. Same `hbin` requirement applies.
    *
    * Regardless of policy, `die.retestCount` is set on any die that was tested more than
    * once, so retest hotspots are always visible.
@@ -362,6 +385,14 @@ export interface WaferMapResult {
     wafer:    { confidence: number; method: string };
     diePitch: { confidence: number; units: 'mm' | 'normalized' };
     grid:     { confidence: number };
+    /**
+     * Non-fatal geometry-trust warnings raised during inference. Empty/absent
+     * when geometry was supplied or confidently inferred. The most important
+     * case: data that does not span a full symmetric wafer, where the inferred
+     * diameter and centre may be wrong. Check this programmatically rather than
+     * relying on console output.
+     */
+    warnings?: string[];
   };
   /** Die population statistics. */
   dataCoverage: {
@@ -478,6 +509,100 @@ function resolveGridOriginOffset(
     };
   }
   return { offsetX: ga.offsetX, offsetY: ga.offsetY };
+}
+
+/**
+ * Determine the physical offset (`colMidX`, `colMidY`) that places the wafer
+ * centre at physical (0,0).  Die physical positions are computed as
+ * `physX = col * pitchX - colMidX`, where `col = round(proberX) - offsetX`.
+ *
+ * - When `waferCenter` (a prober coordinate) is supplied, that die is anchored
+ *   to physical (0,0): `colMidX = (round(center.x) - offsetX) * pitchX`.
+ *   `anchored = true`.
+ * - Otherwise the offset is the midpoint of the observed column/row extent, so
+ *   the data is centred on the canvas.  This is correct only for full, roughly
+ *   symmetric coverage; for partial data the data midpoint is not the wafer
+ *   centre.  `anchored = false`.
+ *
+ * Extents are measured in the die-col frame (using `offsetX`/`offsetY`), so the
+ * result is consistent with how die positions are computed downstream.
+ */
+function resolveCenterAnchor(
+  gridPoints: Array<{ x: number; y: number }>,
+  offsetX: number,
+  offsetY: number,
+  pitchX: number,
+  pitchY: number,
+  waferCenter: { x: number; y: number } | undefined,
+): { colMidX: number; colMidY: number; anchored: boolean } {
+  if (waferCenter) {
+    return {
+      colMidX: (Math.round(waferCenter.x) - offsetX) * pitchX,
+      colMidY: (Math.round(waferCenter.y) - offsetY) * pitchY,
+      anchored: true,
+    };
+  }
+  if (gridPoints.length === 0) {
+    return { colMidX: 0, colMidY: 0, anchored: false };
+  }
+  let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+  for (const p of gridPoints) {
+    const col = Math.round(p.x) - offsetX;
+    const row = Math.round(p.y) - offsetY;
+    if (col < cMin) cMin = col; if (col > cMax) cMax = col;
+    if (row < rMin) rMin = row; if (row > rMax) rMax = row;
+  }
+  return {
+    colMidX: ((cMin + cMax) / 2) * pitchX,
+    colMidY: ((rMin + rMax) / 2) * pitchY,
+    anchored: false,
+  };
+}
+
+/**
+ * Heuristic: does the data look like one-sided (partial) coverage rather than a
+ * full wafer?
+ *
+ * For a full wafer — or a wafer sampled sparsely but across its whole face
+ * (systematic skip-sampling or random sampling) — the data centroid coincides
+ * with the centre of the bounding box: the mass is balanced. A contiguous
+ * partial region (a half, a quadrant, a 60%-slice) pulls the centroid toward the
+ * populated side, away from the bounding-box centre. We measure that pull on each
+ * axis as |centroid − bbox-mid| / half-span and flag when it exceeds 0.11.
+ *
+ * Threshold rationale: contiguous half/quadrant/60% cases land at ≈0.12–0.14;
+ * random sparse sampling stays ≲0.10 (centroid ≈ bbox centre by averaging). 0.11
+ * separates them with a low (~2–3%) false-positive rate on random samples.
+ *
+ * Two cases this deliberately does NOT flag, because both still infer a correct
+ * diameter/centre:
+ *   - sparse-but-full-extent data (the point of the threshold), and
+ *   - an edge ring / annulus, which is centroid-symmetric and reaches the true edge.
+ * A small symmetric cluster far from the true centre is geometrically
+ * indistinguishable from a tiny full wafer and is likewise not guessed at — the
+ * documented remedy for all ambiguous cases is to supply waferConfig.center.
+ */
+function isLikelyPartialCoverage(
+  gridPoints: Array<{ x: number; y: number }>,
+  offsetX: number,
+  offsetY: number,
+): boolean {
+  let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+  let cSum = 0, rSum = 0;
+  for (const p of gridPoints) {
+    const col = Math.round(p.x) - offsetX;
+    const row = Math.round(p.y) - offsetY;
+    cSum += col; rSum += row;
+    if (col < cMin) cMin = col; if (col > cMax) cMax = col;
+    if (row < rMin) rMin = row; if (row > rMax) rMax = row;
+  }
+  const n = gridPoints.length;
+  const centroidOffset = (sum: number, min: number, max: number): number => {
+    const half = (max - min) / 2;
+    if (half <= 0) return 0; // single column/row — no axis information
+    return Math.abs(sum / n - (min + max) / 2) / half;
+  };
+  return centroidOffset(cSum, cMin, cMax) > 0.11 || centroidOffset(rSum, rMin, rMax) > 0.11;
 }
 
 function resolveAxisFlips(
@@ -843,7 +968,7 @@ export function buildWaferMap(
 
   const results: DieResult[] = applyRetestPolicy(rawResults, norm.retestPolicy, norm.passBins);
 
-  const inference = {
+  const inference: WaferMapResult['inference'] = {
     wafer:    { confidence: 1.0, method: 'provided' },
     diePitch: { confidence: 1.0, units: 'mm' as 'mm' | 'normalized' },
     grid:     { confidence: 1.0 },
@@ -912,54 +1037,46 @@ export function buildWaferMap(
 
   const { flipX, flipY } = resolveAxisFlips(norm.dieOpts, origin);
 
-  // For grids with an even column count the col midpoint is a half-integer (e.g. 0.5
-  // for a 26-wide grid). Subtract it from physX/Y so the die extent is symmetric
-  // around (0,0), keeping the rendered circle and canvas viewport correctly centred.
-  let colMidX = 0, colMidY = 0;
-  if (ga.indices.length > 0) {
-    let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
-    for (const { x, y } of ga.indices) {
-      if (x < cMin) cMin = x; if (x > cMax) cMax = x;
-      if (y < rMin) rMin = y; if (y > rMax) rMax = y;
-    }
-    colMidX = ((cMin + cMax) / 2) * pitchX;
-    colMidY = ((rMin + rMax) / 2) * pitchY;
-  }
+  // Physical offset placing the wafer centre at (0,0).  When waferConfig.center
+  // is given that prober coordinate is anchored to (0,0); otherwise the observed
+  // data extent is centred (correct only for full, symmetric coverage).
+  const { colMidX, colMidY, anchored } = resolveCenterAnchor(
+    gridPoints, offsetX, offsetY, pitchX, pitchY, norm.waferOpts?.center,
+  );
 
   let waferDiameter = norm.waferOpts?.diameter;
 
   if (waferDiameter === undefined) {
-    if (ga.indices.length > 0) {
+    if (gridPoints.length > 0) {
+      // Physical positions in the same frame as die placement (relative to the
+      // resolved wafer centre), so an anchored centre yields a circle that
+      // encloses the data about the true centre — not the data midpoint.
+      const physPoints = gridPoints.map(p => ({
+        x: (Math.round(p.x) - offsetX) * pitchX - colMidX,
+        y: (Math.round(p.y) - offsetY) * pitchY - colMidY,
+      }));
       if (units === 'mm') {
         // pitchX/pitchY are real mm — physPoints are true physical positions.
-        const physPoints = ga.indices.map(({ x, y }) => ({ x: x * pitchX, y: y * pitchY }));
         const wi = inferWaferFromXY(physPoints);
         waferDiameter = wi.diameter;
         inference.wafer = { confidence: wi.confidence, method: wi.method };
       } else {
         // pitchX/pitchY are normalized (no physical info). inferWaferFromXY would
         // receive coordinates in normalized units and produce a meaningless diameter.
-        // Instead derive the diameter directly from the grid step extents: find the
-        // maximum physical radius across all grid positions and add one half-die of
-        // margin (the same 5% heuristic as inferWaferFromXY uses), then snap.
-        // Use p98 rather than raw max: rectangular-masked grids have corner-adjacent
-        // positions that inflate maxR beyond the actual circular boundary.
-        // Radii are measured from the fractional data centroid (not from the rounded
-        // integer offset) so the boundary matches the actual data distribution.
-        // Compute the furthest corner distance for each data die — this is the radius
-        // the circle must reach to fully enclose that die. Using corners (not centres)
-        // handles asymmetric grids where one side extends further from (0,0) than the other.
+        // Instead derive the diameter directly from the grid step extents: the
+        // furthest corner distance for each data die is the radius the circle must
+        // reach to fully enclose that die. Using corners (not centres) handles
+        // asymmetric grids where one side extends further from (0,0) than the other.
         // p98 of corner distances excludes rectangular-corner outliers in dense grids.
         const hpx = pitchX / 2, hpy = pitchY / 2;
-        const cornerRadii = ga.indices.map(({ x, y }) => {
-          const px = x * pitchX - colMidX, py = y * pitchY - colMidY;
-          return Math.max(
+        const cornerRadii = physPoints.map(({ x: px, y: py }) =>
+          Math.max(
             Math.sqrt((px - hpx) ** 2 + (py - hpy) ** 2),
             Math.sqrt((px + hpx) ** 2 + (py - hpy) ** 2),
             Math.sqrt((px + hpx) ** 2 + (py + hpy) ** 2),
             Math.sqrt((px - hpx) ** 2 + (py + hpy) ** 2),
-          );
-        });
+          ),
+        );
         waferDiameter = percentile98(cornerRadii) * 2;
         inference.wafer = { confidence: pitchResult.confidence * 0.8, method: 'extent' };
       }
@@ -967,6 +1084,18 @@ export function buildWaferMap(
       waferDiameter = units === 'mm' ? 300 : 30;
       inference.wafer = { confidence: 0, method: 'default' };
     }
+  }
+
+  // Partial-data guard: when the wafer centre was not anchored (no
+  // waferConfig.center) and the data does not look like full symmetric
+  // coverage, the inferred centre/diameter may be wrong and dies may be
+  // mis-positioned relative to the true boundary. Surface this so callers are
+  // not silently misled (see WaferMapResult.inference.warnings).
+  if (!anchored && gridPoints.length > 0 && isLikelyPartialCoverage(gridPoints, offsetX, offsetY)) {
+    inference.wafer.method = 'inferred-partial';
+    (inference.warnings ??= []).push(
+      'Wafer geometry was inferred from die positions alone. The data does not span a full symmetric wafer, so the inferred diameter and centre may be wrong and dies may be mis-positioned relative to the true wafer boundary. Supply waferConfig.diameter and waferConfig.center (the prober coordinate of the wafer centre) to position partial data correctly.',
+    );
   }
 
   const wafer = createWafer({

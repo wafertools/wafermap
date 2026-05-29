@@ -74,7 +74,7 @@ Some probers contact a die more than once, either due to contact failures (a ret
 
 ### STDF
 
-Standard Test Data Format — the binary file format output by most ATE systems after a wafer test run. STDF encodes die bin results, parametric test values, and lot/wafer metadata in a compact binary record structure. The library does not parse STDF directly; see `GUIDE.md` for how to extract and map STDF data to `DieResult` records.
+Standard Test Data Format — the binary file format output by most ATE systems after a wafer test run. STDF encodes die bin results, parametric test values, and lot/wafer metadata in a compact binary record structure. The library does not parse STDF directly; see `guide.md` for how to extract and map STDF data to `DieResult` records.
 
 ### ATE
 
@@ -86,4 +86,4 @@ Yield expressed as passing dies divided by the total number of testable dies, wh
 
 ---
 
-*See also: [GUIDE.md](GUIDE.md) for worked examples, [API.md](API.md) for full type and option reference.*
+*See also: [guide.md](guide.md) for worked examples, [api.md](api.md) for full type and option reference.*

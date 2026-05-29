@@ -1,7 +1,7 @@
 # API Reference
 
 This document describes the public API exposed by `wafermap`.
-For the system-level overview and recommended entry points, see [Architecture](ARCHITECTURE.md).
+For the system-level overview and recommended entry points, see [Architecture](architecture.md).
 
 ---
 
@@ -62,7 +62,7 @@ if (top) console.log(`[${top.severity}] ${top.summary}`);
 ## 3 API overview
 
 If you want the shortest path to the right entry point before diving into the
-type details, see [Architecture](ARCHITECTURE.md). It explains which layer to
+type details, see [Architecture](architecture.md). It explains which layer to
 use for data construction, rendering, analysis, and worker offloading.
 
 ```mermaid
@@ -103,6 +103,19 @@ graph TD
 The primary entry point.  Pass whatever data you have — prober step positions,
 optional geometry hints, or a pre-built die array.  The function infers whatever
 is missing and returns a fully constructed wafer model.
+
+> **Inference reads geometry from the extent of the data.** When you supply only
+> die positions, the wafer diameter and centre are derived from how far the data
+> reaches.  This is correct whenever the data reaches the true wafer edge — a
+> fully-populated wafer, or a **sparse** one (skip-sampled or randomly sampled
+> positions missing across the whole face).  It is **wrong for *partial* data** —
+> a contiguous region such as a half wafer, a single quadrant, or an off-centre
+> cluster — because the extent stops short of the true edge, so the region is
+> mistaken for a smaller full wafer and mis-centred.  For partial data supply
+> `waferConfig.diameter` **and** `waferConfig.center` — see
+> [§4.3 Inference levels](#43-inference-levels).  When the library detects
+> likely-partial coverage with no anchor, it adds a message to
+> `result.inference.warnings`.
 
 **Server-safe:** `buildWaferMap` is a pure function with no DOM access or side
 effects.  It can run in Node.js, Deno, a Web Worker, or any server-side environment.
@@ -189,6 +202,13 @@ When a die position appears more than once in the `results` array (a retest), th
 ```ts
 {
   diameter?:      number         // wafer diameter in mm; inferred from grid extent × pitch if omitted
+  center?:        { x: number, y: number }
+                  // prober coordinate that lies at the physical wafer centre.
+                  // Supply for partial data (a contiguous half/quadrant/slice that
+                  // stops short of the wafer edge); anchors placement to the true
+                  // centre. Not needed for sparse full-extent data. Does NOT change
+                  // die.x/die.y labels.
+                  // When omitted, the centre is inferred as the data midpoint (full-wafer assumption).
   notch?:         { type: 'top' | 'bottom' | 'left' | 'right' }
                   // physical orientation mark direction; standard dimensions derived from diameter:
                   //   ≤ 100 mm → 32.5 mm orientation flat  (SEMI M1)
@@ -392,9 +412,11 @@ const { yieldPercent, yieldPercentGross } = result.yield;
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
   inference: {
-    wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1
+    wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1.
+                                                        // method is 'inferred-partial' when partial data was detected
     diePitch: { confidence: number; units: 'mm' | 'normalized' }  // how die size was resolved
     grid:     { confidence: number }                   // quality of the grid index assignment
+    warnings?: string[]                                // geometry-trust warnings, e.g. likely-partial data with no anchor
   }
   dataCoverage: {
     filledDies:       number   // dies with at least one value or bin attached
@@ -441,12 +463,66 @@ The library adapts to whatever geometry context you provide.  Four distinct leve
 | grid positions + wafer diameter | Die size from `diameter / grid_extent` | `'mm'` |
 | grid positions + die size + diameter | Nothing — fully specified | `'mm'` |
 
+> **All four levels assume the data spans a full, roughly symmetric wafer
+> centred near the prober origin.** The diameter and centre are derived from the
+> *extent of the data you pass*. See "Minimum geometry for partial data" below
+> before relying on inference for anything less than a full wafer.
+
 **Diameter snapping:** inferred diameters snap to industry-standard sizes.
 100 mm, 150 mm, 200 mm, and 300 mm are preferred (±10% tolerance); other SEMI
 standard sizes (25 / 50 / 75 / 450 mm) are tried next (±20%); remaining values
 are rounded to the nearest 10 mm.
 
 **Origin:** defaults to `'center'` (centroid offset applied automatically). Set `coordinateOrigin: { type: 'LL' }` explicitly for standard STDF/KLA output where (0,0) is at the lower-left corner.
+
+#### Minimum geometry for partial data
+
+Inference works backwards from the data's bounding extent. What matters is
+whether the data **reaches the true wafer edge**:
+
+- **Sparse data** — positions missing across the whole wafer (systematic
+  skip-sampling, e.g. 1-in-4, or random sampling). The extent still reaches the
+  edge, so diameter and centre infer correctly. **No geometry hints required.**
+- **Partial data** — a contiguous region that stops short of the edge: a half
+  wafer, a single quadrant, a slice, or an off-centre cluster. The extent
+  understates the wafer, so the region is mistaken for a smaller full wafer and
+  re-centred on its own midpoint. Inference is **wrong** here.
+
+An **edge ring / annulus** is a middle case: only outer dies are present, but
+they reach the true edge, so the diameter is right — only the empty interior is
+"missing", which is harmless.
+
+For partial data, supply both:
+
+| Field | Meaning |
+| ----- | ------- |
+| `waferConfig.diameter` | the true wafer diameter in mm |
+| `waferConfig.center` | the prober coordinate `(x, y)` that lies at the physical wafer centre |
+
+`waferConfig.center` anchors placement to the real centre. It does **not** change
+the public `die.x` / `die.y` labels — those remain the original prober
+coordinates. (Supplying `dieConfig.width`/`height` for the pitch is recommended
+too, so coordinates are in real mm.)
+
+Detection is heuristic: the library flags likely-partial coverage by how far the
+data centroid sits from its bounding-box centre. Contiguous partial regions are
+caught; an off-centre cluster small enough to look like a tiny full wafer, and an
+edge ring (centroid-symmetric), are not flagged — when in doubt, set
+`waferConfig.center` explicitly rather than relying on the warning.
+
+```ts
+// Right half of a 300 mm wafer; prober (0,0) is the wafer centre.
+const result = buildWaferMap({
+  results,                                   // prober x ∈ [0..15], y ∈ [-15..15]
+  waferConfig: { diameter: 300, center: { x: 0, y: 0 } },
+  dieConfig:   { width: 10, height: 10 },
+});
+```
+
+When the library detects likely-partial data and no `center` was supplied, it
+pushes an explanatory string onto `result.inference.warnings` and sets
+`result.inference.wafer.method` to `'inferred-partial'` — check these
+programmatically rather than relying on console output.
 
 ### 4.4 Examples
 

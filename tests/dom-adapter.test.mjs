@@ -87,7 +87,12 @@ function setupDom() {
   globalThis.CustomEvent = window.CustomEvent;
   globalThis.Blob = window.Blob;
   globalThis.DOMRect = window.DOMRect;
-  globalThis.navigator = window.navigator;
+  // globalThis.navigator is a read-only getter on Node ≥ 21 — use defineProperty.
+  Object.defineProperty(globalThis, 'navigator', {
+    value: window.navigator,
+    configurable: true,
+    writable: true,
+  });
   globalThis.getComputedStyle = window.getComputedStyle.bind(window);
   globalThis.matchMedia = window.matchMedia?.bind(window) ?? (() => ({
     matches: false,

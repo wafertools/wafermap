@@ -7,16 +7,17 @@ repo_url    = "https://github.com/telecasterer/wafermap"
 
 nav = [
   { "Home"              = "index.md"      },
-  { "Quick Start"       = "QUICKSTART.md" },
-  { "User Guide"        = "GUIDE.md"      },
-  { "Architecture"      = "ARCHITECTURE.md" },
-  { "API Reference"     = "API.md"        },
+  { "Quick Start"       = "quickstart.md" },
+  { "User Guide"        = "guide.md"      },
+  { "Architecture"      = "architecture.md" },
+  { "API Reference"     = "api.md"        },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
     { "Getting started" = [
       { "Your first wafer map"           = "examples/01-first-map.html"      },
       { "Loading CSV data"               = "examples/03-csv-data.html"       },
       { "Geometry inference"             = "examples/04-geometry.html"       },
+      { "Partial data"                   = "examples/02-partial-data.html" },
       { "Bins and yield"                 = "examples/05-named-bins.html"     },
       { "Test values"                    = "examples/06-test-values.html"    },
       { "Retests"                        = "examples/07-retests.html"        },
@@ -42,11 +43,11 @@ nav = [
     ]},
   ]},
   { "Integration Guides" = [
-    { "SvelteKit" = "SVELTEKIT.md" },
-    { "React"     = "REACT.md"     },
-    { "Vue 3"     = "VUE.md"       },
+    { "SvelteKit" = "sveltekit.md" },
+    { "React"     = "react.md"     },
+    { "Vue 3"     = "vue.md"       },
   ]},
-  { "Glossary"          = "GLOSSARY.md"   },
+  { "Glossary"          = "glossary.md"   },
 ]
 
 [project.theme]

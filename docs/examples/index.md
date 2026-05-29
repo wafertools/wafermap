@@ -7,6 +7,7 @@ Live interactive demos. Each opens a standalone page rendered in the browser.
 - [Your first wafer map](01-first-map.html) — minimal two-call example, no CSV
 - [Loading CSV data](03-csv-data.html) — parse and map real columnar data
 - [Geometry inference](04-geometry.html) — omit die size and let the library infer it
+- [Partial data](02-partial-data.html) — anchoring the wafer centre for partial coverage, and why sparse data doesn't need it
 - [Bins and yield](05-named-bins.html) — named hard bins, pass/fail colours, yield label
 - [Test values](06-test-values.html) — parametric measurements, spec limits, colorbar
 - [Retests](07-retests.html) — multi-touch probe sequences and retest policy

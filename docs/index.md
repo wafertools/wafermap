@@ -34,13 +34,13 @@ renderWaferMap(document.getElementById('map'), result);
 
 ## Start here
 
-- [Quick Start](QUICKSTART.md) — up and running in 5 minutes
-- [Architecture](ARCHITECTURE.md) — visual overview of the library layers and entry points
-- [SvelteKit integration](SVELTEKIT.md) · [React](REACT.md) · [Vue](VUE.md)
-- [Troubleshooting](TROUBLESHOOTING.md) — common mistakes and fixes
+- [Quick Start](quickstart.md) — up and running in 5 minutes
+- [Architecture](architecture.md) — visual overview of the library layers and entry points
+- [SvelteKit integration](sveltekit.md) · [React](react.md) · [Vue](vue.md)
+- [Troubleshooting](troubleshooting.md) — common mistakes and fixes
 
 ## Reference
 
-- [User Guide](GUIDE.md) — walkthroughs, usage patterns, and practical integration advice
-- [API Reference](API.md) — full public API and configuration reference
+- [User Guide](guide.md) — walkthroughs, usage patterns, and practical integration advice
+- [API Reference](api.md) — full public API and configuration reference
 - [Examples](examples/index.md) — live interactive demos

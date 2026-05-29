@@ -53,10 +53,38 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 
 The canvas shows your dies colour-coded by bin (green = pass, red = fail by default). Hover over the canvas to reveal the toolbar — use it to switch plot mode, change colour scheme, rotate or flip the wafer, toggle die labels, zoom in, or download a PNG. Hover over any individual die to see a tooltip with its coordinates and bin.
 
+## Partial data needs a wafer centre
+
+The example above passes nothing but die positions, so the library infers the
+wafer diameter and centre from the **extent of your data**. That works whenever
+the data reaches the true wafer edge — a fully-populated wafer, or a **sparse**
+one (skip-sampled or randomly sampled positions missing across the whole face).
+
+It breaks for **partial data** — a contiguous region that stops short of the
+edge, such as a half wafer, a single quadrant, or an off-centre cluster.
+Inference can't tell that apart from a smaller full wafer, so it picks the wrong
+diameter and re-centres the region on its own midpoint.
+
+For partial data, supply the true diameter and the prober coordinate of the
+wafer centre:
+
+```js
+// Right half of a 300 mm wafer; prober (0,0) is the wafer centre.
+const result = buildWaferMap({
+  results,
+  passBins: [1],
+  waferConfig: { diameter: 300, center: { x: 0, y: 0 } },
+  dieConfig:   { width: 10, height: 10 },
+});
+```
+
+If the library detects likely-partial data with no `center`, it adds a message
+to `result.inference.warnings`.
+
 ## Next steps
 
-- **Load real CSV data** → [GUIDE.md §3](GUIDE.md#3-loading-real-data-from-a-csv)
-- **Add a statistical findings panel** → [GUIDE.md §10](GUIDE.md#10-adding-statistical-findings)
-- **Show multiple wafers as a gallery** → [GUIDE.md §12](GUIDE.md#12-building-a-lot-gallery)
+- **Load real CSV data** → [guide.md §3](guide.md#3-loading-real-data-from-a-csv)
+- **Add a statistical findings panel** → [guide.md §10](guide.md#10-adding-statistical-findings)
+- **Show multiple wafers as a gallery** → [guide.md §12](guide.md#12-building-a-lot-gallery)
 
-For the full type and option reference see [API.md](API.md).
+For the full type and option reference see [api.md](api.md).

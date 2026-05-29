@@ -150,6 +150,15 @@ export const CAPTURES = [
     setup: [['showCursorOn', '#map-b', -70, -50], ['hover', '#map-b']],
   },
 
+  // ── image-4a.png — §4 Partial data: partial-wrong / partial-anchored / sparse-ok ─
+  {
+    file: 'image-4a',
+    group: 'maps',
+    page: '/examples/02-partial-data.html',
+    selector: '.demo-content',
+    wait: 1200,
+  },
+
   // ── image-5.png — §5 Bins: named bin map with legend ─────────────────────────
   {
     file: 'image-5',

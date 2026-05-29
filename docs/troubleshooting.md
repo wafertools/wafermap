@@ -103,6 +103,6 @@ Use a dynamic import with `ssr: false`, or guard with `typeof window !== 'undefi
 
 ## Further reading
 
-- [API Reference](API.md)
-- [Developer Guide](GUIDE.md)
-- [Quick Start](QUICKSTART.md)
+- [API Reference](api.md)
+- [Developer Guide](guide.md)
+- [Quick Start](quickstart.md)

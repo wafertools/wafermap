@@ -4,6 +4,7 @@ const DEMOS = [
   '01-first-map.html',
   '03-csv-data.html',
   '04-geometry.html',
+  '02-partial-data.html',
   '05-named-bins.html',
   '06-test-values.html',
   '07-retests.html',

@@ -229,4 +229,4 @@ import { createWafermapWorker } from '@paulrobins/wafermap/worker';
 - Use `analyzeWaferLot()` when you need cross-wafer lot statistics
 - Use `createWafermapWorker()` when the same work should happen off the main thread
 
-If you want the deeper API surface, the [API Reference](API.md) lists every public type and option.
+If you want the deeper API surface, the [API Reference](api.md) lists every public type and option.

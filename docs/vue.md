@@ -219,7 +219,7 @@ export const useWaferStore = defineStore('wafer', {
 
 ## Further reading
 
-- [API reference](API.md)
+- [API reference](api.md)
 - [Statistical findings](examples/10-findings.html)
 - [Lot gallery](examples/12-gallery.html)
 - [Web Worker](examples/15-worker.html)

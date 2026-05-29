@@ -2,13 +2,13 @@
 
 This guide walks through building wafer map visualisations in a real application,
 from a single interactive map up to a multi-wafer gallery with statistical findings.
-It focuses on practical patterns; for the full type reference see [API Reference](API.md).
-For a visual overview of how the library fits together, see [Architecture](ARCHITECTURE.md).
+It focuses on practical patterns; for the full type reference see [API Reference](api.md).
+For a visual overview of how the library fits together, see [Architecture](architecture.md).
 
 ## Architecture at a glance
 
 If you are trying to understand the shape of the library before choosing an API,
-start with [Architecture](ARCHITECTURE.md). It shows the top-level flow from raw
+start with [Architecture](architecture.md). It shows the top-level flow from raw
 wafer data to built maps, rendered views, analysis summaries, and worker-based
 execution.
 
@@ -188,6 +188,37 @@ buildWaferMap({ results });
 Check `result.units` to know which case applied: `'mm'` means physical millimetres;
 `'normalized'` means grid-relative units.
 
+### Partial data — anchoring the wafer centre
+
+Inference reads geometry from how far your data reaches. That works as long as the
+data reaches the true wafer edge — including **sparse** data, where positions are
+missing across the whole face (systematic skip-sampling such as 1-in-4, or random
+sampling). Sparse data still resolves the diameter and centre correctly with no
+hints.
+
+It breaks for **partial** data — a contiguous region that stops short of the edge:
+a half wafer, a single quadrant, a slice, or an off-centre cluster. The extent
+understates the wafer, so the region is mistaken for a smaller full wafer and
+re-centred on its own midpoint. For partial data, give the library the true
+diameter and the prober coordinate of the wafer centre:
+
+```ts
+// Only the right half of a 300 mm wafer was tested; prober (0,0) is the centre.
+const result = buildWaferMap({
+  results,
+  waferConfig: { diameter: 300, center: { x: 0, y: 0 } },
+  dieConfig:   { width: 10, height: 10 },
+});
+```
+
+`waferConfig.center` anchors placement to the real centre. It does not change the
+public `die.x`/`die.y` labels — those stay the original prober coordinates.
+
+When the library detects likely-partial coverage with no `center`, it adds a
+message to `result.inference.warnings` and sets `result.inference.wafer.method`
+to `'inferred-partial'`. Detection is heuristic, so for any partial dataset set
+`waferConfig.center` explicitly rather than relying on the warning.
+
 ### Edge exclusion
 
 ```ts
@@ -222,6 +253,11 @@ buildWaferMap({
 
 
 ![](images/image-4.png)
+
+**→ [Demo: Partial data](examples/02-partial-data.html)**
+
+
+![](images/image-4a.png)
 
 
 

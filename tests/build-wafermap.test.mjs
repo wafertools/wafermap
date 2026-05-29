@@ -144,11 +144,17 @@ test('buildWaferMap collapses lot stacks before rendering', () => {
 });
 
 test('buildWaferMap marks edge-excluded dies and falls back to hardBin mode when no values are present', () => {
+  // diameter=60mm (radius=30), edgeExclusion=5 → keep-zone radius=25mm, pitch=10mm.
+  // Symmetric grid [-3..+3]: physX/Y = col*10, so dies at ±30mm are outside the keep zone.
+  // Dies at (3,0) → physX=30 → edge-excluded; die at (0,0) → physX=0 → kept.
+  const results = [];
+  for (let x = -3; x <= 3; x++) {
+    for (let y = -3; y <= 3; y++) {
+      results.push({ x, y, hbin: 1 });
+    }
+  }
   const result = buildWaferMap({
-    results: [
-      { x: 0, y: 0, hbin: 1 },
-      { x: 1, y: 0, hbin: 2 },
-    ],
+    results,
     waferConfig: {
       diameter: 60,
       edgeExclusion: 5,
@@ -160,12 +166,12 @@ test('buildWaferMap marks edge-excluded dies and falls back to hardBin mode when
   assert.equal(result.plotMode, 'hardBin');
   assert.ok(result.dies.some((die) => die.edgeExcluded));
   assert.ok(result.dataCoverage.edgeExcludedDies > 0);
-  assert.equal(result.dataCoverage.filledDies, 2);
+  assert.equal(result.dataCoverage.filledDies, results.length);
 });
 
 test('buildWaferMap handles empty inputs gracefully', () => {
   const empty = buildWaferMap([]);
-  assert.ok(empty.dies.length > 0); // Still generates default grid
+  assert.equal(empty.dies.length, 0);
   assert.equal(empty.units, 'normalized');
   assert.equal(empty.dataCoverage.filledDies, 0);
   assert.equal(empty.dataCoverage.totalDies, empty.dies.length);
