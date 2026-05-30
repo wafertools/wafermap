@@ -1406,6 +1406,62 @@ ctrl.setLotStatsSummary(newLotSummary);
 
 ![](images/image-13.png)
 
+### Exporting reports
+
+The library can generate standalone printable HTML reports that open in a new browser tab and can be saved as PDF.
+
+**Wafer summary report** — everything shown in a single wafer's summary panel (yield, bins, ring/quadrant yield, test stats, findings):
+
+```ts
+import { renderSummaryReportHtml, openHtmlReport } from '@paulrobins/wafermap/stats';
+
+const html = renderSummaryReportHtml({
+  wafer, dies,
+  yieldSummary:  summary.stats,
+  dataCoverage:  summary.stats.dataCoverage,
+  hbinDefs:      result.hbinDefs,
+  sbinDefs:      result.sbinDefs,
+  testDefs:      result.testDefs,
+  statsSummary:  summary,
+  passBins:      [1],
+});
+openHtmlReport(html);
+```
+
+**Lot summary report** — the lot-level equivalent, covering per-wafer yield table, bin breakdown, ring/quadrant yield, lot-level test stats, and lot findings:
+
+```ts
+import { renderLotSummaryReportHtml, openHtmlReport } from '@paulrobins/wafermap/stats';
+
+const html = renderLotSummaryReportHtml({
+  lotSummary,
+  items: waferMapResults.map((r, i) => ({
+    label: `W${i + 1}`,
+    wafer: r.wafer,
+    dies:  r.dies,
+  })),
+  hbinDefs:  waferMapResults[0].hbinDefs,
+  sbinDefs:  waferMapResults[0].sbinDefs,
+  testDefs:  waferMapResults[0].testDefs,
+  passBins:  [1],
+});
+openHtmlReport(html);
+```
+
+**Findings-only report** — a lighter report with just the severity-coded findings table, works for both wafer and lot summaries:
+
+```ts
+import { renderFindingsReportHtml, openHtmlReport } from '@paulrobins/wafermap/stats';
+
+openHtmlReport(renderFindingsReportHtml(lotSummary));
+```
+
+The summary panel's "Summary report" button in `renderWaferMap` and `renderWaferGallery` calls the appropriate function automatically — you only need to call these directly when building a custom export flow.
+
+![Wafer summary report](images/image-report-wafer.png)
+
+![Lot summary report](images/image-report-lot.png)
+
 ### Advanced: standalone stacked map with programmatic findings access
 
 The gallery's stacked modes cover most use cases.  Use `buildWaferMap({ lotStack })`

@@ -30,13 +30,23 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 
     // x, y are integer die grid positions output by the prober — NOT millimetres.
     // hbin is the hard bin: the pass/fail category assigned by the test equipment.
-    const results = [
-      { x:  0, y:  0, hbin: 1 },  // pass
-      { x:  1, y:  0, hbin: 1 },  // pass
-      { x: -1, y:  0, hbin: 2 },  // fail
-      { x:  0, y:  1, hbin: 1 },  // pass
-      { x:  0, y: -1, hbin: 2 },  // fail
-    ];
+    //
+    // Build a synthetic lot with ~640 dies and an edge-ring failure pattern.
+    // In production you would load these rows from a CSV or your test data API.
+    const results = [];
+    for (let x = -14; x <= 14; x++) {
+      for (let y = -14; y <= 14; y++) {
+        const r = Math.sqrt(x * x + y * y);
+        if (r > 14.3) continue;                        // outside wafer boundary
+        const h = ((Math.imul(x + 100, 2654435761) ^ Math.imul(y + 100, 2246822519)) >>> 0);
+        const edgeFail = r > 11 && (h % 100) < 55;    // edge-ring yield loss
+        results.push({ x, y, hbin: edgeFail ? 2 : 1 });
+      }
+    }
+    // results is now an array of objects like:
+    //   { x:  0, y:  0, hbin: 1 }   // centre die — pass
+    //   { x:  4, y:  3, hbin: 1 }   // mid-wafer  — pass
+    //   { x: -14, y:  1, hbin: 2 }  // outer ring — fail
 
     // buildWaferMap processes die data into a wafer model. Pure function — no DOM access.
     // passBins tells the library which bin numbers count as passing yield.
@@ -48,6 +58,10 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 </body>
 </html>
 ```
+
+**[Open this example in your browser →](examples/quickstart-live.html)**
+
+![Edge-ring failure pattern on a 641-die wafer](images/image-quickstart.png)
 
 ## What you just built
 

@@ -47,6 +47,23 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
+function buildWarningsBanner(warnings: string[]): HTMLDivElement {
+  const wrap = el('div', {
+    background:   '#fffbe6',
+    border:       '1px solid #f0c040',
+    borderRadius: '4px',
+    padding:      '7px 9px',
+    marginBottom: '10px',
+    fontSize:     '10px',
+    color:        '#7a5800',
+    lineHeight:   '1.5',
+  });
+  for (const w of warnings) {
+    wrap.appendChild(el('div', {}, `⚠ ${w}`));
+  }
+  return wrap;
+}
+
 function sectionTitle(label: string): HTMLDivElement {
   const d = el('div', {
     fontSize:      TITLE_SIZE,
@@ -764,6 +781,9 @@ export function renderWaferSummaryContent(
     onFindingClick, activeFindingId = null,
   } = params;
 
+  const warnings = statsSummary?.stats.warnings;
+  if (warnings?.length) panel.appendChild(buildWarningsBanner(warnings));
+
   const sections: (HTMLDivElement | null)[] = [];
 
   const meta = wafer.metadata as Record<string, unknown> | undefined;
@@ -864,6 +884,11 @@ export function renderLotSummaryContent(
     fallbackFormat,
     onFindingClick, activeFindingId = null,
   } = params;
+
+  const allWarnings = [...new Set(
+    lotSummary.perWafer.flatMap(pw => pw.summary.stats.warnings ?? []),
+  )];
+  if (allWarnings.length) panel.appendChild(buildWarningsBanner(allWarnings));
 
   const allWafers: Wafer[] = [];
   const diesByWafer: Die[][] = [];

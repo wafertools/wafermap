@@ -1,4 +1,5 @@
 export {
+  buildView,
   resolveTestNumber,
   findTestDef,
   getUniqueTestNumbers,

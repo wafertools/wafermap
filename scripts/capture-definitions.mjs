@@ -118,6 +118,47 @@ export const CAPTURES = [
     setup: [['hover'], ['showCursorOn', '#map canvas', -120, -100]],
   },
 
+  // ── image-quickstart.png — quickstart example: edge-ring pattern ─────────────
+  {
+    file: 'image-quickstart',
+    group: 'maps',
+    page: '/examples/01-first-map.html',  // reuse the demo page infrastructure
+    wait: 800,
+    screenshotFn: async (page, outFile) => {
+      // Inject the quickstart inline data directly, replacing the demo's result
+      await page.evaluate(() => {
+        return new Promise(resolve => {
+          // Wait for the map to already be rendered, then swap the data
+          const results = [];
+          for (let x = -14; x <= 14; x++) {
+            for (let y = -14; y <= 14; y++) {
+              const r = Math.sqrt(x * x + y * y);
+              if (r > 14.3) continue;
+              const h = ((Math.imul(x + 100, 2654435761) ^ Math.imul(y + 100, 2246822519)) >>> 0);
+              const edgeFail = r > 11 && (h % 100) < 55;
+              results.push({ x, y, hbin: edgeFail ? 2 : 1 });
+            }
+          }
+          window.__quickstartResults = results;
+          resolve();
+        });
+      });
+      // Reinitialise by navigating to a data-URL that uses the local importmap
+      // Instead: render directly using the page's already-loaded modules
+      await page.evaluate(async () => {
+        const { buildWaferMap }  = await import('wafermap');
+        const { renderWaferMap } = await import('wafermap/render');
+        const container = document.getElementById('map');
+        container.innerHTML = '';
+        const result = buildWaferMap({ results: window.__quickstartResults, passBins: [1] });
+        renderWaferMap(container, result);
+      });
+      await page.waitForTimeout(600);
+      const el = await page.$('.canvas-card');
+      await el.screenshot({ path: outFile });
+    },
+  },
+
   // ── image-2.png — §2 Your first wafer map ────────────────────────────────────
   {
     file: 'image-2',
@@ -316,6 +357,72 @@ export const CAPTURES = [
     ],
   },
 
+  // ── image-report-wafer.png — §13 Wafer summary report (popup from panel button) ──
+  {
+    file: 'image-report-wafer',
+    group: 'maps',
+    page: '/examples/11-summary-panel.html',
+    wait: 1000,
+    screenshotFn: async (page, outFile) => {
+      // Open the summary panel
+      await page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')]
+          .find(b => b.ariaLabel === 'Summary panel');
+        if (btn && !btn.dataset.active) btn.click();
+      });
+      await page.waitForTimeout(600);
+
+      // Click "Summary report" and capture the popup
+      const popupPromise = page.context().waitForEvent('page');
+      await page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')]
+          .find(b => b.textContent?.trim() === 'Summary report');
+        if (btn) btn.click();
+      });
+      const popup = await popupPromise;
+      await popup.waitForLoadState('domcontentloaded');
+      await popup.waitForTimeout(400);
+      await popup.screenshot({ path: outFile, fullPage: false });
+    },
+  },
+
+  // ── image-report-lot.png — §13 Lot summary report (popup from lot panel button) ──
+  {
+    file: 'image-report-lot',
+    group: 'gallery',
+    page: '/examples/13-lot-findings.html',
+    wait: 2000,
+    screenshotFn: async (page, outFile) => {
+      // Panel opens by default (defaultOpen: true in this demo).
+      // Ensure we're at lot-level view — click the gallery-bar Summary panel button
+      // which is scoped to [data-wmap-toolbar="gallery"].
+      await page.evaluate(() => {
+        const galleryBar = document.querySelector('[data-wmap-toolbar="gallery"]');
+        const btn = galleryBar && [...galleryBar.querySelectorAll('button')]
+          .find(b => b.ariaLabel === 'Summary panel');
+        if (btn && !btn.dataset.active) btn.click();
+      });
+      await page.waitForTimeout(600);
+
+      // Find the visible summary panel (the lot-level one is open by default).
+      // It's the panel whose display is not 'none' and which is not inside a card.
+      const popupPromise = page.context().waitForEvent('page');
+      await page.evaluate(() => {
+        // The lot summary panel is not inside a .wmap-gallery-card
+        const btn = [...document.querySelectorAll('button')]
+          .find(b =>
+            b.textContent?.trim() === 'Summary report' &&
+            !b.closest('.wmap-gallery-card')
+          );
+        if (btn) btn.click();
+      });
+      const popup = await popupPromise;
+      await popup.waitForLoadState('domcontentloaded');
+      await popup.waitForTimeout(400);
+      await popup.screenshot({ path: outFile, fullPage: false });
+    },
+  },
+
   // ── image-10a.png — §10 Cluster/edge-arc highlight: specific dies lit amber ───
   {
     file: 'image-10a',
@@ -373,14 +480,14 @@ export const CAPTURES = [
     ]
   },
 
-  // ── CSV showcase ──────────────────────────────────────────────────────────────
-  {
-    file: 'csv',
-    group: 'showcase',
-    page: '/examples/00-showcase.html',
-    selector: '#phase-upload',
-    wait: 600
-  },
+  // // ── CSV showcase ──────────────────────────────────────────────────────────────
+  // {
+  //   file: 'csv',
+  //   group: 'showcase',
+  //   page: '/examples/00-showcase.html',
+  //   selector: '#phase-upload',
+  //   wait: 600
+  // },
 
   // ── Toolbar strips ────────────────────────────────────────────────────────────
 

@@ -197,6 +197,8 @@ export interface WaferMapController {
   setViewControlsVisible(visible: boolean): void;
   /** Show or hide the expand toolbar button. */
   setExpandVisible(visible: boolean): void;
+  /** Close the auto-mounted summary panel if it is open. No-op if no panel exists. */
+  closeSummaryPanel(): void;
   /** Move the floating tooltip into a different parent (e.g. a fullscreen element). */
   setTooltipParent(parent: HTMLElement): void;
   /**
@@ -1487,6 +1489,17 @@ export function renderWaferMap(
 
     setExpandVisible(visible: boolean): void {
       if (btnExpand) btnExpand.style.display = visible ? 'flex' : 'none';
+    },
+
+    closeSummaryPanel(): void {
+      const panelEl = autoSummaryPanelEl;
+      if (!panelEl || panelEl.style.display === 'none') return;
+      panelEl.style.display = 'none';
+      if (btnFindings) {
+        delete btnFindings.dataset.active;
+        btnFindings.style.background = 'transparent';
+        btnFindings.style.color      = CLR.icon;
+      }
     },
 
     setTooltipParent(parent: HTMLElement): void {

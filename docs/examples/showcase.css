@@ -215,15 +215,10 @@
   gap: 14px;
   flex-wrap: wrap;
 }
-.maps-bar-info {
+.maps-data-strip {
   font-size: 11px;
   color: var(--muted);
-  margin-left: auto;
-}
-.capability-badges {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  flex: 1;
 }
 .maps-gallery {
   flex: 1;
@@ -387,3 +382,165 @@
 .phase { display: none; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
 .phase.active { display: flex; }
 #phase-upload.active { overflow-y: auto; }
+
+/* ── Demo scenario selector ───────────────────────────────────────────── */
+.demo-scenario-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.scenario-pill {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+  white-space: nowrap;
+}
+.scenario-pill:hover {
+  background: var(--accent-lo);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.scenario-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.scenario-pill-own {
+  margin-left: auto;
+  border-style: dashed;
+}
+.scenario-pill-own.active {
+  background: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  border-style: dashed;
+}
+
+/* ── Scenario description banner ─────────────────────────────────────── */
+.scenario-banner {
+  flex-shrink: 0;
+  padding: 8px 18px;
+  background: var(--accent-lo);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  display: none;
+}
+.scenario-banner strong { color: var(--text); }
+.scenario-banner em { font-style: italic; }
+
+/* ── Upload section (moved below gallery) ────────────────────────────── */
+.upload-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--muted);
+  padding: 20px 24px 4px;
+  text-align: center;
+}
+#phase-upload { align-items: center; justify-content: flex-start; padding: 0 32px 40px; }
+
+/* ── Feature tour ────────────────────────────────────────────────────── */
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  z-index: 1100;
+}
+#tour-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1101;
+}
+.tour-ring {
+  position: fixed;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2000px rgba(0,0,0,.45);
+  pointer-events: none;
+  z-index: 1102;
+}
+.tour-tip {
+  position: fixed;
+  transform: translateX(-50%);
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+  padding: 10px 14px;
+  border-radius: 8px;
+  width: 220px;
+  text-align: center;
+  line-height: 1.45;
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  pointer-events: none;
+  z-index: 1103;
+}
+.tour-tip::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: var(--arrow-left, 50%);
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top: none;
+  border-bottom-color: #fff;
+}
+.tour-tip[data-above="1"] {
+  transform: translateX(-50%) translateY(-100%);
+}
+.tour-tip[data-above="1"]::before {
+  top: auto;
+  bottom: -6px;
+  border-bottom: none;
+  border-top: 6px solid #fff;
+}
+.tour-nav {
+  position: fixed;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  z-index: 1103;
+  pointer-events: all;
+}
+.tour-skip {
+  padding: 6px 14px;
+  background: transparent;
+  color: rgba(255,255,255,.7);
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 20px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.tour-skip:hover { color: #fff; border-color: rgba(255,255,255,.8); }
+.tour-next {
+  padding: 6px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  transition: opacity .15s;
+}
+.tour-next:hover { opacity: .88; }

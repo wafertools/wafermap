@@ -334,6 +334,28 @@ export let galleryCtrl   = null;
 
 export function setGalleryCtrl(ctrl) { galleryCtrl = ctrl; }
 
+// ── Demo mapping override ──────────────────────────────────────────────────
+// When set, readMapping() returns this instead of reading the DOM table.
+// Cleared whenever the user loads their own file.
+let _demoMapping = null;
+
+export function setDemoMapping(m) { _demoMapping = m; }
+export function clearDemoMapping() { _demoMapping = null; }
+
+/**
+ * Load a demo CSV: parse it, store parsedRows, and skip the mapping UI.
+ * The caller must call renderGallery() immediately after.
+ */
+export function loadDemoCsv(text, name) {
+  const { rows, headers, truncated } = parseCsv(text);
+  if (!rows.length) return false;
+  parsedRows    = rows;
+  fileHeaders   = headers;
+  fileTruncated = truncated;
+  fileName      = name;
+  return true;
+}
+
 // ── Phase management ───────────────────────────────────────────────────────
 
 export function showPhase(id) {
@@ -363,6 +385,7 @@ function handleFile(file) {
 
 function processText(text, name) {
   fileName = name;
+  clearDemoMapping();
 
   if (name.toLowerCase().endsWith('.json')) {
     processJson(text);
@@ -539,6 +562,7 @@ function buildMappingUI() {
 }
 
 export function readMapping() {
+  if (_demoMapping) return _demoMapping;
   const rows  = document.querySelectorAll('#mapping-rows tr');
   const mapping = {
     x: null, y: null, hbin: null, sbin: null, wafer: null, lot: null,
@@ -597,7 +621,7 @@ export function initShowcase(renderGallery) {
     if (e.target.files[0]) handleFile(e.target.files[0]);
   });
 
-  document.getElementById('btn-demo').addEventListener('click', async () => {
+  document.getElementById('btn-demo')?.addEventListener('click', async () => {
     showUploadError('');
     const resp = await fetch('../data/dummy-fulldata.csv');
     const text = await resp.text();

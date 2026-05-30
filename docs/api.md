@@ -1445,7 +1445,38 @@ Generates a standalone printable HTML **full summary report** — a snapshot of 
 
 The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided.
 
-### 7.8 `StatsFinding`
+### 7.8 `renderLotSummaryReportHtml`
+
+```ts
+import { renderLotSummaryReportHtml } from '@paulrobins/wafermap/stats';
+
+renderLotSummaryReportHtml(params: LotSummaryReportParams, options?: { title?: string }): string
+```
+
+Generates a standalone printable HTML **full lot summary report** — the lot-level equivalent of `renderSummaryReportHtml`. Covers lot overview stats, per-wafer yield table, bin breakdown, ring and quadrant yield, test value statistics across the lot, and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
+
+```ts
+// LotSummaryReportParams
+{
+  lotSummary: LotStatsSummary
+  items:      Array<{
+    label?:  string
+    wafer?:  Wafer
+    dies?:   Die[]
+  }>
+  hbinDefs?:  BinDef[]
+  sbinDefs?:  BinDef[]
+  testDefs?:  TestDef[]
+  passBins?:  number[]   // default [1]
+  ringCount?: number     // default 4
+}
+```
+
+`LotStatsSummary` → §7.5 · `Wafer` → §12.2 · `Die` → §12.1 · `BinDef` → §4.1.9 · `TestDef` → §4.1.8
+
+The lot summary panel's "Summary report" button calls this automatically when `lotStatsSummary` is provided to `renderWaferGallery`.
+
+### 7.9 `StatsFinding`
 
 ```ts
 {
@@ -1484,7 +1515,7 @@ The summary panel's "Summary report" button calls this automatically when `stats
 }
 ```
 
-### 7.9 `HighlightTarget`
+### 7.10 `HighlightTarget`
 
 Describes what to visually emphasise when a finding is selected.
 
@@ -1511,7 +1542,7 @@ type HighlightTarget =
 | `edge-arc`           | `dies`           | exact failing die keys |
 | `wafer`              | `wafer`          | lot-level only |
 
-### 7.10 Integrating with `renderWaferMap`
+### 7.11 Integrating with `renderWaferMap`
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -1534,7 +1565,7 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
-### 7.11 Region builder utilities
+### 7.12 Region builder utilities
 
 These are exported from `@paulrobins/wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
 
@@ -1575,7 +1606,7 @@ Each `StatsRegion` has:
 }
 ```
 
-### 7.12 `filterFindings(source, filter)`
+### 7.13 `filterFindings(source, filter)`
 
 ```ts
 filterFindings(source: StatsSummary | LotStatsSummary, filter: FindingsFilter): StatsFinding[]

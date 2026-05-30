@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quick Start — wafermap</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    header {
+      background: #0f172a;
+      color: #fff;
+      padding: 10px 20px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header .logo { font-weight: 700; font-size: 15px; }
+    header .logo em { color: #60a5fa; font-style: normal; }
+    header .sep { width: 1px; height: 16px; background: #334155; }
+    header .title { color: #94a3b8; }
+    header a {
+      margin-left: auto;
+      color: #60a5fa;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    header a:hover { text-decoration: underline; }
+    #map {
+      width: min(600px, 96vw);
+      height: min(600px, 96vw);
+      margin: 24px auto;
+      display: block;
+    }
+    .note {
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 24px;
+    }
+    .note a { color: #3b82f6; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="logo">wafer<em>map</em></span>
+    <div class="sep"></div>
+    <span class="title">Quick Start demo</span>
+    <a href="https://telecasterer.github.io/wafermap/quickstart/">← Back to Quick Start guide</a>
+  </header>
+
+  <div id="map"></div>
+  <p class="note">
+    Hover the map to reveal the toolbar — zoom, rotate, change colour scheme, download PNG.<br>
+    <a href="https://telecasterer.github.io/wafermap/quickstart/">Read the Quick Start guide</a>
+    to see the code that generated this.
+  </p>
+
+  <script type="module">
+    import { buildWaferMap }  from 'https://esm.sh/@paulrobins/wafermap';
+    import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/render';
+
+    // x, y are integer die grid positions output by the prober — NOT millimetres.
+    // hbin is the hard bin: the pass/fail category assigned by the test equipment.
+    //
+    // Build a synthetic lot with ~640 dies and an edge-ring failure pattern.
+    // In production you would load these rows from a CSV or your test data API.
+    const results = [];
+    for (let x = -14; x <= 14; x++) {
+      for (let y = -14; y <= 14; y++) {
+        const r = Math.sqrt(x * x + y * y);
+        if (r > 14.3) continue;                        // outside wafer boundary
+        const h = ((Math.imul(x + 100, 2654435761) ^ Math.imul(y + 100, 2246822519)) >>> 0);
+        const edgeFail = r > 11 && (h % 100) < 55;    // edge-ring yield loss
+        results.push({ x, y, hbin: edgeFail ? 2 : 1 });
+      }
+    }
+    // results is now an array of objects like:
+    //   { x:  0, y:  0, hbin: 1 }   // centre die — pass
+    //   { x:  4, y:  3, hbin: 1 }   // mid-wafer  — pass
+    //   { x: -14, y:  1, hbin: 2 }  // outer ring — fail
+
+    // buildWaferMap processes die data into a wafer model. Pure function — no DOM access.
+    // passBins tells the library which bin numbers count as passing yield.
+    const result = buildWaferMap({ results, passBins: [1] });
+
+    // renderWaferMap mounts an interactive canvas into the container div.
+    renderWaferMap(document.getElementById('map'), result);
+  </script>
+</body>
+</html>

@@ -212,7 +212,7 @@ export function renderWaferGallery(
       card.style.outlineOffset = active ? '-3px' : '';
       if (active && firstHighlighted === undefined) firstHighlighted = card;
     });
-    firstHighlighted?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    firstHighlighted?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
   }
 
   function clearCardHighlight(): void {
@@ -1296,6 +1296,7 @@ export function renderWaferGallery(
     cardControllers[cardIndex]?.setFindingsVisible(true);
     cardControllers[cardIndex]?.setExpandVisible(false);
     cardControllers[cardIndex]?.resetZoom();
+    applyCardHighlight([cardIndex]);
 
     const handle = openModal({
       title: item.label ?? '',
@@ -1329,6 +1330,8 @@ export function renderWaferGallery(
     }
     cardControllers[modalCardIndex]?.setViewControlsVisible(false);
     cardControllers[modalCardIndex]?.setFindingsVisible(false);
+    cardControllers[modalCardIndex]?.closeSummaryPanel();
+    cardControllers[modalCardIndex]?.setExpandVisible(true);
     cardControllers[modalCardIndex]?.resetZoom();
     modalCardIndex           = -1;
     modalReparentedContainer = null;

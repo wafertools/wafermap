@@ -18,18 +18,33 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">Showcase — load your own data</span>
-    <span class="demo-desc">CSV · JSON · automatic column detection · full interactive gallery</span>
+    <span class="demo-title">Showcase</span>
+    <span class="demo-desc">yield patterns · spatial anomalies · parametric distributions · stacked lot views</span>
   </header>
 
   <div class="demo-intro">
-    Load a CSV or JSON file containing die-level test results. Columns are detected automatically — review and adjust the mapping, then render an interactive gallery with statistical findings, stacked lot views, and parametric value maps, depending on what your data contains.
+    Visualise semiconductor test data instantly — yield patterns, spatial anomalies, parametric
+    distributions, and stacked lot views. Load your own CSV or JSON below, or explore the demo
+    scenarios now.
   </div>
+
+  <!-- ── Demo scenario selector ──────────────────────────────────────────── -->
+  <div class="demo-scenario-bar" id="demo-scenario-bar">
+    <button class="scenario-pill active" data-demo="edge-ring">Edge ring pattern</button>
+    <button class="scenario-pill" data-demo="parametric">Parametric map</button>
+    <button class="scenario-pill" data-demo="cluster">Cluster defects</button>
+    <button class="scenario-pill" data-demo="high-yield">High yield lot</button>
+    <button class="scenario-pill scenario-pill-own" data-demo="own" id="pill-own">Load your own &#8595;</button>
+  </div>
+
+  <!-- ── Scenario description banner ────────────────────────────────────── -->
+  <div class="scenario-banner" id="scenario-banner"></div>
 
   <div class="phase-host">
 
   <!-- ── Phase 1: Upload ─────────────────────────────────────────────────── -->
-  <div id="phase-upload" class="phase active">
+  <div id="phase-upload" class="phase">
+    <div class="upload-section-heading">&#9472;&#9472; Try with your own data &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;</div>
     <div class="upload-card" id="drop-zone">
       <div class="upload-icon">&#8659;</div>
       <div class="upload-heading">Drop a file here</div>
@@ -39,7 +54,6 @@
       </div>
       <div class="upload-actions">
         <button class="btn-primary" id="btn-browse">Browse file&hellip;</button>
-        <button class="btn-secondary" id="btn-demo">Try demo data</button>
       </div>
       <div class="upload-limit">Maximum file size: 20 MB &nbsp;&middot;&nbsp; Rows beyond 500,000 are skipped</div>
       <div class="upload-error" id="upload-error"></div>
@@ -84,9 +98,8 @@
   <!-- ── Phase 3: Gallery ───────────────────────────────────────────────── -->
   <div id="phase-maps" class="phase">
     <div class="maps-bar">
-      <button class="btn-secondary" id="btn-back-mapping">&#8592; Back</button>
-      <div class="capability-badges" id="capability-badges"></div>
-      <div class="maps-bar-info" id="maps-bar-info"></div>
+      <button class="btn-secondary" id="btn-back-mapping" style="display:none">&#8592; Back</button>
+      <span class="maps-data-strip" id="maps-data-strip"></span>
       <button class="help-btn" id="btn-help">? Toolbar guide</button>
     </div>
     <div class="lot-info-bar" id="lot-info-bar" style="display:none"></div>
@@ -159,6 +172,10 @@
     </div>
   </div>
 
+  <!-- ── Feature tour tooltips ─────────────────────────────────────────── -->
+  <div id="tour-overlay" class="tour-overlay" style="display:none"></div>
+  <div id="tour-container" style="display:none"></div>
+
   </div><!-- /.phase-host -->
 
   <script type="module">
@@ -169,9 +186,50 @@
       readMapping, parsePassBins, escHtml,
       setGalleryCtrl, showPhase, initShowcase,
       detectLongFormat, pivotLongFormat, showLongFormatModal,
+      loadDemoCsv, setDemoMapping, clearDemoMapping,
     } from './showcase.js';
 
-    // buildWaferMap runs in a Web Worker so the page stays responsive while processing.
+    // ── Demo scenario definitions ──────────────────────────────────────────
+    const DEMO_MAPPING = {
+      x: 'x', y: 'y', hbin: 'hbin', sbin: 'sbin',
+      wafer: 'wafer', lot: 'lot',
+      testname: null, testvalue: null,
+      tests: [
+        { col: 'leakage',   name: 'Leakage (µA)',  testNumber: 1001 },
+        { col: 'voltage',   name: 'Voltage (V)',    testNumber: 1002 },
+        { col: 'frequency', name: 'Frequency (MHz)',testNumber: 1003 },
+      ],
+      meta: [], splitBy: [],
+    };
+
+    const DEMO_SCENARIOS = {
+      'edge-ring': {
+        file: 'data/edge-ring.csv',
+        passBins: [1],
+        plotMode: 'hardBin',
+        description: 'Yield loss concentrated at the wafer edge — a classic edge-ring pattern. The summary panel on the right shows per-wafer yield and spatial findings. Click any wafer\'s expand button to zoom in on the edge dies.',
+      },
+      'parametric': {
+        file: 'data/parametric.csv',
+        passBins: [1],
+        plotMode: 'value',
+        description: 'Leakage current mapped spatially across a 6-wafer lot — showing a radial gradient and a per-wafer hotspot. Switch to <em>Test value</em> mode in the toolbar if not already active, then try log scale to reveal the full dynamic range.',
+      },
+      'cluster': {
+        file: 'data/cluster.csv',
+        passBins: [1],
+        plotMode: 'hardBin',
+        description: 'Random defect clusters at different positions on each wafer. The summary panel shows lot-level cluster anomaly scores — click a finding to highlight the affected dies on the map.',
+      },
+      'high-yield': {
+        file: 'data/high-yield.csv',
+        passBins: [1],
+        plotMode: 'hardBin',
+        description: 'A mature, high-yield process across 10 wafers. Explore the per-wafer yield chart and bin breakdown in the summary panel, or switch to <em>Test value</em> mode to see how tight the parametric distributions are.',
+      },
+    };
+
+    // ── Worker ─────────────────────────────────────────────────────────────
     const worker = createWafermapWorker(
       new Worker('../dist/packages/worker/wafermap.worker.js', { type: 'module' })
     );
@@ -191,6 +249,7 @@
       }
     }
 
+    // ── Core render logic ──────────────────────────────────────────────────
     async function _renderGallery() {
       const mapping  = readMapping();
       const passBins = parsePassBins();
@@ -202,7 +261,7 @@
 
       // ── Long-format detection and pivot ──────────────────────────────────
       let activeRows = parsedRows;
-      let longFmtTestNames = null; // Map<name, testNumber> if pivoted
+      let longFmtTestNames = null;
 
       const longFmtInfo = detectLongFormat(mapping);
       if (longFmtInfo) {
@@ -235,17 +294,15 @@
       const hasTestValues = mapping.tests.length > 0 || longFmtTestNames != null;
       const hasMultiWafer = waferIds.length >= 2;
 
-      // Build testDefs — from wide-format mapping.tests or from pivoted long-format names
       const testDefs = hasTestValues
         ? (longFmtTestNames
             ? [...longFmtTestNames.entries()].map(([name, testNumber]) => ({ testNumber, name }))
             : mapping.tests.map(t => ({ testNumber: t.testNumber, name: t.name })))
         : undefined;
 
-      const plotMode = hasHardBins ? 'hardBin' : hasSoftBins ? 'softBin' : hasTestValues ? 'value' : 'hardBin';
+      const plotModeAuto = hasHardBins ? 'hardBin' : hasSoftBins ? 'softBin' : hasTestValues ? 'value' : 'hardBin';
+      const plotMode = activeDemoPlotMode ?? plotModeAuto;
 
-      // Detect coordinate origin from the data — if all sampled x and y values are
-      // non-negative, treat as lower-left (prober step) coordinates, otherwise center.
       const allXY = activeRows.slice(0, 200).map(r => ({ x: Number(r[mapping.x]), y: Number(r[mapping.y]) })).filter(p => !isNaN(p.x) && !isNaN(p.y));
       const coordinateOrigin = allXY.length > 0 && allXY.every(p => p.x >= 0 && p.y >= 0)
         ? { type: 'LL' }
@@ -259,7 +316,6 @@
           if (hasTestValues) {
             result.testValues = {};
             if (longFmtTestNames) {
-              // Pivoted rows store values as __test_<testNumber>
               for (const [, testNumber] of longFmtTestNames) {
                 const v = Number(row[`__test_${testNumber}`]);
                 if (!isNaN(v)) result.testValues[testNumber] = v;
@@ -275,8 +331,8 @@
         }).filter(r => !isNaN(r.x) && !isNaN(r.y));
       }
 
-      // Switch to gallery phase so the spinner is visible while the worker runs
       showPhase('phase-maps');
+      document.getElementById('btn-back-mapping').style.display = activeDemoKey ? 'none' : '';
       setLoading(`Building wafer maps… (0 / ${waferIds.length})`);
 
       const waferMapResults = [];
@@ -315,26 +371,17 @@
         return useLazy ? () => item : item;
       });
 
-      // Capability badges
-      const badgesEl = document.getElementById('capability-badges');
-      badgesEl.innerHTML = '';
-      const caps = [];
-      if (hasHardBins)   caps.push({ label: 'Hard bins',   cls: 'badge-green' });
-      if (hasSoftBins)   caps.push({ label: 'Soft bins',   cls: 'badge-blue' });
-      if (hasTestValues) caps.push({ label: `${mapping.tests.length} test value${mapping.tests.length !== 1 ? 's' : ''}`, cls: 'badge-blue' });
-      if (hasMultiWafer) caps.push({ label: 'Lot analysis', cls: 'badge-blue' });
-      if (hasMultiWafer) caps.push({ label: 'Stacked view', cls: 'badge-muted' });
-      for (const cap of caps) {
-        const b = document.createElement('span');
-        b.className = `badge ${cap.cls}`;
-        b.textContent = cap.label;
-        badgesEl.appendChild(b);
-      }
-
-      // Info bar
+      // Data strip — plain text, no interactive-looking badges
       const totalDies = waferMapResults.reduce((s, r) => s + r.dies.length, 0);
-      document.getElementById('maps-bar-info').textContent =
-        `${validWaferIds.length} wafer${validWaferIds.length !== 1 ? 's' : ''} · ${parsedRows.length.toLocaleString()} rows · ${totalDies.toLocaleString()} dies`;
+      const dataParts = [];
+      if (hasHardBins)   dataParts.push('Hard bins');
+      if (hasSoftBins)   dataParts.push('Soft bins');
+      if (hasTestValues) dataParts.push(`${mapping.tests.length} test value${mapping.tests.length !== 1 ? 's' : ''}`);
+      if (hasMultiWafer) dataParts.push('Lot analysis');
+      if (hasMultiWafer) dataParts.push('Stacked view');
+      dataParts.push(`${validWaferIds.length} wafer${validWaferIds.length !== 1 ? 's' : ''}`);
+      dataParts.push(`${totalDies.toLocaleString()} dies`);
+      document.getElementById('maps-data-strip').textContent = dataParts.join(' · ');
 
       // Truncation banner
       const banner = document.getElementById('truncation-banner');
@@ -367,9 +414,12 @@
           ...(testDefs ? { testDefs } : {}),
         },
         ...(lotSummary ? { lotStatsSummary: lotSummary } : {}),
-        ...(lotSummary ? { summaryPanel: { defaultOpen: false } } : {}),
+        ...(lotSummary ? { summaryPanel: { defaultOpen: activeDemoKey != null } } : {}),
       });
       setGalleryCtrl(ctrl);
+
+      // Show feature tour on first demo render
+      maybeShowTour();
     }
 
     async function renderGallery() {
@@ -377,7 +427,184 @@
       catch (err) { setLoading(null); alert('Error rendering maps:\n\n' + err.message); console.error(err); }
     }
 
+    // ── Demo scenario loading ──────────────────────────────────────────────
+    let activeDemoKey = null;
+    let activeDemoPlotMode = null;
+
+    async function loadDemo(key) {
+      const scenario = DEMO_SCENARIOS[key];
+      if (!scenario) return;
+      activeDemoKey = key;
+      activeDemoPlotMode = scenario.plotMode ?? null;
+
+      // Update pills
+      for (const pill of document.querySelectorAll('.scenario-pill[data-demo]')) {
+        pill.classList.toggle('active', pill.dataset.demo === key);
+      }
+
+      // Update banner
+      const banner = document.getElementById('scenario-banner');
+      banner.innerHTML = scenario.description;
+      banner.style.display = '';
+
+      // Load and render
+      const resp = await fetch(scenario.file);
+      const text = await resp.text();
+      setDemoMapping({ ...DEMO_MAPPING });
+      document.getElementById('pass-bin-input').value = scenario.passBins.join(',');
+      loadDemoCsv(text, scenario.file.split('/').pop());
+      await renderGallery();
+    }
+
+    // ── Pill click handlers ────────────────────────────────────────────────
+    for (const pill of document.querySelectorAll('.scenario-pill[data-demo]')) {
+      pill.addEventListener('click', () => {
+        const key = pill.dataset.demo;
+        if (key === 'own') {
+          // Deactivate demo pills, show upload section
+          activeDemoKey = null;
+          activeDemoPlotMode = null;
+          clearDemoMapping();
+          for (const p of document.querySelectorAll('.scenario-pill')) {
+            p.classList.toggle('active', p.dataset.demo === 'own');
+          }
+          document.getElementById('scenario-banner').style.display = 'none';
+          showPhase('phase-upload');
+          document.getElementById('phase-upload').scrollIntoView({ behavior: 'smooth' });
+        } else {
+          loadDemo(key);
+        }
+      });
+    }
+
+    // ── Feature tour ───────────────────────────────────────────────────────
+    const TOUR_STORAGE_KEY = 'showcaseTourSeen';
+
+    function maybeShowTour() {
+      if (sessionStorage.getItem(TOUR_STORAGE_KEY)) return;
+      // Defer slightly so the gallery has fully painted
+      requestAnimationFrame(() => requestAnimationFrame(showTour));
+    }
+
+    function showTour() {
+      const overlay  = document.getElementById('tour-overlay');
+      const tourCont = document.getElementById('tour-container');
+
+      const targets = [
+        {
+          selector: '[data-wmap-toolbar="gallery"] button[aria-label="Plot mode"]',
+          label: 'Plot mode — switch between bin view, parametric heatmap, and stacked lot views',
+        },
+        {
+          selector: '[data-wmap-toolbar="gallery"] button[aria-label="Summary panel"]',
+          label: 'Summary panel — open yield stats, bin breakdown, and spatial anomaly findings',
+        },
+        {
+          selector: '[data-wmap-expand-btn="1"]',
+          label: 'Expand — open a full-screen view of this wafer with zoom, pan, and PNG export',
+        },
+        {
+          selector: '[data-wmap-toolbar="gallery"] button[aria-label="Columns"]',
+          label: 'Columns — adjust how many wafers appear side by side in the gallery',
+        },
+      ];
+
+      // Only keep the targets whose elements exist — verify once at start.
+      const activeTips = targets.filter(t => {
+        const el = document.querySelector(t.selector);
+        return el && el.getBoundingClientRect().width > 0;
+      });
+
+      if (!activeTips.length) return;
+
+      let step = 0;
+      let resizeRaf = null;
+
+      function onResize() {
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(renderStep);
+      }
+      window.addEventListener('resize', onResize);
+
+      function dismiss() {
+        sessionStorage.setItem(TOUR_STORAGE_KEY, '1');
+        overlay.style.display = 'none';
+        tourCont.style.display = 'none';
+        window.removeEventListener('resize', onResize);
+      }
+
+      function renderStep() {
+        tourCont.innerHTML = '';
+        const { selector, label } = activeTips[step];
+        // Re-query live so position is always current after resize
+        const el = document.querySelector(selector);
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+
+        // Highlight ring around the target element
+        const ring = document.createElement('div');
+        ring.className = 'tour-ring';
+        ring.style.left   = `${rect.left - 4}px`;
+        ring.style.top    = `${rect.top - 4}px`;
+        ring.style.width  = `${rect.width + 8}px`;
+        ring.style.height = `${rect.height + 8}px`;
+        tourCont.appendChild(ring);
+
+        // Tip bubble — position below target, clamped to viewport
+        const tip = document.createElement('div');
+        tip.className = 'tour-tip';
+        const TIP_W = 220;
+        const MARGIN = 12;
+        const targetCX = rect.left + rect.width / 2;
+        const clampedLeft = Math.max(TIP_W / 2 + MARGIN, Math.min(targetCX, window.innerWidth - TIP_W / 2 - MARGIN));
+        // Place below if there's room, otherwise above
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const tipTop = spaceBelow > 80 ? rect.bottom + 10 : rect.top - 10;
+        tip.style.left = `${clampedLeft}px`;
+        tip.style.top  = `${tipTop}px`;
+        tip.dataset.above = spaceBelow <= 80 ? '1' : '';
+        // Arrow points at the actual target centre, not the (possibly clamped) tip centre
+        const arrowOffset = targetCX - clampedLeft;
+        const arrowPct = Math.max(10, Math.min(90, 50 + (arrowOffset / TIP_W) * 100));
+        tip.style.setProperty('--arrow-left', `${arrowPct}%`);
+        tip.textContent = label;
+        tourCont.appendChild(tip);
+
+        // Navigation buttons
+        const nav = document.createElement('div');
+        nav.className = 'tour-nav';
+        nav.style.left = `${clampedLeft}px`;
+        nav.style.top  = `${tipTop + 62}px`;
+
+        const skipBtn = document.createElement('button');
+        skipBtn.className = 'tour-skip';
+        skipBtn.textContent = 'Skip';
+        skipBtn.addEventListener('click', dismiss);
+
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'tour-next';
+        const isLast = step === activeTips.length - 1;
+        nextBtn.textContent = isLast ? 'Got it ✓' : `Next (${step + 1}/${activeTips.length})`;
+        nextBtn.addEventListener('click', () => {
+          if (isLast) { dismiss(); } else { step++; renderStep(); }
+        });
+
+        nav.appendChild(skipBtn);
+        nav.appendChild(nextBtn);
+        tourCont.appendChild(nav);
+      }
+
+      overlay.style.display = 'block';
+      tourCont.style.display = 'block';
+      renderStep();
+      overlay.addEventListener('click', dismiss, { once: true });
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
     initShowcase(renderGallery);
+
+    // Auto-load edge-ring scenario on page load
+    loadDemo('edge-ring');
   </script>
 
 </body>

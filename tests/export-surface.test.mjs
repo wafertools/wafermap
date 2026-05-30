@@ -15,7 +15,7 @@ const SNAPSHOTS = {
     'applyOrientation', 'applyProbeSequence',
     'buildHoverText',
     'buildQuadrantRegions', 'buildReticlePositionRegions', 'buildRingRegions',
-    'buildSectorRegions', 'buildWaferMap',
+    'buildSectorRegions', 'buildView', 'buildWaferMap',
     'classifyDie', 'clipDiesToWafer', 'contrastTextColor', 'createWafer',
     'filterFindings', 'findTestDef', 'generateDies', 'generateReticleGrid', 'generateTextOverlay',
     'getColorScheme', 'getDieKey', 'getDieTestValue',
@@ -34,7 +34,7 @@ const SNAPSHOTS = {
     'isInsideWafer', 'mapDataToDies', 'transformDies',
   ],
   './renderer': [
-    'buildHoverText', 'buildWaferMap',
+    'buildHoverText', 'buildView', 'buildWaferMap',
     'contrastTextColor', 'findTestDef', 'generateTextOverlay',
     'getColorScheme', 'getDieKey', 'getDieTestValue',
     'getUniqueTestNumbers',
