@@ -6,11 +6,13 @@ import type { AnalyzeWaferMapOptions, StatsSummary, LotStatsSummary } from '../s
 export type WorkerRequest =
   | { type: 'run'; id: number; input: WaferMapInput }
   | { type: 'analyze'; id: number; results: WaferMapResult[]; options: AnalyzeWaferMapOptions; hasMultiWafer: boolean }
+  | { type: 'runWithAnalysis'; id: number; inputs: WaferMapInput[]; options: AnalyzeWaferMapOptions; hasMultiWafer: boolean }
   | { type: 'ping' };
 
 export type WorkerResponse =
   | { type: 'result'; id: number; result: WaferMapResult }
   | { type: 'analyzed'; id: number; waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }
+  | { type: 'resultWithAnalysis'; id: number; results: WaferMapResult[]; waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }
   | { type: 'error'; id: number; message: string }
   | { type: 'pong' };
 
@@ -44,6 +46,24 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
         : null;
       (self as unknown as Worker).postMessage(
         { type: 'analyzed', id: msg.id, waferSummaries, lotSummary } satisfies WorkerResponse,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      (self as unknown as Worker).postMessage(
+        { type: 'error', id: msg.id, message } satisfies WorkerResponse,
+      );
+    }
+  }
+
+  if (msg.type === 'runWithAnalysis') {
+    try {
+      const results = msg.inputs.map(input => buildWaferMap(input));
+      const waferSummaries = results.map(r => analyzeWaferMap(r, msg.options));
+      const lotSummary = msg.hasMultiWafer
+        ? analyzeWaferLot(results, { ...msg.options, perWaferSummaries: waferSummaries })
+        : null;
+      (self as unknown as Worker).postMessage(
+        { type: 'resultWithAnalysis', id: msg.id, results, waferSummaries, lotSummary } satisfies WorkerResponse,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

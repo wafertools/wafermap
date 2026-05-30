@@ -1512,6 +1512,16 @@ const items = waferResults.map((r, i) => ({ ...r, label: `W${i + 1}` }));
 For lots with many wafers or high die counts, `buildWaferMap` can be moved off the
 main thread to avoid blocking the UI.
 
+> **Use the worker for responsiveness, not speed.** The worker runs the same code
+> as the main thread, then pays extra to copy the input in and the result out
+> across `postMessage` (structured clone). In total wall-clock time it is **always
+> slower** than calling `buildWaferMap` directly — what you gain is that the page
+> stays interactive instead of freezing during a big build. Only reach for it when
+> a single synchronous build is large enough to cause a visible freeze (roughly
+> tens of thousands of dies). Below a few thousand dies it just adds latency; build
+> on the main thread. See [§8 in the API reference](api.md#8-web-worker) for
+> indicative timings and the crossover point.
+
 ### Setup
 
 ```ts
@@ -1551,6 +1561,18 @@ const waferResults = await Promise.all(
     waferConfig: { diameter: 300 },
     dieConfig:   { width: 10, height: 10 },
   }))
+);
+```
+
+If you also need the analysis summaries, use `runWithAnalysis` instead of `run`
+followed by `runAnalysis` — it builds and analyses in one round-trip so the large
+result objects are not cloned back into the worker just to be analysed:
+
+```ts
+const { results, waferSummaries, lotSummary } = await wmWorker.runWithAnalysis(
+  waferIds.map(id => ({ results: dataByWafer[id], dieConfig: { width: 10, height: 10 } })),
+  { passBins: [1] },
+  waferIds.length > 1,
 );
 ```
 
@@ -1702,24 +1724,35 @@ colour scale so differences in the data are visible rather than hidden by
 per-wafer auto-scaling:
 
 ```ts
+const TEST = 1050;  // the test we lock the scale to
+
 // Compute the shared range across all wafers first
 let min = Infinity, max = -Infinity;
 for (const r of waferResults) {
   for (const die of r.dies) {
-    const v = die.testValues?.[1050];
+    const v = die.testValues?.[TEST];
     if (v !== undefined) { min = Math.min(min, v); max = Math.max(max, v); }
   }
 }
 
-// Apply it as a per-card override so the shared gallery scale doesn't override it
+// Apply it as a per-card override so the shared gallery scale doesn't override it.
+// Use the test-keyed `{ test, range }` form: the range is bound to the test it was
+// computed from. If the active test is ever something other than TEST, the library
+// ignores the range and auto-scales rather than colouring the wrong test's data
+// against 1050's scale — you cannot accidentally produce a mis-scaled plot.
 const items = waferResults.map((r, i) => ({
   ...r,
   label: waferIds[i],
-  viewOptions: { valueRange: [min, max] },
+  viewOptions: { valueRange: { test: TEST, range: [min, max] }, activeTest: TEST },
 }));
 
 renderWaferGallery(container, items, { viewOptions: { plotMode: 'value' } });
 ```
+
+> The plain tuple form `valueRange: [min, max]` still works and applies to
+> whichever test is active — but then keeping it consistent with `activeTest` is
+> your responsibility. Prefer `{ test, range }` whenever the range was derived
+> from a specific test.
 
 ### Keep `ringCount` consistent between renderer and stats engine
 

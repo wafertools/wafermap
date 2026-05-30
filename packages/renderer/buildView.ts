@@ -132,10 +132,18 @@ export interface ViewOptions {
   highlightBin?: number;
   interactiveTransform?: { rotation?: number; flipX?: boolean; flipY?: boolean };
   /**
-   * Explicit [min, max] for value colour normalization. When omitted the range
-   * is auto-computed from the die values present in the scene.
+   * Explicit value colour normalization range.
+   *
+   * - Tuple `[min, max]`: applied to whichever test is active. The caller is
+   *   responsible for keeping it consistent with `activeTest`.
+   * - Object `{ test, range }`: applied **only** when `test` matches the active
+   *   test. On mismatch the range is ignored and the scene auto-scales — this
+   *   makes it impossible to colour one test's data against another test's
+   *   range. Prefer this form when the range was computed for a specific test.
+   *
+   * When omitted entirely, the range is auto-computed from the die values present.
    */
-  valueRange?: [number, number];
+  valueRange?: [number, number] | { test: number; range: [number, number] };
   /**
    * Controls the default colorbar range when the active testDef has spec limits.
    * `'spec'` (default when limits present): colorbar spans [limitLow, limitHigh].
@@ -776,7 +784,7 @@ export function buildView(
     colorScheme = 'color',
     highlightBin,
     interactiveTransform,
-    valueRange: explicitRange,
+    valueRange: valueRangeOpt,
     testDefs,
     activeTest = 0,
     fallbackFormat = 'engineering' as const,
@@ -833,6 +841,19 @@ export function buildView(
         activeTestFallback = firstKey;
       }
     }
+  }
+
+  // Resolve the explicit value range from the ViewOptions union.
+  // - Tuple form: applied as-is (caller owns the activeTest coupling).
+  // - Object { test, range } form: applied ONLY when `test` resolves to the
+  //   active test number. On mismatch we drop it and auto-scale, so the library
+  //   can never colour one test's data against another test's range.
+  let explicitRange: [number, number] | undefined;
+  if (Array.isArray(valueRangeOpt)) {
+    explicitRange = valueRangeOpt;
+  } else if (valueRangeOpt) {
+    const { testNumber: rangeTestNumber } = resolveTestNumber(valueRangeOpt.test, testDefs);
+    explicitRange = rangeTestNumber === activeTestNumber ? valueRangeOpt.range : undefined;
   }
 
   // Resolve active test def now — needed for limit-based range defaulting below.

@@ -11,6 +11,17 @@ export interface WafermapWorker {
     options: AnalyzeWaferMapOptions,
     hasMultiWafer: boolean,
   ): Promise<{ waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }>;
+  /**
+   * Build and analyse in a single round-trip. The built `WaferMapResult`s stay
+   * in the worker for analysis instead of being sent out and cloned back in, so
+   * the large result objects cross the worker boundary only once (out), not three
+   * times. Prefer this over `run` + `runAnalysis` when you need both.
+   */
+  runWithAnalysis(
+    inputs: WaferMapInput[],
+    options: AnalyzeWaferMapOptions,
+    hasMultiWafer: boolean,
+  ): Promise<{ results: WaferMapResult[]; waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }>;
   /** Terminate the underlying Worker. Call when the worker is no longer needed. */
   terminate(): void;
 }
@@ -50,6 +61,8 @@ export function createWafermapWorker(worker: Worker): WafermapWorker {
       entry.resolve(msg.result);
     } else if (msg.type === 'analyzed') {
       entry.resolve({ waferSummaries: msg.waferSummaries, lotSummary: msg.lotSummary });
+    } else if (msg.type === 'resultWithAnalysis') {
+      entry.resolve({ results: msg.results, waferSummaries: msg.waferSummaries, lotSummary: msg.lotSummary });
     }
   };
 
@@ -76,6 +89,17 @@ export function createWafermapWorker(worker: Worker): WafermapWorker {
         const id = nextId++;
         pending.set(id, { resolve, reject });
         worker.postMessage({ type: 'analyze', id, results, options, hasMultiWafer } satisfies WorkerRequest);
+      });
+    },
+    runWithAnalysis(
+      inputs: WaferMapInput[],
+      options: AnalyzeWaferMapOptions,
+      hasMultiWafer: boolean,
+    ): Promise<{ results: WaferMapResult[]; waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }> {
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        pending.set(id, { resolve, reject });
+        worker.postMessage({ type: 'runWithAnalysis', id, inputs, options, hasMultiWafer } satisfies WorkerRequest);
       });
     },
     terminate() {

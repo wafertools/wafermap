@@ -38,6 +38,50 @@ test('specLimit — explicit valueRange overrides limit-based default', () => {
   assert.equal(scene.valueRange[1], 5.0);
 });
 
+test('test-keyed valueRange — applied when { test } matches the active test', () => {
+  const testDefs = [
+    { testNumber: 1010, name: 'Vth', unit: 'V' },
+    { testNumber: 1020, name: 'Idd', unit: 'A' },
+  ];
+  const { wafer, dies } = buildWaferMap({
+    results: [
+      { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0, 1020: 0.1 } },
+      { x: 1, y: 0, hbin: 1, testValues: { 1010: 2.0, 1020: 0.2 } },
+    ],
+    waferConfig, dieConfig, testDefs,
+  });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1010,
+    valueRange: { test: 1010, range: [0.0, 5.0] },
+  });
+  assert.equal(scene.valueRange[0], 0.0);
+  assert.equal(scene.valueRange[1], 5.0);
+});
+
+test('test-keyed valueRange — IGNORED (auto-scales) when { test } ≠ active test', () => {
+  // Range computed for test 1010 must NOT colour test 1020's data. The library
+  // drops the mismatched range and auto-scales to 1020's own data extents,
+  // making a cross-test mis-scaled plot impossible regardless of caller error.
+  const testDefs = [
+    { testNumber: 1010, name: 'Vth', unit: 'V' },
+    { testNumber: 1020, name: 'Idd', unit: 'A' },
+  ];
+  const { wafer, dies } = buildWaferMap({
+    results: [
+      { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0, 1020: 0.1 } },
+      { x: 1, y: 0, hbin: 1, testValues: { 1010: 2.0, 1020: 0.4 } },
+    ],
+    waferConfig, dieConfig, testDefs,
+  });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1020,
+    valueRange: { test: 1010, range: [0.0, 5.0] },
+  });
+  // Auto-scaled to 1020's data [0.1, 0.4], NOT the mismatched [0.0, 5.0].
+  assert.equal(scene.valueRange[0], 0.1);
+  assert.equal(scene.valueRange[1], 0.4);
+});
+
 test('specLimit — only limitLow defined: low end is limitLow, high end is data max', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.5 }];
   const { wafer, dies } = buildWaferMap({

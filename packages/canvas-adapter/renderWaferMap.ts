@@ -73,10 +73,18 @@ export interface WaferDisplayState {
   activeTest?:   number;
   highlightBin?: number;
   /**
-   * Explicit [min, max] for value colour normalization. When omitted the range
-   * is auto-computed from the die values present in the scene.
+   * Explicit value colour normalization range.
+   *
+   * - Tuple `[min, max]`: applied to whichever test is active (caller owns the
+   *   coupling with `activeTest`).
+   * - Object `{ test, range }`: applied only when `test` matches the active
+   *   test; ignored (auto-scale) on mismatch, so one test's data can never be
+   *   coloured against another test's range. Prefer this when the range was
+   *   computed for a specific test.
+   *
+   * When omitted, the range is auto-computed from the die values present.
    */
-  valueRange?:   [number, number];
+  valueRange?:   [number, number] | { test: number; range: [number, number] };
   /**
    * Aggregation method for `stackedValues` mode.
    * Drives both the per-die aggregation and the hover tooltip label.

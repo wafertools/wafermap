@@ -74,6 +74,7 @@
     <code>createWafermapWorker</code> wraps a native <code>Worker</code> and runs <code>buildWaferMap</code> off-thread — the page stays responsive while building.
     The loading spinner is shown until <code>worker.run(input)</code> resolves; the timing badge shows how long the worker took.
     Rendering (<code>renderWaferMap</code>) always runs on the main thread after the promise resolves.
+    <strong>Note:</strong> the worker trades total speed for responsiveness — copying data across <code>postMessage</code> makes it slower overall than building directly, so it only pays off when a build is large enough to visibly freeze the page. For small datasets, build on the main thread.
   </div>
 
   <div class="demo-content">

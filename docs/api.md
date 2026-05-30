@@ -730,7 +730,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `colorBySpec` | `boolean` | `false` | In `value` mode: replace the gradient with categorical pass/fail colours when the active test has spec limits. Toggled via the Overlays toolbar menu. |
 | `highlightBin` | `number` | — | Dim all bins except this one |
-| `valueRange` | `[number, number]` | auto | Explicit `[min, max]` for value colour normalization; overrides `colorbarRangeMode` |
+| `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the scene auto-scales — use this to safely fix a range computed for a specific test. |
 | `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | When the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans actual data min/max. Out-of-spec die coloring (blue/red) applies in both modes. |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
 | `aggregationMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
@@ -1611,13 +1611,37 @@ interface FindingsFilter {
 
 ## 8 Web Worker
 
-For large datasets, `buildWaferMap` can be moved off the main thread to keep the
-UI responsive.  The `@paulrobins/wafermap/worker` subpackage provides a thin wrapper around a
-pre-built worker script.
+`buildWaferMap` and the analysis functions can be moved off the main thread so a
+large build does not freeze the UI.  The `@paulrobins/wafermap/worker` subpackage
+provides a thin wrapper around a pre-built worker script.
 
-**When to use it:** datasets with ~10,000+ rows, or many wafers processed at once.
-For small fixed datasets the overhead is not worth it.  `renderWaferMap` is a fast
-rendering operation and always runs on the main thread regardless.
+**The worker is a responsiveness tool, not a speed tool.** The worker runs the
+*same* code as the main thread, then pays an additional cost: every `WaferMapInput`
+sent in and every `WaferMapResult` sent back is deep-copied by the structured-clone
+algorithm behind `postMessage`. For a result this copy can cost **~2× the build
+itself**, and the deserialize half of it lands back on the main thread. So in
+total wall-clock time the worker is **always slower** than calling `buildWaferMap`
+directly. What you buy is that most of the work happens off-thread, so the page
+stays interactive instead of locking up.
+
+**When to use it:** only when a *single synchronous build would block the UI long
+enough to notice* — roughly tens of thousands of dies, or many wafers built in one
+batch. Indicative figures (vary by machine and data):
+
+| dies per wafer | main-thread build+analyze (blocks UI) | worker wall-clock | verdict |
+|---|---|---|---|
+| ~500 | ~7 ms | ~12 ms | **don't use the worker** — nothing to unblock |
+| ~20,000 | ~275 ms | ~370 ms | use it if a ~¼s freeze matters |
+| ~50,000 | ~810 ms | ~1130 ms | use it — a ~0.8s freeze is very visible |
+
+Below a few thousand dies the build is fast enough that the worker only adds
+latency. Don't reach for it by default. `renderWaferMap` always runs on the main
+thread regardless.
+
+**If you need both the result and its analysis, use `runWithAnalysis` (§8.5), not
+`run` followed by `runAnalysis`.** The latter ships the large result out of the
+worker and clones it straight back in for analysis — three crossings of the big
+object instead of one.
 
 ### 8.1 Setup
 
@@ -1648,6 +1672,16 @@ Returns a `WafermapWorker`:
 // WafermapWorker
 {
   run(input: WaferMapInput): Promise<WaferMapResult>
+  runAnalysis(
+    results: WaferMapResult[],
+    options: AnalyzeWaferMapOptions,
+    hasMultiWafer: boolean,
+  ): Promise<{ waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }>
+  runWithAnalysis(
+    inputs: WaferMapInput[],
+    options: AnalyzeWaferMapOptions,
+    hasMultiWafer: boolean,
+  ): Promise<{ results: WaferMapResult[]; waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }>
   terminate(): void
 }
 ```
@@ -1683,13 +1717,41 @@ const waferResults = await Promise.all(
 );
 ```
 
-### 8.4 `worker.terminate()`
+### 8.4 `worker.runWithAnalysis(inputs, options, hasMultiWafer)`
+
+```ts
+worker.runWithAnalysis(
+  inputs: WaferMapInput[],
+  options: AnalyzeWaferMapOptions,
+  hasMultiWafer: boolean,
+): Promise<{ results: WaferMapResult[]; waferSummaries: StatsSummary[]; lotSummary: LotStatsSummary | null }>
+```
+
+Builds **and** analyses in a single round-trip. The built `WaferMapResult`s are
+analysed inside the worker and never sent out just to be sent back, so the large
+result objects cross the worker boundary only once. Prefer this whenever you need
+both the maps and their statistics — it avoids two extra structured-clone copies
+per wafer compared with `run` + `runAnalysis`.
+
+```ts
+const { results, waferSummaries, lotSummary } = await worker.runWithAnalysis(
+  waferIds.map(id => ({ results: dataByWafer[id], dieConfig })),
+  { passBins: [1] },
+  waferIds.length > 1,
+);
+results.forEach((result, i) =>
+  renderWaferMap(containers[i], result, { statsSummary: waferSummaries[i] }));
+```
+
+`AnalyzeWaferMapOptions` → §7.3 · `StatsSummary` → §7.4 · `LotStatsSummary` → §7.5
+
+### 8.5 `worker.terminate()`
 
 ```ts
 worker.terminate(): void
 ```
 
-Shuts down the underlying worker.  Any in-flight `run()` calls reject immediately.
+Shuts down the underlying worker.  Any in-flight calls reject immediately.
 
 ---
 
@@ -2124,7 +2186,7 @@ interface ViewOptions {
   dieGap?:                 number    // visual kerf gap in mm, default 1
   colorScheme?:            string    // default 'default'
   highlightBin?:           number
-  valueRange?:             [number, number]
+  valueRange?:             [number, number] | { test: number; range: [number, number] }
   interactiveTransform?:   { rotation?: number; flipX?: boolean; flipY?: boolean }
   reticles?:               Reticle[]
   testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
