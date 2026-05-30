@@ -143,10 +143,10 @@ export function makeResults({
  * Bin 1 = Pass; bins 2–4 are failure categories as assigned by the test program handler.
  */
 export const HBIN_DEFS = [
-  { bin: 1, name: 'Pass',          color: '#22c55e' },
-  { bin: 2, name: 'Contact Open',  color: '#ef4444' },
-  { bin: 3, name: 'Vth - Hi',      color: '#f97316' },
-  { bin: 4, name: 'Leakage',       color: '#a855f7' },
+  { bin: 1, name: 'Pass'          },
+  { bin: 2, name: 'Contact Open'  },
+  { bin: 3, name: 'Vth - Hi'      },
+  { bin: 4, name: 'Leakage'       },
 ];
 
 /**

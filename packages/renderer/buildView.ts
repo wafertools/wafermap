@@ -710,9 +710,7 @@ function pushDieRectangles(
 
   if (plotMode === 'hardBin' || plotMode === 'softBin') {
     const bin = getBin(die);
-    const fill = bin != null
-      ? (binDefMap?.get(bin)?.color ?? colorFns.forBin(bin))
-      : '#d6d9dd';
+    const fill = bin != null ? colorFns.forBin(bin) : '#d6d9dd';
     rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata });
     return;
   }
@@ -817,7 +815,9 @@ export function buildView(
 
   const colorFns: ColorFns = {
     forValue: buildColorLut(scheme.forValue),
-    forBin:   scheme.forBin,
+    forBin:   colorScheme === 'custom' && binDefMap
+      ? (bin) => binDefMap.get(bin)?.color ?? scheme.forBin(bin)
+      : scheme.forBin,
   };
 
   // Resolve activeTest (toolbar cursor) → canonical test number for getDieTestValue.

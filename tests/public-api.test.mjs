@@ -247,6 +247,7 @@ test('renderer scene assembly preserves the public contract', () => {
   const sbinDefs = [{ bin: 2, name: 'SoftFail', color: '#aa0000' }];
   const scene = buildView(wafer, dies, {
     plotMode: 'hardBin',
+    colorScheme: 'custom',
     showDieLabels: true,
     showReticle: true,
     showProbePath: true,

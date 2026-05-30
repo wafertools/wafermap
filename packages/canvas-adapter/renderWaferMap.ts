@@ -276,9 +276,11 @@ export function renderWaferMap(
   let reticles: Reticle[]   | undefined = result.reticles?.length ? result.reticles : undefined;
   let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.axisFlip;
 
+  const hasCustomColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
+
   let viewOpts: WaferViewOptions = {
     plotMode:               'hardBin',
-    colorScheme:            'default',
+    colorScheme:            hasCustomColors ? 'custom' : 'default',
     showDieLabels:               false,
     showPartialDies:        true,
     showRingBoundaries:     false,
@@ -626,7 +628,10 @@ export function renderWaferMap(
         });
         const btnPalette = makeDropdown(
           'palette', 'Colour scheme',
-          () => listColorSchemes().map(s => ({ value: s.name, label: s.label })),
+          () => [
+            ...(hasCustomColors ? [{ value: 'custom', label: 'Custom' }] : []),
+            ...listColorSchemes().map(s => ({ value: s.name, label: s.label })),
+          ],
           () => viewOpts.colorScheme ?? 'default',
           v => applyOpts({ colorScheme: v }),
         );

@@ -528,9 +528,15 @@ export function renderWaferGallery(
     setOpenMenu(menu);
   });
 
+  const itemsHaveCustomColors = (): boolean =>
+    currentItems.flatMap(it => it ? [...(it.hbinDefs ?? []), ...(it.sbinDefs ?? [])] : []).some(d => d.color);
+
   const btnPalette = makeDropdown(
     'palette', 'Colour scheme',
-    () => listColorSchemes().map(s => ({ value: s.name, label: s.label })),
+    () => [
+      ...(itemsHaveCustomColors() ? [{ value: 'custom', label: 'Custom' }] : []),
+      ...listColorSchemes().map(s => ({ value: s.name, label: s.label })),
+    ],
     () => sharedOpts.colorScheme ?? 'default',
     v => updateShared({ colorScheme: v }),
   );
@@ -864,7 +870,7 @@ export function renderWaferGallery(
         width:        '13px',
         height:       '13px',
         flexShrink:   '0',
-        background:   binDef?.color ?? scheme.forBin(bin),
+        background:   (sharedOpts.colorScheme === 'custom' ? binDef?.color : undefined) ?? scheme.forBin(bin),
         border:       isActive ? '2px solid #1a66cc' : '1px solid #ccc',
         borderRadius: '2px',
         boxSizing:    'border-box',
@@ -1225,6 +1231,12 @@ export function renderWaferGallery(
         cardControllers.push(ctrl);
         cardContainers.push(canvasWrapper);
       }
+    }
+
+    // Set 'custom' scheme if items have bin def colours and no explicit scheme was passed.
+    const allDefs = currentItems.flatMap(it => it ? [...(it.hbinDefs ?? []), ...(it.sbinDefs ?? [])] : []);
+    if (allDefs.some(d => d.color) && !options.viewOptions?.colorScheme) {
+      sharedOpts = { ...sharedOpts, colorScheme: 'custom' };
     }
 
     // All sync items are now in currentItems — legend can be built from them.

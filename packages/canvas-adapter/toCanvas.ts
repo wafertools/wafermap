@@ -457,6 +457,10 @@ export function toCanvas(
 
     const activeDefs = view.plotMode === 'softBin' ? sbinDefs : hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
+    const binColor = (bin: number): string => {
+      const def = binDefMap?.get(bin);
+      return (view.colorScheme === 'custom' ? def?.color : undefined) ?? scheme.forBin(bin);
+    };
 
     type LegendEntry = {
       bin: number;
@@ -595,7 +599,7 @@ export function toCanvas(
           const midY = originYLegend + row * BIN_ROW_H + BIN_ROW_H / 2;
           const swatchY = originYLegend + row * BIN_ROW_H + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
           const labelMaxW = columnWidths[col] - BIN_SWATCH_SIZE - BIN_LABEL_GAP - BIN_COUNT_W;
-          ctx.fillStyle = entry.binDef?.color ?? scheme.forBin(entry.bin);
+          ctx.fillStyle = binColor(entry.bin);
           ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
           ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
           ctx.lineWidth = isActive ? 2 : 0.75;
@@ -638,7 +642,7 @@ export function toCanvas(
         const displayLabel = legendIsFloating
           ? (entry.binDef?.name ? `${entry.bin} · ${entry.binDef.name}` : `Bin ${entry.bin}`)
           : entry.label;
-        ctx.fillStyle = entry.binDef?.color ?? scheme.forBin(entry.bin);
+        ctx.fillStyle = binColor(entry.bin);
         ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
         ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
         ctx.lineWidth = isActive ? 2 : 0.75;

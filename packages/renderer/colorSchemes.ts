@@ -68,22 +68,23 @@ function binArray(colors: readonly string[]): (bin: number) => string {
 // ── Built-in schemes ──────────────────────────────────────────────────────────
 
 /**
- * VIRIDIS — purple-to-yellow perceptually uniform continuous gradient.
- * Available as a standalone scheme; also used as the continuous scale for DEFAULT.
- */
-registerColorScheme('viridis', {
-  label: 'Viridis',
-  forBin: binArray(HARD_BIN_COLORS),
-  forValue: (t) => lerpKp(VIRIDIS, t),
-});
-
-/**
  * DEFAULT — colourful categorical bins, Viridis continuous gradient.
  * Good all-purpose choice for colour displays.
  */
 registerColorScheme('default', {
   label: 'Default',
   forBin: binArray(HARD_BIN_COLORS),
+  forValue: (t) => lerpKp(VIRIDIS, t),
+});
+
+/**
+ * VIRIDIS — purple-to-yellow perceptually uniform gradient for both bins and values.
+ * Unlike Default (which uses categorical colours for bins), Viridis maps bin numbers
+ * sequentially through the gradient — useful when bins represent ordered severity levels.
+ */
+registerColorScheme('viridis', {
+  label: 'Viridis',
+  forBin:  (bin) => lerpKp(VIRIDIS, Math.min(bin, 16) / 16),
   forValue: (t) => lerpKp(VIRIDIS, t),
 });
 
