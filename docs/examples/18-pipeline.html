@@ -167,9 +167,8 @@
 
     // ── Redraw ─────────────────────────────────────────────────────────────────
     //
-    // transformDies applies the interactive rotation/flip on top of the
-    // already-oriented base dies.  buildView then converts the dies and
-    // options into a renderer-agnostic View.  toCanvas draws it directly
+    // buildView converts the dies and options into a renderer-agnostic View,
+    // applying interactiveTransform internally.  toCanvas draws it directly
     // onto the canvas element — no DOM scaffolding or toolbar is added.
     function redraw() {
       const interactiveTransform = {
@@ -178,9 +177,7 @@
         flipY:    state.flipY,
       };
 
-      const currentDies = transformDies(enriched, interactiveTransform, wafer.center);
-
-      const view = buildView(wafer, currentDies, {
+      const view = buildView(wafer, enriched, {
         plotMode:               'hardBin',
         reticles,
         showProbePath:          state.showProbePath,
