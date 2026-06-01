@@ -414,6 +414,8 @@ export function buildHoverText(
   }
 
   if (die.retestCount !== undefined) lines.push(`Retests: ${die.retestCount}`);
+  if (die.siteNum     !== undefined) lines.push(`Site: ${die.siteNum}`);
+  if (die.partId      !== undefined) lines.push(`Part ID: ${die.partId}`);
   if (die.partial) lines.push('<i>partial die</i>');
   if (die.probeIndex !== undefined) lines.push(`Probe: #${die.probeIndex}`);
 
