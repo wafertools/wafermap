@@ -1563,7 +1563,81 @@ const items = waferResults.map((r, i) => ({ ...r, label: `W${i + 1}` }));
 
 ![](images/image-14.png)
 
-## 15. Processing large datasets with a Web Worker
+## 15. Multi-site parallel testing
+
+Modern probers test multiple dies simultaneously using a multi-site probe card. Each
+site on the card contacts a different die, and the tester records which site produced
+each result via the STDF `site_num` field. Supplying `siteNum` on each `DieResult`
+enables per-site analysis in the stats engine: the engine compares yield and bin
+distributions across sites, surfacing systematic probe card or prober alignment
+problems.
+
+### Supplying site numbers
+
+Pass `siteNum` on each die result — it maps directly from the STDF `site_num` field:
+
+```ts
+const results = stdfRows.map(row => ({
+  x:       row.x_coord,
+  y:       row.y_coord,
+  hbin:    row.hard_bin,
+  siteNum: row.site_num,   // STDF site_num — which parallel site tested this die
+}));
+
+const result = buildWaferMap({ results, passBins: [1] });
+```
+
+### Test-site analysis in the stats engine
+
+`analyzeWaferMap` enables test-site analysis automatically when the data contains
+meaningful site duplication — at least two distinct `siteNum` values each appearing
+on three or more dies (the guard that distinguishes a 4-site probe card from a
+monotonically-incrementing counter):
+
+```ts
+const summary = analyzeWaferMap(result);
+// test-site findings appear automatically when the guard passes
+
+// To force-enable or suppress explicitly:
+const summary = analyzeWaferMap(result, { enableTestSiteAnalysis: true  });
+const summary = analyzeWaferMap(result, { enableTestSiteAnalysis: false });
+```
+
+Findings compare each site against all other sites, using the same yield, hard-bin,
+soft-bin, and test-value analyses as spatial regions. A finding such as:
+
+```
+[unusual] Site 3 yield is 14.2 percentage points lower than other test sites
+```
+
+points directly to a probe card contact problem on that site.
+
+### Prober step identifier
+
+The STDF `pir.part_id` field records the tester's identifier for each tested unit —
+at most fabs this encodes probe sequence (the order in which the prober stepped across
+the wafer). Supply it as `partId` to preserve it through the library for traceability
+or custom sequential analysis:
+
+```ts
+const results = stdfRows.map(row => ({
+  x:      row.x_coord,
+  y:      row.y_coord,
+  hbin:   row.hard_bin,
+  siteNum: row.site_num,
+  partId:  row.part_id,   // STDF pir.part_id — 1-based tester step identifier
+}));
+```
+
+`partId` is carried through to every `Die` and appears in hover tooltips alongside
+`x`, `y`, and bin assignments. The field is semantically neutral — its exact meaning
+is fab-specific — so the library stores it as-is without interpretation.
+
+**→ [Demo: Multi-site parallel testing](examples/15-test-sites.html)**
+
+![](images/image-15.png)
+
+## 16. Processing large datasets with a Web Worker
 
 For lots with many wafers or high die counts, `buildWaferMap` can be moved off the
 main thread to avoid blocking the UI.
@@ -1672,7 +1746,7 @@ when the card does rather than upfront. If the label is known in advance and you
 want it visible immediately, pre-build items as usual for those cards.
 
 
-## 16. Custom colour schemes
+## 17. Custom colour schemes
 
 The built-in colour schemes are `'default'`, `'greyscale'`, `'accessible'`,
 `'plasma'`, and `'inferno'`.  You can register additional schemes for brand colours,
@@ -1715,7 +1789,7 @@ They are global and persist for the lifetime of the page.
 
 ![](images/image-16.png)
 
-## 17. Recipes
+## 18. Recipes
 
 Short, task-focused examples for common integration questions.
 
@@ -1929,7 +2003,7 @@ for (const [waferId, waferRows] of byWafer) {
 ```
 
 
-## 18. Advanced: the rendering pipeline
+## 19. Advanced: the rendering pipeline
 
 `renderWaferMap` handles the full pipeline for you.  Use
 the manual pipeline only when you need control they cannot provide — for example,

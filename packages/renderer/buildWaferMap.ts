@@ -49,6 +49,19 @@ export interface DieResult {
    * Only present when the die was tested more than once.
    */
   retestCount?: number;
+  /**
+   * STDF `site_num` — which parallel test site tested this die.
+   * Only meaningful when more than one distinct value appears across the wafer
+   * (i.e. the wafer was tested with a multi-site probe card).
+   */
+  siteNum?: number;
+  /**
+   * STDF `pir.part_id` — tester-assigned identifier for this tested unit.
+   * At most fabs this encodes the probe sequence (the order in which the prober
+   * stepped across the wafer), but the field is semantically neutral — its
+   * meaning is fab-specific.
+   */
+  partId?: number;
   /** Per-die metadata — all fields appear automatically in hover tooltips. See `DieMetadata → §12.4`. */
   metadata?: DieMetadata;
 }
@@ -860,6 +873,8 @@ function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
   if (pt.hbin        !== undefined) base.hbin        = pt.hbin;
   if (pt.sbin        !== undefined) base.sbin        = pt.sbin;
   if (pt.retestCount !== undefined) base.retestCount = pt.retestCount;
+  if (pt.siteNum     !== undefined) base.siteNum     = pt.siteNum;
+  if (pt.partId      !== undefined) base.partId      = pt.partId;
   if (pt.metadata    !== undefined) base.metadata    = pt.metadata;
 
   // Preferred path: testValues map supplied directly — use as-is.

@@ -186,6 +186,13 @@ A single die record from wafer test equipment.
   values?:     number[]                    // @deprecated: use testValues. Positional array — fragile when tests are added or removed
   hbin?:       number                      // hard bin assignment (physical sort result; STDF V4 range 0–32767)
   sbin?:       number                      // soft bin assignment (test-program failure category; independent 0–32767 space)
+  siteNum?:    number                      // STDF site_num — which parallel test site tested this die
+                                           // enables test-site analysis in analyzeWaferMap when ��2 distinct
+                                           // values each appear on ≥3 dies (indicating a multi-site probe card)
+  partId?:     number                      // STDF pir.part_id — tester-assigned identifier for this unit
+                                           // at most fabs this encodes probe sequence (the step order across the wafer)
+                                           // but the field is semantically neutral — its meaning is fab-specific
+                                           // note: STDF part_id is 1-based; camelCase follows the library convention
 }
 ```
 
@@ -1261,6 +1268,9 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
   enableSoftBinAnalysis?:         boolean  // default true
   enableTestValueAnalysis?:       boolean  // default true
   enableReticlePositionAnalysis?: boolean  // default true (only runs when reticleConfig is present)
+  enableTestSiteAnalysis?:        boolean  // default undefined (auto) — enabled when the wafer has
+                                           // meaningful site duplication (≥2 distinct siteNum values
+                                           // each on ≥3 dies); set true to force-enable, false to suppress
   enableAngularAnalysis?:         boolean  // compass-sector directional analysis (default true)
   enableClusterAnalysis?:         boolean  // contiguous cluster + edge-arc detection (default true)
 
@@ -1575,6 +1585,7 @@ import {
   buildQuadrantRegions,
   buildReticlePositionRegions,
   buildSectorRegions,
+  buildTestSiteRegions,
 } from '@paulrobins/wafermap/stats';
 
 buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[]
@@ -1591,6 +1602,14 @@ buildSectorRegions(dies: Die[], wafer: Wafer, sectorCount: number): StatsRegion[
 // family: 'sector'; keys 'sector:N', 'sector:NNE', etc.
 // sectorCount: 4 | 8 | 16 | 32 (default 16 if invalid value passed)
 // dies with normalised radius < 0.2 are excluded (too close to centre)
+
+buildTestSiteRegions(dies: Die[], forceEnable?: boolean): StatsRegion[]
+// family: 'test-site'; keys 'test-site:N' (one per distinct siteNum value)
+// groups dies by die.siteNum — no geometry required
+// auto-enable guard: returns [] unless ≥2 distinct siteNum values each appear on ≥3 dies
+//   (prevents spurious regions when siteNum is used as a monotonic counter rather
+//    than a true parallel-site identifier)
+// pass forceEnable=true to bypass the guard when you have already validated the data
 ```
 
 `Die` → §12.1 · `Wafer` → §12.2 · `ReticleConfig` → §4.1.4
@@ -1599,9 +1618,9 @@ Each `StatsRegion` has:
 
 ```ts
 {
-  family:   'ring' | 'quadrant' | 'reticle-position' | 'sector'
+  family:   'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector'
   key:      string   // unique region identifier
-  label:    string   // human-readable (e.g. "Ring 4 (edge)", "Sector NNW")
+  label:    string   // human-readable (e.g. "Ring 4 (edge)", "Sector NNW", "Site 2")
   dieKeys:  string[] // "x,y" keys of dies in this region
 }
 ```

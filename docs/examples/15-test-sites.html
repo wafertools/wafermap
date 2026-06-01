@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi-site parallel testing — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§15 — Multi-site parallel testing</span>
+    <span class="demo-desc">
+      DieResult.siteNum · DieResult.partId · test-site analysis in the stats engine
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    Modern probers test multiple dies simultaneously using a multi-site probe card.
+    Pass <code>siteNum</code> (from STDF <code>site_num</code>) on each <code>DieResult</code> to
+    enable per-site analysis. <code>analyzeWaferMap</code> automatically compares yield and bin
+    distributions across sites when meaningful duplication is detected.
+    The injected site-3 defect (lower yield) appears as a finding in the panel on the right.
+    Toggle between sites using the controls above to colour dies by their assigned site.
+  </div>
+
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Colour by</span>
+      <button class="toggle-btn active" id="btn-hbin">Hard Bin</button>
+      <button class="toggle-btn"        id="btn-site">Test Site</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="ctrl-group">
+      <span class="ctrl-label">Injected defect</span>
+      <button class="toggle-btn active" id="btn-defect-on">Site 3 fail</button>
+      <button class="toggle-btn"        id="btn-defect-off">None</button>
+    </div>
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <div id="map"></div>
+    </div>
+
+    <div class="demo-panel">
+      <div class="demo-panel-scroll">
+
+        <div class="section">
+          <div class="section-heading">Probe card configuration</div>
+          <table class="kv">
+            <tr><td>Sites</td>        <td id="pc-sites">—</td></tr>
+            <tr><td>Layout</td>       <td id="pc-layout">—</td></tr>
+            <tr><td>Dies / site</td>  <td id="pc-dies">—</td></tr>
+            <tr><td>partId range</td> <td id="pc-partid">—</td></tr>
+          </table>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section">
+          <div class="section-heading">Site populations</div>
+          <table class="kv" id="site-table">
+            <tr><td colspan="2" style="color:#888;font-size:11px">Loading…</td></tr>
+          </table>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section">
+          <div class="section-heading">About multi-site testing</div>
+          <div class="info-box" style="font-size:11px; line-height:1.6">
+            A multi-site probe card contacts several dies simultaneously. The tester
+            records <code>site_num</code> (STDF) on each result to identify which
+            contact point tested which die. Systematic contact problems, pin misalignment,
+            or prober chuck tilt show up as per-site yield or parametric deviations.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }   from 'wafermap';
+    import { renderWaferMap }  from 'wafermap/render';
+    import { analyzeWaferMap } from 'wafermap/stats';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS } from './data.js';
+
+    const SITE_COUNT  = 4;   // 2×2 probe card
+    const SITE_LAYOUT = '2 × 2';
+
+    let ctrl;
+
+    function build(injectDefect) {
+      const results = makeResults({
+        seed:         7,
+        edgeFail:     true,
+        siteCount:    SITE_COUNT,
+        siteFail:     injectDefect ? 3 : 0,
+        includePartId: true,
+      });
+
+      const result = buildWaferMap({
+        results,
+        waferConfig: WAFER_CONFIG,
+        dieConfig:   DIE_CONFIG,
+        hbinDefs:    HBIN_DEFS,
+        passBins:    [1],
+      });
+
+      const summary = analyzeWaferMap(result);
+
+      // Populate probe card panel
+      document.getElementById('pc-sites').textContent  = SITE_COUNT;
+      document.getElementById('pc-layout').textContent = SITE_LAYOUT;
+
+      const siteDies = new Map();
+      for (const die of result.dies) {
+        if (die.siteNum === undefined) continue;
+        siteDies.set(die.siteNum, (siteDies.get(die.siteNum) ?? 0) + 1);
+      }
+      const totalWithSite = [...siteDies.values()].reduce((a, b) => a + b, 0);
+      document.getElementById('pc-dies').textContent = Math.round(totalWithSite / SITE_COUNT);
+
+      const partIds = result.dies.map(d => d.partId).filter(v => v !== undefined);
+      if (partIds.length) {
+        document.getElementById('pc-partid').textContent =
+          `${Math.min(...partIds)} – ${Math.max(...partIds)}`;
+      }
+
+      // Site population table
+      const tbody = document.getElementById('site-table');
+      tbody.innerHTML = '';
+      for (const [site, count] of [...siteDies.entries()].sort((a, b) => a[0] - b[0])) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>Site ${site}</td><td>${count} dies</td>`;
+        tbody.appendChild(tr);
+      }
+
+      return { result, summary };
+    }
+
+    let { result, summary } = build(true);
+
+    ctrl = renderWaferMap(document.getElementById('map'), result, {
+      viewOptions:  { plotMode: 'hardBin' },
+      statsSummary: summary,
+      summaryPanel: { defaultOpen: true },
+    });
+
+    // Colour-by controls
+    document.getElementById('btn-hbin').addEventListener('click', () => {
+      ctrl.setOptions({ plotMode: 'hardBin' });
+      document.getElementById('btn-hbin').classList.add('active');
+      document.getElementById('btn-site').classList.remove('active');
+    });
+
+    document.getElementById('btn-site').addEventListener('click', () => {
+      // siteNum is not a native plotMode; colour by metadata isn't available yet —
+      // show a tooltip note instead and keep hardBin mode.
+      // (A dedicated siteNum plot mode is a future feature.)
+      ctrl.setOptions({ plotMode: 'hardBin' });
+      document.getElementById('btn-hbin').classList.add('active');
+      document.getElementById('btn-site').classList.remove('active');
+      alert('Per-site colouring as a dedicated plot mode is planned for a future release.\nThe findings panel already shows site-level statistical comparisons.');
+    });
+
+    // Defect injection toggle
+    document.getElementById('btn-defect-on').addEventListener('click', () => {
+      document.getElementById('btn-defect-on').classList.add('active');
+      document.getElementById('btn-defect-off').classList.remove('active');
+      const rebuilt = build(true);
+      ctrl = renderWaferMap(document.getElementById('map'), rebuilt.result, {
+        viewOptions:  { plotMode: 'hardBin' },
+        statsSummary: rebuilt.summary,
+        summaryPanel: { defaultOpen: true },
+      });
+    });
+
+    document.getElementById('btn-defect-off').addEventListener('click', () => {
+      document.getElementById('btn-defect-off').classList.add('active');
+      document.getElementById('btn-defect-on').classList.remove('active');
+      const rebuilt = build(false);
+      ctrl = renderWaferMap(document.getElementById('map'), rebuilt.result, {
+        viewOptions:  { plotMode: 'hardBin' },
+        statsSummary: rebuilt.summary,
+        summaryPanel: { defaultOpen: true },
+      });
+    });
+  </script>
+
+</body>
+</html>

@@ -8,7 +8,7 @@ import type {
   StatsSeverity,
   StatsSummary,
 } from './types.js';
-import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, type StatsRegion } from './regions.js';
+import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, buildTestSiteRegions, type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
 
 interface EligibleDie extends Die {
@@ -21,7 +21,7 @@ interface RawFinding extends StatsFinding {
   effect: StatsFinding['effect'];
 }
 
-type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers'>> & { testNumbers?: number[] };
+type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'enableTestSiteAnalysis'>> & { testNumbers?: number[]; enableTestSiteAnalysis?: boolean };
 
 const DEFAULT_OPTIONS: ResolvedOptions = {
   ringCount: 4,
@@ -220,12 +220,23 @@ function severityForScore(pValue: number, score: number): StatsSeverity {
   return 'info';
 }
 
-type RegionFamily = 'ring' | 'quadrant' | 'reticle-position' | 'sector';
+type RegionFamily = 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector';
+
+function comparisonTarget(family: RegionFamily): string {
+  if (family === 'reticle-position') return 'other reticle positions';
+  if (family === 'test-site') return 'other test sites';
+  return 'the rest of the map';
+}
+
+function comparisonRight(family: RegionFamily): string {
+  if (family === 'reticle-position') return 'Other reticle positions';
+  if (family === 'test-site') return 'Other test sites';
+  return 'Rest of map';
+}
 
 function summarizeYieldFinding(label: string, delta: number, family: RegionFamily): string {
-  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the map';
   const pp = (Math.abs(delta) * 100).toFixed(1);
-  return `${label} yield is ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
+  return `${label} yield is ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
 }
 
 function summarizeRegionLabel(label: string, family: RegionFamily): string {
@@ -240,9 +251,8 @@ function summarizeBinFinding(
   family: RegionFamily,
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
-  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the map';
   const pp = (Math.abs(delta) * 100).toFixed(1);
-  return `${familyLabel} has ${binLabel} occurrence ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${target}`;
+  return `${familyLabel} has ${binLabel} occurrence ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
 }
 
 function summarizeTestFinding(
@@ -254,7 +264,7 @@ function summarizeTestFinding(
   unit?: string,
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
-  const target = family === 'reticle-position' ? 'other reticle positions' : 'the rest of the map';
+  const target = comparisonTarget(family);
   const dir = delta > 0 ? 'higher' : 'lower';
   if (relativeDelta !== undefined && Number.isFinite(relativeDelta)) {
     const pct = (Math.abs(relativeDelta) * 100).toFixed(1);
@@ -338,7 +348,7 @@ function buildYieldFindings(
       comparison: {
         family: region.family,
         left: region.label,
-        right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
+        right: comparisonRight(region.family),
       },
       effect: {
         direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -456,7 +466,7 @@ function buildBinFindings(
         comparison: {
           family: region.family,
           left: region.label,
-          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
+          right: comparisonRight(region.family),
         },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -623,7 +633,7 @@ function buildTestValueFindings(
         comparison: {
           family: region.family,
           left: region.label,
-          right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
+          right: comparisonRight(region.family),
         },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -738,7 +748,7 @@ function buildSpecLimitFindings(
           comparison: {
             family: region.family,
             left: region.label,
-            right: region.family === 'reticle-position' ? 'Other reticle positions' : 'Rest of map',
+            right: comparisonRight(region.family),
           },
           effect: {
             direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
@@ -807,6 +817,11 @@ export function analyzeWaferMap(
   const reticlePositionRegions = resolved.enableReticlePositionAnalysis
     ? buildReticlePositionRegions(includedDies, result.reticleConfig)
     : [];
+  // enableTestSiteAnalysis: undefined means auto (guard in buildTestSiteRegions decides);
+  // true forces it on; false suppresses it.
+  const testSiteRegions = resolved.enableTestSiteAnalysis === false
+    ? []
+    : buildTestSiteRegions(includedDies, resolved.enableTestSiteAnalysis === true);
   const sectorRegions = resolved.enableAngularAnalysis
     ? buildSectorRegions(includedDies, result.wafer, resolved.sectorCount)
     : [];
@@ -817,6 +832,7 @@ export function analyzeWaferMap(
       ...buildYieldFindings(eligibleDies, ringRegions, resolved.passBins, resolved),
       ...buildYieldFindings(eligibleDies, quadrantRegions, resolved.passBins, resolved),
       ...buildYieldFindings(eligibleDies, reticlePositionRegions, resolved.passBins, resolved),
+      ...buildYieldFindings(eligibleDies, testSiteRegions, resolved.passBins, resolved),
       ...buildYieldFindings(eligibleDies, sectorRegions, resolved.passBins, resolved),
     );
   }
@@ -825,6 +841,7 @@ export function analyzeWaferMap(
       ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
+      ...buildBinFindings(eligibleDies, testSiteRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, sectorRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
     );
   }
@@ -834,21 +851,23 @@ export function analyzeWaferMap(
       ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.sbinDefs, 'softBin', resolved),
+      ...buildBinFindings(softEligibleDies, testSiteRegions, 'soft', result.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.sbinDefs, 'softBin', resolved),
     );
   }
   const warnings: string[] = [];
   if (resolved.enableTestValueAnalysis) {
-    const ring    = buildTestValueFindings(eligibleDies, ringRegions, result.view.testDefs, resolved);
-    const quad    = buildTestValueFindings(eligibleDies, quadrantRegions, result.view.testDefs, resolved);
-    const reticle = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.view.testDefs, resolved);
-    const sector  = buildTestValueFindings(eligibleDies, sectorRegions, result.view.testDefs, resolved);
-    findings.push(...ring.findings, ...quad.findings, ...reticle.findings, ...sector.findings);
+    const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.view.testDefs, resolved);
+    const quad     = buildTestValueFindings(eligibleDies, quadrantRegions, result.view.testDefs, resolved);
+    const reticle  = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.view.testDefs, resolved);
+    const testSite = buildTestValueFindings(eligibleDies, testSiteRegions, result.view.testDefs, resolved);
+    const sector   = buildTestValueFindings(eligibleDies, sectorRegions, result.view.testDefs, resolved);
+    findings.push(...ring.findings, ...quad.findings, ...reticle.findings, ...testSite.findings, ...sector.findings);
     if (ring.warning) warnings.push(ring.warning);
 
     findings.push(...buildSpecLimitFindings(
       eligibleDies,
-      [ringRegions, quadrantRegions, reticlePositionRegions, sectorRegions],
+      [ringRegions, quadrantRegions, reticlePositionRegions, testSiteRegions, sectorRegions],
       result.view.testDefs,
       resolved,
     ));

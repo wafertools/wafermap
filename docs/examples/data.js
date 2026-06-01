@@ -39,7 +39,13 @@ export function rng(i, j, seed = 1) {
  * @param {boolean} [opts.reticlePattern=false]  Repeating field-position defect pattern.
  * @param {boolean} [opts.cluster=false]         Tight failure cluster (~8 dies) simulating a particle/ESD event.
  * @param {boolean} [opts.edgeArc=false]         Short failure arc near the wafer edge (~NNW) simulating handling damage.
- * @returns {Array<{x,y,hbin,sbin,testValues}>}
+ * @param {number}  [opts.siteCount=0]           When > 0, assigns siteNum (1-based) in a repeating grid of this
+ *                                               many sites. 4 → 2×2 tile; 8 → 4×2 tile; use with siteFail to
+ *                                               inject a per-site yield defect.
+ * @param {number}  [opts.siteFail=0]            Site number (1-based) to inject a yield loss on (~20 pp drop).
+ *                                               Ignored when siteCount=0.
+ * @param {boolean} [opts.includePartId=false]   When true, adds partId (1-based probe step counter, row order).
+ * @returns {Array<{x,y,hbin,sbin,testValues,siteNum?,partId?}>}
  */
 export function makeResults({
   seed            = 1,
@@ -49,6 +55,9 @@ export function makeResults({
   reticlePattern  = false,
   cluster         = false,
   edgeArc         = false,
+  siteCount       = 0,
+  siteFail        = 0,
+  includePartId   = false,
 } = {}) {
   // Physical die pitch and wafer radius in mm.
   // Grid sweeps enough index steps to cover the full wafer in each direction.
@@ -61,6 +70,13 @@ export function makeResults({
   const halfDiag = Math.hypot(pitchX / 2, pitchY / 2);
 
   const results = [];
+  let partIdCounter = 1;
+
+  // Pre-compute site grid dimensions for siteCount > 0.
+  // Sites are assigned by tiling a (cols × rows) grid over die coordinates.
+  // siteCount 4 → 2×2; siteCount 8 → 4×2; other values → 1×siteCount fallback.
+  const siteCols = siteCount === 4 ? 2 : siteCount === 8 ? 4 : siteCount;
+  const siteRows = siteCount === 4 ? 2 : siteCount === 8 ? 2 : 1;
 
   for (let i = -iMax; i <= iMax; i++) {
     for (let j = -jMax; j <= jMax; j++) {
@@ -129,7 +145,33 @@ export function makeResults({
       //   Ioff: off-state leakage grows exponentially toward edge
       const ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
 
-      results.push({ x: i, y: j, hbin, sbin, testValues: { 1050: idsat, 1060: vth, 1070: ioff } });
+      // Compute siteNum and partId when requested.
+      let siteNum, partId;
+      if (siteCount > 0) {
+        const col = ((i % siteCols) + siteCols) % siteCols;
+        const row = ((j % siteRows) + siteRows) % siteRows;
+        siteNum = col + row * siteCols + 1; // 1-based
+        // Inject a yield loss on the target site.
+        if (siteFail > 0 && siteNum === siteFail) pass -= 0.20;
+        pass = Math.max(0.04, Math.min(0.97, pass));
+        // Re-resolve hbin/sbin after site-induced pass adjustment.
+        if (roll < pass) {
+          hbin = 1; sbin = 10;
+        } else {
+          const which = rng(i, j, seed + 400);
+          if      (which < 0.45) { hbin = 2; sbin = 20; }
+          else if (which < 0.75) { hbin = 3; sbin = 11; }
+          else                   { hbin = 4; sbin = 21; }
+        }
+      }
+      if (includePartId) {
+        partId = partIdCounter++;
+      }
+
+      const die = { x: i, y: j, hbin, sbin, testValues: { 1050: idsat, 1060: vth, 1070: ioff } };
+      if (siteNum !== undefined) die.siteNum = siteNum;
+      if (partId  !== undefined) die.partId  = partId;
+      results.push(die);
     }
   }
 

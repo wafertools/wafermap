@@ -35,6 +35,7 @@ nav = [
       { "Lot-level findings"             = "examples/13-lot-findings.html"    },
       { "Lot-stack spatial analysis"     = "examples/20-lot-stack-analysis.html" },
       { "Reticle overlays"               = "examples/14-reticle.html"         },
+      { "Multi-site parallel testing"    = "examples/15-test-sites.html"      },
       { "Real wafer data (WM-811K)"      = "examples/19-real-data.html"       },
       { "Mixed patterns (MixedWM38)"    = "examples/21-mixedwm38.html"       },
     ]},

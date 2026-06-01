@@ -33,6 +33,10 @@ export interface Die {
   probeIndex?: number;   // assigned by applyProbeSequence
   /** Number of times this die position appeared in the input results. Only set when > 1. */
   retestCount?: number;
+  /** STDF site_num — which parallel test site tested this die. Only meaningful when > 1 distinct value appears per wafer. */
+  siteNum?: number;
+  /** STDF pir.part_id — tester-assigned identifier for this tested unit. Encodes probe sequence at most fabs. */
+  partId?: number;
 }
 
 /**

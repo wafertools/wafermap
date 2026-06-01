@@ -7,6 +7,7 @@ export type StatsComparisonFamily =
   | 'ring'
   | 'quadrant'
   | 'reticle-position'
+  | 'test-site'
   | 'wafer'
   | 'sector'
   | 'cluster'
@@ -14,7 +15,7 @@ export type StatsComparisonFamily =
 
 export interface HighlightRegionTarget {
   kind: 'region';
-  regionFamily: 'ring' | 'quadrant' | 'reticle-position' | 'sector';
+  regionFamily: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector';
   keys: string[];
   dieKeys?: string[];
 }
@@ -155,6 +156,13 @@ export interface AnalyzeWaferMapOptions {
   enableSoftBinAnalysis?: boolean;
   enableTestValueAnalysis?: boolean;
   enableReticlePositionAnalysis?: boolean;
+  /**
+   * Analyse yield and bin distributions by test site (`siteNum`).
+   * Enabled automatically when the wafer contains meaningful site duplication
+   * (at least 2 distinct site numbers each appearing on 3 or more dies).
+   * Set to `false` to suppress, or `true` to force-enable regardless of the guard.
+   */
+  enableTestSiteAnalysis?: boolean;
   /** Detect contiguous failure clusters and edge arc damage. Default true. */
   enableClusterAnalysis?: boolean;
   /** Angular sector analysis (finer-grained than quadrants). Default true. */

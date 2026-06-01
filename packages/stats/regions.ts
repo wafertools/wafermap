@@ -2,7 +2,7 @@ import { classifyDie, getRingLabel, type Die, type Wafer } from '../core/index.j
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
 
 export interface StatsRegion {
-  family: 'ring' | 'quadrant' | 'reticle-position' | 'sector';
+  family: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector';
   key: string;
   label: string;
   dieKeys: string[];
@@ -83,6 +83,49 @@ export function buildReticlePositionRegions(
   }
 
   return [...regions.values()].sort((left, right) => left.key.localeCompare(right.key));
+}
+
+// Minimum dies-per-site to consider a site meaningfully populated.
+const MIN_DIES_PER_SITE = 3;
+
+/**
+ * Group dies by siteNum for parallel test site analysis.
+ *
+ * Returns an empty array (suppressing analysis) unless at least 2 distinct
+ * siteNum values each appear on MIN_DIES_PER_SITE or more dies — this prevents
+ * spurious regions when siteNum is used as a monotonically-increasing counter
+ * rather than a true parallel-site identifier.
+ *
+ * Pass `forceEnable: true` to bypass the guard (e.g. when the caller has already
+ * validated the data).
+ */
+export function buildTestSiteRegions(dies: Die[], forceEnable = false): StatsRegion[] {
+  const siteCounts = new Map<number, string[]>();
+
+  for (const die of dies) {
+    if (die.siteNum === undefined) continue;
+    const keys = siteCounts.get(die.siteNum) ?? [];
+    keys.push(dieKey(die));
+    siteCounts.set(die.siteNum, keys);
+  }
+
+  if (!forceEnable) {
+    // Count how many sites meet the minimum population threshold.
+    let qualifyingSites = 0;
+    for (const keys of siteCounts.values()) {
+      if (keys.length >= MIN_DIES_PER_SITE) qualifyingSites++;
+    }
+    if (qualifyingSites < 2) return [];
+  }
+
+  return [...siteCounts.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([siteNum, keys]) => ({
+      family: 'test-site' as const,
+      key: `test-site:${siteNum}`,
+      label: `Site ${siteNum}`,
+      dieKeys: keys,
+    }));
 }
 
 export function buildSectorRegions(dies: Die[], wafer: Wafer, sectorCount: number): StatsRegion[] {

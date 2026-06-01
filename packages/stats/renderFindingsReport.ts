@@ -146,6 +146,10 @@ ${reportStyles()}
 }
 
 export function openHtmlReport(html: string): void {
+  if (typeof (window as any).__openHtmlReport === 'function') {
+    (window as any).__openHtmlReport(html);
+    return;
+  }
   const win = window.open('', '_blank');
   if (!win) return;
   win.document.write(html);
