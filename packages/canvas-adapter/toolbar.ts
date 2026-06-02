@@ -37,6 +37,18 @@ export const MODE_LABELS: Record<PlotMode, string> = {
 export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardBin', 'softBin']);
 export const STACKED_MODES    = new Set<PlotMode>(['stackedValues', 'stackedBins', 'stackedSoftBins']);
 
+// Menus must be appended inside the fullscreen element or the nearest modal box,
+// not document.body — both create stacking contexts that would obscure body-level menus.
+export function menuRootFor(anchor: Element): Element {
+  if (document.fullscreenElement) return document.fullscreenElement;
+  let el: Element | null = anchor;
+  while (el) {
+    if (el.classList.contains('wmap-modal-box')) return el;
+    el = el.parentElement;
+  }
+  return document.body;
+}
+
 // ── Tooltip ────────────────────────────────────────────────────────────────────
 
 export function createTooltip(): HTMLDivElement {
@@ -303,9 +315,7 @@ export function buildCheckMenuEl(
 
 export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   let openMenu: HTMLDivElement | null = null;
-  // In fullscreen mode, menus must be appended inside the fullscreen element —
-  // anything outside it is hidden by the browser's fullscreen stacking context.
-  const menuRoot = (): Element => document.fullscreenElement ?? document.body;
+  const menuRoot = (anchor: Element): Element => menuRootFor(anchor);
 
   function makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -467,7 +477,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         });
         menu.appendChild(row);
       }
-      menuRoot().appendChild(menu);
+      menuRoot(btn).appendChild(menu);
       openMenu = menu;
     });
     return btn;
@@ -503,7 +513,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     const btn = makeBtn(iconKey, label, () => {
       if (openMenu) { openMenu.remove(); openMenu = null; return; }
       const menu = buildMenu();
-      menuRoot().appendChild(menu);
+      menuRoot(btn).appendChild(menu);
       openMenu = menu;
     });
     onSync(btn);

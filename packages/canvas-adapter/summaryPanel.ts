@@ -10,6 +10,7 @@ import { buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
 import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
+import { getColorScheme } from '../renderer/colorSchemes.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { CLR, openModal } from './toolbar.js';
@@ -173,22 +174,31 @@ function progressRow(label: string, value: number, color = '#2a6fc0'): HTMLDivEl
   top.appendChild(pct);
 
   const track = el('div', {
-    height:       '5px',
+    height:       '9px',
     background:   '#e2e5ea',
-    borderRadius: '3px',
+    borderRadius: '4px',
     overflow:     'hidden',
   });
   const fill = el('div', {
-    height:     '100%',
-    width:      `${Math.min(100, Math.max(0, value))}%`,
-    background: color,
-    borderRadius: '3px',
-    transition: 'width 0.3s ease',
+    height:       '100%',
+    width:        `${Math.min(100, Math.max(0, value))}%`,
+    background:   color,
+    borderRadius: '4px',
+    transition:   'width 0.3s ease',
   });
   track.appendChild(fill);
   row.appendChild(top);
   row.appendChild(track);
   return row;
+}
+
+// High yield → rich blue, low yield → pale blue-grey. Accessible: no red/green semantics.
+function yieldColor(pct: number): string {
+  const t   = Math.max(0, Math.min(1, (pct - 50) / 50));
+  const hue = Math.round(214 - t * 179);  // 214° (blue) → 35° (orange)
+  const sat = Math.round(55 + t * 20);    // 55% → 75%
+  const lgt = Math.round(52 - t * 14);    // 52% → 38%
+  return `hsl(${hue}, ${sat}%, ${lgt}%)`;
 }
 
 /** Big stat card — used for yield % and total dies. */
@@ -286,6 +296,7 @@ export function buildBinSection(
   dies: Die[],
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
+  colorScheme?: string,
 ): HTMLDivElement | null {
   const binCounts = new Map<number, number>();
   for (const d of dies) {
@@ -305,7 +316,8 @@ export function buildBinSection(
     const def   = defMap?.get(bin);
     const label = def?.name ? `Bin ${bin} · ${def.name}` : `Bin ${bin}`;
     const pct   = (count / total) * 100;
-    const color = def?.color ?? '#2a6fc0';
+    const scheme = getColorScheme(colorScheme);
+    const color  = def?.color ?? scheme.forBin(bin);
     wrap.appendChild(progressRow(`${label}  (${count})`, pct, color));
   }
   return wrap;
@@ -329,8 +341,7 @@ function buildRegionYieldSection(
   const passSet  = new Set(passBins);
   const dieByKey = new Map<string, Die>(dies.map(d => [`${d.x},${d.y}`, d]));
 
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle(title));
+  const rows: { label: string; yPct: number }[] = [];
   for (const region of regions) {
     let pass = 0, total = 0;
     for (const key of region.dieKeys) {
@@ -342,7 +353,14 @@ function buildRegionYieldSection(
       if (passSet.has(b)) pass++;
     }
     if (!total) continue;
-    wrap.appendChild(progressRow(`${region.label} (N=${total})`, (pass / total) * 100));
+    rows.push({ label: `${region.label} (N=${total})`, yPct: (pass / total) * 100 });
+  }
+  if (!rows.length) return null;
+
+  const wrap = el('div');
+  wrap.appendChild(sectionTitle(title));
+  for (const { label, yPct } of rows) {
+    wrap.appendChild(progressRow(label, yPct, yieldColor(yPct)));
   }
   return wrap;
 }
@@ -688,7 +706,8 @@ export function buildPerWaferYieldSection(
   const wrap = el('div');
   wrap.appendChild(sectionTitle('Wafer Yield'));
   for (const { label, yieldPct } of waferData) {
-    wrap.appendChild(progressRow(label, yieldPct * 100));
+    const yPct = yieldPct * 100;
+    wrap.appendChild(progressRow(label, yPct, yieldColor(yPct)));
   }
   return wrap;
 }
@@ -698,8 +717,9 @@ export function buildLotBinSection(
   allDies: Die[],
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
+  colorScheme?: string,
 ): HTMLDivElement | null {
-  return buildBinSection(allDies, binDefs, mode);
+  return buildBinSection(allDies, binDefs, mode, colorScheme);
 }
 
 function buildLotRegionYieldSection(
@@ -739,12 +759,16 @@ function buildLotRegionYieldSection(
   }
   if (!totals.size) return null;
 
+  const validRows = order
+    .map(label => ({ label, acc: totals.get(label) }))
+    .filter((r): r is { label: string; acc: { pass: number; total: number } } => !!r.acc?.total);
+  if (!validRows.length) return null;
+
   const wrap = el('div');
   wrap.appendChild(sectionTitle(title));
-  for (const label of order) {
-    const acc = totals.get(label);
-    if (!acc || !acc.total) continue;
-    wrap.appendChild(progressRow(`${label} (N=${acc.total})`, (acc.pass / acc.total) * 100));
+  for (const { label, acc } of validRows) {
+    const yPct = (acc.pass / acc.total) * 100;
+    wrap.appendChild(progressRow(`${label} (N=${acc.total})`, yPct, yieldColor(yPct)));
   }
   return wrap;
 }
@@ -860,6 +884,7 @@ export function renderWaferSummaryContent(
     statsSummary?: StatsSummary;
     passBins?:    number[];
     ringCount?:   number;
+    colorScheme?: string;
     fallbackFormat?: 'si' | 'engineering';
     onFindingClick?: (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
@@ -871,7 +896,7 @@ export function renderWaferSummaryContent(
     wafer, dies, yieldSummary, dataCoverage,
     hbinDefs, sbinDefs, testDefs,
     statsSummary, passBins = [1], ringCount = 4,
-    fallbackFormat,
+    colorScheme, fallbackFormat,
     onFindingClick, activeFindingId = null,
   } = params;
 
@@ -901,8 +926,8 @@ export function renderWaferSummaryContent(
   // Use hard bin mode as the primary bin display; fall back to soft if only soft present
   const hasHbin = dies.some(d => d.hbin != null);
   const hasSbin = dies.some(d => d.sbin != null);
-  if (hasHbin) sections.push(buildBinSection(dies, hbinDefs, 'hard'));
-  else if (hasSbin) sections.push(buildBinSection(dies, sbinDefs, 'soft'));
+  if (hasHbin) sections.push(buildBinSection(dies, hbinDefs, 'hard', colorScheme));
+  else if (hasSbin) sections.push(buildBinSection(dies, sbinDefs, 'soft', colorScheme));
 
   sections.push(buildRingSection(dies, wafer, ringCount, passBins));
   sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
@@ -966,6 +991,7 @@ export function renderLotSummaryContent(
     testDefs?:        TestDef[];
     passBins?:        number[];
     ringCount?:       number;
+    colorScheme?:     string;
     fallbackFormat?:  'si' | 'engineering';
     onFindingClick?:  (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
@@ -977,7 +1003,7 @@ export function renderLotSummaryContent(
     lotSummary, items,
     hbinDefs, sbinDefs, testDefs,
     passBins = [1], ringCount = 4,
-    fallbackFormat,
+    colorScheme, fallbackFormat,
     onFindingClick, activeFindingId = null,
   } = params;
 
@@ -1003,8 +1029,8 @@ export function renderLotSummaryContent(
   const sections: (HTMLDivElement | null)[] = [
     buildLotOverviewSection(lotSummary),
     buildPerWaferYieldSection(lotSummary, items),
-    hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard')
-            : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft') : null,
+    hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard', colorScheme)
+            : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft', colorScheme) : null,
     buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
     buildLotQuadrantSection(diesByWafer, allWafers, ringCount, passBins),
     testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat) : null,

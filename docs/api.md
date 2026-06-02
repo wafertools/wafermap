@@ -839,7 +839,7 @@ When `statsSummary` is provided, a summary panel toggle button (notebook icon) a
 :root { --wmap-z: 1200; }
 ```
 
-The variable defaults to `100`. Menus and dropdowns use `--wmap-z`; the tooltip and submenus use `--wmap-z + 1`; the modal backdrop uses `--wmap-z + 1` and the modal box uses `--wmap-z + 2`.
+The variable defaults to `100`. Menus and dropdowns use `--wmap-z`; the tooltip and submenus use `--wmap-z + 1`; the modal backdrop uses `--wmap-z + 1` and the modal box uses `--wmap-z + 2`. Menus opened from inside a modal are appended to the modal box rather than `document.body`, so they always appear above the modal content regardless of the host page's stacking context.
 
 #### 5.4.1 `SummaryPanelOptions`
 

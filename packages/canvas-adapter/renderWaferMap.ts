@@ -6,7 +6,7 @@ import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
-import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, type ModeEntry } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, menuRootFor, type ModeEntry } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -377,6 +377,7 @@ export function renderWaferMap(
       statsSummary:    currentStatsSummary,
       passBins,
       ringCount:       viewOpts.ringCount ?? 4,
+      colorScheme:     viewOpts.colorScheme,
       fallbackFormat:  currentFallbackFormat,
       activeFindingId: summaryActiveFindingId,
       onFindingClick: (finding, _row) => {
@@ -628,7 +629,7 @@ export function renderWaferMap(
             { makeMenuRow, makeMenuSection },
             viewOpts.plotMode ?? 'hardBin',
           );
-          document.body.appendChild(menu);
+          menuRootFor(btnMode).appendChild(menu);
           setOpenMenu(menu);
         });
         const btnPalette = makeDropdown(
@@ -867,6 +868,7 @@ export function renderWaferMap(
     syncLogScaleBtnFn?.();
     syncColorbarRangeBtnFn?.();
     render();
+    if (partial.colorScheme !== undefined) { renderSummaryPanel(); renderAutoSummaryPanel(); }
   }
 
   // Rebuild, redraw, and fire onViewOptionsChange.

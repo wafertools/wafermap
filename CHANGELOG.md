@@ -52,6 +52,9 @@ All notable changes to `@paulrobins/wafermap` are documented here.
 - Toolbar fades to 35% opacity when the mouse leaves (was fully hidden) and always accepts pointer events — buttons remain clickable without requiring hover.
 
 ### Fixed
+- Summary panel bin breakdown bars now use the active colour scheme (`getColorScheme().forBin()`) and update immediately when the user changes scheme. Both the `summaryPanel` option panel and the toolbar-toggled panel are updated.
+- Summary panel yield bars (ring yield, quadrant yield, per-wafer yield) now use a blue→orange gradient (low = muted blue, high = warm orange) instead of a red/green hue ramp — readable for all colour vision types.
+- Toolbar dropdown and check menus opened from inside an expand modal now appear above the modal content. Previously they were appended to `document.body` and rendered beneath the modal's stacking context.
 - Gallery legend regression (bin colours lost after a mode switch).
 - Non-square die rotation now correctly accounts for aspect ratio — previously produced skewed geometry.
 - Expand modal correctly reparents the summary panel wrapper alongside the canvas.

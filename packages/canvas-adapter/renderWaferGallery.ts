@@ -256,6 +256,7 @@ export function renderWaferGallery(
         testDefs:   originalItems.find(it => it?.testDefs?.length)?.testDefs,
         passBins,
         ringCount:      sharedOpts.ringCount,
+        colorScheme:    sharedOpts.colorScheme,
         fallbackFormat: currentFallbackFormat,
         activeFindingId: gallerySummaryActiveFindingId,
         onFindingClick: (finding, row) => {
@@ -322,6 +323,7 @@ export function renderWaferGallery(
         testDefs:       item.testDefs,
         statsSummary:   waferSummary,
         passBins,
+        colorScheme:    sharedOpts.colorScheme,
         fallbackFormat: currentFallbackFormat,
         activeFindingId: gallerySummaryActiveFindingId,
         onFindingClick: (finding, _row) => {
@@ -1075,6 +1077,7 @@ export function renderWaferGallery(
     rebuildLegend();
     syncAggrMethodBtn();
     syncLegendStyleBtn();
+    if (partial.colorScheme !== undefined) renderGallerySummaryPanel();
     if (fireCallback) {
       syncLogScaleBtn();
       const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
