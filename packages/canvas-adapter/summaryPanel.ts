@@ -12,7 +12,7 @@ import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
-import { CLR } from './toolbar.js';
+import { CLR, openModal } from './toolbar.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
 
@@ -474,52 +474,145 @@ export function buildFindingsSection(
   reportBtn.addEventListener('click', () => openHtmlReport(renderFindingsReportHtml(statsSummary)));
   content.appendChild(reportBtn);
 
-  const narrativeText = buildFindingsNarrative(findings);
-  if (narrativeText) {
-    content.appendChild(el('p', {
-      fontSize:   '10px',
-      fontStyle:  'italic',
-      color:      '#66788a',
-      margin:     '0 0 8px',
-      lineHeight: '1.5',
-      padding:    '0',
-    }, narrativeText));
-  }
-
-  const severityOrder: StatsFinding['severity'][] = ['unusual', 'notable', 'info'];
-  const severityLabel: Record<StatsFinding['severity'], string> = {
-    unusual: 'Unusual', notable: 'Notable', info: 'Informational',
-  };
+  const severityRank: Record<StatsFinding['severity'], number> = { unusual: 0, notable: 1, info: 2 };
   function sevColor(s: StatsFinding['severity']): string {
     return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : '#506784';
   }
+  function worstSeverity(fs: StatsFinding[]): StatsFinding['severity'] {
+    return fs.reduce<StatsFinding['severity']>(
+      (best, f) => severityRank[f.severity] < severityRank[best] ? f.severity : best,
+      'info',
+    );
+  }
+  function buildGroups(fs: StatsFinding[]) {
+    const groupMap = new Map<string, StatsFinding[]>();
+    for (const f of fs) {
+      const key = `${f.comparison.family}\0${f.comparison.left}`;
+      const bucket = groupMap.get(key) ?? [];
+      bucket.push(f);
+      groupMap.set(key, bucket);
+    }
+    const result = [...groupMap.entries()].map(([key, members]) => {
+      const sorted = [...members].sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+      return { key, findings: sorted, worst: worstSeverity(sorted) };
+    });
+    result.sort((a, b) => severityRank[a.worst] - severityRank[b.worst]);
+    return result;
+  }
+  function groupLabel(family: string, left: string): string {
+    const familyMap: Record<string, string> = {
+      ring: 'Ring', quadrant: 'Quadrant', sector: 'Sector',
+      'reticle-position': 'Reticle', 'test-site': 'Test site',
+      cluster: 'Cluster', 'edge-arc': 'Edge arc', wafer: 'Wafer',
+    };
+    return `${familyMap[family] ?? family}: ${left}`;
+  }
 
-  const grouped = new Map<StatsFinding['severity'], StatsFinding[]>(
-    severityOrder.map(s => [s, []])
-  );
-  for (const f of findings) grouped.get(f.severity)!.push(f);
+  const groups = buildGroups(findings);
 
-  // Flat ordered list for arrow-key navigation
-  const orderedFindings: StatsFinding[] = severityOrder.flatMap(s => grouped.get(s)!);
-  const rowMap = new Map<string, HTMLButtonElement>();
+  // Narrative block — elevated styling with a "Detail ▸" expand button
+  const narrativeText = buildFindingsNarrative(findings);
+  if (narrativeText) {
+    const narrativeBlock = el('div', {
+      background:    CLR.bgActive,
+      borderRadius:  '6px',
+      padding:       '8px 10px',
+      marginBottom:  '8px',
+      display:       'flex',
+      gap:           '8px',
+      alignItems:    'flex-start',
+    });
+
+    const narrativeText2 = el('span', {
+      flex:       '1',
+      fontSize:   '12px',
+      lineHeight: '1.5',
+      color:      '#2a3f5f',
+    }, narrativeText);
+    narrativeBlock.appendChild(narrativeText2);
+
+    const detailBtn = el('button', {
+      flexShrink: '0',
+      border:     'none',
+      background: 'none',
+      fontSize:   '10px',
+      color:      '#506784',
+      cursor:     'pointer',
+      padding:    '0',
+      lineHeight: '1.5',
+      whiteSpace: 'nowrap',
+    }, 'Detail ▸');
+    (detailBtn as HTMLButtonElement).type = 'button';
+    detailBtn.addEventListener('click', () => {
+      const handle = openModal({ title: 'Findings Summary', onClose: () => {} });
+
+      // Narrative paragraph
+      const narPara = el('p', {
+        fontSize:     '16px',
+        lineHeight:   '1.6',
+        color:        '#2a3f5f',
+        padding:      '20px 24px 16px',
+        margin:       '0',
+        borderBottom: '1px solid #e2e5ea',
+        flexShrink:   '0',
+      }, narrativeText);
+      handle.contentWrap.appendChild(narPara);
+
+      // Scrollable findings list
+      const listWrap = el('div', {
+        overflowY: 'auto',
+        padding:   '16px 24px',
+        flex:      '1',
+      });
+      for (const group of groups) {
+        const [fam, left] = group.key.split('\0');
+        listWrap.appendChild(el('div', {
+          fontSize:      '11px',
+          fontWeight:    '700',
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          color:         sevColor(group.worst),
+          padding:       '6px 0 4px 8px',
+          borderLeft:    `3px solid ${sevColor(group.worst)}`,
+          marginTop:     '10px',
+          marginBottom:  '4px',
+        }, groupLabel(fam, left)));
+        for (const f of group.findings) {
+          listWrap.appendChild(el('div', {
+            fontSize:    '13px',
+            color:       '#2a3f5f',
+            padding:     '3px 0 3px 12px',
+            borderLeft:  `2px solid ${sevColor(f.severity)}`,
+            marginBottom: '2px',
+          }, f.summary));
+        }
+      }
+      handle.contentWrap.appendChild(listWrap);
+      Object.assign(handle.contentWrap.style, { flexDirection: 'column', overflow: 'hidden' });
+    });
+
+    narrativeBlock.appendChild(detailBtn);
+    content.appendChild(narrativeBlock);
+  }
 
   let first = true;
-  for (const severity of severityOrder) {
-    const group = grouped.get(severity)!;
-    if (!group.length) continue;
+  for (const group of groups) {
     if (!first) content.appendChild(el('div', { height: '1px', background: CLR.separator, margin: '4px 0' }));
     first = false;
 
+    const [family, left] = group.key.split('\0');
     content.appendChild(el('div', {
       fontSize:      '10px',
       fontWeight:    '700',
-      letterSpacing: '0.05em',
+      letterSpacing: '0.04em',
       textTransform: 'uppercase',
-      color:         sevColor(severity),
-      padding:       '2px 0',
-    }, severityLabel[severity]));
+      color:         sevColor(group.worst),
+      padding:       '2px 0 2px 6px',
+      borderLeft:    `3px solid ${sevColor(group.worst)}`,
+      marginBottom:  '3px',
+    }, groupLabel(family, left)));
 
-    for (const finding of group) {
+    for (const finding of group.findings) {
       const isActive = activeFindingId === finding.id;
       const row = document.createElement('button');
       row.type = 'button';
@@ -540,7 +633,6 @@ export function buildFindingsSection(
         marginBottom: '4px',
       });
       row.addEventListener('click', () => onFindingClick(finding, row));
-      rowMap.set(finding.id, row);
       content.appendChild(row);
     }
   }
@@ -732,7 +824,8 @@ export function wrapWithSummaryPanel(
     flexDirection: isVertical ? 'column' : 'row',
     gap:           '8px',
     width:         '100%',
-    height:        '100%',
+    flex:          '1 1 0',
+    minHeight:     '0',
     boxSizing:     'border-box',
     alignItems:    'flex-start',
   });
@@ -772,6 +865,7 @@ export function renderWaferSummaryContent(
     activeFindingId?: string | null;
   },
 ): void {
+  const savedScroll = panel.scrollTop;
   panel.innerHTML = '';
   const {
     wafer, dies, yieldSummary, dataCoverage,
@@ -858,6 +952,7 @@ export function renderWaferSummaryContent(
     panel.appendChild(s);
   }
 
+  panel.scrollTop = savedScroll;
 }
 
 /** Render lot-level content into the panel. Clears existing content. */
@@ -876,6 +971,7 @@ export function renderLotSummaryContent(
     activeFindingId?: string | null;
   },
 ): void {
+  const savedScroll = panel.scrollTop;
   panel.innerHTML = '';
   const {
     lotSummary, items,
@@ -958,6 +1054,8 @@ export function renderLotSummaryContent(
     first = false;
     panel.appendChild(s);
   }
+
+  panel.scrollTop = savedScroll;
 }
 
 /** Build the wafer-detail panel header with a back button for gallery drill-down. */

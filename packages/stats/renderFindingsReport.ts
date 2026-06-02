@@ -155,3 +155,7 @@ export function openHtmlReport(html: string): void {
   win.document.write(html);
   win.document.close();
 }
+
+export function setReportOpener(opener: (html: string) => void): void {
+  (window as any).__openHtmlReport = opener;
+}

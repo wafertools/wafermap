@@ -21,7 +21,7 @@ const SNAPSHOTS = {
     'getColorScheme', 'getDieKey', 'getDieTestValue',
     'getRingLabel', 'getUniqueBins', 'getUniqueTestNumbers',
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'listColorSchemes',
-    'mapDataToDies', 'openHtmlReport', 'registerColorScheme',
+    'mapDataToDies', 'openHtmlReport', 'registerColorScheme', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
     'resolveTestNumber',
     'softBinColor', 'transformDies', 'valueToGreyscale', 'valueToViridis',
@@ -47,7 +47,7 @@ const SNAPSHOTS = {
     'analyzeWaferLot', 'analyzeWaferMap',
     'buildQuadrantRegions', 'buildReticlePositionRegions',
     'buildRingRegions', 'buildSectorRegions', 'buildTestSiteRegions',
-    'filterFindings', 'openHtmlReport',
+    'filterFindings', 'openHtmlReport', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
   ],
   './render': [

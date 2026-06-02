@@ -155,6 +155,8 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
   minZoom?: number;
   /** Maximum zoom relative to fit. Default 20. */
   maxZoom?: number;
+  /** Filename for the PNG download (without extension). Default `'wafermap'`. */
+  downloadFilename?: string;
   /**
    * When provided, renders a persistent summary panel alongside the canvas.
    * The panel shows metadata, yield, bins, rings, quadrants, test values, and findings.
@@ -392,7 +394,10 @@ export function renderWaferMap(
   }
 
   function renderSummaryPanel(): void {
-    if (summaryPanelEl) renderSummaryPanelInto(summaryPanelEl, renderSummaryPanel);
+    if (!summaryPanelEl) return;
+    const savedScroll = summaryPanelEl.scrollTop;
+    renderSummaryPanelInto(summaryPanelEl, renderSummaryPanel);
+    summaryPanelEl.scrollTop = savedScroll;
   }
 
   function renderAutoSummaryPanel(): void {
@@ -496,7 +501,7 @@ export function renderWaferMap(
         border:        `1px solid ${CLR.menuBorder}`,
         borderRadius:  '4px',
         boxShadow:     '0 1px 4px rgba(0,0,0,0.12)',
-        zIndex:        '1001',
+        zIndex:        'var(--wmap-z, 100)',
         opacity:       '0.35',
         transition:    'opacity 0.2s ease',
         pointerEvents: 'auto',
@@ -1005,7 +1010,7 @@ export function renderWaferMap(
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       const a   = document.createElement('a');
-      a.href = url; a.download = 'wafermap.png'; a.click();
+      a.href = url; a.download = `${options.downloadFilename ?? 'wafermap'}.png`; a.click();
       URL.revokeObjectURL(url);
     });
   }
@@ -1182,6 +1187,12 @@ export function renderWaferMap(
     const cssPx = e.clientX - rect.left;
     const cssPy = e.clientY - rect.top;
     const multi = e.ctrlKey || e.metaKey;
+
+    // pointer capture suppresses pointerleave while the button is held, so
+    // hide the tooltip explicitly if the pointer was released outside the canvas.
+    if (tooltip && (cssPx < 0 || cssPy < 0 || cssPx > rect.width || cssPy > rect.height)) {
+      tooltip.style.display = 'none';
+    }
 
     if (isBoxSelecting) {
       isBoxSelecting = false;

@@ -1137,10 +1137,12 @@ export function renderWaferGallery(
     // Container div for renderWaferMap — the function creates the canvas inside it.
     const canvasWrapper = document.createElement('div');
     Object.assign(canvasWrapper.style, {
-      position: 'relative',
-      flex:     '1',
-      minHeight:'0',
-      overflow: 'hidden',
+      position:      'relative',
+      flex:          '1',
+      minHeight:     '0',
+      overflow:      'hidden',
+      display:       'flex',
+      flexDirection: 'column',
     });
     card.appendChild(canvasWrapper);
 

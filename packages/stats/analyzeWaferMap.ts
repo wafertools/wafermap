@@ -27,8 +27,8 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   ringCount: 4,
   passBins: [1],
   significanceLevel: 0.05,
-  minimumEffectSize: 0.15,
-  minimumRelativeEffect: 0.5,
+  minimumEffectSize: 0.20,
+  minimumRelativeEffect: 1.0,
   minimumSampleSize: 5,
   includePartial: false,
   includeEdgeExcluded: false,
@@ -39,8 +39,8 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   enableReticlePositionAnalysis: true,
   enableClusterAnalysis: true,
   enableAngularAnalysis: true,
-  minimumClusterSize: 3,
-  sectorCount: 16,
+  minimumClusterSize: 5,
+  sectorCount: 8,
 };
 
 function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
@@ -209,8 +209,8 @@ function adjustPValues(findings: RawFinding[]): RawFinding[] {
 function severityForFinding(pValue: number, delta: number, relativeDelta?: number): StatsSeverity {
   const absDelta = Math.abs(delta);
   const absRel = relativeDelta !== undefined ? Math.abs(relativeDelta) : 0;
-  if (pValue <= 0.01 && (absDelta >= 0.25 || absRel >= 2.0)) return 'unusual';
-  if (pValue <= 0.05 && (absDelta >= 0.15 || absRel >= 1.0)) return 'notable';
+  if (pValue <= 0.01 && (absDelta >= 0.30 || absRel >= 2.5)) return 'unusual';
+  if (pValue <= 0.05 && (absDelta >= 0.20 || absRel >= 1.5)) return 'notable';
   return 'info';
 }
 

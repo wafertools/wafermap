@@ -1458,6 +1458,19 @@ openHtmlReport(renderFindingsReportHtml(lotSummary));
 
 The summary panel's "Summary report" button in `renderWaferMap` and `renderWaferGallery` calls the appropriate function automatically — you only need to call these directly when building a custom export flow.
 
+**Embedded hosts (Tauri, Electron, WebView2).** In hosts where `window.open` is blocked, register a custom opener once at startup:
+
+```ts
+import { setReportOpener } from '@paulrobins/wafermap/stats';
+
+setReportOpener(html => {
+  // route to a host-managed window, IPC call, etc.
+  myApp.showReport(html);
+});
+```
+
+All `openHtmlReport` calls — including the summary panel buttons — then route through your opener automatically.
+
 ![Wafer summary report](images/image-report-wafer.png)
 
 ![Lot summary report](images/image-report-lot.png)

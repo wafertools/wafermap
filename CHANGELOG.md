@@ -18,6 +18,9 @@ All notable changes to `@paulrobins/wafermap` are documented here.
 
 ### Added
 
+- `setReportOpener(opener)` in `@paulrobins/wafermap/stats` — registers a custom HTML report handler for embedded hosts (Tauri, Electron, WebView2) where `window.open` is blocked. All `openHtmlReport` calls, including the summary panel buttons, route through the registered opener automatically.
+- `downloadFilename` option on `RenderOptions` (`renderWaferMap`) — sets the PNG download filename stem (default `'wafermap'`); `.png` is appended automatically. Previously hardcoded.
+- CSS custom property `--wmap-z` (default `100`) controls the z-index stack for all toolbar menus, dropdowns, and the hover tooltip. Set it at `:root` to avoid conflicts with host-application overlays.
 - `ViewOptions.valueRange` now accepts a test-keyed form `{ test, range }` in addition to the `[min, max]` tuple. The object form is applied only when `test` matches the active test; on mismatch the range is ignored and the scene auto-scales, so a value range computed for one test can never colour another test's data. The tuple form is unchanged and still applies to whichever test is active.
 - `worker.runWithAnalysis(inputs, options, hasMultiWafer)` on `WafermapWorker` — builds and analyses in a single round-trip, keeping the built `WaferMapResult`s inside the worker instead of cloning them out and back in for analysis. Prefer it over `run` + `runAnalysis` when both maps and stats are needed; it removes two structured-clone copies of the large result per wafer.
 - `waferConfig.center` — the prober coordinate `{x,y}` that lies at the physical wafer centre. Anchors die placement to the true centre for partial/sparse data (half wafers, quadrants, edge rings, clusters) or off-centre prober origins, where inferring the centre from the data extent would be wrong. Does not affect the public `die.x`/`die.y` labels.

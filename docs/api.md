@@ -818,6 +818,7 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
+  downloadFilename?:       string    // stem for the PNG download filename (default 'wafermap') — '.png' is appended automatically
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
 ```
@@ -827,6 +828,18 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 The box-select toolbar button is always shown. Providing `onSelect` lets your app react to selection changes; without it the selection is purely visual.
 
 When `statsSummary` is provided, a summary panel toggle button (notebook icon) appears in the toolbar. The panel opens hidden by default; clicking the button shows or hides it. Clicking a finding in the panel highlights the affected die zone on the map.
+
+**Toolbar z-index (`--wmap-z`).** The toolbar menus, dropdowns, and hover tooltip use `position: fixed` and are stacked relative to a CSS custom property:
+
+```css
+/* default — sufficient for most in-page embeds */
+:root { --wmap-z: 100; }
+
+/* raise it if a host modal sits above the toolbar menus */
+:root { --wmap-z: 1200; }
+```
+
+The variable defaults to `100`. The modal backdrop uses `--wmap-z - 1`; menus use `--wmap-z`; the tooltip and submenus use `--wmap-z + 1`.
 
 #### 5.4.1 `SummaryPanelOptions`
 
@@ -1486,7 +1499,29 @@ Generates a standalone printable HTML **full lot summary report** — the lot-le
 
 The lot summary panel's "Summary report" button calls this automatically when `lotStatsSummary` is provided to `renderWaferGallery`.
 
-### 7.9 `StatsFinding`
+### 7.9 `openHtmlReport` / `setReportOpener`
+
+```ts
+import { openHtmlReport, setReportOpener } from '@paulrobins/wafermap/stats';
+
+openHtmlReport(html: string): void
+setReportOpener(opener: (html: string) => void): void
+```
+
+`openHtmlReport` opens a rendered HTML report string (from `renderFindingsReportHtml` or `renderSummaryReportHtml`) in a new browser tab. The summary panel's "Open Report" and "Summary report" buttons call it internally.
+
+In embedded hosts where `window.open` is blocked (e.g. Tauri, Electron, WebView2), register a custom opener at startup:
+
+```ts
+setReportOpener(html => {
+  // e.g. write to a host-managed window, invoke an IPC call, etc.
+  myApp.showReport(html);
+});
+```
+
+Once set, `openHtmlReport` routes through your opener instead of `window.open`. The summary panel buttons continue to work without any other changes.
+
+### 7.10 `StatsFinding`
 
 ```ts
 {
@@ -1525,7 +1560,7 @@ The lot summary panel's "Summary report" button calls this automatically when `l
 }
 ```
 
-### 7.10 `HighlightTarget`
+### 7.11 `HighlightTarget`
 
 Describes what to visually emphasise when a finding is selected.
 
@@ -1552,7 +1587,7 @@ type HighlightTarget =
 | `edge-arc`           | `dies`           | exact failing die keys |
 | `wafer`              | `wafer`          | lot-level only |
 
-### 7.11 Integrating with `renderWaferMap`
+### 7.12 Integrating with `renderWaferMap`
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -1575,7 +1610,7 @@ const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
-### 7.12 Region builder utilities
+### 7.13 Region builder utilities
 
 These are exported from `@paulrobins/wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
 
@@ -1625,7 +1660,7 @@ Each `StatsRegion` has:
 }
 ```
 
-### 7.13 `filterFindings(source, filter)`
+### 7.14 `filterFindings(source, filter)`
 
 ```ts
 filterFindings(source: StatsSummary | LotStatsSummary, filter: FindingsFilter): StatsFinding[]
@@ -1633,7 +1668,7 @@ filterFindings(source: StatsSummary | LotStatsSummary, filter: FindingsFilter): 
 
 Filters findings from a `StatsSummary` or `LotStatsSummary` by any combination of severity, kind, family, and level. All criteria are ANDed; each accepts a single value or an array.
 
-`StatsSummary` → §7.4 · `LotStatsSummary` → §7.5 · `StatsFinding` → §7.8
+`StatsSummary` → §7.4 · `LotStatsSummary` → §7.5 · `StatsFinding` → §7.10
 
 ```ts
 import { filterFindings } from '@paulrobins/wafermap/stats';
