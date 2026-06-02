@@ -562,7 +562,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
     display:        'flex',
     alignItems:     'center',
     justifyContent: 'center',
-    zIndex:         'calc(var(--wmap-z, 100) - 1)',
+    zIndex:         'calc(var(--wmap-z, 100) + 1)',
     backdropFilter: 'blur(3px)',
   });
 
@@ -582,6 +582,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
     minHeight:     '240px',
     maxWidth:      '100vw',
     maxHeight:     '100vh',
+    zIndex:        'calc(var(--wmap-z, 100) + 2)',
   });
 
   const header = document.createElement('div');

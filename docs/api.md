@@ -839,7 +839,7 @@ When `statsSummary` is provided, a summary panel toggle button (notebook icon) a
 :root { --wmap-z: 1200; }
 ```
 
-The variable defaults to `100`. The modal backdrop uses `--wmap-z - 1`; menus use `--wmap-z`; the tooltip and submenus use `--wmap-z + 1`.
+The variable defaults to `100`. Menus and dropdowns use `--wmap-z`; the tooltip and submenus use `--wmap-z + 1`; the modal backdrop uses `--wmap-z + 1` and the modal box uses `--wmap-z + 2`.
 
 #### 5.4.1 `SummaryPanelOptions`
 
