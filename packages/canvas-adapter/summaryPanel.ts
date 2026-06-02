@@ -526,7 +526,38 @@ export function buildFindingsSection(
     return `${familyMap[family] ?? family}: ${left}`;
   }
 
-  const groups = buildGroups(findings);
+  // Separate spatial-pattern (parent) findings from the rest
+  const patternFindings = findings.filter(f => f.comparison.family === 'spatial-pattern');
+  const relatedIdSet    = new Set(patternFindings.flatMap(f => f.relatedIds ?? []));
+  const standaloneFindings = findings.filter(
+    f => f.comparison.family !== 'spatial-pattern' && !relatedIdSet.has(f.id),
+  );
+  const groups = buildGroups(standaloneFindings);
+
+  // Helper: build a clickable finding row button
+  function makeFindingRow(finding: StatsFinding, isChild = false): HTMLButtonElement {
+    const isActive = activeFindingId === finding.id;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.dataset.wmapFinding = finding.id;
+    row.textContent = finding.summary;
+    Object.assign(row.style, {
+      border:       `1px solid ${CLR.menuBorder}`,
+      borderLeft:   `3px solid ${sevColor(finding.severity)}`,
+      background:   isActive ? CLR.bgActive : '#fff',
+      borderRadius: '6px',
+      padding:      isChild ? '6px 10px' : '8px 10px',
+      textAlign:    'left',
+      fontSize:     isChild ? '10px' : '11px',
+      fontWeight:   isActive ? '600' : '400',
+      color:        '#2a3f5f',
+      cursor:       'pointer',
+      width:        '100%',
+      marginBottom: '4px',
+    });
+    row.addEventListener('click', () => onFindingClick(finding, row));
+    return row;
+  }
 
   // Narrative block — elevated styling with a "Detail ▸" expand button
   const narrativeText = buildFindingsNarrative(findings);
@@ -576,12 +607,44 @@ export function buildFindingsSection(
       }, narrativeText);
       handle.contentWrap.appendChild(narPara);
 
-      // Scrollable findings list
+      // Scrollable findings list — pattern parents first, then standalone groups
       const listWrap = el('div', {
         overflowY: 'auto',
         padding:   '16px 24px',
         flex:      '1',
       });
+
+      for (const pf of patternFindings) {
+        listWrap.appendChild(el('div', {
+          fontSize:      '11px',
+          fontWeight:    '700',
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          color:         sevColor(pf.severity),
+          padding:       '6px 0 4px 8px',
+          borderLeft:    `3px solid ${sevColor(pf.severity)}`,
+          marginTop:     '10px',
+          marginBottom:  '4px',
+        }, pf.comparison.left));
+        listWrap.appendChild(el('div', {
+          fontSize:    '13px',
+          color:       '#2a3f5f',
+          padding:     '3px 0 3px 12px',
+          borderLeft:  `2px solid ${sevColor(pf.severity)}`,
+          marginBottom: '2px',
+        }, pf.summary));
+        const children = findings.filter(f => pf.relatedIds?.includes(f.id));
+        for (const cf of children) {
+          listWrap.appendChild(el('div', {
+            fontSize:    '12px',
+            color:       '#506784',
+            padding:     '2px 0 2px 20px',
+            borderLeft:  `2px solid ${sevColor(cf.severity)}`,
+            marginBottom: '2px',
+          }, cf.summary));
+        }
+      }
+
       for (const group of groups) {
         const [fam, left] = group.key.split('\0');
         listWrap.appendChild(el('div', {
@@ -613,10 +676,86 @@ export function buildFindingsSection(
     content.appendChild(narrativeBlock);
   }
 
-  let first = true;
+  let firstItem = true;
+
+  // Render spatial-pattern findings as collapsible parents
+  for (const pf of patternFindings) {
+    if (!firstItem) content.appendChild(el('div', { height: '1px', background: CLR.separator, margin: '4px 0' }));
+    firstItem = false;
+
+    const children = findings.filter(f => pf.relatedIds?.includes(f.id));
+    const hasChildren = children.length > 0;
+
+    // Parent row wrapper (flex row: clickable text area + chevron toggle)
+    const parentWrap = el('div', { position: 'relative', marginBottom: hasChildren ? '2px' : '4px' });
+
+    const isActive = activeFindingId === pf.id;
+    const parentRow = document.createElement('button');
+    parentRow.type = 'button';
+    parentRow.dataset.wmapFinding = pf.id;
+    Object.assign(parentRow.style, {
+      border:       `1px solid ${CLR.menuBorder}`,
+      borderLeft:   `3px solid ${sevColor(pf.severity)}`,
+      background:   isActive ? CLR.bgActive : '#fff',
+      borderRadius: '6px',
+      padding:      '8px 32px 8px 10px', // right padding for chevron
+      textAlign:    'left',
+      fontSize:     '11px',
+      fontWeight:   isActive ? '600' : '500',
+      color:        '#2a3f5f',
+      cursor:       'pointer',
+      width:        '100%',
+    });
+    parentRow.textContent = pf.summary;
+    parentRow.addEventListener('click', () => onFindingClick(pf, parentRow));
+    parentWrap.appendChild(parentRow);
+
+    if (hasChildren) {
+      // Child container — initially collapsed
+      const childWrap = el('div', {
+        display:     'none',
+        paddingLeft: '12px',
+        marginBottom: '4px',
+      });
+      for (const cf of children) {
+        childWrap.appendChild(makeFindingRow(cf, true));
+      }
+      parentWrap.appendChild(childWrap);
+
+      // Chevron toggle button (absolutely positioned in top-right of parentRow)
+      let expanded = false;
+      const chevron = el('button', {
+        position:   'absolute',
+        top:        '50%',
+        right:      '8px',
+        transform:  'translateY(-50%)',
+        border:     'none',
+        background: 'none',
+        fontSize:   '10px',
+        color:      '#506784',
+        cursor:     'pointer',
+        padding:    '2px 4px',
+        lineHeight: '1',
+      }, '▸') as HTMLButtonElement;
+      chevron.type = 'button';
+      chevron.title = 'Show supporting findings';
+      chevron.addEventListener('click', (e) => {
+        e.stopPropagation();
+        expanded = !expanded;
+        childWrap.style.display = expanded ? 'block' : 'none';
+        chevron.textContent = expanded ? '▾' : '▸';
+        chevron.title = expanded ? 'Hide supporting findings' : 'Show supporting findings';
+      });
+      parentWrap.appendChild(chevron);
+    }
+
+    content.appendChild(parentWrap);
+  }
+
+  // Render remaining standalone findings in existing flat-group style
   for (const group of groups) {
-    if (!first) content.appendChild(el('div', { height: '1px', background: CLR.separator, margin: '4px 0' }));
-    first = false;
+    if (!firstItem) content.appendChild(el('div', { height: '1px', background: CLR.separator, margin: '4px 0' }));
+    firstItem = false;
 
     const [family, left] = group.key.split('\0');
     content.appendChild(el('div', {
@@ -631,27 +770,7 @@ export function buildFindingsSection(
     }, groupLabel(family, left)));
 
     for (const finding of group.findings) {
-      const isActive = activeFindingId === finding.id;
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.dataset.wmapFinding = finding.id;
-      row.textContent = finding.summary;
-      Object.assign(row.style, {
-        border:       `1px solid ${CLR.menuBorder}`,
-        borderLeft:   `3px solid ${sevColor(finding.severity)}`,
-        background:   isActive ? CLR.bgActive : '#fff',
-        borderRadius: '6px',
-        padding:      '8px 10px',
-        textAlign:    'left',
-        fontSize:     '11px',
-        fontWeight:   isActive ? '600' : '400',
-        color:        '#2a3f5f',
-        cursor:       'pointer',
-        width:        '100%',
-        marginBottom: '4px',
-      });
-      row.addEventListener('click', () => onFindingClick(finding, row));
-      content.appendChild(row);
+      content.appendChild(makeFindingRow(finding));
     }
   }
 

@@ -219,7 +219,8 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
   assert.equal(lot.hasNotableFindings, true);
   assert.equal(lot.perWafer[0].summary.hasNotableFindings, true);
   assert.equal(lot.perWafer[1].summary.hasNotableFindings, false);
-  assert.equal(lot.perWafer[2].summary.hasNotableFindings, false);
+  // perWafer[2] is all-failing (near-full pattern) — spatial-pattern finding makes it notable
+  assert.equal(lot.perWafer[2].summary.hasNotableFindings, true);
   assert.equal(lot.perWafer[3].summary.hasNotableFindings, true);
 });
 

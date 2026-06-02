@@ -1692,6 +1692,103 @@ interface FindingsFilter {
 }
 ```
 
+### 7.15 `classifyPattern(dies, wafer, options?)`
+
+```ts
+classifyPattern(
+  dies:    Die[],
+  wafer:   Wafer,
+  options: {
+    passBins:    number[],
+    ringCount?:  number,
+    thresholds?: Partial<PatternThresholds>,
+  }
+): PatternClassification | null
+```
+
+Classifies the spatial failure pattern of a wafer from its die data. Returns `null` when the number of failing dies is below the minimum threshold (default 5).
+
+`Die` → §2.3 · `Wafer` → §2.1 · `PatternThresholds` → below · `PatternClassification` → below
+
+Called automatically by `analyzeWaferMap` when `enablePatternClassification` is `true` (the default). Call directly when you need the geometry features without the full analysis pipeline, or to use the raw `PatternFeatures` as input to your own classifier.
+
+```ts
+import { classifyPattern } from '@paulrobins/wafermap/stats';
+
+const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
+const c = classifyPattern(result.dies, result.wafer, { passBins: [1] });
+
+if (c) {
+  console.log(c.pattern);     // 'edge-ring' | 'center' | 'scratch' | ...
+  console.log(c.confidence);  // 'high' | 'medium' | 'low'
+  console.log(c.note);        // advisory string when classification may be imprecise
+  console.log(c.features);    // raw geometry numbers — use as ML input if needed
+}
+```
+
+**`PatternClassification`**
+
+```ts
+interface PatternClassification {
+  pattern:    PatternLabel           // detected pattern
+  confidence: 'high' | 'medium' | 'low'
+  features:   PatternFeatures        // raw geometry numbers
+  note?:      string                 // advisory when classification may be imprecise
+}
+
+type PatternLabel =
+  | 'center' | 'donut' | 'edge-ring' | 'edge-local'
+  | 'scratch' | 'near-full' | 'random' | 'none'
+```
+
+**`PatternFeatures`**
+
+The geometry numbers computed for every wafer — usable as input to a custom classifier:
+
+```ts
+interface PatternFeatures {
+  globalRdd:         number  // failing / total eligible dies
+  edgeRdd:           number  // failing in outermost ring / total outermost-ring dies
+  centroidDistNorm:  number  // distance from wafer centre to salient-region centroid, / radius
+  minDistNorm:       number  // min radial distance of salient-region dies, / radius
+  maxDistNorm:       number  // max radial distance of salient-region dies, / radius
+  p25DistNorm:       number  // 25th-percentile radial distance of all failing dies, / radius
+  eccentricity:      number  // 0 = circle, 1 = line (from covariance of top-5 components)
+  linearScore:       number  // fraction of top-5 component dies on the best row/col/diagonal
+  salienceSize:      number  // die count of the largest connected component
+  salienceFraction:  number  // salienceSize / total failing dies
+  edgeAngularSpread: number  // fraction of 16 circumference sectors covered by edge-zone fails
+  innerOuterRatio:   number  // fail rate inner half / fail rate outer half
+}
+```
+
+**`PatternThresholds` / `DEFAULT_PATTERN_THRESHOLDS`**
+
+All classifier decision thresholds, calibrated against WM-811K (25,519 labelled wafers). Override any subset via `patternThresholds` in `AnalyzeWaferMapOptions`.
+
+| Threshold | Default | Controls |
+|---|---|---|
+| `nearFullGlobalRdd` | 0.60 | globalRdd above which → near-full |
+| `edgeRingEdgeRdd` | 0.18 | minimum edgeRdd for any edge pattern |
+| `edgeRingEdgeRddHigh` | 0.30 | edgeRdd for high-confidence edge-ring |
+| `edgeRingRadialSpread` | 0.45 | max (maxDist − minDist) for edge-ring |
+| `edgeRingAngularSpread` | 0.60 | min angular spread fraction for edge-ring |
+| `edgeLocalEdgeRdd` | 0.12 | minimum edgeRdd for edge-local |
+| `edgeLocalCentroidDist` | 0.87 | min p25DistNorm to prefer edge-ring over edge-local |
+| `edgeLocalEccentricity` | 0.65 | min eccentricity for edge-local (secondary) |
+| `donutP25Dist` | 0.40 | p25DistNorm above which → donut (vs center) |
+| `donutEdgeRdd` | 0.45 | max edgeRdd for donut |
+| `centerCentroidDist` | 0.22 | max centroidDistNorm for center |
+| `centerCentroidDistHigh` | 0.10 | centroidDistNorm below which → high confidence |
+| `centerEdgeRdd` | 0.35 | max edgeRdd for center |
+| `centerMaxDist` | 0.65 | max maxDistNorm for center (unused at real noise levels) |
+| `scratchLinearScore` | 0.35 | min linearScore for scratch |
+| `scratchLinearScoreHigh` | 0.55 | linearScore for high-confidence scratch |
+| `scratchEccentricity` | 0.80 | min eccentricity for scratch |
+| `minimumFailingDies` | 5 | fewer failing dies → return null |
+
+See [Pattern Detection](pattern-detection.md) for benchmark accuracy figures and known limitations.
+
 ---
 
 ## 8 Web Worker

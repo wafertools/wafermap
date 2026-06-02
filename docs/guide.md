@@ -846,92 +846,12 @@ The filter also works in gallery view — clicking a legend row in the gallery t
 
 The statistics engine (`analyzeWaferMap`) scans for spatial patterns across five families: rings, quadrants, angular sectors, contiguous failure clusters, and edge arcs. For each family it compares the local zone to the rest of the wafer using a statistical test appropriate to the variable type.
 
-### Five-minute walkthrough
-
-This is a complete, runnable Node.js script — no browser or DOM needed. It covers
-the full path from raw CSV rows to printed findings. Copy, adjust the field names
-to match your data, and run with `node analyse.mjs`.
-
-```js
-// analyse.mjs
-import { readFileSync } from 'node:fs';
-import { buildWaferMap }   from '@paulrobins/wafermap';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';  // /stats subpath — not root
-
-// ── 1. Parse CSV ────────────────────────────────────────────────────────────
-const lines  = readFileSync('data/wafers.csv', 'utf8').trim().split('\n');
-const header = lines[0].split(',');
-const col    = (row, name) => row[header.indexOf(name)];
-
-const rows = lines.slice(1).map(line => {
-  const r = line.split(',');
-  return {
-    wafer:  col(r, 'wafer'),           // e.g. "W01"
-    x:      Number(col(r, 'x')),       // die grid position — integer, not mm
-    y:      Number(col(r, 'y')),
-    hbin:   Number(col(r, 'hbin')),    // hard bin number
-    // testValues keys are integer test numbers, not column names:
-    testValues: { 1010: Number(col(r, 'testA')) },
-  };
-});
-
-// ── 2. Group rows by wafer ID ───────────────────────────────────────────────
-const byWafer = new Map();
-for (const row of rows) {
-  if (!byWafer.has(row.wafer)) byWafer.set(row.wafer, []);
-  byWafer.get(row.wafer).push(row);
-}
-
-// ── 3. Build + analyse each wafer ──────────────────────────────────────────
-for (const [waferId, waferRows] of byWafer) {
-  const result = buildWaferMap({
-    results:  waferRows,
-    passBins: [1],   // hbin=1 is pass
-    testDefs: [{ testNumber: 1010, name: 'TestA', unit: 'V' }],
-    // waferConfig and dieConfig are optional — the library infers geometry from the grid
-  });
-
-  // analyzeWaferMap accepts the full WaferMapResult; passBins is inferred automatically.
-  const summary = analyzeWaferMap(result);
-
-  // findings is pre-sorted: 'unusual' first, then 'notable', then 'info'.
-  const top = summary.findings[0];
-  const yld = summary.stats.yieldPercent;
-
-  console.log(
-    `${waferId}  yield=${yld !== null ? (yld * 100).toFixed(1) + '%' : 'n/a'}` +
-    `  findings=${summary.findings.length}` +
-    (top ? `  [${top.severity}] ${top.summary}` : ''),
-  );
-}
-
-// Example output:
-//   W01  yield=87.3%  findings=3  [unusual] Ring 4 (edge) yield is lower than the rest of the wafer
-//   W02  yield=84.1%  findings=2  [notable] The NE quadrant shows reduced yield.
-//   W03  yield=91.0%  findings=1  [info] Mean TestA in Ring 3 (edge) is lower than the rest of the wafer.
-```
-
-**What each finding object looks like** — `summary.findings[0]` for reference:
-
-```js
-{
-  id:       'ring:Ring 4 (edge)',
-  level:    'wafer',
-  severity: 'unusual',            // 'unusual' > 'notable' > 'info'
-  variable: { kind: 'yield', label: 'Yield' },
-  comparison: { family: 'ring', left: 'Ring 4 (edge)', right: 'Rest of wafer' },
-  effect:   { direction: 'lower', absoluteDelta: -0.18, relativeDelta: -0.62 },
-  stats:    { method: 'z', pValue: 0.003, adjustedPValue: 0.009,
-              sampleSizeLeft: 48, sampleSizeRight: 412 },
-  summary:  'Ring 4 (edge) yield is lower than the rest of the wafer',
-  highlight: { kind: 'region', regionFamily: 'ring', keys: ['Ring 4 (edge)'] },
-}
-```
-
-Use `finding.summary` for display text. Use `finding.highlight` to programmatically
-select or colour dies associated with the finding.
+It also runs a **spatial pattern classifier** that labels the overall failure signature of the wafer — edge-ring, center cluster, scratch, and so on. This operates separately from the zone-by-zone statistical tests: the statistical findings are the evidence, the pattern label is the interpretation. See [Spatial Pattern Detection](pattern-detection.md) for how the classifier works, what it was tested on, and its known limitations.
 
 ### Basic usage
+
+Pass the result of `analyzeWaferMap` to `renderWaferMap` as `statsSummary`.
+That's all most users need — the library handles the rest.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -946,25 +866,16 @@ renderWaferMap(container, result, {
 });
 ```
 
+A "Findings" button (notebook icon) appears in the toolbar. Clicking it opens
+the summary panel — a persistent results panel alongside the map showing yield,
+bin distribution, ring and quadrant stats, test value summaries, and the full
+findings list. Clicking any finding in the panel highlights the affected dies on
+the map. See [§11 Summary panel](#11-summary-panel) for the full panel content
+reference and configuration options (auto-open, pinned placement, gallery use).
+
 When you pass a `WaferMapResult` to `analyzeWaferMap`, the `passBins` you gave to
 `buildWaferMap` are carried through automatically — you only need to set `passBins`
 explicitly in `analyzeWaferMap` options if you want to override them.
-
-The `summary.findings` array is sorted by severity — `'unusual'` first, `'notable'`
-next, `'info'` last. To get the single highest-severity finding:
-
-```ts
-const top = summary.findings[0];  // highest severity; undefined when no findings
-if (top) {
-  console.log(`[${top.severity}] ${top.summary}`);
-  // e.g. "[unusual] Ring 4 (edge) yield is lower than the rest of the wafer"
-}
-```
-
-A "Findings" button (notebook icon) appears in the toolbar when `statsSummary` is
-provided.  Clicking it opens the summary panel, which lists all detected findings
-grouped by severity alongside yield, bin, and test statistics.
-
 
 ### What gets analysed
 
@@ -982,6 +893,15 @@ For each spatial family the engine tests: yield, hard bin rate per bin, soft bin
 **Angular sectors in detail.** Sector analysis divides the wafer into compass-named angular slices — N, NNE, NE, ENE, E, … (16 sectors by default).  Each sector is compared to the rest of the wafer independently, giving finer directional resolution than quadrants: a drift pattern concentrated in the NE corner shows up as a sector finding even if the wider NE quadrant is diluted by clean dies elsewhere in that quarter.  Dies within 0.2 normalised radius of the wafer centre are excluded from sector analysis (they are too close to the centre to be meaningfully attributed to a direction).  The number of sectors is controlled by `sectorCount` (4, 8, 16, or 32); the feature can be disabled entirely with `enableAngularAnalysis: false`.
 
 Findings are suppressed unless they pass both an adjusted p-value threshold and an effect size gate. The effect size gate uses two complementary criteria — absolute and relative — so that meaningful patterns are not missed on wafers with either high or low background failure rates.
+
+### Clicking a finding highlights the map
+
+When the user clicks a finding row in the panel, the map automatically:
+1. Switches to the most relevant display mode (value mode for test findings, bin
+   mode for bin findings)
+2. Highlights the affected die zone with an amber overlay
+
+Clicking the finding again clears the highlight.
 
 ### Interpreting findings and severity
 
@@ -1015,15 +935,6 @@ The findings list is ranked and filtered by statistical strength and effect size
 A cluster qualifies for a severity level if it satisfies **either** the rate criterion **or** the size criterion (both require the p-value gate).
 
 Use the `summary`, `effect`, and `stats` fields on each `StatsFinding` to display numerical details to users.
-
-### Clicking a finding highlights the map
-
-When the user clicks a finding row in the panel, the map automatically:
-1. Switches to the most relevant display mode (value mode for test findings, bin
-   mode for bin findings)
-2. Highlights the affected die zone with an amber overlay
-
-Clicking the finding again clears the highlight.
 
 ### Controlling what is analysed
 
@@ -1068,8 +979,9 @@ for (const f of clusters) {
 
 ### Reading findings in code
 
-Each finding is a `StatsFinding` with a human-readable `summary` and structured
-data you can use in your own UI:
+If you need to drive your own UI from findings rather than using the built-in
+panel, each finding is a `StatsFinding` with a human-readable `summary` and
+structured data:
 
 ```ts
 for (const finding of summary.findings) {
@@ -1092,6 +1004,29 @@ ctrl.setDies(newDies);
 const newSummary = analyzeWaferMap({ ...result, dies: newDies });
 ctrl.setStatsSummary(newSummary);
 ```
+
+A finding object in full:
+
+```js
+{
+  id:       'ring:Ring 4 (edge)',
+  level:    'wafer',
+  severity: 'unusual',            // 'unusual' > 'notable' > 'info'
+  variable: { kind: 'yield', label: 'Yield' },
+  comparison: { family: 'ring', left: 'Ring 4 (edge)', right: 'Rest of wafer' },
+  effect:   { direction: 'lower', absoluteDelta: -0.18, relativeDelta: -0.62 },
+  stats:    { method: 'z', pValue: 0.003, adjustedPValue: 0.009,
+              sampleSizeLeft: 48, sampleSizeRight: 412 },
+  summary:  'Ring 4 (edge) yield is lower than the rest of the wafer',
+  highlight: { kind: 'region', regionFamily: 'ring', keys: ['Ring 4 (edge)'] },
+}
+```
+
+Use `finding.summary` for display text. Use `finding.highlight` to programmatically
+select or colour dies associated with the finding.
+
+For running the stats engine in Node.js without a browser, see the
+[recipe in §18](#analyse-a-lot-in-nodejs-without-a-browser).
 
 **→ [Demo: Statistical findings](examples/10-findings.html)**
 
@@ -1475,54 +1410,6 @@ All `openHtmlReport` calls — including the summary panel buttons — then rout
 
 ![Lot summary report](images/image-report-lot.png)
 
-### Advanced: standalone stacked map with programmatic findings access
-
-The gallery's stacked modes cover most use cases.  Use `buildWaferMap({ lotStack })`
-directly when you need one or more of:
-
-- A **standalone stacked map** (not inside a gallery — e.g. a dedicated lot-average view)
-- **Programmatic access to the findings** before rendering (to filter, store, or feed your own UI)
-- A **fixed aggregation method** set at build time rather than chosen interactively
-
-```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-
-// Aggregate six wafers into a single mean map
-const result = buildWaferMap({
-  lotStack:    { results: waferResults, method: 'mean' },
-  waferConfig, dieConfig,
-  testDefs,    // include limitLow/limitHigh to enable cluster detection
-});
-
-// Run spatial analysis on the aggregated result
-const summary = analyzeWaferMap(result, {
-  ringCount:   4,
-  testNumbers: [1060],   // optional: restrict to a specific test
-});
-
-// summary.stats.isLotStack        === true
-// summary.stats.aggregationMethod === 'mean'
-
-renderWaferMap(container, result, {
-  viewOptions: { plotMode: 'value', activeTest: 1060 },
-  statsSummary: summary,
-  summaryPanel: { defaultOpen: true },
-});
-```
-
-Systematic lot patterns (e.g. an NE-quadrant drift present on every wafer) survive
-averaging and emerge as clear findings on the lot-average map.  The summary panel
-labels the view as "N wafers · mean" so it is unambiguous to the reader.
-
-For cluster and edge-arc detection, dies that exceed a test's spec limits
-(`limitLow` / `limitHigh` in `testDefs`) are used as the failure proxy.  If no spec
-limits are defined, cluster detection is skipped automatically.
-
-**→ [Demo: Standalone stacked map with spatial analysis](examples/20-lot-stack-analysis.html)**
-
-
 ## 14. Reticle overlays
 
 A reticle (stepper field) is a rectangular group of dies that the lithography
@@ -1732,32 +1619,6 @@ wmWorker.terminate();
 > server-side environment.
 
 **→ [Demo: Processing large datasets with a Web Worker](examples/15-worker.html)**
-
-### Tip: keeping galleries responsive when building many maps
-
-`buildWaferMap` and `analyzeWaferMap` are synchronous. Building a large gallery in
-a single `.map()` loop blocks the main thread until all items are ready, leaving
-the page blank for several seconds.
-
-Pass factory functions instead of pre-built items and the gallery handles the rest
-— the control bar and placeholder cards appear immediately, and each card is built
-and inserted one per browser task as the factories run:
-
-```ts
-const items = fixtures.map(sample => () => {
-  const result  = buildWaferMap({ results: sample.results, passBins: [1] });
-  const summary = analyzeWaferMap(result,  { passBins: [1] });
-  return { ...result, label: sample.label, statsSummary: summary };
-});
-
-renderWaferGallery(container, items);
-```
-
-The only visible difference is that each card's label is blank until its factory
-runs — if the label depends on computed data (e.g. a findings count), it appears
-when the card does rather than upfront. If the label is known in advance and you
-want it visible immediately, pre-build items as usual for those cards.
-
 
 ## 17. Custom colour schemes
 
@@ -2014,6 +1875,79 @@ for (const [waferId, waferRows] of byWafer) {
   );
 }
 ```
+
+
+### Keep a gallery responsive when building many maps
+
+`buildWaferMap` and `analyzeWaferMap` are synchronous. Building a large gallery in
+a single `.map()` loop blocks the main thread until all items are ready, leaving
+the page blank for several seconds.
+
+Pass factory functions instead of pre-built items and the gallery handles the rest
+— the control bar and placeholder cards appear immediately, and each card is built
+and inserted one per browser task as the factories run:
+
+```ts
+const items = fixtures.map(sample => () => {
+  const result  = buildWaferMap({ results: sample.results, passBins: [1] });
+  const summary = analyzeWaferMap(result,  { passBins: [1] });
+  return { ...result, label: sample.label, statsSummary: summary };
+});
+
+renderWaferGallery(container, items);
+```
+
+The only visible difference is that each card's label is blank until its factory
+runs — if the label depends on computed data (e.g. a findings count), it appears
+when the card does rather than upfront. If the label is known in advance and you
+want it visible immediately, pre-build items as usual for those cards.
+
+### Standalone stacked lot map with programmatic findings access
+
+The gallery's stacked modes cover most use cases. Use `buildWaferMap({ lotStack })`
+directly when you need one or more of:
+
+- A **standalone stacked map** outside a gallery (e.g. a dedicated lot-average view)
+- **Programmatic access to findings** before rendering (to filter, store, or feed your own UI)
+- A **fixed aggregation method** set at build time rather than chosen interactively
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';
+import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+
+// Aggregate six wafers into a single mean map
+const result = buildWaferMap({
+  lotStack:    { results: waferResults, method: 'mean' },
+  waferConfig, dieConfig,
+  testDefs,    // include limitLow/limitHigh to enable cluster detection
+});
+
+// Run spatial analysis on the aggregated result
+const summary = analyzeWaferMap(result, {
+  ringCount:   4,
+  testNumbers: [1060],   // optional: restrict to a specific test
+});
+
+// summary.stats.isLotStack        === true
+// summary.stats.aggregationMethod === 'mean'
+
+renderWaferMap(container, result, {
+  viewOptions:  { plotMode: 'value', activeTest: 1060 },
+  statsSummary: summary,
+  summaryPanel: { defaultOpen: true },
+});
+```
+
+Systematic lot patterns (e.g. an NE-quadrant drift present on every wafer) survive
+averaging and emerge as clear findings on the lot-average map. The summary panel
+labels the view as "N wafers · mean" so it is unambiguous to the reader.
+
+For cluster and edge-arc detection, dies that exceed a test's spec limits
+(`limitLow` / `limitHigh` in `testDefs`) are used as the failure proxy. If no spec
+limits are defined, cluster detection is skipped automatically.
+
+**→ [Demo: Standalone stacked map with spatial analysis](examples/20-lot-stack-analysis.html)**
 
 
 ## 19. Advanced: the rendering pipeline

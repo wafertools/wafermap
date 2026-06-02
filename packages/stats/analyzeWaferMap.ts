@@ -7,9 +7,11 @@ import type {
   StatsFinding,
   StatsSeverity,
   StatsSummary,
+  StatsComparisonFamily,
 } from './types.js';
 import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, buildTestSiteRegions, type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
+import { classifyPattern, type PatternThresholds } from './patternClassification.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -21,7 +23,7 @@ interface RawFinding extends StatsFinding {
   effect: StatsFinding['effect'];
 }
 
-type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'enableTestSiteAnalysis'>> & { testNumbers?: number[]; enableTestSiteAnalysis?: boolean };
+type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'enableTestSiteAnalysis' | 'patternThresholds'>> & { testNumbers?: number[]; enableTestSiteAnalysis?: boolean; patternThresholds?: PatternThresholds };
 
 const DEFAULT_OPTIONS: ResolvedOptions = {
   ringCount: 4,
@@ -41,6 +43,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   enableAngularAnalysis: true,
   minimumClusterSize: 5,
   sectorCount: 8,
+  enablePatternClassification: true,
 };
 
 function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
@@ -879,6 +882,101 @@ export function analyzeWaferMap(
         ...resolved,
         isFailingDie: failPredicate,
       }));
+    }
+  }
+  if (resolved.enablePatternClassification && hasHbinData) {
+    const patternResult = classifyPattern(eligibleDies, result.wafer, {
+      passBins:    resolved.passBins,
+      ringCount:   resolved.ringCount,
+      thresholds:  resolved.patternThresholds,
+    });
+    if (patternResult !== null && patternResult.pattern !== 'random' && patternResult.pattern !== 'none') {
+      const LABEL_MAP: Record<string, string> = {
+        'center':     'Center cluster',
+        'donut':      'Donut',
+        'edge-ring':  'Edge-ring',
+        'edge-local': 'Edge-local',
+        'scratch':    'Scratch',
+        'near-full':  'Near-full',
+      };
+      const label = LABEL_MAP[patternResult.pattern] ?? patternResult.pattern;
+      const severity: StatsSeverity =
+        patternResult.confidence === 'high'   ? 'unusual' :
+        patternResult.confidence === 'medium' ? 'notable' : 'info';
+      const f = patternResult.features;
+      const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+      const detail =
+        patternResult.pattern === 'edge-ring' || patternResult.pattern === 'edge-local'
+          ? `${pct(f.edgeRdd)} of edge dies failing`
+          : patternResult.pattern === 'center' || patternResult.pattern === 'donut'
+          ? `centroid at ${pct(f.centroidDistNorm)} of wafer radius from centre`
+          : patternResult.pattern === 'scratch'
+          ? `linear score ${f.linearScore.toFixed(2)}, eccentricity ${f.eccentricity.toFixed(2)}`
+          : `${pct(f.globalRdd)} of dies failing`;
+      const failingDies = eligibleDies.filter(d => {
+        const bin = d.hbin ?? d.sbin;
+        return bin !== undefined && !new Set(resolved.passBins).has(bin);
+      });
+
+      // Find existing findings that are correlated with this spatial pattern.
+      // A finding is related when its comparison family is one the pattern explains.
+      const RELATED_FAMILIES: Record<string, StatsComparisonFamily[]> = {
+        'edge-ring':  ['ring', 'edge-arc'],
+        'edge-local': ['edge-arc'],
+        'center':     ['ring', 'cluster'],
+        'donut':      ['ring'],
+        'scratch':    ['cluster'],
+        'near-full':  ['ring'],
+      };
+      const relatedFamilies = new Set<StatsComparisonFamily>(
+        RELATED_FAMILIES[patternResult.pattern] ?? [],
+      );
+
+      // For ring-based patterns, further filter to only rings that are relevant:
+      // edge patterns → outer ring; center → core ring; donut → middle rings.
+      const detectedPattern = patternResult.pattern;
+      function isRingRelevant(left: string): boolean {
+        if (detectedPattern === 'edge-ring' || detectedPattern === 'edge-local') {
+          return left.includes('(edge)');
+        }
+        if (detectedPattern === 'center') return left.includes('(core)');
+        if (detectedPattern === 'donut') {
+          return !left.includes('(edge)') && !left.includes('(core)');
+        }
+        return true; // near-full: all rings
+      }
+
+      const relatedIds: string[] = [];
+      for (const existing of findings) {
+        if (!relatedFamilies.has(existing.comparison.family as StatsComparisonFamily)) continue;
+        if (existing.comparison.family === 'ring' && !isRingRelevant(existing.comparison.left)) continue;
+        relatedIds.push(existing.id);
+        // Downgrade ring-family findings to info so they don't double-count in the badge/hasNotable.
+        // Cluster and edge-arc findings carry their own statistical evidence (p-value, exact die count)
+        // and should keep their computed severity — they are supporting detail, not redundant.
+        const isRegionOnly = existing.comparison.family === 'ring' ||
+          existing.comparison.family === 'quadrant' || existing.comparison.family === 'sector';
+        if (severity !== 'info' && isRegionOnly) {
+          (existing as RawFinding).severity = 'info';
+        }
+      }
+
+      findings.push({
+        id: `spatial-pattern:${patternResult.pattern}`,
+        level: 'wafer',
+        severity,
+        variable: { kind: 'spatialPattern', label },
+        comparison: { family: 'spatial-pattern', left: label, right: 'Wafer' },
+        effect: { direction: 'different', effectSize: f.globalRdd },
+        stats: {
+          method: 'geometry',
+          sampleSizeLeft:  failingDies.length,
+          sampleSizeRight: eligibleDies.length,
+        },
+        summary: `Spatial pattern: ${label.toLowerCase()} (${patternResult.confidence} confidence) — ${detail}${patternResult.note ? ` [${patternResult.note}]` : ''}`,
+        highlight: { kind: 'dies', dieKeys: failingDies.map(d => `${d.x},${d.y}`) },
+        relatedIds: relatedIds.length > 0 ? relatedIds : undefined,
+      });
     }
   }
 

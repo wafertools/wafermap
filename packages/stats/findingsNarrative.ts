@@ -1,7 +1,7 @@
 import type { StatsFinding, StatsComparisonFamily } from './types.js';
 
 const FAMILY_PRIORITY: StatsComparisonFamily[] = [
-  'ring', 'sector', 'quadrant', 'cluster', 'edge-arc', 'reticle-position',
+  'spatial-pattern', 'ring', 'sector', 'quadrant', 'cluster', 'edge-arc', 'reticle-position',
 ];
 
 function metricLabel(f: StatsFinding): string {
@@ -132,6 +132,13 @@ function reticlePositionSentence(findings: StatsFinding[]): string {
   return `Reticle-position variation across ${findings.length} cells (${dirWord(dir)} ${metricsPhrase(findings)}).`;
 }
 
+// Spatial-pattern label: e.g. "Edge-ring", "Center cluster"
+function spatialPatternSentence(findings: StatsFinding[]): string {
+  const f = findings[0];
+  const conf = f.stats.method === 'geometry' ? ` (${f.severity === 'unusual' ? 'high' : f.severity === 'notable' ? 'medium' : 'low'} confidence)` : '';
+  return `${f.comparison.left} failure pattern detected${conf}.`;
+}
+
 function buildSentence(family: StatsComparisonFamily, findings: StatsFinding[]): string {
   switch (family) {
     case 'ring':              return ringSentence(findings);
@@ -140,6 +147,7 @@ function buildSentence(family: StatsComparisonFamily, findings: StatsFinding[]):
     case 'cluster':           return clusterSentence(findings);
     case 'edge-arc':          return edgeArcSentence(findings);
     case 'reticle-position':  return reticlePositionSentence(findings);
+    case 'spatial-pattern':   return spatialPatternSentence(findings);
     default:                  return '';
   }
 }

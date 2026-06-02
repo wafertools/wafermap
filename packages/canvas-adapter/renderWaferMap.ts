@@ -312,14 +312,16 @@ export function renderWaferMap(
   let isPanning       = false;
   let isBoxSelecting  = false;
   // Interaction mode: 'pan' | 'zoom' | 'select'
-  // 'pan'    — drag pans; scroll wheel is disabled (prevents accidental zoom)
-  // 'zoom'   — drag draws a zoom-box; scroll wheel zooms
+  // 'pan'    — drag pans; plain scroll pans; Ctrl+scroll zooms
+  // 'zoom'   — drag draws a zoom-box; plain scroll pans; Ctrl+scroll zooms
   // 'select' — drag draws a selection box (only available when onSelect provided)
   let interactMode: 'pan' | 'zoom' | 'select' = 'pan';
   let panStart        = { x: 0, y: 0 };
   let panOrigin       = { x: 0, y: 0 };
   let boxStart        = { x: 0, y: 0 };
   let boxEnd          = { x: 0, y: 0 };
+  let spaceHeld       = false;
+  let spacePanActive  = false;
 
   // ── View rebuild ──────────────────────────────────────────────────────────
   function rebuildView(): void {
@@ -1041,12 +1043,22 @@ export function renderWaferMap(
 
   // ── Pointer events ─────────────────────────────────────────────────────────
   function onWheel(e: WheelEvent): void {
-    // Scroll-wheel zoom only active in zoom mode — prevents accidental zoom while panning.
-    if (interactMode !== 'zoom') return;
-    e.preventDefault();
-    const rect   = canvas.getBoundingClientRect();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    zoomAt(e.clientX - rect.left, e.clientY - rect.top, factor);
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl/Cmd+scroll or trackpad pinch → zoom toward cursor
+      e.preventDefault();
+      const rect   = canvas.getBoundingClientRect();
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, factor);
+    } else if (viewport !== null) {
+      // Plain two-finger scroll → pan, but only when already zoomed in.
+      // At fit-to-screen (viewport === null) let the event pass through so the
+      // page can scroll normally.
+      e.preventDefault();
+      const vp = currentViewport()!;
+      const snapDist = viewport.snapDist;
+      viewport = { originX: vp.originX - e.deltaX, originY: vp.originY - e.deltaY, ppm: vp.ppm, snapDist };
+      render();
+    }
   }
 
   function pointInRect(px: number, py: number, rect: { x: number; y: number; w: number; h: number }): boolean {
@@ -1066,6 +1078,15 @@ export function renderWaferMap(
       legendDragPending = true;
       legendDragStart = { x: px, y: py };
       legendOffsetStart = { ...legendOffset };
+      return;
+    }
+
+    if (spaceHeld && interactMode !== 'pan') {
+      spacePanActive = true;
+      isPanning  = true;
+      panStart   = { x: px, y: py };
+      panOrigin  = { x: currentViewport()!.originX, y: currentViewport()!.originY };
+      canvas.style.cursor = 'grabbing';
       return;
     }
 
@@ -1285,6 +1306,11 @@ export function renderWaferMap(
 
     if (!isPanning) return;
     isPanning = false;
+    if (spacePanActive) {
+      spacePanActive = false;
+      canvas.style.cursor = spaceHeld ? 'grab' : (interactMode === 'pan' ? 'grab' : 'crosshair');
+      return;
+    }
     canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
     const dx = cssPx - panStart.x;
     const dy = cssPy - panStart.y;
@@ -1406,6 +1432,50 @@ export function renderWaferMap(
     if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only') {
       openExpandModal();
     }
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.20);
+      } else if (e.key === '-') {
+        e.preventDefault();
+        zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.20);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        resetZoom();
+      }
+    }
+    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      const PAN_STEP = 20;
+      const vp = currentViewport();
+      if (vp) {
+        const snapDist = viewport?.snapDist ?? fittedViewport?.snapDist ?? 1;
+        let dx = 0, dy = 0;
+        if (e.key === 'ArrowLeft')  { dx =  PAN_STEP; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { dx = -PAN_STEP; e.preventDefault(); }
+        if (e.key === 'ArrowUp')    { dy =  PAN_STEP; e.preventDefault(); }
+        if (e.key === 'ArrowDown')  { dy = -PAN_STEP; e.preventDefault(); }
+        if (dx || dy) {
+          viewport = { originX: vp.originX + dx, originY: vp.originY + dy, ppm: vp.ppm, snapDist };
+          render();
+        }
+      }
+      if (e.key === ' ' && !spaceHeld) {
+        e.preventDefault();
+        spaceHeld = true;
+        if (interactMode !== 'pan') canvas.style.cursor = 'grab';
+      }
+    }
+  }
+
+  function onKeyUp(e: KeyboardEvent): void {
+    if (e.key === ' ') {
+      spaceHeld = false;
+      if (spacePanActive) {
+        isPanning = false;
+        spacePanActive = false;
+      }
+      canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
+    }
   }
 
   canvas.style.cursor = 'grab';
@@ -1418,6 +1488,7 @@ export function renderWaferMap(
   const onDblClick = () => resetZoom();
   canvas.addEventListener('dblclick',     onDblClick);
   canvas.addEventListener('keydown',      onKeyDown);
+  canvas.addEventListener('keyup',        onKeyUp);
   // Always stop propagation — prevents canvas interactions (bin legend clicks,
   // die clicks, pan gestures) from bubbling to parent containers such as a
   // gallery card's click-to-modal handler.
@@ -1551,6 +1622,7 @@ export function renderWaferMap(
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('dblclick',     onDblClick);
       canvas.removeEventListener('keydown',      onKeyDown);
+      canvas.removeEventListener('keyup',        onKeyUp);
       canvas.removeEventListener('click',        onCanvasClick);
       resizeObserver.disconnect();
       dprMediaQuery.removeEventListener('change', onDprChange);

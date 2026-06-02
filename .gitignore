@@ -11,5 +11,8 @@ scratch/
 tests/fixtures/*.pkl
 tests/fixtures/*.zip
 tests/fixtures/*.npz
+tests/fixtures/wm811k-benchmark.json
+tests/fixtures/mixedwm38-benchmark.json
+tests/fixtures/Description.pdf
 site/
 docs/examples/presentation.html

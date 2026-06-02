@@ -2,7 +2,7 @@ import type { WaferMapInput, WaferMapResult } from '../renderer/buildWaferMap.js
 
 export type StatsSeverity = 'info' | 'notable' | 'unusual';
 export type StatsLevel = 'wafer' | 'lot' | 'inter-wafer';
-export type StatsVariableKind = 'yield' | 'hardBin' | 'softBin' | 'test';
+export type StatsVariableKind = 'yield' | 'hardBin' | 'softBin' | 'test' | 'spatialPattern';
 export type StatsComparisonFamily =
   | 'ring'
   | 'quadrant'
@@ -11,7 +11,8 @@ export type StatsComparisonFamily =
   | 'wafer'
   | 'sector'
   | 'cluster'
-  | 'edge-arc';
+  | 'edge-arc'
+  | 'spatial-pattern';
 
 export interface HighlightRegionTarget {
   kind: 'region';
@@ -74,6 +75,8 @@ export interface StatsFinding {
   };
   summary: string;
   highlight: HighlightTarget;
+  /** IDs of other findings that describe the same signal at a finer level of detail. */
+  relatedIds?: string[];
 }
 
 export interface StatsSummary {
@@ -171,6 +174,13 @@ export interface AnalyzeWaferMapOptions {
   minimumClusterSize?: number;
   /** Number of angular sectors for sector analysis. Must be 4, 8, 16, or 32. Default 16. */
   sectorCount?: number;
+  /** Classify the spatial failure pattern (center, edge-ring, scratch, etc.). Default true. */
+  enablePatternClassification?: boolean;
+  /**
+   * Override thresholds used by the pattern classifier.
+   * Useful for calibrating to a specific process or die pitch.
+   */
+  patternThresholds?: import('./patternClassification.js').PatternThresholds;
   /**
    * Restrict test value analysis to a specific subset of test numbers.
    * When omitted and more than 100 tests are present in the data, test value

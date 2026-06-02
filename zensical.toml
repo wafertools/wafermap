@@ -10,6 +10,7 @@ nav = [
   { "Quick Start"       = "quickstart.md" },
   { "User Guide"        = "guide.md"      },
   { "Architecture"      = "architecture.md" },
+  { "Pattern Detection" = "pattern-detection.md" },
   { "API Reference"     = "api.md"        },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
