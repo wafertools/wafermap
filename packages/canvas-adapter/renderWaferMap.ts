@@ -427,15 +427,9 @@ export function renderWaferMap(
     }
   }
 
-  // Extra top clearance beyond the canvas padding (16px) needed to clear the
-  // toolbar: toolbar sits at top:4px, is ~32px tall → bottom at ~36px.
-  // Excess over padding: 36 - 16 = 20px, rounded up to 24px for a small gap.
-  const TOOLBAR_CLEARANCE = 24;
-
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
-    const clearance = showToolbar ? TOOLBAR_CLEARANCE : 0;
-    summaryPanelEl = createSummaryPanelEl(placement, clearance);
+    summaryPanelEl = createSummaryPanelEl(placement);
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
     summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
@@ -455,6 +449,10 @@ export function renderWaferMap(
   let btnBoxSelect:     HTMLButtonElement | null = null;
   let btnFindings:      HTMLButtonElement | null = null;
   let btnExpand:        HTMLButtonElement | null = null;
+  // Top clearance reserved on the canvas for the toolbar overlay.
+  // toolbar sits at top:4px, is ~32px tall → bottom at ~36px; excess over canvas padding = 24px.
+  const TOOLBAR_CLEARANCE = 24;
+
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Set when toolbar is created — used by destroy() regardless of showToolbar.
@@ -745,9 +743,8 @@ export function renderWaferMap(
         // defaultOpen: true starts the panel visible; otherwise hidden until the user clicks.
         const autoMount = currentStatsSummary && !summaryPanelOpts?.placement;
         if (autoMount) {
-          const clearance = TOOLBAR_CLEARANCE;
           const openOnMount = !!summaryPanelOpts?.defaultOpen;
-          autoSummaryPanelEl = createSummaryPanelEl('right', clearance);
+          autoSummaryPanelEl = createSummaryPanelEl('right');
           autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
           const parent = canvasWrap.parentElement;
           const next = canvasWrap.nextSibling;

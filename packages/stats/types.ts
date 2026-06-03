@@ -151,7 +151,6 @@ export interface AnalyzeWaferMapOptions {
    * is small but the relative deviation is large. Default 0.5 (50% of background).
    */
   minimumRelativeEffect?: number;
-  minimumSampleSize?: number;
   includePartial?: boolean;
   includeEdgeExcluded?: boolean;
   enableYieldAnalysis?: boolean;
@@ -170,17 +169,10 @@ export interface AnalyzeWaferMapOptions {
   enableClusterAnalysis?: boolean;
   /** Angular sector analysis (finer-grained than quadrants). Default true. */
   enableAngularAnalysis?: boolean;
-  /** Minimum number of contiguous failing dies to qualify as a cluster. Default 3. */
-  minimumClusterSize?: number;
-  /** Number of angular sectors for sector analysis. Must be 4, 8, 16, or 32. Default 16. */
+  /** Number of angular sectors for sector analysis. Must be 4, 8, 16, or 32. Default 8. */
   sectorCount?: number;
   /** Classify the spatial failure pattern (center, edge-ring, scratch, etc.). Default true. */
   enablePatternClassification?: boolean;
-  /**
-   * Override thresholds used by the pattern classifier.
-   * Useful for calibrating to a specific process or die pitch.
-   */
-  patternThresholds?: import('./patternClassification.js').PatternThresholds;
   /**
    * Restrict test value analysis to a specific subset of test numbers.
    * When omitted and more than 100 tests are present in the data, test value

@@ -915,7 +915,7 @@ The findings list is ranked and filtered by statistical strength and effect size
   The relative criterion matters on low-failure-rate wafers. With a 2% background rate, a 2 percentage-point elevation is only 0.02 in absolute terms (below the 0.15 threshold) but represents a 100% relative deviation — clearly significant. Without the relative criterion that finding would be silently dropped.
 
 - **Effect size for test-value findings:** Cohen's d (pooled SD). Only `minimumEffectSize` applies; relative effect is not used for continuous measurements.
-- **Minimum sample size** per region defaults to 5 (`minimumSampleSize`). Regions smaller than this are not tested.
+- **Minimum sample size** per region is auto-scaled to roughly 1% of wafer die count (minimum 5). Regions smaller than this are not tested.
 
 **Severity** is derived from the adjusted p-value and the strongest satisfied effect criterion:
 
@@ -946,16 +946,14 @@ const summary = analyzeWaferMap(result, {
   minimumEffectSize:         0.15,   // min absolute |delta| for proportion findings
   minimumRelativeEffect:     0.5,    // min relative |delta / background| for proportion findings
                                      // a finding passes if it satisfies either this OR minimumEffectSize
-  minimumSampleSize:         5,      // min dies per region to test
   enableYieldAnalysis:       true,
   enableHardBinAnalysis:     true,
   enableSoftBinAnalysis:     true,
   enableTestValueAnalysis:   true,
   enableReticlePositionAnalysis: true,  // auto-disabled when no reticle config
-  enableAngularAnalysis:     true,   // 16-sector directional analysis
+  enableAngularAnalysis:     true,   // sector directional analysis
   enableClusterAnalysis:     true,   // contiguous failure cluster + edge arc detection
-  sectorCount:               16,     // 4 | 8 | 16 | 32
-  minimumClusterSize:        3,      // min contiguous failing dies for a cluster finding
+  sectorCount:               8,      // 4 | 8 | 16 | 32
 });
 ```
 
@@ -1106,8 +1104,14 @@ ctrl.setStatsSummary(newSummary);
 
 ### Summary panel in a gallery
 
-Each gallery card carries its own `statsSummary`.  When the user opens a card modal
-(expand ↗), the modal's summary panel shows that card's per-wafer summary:
+For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Findings" button appears in the control bar giving access to:
+
+- **Lot tab** — cross-wafer patterns and yield outliers
+- **Wafers tab** — per-wafer findings index; clicking any row opens that wafer's card modal with its summary panel
+
+See [§13 Lot-level statistical findings](#13-lot-level-statistical-findings) for the full example.
+
+If you are building a gallery *without* lot-level analysis — for example, a set of unrelated wafers — you can attach `statsSummary` to each item individually:
 
 ```ts
 const items = waferResults.map((r, i) => ({
@@ -1116,9 +1120,9 @@ const items = waferResults.map((r, i) => ({
   statsSummary: analyzeWaferMap(r),
 }));
 
-renderWaferGallery(container, items, {
-  viewOptions: { plotMode: 'hardBin' },
-});
+renderWaferGallery(container, items);
+// → Wafers findings panel appears in toolbar
+// → Each card modal shows its own per-wafer summary
 ```
 
 **→ [Demo: Summary panel](examples/11-summary-panel.html)**
@@ -1286,36 +1290,33 @@ See also: [Demo: Lot-level findings with stacked modes](examples/13-lot-findings
 
 ## 13. Lot-level statistical findings
 
-`analyzeWaferLot` extends the per-wafer analysis to the full lot, detecting:
+`analyzeWaferLot` detects cross-wafer patterns across a lot:
 
 - **Repeated patterns** — ring, quadrant, or reticle findings that appear on ≥ 2 wafers
 - **Inter-wafer yield outliers** — individual wafers whose yield deviates from the lot median
 
+It runs per-wafer analysis internally, so a single call gives you everything — no separate `analyzeWaferMap` per item is needed.
+
 ```ts
-import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
+import { analyzeWaferLot } from '@paulrobins/wafermap/stats';
 
-// Per-wafer summaries (attach to each gallery item)
-const waferSummaries = waferResults.map(r => analyzeWaferMap(r, { ringCount: 4 }));
-
-// Lot-level summary
 const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 
-// Gallery items carry their own per-wafer summary
 const items = waferResults.map((r, i) => ({
   ...r,
-  label:        `Wafer ${i + 1}`,
-  statsSummary: waferSummaries[i],   // shown when modal opens
+  label: `Wafer ${i + 1}`,
 }));
 
 renderWaferGallery(container, items, {
-  viewOptions:    { plotMode: 'hardBin' },
+  viewOptions:     { plotMode: 'hardBin' },
   lotStatsSummary: lotSummary,
 });
 ```
 
-A "Findings" button appears in the gallery control bar.  Clicking it toggles the
-lot summary panel alongside the card grid, showing lot-level yield, bin breakdown,
-ring and quadrant statistics, test value summaries, and findings.
+A "Findings" button appears in the gallery control bar. Clicking it opens a panel with two tabs:
+
+- **Lot** — lot-level yield, bin breakdown, ring/quadrant statistics, cross-wafer findings
+- **Wafers** — per-wafer findings index; click any wafer to open its card modal with full per-wafer findings
 
 
 ### What highlighting looks like

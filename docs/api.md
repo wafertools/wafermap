@@ -998,7 +998,7 @@ interface WaferMapDisplayItem {
 
   label?:        string                               // card header text
   viewOptions?:  Partial<WaferViewOptions>            // per-card overrides merged on top of shared options
-  statsSummary?:  StatsSummary                        // shown in the modal's summary panel when the card is expanded
+  statsSummary?:  StatsSummary                        // shown in the modal's summary panel and the gallery Wafers panel; when lotStatsSummary is provided, per-wafer findings are available automatically — only set this explicitly when analysing without analyzeWaferLot
   onClick?:       (die: Die, event: MouseEvent) => void
   onSelect?:      (dies: Die[]) => void
 }
@@ -1063,7 +1063,7 @@ to be pre-built.
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
-  lotStatsSummary?:        LotStatsSummary   // precomputed lot-level stats — adds a summary panel toggle button to the control bar
+  lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Findings button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
 }
 ```
@@ -1098,13 +1098,18 @@ to be pre-built.
 | Orientation | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide and all available width is used. |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
-| Findings | Toggle lot summary panel — only shown when `lotStatsSummary` is provided |
+| Findings | Toggle summary panel — shown when `lotStatsSummary` is provided or any item carries `statsSummary` |
 
 Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
 
-### 6.5 Lot summary panel
+### 6.5 Findings panel
 
-When `lotStatsSummary` is provided, a summary panel toggle button appears in the control bar. The panel is hidden by default; clicking the button shows or hides it alongside the card grid. The panel shows lot-level yield, bin breakdown, ring and quadrant yield aggregated across all wafers, test value statistics (labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), and findings grouped by severity: **Unusual** → **Notable** → **Informational**.
+When `lotStatsSummary` is provided or any item carries `statsSummary`, a Findings toggle button appears in the control bar. Clicking it opens a panel alongside the grid. The panel has two tabs when both sources are present:
+
+- **Lot** — lot-level yield, bin breakdown, ring/quadrant yield aggregated across all wafers, test value statistics, and cross-wafer findings (repeated patterns, yield outliers). Only present when `lotStatsSummary` is provided.
+- **Wafers** — a findings index listing every wafer that has notable findings (from `item.statsSummary` or from `lotStatsSummary.perWafer`). Clicking a row opens the card modal with its summary panel. Only present when per-wafer findings exist.
+
+`analyzeWaferLot` runs per-wafer analysis internally, so passing `lotStatsSummary` alone populates both tabs automatically — no separate `analyzeWaferMap` per item is needed.
 
 Clicking a finding highlights the affected area:
 
@@ -1286,6 +1291,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
                                            // each on ≥3 dies); set true to force-enable, false to suppress
   enableAngularAnalysis?:         boolean  // compass-sector directional analysis (default true)
   enableClusterAnalysis?:         boolean  // contiguous cluster + edge-arc detection (default true)
+  enablePatternClassification?:   boolean  // spatial pattern labelling (center, edge-ring, etc.) (default true)
 
   // ── Test-value scope ──────────────────────────────────────────────────────
   testNumbers?:   number[]  // restrict test-value analysis to these test numbers;
@@ -1298,9 +1304,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
   minimumRelativeEffect?:   number  // minimum relative |delta / background| (default 0.5);
                                     // catches signals on low-failure-rate wafers where absolute delta
                                     // is small but represents a large relative deviation
-  minimumSampleSize?:       number  // minimum dies per region to run any test (default 5)
-  minimumClusterSize?:      number  // min contiguous failing dies for a cluster finding (default 3)
-  sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 | 32 (default 16)
+  sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 | 32 (default 8)
 
   // ── Population ────────────────────────────────────────────────────────────
   includePartial?:      boolean  // include partial dies (default false)
@@ -1319,7 +1323,7 @@ A finding is emitted only when it clears two independent gates: it must be stati
 | `significanceLevel` | `0.05` | adjusted p-value threshold after per-family BH correction |
 | `minimumEffectSize` | `0.15` | absolute proportion delta for yield/bin findings |
 | `minimumRelativeEffect` | `0.5` | relative effect `\|delta / background\|` for yield/bin/cluster findings |
-| `minimumSampleSize` | `5` | minimum dies per region to run any test |
+| minimum region size | auto | auto-scaled to ~1% of wafer die count (min 5); not user-configurable |
 
 **Effect size gate for proportion findings (yield, hard bin, soft bin, cluster, edge-arc):**
 
@@ -1699,16 +1703,15 @@ classifyPattern(
   dies:    Die[],
   wafer:   Wafer,
   options: {
-    passBins:    number[],
-    ringCount?:  number,
-    thresholds?: Partial<PatternThresholds>,
+    passBins:   number[],
+    ringCount?: number,
   }
 ): PatternClassification | null
 ```
 
-Classifies the spatial failure pattern of a wafer from its die data. Returns `null` when the number of failing dies is below the minimum threshold (default 5).
+Classifies the spatial failure pattern of a wafer from its die data. Returns `null` when the number of failing dies is below the minimum threshold (auto-scaled, min 5).
 
-`Die` → §2.3 · `Wafer` → §2.1 · `PatternThresholds` → below · `PatternClassification` → below
+`Die` → §2.3 · `Wafer` → §2.1 · `PatternClassification` → below
 
 Called automatically by `analyzeWaferMap` when `enablePatternClassification` is `true` (the default). Call directly when you need the geometry features without the full analysis pipeline, or to use the raw `PatternFeatures` as input to your own classifier.
 
@@ -1761,31 +1764,6 @@ interface PatternFeatures {
   innerOuterRatio:   number  // fail rate inner half / fail rate outer half
 }
 ```
-
-**`PatternThresholds` / `DEFAULT_PATTERN_THRESHOLDS`**
-
-All classifier decision thresholds, calibrated against WM-811K (25,519 labelled wafers). Override any subset via `patternThresholds` in `AnalyzeWaferMapOptions`.
-
-| Threshold | Default | Controls |
-|---|---|---|
-| `nearFullGlobalRdd` | 0.60 | globalRdd above which → near-full |
-| `edgeRingEdgeRdd` | 0.18 | minimum edgeRdd for any edge pattern |
-| `edgeRingEdgeRddHigh` | 0.30 | edgeRdd for high-confidence edge-ring |
-| `edgeRingRadialSpread` | 0.45 | max (maxDist − minDist) for edge-ring |
-| `edgeRingAngularSpread` | 0.60 | min angular spread fraction for edge-ring |
-| `edgeLocalEdgeRdd` | 0.12 | minimum edgeRdd for edge-local |
-| `edgeLocalCentroidDist` | 0.87 | min p25DistNorm to prefer edge-ring over edge-local |
-| `edgeLocalEccentricity` | 0.65 | min eccentricity for edge-local (secondary) |
-| `donutP25Dist` | 0.40 | p25DistNorm above which → donut (vs center) |
-| `donutEdgeRdd` | 0.45 | max edgeRdd for donut |
-| `centerCentroidDist` | 0.22 | max centroidDistNorm for center |
-| `centerCentroidDistHigh` | 0.10 | centroidDistNorm below which → high confidence |
-| `centerEdgeRdd` | 0.35 | max edgeRdd for center |
-| `centerMaxDist` | 0.65 | max maxDistNorm for center (unused at real noise levels) |
-| `scratchLinearScore` | 0.35 | min linearScore for scratch |
-| `scratchLinearScoreHigh` | 0.55 | linearScore for high-confidence scratch |
-| `scratchEccentricity` | 0.80 | min eccentricity for scratch |
-| `minimumFailingDies` | 5 | fewer failing dies → return null |
 
 See [Pattern Detection](pattern-detection.md) for benchmark accuracy figures and known limitations.
 

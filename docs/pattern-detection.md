@@ -75,7 +75,7 @@ wafers from real-world TSMC 300mm fabrication, collected across 46,293 lots
 
 **Overall exact-match accuracy: 64%**
 
-**Detection rate: 86%** — the more operationally useful number. This means
+**Detection rate: 86.2%** — the more operationally useful number. This means
 that for 86 out of 100 wafers with a genuine spatial pattern, the library
 correctly flags *some* pattern (even if the specific label is occasionally
 wrong). Only 14% of patterned wafers are missed entirely (returned as random).
@@ -85,6 +85,14 @@ wafer is labelled as "donut" still gets a useful signal pointing to a
 symmetric, wafer-centre-related process issue. A wafer labelled "random" when
 the pattern is borderline scratch gets no spatial hint at all — those are the
 true misses.
+
+**Combined detection rate: 99%** — when the spatial pattern classifier and the
+statistical regional analysis (rings, sectors, clusters, edge arcs) are
+considered together, 99 out of 100 patterned wafers produce at least one
+relevant finding. The 14% of wafers the classifier misses are largely recovered
+by the regional analysis firing on the same underlying signal through a
+different mechanism. See the [detection analysis notes](detection-analysis.md)
+for the full investigation.
 
 ## Known limitations
 
@@ -105,8 +113,9 @@ through to "random".
 **Calibrated on WM-811K (TSMC 300mm).** The thresholds were derived from one
 specific fab and process node. Wafers from significantly different die pitches,
 wafer sizes, or process types may show different geometric signatures. The
-`patternThresholds` option allows you to override any threshold without forking
-the library.
+geometry features are radially normalised so they transfer well across different
+wafer diameters and die pitches; the classifier thresholds themselves are fixed
+at the WM-811K calibration.
 
 **Multi-pattern wafers get one headline label.** The spatial-pattern finding
 reports the single geometrically dominant pattern. However, the independent
@@ -150,30 +159,12 @@ const summary = analyzeWaferMap(result, {
 });
 ```
 
-## Tuning thresholds
-
-The classifier exposes all decision thresholds as `PatternThresholds`. You can
-override any subset via `patternThresholds` in `AnalyzeWaferMapOptions`:
-
-```js
-const summary = analyzeWaferMap(result, {
-  passBins: [1],
-  patternThresholds: {
-    // Tighten edge-ring detection for a process with high background edge RDD
-    edgeRingEdgeRdd: 0.35,
-  },
-});
-```
-
-See `DEFAULT_PATTERN_THRESHOLDS` in the [API reference](api.md) for the full
-list of tunable values and their defaults.
-
-## Extending with your own classifier
+## Using the geometry features directly
 
 The geometry features computed for each wafer are exposed in the
 `PatternClassification` return value from `classifyPattern`. You can call
 this function directly and use the `features` object as input to your own
-model:
+model or reporting pipeline:
 
 ```js
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -186,9 +177,12 @@ const classification = classifyPattern(result.dies, result.wafer, {
 
 // classification.features contains:
 // globalRdd, edgeRdd, p25DistNorm, centroidDistNorm,
-// eccentricity, linearScore, edgeAngularSpread, ...
+// eccentricity, linearScore, edgeAngularSpread, innerOuterRatio, ...
 ```
 
-These features are scale-invariant and work at any wafer size or die pitch,
+These features are radially normalised and work at any wafer size or die pitch,
 making them suitable as input to a trained classifier if higher accuracy is
-needed for your specific process.
+needed for your specific process. Published CNN-based classifiers achieve 96–99%
+exact-match accuracy on WM-811K when trained on labelled examples — the
+`PatternFeatures` struct provides a compact, interpretable feature vector that
+can serve as input to such a model without requiring pixel-level wafer images.

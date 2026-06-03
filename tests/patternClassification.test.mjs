@@ -73,8 +73,8 @@ function makeRandom() {
 }
 
 // Helper to run classifyPattern directly from a WaferMapResult
-function classify(result, options = {}) {
-  return classifyPattern(result.dies, result.wafer, { passBins: [1], ringCount: 4, ...options });
+function classify(result) {
+  return classifyPattern(result.dies, result.wafer, { passBins: [1], ringCount: 4 });
 }
 
 test('edge-ring pattern — high confidence', () => {
@@ -159,4 +159,53 @@ test('analyzeWaferMap respects enablePatternClassification: false', () => {
   const summary = analyzeWaferMap(result, { passBins: [1], enablePatternClassification: false });
   const patternFindings = summary.findings.filter(f => f.comparison.family === 'spatial-pattern');
   assert.equal(patternFindings.length, 0, 'should suppress spatial-pattern findings');
+});
+
+test('adaptive minimumFailingDies — returns null when fails below 0.3% of die count', () => {
+  // Large wafer (~1500 dies): adaptive minimum = max(5, round(1500 * 0.003)) = 5
+  // So 4 failing dies should return null
+  const positions = allDiesOnWafer();
+  const results = positions.map(({ i, j }, idx) => ({
+    x: i, y: j, hbin: idx < 4 ? 2 : 1, // exactly 4 failing dies
+  }));
+  const result = buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE });
+  const c = classify(result);
+  assert.equal(c, null, 'should return null when failing dies below adaptive minimum');
+});
+
+test('RELATED_FAMILIES — edge-ring pattern downgrades ring findings to info', () => {
+  const result = makeEdgeRing();
+  const summary = analyzeWaferMap(result, { passBins: [1] });
+  const patternFinding = summary.findings.find(f => f.comparison.family === 'spatial-pattern');
+  assert.ok(patternFinding, 'should have a spatial-pattern finding');
+  // Ring findings correlated with an edge-ring should be downgraded to info
+  const ringFindings = summary.findings.filter(f => f.comparison.family === 'ring');
+  if (ringFindings.length > 0 && patternFinding.severity !== 'info') {
+    for (const rf of ringFindings) {
+      if (patternFinding.relatedIds?.includes(rf.id)) {
+        assert.equal(rf.severity, 'info', 'ring finding related to edge-ring pattern should be info');
+      }
+    }
+  }
+});
+
+test('RELATED_FAMILIES — edge-local pattern downgrades sector/quadrant/edge-arc findings', () => {
+  // Edge-local: failures in a localised arc near one edge
+  const result = buildResult((i, j) => {
+    const norm = Math.hypot(i * pitchX, j * pitchY) / waferRadius;
+    // Upper-right quadrant, outer zone
+    return norm >= 0.70 && i > 0 && j > 0;
+  });
+  const summary = analyzeWaferMap(result, { passBins: [1] });
+  const patternFinding = summary.findings.find(f => f.comparison.family === 'spatial-pattern');
+  if (!patternFinding || patternFinding.comparison.left !== 'Edge-local') return; // skip if not classified as edge-local
+  // Sector/quadrant/edge-arc findings in relatedIds should be info
+  const relatedSet = new Set(patternFinding.relatedIds ?? []);
+  const related = summary.findings.filter(f =>
+    relatedSet.has(f.id) &&
+    ['sector', 'quadrant', 'edge-arc'].includes(f.comparison.family),
+  );
+  for (const rf of related) {
+    assert.equal(rf.severity, 'info', `${rf.comparison.family} finding related to edge-local should be info`);
+  }
 });

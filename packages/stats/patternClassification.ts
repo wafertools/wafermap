@@ -70,15 +70,13 @@ export interface PatternThresholds {
   /** Minimum angular spread (0–1) for edge-ring vs edge-local classification. */
   edgeRingAngularSpread: number;
   edgeLocalEdgeRdd: number;
-  /** Minimum centroidDistNorm for edge-local (salient component hugs the rim). */
+  /** p25DistNorm separator: ≥ this → edge-ring; [0.55, this) → edge-local. */
   edgeLocalCentroidDist: number;
+  /** p25DistNorm separator: &lt; this → center; [this, 0.55) → donut. */
   donutP25Dist: number;
-  edgeLocalEccentricity: number;
   centerCentroidDist: number;
   centerCentroidDistHigh: number;
   centerEdgeRdd: number;
-  centerMaxDist: number;
-  donutMinDist: number;
   donutEdgeRdd: number;
   scratchLinearScore: number;
   scratchLinearScoreHigh: number;
@@ -103,9 +101,6 @@ export interface PatternThresholds {
  * | Donut      |  15%   | Geometrically similar to center with noise |
  *
  * Overall accuracy: 64% exact match, 86% detection rate (any pattern flagged).
- *
- * Override specific values via the `patternThresholds` option on
- * `AnalyzeWaferMapOptions` to tune for different processes or die pitches.
  */
 export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
   // Calibrated against WM-811K (25,519 labelled wafers)
@@ -119,13 +114,10 @@ export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
   edgeLocalEdgeRdd:        0.10,
   edgeLocalCentroidDist:   0.76,  // p25D > 0.76 → edge-ring; 0.55–0.76 → edge-local
   donutP25Dist:            0.40,  // donut p25D mean=0.43, center=0.38 → split at 0.40
-  edgeLocalEccentricity:   0.50,
   // Center: cDist mean=0.07, p25D mean=0.38
   centerCentroidDist:      0.22,
   centerCentroidDistHigh:  0.10,
   centerEdgeRdd:           0.35,
-  centerMaxDist:           0.70,
-  donutMinDist:            0.20,
   donutEdgeRdd:            0.22,  // donut eRdd mean=0.17, center=0.22 → split at 0.22
   // Scratch: gRdd mean=0.10, eRdd mean=0.12, p25D mean=0.60
   scratchLinearScore:      0.25,
@@ -323,10 +315,13 @@ function computeFeatures(
 function classify(
   f: PatternFeatures,
   t: PatternThresholds,
+  dieCount: number,
 ): { pattern: PatternLabel; confidence: 'high' | 'medium' | 'low'; note?: string } {
   // Require minimum salient size for shape-based rules to fire.
-  // A tiny salient component (e.g. 2 dies) produces unreliable geometry.
-  const salienceOk = f.salienceSize >= 5;
+  // Scale with wafer size: 0.3% of die count, floored at 5.
+  // A 5-die cluster is meaningful on a small wafer but noise on a 2500-die wafer.
+  const minSalience = Math.max(5, Math.round(dieCount * 0.003));
+  const salienceOk = f.salienceSize >= minSalience;
 
   // If the salient region covers less than 10% of failing dies there is no
   // dominant spatial cluster — treat as random.
@@ -375,10 +370,11 @@ function classify(
   }
 
   // center vs donut: both have centroid near wafer centre and low eRdd.
-  // At real-wafer noise levels these classes overlap heavily in all simple features.
-  // Use p25DistNorm as a best-effort separator (center mean 0.38, donut mean 0.43)
-  // knowing misclassifications between the two will be common.
+  // Use p25DistNorm as primary separator (center mean=0.38, donut mean=0.43).
+  // These classes overlap heavily at real-wafer noise levels; misclassifications are common.
   // WM-811K center wafers have background scatter so maxDistNorm is ~1.0 — no gate.
+  // Note: innerOuterRatio is not a useful discriminator here — WM-811K donuts have
+  // high inner/outer failure rates due to the hole geometry reducing outer fail rate.
   const isSymmetric = salienceOk && f.centroidDistNorm <= t.centerCentroidDist && f.edgeRdd <= t.centerEdgeRdd;
 
   const CENTER_DONUT_NOTE = 'Center and donut patterns have similar geometry; classification may be imprecise';
@@ -412,10 +408,9 @@ export function classifyPattern(
   options: {
     passBins: number[];
     ringCount?: number;
-    thresholds?: Partial<PatternThresholds>;
   },
 ): PatternClassification | null {
-  const t: PatternThresholds = { ...DEFAULT_PATTERN_THRESHOLDS, ...options.thresholds };
+  const t: PatternThresholds = { ...DEFAULT_PATTERN_THRESHOLDS };
   const ringCount = options.ringCount ?? 4;
   const passSet   = new Set(options.passBins);
 
@@ -424,10 +419,12 @@ export function classifyPattern(
     return bin !== undefined && !passSet.has(bin);
   });
 
-  if (failing.length < t.minimumFailingDies) return null;
+  // Adaptive minimum: 0.3% of wafer die count, floored at 5.
+  const minFailingDies = Math.max(t.minimumFailingDies, Math.round(dies.length * 0.003));
+  if (failing.length < minFailingDies) return null;
 
   const features = computeFeatures(failing, dies, wafer, ringCount);
-  const { pattern, confidence, note } = classify(features, t);
+  const { pattern, confidence, note } = classify(features, t, dies.length);
 
   return { pattern, confidence, features, ...(note ? { note } : {}) };
 }

@@ -11,7 +11,7 @@ import type {
 } from './types.js';
 import { buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, buildTestSiteRegions, type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
-import { classifyPattern, type PatternThresholds } from './patternClassification.js';
+import { classifyPattern } from './patternClassification.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -23,7 +23,13 @@ interface RawFinding extends StatsFinding {
   effect: StatsFinding['effect'];
 }
 
-type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'enableTestSiteAnalysis' | 'patternThresholds'>> & { testNumbers?: number[]; enableTestSiteAnalysis?: boolean; patternThresholds?: PatternThresholds };
+type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'enableTestSiteAnalysis'>> & {
+  testNumbers?: number[];
+  enableTestSiteAnalysis?: boolean;
+  // Internal — not exposed in AnalyzeWaferMapOptions.
+  minimumSampleSize: number;
+  minimumClusterSize: number;
+};
 
 const DEFAULT_OPTIONS: ResolvedOptions = {
   ringCount: 4,
@@ -31,7 +37,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   significanceLevel: 0.05,
   minimumEffectSize: 0.20,
   minimumRelativeEffect: 1.0,
-  minimumSampleSize: 5,
+  minimumSampleSize: 5,        // internal, not in public AnalyzeWaferMapOptions
   includePartial: false,
   includeEdgeExcluded: false,
   enableYieldAnalysis: true,
@@ -41,10 +47,29 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   enableReticlePositionAnalysis: true,
   enableClusterAnalysis: true,
   enableAngularAnalysis: true,
-  minimumClusterSize: 5,
   sectorCount: 8,
   enablePatternClassification: true,
+  minimumClusterSize: 5,     // overwritten by adaptOptions()
 };
+
+/**
+ * Compute adaptive overrides for thresholds that scale with wafer geometry.
+ * Called once per analyzeWaferMap invocation after eligible dies are known.
+ *
+ * Only minimumClusterSize is adapted here — other region analysis thresholds
+ * (minimumSampleSize, significanceLevel) must not be adapted because changing
+ * the number of tests fed into Bonferroni correction alters the correction itself,
+ * producing unpredictable FP rate changes.
+ */
+function adaptOptions(base: ResolvedOptions, dieCount: number): ResolvedOptions {
+  const adapted = { ...base };
+  // minimumClusterSize: ~0.3% of wafer die count, floored at 3.
+  // A 5-die cluster is meaningful on a small wafer but noise on a 2500-die wafer.
+  // Safe to adapt because cluster findings go through a separate code path
+  // and do not affect the regional analysis Bonferroni denominator.
+  adapted.minimumClusterSize = Math.max(5, Math.round(dieCount * 0.003));
+  return adapted;
+}
 
 function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
   return 'wafer' in input && 'dies' in input && 'view' in input ? input : buildWaferMap(input);
@@ -803,13 +828,14 @@ export function analyzeWaferMap(
   input: AnalyzeWaferMapInput,
   options: AnalyzeWaferMapOptions = {},
 ): StatsSummary {
-  const resolved = { ...DEFAULT_OPTIONS, ...options };
+  const baseResolved = { ...DEFAULT_OPTIONS, ...options } as ResolvedOptions;
   const result = normalizeInput(input);
   const isLotStack  = result.view.isLotStack;
   const stackMethod = result.view.aggrMethod;
   const hasHbinData = !isLotStack ||
     stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
-  const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, resolved));
+  const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, baseResolved));
+  const resolved = adaptOptions(baseResolved, eligibleDies.length);
   const includedDies = result.dies.filter((die) => {
     if (!resolved.includePartial && die.partial) return false;
     if (!resolved.includeEdgeExcluded && die.edgeExcluded) return false;
@@ -886,9 +912,8 @@ export function analyzeWaferMap(
   }
   if (resolved.enablePatternClassification && hasHbinData) {
     const patternResult = classifyPattern(eligibleDies, result.wafer, {
-      passBins:    resolved.passBins,
-      ringCount:   resolved.ringCount,
-      thresholds:  resolved.patternThresholds,
+      passBins:  resolved.passBins,
+      ringCount: resolved.ringCount,
     });
     if (patternResult !== null && patternResult.pattern !== 'random' && patternResult.pattern !== 'none') {
       const LABEL_MAP: Record<string, string> = {
@@ -922,10 +947,10 @@ export function analyzeWaferMap(
       // A finding is related when its comparison family is one the pattern explains.
       const RELATED_FAMILIES: Record<string, StatsComparisonFamily[]> = {
         'edge-ring':  ['ring', 'edge-arc'],
-        'edge-local': ['edge-arc'],
+        'edge-local': ['edge-arc', 'sector', 'quadrant'],
         'center':     ['ring', 'cluster'],
         'donut':      ['ring'],
-        'scratch':    ['cluster'],
+        'scratch':    ['cluster', 'sector', 'quadrant'],
         'near-full':  ['ring'],
       };
       const relatedFamilies = new Set<StatsComparisonFamily>(

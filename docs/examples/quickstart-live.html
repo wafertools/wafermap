@@ -63,8 +63,8 @@
   </p>
 
   <script type="module">
-    import { buildWaferMap }  from 'https://esm.sh/@paulrobins/wafermap';
-    import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/render';
+    import { buildWaferMap }  from '../dist/index.js';
+    import { renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
 
     // x, y are integer die grid positions output by the prober — NOT millimetres.
     // hbin is the hard bin: the pass/fail category assigned by the test equipment.

@@ -22,8 +22,6 @@ export interface SummaryPanelOptions {
   placement?: 'right' | 'left' | 'top' | 'bottom';
   /** Open the panel immediately on render without requiring the user to click the toolbar button. Default false. */
   defaultOpen?: boolean;
-  /** Extra top padding in px to clear an overlapping toolbar. Set internally by renderWaferMap. */
-  _toolbarClearance?: number;
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -927,14 +925,13 @@ export function buildLotTestSection(
 
 export function createSummaryPanelEl(
   placement: 'right' | 'left' | 'top' | 'bottom',
-  toolbarClearance = 0,
 ): HTMLDivElement {
   const isVertical = placement === 'top' || placement === 'bottom';
   const panel = el('div', {
     background:  PANEL_BG,
     border:      BORDER,
     borderRadius:'8px',
-    padding:     `${12 + toolbarClearance}px 12px 12px`,
+    padding:     '12px',
     overflowY:   isVertical ? 'hidden' : 'auto',
     overflowX:   isVertical ? 'auto'   : 'hidden',
     flexShrink:  '0',
@@ -1096,6 +1093,10 @@ export function renderWaferSummaryContent(
     panel.appendChild(s);
   }
 
+  // Browsers ignore padding-bottom on scrollable containers. A bottom spacer
+  // ensures the last finding card is not clipped when scrolled to the end.
+  panel.appendChild(el('div', { height: '12px', flexShrink: '0' }));
+
   panel.scrollTop = savedScroll;
 }
 
@@ -1199,6 +1200,8 @@ export function renderLotSummaryContent(
     first = false;
     panel.appendChild(s);
   }
+
+  panel.appendChild(el('div', { height: '12px', flexShrink: '0' }));
 
   panel.scrollTop = savedScroll;
 }
