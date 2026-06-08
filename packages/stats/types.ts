@@ -90,6 +90,7 @@ export interface StatsSummary {
     totalDies: number;
     analyzedDies: number;
     excludedDies: number;
+    /** `(passDies / totalDies) × 100` in [0, 100], or `null` when no bin data is present. */
     yieldPercent: number | null;
     testsConsidered: number[];
     hardBinsConsidered: number[];
@@ -113,7 +114,24 @@ export interface StatsSummary {
       failLowDies:  number;
       failHighDies: number;
       totalDies:    number;
+      /** `(passDies / totalDies) × 100` in [0, 100], or `null` when no dies had this test. */
       yieldPercent: number | null;
+    }>;
+    /**
+     * Descriptive statistics for each test's values across all eligible dies.
+     * Only populated when enableTestValueAnalysis is true and the test count is within the cap.
+     */
+    perTestStats?: Array<{
+      testNumber: number;
+      label:      string;
+      count:      number;
+      min:        number;
+      max:        number;
+      mean:       number;
+      stddev:     number;
+      median:     number;
+      q1:         number;
+      q3:         number;
     }>;
   };
 }
@@ -128,7 +146,7 @@ export interface LotStatsSummary {
   stats: {
     waferCount: number;
   };
-  /** Per-wafer yield as a flat series, ordered by waferIndex. null when a wafer had no bin data. */
+  /** Per-wafer yield as a flat series, ordered by waferIndex. `yieldPercent` is in [0, 100]; null when a wafer had no bin data. */
   lotYieldSeries: Array<{ waferIndex: number; yieldPercent: number | null }>;
   perWafer: Array<{
     waferIndex: number;

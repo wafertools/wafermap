@@ -41,6 +41,10 @@ renderWaferMap(document.getElementById('map'), result);
 - [Glossary](https://telecasterer.github.io/wafermap/glossary/)
 - [Demo catalog](https://telecasterer.github.io/wafermap/)
 
+## Built with wafermap
+
+- **[tsmap](https://github.com/telecasterer/tsmap)** — cross-platform desktop app for loading STDF, ATDF, CSV, and JSON wafer data
+
 ## Local preview
 
 ```bash

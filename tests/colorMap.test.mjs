@@ -66,18 +66,31 @@ test('lerpKp — VIRIDIS t=1 is yellow (high r, high g, low b)', () => {
 
 // ── hardBinColor ──────────────────────────────────────────────────────────────
 
-test('hardBinColor — known bin indices', () => {
-  assert.equal(hardBinColor(0), HARD_BIN_COLORS[0]);
-  assert.equal(hardBinColor(1), HARD_BIN_COLORS[1]);
-  assert.equal(hardBinColor(2), HARD_BIN_COLORS[2]);
+test('hardBinColor — bin 1 is green (pass convention)', () => {
+  assert.equal(hardBinColor(1), '#2ecc71');
 });
 
-test('hardBinColor — clamps below 0', () => {
-  assert.equal(hardBinColor(-1), HARD_BIN_COLORS[0]);
+test('hardBinColor — returns a CSS colour string for any bin', () => {
+  for (const b of [2, 14, 15, 1000, 99999]) {
+    assert.match(hardBinColor(b), /^#[0-9a-f]{6}$/i);
+  }
 });
 
-test('hardBinColor — clamps above max', () => {
-  assert.equal(hardBinColor(9999), HARD_BIN_COLORS[HARD_BIN_COLORS.length - 1]);
+test('hardBinColor — different bin numbers produce different colours', () => {
+  assert.notEqual(hardBinColor(1), hardBinColor(2));
+  assert.notEqual(hardBinColor(1), hardBinColor(100));
+});
+
+test('hardBinColor — same bin always returns same colour (deterministic)', () => {
+  assert.equal(hardBinColor(42), hardBinColor(42));
+  assert.equal(hardBinColor(10000), hardBinColor(10000));
+});
+
+test('hardBinColor — never returns the no-data grey', () => {
+  const noData = HARD_BIN_COLORS[0];
+  for (const b of [1, 2, 14, 15, 100, 9999]) {
+    assert.notEqual(hardBinColor(b), noData);
+  }
 });
 
 // ── hardBinGreyscale ──────────────────────────────────────────────────────────
@@ -127,12 +140,22 @@ test('valueToGreyscale — brightness is monotonically increasing', () => {
 
 // ── softBinColor ──────────────────────────────────────────────────────────────
 
-test('softBinColor — bin 0 maps to viridis t=0', () => {
-  assert.equal(softBinColor(0, 6), lerpKp(VIRIDIS, 0));
+test('softBinColor — returns a string from BIN_PALETTE', () => {
+  assert.ok(HARD_BIN_COLORS.includes(softBinColor(1)));
+  assert.ok(HARD_BIN_COLORS.includes(softBinColor(10000)));
 });
 
-test('softBinColor — bin 6 maps to viridis t=1', () => {
-  assert.equal(softBinColor(6, 6), lerpKp(VIRIDIS, 1));
+test('softBinColor — same bin number gives different colour than hardBinColor', () => {
+  for (const b of [1, 2, 6, 100, 10000]) {
+    assert.notEqual(softBinColor(b), hardBinColor(b), `bin ${b} should differ`);
+  }
+});
+
+test('softBinColor — good spread across a high-value range (birthday paradox allows collisions)', () => {
+  // 45 bins into a 63-slot palette: birthday paradox gives ~32 expected unique.
+  // Assert at least 25 distinct to catch degenerate hashes while allowing natural collisions.
+  const colors = Array.from({ length: 45 }, (_, i) => softBinColor(100 + i));
+  assert.ok(new Set(colors).size >= 25, `expected >= 25 distinct colours, got ${new Set(colors).size}`);
 });
 
 // ── contrastTextColor ─────────────────────────────────────────────────────────

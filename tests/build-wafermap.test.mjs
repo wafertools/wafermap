@@ -50,11 +50,11 @@ test('buildWaferMap applies retest policy and chooses plot mode from the data', 
 
   assert.equal(first.yield.passDies, 2);
   assert.equal(first.yield.failDies, 0);
-  assert.equal(first.yield.yieldPercent, 1);
+  assert.equal(first.yield.yieldPercent, 100);
 
   assert.equal(last.yield.passDies, 1);
   assert.equal(last.yield.failDies, 1);
-  assert.equal(last.yield.yieldPercent, 0.5);
+  assert.equal(last.yield.yieldPercent, 50);
 });
 
 test('buildWaferMap accepts explicit dies and enables reticles by default when configured', () => {

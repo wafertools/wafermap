@@ -155,8 +155,19 @@ function separator(): HTMLDivElement {
   });
 }
 
-/** Render a progress bar row: label left, bar + percent right. */
-function progressRow(label: string, value: number, color = '#2a6fc0'): HTMLDivElement {
+/** Render a progress bar row: label left, bar + percent right.
+ *  `fillPct` overrides bar width independently of the displayed value — use for
+ *  range-normalised bars where the fill encodes relative spread, not absolute yield.
+ *  `medianLinePct` draws a vertical rule at that fill % position (lot median marker).
+ *  `belowMedian` renders the fill in a muted colour. */
+function progressRow(
+  label: string,
+  value: number,
+  color = '#2a6fc0',
+  fillPct?: number,
+  medianLinePct?: number,
+  belowMedian?: boolean,
+): HTMLDivElement {
   const row = el('div', { marginBottom: '5px' });
 
   const top = el('div', {
@@ -171,7 +182,10 @@ function progressRow(label: string, value: number, color = '#2a6fc0'): HTMLDivEl
   top.appendChild(lbl);
   top.appendChild(pct);
 
+  const barWidth  = fillPct !== undefined ? fillPct : Math.min(100, Math.max(0, value));
+  const fillColor = belowMedian ? '#94a3b8' : color;
   const track = el('div', {
+    position:     'relative',
     height:       '9px',
     background:   '#e2e5ea',
     borderRadius: '4px',
@@ -179,25 +193,45 @@ function progressRow(label: string, value: number, color = '#2a6fc0'): HTMLDivEl
   });
   const fill = el('div', {
     height:       '100%',
-    width:        `${Math.min(100, Math.max(0, value))}%`,
-    background:   color,
+    width:        `${barWidth}%`,
+    background:   fillColor,
     borderRadius: '4px',
     transition:   'width 0.3s ease',
   });
   track.appendChild(fill);
+  if (medianLinePct !== undefined) {
+    const line = el('div', {
+      position:   'absolute',
+      top:        '0',
+      bottom:     '0',
+      left:       `${medianLinePct}%`,
+      width:      '1px',
+      background: '#334155',
+      opacity:    '0.5',
+    });
+    track.appendChild(line);
+  }
   row.appendChild(top);
   row.appendChild(track);
   return row;
 }
 
-// High yield → rich blue, low yield → pale blue-grey. Accessible: no red/green semantics.
-function yieldColor(pct: number): string {
-  const t   = Math.max(0, Math.min(1, (pct - 50) / 50));
-  const hue = Math.round(214 - t * 179);  // 214° (blue) → 35° (orange)
-  const sat = Math.round(55 + t * 20);    // 55% → 75%
-  const lgt = Math.round(52 - t * 14);    // 52% → 38%
-  return `hsl(${hue}, ${sat}%, ${lgt}%)`;
+/** Normalise a value within [min, max] to a fill % in [MIN_FILL, 100].
+ *  When all values are equal the fill is fixed at MIN_FILL. */
+const REGION_MIN_FILL = 15;
+function regionFillPct(value: number, min: number, max: number): number {
+  if (max === min) return REGION_MIN_FILL;
+  return REGION_MIN_FILL + ((value - min) / (max - min)) * (100 - REGION_MIN_FILL);
 }
+
+function medianOf(sorted: number[]): number {
+  const n = sorted.length;
+  if (n === 0) return 0;
+  const mid = Math.floor(n / 2);
+  return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+
 
 /** Big stat card — used for yield % and total dies. */
 function statCard(value: string, label: string): HTMLDivElement {
@@ -279,7 +313,7 @@ export function buildYieldSection(
   }
   if (yieldSummary.yieldPercent !== null) {
     const binLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
-    cards.appendChild(statCard(`${(yieldSummary.yieldPercent * 100).toFixed(1)}%`, `Yield (pass: ${binLabel})`));
+    cards.appendChild(statCard(`${yieldSummary.yieldPercent.toFixed(1)}%`, `Yield (pass: ${binLabel})`));
   }
   wrap.appendChild(cards);
 
@@ -315,7 +349,7 @@ export function buildBinSection(
     const label = def?.name ? `Bin ${bin} · ${def.name}` : `Bin ${bin}`;
     const pct   = (count / total) * 100;
     const scheme = getColorScheme(colorScheme);
-    const color  = def?.color ?? scheme.forBin(bin);
+    const color  = (colorScheme === 'custom' ? def?.color : undefined) ?? scheme.forBin(bin);
     wrap.appendChild(progressRow(`${label}  (${count})`, pct, color));
   }
   return wrap;
@@ -355,10 +389,14 @@ function buildRegionYieldSection(
   }
   if (!rows.length) return null;
 
+  const minY = Math.min(...rows.map(r => r.yPct));
+  const maxY = Math.max(...rows.map(r => r.yPct));
+  const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
+
   const wrap = el('div');
-  wrap.appendChild(sectionTitle(title));
+  wrap.appendChild(sectionTitle(title + rangeNote));
   for (const { label, yPct } of rows) {
-    wrap.appendChild(progressRow(label, yPct, yieldColor(yPct)));
+    wrap.appendChild(progressRow(label, yPct, undefined, regionFillPct(yPct, minY, maxY)));
   }
   return wrap;
 }
@@ -791,7 +829,7 @@ export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivEle
 
   if (waferYields.length) {
     const mean = waferYields.reduce((a, b) => a + b, 0) / waferYields.length;
-    cards.appendChild(statCard(`${(mean * 100).toFixed(1)}%`, 'Mean wafer yield'));
+    cards.appendChild(statCard(`${mean.toFixed(1)}%`, 'Mean wafer yield'));
   }
   wrap.appendChild(cards);
 
@@ -809,22 +847,43 @@ export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivEle
 export function buildPerWaferYieldSection(
   lotSummary: LotStatsSummary,
   items: Array<{ label?: string } | null>,
+  onWaferClick?: (waferIndex: number) => void,
 ): HTMLDivElement | null {
   const waferData = lotSummary.perWafer
     .map(pw => ({
+      waferIndex: pw.waferIndex,
       label: (items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`)
         .replace(/\s*·\s*\d+(\.\d+)?%$/, ''),
       yieldPct: pw.summary.stats.yieldPercent,
     }))
-    .filter(w => w.yieldPct !== null) as Array<{ label: string; yieldPct: number }>;
+    .filter(w => w.yieldPct !== null) as Array<{ waferIndex: number; label: string; yieldPct: number }>;
 
   if (!waferData.length) return null;
 
+  const minY = Math.min(...waferData.map(w => w.yieldPct));
+  const maxY = Math.max(...waferData.map(w => w.yieldPct));
+  const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
+
+  const sorted  = [...waferData.map(w => w.yieldPct)].sort((a, b) => a - b);
+  const med     = medianOf(sorted);
+  const medFill = regionFillPct(med, minY, maxY);
+
   const wrap = el('div');
-  wrap.appendChild(sectionTitle('Wafer Yield'));
-  for (const { label, yieldPct } of waferData) {
-    const yPct = yieldPct * 100;
-    wrap.appendChild(progressRow(label, yPct, yieldColor(yPct)));
+  wrap.appendChild(sectionTitle('Wafer Yield' + rangeNote));
+  for (const { waferIndex, label, yieldPct } of waferData) {
+    const yPct = yieldPct;
+    const row = progressRow(label, yPct, undefined, regionFillPct(yPct, minY, maxY), medFill, yPct < med);
+    if (onWaferClick) {
+      row.style.cursor = 'pointer';
+      row.style.borderRadius = '4px';
+      row.style.padding = '2px 3px';
+      row.style.marginLeft = '-3px';
+      row.style.marginRight = '-3px';
+      row.addEventListener('mouseenter', () => { row.style.background = CLR.bgHover; });
+      row.addEventListener('mouseleave', () => { row.style.background = ''; });
+      row.addEventListener('click', () => onWaferClick(waferIndex));
+    }
+    wrap.appendChild(row);
   }
   return wrap;
 }
@@ -881,11 +940,17 @@ function buildLotRegionYieldSection(
     .filter((r): r is { label: string; acc: { pass: number; total: number } } => !!r.acc?.total);
   if (!validRows.length) return null;
 
+  const yPcts = validRows.map(({ acc }) => (acc.pass / acc.total) * 100);
+  const minY  = Math.min(...yPcts);
+  const maxY  = Math.max(...yPcts);
+  const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
+
   const wrap = el('div');
-  wrap.appendChild(sectionTitle(title));
-  for (const { label, acc } of validRows) {
-    const yPct = (acc.pass / acc.total) * 100;
-    wrap.appendChild(progressRow(`${label} (N=${acc.total})`, yPct, yieldColor(yPct)));
+  wrap.appendChild(sectionTitle(title + rangeNote));
+  for (let i = 0; i < validRows.length; i++) {
+    const { label, acc } = validRows[i];
+    const yPct = yPcts[i];
+    wrap.appendChild(progressRow(`${label} (N=${acc.total})`, yPct, undefined, regionFillPct(yPct, minY, maxY)));
   }
   return wrap;
 }
@@ -1115,6 +1180,7 @@ export function renderLotSummaryContent(
     fallbackFormat?:  'si' | 'engineering';
     onFindingClick?:  (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
+    onWaferClick?:    (waferIndex: number) => void;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1125,6 +1191,7 @@ export function renderLotSummaryContent(
     passBins = [1], ringCount = 4,
     colorScheme, fallbackFormat,
     onFindingClick, activeFindingId = null,
+    onWaferClick,
   } = params;
 
   const allWarnings = [...new Set(
@@ -1148,7 +1215,7 @@ export function renderLotSummaryContent(
 
   const sections: (HTMLDivElement | null)[] = [
     buildLotOverviewSection(lotSummary),
-    buildPerWaferYieldSection(lotSummary, items),
+    buildPerWaferYieldSection(lotSummary, items, onWaferClick),
     hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard', colorScheme)
             : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft', colorScheme) : null,
     buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
@@ -1241,7 +1308,7 @@ export function buildWaferDetailHeader(
   backBtn.addEventListener('click', onBack);
 
   const titleParts: string[] = [label];
-  if (yieldPct !== null) titleParts.push(`${(yieldPct * 100).toFixed(1)}%`);
+  if (yieldPct !== null) titleParts.push(`${yieldPct.toFixed(1)}%`);
 
   const title = el('span', {
     fontSize:   '11px',

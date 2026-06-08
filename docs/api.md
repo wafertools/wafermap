@@ -444,15 +444,15 @@ const { yieldPercent, yieldPercentGross } = result.yield;
   edgeExcludedDies:  number          // dies within the edge exclusion zone
   partialDies:       number          // dies straddling the wafer boundary
   totalDies:         number          // passDies + failDies (edge-excluded not included)
-  yieldPercent:      number | null   // passDies / totalDies ∈ [0,1]; null when no bin data
-  yieldPercentGross: number | null   // passDies / (passDies + failDies + edgeExcludedDies);
+  yieldPercent:      number | null   // (passDies / totalDies) × 100 ∈ [0, 100]; null when no bin data
+  yieldPercentGross: number | null   // (passDies / (passDies + failDies + edgeExcludedDies)) × 100 ∈ [0, 100];
                                      // only set when edgeDieYieldMode: 'denominator-only'; otherwise null
 }
 ```
 
 Partial dies are excluded from both numerator and denominator. Edge-excluded dies are excluded by default (`edgeDieYieldMode: 'exclude'`); set `edgeDieYieldMode: 'denominator-only'` to include them in the denominator for gross die yield.
 
-**`result.yield.yieldPercent` vs `summary.stats.yieldPercent`** — both are the same fraction ∈ \[0,1\], but they can differ when you pass custom options to `analyzeWaferMap` (e.g. a different `edgeDieYieldMode` or `passBins`). Use `result.yield` for rendering and quick checks; use `summary.stats.yieldPercent` when you need the yield that is consistent with the findings analysis.
+**`result.yield.yieldPercent` vs `summary.stats.yieldPercent`** — both are in \[0, 100\] and can differ when you pass custom options to `analyzeWaferMap` (e.g. a different `edgeDieYieldMode` or `passBins`). Use `result.yield` for rendering and quick checks; use `summary.stats.yieldPercent` when you need the yield that is consistent with the findings analysis.
 
 **`units`** tells you the coordinate space of the physical coordinates (`die.physX`, `die.physY`) and wafer dimensions; `die.x`/`die.y` remain die grid positions (prober step coordinates):
 
@@ -1386,9 +1386,8 @@ Either the rate criterion or the size criterion can trigger the severity level; 
     totalDies:            number        // all dies on the wafer including partial and edge-excluded
     analyzedDies:         number        // dies included in analysis (excludes partial and, by default, edge dies)
     excludedDies:         number        // edge-excluded dies (see edgeDieYieldMode)
-    yieldPercent:         number | null // fraction ∈ [0, 1] — multiply by 100 to display as %
+    yieldPercent:         number | null // (passDies / analyzedDies) × 100 ∈ [0, 100]
                                         // null when no die in the wafer has an hbin value at all
-                                        // denominator is analyzedDies (totalDies minus excluded)
     testsConsidered:      number[]     // test numbers (keys from testValues) that had enough data
     hardBinsConsidered:   number[]
     softBinsConsidered:   number[]
@@ -1402,7 +1401,19 @@ Either the rate criterion or the size criterion can trigger the severity level; 
       failLowDies:  number            // dies with value < limitLow (0 when limitLow absent)
       failHighDies: number            // dies with value > limitHigh (0 when limitHigh absent)
       totalDies:    number            // dies that had a value for this test
-      yieldPercent: number | null     // passDies / totalDies; null when totalDies = 0
+      yieldPercent: number | null     // (passDies / totalDies) × 100 ∈ [0, 100]; null when totalDies = 0
+    }>
+    perTestStats?: Array<{            // one entry per active test with enough data; absent when no test values
+      testNumber: number
+      label:      string             // testDef.name, or "Test {N}" when no testDef
+      count:      number             // number of dies with a value for this test
+      min:        number
+      max:        number
+      mean:       number
+      stddev:     number             // sample standard deviation
+      median:     number             // 50th percentile (linear interpolation)
+      q1:         number             // 25th percentile
+      q3:         number             // 75th percentile
     }>
   }
 }
@@ -1421,7 +1432,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
   }
   lotYieldSeries: Array<{
     waferIndex:   number
-    yieldPercent: number | null        // null when a wafer had no bin data
+    yieldPercent: number | null        // (passDies / totalDies) × 100 ∈ [0, 100]; null when a wafer had no bin data
   }>
   perWafer: Array<{
     waferIndex: number
@@ -2416,9 +2427,9 @@ const die = map.get(getDieKey({ x: 3, y: -2 }));
 
 | Signature | Returns | Description |
 | --------- | ------- | ----------- |
-| `hardBinColor(bin: number)` | `string` | Categorical CSS colour for hard bin 0–14; cycles for values above 14 |
+| `hardBinColor(bin: number)` | `string` | Categorical colour for a hard bin. Bins 1–14 use hand-picked colours (bin 1 = green/pass); bin 15+ uses a Wang hash into a 63-entry palette — any bin number range is supported |
 | `hardBinGreyscale(bin: number)` | `string` | Greyscale variant of `hardBinColor` |
-| `softBinColor(bin: number, maxBin?: number)` | `string` | Maps bin to a Viridis position; `maxBin` sets the scale ceiling |
+| `softBinColor(bin: number)` | `string` | Categorical colour for a soft bin. Uses the same 63-entry palette as `hardBinColor` but a different hash salt, so the same bin number maps to a different colour in each scheme |
 | `valueToViridis(t: number)` | `string` | Maps `t ∈ [0,1]` to a Viridis RGB CSS string |
 | `valueToGreyscale(t: number)` | `string` | Maps `t ∈ [0,1]` to a grey RGB CSS string |
 | `contrastTextColor(cssColor: string)` | `'#000000' \| '#ffffff'` | Returns the WCAG-contrast text colour for a given background |

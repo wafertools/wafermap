@@ -1,4 +1,4 @@
-import { HARD_BIN_COLORS, HARD_BIN_GREY, VIRIDIS, lerpKp, valueToGreyscale } from './colorMap.js';
+import { BIN_PALETTE, HARD_BIN_GREY, VIRIDIS, lerpKp, valueToGreyscale, hardBinColor } from './colorMap.js';
 
 // ── Public interface ──────────────────────────────────────────────────────────
 
@@ -60,9 +60,21 @@ export function listColorSchemes(): Array<{ name: string; label: string }> {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Clamp-and-index into a flat colour array. */
-function binArray(colors: readonly string[]): (bin: number) => string {
-  return (bin) => colors[Math.max(0, Math.min(bin, colors.length - 1))];
+/** Wang hash for scheme-internal bin → palette index mapping. */
+function schemeHash(bin: number, salt: number): number {
+  let h = (bin ^ salt) | 0;
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
+ * Hash a bin number into a colour array, skipping index 0 (reserved for no-data).
+ * Different salts give different mappings for the same bin number.
+ */
+function binHash(colors: readonly string[], salt: number): (bin: number) => string {
+  const slots = colors.length - 1;
+  return (bin) => colors[(schemeHash(bin, salt) % slots) + 1];
 }
 
 // ── Built-in schemes ──────────────────────────────────────────────────────────
@@ -73,7 +85,7 @@ function binArray(colors: readonly string[]): (bin: number) => string {
  */
 registerColorScheme('default', {
   label: 'Default',
-  forBin: binArray(HARD_BIN_COLORS),
+  forBin: hardBinColor,
   forValue: (t) => lerpKp(VIRIDIS, t),
 });
 
@@ -97,32 +109,85 @@ registry.set('color', { ...registry.get('default')!, isAlias: true });
  */
 registerColorScheme('greyscale', {
   label: 'Greyscale',
-  forBin: binArray(HARD_BIN_GREY),
+  forBin: binHash(HARD_BIN_GREY, 0x9e3779b9),
   forValue: valueToGreyscale,
 });
 
 /**
- * ACCESSIBLE — Okabe-Ito categorical palette + Cividis gradient.
+ * ACCESSIBLE — 63-entry colourblind-safe categorical palette + Cividis gradient.
  * Designed to remain distinguishable for the most common forms of colour
  * vision deficiency (deuteranopia, protanopia, tritanopia).
- * Reference: Okabe & Ito (2008), "Color Universal Design".
+ *
+ * Palette design follows Okabe-Ito (2008) principles: four hue families chosen
+ * from CVD-safe zones (blue 202–256°, orange/yellow 26–57°, teal 160–192°,
+ * purple/pink 283–324°), three lightness tiers each (light 62%, mid 47%,
+ * dark 33%), 6+5+5+5 hues = 63 colour slots. Index 0 = no-data grey.
  */
-const OKABE_ITO: readonly string[] = [
+const ACCESSIBLE_PALETTE: readonly string[] = [
   '#aaaaaa', //  0: no data
-  '#E69F00', //  1: orange
-  '#56B4E9', //  2: sky blue
-  '#009E73', //  3: bluish green
-  '#F0E442', //  4: yellow
-  '#0072B2', //  5: blue
-  '#D55E00', //  6: vermillion
-  '#CC79A7', //  7: reddish purple
-  '#999999', //  8: medium grey
-  '#f5c650', //  9: lighter orange
-  '#7ecbf7', // 10: lighter sky blue
-  '#4cbf99', // 11: lighter green
-  '#d4c34a', // 12: olive yellow
-  '#3a8fc7', // 13: medium blue
-  '#c46e3a', // 14: orange-brown
+  '#51b3ec', //  1: blue light
+  '#5199ec', //  2: blue light
+  '#517fec', //  3: blue light
+  '#5165ec', //  4: blue light
+  '#5b51ec', //  5: blue light
+  '#7a51ec', //  6: blue light
+  '#1891d8', //  7: blue mid
+  '#1871d8', //  8: blue mid
+  '#1851d8', //  9: blue mid
+  '#1832d8', // 10: blue mid
+  '#2518d8', // 11: blue mid
+  '#4b18d8', // 12: blue mid
+  '#116697', // 13: blue dark
+  '#115097', // 14: blue dark
+  '#113997', // 15: blue dark
+  '#112397', // 16: blue dark
+  '#1a1197', // 17: blue dark
+  '#351197', // 18: blue dark
+  '#f39349', // 19: orange light
+  '#f3a749', // 20: orange light
+  '#f3bb49', // 21: orange light
+  '#f3d149', // 22: orange light
+  '#f3eb49', // 23: orange light
+  '#e16a0e', // 24: orange mid
+  '#e1820e', // 25: orange mid
+  '#e19b0e', // 26: orange mid
+  '#e1b70e', // 27: orange mid
+  '#e1d70e', // 28: orange mid
+  '#9e4a0a', // 29: orange dark
+  '#9e5c0a', // 30: orange dark
+  '#9e6d0a', // 31: orange dark
+  '#9e810a', // 32: orange dark
+  '#9e970a', // 33: orange dark
+  '#54e8b7', // 34: teal light
+  '#54e8ca', // 35: teal light
+  '#54e8de', // 36: teal light
+  '#54dee8', // 37: teal light
+  '#54cae8', // 38: teal light
+  '#1dd396', // 39: teal mid
+  '#1dd3af', // 40: teal mid
+  '#1dd3c7', // 41: teal mid
+  '#1dc7d3', // 42: teal mid
+  '#1dafd3', // 43: teal mid
+  '#149469', // 44: teal dark
+  '#14947b', // 45: teal dark
+  '#14948c', // 46: teal dark
+  '#148c94', // 47: teal dark
+  '#147b94', // 48: teal dark
+  '#bb5ce0', // 49: purple light
+  '#d35ce0', // 50: purple light
+  '#e05cd5', // 51: purple light
+  '#e05cbf', // 52: purple light
+  '#e05cab', // 53: purple light
+  '#9b26c9', // 54: purple mid
+  '#b926c9', // 55: purple mid
+  '#c926bc', // 56: purple mid
+  '#c926a1', // 57: purple mid
+  '#c92688', // 58: purple mid
+  '#6d1b8d', // 59: purple dark
+  '#821b8d', // 60: purple dark
+  '#8d1b84', // 61: purple dark
+  '#8d1b71', // 62: purple dark
+  '#8d1b60', // 63: purple dark
 ];
 
 // Cividis keypoints — blue-grey to yellow, avoids red/green transitions.
@@ -135,8 +200,8 @@ const CIVIDIS: readonly [number, number, number][] = [
 ];
 
 registerColorScheme('accessible', {
-  label: 'Accessible (Okabe-Ito / Cividis)',
-  forBin:  binArray(OKABE_ITO),
+  label: 'Accessible (CVD-safe / Cividis)',
+  forBin:  binHash(ACCESSIBLE_PALETTE, 0x9e3779b9),
   forValue: (t) => lerpKp(CIVIDIS, t),
 });
 
@@ -173,7 +238,7 @@ const PLASMA_KP: readonly [number, number, number][] = [
 
 registerColorScheme('plasma', {
   label: 'Plasma',
-  forBin: binArray(PLASMA_BINS),
+  forBin: binHash(PLASMA_BINS, 0x9e3779b9),
   forValue: (t) => lerpKp(PLASMA_KP, t),
 });
 
@@ -210,6 +275,6 @@ const INFERNO_KP: readonly [number, number, number][] = [
 
 registerColorScheme('inferno', {
   label: 'Inferno',
-  forBin: binArray(INFERNO_BINS),
+  forBin: binHash(INFERNO_BINS, 0x9e3779b9),
   forValue: (t) => lerpKp(INFERNO_KP, t),
 });

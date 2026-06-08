@@ -634,10 +634,17 @@ export function renderWaferMap(
         });
         const btnPalette = makeDropdown(
           'palette', 'Colour scheme',
-          () => [
-            ...(hasCustomColors ? [{ value: 'custom', label: 'Custom' }] : []),
-            ...listColorSchemes().map(s => ({ value: s.name, label: s.label })),
-          ],
+          () => {
+            const pm = viewOpts.plotMode ?? 'hardBin';
+            const isBinMode = pm === 'hardBin' || pm === 'softBin';
+            const schemes = isBinMode
+              ? listColorSchemes().filter(s => s.name === 'default' || s.name === 'accessible')
+              : listColorSchemes();
+            return [
+              ...(hasCustomColors ? [{ value: 'custom', label: 'Custom' }] : []),
+              ...schemes.map(s => ({ value: s.name, label: s.label })),
+            ];
+          },
           () => viewOpts.colorScheme ?? 'default',
           v => applyOpts({ colorScheme: v }),
         );
@@ -859,6 +866,13 @@ export function renderWaferMap(
     // recomputed for the new mode before drawSelectionOverlay reads it.
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
       fittedViewport = null;
+      // Switching into a bin mode: reset to default if scheme is not bin-compatible.
+      const newMode = viewOpts.plotMode;
+      const isBinMode = newMode === 'hardBin' || newMode === 'softBin';
+      const BIN_SCHEMES = new Set(['default', 'accessible', 'custom']);
+      if (isBinMode && !BIN_SCHEMES.has(viewOpts.colorScheme ?? '')) {
+        viewOpts = { ...viewOpts, colorScheme: 'default' };
+      }
     }
     // legendPosition only affects canvas layout — skip the scene rebuild.
     const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendPosition');
@@ -867,7 +881,8 @@ export function renderWaferMap(
     syncLogScaleBtnFn?.();
     syncColorbarRangeBtnFn?.();
     render();
-    if (partial.colorScheme !== undefined) { renderSummaryPanel(); renderAutoSummaryPanel(); }
+    const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
+    if (partial.colorScheme !== undefined || modeChanged) { renderSummaryPanel(); renderAutoSummaryPanel(); }
   }
 
   // Rebuild, redraw, and fire onViewOptionsChange.

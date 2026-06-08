@@ -166,7 +166,7 @@ test('testSpecYield — populated when testDef has limits', () => {
   assert.equal(entry.failLowDies, 1);
   assert.equal(entry.failHighDies, 1);
   assert.equal(entry.totalDies, 4);
-  assert.ok(Math.abs(entry.yieldPercent - 0.5) < 1e-9);
+  assert.ok(Math.abs(entry.yieldPercent - 50) < 1e-6);
 });
 
 test('testSpecYield — undefined when testDef has no limits', () => {

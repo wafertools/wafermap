@@ -4,7 +4,7 @@ All notable changes to `@paulrobins/wafermap` are documented here.
 
 ---
 
-## [Unreleased]
+## [0.13.3] — 2026-06-08
 
 ### Breaking
 
@@ -34,6 +34,7 @@ All notable changes to `@paulrobins/wafermap` are documented here.
 - `setResult()` controller method on `WaferMapController` — replaces the rendered map data without re-mounting.
 - Tooltip now avoids viewport edges — flips left when it would overflow the right edge, clamps vertically.
 - `View` type exported from `@paulrobins/wafermap/renderer`.
+- `StatsSummary.stats.perTestStats` — each entry now includes `median`, `q1`, and `q3` (linear-interpolation quartiles) alongside the existing `mean`/`stddev`/`min`/`max`. Eliminates the need for callers to sort and compute quartiles themselves for box-plot visualisations.
 
 ### Renamed (deprecated aliases still work)
 - `WaferCanvasController` → `WaferMapController` — the return type of `renderWaferMap`. The old name is kept as a deprecated alias and will be removed in a future release.
@@ -42,6 +43,12 @@ All notable changes to `@paulrobins/wafermap` are documented here.
 - `aggrMethod` → `aggregationMethod` (on `WaferDisplayState` / `ViewOptions`) — aggregation method for `stackedValues` mode. The old name is kept as a deprecated alias.
 
 ### Changed
+
+- Colour scheme dropdown in bin modes (`hardBin` / `softBin`) now shows only **Default** and **Accessible** — Viridis, Plasma, and Inferno apply gradient semantics to ordered values and produce misleading colours for categorical bin classifications. All schemes remain available in value and stacked modes.
+- `softBinColor` now uses a hash-based discrete palette (identical in structure to `hardBinColor`) rather than a Viridis gradient. Soft bins are discrete fail classifications; this change ensures any sbin number range (including high-value bitwise-encoded sbins in the 10000s) maps to visually distinct colours, matching the semantics already used for hard bins. `maxBin` parameter removed.
+- `hardBinColor` bins 15+ now use a Wang hash into a 63-entry golden-angle HSL palette. Bins 1–14 retain hand-picked colours for maximum low-range distinctiveness; bin 1 is always green (pass convention).
+- Accessible colour scheme palette extended from 14 entries (Okabe-Ito) to a 63-entry colourblind-safe palette covering blue (202–256°), orange/yellow (26–57°), teal (160–192°), and purple/pink (283–324°) hue families at three lightness tiers, ensuring good spread for any bin number range.
+- `yieldPercent` and `yieldPercentGross` on `WaferMapResult.yield`, `StatsSummary.stats`, and `LotStatsSummary.lotYieldSeries` are now **0–100** real percentages (previously 0–1 fractions despite the `*Percent` name). All built-in display code updated; callers that multiply by 100 before displaying must remove the multiply. **Breaking for existing callers that read these fields.**
 - `WaferViewOptions` split into `WaferPreferences` (stable, persist-worthy settings: orientation, colour scheme, overlays) and `WaferDisplayState` (transient, session-only state: active test, highlight bin, value range). The flat shape is unchanged; callers set any field directly as before.
 - `hbinDefs`, `sbinDefs`, and `testDefs` are now top-level fields on `WaferMapResult` — callers no longer need to round-trip these back through `viewOptions`.
 - `buildView` signature: bin definitions are now passed as a separate second argument rather than via `ViewOptions`.
@@ -52,6 +59,8 @@ All notable changes to `@paulrobins/wafermap` are documented here.
 - Toolbar fades to 35% opacity when the mouse leaves (was fully hidden) and always accepts pointer events — buttons remain clickable without requiring hover.
 
 ### Fixed
+- Summary panel bin pareto now re-renders when the plot mode changes (e.g. switching between hardBin and softBin) as well as when the colour scheme changes. Previously only a direct colour scheme change triggered a panel update.
+- Switching to a bin plot mode (`hardBin` / `softBin`) while a non-bin-compatible colour scheme (Viridis, Greyscale, Plasma, Inferno) is active now resets the scheme to Default. Only Default, Accessible, and Custom are valid in bin mode; leaving an incompatible scheme active produced incorrect bin colours with no way to recover from the toolbar.
 - Summary panel bin breakdown bars now use the active colour scheme (`getColorScheme().forBin()`) and update immediately when the user changes scheme. Both the `summaryPanel` option panel and the toolbar-toggled panel are updated.
 - Summary panel yield bars (ring yield, quadrant yield, per-wafer yield) now use a blue→orange gradient (low = muted blue, high = warm orange) instead of a red/green hue ramp — readable for all colour vision types.
 - Toolbar dropdown and check menus opened from inside an expand modal now appear above the modal content. Previously they were appended to `document.body` and rendered beneath the modal's stacking context.

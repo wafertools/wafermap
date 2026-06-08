@@ -338,7 +338,7 @@ const result = buildWaferMap({
 });
 
 const yld = result.yield.yieldPercent;
-console.log(yld !== null ? `${(yld * 100).toFixed(1)}%` : 'n/a');
+console.log(yld !== null ? `${yld.toFixed(1)}%` : 'n/a');
 ```
 
 **→ [Demo: Working with bins](examples/05-named-bins.html)**
@@ -1870,7 +1870,7 @@ for (const [waferId, waferRows] of byWafer) {
   const yld     = summary.stats.yieldPercent;
   const top     = summary.findings[0];
   console.log(
-    `${waferId}  yield=${yld !== null ? (yld * 100).toFixed(1) + '%' : 'n/a'}` +
+    `${waferId}  yield=${yld !== null ? yld.toFixed(1) + '%' : 'n/a'}` +
     `  findings=${summary.findings.length}` +
     (top ? `  top=[${top.severity}] ${top.summary}` : ''),
   );

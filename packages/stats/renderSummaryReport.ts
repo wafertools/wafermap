@@ -84,7 +84,7 @@ function yieldSection(y: YieldSummary, cov: SummaryReportParams['dataCoverage'])
     { label: 'Fail dies', value: String(y.failDies) },
     ...(y.edgeExcludedDies > 0 ? [{ label: 'Edge excluded', value: String(y.edgeExcludedDies) }] : []),
     ...(y.partialDies > 0 ? [{ label: 'Partial dies', value: String(y.partialDies) }] : []),
-    { label: 'Yield', value: y.yieldPercent !== null ? `${(y.yieldPercent * 100).toFixed(1)}%` : 'N/A' },
+    { label: 'Yield', value: y.yieldPercent !== null ? `${y.yieldPercent.toFixed(1)}%` : 'N/A' },
   ];
   return renderSection('Yield', renderMetricGrid(metrics));
 }
@@ -216,7 +216,7 @@ export function renderSummaryReportHtml(
   const summaryMetrics = [
     { label: 'Total dies', value: String(dataCoverage.totalDies) },
     ...(yieldSummary.partialDies > 0 ? [{ label: 'Partial', value: String(yieldSummary.partialDies) }] : []),
-    ...(yieldSummary.yieldPercent !== null ? [{ label: `Yield (pass: ${passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`})`, value: `${(yieldSummary.yieldPercent * 100).toFixed(1)}%` }] : []),
+    ...(yieldSummary.yieldPercent !== null ? [{ label: `Yield (pass: ${passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`})`, value: `${yieldSummary.yieldPercent.toFixed(1)}%` }] : []),
     ...(yieldSummary.edgeExcludedDies > 0 ? [{ label: 'Edge excluded (outer zone)', value: String(yieldSummary.edgeExcludedDies) }] : []),
   ];
 
@@ -270,7 +270,7 @@ function lotWaferYieldTable(lotSummary: LotStatsSummary, items: LotSummaryReport
   const rows = lotSummary.perWafer.map((pw) => {
     const label = items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`;
     const yld = pw.summary.stats.yieldPercent;
-    return [label, yld !== null ? `${(yld * 100).toFixed(1)}%` : 'N/A'];
+    return [label, yld !== null ? `${yld.toFixed(1)}%` : 'N/A'];
   });
   return renderTable(['Wafer', 'Yield'], rows, { className: 'compact' });
 }
@@ -398,7 +398,7 @@ export function renderLotSummaryReportHtml(
 
   const overviewMetrics = [
     { label: 'Wafers', value: String(lotSummary.stats.waferCount) },
-    ...(meanYield !== null ? [{ label: 'Mean yield', value: `${(meanYield * 100).toFixed(1)}%` }] : []),
+    ...(meanYield !== null ? [{ label: 'Mean yield', value: `${meanYield.toFixed(1)}%` }] : []),
   ];
 
   const summaryBody = [

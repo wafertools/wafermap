@@ -169,7 +169,49 @@ function computeTestSpecYield(
       failLowDies,
       failHighDies,
       totalDies,
-      yieldPercent: totalDies > 0 ? passDies / totalDies : null,
+      yieldPercent: totalDies > 0 ? (passDies / totalDies) * 100 : null,
+    });
+  }
+  return result.length ? result : undefined;
+}
+
+function quantile(sorted: number[], p: number): number {
+  const pos = p * (sorted.length - 1);
+  const lo = Math.floor(pos);
+  const hi = Math.min(lo + 1, sorted.length - 1);
+  return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
+}
+
+function computePerTestStats(
+  dies: Die[],
+  testNumbers: number[],
+  testDefs: TestDef[] | undefined,
+  minimumSampleSize: number,
+): StatsSummary['stats']['perTestStats'] {
+  const result: NonNullable<StatsSummary['stats']['perTestStats']> = [];
+  for (const tn of testNumbers) {
+    const values: number[] = [];
+    for (const die of dies) {
+      if (die.partial || die.edgeExcluded) continue;
+      const v = die.testValues?.[tn] ?? die.values?.[tn];
+      if (v !== undefined) values.push(v);
+    }
+    if (values.length < minimumSampleSize) continue;
+    const avg = mean(values);
+    const stddev = Math.sqrt(sampleVariance(values, avg));
+    const sorted = values.slice().sort((a, b) => a - b);
+    const label = testDefs?.find(td => (td.testNumber ?? td.index) === tn)?.name ?? String(tn);
+    result.push({
+      testNumber: tn,
+      label,
+      count:  values.length,
+      min:    sorted[0],
+      max:    sorted[sorted.length - 1],
+      mean:   avg,
+      stddev,
+      median: quantile(sorted, 0.5),
+      q1:     quantile(sorted, 0.25),
+      q3:     quantile(sorted, 0.75),
     });
   }
   return result.length ? result : undefined;
@@ -577,7 +619,7 @@ function buildTestValueFindings(
   regionFamily: StatsRegion[],
   defs: TestDef[] | undefined,
   options: ResolvedOptions,
-): { findings: RawFinding[]; warning?: string } {
+): { findings: RawFinding[]; warning?: string; activeTestNumbers?: number[] } {
   const dieMap = new Map(dies.map((die) => [`${die.x},${die.y}`, die]));
 
   // If the caller specifies exact test numbers, use them directly — skip the
@@ -689,6 +731,7 @@ function buildTestValueFindings(
   adjustPValues(findings);
 
   return {
+    activeTestNumbers,
     findings: findings
       .filter((finding) => {
         const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
@@ -885,6 +928,7 @@ export function analyzeWaferMap(
     );
   }
   const warnings: string[] = [];
+  let activeTestNumbers: number[] | undefined;
   if (resolved.enableTestValueAnalysis) {
     const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.view.testDefs, resolved);
     const quad     = buildTestValueFindings(eligibleDies, quadrantRegions, result.view.testDefs, resolved);
@@ -893,6 +937,7 @@ export function analyzeWaferMap(
     const sector   = buildTestValueFindings(eligibleDies, sectorRegions, result.view.testDefs, resolved);
     findings.push(...ring.findings, ...quad.findings, ...reticle.findings, ...testSite.findings, ...sector.findings);
     if (ring.warning) warnings.push(ring.warning);
+    activeTestNumbers = ring.activeTestNumbers;
 
     findings.push(...buildSpecLimitFindings(
       eligibleDies,
@@ -1020,6 +1065,10 @@ export function analyzeWaferMap(
   if (warnings.length > 0) stats.warnings = warnings;
   const specYield = computeTestSpecYield(result.dies, result.view.testDefs);
   if (specYield) stats.testSpecYield = specYield;
+  if (activeTestNumbers?.length) {
+    const perTestStats = computePerTestStats(result.dies, activeTestNumbers, result.view.testDefs, resolved.minimumSampleSize);
+    if (perTestStats) stats.perTestStats = perTestStats;
+  }
 
   return {
     level: 'wafer',

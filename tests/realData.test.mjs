@@ -84,12 +84,12 @@ skip('real data: grid centroid is near (0,0) — no erroneous LL-origin offset',
 
 // ── 3. Yield plausibility ─────────────────────────────────────────────────────
 
-skip('real data: yield values are in [0, 1]', () => {
+skip('real data: yield values are in [0, 100]', () => {
   for (const sample of fixture) {
     const result = buildWaferMap({ results: sample.results, passBins: [1] });
     const y = result.yield.yieldPercent;
     if (y !== null) {
-      assert.ok(y >= 0 && y <= 1,
+      assert.ok(y >= 0 && y <= 100,
         `${sample.failureType} W${sample.waferIndex}: yield ${y} out of range`);
     }
   }
@@ -207,12 +207,12 @@ mxSkip('MixedWM38: buildWaferMap succeeds on all 38 class samples', () => {
 
 // ── MX-2. Yield plausibility ──────────────────────────────────────────────────
 
-mxSkip('MixedWM38: yield values are in [0, 1]', () => {
+mxSkip('MixedWM38: yield values are in [0, 100]', () => {
   for (const sample of mxFixture) {
     const result = buildWaferMap({ results: sample.results, passBins: [1] });
     const y = result.yield.yieldPercent;
     if (y !== null) {
-      assert.ok(y >= 0 && y <= 1, `${sample.className}: yield ${y} out of range`);
+      assert.ok(y >= 0 && y <= 100, `${sample.className}: yield ${y} out of range`);
     }
   }
 });

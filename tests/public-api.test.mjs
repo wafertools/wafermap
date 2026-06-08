@@ -206,10 +206,11 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   assert.equal(fmtColorbarAxis(1e-6, 'Idsat', 'A').axisLabel, 'Idsat (µA)');
   assert.equal(fmtColorbarAxis(1e-6, 'Idsat', 'A').tickFmt(2e-6), '2.00');
 
-  assert.equal(hardBinColor(1), '#2ecc71');
-  assert.equal(hardBinColor(999), '#16a085');
+  assert.equal(hardBinColor(1), '#2ecc71');   // bin 1 always green (pass)
+  assert.equal(hardBinColor(2), '#e74c3c');   // bin 2 always red (fail)
+  assert.notEqual(hardBinColor(999), hardBinColor(1000)); // hash gives distinct colours
   assert.equal(hardBinGreyscale(1), '#f7f7f7');
-  assert.equal(softBinColor(3, 6), valueToViridis(0.5));
+  assert.notEqual(softBinColor(3), hardBinColor(3)); // same bin number, different colour
   assert.equal(valueToViridis(-1), 'rgb(68,1,84)');
   assert.equal(valueToGreyscale(1), 'rgb(230,230,230)');
   assert.equal(contrastTextColor('#ffffff'), '#000000');

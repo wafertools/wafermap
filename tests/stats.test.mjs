@@ -274,6 +274,28 @@ test('analyzeWaferLot handles empty lot', () => {
   assert.equal(lot.perWafer.length, 0);
 });
 
+test('analyzeWaferMap populates perTestStats with quartiles', () => {
+  const { dies } = makeBaseDies();
+  const enriched = dies.map((die, i) => ({
+    ...die,
+    testValues: { 1050: i % 10 + Math.random() * 0.1 },
+  }));
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+  });
+
+  assert.ok(summary.stats.perTestStats, 'perTestStats should be populated');
+  const entry = summary.stats.perTestStats.find(s => s.testNumber === 1050);
+  assert.ok(entry, 'should have entry for test 1050');
+  assert.ok(entry.count > 0);
+  assert.ok(entry.q1 <= entry.median, 'q1 <= median');
+  assert.ok(entry.median <= entry.q3, 'median <= q3');
+  assert.ok(entry.min <= entry.q1, 'min <= q1');
+  assert.ok(entry.q3 <= entry.max, 'q3 <= max');
+});
+
 test('analyzeWaferMap respects minimum sample size filtering', () => {
   const { wafer, dies } = makeBaseDies();
   // Create a wafer with very few dies in each ring

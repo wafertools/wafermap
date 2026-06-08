@@ -35,8 +35,8 @@ test('lotYieldSeries — yieldPercent values match per-wafer stats', () => {
   const lot = analyzeWaferLot([w1, w2]);
   const y0 = lot.lotYieldSeries[0].yieldPercent;
   const y1 = lot.lotYieldSeries[1].yieldPercent;
-  assert.ok(y0 !== null && Math.abs(y0 - 2 / 3) < 1e-9);
-  assert.ok(y1 !== null && Math.abs(y1 - 1 / 3) < 1e-9);
+  assert.ok(y0 !== null && Math.abs(y0 - (2 / 3) * 100) < 1e-6);
+  assert.ok(y1 !== null && Math.abs(y1 - (1 / 3) * 100) < 1e-6);
 });
 
 test('lotYieldSeries — null yieldPercent when wafer has no bin data', () => {

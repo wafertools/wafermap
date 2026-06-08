@@ -22,7 +22,7 @@ const mockInference = {
 
 const mockDataCoverage = { filledDies: 2, totalDies: 2, edgeExcludedDies: 0, ratio: 1 };
 
-const mockYield = { yieldPercent: 0.5, passDies: 1, failDies: 1, totalDies: 2, edgeExcludedDies: 0, partialDies: 0 };
+const mockYield = { yieldPercent: 50, passDies: 1, failDies: 1, totalDies: 2, edgeExcludedDies: 0, partialDies: 0 };
 
 function makeMockController(): WaferMapController {
   return {

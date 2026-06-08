@@ -357,10 +357,10 @@ export interface YieldSummary {
   partialDies: number;
   /** Total full dies inside wafer boundary used for yield (excludes edge and partial). */
   totalDies: number;
-  /** `passDies / totalDies` in [0, 1], or `null` when no bin data is present. */
+  /** `(passDies / totalDies) × 100` in [0, 100], or `null` when no bin data is present. */
   yieldPercent: number | null;
   /**
-   * Gross die yield: `passDies / (passDies + failDies + edgeExcludedDies)`.
+   * Gross die yield: `passDies / (passDies + failDies + edgeExcludedDies) × 100` in [0, 100].
    * Set when `edgeDieYieldMode: 'denominator-only'` was passed; `null` otherwise.
    */
   yieldPercentGross?: number | null;
@@ -758,12 +758,12 @@ function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclud
   }
 
   const totalDies = passDies + failDies;
-  const yieldPercent = hasBinData && totalDies > 0 ? passDies / totalDies : null;
+  const yieldPercent = hasBinData && totalDies > 0 ? (passDies / totalDies) * 100 : null;
 
   let yieldPercentGross: number | null = null;
   if (edgeDieYieldMode === 'denominator-only') {
     const grossDenom = totalDies + edgeCount;
-    yieldPercentGross = hasBinData && grossDenom > 0 ? passDies / grossDenom : null;
+    yieldPercentGross = hasBinData && grossDenom > 0 ? (passDies / grossDenom) * 100 : null;
   }
 
   return {

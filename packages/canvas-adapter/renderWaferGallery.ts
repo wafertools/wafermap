@@ -448,6 +448,9 @@ export function renderWaferGallery(
           }
           renderGallerySummaryPanel();
         },
+        onWaferClick: (waferIndex) => {
+          applyCardHighlight([waferIndex]);
+        },
       });
       // Prepend tab row if per-wafer findings also exist
       if (hasAnyPerWaferFindings()) {
@@ -634,10 +637,17 @@ export function renderWaferGallery(
 
   const btnPalette = makeDropdown(
     'palette', 'Colour scheme',
-    () => [
-      ...(itemsHaveCustomColors() ? [{ value: 'custom', label: 'Custom' }] : []),
-      ...listColorSchemes().map(s => ({ value: s.name, label: s.label })),
-    ],
+    () => {
+      const pm = sharedOpts.plotMode ?? 'hardBin';
+      const isBinMode = pm === 'hardBin' || pm === 'softBin';
+      const schemes = isBinMode
+        ? listColorSchemes().filter(s => s.name === 'default' || s.name === 'accessible')
+        : listColorSchemes();
+      return [
+        ...(itemsHaveCustomColors() ? [{ value: 'custom', label: 'Custom' }] : []),
+        ...schemes.map(s => ({ value: s.name, label: s.label })),
+      ];
+    },
     () => sharedOpts.colorScheme ?? 'default',
     v => updateShared({ colorScheme: v }),
   );
@@ -1138,6 +1148,8 @@ export function renderWaferGallery(
   // propagates to cards, fires callback.
   // fireCallback=true (default) fires onViewOptionsChange — used for toolbar interactions.
   // fireCallback=false is used by the public setOptions API to avoid re-entrant callbacks.
+  const BIN_SCHEMES = new Set(['default', 'accessible', 'custom']);
+
   function updateShared(partial: Partial<WaferViewOptions>, { fireCallback = true } = {}): void {
     const prevMode = sharedOpts.plotMode;
     sharedOpts = { ...sharedOpts, ...partial };
@@ -1145,6 +1157,14 @@ export function renderWaferGallery(
     const nowStacked = STACKED_MODES.has(newMode);
     const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
     const hasPendingFactories = cardControllers.some(ctrl => ctrl === null);
+
+    // Switching into a bin mode: reset to default if scheme is not bin-compatible.
+    if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
+      const isBinMode = newMode === 'hardBin' || newMode === 'softBin';
+      if (isBinMode && !BIN_SCHEMES.has(sharedOpts.colorScheme ?? '')) {
+        sharedOpts = { ...sharedOpts, colorScheme: 'default' };
+      }
+    }
 
     if (partial.plotMode !== undefined) {
       if (nowStacked) {
@@ -1184,7 +1204,8 @@ export function renderWaferGallery(
     rebuildLegend();
     syncAggrMethodBtn();
     syncLegendStyleBtn();
-    if (partial.colorScheme !== undefined) renderGallerySummaryPanel();
+    const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
+    if (partial.colorScheme !== undefined || modeChanged) renderGallerySummaryPanel();
     if (fireCallback) {
       syncLogScaleBtn();
       const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
