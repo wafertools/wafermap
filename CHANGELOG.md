@@ -4,6 +4,25 @@ All notable changes to `@paulrobins/wafermap` are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- `LotStatsSummary.perWaferTestStats` — per-wafer × per-test five-number summaries (min/Q1/median/Q3/max plus mean/stddev/count/label) for box-plot rendering. Projected from `perWafer[i].summary.stats.perTestStats`; only present when `enableTestValueAnalysis` is true and at least one wafer has test data.
+
+### Performance
+
+- `buildView`: merged two O(D) min/max scans into one pass — eliminates a redundant full-die scan on every value-mode view build.
+- `buildView`: replaced per-die object spread in rotation/flip path with a `Float64Array` coord pair table — reduces transient heap allocation from ~1.9 MB to ~314 KB per rotated view build at 20k dies, and eliminates 20k short-lived JS objects per call.
+- `buildView`: merged bin-count accumulation into the rectangle generation loop — one fewer O(D) pass per bin-mode render.
+- `toCanvas`: replaced O(D) linear scan in `getDieAtPoint` with a uniform-grid spatial index — reduces hover hit-testing from O(D) to near-O(1); 48× faster at 20k dies (0.77 ms vs 37 ms per 1000 probes).
+
+### Changed
+
+- `generateTextOverlay` (renderer-internal export): second parameter is now `txCoords: Float64Array | null` before the options object. Pass `null` when calling outside a rotation/flip context.
+
+---
+
 ## [0.13.3] — 2026-06-08
 
 ### Breaking

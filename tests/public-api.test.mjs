@@ -281,7 +281,7 @@ test('renderer scene assembly preserves the public contract', () => {
 
   assert.equal(getDieKey({ x: 3, y: -2 }), '3,-2');
 
-  const textOverlay = generateTextOverlay(dies, {
+  const textOverlay = generateTextOverlay(dies, null, {
     plotMode: 'value',
     colorFns: getColorScheme('default'),
     normalize: (v) => v,

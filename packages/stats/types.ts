@@ -152,6 +152,26 @@ export interface LotStatsSummary {
     waferIndex: number;
     summary: StatsSummary;
   }>;
+  /**
+   * Per-wafer × per-test descriptive statistics, for box-plot rendering.
+   * Only populated when `enableTestValueAnalysis` is true and at least one wafer has test data.
+   * Each entry's `tests` array has the same shape as `StatsSummary.stats.perTestStats`.
+   */
+  perWaferTestStats?: Array<{
+    waferIndex: number;
+    tests: Array<{
+      testNumber: number;
+      label:      string;
+      count:      number;
+      min:        number;
+      max:        number;
+      mean:       number;
+      stddev:     number;
+      median:     number;
+      q1:         number;
+      q3:         number;
+    }>;
+  }>;
 }
 
 export interface AnalyzeWaferMapOptions {

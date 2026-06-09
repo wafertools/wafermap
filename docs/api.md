@@ -816,6 +816,8 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
+  tooltipTestLimit?:       number    // max test value rows in the die hover tooltip (default 12);
+                                            // excess rows are replaced with "…and N more"
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   downloadFilename?:       string    // stem for the PNG download filename (default 'wafermap') — '.png' is appended automatically
@@ -1437,6 +1439,21 @@ Either the rate criterion or the size criterion can trigger the severity level; 
   perWafer: Array<{
     waferIndex: number
     summary: StatsSummary              // per-wafer findings
+  }>
+  perWaferTestStats?: Array<{          // only present when enableTestValueAnalysis is true and at least one wafer has test data
+    waferIndex: number
+    tests: Array<{
+      testNumber: number
+      label:      string
+      count:      number
+      min:        number
+      max:        number
+      mean:       number
+      stddev:     number
+      median:     number
+      q1:         number
+      q3:         number
+    }>
   }>
 }
 ```
@@ -2390,6 +2407,7 @@ buildHoverText(
   fallbackFormat?:   'si' | 'engineering',
   aggregationMethod?: string,
   lotSize?:          number,
+  testLimit?:        number,   // max test rows shown; excess replaced with "…and N more" (default 12)
 ): string
 ```
 

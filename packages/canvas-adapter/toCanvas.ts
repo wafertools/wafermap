@@ -374,6 +374,18 @@ export function toCanvas(
 
     const ticks: number[] = view.logScale && logRange > 0
       ? logTicks(vMin, vMax, cbH, minPixels, endpointGuard, logMin, logRange)
+      : view.allIntegerValues
+      ? (() => {
+          // Integer-valued data: snap ticks to whole numbers with sensible spacing.
+          const intStep = Math.max(1, niceStep(vRange * minPixels / cbH));
+          const ts: number[] = [];
+          const first = Math.ceil(vMin / intStep) * intStep;
+          for (let v = first; v <= vMax + intStep * 1e-6; v += intStep) {
+            const py = (1 - (v - vMin) / vRange) * cbH;
+            if (py > endpointGuard && py < cbH - endpointGuard) ts.push(Math.round(v));
+          }
+          return ts;
+        })()
       : (() => {
           const step  = vRange > 0 ? niceStep(vRange * minPixels / cbH) : 0;
           const ts: number[] = [];
@@ -391,9 +403,10 @@ export function toCanvas(
     const isCountMode = view.plotMode === 'stackedBins' || view.plotMode === 'stackedSoftBins';
     const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (view.activeTest != null ? `Test ${view.activeTest}` : undefined));
     const cbUnit  = isCountMode ? undefined : testDef?.unit;
-    const { tickFmt, axisLabel } = fmtColorbarAxis(
+    const { tickFmt: baseFmt, axisLabel } = fmtColorbarAxis(
       vMax, cbName, cbUnit, fallbackFormat,
     );
+    const tickFmt = view.allIntegerValues ? (v: number) => String(Math.round(v)) : baseFmt;
 
     // Draw intermediate ticks with middle baseline.
     ctx.textBaseline = 'middle';
@@ -684,24 +697,58 @@ export function toCanvas(
   // ── Build viewport and hit target ──────────────────────────────────────────
   const viewport: ViewportTransform = { originX, originY, ppm, snapDist };
 
+  // Uniform-grid spatial index over hoverPoints for O(1) hit-testing.
+  // Each cell holds the indices of dies whose centre falls in that cell.
+  // Cell size = typical die pitch so most queries touch only 1–4 cells.
+  const rectW = view.rectangles[0]?.width  ?? 1;
+  const rectH = view.rectangles[0]?.height ?? 1;
+  const cellW = rectW * 1.5;
+  const cellH = rectH * 1.5;
+  const dieBounds = view.dieBounds;
+  const idxMinX = dieBounds ? dieBounds.minX : (pts.length ? Math.min(...pts.map(p => p.x)) : 0);
+  const idxMinY = dieBounds ? dieBounds.minY : (pts.length ? Math.min(...pts.map(p => p.y)) : 0);
+  const idxMaxX = dieBounds ? dieBounds.maxX : (pts.length ? Math.max(...pts.map(p => p.x)) : 1);
+  const idxMaxY = dieBounds ? dieBounds.maxY : (pts.length ? Math.max(...pts.map(p => p.y)) : 1);
+  const nCols = Math.max(1, Math.ceil((idxMaxX - idxMinX) / cellW) + 1);
+  const nRows = Math.max(1, Math.ceil((idxMaxY - idxMinY) / cellH) + 1);
+  const gridCells: number[][] = Array.from({ length: nCols * nRows }, () => []);
+  for (let i = 0; i < pts.length; i++) {
+    const col = Math.floor((pts[i].x - idxMinX) / cellW);
+    const row = Math.floor((pts[i].y - idxMinY) / cellH);
+    const ci = Math.max(0, Math.min(nCols - 1, col));
+    const ri = Math.max(0, Math.min(nRows - 1, row));
+    gridCells[ri * nCols + ci].push(i);
+  }
+  function cellsForRadius(mx: number, my: number, r: number): number[] {
+    const c0 = Math.max(0, Math.floor((mx - r - idxMinX) / cellW));
+    const c1 = Math.min(nCols - 1, Math.floor((mx + r - idxMinX) / cellW));
+    const r0 = Math.max(0, Math.floor((my - r - idxMinY) / cellH));
+    const r1 = Math.min(nRows - 1, Math.floor((my + r - idxMinY) / cellH));
+    const out: number[] = [];
+    for (let rr = r0; rr <= r1; rr++)
+      for (let cc = c0; cc <= c1; cc++)
+        for (const idx of gridCells[rr * nCols + cc]) out.push(idx);
+    return out;
+  }
+
   const hitTarget: HitTarget = {
     getDieAtPoint(px: number, py: number): Die | null {
       const mx = (px - originX) / ppm;
       const my = (originY - py) / ppm;
 
-      // First pass: exact rectangle containment.
-      for (let i = 0; i < view.rectangles.length; i++) {
+      // Exact rectangle containment using the spatial index.
+      const exactRadius = Math.max(rectW, rectH);
+      for (const i of cellsForRadius(mx, my, exactRadius)) {
         const r = view.rectangles[i];
-        if (Math.abs(mx - r.x) <= r.width / 2 && Math.abs(my - r.y) <= r.height / 2) {
+        if (r && Math.abs(mx - r.x) <= r.width / 2 && Math.abs(my - r.y) <= r.height / 2) {
           return view.dies[i] ?? null;
         }
       }
 
-      // Second pass: nearest-centre fallback for clicks in the kerf gap.
+      // Nearest-centre fallback for clicks in the kerf gap.
       let bestDie: Die | null = null;
       let bestDist = snapDist * snapDist;
-
-      for (let i = 0; i < pts.length; i++) {
+      for (const i of cellsForRadius(mx, my, snapDist)) {
         const dx = pts[i].x - mx;
         const dy = pts[i].y - my;
         const d2 = dx * dx + dy * dy;

@@ -169,6 +169,12 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * The built-in tooltip wrapper (positioning, show/hide behaviour) is preserved.
    */
   renderTooltip?: (die: Die) => string | HTMLElement | null;
+  /**
+   * Maximum number of test value rows shown in the die hover tooltip.
+   * When the die has more tests than this limit, the remainder are replaced with "…and N more".
+   * Default 12.
+   */
+  tooltipTestLimit?: number;
 }
 
 /** @deprecated Use RenderOptions instead. */
@@ -257,6 +263,7 @@ export function renderWaferMap(
     maxZoom              = 20,
     summaryPanel:        summaryPanelOpts,
     renderTooltip,
+    tooltipTestLimit,
     passBins             = [1],
     viewOptions: initialViewOptions = {},
     ...drawOptions
@@ -1205,6 +1212,7 @@ export function renderWaferMap(
             currentFallbackFormat,
             viewOpts.aggregationMethod,
             viewOpts.lotSize,
+            tooltipTestLimit,
           );
           tooltip.style.display = 'block';
           positionTooltip(tooltip, e.clientX, e.clientY);

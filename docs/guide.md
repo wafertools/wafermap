@@ -1313,6 +1313,8 @@ renderWaferGallery(container, items, {
 });
 ```
 
+Pass `enableTestValueAnalysis: true` to also populate `lotSummary.perWaferTestStats` — a per-wafer × per-test five-number summary (min/Q1/median/Q3/max plus mean/stddev/count) ready for box-plot rendering. Each entry corresponds to one wafer and has a `tests` array with the same shape as `StatsSummary.stats.perTestStats`.
+
 A "Findings" button appears in the gallery control bar. Clicking it opens a panel with two tabs:
 
 - **Lot** — lot-level yield, bin breakdown, ring/quadrant statistics, cross-wafer findings

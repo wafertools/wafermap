@@ -85,6 +85,8 @@ export interface View {
   dies: Die[];
   /** Actual [min, max] of the value data used for color normalization. */
   valueRange: [number, number];
+  /** True when every observed value for the active test is a whole number. Drives integer-only colorbar ticks. */
+  allIntegerValues?: boolean;
   /** Named test definitions — populated when `testDefs` is passed to `buildWaferMap`. */
   testDefs?: TestDef[];
   /** Which `values[]` index is being displayed (for `value` plot mode). Default 0. */
@@ -339,6 +341,7 @@ export function buildHoverText(
   fallbackFormat?: 'si' | 'engineering',
   aggrMethod?: string,
   lotSize?: number,
+  testLimit?: number,
 ): string {
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
@@ -367,6 +370,7 @@ export function buildHoverText(
     }
   } else {
     // Standard modes: show all test values with names, then bins.
+    const cap = testLimit ?? 12;
     if (die.testValues && Object.keys(die.testValues).length > 0) {
       if (testDefs?.length) {
         const parts = testDefs.map(def => {
@@ -376,12 +380,22 @@ export function buildHoverText(
           if (v === undefined) return null;
           return `${def.name}: ${fmt(v, def.unit, fallbackFormat)}`;
         }).filter((s): s is string => s !== null);
-        if (parts.length) lines.push(parts.join('<br>'));
+        const overflow = parts.length - cap;
+        const shown = overflow > 0 ? parts.slice(0, cap) : parts;
+        if (shown.length) {
+          if (overflow > 0) shown.push(`<i>…and ${overflow} more</i>`);
+          lines.push(shown.join('<br>'));
+        }
       } else {
         const parts = Object.entries(die.testValues).map(([k, v]) =>
           `Test ${k}: ${fmt(v, undefined, fallbackFormat)}`
         );
-        if (parts.length) lines.push(parts.join('<br>'));
+        const overflow = parts.length - cap;
+        const shown = overflow > 0 ? parts.slice(0, cap) : parts;
+        if (shown.length) {
+          if (overflow > 0) shown.push(`<i>…and ${overflow} more</i>`);
+          lines.push(shown.join('<br>'));
+        }
       }
     } else if (die.values?.length) {
       // Deprecated fallback.
@@ -391,7 +405,10 @@ export function buildHoverText(
           const label = def?.name ?? `Test ${i}`;
           return `${label}: ${fmt(v, def?.unit, fallbackFormat)}`;
         });
-        lines.push(parts.join('<br>'));
+        const overflow = parts.length - cap;
+        const shown = overflow > 0 ? parts.slice(0, cap) : parts;
+        if (overflow > 0) shown.push(`<i>…and ${overflow} more</i>`);
+        lines.push(shown.join('<br>'));
       } else {
         lines.push(`Values: ${die.values.map((v) => fmt(v, undefined, fallbackFormat)).join(' / ')}`);
       }
@@ -432,6 +449,7 @@ export function buildHoverText(
 
 export function generateTextOverlay(
   dies: Die[],
+  txCoords: Float64Array | null,
   options: {
     plotMode: PlotMode;
     colorFns: ColorFns;
@@ -449,7 +467,7 @@ export function generateTextOverlay(
   const { tickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
   const { testNumber: tn, fallbackIndex: fi } = resolveTestNumber(activeTest, testDefs);
 
-  return dies.flatMap((die) => {
+  return dies.flatMap((die, i) => {
     let text = '';
     let color = '#111111';
 
@@ -471,9 +489,11 @@ export function generateTextOverlay(
       color = contrastTextColor(colorFns.forValue(normalize(v)));
     }
 
+    const physX = txCoords ? txCoords[i * 2]     : die.physX;
+    const physY = txCoords ? txCoords[i * 2 + 1] : die.physY;
     return [{
-      x: die.physX,
-      y: die.physY,
+      x: physX,
+      y: physY,
       text,
       fontSize: fontSizeForDie(die, text),
       color,
@@ -642,6 +662,8 @@ function buildProbeOverlay(dies: Die[]): ViewOverlay[] {
 function pushDieRectangles(
   rectangles: ViewRect[],
   die: Die,
+  physX: number,
+  physY: number,
   plotMode: PlotMode,
   transform: TransformState,
   gap: number,
@@ -668,7 +690,7 @@ function pushDieRectangles(
 
   if (die.partial) {
     rectangles.push({
-      x: die.physX, y: die.physY, width: sw, height: sh,
+      x: physX, y: physY, width: sw, height: sh,
       fill: PARTIAL_DIE_FILL, type: 'stacked', metadata: die.metadata,
     });
     return;
@@ -676,7 +698,7 @@ function pushDieRectangles(
 
   if (die.edgeExcluded) {
     rectangles.push({
-      x: die.physX, y: die.physY, width: sw, height: sh,
+      x: physX, y: physY, width: sw, height: sh,
       fill: EDGE_EXCLUDED_FILL, type: 'stacked', metadata: die.metadata,
     });
     return;
@@ -686,7 +708,7 @@ function pushDieRectangles(
       (plotMode === 'hardBin' || plotMode === 'softBin') &&
       getBin(die) !== highlightBin) {
     rectangles.push({
-      x: die.physX, y: die.physY, width: sw, height: sh,
+      x: physX, y: physY, width: sw, height: sh,
       fill: DIM_FILL, type: 'hardBin', metadata: die.metadata,
     });
     return;
@@ -706,21 +728,21 @@ function pushDieRectangles(
     } else {
       fill = colorFns.forValue(normalize(value));
     }
-    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
+    rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
     return;
   }
 
   if (plotMode === 'hardBin' || plotMode === 'softBin') {
     const bin = getBin(die);
     const fill = bin != null ? colorFns.forBin(bin) : '#d6d9dd';
-    rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata });
+    rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata });
     return;
   }
 
   // stackedValues / stackedBins: aggregated scalar in testValues[0] (preferred) or values[0].
   const aggValue = getDieTestValue(die, 0, 0);
   const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
-  rectangles.push({ x: die.physX, y: die.physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
+  rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
 }
 
 function buildXYIndicatorOverlay(
@@ -866,38 +888,39 @@ export function buildView(
   // For stackedValues/stackedBins the aggregated scalar sits at testNumber=0.
   let vMin: number;
   let vMax: number;
+  let allIntegerValues = false;
   if (explicitRange) {
     [vMin, vMax] = explicitRange;
-  } else if (
-    plotMode === 'value' &&
-    colorbarRangeMode === 'spec' &&
-    activeTestDef &&
-    (activeTestDef.limitLow !== undefined || activeTestDef.limitHigh !== undefined)
-  ) {
-    // Colorbar spans the spec window. Data extents fill whichever limit side is absent.
-    let lo = Infinity, hi = -Infinity;
-    for (const die of dies) {
-      const v = getDieTestValue(die, activeTestNumber, activeTestFallback);
-      if (v !== undefined) {
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-      }
-    }
-    vMin = activeTestDef.limitLow  !== undefined ? activeTestDef.limitLow  : (isFinite(lo) ? lo : 0);
-    vMax = activeTestDef.limitHigh !== undefined ? activeTestDef.limitHigh : (isFinite(hi) ? hi : 1);
   } else {
+    const isStacked = plotMode === 'stackedValues' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
+    const useSpecRange =
+      !isStacked &&
+      plotMode === 'value' &&
+      colorbarRangeMode === 'spec' &&
+      activeTestDef &&
+      (activeTestDef.limitLow !== undefined || activeTestDef.limitHigh !== undefined);
     let lo = Infinity, hi = -Infinity;
+    let allIntegers = true;
     for (const die of dies) {
-      const v = plotMode === 'stackedValues' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins'
+      const v = isStacked
         ? getDieTestValue(die, 0, 0)
         : getDieTestValue(die, activeTestNumber, activeTestFallback);
       if (v !== undefined) {
         if (v < lo) lo = v;
         if (v > hi) hi = v;
+        if (!Number.isInteger(v)) allIntegers = false;
       }
     }
-    vMin = isFinite(lo) ? lo : 0;
-    vMax = isFinite(hi) ? hi : 1;
+    if (!isFinite(lo)) allIntegers = false;
+    allIntegerValues = allIntegers;
+    if (useSpecRange) {
+      // Colorbar spans the spec window. Data extents fill whichever limit side is absent.
+      vMin = activeTestDef!.limitLow  !== undefined ? activeTestDef!.limitLow  : (isFinite(lo) ? lo : 0);
+      vMax = activeTestDef!.limitHigh !== undefined ? activeTestDef!.limitHigh : (isFinite(hi) ? hi : 1);
+    } else {
+      vMin = isFinite(lo) ? lo : 0;
+      vMax = isFinite(hi) ? hi : 1;
+    }
   }
   if (vMin === vMax) vMax = vMin + 1;
 
@@ -938,24 +961,40 @@ export function buildView(
 
   const rectangles: ViewRect[] = [];
   const hoverPoints: ViewHoverPoint[] = [];
-  // Pre-transformed dies — positions rotated/flipped around wafer centre.
-  // Only the physX/physY centre moves; die.x/y/width/height/hbin/sbin/values are unchanged.
-  const transformedDies = (transform.rotation || transform.flipX || transform.flipY)
-    ? dies.map(d => {
-        const tp = transformPoint({ x: d.physX, y: d.physY }, wafer.center, transform);
-        return { ...d, physX: tp.x, physY: tp.y };
-      })
-    : dies;
-
-  for (const tdie of transformedDies) {
-    // Always add to hoverPoints so dieBounds covers the full die extent —
-    // the viewport must fit the whole wafer regardless of showPartialDies.
-    hoverPoints.push({ x: tdie.physX, y: tdie.physY });
-    if (tdie.partial && !showPartialDies) continue;
-    pushDieRectangles(rectangles, tdie, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
+  // Pre-compute transformed physical positions — only physX/physY move under
+  // rotation/flip; all other die fields are unchanged. Storing coords in a
+  // parallel Float64Array pair avoids allocating a new Die object per die.
+  const needsTransform = !!(transform.rotation || transform.flipX || transform.flipY);
+  let txCoords: Float64Array | null = null;
+  if (needsTransform) {
+    txCoords = new Float64Array(dies.length * 2);
+    for (let i = 0; i < dies.length; i++) {
+      const tp = transformPoint({ x: dies[i].physX, y: dies[i].physY }, wafer.center, transform);
+      txCoords[i * 2]     = tp.x;
+      txCoords[i * 2 + 1] = tp.y;
+    }
   }
 
-  const texts: ViewText[] = showDieLabels ? generateTextOverlay(transformedDies, {
+  const isBinMode = plotMode === 'hardBin' || plotMode === 'softBin' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
+  const useSoftBin = plotMode === 'softBin' || plotMode === 'stackedSoftBins';
+  let binCounts: Map<number, number> | undefined = isBinMode ? new Map() : undefined;
+
+  for (let i = 0; i < dies.length; i++) {
+    const die = dies[i];
+    const physX = txCoords ? txCoords[i * 2]     : die.physX;
+    const physY = txCoords ? txCoords[i * 2 + 1] : die.physY;
+    // Always add to hoverPoints so dieBounds covers the full die extent —
+    // the viewport must fit the whole wafer regardless of showPartialDies.
+    hoverPoints.push({ x: physX, y: physY });
+    if (binCounts && !die.partial) {
+      const bin = useSoftBin ? die.sbin : die.hbin;
+      if (bin != null) binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
+    }
+    if (die.partial && !showPartialDies) continue;
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
+  }
+
+  const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {
     plotMode, colorFns, normalize, activeTest,
     valueRange: [vMin, vMax], testDefs, fallbackFormat,
   }) : [];
@@ -978,19 +1017,6 @@ export function buildView(
     maxY: wafer.center.y + wafer.radius,
   } : null;
 
-  // Pre-compute bin counts for the legend — avoids O(N) scan on every render.
-  let binCounts: Map<number, number> | undefined;
-  if (plotMode === 'hardBin' || plotMode === 'softBin' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
-    binCounts = new Map();
-    const useSoft = plotMode === 'softBin' || plotMode === 'stackedSoftBins';
-    for (const die of dies) {
-      if (die.partial) continue;
-      const bin = useSoft ? die.sbin : die.hbin;
-      if (bin == null) continue;
-      binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
-    }
-  }
-
   return {
     rectangles,
     hoverPoints,
@@ -1001,6 +1027,7 @@ export function buildView(
     metadata: wafer.metadata ?? null,
     dies,
     valueRange: [vMin, vMax],
+    allIntegerValues,
     testDefs,
     activeTest,
     logScale,

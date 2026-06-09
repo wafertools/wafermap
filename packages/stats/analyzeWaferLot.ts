@@ -178,6 +178,14 @@ export function analyzeWaferLot(
     yieldPercent: summary.stats.yieldPercent,
   }));
 
+  const perWaferTestStatsRaw = perWafer
+    .map(({ waferIndex, summary }) =>
+      summary.stats.perTestStats?.length
+        ? { waferIndex, tests: summary.stats.perTestStats }
+        : null
+    )
+    .filter((e): e is NonNullable<typeof e> => e !== null);
+
   return {
     level: 'lot',
     hasNotableFindings: findings.some((finding) => finding.severity !== 'info')
@@ -187,5 +195,6 @@ export function analyzeWaferLot(
     stats: { waferCount: items.length },
     lotYieldSeries,
     perWafer,
+    ...(perWaferTestStatsRaw.length > 0 ? { perWaferTestStats: perWaferTestStatsRaw } : {}),
   };
 }
