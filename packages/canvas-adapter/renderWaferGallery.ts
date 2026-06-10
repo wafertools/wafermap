@@ -1,7 +1,7 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, type ModeEntry } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -81,6 +81,15 @@ export interface GalleryOptions {
   cardPadding?:          number;
   /** Filename stem for the composite gallery PNG. Default 'wafer-gallery'. */
   downloadFilename?:     string;
+  /**
+   * Host hook for persisting the composite gallery PNG. When provided, the save
+   * action calls `onSaveImage(blob, suggestedName)` instead of triggering a
+   * browser `<a download>` — letting embedded hosts (Tauri, Electron, WebView2)
+   * route the image through a native save dialog. `suggestedName` includes the
+   * `.png` extension and is derived from `downloadFilename`. When omitted, the
+   * default browser download behaviour is unchanged.
+   */
+  onSaveImage?:          SaveImageHandler;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -563,9 +572,13 @@ export function renderWaferGallery(
     overflowX:     'auto',
   });
 
+  const closeModeMenu = (): void => {
+    const m = getOpenMenu();
+    if (m) { m.remove(); setOpenMenu(null); }
+    markMenuTrigger(btnMode, false);
+  };
   const btnMode = makeBtn('mode', 'Plot mode', () => {
-    const openMenu = getOpenMenu();
-    if (openMenu) { openMenu.remove(); setOpenMenu(null); return; }
+    if (getOpenMenu()) { closeModeMenu(); return; }
 
     // Use originalItems (per-wafer source) — currentItems may be aggregated cards
     // in stacked modes, which don't accurately reflect the full data availability.
@@ -595,6 +608,7 @@ export function renderWaferGallery(
       }
       menu.remove();
       setOpenMenu(null);
+      markMenuTrigger(btnMode, false);
     }
 
     const testEntries: ModeEntry[] = hasValues
@@ -630,7 +644,10 @@ export function renderWaferGallery(
     );
     document.body.appendChild(menu);
     setOpenMenu(menu);
+    markMenuTrigger(btnMode, true);
+    wireMenuA11y(menu, btnMode, closeModeMenu);
   });
+  markMenuTrigger(btnMode, false);
 
   const itemsHaveCustomColors = (): boolean =>
     currentItems.flatMap(it => it ? [...(it.hbinDefs ?? []), ...(it.sbinDefs ?? [])] : []).some(d => d.color);
@@ -1542,12 +1559,7 @@ export function renderWaferGallery(
     });
     off.toBlob(blob => {
       if (!blob) return;
-      const a = Object.assign(document.createElement('a'), {
-        href:     URL.createObjectURL(blob),
-        download: `${downloadFilename}.png`,
-      });
-      a.click();
-      URL.revokeObjectURL(a.href);
+      saveImageBlob(blob, downloadFilename, options.onSaveImage);
     });
   }
 

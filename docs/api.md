@@ -114,8 +114,8 @@ is missing and returns a fully constructed wafer model.
 > mistaken for a smaller full wafer and mis-centred.  For partial data supply
 > `waferConfig.diameter` **and** `waferConfig.center` — see
 > [§4.3 Inference levels](#43-inference-levels).  When the library detects
-> likely-partial coverage with no anchor, it adds a message to
-> `result.inference.warnings`.
+> likely-partial coverage with no anchor, it adds a structured warning to
+> `result.warnings` (code `'partial-coverage'`).
 
 **Server-safe:** `buildWaferMap` is a pure function with no DOM access or side
 effects.  It can run in Node.js, Deno, a Web Worker, or any server-side environment.
@@ -418,12 +418,17 @@ const { yieldPercent, yieldPercentGross } = result.yield;
   reticles:      Reticle[]      // generated reticle geometry — wired automatically when passed as a WaferMapDisplayItem
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
+  warnings: WaferWarning[]       // structured geometry-inference advisories — always present (may be empty).
+                                  // Read this instead of relying on console.warn.
+                                  // { code: string; message: string; confidence?: number }
+                                  // Current code: 'partial-coverage' — data does not span a full wafer;
+                                  //   inferred diameter/centre may be wrong. Supply waferConfig.center + .diameter.
   inference: {
     wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1.
                                                         // method is 'inferred-partial' when partial data was detected
     diePitch: { confidence: number; units: 'mm' | 'normalized' }  // how die size was resolved
     grid:     { confidence: number }                   // quality of the grid index assignment
-    warnings?: string[]                                // geometry-trust warnings, e.g. likely-partial data with no anchor
+    warnings?: string[]                                // @deprecated: mirrors result.warnings[].message; use result.warnings instead
   }
   dataCoverage: {
     filledDies:       number   // dies with at least one value or bin attached
@@ -527,7 +532,7 @@ const result = buildWaferMap({
 ```
 
 When the library detects likely-partial data and no `center` was supplied, it
-pushes an explanatory string onto `result.inference.warnings` and sets
+adds a structured warning to `result.warnings` (code `'partial-coverage'`) and sets
 `result.inference.wafer.method` to `'inferred-partial'` — check these
 programmatically rather than relying on console output.
 
@@ -733,7 +738,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` |
-| `colorScheme` | `string` | `'default'` | Built-in: `'default'` `'viridis'` `'plasma'` `'cool'` `'warm'` `'red-blue'`. Custom schemes via `registerColorScheme()`. |
+| `colorScheme` | `string` | `'default'` | Built-in: `'default'` `'viridis'` `'greyscale'` `'accessible'` `'plasma'` `'inferno'` `'traffic'` `'thermal'`. Custom schemes via `registerColorScheme()`. |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `colorBySpec` | `boolean` | `false` | In `value` mode: replace the gradient with categorical pass/fail colours when the active test has spec limits. Toggled via the Overlays toolbar menu. |
 | `highlightBin` | `number` | — | Dim all bins except this one |
@@ -821,6 +826,11 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   downloadFilename?:       string    // stem for the PNG download filename (default 'wafermap') — '.png' is appended automatically
+  onSaveImage?:            (blob: Blob, suggestedName: string) => void | Promise<void>
+                                            // host hook for persisting the rendered PNG. When provided, the toolbar's save
+                                            // button calls it instead of triggering a browser <a download>, letting
+                                            // embedded hosts (Tauri, Electron, WebView2) route the image through a native
+                                            // dialog. When omitted, the default download behaviour is unchanged.
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
 ```

@@ -88,6 +88,18 @@ test('partial: half-wafer with NO geometry emits an inference warning (current f
   assert.ok(Array.isArray(result.inference.warnings));
   assert.ok(result.inference.warnings.length > 0);
   assert.equal(result.inference.wafer.method, 'inferred-partial');
+
+  // Promoted structured channel mirrors the deprecated string array.
+  assert.ok(Array.isArray(result.warnings));
+  const partial = result.warnings.find((w) => w.code === 'partial-coverage');
+  assert.ok(partial, 'structured partial-coverage warning present');
+  assert.equal(typeof partial.message, 'string');
+  assert.ok(partial.message.length > 0);
+  // String mirror and structured messages stay in sync.
+  assert.deepEqual(
+    result.inference.warnings,
+    result.warnings.map((w) => w.message),
+  );
   // Documented limitation (not asserted as correct): with no anchor the data
   // midpoint — not the true centre — is placed at the origin, so the centre die
   // is pushed off the physical origin. This is exactly why the warning fires.
@@ -103,6 +115,9 @@ test('partial: symmetric full wafer with no geometry is unchanged and warning-fr
   assert.equal(centre.physX, 0);
   assert.equal(centre.physY, 0);
   assert.ok(!result.inference.warnings || result.inference.warnings.length === 0);
+  // Promoted channel is always an array; empty when geometry is trustworthy.
+  assert.ok(Array.isArray(result.warnings));
+  assert.equal(result.warnings.length, 0);
 });
 
 test('partial: full wafer with an off-origin prober coordinate system does NOT warn', () => {

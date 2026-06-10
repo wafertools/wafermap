@@ -92,8 +92,8 @@ const result = buildWaferMap({
 });
 ```
 
-If the library detects likely-partial data with no `center`, it adds a message
-to `result.inference.warnings`.
+If the library detects likely-partial data with no `center`, it adds a structured
+warning to `result.warnings` (code `'partial-coverage'`).
 
 ## Next steps
 

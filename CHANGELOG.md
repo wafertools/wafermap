@@ -2,13 +2,34 @@
 
 All notable changes to `@paulrobins/wafermap` are documented here.
 
+## Versioning policy
+
+This project is pre-1.0 and follows a strict breakage rule:
+
+- **Any release containing a `### Breaking` entry requires a minor bump** (`0.x.0`),
+  never a patch. Removing, renaming, or changing the type/semantics of a public
+  field, option, return value, or export is breaking.
+- **Patch bumps (`0.x.y`) are additive or fixative only** — new optional fields,
+  new optional options, bug fixes, performance work, and documentation. They must
+  not break code written against the previous patch.
+
+Consumers pinning `~0.x.y` therefore get patch-level fixes without surprise
+breakage; breaking changes always move the minor and surface in the changelog
+under `### Breaking`.
+
 ---
 
-## [Unreleased]
+## [0.13.5] — 2026-06-10
 
 ### Added
 
+- `WaferMapResult.warnings` — a promoted, always-present `WaferWarning[]` of structured geometry-inference advisories (`{ code, message, confidence? }`). The one advisory today is `'partial-coverage'`: data that does not span a full symmetric wafer, where the inferred diameter/centre may be wrong. Read this instead of relying on `console.warn`. The pre-existing `result.inference.warnings` string array is now deprecated (it mirrors the `message` of each structured warning).
+- `renderWaferMap` / `renderWaferGallery` `onSaveImage?(blob, suggestedName)` option — host hook for persisting the rendered PNG. When provided, the toolbar's save action calls it instead of triggering a browser `<a download>`, letting embedded hosts (Tauri, Electron, WebView2) route the image through a native save dialog. When omitted, the default download behaviour is unchanged.
 - `LotStatsSummary.perWaferTestStats` — per-wafer × per-test five-number summaries (min/Q1/median/Q3/max plus mean/stddev/count/label) for box-plot rendering. Projected from `perWafer[i].summary.stats.perTestStats`; only present when `enableTestValueAnalysis` is true and at least one wafer has test data.
+
+### Accessibility
+
+- Toolbar dropdown, plot-mode, and overlay menus now carry `role="menu"` with `menuitemradio` / `menuitemcheckbox` rows (`aria-checked` reflecting state), trigger buttons advertise `aria-haspopup="menu"` and toggle `aria-expanded`, and menus support full keyboard navigation (ArrowUp/Down, Home/End, Enter/Space, Escape). The expand modal is now a `role="dialog"` with `aria-modal`, a focus trap, and focus restoration to the opener on close. Toolbar buttons retain their `aria-label` and deliberately use no `title` attribute (which would duplicate the custom hover tooltip).
 
 ### Performance
 

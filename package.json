@@ -1,12 +1,20 @@
 {
   "name": "@paulrobins/wafermap",
-  "version": "0.13.4",
+  "version": "0.13.5",
   "description": "Interactive wafer map visualization and yield analysis for semiconductor test data. Hard bins, soft bins, test values, retests, edge exclusion, reticle overlays, spatial statistics, failure clustering, and lot-level trend analysis — pure ES modules, no runtime dependencies, no server required.",
   "type": "module",
   "license": "MIT",
   "author": {
     "name": "Paul Robins",
     "url": "https://telecasterer.github.io/wafermap/"
+  },
+  "homepage": "https://telecasterer.github.io/wafermap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/telecasterer/wafermap.git"
+  },
+  "bugs": {
+    "url": "https://github.com/telecasterer/wafermap/issues"
   },
   "private": false,
   "files": [

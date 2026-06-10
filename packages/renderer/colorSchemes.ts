@@ -86,7 +86,7 @@ function binHash(colors: readonly string[], salt: number): (bin: number) => stri
 registerColorScheme('default', {
   label: 'Default',
   forBin: hardBinColor,
-  forValue: (t) => lerpKp(VIRIDIS, t),
+  forValue: (t) => lerpKp(VIRIDIS, 1 - t),
 });
 
 /**
@@ -97,7 +97,7 @@ registerColorScheme('default', {
 registerColorScheme('viridis', {
   label: 'Viridis',
   forBin:  (bin) => lerpKp(VIRIDIS, Math.min(bin, 16) / 16),
-  forValue: (t) => lerpKp(VIRIDIS, t),
+  forValue: (t) => lerpKp(VIRIDIS, 1 - t),
 });
 
 // 'color' kept as an alias so existing code that passed colorScheme:'color' still works.
@@ -110,7 +110,7 @@ registry.set('color', { ...registry.get('default')!, isAlias: true });
 registerColorScheme('greyscale', {
   label: 'Greyscale',
   forBin: binHash(HARD_BIN_GREY, 0x9e3779b9),
-  forValue: valueToGreyscale,
+  forValue: (t) => valueToGreyscale(1 - t),
 });
 
 /**
@@ -202,7 +202,7 @@ const CIVIDIS: readonly [number, number, number][] = [
 registerColorScheme('accessible', {
   label: 'Accessible (CVD-safe / Cividis)',
   forBin:  binHash(ACCESSIBLE_PALETTE, 0x9e3779b9),
-  forValue: (t) => lerpKp(CIVIDIS, t),
+  forValue: (t) => lerpKp(CIVIDIS, 1 - t),
 });
 
 /**
@@ -239,7 +239,7 @@ const PLASMA_KP: readonly [number, number, number][] = [
 registerColorScheme('plasma', {
   label: 'Plasma',
   forBin: binHash(PLASMA_BINS, 0x9e3779b9),
-  forValue: (t) => lerpKp(PLASMA_KP, t),
+  forValue: (t) => lerpKp(PLASMA_KP, 1 - t),
 });
 
 /**
@@ -276,5 +276,77 @@ const INFERNO_KP: readonly [number, number, number][] = [
 registerColorScheme('inferno', {
   label: 'Inferno',
   forBin: binHash(INFERNO_BINS, 0x9e3779b9),
-  forValue: (t) => lerpKp(INFERNO_KP, t),
+  forValue: (t) => lerpKp(INFERNO_KP, 1 - t),
+});
+
+/**
+ * TRAFFIC — green → yellow → red.
+ * Domain-standard for semiconductor parametric maps where low values are
+ * good (passing) and high values are bad (failing or out-of-spec).
+ * Immediately readable by process and yield engineers without a legend.
+ */
+const TRAFFIC_BINS: readonly string[] = [
+  '#aaaaaa', //  0: no data
+  '#27ae60', //  1: green
+  '#e74c3c', //  2: red
+  '#f39c12', //  3: amber
+  '#2ecc71', //  4: light green
+  '#c0392b', //  5: dark red
+  '#f1c40f', //  6: yellow
+  '#1e8449', //  7: dark green
+  '#e67e22', //  8: orange
+  '#a9cce3', //  9: pale blue
+  '#922b21', // 10: deep red
+  '#82e0aa', // 11: pale green
+  '#d4e6f1', // 12: very pale blue
+  '#fdebd0', // 13: pale orange
+  '#d5f5e3', // 14: very pale green
+];
+
+const TRAFFIC_KP: readonly [number, number, number][] = [
+  [ 46, 204,  113],  // green
+  [241, 196,   15],  // yellow
+  [231,  76,   60],  // red
+];
+
+registerColorScheme('traffic', {
+  label: 'Traffic (Green–Yellow–Red)',
+  forBin: binHash(TRAFFIC_BINS, 0x9e3779b9),
+  forValue: (t) => lerpKp(TRAFFIC_KP, t),
+});
+
+/**
+ * THERMAL — blue → cyan → yellow → red.
+ * Conventional for parametric/electrical test maps (resistance, voltage,
+ * timing). Blue reads as "cold/low", red as "hot/high".
+ */
+const THERMAL_BINS: readonly string[] = [
+  '#aaaaaa', //  0: no data
+  '#2980b9', //  1: blue
+  '#e74c3c', //  2: red
+  '#1abc9c', //  3: teal
+  '#f39c12', //  4: amber
+  '#8e44ad', //  5: purple
+  '#e67e22', //  6: orange
+  '#3498db', //  7: light blue
+  '#c0392b', //  8: dark red
+  '#16a085', //  9: dark teal
+  '#f1c40f', // 10: yellow
+  '#154360', // 11: dark blue
+  '#922b21', // 12: deep red
+  '#d6eaf8', // 13: pale blue
+  '#fdedec', // 14: pale red
+];
+
+const THERMAL_KP: readonly [number, number, number][] = [
+  [  0,   0, 255],  // blue
+  [  0, 255, 255],  // cyan
+  [255, 255,   0],  // yellow
+  [255,   0,   0],  // red
+];
+
+registerColorScheme('thermal', {
+  label: 'Thermal (Blue–Cyan–Yellow–Red)',
+  forBin: binHash(THERMAL_BINS, 0x9e3779b9),
+  forValue: (t) => lerpKp(THERMAL_KP, t),
 });

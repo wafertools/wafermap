@@ -215,9 +215,11 @@ const result = buildWaferMap({
 public `die.x`/`die.y` labels — those stay the original prober coordinates.
 
 When the library detects likely-partial coverage with no `center`, it adds a
-message to `result.inference.warnings` and sets `result.inference.wafer.method`
-to `'inferred-partial'`. Detection is heuristic, so for any partial dataset set
-`waferConfig.center` explicitly rather than relying on the warning.
+structured `WaferWarning` to `result.warnings` (code `'partial-coverage'`) and sets
+`result.inference.wafer.method` to `'inferred-partial'`. Detection is heuristic,
+so for any partial dataset set `waferConfig.center` explicitly rather than relying
+on the warning. (`result.inference.warnings` is a deprecated string-array mirror
+of the same messages — use `result.warnings` in new code.)
 
 ### Edge exclusion
 
@@ -1625,8 +1627,9 @@ wmWorker.terminate();
 
 ## 17. Custom colour schemes
 
-The built-in colour schemes are `'default'`, `'greyscale'`, `'accessible'`,
-`'plasma'`, and `'inferno'`.  You can register additional schemes for brand colours,
+The built-in colour schemes are `'default'`, `'viridis'`, `'greyscale'`, `'accessible'`,
+`'plasma'`, `'inferno'`, `'traffic'` (green→yellow→red, low=good), and `'thermal'`
+(blue→cyan→yellow→red, low=cold).  You can register additional schemes for brand colours,
 thematic colouring, or specialised analysis:
 
 ```ts

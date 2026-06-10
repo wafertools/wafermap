@@ -367,6 +367,29 @@ export interface YieldSummary {
 }
 
 
+/**
+ * A non-fatal advisory raised while `buildWaferMap` inferred geometry from data.
+ * Surface these to the user (a panel, a log, a status line) instead of letting
+ * silent inference mask questionable input — an engineer reading a wafer map
+ * built on guessed geometry must be told the geometry was guessed.
+ */
+export interface WaferWarning {
+  /**
+   * Stable machine-readable key for the advisory. Branch on this, not on
+   * `message` (which is prose and may be reworded). Known codes:
+   * - `'partial-coverage'` — data does not span a full symmetric wafer; the
+   *   inferred diameter and centre may be wrong and dies may be mis-positioned.
+   *
+   * The union is intentionally open to string so future advisory codes can be
+   * added without a breaking change; switch with a `default` branch.
+   */
+  code: 'partial-coverage' | (string & {});
+  /** Human-readable explanation, suitable for direct display. */
+  message: string;
+  /** Inference confidence in [0, 1] for the related quantity, when one exists. */
+  confidence?: number;
+}
+
 export interface WaferMapResult {
   wafer: Wafer;
   dies: Die[];
@@ -399,14 +422,23 @@ export interface WaferMapResult {
     diePitch: { confidence: number; units: 'mm' | 'normalized' };
     grid:     { confidence: number };
     /**
-     * Non-fatal geometry-trust warnings raised during inference. Empty/absent
-     * when geometry was supplied or confidently inferred. The most important
-     * case: data that does not span a full symmetric wafer, where the inferred
-     * diameter and centre may be wrong. Check this programmatically rather than
-     * relying on console output.
+     * @deprecated Use the promoted top-level `WaferMapResult.warnings` instead —
+     * it is always present (empty when none) and carries structured
+     * `{ code, message, confidence? }` entries you can branch on. This raw
+     * string array is retained for backward compatibility and mirrors the
+     * `message` of each structured warning.
      */
     warnings?: string[];
   };
+  /**
+   * Structured non-fatal advisories raised while inferring geometry from data.
+   * Always present; empty when geometry was supplied or confidently inferred.
+   * Branch on `warning.code` and display `warning.message`. The most important
+   * case is `'partial-coverage'`: data that does not span a full symmetric
+   * wafer, where the inferred diameter and centre may be wrong. Read this
+   * programmatically rather than relying on console output.
+   */
+  warnings: WaferWarning[];
   /** Die population statistics. */
   dataCoverage: {
     /** Dies inside the wafer boundary that have at least one value or bin. */
@@ -961,6 +993,26 @@ function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
  * });
  * ```
  */
+/**
+ * Derive the structured, public `WaferMapResult.warnings` array from the
+ * internal `inference` record. Single source of truth for both build paths.
+ *
+ * Only genuinely questionable inference is flagged. Normalized-unit geometry
+ * (raw prober steps with no physical dimensions) is the library's primary
+ * supported input and is inferred confidently — it is NOT a warning. The one
+ * advisory today is `'partial-coverage'`: data that does not span a full
+ * symmetric wafer, where the inferred diameter/centre may be wrong. That
+ * detection lives at the inference site; here we just promote its message(s)
+ * into the structured shape.
+ */
+function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
+  return (inference.warnings ?? []).map(message => ({
+    code: 'partial-coverage' as const,
+    message,
+    confidence: inference.wafer.confidence,
+  }));
+}
+
 export function buildWaferMap(
   input: DieResult[] | WaferMapInput,
   options?: WaferMapOptions,
@@ -1024,6 +1076,7 @@ export function buildWaferMap(
 
     return {
       wafer, dies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
+      warnings: buildWarnings(inference),
       plotMode: view.plotMode,
       metadata: view.metadata,
       isLotStack: false,
@@ -1182,6 +1235,7 @@ export function buildWaferMap(
 
   return {
     wafer, dies, view, reticleConfig: norm.reticleOpts, units, inference,
+    warnings: buildWarnings(inference),
     plotMode: view.plotMode,
     metadata: view.metadata,
     isLotStack: norm.lotStackOpts !== undefined,

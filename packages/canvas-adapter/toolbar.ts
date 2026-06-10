@@ -37,6 +37,132 @@ export const MODE_LABELS: Record<PlotMode, string> = {
 export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardBin', 'softBin']);
 export const STACKED_MODES    = new Set<PlotMode>(['stackedValues', 'stackedBins', 'stackedSoftBins']);
 
+// ── Image save ───────────────────────────────────────────────────────────────
+
+/**
+ * Host hook for persisting a rendered PNG. When supplied, the toolbar calls this
+ * instead of triggering a browser `<a download>`, letting embedded hosts (Tauri,
+ * Electron, WebView2) route the blob through a native save dialog or upload.
+ * Receives the PNG `blob` and a `suggestedName` (already includes `.png`).
+ */
+export type SaveImageHandler = (blob: Blob, suggestedName: string) => void | Promise<void>;
+
+/**
+ * Persist a rendered PNG blob. Routes through the host `onSaveImage` hook when
+ * provided; otherwise falls back to a browser `<a download>` click. Single
+ * source of truth for the save action across `renderWaferMap` and
+ * `renderWaferGallery` — neither should reimplement the `<a download>` dance.
+ *
+ * @param blob          the PNG blob (e.g. from `canvas.toBlob`)
+ * @param filename      filename without extension (e.g. `'wafermap'`)
+ * @param onSaveImage   optional host hook; when present, bypasses `<a download>`
+ */
+export function saveImageBlob(blob: Blob, filename: string, onSaveImage?: SaveImageHandler): void {
+  const suggestedName = `${filename}.png`;
+  if (onSaveImage) {
+    void onSaveImage(blob, suggestedName);
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href = url;
+  a.download = suggestedName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Accessibility ──────────────────────────────────────────────────────────────
+//
+// Toolbar buttons already carry `ariaLabel` (see makeBtn). Deliberately NO `title`
+// attribute on toolbar buttons — it duplicates the custom hover tooltip. The
+// helpers below add the menu/menuitem semantics and keyboard navigation that
+// `aria-label` alone cannot provide, without rendering any native tooltip.
+
+/** Selector matching every focusable menu item within a menu container. */
+const MENU_ITEM_SELECTOR = '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
+
+/**
+ * Run `fn` on the next animation frame, falling back to a macrotask in
+ * environments without `requestAnimationFrame` (e.g. JSDOM under tests).
+ * Used to defer focus moves until the element is laid out.
+ */
+function nextFrame(fn: () => void): void {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
+  else setTimeout(fn, 0);
+}
+
+/**
+ * Tag a menu container and its rows with ARIA roles and make rows keyboard
+ * focusable. `roleForRow` returns the per-row role; rows are skipped (left as
+ * presentational section headers) when it returns `null`.
+ */
+function applyMenuRoles(
+  menu: HTMLElement,
+  label: string,
+  roleForRow: (row: HTMLElement) => 'menuitemradio' | 'menuitemcheckbox' | 'menuitem' | null,
+): void {
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', label);
+  for (const child of Array.from(menu.children) as HTMLElement[]) {
+    const role = roleForRow(child);
+    if (!role) continue;
+    child.setAttribute('role', role);
+    child.tabIndex = -1;
+  }
+}
+
+/**
+ * Wire roving-focus keyboard navigation onto an already-roled menu:
+ * ArrowUp/Down move between items, Home/End jump to ends, Enter/Space activate
+ * the focused item, Escape (or Tab) closes the menu and returns focus to the
+ * trigger. `close` should remove the menu and clear any open-menu bookkeeping.
+ * Focus moves to the first item on open. Returns nothing; the listener lives on
+ * the menu element and dies with it.
+ */
+function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close: () => void): void {
+  const items = (): HTMLElement[] => Array.from(menu.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR));
+
+  menu.addEventListener('keydown', (e: KeyboardEvent) => {
+    const list = items();
+    if (list.length === 0) return;
+    const current = document.activeElement as HTMLElement | null;
+    const idx = current ? list.indexOf(current) : -1;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        list[idx < 0 || idx === list.length - 1 ? 0 : idx + 1].focus();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        list[idx <= 0 ? list.length - 1 : idx - 1].focus();
+        break;
+      case 'Home':
+        e.preventDefault();
+        list[0].focus();
+        break;
+      case 'End':
+        e.preventDefault();
+        list[list.length - 1].focus();
+        break;
+      case 'Enter':
+      case ' ':
+        if (idx >= 0) { e.preventDefault(); list[idx].click(); }
+        break;
+      case 'Escape':
+      case 'Tab':
+        e.preventDefault();
+        close();
+        trigger?.focus();
+        break;
+    }
+  });
+
+  // Move focus into the menu so arrow keys work immediately on open.
+  const first = items()[0];
+  if (first) nextFrame(() => first.focus());
+}
+
 // Menus must be appended inside the fullscreen element or the nearest modal box,
 // not document.body — both create stacking contexts that would obscure body-level menus.
 export function menuRootFor(anchor: Element): Element {
@@ -237,7 +363,27 @@ export function buildModeMenuEl(
     }
   }
 
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Plot mode');
   return menu;
+}
+
+/**
+ * Mark a button as a menu trigger and reflect its open/closed state. Call with
+ * `expanded` on open/close so assistive tech announces the popup state. Public
+ * so the adapters can apply it to mode-menu triggers they mount themselves.
+ */
+export function markMenuTrigger(btn: HTMLElement, expanded: boolean): void {
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+/**
+ * Public re-export of the internal roving-focus keyboard wiring, for menus the
+ * adapters mount directly (the plot-mode menu). See `wireMenuKeyboard`.
+ */
+export function wireMenuA11y(menu: HTMLElement, trigger: HTMLElement | null, close: () => void): void {
+  wireMenuKeyboard(menu, trigger, close);
 }
 
 export type CheckMenuRow =
@@ -280,6 +426,9 @@ export function buildCheckMenuEl(
       const enabled = row.enabled !== false;
       if (!enabled) continue;
       const el = document.createElement('div');
+      el.setAttribute('role', 'menuitemcheckbox');
+      el.setAttribute('aria-checked', row.active ? 'true' : 'false');
+      el.tabIndex = -1;
       Object.assign(el.style, {
         display:    'flex',
         alignItems: 'center',
@@ -291,6 +440,7 @@ export function buildCheckMenuEl(
         fontWeight: row.active ? '700' : '400',
         background: row.active ? CLR.menuActive : 'transparent',
         whiteSpace: 'nowrap',
+        outline:    'none',
       });
       const tick = document.createElement('span');
       Object.assign(tick.style, {
@@ -300,12 +450,15 @@ export function buildCheckMenuEl(
         visibility: row.active ? 'visible' : 'hidden',
       });
       tick.textContent = '✓';
+      tick.setAttribute('aria-hidden', 'true');
       const lbl = document.createElement('span');
       lbl.textContent = row.label;
       el.appendChild(tick);
       el.appendChild(lbl);
       el.addEventListener('mouseenter', () => { if (!row.active) el.style.background = CLR.menuHover; });
       el.addEventListener('mouseleave', () => { el.style.background = row.active ? CLR.menuActive : 'transparent'; });
+      el.addEventListener('focus', () => { if (!row.active) el.style.background = CLR.menuHover; });
+      el.addEventListener('blur',  () => { el.style.background = row.active ? CLR.menuActive : 'transparent'; });
       el.addEventListener('click', (e) => { e.stopPropagation(); row.onClick(e); });
       menu.appendChild(el);
     }
@@ -391,6 +544,11 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   function makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void): HTMLDivElement {
     const row = document.createElement('div');
     row.textContent = label;
+    // Single-select menu semantics; container role/keyboard nav added when the
+    // menu is mounted (applyMenuRoles / wireMenuKeyboard).
+    row.setAttribute('role', 'menuitemradio');
+    row.setAttribute('aria-checked', active ? 'true' : 'false');
+    row.tabIndex = -1;
     Object.assign(row.style, {
       padding:    `6px 14px 6px ${indent ? '26px' : '14px'}`,
       fontSize:   '12px',
@@ -399,9 +557,13 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       fontWeight: active ? '700' : '400',
       background: active ? CLR.menuActive : 'transparent',
       whiteSpace: 'nowrap',
+      outline:    'none',
     });
     row.addEventListener('mouseenter', () => { if (!active) row.style.background = CLR.menuHover; });
     row.addEventListener('mouseleave', () => { row.style.background = active ? CLR.menuActive : 'transparent'; });
+    // Keyboard focus highlight mirrors hover so the roving focus is visible.
+    row.addEventListener('focus', () => { if (!active) row.style.background = CLR.menuHover; });
+    row.addEventListener('blur',  () => { row.style.background = active ? CLR.menuActive : 'transparent'; });
     row.addEventListener('click', onClick);
     return row;
   }
@@ -409,6 +571,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   function makeMenuSection(label: string): HTMLDivElement {
     const el = document.createElement('div');
     el.textContent = label;
+    el.setAttribute('role', 'presentation');
     Object.assign(el.style, {
       padding:       '5px 14px 2px',
       fontSize:      '10px',
@@ -429,8 +592,12 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     getCurrent: () => T,
     onPick: (v: T) => void,
   ): HTMLButtonElement {
+    const closeMenu = (): void => {
+      if (openMenu) { openMenu.remove(); openMenu = null; }
+      btn.setAttribute('aria-expanded', 'false');
+    };
     const btn = makeBtn(iconKey, title, () => {
-      if (openMenu) { openMenu.remove(); openMenu = null; return; }
+      if (openMenu) { closeMenu(); return; }
       const menu = document.createElement('div');
       const btnRect = btn.getBoundingClientRect();
       const ddMinWidth = 148;
@@ -454,6 +621,9 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         row.textContent = item.label;
         row.dataset.wmapDropdownValue = item.value;
         const isActive = item.value === getCurrent();
+        row.setAttribute('role', 'menuitemradio');
+        row.setAttribute('aria-checked', isActive ? 'true' : 'false');
+        row.tabIndex = -1;
         Object.assign(row.style, {
           padding:    '6px 14px',
           fontSize:   '12px',
@@ -462,24 +632,30 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
           fontWeight: isActive ? '700' : '400',
           background: isActive ? CLR.menuActive : 'transparent',
           whiteSpace: 'nowrap',
+          outline:    'none',
         });
-        row.addEventListener('mouseenter', () => {
-          if (item.value !== getCurrent()) row.style.background = CLR.menuHover;
-        });
-        row.addEventListener('mouseleave', () => {
-          row.style.background = item.value === getCurrent() ? CLR.menuActive : 'transparent';
-        });
+        const highlightOn  = (): void => { if (item.value !== getCurrent()) row.style.background = CLR.menuHover; };
+        const highlightOff = (): void => { row.style.background = item.value === getCurrent() ? CLR.menuActive : 'transparent'; };
+        row.addEventListener('mouseenter', highlightOn);
+        row.addEventListener('mouseleave', highlightOff);
+        row.addEventListener('focus', highlightOn);
+        row.addEventListener('blur',  highlightOff);
         row.addEventListener('click', e => {
           e.stopPropagation();
           onPick(item.value);
-          menu.remove();
-          openMenu = null;
+          closeMenu();
         });
         menu.appendChild(row);
       }
+      menu.setAttribute('role', 'menu');
+      menu.setAttribute('aria-label', title);
       menuRoot(btn).appendChild(menu);
       openMenu = menu;
+      btn.setAttribute('aria-expanded', 'true');
+      wireMenuKeyboard(menu, btn, closeMenu);
     });
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.setAttribute('aria-expanded', 'false');
     return btn;
   }
 
@@ -502,20 +678,33 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
               const current = openMenu;
               if (!current) return;
               const updated = buildMenu();
+              updated.setAttribute('role', 'menu');
+              updated.setAttribute('aria-label', label);
               current.replaceWith(updated);
               openMenu = updated;
+              wireMenuKeyboard(updated, btn, closeMenu);
             },
           };
         }),
         { makeMenuRow, makeMenuSection },
       );
     }
+    const closeMenu = (): void => {
+      if (openMenu) { openMenu.remove(); openMenu = null; }
+      btn.setAttribute('aria-expanded', 'false');
+    };
     const btn = makeBtn(iconKey, label, () => {
-      if (openMenu) { openMenu.remove(); openMenu = null; return; }
+      if (openMenu) { closeMenu(); return; }
       const menu = buildMenu();
+      menu.setAttribute('role', 'menu');
+      menu.setAttribute('aria-label', label);
       menuRoot(btn).appendChild(menu);
       openMenu = menu;
+      btn.setAttribute('aria-expanded', 'true');
+      wireMenuKeyboard(menu, btn, closeMenu);
     });
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.setAttribute('aria-expanded', 'false');
     onSync(btn);
     return btn;
   }
@@ -524,6 +713,15 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     if (openMenu && !openMenu.contains(e.target as Node)) {
       openMenu.remove();
       openMenu = null;
+      // Keep menu-trigger aria in sync: a trigger button that re-opens the menu
+      // on the same click will set itself back to 'true' afterwards, so resetting
+      // here cannot leave a stale 'true' on a button whose menu is closed.
+      const target = e.target as Element | null;
+      if (!(target?.getAttribute?.('aria-haspopup') === 'menu')) {
+        for (const el of document.querySelectorAll('[aria-haspopup="menu"][aria-expanded="true"]')) {
+          el.setAttribute('aria-expanded', 'false');
+        }
+      }
     }
   }
 
@@ -576,8 +774,15 @@ export function openModal(opts: ModalOptions): ModalHandle {
     backdropFilter: 'blur(3px)',
   });
 
+  // Remember what had focus so we can restore it when the modal closes.
+  const previouslyFocused = document.activeElement as HTMLElement | null;
+
   const box = document.createElement('div') as HTMLDivElement;
   box.className = 'wmap-modal-box';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-label', opts.title ?? 'Expanded wafer map');
+  box.tabIndex = -1;
   Object.assign(box.style, {
     background:    '#fff',
     borderRadius:  '12px',
@@ -628,8 +833,10 @@ export function openModal(opts: ModalOptions): ModalHandle {
   header.appendChild(spacer);
 
   const fullscreenBtn = document.createElement('button');
+  fullscreenBtn.type = 'button';
   fullscreenBtn.innerHTML = '&#x26F6;';
   fullscreenBtn.title = 'Fullscreen (F)';
+  fullscreenBtn.setAttribute('aria-label', 'Fullscreen');
   Object.assign(fullscreenBtn.style, { ...btnStyle, fontSize: '18px' });
   fullscreenBtn.addEventListener('click', () => {
     if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
@@ -637,8 +844,10 @@ export function openModal(opts: ModalOptions): ModalHandle {
   });
 
   const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
   closeBtn.textContent = '\xD7';
   closeBtn.title = 'Close (Esc)';
+  closeBtn.setAttribute('aria-label', 'Close');
   Object.assign(closeBtn.style, { ...btnStyle, fontSize: '20px', padding: '0 2px' });
   closeBtn.addEventListener('click', close);
 
@@ -664,8 +873,28 @@ export function openModal(opts: ModalOptions): ModalHandle {
     opts.onFullscreenChange?.(isFs, box);
   };
 
+  // Keep keyboard focus inside the dialog while it is open (a11y focus trap).
+  const FOCUSABLE =
+    'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"]),[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
+  function trapTab(e: KeyboardEvent): void {
+    const focusable = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE))
+      .filter(el => el.offsetParent !== null || el === document.activeElement);
+    if (focusable.length === 0) { e.preventDefault(); box.focus(); return; }
+    const first = focusable[0];
+    const last  = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && (active === first || !box.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && !document.fullscreenElement) { close(); return; }
+    if (e.key === 'Tab') { trapTab(e); return; }
     if (e.key === 'f' || e.key === 'F') {
       if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
       else document.exitFullscreen();
@@ -678,6 +907,8 @@ export function openModal(opts: ModalOptions): ModalHandle {
     document.removeEventListener('fullscreenchange', onFsChange);
     backdrop.remove();
     document.body.style.overflow = savedOverflow;
+    // Return focus to whatever was focused before the modal opened.
+    previouslyFocused?.focus?.();
     opts.onClose();
   }
 
@@ -698,6 +929,10 @@ export function openModal(opts: ModalOptions): ModalHandle {
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('fullscreenchange', onFsChange);
+
+  // Move focus into the dialog so the trap has somewhere to start and screen
+  // readers announce the dialog. Prefer the close button (a predictable target).
+  nextFrame(() => (closeBtn.isConnected ? closeBtn : box).focus());
 
   return { backdrop, box, contentWrap, close };
 }

@@ -263,6 +263,104 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
   }
 });
 
+test('renderWaferMap onSaveImage hook intercepts the PNG download', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, hbin: 1 },
+        { x: 1, y: 0, hbin: 2 },
+        { x: 0, y: 1, hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+
+    const saved = [];
+    // When the host provides onSaveImage, the toolbar must call it instead of
+    // appending an <a download> and clicking it. Track any anchor clicks to
+    // confirm the default path is bypassed.
+    let anchorClicks = 0;
+    const origClick = window.HTMLAnchorElement.prototype.click;
+    window.HTMLAnchorElement.prototype.click = function () { anchorClicks++; };
+
+    try {
+      renderWaferMap(container, wafer, {
+        downloadFilename: 'my-wafer',
+        onSaveImage: (blob, name) => { saved.push({ blob, name }); },
+      });
+
+      const downloadBtn = [...root.querySelectorAll('button')].find((b) => b.ariaLabel === 'Download PNG');
+      assert.ok(downloadBtn, 'Download PNG button should exist');
+      click(window, downloadBtn);
+
+      assert.equal(saved.length, 1, 'onSaveImage should be called exactly once');
+      assert.ok(saved[0].blob instanceof window.Blob, 'hook receives a Blob');
+      assert.equal(saved[0].name, 'my-wafer.png', 'suggestedName uses downloadFilename + .png');
+      assert.equal(anchorClicks, 0, 'default <a download> path is bypassed when onSaveImage is set');
+    } finally {
+      window.HTMLAnchorElement.prototype.click = origClick;
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap toolbar menus carry ARIA roles and expanded state', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, hbin: 1 },
+        { x: 1, y: 0, hbin: 2 },
+        { x: 0, y: 1, hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+    renderWaferMap(container, wafer);
+
+    const buttons = [...root.querySelectorAll('button')];
+
+    // Plot mode trigger advertises a popup and reflects expanded state.
+    const modeBtn = buttons.find((b) => b.ariaLabel === 'Plot mode');
+    assert.ok(modeBtn, 'Plot mode button exists');
+    assert.equal(modeBtn.getAttribute('aria-haspopup'), 'menu');
+    assert.equal(modeBtn.getAttribute('aria-expanded'), 'false');
+
+    click(window, modeBtn);
+    assert.equal(modeBtn.getAttribute('aria-expanded'), 'true', 'aria-expanded flips on open');
+    const modeMenu = [...window.document.querySelectorAll('[role="menu"]')].at(-1);
+    assert.ok(modeMenu, 'mode menu has role=menu');
+    const radioItems = modeMenu.querySelectorAll('[role="menuitemradio"]');
+    assert.ok(radioItems.length > 0, 'mode menu rows are menuitemradio');
+    // Exactly the active mode is aria-checked.
+    const checked = [...radioItems].filter((r) => r.getAttribute('aria-checked') === 'true');
+    assert.equal(checked.length, 1, 'one mode row is aria-checked');
+    // Clicking outside the menu (the document body) closes it and resets aria.
+    click(window, window.document.body);
+    assert.equal(modeBtn.getAttribute('aria-expanded'), 'false', 'aria-expanded resets when menu closes');
+
+    // Overlays check-menu uses menuitemcheckbox semantics.
+    const overlaysBtn = buttons.find((b) => b.ariaLabel === 'Overlays');
+    assert.ok(overlaysBtn);
+    assert.equal(overlaysBtn.getAttribute('aria-haspopup'), 'menu');
+    click(window, overlaysBtn);
+    const checkMenu = [...window.document.querySelectorAll('[role="menu"]')].at(-1);
+    assert.ok(checkMenu.querySelectorAll('[role="menuitemcheckbox"]').length > 0, 'overlays rows are menuitemcheckbox');
+  } finally {
+    cleanup();
+  }
+});
+
 test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () => {
   const { window, root, cleanup } = setupDom();
   try {

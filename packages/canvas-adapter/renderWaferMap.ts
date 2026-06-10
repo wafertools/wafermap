@@ -6,7 +6,7 @@ import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
-import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, menuRootFor, type ModeEntry } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -157,6 +157,15 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
   maxZoom?: number;
   /** Filename for the PNG download (without extension). Default `'wafermap'`. */
   downloadFilename?: string;
+  /**
+   * Host hook for persisting the rendered PNG. When provided, the toolbar's save
+   * action calls `onSaveImage(blob, suggestedName)` instead of triggering a
+   * browser `<a download>` — letting embedded hosts (Tauri, Electron, WebView2)
+   * route the image through a native save dialog. `suggestedName` includes the
+   * `.png` extension and is derived from `downloadFilename`. When omitted, the
+   * default browser download behaviour is unchanged.
+   */
+  onSaveImage?: SaveImageHandler;
   /**
    * When provided, renders a persistent summary panel alongside the canvas.
    * The panel shows metadata, yield, bins, rings, quadrants, test values, and findings.
@@ -588,11 +597,16 @@ export function renderWaferMap(
           }
           menu.remove();
           setOpenMenu(null);
+          markMenuTrigger(btnMode, false);
         }
 
+        const closeModeMenu = (): void => {
+          const m = getOpenMenu();
+          if (m) { m.remove(); setOpenMenu(null); }
+          markMenuTrigger(btnMode, false);
+        };
         const btnMode = makeBtn('mode', 'Plot mode', () => {
-          const openMenu = getOpenMenu();
-          if (openMenu) { openMenu.remove(); setOpenMenu(null); return; }
+          if (getOpenMenu()) { closeModeMenu(); return; }
 
           // Only include modes for which data is actually present.
           const dies     = currentView.dies;
@@ -638,7 +652,10 @@ export function renderWaferMap(
           );
           menuRootFor(btnMode).appendChild(menu);
           setOpenMenu(menu);
+          markMenuTrigger(btnMode, true);
+          wireMenuA11y(menu, btnMode, closeModeMenu);
         });
+        markMenuTrigger(btnMode, false);
         const btnPalette = makeDropdown(
           'palette', 'Colour scheme',
           () => {
@@ -1031,10 +1048,7 @@ export function renderWaferMap(
   function downloadPng(): void {
     canvas.toBlob(blob => {
       if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a   = document.createElement('a');
-      a.href = url; a.download = `${options.downloadFilename ?? 'wafermap'}.png`; a.click();
-      URL.revokeObjectURL(url);
+      saveImageBlob(blob, options.downloadFilename ?? 'wafermap', options.onSaveImage);
     });
   }
 
