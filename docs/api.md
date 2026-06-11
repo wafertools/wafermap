@@ -690,8 +690,19 @@ renderWaferMap(container: HTMLElement, result: WaferMapResult, options?: RenderO
 ```
 
 `renderWaferMap` accepts any block `HTMLElement` as `container` — the function
-creates and manages its own `<canvas>` inside it. Passing an `HTMLCanvasElement`
-directly is deprecated but still works for one release.
+creates and manages its own `<canvas>` inside it. The container must have explicit
+dimensions; if it has no height the canvas renders at zero size. A fixed size or
+`aspect-ratio` are the typical choices:
+
+```html
+<!-- Fixed size: -->
+<div id="map" style="width: 600px; height: 600px;"></div>
+
+<!-- Responsive square: -->
+<div id="map" style="width: 100%; aspect-ratio: 1;"></div>
+```
+
+Passing an `HTMLCanvasElement` directly is deprecated but still works for one release.
 
 The toolbar gives users direct access to every display option without any app-level
 chrome: plot mode, colour scheme, ring and quadrant overlays, die labels, rotate,
@@ -986,6 +997,14 @@ flip in the gallery bar applies to every card instantly.
 
 ```ts
 renderWaferGallery(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
+```
+
+The container needs a **width** but not a fixed height — the grid grows to fit its
+cards. `width: 100%` is the typical choice; do not set `overflow: hidden` on it or
+card content will be clipped.
+
+```html
+<div id="gallery" style="width: 100%;"></div>
 ```
 
 ```ts
