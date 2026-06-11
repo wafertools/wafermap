@@ -417,12 +417,12 @@ With `testDefs` in place:
 
 Add `limitLow` and/or `limitHigh` to a `TestDef` to specify the engineering specification window. Both are optional independently — one-sided limits are valid. Once limits are defined, two things happen automatically across all plot modes:
 
-**In `value` mode** — out-of-spec dies are highlighted immediately:
-- Dies **below** `limitLow` render in <span style="color:#3498db">**blue**</span> instead of the gradient colour
-- Dies **above** `limitHigh` render in <span style="color:#e74c3c">**red**</span> instead of the gradient colour
-- In-spec dies continue to use the normal colour gradient
+**In `value` mode** — spec limits affect both the colorbar and the die colours:
 
-The toolbar also gains a **bracket button** (⌥) that toggles the colorbar range between the spec window `[limitLow, limitHigh]` and the actual data range. The default is the spec window so the colorbar always shows where the limits are relative to the data.
+The colorbar always shows LSL / USL labels at the limit positions. Exactly how depends on the colorbar range mode (toggled via the bracket toolbar button):
+
+- **`colorbarRangeMode: 'spec'` (default when limits are present)** — the bar spans `[limitLow, limitHigh]`. The limit values appear as "LSL" / "USL" labels at the bar endpoints alongside the numeric values. Out-of-spec dies are highlighted: below `limitLow` renders in <span style="color:#3498db">**blue**</span>, above `limitHigh` in <span style="color:#e74c3c">**red**</span>.
+- **`colorbarRangeMode: 'data'`** — the bar spans the actual data min/max. LSL / USL are shown as marker lines on the bar wherever the limits fall within the data range. All dies are coloured by the gradient regardless of spec status — the bar and die colours are always consistent with each other.
 
 **With `colorBySpec: true`** — a categorical pass/fail view instead of the continuous gradient:
 - Pass (in spec): green (`#2ecc71`)

@@ -107,6 +107,8 @@ export interface View {
   isLotStack: boolean;
   /** True when value-mode dies are coloured by spec pass/fail rather than the continuous gradient. */
   colorBySpec: boolean;
+  /** Whether the colorbar range is anchored to spec limits ('spec') or data extents ('data'). */
+  colorbarRangeMode: 'spec' | 'data';
   /** Wafer centre in scene/display mm coordinates (the rotation pivot). */
   waferCenter: { x: number; y: number };
   /** Wafer radius in mm. */
@@ -607,19 +609,26 @@ function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: n
   return overlays;
 }
 
-function buildQuadrantOverlays(wafer: Wafer, transform: TransformState): ViewOverlay[] {
-  const angles = [0, Math.PI / 2];
+function buildQuadrantOverlays(wafer: Wafer, transform: TransformState, splitX: number, splitY: number): ViewOverlay[] {
+  const { x: cx, y: cy } = wafer.center;
+  const r = wafer.radius;
 
-  return angles.map((angle) => {
-    const start = transformPoint(boundaryPointAtAngle(wafer, angle), wafer.center, transform);
-    const end = transformPoint(boundaryPointAtAngle(wafer, angle + Math.PI), wafer.center, transform);
-    return {
-      kind: 'quadrant-boundary',
-      ...polyline([start, end]),
-      lineColor: 'rgba(255,255,255,0.7)',
-      lineWidth: 1.5,
-    };
-  });
+  // Vertical chord at x = splitX.
+  const dxV = splitX - cx;
+  const dyV = Math.sqrt(Math.max(0, r * r - dxV * dxV));
+  const vStart = transformPoint({ x: splitX, y: cy - dyV }, wafer.center, transform);
+  const vEnd   = transformPoint({ x: splitX, y: cy + dyV }, wafer.center, transform);
+
+  // Horizontal chord at y = splitY.
+  const dyH = splitY - cy;
+  const dxH = Math.sqrt(Math.max(0, r * r - dyH * dyH));
+  const hStart = transformPoint({ x: cx - dxH, y: splitY }, wafer.center, transform);
+  const hEnd   = transformPoint({ x: cx + dxH, y: splitY }, wafer.center, transform);
+
+  return [
+    { kind: 'quadrant-boundary', ...polyline([vStart, vEnd]), lineColor: 'rgba(255,255,255,0.7)', lineWidth: 1.5 },
+    { kind: 'quadrant-boundary', ...polyline([hStart, hEnd]), lineColor: 'rgba(255,255,255,0.7)', lineWidth: 1.5 },
+  ];
 }
 
 function buildReticleOverlays(reticles: Reticle[], wafer: Wafer, transform: TransformState): ViewOverlay[] {
@@ -675,6 +684,7 @@ function pushDieRectangles(
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
   colorBySpec?: boolean,
+  colorbarRangeMode?: 'spec' | 'data',
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -719,9 +729,9 @@ function pushDieRectangles(
     let fill: string;
     if (value === undefined) {
       fill = NO_DATA_FILL;
-    } else if (activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) {
+    } else if (colorbarRangeMode !== 'data' && activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) {
       fill = SPEC_FAIL_LOW;
-    } else if (activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) {
+    } else if (colorbarRangeMode !== 'data' && activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) {
       fill = SPEC_FAIL_HIGH;
     } else if (colorBySpec) {
       fill = SPEC_PASS_FILL;
@@ -815,10 +825,14 @@ export function buildView(
     dataAxisFlip,
     isLotStack = false,
     logScale: logScaleOption,
-    colorbarRangeMode = 'spec' as const,
+    colorbarRangeMode: colorbarRangeModeOpt = 'spec' as const,
     colorBySpec = false,
     showPartialDies = true,
   } = options;
+
+  // colorBySpec implies spec-anchored range — the bar is irrelevant in pass/fail mode
+  // but we must not leave colorbarRangeMode as 'data' or the die colouring breaks.
+  const colorbarRangeMode: 'spec' | 'data' = colorBySpec ? 'spec' : colorbarRangeModeOpt;
 
   const hbinDefs = binDefs?.hbinDefs;
   const sbinDefs = binDefs?.sbinDefs;
@@ -991,7 +1005,7 @@ export function buildView(
       if (bin != null) binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
     }
     if (die.partial && !showPartialDies) continue;
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec, colorbarRangeMode);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {
@@ -1001,7 +1015,22 @@ export function buildView(
   const overlays = buildBoundaryOverlay(wafer, transform);
 
   if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, transform, ringCount));
-  if (showQuadrantBoundaries) overlays.push(...buildQuadrantOverlays(wafer, transform));
+  if (showQuadrantBoundaries) {
+    // Find the gap between die columns/rows straddling the wafer centre so the
+    // lines align with the classification boundary used by classifyDie (dx >= 0 / dy >= 0).
+    let loX = -Infinity, hiX = Infinity, loY = -Infinity, hiY = Infinity;
+    for (let i = 0; i < dies.length; i++) {
+      const px = txCoords ? txCoords[i * 2]     : dies[i].physX;
+      const py = txCoords ? txCoords[i * 2 + 1] : dies[i].physY;
+      if (px < wafer.center.x  && px > loX) loX = px;
+      if (px >= wafer.center.x && px < hiX) hiX = px;
+      if (py < wafer.center.y  && py > loY) loY = py;
+      if (py >= wafer.center.y && py < hiY) hiY = py;
+    }
+    const splitX = isFinite(loX) && isFinite(hiX) ? (loX + hiX) / 2 : wafer.center.x;
+    const splitY = isFinite(loY) && isFinite(hiY) ? (loY + hiY) / 2 : wafer.center.y;
+    overlays.push(...buildQuadrantOverlays(wafer, transform, splitX, splitY));
+  }
   if (showReticle) overlays.push(...buildReticleOverlays(reticles, wafer, transform));
   if (showProbePath) overlays.push(...buildProbeOverlay(dies));
   if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, transform, texts));
@@ -1038,6 +1067,7 @@ export function buildView(
     hasReticle: reticles.length > 0,
     isLotStack,
     colorBySpec,
+    colorbarRangeMode,
     waferCenter: wafer.center,
     waferRadius: wafer.radius,
     notchDir,

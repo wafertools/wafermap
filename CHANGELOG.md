@@ -19,6 +19,23 @@ under `### Breaking`.
 
 ---
 
+## [0.13.6] — 2026-06-11
+
+### Added
+
+- **Spec limit markers on the value colorbar.** When the active test has `limitLow` / `limitHigh` defined, the colorbar now shows LSL/USL labels on the left side of the bar at the exact limit positions.
+  - In `colorbarRangeMode: 'spec'` (default): the bar is anchored to the spec window, so the endpoints already are the limits — "LSL" / "USL" labels appear at the bar ends alongside the numeric tick values.
+  - In `colorbarRangeMode: 'data'`: the bar spans the data range; LSL/USL are shown as dual-stroke inline marker lines (white halo + dark rule) wherever the limits fall within the bar, readable on any gradient colour.
+
+### Changed
+
+- **`colorbarRangeMode: 'data'` now suppresses out-of-spec die colouring.** When the colorbar is in data-range mode, out-of-spec dies are coloured by the gradient like all other dies rather than blue/red — the bar and the die colours are now always consistent with each other. Spec-fail colouring (blue/red) still applies in `'spec'` mode (the default) and is always used when `colorBySpec: true` regardless of range mode.
+- **`colorBySpec: true` forces `colorbarRangeMode` to `'spec'` internally.** Passing `colorBySpec: true` with `colorbarRangeMode: 'data'` previously produced an incoherent state (all dies green). The library now overrides the range mode so pass/fail colouring is always correct.
+- **Quadrant overlay lines are now die-aligned.** The NE/NW/SE/SW boundary lines previously passed through `wafer.center` exactly, which could bisect die columns or rows. They now pass through the midpoint of the gap between the innermost die column/row on each side of centre, matching the classification boundary used by `classifyDie`.
+- **Ring and quadrant overlay lines use dual-stroke rendering.** Both line types are now drawn with a 3 px dark semi-transparent pass and a 1 px white pass on top, making them legible on any die colour, colour scheme, or die/gap size.
+
+---
+
 ## [0.13.5] — 2026-06-10
 
 ### Added

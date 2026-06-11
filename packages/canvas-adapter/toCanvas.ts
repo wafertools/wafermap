@@ -264,9 +264,19 @@ export function toCanvas(
       ctx.fillStyle = overlay.fill;
       ctx.fill();
     }
-    ctx.strokeStyle = overlay.lineColor;
-    ctx.lineWidth = overlay.lineWidth / (ppm * dpr);
-    ctx.stroke();
+    // Ring and quadrant boundaries use dual-stroke so they read on any die colour or gap.
+    if (overlay.kind === 'ring-boundary' || overlay.kind === 'quadrant-boundary') {
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth   = 3 / (ppm * dpr);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth   = 1 / (ppm * dpr);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = overlay.lineColor;
+      ctx.lineWidth   = overlay.lineWidth / (ppm * dpr);
+      ctx.stroke();
+    }
   }
 
   ctx.restore();
@@ -408,7 +418,7 @@ export function toCanvas(
     );
     const tickFmt = view.allIntegerValues ? (v: number) => String(Math.round(v)) : baseFmt;
 
-    // Draw intermediate ticks with middle baseline.
+    // Draw intermediate ticks.
     ctx.textBaseline = 'middle';
     for (const v of ticks) {
       const sy = cbY + tickPy(v);
@@ -433,6 +443,59 @@ export function toCanvas(
     ctx.stroke();
     ctx.textBaseline = 'bottom';
     ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
+
+    // Spec limit markers — left-side labels + dual-stroke line (white halo + dark rule).
+    // In spec mode: limits sit at the bar endpoints, so draw left-side labels there.
+    // In data mode: limits may fall anywhere within the bar, draw inline markers.
+    if (!isCountMode && testDef && (testDef.limitLow !== undefined || testDef.limitHigh !== undefined)) {
+      type LimitMarker = { value: number; label: string; py: number };
+      const limitMarkers: LimitMarker[] = [];
+      const isSpecMode = view.colorbarRangeMode === 'spec';
+
+      for (const [value, label] of [
+        [testDef.limitLow,  'LSL'] as const,
+        [testDef.limitHigh, 'USL'] as const,
+      ]) {
+        if (value === undefined) continue;
+        if (view.logScale && value <= 0) continue;
+        const py = tickPy(value);
+        // In spec mode the limit is at an endpoint (py ≈ 0 or cbH) — always include it.
+        // In data mode skip limits that fall outside the bar.
+        if (!isSpecMode && (py < -endpointGuard || py > cbH + endpointGuard)) continue;
+        limitMarkers.push({ value, label, py: Math.max(0, Math.min(cbH, py)) });
+      }
+
+      if (limitMarkers.length > 0) {
+        ctx.save();
+        ctx.font         = COLORBAR_LABEL_FONT;
+        ctx.textAlign    = 'right';
+        ctx.textBaseline = 'middle';
+
+        for (const { py, label } of limitMarkers) {
+          const sy = cbY + py;
+          // In data mode: dual-stroke line across the bar so it reads on any gradient colour.
+          if (!isSpecMode) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+            ctx.lineWidth   = 3;
+            ctx.beginPath();
+            ctx.moveTo(cbX, sy);
+            ctx.lineTo(cbX + colorbarWidth, sy);
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+            ctx.lineWidth   = 1;
+            ctx.beginPath();
+            ctx.moveTo(cbX, sy);
+            ctx.lineTo(cbX + colorbarWidth, sy);
+            ctx.stroke();
+          }
+          // Left-side label in both modes.
+          ctx.fillStyle = '#333';
+          ctx.fillText(label, cbX - 3, sy);
+        }
+
+        ctx.restore();
+      }
+    }
 
     // Axis label below the bar, right-aligned — e.g. "Idsat (mA)" or "Idsat (mA) · mean".
     const aggrSuffix = view.plotMode === 'stackedValues' && view.aggrMethod ? ` · ${view.aggrMethod}` : '';

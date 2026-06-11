@@ -127,24 +127,26 @@ test('out-of-spec dies get fail color regardless of colorbarRangeMode=spec', () 
   assert.notEqual(rect01?.fill, SPEC_FAIL_HIGH, 'in-spec die must not render as spec-fail-high');
 });
 
-test('out-of-spec dies get fail color regardless of colorbarRangeMode=data', () => {
+test('colorbarRangeMode=data suppresses spec-fail colours; colorbarRangeMode=spec applies them', () => {
   const wafer = createWafer({ diameter: 300 });
   const dies = [
     { id: '0_0', x: 0, y: 0, physX: 0,  physY: 0,  width: 10, height: 10, testValues: { 0: 0.1 } },
     { id: '1_0', x: 1, y: 0, physX: 10, physY: 0,  width: 10, height: 10, testValues: { 0: 5.0 } },
     { id: '0_1', x: 0, y: 1, physX: 0,  physY: 10, width: 10, height: 10, testValues: { 0: 2.5 } },
   ];
+  const testDefs = [{ index: 0, name: 'Vt', unit: 'V', limitLow: 0.5, limitHigh: 4.5 }];
 
-  const scene = buildView(wafer, dies, {
-    plotMode: 'value',
-    colorbarRangeMode: 'data',
-    activeTest: 0,
-    testDefs: [{ index: 0, name: 'Vt', unit: 'V', limitLow: 0.5, limitHigh: 4.5 }],
-  });
+  // data mode: out-of-spec dies use the gradient, not blue/red
+  const dataView = buildView(wafer, dies, { plotMode: 'value', colorbarRangeMode: 'data', activeTest: 0, testDefs });
+  const d00 = dataView.rectangles.find((r) => r.x === 0  && r.y === 0);
+  const d10 = dataView.rectangles.find((r) => r.x === 10 && r.y === 0);
+  assert.notEqual(d00?.fill, SPEC_FAIL_LOW,  'data mode: below-LSL die must not use spec-fail-low colour');
+  assert.notEqual(d10?.fill, SPEC_FAIL_HIGH, 'data mode: above-USL die must not use spec-fail-high colour');
 
-  const rect00 = scene.rectangles.find((r) => r.x === 0  && r.y === 0);
-  const rect10 = scene.rectangles.find((r) => r.x === 10 && r.y === 0);
-
-  assert.equal(rect00?.fill, SPEC_FAIL_LOW,  'value below limitLow must render as spec-fail-low regardless of colorbarRangeMode=data');
-  assert.equal(rect10?.fill, SPEC_FAIL_HIGH, 'value above limitHigh must render as spec-fail-high regardless of colorbarRangeMode=data');
+  // spec mode: out-of-spec dies get blue/red
+  const specView = buildView(wafer, dies, { plotMode: 'value', colorbarRangeMode: 'spec', activeTest: 0, testDefs });
+  const s00 = specView.rectangles.find((r) => r.x === 0  && r.y === 0);
+  const s10 = specView.rectangles.find((r) => r.x === 10 && r.y === 0);
+  assert.equal(s00?.fill, SPEC_FAIL_LOW,  'spec mode: value below limitLow must render as spec-fail-low');
+  assert.equal(s10?.fill, SPEC_FAIL_HIGH, 'spec mode: value above limitHigh must render as spec-fail-high');
 });
