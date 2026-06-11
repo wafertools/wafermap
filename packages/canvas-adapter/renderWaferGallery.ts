@@ -875,14 +875,22 @@ export function renderWaferGallery(
       gridEl.style.gridTemplateColumns = `repeat(${currentColumns}, 1fr)`;
       return;
     }
-    // Compute how many columns fit given the container width and min card size,
-    // then cap at the actual item count so there are no empty column tracks.
-    const containerW = gridEl.parentElement?.clientWidth ?? gridEl.clientWidth;
+    const N = Math.max(1, currentItemCount);
     const gap = 12;
-    const fitsInContainer = containerW > 0
-      ? Math.max(1, Math.floor((containerW + gap) / (currentMinCardPx + gap)))
-      : currentItemCount;
-    const cols = Math.min(fitsInContainer, Math.max(1, currentItemCount));
+    const containerW = bodyEl.clientWidth || 0;
+
+    // Start with a square-ish grid (sqrt(N) columns), then reduce columns if
+    // the resulting card width would fall below the minimum readable size.
+    // Reducing columns means more rows — cards get taller and wider.
+    const idealCols = Math.max(1, Math.ceil(Math.sqrt(N)));
+    let cols = idealCols;
+    if (containerW > 0) {
+      while (cols > 1) {
+        const cardW = (containerW - gap * (cols - 1)) / cols;
+        if (cardW >= currentMinCardPx) break;
+        cols--;
+      }
+    }
     gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   }
 
@@ -1461,6 +1469,7 @@ export function renderWaferGallery(
     if (currentColumns == null) applyGridTemplate();
   });
   gridResizeObserver.observe(bodyEl);
+  gridResizeObserver.observe(container);
 
   // Initial gallery summary panel render
   if (gallerySummaryPanelEl) renderGallerySummaryPanel();
