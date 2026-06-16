@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Summary panel — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    .demo-content { flex-direction: column; }
+
+    .example-block {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .example-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    #single-map-wrap {
+      position: relative;
+      height: 480px;
+    }
+    #single-map {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #gallery-container {
+      min-height: 500px;
+    }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§11 — Summary panel</span>
+    <span class="demo-desc">
+      Persistent summary panel showing metadata, yield, bins, regions, test values and findings.
+      Gallery panel drills down to wafer detail on card-header click.
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    The summary panel shows yield, bin distribution, ring and quadrant breakdown, test value statistics, and findings — all in one persistent view alongside the map.
+    The top example uses <code>summaryPanel: { placement: 'right' }</code> for a fixed always-visible panel.
+    The gallery below uses <code>lotStatsSummary</code> for lot-level stats; click a card header to drill into that wafer's per-wafer summary.
+  </div>
+
+  <div class="demo-content">
+
+    <div class="example-block">
+      <p class="example-label">Single wafer — summary panel (right)</p>
+      <div id="single-map-wrap">
+        <div id="single-map"></div>
+      </div>
+    </div>
+
+    <div class="example-block">
+      <p class="example-label">Gallery — lot summary panel (right) · click a card header to drill into wafer detail</p>
+      <div id="gallery-container"></div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }       from 'wafermap';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferMap, analyzeWaferLot }   from 'wafermap/stats';
+    import {
+      makeResults, makeWaferConfig, DIE_CONFIG,
+      HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
+    } from './data.js';
+
+    // ── Single wafer ────────────────────────────────────────────────────────────
+
+    const singleResult = buildWaferMap({
+      results:     makeResults({ seed: 3, edgeFail: true }),
+      waferConfig: makeWaferConfig(0),
+      dieConfig:   DIE_CONFIG,
+      hbinDefs:    HBIN_DEFS,
+      sbinDefs:    SBIN_DEFS,
+      testDefs:    TEST_DEFS,
+    });
+
+    const singleStats = analyzeWaferMap(singleResult);
+
+    renderWaferMap(
+      document.getElementById('single-map'),
+      singleResult,
+      {
+        viewOptions:  { plotMode: 'hardBin' },
+        statsSummary: singleStats,
+        summaryPanel: { placement: 'right' },
+        showHelpButton: true,
+      },
+    );
+
+    // ── Gallery ─────────────────────────────────────────────────────────────────
+
+    const waferResults = [
+      buildWaferMap({ results: makeResults({ seed: 1 }),                         waferConfig: makeWaferConfig(0), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 2, edgeFail: true }),          waferConfig: makeWaferConfig(1), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 3, edgeFail: true }),          waferConfig: makeWaferConfig(2), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 4, cluster: true, edgeArc: true }), waferConfig: makeWaferConfig(3), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 5, center: true }),            waferConfig: makeWaferConfig(4), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 6, edgeFail: true, center: true }), waferConfig: makeWaferConfig(5), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+    ];
+
+    const waferSummaries = waferResults.map(r => analyzeWaferMap(r));
+    const lotSummary     = analyzeWaferLot(waferResults);
+
+    const galleryItems = waferResults.map((r, i) => ({
+      ...r,
+      label:        r.wafer.metadata?.wafer ?? `W${i + 1}`,
+      statsSummary: waferSummaries[i],
+    }));
+
+    renderWaferGallery(
+      document.getElementById('gallery-container'),
+      galleryItems,
+      {
+        viewOptions:     { plotMode: 'hardBin' },
+        lotStatsSummary: lotSummary,
+        showHelpButton:  true,
+      },
+    );
+  </script>
+
+</body>
+</html>

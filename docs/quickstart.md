@@ -61,7 +61,7 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 
 **[Open this example in your browser →](examples/quickstart-live.html)**
 
-![Edge-ring failure pattern on a 641-die wafer](images/image-quickstart.png)
+![Edge-ring failure pattern on a 641-die wafer](images/quickstart-first-map.png)
 
 ## What you just built
 

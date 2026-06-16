@@ -19,6 +19,30 @@ under `### Breaking`.
 
 ---
 
+## [0.13.7] — 2026-06-16
+
+### Added
+
+- **`showHelpButton` option** (`RenderOptions` / `GalleryOptions`) — when `true`, adds a help button to the single-map toolbar / gallery bar that opens the built-in end-user guide in a modal. Default `false`. `WaferMapController` gains a matching `setHelpButtonVisible(visible)` method.
+
+### Fixed
+
+- **`mapDataToDies` matched on `physX`/`physY` instead of `x`/`y`.** Data was being correlated to dies using physical mm coordinates instead of die grid coordinates, causing all values to be dropped when `physX`/`physY` were not set (the common case). Corrected to match on `die.x`/`die.y`.
+
+### Performance
+
+- `buildView`: min-dim calculation for die gap capping replaced with an explicit loop — eliminates a closure allocation per call.
+- `buildWaferMap` (`applyRetestPolicy`): retest count tracking switched from string-keyed flat Map to nested integer Maps — avoids string concatenation for every die result.
+
+### Docs
+
+- **Descriptive screenshot filenames.** All doc screenshots renamed from `image-N.png` to meaningful slugs (`guide-bins-named.png`, `guide-findings-panel.png`, etc.), eliminating the coupling to section numbers. `guide-test-sites.png` (§15 multi-site testing) added with a capture definition. Presentation-only images removed (`pres-bins.png`, `pres-values.png`, `csv.png`).
+- **Descriptive demo filenames.** All example HTML files renamed from `NN-name.html` to `name.html` (`first-map.html`, `gallery.html`, etc.). `demo-nav.js` sequence updated; `test-sites.html` added to the navigation sequence.
+- **`troubleshooting.md` and `detection-analysis.md`** added to the docs site nav (both existed on disk but were unreachable, causing 8 build warnings).
+- API reference and developer guide updated for `showHelpButton`, `setHelpButtonVisible`, and `userGuideHtml.ts`.
+
+---
+
 ## [0.13.6] — 2026-06-11
 
 ### Added

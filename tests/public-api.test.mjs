@@ -77,6 +77,11 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
   assert.deepEqual(mapped.find((die) => die.x === 0 && die.y === 0)?.values, [0.97]);
   assert.deepEqual(mapped.find((die) => die.x === 1 && die.y === 0)?.values, [0.91]);
 
+  const mappedXY = mapDataToDies(clipped, [
+    { x: 0, y: 0, value: 0.97 },
+  ], { valueField: 'value' });
+  assert.deepEqual(mappedXY.find((die) => die.x === 0 && die.y === 0)?.values, [0.97]);
+
   const oriented = applyOrientation([
     { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
     { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10 },

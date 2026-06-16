@@ -7,6 +7,7 @@ import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT,
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler } from './toolbar.js';
+import { USER_GUIDE_HTML } from './userGuideHtml.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -184,6 +185,11 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * Default 12.
    */
   tooltipTestLimit?: number;
+  /**
+   * Show a help button in the toolbar that opens the built-in end-user guide in a modal.
+   * Default false. Enable in applications that want to surface the guide without linking externally.
+   */
+  showHelpButton?: boolean;
 }
 
 /** @deprecated Use RenderOptions instead. */
@@ -214,6 +220,8 @@ export interface WaferMapController {
   setViewControlsVisible(visible: boolean): void;
   /** Show or hide the expand toolbar button. */
   setExpandVisible(visible: boolean): void;
+  /** Show or hide the help toolbar button. */
+  setHelpButtonVisible(visible: boolean): void;
   /** Close the auto-mounted summary panel if it is open. No-op if no panel exists. */
   closeSummaryPanel(): void;
   /** Move the floating tooltip into a different parent (e.g. a fullscreen element). */
@@ -274,6 +282,7 @@ export function renderWaferMap(
     renderTooltip,
     tooltipTestLimit,
     passBins             = [1],
+    showHelpButton       = false,
     viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
@@ -465,6 +474,7 @@ export function renderWaferMap(
   let btnBoxSelect:     HTMLButtonElement | null = null;
   let btnFindings:      HTMLButtonElement | null = null;
   let btnExpand:        HTMLButtonElement | null = null;
+  let btnHelp:          HTMLButtonElement | null = null;
   // Top clearance reserved on the canvas for the toolbar overlay.
   // toolbar sits at top:4px, is ~32px tall → bottom at ~36px; excess over canvas padding = 24px.
   const TOOLBAR_CLEARANCE = 24;
@@ -803,6 +813,22 @@ export function renderWaferMap(
         sceneControlsEl!.appendChild(makeSep());
         btnExpand = makeBtn('expand', 'Expand (E)', openExpandModal);
         sceneControlsEl!.appendChild(btnExpand);
+
+        // Help button — opens the end-user guide in a modal (opt-in).
+        if (showHelpButton) {
+          sceneControlsEl!.appendChild(makeSep());
+          btnHelp = makeBtn('help', 'User guide', () => {
+            const content = document.createElement('div');
+            Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
+            content.innerHTML = USER_GUIDE_HTML;
+            const handle = openModal({
+              title: 'Wafer Map — User Guide',
+              onClose: () => {},
+            });
+            handle.contentWrap.appendChild(content);
+          });
+          sceneControlsEl!.appendChild(btnHelp);
+        }
       }
 
       canvasWrap.appendChild(toolbar);
@@ -1612,6 +1638,10 @@ export function renderWaferMap(
 
     setExpandVisible(visible: boolean): void {
       if (btnExpand) btnExpand.style.display = visible ? 'flex' : 'none';
+    },
+
+    setHelpButtonVisible(visible: boolean): void {
+      if (btnHelp) btnHelp.style.display = visible ? 'flex' : 'none';
     },
 
     closeSummaryPanel(): void {

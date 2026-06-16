@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lot-level statistical findings — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    .demo-content { padding: 0; overflow-y: auto; }
+    #gallery-container { width: 100%; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§13 — Lot-level statistical findings</span>
+    <span class="demo-desc">
+      analyzeWaferLot · repeated patterns · inter-wafer yield outliers · lot findings drawer
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    <code>analyzeWaferLot</code> surfaces patterns that repeat across multiple wafers and flags individual yield outliers.
+    W01, W03, and W05 share the same edge-ring failure — detected as a repeated lot pattern.
+    W06 has stacked failures and is flagged as a yield outlier.
+    The findings panel (open on the right) lists all lot-level findings; each card also carries its own per-wafer findings accessible via the card's expand modal.
+  </div>
+
+  <div class="demo-content">
+    <div id="gallery-container"></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }                    from 'wafermap';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferMap, analyzeWaferLot } from 'wafermap/stats';
+    import {
+      makeResults, makeWaferConfig, DIE_CONFIG,
+      HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
+    } from './data.js';
+
+    // ── Build lot — deliberate spatial patterns for stats detection ───────────
+    //
+    // W01/W03/W05 all have the same edge-ring failure → detected as a repeated lot pattern.
+    // W06 has stacked failures (edge + quadrant + centre cluster) → flagged as a yield outlier.
+
+    const waferSpecs = [
+      { seed:  7, edgeFail: true,  quadrant: false },               // W01 — repeated edge pattern
+      { seed: 11, edgeFail: false, quadrant: false },               // W02 — normal
+      { seed: 17, edgeFail: true,  quadrant: false },               // W03 — repeated edge pattern
+      { seed: 23, cluster: true, edgeArc: true },                    // W04 — failure cluster + edge arc
+      { seed: 31, edgeFail: true,  quadrant: false },               // W05 — repeated edge pattern
+      { seed: 37, edgeFail: true, cluster: true, center: true },      // W06 — low-yield outlier
+    ];
+
+    const waferResults = waferSpecs.map((spec, i) =>
+      buildWaferMap({
+        results:     makeResults(spec),
+        waferConfig: makeWaferConfig(i),
+        dieConfig:   DIE_CONFIG,
+        hbinDefs:    HBIN_DEFS,
+        sbinDefs:    SBIN_DEFS,
+        testDefs:    TEST_DEFS,
+        passBins:    [1],
+      })
+    );
+
+    // Per-wafer analyses — findings appear in each card's modal findings panel.
+    const waferSummaries = waferResults.map(r =>
+      analyzeWaferMap(r, { ringCount: 4, passBins: [1] })
+    );
+
+    // Lot-level analysis: surfaces repeated ring/quadrant patterns and outlier wafers.
+    const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
+
+    const items = waferResults.map((r, i) => ({
+      ...r,
+      label:        `W${String(i + 1).padStart(2, '0')} · ${
+        r.yield.yieldPercent != null
+          ? r.yield.yieldPercent.toFixed(1) + '%'
+          : '—'
+      }`,
+      statsSummary: waferSummaries[i],
+    }));
+
+    // ── Render gallery ────────────────────────────────────────────────────────
+    //
+    // lotStatsSummary adds a Findings button to the gallery bar that opens the
+    // lot findings drawer. Cards reflow to use the remaining width.
+    //
+    // Stacked modes work automatically — no onViewOptionsChange wiring needed.
+
+    renderWaferGallery(
+      document.getElementById('gallery-container'),
+      items,
+      {
+        viewOptions: {
+          plotMode:  'hardBin',
+          testDefs:  TEST_DEFS,
+        },
+        lotStatsSummary: lotSummary,
+        summaryPanel:    { defaultOpen: true },
+        showHelpButton:  true,
+      },
+    );
+  </script>
+
+</body>
+</html>

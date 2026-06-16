@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retests and post-enrichment — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+  <style>
+    /* Highlight retested dies in the panel list */
+    .retest-die {
+      font-size: 11px;
+      font-family: monospace;
+      color: var(--text-2);
+      padding: 2px 0;
+    }
+    .retest-die .badge { margin-left: 4px; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§7 — Retests and enriching dies after build</span>
+    <span class="demo-desc">retestPolicy (last · first · best · worst) · retestCount</span>
+  </header>
+
+  <div class="demo-intro">
+    When the same die position appears more than once in the input, <code>buildWaferMap</code> resolves it using a retest policy.
+    <strong>last</strong> (default) keeps the final result; <strong>first</strong> keeps the initial probe;
+    <strong>best</strong> keeps the pass result when one exists (using <code>passBins</code>), falling back to the lowest hbin as a tiebreaker among failures; <strong>worst</strong> prefers a fail result, falling back to the highest hbin.
+    Dies with multiple probes get a <code>retestCount</code> — click any die to see its details.
+  </div>
+
+  <!-- Switch between retest policies -->
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Retest policy</span>
+      <button class="toggle-btn active" id="btn-last">last</button>
+      <button class="toggle-btn"        id="btn-first">first</button>
+      <button class="toggle-btn"        id="btn-best">best</button>
+      <button class="toggle-btn"        id="btn-worst">worst</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <span style="font-size:12px; color:var(--muted)">
+      Click a die on the map to see its retest details
+    </span>
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <div id="map"></div>
+    </div>
+
+    <div class="demo-panel">
+      <div class="demo-panel-scroll">
+
+        <div class="section">
+          <div class="section-heading">Retest summary</div>
+          <div class="stats-grid">
+            <div class="stat">
+              <div class="stat-val" id="stat-retested">—</div>
+              <div class="stat-lbl">Retested dies</div>
+            </div>
+            <div class="stat">
+              <div class="stat-val" id="stat-policy">last</div>
+              <div class="stat-lbl">Active policy</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- Clicked die details -->
+        <div class="section">
+          <div class="section-heading">Clicked die</div>
+          <div class="info-box" id="die-box">
+            <span class="empty">Click a die on the map</span>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- List of retested die positions -->
+        <div class="section">
+          <div class="section-heading">Retested positions</div>
+          <div id="retest-list" style="display:flex; flex-direction:column; gap:2px; max-height:200px; overflow-y:auto"></div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap } from 'wafermap';
+    import { renderWaferMap }           from 'wafermap/render';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS } from './data.js';
+
+    // Build a dataset with deliberate retests:
+    // about 15% of die positions appear twice with a different final bin (simulating a recontact).
+    function makeRetestResults(seed) {
+      const primary = makeResults({ seed });
+
+      // Inject retests: some initially-failing dies pass on retest (and vice versa)
+      const retests = [];
+      for (const r of primary) {
+        const shouldRetest = (Math.abs(r.x + r.y * 3 + seed) % 7) === 0;
+        if (!shouldRetest) continue;
+        // Flip the bin on the retest — first probe failed, retest passes (or vice versa)
+        const retestBin = r.hbin === 1 ? 2 : 1;
+        retests.push({ ...r, hbin: retestBin });
+      }
+
+      // Return primary + retests interleaved (same (x,y) appears twice)
+      return [...primary, ...retests];
+    }
+
+    const rawResults = makeRetestResults(17);
+    let policy = 'last';
+    let ctrl;
+
+    function fmt(v) {
+      if (v == null) return '—';
+      const abs = Math.abs(v);
+      if (abs >= 1e-3) return `${(v*1e3).toPrecision(3)} mA`;
+      if (abs >= 1e-6) return `${(v*1e6).toPrecision(3)} µA`;
+      return v.toExponential(2);
+    }
+
+    function render() {
+      if (ctrl) ctrl.destroy();
+
+      const result = buildWaferMap({
+        results:      rawResults,
+        waferConfig:  WAFER_CONFIG,
+        dieConfig:    DIE_CONFIG,
+        hbinDefs:     HBIN_DEFS,
+        passBins:     [1],
+        retestPolicy: policy, // 'last' (default) or 'first'
+      });
+
+      // Surface which dies were retested
+      const retested = result.dies.filter(d => d.retestCount != null);
+      document.getElementById('stat-retested').textContent = retested.length;
+      document.getElementById('stat-policy').textContent   = policy;
+
+      // Build the retested-positions list
+      const listEl = document.getElementById('retest-list');
+      listEl.innerHTML = '';
+      for (const d of retested.slice(0, 30)) {
+        const bin = HBIN_DEFS.find(b => b.bin === d.hbin);
+        listEl.insertAdjacentHTML('beforeend', `
+          <div class="retest-die">
+            (${d.x}, ${d.y})
+            <span class="badge badge-amber">×${d.retestCount}</span>
+            <span style="color:${bin?.color ?? '#666'}">● ${bin?.name ?? `bin ${d.hbin}`}</span>
+          </div>`);
+      }
+      if (retested.length > 30) {
+        listEl.insertAdjacentHTML('beforeend',
+          `<div style="font-size:11px; color:var(--muted); padding-top:2px">… and ${retested.length - 30} more</div>`);
+      }
+
+      ctrl = renderWaferMap(document.getElementById('map'), result, {
+        viewOptions: { plotMode: 'hardBin' },
+        showHelpButton: true,
+        onClick(die) {
+          const bin  = HBIN_DEFS.find(b => b.bin === die.hbin);
+          const retest = die.retestCount != null
+            ? `<br><strong>Probed ${die.retestCount}×</strong>`
+            : '';
+          document.getElementById('die-box').innerHTML = `
+            Position: <strong>(${die.x}, ${die.y})</strong><br>
+            Hard bin: <strong style="color:${bin?.color}">${bin?.name ?? die.hbin}</strong><br>
+            Idsat: <strong>${fmt(die.testValues?.[1050])}</strong>${retest}`;
+        },
+      });
+    }
+
+    render();
+
+    const policyBtns = ['last', 'first', 'best', 'worst'];
+    policyBtns.forEach(p => {
+      document.getElementById(`btn-${p}`).addEventListener('click', () => {
+        policy = p;
+        policyBtns.forEach(q =>
+          document.getElementById(`btn-${q}`).classList.toggle('active', q === p));
+        render();
+      });
+    });
+  </script>
+
+</body>
+</html>

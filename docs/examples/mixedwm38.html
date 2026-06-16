@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mixed-pattern wafer data (MixedWM38) — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    html, body { height: auto; overflow-y: auto; }
+    .demo-page { min-height: 100vh; }
+    .demo-content { flex: 0 0 auto; overflow: visible; padding: 8px; align-items: flex-start; }
+    #gallery-container { width: 100%; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§21 — Mixed-pattern wafer data (MixedWM38)</span>
+    <span class="demo-desc">
+      38 wafer maps · 38 defect classes including compound patterns · statistical findings
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    <a href="https://www.kaggle.com/datasets/co1d7era/mixedtype-wafer-defect-datasets" target="_blank" rel="noopener">MixedWM38</a>
+    extends the WM-811K dataset with <strong>compound defect patterns</strong> — wafers labelled with
+    two, three, or four co-occurring defect types simultaneously (e.g. Center+Edge-Ring+LOC).
+    The dataset contains 38,015 wafer maps across 38 classes, encoded as 52×52 grids with 8
+    base defect types combined via multi-hot labels.
+    <br><br>
+    One wafer per class is loaded directly into <code>buildWaferMap</code> and
+    <code>analyzeWaferMap</code> with no special configuration.
+    Card labels show the MixedWM38 class name and how many statistical findings the library detected.
+    Click <strong>↗</strong> on any card to open a full interactive view with the findings panel.
+    Compound patterns often produce findings from multiple spatial families simultaneously.
+  </div>
+
+  <div class="demo-content">
+    <div id="gallery-container"></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }      from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferMap }    from 'wafermap/stats';
+
+    // Fixture produced by scripts/convert-mixedwm38.py from the public MixedWM38 dataset.
+    // Each record: { className, labelBits, sampleIndex, gridRows, gridCols, results[] }
+    // results[]: { x, y, hbin } — centred grid coordinates, hbin 1=pass 2=fail.
+    const resp = await fetch('./mixedwm38-sample.json');
+    if (!resp.ok) {
+      document.querySelector('.demo-intro').insertAdjacentHTML('beforeend',
+        `<p style="color:#c0392b;margin-top:8px"><strong>Fixture not found.</strong>
+        Run <code>python scripts/convert-mixedwm38.py Wafer_Map_Datasets.npz tests/fixtures/mixedwm38-sample.json</code>
+        then <code>cp tests/fixtures/mixedwm38-sample.json docs/examples/mixedwm38-sample.json</code>.</p>`);
+      throw new Error('mixedwm38-sample.json missing');
+    }
+    const fixture = await resp.json();
+
+    const items = fixture.map(sample => () => {
+      const result  = buildWaferMap({ results: sample.results, passBins: [1] });
+      const summary = analyzeWaferMap(result, { passBins: [1] });
+      const nFindings = summary.findings.length;
+      const suffix = nFindings ? ` · ${nFindings} finding${nFindings > 1 ? 's' : ''}` : ' · no findings';
+      return {
+        ...result,
+        label:        `${sample.className}${suffix}`,
+        statsSummary: summary,
+        viewOptions: { plotMode: 'hardBin' },
+      };
+    });
+
+    renderWaferGallery(document.getElementById('gallery-container'), items, {
+      viewOptions:   { showPartialDies: false },
+      showHelpButton: true,
+    });
+  </script>
+
+</body>
+</html>

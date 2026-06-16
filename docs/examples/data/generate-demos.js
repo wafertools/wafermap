@@ -5,7 +5,7 @@
 //
 // All files share the same column schema:
 //   lot, wafer, x, y, hbin, sbin, leakage, voltage, frequency
-// so a single hardcoded mapping in 00-showcase.html covers all scenarios.
+// so a single hardcoded mapping in showcase.html covers all scenarios.
 
 import { writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';

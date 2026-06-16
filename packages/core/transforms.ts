@@ -145,7 +145,7 @@ export function mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions)
   const xField = options.xField ?? 'x', yField = options.yField ?? 'y';
   for (const row of data) lookup.set(`${+row[xField]},${+row[yField]}`, +row[valueField]);
   return dies.map((d) => {
-    const v = lookup.get(`${d.physX},${d.physY}`);
+    const v = lookup.get(`${d.x},${d.y}`);
     return v !== undefined ? { ...d, values: [...(d.values ?? []), v] } : { ...d };
   });
 }

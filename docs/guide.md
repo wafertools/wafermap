@@ -89,11 +89,11 @@ opens the map in a full-screen modal without rebuilding the view.
 > like −7, 0, 5.  They are NOT millimetre values.**  The library converts to physical
 > mm internally when you supply a die size.
 
-**→ [Demo: Your first wafer map](examples/01-first-map.html)**
+**→ [Demo: Your first wafer map](examples/first-map.html)**
 
 
 
-![](images/image-2.png)
+![Your first wafer map](images/guide-first-map.png)
 
 ## 3. Loading real data from a CSV
 
@@ -140,14 +140,14 @@ async function loadAndRender(csvText: string, container: HTMLElement) {
 `x` and `y` are the prober step positions from your equipment — pass them directly,
 no unit conversion needed.
 
-**→ [Demo: Loading real data from a CSV](examples/03-csv-data.html)**
+**→ [Demo: Loading real data from a CSV](examples/csv-data.html)**
 
 Here we have toggled some toolbar options on: XY Axis indicator and Ring boundaries. 
 
 
-![](images/image-3.png)
+![CSV data with ring boundaries and XY indicator](images/guide-csv-ring-boundaries.png)
 
-For a real-world dataset, see [Demo: Real wafer defect data (WM-811K)](examples/19-real-data.html), which loads a sample from the WM-811K public dataset and lets you explore the spatial findings engine across known defect pattern types (Center, Donut, Edge-Loc, Scratch, etc.).
+For a real-world dataset, see [Demo: Real wafer defect data (WM-811K)](examples/real-data.html), which loads a sample from the WM-811K public dataset and lets you explore the spatial findings engine across known defect pattern types (Center, Donut, Edge-Loc, Scratch, etc.).
 
 ## 4. Adding die size and wafer geometry
 
@@ -251,15 +251,15 @@ buildWaferMap({
 });
 ```
 
-**→ [Demo: Die size and wafer geometry](examples/04-geometry.html)**
+**→ [Demo: Die size and wafer geometry](examples/geometry.html)**
 
 
-![](images/image-4.png)
+![Four maps showing geometry inference levels](images/guide-geometry-inference.png)
 
-**→ [Demo: Partial data](examples/02-partial-data.html)**
+**→ [Demo: Partial data](examples/partial-data.html)**
 
 
-![](images/image-4a.png)
+![Partial data — sparse die coverage with anchored centre](images/guide-geometry-partial-data.png)
 
 
 
@@ -343,10 +343,10 @@ const yld = result.yield.yieldPercent;
 console.log(yld !== null ? `${yld.toFixed(1)}%` : 'n/a');
 ```
 
-**→ [Demo: Working with bins](examples/05-named-bins.html)**
+**→ [Demo: Working with bins](examples/named-bins.html)**
 
 
-![](images/image-5.png)
+![Named hard bins with colour legend](images/guide-bins-named.png)
 
 ## 6. Working with test values
 
@@ -456,14 +456,14 @@ renderWaferMap(container, result, {
 
 Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.stats.testSpecYield` with per-test spec yield, fail-low count, and fail-high count for every test that has at least one limit defined.
 
-**→ [Demo: Working with test values](examples/06-test-values.html)**
+**→ [Demo: Working with test values](examples/test-values.html)**
 
 
-![](images/image-6.png)
+![Test value heatmap with colorbar](images/guide-test-values-colorbar.png)
 
 The same map with the view option 'Spec pass/fail' selected. Now the map shows the dies in spec limits in green and the dies out of limits in red, for the given test.
 
-![](images/image-6a.png)
+![Spec pass/fail colouring active](images/guide-test-values-spec-passfail.png)
 
 
 ## 7. Retests and enriching dies after build
@@ -587,10 +587,10 @@ const result = buildWaferMap({
 });
 ```
 
-**→ [Demo: Working with retested dies](examples/07-retests.html)**
+**→ [Demo: Working with retested dies](examples/retests.html)**
 
 
-![](images/image-7.png)
+![Retests — enriched die tooltip showing retest count](images/guide-retests.png)
 
 ## 8. Controlling the display
 
@@ -687,10 +687,10 @@ renderWaferMap(container, result, {
   onViewOptionsChange: (opts) => syncMyModeUI(opts),
 });
 ```
-**→ [Demo: Controlling the display](examples/08-display-control.html)**
+**→ [Demo: Controlling the display](examples/display-control.html)**
 
 
-![](images/image-8.png)
+![Display control — rotated map with ring boundaries](images/guide-display-rotated-rings.png)
 
 ### Bin legend position
 
@@ -712,7 +712,7 @@ renderWaferMap(container, result, {
   viewOptions: { plotMode: 'hardBin', legendPosition: 'floating' },
 });
 ```
-![](images/image-8a.png)
+![Legend style dropdown open](images/guide-display-legend-style-menu.png)
 
 
 The Legend style button is automatically disabled when the map is in `value` or stacked mode, since those modes use a continuous colorbar instead of a bin legend.
@@ -736,20 +736,21 @@ gallery grid.  Which buttons appear depends on the context and the current data.
 
 | | Button | Condition | What it does |
 | --- | --- | --- | --- |
-| <img src="images/icons/download.svg" width="16" height="16"> | Download PNG | Always | Saves the current canvas at current zoom/rotation |
-| <img src="images/icons/zoomMode.svg" width="16" height="16"> | Zoom mode | Always | Drag to zoom into a region |
-| <img src="images/icons/zoomIn.svg" width="16" height="16"> <img src="images/icons/zoomOut.svg" width="16" height="16"> <img src="images/icons/reset.svg" width="16" height="16"> | Zoom in / Zoom out / Reset | Always | Step zoom; Reset returns to fitted view |
-| <img src="images/icons/pan.svg" width="16" height="16"> | Pan mode | Always | Drag to pan |
-| <img src="images/icons/boxSelect.svg" width="16" height="16"> | Box select | Always | Drag to select a group of dies; fires `onSelect` when provided |
-| <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, and Stacked modes (only when map was built with `lotStack`) |
-| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Opens colour scheme picker |
-| <img src="images/icons/logScale.svg" width="16" height="16"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0 |
-| <img src="images/icons/specRange.svg" width="16" height="16"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, Spec pass/fail off | Toggles between spec-limit range (blue/red out-of-spec) and data range |
-| <img src="images/icons/overlays.svg" width="16" height="16"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Spec pass/fail (value mode, test has limits) |
-| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
-| <img src="images/icons/orient.svg" width="16" height="16"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
-| <img src="images/icons/findings.svg" width="16" height="16"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
-| <img src="images/icons/expand.svg" width="16" height="16"> | Expand | Always | Opens the map in a full-screen modal; canvas reparented — no view rebuild. `E` key shortcut. |
+| <img src="images/icons/download.svg" width="20" height="20"> | Download PNG | Always | Saves the current canvas at current zoom/rotation |
+| <img src="images/icons/zoomMode.svg" width="20" height="20"> | Zoom mode | Always | Drag to zoom into a region |
+| <img src="images/icons/zoomIn.svg" width="20" height="20"> <img src="images/icons/zoomOut.svg" width="20" height="20"> <img src="images/icons/reset.svg" width="20" height="20"> | Zoom in / Zoom out / Reset | Always | Step zoom; Reset returns to fitted view |
+| <img src="images/icons/pan.svg" width="20" height="20"> | Pan mode | Always | Drag to pan |
+| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select | Always | Drag to select a group of dies; fires `onSelect` when provided |
+| <img src="images/icons/mode.svg" width="20" height="20"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, and Stacked modes (only when map was built with `lotStack`) |
+| <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Opens colour scheme picker |
+| <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0 |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, Spec pass/fail off | Toggles between spec-limit range (blue/red out-of-spec) and data range |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Spec pass/fail (value mode, test has limits) |
+| <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
+| <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
+| <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
+| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Always | Opens the map in a full-screen modal; canvas reparented — no view rebuild. `E` key shortcut. |
+| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a modal |
 
 The full toolbar is shown when `toolbarControls` is `'full'` (default). Gallery card modals
 also use `'full'`. In the gallery, cards show only the navigation controls (download, zoom,
@@ -763,16 +764,17 @@ The gallery control bar is always visible above the card grid.
 
 | | Button | Condition | What it does |
 | --- | --- | --- | --- |
-| <img src="images/icons/mode.svg" width="16" height="16"> | Plot mode | Unless `showPlotModeSelector: false` | Same mode menu as single map; stacked modes always available in the gallery |
-| <img src="images/icons/palette.svg" width="16" height="16"> | Colour palette | Always | Colour scheme picker; applies to all cards |
-| <img src="images/icons/aggr.svg" width="16" height="16"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
-| <img src="images/icons/logScale.svg" width="16" height="16"> | Log scale | Value / stacked-values mode only | Applies to all cards |
-| <img src="images/icons/overlays.svg" width="16" height="16"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator — applies to all cards |
-| <img src="images/icons/legend.svg" width="16" height="16"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position; applies to all cards |
-| <img src="images/icons/orient.svg" width="16" height="16"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
-| <img src="images/icons/columns.svg" width="16" height="16"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch so all available width is used |
-| <img src="images/icons/downloadAll.svg" width="16" height="16"> | Download all | Always | Exports all cards as a single tiled PNG |
-| <img src="images/icons/findings.svg" width="16" height="16"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
+| <img src="images/icons/mode.svg" width="20" height="20"> | Plot mode | Unless `showPlotModeSelector: false` | Same mode menu as single map; stacked modes always available in the gallery |
+| <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Colour scheme picker; applies to all cards |
+| <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
+| <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Applies to all cards |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator — applies to all cards |
+| <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position; applies to all cards |
+| <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
+| <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch so all available width is used |
+| <img src="images/icons/downloadAll.svg" width="20" height="20"> | Download all | Always | Exports all cards as a single tiled PNG |
+| <img src="images/icons/findings.svg" width="20" height="20"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
+| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a modal |
 
 
 ## 9. Responding to user interaction
@@ -825,10 +827,10 @@ ctrl.setSelection(failingDies);
 // Clear:
 ctrl.clearSelection();
 ```
-**→ [Demo: Responding to user interaction](examples/09-interaction.html)**
+**→ [Demo: Responding to user interaction](examples/interaction.html)**
 
 
-![](images/image-9.png)
+![Box-select drag with dies highlighted](images/guide-interaction-box-select.png)
 
 ### Bin legend filter
 
@@ -842,7 +844,7 @@ ctrl.setOptions({ highlightBin: undefined }); // clear
 
 The filter also works in gallery view — clicking a legend row in the gallery toolbar highlights that bin across every card simultaneously.
 
-![Bin legend filter — bin 2 selected, all other bins dimmed](images/image-5a.png)
+![Bin legend filter — bin 2 selected, all other bins dimmed](images/guide-bins-legend-filter.png)
 
 ## 10. Adding statistical findings
 
@@ -975,7 +977,7 @@ for (const f of clusters) {
 }
 ```
 
-![Cluster finding highlight — specific failing dies lit amber](images/image-10a.png)
+![Cluster finding highlight — specific failing dies lit amber](images/guide-findings-cluster-highlight.png)
 
 ### Reading findings in code
 
@@ -1028,10 +1030,10 @@ select or colour dies associated with the finding.
 For running the stats engine in Node.js without a browser, see the
 [recipe in §18](#analyse-a-lot-in-nodejs-without-a-browser).
 
-**→ [Demo: Statistical findings](examples/10-findings.html)**
+**→ [Demo: Statistical findings](examples/findings.html)**
 
 
-![](images/image-10.png)
+![Findings panel open with first finding selected](images/guide-findings-panel.png)
 
 ## 11. Summary panel
 
@@ -1127,10 +1129,10 @@ renderWaferGallery(container, items);
 // → Each card modal shows its own per-wafer summary
 ```
 
-**→ [Demo: Summary panel](examples/11-summary-panel.html)**
+**→ [Demo: Summary panel](examples/summary-panel.html)**
 
 
-![](images/image-11.png)
+![Summary panel open on single wafer](images/guide-summary-panel.png)
 
 ## 12. Building a lot gallery
 
@@ -1282,12 +1284,12 @@ generates default labels (e.g. "Test 1050", "Bin 2") automatically.
 summary — open the card modal and click the findings button to see ring, quadrant,
 sector, and cluster findings on the aggregated map.  No extra code is required.
 
-**→ [Demo: Building a lot gallery](examples/12-gallery.html)**  
-See also: [Demo: Lot-level findings with stacked modes](examples/13-lot-findings.html)
+**→ [Demo: Building a lot gallery](examples/gallery.html)**  
+See also: [Demo: Lot-level findings with stacked modes](examples/lot-findings.html)
 
-![Gallery in Stacked Hard Bins mode — one card per bin aggregated across the lot](images/image-12a.png)
+![Gallery in Stacked Hard Bins mode — one card per bin aggregated across the lot](images/guide-gallery-stacked-bins.png)
 
-![Gallery in per-wafer Hard Bin mode — one card per wafer](images/image-12.png)
+![Gallery in per-wafer Hard Bin mode — one card per wafer](images/guide-gallery-per-wafer.png)
 
 
 ## 13. Lot-level statistical findings
@@ -1341,10 +1343,10 @@ const newLotSummary = analyzeWaferLot(newResults);
 ctrl.setLotStatsSummary(newLotSummary);
 ```
 
-**→ [Demo: Lot-level statistical findings](examples/13-lot-findings.html)**
+**→ [Demo: Lot-level statistical findings](examples/lot-findings.html)**
 
 
-![](images/image-13.png)
+![Lot findings gallery with panel open](images/guide-lot-findings-gallery.png)
 
 ### Exporting reports
 
@@ -1411,9 +1413,9 @@ setReportOpener(html => {
 
 All `openHtmlReport` calls — including the summary panel buttons — then route through your opener automatically.
 
-![Wafer summary report](images/image-report-wafer.png)
+![Wafer summary report](images/report-wafer-summary.png)
 
-![Lot summary report](images/image-report-lot.png)
+![Lot summary report](images/report-lot-summary.png)
 
 ## 14. Reticle overlays
 
@@ -1463,10 +1465,10 @@ const items = waferResults.map(r => ({ ...r }));
 // or with a label:
 const items = waferResults.map((r, i) => ({ ...r, label: `W${i + 1}` }));
 ```
-**→ [Demo: Reticle overlays](examples/14-reticle.html)**
+**→ [Demo: Reticle overlays](examples/reticle.html)**
 
 
-![](images/image-14.png)
+![Reticle grid overlay active](images/guide-reticle-overlay.png)
 
 ## 15. Multi-site parallel testing
 
@@ -1538,9 +1540,9 @@ const results = stdfRows.map(row => ({
 `x`, `y`, and bin assignments. The field is semantically neutral — its exact meaning
 is fab-specific — so the library stores it as-is without interpretation.
 
-**→ [Demo: Multi-site parallel testing](examples/15-test-sites.html)**
+**→ [Demo: Multi-site parallel testing](examples/test-sites.html)**
 
-![](images/image-15.png)
+![Multi-site parallel testing — site yield comparison](images/guide-test-sites.png)
 
 ## 16. Processing large datasets with a Web Worker
 
@@ -1623,7 +1625,7 @@ wmWorker.terminate();
 > pure functions with no DOM access — they can run in a Web Worker, Node.js, or any
 > server-side environment.
 
-**→ [Demo: Processing large datasets with a Web Worker](examples/15-worker.html)**
+**→ [Demo: Processing large datasets with a Web Worker](examples/worker.html)**
 
 ## 17. Custom colour schemes
 
@@ -1664,10 +1666,10 @@ ctrl.setOptions({ colorScheme: 'my-brand' });
 Register your schemes once, before any `renderWaferMap` call.
 They are global and persist for the lifetime of the page.
 
-**→ [Demo: Custom colour schemes](examples/16-color-schemes.html)**
+**→ [Demo: Custom colour schemes](examples/color-schemes.html)**
 
 
-![](images/image-16.png)
+![Colour scheme dropdown open on three-wafer layout](images/guide-color-schemes.png)
 
 ## 18. Recipes
 
@@ -1953,7 +1955,7 @@ For cluster and edge-arc detection, dies that exceed a test's spec limits
 (`limitLow` / `limitHigh` in `testDefs`) are used as the failure proxy. If no spec
 limits are defined, cluster detection is skipped automatically.
 
-**→ [Demo: Standalone stacked map with spatial analysis](examples/20-lot-stack-analysis.html)**
+**→ [Demo: Standalone stacked map with spatial analysis](examples/lot-stack-analysis.html)**
 
 
 ## 19. Advanced: the rendering pipeline
@@ -2014,4 +2016,4 @@ const view = buildView(wafer, currentDies, {
 toCanvas(document.getElementById('map'), view);
 ```
 
-**→ [Demo: Advanced — the rendering pipeline](examples/18-pipeline.html)**
+**→ [Demo: Advanced — the rendering pipeline](examples/pipeline.html)**

@@ -168,9 +168,9 @@ ctrl = renderWaferMap(host, result, {
 ## Reference files
 
 - [API reference](api.md)
-- [Your first wafer map](examples/01-first-map.html)
-- [CSV loading demo](examples/03-csv-data.html)
-- [Statistical findings](examples/10-findings.html)
-- [Lot gallery](examples/12-gallery.html)
-- [Web Worker](examples/15-worker.html)
+- [Your first wafer map](examples/first-map.html)
+- [CSV loading demo](examples/csv-data.html)
+- [Statistical findings](examples/findings.html)
+- [Lot gallery](examples/gallery.html)
+- [Web Worker](examples/worker.html)
 - [Troubleshooting](troubleshooting.md)

@@ -2,3 +2,9 @@ img {
   border: 1px solid #ddd;
   border-radius: .4rem;
 }
+
+/* Icon images in table cells — no border or rounding */
+td img {
+  border: none;
+  border-radius: 0;
+}

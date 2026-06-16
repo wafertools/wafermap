@@ -1,6 +1,6 @@
-// showcase.js — app scaffolding for 00-showcase.html
+// showcase.js — app scaffolding for showcase.html
 // CSV parsing, column detection, mapping UI, phase switching, help popout.
-// Does not import from wafermap — all library calls live in 00-showcase.html.
+// Does not import from wafermap — all library calls live in showcase.html.
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -610,7 +610,7 @@ export function escHtml(s) {
 }
 
 // ── Wire up all event listeners ────────────────────────────────────────────
-// Called by 00-showcase.html after defining renderGallery.
+// Called by showcase.html after defining renderGallery.
 
 export function initShowcase(renderGallery) {
   const dropZone  = document.getElementById('drop-zone');

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Statistical findings — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§10 — Statistical findings</span>
+    <span class="demo-desc">
+      analyzeWaferMap detects yield loss in rings, quadrants, sectors, clusters, and edge arcs
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    <code>analyzeWaferMap</code> scans for statistically significant spatial yield patterns across five families:
+    <strong>rings</strong>, <strong>quadrants</strong>, <strong>angular sectors</strong> (16 compass directions),
+    <strong>failure clusters</strong> (contiguous failing dies denser than background), and
+    <strong>edge arcs</strong> (localised arc damage near the wafer perimeter).
+    This wafer has a particle/ESD failure cluster, a handling arc near the wafer edge, and the natural radial yield gradient that drives ring and sector findings.
+    The <strong>notebook icon</strong> in the toolbar opens the findings panel: click any finding to highlight the affected dies.
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <div id="map"></div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }   from 'wafermap';
+    import { renderWaferMap }  from 'wafermap/render';
+    import { analyzeWaferMap } from 'wafermap/stats';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS, TEST_DEFS } from './data.js';
+
+    // A wafer with deliberate spatial patterns: a particle/ESD failure cluster,
+    // a handling arc near the wafer edge, and the natural radial yield gradient
+    // (stronger at centre, weaker at edge) that drives ring and sector findings.
+    const result = buildWaferMap({
+      results:     makeResults({ seed: 1, cluster: true, edgeArc: true }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig:   DIE_CONFIG,
+      hbinDefs:    HBIN_DEFS,
+      sbinDefs:    SBIN_DEFS,
+      testDefs:    TEST_DEFS,
+      passBins:    [1],
+    });
+
+    const RING_COUNT = 4;
+
+    // analyzeWaferMap scans rings, quadrants, sectors, clusters, and edge arcs.
+    // All default thresholds are used — no overrides needed.
+    const summary = analyzeWaferMap(result, {
+      ringCount:             RING_COUNT,
+      passBins:              [1],
+      enableClusterAnalysis: true,
+      enableAngularAnalysis: true,
+    });
+
+    // Mount the map — pass statsSummary to get the built-in findings panel.
+    // defaultOpen: true starts it visible so the user sees results immediately.
+    renderWaferMap(document.getElementById('map'), result, {
+      viewOptions: {
+        plotMode:  'hardBin',
+        ringCount: RING_COUNT,
+      },
+      statsSummary: summary,
+      summaryPanel: { defaultOpen: true },
+      showHelpButton: true,
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Custom colour schemes — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+  <style>
+    .demo-content { flex-direction: column; gap: 0; padding: 0; }
+
+    /* Three-column grid for the colour scheme comparison */
+    .scheme-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      flex: 1;
+      padding: 14px;
+      overflow: hidden;
+    }
+
+    .scheme-card {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .scheme-card > div[id] { flex: 1; min-height: 0; }
+
+    .scheme-caption {
+      flex-shrink: 0;
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .scheme-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    }
+
+    .scheme-desc {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+
+    /* Swatch row showing forBin colors */
+    .swatch-row {
+      display: flex;
+      gap: 3px;
+      margin-top: 5px;
+    }
+
+    .swatch {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      border: 1px solid rgba(0,0,0,.08);
+    }
+
+    @media (max-width: 640px) {
+      .scheme-grid {
+        grid-template-columns: 1fr;
+        overflow: visible;
+        flex: none;
+        height: auto;
+      }
+      .scheme-card {
+        height: 70vw;
+        min-height: 240px;
+        max-height: 420px;
+      }
+    }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§16 — Custom colour schemes</span>
+    <span class="demo-desc">
+      registerColorScheme · forBin · forValue · schemes appear in every toolbar palette picker
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    Call <code>registerColorScheme(name, { forBin, forValue })</code> before rendering to add a custom palette.
+    Registered schemes appear automatically in every toolbar colour picker alongside the built-in ones.
+    <code>forBin(bin)</code> returns a CSS colour for categorical bin modes; <code>forValue(t)</code> interpolates a colour for continuous value modes (t ∈ [0, 1]).
+    The three cards show the built-in <strong>color</strong> and <strong>plasma</strong> schemes alongside the custom <strong>teal-rose</strong> scheme registered in this demo.
+  </div>
+
+  <div class="demo-content">
+    <div class="scheme-grid">
+
+      <!-- Built-in 'color' (default) -->
+      <div class="scheme-card">
+        <div id="map-color"></div>
+        <div class="scheme-caption">
+          <div class="scheme-name">'color'  <span style="color:var(--muted); font-weight:400">(built-in default)</span></div>
+          <div class="scheme-desc">Categorical palette — visually distinct bins, Viridis for continuous values.</div>
+          <div class="swatch-row" id="sw-color"></div>
+        </div>
+      </div>
+
+      <!-- Built-in 'plasma' -->
+      <div class="scheme-card">
+        <div id="map-plasma"></div>
+        <div class="scheme-caption">
+          <div class="scheme-name">'plasma'  <span style="color:var(--muted); font-weight:400">(built-in)</span></div>
+          <div class="scheme-desc">Plasma colormap — high-contrast gradient for continuous parametric data.</div>
+          <div class="swatch-row" id="sw-plasma"></div>
+        </div>
+      </div>
+
+      <!-- Custom registered scheme -->
+      <div class="scheme-card">
+        <div id="map-custom"></div>
+        <div class="scheme-caption">
+          <div class="scheme-name">'teal-rose'  <span style="color:var(--accent); font-weight:400">(custom)</span></div>
+          <div class="scheme-desc">
+            Registered with <code>registerColorScheme()</code> — teal pass · rose fail palette.
+            Available in the toolbar automatically.
+          </div>
+          <div class="swatch-row" id="sw-custom"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap, registerColorScheme } from 'wafermap';
+    import { renderWaferMap }                     from 'wafermap/render';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG } from './data.js';
+
+    // Bin definitions WITHOUT explicit colors — so each scheme's forBin() controls
+    // the swatch colors. If BinDef.color is set, it overrides the scheme entirely.
+    const HBIN_DEFS = [
+      { bin: 1, name: 'Pass'         },
+      { bin: 2, name: 'Contact Open' },
+      { bin: 3, name: 'Vth – Hi'     },
+      { bin: 4, name: 'Leakage'      },
+    ];
+
+    // ── Register a custom colour scheme before any renderWaferMap call ────────
+    //
+    // forBin(bin)  — categorical colour for hardbin / softbin modes
+    // forValue(t)  — continuous colour for t ∈ [0, 1] in value / stackedValues modes
+    //
+    // Schemes are global and persist for the lifetime of the page.
+    // They appear in every toolbar palette dropdown automatically.
+
+    const TEAL_ROSE_BINS = [
+      '#0d9488', // bin 1 — pass (teal)
+      '#f43f5e', // bin 2 — fail A (rose)
+      '#fb923c', // bin 3 — fail B (orange)
+      '#a78bfa', // bin 4 — fail C (violet)
+    ];
+
+    registerColorScheme('teal-rose', {
+      label: 'Teal / Rose',
+
+      // Return a CSS color for a given bin number
+      forBin(bin) {
+        return TEAL_ROSE_BINS[(bin - 1) % TEAL_ROSE_BINS.length] ?? '#888';
+      },
+
+      // Interpolate teal → white → rose across a normalized value t ∈ [0, 1]
+      forValue(t) {
+        const r = Math.round(t < 0.5 ? t * 2 * 250 : 244 + (t - 0.5) * 2 * 11);
+        const g = Math.round(t < 0.5 ? 148 + t * 2 * (250 - 148) : 250 - (t - 0.5) * 2 * 188);
+        const b = Math.round(t < 0.5 ? 136 + t * 2 * (250 - 136) : 250 - (t - 0.5) * 2 * 156);
+        return `rgb(${r},${g},${b})`;
+      },
+    });
+
+    // ── Build the wafer once, render three times with different schemes ────────
+
+    const result = buildWaferMap({
+      results:     makeResults({ seed: 7 }),
+      waferConfig: WAFER_CONFIG,
+      dieConfig:   DIE_CONFIG,
+      hbinDefs:    HBIN_DEFS,
+      passBins:    [1],
+    });
+
+    const sharedOpts = { viewOptions: { plotMode: 'hardBin' }, showToolbar: true, showHelpButton: true };
+
+    renderWaferMap(document.getElementById('map-color'),
+      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'color'     } });
+
+    renderWaferMap(document.getElementById('map-plasma'),
+      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'plasma'    } });
+
+    renderWaferMap(document.getElementById('map-custom'),
+      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'teal-rose' } });
+
+    // ── Render swatch rows for each scheme ────────────────────────────────────
+
+    function makeSwatches(containerId, colors) {
+      const el = document.getElementById(containerId);
+      for (const c of colors) {
+        el.insertAdjacentHTML('beforeend',
+          `<div class="swatch" style="background:${c}" title="${c}"></div>`);
+      }
+    }
+
+    // Built-in 'color' scheme categorical bin colors (bins 1–8, approximated)
+    makeSwatches('sw-color',  ['#2ecc71','#e74c3c','#e67e22','#9b59b6','#3498db','#1abc9c','#f39c12','#95a5a6']);
+    // Built-in 'plasma' colormap sampled at 8 equal steps
+    makeSwatches('sw-plasma', ['#0d0887','#6a00a8','#b12a90','#e16462','#fca636','#f0f921','#fcffa4','#ffffff']);
+    // Custom scheme
+    makeSwatches('sw-custom', TEAL_ROSE_BINS);
+  </script>
+
+</body>
+</html>

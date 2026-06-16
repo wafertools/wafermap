@@ -845,10 +845,14 @@ function applyRetestPolicy(
   policy: 'last' | 'first' | 'best' | 'worst',
   passBins: number[],
 ): DieResult[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<number, Map<number, number>>();
   for (const d of results) {
-    const key = `${d.x},${d.y}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    let yCounts = counts.get(d.x);
+    if (!yCounts) {
+      yCounts = new Map<number, number>();
+      counts.set(d.x, yCounts);
+    }
+    yCounts.set(d.y, (yCounts.get(d.y) ?? 0) + 1);
   }
 
   const passBinSet = new Set(passBins);
@@ -882,7 +886,8 @@ function applyRetestPolicy(
   }
 
   return Array.from(winners.values()).map(d => {
-    const count = counts.get(`${d.x},${d.y}`) ?? 1;
+    const xMap = counts.get(d.x);
+    const count = xMap?.get(d.y) ?? 1;
     return count > 1 ? { ...d, retestCount: count } : d;
   });
 }

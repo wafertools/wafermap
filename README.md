@@ -7,7 +7,7 @@
 ![bundle](https://img.shields.io/badge/core%20min%2Bgz-~29%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-<img src="docs/images/image.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
+<img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
 
 Browser-first wafer map visualization for semiconductor test data.
 

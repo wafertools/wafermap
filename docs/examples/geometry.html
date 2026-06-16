@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Die size and wafer geometry — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+  <style>
+    /* Override grid to 2×2 for this demo */
+    .demo-content { flex-direction: column; }
+    .quad-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 14px;
+      flex: 1;
+      overflow: hidden;
+    }
+    .canvas-card { display: flex; flex-direction: column; }
+    .canvas-card > div[id] { flex: 1; min-height: 0; }
+    .card-caption { font-size: 11px; }
+
+    @media (max-width: 640px) {
+      .quad-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: none;
+        overflow: visible;
+        flex: none;
+        height: auto;
+      }
+      .canvas-card {
+        height: 70vw;
+        min-height: 240px;
+        max-height: 420px;
+      }
+    }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§4 — Die size and wafer geometry</span>
+    <span class="demo-desc">Four inference levels — same data, different geometry context</span>
+  </header>
+
+  <div class="demo-intro">
+    The same die grid rendered four ways depending on how much geometry is supplied to <code>buildWaferMap</code>.
+    <strong>A</strong> — no geometry, normalized units. <strong>B</strong> — die size only, diameter inferred.
+    <strong>C</strong> — diameter only, pitch estimated, notch visible. <strong>D</strong> — fully specified with a 5 mm edge exclusion band (dimmed dies are excluded from yield).
+  </div>
+
+  <div class="demo-content">
+    <div class="quad-grid">
+
+      <!-- Card A: nothing supplied → normalized units -->
+      <div class="canvas-card">
+        <div class="canvas-badge">A — grid positions only</div>
+        <div id="map-a"></div>
+        <div class="card-caption">
+          <strong>Neither provided.</strong>
+          Pitch inferred by nearest-neighbour step analysis.
+          <code>units: 'normalized'</code> — proportionally correct but not in mm.
+        </div>
+      </div>
+
+      <!-- Card B: die size only → mm, diameter inferred -->
+      <div class="canvas-card">
+        <div class="canvas-badge">B — die size provided</div>
+        <div id="map-b"></div>
+        <div class="card-caption">
+          <strong>dieConfig: { width: 8, height: 12 }</strong> — diameter inferred from
+          grid extent × pitch. <code>units: 'mm'</code>
+        </div>
+      </div>
+
+      <!-- Card C: diameter only → mm, pitch estimated -->
+      <div class="canvas-card">
+        <div class="canvas-badge">C — diameter provided</div>
+        <div id="map-c"></div>
+        <div class="card-caption">
+          <strong>waferConfig: { diameter: 300 }</strong> — die pitch estimated from
+          diameter ÷ grid extent. Notch visible. <code>units: 'mm'</code>
+        </div>
+      </div>
+
+      <!-- Card D: fully specified + edge exclusion -->
+      <div class="canvas-card">
+        <div class="canvas-badge">D — fully specified + edge exclusion</div>
+        <div id="map-d"></div>
+        <div class="card-caption">
+          <strong>diameter: 300, notch: bottom, edgeExclusion: 5 mm, die: 8×12 mm.</strong>
+          Dimmed dies fall within the 5 mm exclusion band and are excluded from yield.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/render';
+    import { makeResults, HBIN_DEFS } from './data.js';
+
+    const results = makeResults({ seed: 3, edgeFail: true });
+    const shared  = { results, hbinDefs: HBIN_DEFS, passBins: [1] };
+    const opts    = { viewOptions: { plotMode: 'hardBin' }, showHelpButton: true };
+
+    // A — nothing supplied: normalized units, no physical scale
+    {
+      const result = buildWaferMap({ ...shared });
+      renderWaferMap(document.getElementById('map-a'), result, opts);
+    }
+
+    // B — die size only: mm coordinates, diameter inferred from grid extent × pitch
+    {
+      const result = buildWaferMap({
+        ...shared,
+        dieConfig: { width: 8, height: 12 },
+      });
+      renderWaferMap(document.getElementById('map-b'), result, opts);
+    }
+
+    // C — diameter only: pitch estimated, notch rendered
+    {
+      const result = buildWaferMap({
+        ...shared,
+        waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+      });
+      renderWaferMap(document.getElementById('map-c'), result, opts);
+    }
+
+    // D — fully specified with a 5 mm edge exclusion band
+    {
+      const result = buildWaferMap({
+        ...shared,
+        waferConfig: { diameter: 300, notch: { type: 'bottom' }, edgeExclusion: 5 },
+        dieConfig:   { width: 8, height: 12 },
+      });
+      renderWaferMap(document.getElementById('map-d'), result, opts);
+    }
+  </script>
+
+</body>
+</html>

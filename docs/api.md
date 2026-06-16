@@ -834,6 +834,8 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
   tooltipTestLimit?:       number    // max test value rows in the die hover tooltip (default 12);
                                             // excess rows are replaced with "…and N more"
+  showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide in a modal
+                                            // (default false); enable in applications that want to surface the guide without linking externally
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   downloadFilename?:       string    // stem for the PNG download filename (default 'wafermap') — '.png' is appended automatically
@@ -901,6 +903,7 @@ Choose the right update method:
   setFindingsVisible(visible: boolean): void        // show/hide the findings toolbar button
   setViewControlsVisible(visible: boolean): void   // show/hide mode, orientation, findings, and expand buttons as a group
   setExpandVisible(visible: boolean): void          // show/hide the expand toolbar button independently
+  setHelpButtonVisible(visible: boolean): void      // show/hide the help toolbar button independently
 
   destroy(): void                                    // remove all listeners and DOM elements
 }
@@ -934,6 +937,7 @@ Choose the right update method:
 | Flip V | Mirror vertically |
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
 | Expand (⛶) | Open the map in a full-screen modal; canvas reparented — no view rebuild. Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards and modals. |
+| User guide | Open the built-in end-user guide in a modal — only shown when `showHelpButton: true` |
 
 ### 5.7 Interactions
 
@@ -1094,6 +1098,7 @@ to be pre-built.
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
+  showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user guide in a modal (default false)
   lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Findings button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
 }
@@ -2097,7 +2102,7 @@ Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/rende
 
 You only need this section if you are building a custom rendering pipeline — for example, rendering to SVG or WebGL, generating images server-side, or inserting custom geometry processing steps between wafer creation and rendering. For everything else, use `buildWaferMap` + `renderWaferMap`.
 
-The [Advanced pipeline demo](examples/18-pipeline.html) is the reference for this path.
+The [Advanced pipeline demo](examples/pipeline.html) is the reference for this path.
 
 **Minimal working example:**
 

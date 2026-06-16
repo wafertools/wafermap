@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your first wafer map — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§2 — Your first wafer map</span>
+    <span class="demo-desc">buildWaferMap + renderWaferMap · hover the canvas to reveal the toolbar</span>
+  </header>
+
+  <div class="demo-intro">
+    A 300 mm wafer rendered in hard-bin mode from synthetic die results.
+    <strong>Hover the canvas</strong> to reveal the toolbar — use it to switch plot mode, change colour scheme, rotate, flip, toggle die labels, zoom, and download a PNG.
+  </div>
+
+  <div class="demo-content">
+    <div class="canvas-card flex-1">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/render';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG } from './data.js';
+
+    // Step 1 — buildWaferMap: pure data layer (no DOM, server-safe).
+    // Pass prober step positions in x/y — the library converts to mm internally.
+    const result = buildWaferMap({
+      results:     makeResults({ seed: 7 }),
+      waferConfig: WAFER_CONFIG,   // { diameter: 300, notch: { type: 'bottom' } }
+      dieConfig:   DIE_CONFIG,     // { width: 10, height: 10 }
+      passBins:    [1],
+    });
+
+    // Step 2 — renderWaferMap: mounts a self-contained interactive canvas.
+    // The toolbar (mode, colour, rotate, zoom…) appears on hover — no extra HTML needed.
+    renderWaferMap(document.getElementById('map'), result, {
+      viewOptions: { plotMode: 'hardBin' },
+      showHelpButton: true,
+    });
+  </script>
+
+</body>
+</html>

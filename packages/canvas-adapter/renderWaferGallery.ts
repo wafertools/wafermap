@@ -2,6 +2,7 @@ import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
 import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler } from './toolbar.js';
+import { USER_GUIDE_HTML } from './userGuideHtml.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -123,6 +124,11 @@ export interface GalleryOptions {
    * Omit (default) to let the gallery auto-size cards based on die pitch.
    */
   columns?:                number;
+  /**
+   * Show a help button in the gallery control bar that opens the built-in end-user guide in a modal.
+   * Default false. Enable in applications that want to surface the guide without linking externally.
+   */
+  showHelpButton?:         boolean;
 }
 
 export interface GalleryController {
@@ -164,6 +170,7 @@ export function renderWaferGallery(
   const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
   let currentColumns         = options.columns;
   const showPlotModeSelector = options.showPlotModeSelector ?? true;
+  const showHelpButton       = options.showHelpButton       ?? false;
   const summaryPanelOpts     = options.summaryPanel;
   const passBins             = options.passBins             ?? [1];
   let currentFallbackFormat  = options.fallbackFormat;
@@ -803,6 +810,21 @@ export function renderWaferGallery(
       barEl.appendChild(makeSep());
       barEl.appendChild(btnLotFindings);
     }
+  }
+
+  // Help button — opens the end-user guide in a modal (opt-in).
+  if (showHelpButton) {
+    barEl.appendChild(makeSep());
+    barEl.appendChild(makeBtn('help', 'User guide', () => {
+      const content = document.createElement('div');
+      Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
+      content.innerHTML = USER_GUIDE_HTML;
+      const handle = openModal({
+        title: 'Wafer Map — User Guide',
+        onClose: () => {},
+      });
+      handle.contentWrap.appendChild(content);
+    }));
   }
 
   // ── Bin legend strip ───────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates a varied set of CSV files for showcase/00-showcase.html testing.
+// Generates a varied set of CSV files for showcase/showcase.html testing.
 // Run: node scripts/gen-showcase-csvs.mjs
 
 import { writeFileSync } from 'fs';

@@ -544,7 +544,7 @@
     const result = buildWaferMap(buildOpts);
     const t1 = performance.now();
 
-    const renderOpts = isValues ? { plotMode: 'value', activeTest: 1050 } : {};
+    const renderOpts = isValues ? { plotMode: 'value', activeTest: 1050, showHelpButton: true } : { showHelpButton: true };
     renderWaferMap(el, result, renderOpts);
     const t2 = performance.now();
 

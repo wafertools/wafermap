@@ -12,9 +12,9 @@
  *                   see the step reference in capture-screenshots.mjs header
  *   screenshotFn  — async (page, outFile) => {} for fully custom capture logic
  *
- * Image numbers match guide section numbers (§2 → image-2, §3 → image-3, …).
- * image.png is the homepage hero (no section number).
- * image-1.png is the intro overview screenshot at the top of the guide.
+ * Image names are descriptive slugs — guide-<topic>.png for guide screenshots,
+ * hero-<topic>.png for the homepage, report-<topic>.png for report popups.
+ * Avoid numeric suffixes; use a second descriptive word instead (e.g. guide-bins-legend-filter).
   * Add new entries to CAPTURES to register additional screenshots.
  *
  * ─── Setup step reference ────────────────────────────────────────────────────
@@ -98,31 +98,31 @@
 
 export const CAPTURES = [
 
-  // ── image.png — homepage hero: Idsat heatmap with colorbar + toolbar ─────────
+  // ── hero-test-values.png — homepage hero: Idsat heatmap with colorbar + toolbar ─
   {
-    file: 'image',
+    file: 'hero-test-values',
     group: 'maps',
-    page: '/examples/06-test-values.html',
+    page: '/examples/test-values.html',
     selector: '.demo-page',
     wait: 800,
     setup: [['hover'], ['showCursorOn', '#map canvas', -120, -100]],
   },
 
-  // ── image-1.png — guide intro: interaction demo showing map + sidebar ─────────
+  // ── guide-intro-interaction.png — guide intro: interaction demo showing map + sidebar ─
   {
-    file: 'image-1',
+    file: 'guide-intro-interaction',
     group: 'maps',
-    page: '/examples/09-interaction.html',
+    page: '/examples/interaction.html',
     selector: '.demo-content',
     wait: 800,
     setup: [['hover'], ['showCursorOn', '#map canvas', -120, -100]],
   },
 
-  // ── image-quickstart.png — quickstart example: edge-ring pattern ─────────────
+  // ── quickstart-first-map.png — quickstart example: edge-ring pattern ────────
   {
-    file: 'image-quickstart',
+    file: 'quickstart-first-map',
     group: 'maps',
-    page: '/examples/01-first-map.html',  // reuse the demo page infrastructure
+    page: '/examples/first-map.html',  // reuse the demo page infrastructure
     wait: 800,
     screenshotFn: async (page, outFile) => {
       // Inject the quickstart inline data directly, replacing the demo's result
@@ -159,21 +159,21 @@ export const CAPTURES = [
     },
   },
 
-  // ── image-2.png — §2 Your first wafer map ────────────────────────────────────
+  // ── guide-first-map.png — §2 Your first wafer map ───────────────────────────
   {
-    file: 'image-2',
+    file: 'guide-first-map',
     group: 'maps',
-    page: '/examples/01-first-map.html',
+    page: '/examples/first-map.html',
     selector: '.demo-content',
     wait: 800,
     setup: [['hover'], ['showCursorOn', '#map canvas', -150, -100]],
   },
 
-  // ── image-3.png — §3 Loading CSV data: map + source-file sidebar ──────────────
+  // ── guide-csv-ring-boundaries.png — §3 Loading CSV data: map + ring boundaries ─
   {
-    file: 'image-3',
+    file: 'guide-csv-ring-boundaries',
     group: 'maps',
-    page: '/examples/03-csv-data.html',
+    page: '/examples/csv-data.html',
     selector: '.demo-content',
     wait: 600,
     setup: [['toggleOverlay', 'Ring boundaries'],
@@ -181,40 +181,40 @@ export const CAPTURES = [
     ['showCursorOn', 'Overlays', 90, 120]],
   },
 
-  // ── image-4.png — §4 Geometry: four maps showing inference levels ─────────────
+  // ── guide-geometry-inference.png — §4 Geometry: four maps showing inference levels ─
   {
-    file: 'image-4',
+    file: 'guide-geometry-inference',
     group: 'maps',
-    page: '/examples/04-geometry.html',
+    page: '/examples/geometry.html',
     selector: '.demo-content',
     wait: 1200,
     setup: [['showCursorOn', '#map-b', -70, -50], ['hover', '#map-b']],
   },
 
-  // ── image-4a.png — §4 Partial data: partial-wrong / partial-anchored / sparse-ok ─
+  // ── guide-geometry-partial-data.png — §4 Partial data: partial-wrong / partial-anchored / sparse-ok ─
   {
-    file: 'image-4a',
+    file: 'guide-geometry-partial-data',
     group: 'maps',
-    page: '/examples/02-partial-data.html',
+    page: '/examples/partial-data.html',
     selector: '.demo-content',
     wait: 1200,
   },
 
-  // ── image-5.png — §5 Bins: named bin map with legend ─────────────────────────
+  // ── guide-bins-named.png — §5 Bins: named bin map with legend ───────────────
   {
-    file: 'image-5',
+    file: 'guide-bins-named',
     group: 'maps',
-    page: '/examples/05-named-bins.html',
+    page: '/examples/named-bins.html',
     selector: '.demo-content',
     wait: 800,
     setup: [['hover'], ['showCursorOn', '#map canvas', -120, -100]],
   },
 
-  // ── image-5a.png — §9 Legend bin filter: bin 2 highlighted, rest dimmed ─────────
+  // ── guide-bins-legend-filter.png — §5 Legend bin filter: bin 2 highlighted, rest dimmed ─
   {
-    file: 'image-5a',
+    file: 'guide-bins-legend-filter',
     group: 'maps',
-    page: '/examples/05-named-bins.html',
+    page: '/examples/named-bins.html',
     selector: '.demo-content',
     wait: 800,
     setup: [
@@ -224,41 +224,41 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-6.png — §6 Test values: heatmap + test-selector sidebar ─────────────
+  // ── guide-test-values-colorbar.png — §6 Test values: heatmap + colorbar ────────
   {
-    file: 'image-6',
+    file: 'guide-test-values-colorbar',
     group: 'maps',
-    page: '/examples/06-test-values.html',
+    page: '/examples/test-values.html',
     selector: '.demo-content',
     wait: 800,
     setup: [['hoverEl', 'Colorbar range: spec limits (click for data range)'],
     ['showCursorOn', 'Colorbar range: spec limits (click for data range)']],
   },
-  // ── image-6a.png — §6 Test values: heatmap + test-selector sidebar ─────────────
+  // ── guide-test-values-spec-passfail.png — §6 Test values: spec pass/fail colouring ─
   {
-    file: 'image-6a',
+    file: 'guide-test-values-spec-passfail',
     group: 'maps',
-    page: '/examples/06-test-values.html',
+    page: '/examples/test-values.html',
     selector: '.demo-content',
     wait: 800,
     setup: [['toggleOverlay', 'Spec pass/fail'], ['showCursorOn', 'Overlays', 90, 140]],
   },
 
-  // ── image-7.png — §7 Retests: map + retested-die list sidebar ─────────────────
+  // ── guide-retests.png — §7 Retests: map + retested-die list sidebar ─────────
   {
-    file: 'image-7',
+    file: 'guide-retests',
     group: 'maps',
-    page: '/examples/07-retests.html',
+    page: '/examples/retests.html',
     selector: '.demo-content',
     wait: 800,
     setup: [['hover']],
   },
 
-  // ── image-8.png — §8 Display control: map + external controls sidebar ─────────
+  // ── guide-display-rotated-rings.png — §8 Display control: rotated + ring boundaries ─
   {
-    file: 'image-8',
+    file: 'guide-display-rotated-rings',
     group: 'maps',
-    page: '/examples/08-display-control.html',
+    page: '/examples/display-control.html',
     selector: '.demo-content',
     wait: 800,
     setup: [
@@ -272,11 +272,11 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-8a.png — §5 Bins: legend at bottom with Legend style menu open ─────
+  // ── guide-display-legend-style-menu.png — §8 Display control: legend style dropdown open ─
   {
-    file: 'image-8a',
+    file: 'guide-display-legend-style-menu',
     group: 'maps',
-    page: '/examples/05-named-bins.html',
+    page: '/examples/named-bins.html',
     selector: '#map',
     wait: 800,
     setup: [
@@ -289,11 +289,11 @@ export const CAPTURES = [
   },
 
 
-  // ── image-9.png — §9 Interaction: box-select drag with dies highlighted ────────
+  // ── guide-interaction-box-select.png — §9 Interaction: box-select drag with dies highlighted ─
   {
-    file: 'image-9',
+    file: 'guide-interaction-box-select',
     group: 'maps',
-    page: '/examples/09-interaction.html',
+    page: '/examples/interaction.html',
     selector: '.demo-content',
     wait: 800,
     setup: [
@@ -303,11 +303,11 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-10.png — §10 Findings: map + panel with first finding selected ────────
+  // ── guide-findings-panel.png — §10 Findings: map + panel with first finding selected ─
   {
-    file: 'image-10',
+    file: 'guide-findings-panel',
     group: 'maps',
-    page: '/examples/10-findings.html',
+    page: '/examples/findings.html',
     selector: '.demo-content',
     wait: 1500,
     setup: [
@@ -317,11 +317,11 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-11.png — §11 Summary panel: single map with panel open ──────────────
+  // ── guide-summary-panel.png — §11 Summary panel: single map with panel open ──
   {
-    file: 'image-11',
+    file: 'guide-summary-panel',
     group: 'maps',
-    page: '/examples/11-summary-panel.html',
+    page: '/examples/summary-panel.html',
     selector: '#single-map-wrap',
     wait: 1000,
     setup: [
@@ -331,21 +331,21 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-12.png — §12 Gallery: card grid with hover on first card ────────────
+  // ── guide-gallery-per-wafer.png — §12 Gallery: card grid per-wafer with hover ─
   {
-    file: 'image-12',
+    file: 'guide-gallery-per-wafer',
     group: 'gallery',
-    page: '/examples/12-gallery.html',
+    page: '/examples/gallery.html',
     selector: '#gallery-container',
     wait: 2000,
     setup: [['hoverFirstCard', '#gallery-container'], ['selectColumns', '3 columns']],
   },
 
-  // ── image-13.png — §13 Lot findings: gallery (3 cols) + lot summary panel ──────
+  // ── guide-lot-findings-gallery.png — §13 Lot findings: gallery + lot summary panel ─
   {
-    file: 'image-13',
+    file: 'guide-lot-findings-gallery',
     group: 'gallery',
-    page: '/examples/13-lot-findings.html',
+    page: '/examples/lot-findings.html',
     selector: '.demo-content',
     wait: 2000,
     setup: [
@@ -357,11 +357,11 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-report-wafer.png — §13 Wafer summary report (popup from panel button) ──
+  // ── report-wafer-summary.png — §13 Wafer summary report (popup from panel button) ─
   {
-    file: 'image-report-wafer',
+    file: 'report-wafer-summary',
     group: 'maps',
-    page: '/examples/11-summary-panel.html',
+    page: '/examples/summary-panel.html',
     wait: 1000,
     screenshotFn: async (page, outFile) => {
       // Open the summary panel
@@ -386,11 +386,11 @@ export const CAPTURES = [
     },
   },
 
-  // ── image-report-lot.png — §13 Lot summary report (popup from lot panel button) ──
+  // ── report-lot-summary.png — §13 Lot summary report (popup from lot panel button) ─
   {
-    file: 'image-report-lot',
+    file: 'report-lot-summary',
     group: 'gallery',
-    page: '/examples/13-lot-findings.html',
+    page: '/examples/lot-findings.html',
     wait: 2000,
     screenshotFn: async (page, outFile) => {
       // Panel opens by default (defaultOpen: true in this demo).
@@ -423,11 +423,11 @@ export const CAPTURES = [
     },
   },
 
-  // ── image-10a.png — §10 Cluster/edge-arc highlight: specific dies lit amber ───
+  // ── guide-findings-cluster-highlight.png — §10 Cluster highlight: specific dies lit amber ─
   {
-    file: 'image-10a',
+    file: 'guide-findings-cluster-highlight',
     group: 'maps',
-    page: '/examples/10-findings.html',
+    page: '/examples/findings.html',
     selector: '.demo-content',
     wait: 1500,
     setup: [
@@ -438,11 +438,11 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-12a.png — §12 Stacked Hard Bins gallery: one card per bin ──────────
+  // ── guide-gallery-stacked-bins.png — §12 Stacked Hard Bins gallery: one card per bin ─
   {
-    file: 'image-12a',
+    file: 'guide-gallery-stacked-bins',
     group: 'gallery',
-    page: '/examples/12-gallery.html',
+    page: '/examples/gallery.html',
     selector: '#gallery-container',
     wait: 2000,
     setup: [
@@ -454,11 +454,11 @@ export const CAPTURES = [
     ],
   },
 
-  // ── image-14.png — §14 Reticle overlays: map + reticle summary panel ─────────
+  // ── guide-reticle-overlay.png — §14 Reticle overlays: map + reticle summary panel ─
   {
-    file: 'image-14',
+    file: 'guide-reticle-overlay',
     group: 'maps',
-    page: '/examples/14-reticle.html',
+    page: '/examples/reticle.html',
     selector: '.demo-content',
     wait: 1000,
     setup: [['toggleOverlay', 'Reticle grid'], ['toggleOverlay', 'Reticle grid'], 
@@ -466,11 +466,21 @@ export const CAPTURES = [
 
   },
 
-  // ── image-16.png — §16 Colour schemes: three wafers side by side ─────────────
+  // ── guide-test-sites.png — §15 Multi-site parallel testing: map + site stats ──
   {
-    file: 'image-16',
+    file: 'guide-test-sites',
     group: 'maps',
-    page: '/examples/16-color-schemes.html',
+    page: '/examples/test-sites.html',
+    selector: '.demo-content',
+    wait: 1000,
+    setup: [['hover'], ['showCursorOn', '#map canvas', -120, -100]],
+  },
+
+  // ── guide-color-schemes.png — §16 Colour schemes: three wafers side by side ──
+  {
+    file: 'guide-color-schemes',
+    group: 'maps',
+    page: '/examples/color-schemes.html',
     selector: '.scheme-grid',
     wait: 1200,
     setup: [
@@ -484,7 +494,7 @@ export const CAPTURES = [
   // {
   //   file: 'csv',
   //   group: 'showcase',
-  //   page: '/examples/00-showcase.html',
+  //   page: '/examples/showcase.html',
   //   selector: '#phase-upload',
   //   wait: 600
   // },
@@ -495,7 +505,7 @@ export const CAPTURES = [
   {
     file: 'toolbar-single',
     group: 'toolbar',
-    page: '/examples/01-first-map.html',
+    page: '/examples/first-map.html',
     selector: '[data-wmap-toolbar="single"]',
     wait: 800,
     viewport: { width: 1280, height: 800 },
@@ -506,18 +516,18 @@ export const CAPTURES = [
   {
     file: 'toolbar-gallery',
     group: 'toolbar',
-    page: '/examples/12-gallery.html',
+    page: '/examples/gallery.html',
     wait: 2000,
     viewport: { width: 1450, height: 900 },
     selector: '[data-wmap-toolbar="gallery"]',
   },
 
-  // ── Presentation-specific ────────────────────────────────────────────────────
+  // ── Misc ─────────────────────────────────────────────────────────────────────
 
   // comparison: run benchmark (bins scenario) and screenshot the result
   {
     file: 'comparison',
-    group: 'presentation',
+    group: 'misc',
     page: '/examples/comparison.html',
     selector: 'body',
     wait: 500,
@@ -525,25 +535,5 @@ export const CAPTURES = [
     setup: [
       ['wait', 200],
     ],
-  },
-
-  // pres-bins: clean hard-bin map (no demo sidebar) for presentation viz-modes slide
-  {
-    file: 'pres-bins',
-    group: 'presentation',
-    page: '/examples/05-named-bins.html',
-    selector: '#map',
-    wait: 800,
-    setup: [['closePanel'], ['hover']],
-  },
-
-  // pres-values: clean test-value heatmap (no demo sidebar) for presentation viz-modes slide
-  {
-    file: 'pres-values',
-    group: 'presentation',
-    page: '/examples/06-test-values.html',
-    selector: '#map',
-    wait: 800,
-    setup: [['hover']],
   },
 ];
