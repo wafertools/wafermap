@@ -753,7 +753,7 @@ export function renderWaferGallery(
     'orient', 'Orientation',
     () => [
       { section: 'Rotate' },
-      { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = sharedOpts.rotation ?? 0; updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] }); } },
+      { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = sharedOpts.rotation ?? 0; updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] }); } },
       { section: 'Flip' },
       { label: 'Flip horizontal', active: !!sharedOpts.flipX, onClick: () => updateShared({ flipX: !sharedOpts.flipX }) },
       { label: 'Flip vertical',   active: !!sharedOpts.flipY, onClick: () => updateShared({ flipY: !sharedOpts.flipY }) },

@@ -248,8 +248,8 @@ function transformVector(dx: number, dy: number, transform: TransformState): Poi
   const rad = (transform.rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
-  let x = dx * cos - dy * sin;
-  let y = dx * sin + dy * cos;
+  let x = dx * cos + dy * sin;
+  let y = -dx * sin + dy * cos;
 
   if (transform.flipX) x = -x;
   if (transform.flipY) y = -y;

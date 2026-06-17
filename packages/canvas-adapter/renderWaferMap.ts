@@ -4,8 +4,11 @@ import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
+import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
+import { renderWaferGallery } from './renderWaferGallery.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
+import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler } from './toolbar.js';
 import { USER_GUIDE_HTML } from './userGuideHtml.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
@@ -758,7 +761,7 @@ export function renderWaferMap(
           'orient', 'Orientation',
           () => [
             { section: 'Rotate' },
-            { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = viewOpts.rotation ?? 0; applyOpts({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 3) % 4] }); } },
+            { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = viewOpts.rotation ?? 0; applyOpts({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] }); } },
             { section: 'Flip' },
             { label: 'Flip horizontal', active: !!viewOpts.flipX, onClick: () => applyOpts({ flipX: !viewOpts.flipX }) },
             { label: 'Flip vertical',   active: !!viewOpts.flipY, onClick: () => applyOpts({ flipY: !viewOpts.flipY }) },
@@ -818,14 +821,25 @@ export function renderWaferMap(
         if (showHelpButton) {
           sceneControlsEl!.appendChild(makeSep());
           btnHelp = makeBtn('help', 'User guide', () => {
+            (window as any).__wmapDemoApi = { buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap };
             const content = document.createElement('div');
             Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
             content.innerHTML = USER_GUIDE_HTML;
             const handle = openModal({
               title: 'Wafer Map — User Guide',
-              onClose: () => {},
+              onClose: () => { delete (window as any).__wmapDemoApi; },
             });
             handle.contentWrap.appendChild(content);
+            // innerHTML does not execute scripts; re-run by cloning script text into a new element.
+            // The script exposes window.__wmapPopulateGuideDemos — call it immediately after.
+            const inert = content.querySelector('script');
+            if (inert) {
+              const s = document.createElement('script');
+              s.textContent = inert.textContent;
+              content.appendChild(s);
+              const guideEl = content.querySelector<HTMLElement>('.wmap-guide');
+              if (guideEl) (window as any).__wmapPopulateGuideDemos?.(guideEl);
+            }
           });
           sceneControlsEl!.appendChild(btnHelp);
         }

@@ -221,14 +221,14 @@ When a die position appears more than once in the `results` array (a retest), th
                   //   ≤ 100 mm → 32.5 mm orientation flat  (SEMI M1)
                   //   ≤ 150 mm → 57.5 mm orientation flat  (SEMI M1)
                   //   > 150 mm → V-notch ~3.5 mm wide, 1.25 mm deep  (SEMI M1)
-  orientation?:   number         // degrees CCW to rotate the die grid on screen; default 0 (see note below)
+  orientation?:   number         // degrees CW to rotate the die grid on screen; default 0 (see note below)
   edgeExclusion?: number         // exclusion band width in mm measured inward from the wafer edge; dies in this band are dimmed
                                  // how these dies affect yield is controlled by the top-level edgeDieYieldMode option (§4.1.10)
   metadata?:      WaferMetadata  // arbitrary lot/wafer-level data attached to the view (lot ID, date, etc.)
 }
 ```
 
-**`orientation` note:** positive values rotate the die grid counter-clockwise (standard mathematical convention).  The notch/flat position is controlled by `notch.type` and is **not** affected by `orientation` — it stays fixed as the physical alignment mark.
+**`orientation` note:** positive values rotate the die grid clockwise.  The notch/flat position is controlled by `notch.type` and is **not** affected by `orientation` — it stays fixed as the physical alignment mark.
 
 
 #### 4.1.3 `DieConfig`
@@ -2153,7 +2153,7 @@ Creates a wafer model.  `diameter` is required.  Accepts a `WaferSpec`:
   diameter:     number                     // required
   center?:      { x: number; y: number }   // mm, default {0, 0}
   notch?:       { type: 'top' | 'bottom' | 'left' | 'right' }
-  orientation?: number                     // degrees CCW, default 0
+  orientation?: number                     // degrees CW, default 0
   metadata?:    WaferMetadata
 }
 ```
@@ -2243,7 +2243,7 @@ Maps row data onto dies by matching grid coordinates. `DataRow` is `Record<strin
 applyOrientation(dies: Die[], wafer: Wafer): Die[]
 ```
 
-Rotates die physical coordinates (`physX`, `physY`) by `wafer.orientation` (degrees CCW) around `wafer.center`. Call once after `clipDiesToWafer` and before `transformDies`.
+Rotates die physical coordinates (`physX`, `physY`) by `wafer.orientation` (degrees CW) around `wafer.center`. Call once after `clipDiesToWafer` and before `transformDies`.
 
 `Die` → §12.1 · `Wafer` → §12.2
 

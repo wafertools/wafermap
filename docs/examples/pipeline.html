@@ -61,9 +61,9 @@
 
     <div class="ctrl-group">
       <span class="ctrl-label">Rotate</span>
-      <button class="icon-btn" id="btn-rot-left" title="Rotate CCW">↺</button>
+      <button class="icon-btn" id="btn-rot-left" title="Rotate CW">↻</button>
       <span class="rot-badge" id="rot-badge">0°</span>
-      <button class="icon-btn" id="btn-rot-right" title="Rotate CW">↻</button>
+      <button class="icon-btn" id="btn-rot-right" title="Rotate CCW">↺</button>
     </div>
 
     <div class="ctrl-group">
@@ -203,7 +203,7 @@
       redraw();
     });
     document.getElementById('btn-rot-right').addEventListener('click', () => {
-      state.rotation = (state.rotation - 90 + 360) % 360;
+      state.rotation = (state.rotation + 270) % 360;
       redraw();
     });
     document.getElementById('btn-flipx').addEventListener('click', () => {

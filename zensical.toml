@@ -1,5 +1,9 @@
 [project]
-extra_css   = ["stylesheets/extra.css"]
+extra_css        = ["stylesheets/extra.css"]
+extra_javascript = [
+  { path = "stylesheets/guide-demos-init.js", defer = true },
+  { path = "guide-demos.js",                  defer = true },
+]
 site_name   = "Wafermap"
 site_url    = "https://telecasterer.github.io/wafermap/"
 site_author = "Paul Robins"

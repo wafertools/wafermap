@@ -212,12 +212,21 @@ export function toCanvas(
   if (viewportOverride) {
     ({ originX, originY, ppm } = viewportOverride);
   } else {
-    // Fit within the drawable area minus the top clearance so the wafer doesn't
-    // clip into the bottom padding after being shifted down by topClearance.
-    const fitH = drawH - topClearance;
-    ppm     = Math.min(drawW / dataW, fitH / dataH);
-    originX = padding + axisLeftReserve + leftLegendReserve + (drawW - dataW * ppm) / 2 - minX * ppm;
-    originY = padding + topClearance + topLegendReserve + (fitH - dataH * ppm) / 2 + maxY * ppm;
+    // The notch arrow is drawn in screen space at OFFSET+ARROW_L px beyond the
+    // wafer edge. Reserve that footprint on the notch side before fitting so it
+    // is never clipped by the container.
+    const ARROW_FOOTPRINT = 4 + 9; // OFFSET + ARROW_L (must match draw constants below)
+    const nd = view.notchDir;
+    const arrowTop    = nd && nd.y >  0.1 ? ARROW_FOOTPRINT : 0;
+    const arrowBottom = nd && nd.y < -0.1 ? ARROW_FOOTPRINT : 0;
+    const arrowLeft   = nd && nd.x < -0.1 ? ARROW_FOOTPRINT : 0;
+    const arrowRight  = nd && nd.x >  0.1 ? ARROW_FOOTPRINT : 0;
+
+    const fitW = drawW - arrowLeft - arrowRight;
+    const fitH = drawH - topClearance - arrowTop - arrowBottom;
+    ppm     = Math.min(fitW / dataW, fitH / dataH);
+    originX = padding + axisLeftReserve + leftLegendReserve + arrowLeft + (fitW - dataW * ppm) / 2 - minX * ppm;
+    originY = padding + topClearance + topLegendReserve + arrowTop + (fitH - dataH * ppm) / 2 + maxY * ppm;
   }
 
   const snapDist = viewportOverride?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
@@ -854,14 +863,14 @@ function drawAxisTicks(
 
   // Convert a display-space mm position to the die grid index for axis labels.
   //
-  // CCW rotation R maps die coords to display coords as:
-  //   display_x =  cos(R)*die_x - sin(R)*die_y
-  //   display_y =  sin(R)*die_x + cos(R)*die_y
+  // CW rotation R maps die coords to display coords as:
+  //   display_x =  cos(R)*die_x + sin(R)*die_y
+  //   display_y = -sin(R)*die_x + cos(R)*die_y
   // Inverting for the 4 cardinal cases (before any flip):
   //   R=0:   die_x =  display_x/px,  die_y =  display_y/py
-  //   R=90:  die_x =  display_y/px,  die_y = -display_x/py
+  //   R=90:  die_x =  display_y/px,  die_y =  display_x/py
   //   R=180: die_x = -display_x/px,  die_y = -display_y/py
-  //   R=270: die_x = -display_y/px,  die_y =  display_x/py
+  //   R=270: die_x = -display_y/px,  die_y = -display_x/py
   //
   // axisFlip (XOR of data-pipeline and interactive flips) negates the display coordinate
   // before the rotation inverse, so flip sign is applied to the mm value first.
@@ -873,18 +882,18 @@ function drawAxisTicks(
     if (!diePitchMm) return mm;
     const ux = fx * mm; // unflipped display-X
     if (r === 0)   return Math.round( ux / diePitchMm.x);
-    if (r === 90)  return Math.round(-ux / diePitchMm.y);
+    if (r === 90)  return Math.round( ux / diePitchMm.y);
     if (r === 180) return Math.round(-ux / diePitchMm.x);
-    /* 270 */      return Math.round( ux / diePitchMm.y);
+    /* 270 */      return Math.round(-ux / diePitchMm.y);
   }
 
   function dieIndexForDisplayY(mm: number): number {
     if (!diePitchMm) return mm;
     const uy = fy * mm; // unflipped display-Y
     if (r === 0)   return Math.round( uy / diePitchMm.y);
-    if (r === 90)  return Math.round( uy / diePitchMm.x);
+    if (r === 90)  return Math.round(-uy / diePitchMm.x);
     if (r === 180) return Math.round(-uy / diePitchMm.y);
-    /* 270 */      return Math.round(-uy / diePitchMm.x);
+    /* 270 */      return Math.round( uy / diePitchMm.x);
   }
 
   // When displaying die indices, snap ticks to whole-die boundaries and pick

@@ -97,9 +97,8 @@ export interface WaferConfig {
   notch?: { type: 'top' | 'bottom' | 'left' | 'right' };
   /**
    * Wafer orientation in degrees.  Positive values rotate the map
-   * counter-clockwise (standard mathematical convention).  The notch/flat
-   * position is set by `notch.type` and is not affected by this value —
-   * `orientation` rotates the *die grid* on the display.
+   * clockwise.  The notch/flat position is set by `notch.type` and is not
+   * affected by this value — `orientation` rotates the *die grid* on the display.
    *
    * Common values: 0 (default), 90, 180, 270.
    */
@@ -814,16 +813,26 @@ function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclud
 function buildReticles(
   reticleOpts: ReticleConfig | undefined,
   wafer: Wafer,
+  dies: Die[],
   diePitchX: number,
   diePitchY: number,
 ): Reticle[] {
   if (!reticleOpts) return [];
-  return generateReticleGrid(wafer, {
+  const all = generateReticleGrid(wafer, {
     width:      reticleOpts.width,
     height:     reticleOpts.height,
     diePitchX,
     diePitchY,
     anchorDie:  reticleOpts.anchorDie ?? { x: 0, y: 0 },
+  });
+  // Only keep reticles that contain at least one die — fields that merely
+  // overlap the wafer circle boundary but hold no dies should not be drawn.
+  return all.filter(r => {
+    const x0 = r.x - r.width  / 2;
+    const x1 = r.x + r.width  / 2;
+    const y0 = r.y - r.height / 2;
+    const y1 = r.y + r.height / 2;
+    return dies.some(d => d.physX >= x0 && d.physX < x1 && d.physY >= y0 && d.physY < y1);
   });
 }
 
@@ -1067,7 +1076,7 @@ export function buildWaferMap(
       metadata:    norm.waferOpts?.metadata,
     });
 
-    const reticles    = buildReticles(norm.reticleOpts, wafer, 1, 1);
+    const reticles    = buildReticles(norm.reticleOpts, wafer, dies, 1, 1);
     const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
     const view = buildView(wafer, dies, {
@@ -1224,7 +1233,7 @@ export function buildWaferMap(
     dies = applyEdgeExclusion(dies, wafer, norm.waferOpts.edgeExclusion);
   }
 
-  const reticles    = buildReticles(norm.reticleOpts, wafer, pitchX, pitchY);
+  const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY);
   const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
   const view = buildView(wafer, dies, {

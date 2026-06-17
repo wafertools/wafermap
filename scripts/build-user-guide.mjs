@@ -6,12 +6,20 @@
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { marked } from 'marked';
+import { marked, Renderer } from 'marked';
 
-const root     = fileURLToPath(new URL('..', import.meta.url));
-const mdPath   = join(root, 'docs/user-guide.md');
-const outFile  = join(root, 'packages/canvas-adapter/userGuideHtml.ts');
-const docsBase = 'https://telecasterer.github.io/wafermap/images/';
+function slugify(text) {
+  return text.toLowerCase().trim()
+    .replace(/[^\w\s-]/g, '')   // strip non-word chars (except spaces and hyphens)
+    .replace(/[\s_]+/g, '-')    // spaces/underscores → hyphens
+    .replace(/-+/g, '-')        // collapse multiple hyphens
+    .replace(/^-|-$/g, '');     // trim leading/trailing hyphens
+}
+
+const root          = fileURLToPath(new URL('..', import.meta.url));
+const mdPath        = join(root, 'docs/user-guide.md');
+const outFile       = join(root, 'packages/canvas-adapter/userGuideHtml.ts');
+const demosScript   = readFileSync(join(root, 'docs/guide-demos.js'), 'utf8');
 
 // ── Load all SVG icons as base64 data URIs ───────────────────────────────────
 const iconDir = join(root, 'docs/images/icons');
@@ -35,25 +43,69 @@ md = md.replace(
 );
 
 // Inline icon SVGs as base64 data URIs so they work without any external files.
+// Handles both markdown ![alt](images/icons/name.svg) and HTML <img src="images/icons/name.svg">.
 md = md.replace(
   /!\[([^\]]*)\]\(images\/icons\/([^)]+)\.svg\)/g,
   (_, alt, name) => {
     if (!iconDataUris[name]) {
-      console.warn(`build-user-guide: unknown icon "${name}" — linking externally`);
-      return `[icon: ${name}](${docsBase}icons/${name}.svg)`;
+      console.warn(`build-user-guide: unknown icon "${name}" — removing from output`);
+      return '';
     }
     return `![${ alt || name }](${iconDataUris[name]})`;
   },
 );
-
-// All other local images → link to docs site (too large to inline).
 md = md.replace(
-  /!\[([^\]]*)\]\(images\/([^)]+)\)/g,
-  (_, alt, file) => `[View image: ${alt || file}](${docsBase}${file})`,
+  /<img\s+src="images\/icons\/([^"]+)\.svg"([^>]*)>/g,
+  (_, name, rest) => {
+    if (!iconDataUris[name]) {
+      console.warn(`build-user-guide: unknown icon "${name}" — removing from output`);
+      return '';
+    }
+    return `<img src="${iconDataUris[name]}"${rest}>`;
+  },
 );
 
+// Screenshot PNGs are too large to inline and must not depend on external URLs.
+// Remove image embeds, plain links to images, and any *caption* paragraph immediately
+// following (captions may span two lines) — so edits to user-guide.md stay self-contained.
+md = md.replace(/!?\[([^\]]*)\]\(images\/(?!icons\/)[^)]+\)\n(\n\*[^\n]*\n?[^\n]*\*)?/g, '');
+
+// ── Configure marked: add id attributes to headings ──────────────────────────
+// marked does not emit id= by default. We need them so internal anchor links
+// (#2-plot-modes etc.) can be resolved via querySelector inside the modal.
+// slugify() matches the slug format user-guide.md's internal links use.
+const renderer = new Renderer();
+renderer.heading = ({ text, depth, tokens }) => {
+  const rawText = tokens.map(t => t.raw ?? '').join('');
+  const id = slugify(rawText);
+  const inner = marked.parseInline(text);
+  return `<h${depth} id="${id}">${inner}</h${depth}>\n`;
+};
+
 // ── Convert to HTML ───────────────────────────────────────────────────────────
-const bodyHtml = marked(md);
+let bodyHtml = marked(md, { renderer });
+
+// Inject online docs link after the <h1>. Opens in new tab in browsers;
+// silently does nothing in Tauri/Electron (WebView blocks external navigation)
+// but the URL remains visible so users can copy it.
+bodyHtml = bodyHtml.replace(
+  /(<h1[^>]*>.*?<\/h1>)/s,
+  `$1\n<p class="wmap-guide-online-link">` +
+  `This is a quick reference. ` +
+  `<a href="https://telecasterer.github.io/wafermap/user-guide/" target="_blank" rel="noopener">` +
+  `View the full illustrated guide online ↗</a></p>`,
+);
+
+// Rewrite internal anchor links (#section-id) so they scroll within the modal
+// instead of navigating the parent page URL. Works in all contexts (third-party
+// app toolbar modal, standalone HTML, Tauri/Electron WebView) because:
+//   - preventDefault() always fires, so the URL never changes
+//   - querySelector searches within .wmap-guide, not the whole document
+//   - headings have matching id attributes (added by the renderer above)
+bodyHtml = bodyHtml.replace(
+  /href="#([^"]+)"/g,
+  (_, id) => `href="#${id}" onclick="(function(e){e.preventDefault();var g=e.target.closest('.wmap-guide');var el=g&&g.querySelector('[id=\\'${id}\\']');if(el)el.scrollIntoView({behavior:'smooth'});})(event)"`,
+);
 
 // ── Wrap with scoped inline styles ───────────────────────────────────────────
 // Icons in headings and table cells need specific sizing; block images (toolbar
@@ -77,11 +129,16 @@ const wrappedHtml = `<div class="wmap-guide">
 .wmap-guide code{font-family:monospace;font-size:12px;background:#f0f2f5;padding:1px 4px;border-radius:3px}
 .wmap-guide hr{border:none;border-top:1px solid #e9eaec;margin:24px 0}
 .wmap-guide img{max-width:100%;height:auto;border:1px solid #e2e5ea;border-radius:6px;margin:8px 0;display:block}
-.wmap-guide td img{width:20px;height:20px;display:inline-block;vertical-align:middle;border:none;border-radius:0;margin:0}
+.wmap-guide td img{width:20px;height:20px;max-width:none;display:inline-block;vertical-align:middle;border:none;border-radius:0;margin:0}
 .wmap-guide a{color:#0066cc;text-decoration:none}
 .wmap-guide a:hover{text-decoration:underline}
+.wmap-guide-online-link{font-size:12px;color:#555;margin:-8px 0 18px;padding:8px 12px;background:#f4f5f7;border-radius:4px;border-left:3px solid #c0c4cc}
+.wmap-guide-online-link a{color:#0066cc}
+.wmap-demo{width:100%;height:220px;margin:12px 0;border:1px solid #e2e5ea;border-radius:6px;overflow:hidden;background:#f8f9fa}
+.wmap-demo[data-wmap-demo="gallery"]{height:380px}
+.wmap-demo[data-wmap-demo="findings"]{height:280px}
 </style>
-${bodyHtml}</div>`;
+${bodyHtml}<script>${demosScript}</script></div>`;
 
 // ── Escape for TypeScript template literal ────────────────────────────────────
 const escaped = wrappedHtml

@@ -87,11 +87,11 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
     { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10 },
   ], createWafer({ diameter: 100, orientation: 90 }));
   assert.equal(Math.round(oriented[0].physX), 0);
-  assert.equal(Math.round(oriented[0].physY), 10);
+  assert.equal(Math.round(oriented[0].physY), -10);
 
   const transformed = transformDies(oriented, { rotation: 90, flipX: true }, wafer.center);
   assert.equal(Math.round(transformed[0].physX), 10);
-  assert.equal(Math.round(transformed[0].physY), 0);
+  assert.equal(Math.abs(Math.round(transformed[0].physY)), 0);
 
   const sequenced = applyProbeSequence([
     { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10 },

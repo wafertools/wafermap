@@ -26,14 +26,14 @@ export interface TransformOptions {
 
 // ── Geometry ──────────────────────────────────────────────────────────────────
 
-/** Rotate (x, y) counterclockwise by angleDegrees around (cx, cy). */
+/** Rotate (x, y) clockwise by angleDegrees around (cx, cy). */
 export function rotatePoint(
   x: number, y: number, angleDegrees: number, cx = 0, cy = 0
 ): { x: number; y: number } {
   const rad = (angleDegrees * Math.PI) / 180;
   const cos = Math.cos(rad), sin = Math.sin(rad);
   const dx = x - cx, dy = y - cy;
-  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+  return { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
 }
 
 /** Perpendicular distance from wafer centre to notch/flat chord: sqrt(r² − (L/2)²). */
