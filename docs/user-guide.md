@@ -7,6 +7,12 @@ or anyone else who may use a wafer map application — not for developers integr
 Some features depend on what data the application has loaded (bin names, test
 definitions, spec limits, reticle geometry). Where this applies it is noted.
 
+**Getting oriented.** The wafer map is an interactive viewer. A toolbar is always
+present at the top-right of the map — use it to change what the colours represent,
+toggle overlays, rotate or flip the wafer, zoom, select dies, and open the summary
+panel. Hover any die for a tooltip; the panels and tooltips always report the
+original die grid coordinates, never the on-screen position after a rotate or flip.
+
 ---
 
 ## 1. Reading the map
@@ -30,10 +36,10 @@ the display to match your convention; die coordinates are unaffected.
 
 <div data-wmap-demo="bin-map" class="wmap-demo"></div>
 
+*An example wafer bin map above and below the same wafer rotated 90°. The notch has moved, but die coordinates — shown in tooltips — remain their original grid/prober values.*
+
 <div data-wmap-demo="orientation" class="wmap-demo"></div>
 
-*The same wafer rotated 90°. The notch has moved, but die coordinates — shown in
-tooltips — remain their original prober values.*
 
 ### 1.3 Die appearance
 
@@ -103,9 +109,9 @@ become available:
 
 ## 3. Toolbar controls
 
-The toolbar appears when you hover over the map (or may be always visible,
-depending on the application). Controls that are not applicable to the current
-mode are hidden automatically.
+The toolbar sits at the top-right of the map and is always visible. Controls that
+are not applicable to the current mode are hidden automatically. (Hovering the map
+shows die tooltips — a separate thing from the toolbar, which is always present.)
 
 ![Single-map toolbar](images/toolbar-single.png)
 
@@ -158,11 +164,16 @@ Use the **Overlays** menu to toggle optional display layers on and off:
 
 ### Keyboard shortcuts
 
-| Key                    | Action                             |
-| ---------------------- | ---------------------------------- |
-| **E**                  | Expand the map to full screen      |
-| **Esc**                | Close the full-screen modal        |
-| **Ctrl / Cmd + click** | Add a die to the current selection |
+| Key                      | Action                                                  |
+| ------------------------ | ------------------------------------------------------- |
+| **E**                    | Expand the map to full screen                           |
+| **Esc**                  | Close the full-screen modal, or clear the die selection |
+| **Ctrl / Cmd + click**   | Add a die to the current selection                      |
+| **Mouse wheel / scroll** | Zoom in and out at the cursor                           |
+| **Ctrl / Cmd + `+`** / **`-`** | Zoom in / zoom out                                |
+| **Ctrl / Cmd + `0`**     | Reset zoom to the fitted view                           |
+| **Arrow keys**           | Pan the map                                             |
+| **Space (hold) + drag**  | Temporarily pan without leaving the current tool        |
 
 ![Legend style dropdown open](images/guide-display-legend-style-menu.png)
 
@@ -213,9 +224,10 @@ dies. This is useful for comparing a sub-region against the full wafer.
 Use **Ctrl / Cmd + click** to add individual dies to the current selection.
 Press **Esc** to clear.
 
-![Box select drag in progress](images/guide-interaction-box-select.png)
+<div data-wmap-demo="box-select" class="wmap-demo"></div>
 
-*Box selection: drag to select a rectangular region of dies.*
+*A block of dies near the centre is shown pre-selected. Choose Box select in the
+toolbar and drag to make your own selection, or Ctrl/Cmd + click individual dies.*
 
 ---
 
@@ -241,10 +253,6 @@ lower strength and are worth reviewing but may reflect smaller or noisier patter
 
 *Findings panel open showing a detected edge-ring pattern. Click any row to
 highlight the affected dies on the map.*
-
-![Findings panel open, first finding selected](images/guide-findings-panel.png)
-
-*Findings panel: click any finding to highlight the affected region on the map.*
 
 ![Cluster finding highlighted on map](images/guide-findings-cluster-highlight.png)
 
@@ -278,7 +286,10 @@ supporting detail.
 The summary panel shows statistics and metadata for the current wafer or lot.
 Open it from the toolbar.
 
-![Summary panel open on single wafer](images/guide-summary-panel.png)
+<div data-wmap-demo="summary-panel" class="wmap-demo"></div>
+
+*The summary panel open alongside a single wafer, showing yield, bin breakdown,
+and per-test statistics. Click any finding to highlight the affected dies.*
 
 For a **single wafer**, the panel shows:
 

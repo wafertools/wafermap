@@ -1,7 +1,7 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
-import { listColorSchemes, getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler } from './toolbar.js';
+import { getColorScheme } from '../renderer/colorSchemes.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import { USER_GUIDE_HTML } from './userGuideHtml.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
@@ -10,6 +10,7 @@ import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferViewOptions, WaferMapController } from './renderWaferMap.js';
 import { classifyChanged } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
+import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
@@ -232,7 +233,8 @@ export function renderWaferGallery(
   // ── Toolbar helpers ────────────────────────────────────────────────────────
 
   const tooltip = createTooltip();
-  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tooltip);
+  const tbHelpers = createToolbarHelpers(tooltip);
+  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
   document.addEventListener('click', closeOpenMenu, true);
 
   function applyCardHighlight(indices: number[]): void {
@@ -659,62 +661,37 @@ export function renderWaferGallery(
   const itemsHaveCustomColors = (): boolean =>
     currentItems.flatMap(it => it ? [...(it.hbinDefs ?? []), ...(it.sbinDefs ?? [])] : []).some(d => d.color);
 
-  const btnPalette = makeDropdown(
-    'palette', 'Colour scheme',
-    () => {
-      const pm = sharedOpts.plotMode ?? 'hardBin';
-      const isBinMode = pm === 'hardBin' || pm === 'softBin';
-      const schemes = isBinMode
-        ? listColorSchemes().filter(s => s.name === 'default' || s.name === 'accessible')
-        : listColorSchemes();
-      return [
-        ...(itemsHaveCustomColors() ? [{ value: 'custom', label: 'Custom' }] : []),
-        ...schemes.map(s => ({ value: s.name, label: s.label })),
-      ];
-    },
+  const btnPalette = makePaletteBtn(
+    tbHelpers,
+    () => sharedOpts.plotMode ?? 'hardBin',
     () => sharedOpts.colorScheme ?? 'default',
+    itemsHaveCustomColors,
     v => updateShared({ colorScheme: v }),
   );
 
   const hasReticleInItems = items.some(it => typeof it !== 'function' && ((it as WaferMapDisplayItem).reticles?.length ?? 0) > 0);
 
-  const btnOverlays = makeCheckMenuBtn(
-    'overlays', 'Overlays',
-    () => [
+  const btnOverlays = makeOverlaysBtn(
+    tbHelpers,
+    (): CheckMenuRow[] => [
       { label: 'Ring boundaries', active: !!sharedOpts.showRingBoundaries,     onClick: () => updateShared({ showRingBoundaries:   !sharedOpts.showRingBoundaries   }) },
       { label: 'Quadrant lines',  active: !!sharedOpts.showQuadrantBoundaries, onClick: () => updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries }) },
-      { label: 'Die labels',      active: !!sharedOpts.showDieLabels,               onClick: () => updateShared({ showDieLabels:              !sharedOpts.showDieLabels              }) },
+      { label: 'Die labels',      active: !!sharedOpts.showDieLabels,          onClick: () => updateShared({ showDieLabels:          !sharedOpts.showDieLabels          }) },
       { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: () => updateShared({ showReticle: !sharedOpts.showReticle }) },
-      { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: () => updateShared({ showXYIndicator:      !sharedOpts.showXYIndicator      }) },
+      { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: () => updateShared({ showXYIndicator:        !sharedOpts.showXYIndicator        }) },
     ],
-    (btn) => {
-      const anyOn = !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
-                       sharedOpts.showDieLabels || sharedOpts.showReticle || sharedOpts.showXYIndicator);
-      setActive(btn, anyOn);
-    },
+    () => !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
+             sharedOpts.showDieLabels || sharedOpts.showReticle || sharedOpts.showXYIndicator),
   );
-  const btnLegendStyle = makeDropdown(
-    'legend',
-    'Legend style',
-    () => [
-      { value: 'default'  as const, label: 'Default (right)' },
-      { value: 'compact'  as const, label: 'Compact (right)' },
-      { value: 'left'     as const, label: 'Left' },
-      { value: 'top'      as const, label: 'Top' },
-      { value: 'bottom'   as const, label: 'Bottom' },
-      { value: 'floating' as const, label: 'Floating' },
-    ],
-    () => currentLegendStyle,
+
+  const { btn: btnLegendStyle, sync: syncLegendStyleBtn } = makeLegendStyleBtn(
+    tbHelpers,
+    () => ({ plotMode: sharedOpts.plotMode, legendPosition: currentLegendStyle }),
     (v) => {
       currentLegendStyle = v;
       for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ legendPosition: currentLegendStyle });
     },
   );
-
-  function syncLegendStyleBtn(): void {
-    const isBinMode = sharedOpts.plotMode === 'hardBin' || sharedOpts.plotMode === 'softBin';
-    btnLegendStyle.style.display = isBinMode ? '' : 'none';
-  }
   syncLegendStyleBtn();
 
   const AGGR_METHOD_ITEMS: Array<{ value: string; label: string }> = [
@@ -738,30 +715,17 @@ export function renderWaferGallery(
   }
   syncAggrMethodBtn();
 
-  const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
-    updateShared({ logScale: !sharedOpts.logScale });
-    syncLogScaleBtn();
-  });
-  function syncLogScaleBtn(): void {
-    const isValueMode = sharedOpts.plotMode === 'value' || sharedOpts.plotMode === 'stackedValues';
-    btnLogScale.style.display = isValueMode ? '' : 'none';
-    setActive(btnLogScale, !!sharedOpts.logScale);
-  }
+  const { btn: btnLogScale, sync: syncLogScaleBtn } = makeLogScaleBtn(
+    tbHelpers,
+    () => sharedOpts,
+    patch => updateShared(patch),
+  );
   syncLogScaleBtn();
 
-  const btnOrient = makeCheckMenuBtn(
-    'orient', 'Orientation',
-    () => [
-      { section: 'Rotate' },
-      { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = sharedOpts.rotation ?? 0; updateShared({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] }); } },
-      { section: 'Flip' },
-      { label: 'Flip horizontal', active: !!sharedOpts.flipX, onClick: () => updateShared({ flipX: !sharedOpts.flipX }) },
-      { label: 'Flip vertical',   active: !!sharedOpts.flipY, onClick: () => updateShared({ flipY: !sharedOpts.flipY }) },
-    ],
-    (btn) => {
-      const nonDefault = !!(sharedOpts.rotation || sharedOpts.flipX || sharedOpts.flipY);
-      setActive(btn, nonDefault);
-    },
+  const btnOrient = makeOrientationBtn(
+    tbHelpers,
+    () => sharedOpts,
+    patch => updateShared(patch),
   );
   const btnDownloadAll = makeBtn('downloadAll', 'Download gallery PNG', downloadGalleryPng);
 
@@ -815,16 +779,8 @@ export function renderWaferGallery(
   // Help button — opens the end-user guide in a modal (opt-in).
   if (showHelpButton) {
     barEl.appendChild(makeSep());
-    barEl.appendChild(makeBtn('help', 'User guide', () => {
-      const content = document.createElement('div');
-      Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
-      content.innerHTML = USER_GUIDE_HTML;
-      const handle = openModal({
-        title: 'Wafer Map — User Guide',
-        onClose: () => {},
-      });
-      handle.contentWrap.appendChild(content);
-    }));
+    barEl.appendChild(makeBtn('help', 'User guide', () =>
+      openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, USER_GUIDE_HTML)));
   }
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
@@ -1339,13 +1295,11 @@ export function renderWaferGallery(
       statsSummary:    item.statsSummary,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
+      onExpand:        () => openModalForCard(cardIndex, item),
     });
     // In-gallery: hide scene controls (gallery bar owns them) and findings button.
     ctrl.setViewControlsVisible(false);
     ctrl.setFindingsVisible(false);
-
-    // Only the expand button opens the modal — canvas clicks are handled
-    // internally by renderWaferMap and stop propagation before reaching here.
     expandBtn.addEventListener('click', () => openModalForCard(cardIndex, item));
 
     return { card, ctrl, canvasWrapper };
@@ -1544,11 +1498,14 @@ export function renderWaferGallery(
       modalReparentedParent.appendChild(modalReparentedContainer);
       modalReparentedParent = null;
     }
-    cardControllers[modalCardIndex]?.setViewControlsVisible(false);
-    cardControllers[modalCardIndex]?.setFindingsVisible(false);
-    cardControllers[modalCardIndex]?.closeSummaryPanel();
-    cardControllers[modalCardIndex]?.setExpandVisible(true);
-    cardControllers[modalCardIndex]?.resetZoom();
+    const closedIndex = modalCardIndex;
+    cardControllers[closedIndex]?.setViewControlsVisible(false);
+    cardControllers[closedIndex]?.setFindingsVisible(false);
+    cardControllers[closedIndex]?.closeSummaryPanel();
+    cardControllers[closedIndex]?.setExpandVisible(true);
+    cardControllers[closedIndex]?.resetZoom();
+    // Re-focus the canvas so E key works again immediately after close.
+    cardContainers[closedIndex]?.querySelector('canvas')?.focus({ preventScroll: true });
     modalCardIndex           = -1;
     modalReparentedContainer = null;
   }

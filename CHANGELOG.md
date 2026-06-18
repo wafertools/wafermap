@@ -19,6 +19,22 @@ under `### Breaking`.
 
 ---
 
+## [0.14.0] — 2026-06-18
+
+### Breaking
+
+- **`HighlightRegionTarget.keys` renamed to `.regionKeys`** to match `HighlightBinTarget.regionKeys` — both now use the same field name for the region keys a finding covers. This is a metadata field on `StatsFinding.highlight`; the built-in renderers and reports highlight from `dieKeys`, so most consumers are unaffected.
+
+### Added
+
+- **Adjacent same-signal findings are now merged.** Runs of spatially adjacent regions (rings, quadrants, sectors) that carry the same signal — same variable, same direction — collapse into a single finding (e.g. "Rings 1–3") with statistics recomputed over the union of dies and the affected dies highlighted as one band. The constituent per-region finding ids are retained on the merged finding's `relatedIds` as an audit trail. This sharply reduces clutter where one physical signal previously surfaced as several near-identical findings. New stats exports: `parseRegionKey`, `areQuadrantsAdjacent`, `sectorCompassNames`.
+
+### Fixed
+
+- **Per-finding summaries handle merged region labels.** Summaries previously assumed single-region labels and, with merged findings, produced doubled wording ("quadrant Quadrants NW, SW, SE…"). They now read the merged labels directly (e.g. "Quadrants NW, SW & SE mean Test A is 45.5% lower…").
+- **Findings narrative rewritten for scannability.** The prose summary above the findings list was dense and redundant — it emitted one sentence per region family (sector, quadrant, ring all restating one signal), buried the spatial pattern mid-paragraph, led with the healthy interior, used the vague "shifted", and could name the same region in both an "elevated" and a "reduced" clause. It now: leads with the spatial pattern (and names where the failures concentrate) or the strongest finding; consolidates the region families into a single sentence, collapsing a directional signal to "Test A increases from SW toward NE across the wafer"; folds redundant pass/fail-bin metrics into yield; never names a region in both directions; leads yield clauses with the failing side; and is capped at three sentences. The full findings list below the prose is unchanged and remains complete and severity-accurate.
+- **Persistent summary panel now renders independently of the toolbar.** `renderWaferMap` with `summaryPanel` + `showToolbar: false` previously failed to mount the panel at all (the auto-mount was gated behind toolbar creation). The panel now mounts whenever a stats summary is provided; only the toggle button lives in the toolbar.
+
 ## [0.13.7] — 2026-06-16
 
 ### Added

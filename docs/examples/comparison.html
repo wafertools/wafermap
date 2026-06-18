@@ -40,7 +40,7 @@
       color: #0f172a;
     }
     header h1 span { color: #94a3b8; font-weight: 400; margin: 0 4px; }
-    header p { font-size: 13px; color: #64748b; }
+    header p { font-size: 14px; color: #64748b; }
 
     /* ── Controls ────────────────────────────────────────── */
     .controls {
@@ -78,8 +78,8 @@
     #run-btn:hover { background: #0f766e; }
     #run-btn:disabled { background: #94a3b8; cursor: default; }
 
-    .run-note { font-size: 12px; color: #94a3b8; }
-    .run-count { font-size: 12px; color: #0d9488; font-weight: 600; }
+    .run-note { font-size: 13px; color: #64748b; }
+    .run-count { font-size: 13px; color: #0d9488; font-weight: 600; }
 
     /* ── Comparison grid ─────────────────────────────────── */
     .comparison-grid {
@@ -107,8 +107,8 @@
     }
     .lib-name { font-size: 14px; font-weight: 700; color: #0f172a; }
     .lib-size {
-      font-size: 11px;
-      color: #94a3b8;
+      font-size: 12px;
+      color: #64748b;
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
       background: #f1f5f9;
       padding: 2px 8px;
@@ -159,10 +159,11 @@
     .timing-row .val.pending { color: #94a3b8; font-weight: 400; }
 
     .panel-footer {
-      padding: 8px 16px;
+      padding: 10px 16px;
       border-top: 1px solid #e2e8f0;
-      font-size: 12px;
-      color: #94a3b8;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #64748b;
     }
     .panel-footer code {
       font-family: monospace;
@@ -171,9 +172,12 @@
       border-radius: 3px;
       color: #475569;
     }
+    .panel-footer .note {
+      color: #64748b;
+    }
     .panel-footer .warning {
       color: #b45309;
-      font-size: 11px;
+      font-size: 13px;
       margin-top: 4px;
     }
 
@@ -231,16 +235,16 @@
     .feature-table .group td {
       background: #e2e8f0;
       font-weight: 600;
-      font-size: 11px;
+      font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: #64748b;
+      color: #475569;
     }
 
     .yes  { color: #15803d; font-weight: 600; }
     .part { color: #b45309; font-weight: 600; }
     .no   { color: #94a3b8; }
-    .note { font-size: 11px; color: #94a3b8; display: block; margin-top: 2px; }
+    .note { font-size: 12px; color: #64748b; display: block; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -265,7 +269,7 @@
   <div class="panel">
     <div class="panel-header">
       <span class="lib-name">@paulrobins/wafermap</span>
-      <span class="lib-size">~91 KB gzip (full stack)</span>
+      <span class="lib-size">~85 KB gzip (full stack)</span>
     </div>
     <div class="render-area" id="wmap-area">
       <div id="wmap-container" style="width:100%;height:100%;"></div>
@@ -286,6 +290,8 @@
     </div>
     <div class="panel-footer" id="wmap-footer">
       <code>buildWaferMap({ results })</code> then <code>renderWaferMap(el, result)</code>
+      <span class="note">Showing to-scale wafer boundary, bottom notch, XY axis indicator and ring overlays — plus a graduated colorbar with LSL/USL spec markers (out-of-spec dies in blue/red) in Test&nbsp;values mode. None of these exist in the Plotly panel.</span>
+      <span class="note">The <strong>built-in toolbar</strong> (top-right of the canvas) lets you configure plot mode, colour scheme, overlays, legend, rotate/flip and more live — no code changes.</span>
     </div>
   </div>
 
@@ -391,6 +397,11 @@
 
       <tr class="group"><td colspan="3">Interactivity</td></tr>
       <tr>
+        <td>In-map toolbar (end-user configurable)</td>
+        <td class="yes">✓ Native<span class="note">Always-visible toolbar (top-right). Does everything Plotly's modebar does — zoom, pan, box-select, save image — <strong>plus</strong> live wafer config: plot mode &amp; test, colour scheme, overlays (rings, quadrants, axes, reticle, spec pass/fail), legend position, rotate/flip — all with no code</span></td>
+        <td class="part">△ Modebar only<span class="note">Zoom, pan, select, export. Colours, overlays and layout require code changes and a re-render</span></td>
+      </tr>
+      <tr>
         <td>Zoom / pan</td>
         <td class="yes">✓</td>
         <td class="yes">✓</td>
@@ -441,7 +452,7 @@
       <tr class="group"><td colspan="3">Integration</td></tr>
       <tr>
         <td>Library size (gzip)</td>
-        <td class="yes">~91 KB (full stack)</td>
+        <td class="yes">~85 KB (full stack)</td>
         <td class="part">~1.1 MB (full bundle)<span class="note">~300 KB with plotly-basic (no WebGL)</span></td>
       </tr>
       <tr>
@@ -528,23 +539,60 @@
     const el = document.getElementById('wmap-container');
     el.innerHTML = '';
 
+    // Real wafer geometry — a 300 mm wafer with a bottom notch, drawn to scale.
+    // Die pitch is inferred from the grid extent (the two scenarios have very
+    // different die counts), so we supply only the diameter and notch.
+    // Plotly has no concept of any of this; it just plots x/y as a scatter.
+    const waferConfig = { diameter: 300, notch: { type: 'bottom' } };
+
     const buildOpts = isValues
       ? {
           results,
           passBins: [1],
+          waferConfig,
           testDefs: [
-            { testNumber: 1050, name: 'testA', unit: 'V' },
+            // Spec limits on testA enable out-of-spec (blue/red) colouring and
+            // LSL/USL markers on the colorbar — neither exists in Plotly.
+            { testNumber: 1050, name: 'testA', unit: 'V', limitLow: 1.00, limitHigh: 1.30 },
             { testNumber: 1060, name: 'testB', unit: 'V' },
             { testNumber: 1070, name: 'testC', unit: 'V' },
           ],
         }
-      : { results, passBins: [1] };
+      : {
+          results,
+          passBins: [1],
+          waferConfig,
+          // WM-811K bin scheme: 1 = pass, 2 = fail.
+          hbinDefs: [
+            { bin: 1, name: 'Pass', color: '#22c55e' },
+            { bin: 2, name: 'Fail', color: '#ef4444' },
+          ],
+        };
 
     const t0 = performance.now();
     const result = buildWaferMap(buildOpts);
     const t1 = performance.now();
 
-    const renderOpts = isValues ? { plotMode: 'value', activeTest: 1050, showHelpButton: true } : { showHelpButton: true };
+    // Note: plotMode / activeTest are WaferViewOptions — they must live inside
+    // `viewOptions`, not at the top level of RenderOptions, or they are ignored.
+    const renderOpts = {
+      showHelpButton: true,
+      viewOptions: isValues
+        ? {
+            // Continuous graduated colorbar. Spec limits stay defined so the
+            // bar shows LSL/USL markers and out-of-spec dies render blue/red on
+            // the gradient — without flattening to a categorical pass/fail view.
+            plotMode:           'value',
+            activeTest:         1050,
+            showXYIndicator:    true,
+            showRingBoundaries: true,
+          }
+        : {
+            plotMode:           'hardBin',
+            showXYIndicator:    true,
+            showRingBoundaries: true,
+          },
+    };
     renderWaferMap(el, result, renderOpts);
     const t2 = performance.now();
 

@@ -1,6 +1,5 @@
 import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
 import { buildView, buildHoverText, findTestDef, resolveTestNumber, getUniqueTestNumbers } from '../renderer/buildView.js';
-import { listColorSchemes } from '../renderer/colorSchemes.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
@@ -9,7 +8,7 @@ import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.
 import { renderWaferGallery } from './renderWaferGallery.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import { USER_GUIDE_HTML } from './userGuideHtml.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
@@ -193,6 +192,8 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * Default false. Enable in applications that want to surface the guide without linking externally.
    */
   showHelpButton?: boolean;
+  /** Override the expand action for both the expand button and the E key. Used by the gallery to route through its own modal logic. */
+  onExpand?: () => void;
 }
 
 /** @deprecated Use RenderOptions instead. */
@@ -286,6 +287,7 @@ export function renderWaferMap(
     tooltipTestLimit,
     passBins             = [1],
     showHelpButton       = false,
+    onExpand,
     viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
@@ -463,6 +465,19 @@ export function renderWaferMap(
     summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
     parent?.insertBefore(summaryPanelWrapper, next);
     renderSummaryPanel();
+  } else if (currentStatsSummary) {
+    // Auto-mount a persistent summary panel when statsSummary is provided without an
+    // explicit placement. Mounted independently of the toolbar so a chromeless map
+    // (showToolbar: false) can still render a persistent panel beside it; the toolbar
+    // only owns the toggle button. defaultOpen: true starts the panel visible.
+    const openOnMount = !!summaryPanelOpts?.defaultOpen;
+    autoSummaryPanelEl = createSummaryPanelEl('right');
+    autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
+    const parent = canvasWrap.parentElement;
+    const next = canvasWrap.nextSibling;
+    autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
+    parent?.insertBefore(autoSummaryPanelWrapper, next);
+    renderAutoSummaryPanel();
   }
 
   // ── Tooltip ────────────────────────────────────────────────────────────────
@@ -540,7 +555,8 @@ export function renderWaferMap(
       // ── Toolbar helpers ──────────────────────────────────────────────────
       // Use shared tooltip if available, otherwise create one for the toolbar.
       const tbTooltip = tooltip ?? createTooltip();
-      const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = createToolbarHelpers(tbTooltip);
+      const tbHelpers = createToolbarHelpers(tbTooltip);
+      const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
       tbCloseOpenMenu = closeOpenMenu;
       tbGetOpenMenu   = getOpenMenu;
       // Single persistent listener — closes any open dropdown on outside click.
@@ -669,25 +685,16 @@ export function renderWaferMap(
           wireMenuA11y(menu, btnMode, closeModeMenu);
         });
         markMenuTrigger(btnMode, false);
-        const btnPalette = makeDropdown(
-          'palette', 'Colour scheme',
-          () => {
-            const pm = viewOpts.plotMode ?? 'hardBin';
-            const isBinMode = pm === 'hardBin' || pm === 'softBin';
-            const schemes = isBinMode
-              ? listColorSchemes().filter(s => s.name === 'default' || s.name === 'accessible')
-              : listColorSchemes();
-            return [
-              ...(hasCustomColors ? [{ value: 'custom', label: 'Custom' }] : []),
-              ...schemes.map(s => ({ value: s.name, label: s.label })),
-            ];
-          },
+        const btnPalette = makePaletteBtn(
+          tbHelpers,
+          () => viewOpts.plotMode ?? 'hardBin',
           () => viewOpts.colorScheme ?? 'default',
+          () => hasCustomColors,
           v => applyOpts({ colorScheme: v }),
         );
-        const btnOverlays = makeCheckMenuBtn(
-          'overlays', 'Overlays',
-          () => {
+        const btnOverlays = makeOverlaysBtn(
+          tbHelpers,
+          (): CheckMenuRow[] => {
             const hasReticleNow = !!currentView!.hasReticle;
             const isValueMode   = (viewOpts.plotMode ?? 'hardBin') === 'value';
             const { testNumber: resolvedTest } = resolveTestNumber(viewOpts.activeTest ?? 0, currentView.testDefs);
@@ -696,45 +703,29 @@ export function renderWaferMap(
             return [
               { label: 'Ring boundaries', active: !!viewOpts.showRingBoundaries,     onClick: () => applyOpts({ showRingBoundaries:   !viewOpts.showRingBoundaries   }) },
               { label: 'Quadrant lines',  active: !!viewOpts.showQuadrantBoundaries, onClick: () => applyOpts({ showQuadrantBoundaries: !viewOpts.showQuadrantBoundaries }) },
-              { label: 'Die labels',      active: !!viewOpts.showDieLabels,               onClick: () => applyOpts({ showDieLabels:              !viewOpts.showDieLabels              }) },
+              { label: 'Die labels',      active: !!viewOpts.showDieLabels,          onClick: () => applyOpts({ showDieLabels:          !viewOpts.showDieLabels          }) },
               { label: 'Reticle grid',    active: !!viewOpts.showReticle,            enabled: hasReticleNow, onClick: () => applyOpts({ showReticle: !viewOpts.showReticle }) },
-              { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:      !viewOpts.showXYIndicator      }) },
+              { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:        !viewOpts.showXYIndicator        }) },
               { label: 'Spec pass/fail',  active: !!viewOpts.colorBySpec,            enabled: hasLimits,    onClick: () => applyOpts({ colorBySpec: !viewOpts.colorBySpec }) },
             ];
           },
-          (btn) => {
-            const anyOn = !!(viewOpts.showRingBoundaries || viewOpts.showQuadrantBoundaries ||
-                             viewOpts.showDieLabels || viewOpts.showReticle || viewOpts.showXYIndicator);
-            setActive(btn, anyOn);
-          },
+          () => !!(viewOpts.showRingBoundaries || viewOpts.showQuadrantBoundaries ||
+                   viewOpts.showDieLabels || viewOpts.showReticle || viewOpts.showXYIndicator),
         );
-        const btnLegendStyle = makeDropdown(
-          'legend', 'Legend style',
-          () => [
-            { value: 'default'  as const, label: 'Default (right)' },
-            { value: 'compact'  as const, label: 'Compact (right)' },
-            { value: 'left'     as const, label: 'Left' },
-            { value: 'top'      as const, label: 'Top' },
-            { value: 'bottom'   as const, label: 'Bottom' },
-            { value: 'floating' as const, label: 'Floating' },
-          ],
-          () => viewOpts.legendPosition ?? 'default',
-          (v) => applyOpts({ legendPosition: v }),
+        const { btn: btnLegendStyle, sync: syncLegendStyle } = makeLegendStyleBtn(
+          tbHelpers,
+          () => viewOpts,
+          v => applyOpts({ legendPosition: v }),
         );
-        syncLegendStyleBtnFn = () => {
-          const isBinMode = viewOpts.plotMode === 'hardBin' || viewOpts.plotMode === 'softBin';
-          btnLegendStyle.style.display = isBinMode ? '' : 'none';
-        };
+        syncLegendStyleBtnFn = syncLegendStyle;
         syncLegendStyleBtnFn();
 
-        const btnLogScale = makeBtn('logScale', 'Toggle log scale', () => {
-          applyOpts({ logScale: !viewOpts.logScale });
-        });
-        syncLogScaleBtnFn = () => {
-          const isValueMode = viewOpts.plotMode === 'value' || viewOpts.plotMode === 'stackedValues';
-          btnLogScale.style.display = isValueMode ? '' : 'none';
-          setActive(btnLogScale, !!viewOpts.logScale);
-        };
+        const { btn: btnLogScale, sync: syncLogScale } = makeLogScaleBtn(
+          tbHelpers,
+          () => viewOpts,
+          patch => applyOpts(patch),
+        );
+        syncLogScaleBtnFn = syncLogScale;
         syncLogScaleBtnFn();
 
         const activeTestDefHasLimits = () => {
@@ -757,19 +748,10 @@ export function renderWaferMap(
         };
         syncColorbarRangeBtnFn();
 
-        const btnOrient = makeCheckMenuBtn(
-          'orient', 'Orientation',
-          () => [
-            { section: 'Rotate' },
-            { label: 'Rotate 90° clockwise', active: false, onClick: () => { const r = viewOpts.rotation ?? 0; applyOpts({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] }); } },
-            { section: 'Flip' },
-            { label: 'Flip horizontal', active: !!viewOpts.flipX, onClick: () => applyOpts({ flipX: !viewOpts.flipX }) },
-            { label: 'Flip vertical',   active: !!viewOpts.flipY, onClick: () => applyOpts({ flipY: !viewOpts.flipY }) },
-          ],
-          (btn) => {
-            const nonDefault = !!(viewOpts.rotation || viewOpts.flipX || viewOpts.flipY);
-            setActive(btn, nonDefault);
-          },
+        const btnOrient = makeOrientationBtn(
+          tbHelpers,
+          () => viewOpts,
+          patch => applyOpts(patch),
         );
         if (showPlotModeSelector) sceneControlsEl!.appendChild(btnMode);
         sceneControlsEl!.appendChild(btnPalette);
@@ -783,19 +765,7 @@ export function renderWaferMap(
         sceneControlsEl!.appendChild(btnOrient);
 
         // Findings button — toggles the summary panel.
-        // Auto-mount when statsSummary is provided without an explicit placement (persistent panel).
-        // defaultOpen: true starts the panel visible; otherwise hidden until the user clicks.
-        const autoMount = currentStatsSummary && !summaryPanelOpts?.placement;
-        if (autoMount) {
-          const openOnMount = !!summaryPanelOpts?.defaultOpen;
-          autoSummaryPanelEl = createSummaryPanelEl('right');
-          autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
-          const parent = canvasWrap.parentElement;
-          const next = canvasWrap.nextSibling;
-          autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
-          parent?.insertBefore(autoSummaryPanelWrapper, next);
-          renderAutoSummaryPanel();
-        }
+        // The panel itself is auto-mounted earlier, independently of the toolbar.
         if (currentStatsSummary) {
           btnFindings = makeBtn('findings', 'Summary panel', () => {
             const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
@@ -814,33 +784,14 @@ export function renderWaferMap(
 
         // Expand button — reparents canvas into a modal for a larger view.
         sceneControlsEl!.appendChild(makeSep());
-        btnExpand = makeBtn('expand', 'Expand (E)', openExpandModal);
+        btnExpand = makeBtn('expand', 'Expand (E)', onExpand ?? openExpandModal);
         sceneControlsEl!.appendChild(btnExpand);
 
         // Help button — opens the end-user guide in a modal (opt-in).
         if (showHelpButton) {
           sceneControlsEl!.appendChild(makeSep());
-          btnHelp = makeBtn('help', 'User guide', () => {
-            (window as any).__wmapDemoApi = { buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap };
-            const content = document.createElement('div');
-            Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
-            content.innerHTML = USER_GUIDE_HTML;
-            const handle = openModal({
-              title: 'Wafer Map — User Guide',
-              onClose: () => { delete (window as any).__wmapDemoApi; },
-            });
-            handle.contentWrap.appendChild(content);
-            // innerHTML does not execute scripts; re-run by cloning script text into a new element.
-            // The script exposes window.__wmapPopulateGuideDemos — call it immediately after.
-            const inert = content.querySelector('script');
-            if (inert) {
-              const s = document.createElement('script');
-              s.textContent = inert.textContent;
-              content.appendChild(s);
-              const guideEl = content.querySelector<HTMLElement>('.wmap-guide');
-              if (guideEl) (window as any).__wmapPopulateGuideDemos?.(guideEl);
-            }
-          });
+          btnHelp = makeBtn('help', 'User guide', () =>
+            openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, USER_GUIDE_HTML));
           sceneControlsEl!.appendChild(btnHelp);
         }
       }
@@ -904,6 +855,7 @@ export function renderWaferMap(
         }
         modalHandle = null;
         if (btnExpand) btnExpand.style.display = 'flex';
+        canvas.focus({ preventScroll: true });
         // Fit will recompute via ResizeObserver firing on reparent.
       },
     });
@@ -1504,7 +1456,8 @@ export function renderWaferMap(
       render();
     }
     if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only') {
-      openExpandModal();
+      e.stopPropagation();
+      (onExpand ?? openExpandModal)();
     }
     if (e.ctrlKey || e.metaKey) {
       if (e.key === '=' || e.key === '+') {

@@ -137,6 +137,8 @@ const wrappedHtml = `<div class="wmap-guide">
 .wmap-demo{width:100%;height:220px;margin:12px 0;border:1px solid #e2e5ea;border-radius:6px;overflow:hidden;background:#f8f9fa}
 .wmap-demo[data-wmap-demo="gallery"]{height:380px}
 .wmap-demo[data-wmap-demo="findings"]{height:280px}
+.wmap-demo[data-wmap-demo="summary-panel"]{height:300px}
+.wmap-demo[data-wmap-demo="box-select"]{height:280px}
 </style>
 ${bodyHtml}<script>${demosScript}</script></div>`;
 

@@ -116,25 +116,60 @@
           var edgeResult = buildWaferMap({ results: edgeResults, hbinDefs: hbinDefs, passBins: [1] });
           var summary = analyzeWaferMap ? analyzeWaferMap(edgeResult) : null;
           renderWaferMap(el, edgeResult, {
-            showToolbar: false, showTooltip: true,
+            showToolbar: true, showTooltip: true,
             viewOptions: { plotMode: 'hardBin' },
             statsSummary: summary || undefined,
             summaryPanel: summary ? { defaultOpen: true } : undefined,
           });
 
         } else if (id === 'lot-stack') {
-          // Build three slightly-different wafers and combine into a stacked map.
-          var waferResults = [7, 7, 7].map(function (r, n) {
-            return buildWaferMap({ results: makeDemoWafer(r), hbinDefs: hbinDefs, passBins: [1] });
-          });
+          // Count how many wafers (out of 3) each die failed (bin 2) — shown as a heatmap.
+          function makeLotWafer(seed) {
+            var r = 7, out = [];
+            for (var x = -r; x <= r; x++) {
+              for (var y = -r; y <= r; y++) {
+                if (Math.sqrt(x * x + y * y) > r + 0.5) continue;
+                out.push({ x: x, y: y, hbin: (Math.abs(x * seed + y * (seed + 4)) % 10 < 2) ? 2 : 1 });
+              }
+            }
+            return out;
+          }
           var stackResult = buildWaferMap({
-            lotStack: { results: waferResults, method: 'countBin' },
+            lotStack: { results: [makeLotWafer(3), makeLotWafer(7), makeLotWafer(11)], method: 'countBin', targetBin: 2 },
             hbinDefs: hbinDefs,
             passBins: [1],
           });
           renderWaferMap(el, stackResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'stackedBins' }
+          });
+
+        } else if (id === 'box-select') {
+          // Box-select is interactive — render WITH the toolbar so the box-select
+          // tool is reachable, and pre-select a cluster of dies so the user sees
+          // what a selection looks like before dragging their own.
+          var bsResult = buildWaferMap({ results: results, hbinDefs: hbinDefs, testDefs: testDefs, passBins: [1], waferConfig: { notch: { type: 'right' } } });
+          var bsCtrl = renderWaferMap(el, bsResult, {
+            showTooltip: true,
+            viewOptions: { plotMode: 'hardBin' },
+            onSelect: function () { /* host app would show selection stats here */ },
+          });
+          // Highlight a 3×3 block near the centre as an illustrative initial selection.
+          var preSel = bsResult.dies.filter(function (d) {
+            return d.x >= -1 && d.x <= 1 && d.y >= -1 && d.y <= 1;
+          });
+          if (bsCtrl && bsCtrl.setSelection) bsCtrl.setSelection(preSel);
+
+        } else if (id === 'summary-panel') {
+          // Full summary panel, opened by default, on a wafer with bins + test
+          // values so yield, bin breakdown, and per-test stats are all populated.
+          var spResult = buildWaferMap({ results: results, hbinDefs: hbinDefs, testDefs: testDefs, passBins: [1], waferConfig: { notch: { type: 'right' } } });
+          var spSummary = analyzeWaferMap ? analyzeWaferMap(spResult) : null;
+          renderWaferMap(el, spResult, {
+            showTooltip: true,
+            viewOptions: { plotMode: 'hardBin' },
+            statsSummary: spSummary || undefined,
+            summaryPanel: { defaultOpen: true },
           });
 
         } else if (id === 'reticle') {

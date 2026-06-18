@@ -12,6 +12,59 @@ function dieKey(die: Die): string {
   return `${die.x},${die.y}`;
 }
 
+// ── Shared ordering / adjacency utilities ──────────────────────────────────
+// Single source of truth for region ordering, consumed by buildSectorRegions,
+// the adjacent-finding merge pass (analyzeWaferMap.ts), and the narrative builder
+// (findingsNarrative.ts) — keep these here so the compass order is never duplicated.
+
+// 16-point compass names, indexed by bucket going CCW from East.
+const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW', 'SW', 'SSW', 'S', 'SSE', 'SE', 'ESE'];
+const COMPASS_8  = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'];
+const COMPASS_4  = ['E', 'N', 'W', 'S'];
+
+/** Compass bearing names for a given sector count, ordered CCW from East. */
+export function sectorCompassNames(sectorCount: number): string[] {
+  const safe = [4, 8, 16, 32].includes(sectorCount) ? sectorCount : 16;
+  return safe === 4 ? COMPASS_4 : safe === 8 ? COMPASS_8 : COMPASS_16;
+}
+
+/** Adjacency on the 2×2 quadrant grid — edge-sharing only, no diagonals. */
+const QUADRANT_ADJACENCY: Record<string, string[]> = {
+  NE: ['NW', 'SE'],
+  NW: ['NE', 'SW'],
+  SE: ['NE', 'SW'],
+  SW: ['NW', 'SE'],
+};
+
+/** True when two quadrants share an edge (NE–NW, NE–SE, NW–SW, SE–SW); diagonals are not adjacent. */
+export function areQuadrantsAdjacent(a: string, b: string): boolean {
+  return QUADRANT_ADJACENCY[a]?.includes(b) ?? false;
+}
+
+export interface ParsedRegionKey {
+  family: StatsRegion['family'] | 'unknown';
+  ring?: number;
+  quadrant?: string;
+  sector?: string;
+}
+
+/**
+ * Parse a region key (e.g. `ring:2`, `quadrant:NE`, `sector:NNE`) into its
+ * structured parts. Always parse identity from the key, never from the label.
+ */
+export function parseRegionKey(key: string): ParsedRegionKey {
+  if (key.startsWith('ring:')) {
+    return { family: 'ring', ring: Number(key.slice('ring:'.length)) };
+  }
+  if (key.startsWith('quadrant:')) {
+    return { family: 'quadrant', quadrant: key.slice('quadrant:'.length) };
+  }
+  if (key.startsWith('sector:')) {
+    return { family: 'sector', sector: key.slice('sector:'.length) };
+  }
+  return { family: 'unknown' };
+}
+
 export function buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[] {
   const regions = new Map<string, StatsRegion>();
 
@@ -129,12 +182,8 @@ export function buildTestSiteRegions(dies: Die[], forceEnable = false): StatsReg
 }
 
 export function buildSectorRegions(dies: Die[], wafer: Wafer, sectorCount: number): StatsRegion[] {
-  // 16-point compass names, indexed by bucket going CCW from East.
-  const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW', 'SW', 'SSW', 'S', 'SSE', 'SE', 'ESE'];
-  const COMPASS_8  = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'];
-  const COMPASS_4  = ['E', 'N', 'W', 'S'];
   const safe = [4, 8, 16, 32].includes(sectorCount) ? sectorCount : 16;
-  const names = safe === 4 ? COMPASS_4 : safe === 8 ? COMPASS_8 : COMPASS_16;
+  const names = sectorCompassNames(safe);
   const regions = new Map<string, StatsRegion>();
   const cx = wafer.center.x;
   const cy = wafer.center.y;

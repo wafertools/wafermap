@@ -33,6 +33,7 @@ Live interactive demos. Each opens a standalone page rendered in the browser.
 ## Compatibility and advanced
 
 - [Rendering pipeline](pipeline.html) — low-level buildView / toCanvas pipeline
+- [wafermap vs Plotly.js](comparison.html) — side-by-side render timings and feature comparison
 
 ---
 

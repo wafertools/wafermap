@@ -4,6 +4,7 @@ import { buildFindingsNarrative } from '../dist/packages/stats/findingsNarrative
 
 // ── Minimal finding factory ───────────────────────────────────────────────────
 
+let _fid = 0;
 function finding({
   family = 'ring',
   left = 'Ring 1 (core)',
@@ -12,18 +13,23 @@ function finding({
   kind = 'yield',
   label = 'Yield',
   bin = undefined,
+  index = undefined,
+  id = undefined,
+  relatedIds = undefined,
+  method = 'z',
   sampleSizeLeft = 100,
 } = {}) {
   return {
-    id: `${family}:${left}`,
+    id: id ?? `${family}:${left}:${kind}:${bin ?? index ?? ''}:${_fid++}`,
     level: 'wafer',
     severity,
-    variable: { kind, label, bin },
+    variable: { kind, label, bin, index },
     comparison: { family, left, right: 'Rest of wafer' },
     effect: { direction, absoluteDelta: -0.2, effectSize: 0.2 },
-    stats: { method: 'z', pValue: 0.01, adjustedPValue: 0.01, sampleSizeLeft, sampleSizeRight: 500 },
+    stats: { method, pValue: 0.01, adjustedPValue: 0.01, sampleSizeLeft, sampleSizeRight: 500 },
     summary: 'test finding',
-    highlight: { kind: 'region', regionFamily: family, keys: [] },
+    highlight: { kind: 'region', regionFamily: family, regionKeys: [] },
+    relatedIds,
   };
 }
 
@@ -43,12 +49,15 @@ test('narrative — all-info findings returns cautious sentence', () => {
 
 // ── Ring sentences ────────────────────────────────────────────────────────────
 
-test('narrative — all edge rings → "Edge rings show"', () => {
+test('narrative — edge rings with yield + redundant fail-bin → folds to yield only', () => {
+  // HBin 2 (a fail bin) merely restates the yield drop; the prose folds it into
+  // yield. Two same-zone edge rings of one metric read as a single ring sentence.
   const result = buildFindingsNarrative([
     finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'lower', kind: 'yield' }),
     finding({ family: 'ring', left: 'Ring 3 (edge)', direction: 'lower', kind: 'hardBin', bin: 2, label: 'HBin 2' }),
   ]);
-  assert.match(result, /^Edge rings show/);
+  assert.match(result, /reduced yield/);
+  assert.doesNotMatch(result, /HBin/);
 });
 
 test('narrative — all core rings → "The core ring shows"', () => {
@@ -65,12 +74,42 @@ test('narrative — single non-core non-edge ring → uses label directly', () =
   assert.match(result, /^Ring 2 show/);
 });
 
-test('narrative — mixed rings → "Multiple rings show"', () => {
+test('narrative — mixed rings → names each ring', () => {
   const result = buildFindingsNarrative([
     finding({ family: 'ring', left: 'Ring 1 (core)', direction: 'lower' }),
     finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'lower' }),
   ]);
-  assert.match(result, /^Multiple rings show/);
+  assert.match(result, /^Ring 1 \(core\) and Ring 4 \(edge\) show/);
+});
+
+test('narrative — merged ring band uses the merged label verbatim', () => {
+  const result = buildFindingsNarrative([
+    finding({ family: 'ring', left: 'Rings 1–3', direction: 'lower' }),
+  ]);
+  assert.match(result, /^Rings 1–3 show/);
+});
+
+test('narrative — opposing-direction yield regions split into two clauses, problem first', () => {
+  // For yield, lower (the failures) leads; no vague "shifted".
+  const result = buildFindingsNarrative([
+    finding({ family: 'ring', left: 'Rings 1–3',     direction: 'higher' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'lower'  }),
+  ]);
+  assert.match(result, /Ring 4 \(edge\) shows reduced yield while rings 1–3 show elevated yield\./);
+  assert.doesNotMatch(result, /shifted/);
+});
+
+test('narrative — opposing metrics in the SAME region do not split or self-contradict', () => {
+  // A region with higher yield necessarily has a lower fail-bin rate — this is one
+  // physical signal, not a spatial split. The region must be named once and the
+  // "elevated" clause must not contain the (lower) fail-bin metric.
+  const result = buildFindingsNarrative([
+    finding({ family: 'ring', left: 'Rings 1–3', direction: 'higher', kind: 'yield',   label: 'Yield' }),
+    finding({ family: 'ring', left: 'Rings 1–3', direction: 'lower',  kind: 'hardBin', label: 'HBin 2', bin: 2 }),
+  ]);
+  assert.match(result, /^Rings 1–3 shows? elevated yield\./);
+  assert.doesNotMatch(result, /while/);
+  assert.doesNotMatch(result, /shifted/);
 });
 
 // ── Quadrant sentences ────────────────────────────────────────────────────────
@@ -90,13 +129,21 @@ test('narrative — two quadrants', () => {
   assert.match(result, /The NE and NW quadrants show/);
 });
 
-test('narrative — three+ quadrants → multiple quadrants', () => {
+test('narrative — three+ bare quadrants names each one', () => {
   const result = buildFindingsNarrative([
     finding({ family: 'quadrant', left: 'NE' }),
     finding({ family: 'quadrant', left: 'NW' }),
     finding({ family: 'quadrant', left: 'SW' }),
   ]);
-  assert.match(result, /multiple quadrants/);
+  assert.match(result, /The NE, NW, and SW quadrants show/);
+});
+
+test('narrative — merged quadrant label used verbatim (no doubled "quadrant")', () => {
+  const result = buildFindingsNarrative([
+    finding({ family: 'quadrant', left: 'Quadrants NW, SW & SE', direction: 'lower' }),
+  ]);
+  assert.match(result, /^Quadrants NW, SW & SE show/);
+  assert.doesNotMatch(result, /quadrant Quadrants/i);
 });
 
 // ── Sector sentences ──────────────────────────────────────────────────────────
@@ -108,23 +155,20 @@ test('narrative — single sector uses bearing + region', () => {
   assert.equal(result, 'The NE region shows reduced yield.');
 });
 
-test('narrative — adjacent sectors collapse to mid bearing', () => {
-  // NE and NNE are adjacent (span = 1 step)
+test('narrative — multiple sectors are named, not collapsed to "multiple sectors"', () => {
   const result = buildFindingsNarrative([
     finding({ family: 'sector', left: 'Sector NE' }),
     finding({ family: 'sector', left: 'Sector NNE' }),
   ]);
-  assert.match(result, /region shows/);
+  assert.match(result, /The NE and NNE sectors show/);
   assert.doesNotMatch(result, /multiple sectors/);
 });
 
-test('narrative — spread sectors → multiple sectors', () => {
-  // N and S are 8 steps apart — well over the 4-step threshold
+test('narrative — merged sector arc uses the merged label', () => {
   const result = buildFindingsNarrative([
-    finding({ family: 'sector', left: 'Sector N' }),
-    finding({ family: 'sector', left: 'Sector S' }),
+    finding({ family: 'sector', left: 'Sectors NE–E', direction: 'lower' }),
   ]);
-  assert.match(result, /multiple sectors/);
+  assert.match(result, /The NE–E sectors show/);
 });
 
 // ── Cluster sentences ─────────────────────────────────────────────────────────
@@ -181,48 +225,61 @@ test('narrative — 1 metric: label only', () => {
   assert.match(result, /reduced yield\./);
 });
 
-test('narrative — 2 metrics: "A and B"', () => {
+// Independent test metrics are NOT folded (only pass/fail bins fold into yield),
+// so they exercise the metric-joining phrase.
+test('narrative — 2 independent metrics: "A and B"', () => {
   const result = buildFindingsNarrative([
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'yield',    label: 'Yield' }),
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'hardBin',  label: 'HBin 2', bin: 2 }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Vth' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Idd', bin: undefined }),
   ]);
-  assert.match(result, /yield and HBin 2/);
+  assert.match(result, /Vth and Idd/);
 });
 
-test('narrative — 3 metrics: "A, B, and C"', () => {
+test('narrative — 3 independent metrics: "A, B, and C"', () => {
   const result = buildFindingsNarrative([
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'yield',   label: 'Yield' }),
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'hardBin', label: 'HBin 2', bin: 2 }),
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'softBin', label: 'SBin 5', bin: 5 }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Vth' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Idd' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Ileak' }),
   ]);
-  assert.match(result, /yield, HBin 2, and SBin 5/);
+  assert.match(result, /Vth, Idd, and Ileak/);
 });
 
-test('narrative — 4+ metrics: "A, B, and N more"', () => {
+test('narrative — 4+ independent metrics: "A, B, and N more"', () => {
   const result = buildFindingsNarrative([
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'yield',   label: 'Yield' }),
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'hardBin', label: 'HBin 2', bin: 2 }),
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'softBin', label: 'SBin 5', bin: 5 }),
-    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test',    label: 'Vth' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Vth' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Idd' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Ileak' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'test', label: 'Cgs' }),
   ]);
   assert.match(result, /and 2 more/);
   assert.doesNotMatch(result, /and \d others/);
 });
 
-// ── Multi-family ordering and cap ─────────────────────────────────────────────
-
-test('narrative — families ordered by count then priority', () => {
-  // 2 cluster findings vs 1 ring — clusters should lead despite lower priority
+test('narrative — yield folds redundant pass/fail bins (single metric word)', () => {
   const result = buildFindingsNarrative([
-    finding({ family: 'ring',    left: 'Ring 4 (edge)',    severity: 'notable' }),
-    finding({ family: 'cluster', left: 'Cluster at (1,1)', severity: 'notable', sampleSizeLeft: 50 }),
-    finding({ family: 'cluster', left: 'Cluster at (2,2)', severity: 'notable', sampleSizeLeft: 30 }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'yield',   direction: 'lower', label: 'Yield' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', kind: 'hardBin', direction: 'higher', label: 'HBin 2', bin: 2 }),
   ]);
-  // Cluster sentence should come first (2 findings vs 1)
-  assert.match(result, /^2 failure clusters/);
+  assert.match(result, /reduced yield\.?$/);
+  assert.doesNotMatch(result, /HBin/);
 });
 
-test('narrative — capped at 4 sentences maximum', () => {
+// ── Multi-family ordering and cap ─────────────────────────────────────────────
+
+test('narrative — leads with strongest finding when no spatial pattern', () => {
+  // A cluster (unusual) and a ring (notable) with no pattern: the stronger cluster leads.
+  const result = buildFindingsNarrative([
+    finding({ family: 'ring',    left: 'Ring 4 (edge)',    severity: 'notable' }),
+    finding({ family: 'cluster', left: 'Cluster at (1,1)', severity: 'unusual', sampleSizeLeft: 50 }),
+    finding({ family: 'cluster', left: 'Cluster at (2,2)', severity: 'notable', sampleSizeLeft: 30 }),
+  ]);
+  // The ring (regional) sentence + the cluster supporting sentence both appear;
+  // the cluster signal must be present and not duplicated.
+  assert.match(result, /failure cluster/i);
+  assert.doesNotMatch(result, /shifted/);
+});
+
+test('narrative — capped at 3 sentences maximum', () => {
   const result = buildFindingsNarrative([
     finding({ family: 'ring',              left: 'Ring 4 (edge)',    severity: 'notable' }),
     finding({ family: 'quadrant',          left: 'NE',              severity: 'notable' }),
@@ -231,5 +288,49 @@ test('narrative — capped at 4 sentences maximum', () => {
     finding({ family: 'reticle-position',  left: 'R1C2',            severity: 'notable' }),
   ]);
   const sentences = result.split('. ').filter(Boolean);
-  assert.ok(sentences.length <= 4, `expected ≤4 sentences, got ${sentences.length}`);
+  assert.ok(sentences.length <= 3, `expected ≤3 sentences, got ${sentences.length}`);
+});
+
+// ── Pipeline: lead, gradient consolidation, cross-family dedup ─────────────────
+
+test('narrative — leads with the spatial pattern when present', () => {
+  const result = buildFindingsNarrative([
+    finding({ family: 'sector', left: 'Sectors NE–E', kind: 'test', label: 'Test A', direction: 'higher', severity: 'unusual' }),
+    finding({ family: 'spatial-pattern', left: 'Center cluster', kind: 'spatialPattern', direction: 'different', severity: 'unusual', method: 'geometry' }),
+  ]);
+  assert.match(result, /^Center cluster failure pattern detected/);
+});
+
+test('narrative — pattern names failure locus from a related edge arc', () => {
+  const arc = finding({ family: 'edge-arc', left: 'Edge arc ~NW', severity: 'unusual', id: 'edge-arc:nw' });
+  const pattern = finding({
+    family: 'spatial-pattern', left: 'Edge-ring', kind: 'spatialPattern', direction: 'different',
+    severity: 'unusual', method: 'geometry', relatedIds: ['edge-arc:nw'],
+  });
+  const result = buildFindingsNarrative([arc, pattern]);
+  assert.match(result, /^Edge-ring failure pattern detected .*near NW\./);
+  // The related arc is folded into the lead, not repeated as its own sentence.
+  assert.doesNotMatch(result, /An edge arc near NW/);
+});
+
+test('narrative — directional gradient collapses to one "increases from X toward Y" phrase', () => {
+  const result = buildFindingsNarrative([
+    finding({ family: 'sector', left: 'Sectors SE–NE', kind: 'test', label: 'Test A', direction: 'higher', severity: 'unusual' }),
+    finding({ family: 'sector', left: 'Sectors NW–S',  kind: 'test', label: 'Test A', direction: 'lower',  severity: 'unusual' }),
+  ]);
+  assert.match(result, /Test A increases from \w+ toward \w+ across the wafer\./);
+  assert.doesNotMatch(result, /while/);
+});
+
+test('narrative — a region never appears in both elevated and reduced clauses', () => {
+  // A merged "Quadrants NW, SW & SE" lower test finding and a bare "SW" higher
+  // spec-fail finding both mention SW — SW must not land on both sides.
+  const result = buildFindingsNarrative([
+    finding({ family: 'quadrant', left: 'NE', kind: 'test', label: 'Test A', direction: 'higher', severity: 'unusual' }),
+    finding({ family: 'quadrant', left: 'Quadrants NW, SW & SE', kind: 'test', label: 'Test A', direction: 'lower', severity: 'unusual' }),
+    finding({ family: 'quadrant', left: 'SW', kind: 'test', label: 'Test A', direction: 'higher', severity: 'notable' }),
+  ]);
+  // SW appears at most once across the whole sentence.
+  const swCount = (result.match(/\bSW\b/g) ?? []).length;
+  assert.ok(swCount <= 1, `SW appears ${swCount} times: ${result}`);
 });

@@ -1020,7 +1020,7 @@ A finding object in full:
   stats:    { method: 'z', pValue: 0.003, adjustedPValue: 0.009,
               sampleSizeLeft: 48, sampleSizeRight: 412 },
   summary:  'Ring 4 (edge) yield is lower than the rest of the wafer',
-  highlight: { kind: 'region', regionFamily: 'ring', keys: ['Ring 4 (edge)'] },
+  highlight: { kind: 'region', regionFamily: 'ring', regionKeys: ['ring:4'], dieKeys: ['6,0', '6,1', /* … */] },
 }
 ```
 

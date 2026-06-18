@@ -12,12 +12,13 @@ import * as canvasApi       from '../dist/packages/canvas-adapter/index.js';
 const SNAPSHOTS = {
   '.' : [
     'aggregateBinCounts', 'aggregateValues', 'analyzeWaferLot', 'analyzeWaferMap',
-    'applyOrientation', 'applyProbeSequence',
+    'applyOrientation', 'applyProbeSequence', 'areQuadrantsAdjacent',
     'buildHoverText',
     'buildQuadrantRegions', 'buildReticlePositionRegions', 'buildRingRegions',
     'buildSectorRegions', 'buildTestSiteRegions', 'buildView', 'buildWaferMap',
     'classifyDie', 'classifyPattern', 'clipDiesToWafer', 'contrastTextColor', 'createWafer',
     'filterFindings', 'findTestDef', 'generateDies', 'generateReticleGrid', 'generateTextOverlay',
+    'parseRegionKey', 'sectorCompassNames',
     'getColorScheme', 'getDieKey', 'getDieTestValue',
     'getRingLabel', 'getUniqueBins', 'getUniqueTestNumbers',
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'listColorSchemes',
@@ -44,11 +45,11 @@ const SNAPSHOTS = {
     'softBinColor', 'valueToGreyscale', 'valueToViridis',
   ],
   './stats': [
-    'analyzeWaferLot', 'analyzeWaferMap',
+    'analyzeWaferLot', 'analyzeWaferMap', 'areQuadrantsAdjacent',
     'buildQuadrantRegions', 'buildReticlePositionRegions',
     'buildRingRegions', 'buildSectorRegions', 'buildTestSiteRegions',
     'classifyPattern',
-    'filterFindings', 'openHtmlReport', 'setReportOpener',
+    'filterFindings', 'openHtmlReport', 'parseRegionKey', 'sectorCompassNames', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
   ],
   './render': [

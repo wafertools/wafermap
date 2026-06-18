@@ -17,14 +17,24 @@ export type StatsComparisonFamily =
 export interface HighlightRegionTarget {
   kind: 'region';
   regionFamily: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector';
-  keys: string[];
+  /**
+   * Provenance only — the region keys this finding covers, e.g. `["ring:1", "ring:2"]`
+   * (a merged band lists several). Not used for rendering: the built-in highlight draws
+   * per-die rectangles from {@link dieKeys}. Exposed so callers can group or filter findings
+   * by region without re-parsing the label, and read by the adjacent-finding merge pass.
+   * Same field name and meaning as {@link HighlightBinTarget.regionKeys}.
+   */
+  regionKeys: string[];
+  /** The dies to highlight — what the renderer actually draws. */
   dieKeys?: string[];
 }
 
 export interface HighlightBinTarget {
   kind: 'bin';
   bin: number;
+  /** Provenance only — see {@link HighlightRegionTarget.regionKeys}. The renderer draws from {@link dieKeys}. */
   regionKeys?: string[];
+  /** The dies to highlight — what the renderer actually draws. */
   dieKeys?: string[];
 }
 

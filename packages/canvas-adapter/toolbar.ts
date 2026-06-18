@@ -2,6 +2,7 @@
 // Internal module. Do not re-export from index.ts.
 
 import type { PlotMode } from '../renderer/buildView.js';
+import { listColorSchemes } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
 
 // ── Colours ────────────────────────────────────────────────────────────────────
@@ -894,6 +895,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && !document.fullscreenElement) { close(); return; }
+    if ((e.key === 'e' || e.key === 'E') && !document.fullscreenElement) { close(); return; }
     if (e.key === 'Tab') { trapTab(e); return; }
     if (e.key === 'f' || e.key === 'F') {
       if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
@@ -935,4 +937,146 @@ export function openModal(opts: ModalOptions): ModalHandle {
   nextFrame(() => (closeBtn.isConnected ? closeBtn : box).focus());
 
   return { backdrop, box, contentWrap, close };
+}
+
+// ── Shared toolbar button builders ────────────────────────────────────────────
+// Each builder takes a ToolbarHelpers instance plus getter/setter callbacks so
+// callers (renderWaferMap, renderWaferGallery) can wire their own state without
+// any circular imports. Each returns { btn, sync } — call sync() after any
+// view-options change to update button visibility/active state.
+
+export function makePaletteBtn(
+  helpers: ToolbarHelpers,
+  getPlotMode: () => PlotMode,
+  getColorScheme: () => string,
+  hasCustomColors: () => boolean,
+  setColorScheme: (v: string) => void,
+): HTMLButtonElement {
+  return helpers.makeDropdown(
+    'palette', 'Colour scheme',
+    () => {
+      const isBinMode = getPlotMode() === 'hardBin' || getPlotMode() === 'softBin';
+      const schemes = isBinMode
+        ? listColorSchemes().filter(s => s.name === 'default' || s.name === 'accessible')
+        : listColorSchemes();
+      return [
+        ...(hasCustomColors() ? [{ value: 'custom', label: 'Custom' }] : []),
+        ...schemes.map(s => ({ value: s.name, label: s.label })),
+      ];
+    },
+    () => getColorScheme(),
+    v => setColorScheme(v),
+  );
+}
+
+export function makeLogScaleBtn(
+  helpers: ToolbarHelpers,
+  getOpts: () => { plotMode?: PlotMode; logScale?: boolean },
+  setOpts: (patch: { logScale: boolean }) => void,
+): { btn: HTMLButtonElement; sync: () => void } {
+  const btn = helpers.makeBtn('logScale', 'Toggle log scale', () => {
+    setOpts({ logScale: !getOpts().logScale });
+    sync();
+  });
+  function sync(): void {
+    const m = getOpts().plotMode;
+    btn.style.display = (m === 'value' || m === 'stackedValues') ? '' : 'none';
+    helpers.setActive(btn, !!getOpts().logScale);
+  }
+  return { btn, sync };
+}
+
+export type LegendPosition = 'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating';
+
+export function makeLegendStyleBtn(
+  helpers: ToolbarHelpers,
+  getOpts: () => { plotMode?: PlotMode; legendPosition?: LegendPosition },
+  setLegendPosition: (v: LegendPosition) => void,
+): { btn: HTMLButtonElement; sync: () => void } {
+  const btn = helpers.makeDropdown(
+    'legend', 'Legend style',
+    () => [
+      { value: 'default'  as const, label: 'Default (right)' },
+      { value: 'compact'  as const, label: 'Compact (right)' },
+      { value: 'left'     as const, label: 'Left' },
+      { value: 'top'      as const, label: 'Top' },
+      { value: 'bottom'   as const, label: 'Bottom' },
+      { value: 'floating' as const, label: 'Floating' },
+    ],
+    () => getOpts().legendPosition ?? 'default',
+    v => setLegendPosition(v),
+  );
+  function sync(): void {
+    const m = getOpts().plotMode;
+    btn.style.display = (m === 'hardBin' || m === 'softBin') ? '' : 'none';
+  }
+  return { btn, sync };
+}
+
+export function makeOverlaysBtn(
+  helpers: ToolbarHelpers,
+  getRows: () => CheckMenuRow[],
+  isAnyOn: () => boolean,
+): HTMLButtonElement {
+  return helpers.makeCheckMenuBtn(
+    'overlays', 'Overlays',
+    () => getRows(),
+    (btn) => helpers.setActive(btn, isAnyOn()),
+  );
+}
+
+export function makeOrientationBtn(
+  helpers: ToolbarHelpers,
+  getOpts: () => { rotation?: number; flipX?: boolean; flipY?: boolean },
+  setOpts: (patch: { rotation?: 0 | 90 | 180 | 270; flipX?: boolean; flipY?: boolean }) => void,
+): HTMLButtonElement {
+  return helpers.makeCheckMenuBtn(
+    'orient', 'Orientation',
+    () => [
+      { section: 'Rotate' },
+      { label: 'Rotate 90° clockwise', active: false, onClick: () => {
+        const r = (getOpts().rotation ?? 0) as 0 | 90 | 180 | 270;
+        setOpts({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] });
+      }},
+      { section: 'Flip' },
+      { label: 'Flip horizontal', active: !!getOpts().flipX, onClick: () => setOpts({ flipX: !getOpts().flipX }) },
+      { label: 'Flip vertical',   active: !!getOpts().flipY, onClick: () => setOpts({ flipY: !getOpts().flipY }) },
+    ],
+    (btn) => {
+      const { rotation, flipX, flipY } = getOpts();
+      helpers.setActive(btn, !!(rotation || flipX || flipY));
+    },
+  );
+}
+
+// ── User guide modal ───────────────────────────────────────────────────────────
+
+/**
+ * Open the embedded user-guide modal and populate its live demos.
+ * `api` must contain the four library functions the guide demos call at runtime.
+ * `html` is USER_GUIDE_HTML — passed in so toolbar.ts has no dependency on userGuideHtml.ts.
+ */
+export function openUserGuideModal(
+  api: { buildWaferMap: unknown; renderWaferMap: unknown; renderWaferGallery: unknown; analyzeWaferMap: unknown },
+  html: string,
+): void {
+  (window as any).__wmapDemoApi = api;
+  const content = document.createElement('div');
+  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
+  content.innerHTML = html;
+  const handle = openModal({
+    title: 'Wafer Map — User Guide',
+    onClose: () => { delete (window as any).__wmapDemoApi; },
+  });
+  handle.contentWrap.appendChild(content);
+  // innerHTML does not execute scripts; re-run by cloning script text into a new element.
+  // The script exposes window.__wmapPopulateGuideDemos — call it immediately after.
+  const inert = content.querySelector('script');
+  if (inert) {
+    const s = document.createElement('script');
+    s.textContent = inert.textContent;
+    content.appendChild(s);
+    const guideEl = content.querySelector<HTMLElement>('.wmap-guide');
+    if (guideEl) (window as any).__wmapPopulateGuideDemos?.(guideEl);
+  }
 }

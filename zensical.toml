@@ -12,9 +12,9 @@ repo_url    = "https://github.com/telecasterer/wafermap"
 nav = [
   { "Home"              = "index.md"      },
   { "Quick Start"       = "quickstart.md" },
-  { "End-User Guide"    = "user-guide.md" },
   { "Developer Guide"   = "guide.md"      },
   { "Architecture"      = "architecture.md" },
+  { "Application User Guide" = "user-guide.md" },
   { "Pattern Detection" = [
     { "Overview"         = "pattern-detection.md" },
     { "Detection Analysis" = "detection-analysis.md" },
@@ -51,6 +51,7 @@ nav = [
     ]},
     { "Compatibility and advanced" = [
       { "Rendering pipeline"             = "examples/pipeline.html"        },
+      { "wafermap vs Plotly.js"          = "examples/comparison.html"      },
     ]},
   ]},
   { "Integration Guides" = [

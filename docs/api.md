@@ -1596,15 +1596,17 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`. 
   severity: 'unusual' | 'notable' | 'info'
             // ranking (highest → lowest): unusual > notable > info
   variable: {
-    kind:   'yield' | 'hardBin' | 'softBin' | 'test'
+    kind:   'yield' | 'hardBin' | 'softBin' | 'test' | 'spatialPattern'
     index?: number          // test number — the key from testValues (for 'test' kind)
     bin?:   number          // bin value (for 'hardBin'/'softBin' kind)
     label:  string          // human-readable name
     unit?:  string
   }
   comparison: {
-    family: 'ring' | 'quadrant' | 'reticle-position' | 'wafer' | 'sector' | 'cluster' | 'edge-arc'
-    left:   string          // e.g. "Ring 3 (edge)", "NE", "Reticle cell (1, 0)"
+    family: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'wafer'
+          | 'sector' | 'cluster' | 'edge-arc' | 'spatial-pattern'
+    left:   string          // e.g. "Ring 3 (edge)", "NE", "Rings 1–3", "Reticle cell (1, 0)"
+                            // adjacent same-signal regions are merged into one finding (e.g. "Rings 1–3")
     right:  string          // typically "Rest of wafer" or "Lot median"
   }
   effect: {
@@ -1623,6 +1625,9 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`. 
   summary:   string         // one-sentence human-readable description — a plain string, not an object
                             // e.g. "Ring 4 (edge) yield is 18.3 pp lower than the rest of the wafer"
   highlight: HighlightTarget
+  relatedIds?: string[]     // ids of findings this one summarises at a finer level:
+                            // a spatial-pattern's supporting regional findings, or the per-region
+                            // findings collapsed into a merged band ("Rings 1–3"). Audit/drill-down.
 }
 ```
 
@@ -1632,8 +1637,8 @@ Describes what to visually emphasise when a finding is selected.
 
 ```ts
 type HighlightTarget =
-  | { kind: 'region';  regionFamily: 'ring' | 'quadrant' | 'reticle-position' | 'sector';
-                        keys: string[]; dieKeys?: string[] }
+  | { kind: 'region';  regionFamily: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector';
+                        regionKeys: string[]; dieKeys?: string[] }
   | { kind: 'bin';     bin: number; regionKeys?: string[]; dieKeys?: string[] }
   | { kind: 'wafer';   waferIndices: number[] }
   | { kind: 'dies';    dieKeys: string[] }
@@ -1724,6 +1729,21 @@ Each `StatsRegion` has:
   label:    string   // human-readable (e.g. "Ring 4 (edge)", "Sector NNW", "Site 2")
   dieKeys:  string[] // "x,y" keys of dies in this region
 }
+```
+
+Three region-ordering helpers are also exported from `@paulrobins/wafermap/stats`. They are the
+single source of truth for sector and quadrant ordering, used by `buildSectorRegions` and by the
+internal adjacent-finding merge:
+
+```ts
+sectorCompassNames(sectorCount: number): string[]
+// CCW-from-East compass names for 4 | 8 | 16 | 32 (defaults to the 16-point set otherwise)
+
+areQuadrantsAdjacent(a: string, b: string): boolean
+// edge-sharing quadrants (NE–NW, NE–SE, NW–SW, SE–SW) are adjacent; diagonals are not
+
+parseRegionKey(key: string): { family, ring?, quadrant?, sector? }
+// parse a region key ('ring:2', 'quadrant:NE', 'sector:NNE') into its structured parts
 ```
 
 ### 7.14 `filterFindings(source, filter)`
