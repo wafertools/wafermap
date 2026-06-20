@@ -1184,8 +1184,8 @@ export function analyzeWaferMap(
 ): StatsSummary {
   const baseResolved = { ...DEFAULT_OPTIONS, ...options } as ResolvedOptions;
   const result = normalizeInput(input);
-  const isLotStack  = result.view.isLotStack;
-  const stackMethod = result.view.aggrMethod;
+  const isLotStack  = result.isLotStack;
+  const stackMethod = result.aggrMethod;
   const hasHbinData = !isLotStack ||
     stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
   const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, baseResolved));
@@ -1241,11 +1241,11 @@ export function analyzeWaferMap(
   const warnings: string[] = [];
   let activeTestNumbers: number[] | undefined;
   if (resolved.enableTestValueAnalysis) {
-    const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.view.testDefs, resolved);
-    const quad     = buildTestValueFindings(eligibleDies, quadrantRegions, result.view.testDefs, resolved);
-    const reticle  = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.view.testDefs, resolved);
-    const testSite = buildTestValueFindings(eligibleDies, testSiteRegions, result.view.testDefs, resolved);
-    const sector   = buildTestValueFindings(eligibleDies, sectorRegions, result.view.testDefs, resolved);
+    const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.testDefs, resolved);
+    const quad     = buildTestValueFindings(eligibleDies, quadrantRegions, result.testDefs, resolved);
+    const reticle  = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.testDefs, resolved);
+    const testSite = buildTestValueFindings(eligibleDies, testSiteRegions, result.testDefs, resolved);
+    const sector   = buildTestValueFindings(eligibleDies, sectorRegions, result.testDefs, resolved);
     findings.push(...ring.findings, ...quad.findings, ...reticle.findings, ...testSite.findings, ...sector.findings);
     if (ring.warning) warnings.push(ring.warning);
     activeTestNumbers = ring.activeTestNumbers;
@@ -1253,12 +1253,12 @@ export function analyzeWaferMap(
     findings.push(...buildSpecLimitFindings(
       eligibleDies,
       [ringRegions, quadrantRegions, reticlePositionRegions, testSiteRegions, sectorRegions],
-      result.view.testDefs,
+      result.testDefs,
       resolved,
     ));
   }
   if (resolved.enableClusterAnalysis) {
-    const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.view.testDefs);
+    const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.testDefs);
     if (!isLotStack || hasHbinData || failPredicate !== undefined) {
       findings.push(...buildClusterFindings(eligibleDies, result.wafer, {
         ...resolved,
@@ -1278,7 +1278,7 @@ export function analyzeWaferMap(
     sectorCount: resolved.sectorCount,
     hbinDefs: result.hbinDefs,
     sbinDefs: result.sbinDefs,
-    testDefs: result.view.testDefs,
+    testDefs: result.testDefs,
   });
   findings.length = 0;
   findings.push(...mergedFindings);
@@ -1396,10 +1396,10 @@ export function analyzeWaferMap(
     if (stackMethod) stats.aggregationMethod = stackMethod;
   }
   if (warnings.length > 0) stats.warnings = warnings;
-  const specYield = computeTestSpecYield(result.dies, result.view.testDefs);
+  const specYield = computeTestSpecYield(result.dies, result.testDefs);
   if (specYield) stats.testSpecYield = specYield;
   if (activeTestNumbers?.length) {
-    const perTestStats = computePerTestStats(result.dies, activeTestNumbers, result.view.testDefs, resolved.minimumSampleSize);
+    const perTestStats = computePerTestStats(result.dies, activeTestNumbers, result.testDefs, resolved.minimumSampleSize);
     if (perTestStats) stats.perTestStats = perTestStats;
   }
 

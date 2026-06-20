@@ -459,6 +459,11 @@ export interface WaferMapResult {
   sbinDefs?: BinDef[];
   /** Named test definitions passed to `buildWaferMap`. Consumed automatically by the renderer — no need to pass again to `renderWaferMap`. */
   testDefs?: TestDef[];
+  /**
+   * Lot-stack aggregation method used when `lotStack` was passed to `buildWaferMap`.
+   * `undefined` for single-wafer results.
+   */
+  aggrMethod?: string;
 }
 
 // ── Internal normalized model ─────────────────────────────────────────────────
@@ -1259,5 +1264,6 @@ export function buildWaferMap(
     hbinDefs: norm.hbinDefs,
     sbinDefs: norm.sbinDefs,
     testDefs: norm.testDefs,
+    aggrMethod: view.aggrMethod,
   };
 }

@@ -125,9 +125,12 @@ function ringSentence(findings: StatsFinding[]): string {
 function quadrantSentence(findings: StatsFinding[]): string {
   const dir = dominantDirection(findings);
   // Single bare-compass labels need the "quadrant(s)" noun appended; merged
-  // labels already include it.
-  const merged = findings.filter(f => f.comparison.left.startsWith('Quadrants'));
-  const bare = findings.filter(f => !f.comparison.left.startsWith('Quadrants'));
+  // labels (covering multiple region keys) already include the noun.
+  const isMulti = (f: StatsFinding) =>
+    (f.highlight.kind === 'region' && f.highlight.regionKeys.length > 1) ||
+    f.comparison.left.startsWith('Quadrants');
+  const merged = findings.filter(f => isMulti(f));
+  const bare   = findings.filter(f => !isMulti(f));
   const parts: string[] = [];
   if (bare.length === 1) parts.push(`the ${bare[0].comparison.left} quadrant`);
   else if (bare.length > 1) parts.push(`the ${joinLabels(bare)} quadrants`);

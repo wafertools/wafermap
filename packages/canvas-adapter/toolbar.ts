@@ -976,7 +976,6 @@ export function makeLogScaleBtn(
 ): { btn: HTMLButtonElement; sync: () => void } {
   const btn = helpers.makeBtn('logScale', 'Toggle log scale', () => {
     setOpts({ logScale: !getOpts().logScale });
-    sync();
   });
   function sync(): void {
     const m = getOpts().plotMode;
@@ -1060,13 +1059,16 @@ export function openUserGuideModal(
   api: { buildWaferMap: unknown; renderWaferMap: unknown; renderWaferGallery: unknown; analyzeWaferMap: unknown },
   html: string,
 ): void {
+  const prevApi = (window as any).__wmapDemoApi;
   (window as any).__wmapDemoApi = api;
   const content = document.createElement('div');
   Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
   content.innerHTML = html;
   const handle = openModal({
     title: 'Wafer Map — User Guide',
-    onClose: () => { delete (window as any).__wmapDemoApi; },
+    onClose: () => {
+      if ((window as any).__wmapDemoApi === api) (window as any).__wmapDemoApi = prevApi;
+    },
   });
   handle.contentWrap.appendChild(content);
   // innerHTML does not execute scripts; re-run by cloning script text into a new element.

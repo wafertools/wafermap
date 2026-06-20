@@ -677,7 +677,7 @@ positions that show elevated failure rates.</p>
         } else if (id === 'gallery') {
           var items = [0, 1, 2, 3].map(function (n) {
             var r = buildWaferMap({ results: makeDemoWafer(6 + n), hbinDefs: hbinDefs, passBins: [1] });
-            return { wafer: r.wafer, dies: r.dies, hbinDefs: hbinDefs, label: 'Wafer ' + (n + 1) };
+            return Object.assign({}, r, { label: 'Wafer ' + (n + 1) });
           });
           renderWaferGallery(el, items);
 

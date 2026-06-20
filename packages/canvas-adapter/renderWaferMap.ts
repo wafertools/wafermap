@@ -5,11 +5,9 @@ import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
-import { renderWaferGallery } from './renderWaferGallery.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
-import { USER_GUIDE_HTML } from './userGuideHtml.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -470,7 +468,7 @@ export function renderWaferMap(
     // explicit placement. Mounted independently of the toolbar so a chromeless map
     // (showToolbar: false) can still render a persistent panel beside it; the toolbar
     // only owns the toggle button. defaultOpen: true starts the panel visible.
-    const openOnMount = !!summaryPanelOpts?.defaultOpen;
+    const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
     autoSummaryPanelEl = createSummaryPanelEl('right');
     autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
     const parent = canvasWrap.parentElement;
@@ -519,9 +517,8 @@ export function renderWaferMap(
     if (!btnFindings) return;
     const hasSummary = !!(summaryPanelEl ?? autoSummaryPanelEl);
     btnFindings.style.display = (currentStatsSummary && hasSummary) ? 'flex' : 'none';
-    const panelOpen = autoSummaryPanelEl
-      ? autoSummaryPanelEl.style.display !== 'none'
-      : false;
+    const activePanelEl = summaryPanelEl ?? autoSummaryPanelEl;
+    const panelOpen = activePanelEl ? activePanelEl.style.display !== 'none' : false;
     if (currentStatsSummary?.hasNotableFindings && !panelOpen) {
       btnFindings.style.color = '#b7551a';
     } else if (!btnFindings.dataset.active) {
@@ -710,7 +707,8 @@ export function renderWaferMap(
             ];
           },
           () => !!(viewOpts.showRingBoundaries || viewOpts.showQuadrantBoundaries ||
-                   viewOpts.showDieLabels || viewOpts.showReticle || viewOpts.showXYIndicator),
+                   viewOpts.showDieLabels || viewOpts.showReticle || viewOpts.showXYIndicator ||
+                   viewOpts.colorBySpec),
         );
         const { btn: btnLegendStyle, sync: syncLegendStyle } = makeLegendStyleBtn(
           tbHelpers,
@@ -791,7 +789,7 @@ export function renderWaferMap(
         if (showHelpButton) {
           sceneControlsEl!.appendChild(makeSep());
           btnHelp = makeBtn('help', 'User guide', () =>
-            openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, USER_GUIDE_HTML));
+            import('./userGuideHtml.js').then(m => openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap }, m.USER_GUIDE_HTML)));
           sceneControlsEl!.appendChild(btnHelp);
         }
       }
@@ -1591,6 +1589,16 @@ export function renderWaferMap(
         renderSummaryPanel();
       } else if (autoSummaryPanelEl) {
         renderAutoSummaryPanel();
+      } else if (summary && !summaryPanelOpts?.placement) {
+        // Late-mount: statsSummary provided after initial render with no placement option.
+        const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
+        autoSummaryPanelEl = createSummaryPanelEl('right');
+        autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
+        const parent = canvasWrap.parentElement;
+        const next = canvasWrap.nextSibling;
+        autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
+        parent?.insertBefore(autoSummaryPanelWrapper, next);
+        renderAutoSummaryPanel();
       }
       refreshFindingsButton();
     },
@@ -1612,7 +1620,7 @@ export function renderWaferMap(
     },
 
     closeSummaryPanel(): void {
-      const panelEl = autoSummaryPanelEl;
+      const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
       if (!panelEl || panelEl.style.display === 'none') return;
       panelEl.style.display = 'none';
       if (btnFindings) {

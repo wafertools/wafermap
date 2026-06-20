@@ -19,6 +19,19 @@ under `### Breaking`.
 
 ---
 
+## [0.14.1] — 2026-06-20
+
+### Performance
+
+- **`userGuideHtml` is now a deferred chunk.** The embedded end-user guide HTML (~26 KB gzipped) was previously statically imported, adding weight to the initial `wafermap/render` parse cost on every page load. It is now dynamically imported on first help-button click. The initial `wafermap/render` bundle drops from ~88 KB to ~62 KB gzipped (~30% smaller). The guide remains fully self-contained — no external network request, no server required; works offline and behind air-gapped tester networks.
+- **Docs site now ships bundled JS.** `npm run build:site` runs esbuild after the Zensical build, replacing the unbundled tsc output in `site/dist/` with two minified entry-point bundles. Reduces module request waterfall from 15+ files to 2, cutting gallery page load time from ~3.3 s to ~1.2 s on low-powered clients.
+
+### Tests
+
+- **Bundle size regression tests** (`tests/bundle-size.test.mjs`) — fail if `wafermap` root exceeds 40 KB gzipped, `wafermap/render` initial chunk exceeds 75 KB gzipped, or `userGuideHtml` is statically imported from either render file.
+
+---
+
 ## [0.14.0] — 2026-06-18
 
 ### Breaking

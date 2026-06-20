@@ -2,7 +2,6 @@ import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
-import { USER_GUIDE_HTML } from './userGuideHtml.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -780,7 +779,7 @@ export function renderWaferGallery(
   if (showHelpButton) {
     barEl.appendChild(makeSep());
     barEl.appendChild(makeBtn('help', 'User guide', () =>
-      openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, USER_GUIDE_HTML)));
+      import('./userGuideHtml.js').then(m => openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, m.USER_GUIDE_HTML))));
   }
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
@@ -855,7 +854,7 @@ export function renderWaferGallery(
     }
     const N = Math.max(1, currentItemCount);
     const gap = 12;
-    const containerW = bodyEl.clientWidth || 0;
+    const containerW = gridEl.clientWidth || 0;
 
     // Start with a square-ish grid (sqrt(N) columns), then reduce columns if
     // the resulting card width would fall below the minimum readable size.
@@ -1209,8 +1208,8 @@ export function renderWaferGallery(
     syncLegendStyleBtn();
     const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
     if (partial.colorScheme !== undefined || modeChanged) renderGallerySummaryPanel();
+    syncLogScaleBtn();
     if (fireCallback) {
-      syncLogScaleBtn();
       const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
       options.onViewOptionsChange?.(sharedOpts, changed, classifyChanged(changed));
     }
@@ -1444,8 +1443,7 @@ export function renderWaferGallery(
   const gridResizeObserver = new ResizeObserver(() => {
     if (currentColumns == null) applyGridTemplate();
   });
-  gridResizeObserver.observe(bodyEl);
-  gridResizeObserver.observe(container);
+  gridResizeObserver.observe(gridEl);
 
   // Initial gallery summary panel render
   if (gallerySummaryPanelEl) renderGallerySummaryPanel();
