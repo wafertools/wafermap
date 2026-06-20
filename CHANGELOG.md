@@ -19,6 +19,19 @@ under `### Breaking`.
 
 ---
 
+## [0.14.2] — 2026-06-20
+
+### Changed
+
+- **Modal header now uses SVG icons instead of unicode glyphs.** The shared modal (`openModal`, used by the gallery and user-guide modals) previously rendered fullscreen/close with the glyphs `⛶`/`⤢`/`×`. It now uses the icon set: new `maximize` (enter fullscreen) and `minimize` (exit fullscreen) icons, and the new `x`-style `close` icon. The buttons gain the same bordered-box styling as the gallery-card expand button, so modal and card chrome read as one system.
+- **Unified the expand icon.** The gallery card's "open full view" button used its own inline polyline SVG, separate from the toolbar `expand`. It now uses `ICONS.expand`, so there is a single definition of the expand icon. `maximize`/`minimize` (fullscreen) are deliberately distinct from `expand` (open-in-modal) so the two never read as the same affordance.
+
+### Added
+
+- **New icons** in the toolbar icon set: `maximize`, `minimize`, `close`.
+
+---
+
 ## [0.14.1] — 2026-06-20
 
 ### Performance

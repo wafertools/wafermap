@@ -805,21 +805,27 @@ export function openModal(opts: ModalOptions): ModalHandle {
   Object.assign(header.style, {
     display:      'flex',
     alignItems:   'center',
+    gap:          '6px',
     padding:      '10px 14px',
     borderBottom: '1px solid #e2e5ea',
     flexShrink:   '0',
   });
 
+  // Bordered icon buttons, matching the gallery-card expand button so modal and
+  // card chrome read as one system.
   const btnStyle: Partial<CSSStyleDeclaration> = {
-    border:      'none',
-    background:  'transparent',
-    cursor:      'pointer',
-    color:       '#888',
-    lineHeight:  '1',
-    padding:     '0 4px',
-    fontSize:    '15px',
-    display:     'flex',
-    alignItems:  'center',
+    border:         '1px solid #d1d5db',
+    borderRadius:   '4px',
+    background:     '#f9fafb',
+    cursor:         'pointer',
+    color:          '#6b7280',
+    lineHeight:     '1',
+    padding:        '0',
+    display:        'flex',
+    alignItems:     'center',
+    justifyContent: 'center',
+    width:          '28px',
+    height:         '28px',
   };
 
   if (opts.title) {
@@ -835,10 +841,10 @@ export function openModal(opts: ModalOptions): ModalHandle {
 
   const fullscreenBtn = document.createElement('button');
   fullscreenBtn.type = 'button';
-  fullscreenBtn.innerHTML = '&#x26F6;';
+  fullscreenBtn.innerHTML = ICONS.maximize;
   fullscreenBtn.title = 'Fullscreen (F)';
   fullscreenBtn.setAttribute('aria-label', 'Fullscreen');
-  Object.assign(fullscreenBtn.style, { ...btnStyle, fontSize: '18px' });
+  Object.assign(fullscreenBtn.style, btnStyle);
   fullscreenBtn.addEventListener('click', () => {
     if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
     else document.exitFullscreen();
@@ -846,10 +852,10 @@ export function openModal(opts: ModalOptions): ModalHandle {
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
-  closeBtn.textContent = '\xD7';
+  closeBtn.innerHTML = ICONS.close;
   closeBtn.title = 'Close (Esc)';
   closeBtn.setAttribute('aria-label', 'Close');
-  Object.assign(closeBtn.style, { ...btnStyle, fontSize: '20px', padding: '0 2px' });
+  Object.assign(closeBtn.style, btnStyle);
   closeBtn.addEventListener('click', close);
 
   header.appendChild(fullscreenBtn);
@@ -857,7 +863,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
 
   const onFsChange = () => {
     const isFs = document.fullscreenElement === box;
-    fullscreenBtn.innerHTML = isFs ? '&#x2922;' : '&#x26F6;';
+    fullscreenBtn.innerHTML = isFs ? ICONS.minimize : ICONS.maximize;
     fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
     closeBtn.style.display = isFs ? 'none' : '';
     if (isFs) {
