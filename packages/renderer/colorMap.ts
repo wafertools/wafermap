@@ -1,4 +1,12 @@
 /**
+ * Spec pass/fail die colours, shared by the value-map renderer and the spec legend so both use one
+ * definition. Pass = green, fail-low (below limitLow) = blue, fail-high (above limitHigh) = red.
+ */
+export const SPEC_PASS_FILL  = '#2ecc71';
+export const SPEC_FAIL_LOW   = '#3498db';
+export const SPEC_FAIL_HIGH  = '#e74c3c';
+
+/**
  * Shared categorical palette for hard and soft bin colouring.
  * Index 0 is the no-data grey sentinel. Indices 1–63 are perceptually
  * spread colours generated via golden-angle HSL stepping.

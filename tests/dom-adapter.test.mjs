@@ -551,6 +551,59 @@ test('renderWaferMap handles empty scenes gracefully', () => {
   }
 });
 
+test('renderWaferGallery exposes Spec pass/fail and Colorbar range for value maps with limits', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '600px', height: '500px' });
+    root.appendChild(container);
+
+    const base = buildWaferMap({
+      results: [
+        { x: 0, y: 0, testValues: { 1010: 0.5 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 1010: 2.5 }, hbin: 1 },
+        { x: 0, y: 1, testValues: { 1010: 5.0 }, hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      testDefs: [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 1.0, limitHigh: 3.0 }],
+    });
+
+    const ctrl = renderWaferGallery(container, [{ ...base, label: 'A' }, { ...base, label: 'B' }]);
+    const buttons = () => [...container.querySelectorAll('button')];
+
+    // Colorbar range button exists.
+    const rangeBtn = buttons().find((b) => (b.ariaLabel ?? '').startsWith('Colorbar range'));
+    assert.ok(rangeBtn, 'Colorbar range button should exist in the gallery toolbar');
+
+    // In a bin/default mode it is hidden; switching to the value test makes it visible.
+    ctrl.setOptions({ plotMode: 'value', activeTest: 1010 });
+    assert.notEqual(rangeBtn.style.display, 'none', 'Colorbar range visible in value mode with limits');
+
+    // Overlays menu offers an enabled "Spec pass/fail" row in value mode.
+    const overlaysBtn = buttons().find((b) => b.ariaLabel === 'Overlays');
+    assert.ok(overlaysBtn, 'Overlays button exists');
+    click(window, overlaysBtn);
+    const menu = [...window.document.querySelectorAll('[role="menu"]')].at(-1);
+    // Disabled overlay rows are omitted entirely; presence here ⇒ enabled (active test has limits).
+    const specRow = [...menu.querySelectorAll('[role="menuitemcheckbox"]')]
+      .find((el) => /Spec pass\/fail/.test(el.textContent ?? ''));
+    assert.ok(specRow, 'Spec pass/fail row present (enabled) when active test has limits');
+
+    // Enabling spec mode hides the colorbar-range button (bar irrelevant in pass/fail).
+    ctrl.setOptions({ colorBySpec: true });
+    assert.equal(rangeBtn.style.display, 'none', 'Colorbar range hidden while colouring by spec');
+
+    // Leaving value mode clears spec colouring.
+    ctrl.setOptions({ plotMode: 'hardBin', activeTest: undefined, colorBySpec: false });
+    assert.equal(rangeBtn.style.display, 'none', 'Colorbar range hidden outside value mode');
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
 test('renderWaferGallery handles empty items array', () => {
   const { window, root, cleanup } = setupDom();
   try {

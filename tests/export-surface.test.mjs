@@ -13,7 +13,7 @@ const SNAPSHOTS = {
   '.' : [
     'aggregateBinCounts', 'aggregateValues', 'analyzeWaferLot', 'analyzeWaferMap',
     'applyOrientation', 'applyProbeSequence', 'areQuadrantsAdjacent',
-    'buildHoverText',
+    'buildHoverText', 'buildMapTitle',
     'buildQuadrantRegions', 'buildReticlePositionRegions', 'buildRingRegions',
     'buildSectorRegions', 'buildTestSiteRegions', 'buildView', 'buildWaferMap',
     'classifyDie', 'classifyPattern', 'clipDiesToWafer', 'contrastTextColor', 'createWafer',
@@ -35,7 +35,7 @@ const SNAPSHOTS = {
     'isInsideWafer', 'mapDataToDies', 'transformDies',
   ],
   './renderer': [
-    'buildHoverText', 'buildView', 'buildWaferMap',
+    'buildHoverText', 'buildMapTitle', 'buildView', 'buildWaferMap',
     'contrastTextColor', 'findTestDef', 'generateTextOverlay',
     'getColorScheme', 'getDieKey', 'getDieTestValue',
     'getUniqueTestNumbers',

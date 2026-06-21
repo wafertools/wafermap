@@ -464,6 +464,11 @@ export interface WaferMapResult {
    * `undefined` for single-wafer results.
    */
   aggrMethod?: string;
+  /**
+   * Number of wafers aggregated when `lotStack` was passed to `buildWaferMap`.
+   * `undefined` for single-wafer results.
+   */
+  lotSize?: number;
 }
 
 // ── Internal normalized model ─────────────────────────────────────────────────
@@ -1250,6 +1255,7 @@ export function buildWaferMap(
     dataAxisFlip: { x: flipX, y: flipY },
     isLotStack:   norm.lotStackOpts !== undefined,
     aggregationMethod: norm.lotStackOpts?.method,
+    lotSize:      norm.lotStackOpts?.results.length,
   }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs });
 
   return {
@@ -1265,5 +1271,6 @@ export function buildWaferMap(
     sbinDefs: norm.sbinDefs,
     testDefs: norm.testDefs,
     aggrMethod: view.aggrMethod,
+    lotSize: view.lotSize,
   };
 }

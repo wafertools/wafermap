@@ -1,5 +1,5 @@
 import type { PlotMode } from '../renderer/buildView.js';
-import { getUniqueTestNumbers } from '../renderer/buildView.js';
+import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../renderer/buildView.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
 import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
@@ -44,6 +44,13 @@ export interface WaferMapDisplayItem {
   sbinDefs?:  import('../renderer/buildWaferMap.js').BinDef[];
   testDefs?:  import('../renderer/buildWaferMap.js').TestDef[];
   reticles?:  import('../core/reticle.js').Reticle[];
+
+  // Lot-stack context carried from buildWaferMap (or set by the gallery on synthetic stacked
+  // cards). Drives the map title's "(N wafers · method)" qualifier so a stacked card is
+  // self-identifying. Undefined for single-wafer cards.
+  isLotStack?: boolean;
+  aggrMethod?: string;
+  lotSize?:    number;
 
   // Per-card display overrides.
   label?:        string;
@@ -613,7 +620,8 @@ export function renderWaferGallery(
       if (entry.activeTest !== undefined) {
         updateShared({ plotMode: 'value', activeTest: entry.activeTest, logScale: entry.logScale });
       } else {
-        updateShared({ plotMode: entry.plotMode, activeTest: undefined });
+        // Leaving value mode → clear spec pass/fail (only valid in value mode), matching single-map.
+        updateShared({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false });
       }
       menu.remove();
       setOpenMenu(null);
@@ -671,6 +679,16 @@ export function renderWaferGallery(
 
   const hasReticleInItems = items.some(it => typeof it !== 'function' && ((it as WaferMapDisplayItem).reticles?.length ?? 0) > 0);
 
+  // True when the shared active test (the one all value cards show) has at least one spec limit.
+  // Gates the "Spec pass/fail" overlay and the "Colorbar range" button, mirroring single-map.
+  function activeTestHasLimits(): boolean {
+    if ((sharedOpts.plotMode ?? 'hardBin') !== 'value') return false;
+    const testDefs = originalItems.find(it => it?.testDefs?.length)?.testDefs;
+    const { testNumber } = resolveTestNumber(sharedOpts.activeTest ?? 0, testDefs);
+    const td = findTestDef(testDefs, testNumber);
+    return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
+  }
+
   const btnOverlays = makeOverlaysBtn(
     tbHelpers,
     (): CheckMenuRow[] => [
@@ -679,9 +697,11 @@ export function renderWaferGallery(
       { label: 'Die labels',      active: !!sharedOpts.showDieLabels,          onClick: () => updateShared({ showDieLabels:          !sharedOpts.showDieLabels          }) },
       { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: () => updateShared({ showReticle: !sharedOpts.showReticle }) },
       { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: () => updateShared({ showXYIndicator:        !sharedOpts.showXYIndicator        }) },
+      { label: 'Spec pass/fail',  active: !!sharedOpts.colorBySpec,            enabled: activeTestHasLimits(), onClick: () => updateShared({ colorBySpec: !sharedOpts.colorBySpec }) },
     ],
     () => !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
-             sharedOpts.showDieLabels || sharedOpts.showReticle || sharedOpts.showXYIndicator),
+             sharedOpts.showDieLabels || sharedOpts.showReticle || sharedOpts.showXYIndicator ||
+             sharedOpts.colorBySpec),
   );
 
   const { btn: btnLegendStyle, sync: syncLegendStyleBtn } = makeLegendStyleBtn(
@@ -722,6 +742,23 @@ export function renderWaferGallery(
   );
   syncLogScaleBtn();
 
+  // Colorbar range (spec limits ↔ data extents) — value mode only, when the active test has limits
+  // and we are not colouring by spec pass/fail (where the bar is irrelevant). Mirrors single-map.
+  const btnColorbarRange = makeBtn('specRange', 'Colorbar range: spec limits', () => {
+    const next = sharedOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
+    updateShared({ colorbarRangeMode: next });
+  });
+  function syncColorbarRangeBtn(): void {
+    const visible = (sharedOpts.plotMode ?? 'hardBin') === 'value' && activeTestHasLimits() && !sharedOpts.colorBySpec;
+    btnColorbarRange.style.display = visible ? '' : 'none';
+    const isSpec = (sharedOpts.colorbarRangeMode ?? 'spec') === 'spec';
+    setActive(btnColorbarRange, isSpec);
+    btnColorbarRange.ariaLabel = isSpec
+      ? 'Colorbar range: spec limits (click for data range)'
+      : 'Colorbar range: data range (click for spec limits)';
+  }
+  syncColorbarRangeBtn();
+
   const btnOrient = makeOrientationBtn(
     tbHelpers,
     () => sharedOpts,
@@ -748,6 +785,7 @@ export function renderWaferGallery(
   barEl.appendChild(btnPalette);
   barEl.appendChild(btnAggrMethod);
   barEl.appendChild(btnLogScale);
+  barEl.appendChild(btnColorbarRange);
   barEl.appendChild(makeSep());
   barEl.appendChild(btnOverlays);
   barEl.appendChild(makeSep());
@@ -1074,6 +1112,9 @@ export function renderWaferGallery(
           dies,
           testDefs: [cardTestDef],
           label: `${def.name} · ${method}`,
+          isLotStack: true,
+          aggrMethod: method,
+          lotSize,
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, testDefs: [cardTestDef] }, { testNumbers: [0] }),
             method,
@@ -1099,6 +1140,9 @@ export function renderWaferGallery(
           dies,
           hbinDefs: itemHbinDefs,
           label: `${def.bin} · ${def.name}`,
+          isLotStack: true,
+          aggrMethod: 'countBin',
+          lotSize,
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs: itemHbinDefs }),
             'countBin',
@@ -1124,6 +1168,9 @@ export function renderWaferGallery(
           dies,
           sbinDefs: itemSbinDefs,
           label: `${def.bin} · ${def.name}`,
+          isLotStack: true,
+          aggrMethod: 'countBin',
+          lotSize,
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs: itemSbinDefs }),
             'countBin',
@@ -1210,6 +1257,7 @@ export function renderWaferGallery(
     const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
     if (partial.colorScheme !== undefined || modeChanged) renderGallerySummaryPanel();
     syncLogScaleBtn();
+    syncColorbarRangeBtn();
     if (fireCallback) {
       const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
       options.onViewOptionsChange?.(sharedOpts, changed, classifyChanged(changed));

@@ -1,7 +1,8 @@
 import type { View, ViewRect } from '../renderer/buildView.js';
-import { findTestDef } from '../renderer/buildView.js';
+import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
+import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from '../renderer/colorMap.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
 
 export interface ToCanvasOptions {
@@ -48,6 +49,12 @@ export interface ToCanvasOptions {
   hbinDefs?: import('../renderer/buildWaferMap.js').BinDef[];
   /** Named soft bin definitions — used to label the bin legend. */
   sbinDefs?: import('../renderer/buildWaferMap.js').BinDef[];
+  /**
+   * Draw the map title (test name / mode + stack context) above the colorbar or bin legend.
+   * Default true. The title is placed in empty space adjacent to the legend/colorbar and does NOT
+   * shrink the map. Set false to suppress (e.g. when a host renders its own heading).
+   */
+  showTitle?: boolean;
 }
 
 /** Internal viewport state shared between toCanvas and mountWaferCanvas. */
@@ -93,6 +100,9 @@ export interface ToCanvasResult {
 const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins', 'stackedSoftBins']);
 const BIN_LEGEND_MODES = new Set(['hardBin', 'softBin']);
 const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
+const MAP_TITLE_FONT      = '600 12px system-ui, sans-serif';  // primary identifier, above scale
+const MAP_SUBTITLE_FONT   = '11px system-ui, sans-serif';      // secondary context, below scale
+const SCALE_NOTE_FONT     = '600 11px system-ui, sans-serif';  // log/linear scale note, below scale
 const COLORBAR_STEPS = 128;
 const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
 const AXIS_TICK_LEN   = 4;  // px
@@ -127,14 +137,35 @@ export function toCanvas(
     minRightReserve,
     hbinDefs,
     sbinDefs,
+    showTitle     = true,
   } = options;
 
   const drawColorbar   = showColorbar && COLORBAR_MODES.has(view.plotMode) && !view.colorBySpec;
   const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(view.plotMode);
+  const drawSpecLegend = showColorbar && view.plotMode === 'value' && view.colorBySpec && view.specCounts !== undefined;
+  // The bin and spec legends share the same layout/rendering machinery.
+  const drawLegend     = drawBinLegend || drawSpecLegend;
 
   const binLegendEntries: Array<[number, number]> = drawBinLegend && view.binCounts
     ? [...view.binCounts.entries()].sort(([a], [b]) => a - b)
     : [];
+
+  // Unified legend entries: a swatch colour + label + count, sourced from bin counts (bin modes)
+  // or spec categories (spec mode). `key` stays a number so the existing activeBin highlight and
+  // hit-row plumbing work unchanged; spec entries use negative sentinel keys that never match a bin.
+  type LegendSwatch = { key: number; color: string; label: string; compactLabel: string; count: number; tooltip: string };
+  const specSwatches: LegendSwatch[] = [];
+  if (drawSpecLegend) {
+    const sc = view.specCounts!;
+    const td = findTestDef(view.testDefs, view.activeTest);
+    specSwatches.push({ key: -1, color: SPEC_PASS_FILL, label: 'Pass', compactLabel: 'Pass', count: sc.pass, tooltip: `Pass · ${sc.pass} dies` });
+    if (td?.limitHigh !== undefined)
+      specSwatches.push({ key: -2, color: SPEC_FAIL_HIGH, label: 'Fail high', compactLabel: 'Fail hi', count: sc.failHigh, tooltip: `Fail high · ${sc.failHigh} dies` });
+    if (td?.limitLow !== undefined)
+      specSwatches.push({ key: -3, color: SPEC_FAIL_LOW, label: 'Fail low', compactLabel: 'Fail lo', count: sc.failLow, tooltip: `Fail low · ${sc.failLow} dies` });
+  }
+  // Row count used for layout reserves applies to whichever legend is active.
+  const legendEntryCount = drawSpecLegend ? specSwatches.length : binLegendEntries.length;
 
   const dpr     = window.devicePixelRatio ?? 1;
   const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
@@ -163,11 +194,11 @@ export function toCanvas(
   const legendWidth = effectiveLegendPosition === 'compact' || effectiveLegendPosition === 'floating' ? BIN_LEGEND_W_COMPACT : BIN_LEGEND_W;
 
   const maxLegendRows  = Math.floor((cssH - 2 * padding) / BIN_ROW_H);
-  const legendRowCount = binLegendEntries.length > maxLegendRows ? maxLegendRows - 1 : binLegendEntries.length;
-  const bottomLegendReserve = drawBinLegend && legendIsBottom ? legendRowCount * BIN_ROW_H : 0;
-  const topLegendReserve    = drawBinLegend && legendIsTop    ? legendRowCount * BIN_ROW_H : 0;
-  const rightReserve    = drawColorbar ? colorbarWidth + 28 : drawBinLegend && legendIsRight ? legendWidth : 0;
-  const leftLegendReserve   = drawBinLegend && legendIsLeft   ? legendWidth : 0;
+  const legendRowCount = legendEntryCount > maxLegendRows ? maxLegendRows - 1 : legendEntryCount;
+  const bottomLegendReserve = drawLegend && legendIsBottom ? legendRowCount * BIN_ROW_H : 0;
+  const topLegendReserve    = drawLegend && legendIsTop    ? legendRowCount * BIN_ROW_H : 0;
+  const rightReserve    = drawColorbar ? colorbarWidth + 28 : drawLegend && legendIsRight ? legendWidth : 0;
+  const leftLegendReserve   = drawLegend && legendIsLeft   ? legendWidth : 0;
   const axisReserve     = showAxes ? 32 : 0;
   const axisLeftReserve = showAxes ? 36 : 0;
   // When the caller specifies a minimum right reserve, use it so the wafer size
@@ -230,6 +261,42 @@ export function toCanvas(
   }
 
   const snapDist = viewportOverride?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
+
+  // Wafer circle in screen space — used to keep the map title clear of the map.
+  const waferCx   = originX + view.waferCenter.x * ppm;
+  const waferCy   = originY - view.waferCenter.y * ppm;
+  const waferRpx  = view.waferRadius * ppm;
+
+  // Half-width of the wafer circle at a given screen y (0 outside the circle's vertical span).
+  // Used to find the free horizontal gap beside the wafer at the title's baseline.
+  const waferHalfChordAt = (y: number): number => {
+    const dy = Math.abs(y - waferCy);
+    return dy >= waferRpx ? 0 : Math.sqrt(waferRpx * waferRpx - dy * dy);
+  };
+
+  // Draw the map title, truncated with an ellipsis so it never overlaps the wafer circle.
+  // `align` controls which edge `anchorX` pins to; `limitX` is the boundary the text must not
+  // cross toward the wafer (left boundary for right-aligned, right boundary for left-aligned).
+  const drawTitleFitted = (
+    title: string, anchorX: number, y: number,
+    align: 'left' | 'right', baseline: 'top' | 'bottom', limitX: number,
+    font: string = MAP_TITLE_FONT, color: string = '#333',
+  ): void => {
+    if (!title) return;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = font;
+    ctx.textAlign = align;
+    ctx.textBaseline = baseline;
+    const maxW = align === 'right' ? anchorX - limitX : limitX - anchorX;
+    let text = title;
+    if (maxW > 8 && ctx.measureText(text).width > maxW) {
+      while (text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1);
+      text = text + '…';
+    }
+    if (maxW > 8) ctx.fillText(text, anchorX, y);
+    ctx.restore();
+  };
 
   // ── Draw rectangles ────────────────────────────────────────────────────────
   ctx.save();
@@ -357,6 +424,23 @@ export function toCanvas(
     const [vMin, vMax] = view.valueRange;
     const vRange    = vMax - vMin;
 
+    // Primary title just ABOVE the bar, right-aligned and truncated so it never overlaps the wafer.
+    // Clamped to sit at or below the toolbar clearance line so the floating toolbar never covers it.
+    // Supporting context (secondary) and the scale note go BELOW the bar, stacked via `belowCursor`
+    // in the roomy lower-right area beneath the colorbar.
+    const cbBinDefs = view.plotMode === 'stackedSoftBins' ? sbinDefs : hbinDefs;
+    const { primary: titlePrimary, secondary: titleSecondary } = showTitle
+      ? buildMapTitle(view, fallbackFormat, cbBinDefs)
+      : { primary: '', secondary: '' };
+    if (showTitle) {
+      const aboveY = Math.max(cbY - 6, padding + topClearance + 11);
+      const aboveLimit = waferCx + Math.max(waferHalfChordAt(aboveY), waferHalfChordAt(aboveY - 12)) + 8;
+      drawTitleFitted(titlePrimary, cssW - padding, aboveY, 'right', 'bottom', aboveLimit);
+    }
+    let belowCursor = cbY + cbH + 4;
+    const belowLimitAt = (y: number) =>
+      waferCx + Math.max(waferHalfChordAt(y), waferHalfChordAt(y + 12)) + 8;
+
     // Pre-compute log constants (only valid when view.logScale is true).
     const logMin   = view.logScale && vMin > 0 ? Math.log10(vMin) : 0;
     const logRange = view.logScale && vMax > 0 ? Math.log10(vMax) - logMin : 1;
@@ -422,7 +506,7 @@ export function toCanvas(
     const isCountMode = view.plotMode === 'stackedBins' || view.plotMode === 'stackedSoftBins';
     const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (view.activeTest != null ? `Test ${view.activeTest}` : undefined));
     const cbUnit  = isCountMode ? undefined : testDef?.unit;
-    const { tickFmt: baseFmt, axisLabel } = fmtColorbarAxis(
+    const { tickFmt: baseFmt } = fmtColorbarAxis(
       vMax, cbName, cbUnit, fallbackFormat,
     );
     const tickFmt = view.allIntegerValues ? (v: number) => String(Math.round(v)) : baseFmt;
@@ -506,28 +590,33 @@ export function toCanvas(
       }
     }
 
-    // Axis label below the bar, right-aligned — e.g. "Idsat (mA)" or "Idsat (mA) · mean".
-    const aggrSuffix = view.plotMode === 'stackedValues' && view.aggrMethod ? ` · ${view.aggrMethod}` : '';
-    const cbLabel = axisLabel ? axisLabel + aggrSuffix : null;
-    if (cbLabel) {
-      ctx.save();
-      ctx.fillStyle    = '#555';
-      ctx.font         = COLORBAR_LABEL_FONT;
-      ctx.textAlign    = 'right';
-      ctx.textBaseline = 'top';
-      ctx.fillText(cbLabel, cssW - padding, cbY + cbH + 4);
-      ctx.restore();
+    // Scale annotation directly below the bar — truthful per map:
+    //  - log applied            → "log₁₀"
+    //  - log requested but the data range included ≤ 0 → "linear — log n/a"
+    // Drawn only for continuous value modes (count-stacked bins have no log option).
+    if (!isCountMode) {
+      const scaleNote = view.logScale
+        ? 'log₁₀'
+        : view.logScaleRequested
+        ? 'linear — log n/a'
+        : null;
+      if (scaleNote) {
+        ctx.save();
+        ctx.fillStyle    = '#333';
+        ctx.font         = SCALE_NOTE_FONT;
+        ctx.textAlign    = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillText(scaleNote, cssW - padding, belowCursor);
+        ctx.restore();
+        belowCursor += 15;
+      }
     }
 
-    // Log scale annotation below the axis label.
-    if (view.logScale) {
-      ctx.save();
-      ctx.fillStyle    = '#555';
-      ctx.font         = '9px system-ui, sans-serif';
-      ctx.textAlign    = 'right';
-      ctx.textBaseline = 'top';
-      ctx.fillText('log₁₀', cssW - padding, cbY + cbH + 16);
-      ctx.restore();
+    // Supporting context (e.g. "stacked (6 wafers)") beneath the scale note, in the roomy
+    // lower-right area below the colorbar.
+    if (showTitle && titleSecondary) {
+      drawTitleFitted(titleSecondary, cssW - padding, belowCursor, 'right', 'top',
+        belowLimitAt(belowCursor), MAP_SUBTITLE_FONT, '#555');
     }
   }
 
@@ -535,10 +624,9 @@ export function toCanvas(
   const binLegendRows: BinLegendRow[] = [];
   let legendBox: { x: number; y: number; w: number; h: number } | undefined;
 
-  if (drawBinLegend) {
+  if (drawLegend) {
     const scheme = getColorScheme(view.colorScheme);
-
-    const entries = binLegendEntries;
+    const isCompact = effectiveLegendPosition === 'compact';
 
     const activeDefs = view.plotMode === 'softBin' ? sbinDefs : hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
@@ -548,27 +636,34 @@ export function toCanvas(
     };
 
     type LegendEntry = {
-      bin: number;
+      key: number;       // bin number, or negative sentinel for spec categories (for activeBin/hit-rows)
+      color: string;
       count: number;
       label: string;
       tooltipLabel: string;
       labelWidth: number;
       countWidth: number;
       totalWidth: number;
-      binDef?: { name?: string; color?: string };
     };
 
-    const legendEntries: LegendEntry[] = entries.map(([bin, count]) => {
-      const binDef = binDefMap?.get(bin);
-      const fullLabel = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
-      const label = effectiveLegendPosition === 'compact' ? String(bin) : fullLabel;
-      const tooltipLabel = `${fullLabel} · ${count} dies`;
+    const measure = (label: string, count: number): { labelWidth: number; countWidth: number; totalWidth: number } => {
       const labelWidth = ctx.measureText(label).width;
-      const countStr = String(count);
-      const countWidth = effectiveLegendPosition === 'compact' ? 0 : ctx.measureText(countStr).width;
+      const countWidth = isCompact ? 0 : ctx.measureText(String(count)).width;
       const totalWidth = BIN_SWATCH_SIZE + BIN_LABEL_GAP + labelWidth + (countWidth ? BIN_COUNT_W : 0);
-      return { bin, count, label, tooltipLabel, labelWidth, countWidth, totalWidth, binDef };
-    });
+      return { labelWidth, countWidth, totalWidth };
+    };
+
+    const legendEntries: LegendEntry[] = drawSpecLegend
+      ? specSwatches.map(s => {
+          const label = isCompact ? s.compactLabel : s.label;
+          return { key: s.key, color: s.color, count: s.count, label, tooltipLabel: s.tooltip, ...measure(label, s.count) };
+        })
+      : binLegendEntries.map(([bin, count]) => {
+          const binDef = binDefMap?.get(bin);
+          const fullLabel = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
+          const label = isCompact ? String(bin) : fullLabel;
+          return { key: bin, color: binColor(bin), count, label, tooltipLabel: `${fullLabel} · ${count} dies`, ...measure(label, count) };
+        });
 
     const availableWidth = cssW - padding * 2;
 
@@ -615,11 +710,9 @@ export function toCanvas(
     let originXLegend: number;
     let originYLegend: number;
     if (legendIsFloating) {
-      // Measure full labels (not compact) so the floating box fits all content.
-      const floatingEntryWidth = Math.max(...legendEntries.map(e => {
-        const fullLabel = e.binDef?.name ? `${e.bin} · ${e.binDef.name}` : `Bin ${e.bin}`;
-        return BIN_SWATCH_SIZE + BIN_LABEL_GAP + ctx.measureText(fullLabel).width + BIN_COUNT_W;
-      }));
+      // Measure full labels (floating is never compact) so the box fits all content.
+      const floatingEntryWidth = Math.max(...legendEntries.map(e =>
+        BIN_SWATCH_SIZE + BIN_LABEL_GAP + ctx.measureText(e.label).width + BIN_COUNT_W));
       const floatingWidth = Math.ceil(floatingEntryWidth);
       columnWidths = [floatingWidth];
       const boxW = floatingWidth + BIN_FLOATING_PADDING * 2;
@@ -643,7 +736,8 @@ export function toCanvas(
       originYLegend = cssH - padding - legendHeight;
     } else if (legendIsTop) {
       originXLegend = padding;
-      originYLegend = padding;
+      // Start below the toolbar clearance so the floating toolbar never covers the top legend.
+      originYLegend = padding + topClearance;
     } else if (legendIsLeft) {
       originXLegend = padding + 4;
       originYLegend = padding + Math.round((cssH - 2 * padding - legendHeight) / 2);
@@ -651,6 +745,43 @@ export function toCanvas(
       // right (default / compact)
       originXLegend = cssW - padding - legendWidth + 4;
       originYLegend = padding + Math.round((cssH - 2 * padding - legendHeight) / 2);
+    }
+
+    // Legend title. Primary identifier sits directly ABOVE the legend block (aligned to its leading
+    // edge) so it reads as the legend's heading and is never near the toolbar. Bin modes have no
+    // secondary; the spec legend adds a "Spec pass/fail" secondary line BELOW the legend.
+    // (Stacked-bin modes use the colorbar branch above, not this legend.)
+    if (showTitle) {
+      const activeBinDefs = view.plotMode === 'softBin' ? sbinDefs : hbinDefs;
+      const { primary, secondary } = buildMapTitle(view, fallbackFormat, activeBinDefs);
+      const GAP = 6;
+      // Wafer-clearance limit for a left-aligned title at screen y (right boundary it must not cross).
+      const leftAlignLimit = (y: number) =>
+        waferCx - Math.max(waferHalfChordAt(y), waferHalfChordAt(y - 12)) - 8;
+      const sideLimit = (y: number) => legendIsRight ? cssW - padding : leftAlignLimit(y);
+      const legendBottom = legendIsFloating ? legendBox!.y + legendBox!.h : originYLegend + legendHeight;
+      if (legendIsTop) {
+        // Legend hugs the top → primary just below it, secondary below that.
+        const y = legendBottom + GAP;
+        drawTitleFitted(primary, originXLegend, y, 'left', 'top',
+          waferCx - Math.max(waferHalfChordAt(y), waferHalfChordAt(y + 12)) - 8);
+        if (secondary) drawTitleFitted(secondary, originXLegend, y + 16, 'left', 'top',
+          leftAlignLimit(y + 16), MAP_SUBTITLE_FONT, '#555');
+      } else if (legendIsFloating) {
+        // Floating box → primary above the box, secondary below it.
+        drawTitleFitted(primary, legendBox!.x, legendBox!.y - GAP, 'left', 'bottom', legendBox!.x + legendBox!.w);
+        if (secondary) drawTitleFitted(secondary, legendBox!.x, legendBottom + GAP, 'left', 'top',
+          legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT, '#555');
+      } else {
+        // right / default / compact / left / bottom → primary just above the legend's first row,
+        // left-aligned to the swatch column, clamped below the toolbar clearance. Secondary below.
+        const yAbove = Math.max(originYLegend - GAP, padding + topClearance + 12);
+        drawTitleFitted(primary, originXLegend, yAbove, 'left', 'bottom', sideLimit(yAbove));
+        if (secondary) {
+          const yBelow = legendBottom + GAP;
+          drawTitleFitted(secondary, originXLegend, yBelow, 'left', 'top', sideLimit(yBelow), MAP_SUBTITLE_FONT, '#555');
+        }
+      }
     }
 
     ctx.save();
@@ -678,13 +809,13 @@ export function toCanvas(
         for (let col = 0; col < legendCols; col++) {
           const entry = legendEntries[idx++];
           if (!entry) break;
-          const isActive = entry.bin === activeBin;
+          const isActive = entry.key === activeBin;
           const swatchX = x;
           const labelX = x + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
           const midY = originYLegend + row * BIN_ROW_H + BIN_ROW_H / 2;
           const swatchY = originYLegend + row * BIN_ROW_H + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
           const labelMaxW = columnWidths[col] - BIN_SWATCH_SIZE - BIN_LABEL_GAP - BIN_COUNT_W;
-          ctx.fillStyle = binColor(entry.bin);
+          ctx.fillStyle = entry.color;
           ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
           ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
           ctx.lineWidth = isActive ? 2 : 0.75;
@@ -699,7 +830,7 @@ export function toCanvas(
           ctx.textAlign = 'right';
           ctx.fillText(String(entry.count), x + columnWidths[col] - 2, midY);
           binLegendRows.push({
-            bin: entry.bin,
+            bin: entry.key,
             x,
             y: originYLegend + row * BIN_ROW_H,
             w: columnWidths[col],
@@ -718,16 +849,14 @@ export function toCanvas(
       if (overflow > 0) visibleEntries = legendEntries.slice(0, maxRows - 1);
       let rowY = originYLegend;
       for (const entry of visibleEntries) {
-        const isActive = entry.bin === activeBin;
+        const isActive = entry.key === activeBin;
         const swatchX = originXLegend;
         const labelX = originXLegend + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
         const midY = rowY + BIN_ROW_H / 2;
         const swatchY = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
-        // Floating always shows full labels and counts, regardless of legendPosition.
-        const displayLabel = legendIsFloating
-          ? (entry.binDef?.name ? `${entry.bin} · ${entry.binDef.name}` : `Bin ${entry.bin}`)
-          : entry.label;
-        ctx.fillStyle = binColor(entry.bin);
+        // Floating always shows full labels (entry.label is already full when not compact).
+        const displayLabel = entry.label;
+        ctx.fillStyle = entry.color;
         ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
         ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
         ctx.lineWidth = isActive ? 2 : 0.75;
@@ -744,7 +873,7 @@ export function toCanvas(
           ctx.fillText(String(entry.count), countX, midY);
         }
         binLegendRows.push({
-          bin: entry.bin,
+          bin: entry.key,
           x: originXLegend,
           y: rowY,
           w: colW,

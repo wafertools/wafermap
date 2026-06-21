@@ -6,9 +6,11 @@ export {
   generateTextOverlay,
   getDieKey,
   buildHoverText,
+  buildMapTitle,
 } from './buildView.js';
 export type {
   View,
+  MapTitleParts,
   PlotMode,
   ViewRect,
   ViewText,

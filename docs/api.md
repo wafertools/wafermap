@@ -412,6 +412,8 @@ const { yieldPercent, yieldPercentGross } = result.yield;
   plotMode:      PlotMode       // the plot mode chosen by buildWaferMap ('hardBin', 'value', etc.)
   metadata:      WaferMetadata | null  // wafer metadata from waferConfig.metadata
   isLotStack:    boolean        // true when built from lotStack input
+  aggrMethod?:   string         // lot-stack aggregation method ('mean', 'median', 'countBin', …); undefined for single wafers
+  lotSize?:      number         // number of wafers aggregated when built from lotStack; undefined for single wafers
   hbinDefs?:     BinDef[]       // named hard bin definitions passed to buildWaferMap
   sbinDefs?:     BinDef[]       // named soft bin definitions passed to buildWaferMap
   testDefs?:     TestDef[]      // named test definitions passed to buildWaferMap
@@ -2027,6 +2029,7 @@ interface ToCanvasOptions {
   colorbarWidth?:   number    // CSS-px width of the colorbar strip (default 16)
   background?:      string    // canvas background colour (default '#f5f5f5')
   showAxes?:        boolean   // draw axis tick marks and labels (default false)
+  showTitle?:       boolean   // draw the map title (test/mode name + stack context) by the colorbar/legend (default true)
   diePitchMm?:      { x: number; y: number }  // when provided, axis labels show die grid indices; otherwise mm values
   fallbackFormat?:  'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
 }
@@ -2034,17 +2037,30 @@ interface ToCanvasOptions {
 
 **Legend behaviour by plot mode:**
 
-| Mode | Right-side legend |
+| Mode | Legend |
 | --- | --- |
-| `value`, `stackedValues` | Continuous colorbar (gradient strip with min/max ticks). Axis label is `testDef.name` (e.g. `"Idsat (mA)"`), or `Test {N}` when no `testDefs` are supplied. |
-| `stackedBins`, `stackedSoftBins` | Continuous colorbar; axis labelled "Count". |
-| `hardBin`, `softBin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"` |
+| `value` | Continuous colorbar (gradient with min/max ticks). When `colorBySpec` is true the colorbar is replaced by a **spec legend**: Pass / Fail high / Fail low swatches with per-category die counts, adaptive to the active test's limits (a one-sided spec omits the absent fail side). |
+| `stackedValues` | Continuous colorbar. |
+| `stackedBins`, `stackedSoftBins` | Continuous colorbar (counts). |
+| `hardBin`, `softBin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"`. |
+
+**Map title (`showTitle`, default true):** every mode draws a title naming what the map shows, placed by the colorbar/legend (never under the toolbar). The primary line sits above the scale, supporting context below it:
+
+| Mode | Title (primary · secondary) |
+| --- | --- |
+| `value` | `Vth (mV)` |
+| `value` + `colorBySpec` | `Vth (mV) · #1050` · `Spec pass/fail` |
+| `stackedValues` | `Vth (mV) · mean` · `stacked (6 wafers)` |
+| `hardBin` / `softBin` | `Hard Bin` / `Soft Bin` |
+| `stackedBins` / `stackedSoftBins` | `Hard Bin 2 · Leakage` · `stacked (6 wafers)` |
+
+The colorbar also shows a scale note (`log₁₀`, or `linear — log n/a` when log was requested but the data range includes ≤ 0).
 
 Returns `{ hitTarget, viewport, binLegendRows }`:
 
 - `hitTarget.getDieAtPoint(x, y): Die | null` — hit-test a CSS-pixel position
 - `viewport` — the auto-fitted viewport transform (useful as initial state for custom zoom/pan)
-- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardBin/softBin)
+- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardBin/softBin; the spec legend also populates this, using negative sentinel `bin` keys for its Pass/Fail rows)
 
 ```ts
 import { buildView } from '@paulrobins/wafermap/renderer';
@@ -2480,7 +2496,23 @@ Called automatically by `renderWaferMap` on hover. Only needed when building a c
 
 ---
 
-### 11.17 `getDieKey(die)`
+### 11.17 `buildMapTitle(view, fallbackFormat?, binDefs?)`
+
+```ts
+buildMapTitle(
+  view:            View,
+  fallbackFormat?: 'si' | 'engineering',   // default 'engineering'
+  binDefs?:        BinDef[],               // active bin defs — names a single-bin stacked card's bin
+): MapTitleParts   // { primary: string; secondary: string }
+```
+
+Builds the on-canvas map title for any plot mode, derived from the `View`. Returns a primary/secondary split so the renderer can place the key identifier above the colorbar/legend and supporting context (stack/wafer-count, or `Spec pass/fail`) below it. `toCanvas` calls this automatically when `showTitle` is true; exported so custom pipelines can render the same title. See the title table under §9.1.
+
+`View` → §11.15 · `BinDef` → §4.1.9
+
+---
+
+### 11.18 `getDieKey(die)`
 
 ```ts
 getDieKey(die: { x: number; y: number }): string
@@ -2495,7 +2527,7 @@ const die = map.get(getDieKey({ x: 3, y: -2 }));
 
 ---
 
-### 11.18 Color helpers
+### 11.19 Color helpers
 
 | Signature | Returns | Description |
 | --------- | ------- | ----------- |

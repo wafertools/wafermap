@@ -92,8 +92,14 @@ not counted in yield calculations.</p>
 and name if the application has supplied bin names.</p>
 <p><strong>Value mode</strong> shows a continuous colorbar: the colour scale runs from the minimum
 to maximum value, with units when available. The colorbar is informational only —
-clicking it has no effect. To filter by spec status, use the <strong>Colour by spec</strong>
+clicking it has no effect. To filter by spec status, use the <strong>Spec pass/fail</strong>
 option in the Overlays menu (available when spec limits are defined for the active test).</p>
+<p><strong>Spec pass/fail mode</strong> replaces the colorbar with a small <strong>spec legend</strong>: Pass,
+Fail high, and Fail low swatches (only the categories that apply to the test&#39;s
+limits) with a die count beside each.</p>
+<p>Every map also shows a short <strong>title</strong> by the colorbar or legend naming what is
+displayed — the test name (and number, in spec mode), the bin type, or the stacked
+wafer count.</p>
 <p>Clicking a bin swatch in the legend filters the display to that bin
 (see <a href="#3-toolbar-controls" onclick="(function(e){e.preventDefault();var g=e.target.closest('.wmap-guide');var el=g&&g.querySelector('[id=\\'3-toolbar-controls\\']');if(el)el.scrollIntoView({behavior:'smooth'});})(event)">Highlight bin</a>).</p>
 <hr>
@@ -150,10 +156,11 @@ become available:</p>
 <li><strong>Colorbar range — Data / Spec</strong>: switches the colorbar scale between the
 actual data extent and the spec limit bounds. Changing this affects only the
 colour scale; it does not change which dies are flagged as out of spec.</li>
-<li><strong>Colour by spec</strong>: when active, dies within spec are shown in a pass colour
+<li><strong>Spec pass/fail</strong>: when active, dies within spec are shown in a pass colour
 and dies outside spec are highlighted — <strong>blue for below the Lower Spec Limit
 (LSL)</strong>, <strong>red for above the Upper Spec Limit (USL)</strong>. Both flags apply
-independently; a die can be flagged on either or both limits.</li>
+independently; a die can be flagged on either or both limits. A spec legend
+replaces the colorbar, listing each applicable category with its die count.</li>
 </ul>
 <div data-wmap-demo="value-heatmap" class="wmap-demo"></div><div data-wmap-demo="spec-passfail" class="wmap-demo"></div><hr>
 <h2 id="3-toolbar-controls">3. Toolbar controls</h2>

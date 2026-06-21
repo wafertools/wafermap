@@ -430,6 +430,8 @@ The colorbar always shows LSL / USL labels at the limit positions. Exactly how d
 - Fail high (above USL): red (`#e74c3c`)
 - No data: grey
 
+In this mode the colorbar is replaced by a **spec legend** showing the categories that apply (Pass always; Fail high / Fail low only when the test defines that limit) with per-category die counts. The title reads `{test} · #{number}` above the legend and `Spec pass/fail` below it.
+
 ```ts
 const testDefs = [
   { testNumber: 1050, name: 'Idsat', unit: 'A' },
@@ -768,7 +770,8 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Colour scheme picker; applies to all cards |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Applies to all cards |
-| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator — applies to all cards |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, active test has `limitLow` or `limitHigh`, Spec pass/fail off | Toggles spec-limit range (blue/red out-of-spec) ↔ data range; applies to all cards |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator, Spec pass/fail (value mode, active test has limits) — applies to all cards |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position; applies to all cards |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch so all available width is used |

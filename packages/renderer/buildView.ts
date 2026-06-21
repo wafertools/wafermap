@@ -3,11 +3,11 @@ import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import { rotatePoint } from '../core/transforms.js';
-import { contrastTextColor } from './colorMap.js';
+import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
 import type { TestDef, BinDef } from './buildWaferMap.js';
 import { getDieTestValue } from './buildWaferMap.js';
-import { fmt, fmtColorbarAxis } from './fmt.js';
+import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 
 type BinDefMap = Map<number, BinDef>;
 
@@ -93,6 +93,12 @@ export interface View {
   activeTest: number;
   /** True when log₁₀ scale is both requested and valid (vMin > 0). */
   logScale: boolean;
+  /**
+   * True when log₁₀ scale was *requested* (option or per-test default), regardless of whether it
+   * was applied. When `logScaleRequested && !logScale` the data range included ≤ 0 and the view
+   * fell back to linear — the colorbar reports this as "linear — log n/a".
+   */
+  logScaleRequested: boolean;
   /** Aggregation method label for `stackedValues` hover tooltips (e.g. `'mean'`). */
   aggrMethod?: string;
   /** Total wafers in lot — for `stackedBins` hover percentage calculation. */
@@ -117,6 +123,11 @@ export interface View {
   notchDir: { x: number; y: number } | null;
   /** Bin → die count for the active bin mode (hardBin or softBin). Undefined in value modes. */
   binCounts?: Map<number, number>;
+  /**
+   * Per-category die counts for `value` + `colorBySpec` mode — drives the spec legend. Counts only
+   * dies with a value (no-data dies excluded). Undefined outside spec mode.
+   */
+  specCounts?: { pass: number; failHigh: number; failLow: number };
   /** Bounding box of all die centres in scene coordinates (mm). */
   dieBounds: { minX: number; maxX: number; minY: number; maxY: number } | null;
 }
@@ -228,10 +239,29 @@ interface ColorFns {
 const PARTIAL_DIE_FILL = '#d3d6db';
 const DIM_FILL = '#e8e9ea';
 const EDGE_EXCLUDED_FILL = '#eceef0';
-const SPEC_PASS_FILL   = '#2ecc71';
-const SPEC_FAIL_LOW    = '#3498db';
-const SPEC_FAIL_HIGH   = '#e74c3c';
 const NO_DATA_FILL     = '#d6d9dd';
+
+/** A die's spec classification for `value` mode against the active test's limits. */
+export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
+
+/**
+ * Classify a value against the active test's spec limits, using the SAME rules as the value-mode
+ * die colouring in `pushDieRectangles`. Returns null when there is no value. Shared by the colour
+ * branch and the spec-count tally so the two never diverge.
+ *
+ * `colorbarRangeMode === 'data'` suppresses out-of-spec classification (limits don't anchor the
+ * range), matching the colouring logic — in that case everything with a value is `pass`.
+ */
+export function classifySpec(
+  value: number | undefined,
+  activeTestDef: { limitLow?: number; limitHigh?: number } | undefined,
+  colorbarRangeMode: 'spec' | 'data' | undefined,
+): SpecCategory | null {
+  if (value === undefined) return null;
+  if (colorbarRangeMode !== 'data' && activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) return 'failLow';
+  if (colorbarRangeMode !== 'data' && activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) return 'failHigh';
+  return 'pass';
+}
 
 function normalizeTransform(
   wafer: Wafer,
@@ -446,6 +476,86 @@ export function buildHoverText(
   }
 
   return lines.join('<br>');
+}
+
+/**
+ * The on-canvas map title split into two parts for placement around the colorbar/legend:
+ * - `primary`   — the most important identifier, drawn ABOVE the colorbar/legend.
+ * - `secondary` — supporting context (stack/wafer-count), drawn BELOW it. Empty when not needed.
+ */
+export interface MapTitleParts {
+  primary: string;
+  secondary: string;
+}
+
+/**
+ * Build the on-canvas map title for any plot mode, derived from the View (+ optional bin defs so a
+ * single-bin stacked card can name its bin). Returns a primary/secondary split so the renderer can
+ * place the key identifier above the scale and the supporting context below it — keeping each line
+ * short and never obscured.
+ *
+ * Primary / secondary per mode:
+ * - value            → "{name} ({unit})"            / —
+ * - stackedValues    → "{name} ({unit}) · {method}" / "stacked ({n} wafers)"
+ * - hardBin/softBin  → "Hard Bin" / "Soft Bin"      / —
+ * - stackedBins      → "Hard Bin {bin}" (or "Hard Bin") / "stacked ({n} wafers)"
+ * - stackedSoftBins  → "Soft Bin {bin}" (or "Soft Bin") / "stacked ({n} wafers)"
+ *
+ * @param fallbackFormat unitless value formatting — matches the colorbar tick formatting.
+ * @param binDefs the active bin defs (hbinDefs for hard modes, sbinDefs for soft) — used to name
+ *   the bin on single-bin stacked cards.
+ */
+export function buildMapTitle(
+  view: View,
+  fallbackFormat: 'si' | 'engineering' = 'engineering',
+  binDefs?: BinDef[],
+): MapTitleParts {
+  // Supporting context for stacked maps, e.g. "stacked (6 wafers)".
+  const stackedContext =
+    view.isLotStack && view.lotSize !== undefined
+      ? `stacked (${view.lotSize} ${view.lotSize === 1 ? 'wafer' : 'wafers'})`
+      : 'stacked';
+
+  // Name the single bin a stacked-bin card represents, e.g. "Hard Bin 2" or "Hard Bin 2 · Leakage".
+  const stackedBinPrimary = (kind: 'Hard' | 'Soft'): string => {
+    const def = binDefs?.length === 1 ? binDefs[0] : undefined;
+    if (def === undefined) return `${kind} Bin`;
+    return def.name ? `${kind} Bin ${def.bin} · ${def.name}` : `${kind} Bin ${def.bin}`;
+  };
+
+  switch (view.plotMode) {
+    case 'hardBin':
+      return { primary: 'Hard Bin', secondary: '' };
+    case 'softBin':
+      return { primary: 'Soft Bin', secondary: '' };
+    case 'stackedBins':
+      return { primary: stackedBinPrimary('Hard'), secondary: stackedContext };
+    case 'stackedSoftBins':
+      return { primary: stackedBinPrimary('Soft'), secondary: stackedContext };
+    case 'stackedValues': {
+      const def = view.testDefs?.[0];
+      const vRef = view.valueRange[1] || view.valueRange[0] || 0;
+      const { axisLabel } = fmtColorbarAxis(vRef, def?.name, def?.unit, fallbackFormat);
+      const base = axisLabel || 'Value';
+      const method = view.aggrMethod ? ` · ${fmtAggregationMethod(view.aggrMethod)}` : '';
+      return { primary: `${base}${method}`, secondary: stackedContext };
+    }
+    case 'value':
+    default: {
+      const def = findTestDef(view.testDefs, view.activeTest);
+      const vRef = view.valueRange[1] || view.valueRange[0] || 0;
+      const { axisLabel } = fmtColorbarAxis(vRef, def?.name, def?.unit, fallbackFormat);
+      const named = axisLabel || def?.name;
+      if (view.colorBySpec) {
+        // Spec pass/fail mode: identify the test (name + number) above the legend, with the colour
+        // scheme named below it. The number is appended so the engineer knows exactly which test.
+        const num = def?.testNumber ?? def?.index ?? view.activeTest;
+        const primary = named ? `${named} · #${num}` : `Test ${num}`;
+        return { primary, secondary: 'Spec pass/fail' };
+      }
+      return { primary: named ?? `Test ${view.activeTest}`, secondary: '' };
+    }
+  }
 }
 
 
@@ -726,12 +836,13 @@ function pushDieRectangles(
 
   if (plotMode === 'value') {
     const value = getDieTestValue(die, testNumber, fallbackIndex);
+    const spec = classifySpec(value, activeTestDef, colorbarRangeMode);
     let fill: string;
     if (value === undefined) {
       fill = NO_DATA_FILL;
-    } else if (colorbarRangeMode !== 'data' && activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) {
+    } else if (spec === 'failLow') {
       fill = SPEC_FAIL_LOW;
-    } else if (colorbarRangeMode !== 'data' && activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) {
+    } else if (spec === 'failHigh') {
       fill = SPEC_FAIL_HIGH;
     } else if (colorBySpec) {
       fill = SPEC_PASS_FILL;
@@ -997,6 +1108,8 @@ export function buildView(
   const isBinMode = plotMode === 'hardBin' || plotMode === 'softBin' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
   const useSoftBin = plotMode === 'softBin' || plotMode === 'stackedSoftBins';
   let binCounts: Map<number, number> | undefined = isBinMode ? new Map() : undefined;
+  const wantSpecCounts = plotMode === 'value' && colorBySpec;
+  const specCounts = wantSpecCounts ? { pass: 0, failHigh: 0, failLow: 0 } : undefined;
 
   for (let i = 0; i < dies.length; i++) {
     const die = dies[i];
@@ -1008,6 +1121,11 @@ export function buildView(
     if (binCounts && !die.partial) {
       const bin = useSoftBin ? die.sbin : die.hbin;
       if (bin != null) binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
+    }
+    if (specCounts && !die.partial) {
+      // Same classification the colouring uses (shared helper) so counts match the drawn colours.
+      const cat = classifySpec(getDieTestValue(die, activeTestNumber, activeTestFallback), activeTestDef, colorbarRangeMode);
+      if (cat) specCounts[cat]++;
     }
     if (die.partial && !showPartialDies) continue;
     pushDieRectangles(rectangles, die, physX, physY, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec, colorbarRangeMode);
@@ -1065,6 +1183,7 @@ export function buildView(
     testDefs,
     activeTest,
     logScale,
+    logScaleRequested: wantsLogScale,
     aggrMethod: aggregationMethod,
     lotSize,
     axisFlip,
@@ -1077,6 +1196,7 @@ export function buildView(
     waferRadius: wafer.radius,
     notchDir,
     binCounts,
+    specCounts,
     dieBounds,
   };
 }

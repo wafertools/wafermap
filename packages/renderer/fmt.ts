@@ -24,6 +24,21 @@ function engFormat(v: number): string {
 }
 
 /**
+ * Plain-language labels for lot-stack aggregation methods. Maps internal API terms to the words
+ * shown to the user (e.g. `countBin` → "occurrence count"). Shared by the canvas map title and the
+ * DOM summary panel so both name the method identically.
+ */
+export const AGGREGATION_METHOD_LABELS: Record<string, string> = {
+  mean: 'mean', median: 'median', stddev: 'std dev', min: 'min', max: 'max',
+  count: 'count', countBin: 'occurrence count', percent: 'occurrence %',
+};
+
+/** Format an aggregation method for display, falling back to the raw key or "aggregated". */
+export function fmtAggregationMethod(method: string | undefined): string {
+  return AGGREGATION_METHOD_LABELS[method ?? ''] ?? method ?? 'aggregated';
+}
+
+/**
  * Format a numeric value for display (tooltips, overlays, single-value labels).
  *
  * - With a unit: always uses SI prefix (e.g. `12 µV`).

@@ -19,7 +19,21 @@ under `### Breaking`.
 
 ---
 
-## [0.14.2] — 2026-06-20
+## [0.14.2] — 2026-06-21
+### Added
+
+- **On-canvas map title for every plot mode.** Each map now draws a title naming what it shows, placed by the colorbar/bin legend (never under the floating toolbar) and captured in PNG exports. The title splits into a primary line above the scale and supporting context below it: `value` → `Vth (mV)`; `stackedValues` → `Vth (mV) · mean` + `stacked (6 wafers)`; `hardBin`/`softBin` → `Hard Bin`/`Soft Bin`; `stackedBins`/`stackedSoftBins` → `Hard Bin 2 · Leakage` + `stacked (6 wafers)`. Titles truncate before overlapping the wafer and adapt to all six legend positions. New `ToCanvasOptions.showTitle` (default `true`) suppresses it; new public helper `buildMapTitle(view, fallbackFormat?, binDefs?)` and `MapTitleParts` type exported from `@paulrobins/wafermap/renderer` for custom pipelines.
+- **Spec legend in `colorBySpec` (Spec pass/fail) mode.** Previously this mode coloured dies green/blue/red with no legend at all. It now renders a legend — Pass / Fail high / Fail low swatches with per-category die counts — adaptive to the active test's limits (a one-sided spec omits the absent fail side). The title reads `{test} · #{number}` above and `Spec pass/fail` below.
+- **Gallery toolbar gains the value-mode spec controls.** The gallery control bar now offers **Spec pass/fail** (in the Overlays menu) and the **Colorbar range** button, gated identically to the single map: shown when the shared active test is a value map with `limitLow`/`limitHigh` (Colorbar range additionally hides while colouring by spec). Both apply to all cards. New optional `WaferMapResult.lotSize` (wafers aggregated in a lot stack) and `WaferMapDisplayItem.isLotStack`/`aggrMethod`/`lotSize` carry stack context to the title.
+
+### Fixed
+
+- **Log-scale toggle now reports its true state on the colorbar.** When log was requested but the active test's data range includes ≤ 0, the view silently falls back to linear; the colorbar now shows `linear — log n/a` (or `log₁₀` when applied) instead of leaving the user unsure why the scale "hardly changed". The scale note is enlarged and darkened for legibility.
+- **Top-positioned bin legend no longer sits under the floating toolbar.** The top legend now starts below the toolbar clearance.
+
+---
+
+## [0.14.2] — 2026-06-20 (not published)
 
 ### Changed
 

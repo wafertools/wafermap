@@ -305,6 +305,11 @@ export function renderWaferMap(
   let testDefs: TestDef[]   | undefined = result.testDefs;
   let reticles: Reticle[]   | undefined = result.reticles?.length ? result.reticles : undefined;
   let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.axisFlip;
+  // Lot-stack context is the library's own derived truth — sourced from the result, never the
+  // caller's viewOptions. Drives the stacked-mode availability and the map title's stack qualifier.
+  let resultIsLotStack: boolean        = result.isLotStack;
+  let resultAggrMethod: string | undefined = result.aggrMethod;
+  let resultLotSize:    number | undefined = result.lotSize;
 
   const hasCustomColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
 
@@ -370,8 +375,9 @@ export function renderWaferMap(
       testDefs,
       valueRange:             so.valueRange,
       logScale:               so.logScale,
-      aggregationMethod:      so.aggregationMethod,
-      lotSize:                so.lotSize,
+      isLotStack:             resultIsLotStack,
+      aggregationMethod:      resultAggrMethod ?? so.aggregationMethod,
+      lotSize:                resultLotSize ?? so.lotSize,
       dataAxisFlip,
       colorbarRangeMode:      so.colorbarRangeMode,
       colorBySpec:            so.colorBySpec,
@@ -1551,6 +1557,9 @@ export function renderWaferMap(
       testDefs      = newResult.testDefs;
       reticles      = newResult.reticles?.length ? newResult.reticles : undefined;
       dataAxisFlip  = newResult.view?.axisFlip;
+      resultIsLotStack = newResult.isLotStack;
+      resultAggrMethod = newResult.aggrMethod;
+      resultLotSize    = newResult.lotSize;
       rebuildView();
       render();
       if (summaryPanelEl) renderSummaryPanel();

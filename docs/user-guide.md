@@ -61,8 +61,16 @@ and name if the application has supplied bin names.
 
 **Value mode** shows a continuous colorbar: the colour scale runs from the minimum
 to maximum value, with units when available. The colorbar is informational only —
-clicking it has no effect. To filter by spec status, use the **Colour by spec**
+clicking it has no effect. To filter by spec status, use the **Spec pass/fail**
 option in the Overlays menu (available when spec limits are defined for the active test).
+
+**Spec pass/fail mode** replaces the colorbar with a small **spec legend**: Pass,
+Fail high, and Fail low swatches (only the categories that apply to the test's
+limits) with a die count beside each.
+
+Every map also shows a short **title** by the colorbar or legend naming what is
+displayed — the test name (and number, in spec mode), the bin type, or the stacked
+wafer count.
 
 Clicking a bin swatch in the legend filters the display to that bin
 (see [Highlight bin](#3-toolbar-controls)).
@@ -96,10 +104,11 @@ become available:
 - **Colorbar range — Data / Spec**: switches the colorbar scale between the
   actual data extent and the spec limit bounds. Changing this affects only the
   colour scale; it does not change which dies are flagged as out of spec.
-- **Colour by spec**: when active, dies within spec are shown in a pass colour
+- **Spec pass/fail**: when active, dies within spec are shown in a pass colour
   and dies outside spec are highlighted — **blue for below the Lower Spec Limit
   (LSL)**, **red for above the Upper Spec Limit (USL)**. Both flags apply
-  independently; a die can be flagged on either or both limits.
+  independently; a die can be flagged on either or both limits. A spec legend
+  replaces the colorbar, listing each applicable category with its die count.
 
 <div data-wmap-demo="value-heatmap" class="wmap-demo"></div>
 

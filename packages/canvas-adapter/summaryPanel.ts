@@ -11,7 +11,7 @@ import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFinding
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { fmt as fmtValue } from '../renderer/fmt.js';
+import { fmt as fmtValue, fmtAggregationMethod } from '../renderer/fmt.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { CLR, openModal } from './toolbar.js';
 
@@ -1088,16 +1088,12 @@ export function renderWaferSummaryContent(
 
   const meta = wafer.metadata as Record<string, unknown> | undefined;
   const lotStackStats = statsSummary?.stats.isLotStack ? statsSummary.stats : undefined;
-  const METHOD_LABELS: Record<string, string> = {
-    mean: 'mean', median: 'median', stddev: 'std dev', min: 'min', max: 'max',
-    count: 'count', countBin: 'occurrence count', percent: 'occurrence %',
-  };
   const metaWithStack: Record<string, unknown> | undefined = lotStackStats
     ? {
         ...(meta ?? {}),
         'Lot stack': lotStackStats.lotSize !== undefined
-          ? `${lotStackStats.lotSize} wafers · ${METHOD_LABELS[lotStackStats.aggregationMethod ?? ''] ?? lotStackStats.aggregationMethod ?? 'aggregated'}`
-          : METHOD_LABELS[lotStackStats.aggregationMethod ?? ''] ?? lotStackStats.aggregationMethod ?? 'aggregated',
+          ? `${lotStackStats.lotSize} wafers · ${fmtAggregationMethod(lotStackStats.aggregationMethod)}`
+          : fmtAggregationMethod(lotStackStats.aggregationMethod),
       }
     : meta;
   if (metaWithStack) sections.push(buildMetadataSection(metaWithStack));

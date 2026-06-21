@@ -278,3 +278,41 @@ test('value mode — out-of-spec dies colored with fail-low/fail-high colors', (
   assert.equal(failLow.fill,  '#3498db', 'fail-low color should be blue');
   assert.equal(failHigh.fill, '#e74c3c', 'fail-high color should be red');
 });
+
+// ── spec legend counts (view.specCounts) ─────────────────────────────────────
+
+test('specCounts — tallies pass / failHigh / failLow against both limits', () => {
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
+  const { wafer, dies } = buildWaferMap({
+    results: [
+      makeResult(0, 0, 1.0),   // pass
+      makeResult(1, 0, 2.0),   // pass
+      makeResult(0, 1, 0.1),   // fail low  (< 0.2)
+      makeResult(-1, 0, 5.0),  // fail high (> 3.0)
+      makeResult(0, -1, 4.0),  // fail high
+    ],
+    waferConfig, dieConfig, testDefs,
+  });
+  const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010, colorBySpec: true });
+  assert.deepEqual(view.specCounts, { pass: 2, failHigh: 2, failLow: 1 });
+});
+
+test('specCounts — one-sided (high only) limit never classifies fail-low', () => {
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitHigh: 3.0 }];
+  const { wafer, dies } = buildWaferMap({
+    results: [makeResult(0, 0, 1.0), makeResult(1, 0, 0.05), makeResult(0, 1, 9.0)],
+    waferConfig, dieConfig, testDefs,
+  });
+  const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010, colorBySpec: true });
+  // 0.05 has no low limit to fail → counts as pass; 9.0 fails high.
+  assert.deepEqual(view.specCounts, { pass: 2, failHigh: 1, failLow: 0 });
+});
+
+test('specCounts — undefined outside spec mode', () => {
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
+  const { wafer, dies } = buildWaferMap({
+    results: [makeResult(0, 0, 1.0)], waferConfig, dieConfig, testDefs,
+  });
+  const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
+  assert.equal(view.specCounts, undefined);
+});
