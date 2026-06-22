@@ -11,18 +11,8 @@
     "wafermap/render": "../dist/packages/canvas-adapter/index.js"
   } }</script>
   <style>
-    .demo-content { flex-direction: column; gap: 0; padding: 0; }
-
-    /* Three-column grid for the colour scheme comparison */
-    .scheme-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      flex: 1;
-      padding: 14px;
-      overflow: hidden;
-    }
-
+    /* Layout uses the shared .canvas-grid-3 helper from demo.css; .scheme-card
+       provides the per-card chrome (border + caption) for the swatch readouts. */
     .scheme-card {
       display: flex;
       flex-direction: column;
@@ -70,13 +60,9 @@
       border: 1px solid rgba(0,0,0,.08);
     }
 
+    /* Shared CSS collapses .canvas-grid-3 to one column at ≤640px; the cards
+       here are .scheme-card, so they need the matching fixed mobile height. */
     @media (max-width: 640px) {
-      .scheme-grid {
-        grid-template-columns: 1fr;
-        overflow: visible;
-        flex: none;
-        height: auto;
-      }
       .scheme-card {
         height: 70vw;
         min-height: 240px;
@@ -104,7 +90,7 @@
   </div>
 
   <div class="demo-content">
-    <div class="scheme-grid">
+    <div class="canvas-grid-3">
 
       <!-- Built-in 'color' (default) -->
       <div class="scheme-card">

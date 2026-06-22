@@ -1517,8 +1517,8 @@ export function renderWaferGallery(
 
     const handle = openModal({
       title: item.label ?? '',
-      onFullscreenChange: (isFs, box) => {
-        cardControllers[modalCardIndex]?.setTooltipParent(isFs ? box : document.body);
+      onMaximizeChange: (isMaximized, box) => {
+        cardControllers[modalCardIndex]?.setTooltipParent(isMaximized ? box : document.body);
       },
       onClose: () => {
         modalHandleGallery = null;

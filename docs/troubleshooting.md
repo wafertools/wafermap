@@ -25,6 +25,37 @@ buildWaferMap({
 
 ---
 
+## Map is blank, invisible, or the wrong height
+
+**Cause:** `renderWaferMap` *fills its container* — the canvas is sized `width: 100%; height: 100%`. Width comes from normal document flow for free, but **height does not**: a container with no resolved height gives the canvas no height to fill. A plain block `<div>` in document flow is fine (it grows to the map), but a flex or grid child whose ancestors never resolve a height collapses to zero, and the map is invisible. When this happens the library logs:
+
+> `[wafermap] The map container has zero height, so the map cannot render…`
+
+**Fix — give the container a resolved height, any one of:**
+
+```ts
+// 1. Let the library size it (simplest — no container CSS needed):
+renderWaferMap(container, result, { height: 600 }); // px, or '70vh', etc.
+```
+
+```css
+/* 2. Explicit CSS height on the container: */
+#map { height: 600px; }
+
+/* 3. A height-resolved flex/grid parent: */
+.parent { display: flex; height: 100vh; }
+.parent > #map { flex: 1; min-height: 0; }
+
+/* 4. Absolute fill of a positioned ancestor: */
+#map { position: absolute; inset: 0; }
+```
+
+The same applies to `renderWaferGallery`, except the gallery is a scrolling card grid: each card has its own height, so it flows downward and scrolls rather than collapsing — but its scroll area still needs a height-resolved parent to be bounded.
+
+**How to confirm:** in DevTools, inspect the container element — if its computed height is `0`, that is the problem, not the data.
+
+---
+
 ## Yield shows 0 % or 100 % when it should not
 
 **Cause:** `passBins` defaults to `[1]`, but your test program uses a different bin for pass (e.g. bin `0`, or multiple bins).

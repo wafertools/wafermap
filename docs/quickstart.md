@@ -65,7 +65,7 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 
 ## What you just built
 
-The canvas shows your dies colour-coded by bin (green = pass, red = fail by default). Hover over the canvas to reveal the toolbar — use it to switch plot mode, change colour scheme, rotate or flip the wafer, toggle die labels, zoom in, or download a PNG. Hover over any individual die to see a tooltip with its coordinates and bin.
+The canvas shows your dies colour-coded by bin (green = pass, red = fail by default). The toolbar (top-right) is always shown — use it to switch plot mode, change colour scheme, rotate or flip the wafer, toggle die labels, zoom in, or download a PNG. Hover over any individual die to see a tooltip with its coordinates and bin.
 
 ## Partial data needs a wafer centre
 

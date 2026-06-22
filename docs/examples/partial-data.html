@@ -11,17 +11,8 @@
     "wafermap/render": "../dist/packages/canvas-adapter/index.js"
   } }</script>
   <style>
-    /* Three cards in a row for this demo */
-    .demo-content { flex-direction: column; }
-    .trio-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      flex: 1;
-      overflow: hidden;
-    }
-    .canvas-card { display: flex; flex-direction: column; }
-    .canvas-card > div[id] { flex: 1; min-height: 0; }
+    /* Layout uses the shared .canvas-grid-3 helper from demo.css — no bespoke
+       grid here. Only demo-specific chrome below. */
     .card-caption { font-size: 11px; }
 
     /* Inference-status readouts surfaced from result.inference.warnings */
@@ -38,20 +29,6 @@
     .warn-note strong { color: #92400e; }
     .ok-note   { border-color: #22c55e; background: #f0fdf4; color: #14532d; }
     .ok-note strong { color: #166534; }
-
-    @media (max-width: 860px) {
-      .trio-grid {
-        grid-template-columns: 1fr;
-        overflow: visible;
-        flex: none;
-        height: auto;
-      }
-      .canvas-card {
-        height: 70vw;
-        min-height: 240px;
-        max-height: 420px;
-      }
-    }
   </style>
 </head>
 <body class="demo-page">
@@ -73,7 +50,7 @@
   </div>
 
   <div class="demo-content">
-    <div class="trio-grid">
+    <div class="canvas-grid-3">
 
       <!-- Card A: partial, no geometry → inference is wrong -->
       <div class="canvas-card">

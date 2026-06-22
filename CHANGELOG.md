@@ -19,6 +19,22 @@ under `### Breaking`.
 
 ---
 
+## [0.14.3] — 2026-06-23
+
+### Added
+
+- **`RenderOptions.height`** — intrinsic map height for `renderWaferMap`. The canvas fills its container, which must therefore have a resolved height; passing `height` (a number of px, or any CSS length like `'70vh'`) makes the library size its own wrapper, so the map renders in a plain document with no container CSS. Width still comes from the container.
+- **Unrenderable-container warning.** When a `renderWaferMap` container resolves to zero height (a flex/grid child with no height-resolved ancestor — the commonest embedding mistake, where the map silently collapses to nothing), the library now logs a single actionable `console.warn` naming the fix, instead of failing silently. A plain block `<div>` (which grows to fit the map) and any height-resolved container do not warn.
+- **Docs: embedding & sizing.** New troubleshooting entry "Map is blank, invisible, or the wrong height" and a sizing note on `RenderOptions` in the API reference, documenting the fill-parent model and the four valid ways to give the container a height.
+
+### Fixed
+
+- **Docs: "full-screen" → "maximise" for the expand modal.** The expand modal opens as an enlarged overlay with a *maximise* toggle (`F`); it no longer uses the OS Fullscreen API. The API reference, developer guide, quickstart, and embedded end-user guide were updated to match, and the `F` (maximise/restore) shortcut is now documented. Also corrected stale "toolbar appears on hover" wording — the toolbar is always shown.
+- **Expand-modal "fullscreen" no longer dead in macOS WKWebView.** The modal's maximize button used the real Fullscreen API (`box.requestFullscreen()`, `document.exitFullscreen()`, the `fullscreenchange` event). macOS Tauri runs on WKWebView, which only exposes the `webkit`-prefixed variants and disables element fullscreen unless the host opts into Apple private API (`macOSPrivateApi: true`, blocks Mac App Store distribution) — so the button silently did nothing and `onFullscreenChange` never fired, breaking tooltip reparenting. The modal now maximizes via a pure CSS toggle (the box grows to `100vw`/`100vh` inside its fixed-inset backdrop), behaving identically on Linux/Windows/macOS Tauri and every browser including Safari, with no native config. The `onFullscreenChange(isMaximized, box)` callback still fires on the synthetic toggle, so consumers are unaffected. `Esc` always closes; the close button stays visible while maximized.
+- **Quadrant boundary lines now sit exactly on the wafer centre.** The vertical/horizontal quadrant dividers were drawn at the midpoint between the two die columns/rows straddling the centre. When a column sits on the centre (odd column count), that midpoint lands half a die-pitch off-centre — the vertical line appeared shifted left and the horizontal line down — even though `classifyDie` assigns that centre column to the E/N quadrant. The lines are now drawn at `wafer.center`, matching the classification boundary.
+
+---
+
 ## [0.14.2] — 2026-06-21
 ### Added
 

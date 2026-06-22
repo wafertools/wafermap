@@ -692,25 +692,36 @@ renderWaferMap(container: HTMLElement, result: WaferMapResult, options?: RenderO
 ```
 
 `renderWaferMap` accepts any block `HTMLElement` as `container` — the function
-creates and manages its own `<canvas>` inside it. The container must have explicit
-dimensions; if it has no height the canvas renders at zero size. A fixed size or
-`aspect-ratio` are the typical choices:
+creates and manages its own `<canvas>` inside it, sized to fill the container
+(`width: 100%; height: 100%`). Width comes from document flow, but the canvas can
+only fill a **resolved height**. A plain block `<div>` in normal flow works (it
+grows to the map), but a flex or grid child whose ancestors never resolve a height
+collapses to zero — the map is then invisible and the library logs a warning. Give
+the container a height with any of:
 
 ```html
 <!-- Fixed size: -->
 <div id="map" style="width: 600px; height: 600px;"></div>
 
-<!-- Responsive square: -->
+<!-- Responsive square (height follows width): -->
 <div id="map" style="width: 100%; aspect-ratio: 1;"></div>
 ```
+
+```ts
+// Or let the library size it — no container CSS needed:
+renderWaferMap(container, result, { height: 600 }); // px, or '70vh', etc.
+```
+
+See [Troubleshooting → Map is blank, invisible, or the wrong height](troubleshooting.md)
+for all four valid sizing patterns.
 
 Passing an `HTMLCanvasElement` directly is deprecated but still works for one release.
 
 The toolbar gives users direct access to every display option without any app-level
 chrome: plot mode, colour scheme, ring and quadrant overlays, die labels, rotate,
 flip, zoom, box-select, and PNG download. An **expand** button (⛶) in the toolbar
-opens the map in a full-screen modal using canvas reparenting — no second controller
-is created.
+opens the map in an enlarged modal overlay using canvas reparenting — no second
+controller is created. A maximise button inside the modal grows it to fill the window.
 
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
@@ -813,6 +824,10 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 
 ```ts
 {
+  height?:                 number | string    // intrinsic map height. renderWaferMap fills its container, which must
+                                            // therefore have a resolved height; set this and the library sizes its own
+                                            // wrapper, so the map renders with no container CSS. Number = px, or any CSS
+                                            // length ('600px', '70vh'). Omit when the container already has a height.
   showAxes?:               boolean            // draw axis tick marks and die grid index labels (default false)
   viewOptions?:           WaferViewOptions  // initial display state; plotMode, testDefs, and reticles are pre-seeded from the result automatically
   onHover?:                (die: Die | null, event: MouseEvent) => void
@@ -851,6 +866,8 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 ```
 
 > **`MountOptions`** is a deprecated alias for `RenderOptions` — it still works but will be removed in a future release. Use `RenderOptions` in new code.
+
+> **Sizing.** `renderWaferMap` fills its container, so the container must have a resolved height (width comes from document flow). A plain block `<div>` grows to fit the map; a flex/grid child needs a height-resolved parent or it collapses to zero — the library logs a warning when it detects this. Pass `height` to have the library size the container for you. See [Troubleshooting → Map is blank, invisible, or the wrong height](troubleshooting.md).
 
 The box-select toolbar button is always shown. Providing `onSelect` lets your app react to selection changes; without it the selection is purely visual.
 
@@ -938,7 +955,7 @@ Choose the right update method:
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
-| Expand (⛶) | Open the map in a full-screen modal; canvas reparented — no view rebuild. Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards and modals. |
+| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards and modals. |
 | User guide | Open the built-in end-user guide in a modal — only shown when `showHelpButton: true` |
 
 ### 5.7 Interactions
@@ -1158,8 +1175,8 @@ Clicking the active finding again clears the highlight. Opening a card modal whi
 
 ### 6.6 Click-to-detail modal
 
-Each card header contains an expand button (↗).  Clicking it opens a full-screen
-modal with `renderWaferMap` mounted at full resolution and with the complete
+Each card header contains an expand button (↗).  Clicking it opens an enlarged
+modal overlay with `renderWaferMap` mounted at full resolution and with the complete
 toolbar.  Shared view options are passed through so the modal opens in the same
 display state as the gallery.  Close with Esc, the × button, or clicking the
 backdrop.

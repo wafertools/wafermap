@@ -1139,20 +1139,13 @@ export function buildView(
 
   if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, transform, ringCount));
   if (showQuadrantBoundaries) {
-    // Find the gap between die columns/rows straddling the wafer centre so the
-    // lines align with the classification boundary used by classifyDie (dx >= 0 / dy >= 0).
-    let loX = -Infinity, hiX = Infinity, loY = -Infinity, hiY = Infinity;
-    for (let i = 0; i < dies.length; i++) {
-      const px = txCoords ? txCoords[i * 2]     : dies[i].physX;
-      const py = txCoords ? txCoords[i * 2 + 1] : dies[i].physY;
-      if (px < wafer.center.x  && px > loX) loX = px;
-      if (px >= wafer.center.x && px < hiX) hiX = px;
-      if (py < wafer.center.y  && py > loY) loY = py;
-      if (py >= wafer.center.y && py < hiY) hiY = py;
-    }
-    const splitX = isFinite(loX) && isFinite(hiX) ? (loX + hiX) / 2 : wafer.center.x;
-    const splitY = isFinite(loY) && isFinite(hiY) ? (loY + hiY) / 2 : wafer.center.y;
-    overlays.push(...buildQuadrantOverlays(wafer, transform, splitX, splitY));
+    // The classification boundary in classifyDie is a hard cut at the wafer
+    // centre (dx >= 0 / dy >= 0, i.e. physX/physY vs wafer.center). Draw the
+    // lines exactly there. Do NOT place them at the midpoint between straddling
+    // die columns: when a column sits on the centre (odd column count) that
+    // midpoint lands half a pitch off-centre, while classifyDie still assigns
+    // the centre column to E/N.
+    overlays.push(...buildQuadrantOverlays(wafer, transform, wafer.center.x, wafer.center.y));
   }
   if (showReticle) overlays.push(...buildReticleOverlays(reticles, wafer, transform));
   if (showProbePath) overlays.push(...buildProbeOverlay(dies));

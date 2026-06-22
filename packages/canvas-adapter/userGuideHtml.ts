@@ -255,7 +255,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xNSAzaDZ2NiIvPjxwYXRoIGQ9Ik05IDIxSDN2LTYiLz48cGF0aCBkPSJNMjEgM2wtNyA3Ii8+PHBhdGggZD0iTTMgMjFsNy03Ii8+PC9zdmc+Cg==" width="20" height="20"></td>
 <td>Expand</td>
-<td>Opens the map full-screen in a modal overlay. Press <strong>Esc</strong> or click outside to close. Useful for detailed inspection without changing the main view.</td>
+<td>Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press <strong>F</strong>). Press <strong>Esc</strong> or click outside to close. Useful for detailed inspection without changing the main view.</td>
 </tr>
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMy45OTcgNGEyIDIgMCAwIDEgMS43NiAxLjA1bC40ODYuOUEyIDIgMCAwIDAgMTguMDAzIDdIMjBhMiAyIDAgMCAxIDIgMnY5YTIgMiAwIDAgMS0yIDJINGEyIDIgMCAwIDEtMi0yVjlhMiAyIDAgMCAxIDItMmgxLjk5N2EyIDIgMCAwIDAgMS43NTktMS4wNDhsLjQ4OS0uOTA0QTIgMiAwIDAgMSAxMC4wMDQgNHoiLz48Y2lyY2xlIGN4PSIxMiIgY3k9IjEzIiByPSIzIi8+PC9zdmc+Cg==" width="20" height="20"></td>
@@ -298,11 +298,15 @@ failure category across the wafer.</p>
 </thead>
 <tbody><tr>
 <td><strong>E</strong></td>
-<td>Expand the map to full screen</td>
+<td>Open the map in an enlarged modal overlay</td>
+</tr>
+<tr>
+<td><strong>F</strong></td>
+<td>Maximise / restore the modal (when expanded)</td>
 </tr>
 <tr>
 <td><strong>Esc</strong></td>
-<td>Close the full-screen modal, or clear the die selection</td>
+<td>Close the expanded modal, or clear the die selection</td>
 </tr>
 <tr>
 <td><strong>Ctrl / Cmd + click</strong></td>

@@ -11,34 +11,8 @@
     "wafermap/render": "../dist/packages/canvas-adapter/index.js"
   } }</script>
   <style>
-    /* Override grid to 2×2 for this demo */
-    .demo-content { flex-direction: column; }
-    .quad-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr 1fr;
-      gap: 14px;
-      flex: 1;
-      overflow: hidden;
-    }
-    .canvas-card { display: flex; flex-direction: column; }
-    .canvas-card > div[id] { flex: 1; min-height: 0; }
+    /* Layout uses the shared .canvas-grid-4 (2×2) helper from demo.css. */
     .card-caption { font-size: 11px; }
-
-    @media (max-width: 640px) {
-      .quad-grid {
-        grid-template-columns: 1fr;
-        grid-template-rows: none;
-        overflow: visible;
-        flex: none;
-        height: auto;
-      }
-      .canvas-card {
-        height: 70vw;
-        min-height: 240px;
-        max-height: 420px;
-      }
-    }
   </style>
 </head>
 <body class="demo-page">
@@ -57,7 +31,7 @@
   </div>
 
   <div class="demo-content">
-    <div class="quad-grid">
+    <div class="canvas-grid-4">
 
       <!-- Card A: nothing supplied → normalized units -->
       <div class="canvas-card">

@@ -81,9 +81,9 @@ renderWaferMap(document.getElementById('map'), result, {
 ```
 
 `renderWaferMap` returns immediately and mounts a self-contained interactive map.
-A toolbar appears on hover, giving users access to all display controls — no extra
+A toolbar is always shown (top-right), giving users access to all display controls — no extra
 HTML or JavaScript required (`showToolbar` defaults to `true`). The toolbar includes an **expand** button (⛶) that
-opens the map in a full-screen modal without rebuilding the view.
+opens the map in an enlarged modal overlay without rebuilding the view.
 
 > **`x` and `y` are always die grid positions (prober step coordinates) — integers
 > like −7, 0, 5.  They are NOT millimetre values.**  The library converts to physical
@@ -729,8 +729,8 @@ renderWaferGallery(container, items, {
 
 ### Toolbar reference
 
-The toolbar appears on hover over a single map, or as a persistent bar above the
-gallery grid.  Which buttons appear depends on the context and the current data.
+The toolbar is always shown — at the top-right of a single map, or as a persistent
+bar above the gallery grid.  Which buttons appear depends on the context and the current data.
 
 #### Single map toolbar
 
@@ -751,7 +751,7 @@ gallery grid.  Which buttons appear depends on the context and the current data.
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
-| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Always | Opens the map in a full-screen modal; canvas reparented — no view rebuild. `E` key shortcut. |
+| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Always | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a modal |
 
 The full toolbar is shown when `toolbarControls` is `'full'` (default). Gallery card modals
@@ -1180,7 +1180,7 @@ const ctrl = renderWaferGallery(
 ```
 
 Cards reflow responsively as the container resizes.  Each card has an expand
-button (↗) in its header — clicking it opens a full-screen modal with the
+button (↗) in its header — clicking it opens an enlarged modal overlay with the
 complete toolbar; the card's live canvas is reparented into the modal, so there
 is no view rebuild and the toolbar stays fully interactive.
 

@@ -192,6 +192,16 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
   showHelpButton?: boolean;
   /** Override the expand action for both the expand button and the E key. Used by the gallery to route through its own modal logic. */
   onExpand?: () => void;
+  /**
+   * Intrinsic height for the map. `renderWaferMap` fills its container, which
+   * therefore must have a resolved height — in a plain document a bare `<div>`
+   * has none and the map collapses to zero. Set this and the library sizes its
+   * own wrapper instead, so the map renders with no container CSS required.
+   * Accepts a number (px) or any CSS length (e.g. `'600px'`, `'70vh'`).
+   * Omit it when the container already has a height (flex/grid child, absolute
+   * inset, or an explicit CSS height). Width always comes from the container.
+   */
+  height?: number | string;
 }
 
 /** @deprecated Use RenderOptions instead. */
@@ -226,7 +236,7 @@ export interface WaferMapController {
   setHelpButtonVisible(visible: boolean): void;
   /** Close the auto-mounted summary panel if it is open. No-op if no panel exists. */
   closeSummaryPanel(): void;
-  /** Move the floating tooltip into a different parent (e.g. a fullscreen element). */
+  /** Move the floating tooltip into a different parent (e.g. a maximized modal box). */
   setTooltipParent(parent: HTMLElement): void;
   /**
    * Returns the current bin legend entries in `hardBin`/`softBin` modes, `null` in other modes.
@@ -262,6 +272,15 @@ export function renderWaferMap(
   options: RenderOptions = {},
 ): WaferMapController {
   if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+  // Container height as the host laid it out, before we touch anything. A flex/grid
+  // child whose ancestors never resolve a height reports 0 here — the case where the
+  // fill-parent canvas can't get a height and the map silently collapses or oscillates.
+  const containerHeightBefore = container.clientHeight;
+  // Intrinsic height: when provided, the library sizes the container itself so
+  // the fill-parent canvas has a resolved height with no host CSS required.
+  if (options.height != null) {
+    container.style.height = typeof options.height === 'number' ? `${options.height}px` : options.height;
+  }
   const canvasWrap = document.createElement('div');
   Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
   const canvas = document.createElement('canvas');
@@ -844,9 +863,9 @@ export function renderWaferMap(
     modalOriginalNext   = reparentRoot.nextSibling;
 
     const handle = openModal({
-      onFullscreenChange: (isFs, box) => {
+      onMaximizeChange: (isMaximized, box) => {
         if (tooltip) {
-          if (isFs) box.appendChild(tooltip);
+          if (isMaximized) box.appendChild(tooltip);
           else document.body.appendChild(tooltip);
         }
       },
@@ -1439,6 +1458,28 @@ export function renderWaferMap(
     render();
   });
   resizeObserver.observe(canvas);
+
+  // ── Unrenderable-container guard ───────────────────────────────────────────
+  // The canvas fills its container, so the container must have a resolved height.
+  // The acute failure is a flex/grid child whose ancestors never resolve a height:
+  // the container stays 0-tall, the canvas can't get a height from it, and the map
+  // is invisible or oscillates — the commonest embedding mistake. We own validity
+  // here, so we warn with the fix. We only warn when the caller did NOT pass an
+  // intrinsic `height` (that path is self-resolving) and the container both started
+  // at zero height and is still flat after layout settles (a bare block-flow div is
+  // fine — it grows to the canvas — so pre-layout zero alone is not enough).
+  if (options.height == null && containerHeightBefore <= 0) {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (container.clientHeight > 0) return; // resolved after layout — all good
+      console.warn(
+        '[wafermap] The map container has zero height, so the map cannot render. ' +
+        'renderWaferMap fills its container — give the container a resolved height: ' +
+        'an explicit CSS `height` (e.g. 600px), a height-resolved flex/grid parent, ' +
+        'or `position:absolute; inset:0`. Alternatively pass `{ height: 600 }` in the ' +
+        'render options and the library will size it for you.',
+      );
+    }));
+  }
 
   // ── DPR change listener (browser zoom / display change) ────────────────────
   // ResizeObserver does not fire when devicePixelRatio changes without a layout

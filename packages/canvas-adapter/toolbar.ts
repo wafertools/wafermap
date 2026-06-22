@@ -164,10 +164,10 @@ function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close:
   if (first) nextFrame(() => first.focus());
 }
 
-// Menus must be appended inside the fullscreen element or the nearest modal box,
-// not document.body — both create stacking contexts that would obscure body-level menus.
+// Menus must be appended inside the nearest modal box, not document.body — the
+// maximized modal box is a high-z-index fixed stacking context that would
+// obscure body-level menus.
 export function menuRootFor(anchor: Element): Element {
-  if (document.fullscreenElement) return document.fullscreenElement;
   let el: Element | null = anchor;
   while (el) {
     if (el.classList.contains('wmap-modal-box')) return el;
@@ -330,7 +330,10 @@ export function buildModeMenuEl(
             pickEntry(entry, menu);
           }));
         }
-        (document.fullscreenElement ?? document.body).appendChild(subMenu);
+        // Append into the same stacking root as the parent menu so the submenu
+        // is visible when the menu is inside a maximized modal box (no real
+        // fullscreen element exists — see openModal's CSS maximize).
+        (menu.parentElement ?? document.body).appendChild(subMenu);
         document.addEventListener('click', closeSub, { once: true });
       };
       cascadeRow.addEventListener('mouseenter', openSub);
@@ -739,8 +742,12 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
 export interface ModalOptions {
   /** Optional title shown in the header left. */
   title?: string;
-  /** Called when fullscreen state changes — use to reparent tooltips etc. */
-  onFullscreenChange?: (isFs: boolean, box: HTMLElement) => void;
+  /**
+   * Called when the modal's maximized state changes — use to reparent tooltips
+   * etc. The modal uses a CSS maximize (the box grows to fill its backdrop), not
+   * the real Fullscreen API, for macOS WKWebView compatibility.
+   */
+  onMaximizeChange?: (isMaximized: boolean, box: HTMLElement) => void;
   /** Called when the modal is closed. */
   onClose: () => void;
 }
@@ -755,7 +762,7 @@ export interface ModalHandle {
 }
 
 /**
- * Create and open a resizable, fullscreen-capable expand modal.
+ * Create and open a resizable, maximizable expand modal.
  * Mounts itself into document.body. Call `handle.close()` to tear down cleanly.
  */
 export function openModal(opts: ModalOptions): ModalHandle {
@@ -839,16 +846,13 @@ export function openModal(opts: ModalOptions): ModalHandle {
   spacer.style.flex = '1';
   header.appendChild(spacer);
 
-  const fullscreenBtn = document.createElement('button');
-  fullscreenBtn.type = 'button';
-  fullscreenBtn.innerHTML = ICONS.maximize;
-  fullscreenBtn.title = 'Fullscreen (F)';
-  fullscreenBtn.setAttribute('aria-label', 'Fullscreen');
-  Object.assign(fullscreenBtn.style, btnStyle);
-  fullscreenBtn.addEventListener('click', () => {
-    if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
-    else document.exitFullscreen();
-  });
+  const maximizeBtn = document.createElement('button');
+  maximizeBtn.type = 'button';
+  maximizeBtn.innerHTML = ICONS.maximize;
+  maximizeBtn.title = 'Maximize (F)';
+  maximizeBtn.setAttribute('aria-label', 'Maximize');
+  Object.assign(maximizeBtn.style, btnStyle);
+  maximizeBtn.addEventListener('click', () => setMaximized(!maximized));
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
@@ -858,27 +862,36 @@ export function openModal(opts: ModalOptions): ModalHandle {
   Object.assign(closeBtn.style, btnStyle);
   closeBtn.addEventListener('click', close);
 
-  header.appendChild(fullscreenBtn);
+  header.appendChild(maximizeBtn);
   header.appendChild(closeBtn);
 
-  const onFsChange = () => {
-    const isFs = document.fullscreenElement === box;
-    fullscreenBtn.innerHTML = isFs ? ICONS.minimize : ICONS.maximize;
-    fullscreenBtn.title = isFs ? 'Exit fullscreen (F or Esc)' : 'Fullscreen (F)';
-    closeBtn.style.display = isFs ? 'none' : '';
-    if (isFs) {
+  // Maximize is a pure CSS toggle — the box grows to fill its fixed-inset
+  // backdrop. We deliberately avoid the real Fullscreen API: macOS WKWebView
+  // (Tauri) only exposes the webkit-prefixed variants and disables element
+  // fullscreen unless the host opts into private API (blocks Mac App Store).
+  // The CSS toggle behaves identically on every target. The close button stays
+  // visible while maximized (no OS chrome to escape), and Esc always closes.
+  let maximized = false;
+  function setMaximized(next: boolean): void {
+    maximized = next;
+    maximizeBtn.innerHTML = maximized ? ICONS.minimize : ICONS.maximize;
+    maximizeBtn.title = maximized ? 'Restore (F)' : 'Maximize (F)';
+    maximizeBtn.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
+    if (maximized) {
       box.style.borderRadius = '0';
       box.style.resize = 'none';
-      box.style.width = '100%';
-      box.style.height = '100%';
+      box.style.width = '100vw';
+      box.style.height = '100vh';
     } else {
       box.style.borderRadius = '12px';
       box.style.resize = 'both';
       box.style.width = 'min(90vw, 700px)';
       box.style.height = 'min(90vh, 700px)';
     }
-    opts.onFullscreenChange?.(isFs, box);
-  };
+    // Keep the onMaximizeChange callback firing on the synthetic toggle so
+    // tooltip-reparenting consumers (renderWaferMap / renderWaferGallery) work.
+    opts.onMaximizeChange?.(maximized, box);
+  }
 
   // Keep keyboard focus inside the dialog while it is open (a11y focus trap).
   const FOCUSABLE =
@@ -900,19 +913,14 @@ export function openModal(opts: ModalOptions): ModalHandle {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && !document.fullscreenElement) { close(); return; }
-    if ((e.key === 'e' || e.key === 'E') && !document.fullscreenElement) { close(); return; }
+    if (e.key === 'Escape') { close(); return; }
+    if (e.key === 'e' || e.key === 'E') { close(); return; }
     if (e.key === 'Tab') { trapTab(e); return; }
-    if (e.key === 'f' || e.key === 'F') {
-      if (!document.fullscreenElement) box.requestFullscreen().catch(() => {});
-      else document.exitFullscreen();
-    }
+    if (e.key === 'f' || e.key === 'F') { setMaximized(!maximized); }
   };
 
   function close() {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     document.removeEventListener('keydown', onKeyDown);
-    document.removeEventListener('fullscreenchange', onFsChange);
     backdrop.remove();
     document.body.style.overflow = savedOverflow;
     // Return focus to whatever was focused before the modal opened.
@@ -936,7 +944,6 @@ export function openModal(opts: ModalOptions): ModalHandle {
 
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', onKeyDown);
-  document.addEventListener('fullscreenchange', onFsChange);
 
   // Move focus into the dialog so the trap has somewhere to start and screen
   // readers announce the dialog. Prefer the close button (a predictable target).

@@ -29,6 +29,11 @@ html, body {
 .demo-page {
   display: flex;
   flex-direction: column;
+  /* The shell flows in normal document height — NOT viewport-locked. Demos are
+     documents: when content is taller than the window the page scrolls. Every
+     canvas card therefore carries an EXPLICIT pixel height (never a flex-derived
+     one), so the map area is well-defined regardless of shell height and
+     renderWaferMap's ResizeObserver has nothing to feed back against. */
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -401,29 +406,28 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
 
 /* ── Multi-canvas grids ──────────────────────────────────────────────────── */
 
-.canvas-grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  flex: 1;
-  overflow: hidden;
-}
-
+/* Multi-card grids carry an EXPLICIT height (like .canvas-card.flex-1's 600px),
+   so cards inside are well-defined and the page flows/scrolls normally. width:100%
+   makes the grid fill .demo-content; no flex:1 (that would re-derive height from
+   the shell and reintroduce the ResizeObserver growth loop). */
+.canvas-grid-2,
 .canvas-grid-3 {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
   gap: 14px;
-  flex: 1;
-  overflow: hidden;
+  width: 100%;
+  height: 520px;
 }
+
+.canvas-grid-2 { grid-template-columns: 1fr 1fr; }
+.canvas-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
 
 .canvas-grid-4 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
   gap: 14px;
-  flex: 1;
-  overflow: hidden;
+  width: 100%;
+  height: 640px;
 }
 
 /* ── Mobile — stack vertically, allow page scroll ───────────────────────── */

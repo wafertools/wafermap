@@ -143,7 +143,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/reset.svg" width="20" height="20">     | Reset zoom         | Returns the map to the default fitted view.                                                                                                                                                                                  |
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                               |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)).                                                                                                                                    |
-| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map full-screen in a modal overlay. Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view.                                                                        |
+| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view.                                                                        |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                     |
 | <img src="images/icons/findings.svg" width="20" height="20">  | Summary panel      | Opens or closes the summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                       |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                            |
@@ -175,8 +175,9 @@ Use the **Overlays** menu to toggle optional display layers on and off:
 
 | Key                      | Action                                                  |
 | ------------------------ | ------------------------------------------------------- |
-| **E**                    | Expand the map to full screen                           |
-| **Esc**                  | Close the full-screen modal, or clear the die selection |
+| **E**                    | Open the map in an enlarged modal overlay               |
+| **F**                    | Maximise / restore the modal (when expanded)            |
+| **Esc**                  | Close the expanded modal, or clear the die selection    |
 | **Ctrl / Cmd + click**   | Add a die to the current selection                      |
 | **Mouse wheel / scroll** | Zoom in and out at the cursor                           |
 | **Ctrl / Cmd + `+`** / **`-`** | Zoom in / zoom out                                |
