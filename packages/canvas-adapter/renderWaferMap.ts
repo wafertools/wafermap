@@ -7,7 +7,7 @@ import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -938,7 +938,7 @@ export function renderWaferMap(
   function scheduleRender(): void {
     if (rafPending) return;
     rafPending = true;
-    requestAnimationFrame(() => { rafPending = false; render(); });
+    nextFrame(() => { rafPending = false; render(); });
   }
 
   function render(): void {
@@ -1469,7 +1469,7 @@ export function renderWaferMap(
   // at zero height and is still flat after layout settles (a bare block-flow div is
   // fine — it grows to the canvas — so pre-layout zero alone is not enough).
   if (options.height == null && containerHeightBefore <= 0) {
-    requestAnimationFrame(() => requestAnimationFrame(() => {
+    nextFrame(() => nextFrame(() => {
       if (container.clientHeight > 0) return; // resolved after layout — all good
       console.warn(
         '[wafermap] The map container has zero height, so the map cannot render. ' +

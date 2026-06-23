@@ -87,7 +87,7 @@ const MENU_ITEM_SELECTOR = '[role="menuitem"],[role="menuitemradio"],[role="menu
  * environments without `requestAnimationFrame` (e.g. JSDOM under tests).
  * Used to defer focus moves until the element is laid out.
  */
-function nextFrame(fn: () => void): void {
+export function nextFrame(fn: () => void): void {
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
   else setTimeout(fn, 0);
 }
@@ -1079,6 +1079,12 @@ export function openUserGuideModal(
   content.innerHTML = html;
   const handle = openModal({
     title: 'Wafer Map — User Guide',
+    // Maximising widens the reading measure (720px → 1000px) so the guide uses
+    // the extra space without lines growing uncomfortably long. Toggled via a
+    // class so the cap lives in the guide stylesheet, not inline here.
+    onMaximizeChange: (isMaximized) => {
+      content.querySelector('.wmap-guide')?.classList.toggle('wmap-guide--max', isMaximized);
+    },
     onClose: () => {
       if ((window as any).__wmapDemoApi === api) (window as any).__wmapDemoApi = prevApi;
     },

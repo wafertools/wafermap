@@ -31,6 +31,25 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
 .wmap-demo[data-wmap-demo="findings"]{height:280px}
 .wmap-demo[data-wmap-demo="summary-panel"]{height:300px}
 .wmap-demo[data-wmap-demo="box-select"]{height:280px}
+.wmap-guide--max{max-width:1000px}
+@media print{
+  /* Print only the guide content: hide the dimmed backdrop, the modal frame
+     chrome (header/buttons), and let the guide flow at full width with its
+     natural height. Without this, the browser prints the centred modal box
+     (modal mode) or a single clipped viewport that is often blank (maximised
+     mode, where the box is 100vh with overflow:hidden). */
+  body{overflow:visible!important;height:auto!important}
+  /* Hide the host app behind the modal; print only the backdrop subtree (the guide). */
+  body > *{display:none!important}
+  body > #wmap-modal-backdrop{position:static!important;background:none!important;backdrop-filter:none!important;display:block!important}
+  .wmap-modal-box{position:static!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important;display:block!important}
+  .wmap-modal-box > div:first-child{display:none!important}
+  /* contentWrap (flex container) and the scroll wrapper inside it both clip/scroll;
+     unclip them so the full guide paginates instead of one screenful printing. */
+  .wmap-modal-box > div:not(:first-child),.wmap-modal-box > div:not(:first-child) > div{display:block!important;overflow:visible!important;height:auto!important;flex:none!important;min-height:0!important}
+  .wmap-guide,.wmap-guide--max{max-width:none!important;height:auto!important;overflow:visible!important;padding:0!important}
+  .wmap-guide-online-link{display:none!important}
+}
 </style>
 <h1 id="wafer-map-user-guide">Wafer Map — User Guide</h1>
 <p class="wmap-guide-online-link">This is a quick reference. <a href="https://telecasterer.github.io/wafermap/user-guide/" target="_blank" rel="noopener">View the full illustrated guide online ↗</a></p>
