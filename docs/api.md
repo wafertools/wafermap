@@ -2645,40 +2645,37 @@ waferConfig: {
 }
 ```
 
+Since 0.15.0, `WaferMetadata` is also the home for lot/wafer facts shown in **die hover tooltips** — they merge in as the tooltip base, with any per-die [`DieMetadata`](#124-diemetadata) key overriding the wafer value (`waferId` excepted; see §12.4).
+
 ### 12.4 `DieMetadata`
 
-Named fields with an open index signature — any extra key is accepted and rendered automatically in die hover tooltips.
+An open index signature for annotations that **genuinely vary die-to-die**. Any key is accepted and rendered automatically in die hover tooltips.
 
 ```ts
 {
-  lotId?:        string
-  waferId?:      string
-  deviceType?:   string
-  testProgram?:  string
-  temperature?:  number
-  [key: string]: unknown   // custom fields — shown in hover tooltip automatically
+  [key: string]: unknown   // per-die fields — shown in hover tooltip automatically
 }
 ```
 
-All metadata fields — named and custom — appear in the hover tooltip with no extra configuration. The tooltip renders them as `key: value` lines, skipping `null` and `undefined` values. Named fields appear first in the order they are declared; custom fields follow in the order they appear on the object.
+> **Changed in 0.15.0:** the named wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were **removed** from `DieMetadata`. They are properties of the wafer, not the die — set them once on [`WaferMetadata`](#123-wafermetadata) (`waferConfig.metadata`). Storing them per die replicated identical values across every die for no benefit.
+
+The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. Both render as `key: value` lines, skipping `null`/`undefined`. `waferId` is omitted (the map context already identifies the wafer).
 
 ```ts
-// In DieResult input:
+// Wafer-level facts — set once:
+buildWaferMap({
+  results,
+  waferConfig: { metadata: { lot: 'LOT-001', product: 'NMOS-A', testProgram: 'NM_v3.2' } },
+});
+
+// Per-die annotations — only what varies die-to-die:
 {
   x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin),
-  metadata: {
-    lotId:       r.lot,
-    waferId:     r.wafer,
-    deviceType:  'NMOS-A',
-    testProgram: 'NM_v3.2',
-    probeCard:   'PC-42',    // custom — shown in tooltip automatically
-    inkDate:     r.inkDate,  // custom
-  },
+  metadata: { probeCard: 'PC-42', inkDate: r.inkDate },
 }
 
 // In onClick or onHover callback:
 onClick: (die) => {
-  const lotId     = die.metadata?.lotId;
   const probeCard = die.metadata?.probeCard;
 }
 ```

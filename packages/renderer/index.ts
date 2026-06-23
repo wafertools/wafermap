@@ -19,6 +19,10 @@ export type {
   ViewOptions,
 } from './buildView.js';
 export * from './buildWaferMap.js';
+// WaferMetadata/DieMetadata are renderer concepts (WaferConfig.metadata,
+// DieResult.metadata) — re-export them here so consumers building renderer input
+// don't have to reach into /core for the types.
+export type { WaferMetadata, DieMetadata } from '../core/metadata.js';
 export {
   hardBinColor,
   hardBinGreyscale,

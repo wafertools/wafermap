@@ -374,6 +374,7 @@ export function buildHoverText(
   aggrMethod?: string,
   lotSize?: number,
   testLimit?: number,
+  waferMeta?: WaferMetadata | null,
 ): string {
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
@@ -468,11 +469,15 @@ export function buildHoverText(
   if (die.partial) lines.push('<i>partial die</i>');
   if (die.probeIndex !== undefined) lines.push(`Probe: #${die.probeIndex}`);
 
-  if (die.metadata) {
-    for (const [key, value] of Object.entries(die.metadata)) {
-      if (value === undefined || value === null) continue;
-      lines.push(`${key}: ${String(value)}`);
-    }
+  // Metadata: wafer-level facts (lot, product, program, …) are the base; any
+  // per-die key overrides the wafer value of the same name. `waferId` is omitted
+  // because the die's wafer identity is already conveyed by the map context (and
+  // the gallery strips it), so it would be noise in every tooltip.
+  const meta: Record<string, unknown> = { ...(waferMeta ?? {}), ...(die.metadata ?? {}) };
+  delete meta.waferId;
+  for (const [key, value] of Object.entries(meta)) {
+    if (value === undefined || value === null) continue;
+    lines.push(`${key}: ${String(value)}`);
   }
 
   return lines.join('<br>');

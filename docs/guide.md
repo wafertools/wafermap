@@ -531,31 +531,32 @@ renderWaferMap(container, { ...result, dies: enrichedDies, testDefs });
 > Always use `getDieKey(die)` for lookups rather than manually formatting `"${die.x},${die.y}"` —
 > it guarantees the correct format after any grid offset correction.
 
-### Per-die metadata
+### Wafer vs. per-die metadata
 
-Attach structured data to individual dies using the `metadata` field on each `DieResult`. The named fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) cover the most common identifiers; any additional key you add is accepted via the open index signature:
+Lot- and wafer-level facts — lot, product, test program, temperature, test date — belong on **`WaferMetadata`**, passed once via `waferConfig.metadata`. A die cannot differ from its wafer on these, so they live on the wafer and the tooltip reads them from there:
 
 ```ts
 const result = buildWaferMap({
-  results: rows.map(r => ({
-    x:    Number(r.x),
-    y:    Number(r.y),
-    hbin: Number(r.hbin),
-    metadata: {
-      lotId:       r.lot,
-      waferId:     r.wafer,
-      deviceType:  'NMOS-A',
-      testProgram: 'NM_v3.2',
-      // custom fields — any key accepted, shown in tooltip automatically
-      probeCard:   r.probe_card,
-      inkDate:     r.ink_date,
-    },
-  })),
+  results: rows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
+  waferConfig: {
+    metadata: { lot: 'LOT-001', product: 'NMOS-A', testProgram: 'NM_v3.2', temperature: 25 },
+  },
   dieConfig: { width: 10, height: 10 },
 });
 ```
 
-**All metadata fields appear automatically in hover tooltips** — no extra configuration needed. The tooltip renders each field as `key: value`, in the order: named fields first, then custom fields. `null` and `undefined` values are skipped.
+Use the `metadata` field on a `DieResult` only for data that **genuinely varies die-to-die** — any key is accepted via the open index signature and shown in the tooltip:
+
+```ts
+results: rows.map(r => ({
+  x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin),
+  metadata: { probeCard: r.probe_card, inkDate: r.ink_date },
+})),
+```
+
+**Metadata appears automatically in hover tooltips** — no extra configuration. The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. `waferId` is omitted from the metadata lines (the map context already identifies the wafer), and `null`/`undefined` values are skipped.
+
+> **Changed in 0.15.0:** wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were removed from `DieMetadata` — set them on `WaferMetadata` instead. See the migration note in the changelog.
 
 Read metadata back from the die in any callback:
 

@@ -344,3 +344,28 @@ test('inference functions handle edge cases', () => {
   const singlePitch = resolveGridPitch([{ x: 0, y: 0 }]);
   assert.equal(singlePitch.confidence, 0.4);
 });
+
+test('buildHoverText merges wafer-level metadata under per-die overrides', () => {
+  const die = { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 1, height: 1, hbin: 1 };
+  const waferMeta = { lot: 'LOT-001', product: 'WidgetA', testProgram: 'PGM_X', waferId: 'W01', temperature: 25 };
+
+  // Wafer-level facts appear with no per-die metadata at all.
+  const base = buildHoverText(die, 'hardBin', undefined, undefined, undefined, undefined, undefined, undefined, undefined, waferMeta);
+  assert.ok(base.includes('lot: LOT-001'), 'wafer lot should appear');
+  assert.ok(base.includes('product: WidgetA'), 'wafer product should appear');
+  assert.ok(base.includes('temperature: 25'), 'wafer temperature should appear');
+  assert.ok(!base.includes('waferId'), 'waferId is suppressed — already conveyed by map context');
+
+  // A per-die key overrides the wafer value of the same name; other wafer facts remain.
+  const dieWithOverride = { ...die, metadata: { testProgram: 'PGM_RETEST', site: 3 } };
+  const merged = buildHoverText(dieWithOverride, 'hardBin', undefined, undefined, undefined, undefined, undefined, undefined, undefined, waferMeta);
+  assert.ok(merged.includes('testProgram: PGM_RETEST'), 'die value overrides wafer value');
+  assert.ok(!merged.includes('PGM_X'), 'overridden wafer value should not also appear');
+  assert.ok(merged.includes('lot: LOT-001'), 'non-overridden wafer facts still present');
+  assert.ok(merged.includes('site: 3'), 'genuinely per-die annotation appears');
+
+  // No metadata at all → no metadata lines, no crash.
+  const none = buildHoverText(die, 'hardBin');
+  assert.ok(none.includes('Die ('));
+  assert.ok(!none.includes('lot:'));
+});

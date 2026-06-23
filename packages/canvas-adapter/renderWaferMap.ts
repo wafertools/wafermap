@@ -1242,6 +1242,7 @@ export function renderWaferMap(
             viewOpts.aggregationMethod,
             viewOpts.lotSize,
             tooltipTestLimit,
+            result.metadata,
           );
           tooltip.style.display = 'block';
           positionTooltip(tooltip, e.clientX, e.clientY);

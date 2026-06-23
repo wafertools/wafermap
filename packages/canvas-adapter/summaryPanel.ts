@@ -1008,7 +1008,12 @@ export function createSummaryPanelEl(
 
   if (!isVertical) {
     panel.style.width    = '220px';
-    panel.style.maxHeight = 'calc(100vh - 80px)';
+    // Bound the panel by its container (the flex row), not the viewport. A
+    // viewport-relative cap (e.g. 100vh) overflows a container shorter than the
+    // viewport, stretching the row and clipping the wafer. With the wrapper
+    // pinned to the container height, `100%` keeps the panel inside it and lets
+    // overflowY:auto scroll the panel internally.
+    panel.style.maxHeight = '100%';
   } else {
     panel.style.height = '180px';
     panel.style.width  = '100%';
@@ -1029,10 +1034,18 @@ export function wrapWithSummaryPanel(
     flexDirection: isVertical ? 'column' : 'row',
     gap:           '8px',
     width:         '100%',
+    // Fill the container's height so the whole subtree is bounded by it. The
+    // container (a plain block in the common embedding) gives no height to a
+    // `flex:1` child, so the row would otherwise size to its tallest child (the
+    // panel) and overflow — dragging the canvas past the container and clipping
+    // the wafer. `height:100%` + a min-height floor pins it to the container.
+    height:        '100%',
     flex:          '1 1 0',
     minHeight:     '0',
     boxSizing:     'border-box',
-    alignItems:    'flex-start',
+    // Stretch children to the row height (horizontal layout) so the canvas and
+    // panel both track the container, not their own content.
+    alignItems:    isVertical ? 'flex-start' : 'stretch',
   });
 
   // Content takes all remaining space

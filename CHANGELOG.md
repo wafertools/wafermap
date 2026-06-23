@@ -19,6 +19,25 @@ under `### Breaking`.
 
 ---
 
+## [0.15.0] — 2026-06-23
+
+### Breaking
+
+- **`DieMetadata` no longer carries wafer/lot-level fields.** The named fields `lotId`, `waferId`, `deviceType`, `testProgram`, and `temperature` are removed from `DieMetadata`; only the open `[key: string]: unknown` index signature remains. These facts are properties of the *wafer*, not the die — a die cannot differ from its wafer on lot, product, program, or temperature — so storing them per die was pure redundancy (replicated across every die, up to hundreds of thousands per wafer). Supply them once on `WaferMetadata` (via `buildWaferMap({ waferConfig: { metadata } })`); the tooltip now reads them from there (see below). Use `DieMetadata` only for annotations that genuinely vary die-to-die. **Migration:** move any per-die `metadata.lotId`/`testProgram`/etc. to the wafer's `waferConfig.metadata`; truly per-die keys continue to work unchanged via the index signature.
+- **`buildHoverText` gained a trailing `waferMeta?` parameter.** Signature is now `buildHoverText(die, plotMode, testDefs?, hbinDefs?, sbinDefs?, fallbackFormat?, aggrMethod?, lotSize?, testLimit?, waferMeta?)`. Existing positional calls are unaffected (the new parameter is last and optional); pass the wafer's `WaferMetadata` to get wafer-level facts in the tooltip. `renderWaferMap` passes it automatically from the `WaferMapResult.metadata`.
+
+### Added
+
+- **`WaferMetadata` and `DieMetadata` are now re-exported from `@paulrobins/wafermap/renderer`.** They are renderer-input concepts (`WaferConfig.metadata`, `DieResult.metadata`) but were previously reachable only from `/core`. Consumers building renderer input can now import them from the renderer entry point.
+
+### Changed
+
+- **Hover tooltips merge wafer-level metadata under per-die overrides.** The tooltip now shows the wafer's `WaferMetadata` (lot, product, test program, temperature, test date, …) by default; any key also present in a die's `DieMetadata` overrides the wafer value for that die. `waferId` is omitted from the merged metadata lines because the die's wafer identity is already conveyed by the map context (and the gallery strips it). This means a host that knows provenance at the wafer level gets full tooltips by setting `waferConfig.metadata` once — with no per-die duplication and no walk over the die array.
+
+### Fixed
+
+- **Summary panel no longer clips the wafer in short containers.** The persistent summary panel beside a `renderWaferMap` was capped at a *viewport*-relative height (`calc(100vh - 80px)`), so in any container shorter than the viewport the panel demanded more height than the container had, stretched the flex row, and dragged the canvas past the container — clipping the bottom of the wafer. The panel is now bounded by its container (`max-height: 100%`) and the wrap row is pinned to the container height (`height: 100%`, children stretched), so the canvas always tracks the container and the panel scrolls internally instead. The wafer renders complete at any container height. (The gallery's own viewport-relative panel cap is unchanged — it is intentionally viewport-scrolled.)
+
 ## [0.14.3] — 2026-06-23
 
 ### Added
