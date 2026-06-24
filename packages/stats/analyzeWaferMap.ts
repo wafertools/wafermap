@@ -17,6 +17,7 @@ import {
 } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
 import { classifyPattern } from './patternClassification.js';
+import { normalCdf } from './math.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -48,7 +49,12 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   enableYieldAnalysis: true,
   enableHardBinAnalysis: true,
   enableSoftBinAnalysis: true,
-  enableTestValueAnalysis: true,
+  // Off by default: the regional Welch pass is the expensive part of analysis
+  // (scales with regions × tests × dies). Callers that display regional
+  // test-value findings opt in explicitly. For cheap per-test quartiles without
+  // the spatial comparisons, use computePerTestStats instead.
+  enableTestValueAnalysis: false,
+  computePerTestStats: false,
   enableReticlePositionAnalysis: true,
   enableClusterAnalysis: true,
   enableAngularAnalysis: true,
@@ -222,24 +228,6 @@ function computePerTestStats(
   return result.length ? result : undefined;
 }
 
-function errorFunction(value: number): number {
-  const sign = value < 0 ? -1 : 1;
-  const x = Math.abs(value);
-  const a1 = 0.254829592;
-  const a2 = -0.284496736;
-  const a3 = 1.421413741;
-  const a4 = -1.453152027;
-  const a5 = 1.061405429;
-  const p = 0.3275911;
-  const t = 1 / (1 + p * x);
-  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-  return sign * y;
-}
-
-function normalCdf(value: number): number {
-  return 0.5 * (1 + errorFunction(value / Math.sqrt(2)));
-}
-
 function twoProportionPValue(
   leftPass: number,
   leftTotal: number,
@@ -383,16 +371,24 @@ function buildYieldFindings(
     buckets.set(region.key, bucket);
   }
 
-  // Pre-count pass dies per bucket.
+  // Pre-count pass dies and the hbin-bearing population per bucket. The yield
+  // denominator must be dies that HAVE a hard bin — a die eligible only via sbin
+  // or test values has no hard-bin pass/fail verdict and must not be counted as a
+  // fail (which it would be if the denominator were the full bucket length, since
+  // the pass test requires d.hbin). This mirrors the global yield (passDies /
+  // dies-with-bin-data) so regional and overall yields use the same population.
   const passCounts = new Map<string, number>();
   const bucketSizes = new Map<string, number>();
   for (const [regionKey, bucket] of buckets) {
     let passes = 0;
+    let withHbin = 0;
     for (const d of bucket) {
-      if (d.hbin !== undefined && passSet.has(d.hbin)) passes++;
+      if (d.hbin === undefined) continue;
+      withHbin++;
+      if (passSet.has(d.hbin)) passes++;
     }
     passCounts.set(regionKey, passes);
-    bucketSizes.set(regionKey, bucket.length);
+    bucketSizes.set(regionKey, withHbin);
   }
 
   const findings: RawFinding[] = [];
@@ -598,16 +594,26 @@ function sampleVariance(values: number[], avg: number): number {
   return values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (values.length - 1);
 }
 
-function welchPValue(leftValues: number[], rightValues: number[]): { pValue: number; effectSize: number; delta: number } {
-  const leftMean = mean(leftValues);
-  const rightMean = mean(rightValues);
-  const leftVar = sampleVariance(leftValues, leftMean);
-  const rightVar = sampleVariance(rightValues, rightMean);
-  const standardError = Math.sqrt((leftVar / leftValues.length) + (rightVar / rightValues.length));
+/**
+ * Welch two-sample comparison from summary statistics (count, mean, variance).
+ * The findings pass accumulates these per region in a single columnar scan, so
+ * the comparison never materialises the value arrays — see buildTestValueFindings.
+ */
+function welchFromStats(
+  leftN: number, leftMean: number, leftVar: number,
+  rightN: number, rightMean: number, rightVar: number,
+): { pValue: number; effectSize: number; delta: number } {
+  const standardError = Math.sqrt((leftVar / leftN) + (rightVar / rightN));
   const delta = leftMean - rightMean;
 
+  // Zero (or non-finite) standard error means there is no within-group spread to
+  // test against — both groups are constant. A constant-vs-constant difference is
+  // statistically *unmeasurable*, not infinitely significant: with zero variance
+  // the Welch statistic is undefined. Treat it as a non-finding (p = 1, no effect)
+  // rather than awarding p = 0 / infinite effect, which previously fired spurious
+  // "unusual" findings on uniform or coarsely-quantised test data.
   if (!Number.isFinite(standardError) || standardError === 0) {
-    return { pValue: delta === 0 ? 1 : 0, effectSize: delta === 0 ? 0 : Math.sign(delta) * Infinity, delta };
+    return { pValue: 1, effectSize: 0, delta };
   }
 
   const z = delta / standardError;
@@ -620,82 +626,154 @@ function welchPValue(leftValues: number[], rightValues: number[]): { pValue: num
   };
 }
 
+/**
+ * Array-based Welch comparison — convenience wrapper over welchFromStats for the
+ * cold merge/re-aggregation path, which works on arbitrary merged die sets rather
+ * than the per-region running sums the columnar findings pass maintains.
+ */
+function welchPValue(leftValues: number[], rightValues: number[]): { pValue: number; effectSize: number; delta: number } {
+  const leftMean = mean(leftValues);
+  const rightMean = mean(rightValues);
+  return welchFromStats(
+    leftValues.length, leftMean, sampleVariance(leftValues, leftMean),
+    rightValues.length, rightMean, sampleVariance(rightValues, rightMean),
+  );
+}
+
 const TEST_COUNT_WARN_THRESHOLD = 250;
 
+/**
+ * Discover the test numbers present in the die data, or echo back an explicit
+ * caller-supplied subset. Shared by the cheap perTestStats pass and the regional
+ * findings pass so the auto-cap behaviour is defined in exactly one place.
+ * Stops scanning once the cap is exceeded and returns a warning instead.
+ */
+function discoverTestNumbers(
+  dies: Die[],
+  explicit: number[] | undefined,
+): { testNumbers: number[]; warning?: string } {
+  if (explicit) return { testNumbers: explicit.slice().sort((a, b) => a - b) };
+
+  const testNumberSet = new Set<number>();
+  let capped = false;
+  outer: for (const die of dies) {
+    const keys = die.testValues
+      ? Object.keys(die.testValues)
+      : (die.values ?? []).map((v, i) => v !== undefined ? String(i) : null).filter(Boolean) as string[];
+    for (const k of keys) {
+      const n = Number(k);
+      if (!testNumberSet.has(n)) {
+        testNumberSet.add(n);
+        if (testNumberSet.size > TEST_COUNT_WARN_THRESHOLD) { capped = true; break outer; }
+      }
+    }
+  }
+
+  if (capped) {
+    const warning =
+      `[wafermap] analyzeWaferMap: more than ${TEST_COUNT_WARN_THRESHOLD} tests found in die data. ` +
+      `Pass testNumbers: [...] in options to enable test value analysis for specific tests. ` +
+      `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`;
+    console.warn(warning);
+    return { testNumbers: [], warning };
+  }
+  return { testNumbers: [...testNumberSet].sort((a, b) => a - b) };
+}
+
+/**
+ * Regional parametric significance findings: for each test, compare each region's
+ * values against the rest of the wafer (Welch).
+ *
+ * Performance: the previous implementation allocated two value arrays per
+ * (region × test) via `.map().filter()` and rebuilt the "rest of wafer" die set
+ * per region — O(regions² + regions·tests) allocations that dominated analysis
+ * (profiled at ~95% of cost, mostly GC). This version is allocation-light:
+ *   • each die is assigned its region index once (regionOf), and
+ *   • per test we walk the dies once accumulating running sums (n, Σ, Σ²) per
+ *     region plus a family total, over values shifted by a per-test constant for
+ *     numerical stability; the "rest of wafer" stats are derived by subtraction
+ *     (total − region), never materialised.
+ * Welch needs only count/mean/variance, all available from the running sums, so
+ * no value arrays are built in the hot path. The region set the comparison sees
+ * is the same as the array-based path because the regions are disjoint (each die
+ * maps to at most one bucket), so total − region == union of the other regions.
+ * Findings match the array path to within floating-point tolerance (the shifted
+ * one-pass variance is, if anything, better-conditioned than a raw two-pass sum
+ * on large-magnitude data).
+ */
 function buildTestValueFindings(
   dies: Die[],
   regionFamily: StatsRegion[],
   defs: TestDef[] | undefined,
   options: ResolvedOptions,
 ): { findings: RawFinding[]; warning?: string; activeTestNumbers?: number[] } {
-  const dieMap = new Map(dies.map((die) => [`${die.x},${die.y}`, die]));
+  const discovered = discoverTestNumbers(dies, options.testNumbers);
+  if (discovered.warning) return { findings: [], warning: discovered.warning };
+  const activeTestNumbers = discovered.testNumbers;
 
-  // If the caller specifies exact test numbers, use them directly — skip the
-  // expensive scan of all die testValues keys, which is O(N × tests).
-  let activeTestNumbers: number[];
-  if (options.testNumbers) {
-    activeTestNumbers = options.testNumbers.slice().sort((a, b) => a - b);
-  } else {
-    // No filter provided: discover test numbers present in the data.
-    // Stop early once we exceed the cap — no need to scan all dies.
-    const testNumberSet = new Set<number>();
-    let cappedCount = 0;
-    outer: for (const die of dies) {
-      const keys = die.testValues
-        ? Object.keys(die.testValues)
-        : (die.values ?? []).map((v, i) => v !== undefined ? String(i) : null).filter(Boolean) as string[];
-      for (const k of keys) {
-        const n = Number(k);
-        if (!testNumberSet.has(n)) {
-          testNumberSet.add(n);
-          if (testNumberSet.size > TEST_COUNT_WARN_THRESHOLD) {
-            cappedCount = testNumberSet.size;
-            break outer;
-          }
-        }
-      }
-    }
-
-    if (cappedCount > TEST_COUNT_WARN_THRESHOLD) {
-      const warning =
-        `[wafermap] analyzeWaferMap: more than ${TEST_COUNT_WARN_THRESHOLD} tests found in die data. ` +
-        `Pass testNumbers: [...] in options to enable test value analysis for specific tests. ` +
-        `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`;
-      console.warn(warning);
-      return { findings: [], warning };
-    }
-    activeTestNumbers = [...testNumberSet].sort((a, b) => a - b);
+  // Assign each die to its region index once (−1 = not in this family).
+  const keyToRegion = new Map<string, number>();
+  for (let r = 0; r < regionFamily.length; r++) {
+    for (const key of regionFamily[r].dieKeys) keyToRegion.set(key, r);
   }
-
-  const buckets = new Map<string, Die[]>();
-  for (const region of regionFamily) {
-    const bucket: Die[] = [];
-    for (const key of region.dieKeys) {
-      const d = dieMap.get(key);
-      if (d) bucket.push(d);
-    }
-    buckets.set(region.key, bucket);
+  const nRegions = regionFamily.length;
+  // Dies that belong to some region in this family, paired with their region idx.
+  const regionDies: Die[] = [];
+  const regionIdx: number[] = [];
+  for (const die of dies) {
+    const r = keyToRegion.get(`${die.x},${die.y}`);
+    if (r !== undefined) { regionDies.push(die); regionIdx.push(r); }
   }
 
   const findings: RawFinding[] = [];
 
-  for (const region of regionFamily) {
-    const leftDies = buckets.get(region.key)!;
-    const rightDies: Die[] = [];
-    for (const [key, bucket] of buckets) {
-      if (key !== region.key) for (const d of bucket) rightDies.push(d);
+  // Per-region accumulators, reused across tests (cleared each test).
+  const n   = new Float64Array(nRegions);
+  const sum = new Float64Array(nRegions);
+  const sq  = new Float64Array(nRegions);
+
+  for (const testNumber of activeTestNumbers) {
+    n.fill(0); sum.fill(0); sq.fill(0);
+    let totN = 0, totSum = 0, totSq = 0;
+
+    // Accumulate sums of (v − shift) rather than v. Subtracting a constant close
+    // to the data leaves variance and the between-region delta unchanged but keeps
+    // Σ(v−shift)² well-conditioned, avoiding the catastrophic cancellation of the
+    // raw (Σv² − n·mean²) form for large-magnitude / low-variance test values
+    // (e.g. voltages ≈1e6 with mV spread). We use the first observed value as the
+    // shift — it is O(1), needs no pre-pass, and is guaranteed to be on-scale.
+    let shift: number | undefined;
+    for (let i = 0; i < regionDies.length; i++) {
+      const die = regionDies[i];
+      const raw = die.testValues?.[testNumber] ?? die.values?.[testNumber];
+      if (raw === undefined) continue;
+      if (shift === undefined) shift = raw;
+      const v = raw - shift;
+      const r = regionIdx[i];
+      n[r]   += 1;   sum[r] += v;   sq[r] += v * v;
+      totN   += 1;   totSum += v;   totSq += v * v;
     }
+    if (shift === undefined) continue; // no data for this test
 
-    for (const testNumber of activeTestNumbers) {
-      const readVal = (die: Die) => die.testValues?.[testNumber] ?? die.values?.[testNumber];
-      const leftValues = leftDies.map(readVal).filter((value): value is number => value !== undefined);
-      const rightValues = rightDies.map(readVal).filter((value): value is number => value !== undefined);
+    for (let r = 0; r < nRegions; r++) {
+      const leftN  = n[r];
+      const rightN = totN - leftN;
+      if (leftN < options.minimumSampleSize || rightN < options.minimumSampleSize) continue;
 
-      if (leftValues.length < options.minimumSampleSize || rightValues.length < options.minimumSampleSize) continue;
+      // Means in shifted space; true means add `shift` back (delta is shift-invariant).
+      const leftMeanS  = sum[r] / leftN;
+      const rightSum   = totSum - sum[r];
+      const rightMeanS = rightSum / rightN;
+      const leftMean   = leftMeanS  + shift;
+      const rightMean  = rightMeanS + shift;
+      // Sample variance from running sums of the shifted data:
+      // (Σ(v−k)² − n·meanS²) / (n − 1) — identical to the variance of v.
+      const leftVar  = leftN  > 1 ? Math.max(0, (sq[r]          - leftN  * leftMeanS  * leftMeanS )) / (leftN  - 1) : 0;
+      const rightVar = rightN > 1 ? Math.max(0, ((totSq - sq[r]) - rightN * rightMeanS * rightMeanS)) / (rightN - 1) : 0;
 
-      const { pValue, effectSize, delta } = welchPValue(leftValues, rightValues);
+      const { pValue, effectSize, delta } = welchFromStats(leftN, leftMean, leftVar, rightN, rightMean, rightVar);
+      const region = regionFamily[r];
       const { label, unit } = labelForTest(testNumber, defs);
-      const rightMean = mean(rightValues);
       const relativeDelta = rightMean !== 0 ? delta / Math.abs(rightMean) : undefined;
 
       findings.push({
@@ -722,8 +800,8 @@ function buildTestValueFindings(
         stats: {
           method: 'welch-z-approx',
           pValue,
-          sampleSizeLeft: leftValues.length,
-          sampleSizeRight: rightValues.length,
+          sampleSizeLeft: leftN,
+          sampleSizeRight: rightN,
         },
         summary: summarizeTestFinding(region.label, label, delta, relativeDelta, region.family, unit),
         highlight: {
@@ -1078,19 +1156,25 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     idMetric = `test:${testNumber}`;
   } else if (kind === 'yield') {
     const passSet = new Set(ctx.passBins);
-    const leftPass = leftDies.filter(d => d.hbin !== undefined && passSet.has(d.hbin)).length;
-    const rightPass = rightDies.filter(d => d.hbin !== undefined && passSet.has(d.hbin)).length;
-    const leftRate = leftPass / leftDies.length;
-    const rightRate = rightPass / rightDies.length;
+    // Denominator is the hbin-bearing population only (see buildYieldFindings):
+    // dies without a hard bin have no pass/fail verdict and must not deflate yield.
+    const leftHbin = leftDies.filter(d => d.hbin !== undefined);
+    const rightHbin = rightDies.filter(d => d.hbin !== undefined);
+    const leftN = leftHbin.length;
+    const rightN = rightHbin.length;
+    const leftPass = leftHbin.filter(d => passSet.has(d.hbin!)).length;
+    const rightPass = rightHbin.filter(d => passSet.has(d.hbin!)).length;
+    const leftRate = leftN > 0 ? leftPass / leftN : 0;
+    const rightRate = rightN > 0 ? rightPass / rightN : 0;
     const delta = leftRate - rightRate;
-    const pValue = twoProportionPValue(leftPass, leftDies.length, rightPass, rightDies.length);
+    const pValue = twoProportionPValue(leftPass, leftN, rightPass, rightN);
     effect = {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta,
     };
-    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftDies.length, sampleSizeRight: rightDies.length };
+    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
     severity = severityForFinding(pValue, delta, effect.relativeDelta);
     summary = summarizeYieldFinding(label, delta, family);
     idMetric = 'yield';
@@ -1242,6 +1326,7 @@ export function analyzeWaferMap(
   let activeTestNumbers: number[] | undefined;
   if (resolved.enableTestValueAnalysis) {
     const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.testDefs, resolved);
+    // ── set below; the cheap perTestStats pass reuses ring.activeTestNumbers ──
     const quad     = buildTestValueFindings(eligibleDies, quadrantRegions, result.testDefs, resolved);
     const reticle  = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.testDefs, resolved);
     const testSite = buildTestValueFindings(eligibleDies, testSiteRegions, result.testDefs, resolved);
@@ -1395,13 +1480,24 @@ export function analyzeWaferMap(
     stats.isLotStack = true;
     if (stackMethod) stats.aggregationMethod = stackMethod;
   }
-  if (warnings.length > 0) stats.warnings = warnings;
   const specYield = computeTestSpecYield(result.dies, result.testDefs);
   if (specYield) stats.testSpecYield = specYield;
+  // Per-test descriptive stats (quartiles for box plots). Produced when the full
+  // test-value analysis ran (reusing its discovered test numbers) OR when the
+  // caller asked for the cheap computePerTestStats pass on its own. This may push
+  // a cap warning, so it must run BEFORE stats.warnings is assigned below.
+  if (activeTestNumbers === undefined && resolved.computePerTestStats) {
+    const discovered = discoverTestNumbers(eligibleDies, resolved.testNumbers);
+    if (discovered.warning) warnings.push(discovered.warning);
+    activeTestNumbers = discovered.testNumbers;
+  }
   if (activeTestNumbers?.length) {
     const perTestStats = computePerTestStats(result.dies, activeTestNumbers, result.testDefs, resolved.minimumSampleSize);
     if (perTestStats) stats.perTestStats = perTestStats;
   }
+  // Assign warnings last so cap warnings raised by the cheap perTestStats path
+  // above are not lost (they are pushed after the earlier assignment point).
+  if (warnings.length > 0) stats.warnings = warnings;
 
   return {
     level: 'wafer',

@@ -164,7 +164,9 @@
           // Full summary panel, opened by default, on a wafer with bins + test
           // values so yield, bin breakdown, and per-test stats are all populated.
           var spResult = buildWaferMap({ results: results, hbinDefs: hbinDefs, testDefs: testDefs, passBins: [1], waferConfig: { notch: { type: 'right' } } });
-          var spSummary = analyzeWaferMap ? analyzeWaferMap(spResult) : null;
+          // computePerTestStats: true adds the cheap per-test value summary to the
+          // panel without the heavier regional test-value findings pass.
+          var spSummary = analyzeWaferMap ? analyzeWaferMap(spResult, { computePerTestStats: true }) : null;
           renderWaferMap(el, spResult, {
             showTooltip: true,
             viewOptions: { plotMode: 'hardBin' },

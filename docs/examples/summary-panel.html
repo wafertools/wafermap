@@ -61,6 +61,7 @@
     The summary panel shows yield, bin distribution, ring and quadrant breakdown, test value statistics, and findings — all in one persistent view alongside the map.
     The top example uses <code>summaryPanel: { placement: 'right' }</code> for a fixed always-visible panel.
     The gallery below uses <code>lotStatsSummary</code> for lot-level stats; click a card header to drill into that wafer's per-wafer summary.
+    The <strong>test value statistics</strong> section appears only because this demo passes <code>computePerTestStats: true</code> to <code>analyzeWaferMap</code>; it is off by default, since the per-test scan adds cost (see the <a href="../guide/#which-test-value-setting-to-use">guide</a> for the full breakdown).
   </div>
 
   <div class="demo-content">
@@ -99,7 +100,9 @@
       testDefs:    TEST_DEFS,
     });
 
-    const singleStats = analyzeWaferMap(singleResult);
+    // computePerTestStats: true adds the per-test value summary to the panel
+    // (mean / stddev / quartiles) without the heavier regional Welch findings.
+    const singleStats = analyzeWaferMap(singleResult, { computePerTestStats: true });
 
     renderWaferMap(
       document.getElementById('single-map'),
@@ -123,8 +126,8 @@
       buildWaferMap({ results: makeResults({ seed: 6, edgeFail: true, center: true }), waferConfig: makeWaferConfig(5), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
     ];
 
-    const waferSummaries = waferResults.map(r => analyzeWaferMap(r));
-    const lotSummary     = analyzeWaferLot(waferResults);
+    const waferSummaries = waferResults.map(r => analyzeWaferMap(r, { computePerTestStats: true }));
+    const lotSummary     = analyzeWaferLot(waferResults, { computePerTestStats: true, perWaferSummaries: waferSummaries });
 
     const galleryItems = waferResults.map((r, i) => ({
       ...r,

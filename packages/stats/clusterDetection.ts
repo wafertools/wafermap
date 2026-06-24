@@ -1,5 +1,6 @@
 import type { Die, Wafer } from '../core/index.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
+import { normalCdf } from './math.js';
 
 // 16-point compass for edge-arc bearing labels.
 const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW', 'SW', 'SSW', 'S', 'SSE', 'SE', 'ESE'];
@@ -22,16 +23,6 @@ function severityForCluster(
   if (pValue <= 0.01 && (delta >= 0.25 || absRel >= 2.0 || clusterFraction >= 0.10)) return 'unusual';
   if (pValue <= 0.05 && (delta >= 0.15 || absRel >= 1.0 || clusterFraction >= 0.03)) return 'notable';
   return 'info';
-}
-
-// Normal CDF approximation (same as analyzeWaferMap).
-function normalCdf(value: number): number {
-  const x = Math.abs(value);
-  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429;
-  const p = 0.3275911;
-  const t = 1 / (1 + p * x);
-  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-  return 0.5 * (1 + (value < 0 ? -y : y));
 }
 
 // One-sided binomial p-value P(X >= k | n, p) using normal approximation.

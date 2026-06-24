@@ -19,6 +19,42 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+## [0.16.0] — 2026-06-24
+
+### Breaking
+
+- **`enableTestValueAnalysis` now defaults to `false`.** The regional parametric significance pass (Welch comparisons of each test's values between every region family and the rest of the wafer, plus spec-limit region findings) was previously **on by default**, making it the dominant cost of `analyzeWaferMap`/`analyzeWaferLot` — it scales with regions × tests × dies. Any caller that did not explicitly disable it paid 11–28× the cost of the rest of analysis (≈285 ms vs 23 ms at 2.8k dies × 50 tests; ≈867 ms vs 31 ms at 200 tests), and a 10-wafer lot ran multiple seconds. It is now opt-in. **Migration:** if you display the regional test-value findings (or the `perWaferTestStats` they implied), pass `enableTestValueAnalysis: true`. If you only need per-test descriptive statistics (mean/stddev/quartiles for box plots), use the new, far cheaper `computePerTestStats: true` instead.
+
+### Added
+
+- **`computePerTestStats` analysis option.** Computes the per-test descriptive statistics (`count`, `min`, `max`, `mean`, `stddev`, `median`, `q1`, `q3`) into `StatsSummary.stats.perTestStats` — and `perWaferTestStats` on the lot summary — **without** the expensive regional Welch pass of `enableTestValueAnalysis`. Use it for box-plot / histogram panels that need distribution shape but not spatial findings. Off by default; implied by `enableTestValueAnalysis`. At 2.8k dies × 200 tests this path is ≈149 ms versus ≈382 ms for the full findings pass.
+
+### Performance
+
+- **`buildTestValueFindings` rewritten to be allocation-light (≈2–2.3× faster, identical output).** The previous implementation allocated two value arrays per (region × test) via `.map().filter()` and rebuilt the "rest of wafer" die set per region — profiled at ~95% of analysis cost, mostly GC. It now assigns each die to its region once and, per test, walks the dies a single time accumulating per-region running sums (n, Σx, Σx²); the "rest of wafer" statistics are derived by subtraction and never materialised. Welch needs only count/mean/variance, so no value arrays are built in the hot path. Per-test values are accumulated shifted by a per-test constant so the running-sum variance stays well-conditioned even for large-magnitude, low-variance tests (e.g. voltages near 1e6 with mV spread). Findings match the previous output to within floating-point tolerance. Full pass at 2.8k dies × 200 tests dropped from ≈867 ms to ≈382 ms; a 10-wafer lot from multiple seconds to ≈2.5 s with findings on, ≈293 ms with the new default.
+
+### Fixed
+
+The following were found in the first full code review of the library and each ships with a regression test that exercises the previously-untested path.
+
+- **`wafer.orientation` was applied twice, rotating dies out of alignment with the wafer boundary.** `buildWaferMap` bakes `wafer.orientation` into `die.physX/physY`, and `buildView` then re-applied it in the render transform — so for any non-zero `wafer.orientation` the dies rotated twice while the boundary/notch rotated once, and they no longer matched. Invisible at the default `orientation: 0`. Die *centre* positions now use the interactive rotation only (orientation is already baked in); die rectangle shapes and all overlays keep the full transform. Interactive rotation/flip from the toolbar was always correct and is unchanged.
+- **Out-of-spec die colouring was suppressed in `colorbarRangeMode: 'data'`.** In value mode with spec limits defined, dies outside the limits must always render red (fail-high) / blue (fail-low); under `'data'` range mode they were drawn with the in-spec gradient instead, so an out-of-spec die looked in-spec. Out-of-spec classification now depends only on whether limits are defined — `colorbarRangeMode` affects only the colorbar's numeric range, as documented.
+- **Regional yield findings counted dies with no hard bin as fails.** A die eligible only via soft bin or test values has no hard-bin pass/fail verdict, but it was included in the regional yield denominator (and so counted as a fail), deflating that region's yield and producing spurious "lower yield" findings. The denominator is now the hbin-bearing population, matching the overall wafer yield.
+- **Regional test-value findings could fire on constant (zero-variance) data.** When every die in both the region and the rest of the wafer read an identical value, the Welch standard error is zero and the comparison is statistically undefined — it was reported as `p = 0` with infinite effect (maximally significant). It is now correctly treated as a non-finding (`p = 1`, no effect), so uniform or coarsely-quantised tests no longer produce spurious "unusual" findings.
+- **A `>250` test-count cap warning from `computePerTestStats` could be silently dropped.** `stats.warnings` was assigned before the cheap per-test-stats path ran, so a cap warning it raised never reached `StatsSummary.stats.warnings`. The assignment now happens after that path.
+- **Wafer ID now appears in die hover tooltips.** 0.15.0 stripped `waferId` from the merged tooltip metadata on the assumption the map context always conveys it — but in the gallery (many wafers on screen) and stacked maps that left tooltips ambiguous. The tooltip now renders every host-supplied metadata key, including `waferId`; wmap takes no view on which fields belong in a tooltip, so content is controlled entirely by the metadata the host provides on `WaferMetadata`/`DieMetadata`.
+- **Stacked-map die tooltips showed the wrong/missing aggregation context.** The tooltip read the aggregation method and lot size from the caller's `viewOptions` rather than from the built view, so a `buildWaferMap({ lotStack })` result (which carries them on the result) produced tooltips with a missing method or no occurrence percentage. It now reads them from the view, which always holds the authoritative values.
+- **`stackedBins` / `stackedSoftBins` tooltips mislabelled `percent`-aggregated values.** A `percent` lot-stack value is already a percentage, but the hover treated it as an occurrence count and derived a second percentage from it (e.g. "50 (250%)"). The tooltip now renders a `percent` value as `N%`, a `countBin` value as a count with its share of the lot, and names the aggregation method either way.
+- **On-canvas bin/spec legend counts excluded edge-excluded dies.** Edge-excluded dies are drawn as no-data grey but were still tallied into the legend population, so the legend disagreed with both the drawn colours and the summary panel. They are now excluded, matching the rest of the pipeline.
+- **Docs site: `wafermap/stats`, `wafermap/renderer`, and `wafermap/worker` were served as unbundled module graphs.** `bundle-docs.mjs` bundled only the `wafermap` and `wafermap/render` importmap entries; the other three resolved to raw `tsc` barrels, so any demo importing them fetched each internal module over a separate request — a serial waterfall (stats alone fans out to ~13 modules) that showed as a blank before the maps appeared, worst on high-latency connections. All five importmap entry points are now bundled to single minified files.
+
+### Changed
+
+- **`minimumRelativeEffect` documentation corrected to its actual default of `1.0`** (the TSDoc and API reference previously said `0.5`), and the test-value auto-skip threshold corrected to **250 tests** (docs previously said 100).
+- **Internal de-duplication (no behaviour change):** the normal-CDF / error-function approximation (previously copied in `analyzeWaferMap` and `clusterDetection`) now lives in a shared `stats/math.ts`; the Wang hash used for bin colours (previously copied in `colorMap` and `colorSchemes`) is now a single shared `wangHash`. The lot summary report no longer tags caller-owned `Die` objects with a hidden `_waferIndex` field (stats is side-effect-free) — it uses a parallel per-wafer array instead, which also fixes a latent index-misalignment when an item had dies but no wafer.
+
 ## [0.15.0] — 2026-06-23
 
 ### Breaking

@@ -554,7 +554,7 @@ results: rows.map(r => ({
 })),
 ```
 
-**Metadata appears automatically in hover tooltips** — no extra configuration. The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. `waferId` is omitted from the metadata lines (the map context already identifies the wafer), and `null`/`undefined` values are skipped.
+**Metadata appears automatically in hover tooltips** — no extra configuration. The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. `null`/`undefined` values are skipped. wmap renders whatever keys you supply, so you control tooltip content through the metadata you set.
 
 > **Changed in 0.15.0:** wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were removed from `DieMetadata` — set them on `WaferMetadata` instead. See the migration note in the changelog.
 
@@ -957,13 +957,53 @@ const summary = analyzeWaferMap(result, {
   enableYieldAnalysis:       true,
   enableHardBinAnalysis:     true,
   enableSoftBinAnalysis:     true,
-  enableTestValueAnalysis:   true,
+  enableTestValueAnalysis:   true,   // default FALSE — opt in for regional test-value findings (expensive);
+                                     // use computePerTestStats: true for box-plot stats without the Welch pass
   enableReticlePositionAnalysis: true,  // auto-disabled when no reticle config
   enableAngularAnalysis:     true,   // sector directional analysis
   enableClusterAnalysis:     true,   // contiguous failure cluster + edge arc detection
   sectorCount:               8,      // 4 | 8 | 16 | 32
 });
 ```
+
+#### How the analysis is structured: variable × region
+
+Regional analysis has **two independent axes**, and it helps to keep them separate:
+
+- **What is measured** (the *variable*): yield, hard bin, soft bin, or test value.
+- **Where it is measured** (the *region family*): rings, quadrants, sectors, reticle positions, or test sites.
+
+Every enabled variable is compared across **every** enabled region family — they form a grid. Sectors, reticle positions, and test sites are **not** specific to any one variable: if reticle analysis is on, you get yield *and* bin *and* (when enabled) test-value findings broken down by reticle position, exactly as you do for rings.
+
+|                          | Rings | Quadrants | Sectors¹ | Reticle² | Test sites³ |
+|--------------------------|:-----:|:---------:|:--------:|:--------:|:-----------:|
+| **Yield** (`enableYieldAnalysis`)        | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Hard bin** (`enableHardBinAnalysis`)   | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Soft bin** (`enableSoftBinAnalysis`)   | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Test value** (`enableTestValueAnalysis`) | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+The **column** toggles control which region families are built at all:
+
+1. **Sectors** — built only when `enableAngularAnalysis: true` (default), with `sectorCount` slices.
+2. **Reticle positions** — built only when `enableReticlePositionAnalysis: true` (default) **and** a reticle configuration is present; otherwise skipped automatically.
+3. **Test sites** — built only when the wafer has meaningful site duplication (≥ 2 distinct `siteNum` values, each on ≥ 3 dies), unless `enableTestSiteAnalysis` forces it on (`true`) or off (`false`).
+
+Rings and quadrants are always built. The **row** toggles control which variables are compared across whatever families exist.
+
+#### Which test-value setting to use
+
+The **test-value row is off by default** because it is the expensive one — it runs a Welch comparison for every test across every region, scaling with regions × tests × dies. Leaving it off costs you **nothing on yield or bins**; you lose only the parametric (measured-value) findings. Choose based on what you need:
+
+| You want…                                                                 | Pass                                | Relative cost |
+|---------------------------------------------------------------------------|-------------------------------------|---------------|
+| Yield, bin, and spatial (ring/quadrant/sector/cluster) findings only      | *(nothing — this is the default)*   | baseline      |
+| …plus per-test descriptive stats (mean, stddev, min, max, median, Q1, Q3) for box plots / histograms | `computePerTestStats: true`         | ~5× baseline  |
+| …plus "this test's value differs significantly in this region" findings (and spec-limit region findings) | `enableTestValueAnalysis: true`     | ~12× baseline |
+
+`enableTestValueAnalysis` also produces the per-test descriptive stats, so you never need both. The cost multipliers are illustrative (measured at ~2.8k dies × 200 tests); the absolute numbers scale with your test count.
+
+**→ [Demo: Summary panel](examples/summary-panel.html)** uses `computePerTestStats: true` to populate the per-test value section of the panel.  
+See also: **[Demo: Standalone stacked map with spatial analysis](examples/lot-stack-analysis.html)**, which uses `enableTestValueAnalysis: true` to surface regional test-value findings on a lot-averaged map.
 
 #### Cluster and edge-arc highlights
 
@@ -1321,7 +1361,7 @@ renderWaferGallery(container, items, {
 });
 ```
 
-Pass `enableTestValueAnalysis: true` to also populate `lotSummary.perWaferTestStats` — a per-wafer × per-test five-number summary (min/Q1/median/Q3/max plus mean/stddev/count) ready for box-plot rendering. Each entry corresponds to one wafer and has a `tests` array with the same shape as `StatsSummary.stats.perTestStats`.
+Pass `computePerTestStats: true` to also populate `lotSummary.perWaferTestStats` — a per-wafer × per-test five-number summary (min/Q1/median/Q3/max plus mean/stddev/count) ready for box-plot rendering. Each entry corresponds to one wafer and has a `tests` array with the same shape as `StatsSummary.stats.perTestStats`. (`enableTestValueAnalysis: true` populates it too, but also runs the much more expensive regional Welch findings pass — prefer `computePerTestStats` when you only need distribution stats for box plots.)
 
 A "Findings" button appears in the gallery control bar. Clicking it opens a panel with two tabs:
 

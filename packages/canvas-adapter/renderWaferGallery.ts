@@ -632,7 +632,7 @@ export function renderWaferGallery(
       ? (testDefs?.length
           ? testDefs.map(t => ({
               plotMode: 'value' as PlotMode,
-              activeTest: t.index ?? t.testNumber ?? 0,
+              activeTest: t.testNumber ?? t.index ?? 0,
               label: t.unit ? `${t.name} (${t.unit})` : t.name,
               logScale: t.logScale,
             }))
@@ -1106,7 +1106,7 @@ export function renderWaferGallery(
       const method = (sharedOpts.aggregationMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => {
         const dies = aggregateValues(allDies, method, def.testNumber ?? def.index) as Die[];
-        const cardTestDef = { index: 0, name: def.name, unit: def.unit };
+        const cardTestDef = { testNumber: 0, name: def.name, unit: def.unit };
         return {
           wafer: stackedWafer,
           dies,

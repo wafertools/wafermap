@@ -1339,7 +1339,13 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
   enableYieldAnalysis?:           boolean  // default true
   enableHardBinAnalysis?:         boolean  // default true
   enableSoftBinAnalysis?:         boolean  // default true
-  enableTestValueAnalysis?:       boolean  // default true
+  enableTestValueAnalysis?:       boolean  // default FALSE — expensive regional Welch pass on test values
+                                           // (scales with regions × tests × dies). Opt in only when you
+                                           // display the regional test-value findings. Implies perTestStats.
+  computePerTestStats?:           boolean  // default false — cheap per-test quartile scan into perTestStats
+                                           // (mean/stddev/median/q1/q3) WITHOUT the regional Welch pass.
+                                           // Use this for box-plot / histogram panels. Implied by
+                                           // enableTestValueAnalysis.
   enableReticlePositionAnalysis?: boolean  // default true (only runs when reticleConfig is present)
   enableTestSiteAnalysis?:        boolean  // default undefined (auto) — enabled when the wafer has
                                            // meaningful site duplication (≥2 distinct siteNum values
@@ -1356,7 +1362,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
   // ── Statistical thresholds (rarely need changing) ─────────────────────────
   significanceLevel?:       number  // adjusted p-value threshold (default 0.05)
   minimumEffectSize?:       number  // minimum absolute |delta| for proportion findings (default 0.15)
-  minimumRelativeEffect?:   number  // minimum relative |delta / background| (default 0.5);
+  minimumRelativeEffect?:   number  // minimum relative |delta / background| (default 1.0);
                                     // catches signals on low-failure-rate wafers where absolute delta
                                     // is small but represents a large relative deviation
   sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 | 32 (default 8)
@@ -1377,14 +1383,14 @@ A finding is emitted only when it clears two independent gates: it must be stati
 |--------|---------|------------|
 | `significanceLevel` | `0.05` | adjusted p-value threshold after per-family BH correction |
 | `minimumEffectSize` | `0.15` | absolute proportion delta for yield/bin findings |
-| `minimumRelativeEffect` | `0.5` | relative effect `\|delta / background\|` for yield/bin/cluster findings |
+| `minimumRelativeEffect` | `1.0` | relative effect `\|delta / background\|` for yield/bin/cluster findings |
 | minimum region size | auto | auto-scaled to ~1% of wafer die count (min 5); not user-configurable |
 
 **Effect size gate for proportion findings (yield, hard bin, soft bin, cluster, edge-arc):**
 
 A finding is kept when it passes the significance test AND satisfies at least one of:
 - absolute `|delta| ≥ minimumEffectSize` (0.15 by default), **or**
-- relative `|delta / background| ≥ minimumRelativeEffect` (0.5 by default)
+- relative `|delta / background| ≥ minimumRelativeEffect` (1.0 by default)
 
 The relative criterion catches meaningful signals on low-failure-rate wafers where the absolute delta is small but still represents a large deviation from background. For example, with a 3% background failure rate a 2 percentage-point increase is a 67% relative elevation — statistically and practically significant even though 0.02 < 0.15.
 
@@ -1424,7 +1430,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 **Behavioural notes:**
 
 - Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the view.
-- Test-value analysis is auto-skipped if the data contains more than 100 distinct tests unless `testNumbers` is provided. A warning is emitted via `console.warn` and also surfaced in `summary.stats.warnings[]` for programmatic inspection.
+- Test-value analysis is auto-skipped if the data contains more than 250 distinct tests unless `testNumbers` is provided. A warning is emitted via `console.warn` and also surfaced in `summary.stats.warnings[]` for programmatic inspection.
 
 ### 7.4 `StatsSummary`
 
@@ -1458,7 +1464,8 @@ Either the rate criterion or the size criterion can trigger the severity level; 
       totalDies:    number            // dies that had a value for this test
       yieldPercent: number | null     // (passDies / totalDies) × 100 ∈ [0, 100]; null when totalDies = 0
     }>
-    perTestStats?: Array<{            // one entry per active test with enough data; absent when no test values
+    perTestStats?: Array<{            // present only when computePerTestStats or enableTestValueAnalysis is set;
+                                      // one entry per active test with enough data
       testNumber: number
       label:      string             // testDef.name, or "Test {N}" when no testDef
       count:      number             // number of dies with a value for this test
@@ -1493,7 +1500,8 @@ Either the rate criterion or the size criterion can trigger the severity level; 
     waferIndex: number
     summary: StatsSummary              // per-wafer findings
   }>
-  perWaferTestStats?: Array<{          // only present when enableTestValueAnalysis is true and at least one wafer has test data
+  perWaferTestStats?: Array<{          // present only when computePerTestStats or enableTestValueAnalysis is set
+                                       // (prefer computePerTestStats — it skips the regional Welch pass)
     waferIndex: number
     tests: Array<{
       testNumber: number
@@ -2645,7 +2653,7 @@ waferConfig: {
 }
 ```
 
-Since 0.15.0, `WaferMetadata` is also the home for lot/wafer facts shown in **die hover tooltips** — they merge in as the tooltip base, with any per-die [`DieMetadata`](#124-diemetadata) key overriding the wafer value (`waferId` excepted; see §12.4).
+Since 0.15.0, `WaferMetadata` is also the home for lot/wafer facts shown in **die hover tooltips** — they merge in as the tooltip base, with any per-die [`DieMetadata`](#124-diemetadata) key overriding the wafer value.
 
 ### 12.4 `DieMetadata`
 
@@ -2659,7 +2667,7 @@ An open index signature for annotations that **genuinely vary die-to-die**. Any 
 
 > **Changed in 0.15.0:** the named wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were **removed** from `DieMetadata`. They are properties of the wafer, not the die — set them once on [`WaferMetadata`](#123-wafermetadata) (`waferConfig.metadata`). Storing them per die replicated identical values across every die for no benefit.
 
-The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. Both render as `key: value` lines, skipping `null`/`undefined`. `waferId` is omitted (the map context already identifies the wafer).
+The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. Both render as `key: value` lines, skipping `null`/`undefined`. wmap renders whatever keys the host supplies — it has no opinion on which fields belong in a tooltip, so control over tooltip content lives in the host-provided metadata.
 
 ```ts
 // Wafer-level facts — set once:

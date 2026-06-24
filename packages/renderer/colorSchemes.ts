@@ -1,4 +1,4 @@
-import { BIN_PALETTE, HARD_BIN_GREY, VIRIDIS, lerpKp, valueToGreyscale, hardBinColor } from './colorMap.js';
+import { BIN_PALETTE, HARD_BIN_GREY, VIRIDIS, lerpKp, valueToGreyscale, hardBinColor, wangHash } from './colorMap.js';
 
 // ── Public interface ──────────────────────────────────────────────────────────
 
@@ -60,21 +60,14 @@ export function listColorSchemes(): Array<{ name: string; label: string }> {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Wang hash for scheme-internal bin → palette index mapping. */
-function schemeHash(bin: number, salt: number): number {
-  let h = (bin ^ salt) | 0;
-  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
-  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
-  return (h ^ (h >>> 16)) >>> 0;
-}
-
 /**
  * Hash a bin number into a colour array, skipping index 0 (reserved for no-data).
- * Different salts give different mappings for the same bin number.
+ * Different salts give different mappings for the same bin number. Uses the shared
+ * Wang hash from colorMap so the hashing is defined in exactly one place.
  */
 function binHash(colors: readonly string[], salt: number): (bin: number) => string {
   const slots = colors.length - 1;
-  return (bin) => colors[(schemeHash(bin, salt) % slots) + 1];
+  return (bin) => colors[(wangHash(bin ^ salt) % slots) + 1];
 }
 
 // ── Built-in schemes ──────────────────────────────────────────────────────────

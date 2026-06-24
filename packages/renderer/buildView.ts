@@ -249,17 +249,19 @@ export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
  * die colouring in `pushDieRectangles`. Returns null when there is no value. Shared by the colour
  * branch and the spec-count tally so the two never diverge.
  *
- * `colorbarRangeMode === 'data'` suppresses out-of-spec classification (limits don't anchor the
- * range), matching the colouring logic — in that case everything with a value is `pass`.
+ * Out-of-spec classification depends ONLY on whether limits are defined — never on
+ * `colorbarRangeMode`. That option controls the colorbar's numeric range, not whether a die is
+ * in or out of spec: an out-of-spec die must always be flagged (and coloured) when limits exist,
+ * regardless of how the colorbar is scaled. (Previously `'data'` mode suppressed this, so an
+ * out-of-spec die rendered as an in-spec gradient colour — a silent correctness bug.)
  */
 export function classifySpec(
   value: number | undefined,
   activeTestDef: { limitLow?: number; limitHigh?: number } | undefined,
-  colorbarRangeMode: 'spec' | 'data' | undefined,
 ): SpecCategory | null {
   if (value === undefined) return null;
-  if (colorbarRangeMode !== 'data' && activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) return 'failLow';
-  if (colorbarRangeMode !== 'data' && activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) return 'failHigh';
+  if (activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) return 'failLow';
+  if (activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) return 'failHigh';
   return 'pass';
 }
 
@@ -269,6 +271,26 @@ function normalizeTransform(
 ): TransformState {
   return {
     rotation: wafer.orientation + (interactiveTransform?.rotation ?? 0),
+    flipX: interactiveTransform?.flipX ?? false,
+    flipY: interactiveTransform?.flipY ?? false,
+  };
+}
+
+/**
+ * Transform for die *centre positions* (`physX`/`physY`). These already have
+ * `wafer.orientation` baked in by `applyOrientation` in `buildWaferMap`, so we
+ * must NOT re-apply it here — only the interactive rotation/flip. Applying the
+ * full `normalizeTransform` (which adds `wafer.orientation`) to the already-
+ * oriented centres double-rotates the dies relative to the wafer boundary, which
+ * is built live from un-oriented geometry and so correctly carries orientation in
+ * its transform. The die rectangle *shape* (and all overlays) keep the full
+ * transform; only the pre-baked centre offset is interactive-only.
+ */
+function dieCenterTransform(
+  interactiveTransform: ViewOptions['interactiveTransform']
+): TransformState {
+  return {
+    rotation: interactiveTransform?.rotation ?? 0,
     flipX: interactiveTransform?.flipX ?? false,
     flipY: interactiveTransform?.flipY ?? false,
   };
@@ -391,15 +413,29 @@ export function buildHoverText(
       lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
     }
   } else if (plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
-    const count = getDieTestValue(die, 0, 0);
+    const value = getDieTestValue(die, 0, 0);
     const bin   = plotMode === 'stackedSoftBins' ? die.sbin : die.hbin;
-    if (count !== undefined) {
-      const pct     = lotSize ? ` (${((count / lotSize) * 100).toFixed(0)}%)` : '';
+    if (value !== undefined) {
       const defMap  = plotMode === 'stackedSoftBins' ? sbinMap : hbinMap;
       const binLabel = bin !== undefined
         ? (defMap?.get(bin)?.name ? `${bin} · ${defMap.get(bin)!.name}` : `Bin ${bin}`)
         : 'Bin';
-      lines.push(`${binLabel}: ${count}${pct}`);
+      // The aggregated scalar's meaning depends on the lot-stack method:
+      //  - 'percent'  → value is ALREADY a percentage; show it as N%, never derive
+      //    a second (count/lotSize) percentage (which produced nonsense like "250%").
+      //  - countBin/default → value is an occurrence count; optionally annotate with
+      //    its share of the lot.
+      let valueText: string;
+      if (aggrMethod === 'percent') {
+        valueText = `${value.toFixed(0)}%`;
+      } else {
+        const pct = lotSize ? ` (${((value / lotSize) * 100).toFixed(0)}% of lot)` : '';
+        valueText = `${value}${pct}`;
+      }
+      // Name the aggregation method so an engineer knows whether they are reading
+      // an occurrence count or a percentage.
+      const method = aggrMethod ? ` [${fmtAggregationMethod(aggrMethod)}]` : '';
+      lines.push(`${binLabel}: ${valueText}${method}`);
     }
   } else {
     // Standard modes: show all test values with names, then bins.
@@ -469,12 +505,12 @@ export function buildHoverText(
   if (die.partial) lines.push('<i>partial die</i>');
   if (die.probeIndex !== undefined) lines.push(`Probe: #${die.probeIndex}`);
 
-  // Metadata: wafer-level facts (lot, product, program, …) are the base; any
-  // per-die key overrides the wafer value of the same name. `waferId` is omitted
-  // because the die's wafer identity is already conveyed by the map context (and
-  // the gallery strips it), so it would be noise in every tooltip.
+  // Metadata: wafer-level facts (lot, wafer id, product, program, …) are the
+  // base; any per-die key overrides the wafer value of the same name. wmap is
+  // unopinionated about which fields belong in a tooltip — it renders whatever
+  // keys the host supplies, so control over tooltip content lives in the
+  // host-provided metadata.
   const meta: Record<string, unknown> = { ...(waferMeta ?? {}), ...(die.metadata ?? {}) };
-  delete meta.waferId;
   for (const [key, value] of Object.entries(meta)) {
     if (value === undefined || value === null) continue;
     lines.push(`${key}: ${String(value)}`);
@@ -799,7 +835,6 @@ function pushDieRectangles(
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
   colorBySpec?: boolean,
-  colorbarRangeMode?: 'spec' | 'data',
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -841,7 +876,7 @@ function pushDieRectangles(
 
   if (plotMode === 'value') {
     const value = getDieTestValue(die, testNumber, fallbackIndex);
-    const spec = classifySpec(value, activeTestDef, colorbarRangeMode);
+    const spec = classifySpec(value, activeTestDef);
     let fill: string;
     if (value === undefined) {
       fill = NO_DATA_FILL;
@@ -860,14 +895,14 @@ function pushDieRectangles(
 
   if (plotMode === 'hardBin' || plotMode === 'softBin') {
     const bin = getBin(die);
-    const fill = bin != null ? colorFns.forBin(bin) : '#d6d9dd';
+    const fill = bin != null ? colorFns.forBin(bin) : NO_DATA_FILL;
     rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata });
     return;
   }
 
   // stackedValues / stackedBins: aggregated scalar in testValues[0] (preferred) or values[0].
   const aggValue = getDieTestValue(die, 0, 0);
-  const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : '#d6d9dd';
+  const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : NO_DATA_FILL;
   rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
 }
 
@@ -929,7 +964,10 @@ export function buildView(
     showQuadrantBoundaries = false,
     showXYIndicator = false,
     dieGap = 1,
-    colorScheme = 'color',
+    // 'default' is the canonical scheme name ('color' is a deprecated alias). Using
+    // the canonical name here means view.colorScheme matches the toolbar dropdown's
+    // 'default' entry for active-state highlighting.
+    colorScheme = 'default',
     highlightBin,
     interactiveTransform,
     valueRange: valueRangeOpt,
@@ -946,8 +984,9 @@ export function buildView(
     showPartialDies = true,
   } = options;
 
-  // colorBySpec implies spec-anchored range — the bar is irrelevant in pass/fail mode
-  // but we must not leave colorbarRangeMode as 'data' or the die colouring breaks.
+  // colorBySpec is pass/fail mode: anchor the colorbar range to the spec limits.
+  // (This only affects the colorbar's numeric range now — out-of-spec die colouring
+  // is independent of colorbarRangeMode; see classifySpec.)
   const colorbarRangeMode: 'spec' | 'data' = colorBySpec ? 'spec' : colorbarRangeModeOpt;
 
   const hbinDefs = binDefs?.hbinDefs;
@@ -1099,12 +1138,16 @@ export function buildView(
   // Pre-compute transformed physical positions — only physX/physY move under
   // rotation/flip; all other die fields are unchanged. Storing coords in a
   // parallel Float64Array pair avoids allocating a new Die object per die.
-  const needsTransform = !!(transform.rotation || transform.flipX || transform.flipY);
+  // Die CENTRES use the interactive-only transform: wafer.orientation is already
+  // baked into physX/physY (see dieCenterTransform). The die rectangle shapes and
+  // overlays below keep the full `transform` (orientation + interactive).
+  const centerTransform = dieCenterTransform(interactiveTransform);
+  const needsTransform = !!(centerTransform.rotation || centerTransform.flipX || centerTransform.flipY);
   let txCoords: Float64Array | null = null;
   if (needsTransform) {
     txCoords = new Float64Array(dies.length * 2);
     for (let i = 0; i < dies.length; i++) {
-      const tp = transformPoint({ x: dies[i].physX, y: dies[i].physY }, wafer.center, transform);
+      const tp = transformPoint({ x: dies[i].physX, y: dies[i].physY }, wafer.center, centerTransform);
       txCoords[i * 2]     = tp.x;
       txCoords[i * 2 + 1] = tp.y;
     }
@@ -1123,17 +1166,24 @@ export function buildView(
     // Always add to hoverPoints so dieBounds covers the full die extent —
     // the viewport must fit the whole wafer regardless of showPartialDies.
     hoverPoints.push({ x: physX, y: physY });
-    if (binCounts && !die.partial) {
+    // Legend tallies must exclude both partial AND edge-excluded dies: those are
+    // drawn as no-data grey (not their bin/spec colour), so counting them would
+    // make the legend population disagree with what is actually coloured on the
+    // map and with the summary panel (which also excludes edge-excluded dies).
+    if (binCounts && !die.partial && !die.edgeExcluded) {
       const bin = useSoftBin ? die.sbin : die.hbin;
       if (bin != null) binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
     }
-    if (specCounts && !die.partial) {
+    if (specCounts && !die.partial && !die.edgeExcluded) {
       // Same classification the colouring uses (shared helper) so counts match the drawn colours.
-      const cat = classifySpec(getDieTestValue(die, activeTestNumber, activeTestFallback), activeTestDef, colorbarRangeMode);
+      const cat = classifySpec(getDieTestValue(die, activeTestNumber, activeTestFallback), activeTestDef);
       if (cat) specCounts[cat]++;
     }
     if (die.partial && !showPartialDies) continue;
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, transform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec, colorbarRangeMode);
+    // centerTransform (not the full transform): dies are axis-aligned rects centred
+    // on the already-oriented physX/physY, so the AABB width/height swap must key off
+    // the interactive rotation only — matching how the centre position was derived.
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {

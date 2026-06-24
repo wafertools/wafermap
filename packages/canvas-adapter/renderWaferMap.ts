@@ -673,7 +673,7 @@ export function renderWaferMap(
             ? (testDefs?.length
                 ? testDefs.map(t => ({
                     plotMode: 'value' as PlotMode,
-                    activeTest: t.index ?? t.testNumber ?? 0,
+                    activeTest: t.testNumber ?? t.index ?? 0,
                     label: t.unit ? `${t.name} (${t.unit})` : t.name,
                     logScale: t.logScale,
                   }))
@@ -1234,13 +1234,18 @@ export function renderWaferMap(
         } else {
           tooltip.innerHTML = buildHoverText(
             die,
-            viewOpts.plotMode ?? 'value',
+            currentView.plotMode,
             testDefs,
             hbinDefs,
             sbinDefs,
             currentFallbackFormat,
-            viewOpts.aggregationMethod,
-            viewOpts.lotSize,
+            // Read aggregation context from the built View, not viewOpts: a
+            // buildWaferMap({ lotStack }) result carries these on the result
+            // (→ currentView.aggrMethod/lotSize), and the caller need not repeat
+            // them in viewOptions. Using viewOpts here showed the wrong/missing
+            // aggregation method on stacked-map tooltips.
+            currentView.aggrMethod,
+            currentView.lotSize,
             tooltipTestLimit,
             result.metadata,
           );

@@ -35,6 +35,11 @@
     with <code>method: 'mean'</code>, then runs <code>analyzeWaferMap</code>
     directly on the aggregated result.  The NE-quadrant Vth drift that appears on
     every wafer produces clear quadrant and sector findings on the lot average.
+    Because these are findings on a <strong>measured test value</strong> (Vth), the call
+    passes <code>enableTestValueAnalysis: true</code> — the regional test-value pass is
+    off by default (it is the expensive one; see the
+    <a href="../guide/#which-test-value-setting-to-use">guide</a>).  Yield and bin
+    findings need no such flag.
     Because Vth has spec limits (<code>limitHigh: 0.57&thinsp;V</code>), dies where
     the lot-average Vth exceeds spec are used as the failure proxy for cluster
     detection — revealing the spatial extent of the out-of-spec zone.
@@ -81,6 +86,9 @@
     // "failing" for cluster/edge-arc detection on the lot-average map.
     const summary = analyzeWaferMap(result, {
       ringCount:  4,
+      // enableTestValueAnalysis runs the regional Welch comparisons on test
+      // values — off by default because it scales with regions × tests × dies.
+      enableTestValueAnalysis: true,
       // Restrict to Vth only for a focused demo; remove testNumbers to analyse all tests.
       testNumbers: [1060],
     });

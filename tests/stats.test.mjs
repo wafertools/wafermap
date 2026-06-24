@@ -82,9 +82,13 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
   const { wafer, dies } = makeBaseDies();
   const enriched = dies.map((die) => {
     const { ring, quadrant } = classifyDie(die, wafer, { ringCount: 3 });
+    // Deterministic within-region jitter so each group has real variance — a
+    // constant-per-region value has zero within-group spread, which Welch
+    // correctly treats as unmeasurable (no finding). Real test data always varies.
+    const jitter = (((die.x * 7 + die.y * 13) % 10) - 4.5) * 0.05; // ~±0.225
     return {
       ...die,
-      values: [quadrant === 'NE' ? 10 : 1],
+      values: [(quadrant === 'NE' ? 10 : 1) + jitter],
       hbin: quadrant === 'NE' ? 8 : 1,
       sbin: ring === 3 ? 23 : 1,
     };
@@ -102,6 +106,7 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
     enableYieldAnalysis: false,
+    enableTestValueAnalysis: true,
   });
 
   assert.ok(summary.findings.some((finding) =>
@@ -134,9 +139,12 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
     const localCol = ((die.x % 2) + 2) % 2;
     const localRow = ((die.y % 2) + 2) % 2;
     const isBadCell = localCol === 1 && localRow === 0;
+    // Deterministic within-group jitter so values have real variance (constant
+    // per group → zero within-group spread → Welch correctly finds nothing).
+    const jitter = (((die.x * 7 + die.y * 13) % 10) - 4.5) * 0.05;
     return {
       ...die,
-      values: [isBadCell ? 10 : 1],
+      values: [(isBadCell ? 10 : 1) + jitter],
       hbin: isBadCell ? 9 : 1,
       sbin: isBadCell ? 31 : 1,
     };
@@ -154,6 +162,7 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
     enableYieldAnalysis: false,
+    enableTestValueAnalysis: true,
   });
 
   assert.ok(summary.findings.some((finding) =>
@@ -284,7 +293,7 @@ test('analyzeWaferMap populates perTestStats with quartiles', () => {
   const summary = analyzeWaferMap({
     dies: enriched,
     waferConfig: { diameter: 60 },
-  });
+  }, { computePerTestStats: true });
 
   assert.ok(summary.stats.perTestStats, 'perTestStats should be populated');
   const entry = summary.stats.perTestStats.find(s => s.testNumber === 1050);
@@ -294,6 +303,151 @@ test('analyzeWaferMap populates perTestStats with quartiles', () => {
   assert.ok(entry.median <= entry.q3, 'median <= q3');
   assert.ok(entry.min <= entry.q1, 'min <= q1');
   assert.ok(entry.q3 <= entry.max, 'q3 <= max');
+});
+
+test('test-value analysis is off by default — no test findings, no perTestStats', () => {
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die) => {
+    const { quadrant } = classifyDie(die, wafer, { ringCount: 3 });
+    return { ...die, hbin: 1, testValues: { 1050: quadrant === 'NE' ? 10 : 1 } };
+  });
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'A' }],
+  }, { minimumSampleSize: 3, minimumEffectSize: 0.2 });
+
+  assert.ok(!summary.findings.some(f => f.variable.kind === 'test'),
+    'no test-value findings should be produced by default');
+  assert.equal(summary.stats.perTestStats, undefined,
+    'perTestStats should not be populated by default');
+});
+
+test('computePerTestStats yields quartiles WITHOUT regional test findings', () => {
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die) => {
+    const { quadrant } = classifyDie(die, wafer, { ringCount: 3 });
+    return { ...die, hbin: 1, testValues: { 1050: quadrant === 'NE' ? 10 : 1 } };
+  });
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'A' }],
+  }, { computePerTestStats: true, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+
+  assert.ok(summary.stats.perTestStats?.length, 'perTestStats should be populated');
+  assert.ok(!summary.findings.some(f => f.variable.kind === 'test'),
+    'computePerTestStats must NOT run the regional Welch findings pass');
+});
+
+test('enableTestValueAnalysis implies perTestStats', () => {
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die) => {
+    const { quadrant } = classifyDie(die, wafer, { ringCount: 3 });
+    return { ...die, hbin: 1, testValues: { 1050: quadrant === 'NE' ? 10 : 1 } };
+  });
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'A' }],
+  }, { enableTestValueAnalysis: true, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+
+  assert.ok(summary.stats.perTestStats?.length,
+    'enableTestValueAnalysis should also populate perTestStats');
+});
+
+test('test-value findings — constant-per-region values produce NO finding (zero within-group variance)', () => {
+  // Two rings only, value constant within each (inner ring = 1, outer = 10).
+  // With exactly two regions, the only comparison is constant-vs-constant — ZERO
+  // within-group spread on both sides. Welch is undefined on constant groups; the
+  // difference is statistically unmeasurable, so NO test-value finding should fire
+  // (regression for the old p=0 / infinite-effect behaviour). Other region
+  // families are disabled so none can straddle the ring boundary and reintroduce
+  // variance into the "rest of wafer" comparison.
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die) => {
+    const { ring } = classifyDie(die, wafer, { ringCount: 2 });
+    return { ...die, hbin: 1, testValues: { 1050: ring === 2 ? 10 : 1 } };
+  });
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'A' }],
+  }, {
+    ringCount: 2,
+    enableTestValueAnalysis: true,
+    enableAngularAnalysis: false,         // no sectors straddling the ring boundary
+    enableReticlePositionAnalysis: false,
+    enableTestSiteAnalysis: false,
+    minimumSampleSize: 3,
+    minimumEffectSize: 0.2,
+  });
+
+  assert.ok(!summary.findings.some(f => f.variable.kind === 'test'),
+    'constant-vs-constant values must not produce any test-value finding');
+});
+
+test('test-value findings — stable on large-magnitude, low-variance values', () => {
+  // Values ~1e6 with a tiny (~few-ppm) spread and a real ~0.5 NE shift. The raw
+  // one-pass variance (Σx² − n·mean²) catastrophically cancels at this scale and
+  // would mis-estimate variance (→ wrong/garbage p-values). The shifted
+  // accumulator must still detect the genuine NE difference.
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die) => {
+    const { quadrant } = classifyDie(die, wafer, { ringCount: 3 });
+    const jitter = (((die.x * 7 + die.y * 13) % 10) - 4.5) * 0.1; // ~±0.45 within-group
+    const base = 1_000_000 + (quadrant === 'NE' ? 0.6 : 0); // tiny real shift on a huge base
+    return { ...die, hbin: 1, testValues: { 1050: base + jitter } };
+  });
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'V' }],
+  }, { enableTestValueAnalysis: true, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+
+  const testFinding = summary.findings.find(
+    f => f.variable.kind === 'test' && f.comparison.left === 'NE',
+  );
+  assert.ok(testFinding, 'should detect the NE shift even on a 1e6 base');
+  assert.ok(Number.isFinite(testFinding.stats.pValue), 'p-value must be finite');
+  assert.ok(testFinding.stats.pValue >= 0 && testFinding.stats.pValue <= 1, 'p-value in [0,1]');
+});
+
+test('yield findings — hbin-less (sbin-only) dies are not counted as fails (H3)', () => {
+  // Outer ring: every die actually PASSES (hbin 1) but half carry only an sbin and
+  // no hbin. Inner rings: all pass with hbin 1. With the old full-bucket denominator
+  // the sbin-only outer dies counted as fails, deflating outer-ring yield to ~50%
+  // and manufacturing a spurious "outer ring lower yield" finding. With the
+  // hbin-bearing denominator the outer ring is correctly 100% pass → no finding.
+  const { wafer, dies } = makeBaseDies();
+  let n = 0;
+  const enriched = dies.map((die) => {
+    const { ring } = classifyDie(die, wafer, { ringCount: 3 });
+    if (ring === 3) {
+      const sbinOnly = (n++ % 2 === 0);
+      return sbinOnly
+        ? { ...die, sbin: 1 }            // eligible via sbin, NO hbin
+        : { ...die, hbin: 1, sbin: 1 };  // genuine pass
+    }
+    return { ...die, hbin: 1, sbin: 1 };
+  });
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    passBins: [1],
+  }, { ringCount: 3, minimumSampleSize: 3, minimumEffectSize: 0.05 });
+
+  const outerYieldFinding = summary.findings.find(
+    f => f.variable.kind === 'yield' && /Ring 3/.test(f.comparison.left ?? ''),
+  );
+  assert.ok(!outerYieldFinding,
+    'sbin-only dies must not deflate outer-ring yield into a spurious finding');
 });
 
 test('analyzeWaferMap respects minimum sample size filtering', () => {

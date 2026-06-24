@@ -129,7 +129,8 @@ export interface StatsSummary {
     }>;
     /**
      * Descriptive statistics for each test's values across all eligible dies.
-     * Only populated when enableTestValueAnalysis is true and the test count is within the cap.
+     * Only populated when `computePerTestStats` or `enableTestValueAnalysis` is
+     * true and the test count is within the cap.
      */
     perTestStats?: Array<{
       testNumber: number;
@@ -164,7 +165,9 @@ export interface LotStatsSummary {
   }>;
   /**
    * Per-wafer × per-test descriptive statistics, for box-plot rendering.
-   * Only populated when `enableTestValueAnalysis` is true and at least one wafer has test data.
+   * Only populated when `computePerTestStats` or `enableTestValueAnalysis` is
+   * true and at least one wafer has test data. Prefer `computePerTestStats` for
+   * box plots — it skips the expensive regional Welch pass.
    * Each entry's `tests` array has the same shape as `StatsSummary.stats.perTestStats`.
    */
   perWaferTestStats?: Array<{
@@ -196,7 +199,7 @@ export interface AnalyzeWaferMapOptions {
   /**
    * Minimum relative effect size (|delta / background|) for proportion findings.
    * Catches meaningful signals on low-failure-rate wafers where the absolute delta
-   * is small but the relative deviation is large. Default 0.5 (50% of background).
+   * is small but the relative deviation is large. Default 1.0 (100% of background).
    */
   minimumRelativeEffect?: number;
   includePartial?: boolean;
@@ -204,7 +207,28 @@ export interface AnalyzeWaferMapOptions {
   enableYieldAnalysis?: boolean;
   enableHardBinAnalysis?: boolean;
   enableSoftBinAnalysis?: boolean;
+  /**
+   * Full parametric **spatial significance** analysis: Welch comparisons of each
+   * test's values between every region (ring/quadrant/reticle/site/sector) and
+   * the rest of the wafer, plus spec-limit region findings. This is the expensive
+   * pass — it scales with (regions × tests × dies) — so it is **off by default**.
+   * Enable it only when you display the resulting regional test-value findings.
+   *
+   * For per-test descriptive statistics (mean/stddev/quartiles for box plots)
+   * **without** the spatial comparisons, use {@link computePerTestStats} instead —
+   * it is an order of magnitude cheaper. Enabling `enableTestValueAnalysis` also
+   * produces `perTestStats`, so you do not need both.
+   */
   enableTestValueAnalysis?: boolean;
+  /**
+   * Compute per-test descriptive statistics (`count`, `min`, `max`, `mean`,
+   * `stddev`, `median`, `q1`, `q3`) into `StatsSummary.stats.perTestStats` —
+   * the cheap quartile scan only, **without** the expensive regional Welch
+   * comparisons of {@link enableTestValueAnalysis}. Use this for box-plot /
+   * histogram panels that need distribution shape but not spatial findings.
+   * Off by default. Implied by `enableTestValueAnalysis`.
+   */
+  computePerTestStats?: boolean;
   enableReticlePositionAnalysis?: boolean;
   /**
    * Analyse yield and bin distributions by test site (`siteNum`).
@@ -223,7 +247,7 @@ export interface AnalyzeWaferMapOptions {
   enablePatternClassification?: boolean;
   /**
    * Restrict test value analysis to a specific subset of test numbers.
-   * When omitted and more than 100 tests are present in the data, test value
+   * When omitted and more than 250 tests are present in the data, test value
    * analysis is skipped automatically with a console warning — pass this option
    * to analyse a specific subset in that case.
    * Example: `testNumbers: [1050, 1060, 1070]`

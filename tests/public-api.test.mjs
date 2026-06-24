@@ -349,12 +349,13 @@ test('buildHoverText merges wafer-level metadata under per-die overrides', () =>
   const die = { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 1, height: 1, hbin: 1 };
   const waferMeta = { lot: 'LOT-001', product: 'WidgetA', testProgram: 'PGM_X', waferId: 'W01', temperature: 25 };
 
-  // Wafer-level facts appear with no per-die metadata at all.
+  // Wafer-level facts appear with no per-die metadata at all — wmap renders
+  // whatever keys the host supplies, including waferId.
   const base = buildHoverText(die, 'hardBin', undefined, undefined, undefined, undefined, undefined, undefined, undefined, waferMeta);
   assert.ok(base.includes('lot: LOT-001'), 'wafer lot should appear');
   assert.ok(base.includes('product: WidgetA'), 'wafer product should appear');
   assert.ok(base.includes('temperature: 25'), 'wafer temperature should appear');
-  assert.ok(!base.includes('waferId'), 'waferId is suppressed — already conveyed by map context');
+  assert.ok(base.includes('waferId: W01'), 'waferId is rendered like any other host-supplied key');
 
   // A per-die key overrides the wafer value of the same name; other wafer facts remain.
   const dieWithOverride = { ...die, metadata: { testProgram: 'PGM_RETEST', site: 3 } };

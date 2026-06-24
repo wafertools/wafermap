@@ -80,8 +80,8 @@ export const BIN_PALETTE: readonly string[] = [
   '#b8591e', // 63
 ];
 
-/** Wang hash — maps any integer to a well-distributed unsigned 32-bit value. */
-function binHash(n: number): number {
+/** Wang hash — maps any integer to a well-distributed unsigned 32-bit value. Shared with colorSchemes. */
+export function wangHash(n: number): number {
   let h = n | 0;
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
@@ -119,7 +119,7 @@ const HARD_BIN_OVERRIDES: Record<number, string> = {
 
 /** Categorical colour for a hard bin. No-data handling is the caller's responsibility. */
 export function hardBinColor(bin: number): string {
-  return HARD_BIN_OVERRIDES[bin] ?? BIN_PALETTE[(binHash(bin ^ HARD_SALT) % PALETTE_SIZE) + 1];
+  return HARD_BIN_OVERRIDES[bin] ?? BIN_PALETTE[(wangHash(bin ^ HARD_SALT) % PALETTE_SIZE) + 1];
 }
 
 /** @deprecated Use BIN_PALETTE directly if you need the raw array. */
@@ -154,7 +154,7 @@ export function valueToViridis(t: number): string {
 
 /** Categorical colour for a soft bin. No-data handling is the caller's responsibility. */
 export function softBinColor(bin: number): string {
-  return BIN_PALETTE[(binHash(bin ^ SOFT_SALT) % PALETTE_SIZE) + 1];
+  return BIN_PALETTE[(wangHash(bin ^ SOFT_SALT) % PALETTE_SIZE) + 1];
 }
 
 /** @deprecated Use BIN_PALETTE directly if you need the raw array. */

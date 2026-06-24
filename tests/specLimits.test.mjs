@@ -125,6 +125,34 @@ test('colorBySpec — rectangles are colored by pass/fail category', () => {
   assert.equal(failHRect.fill, '#e74c3c', 'fail-high color should be red');
 });
 
+test('value mode — out-of-spec dies stay coloured red/blue under colorbarRangeMode: data (H2)', () => {
+  // Regression: colorbarRangeMode only controls the colorbar's numeric range, NOT
+  // whether a die is in/out of spec. In 'data' mode the old code suppressed
+  // out-of-spec classification, so an out-of-spec die rendered as an in-spec
+  // gradient colour — i.e. looked in-spec. With limits defined, out-of-spec dies
+  // must still render red (fail-high) / blue (fail-low) regardless of range mode.
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
+  const results = [
+    makeResult(0, 0, 1.0),  // within limits
+    makeResult(1, 0, 0.1),  // below limitLow → must be blue
+    makeResult(-1, 0, 4.0), // above limitHigh → must be red
+  ];
+  const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
+
+  // NOTE: plain value mode (NOT colorBySpec), explicitly colorbarRangeMode: 'data'.
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1010, colorbarRangeMode: 'data',
+  });
+
+  const getRectForDie = (x, y) => {
+    const die = scene.dies.find(d => d.x === x && d.y === y);
+    return die ? scene.rectangles.find(r => Math.abs(r.x - die.physX) < 0.1 && Math.abs(r.y - die.physY) < 0.1) : null;
+  };
+
+  assert.equal(getRectForDie(1, 0).fill, '#3498db', 'fail-low must be blue even in data range mode');
+  assert.equal(getRectForDie(-1, 0).fill, '#e74c3c', 'fail-high must be red even in data range mode');
+});
+
 test('colorBySpec — die with no value gets no-data fill', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
@@ -202,7 +230,7 @@ test('stats.warnings — populated when >250 tests present without testNumbers f
     results: [{ x: 0, y: 0, hbin: 1, testValues }, { x: 1, y: 0, hbin: 1, testValues }],
     waferConfig, dieConfig,
   });
-  const summary = analyzeWaferMap(input);
+  const summary = analyzeWaferMap(input, { enableTestValueAnalysis: true });
   assert.ok(summary.stats.warnings?.length, 'should have at least one warning');
   assert.ok(summary.stats.warnings[0].includes('tests found'));
 });
@@ -216,6 +244,22 @@ test('stats.warnings — undefined when testNumbers filter provided', () => {
   });
   const summary = analyzeWaferMap(input, { testNumbers: [0, 1, 2] });
   assert.equal(summary.stats.warnings, undefined);
+});
+
+test('stats.warnings — cap warning from computePerTestStats reaches stats.warnings (H4)', () => {
+  // The cheap perTestStats path discovers test numbers and can raise the >250-test
+  // cap warning. Regression: that warning was previously dropped because
+  // stats.warnings was assigned before this path ran. No findings pass here, so
+  // warnings starts empty — exactly the case where the old code skipped assignment.
+  const testValues = {};
+  for (let i = 0; i < 251; i++) testValues[i] = Math.random();
+  const input = buildWaferMap({
+    results: [{ x: 0, y: 0, hbin: 1, testValues }, { x: 1, y: 0, hbin: 1, testValues }],
+    waferConfig, dieConfig,
+  });
+  const summary = analyzeWaferMap(input, { computePerTestStats: true });
+  assert.ok(summary.stats.warnings?.length, 'cap warning should reach stats.warnings');
+  assert.ok(summary.stats.warnings[0].includes('tests found'));
 });
 
 // ── colorbarRangeMode ─────────────────────────────────────────────────────────

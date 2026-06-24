@@ -303,7 +303,7 @@ function lotAggregateBinTable(allDies: Die[], binDefs: BinDef[] | undefined, mod
 function lotRegionYieldTable(
   title: string,
   regionFn: typeof buildRingRegions,
-  allDies: Die[],
+  diesByWafer: Die[][],
   allWafers: Wafer[],
   ringCount: number,
   passBins: number[],
@@ -314,7 +314,7 @@ function lotRegionYieldTable(
 
   for (let wi = 0; wi < allWafers.length; wi++) {
     const wafer = allWafers[wi];
-    const wDies = allDies.filter((die) => (die as { _waferIndex?: number })._waferIndex === wi);
+    const wDies = diesByWafer[wi] ?? [];
     if (!wDies.length) continue;
     const regions = regionFn(wDies, wafer, ringCount);
     const dieByKey = new Map(wDies.map((die) => [`${die.x},${die.y}`, die]));
@@ -363,17 +363,21 @@ export function renderLotSummaryReportHtml(
     ringCount = 4,
   } = params;
 
+  // diesByWafer keeps each wafer's dies in a parallel array — aligned by index with
+  // allWafers — instead of tagging caller-owned Die objects with a hidden field.
+  // Stats must be side-effect-free; mutating input dies violated that. (The old
+  // tag also indexed by item position while the region table indexed by wafer
+  // position, so the two diverged whenever an item had dies but no wafer.)
   const allWafers: Wafer[] = [];
   const allDies: Die[] = [];
-  for (let wi = 0; wi < items.length; wi++) {
-    const item = items[wi];
-    if (item.wafer) allWafers.push(item.wafer);
-    if (item.dies) {
-      for (const die of item.dies) {
-        (die as { _waferIndex?: number })._waferIndex = wi;
-        allDies.push(die);
-      }
+  const diesByWafer: Die[][] = [];
+  for (const item of items) {
+    const wDies = item.dies ?? [];
+    if (item.wafer) {
+      allWafers.push(item.wafer);
+      diesByWafer.push(wDies);
     }
+    if (wDies.length) allDies.push(...wDies);
   }
 
   const hasHbin = allDies.some((die) => die.hbin != null);
@@ -414,10 +418,10 @@ export function renderLotSummaryReportHtml(
         : lotAggregateBinTable(allDies, sbinDefs, 'soft'))
     : '';
   const ringSection = hasBins && allWafers.length
-    ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, allDies, allWafers, ringCount, passBins)
+    ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, diesByWafer, allWafers, ringCount, passBins)
     : '';
   const quadSection = hasBins && allWafers.length
-    ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, allDies, allWafers, ringCount, passBins)
+    ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBins)
     : '';
   const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs) : '';
   const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount) : '';
