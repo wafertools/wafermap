@@ -422,7 +422,7 @@ Add `limitLow` and/or `limitHigh` to a `TestDef` to specify the engineering spec
 The colorbar always shows LSL / USL labels at the limit positions. Exactly how depends on the colorbar range mode (toggled via the bracket toolbar button):
 
 - **`colorbarRangeMode: 'spec'` (default when limits are present)** — the bar spans `[limitLow, limitHigh]`. The limit values appear as "LSL" / "USL" labels at the bar endpoints alongside the numeric values. Out-of-spec dies are highlighted: below `limitLow` renders in <span style="color:#3498db">**blue**</span>, above `limitHigh` in <span style="color:#e74c3c">**red**</span>.
-- **`colorbarRangeMode: 'data'`** — the bar spans the actual data min/max. LSL / USL are shown as marker lines on the bar wherever the limits fall within the data range. All dies are coloured by the gradient regardless of spec status — the bar and die colours are always consistent with each other.
+- **`colorbarRangeMode: 'data'`** — the bar spans the actual data min/max. LSL / USL are shown as marker lines on the bar wherever the limits fall within the data range. All dies are coloured by the gradient so the value distribution stays readable and the bar and die colours agree; out-of-spec dies additionally carry a <span style="color:#3498db">**blue**</span> (below `limitLow`) / <span style="color:#e74c3c">**red**</span> (above `limitHigh`) marker — a coloured outline and a small central dot — so they remain flagged without dropping out of the distribution.
 
 **With `colorBySpec: true`** — a categorical pass/fail view instead of the continuous gradient:
 - Pass (in spec): green (`#2ecc71`)

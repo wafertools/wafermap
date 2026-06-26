@@ -102,8 +102,12 @@ When spec limits are defined for the active test, two additional display options
 become available:
 
 - **Colorbar range — Data / Spec**: switches the colorbar scale between the
-  actual data extent and the spec limit bounds. Changing this affects only the
-  colour scale; it does not change which dies are flagged as out of spec.
+  actual data extent and the spec limit bounds. This affects only how dies are
+  coloured, never which dies are out of spec. In **Spec** range, out-of-spec dies
+  are filled solid blue (below LSL) / red (above USL). In **Data** range, every
+  die is coloured by the gradient so you can read the value distribution, and
+  out-of-spec dies are marked with a blue/red outline and dot so they still stand
+  out without leaving the distribution.
 - **Spec pass/fail**: when active, dies within spec are shown in a pass colour
   and dies outside spec are highlighted — **blue for below the Lower Spec Limit
   (LSL)**, **red for above the Upper Spec Limit (USL)**. Both flags apply

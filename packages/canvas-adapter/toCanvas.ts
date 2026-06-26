@@ -324,6 +324,38 @@ export function toCanvas(
     ctx.beginPath();
     for (const r of view.rectangles) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
     ctx.stroke();
+
+    // Out-of-spec markers (value mode, 'data' colorbar range): the die keeps its
+    // gradient fill, so flag out-of-spec dies with a coloured outline + central dot
+    // (blue = below low limit, red = above high limit) — never shown as plain in-spec.
+    // One batched outline + dot pass per mark colour. Sizes are in data units divided
+    // by (ppm * dpr) so they read at a constant on-screen size at any zoom.
+    const marked = view.rectangles.filter(r => r.specMark);
+    if (marked.length > 0) {
+      const outlineW = 1.5 / (ppm * dpr);
+      // Dot radius: proportional to die size, floored so it stays visible when zoomed out.
+      const minDie = Math.min(marked[0].width, marked[0].height);
+      const dotR = Math.max(2 / (ppm * dpr), minDie * 0.16);
+      for (const [mark, color] of [['failLow', SPEC_FAIL_LOW], ['failHigh', SPEC_FAIL_HIGH]] as const) {
+        const group = marked.filter(r => r.specMark === mark);
+        if (group.length === 0) continue;
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = outlineW;
+        ctx.beginPath();
+        for (const r of group) {
+          const inset = outlineW / 2; // keep the stroke inside the die edge
+          ctx.rect(r.x - r.width / 2 + inset, r.y - r.height / 2 + inset, r.width - 2 * inset, r.height - 2 * inset);
+        }
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (const r of group) {
+          ctx.moveTo(r.x + dotR, r.y);
+          ctx.arc(r.x, r.y, dotR, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
+    }
   }
 
   // ── Draw overlays ──────────────────────────────────────────────────────────

@@ -185,8 +185,13 @@ test('buildView isLotStack defaults to false', () => {
 });
 
 // ── colorbarRangeMode independence from out-of-spec coloring ─────────────────
-// Out-of-spec dies must render blue/red regardless of colorbarRangeMode.
-// colorbarRangeMode only affects the colorbar bounds, not die fill colors.
+// Out-of-spec dies must always be distinguishable from in-spec dies, regardless
+// of colorbarRangeMode — a die outside its limits must never look in-spec. The
+// *form* of the indication depends on the range mode:
+//   - 'spec' (default): solid blue/red fill.
+//   - 'data': the value gradient fill (so the distribution reads correctly) PLUS
+//     a blue/red `specMark` the renderer draws as a marker.
+// Either way an engineer can always tell an out-of-spec die from an in-spec one.
 
 const SPEC_FAIL_LOW  = '#3498db';
 const SPEC_FAIL_HIGH = '#e74c3c';
@@ -217,12 +222,12 @@ test('out-of-spec dies get fail color regardless of colorbarRangeMode=spec', () 
   assert.notEqual(rect01?.fill, SPEC_FAIL_HIGH, 'in-spec die must not render as spec-fail-high');
 });
 
-test('out-of-spec dies render blue/red in BOTH colorbarRangeMode=data and =spec', () => {
-  // Invariant (CLAUDE.md): colorbarRangeMode controls only the colorbar's numeric
-  // range — out-of-spec die colouring always applies when limits are defined,
-  // regardless of this setting. An out-of-spec die must never look in-spec.
-  // (This test previously asserted the OPPOSITE and was locking in a real bug:
-  //  in 'data' mode an out-of-spec die rendered as an in-spec gradient colour.)
+test('out-of-spec dies are always distinguishable from in-spec in BOTH colorbarRangeMode=data and =spec', () => {
+  // Safety invariant: an out-of-spec die must never be shown as plain in-spec.
+  // In 'spec' mode this is a solid blue/red fill; in 'data' mode the die keeps
+  // its value-gradient fill (so the distribution stays readable) and is flagged
+  // with a blue/red `specMark` marker instead. Both modes flag it — neither
+  // leaves an out-of-spec die looking identical to an in-spec one.
   const wafer = createWafer({ diameter: 300 });
   const dies = [
     { id: '0_0', x: 0, y: 0, physX: 0,  physY: 0,  width: 10, height: 10, testValues: { 0: 0.1 } },
@@ -231,11 +236,23 @@ test('out-of-spec dies render blue/red in BOTH colorbarRangeMode=data and =spec'
   ];
   const testDefs = [{ index: 0, name: 'Vt', unit: 'V', limitLow: 0.5, limitHigh: 4.5 }];
 
-  for (const mode of ['data', 'spec']) {
-    const view = buildView(wafer, dies, { plotMode: 'value', colorbarRangeMode: mode, activeTest: 0, testDefs });
-    const below = view.rectangles.find((r) => r.x === 0  && r.y === 0);
-    const above = view.rectangles.find((r) => r.x === 10 && r.y === 0);
-    assert.equal(below?.fill, SPEC_FAIL_LOW,  `${mode} mode: value below limitLow must render as spec-fail-low`);
-    assert.equal(above?.fill, SPEC_FAIL_HIGH, `${mode} mode: value above limitHigh must render as spec-fail-high`);
-  }
+  // 'spec' mode: solid blue/red fill, no marker.
+  const specView = buildView(wafer, dies, { plotMode: 'value', colorbarRangeMode: 'spec', activeTest: 0, testDefs });
+  const specBelow = specView.rectangles.find((r) => r.x === 0  && r.y === 0);
+  const specAbove = specView.rectangles.find((r) => r.x === 10 && r.y === 0);
+  assert.equal(specBelow?.fill, SPEC_FAIL_LOW,  'spec mode: below limitLow → solid blue');
+  assert.equal(specAbove?.fill, SPEC_FAIL_HIGH, 'spec mode: above limitHigh → solid red');
+
+  // 'data' mode: gradient fill (NOT solid spec colours) + specMark flag.
+  const dataView = buildView(wafer, dies, { plotMode: 'value', colorbarRangeMode: 'data', activeTest: 0, testDefs });
+  const dataBelow = dataView.rectangles.find((r) => r.x === 0  && r.y === 0);
+  const dataAbove = dataView.rectangles.find((r) => r.x === 10 && r.y === 0);
+  const dataIn    = dataView.rectangles.find((r) => r.x === 0  && r.y === 10);
+  assert.notEqual(dataBelow?.fill, SPEC_FAIL_LOW,  'data mode: out-of-spec die keeps the gradient, not solid blue');
+  assert.notEqual(dataAbove?.fill, SPEC_FAIL_HIGH, 'data mode: out-of-spec die keeps the gradient, not solid red');
+  assert.equal(dataBelow?.specMark, 'failLow',  'data mode: below limitLow is flagged with specMark');
+  assert.equal(dataAbove?.specMark, 'failHigh', 'data mode: above limitHigh is flagged with specMark');
+  // And the in-spec die is plain — no fill spec-colour, no marker — so the marker
+  // genuinely distinguishes out-of-spec from in-spec.
+  assert.equal(dataIn?.specMark, undefined, 'data mode: in-spec die carries no marker');
 });

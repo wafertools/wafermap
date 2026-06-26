@@ -49,6 +49,15 @@ export interface ViewRect {
   type: 'hardBin' | 'softBin' | 'value' | 'stacked';
   stack?: number[];
   metadata?: DieMetadata;
+  /**
+   * Out-of-spec indicator for value-mode dies drawn with the value gradient
+   * (i.e. `colorbarRangeMode: 'data'`). The die keeps its gradient fill so the
+   * distribution stays readable, and the renderer draws a blue (`failLow`) /
+   * red (`failHigh`) marker on top so the die is never shown as plain in-spec.
+   * Absent in `'spec'` range mode and under `colorBySpec`, where the fill is
+   * itself the solid spec-fail colour and no marker is needed.
+   */
+  specMark?: 'failLow' | 'failHigh';
 }
 
 export interface ViewText {
@@ -249,11 +258,14 @@ export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
  * die colouring in `pushDieRectangles`. Returns null when there is no value. Shared by the colour
  * branch and the spec-count tally so the two never diverge.
  *
- * Out-of-spec classification depends ONLY on whether limits are defined — never on
- * `colorbarRangeMode`. That option controls the colorbar's numeric range, not whether a die is
- * in or out of spec: an out-of-spec die must always be flagged (and coloured) when limits exist,
- * regardless of how the colorbar is scaled. (Previously `'data'` mode suppressed this, so an
- * out-of-spec die rendered as an in-spec gradient colour — a silent correctness bug.)
+ * Out-of-spec *classification* depends ONLY on whether limits are defined — never on
+ * `colorbarRangeMode`. An out-of-spec die is always flagged when limits exist, regardless of
+ * how the colorbar is scaled; what differs is the *form* of the indication, decided in
+ * `pushDieRectangles`: a solid blue/red fill in `'spec'` range mode (and under `colorBySpec`),
+ * or the value gradient plus a blue/red marker (`ViewRect.specMark`) in `'data'` mode so the
+ * value distribution stays readable. Either way the die is never drawn as plain in-spec — the
+ * silent correctness bug this guards against. (`'data'` mode previously suppressed any spec
+ * indication entirely; the all-solid-blue/red fix that replaced it then erased the distribution.)
  */
 export function classifySpec(
   value: number | undefined,
@@ -835,6 +847,7 @@ function pushDieRectangles(
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
   colorBySpec?: boolean,
+  colorbarRangeMode: 'spec' | 'data' = 'spec',
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -877,19 +890,26 @@ function pushDieRectangles(
   if (plotMode === 'value') {
     const value = getDieTestValue(die, testNumber, fallbackIndex);
     const spec = classifySpec(value, activeTestDef);
+    // Solid blue/red fill only when the die is coloured *by* spec: in 'spec' range mode
+    // (default) or under colorBySpec. In 'data' mode an out-of-spec die keeps its gradient
+    // fill (so the distribution reads correctly and bar/die colours agree) and is flagged
+    // with a marker instead — see ViewRect.specMark.
+    const solidSpecFill = colorbarRangeMode === 'spec' || colorBySpec === true;
     let fill: string;
+    let specMark: 'failLow' | 'failHigh' | undefined;
     if (value === undefined) {
       fill = NO_DATA_FILL;
-    } else if (spec === 'failLow') {
+    } else if (spec === 'failLow' && solidSpecFill) {
       fill = SPEC_FAIL_LOW;
-    } else if (spec === 'failHigh') {
+    } else if (spec === 'failHigh' && solidSpecFill) {
       fill = SPEC_FAIL_HIGH;
     } else if (colorBySpec) {
       fill = SPEC_PASS_FILL;
     } else {
       fill = colorFns.forValue(normalize(value));
+      if (spec === 'failLow' || spec === 'failHigh') specMark = spec;
     }
-    rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
+    rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'value', specMark, metadata: die.metadata });
     return;
   }
 
@@ -1183,7 +1203,7 @@ export function buildView(
     // centerTransform (not the full transform): dies are axis-aligned rects centred
     // on the already-oriented physX/physY, so the AABB width/height swap must key off
     // the interactive rotation only — matching how the centre position was derived.
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec, colorbarRangeMode);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {

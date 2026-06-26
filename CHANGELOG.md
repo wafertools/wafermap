@@ -21,6 +21,12 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.16.2] — 2026-06-26
+
+### Fixed
+
+- **Out-of-spec dies in `colorbarRangeMode: 'data'` are flagged with a marker instead of a solid blue/red fill, restoring the value distribution.** In value mode with spec limits, 0.16.0/0.16.1 filled every out-of-spec die solid blue (fail-low) / red (fail-high) regardless of range mode. That is correct in `'spec'` mode (the colorbar spans the spec window), but in `'data'` mode — where the colorbar spans the actual data range to show the *distribution* of values — it removed the out-of-spec dies from the gradient entirely and made the die colours disagree with the colorbar. The data-range view now colours out-of-spec dies by the value gradient like every other die and draws a blue/red marker (a coloured outline plus a small central dot) over them, so the distribution stays readable, the bar and die colours agree, and an out-of-spec die is still never shown as plain in-spec. `'spec'` mode (the default) and `colorBySpec` are unchanged — out-of-spec dies remain solid blue/red there. New additive optional field `ViewRect.specMark` carries the flag to the renderer. This corrects the all-solid-blue/red behaviour introduced in 0.16.0.
+
 ## [0.16.1] — 2026-06-26
 
 ### Added

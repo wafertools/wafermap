@@ -125,17 +125,19 @@ test('colorBySpec — rectangles are colored by pass/fail category', () => {
   assert.equal(failHRect.fill, '#e74c3c', 'fail-high color should be red');
 });
 
-test('value mode — out-of-spec dies stay coloured red/blue under colorbarRangeMode: data (H2)', () => {
-  // Regression: colorbarRangeMode only controls the colorbar's numeric range, NOT
-  // whether a die is in/out of spec. In 'data' mode the old code suppressed
-  // out-of-spec classification, so an out-of-spec die rendered as an in-spec
-  // gradient colour — i.e. looked in-spec. With limits defined, out-of-spec dies
-  // must still render red (fail-high) / blue (fail-low) regardless of range mode.
+test('value mode — out-of-spec dies keep the gradient fill but carry a specMark under colorbarRangeMode: data', () => {
+  // In 'data' range mode the die is coloured by the value gradient so the
+  // distribution stays readable and the colorbar (data range) and die colours
+  // agree. Out-of-spec dies are NOT filled solid blue/red — instead they carry a
+  // `specMark` ('failLow'/'failHigh') the renderer draws as a marker, so an
+  // out-of-spec die is flagged without losing its place in the distribution.
+  // (In 'spec' range mode and under colorBySpec the fill IS solid blue/red — see
+  // the 'spec'-mode tests above; this is the 'data'-mode-only behaviour.)
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
     makeResult(0, 0, 1.0),  // within limits
-    makeResult(1, 0, 0.1),  // below limitLow → must be blue
-    makeResult(-1, 0, 4.0), // above limitHigh → must be red
+    makeResult(1, 0, 0.1),  // below limitLow → gradient fill + specMark 'failLow'
+    makeResult(-1, 0, 4.0), // above limitHigh → gradient fill + specMark 'failHigh'
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
@@ -149,8 +151,68 @@ test('value mode — out-of-spec dies stay coloured red/blue under colorbarRange
     return die ? scene.rectangles.find(r => Math.abs(r.x - die.physX) < 0.1 && Math.abs(r.y - die.physY) < 0.1) : null;
   };
 
-  assert.equal(getRectForDie(1, 0).fill, '#3498db', 'fail-low must be blue even in data range mode');
-  assert.equal(getRectForDie(-1, 0).fill, '#e74c3c', 'fail-high must be red even in data range mode');
+  const failLow  = getRectForDie(1, 0);
+  const failHigh = getRectForDie(-1, 0);
+  const inSpec   = getRectForDie(0, 0);
+
+  // Out-of-spec dies keep the gradient (NOT the solid spec-fail colours)…
+  assert.notEqual(failLow.fill,  '#3498db', 'fail-low die should use the gradient, not solid blue, in data mode');
+  assert.notEqual(failHigh.fill, '#e74c3c', 'fail-high die should use the gradient, not solid red, in data mode');
+  // …but are flagged via specMark so they are never shown as plain in-spec.
+  assert.equal(failLow.specMark,  'failLow',  'fail-low die must carry specMark failLow');
+  assert.equal(failHigh.specMark, 'failHigh', 'fail-high die must carry specMark failHigh');
+  // In-spec die has no marker.
+  assert.equal(inSpec.specMark, undefined, 'in-spec die must not carry a specMark');
+});
+
+test('value mode — out-of-spec dies stay solid blue/red (no specMark) under colorbarRangeMode: spec', () => {
+  // The default 'spec' range mode is unchanged: out-of-spec dies are filled solid
+  // blue/red and carry no marker (the fill already conveys the spec verdict).
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
+  const results = [
+    makeResult(0, 0, 1.0),
+    makeResult(1, 0, 0.1),
+    makeResult(-1, 0, 4.0),
+  ];
+  const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1010, colorbarRangeMode: 'spec',
+  });
+
+  const getRectForDie = (x, y) => {
+    const die = scene.dies.find(d => d.x === x && d.y === y);
+    return die ? scene.rectangles.find(r => Math.abs(r.x - die.physX) < 0.1 && Math.abs(r.y - die.physY) < 0.1) : null;
+  };
+
+  assert.equal(getRectForDie(1, 0).fill,  '#3498db', 'fail-low solid blue in spec mode');
+  assert.equal(getRectForDie(-1, 0).fill, '#e74c3c', 'fail-high solid red in spec mode');
+  assert.equal(getRectForDie(1, 0).specMark,  undefined, 'no marker needed — solid fill conveys it');
+  assert.equal(getRectForDie(-1, 0).specMark, undefined, 'no marker needed — solid fill conveys it');
+});
+
+test('value mode — colorBySpec keeps solid spec fills (no specMark) even with colorbarRangeMode: data', () => {
+  // colorBySpec coerces range mode to 'spec' internally (buildView), so spec
+  // colouring is always solid blue/red/green and no marker is emitted.
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
+  const results = [
+    makeResult(0, 0, 1.0),
+    makeResult(1, 0, 0.1),
+    makeResult(-1, 0, 4.0),
+  ];
+  const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1010, colorBySpec: true, colorbarRangeMode: 'data',
+  });
+
+  const getRectForDie = (x, y) => {
+    const die = scene.dies.find(d => d.x === x && d.y === y);
+    return die ? scene.rectangles.find(r => Math.abs(r.x - die.physX) < 0.1 && Math.abs(r.y - die.physY) < 0.1) : null;
+  };
+
+  assert.equal(getRectForDie(1, 0).fill,  '#3498db', 'fail-low solid blue under colorBySpec');
+  assert.equal(getRectForDie(-1, 0).fill, '#e74c3c', 'fail-high solid red under colorBySpec');
+  assert.equal(getRectForDie(0, 0).fill,  '#2ecc71', 'in-spec solid green under colorBySpec');
+  assert.equal(getRectForDie(1, 0).specMark, undefined, 'colorBySpec emits no marker');
 });
 
 test('colorBySpec — die with no value gets no-data fill', () => {

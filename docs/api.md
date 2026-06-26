@@ -767,7 +767,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `colorBySpec` | `boolean` | `false` | In `value` mode: replace the gradient with categorical pass/fail colours when the active test has spec limits. Toggled via the Overlays toolbar menu. |
 | `highlightBin` | `number` | — | Dim all bins except this one |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the scene auto-scales — use this to safely fix a range computed for a specific test. |
-| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | When the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]` and colours out-of-spec dies blue/red; `'data'` spans the actual data min/max and colours all dies by the gradient (no blue/red). Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits). |
+| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | When the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]` and fills out-of-spec dies solid blue/red; `'data'` spans the actual data min/max and colours all dies by the gradient, flagging out-of-spec dies with a blue/red marker (outline + central dot) instead of a solid fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits). |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
 | `aggregationMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
 | `lotSize` | `number` | — | Total wafers in lot — percentage denominator in `stackedBins`/`stackedSoftBins` tooltips |
@@ -946,7 +946,7 @@ Choose the right update method:
 | Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Dropdown: all registered colour schemes |
 | Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Active only in `value` / `stackedValues` modes; dimmed otherwise. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
-| Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. Out-of-spec die coloring (blue/red) applies in both states. |
+| Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. Out-of-spec dies are always flagged in both states: a solid blue/red fill in spec range, a blue/red marker (outline + dot) over the gradient fill in data range. |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
 | Labels | Toggle die index text labels |
@@ -2482,8 +2482,9 @@ interface ViewOptions {
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
   activeTest?:              number      // testNumber to display in 'value' mode (matches testDef.testNumber, NOT a positional index); defaults to first available test
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
-  colorbarRangeMode?:      'spec' | 'data'  // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh]
-                                            // 'data' spans actual data min/max; out-of-spec coloring applies in both modes
+  colorbarRangeMode?:      'spec' | 'data'  // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh],
+                                            // out-of-spec dies filled solid blue/red. 'data' spans actual data min/max; out-of-spec
+                                            // dies keep the gradient fill and get a blue/red marker (outline + dot) instead
   aggregationMethod?:      string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
   lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
 }
