@@ -59,7 +59,6 @@ mock.module('../packages/canvas-adapter/renderWaferMap.js', {
 
 mock.module('../packages/canvas-adapter/toolbar.js', {
   namedExports: {
-    createTooltip: mock.fn(() => document.createElement('div')),
     createToolbarHelpers: mock.fn(() => ({
       makeBtn:        mock.fn(() => document.createElement('button')),
       setActive:      mock.fn(),

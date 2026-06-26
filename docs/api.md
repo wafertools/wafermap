@@ -862,6 +862,9 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // embedded hosts (Tauri, Electron, WebView2) route the image through a native
                                             // dialog. When omitted, the default download behaviour is unchanged.
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
+  zIndex?:                 number    // base z-index for wmap's transient overlays (menus, tooltip, expand/help modals).
+                                            // Omit for a safe high default (above typical app modal layers); set it to
+                                            // embed the map inside your own modal/overlay. See "Overlay z-index" below.
 }
 ```
 
@@ -873,17 +876,16 @@ The box-select toolbar button is always shown. Providing `onSelect` lets your ap
 
 When `statsSummary` is provided, a summary panel toggle button (notebook icon) appears in the toolbar. The panel opens hidden by default; clicking the button shows or hides it. Clicking a finding in the panel highlights the affected die zone on the map.
 
-**Toolbar z-index (`--wmap-z`).** The toolbar menus, dropdowns, and hover tooltip use `position: fixed` and are stacked relative to a CSS custom property:
+**Overlay z-index (`zIndex` / `--wmap-z`).** Every transient overlay wmap creates — toolbar menus and dropdowns, the die hover tooltip, the expand modal, and the user-guide modal — uses `position: fixed`. By default they stack at a **high** base value (`6000`), so they appear above typical app modal layers with no configuration. wmap layers its own overlays from the base upward: menus and dropdowns at the base, the tooltip and submenus at base + 1, the modal backdrop at base + 1 and the modal box at base + 2.
 
-```css
-/* default — sufficient for most in-page embeds */
-:root { --wmap-z: 100; }
+To embed a wmap render **inside your own modal or overlay**, pass `zIndex` so wmap's menus and tooltips land above it:
 
-/* raise it if a host modal sits above the toolbar menus */
-:root { --wmap-z: 1200; }
+```ts
+// Host modal at z-index 5000; put wmap's overlays above it:
+renderWaferMap(container, result, { zIndex: 5100 });
 ```
 
-The variable defaults to `100`. Menus and dropdowns use `--wmap-z`; the tooltip and submenus use `--wmap-z + 1`; the modal backdrop uses `--wmap-z + 1` and the modal box uses `--wmap-z + 2`. Menus opened from inside a modal are appended to the modal box rather than `document.body`, so they always appear above the modal content regardless of the host page's stacking context.
+`zIndex` is applied for the lifetime of the render and restored on `controller.destroy()`. Internally it writes the `--wmap-z` CSS custom property on `document.documentElement` (overlays that append to `document.body` inherit it from there); you can set `--wmap-z` yourself instead of passing `zIndex` if you prefer to control stacking via CSS. Menus opened from inside the expand modal are appended to the modal box rather than `document.body`, so they always appear above the modal content regardless of the host page's stacking context.
 
 #### 5.4.1 `SummaryPanelOptions`
 
@@ -1120,6 +1122,9 @@ to be pre-built.
   showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user guide in a modal (default false)
   lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Findings button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
+  zIndex?:                 number            // base z-index for wmap's transient overlays (menus, tooltip, modals); omit for a
+                                            // safe high default, or set it to embed the gallery inside your own modal/overlay
+                                            // (same semantics as renderWaferMap — see "Overlay z-index" in §5.4)
 }
 ```
 

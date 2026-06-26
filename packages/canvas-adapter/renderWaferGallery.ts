@@ -2,7 +2,7 @@ import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../renderer/buildView.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, createTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -137,6 +137,16 @@ export interface GalleryOptions {
    * Default false. Enable in applications that want to surface the guide without linking externally.
    */
   showHelpButton?:         boolean;
+  /**
+   * Base `z-index` for wmap's transient overlays — toolbar menus, the die
+   * tooltip, the expand modal, and the user-guide modal. wmap layers its own
+   * overlays from this value upward. Set this when embedding the gallery inside
+   * your own modal/overlay so wmap's menus and tooltips appear above it.
+   *
+   * Omit it and wmap defaults overlays to a high value (above typical app modal
+   * layers). Applied for the lifetime of this render and restored on `destroy()`.
+   */
+  zIndex?:                 number;
 }
 
 export interface GalleryController {
@@ -179,6 +189,9 @@ export function renderWaferGallery(
   let currentColumns         = options.columns;
   const showPlotModeSelector = options.showPlotModeSelector ?? true;
   const showHelpButton       = options.showHelpButton       ?? false;
+  // Host-supplied overlay stacking (no-op when undefined; safe high default
+  // applies). Restored on destroy() via the returned disposer.
+  const disposeOverlayZ      = applyOverlayZ(options.zIndex);
   const summaryPanelOpts     = options.summaryPanel;
   const passBins             = options.passBins             ?? [1];
   let currentFallbackFormat  = options.fallbackFormat;
@@ -239,10 +252,16 @@ export function renderWaferGallery(
 
   // ── Toolbar helpers ────────────────────────────────────────────────────────
 
-  const tooltip = createTooltip();
+  // Shared document-level singleton tooltip (toolbar.ts) — the same node every
+  // card's renderWaferMap uses, so only one tooltip is ever visible at a time.
+  const tooltip = getTooltip();
   const tbHelpers = createToolbarHelpers(tooltip);
   const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
   document.addEventListener('click', closeOpenMenu, true);
+  // Window focus loss (alt-tab / app switch, notably in a Tauri WebView) does
+  // not fire mouseleave, which would leave a toolbar tooltip lingering visible.
+  const onWindowBlur = () => hideTooltip();
+  window.addEventListener('blur', onWindowBlur);
 
   function applyCardHighlight(indices: number[]): void {
     highlightedCardIndices = new Set(indices);
@@ -1515,11 +1534,10 @@ export function renderWaferGallery(
     cardControllers[cardIndex]?.resetZoom();
     applyCardHighlight([cardIndex]);
 
+    // openModal owns shared-tooltip re-homing into/out of the modal box, so no
+    // onMaximizeChange tooltip wiring is needed here.
     const handle = openModal({
       title: item.label ?? '',
-      onMaximizeChange: (isMaximized, box) => {
-        cardControllers[modalCardIndex]?.setTooltipParent(isMaximized ? box : document.body);
-      },
       onClose: () => {
         modalHandleGallery = null;
         closeModal();
@@ -1652,7 +1670,10 @@ export function renderWaferGallery(
       getOpenMenu()?.remove();
       gridResizeObserver.disconnect();
       document.removeEventListener('click', closeOpenMenu, true);
-      tooltip.remove();
+      window.removeEventListener('blur', onWindowBlur);
+      disposeOverlayZ();
+      // Shared singleton — hide, never destroy (other instances may use it).
+      hideTooltip();
       barEl.remove();
       legendEl.remove();
       bodyEl.remove();

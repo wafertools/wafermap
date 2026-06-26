@@ -310,6 +310,66 @@ test('renderWaferMap onSaveImage hook intercepts the PNG download', () => {
   }
 });
 
+test('renderWaferMap zIndex option sets --wmap-z for its lifetime and restores on destroy', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const docEl = window.document.documentElement;
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+
+    // Seed a pre-existing host value so we can confirm it is restored, not cleared.
+    docEl.style.setProperty('--wmap-z', '42');
+
+    const ctrl = renderWaferMap(container, wafer, { zIndex: 5100 });
+    assert.equal(
+      docEl.style.getPropertyValue('--wmap-z'), '5100',
+      'zIndex is written to --wmap-z on document.documentElement while mounted',
+    );
+
+    ctrl.destroy();
+    assert.equal(
+      docEl.style.getPropertyValue('--wmap-z'), '42',
+      'destroy() restores the prior --wmap-z value',
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap leaves --wmap-z untouched when no zIndex is given', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const docEl = window.document.documentElement;
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+
+    // The default-high path relies on the CSS fallback (var(--wmap-z, 6000)) and
+    // must never write the property — so concurrent default renders don't clash.
+    const ctrl = renderWaferMap(container, wafer, {});
+    assert.equal(
+      docEl.style.getPropertyValue('--wmap-z'), '',
+      'no zIndex leaves --wmap-z unset (safe high default applies via CSS fallback)',
+    );
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
 test('renderWaferMap toolbar menus carry ARIA roles and expanded state', () => {
   const { window, root, cleanup } = setupDom();
   try {

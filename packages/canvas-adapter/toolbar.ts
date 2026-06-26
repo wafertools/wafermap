@@ -26,6 +26,50 @@ export const ROTATIONS: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
 
 export const INLINE_TEST_LIMIT = 6;
 
+// ── Overlay stacking ─────────────────────────────────────────────────────────
+//
+// Every transient overlay wmap creates (toolbar menus, die tooltip, expand
+// modal, user-guide modal) is positioned `position: fixed` and reads its
+// `z-index` from the `--wmap-z` custom property. The host controls stacking by
+// passing `zIndex` to `renderWaferMap`/`renderWaferGallery`, which writes
+// `--wmap-z` onto `document.documentElement` for the render's lifetime — body-
+// escaping overlays (tooltip, modal backdrop) inherit it from there, and
+// container-scoped overlays inherit it too.
+//
+// The default is deliberately HIGH (not the old `100`), so that with no host
+// configuration overlays land above typical app modal layers instead of
+// silently rendering behind them. A host that needs them lower passes an
+// explicit `zIndex`.
+export const DEFAULT_OVERLAY_Z = 6000;
+
+/** `z-index` value string for a base-level overlay (menus, modal backdrop). */
+export const Z_BASE = `var(--wmap-z, ${DEFAULT_OVERLAY_Z})`;
+/** One above base — tooltips, submenus, the modal box above its backdrop. */
+export const Z_ABOVE = `calc(var(--wmap-z, ${DEFAULT_OVERLAY_Z}) + 1)`;
+/** Two above base — controls that must sit above a maximized modal box. */
+export const Z_ABOVE2 = `calc(var(--wmap-z, ${DEFAULT_OVERLAY_Z}) + 2)`;
+
+/**
+ * Apply a host-supplied `zIndex` to wmap's overlays by writing `--wmap-z` onto
+ * `document.documentElement`. Returns a disposer that restores the previous
+ * value (called on controller `destroy`). No-op when `zIndex` is undefined, so
+ * the safe high default in `Z_BASE`/`Z_ABOVE` applies.
+ *
+ * `--wmap-z` is set on the document root (not the render container) because
+ * several overlays append to `document.body`, outside the container's subtree,
+ * and must still inherit the value.
+ */
+export function applyOverlayZ(zIndex: number | undefined): () => void {
+  if (zIndex == null) return () => {};
+  const root = document.documentElement;
+  const prev = root.style.getPropertyValue('--wmap-z');
+  root.style.setProperty('--wmap-z', String(zIndex));
+  return () => {
+    if (prev) root.style.setProperty('--wmap-z', prev);
+    else root.style.removeProperty('--wmap-z');
+  };
+}
+
 export const MODE_LABELS: Record<PlotMode, string> = {
   value:           'Test Value',
   hardBin:         'Hard Bin',
@@ -177,28 +221,67 @@ export function menuRootFor(anchor: Element): Element {
 }
 
 // ── Tooltip ────────────────────────────────────────────────────────────────────
+//
+// There is exactly ONE tooltip element for the whole document, shared by every
+// renderWaferMap, every renderWaferGallery, and all their toolbars. This is a
+// hard invariant: only one tooltip may ever be visible at a time. Because every
+// consumer points at the same node, "showing" a tooltip anywhere inherently
+// hides whatever was shown elsewhere — they are the same element, it just moves
+// and re-renders. This makes a stuck/frozen tooltip structurally impossible: the
+// next hover anywhere reclaims and repositions the single node. (Previously each
+// instance created its own body-appended element; a missed leave/cancel event on
+// one left its tooltip frozen while the others kept working.)
+//
+// The singleton lives for the page lifetime — like a browser's native tooltip
+// layer, it is reused, never destroyed. Instance teardown hides it rather than
+// removing it, since other instances may still be using it.
 
-export function createTooltip(): HTMLDivElement {
-  const el = document.createElement('div');
-  Object.assign(el.style, {
-    position:     'fixed',
-    pointerEvents:'none',
-    background:   'rgba(30, 32, 40, 0.93)',
-    color:        '#f0f0f2',
-    border:       '1px solid rgba(255,255,255,0.10)',
-    padding:      '7px 11px',
-    borderRadius: '5px',
-    fontSize:     '13px',
-    lineHeight:   '1.55',
-    maxWidth:     '280px',
-    whiteSpace:   'pre-wrap',
-    zIndex:       'calc(var(--wmap-z, 100) + 1)',
-    display:      'none',
-    fontFamily:   'system-ui, sans-serif',
-    boxShadow:    '0 3px 10px rgba(0,0,0,0.45)',
-  });
+let sharedTooltip: HTMLDivElement | null = null;
+
+/** The one shared tooltip element, lazily created and appended to <body>. */
+export function getTooltip(): HTMLDivElement {
+  if (sharedTooltip && sharedTooltip.isConnected) return sharedTooltip;
+  const el = sharedTooltip ?? document.createElement('div');
+  if (!sharedTooltip) {
+    Object.assign(el.style, {
+      position:     'fixed',
+      pointerEvents:'none',
+      background:   'rgba(30, 32, 40, 0.93)',
+      color:        '#f0f0f2',
+      border:       '1px solid rgba(255,255,255,0.10)',
+      padding:      '7px 11px',
+      borderRadius: '5px',
+      fontSize:     '13px',
+      lineHeight:   '1.55',
+      maxWidth:     '280px',
+      whiteSpace:   'pre-wrap',
+      zIndex:       Z_ABOVE,
+      display:      'none',
+      fontFamily:   'system-ui, sans-serif',
+      boxShadow:    '0 3px 10px rgba(0,0,0,0.45)',
+    });
+    sharedTooltip = el;
+  }
   document.body.appendChild(el);
   return el;
+}
+
+/** Hide the shared tooltip and re-home it to <body> if it was re-parented. */
+export function hideTooltip(): void {
+  if (!sharedTooltip) return;
+  sharedTooltip.style.display = 'none';
+  if (sharedTooltip.parentElement !== document.body) {
+    document.body.appendChild(sharedTooltip);
+  }
+}
+
+/**
+ * Move the shared tooltip into `parent` (e.g. a maximized modal box that creates
+ * its own stacking/overflow context). Pass nothing to re-home it to <body>.
+ */
+export function reparentTooltip(parent?: HTMLElement): void {
+  const el = getTooltip();
+  (parent ?? document.body).appendChild(el);
 }
 
 export function positionTooltip(tooltip: HTMLDivElement, clientX: number, clientY: number): void {
@@ -280,7 +363,7 @@ export function buildModeMenuEl(
     border:        `1px solid ${CLR.menuBorder}`,
     borderRadius:  '4px',
     boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-    zIndex:        'var(--wmap-z, 100)',
+    zIndex:        Z_BASE,
     minWidth:      `${modeMinWidth}px`,
     padding:       '4px 0',
     pointerEvents: 'auto',
@@ -316,7 +399,7 @@ export function buildModeMenuEl(
           border:        `1px solid ${CLR.menuBorder}`,
           borderRadius:  '4px',
           boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-          zIndex:        'calc(var(--wmap-z, 100) + 1)',
+          zIndex:        Z_ABOVE,
           minWidth:      '160px',
           maxHeight:     '320px',
           overflowY:     'auto',
@@ -418,7 +501,7 @@ export function buildCheckMenuEl(
     border:        `1px solid ${CLR.menuBorder}`,
     borderRadius:  '4px',
     boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-    zIndex:        'var(--wmap-z, 100)',
+    zIndex:        Z_BASE,
     minWidth:      `${minWidth}px`,
     padding:       '4px 0',
     pointerEvents: 'auto',
@@ -615,7 +698,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         border:        `1px solid ${CLR.menuBorder}`,
         borderRadius:  '4px',
         boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
-        zIndex:        'var(--wmap-z, 100)',
+        zIndex:        Z_BASE,
         minWidth:      `${ddMinWidth}px`,
         padding:       '4px 0',
         pointerEvents: 'auto',
@@ -778,7 +861,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
     display:        'flex',
     alignItems:     'center',
     justifyContent: 'center',
-    zIndex:         'calc(var(--wmap-z, 100) + 1)',
+    zIndex:         Z_ABOVE,
     backdropFilter: 'blur(3px)',
   });
 
@@ -805,7 +888,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
     minHeight:     '240px',
     maxWidth:      '100vw',
     maxHeight:     '100vh',
-    zIndex:        'calc(var(--wmap-z, 100) + 2)',
+    zIndex:        Z_ABOVE2,
   });
 
   const header = document.createElement('div');
@@ -921,6 +1004,9 @@ export function openModal(opts: ModalOptions): ModalHandle {
 
   function close() {
     document.removeEventListener('keydown', onKeyDown);
+    // Restore the shared tooltip to <body> before tearing down the box it was
+    // re-homed into (see below), otherwise it would be removed with the backdrop.
+    hideTooltip();
     backdrop.remove();
     document.body.style.overflow = savedOverflow;
     // Return focus to whatever was focused before the modal opened.
@@ -941,6 +1027,13 @@ export function openModal(opts: ModalOptions): ModalHandle {
   box.appendChild(contentWrap);
   backdrop.appendChild(box);
   document.body.appendChild(backdrop);
+
+  // Re-home the shared tooltip into the modal box. The tooltip's z-index
+  // (--wmap-z + 1) sits below the box (--wmap-z + 2), so while parented to
+  // <body> it renders *behind* an open modal. Moving it inside the box places it
+  // in the box's stacking context, above the canvas content — correct whether or
+  // not the modal is maximized. Restored to <body> in close().
+  reparentTooltip(box);
 
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', onKeyDown);

@@ -21,6 +21,21 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-06-26
+
+### Added
+
+- **`zIndex` render option on `renderWaferMap` and `renderWaferGallery`.** A first-class, per-render control for the base z-index of wmap's transient overlays (menus, tooltip, expand/help modals), replacing the need to mutate the global `--wmap-z` CSS variable by hand when embedding a map inside a host-owned modal. wmap layers its own overlays from this value upward and restores the previous stacking on `controller.destroy()`. Internally it still writes `--wmap-z` (now defaulting high — see Changed) so overlays that append to `document.body` inherit it; you may set `--wmap-z` via CSS instead if you prefer. Resolves tsmap issues #22/#23 (toolbar menus/tooltips rendering behind a host modal; the recurring z-index failure class).
+
+### Changed
+
+- **Transient overlays now default to a high z-index (`6000`, was `100`).** wmap's toolbar menus, die tooltip, and expand/help modals are positioned `position: fixed` and read their stacking from the `--wmap-z` custom property, which previously defaulted to `100` — *below* almost any host app's own modal layer, so embedding a wmap render inside a host overlay silently rendered wmap's menus and tooltips *behind* it (a "dead toolbar" with nothing in the console). The default is now high so overlays appear on top with no configuration — the behaviour essentially every embedder expects. This is a default change, not an API change: any host that already set `--wmap-z` is unaffected, and the only way to notice a regression is to have *deliberately* placed a host overlay in the `100`–`6000` range to cover wmap's own menus, which is not a sensible configuration. If you did, set `--wmap-z` (or the new `zIndex` option) below your overlay.
+
+### Fixed
+
+- **Frozen die/toolbar tooltip that would not close.** A wafer map's hover tooltip could become stuck visible and stop updating — other maps still worked, and only a full page reload (or Tauri app restart) cleared it. Root cause: each `renderWaferMap` and `renderWaferGallery` created its own `<body>`-appended tooltip element, so many existed at once with no coordination; if a leave-event was ever missed (e.g. `setPointerCapture` in `onPointerDown` suppresses `pointerleave`, and a gesture interrupted by `pointercancel` from OS/WebView focus loss, a context menu, or a touch gesture left no `pointerup`), that instance's tooltip stayed visible forever — the only path that hides it, the same canvas's `pointermove` with no die under the cursor, never ran because the pointer had moved to a different card. **Fix:** there is now exactly **one** shared document-level tooltip element for all maps, galleries, and toolbars. Because every consumer points at the same node, showing a tooltip anywhere inherently hides whatever was shown elsewhere, making a frozen tooltip structurally impossible. Also added a `pointercancel` handler (which still resets pan/box-select gesture state) and a window `blur` net so the tooltip clears immediately on alt-tab/app-switch rather than lingering until the next hover.
+- **Tooltips hidden behind the expand modal.** In a map's expand modal, die and toolbar tooltips were invisible (or appeared beneath the modal) unless the modal was maximized — the tooltip's z-index (`--wmap-z + 1`) sits below the modal box (`--wmap-z + 2`), so while parented to `<body>` it rendered behind an open modal, and only the maximize path re-homed it. The modal now re-homes the shared tooltip into its box on open (and back to `<body>` on close) in every state, so tooltips always render above modal content.
+
 ## [0.16.0] — 2026-06-24
 
 ### Breaking

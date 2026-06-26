@@ -7,7 +7,7 @@ import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, createTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -202,6 +202,18 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * inset, or an explicit CSS height). Width always comes from the container.
    */
   height?: number | string;
+  /**
+   * Base `z-index` for wmap's transient overlays — toolbar menus, the die
+   * tooltip, the expand modal, and the user-guide modal. wmap layers its own
+   * overlays from this value upward (tooltip and the modal box sit one or two
+   * above it). Set this when embedding a map inside your own modal/overlay so
+   * wmap's menus and tooltips appear above it.
+   *
+   * Omit it and wmap defaults overlays to a high value (above typical app modal
+   * layers), so they appear on top with no configuration. The value is applied
+   * for the lifetime of this render and restored on `destroy()`.
+   */
+  zIndex?: number;
 }
 
 /** @deprecated Use RenderOptions instead. */
@@ -305,9 +317,14 @@ export function renderWaferMap(
     passBins             = [1],
     showHelpButton       = false,
     onExpand,
+    zIndex,
     viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
+
+  // Host-supplied overlay stacking (no-op when zIndex is undefined; safe high
+  // default applies). Restored on destroy() via the returned disposer.
+  const disposeOverlayZ = applyOverlayZ(zIndex);
 
   let currentFallbackFormat = drawOptions.fallbackFormat;
   let currentStatsSummary = options.statsSummary;
@@ -504,10 +521,11 @@ export function renderWaferMap(
   }
 
   // ── Tooltip ────────────────────────────────────────────────────────────────
-  let tooltip: HTMLDivElement | null = null;
-  if (showTooltip) {
-    tooltip = createTooltip();
-  }
+  // One shared tooltip element for the whole document (see toolbar.ts). `tooltip`
+  // is the local handle used by die-hover code; null when this instance has
+  // tooltips disabled, so die hover never shows one. The toolbar still uses the
+  // singleton regardless.
+  const tooltip: HTMLDivElement | null = showTooltip ? getTooltip() : null;
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
   let toolbar:          HTMLDivElement    | null = null;
@@ -568,15 +586,16 @@ export function renderWaferMap(
         border:        `1px solid ${CLR.menuBorder}`,
         borderRadius:  '4px',
         boxShadow:     '0 1px 4px rgba(0,0,0,0.12)',
-        zIndex:        'var(--wmap-z, 100)',
+        zIndex:        Z_BASE,
         opacity:       '0.35',
         transition:    'opacity 0.2s ease',
         pointerEvents: 'auto',
       });
 
       // ── Toolbar helpers ──────────────────────────────────────────────────
-      // Use shared tooltip if available, otherwise create one for the toolbar.
-      const tbTooltip = tooltip ?? createTooltip();
+      // The toolbar uses the shared singleton tooltip — the same node die hover
+      // uses when enabled, so the one-tooltip invariant holds across both.
+      const tbTooltip = getTooltip();
       const tbHelpers = createToolbarHelpers(tbTooltip);
       const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
       tbCloseOpenMenu = closeOpenMenu;
@@ -862,13 +881,10 @@ export function renderWaferMap(
     modalOriginalParent = reparentRoot.parentElement as HTMLElement;
     modalOriginalNext   = reparentRoot.nextSibling;
 
+    // openModal owns shared-tooltip re-homing (into the box on open, back to
+    // <body> on close) — correct in both modal and maximized states — so no
+    // onMaximizeChange tooltip wiring is needed here.
     const handle = openModal({
-      onMaximizeChange: (isMaximized, box) => {
-        if (tooltip) {
-          if (isMaximized) box.appendChild(tooltip);
-          else document.body.appendChild(tooltip);
-        }
-      },
       onClose: () => {
         if (modalReparentedEl && modalOriginalParent) {
           modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
@@ -1425,9 +1441,27 @@ export function renderWaferMap(
   }
 
   function onPointerLeave(): void {
-    if (tooltip) tooltip.style.display = 'none';
+    if (tooltip) hideTooltip();
     onHover?.(null, new MouseEvent('mouseleave'));
     canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
+  }
+
+  // The shared singleton tooltip (toolbar.ts) makes a frozen tooltip structurally
+  // impossible across instances, but a captured pointer still needs an explicit
+  // out: while a pointer is captured (set in onPointerDown) the browser suppresses
+  // pointerleave, so a gesture interrupted without a pointerup — pointercancel from
+  // the OS/WebView on focus loss, a context menu, a touch gesture — must also reset
+  // gesture state (pan/box-select), which the tooltip singleton alone does not do.
+  function onPointerCancel(): void {
+    isPanning         = false;
+    spacePanActive    = false;
+    isBoxSelecting    = false;
+    legendDragPending = false;
+    draggingLegend    = false;
+    if (tooltip) hideTooltip();
+    onHover?.(null, new MouseEvent('mouseleave'));
+    canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
+    render();
   }
 
   // ── Hit testing ────────────────────────────────────────────────────────────
@@ -1499,6 +1533,13 @@ export function renderWaferMap(
   };
   dprMediaQuery.addEventListener('change', onDprChange);
 
+  // ── Window focus loss ──────────────────────────────────────────────────────
+  // Alt-tab / app switch (notably in a Tauri WebView) moves the pointer out of
+  // the window without firing pointerleave or pointercancel. The shared tooltip
+  // would otherwise linger visibly until the next hover reclaims it; hide it now.
+  const onWindowBlur = () => { if (tooltip) hideTooltip(); };
+  window.addEventListener('blur', onWindowBlur);
+
   // ── Wire canvas events ─────────────────────────────────────────────────────
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape' && selectedKeys.size > 0) {
@@ -1563,6 +1604,7 @@ export function renderWaferMap(
   canvas.addEventListener('pointermove',  onPointerMove);
   canvas.addEventListener('pointerup',    onPointerUp);
   canvas.addEventListener('pointerleave', onPointerLeave);
+  canvas.addEventListener('pointercancel', onPointerCancel);
   const onDblClick = () => resetZoom();
   canvas.addEventListener('dblclick',     onDblClick);
   canvas.addEventListener('keydown',      onKeyDown);
@@ -1687,7 +1729,7 @@ export function renderWaferMap(
     },
 
     setTooltipParent(parent: HTMLElement): void {
-      if (tooltip) parent.appendChild(tooltip);
+      if (tooltip) reparentTooltip(parent);
     },
 
     getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null {
@@ -1715,13 +1757,19 @@ export function renderWaferMap(
       canvas.removeEventListener('pointermove',  onPointerMove);
       canvas.removeEventListener('pointerup',    onPointerUp);
       canvas.removeEventListener('pointerleave', onPointerLeave);
+      canvas.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('dblclick',     onDblClick);
       canvas.removeEventListener('keydown',      onKeyDown);
       canvas.removeEventListener('keyup',        onKeyUp);
       canvas.removeEventListener('click',        onCanvasClick);
       resizeObserver.disconnect();
       dprMediaQuery.removeEventListener('change', onDprChange);
-      tooltip?.remove();
+      window.removeEventListener('blur', onWindowBlur);
+      disposeOverlayZ();
+      // The tooltip is the shared document-level singleton — never destroy it
+      // (other instances may still use it). Just hide it and re-home to <body>
+      // in case this instance had moved it into a now-removed modal.
+      if (tooltip) hideTooltip();
       toolbar?.remove();
       if (summaryPanelWrapper) {
         summaryPanelWrapper.parentElement?.insertBefore(canvasWrap, summaryPanelWrapper);
