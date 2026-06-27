@@ -290,7 +290,7 @@
     </div>
     <div class="panel-footer" id="wmap-footer">
       <code>buildWaferMap({ results })</code> then <code>renderWaferMap(el, result)</code>
-      <span class="note">Showing to-scale wafer boundary, bottom notch, XY axis indicator and ring overlays — plus a graduated colorbar with LSL/USL spec markers (out-of-spec dies in blue/red) in Test&nbsp;values mode. None of these exist in the Plotly panel.</span>
+      <span class="note">Showing to-scale wafer boundary, bottom notch, XY axis indicator and ring overlays — plus a graduated colorbar with LSL/USL spec markers (out-of-spec dies flagged with ▽/△ markers) in Test&nbsp;values mode. None of these exist in the Plotly panel.</span>
       <span class="note">The <strong>built-in toolbar</strong> (top-right of the canvas) lets you configure plot mode, colour scheme, overlays, legend, rotate/flip and more live — no code changes.</span>
     </div>
   </div>
@@ -385,8 +385,8 @@
         <td class="no">✗ One value per trace; manual UI to switch</td>
       </tr>
       <tr>
-        <td>Spec limits + out-of-spec colour</td>
-        <td class="yes">✓ Native — blue/red overlay</td>
+        <td>Spec limits + out-of-spec flagging</td>
+        <td class="yes">✓ Native — ▽/△ markers</td>
         <td class="no">✗ Manual pre-classification</td>
       </tr>
       <tr>
@@ -551,7 +551,7 @@
           passBins: [1],
           waferConfig,
           testDefs: [
-            // Spec limits on testA enable out-of-spec (blue/red) colouring and
+            // Spec limits on testA enable out-of-spec (▽/△ marker) flagging and
             // LSL/USL markers on the colorbar — neither exists in Plotly.
             { testNumber: 1050, name: 'testA', unit: 'V', limitLow: 1.00, limitHigh: 1.30 },
             { testNumber: 1060, name: 'testB', unit: 'V' },
@@ -580,8 +580,8 @@
       viewOptions: isValues
         ? {
             // Continuous graduated colorbar. Spec limits stay defined so the
-            // bar shows LSL/USL markers and out-of-spec dies render blue/red on
-            // the gradient — without flattening to a categorical pass/fail view.
+            // bar shows LSL/USL markers and out-of-spec dies are flagged with ▽/△
+            // markers on the gradient — without flattening to a categorical pass/fail view.
             plotMode:           'value',
             activeTest:         1050,
             showXYIndicator:    true,
@@ -613,7 +613,9 @@
 
     if (isValues) {
       markerColor  = results.map(r => r.testValues[1050]);
-      colorscale   = 'Viridis';
+      // 'Jet' (blue→cyan→yellow→red) matches wmap's default thermal value gradient,
+      // so the two panels compare like-for-like — the differences are features, not colour.
+      colorscale   = 'Jet';
       showscale    = true;
       colorbarTitle = 'testA';
     } else {

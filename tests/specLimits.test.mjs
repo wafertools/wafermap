@@ -165,9 +165,12 @@ test('value mode — out-of-spec dies keep the gradient fill but carry a specMar
   assert.equal(inSpec.specMark, undefined, 'in-spec die must not carry a specMark');
 });
 
-test('value mode — out-of-spec dies stay solid blue/red (no specMark) under colorbarRangeMode: spec', () => {
-  // The default 'spec' range mode is unchanged: out-of-spec dies are filled solid
-  // blue/red and carry no marker (the fill already conveys the spec verdict).
+test('value mode — out-of-spec dies keep the gradient fill and carry a specMark under colorbarRangeMode: spec', () => {
+  // Unified rule: in normal value mode the out-of-spec indication is the ▽/△ marker
+  // in BOTH colorbar ranges. Out-of-spec dies are NOT solid blue/red — they keep the
+  // gradient fill like every other die (so the indication never collides with a
+  // scheme whose gradient is blue/red at that end). colorbarRangeMode now only sets
+  // the colorbar's numeric range, not the form of the spec indication.
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
     makeResult(0, 0, 1.0),
@@ -184,10 +187,11 @@ test('value mode — out-of-spec dies stay solid blue/red (no specMark) under co
     return die ? scene.rectangles.find(r => Math.abs(r.x - die.physX) < 0.1 && Math.abs(r.y - die.physY) < 0.1) : null;
   };
 
-  assert.equal(getRectForDie(1, 0).fill,  '#3498db', 'fail-low solid blue in spec mode');
-  assert.equal(getRectForDie(-1, 0).fill, '#e74c3c', 'fail-high solid red in spec mode');
-  assert.equal(getRectForDie(1, 0).specMark,  undefined, 'no marker needed — solid fill conveys it');
-  assert.equal(getRectForDie(-1, 0).specMark, undefined, 'no marker needed — solid fill conveys it');
+  assert.notEqual(getRectForDie(1, 0).fill,  '#3498db', 'fail-low die uses the gradient, not solid blue, in spec mode');
+  assert.notEqual(getRectForDie(-1, 0).fill, '#e74c3c', 'fail-high die uses the gradient, not solid red, in spec mode');
+  assert.equal(getRectForDie(1, 0).specMark,  'failLow',  'fail-low die must carry specMark failLow in spec mode');
+  assert.equal(getRectForDie(-1, 0).specMark, 'failHigh', 'fail-high die must carry specMark failHigh in spec mode');
+  assert.equal(getRectForDie(0, 0).specMark,  undefined, 'in-spec die must not carry a specMark');
 });
 
 test('value mode — colorBySpec keeps solid spec fills (no specMark) even with colorbarRangeMode: data', () => {
@@ -354,7 +358,7 @@ test('colorbarRangeMode data — valueRange uses data min/max even with limits',
 
 // ── out-of-spec coloring in value mode ───────────────────────────────────────
 
-test('value mode — out-of-spec dies colored with fail-low/fail-high colors', () => {
+test('value mode — out-of-spec dies keep the gradient fill and are flagged via specMark', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 1.0, limitHigh: 3.0 }];
   const results = [
     makeResult(0, 0, 2.0),   // in spec
@@ -378,11 +382,15 @@ test('value mode — out-of-spec dies colored with fail-low/fail-high colors', (
   assert.ok(failLow,  'fail-low die rect not found');
   assert.ok(failHigh, 'fail-high die rect not found');
 
-  // In-spec die should use the gradient (not fail colors)
-  assert.notEqual(inSpec.fill,  '#3498db', 'in-spec die should not be fail-low color');
-  assert.notEqual(inSpec.fill,  '#e74c3c', 'in-spec die should not be fail-high color');
-  assert.equal(failLow.fill,  '#3498db', 'fail-low color should be blue');
-  assert.equal(failHigh.fill, '#e74c3c', 'fail-high color should be red');
+  // All dies use the gradient fill (never the solid fail colours); out-of-spec
+  // dies are flagged with a ▽/△ marker via specMark instead.
+  assert.notEqual(inSpec.fill,   '#3498db', 'in-spec die should not be fail-low color');
+  assert.notEqual(inSpec.fill,   '#e74c3c', 'in-spec die should not be fail-high color');
+  assert.notEqual(failLow.fill,  '#3498db', 'fail-low die uses the gradient, not solid blue');
+  assert.notEqual(failHigh.fill, '#e74c3c', 'fail-high die uses the gradient, not solid red');
+  assert.equal(inSpec.specMark,   undefined, 'in-spec die carries no marker');
+  assert.equal(failLow.specMark,  'failLow',  'fail-low die flagged via specMark');
+  assert.equal(failHigh.specMark, 'failHigh', 'fail-high die flagged via specMark');
 });
 
 // ── spec legend counts (view.specCounts) ─────────────────────────────────────

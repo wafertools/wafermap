@@ -767,7 +767,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `colorBySpec` | `boolean` | `false` | In `value` mode: replace the gradient with categorical pass/fail colours when the active test has spec limits. Toggled via the Overlays toolbar menu. |
 | `highlightBin` | `number` | — | Dim all bins except this one |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the scene auto-scales — use this to safely fix a range computed for a specific test. |
-| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | When the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]` and fills out-of-spec dies solid blue/red; `'data'` spans the actual data min/max and colours all dies by the gradient, flagging out-of-spec dies with a blue/red marker (outline + central dot) instead of a solid fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits). |
+| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
 | `aggregationMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
 | `lotSize` | `number` | — | Total wafers in lot — percentage denominator in `stackedBins`/`stackedSoftBins` tooltips |
@@ -849,8 +849,10 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
-  tooltipTestLimit?:       number    // max test value rows in the die hover tooltip (default 12);
-                                            // excess rows are replaced with "…and N more"
+  tooltipTestLimit?:       number    // @deprecated — no longer used. The die hover tooltip is now
+                                            // compact and mode-aware (value mode leads with the active test
+                                            // + "+N more tests"; bin modes show a test-value count), so it
+                                            // never lists tests up to a cap. Kept for back-compat.
   showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide in a modal
                                             // (default false); enable in applications that want to surface the guide without linking externally
   minZoom?:                number    // default 0.5
@@ -946,7 +948,7 @@ Choose the right update method:
 | Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Dropdown: all registered colour schemes |
 | Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Active only in `value` / `stackedValues` modes; dimmed otherwise. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
-| Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. Out-of-spec dies are always flagged in both states: a solid blue/red fill in spec range, a blue/red marker (outline + dot) over the gradient fill in data range. |
+| Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. In both states all dies keep the gradient fill and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over that fill. |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
 | Labels | Toggle die index text labels |
@@ -2482,9 +2484,9 @@ interface ViewOptions {
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
   activeTest?:              number      // testNumber to display in 'value' mode (matches testDef.testNumber, NOT a positional index); defaults to first available test
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
-  colorbarRangeMode?:      'spec' | 'data'  // default 'spec' when active testDef has limits: colorbar spans [limitLow, limitHigh],
-                                            // out-of-spec dies filled solid blue/red. 'data' spans actual data min/max; out-of-spec
-                                            // dies keep the gradient fill and get a blue/red marker (outline + dot) instead
+  colorbarRangeMode?:      'spec' | 'data'  // sets colorbar range only: 'spec' (default) spans [limitLow, limitHigh],
+                                            // 'data' spans actual data min/max. In both, dies keep the gradient fill and
+                                            // out-of-spec dies get a triangle marker (▽ below limit, △ above)
   aggregationMethod?:      string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
   lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
 }
@@ -2508,11 +2510,21 @@ buildHoverText(
   fallbackFormat?:   'si' | 'engineering',
   aggregationMethod?: string,
   lotSize?:          number,
-  testLimit?:        number,   // max test rows shown; excess replaced with "…and N more" (default 12)
+  testLimit?:        number,            // @deprecated — no longer used (see below); kept for back-compat
+  waferMeta?:        WaferMetadata | null, // wafer-level metadata; per-die keys override
+  activeTest?:       number,            // active test number (value mode) — leads the tooltip
 ): string
 ```
 
 Builds the HTML tooltip string for a single die. Exported so custom `toCanvas` pipelines can generate the same tooltip content as `renderWaferMap` without re-implementing the formatting logic.
+
+The tooltip is **compact and mode-aware**, so it never becomes an unwieldy block on dies with many tests:
+
+- **`value` mode** — leads with the **active test** (`activeTest`) value, in bold, with an `(out of spec)` note when it fails its limits; the remaining tests are summarised as `+N more tests`.
+- **`hardBin` / `softBin` mode** — shows the bin verdict (`HBin` / `SBin`), then a `N test values recorded` count rather than listing individual tests (no single test is privileged in bin mode).
+- **stacked modes** — show the single aggregated value.
+
+`testLimit` is **deprecated and ignored** — the tooltip no longer lists tests up to a cap, so there is nothing to limit. It is retained only so existing positional calls keep working.
 
 `Die` → §12.1 · `TestDef` → §4.1.8 · `BinDef` → §4.1.9
 

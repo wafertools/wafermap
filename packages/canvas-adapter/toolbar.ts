@@ -254,6 +254,12 @@ export function getTooltip(): HTMLDivElement {
       fontSize:     '13px',
       lineHeight:   '1.55',
       maxWidth:     '280px',
+      // Hard height cap so the tooltip can never grow into a full-viewport block —
+      // a safety net (the hover content is now compact, and pointerEvents:none means
+      // it can't scroll, so anything beyond the cap, e.g. abundant host metadata, is
+      // clipped rather than overflowing the screen).
+      maxHeight:    'min(60vh, 480px)',
+      overflow:     'hidden',
       whiteSpace:   'pre-wrap',
       zIndex:       Z_ABOVE,
       display:      'none',

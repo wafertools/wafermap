@@ -23,7 +23,7 @@
   <div class="demo-intro">
     Continuous parametric data stored in <code>die.testValues</code> as a <code>testNumber → value</code> map.
     <code>testDefs</code> gives each test a name and unit — the toolbar mode menu, tooltips, and colorbar all update automatically.
-    Vth has spec limits defined (<code>limitLow</code> / <code>limitHigh</code>): out-of-spec dies appear in blue/red in <strong>Test Value</strong> mode.
+    Vth has spec limits defined (<code>limitLow</code> / <code>limitHigh</code>): in <strong>Test Value</strong> mode out-of-spec dies keep the gradient fill and are flagged with a ▽/△ triangle marker (in either colorbar range).
     Enable <strong>Spec pass/fail</strong> (via the Overlays menu or the button below) to replace the gradient with categorical pass·fail-low·fail-high colouring. The button is disabled for tests without limits.
     Use the toolbar bracket button to switch the colorbar between the spec window and the full data range.
   </div>
@@ -80,8 +80,8 @@
             <tr><td>Spec yield</td> <td id="spec-yield" style="font-weight:600">—</td></tr>
           </table>
           <div style="margin-top:6px; font-size:11px; color:var(--muted); line-height:1.5">
-            Out-of-spec dies shown in <span style="color:#3498db; font-weight:600">blue</span> (below LSL)
-            and <span style="color:#e74c3c; font-weight:600">red</span> (above USL) in both modes.
+            Out-of-spec dies keep the gradient fill and are flagged with a triangle marker —
+            <span style="font-weight:600">▽</span> below LSL, <span style="font-weight:600">△</span> above USL — in both colorbar ranges.
           </div>
         </div>
         <div id="spec-divider" class="section-divider" style="display:none"></div>
@@ -108,8 +108,9 @@
     import { renderWaferMap } from 'wafermap/render';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS, HBIN_DEFS } from './data.js';
 
-    // TEST_DEFS includes limitLow/limitHigh for Vth (1060) — the toolbar shows a spec-range
-    // toggle button, and out-of-spec dies render in blue (below LSL) or red (above USL).
+    // TEST_DEFS includes limitLow/limitHigh for Vth (1060) — the toolbar shows a colorbar-range
+    // toggle button. Out-of-spec dies keep the gradient fill and are flagged with a ▽/△ triangle
+    // marker (▽ below LSL, △ above USL) in either colorbar range.
     const result = buildWaferMap({
       results:     makeResults({ seed: 5, quadrant: true }),
       waferConfig: WAFER_CONFIG,
@@ -120,9 +121,9 @@
     const { dies } = result;
 
     const patterns = [
-      'Peaks at the wafer centre (~1.5 mA), falls toward the edge. The NE quadrant shows a ~7% suppression from process gradient.',
-      'Increases radially from centre (0.45 V) to edge (0.53 V). The NE quadrant shows an additional +40 mV shift above the USL of 0.57 V — visible as red dies in the NE quadrant.',
-      'Exponential growth toward the edge. Higher Ioff in the NE quadrant correlates with elevated Vth.',
+      'Peaks at the wafer centre (~1.5 mA), falls toward the edge. Lower toward the NE corner, where the higher Vth makes weaker silicon.',
+      'A smooth NE→SW process tilt across the wafer: high toward the NE corner (a few dies climb above the USL of 0.57 V → △ fail-high markers) and low toward the SW corner (a few dip below the LSL of 0.44 V → ▽ fail-low markers), over a gentle centre-to-edge rise.',
+      'Exponential growth toward the edge. Elevated toward the NE corner, correlating with the higher Vth there.',
     ];
 
     function testStats(dies, testNumber) {
@@ -185,7 +186,7 @@
 
     const VTH_TEST = 1060; // only test with spec limits — start here so the demo is self-explanatory
 
-    // Mount in value mode on Vth so out-of-spec dies (blue/red) are visible immediately.
+    // Mount in value mode on Vth so out-of-spec dies (▽/△ markers) are visible immediately.
     // The Overlays menu exposes a "Spec pass/fail" toggle (colorBySpec) when the active
     // test has limits defined.
     const ctrl = renderWaferMap(document.getElementById('map'), result, {

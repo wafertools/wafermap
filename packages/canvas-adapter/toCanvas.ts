@@ -2,8 +2,21 @@ import type { View, ViewRect } from '../renderer/buildView.js';
 import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from '../renderer/colorMap.js';
+import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH, contrastTextColor } from '../renderer/colorMap.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
+
+/**
+ * Append an isosceles triangle to the current path, centred on (cx, cy).
+ * `dir` = +1 points the apex up (canvas y-up transform), -1 points it down.
+ * `tri` is the half-size (apex distance from centre). Used for out-of-spec die
+ * glyphs and their colorbar key, so the shape is defined in exactly one place.
+ */
+function triPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, tri: number, dir: number): void {
+  ctx.moveTo(cx, cy + dir * tri);
+  ctx.lineTo(cx - tri * 0.9, cy - dir * tri * 0.6);
+  ctx.lineTo(cx + tri * 0.9, cy - dir * tri * 0.6);
+  ctx.closePath();
+}
 
 export interface ToCanvasOptions {
   /** Padding in CSS pixels inside the canvas edge. Default 16. */
@@ -326,33 +339,43 @@ export function toCanvas(
     ctx.stroke();
 
     // Out-of-spec markers (value mode, 'data' colorbar range): the die keeps its
-    // gradient fill, so flag out-of-spec dies with a coloured outline + central dot
-    // (blue = below low limit, red = above high limit) — never shown as plain in-spec.
-    // One batched outline + dot pass per mark colour. Sizes are in data units divided
-    // by (ppm * dpr) so they read at a constant on-screen size at any zoom.
+    // gradient fill, so flag out-of-spec dies with a triangle glyph — down = below
+    // low limit (fail-low), up = above high limit (fail-high). Shape (not colour)
+    // carries the meaning, so it survives greyscale and colour-vision deficiency.
+    // The glyph colour is chosen per die for maximum contrast against that die's
+    // own gradient fill (black or white), with an opposite-colour halo so it reads
+    // on any scheme. Sizes are in data units divided by (ppm * dpr) so they hold a
+    // constant on-screen size at any zoom.
     const marked = view.rectangles.filter(r => r.specMark);
     if (marked.length > 0) {
-      const outlineW = 1.5 / (ppm * dpr);
-      // Dot radius: proportional to die size, floored so it stays visible when zoomed out.
-      const minDie = Math.min(marked[0].width, marked[0].height);
-      const dotR = Math.max(2 / (ppm * dpr), minDie * 0.16);
-      for (const [mark, color] of [['failLow', SPEC_FAIL_LOW], ['failHigh', SPEC_FAIL_HIGH]] as const) {
-        const group = marked.filter(r => r.specMark === mark);
-        if (group.length === 0) continue;
-        ctx.strokeStyle = color;
-        ctx.lineWidth   = outlineW;
+      // Bucket by (shape, glyph colour). contrastTextColor yields only black or
+      // white, so there are at most 4 buckets → ≤8 draw calls regardless of die
+      // count, matching the previous marker's efficiency class. ViewRect is never
+      // mutated — the glyph colour lives only in these transient buckets.
+      const buckets = new Map<string, ViewRect[]>();
+      for (const r of marked) {
+        const g = contrastTextColor(String(r.fill));
+        const key = `${r.specMark}|${g}`;
+        let group = buckets.get(key);
+        if (!group) { group = []; buckets.set(key, group); }
+        group.push(r);
+      }
+      const haloW = 2.5 / (ppm * dpr);
+      ctx.lineJoin = 'round';
+      for (const [key, group] of buckets) {
+        const [mark, glyph] = key.split('|');
+        const halo = glyph === '#000000' ? '#ffffff' : '#000000';
+        const dir = mark === 'failHigh' ? 1 : -1; // up for fail-high, down for fail-low
+        // Triangle half-size: proportional to die, floored so it stays visible zoomed out.
+        const minDie = Math.min(group[0].width, group[0].height);
+        const tri = Math.max(2.5 / (ppm * dpr), minDie * 0.30);
+        // Halo pass (opposite colour), then fill pass — both over one batched path.
         ctx.beginPath();
-        for (const r of group) {
-          const inset = outlineW / 2; // keep the stroke inside the die edge
-          ctx.rect(r.x - r.width / 2 + inset, r.y - r.height / 2 + inset, r.width - 2 * inset, r.height - 2 * inset);
-        }
+        for (const r of group) triPath(ctx, r.x, r.y, tri, dir);
+        ctx.strokeStyle = halo;
+        ctx.lineWidth   = haloW;
         ctx.stroke();
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        for (const r of group) {
-          ctx.moveTo(r.x + dotR, r.y);
-          ctx.arc(r.x, r.y, dotR, 0, Math.PI * 2);
-        }
+        ctx.fillStyle = glyph;
         ctx.fill();
       }
     }
@@ -616,6 +639,22 @@ export function toCanvas(
           // Left-side label in both modes.
           ctx.fillStyle = '#333';
           ctx.fillText(label, cbX - 3, sy);
+
+          // Key: a tiny triangle to the left of the label tying the out-of-spec die
+          // marker shape to its limit (▽ below LSL, △ above USL). Shown in both
+          // colorbar ranges, since the ▽/△ die markers now appear in both.
+          // Screen space here: y increases downward, so apex-up needs dir=-1.
+          const dir = label === 'USL' ? -1 : 1; // up for USL (fail-high), down for LSL
+          const keyTri = 4;
+          const kx = cbX - 3 - ctx.measureText(label).width - keyTri - 4;
+          ctx.beginPath();
+          triPath(ctx, kx, sy, keyTri, dir);
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth   = 2;
+          ctx.lineJoin    = 'round';
+          ctx.stroke();
+          ctx.fillStyle = '#333';
+          ctx.fill();
         }
 
         ctx.restore();

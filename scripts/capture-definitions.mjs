@@ -481,7 +481,7 @@ export const CAPTURES = [
     file: 'guide-color-schemes',
     group: 'maps',
     page: '/examples/color-schemes.html',
-    selector: '.scheme-grid',
+    selector: '.canvas-grid-3',
     wait: 1200,
     setup: [
       ['hover', '#map-custom'],

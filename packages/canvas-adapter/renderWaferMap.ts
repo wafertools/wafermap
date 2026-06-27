@@ -180,9 +180,10 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    */
   renderTooltip?: (die: Die) => string | HTMLElement | null;
   /**
-   * Maximum number of test value rows shown in the die hover tooltip.
-   * When the die has more tests than this limit, the remainder are replaced with "…and N more".
-   * Default 12.
+   * @deprecated No longer used. The die hover tooltip is now compact and mode-aware:
+   * in value mode it leads with the active test then summarises the rest as "+N more
+   * tests"; in bin modes it shows a "N test values recorded" count. It never lists
+   * tests up to a cap, so there is nothing to limit. Kept for back-compat.
    */
   tooltipTestLimit?: number;
   /**
@@ -1264,6 +1265,9 @@ export function renderWaferMap(
             currentView.lotSize,
             tooltipTestLimit,
             result.metadata,
+            // Active test from the built View (authoritative, like plotMode above):
+            // in value mode the tooltip leads with it; ignored in bin modes.
+            currentView.activeTest,
           );
           tooltip.style.display = 'block';
           positionTooltip(tooltip, e.clientX, e.clientY);

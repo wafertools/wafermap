@@ -34,7 +34,7 @@ export function rng(i, j, seed = 1) {
  * @param {object}  opts
  * @param {number}  [opts.seed=1]               Controls per-wafer variation.
  * @param {boolean} [opts.edgeFail=false]        Adds a strong failure band in the outer ring (r > 72%).
- * @param {boolean} [opts.quadrant=false]        NE quadrant has lower yield and higher Vth.
+ * @param {boolean} [opts.quadrant=false]        Smooth NE→SW Vth process tilt (high NE → USL fails, low SW → LSL fails) with a mild NE-corner yield droop.
  * @param {boolean} [opts.center=false]          Small defect cluster at the wafer centre.
  * @param {boolean} [opts.reticlePattern=false]  Repeating field-position defect pattern.
  * @param {boolean} [opts.cluster=false]         Tight failure cluster (~8 dies) simulating a particle/ESD event.
@@ -86,6 +86,17 @@ export function makeResults({
 
       const t = rMm / waferRadius; // normalised radial position [0, 1]
 
+      // Physical die position in mm (used by the smooth spatial pattern below).
+      const xMm = i * pitchX, yMm = j * pitchY;
+
+      // Smooth NE→SW process tilt: a single linear gradient across the wafer (like
+      // real implant-angle / anneal non-uniformity), NOT a localised blob and not a
+      // hard quadrant step. `tilt` runs ~ -1 at the SW corner to ~ +1 at the NE
+      // corner, smoothly. It drives Vth high toward the NE (→ USL fails) and low
+      // toward the SW (→ LSL fails), and is reused (attenuated) for the yield and
+      // Idsat coupling so the high-Vth corner also reads as slightly weaker silicon.
+      const tilt = quadrant ? (xMm + yMm) / (2 * waferRadius) : 0;
+
       // Independent noise samples
       const n1 = rng(i, j, seed);
       const n2 = rng(i, j, seed + 37);
@@ -101,7 +112,7 @@ export function makeResults({
 
       // Optional failure patterns
       if (edgeFail  && t > 0.72)            pass -= 0.22; // outer ring yield loss
-      if (quadrant  && i > 0 && j > 0)      pass -= 0.14; // NE quadrant drift
+      if (quadrant)                         pass -= 0.10 * Math.max(0, tilt); // mild NE-corner yield droop (smooth)
       if (center    && t < 0.22)            pass -= 0.20; // centre defect cluster
       if (cluster   && Math.hypot(i + 5, j + 3) < 2.5)  pass -= 0.80; // particle/ESD cluster (SW, away from NE drift)
       if (edgeArc) {
@@ -133,14 +144,17 @@ export function makeResults({
       }
 
       // Test values — physically motivated spatial gradients:
-      //   Idsat: drive current peaks at centre, drops toward edge
+      //   Idsat: drive current peaks at centre, drops toward edge; the high-Vth NE
+      //   corner reads as slightly weaker drive current.
       const idsatBase = 1.5e-3 * (1 - t * 0.35);
-      const idsatQuad = (quadrant && i > 0 && j > 0) ? -0.11e-3 : 0;
-      const idsat = idsatBase + idsatQuad + (n2 - 0.5) * 0.18e-3;
+      const idsatTilt = -0.10e-3 * tilt;
+      const idsat = idsatBase + idsatTilt + (n2 - 0.5) * 0.18e-3;
 
-      //   Vth: threshold voltage increases toward edge (process gradient)
-      const vthQuad = (quadrant && i > 0 && j > 0) ? 0.04 : 0;
-      const vth = 0.450 + t * 0.085 + vthQuad + (n3 - 0.5) * 0.028;
+      //   Vth: a gentle centre-to-edge rise plus the smooth NE→SW process tilt —
+      //   high toward the NE (→ USL fails), low toward the SW (→ LSL fails). The
+      //   tilt is a single across-wafer gradient, so out-of-spec dies form soft,
+      //   irregular corner patches rather than a blob or a hard quadrant block.
+      const vth = 0.490 + t * 0.02 + 0.095 * tilt + (n3 - 0.5) * 0.028;
 
       //   Ioff: off-state leakage grows exponentially toward edge
       const ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
@@ -205,7 +219,8 @@ export const SBIN_DEFS = [
 /**
  * Three continuous parametric tests: saturation current, threshold voltage, leakage.
  * testNumber is a stable per-test identity (e.g. STDF TEST_NUM or equivalent).
- * Vth has spec limits — the NE quadrant drifts high and produces measurable out-of-spec fails.
+ * Vth has spec limits — a smooth NE→SW process tilt runs high toward the NE (USL
+ * fails) and low toward the SW (LSL fails), so the wafer shows both out-of-spec sides.
  */
 export const TEST_DEFS = [
   { testNumber: 1050, name: 'Idsat', unit: 'A' },

@@ -50,12 +50,12 @@ export interface ViewRect {
   stack?: number[];
   metadata?: DieMetadata;
   /**
-   * Out-of-spec indicator for value-mode dies drawn with the value gradient
-   * (i.e. `colorbarRangeMode: 'data'`). The die keeps its gradient fill so the
-   * distribution stays readable, and the renderer draws a blue (`failLow`) /
-   * red (`failHigh`) marker on top so the die is never shown as plain in-spec.
-   * Absent in `'spec'` range mode and under `colorBySpec`, where the fill is
-   * itself the solid spec-fail colour and no marker is needed.
+   * Out-of-spec indicator for value-mode dies drawn with the value gradient.
+   * The die keeps its gradient fill (so the distribution stays readable) and the
+   * renderer draws a ▽ (`failLow`) / △ (`failHigh`) marker on top so the die is
+   * never shown as plain in-spec. Set in both `'spec'` and `'data'` colorbar
+   * ranges. Absent only under `colorBySpec`, where the solid categorical fill is
+   * itself the indication and no marker is needed.
    */
   specMark?: 'failLow' | 'failHigh';
 }
@@ -260,12 +260,12 @@ export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
  *
  * Out-of-spec *classification* depends ONLY on whether limits are defined — never on
  * `colorbarRangeMode`. An out-of-spec die is always flagged when limits exist, regardless of
- * how the colorbar is scaled; what differs is the *form* of the indication, decided in
- * `pushDieRectangles`: a solid blue/red fill in `'spec'` range mode (and under `colorBySpec`),
- * or the value gradient plus a blue/red marker (`ViewRect.specMark`) in `'data'` mode so the
- * value distribution stays readable. Either way the die is never drawn as plain in-spec — the
- * silent correctness bug this guards against. (`'data'` mode previously suppressed any spec
- * indication entirely; the all-solid-blue/red fix that replaced it then erased the distribution.)
+ * how the colorbar is scaled. The *form* of the indication, decided in `pushDieRectangles`,
+ * depends only on `colorBySpec`: under `colorBySpec` (pass/fail mode) the die gets a solid
+ * green/blue/red categorical fill; in normal value/gradient mode it keeps the value gradient
+ * fill (like every other die, so the distribution stays readable and out-of-spec colours don't
+ * collide with the scheme) and is flagged with a ▽/△ marker (`ViewRect.specMark`). Either way
+ * the die is never drawn as plain in-spec — the silent correctness bug this guards against.
  */
 export function classifySpec(
   value: number | undefined,
@@ -398,6 +398,39 @@ function fontSizeForDie(die: Die, text: string): number {
   return Math.max(8, Math.min(16, Math.round(Math.min(minSide * 0.55, widthBudget * 1.8))));
 }
 
+/** One displayable test row for the hover tooltip: a label, a formatted value, and the
+ * test's key (testNumber/index) so the active test can be located. Unifies the
+ * testValues path and the deprecated values[] path so the tooltip builder has a single
+ * source. Skips tests with no value for this die. */
+function collectTestRows(
+  die: Die,
+  testDefs: TestDef[] | undefined,
+  fallbackFormat?: 'si' | 'engineering',
+): Array<{ key: number; label: string; value: string }> {
+  if (die.testValues && Object.keys(die.testValues).length > 0) {
+    if (testDefs?.length) {
+      return testDefs.flatMap(def => {
+        const key = def.testNumber ?? def.index;
+        if (key === undefined) return [];
+        const v = getDieTestValue(die, key, def.index);
+        if (v === undefined) return [];
+        return [{ key, label: def.name, value: fmt(v, def.unit, fallbackFormat) }];
+      });
+    }
+    return Object.entries(die.testValues).map(([k, v]) => ({
+      key: Number(k), label: `Test ${k}`, value: fmt(v, undefined, fallbackFormat),
+    }));
+  }
+  if (die.values?.length) {
+    // Deprecated positional values[].
+    return die.values.map((v, i) => {
+      const def = testDefs?.find(t => t.index === i);
+      return { key: i, label: def?.name ?? `Test ${i}`, value: fmt(v, def?.unit, fallbackFormat) };
+    });
+  }
+  return [];
+}
+
 export function buildHoverText(
   die: Die,
   plotMode: PlotMode,
@@ -407,8 +440,13 @@ export function buildHoverText(
   fallbackFormat?: 'si' | 'engineering',
   aggrMethod?: string,
   lotSize?: number,
+  /** @deprecated No longer used. The tooltip is now compact and mode-aware (value mode
+   * leads with the active test + a "+N more" summary; bin modes show a test-value
+   * count), so it never lists tests up to a cap. Kept for positional back-compat. */
   testLimit?: number,
   waferMeta?: WaferMetadata | null,
+  /** Active test number (value mode only) — leads the tooltip and gets an out-of-spec note. */
+  activeTest?: number,
 ): string {
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
@@ -450,49 +488,42 @@ export function buildHoverText(
       lines.push(`${binLabel}: ${valueText}${method}`);
     }
   } else {
-    // Standard modes: show all test values with names, then bins.
-    const cap = testLimit ?? 12;
-    if (die.testValues && Object.keys(die.testValues).length > 0) {
-      if (testDefs?.length) {
-        const parts = testDefs.map(def => {
-          const tn  = def.testNumber ?? def.index;
-          if (tn === undefined) return null;
-          const v = getDieTestValue(die, tn, def.index);
-          if (v === undefined) return null;
-          return `${def.name}: ${fmt(v, def.unit, fallbackFormat)}`;
-        }).filter((s): s is string => s !== null);
-        const overflow = parts.length - cap;
-        const shown = overflow > 0 ? parts.slice(0, cap) : parts;
-        if (shown.length) {
-          if (overflow > 0) shown.push(`<i>…and ${overflow} more</i>`);
-          lines.push(shown.join('<br>'));
-        }
-      } else {
-        const parts = Object.entries(die.testValues).map(([k, v]) =>
-          `Test ${k}: ${fmt(v, undefined, fallbackFormat)}`
-        );
-        const overflow = parts.length - cap;
-        const shown = overflow > 0 ? parts.slice(0, cap) : parts;
-        if (shown.length) {
-          if (overflow > 0) shown.push(`<i>…and ${overflow} more</i>`);
-          lines.push(shown.join('<br>'));
-        }
+    // Standard modes (value / hardBin / softBin). The tooltip stays COMPACT — it is a
+    // transient, non-scrollable hover element, so it never lists every test (which
+    // becomes a full-height block on dies with many parametric tests). The form is
+    // mode-aware:
+    //  - value mode: lead with the ACTIVE (plotted) test, then summarise the rest as
+    //    "+N more tests". Only value mode has a privileged test to show.
+    //  - bin modes: the bin verdict is primary; no single test is privileged, so the
+    //    tests collapse to a "N test values recorded" count rather than an arbitrary list.
+    const testRows = collectTestRows(die, testDefs, fallbackFormat);
+
+    if (plotMode === 'value' && testRows.length) {
+      // Resolve the active test; fall back to the first available row if it is
+      // unresolvable or has no value for this die.
+      const { testNumber, fallbackIndex } = resolveTestNumber(activeTest ?? 0, testDefs);
+      const activeDef = findTestDef(testDefs, testNumber);
+      const activeVal = getDieTestValue(die, testNumber, fallbackIndex);
+      let leadIdx = activeVal !== undefined
+        ? testRows.findIndex(r => r.key === testNumber)
+        : -1;
+      if (leadIdx < 0) leadIdx = 0; // degrade: lead with the first present test
+      const lead = testRows[leadIdx];
+
+      let leadLine = `<b>${lead.label}: ${lead.value}</b>`;
+      // Note out-of-spec status for the active test (complements the ▽/△ die markers).
+      if (lead.key === testNumber && activeDef) {
+        const spec = classifySpec(activeVal, activeDef);
+        if (spec === 'failLow' || spec === 'failHigh') leadLine += ' <i>(out of spec)</i>';
       }
-    } else if (die.values?.length) {
-      // Deprecated fallback.
-      if (testDefs?.length) {
-        const parts = die.values.map((v, i) => {
-          const def   = testDefs.find(t => t.index === i);
-          const label = def?.name ?? `Test ${i}`;
-          return `${label}: ${fmt(v, def?.unit, fallbackFormat)}`;
-        });
-        const overflow = parts.length - cap;
-        const shown = overflow > 0 ? parts.slice(0, cap) : parts;
-        if (overflow > 0) shown.push(`<i>…and ${overflow} more</i>`);
-        lines.push(shown.join('<br>'));
-      } else {
-        lines.push(`Values: ${die.values.map((v) => fmt(v, undefined, fallbackFormat)).join(' / ')}`);
-      }
+      lines.push(leadLine);
+
+      const more = testRows.length - 1;
+      if (more > 0) lines.push(`<i>+${more} more test${more === 1 ? '' : 's'}</i>`);
+    } else if (testRows.length) {
+      // Bin modes: collapse the test values to a count — the bin lines below are primary.
+      const n = testRows.length;
+      lines.push(`<i>${n} test value${n === 1 ? '' : 's'} recorded</i>`);
     }
 
     if (die.hbin !== undefined || die.sbin !== undefined) {
@@ -847,7 +878,6 @@ function pushDieRectangles(
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
   colorBySpec?: boolean,
-  colorbarRangeMode: 'spec' | 'data' = 'spec',
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -890,21 +920,22 @@ function pushDieRectangles(
   if (plotMode === 'value') {
     const value = getDieTestValue(die, testNumber, fallbackIndex);
     const spec = classifySpec(value, activeTestDef);
-    // Solid blue/red fill only when the die is coloured *by* spec: in 'spec' range mode
-    // (default) or under colorBySpec. In 'data' mode an out-of-spec die keeps its gradient
-    // fill (so the distribution reads correctly and bar/die colours agree) and is flagged
-    // with a marker instead — see ViewRect.specMark.
-    const solidSpecFill = colorbarRangeMode === 'spec' || colorBySpec === true;
+    // Two distinct out-of-spec presentations:
+    //  - colorBySpec (pass/fail mode): the die fill *is* the indication — solid
+    //    green/blue/red categorical colours, no marker.
+    //  - normal value/gradient mode (both colorbar ranges): the die keeps its
+    //    gradient fill like every other die — so the value distribution stays
+    //    readable and out-of-spec colours don't collide with the scheme — and is
+    //    flagged with a ▽/△ marker via ViewRect.specMark. The indication form no
+    //    longer depends on colorbarRangeMode (which now only sets the bar range).
     let fill: string;
     let specMark: 'failLow' | 'failHigh' | undefined;
     if (value === undefined) {
       fill = NO_DATA_FILL;
-    } else if (spec === 'failLow' && solidSpecFill) {
-      fill = SPEC_FAIL_LOW;
-    } else if (spec === 'failHigh' && solidSpecFill) {
-      fill = SPEC_FAIL_HIGH;
     } else if (colorBySpec) {
-      fill = SPEC_PASS_FILL;
+      fill = spec === 'failLow' ? SPEC_FAIL_LOW
+           : spec === 'failHigh' ? SPEC_FAIL_HIGH
+           : SPEC_PASS_FILL;
     } else {
       fill = colorFns.forValue(normalize(value));
       if (spec === 'failLow' || spec === 'failHigh') specMark = spec;
@@ -1203,7 +1234,7 @@ export function buildView(
     // centerTransform (not the full transform): dies are axis-aligned rects centred
     // on the already-oriented physX/physY, so the AABB width/height swap must key off
     // the interactive rotation only — matching how the centre position was derived.
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec, colorbarRangeMode);
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, colorBySpec);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {

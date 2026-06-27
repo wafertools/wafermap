@@ -173,12 +173,14 @@ aggregation method is active.</p>
 become available:</p>
 <ul>
 <li><strong>Colorbar range — Data / Spec</strong>: switches the colorbar scale between the
-actual data extent and the spec limit bounds. This affects only how dies are
-coloured, never which dies are out of spec. In <strong>Spec</strong> range, out-of-spec dies
-are filled solid blue (below LSL) / red (above USL). In <strong>Data</strong> range, every
-die is coloured by the gradient so you can read the value distribution, and
-out-of-spec dies are marked with a blue/red outline and dot so they still stand
-out without leaving the distribution.</li>
+actual data extent and the spec limit bounds. This affects only the colorbar&#39;s
+range, never how out-of-spec dies are shown. In <strong>both</strong> ranges every die is
+coloured by the gradient so you can read the value distribution, and out-of-spec
+dies are marked with a triangle — pointing <strong>down (▽) for below LSL</strong>, <strong>up (△)
+for above USL</strong> — so they stand out without leaving the distribution. The
+triangle is drawn black or white per die for contrast against its own colour, so
+it stays visible under any colour scheme, and its shape (not colour) carries the
+below/above-limit meaning.</li>
 <li><strong>Spec pass/fail</strong>: when active, dies within spec are shown in a pass colour
 and dies outside spec are highlighted — <strong>blue for below the Lower Spec Limit
 (LSL)</strong>, <strong>red for above the Upper Spec Limit (USL)</strong>. Both flags apply

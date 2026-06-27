@@ -73,13 +73,27 @@ function binHash(colors: readonly string[], salt: number): (bin: number) => stri
 // ── Built-in schemes ──────────────────────────────────────────────────────────
 
 /**
- * DEFAULT — colourful categorical bins, Viridis continuous gradient.
- * Good all-purpose choice for colour displays.
+ * Thermal gradient keypoints: blue → cyan → yellow → red. Reads low→high
+ * intuitively (blue = cold/low, red = hot/high), the convention semiconductor
+ * engineers expect for parametric/electrical value maps. Shared by both the
+ * `default` and `thermal` schemes — the canonical continuous value gradient.
+ */
+const THERMAL_KP: readonly [number, number, number][] = [
+  [  0,   0, 255],  // blue
+  [  0, 255, 255],  // cyan
+  [255, 255,   0],  // yellow
+  [255,   0,   0],  // red
+];
+
+/**
+ * DEFAULT — colourful categorical bins, blue→cyan→yellow→red value gradient.
+ * Good all-purpose choice for colour displays. The continuous gradient reads
+ * low→high intuitively (blue=low, red=high), unlike a Viridis ramp.
  */
 registerColorScheme('default', {
   label: 'Default',
   forBin: hardBinColor,
-  forValue: (t) => lerpKp(VIRIDIS, 1 - t),
+  forValue: (t) => lerpKp(THERMAL_KP, t),
 });
 
 /**
@@ -200,8 +214,8 @@ registerColorScheme('accessible', {
 
 /**
  * PLASMA — vibrant purple-to-yellow palette.
- * High perceptual contrast and visually distinctive. A good alternative
- * when the default Viridis palette feels too similar across ranges.
+ * High perceptual contrast and visually distinctive. A good perceptually-uniform
+ * alternative to the default blue→red (thermal) value gradient.
  */
 const PLASMA_BINS: readonly string[] = [
   '#888888', //  0: no data
@@ -329,13 +343,6 @@ const THERMAL_BINS: readonly string[] = [
   '#922b21', // 12: deep red
   '#d6eaf8', // 13: pale blue
   '#fdedec', // 14: pale red
-];
-
-const THERMAL_KP: readonly [number, number, number][] = [
-  [  0,   0, 255],  // blue
-  [  0, 255, 255],  // cyan
-  [255, 255,   0],  // yellow
-  [255,   0,   0],  // red
 ];
 
 registerColorScheme('thermal', {
