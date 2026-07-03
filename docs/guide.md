@@ -785,6 +785,36 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a modal |
 
 
+### Theming the chrome
+
+wmap's chrome — the toolbar, gallery cards, summary panel, menus, tooltip — and the wafer **canvas** (background, axis labels, grid) are themed through `--wmap-*` CSS custom properties. Set them on any ancestor of the render container and everything wmap draws follows. Every token has a light default, so you override only what differs; a host that sets nothing gets the default light appearance.
+
+![Four-wafer gallery with the summary panel open, rendered in the Nord theme via --wmap-* tokens](images/guide-theming.png)
+
+```css
+/* The Nord theme shown above — set on a wrapper around the render container */
+.my-nord-wrap {
+  --wmap-canvas-bg:   #2e3440;   /* the wafer canvas */
+  --wmap-surface:     #323846;   /* cards, menus, toolbar */
+  --wmap-panel-bg:    #2b303b;   /* summary panel */
+  --wmap-border:      #434c5e;
+  --wmap-text:        #e5e9f0;
+  --wmap-text-muted:  #a6adbb;
+  --wmap-icon:        #d8dee9;
+  --wmap-icon-hover:  #88c0d0;   /* accent — hover/active affordances */
+  --wmap-icon-active: #88c0d0;
+  --wmap-selected:    #88c0d0;   /* finding-drilldown card outline */
+  /* …see the full token table in the API reference… */
+}
+```
+
+To follow the OS preference, put the light values on `:root` and override in a `@media (prefers-color-scheme: dark)` block. Canvas colours are re-resolved on a theme change or light/dark flip, so the wafer repaints to match.
+
+The **data palette** (the bin/value colours of the dies) is separate — it's controlled by `colorScheme` (see §17), not these tokens, and does not follow the chrome accent.
+
+**→ [Demo: Theming with `--wmap-*` tokens](examples/theming.html)** · full token reference in the [API docs](api.md#541-theming-wmap-custom-properties)
+
+
 ## 9. Responding to user interaction
 
 ### Click and hover callbacks

@@ -1,6 +1,7 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../renderer/buildView.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
+import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
 import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import type { Die } from '../core/dies.js';
@@ -224,8 +225,9 @@ export function renderWaferGallery(
 
   let btnLotFindings: HTMLButtonElement | null = null;
   let activeLotFindingId: string | null = null;
-  // Card highlight state: indices of cards to visually emphasise.
-  let highlightedCardIndices = new Set<number>();
+  // Finding-highlight state: indices of cards implicated by the summary-panel
+  // finding the user is currently inspecting (outlined until they clear it).
+  let findingHighlightIndices = new Set<number>();
 
   // Summary panel state
   let gallerySummaryPanelEl: HTMLDivElement | null = null;
@@ -263,21 +265,21 @@ export function renderWaferGallery(
   const onWindowBlur = () => hideTooltip();
   window.addEventListener('blur', onWindowBlur);
 
-  function applyCardHighlight(indices: number[]): void {
-    highlightedCardIndices = new Set(indices);
+  function applyFindingHighlight(indices: number[]): void {
+    findingHighlightIndices = new Set(indices);
     const cards = [...gridEl.querySelectorAll<HTMLElement>('.wmap-gallery-card')];
     let firstHighlighted: HTMLElement | undefined;
     cards.forEach((card, i) => {
-      const active = highlightedCardIndices.has(i);
-      card.style.outline       = active ? '3px solid #e07a20' : '';
+      const active = findingHighlightIndices.has(i);
+      card.style.outline       = active ? `3px solid ${CLR.findingHighlight}` : '';
       card.style.outlineOffset = active ? '-3px' : '';
       if (active && firstHighlighted === undefined) firstHighlighted = card;
     });
     firstHighlighted?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
   }
 
-  function clearCardHighlight(): void {
-    applyCardHighlight([]);
+  function clearFindingHighlight(): void {
+    applyFindingHighlight([]);
   }
 
   function clearDieZoneHighlight(): void {
@@ -299,7 +301,7 @@ export function renderWaferGallery(
 
   // Severity colour — matches summaryPanel.ts sevColor
   function gallerySevColor(s: 'unusual' | 'notable' | 'info'): string {
-    return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : '#506784';
+    return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : CLR.icon;
   }
 
   // Tab row shown when both lot stats and per-wafer findings are present.
@@ -309,7 +311,7 @@ export function renderWaferGallery(
       display:       'flex',
       gap:           '4px',
       marginBottom:  '10px',
-      borderBottom:  `1px solid rgba(0,0,0,0.10)`,
+      borderBottom:  `1px solid ${CLR.menuBorder}`,
       paddingBottom: '8px',
     });
     for (const tab of (['lot', 'wafers'] as const)) {
@@ -325,11 +327,11 @@ export function renderWaferGallery(
         cursor:       'pointer',
         fontWeight:   active ? '600' : '400',
         background:   active ? CLR.bgActive : 'transparent',
-        color:        active ? '#2a3f5f' : CLR.icon,
+        color:        active ? CLR.iconHover : CLR.icon,
       });
       btn.addEventListener('click', () => {
         gallerySummaryTab = tab;
-        clearCardHighlight();
+        clearFindingHighlight();
         clearDieZoneHighlight();
         renderGallerySummaryPanel();
       });
@@ -366,12 +368,12 @@ export function renderWaferGallery(
       reportBtn.type = 'button';
       reportBtn.textContent = 'Findings report';
       Object.assign(reportBtn.style, {
-        border:       `1px solid rgba(0,0,0,0.15)`,
+        border:       `1px solid ${CLR.menuBorder}`,
         borderRadius: '4px',
         padding:      '3px 8px',
         marginBottom: '10px',
         fontSize:     '10px',
-        color:        '#2a3f5f',
+        color:        CLR.iconHover,
         background:   'none',
         cursor:       'pointer',
         display:      'block',
@@ -420,19 +422,19 @@ export function renderWaferGallery(
           border:         'none',
           borderLeft:     `3px solid ${gallerySevColor(topSeverity)}`,
           borderRadius:   '3px',
-          background:     'rgba(0,0,0,0.03)',
+          background:     CLR.bgHover,
           cursor:         'pointer',
           fontSize:       '11px',
           textAlign:      'left',
           boxSizing:      'border-box',
         });
         row.addEventListener('mouseover', () => { row.style.background = CLR.bgActive; });
-        row.addEventListener('mouseout',  () => { row.style.background = 'rgba(0,0,0,0.03)'; });
+        row.addEventListener('mouseout',  () => { row.style.background = CLR.bgHover; });
 
         const labelSpan = document.createElement('span');
         labelSpan.textContent = item.label ?? `W${index + 1}`;
         Object.assign(labelSpan.style, {
-          color:         '#2a3f5f',
+          color:         CLR.iconHover,
           overflow:      'hidden',
           textOverflow:  'ellipsis',
           whiteSpace:    'nowrap',
@@ -493,7 +495,7 @@ export function renderWaferGallery(
           renderGallerySummaryPanel();
         },
         onWaferClick: (waferIndex) => {
-          applyCardHighlight([waferIndex]);
+          applyFindingHighlight([waferIndex]);
         },
       });
       // Prepend tab row if per-wafer findings also exist
@@ -518,7 +520,7 @@ export function renderWaferGallery(
 
   function clearLotFindingHighlight(): void {
     activeLotFindingId = null;
-    clearCardHighlight();
+    clearFindingHighlight();
     clearDieZoneHighlight();
     updateShared({ highlightBin: undefined }, { fireCallback: false });
   }
@@ -547,12 +549,12 @@ export function renderWaferGallery(
     }
 
     // Clear all card outlines and die zone selections before applying new ones.
-    clearCardHighlight();
+    clearFindingHighlight();
     clearDieZoneHighlight();
 
     const h = finding.highlight;
     if (h.kind === 'wafer') {
-      applyCardHighlight(h.waferIndices);
+      applyFindingHighlight(h.waferIndices);
       // For repeated-pattern findings, highlight the actual die zones on the
       // affected cards using each card's matching per-wafer finding's dieKeys.
       const fp = findingFingerprint(finding);
@@ -596,7 +598,7 @@ export function renderWaferGallery(
     flexDirection: 'row',
     alignItems:    'center',
     gap:           '0',
-    background:    '#fff',
+    background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
     borderRadius:  '6px',
     padding:       '3px 4px',
@@ -847,8 +849,8 @@ export function renderWaferGallery(
     display:       'flex',
     flexWrap:      'wrap',
     gap:           '6px 14px',
-    background:    '#fff',
-    border:        `1px solid rgba(0,0,0,0.12)`,
+    background:    CLR.menuBg,
+    border:        `1px solid ${CLR.menuBorder}`,
     borderRadius:  '6px',
     padding:       '6px 10px',
     marginBottom:  '10px',
@@ -875,6 +877,10 @@ export function renderWaferGallery(
   const TARGET_DIE_PX = 4;   // minimum readable die pixel size at gallery scale
   const MIN_CARD_PX   = 240; // absolute floor
   const MAX_CARD_PX   = 480; // cap to avoid monopolising width on dense grids
+  // A card at the bare MIN floor is legible but cramped. When the container is
+  // wide enough, auto packs more columns rather than inflating a few cards past
+  // this comfortable width — using the available width instead of wasting it.
+  const COMFORTABLE_CARD_FACTOR = 1.25;
 
   // Compute the minimum card width (px) so that each die is at least TARGET_DIE_PX wide.
   // Uses die.width (mm) and wafer.radius from the first item that has die data.
@@ -914,17 +920,21 @@ export function renderWaferGallery(
     const gap = 12;
     const containerW = gridEl.clientWidth || 0;
 
-    // Start with a square-ish grid (sqrt(N) columns), then reduce columns if
-    // the resulting card width would fall below the minimum readable size.
-    // Reducing columns means more rows — cards get taller and wider.
-    const idealCols = Math.max(1, Math.ceil(Math.sqrt(N)));
-    let cols = idealCols;
+    // Start from a square-ish grid (sqrt(N) columns), then adjust to the
+    // container width. Two guards, in priority order:
+    //   1. never let a card fall below the readable floor (currentMinCardPx) —
+    //      reduce columns if it would (more rows: cards get taller and wider);
+    //   2. otherwise, when the container is wide enough that extra columns would
+    //      still be comfortably sized, add columns so the width is used rather
+    //      than inflating a few oversized cards. Capped at N (no empty columns).
+    const cardWidthAt = (c: number) => (containerW - gap * (c - 1)) / c;
+    let cols = Math.max(1, Math.ceil(Math.sqrt(N)));
     if (containerW > 0) {
-      while (cols > 1) {
-        const cardW = (containerW - gap * (cols - 1)) / cols;
-        if (cardW >= currentMinCardPx) break;
-        cols--;
-      }
+      // Down pass — enforce the hard readability floor.
+      while (cols > 1 && cardWidthAt(cols) < currentMinCardPx) cols--;
+      // Up pass — pack more columns while they stay comfortably sized.
+      const comfortablePx = Math.min(MAX_CARD_PX, currentMinCardPx * COMFORTABLE_CARD_FACTOR);
+      while (cols < N && cardWidthAt(cols + 1) >= comfortablePx) cols++;
     }
     gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   }
@@ -1050,7 +1060,7 @@ export function renderWaferGallery(
         height:       '13px',
         flexShrink:   '0',
         background:   (sharedOpts.colorScheme === 'custom' ? binDef?.color : undefined) ?? scheme.forBin(bin),
-        border:       isActive ? '2px solid #1a66cc' : '1px solid #ccc',
+        border:       isActive ? `2px solid ${CLR.iconActive}` : `1px solid ${CLR.menuBorder}`,
         borderRadius: '2px',
         boxSizing:    'border-box',
       });
@@ -1059,7 +1069,7 @@ export function renderWaferGallery(
       lbl.textContent = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
       Object.assign(lbl.style, {
         fontWeight: isActive ? '700' : '400',
-        color:      isActive ? CLR.iconActive : '#444',
+        color:      isActive ? CLR.iconActive : CLR.text,
         whiteSpace: 'nowrap',
       });
 
@@ -1289,8 +1299,8 @@ export function renderWaferGallery(
     const card = document.createElement('div');
     card.className = 'wmap-gallery-card';
     Object.assign(card.style, {
-      background:    '#fff',
-      border:        `1px solid #e2e5ea`,
+      background:    CLR.menuBg,
+      border:        `1px solid ${CLR.menuBorder}`,
       borderRadius:  '10px',
       overflow:      'hidden',
       display:       'flex',
@@ -1304,7 +1314,7 @@ export function renderWaferGallery(
       display:        'flex',
       alignItems:     'center',
       padding:        '8px 10px 6px',
-      borderBottom:   '1px solid #e2e5ea',
+      borderBottom:   `1px solid ${CLR.menuBorder}`,
       flexShrink:     '0',
       gap:            '6px',
     });
@@ -1322,10 +1332,10 @@ export function renderWaferGallery(
       display:         'flex',
       alignItems:      'center',
       justifyContent:  'center',
-      border:          '1px solid #d1d5db',
+      border:          `1px solid ${CLR.menuBorder}`,
       borderRadius:    '4px',
-      background:      '#f9fafb',
-      color:           '#6b7280',
+      background:      CLR.panelBg,
+      color:           CLR.label,
       padding:         '2px',
       cursor:          'pointer',
       flexShrink:      '0',
@@ -1395,8 +1405,8 @@ export function renderWaferGallery(
         const placeholder = document.createElement('div');
         placeholder.className = 'wmap-gallery-card';
         Object.assign(placeholder.style, {
-          background:    '#fff',
-          border:        `1px solid #e2e5ea`,
+          background:    CLR.menuBg,
+          border:        `1px solid ${CLR.menuBorder}`,
           borderRadius:  '10px',
           aspectRatio:   '1',
           display:       'flex',
@@ -1405,7 +1415,7 @@ export function renderWaferGallery(
         });
         const spinner = document.createElement('span');
         spinner.textContent = '…';
-        Object.assign(spinner.style, { color: '#bbb', fontSize: '18px' });
+        Object.assign(spinner.style, { color: CLR.label, fontSize: '18px' });
         placeholder.appendChild(spinner);
         gridEl.appendChild(placeholder);
         currentItems.push(null as unknown as WaferMapDisplayItem); // slot reserved
@@ -1532,7 +1542,6 @@ export function renderWaferGallery(
     cardControllers[cardIndex]?.setFindingsVisible(true);
     cardControllers[cardIndex]?.setExpandVisible(false);
     cardControllers[cardIndex]?.resetZoom();
-    applyCardHighlight([cardIndex]);
 
     // openModal owns shared-tooltip re-homing into/out of the modal box, so no
     // onMaximizeChange tooltip wiring is needed here.
@@ -1593,7 +1602,9 @@ export function renderWaferGallery(
     off.width   = cols * cellW + (cols - 1) * gap;
     off.height  = rows * (cellH + headerH) + (rows - 1) * gap;
     const ctx   = off.getContext('2d')!;
-    ctx.fillStyle = '#f0f2f5';
+    // Composite export follows the on-screen theme (resolve once from the grid).
+    const gTheme = resolveCanvasTheme(gridEl);
+    ctx.fillStyle = gTheme.background;
     ctx.fillRect(0, 0, off.width, off.height);
     canvases.forEach((c, i) => {
       const col   = i % cols;
@@ -1601,9 +1612,9 @@ export function renderWaferGallery(
       const x     = col * (cellW + gap);
       const y     = row * (cellH + headerH + gap);
       const label = c.closest('.wmap-gallery-card')?.querySelector<HTMLElement>('span')?.textContent ?? '';
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = gTheme.surface;
       ctx.fillRect(x, y, cellW, headerH);
-      ctx.fillStyle = '#1a1a2e';
+      ctx.fillStyle = gTheme.text;
       ctx.font      = `700 ${fontSize}px system-ui, sans-serif`;
       ctx.textAlign    = 'left';
       ctx.textBaseline = 'middle';

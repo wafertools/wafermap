@@ -583,7 +583,7 @@ export function renderWaferMap(
         display:       'flex',
         flexDirection: 'row',
         alignItems:    'center',
-        background:    '#fff',
+        background:    CLR.menuBg,
         border:        `1px solid ${CLR.menuBorder}`,
         borderRadius:  '4px',
         boxShadow:     '0 1px 4px rgba(0,0,0,0.12)',
@@ -1537,6 +1537,16 @@ export function renderWaferMap(
   };
   dprMediaQuery.addEventListener('change', onDprChange);
 
+  // ── Colour-scheme change listener (OS light/dark flip) ─────────────────────
+  // Canvas chrome colours are resolved from --wmap-* at draw time (canvasTheme.ts
+  // / toCanvas). A host that maps those tokens to OS-driven theme variables
+  // changes them on a light/dark flip, but nothing re-runs the draw — so
+  // re-render to re-resolve the palette. Cheap: one redraw only when the OS
+  // scheme actually changes, never per frame.
+  const schemeMediaQuery = matchMedia('(prefers-color-scheme: dark)');
+  const onSchemeChange = () => render();
+  schemeMediaQuery.addEventListener('change', onSchemeChange);
+
   // ── Window focus loss ──────────────────────────────────────────────────────
   // Alt-tab / app switch (notably in a Tauri WebView) moves the pointer out of
   // the window without firing pointerleave or pointercancel. The shared tooltip
@@ -1768,6 +1778,7 @@ export function renderWaferMap(
       canvas.removeEventListener('click',        onCanvasClick);
       resizeObserver.disconnect();
       dprMediaQuery.removeEventListener('change', onDprChange);
+      schemeMediaQuery.removeEventListener('change', onSchemeChange);
       window.removeEventListener('blur', onWindowBlur);
       disposeOverlayZ();
       // The tooltip is the shared document-level singleton — never destroy it

@@ -889,7 +889,105 @@ renderWaferMap(container, result, { zIndex: 5100 });
 
 `zIndex` is applied for the lifetime of the render and restored on `controller.destroy()`. Internally it writes the `--wmap-z` CSS custom property on `document.documentElement` (overlays that append to `document.body` inherit it from there); you can set `--wmap-z` yourself instead of passing `zIndex` if you prefer to control stacking via CSS. Menus opened from inside the expand modal are appended to the modal box rather than `document.body`, so they always appear above the modal content regardless of the host page's stacking context.
 
-#### 5.4.1 `SummaryPanelOptions`
+#### 5.4.1 Theming (`--wmap-*` custom properties)
+
+wmap's **chrome** — the toolbar, summary panel, menus, the die tooltip, and the wafer **canvas** itself (background, axis labels, grid) — is themed entirely through CSS custom properties. Set them on any ancestor of the render container and everything wmap draws follows. Every token has a **light default baked in**, so if you set nothing you get the default light appearance; override only what you want.
+
+This is the same mechanism `--wmap-z` uses for stacking. It is theme-agnostic: wmap defines the tokens and their defaults, the host supplies the values. (The **data** palette — the bin/value colours of the dies — is separate and controlled by `colorScheme`, not these tokens; it does not follow the chrome accent.)
+
+**Token reference** (default in parentheses):
+
+| Token | Themes | Default |
+| --- | --- | --- |
+| `--wmap-canvas-bg` | Wafer canvas background | `#f5f5f5` (falls back to `--wmap-surface`) |
+| `--wmap-surface` | Menus, panels, toolbar surfaces, gallery cards | `#fff` |
+| `--wmap-panel-bg` | Summary-panel base | `#fafbfc` |
+| `--wmap-border` | Borders, dividers, axis tick lines | `rgba(0,0,0,0.12)` |
+| `--wmap-text` | Primary text (chrome + canvas axis/legend) | `#333` |
+| `--wmap-text-muted` | Secondary/muted text | `#66788a` |
+| `--wmap-icon` | Toolbar icon default | `#506784` |
+| `--wmap-icon-hover` | Toolbar icon hover | `#2a3f5f` |
+| `--wmap-icon-active` | Active icon / on-canvas accent | `#1a66cc` |
+| `--wmap-bg-hover` / `--wmap-bg-active` | Hover / active row backgrounds | `#edf0f8` / `#dce8f8` |
+| `--wmap-menu-hover` / `--wmap-menu-active` | Menu-item hover / active | `#f0f4fc` / `#dce8f8` |
+| `--wmap-separator` | Faint separators | `rgba(0,0,0,0.12)` |
+| `--wmap-warn-bg` / `--wmap-warn-border` / `--wmap-warn-text` | Warning banner | `#fffbe6` / `#f0c040` / `#7a5800` |
+| `--wmap-info-bg` / `--wmap-info-text` | Info callout | `#dce8f8` / `#334155` |
+| `--wmap-selected` | Finding-drilldown card outline (gallery) | `#e07a20` |
+
+Canvas colours are resolved from these variables at draw time and re-resolved on a theme change or OS light/dark flip, so the wafer repaints to match.
+
+**Following the OS light/dark preference** — put the light values on `:root` and override in a media query:
+
+```css
+:root {
+  --wmap-surface: #fff;
+  --wmap-text: #333;
+  /* …other light values… */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wmap-canvas-bg: #242426;
+    --wmap-surface:   #2a2a2d;
+    --wmap-panel-bg:  #202022;
+    --wmap-border:    #3a3a3a;
+    --wmap-text:      #ccc;
+    --wmap-text-muted:#888;
+    --wmap-icon:      #aaa;
+    --wmap-icon-hover:#6af;
+    --wmap-icon-active:#6af;
+    /* …etc… */
+  }
+}
+```
+
+**Example — a dark theme** (drop-in; overrides only what differs from the light defaults):
+
+```css
+.wmap-dark {
+  --wmap-canvas-bg:   #242426;
+  --wmap-surface:     #2a2a2d;
+  --wmap-panel-bg:    #202022;
+  --wmap-border:      #3a3a3a;
+  --wmap-text:        #ccc;
+  --wmap-text-muted:  #888;
+  --wmap-icon:        #aaa;
+  --wmap-icon-hover:  #6af;
+  --wmap-icon-active: #6af;
+  --wmap-bg-hover:    #343438;
+  --wmap-bg-active:   #2b3a4f;
+  --wmap-menu-hover:  #343438;
+  --wmap-menu-active: #2b3a4f;
+  --wmap-separator:   #2a2a2a;
+  --wmap-selected:    #6af;
+}
+```
+
+**Example — Nord** (a branded palette; shows the same structure with a different accent):
+
+```css
+.wmap-nord {
+  --wmap-canvas-bg:   #2e3440;
+  --wmap-surface:     #323846;
+  --wmap-panel-bg:    #2b303b;
+  --wmap-border:      #434c5e;
+  --wmap-text:        #e5e9f0;
+  --wmap-text-muted:  #a6adbb;
+  --wmap-icon:        #d8dee9;
+  --wmap-icon-hover:  #88c0d0;
+  --wmap-icon-active: #88c0d0;
+  --wmap-bg-hover:    #3b4252;
+  --wmap-bg-active:   #3b4a58;
+  --wmap-menu-hover:  #3b4252;
+  --wmap-menu-active: #3b4a58;
+  --wmap-separator:   #3b4252;
+  --wmap-selected:    #88c0d0;
+}
+```
+
+> The reference host [tsmap](https://github.com/telecasterer/tsmap) implements a full theme picker (light, dark, Nord, Solarized, a brand green, high-contrast) this way — its `index.html` `:root` blocks are a worked example of the complete token set across multiple themes.
+
+#### 5.4.2 `SummaryPanelOptions`
 
 ```ts
 {

@@ -9,6 +9,7 @@ const DEMOS = [
   'test-values.html',
   'retests.html',
   'display-control.html',
+  'theming.html',
   'interaction.html',
   'gallery.html',
   'worker.html',

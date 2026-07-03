@@ -5,19 +5,53 @@ import type { PlotMode } from '../renderer/buildView.js';
 import { listColorSchemes } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
 
-// ── Colours ────────────────────────────────────────────────────────────────────
+// ── Colours (themeable design tokens) ───────────────────────────────────────────
+//
+// Every chrome colour (toolbar + summary panel) is a `--wmap-<name>` CSS custom
+// property with the current light value as its fallback default. Existing hosts
+// are unaffected (the default renders identically); a host that wants dark — or
+// to match its own brand — sets the `--wmap-*` variables on any ancestor of the
+// render container and the DOM chrome follows. This is the colour analogue of
+// `--wmap-z` (stacking): one host-settable token set, safe light defaults.
+//
+// NOTE: this covers DOM chrome only. The <canvas> draws its own hardcoded colours
+// (axis text, grid, halos) which a stylesheet can't reach — those need a separate
+// draw-time resolve pass (tracked as a follow-up; see tsmap WMAP_ISSUES #25).
+//
+// `t(name, fallback)` builds a `var()` reference so the token name and its light
+// default live together, in one place, here.
+const t = (name: string, fallback: string) => `var(--wmap-${name}, ${fallback})`;
 
 export const CLR = {
-  icon:        '#506784',
-  iconHover:   '#2a3f5f',
-  iconActive:  '#1a66cc',
-  bgHover:     '#edf0f8',
-  bgActive:    '#dce8f8',
-  separator:   'rgba(0,0,0,0.12)',
-  menuBg:      '#fff',
-  menuBorder:  'rgba(0,0,0,0.12)',
-  menuHover:   '#f0f4fc',
-  menuActive:  '#dce8f8',
+  // Toolbar icons + hover/active affordances.
+  icon:        t('icon',         '#506784'),
+  iconHover:   t('icon-hover',   '#2a3f5f'),
+  iconActive:  t('icon-active',  '#1a66cc'),
+  bgHover:     t('bg-hover',     '#edf0f8'),
+  bgActive:    t('bg-active',    '#dce8f8'),
+  separator:   t('separator',    'rgba(0,0,0,0.12)'),
+  // Menus / dropdowns.
+  menuBg:      t('surface',      '#fff'),
+  menuBorder:  t('border',       'rgba(0,0,0,0.12)'),
+  menuHover:   t('menu-hover',   '#f0f4fc'),
+  menuActive:  t('menu-active',  '#dce8f8'),
+  // Summary-panel surfaces + text.
+  panelBg:     t('panel-bg',     '#fafbfc'),
+  label:       t('text-muted',   '#66788a'),
+  value:       t('text',         '#1f2f43'),
+  text:        t('text',         '#333'),
+  // Semantic — warning banner.
+  warnBg:      t('warn-bg',      '#fffbe6'),
+  warnBorder:  t('warn-border',  '#f0c040'),
+  warnText:    t('warn-text',    '#7a5800'),
+  // Semantic — info / callout.
+  infoBg:      t('info-bg',      '#dce8f8'),
+  infoText:    t('info-text',    '#334155'),
+  // Finding-drilldown highlight — the outline drawn round gallery cards whose
+  // wafers are implicated by the summary-panel finding the user is inspecting.
+  // Orange default stands out against light chrome; hosts can theme it. The CSS
+  // token stays `--wmap-selected` for theme back-compat.
+  findingHighlight: t('selected', '#e07a20'),
 };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -529,7 +563,7 @@ export function buildCheckMenuEl(
         padding:    '6px 14px',
         fontSize:   '12px',
         cursor:     'pointer',
-        color:      row.active ? CLR.iconActive : '#333',
+        color:      row.active ? CLR.iconActive : CLR.text,
         fontWeight: row.active ? '700' : '400',
         background: row.active ? CLR.menuActive : 'transparent',
         whiteSpace: 'nowrap',
@@ -646,7 +680,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       padding:    `6px 14px 6px ${indent ? '26px' : '14px'}`,
       fontSize:   '12px',
       cursor:     'pointer',
-      color:      active ? CLR.iconActive : '#333',
+      color:      active ? CLR.iconActive : CLR.text,
       fontWeight: active ? '700' : '400',
       background: active ? CLR.menuActive : 'transparent',
       whiteSpace: 'nowrap',
@@ -670,7 +704,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       fontSize:      '10px',
       fontWeight:    '600',
       letterSpacing: '0.05em',
-      color:         '#888',
+      color:         CLR.label,
       textTransform: 'uppercase',
       pointerEvents: 'none',
       userSelect:    'none',
@@ -721,7 +755,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
           padding:    '6px 14px',
           fontSize:   '12px',
           cursor:     'pointer',
-          color:      isActive ? CLR.iconActive : '#333',
+          color:      isActive ? CLR.iconActive : CLR.text,
           fontWeight: isActive ? '700' : '400',
           background: isActive ? CLR.menuActive : 'transparent',
           whiteSpace: 'nowrap',
@@ -881,7 +915,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
   box.setAttribute('aria-label', opts.title ?? 'Expanded wafer map');
   box.tabIndex = -1;
   Object.assign(box.style, {
-    background:    '#fff',
+    background:    CLR.menuBg,
     borderRadius:  '12px',
     overflow:      'hidden',
     display:       'flex',
@@ -903,18 +937,18 @@ export function openModal(opts: ModalOptions): ModalHandle {
     alignItems:   'center',
     gap:          '6px',
     padding:      '10px 14px',
-    borderBottom: '1px solid #e2e5ea',
+    borderBottom: `1px solid ${CLR.menuBorder}`,
     flexShrink:   '0',
   });
 
   // Bordered icon buttons, matching the gallery-card expand button so modal and
   // card chrome read as one system.
   const btnStyle: Partial<CSSStyleDeclaration> = {
-    border:         '1px solid #d1d5db',
+    border:         `1px solid ${CLR.menuBorder}`,
     borderRadius:   '4px',
-    background:     '#f9fafb',
+    background:     CLR.panelBg,
     cursor:         'pointer',
-    color:          '#6b7280',
+    color:          CLR.label,
     lineHeight:     '1',
     padding:        '0',
     display:        'flex',

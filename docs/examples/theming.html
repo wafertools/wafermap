@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Theming — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    .demo-content { padding: 0; overflow-y: auto; }
+    #gallery-container { width: 100%; }
+
+    /* Theme switcher row */
+    .theme-bar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+    }
+    .theme-bar label { font-size: 12px; color: var(--muted); margin-right: 2px; }
+    .theme-btn {
+      font-size: 12px; padding: 4px 12px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--text-2); cursor: pointer;
+    }
+    .theme-btn.active { font-weight: 600; }
+
+    /* ── The theming contract in action ──────────────────────────────────────
+       Each block sets TWO things, both keyed off `data-theme` on <body>:
+         • the `--wmap-*` tokens — these theme the embedded map (toolbar, cards,
+           summary panel, and the wafer canvas). This is wmap's public API.
+         • the demo page's own `--bg`/`--surface`/`--text`/… tokens (from
+           demo.css) — so the surrounding page chrome (header, intro, this
+           switcher) matches, for a cohesive look. These are DEMO styling, NOT
+           part of wmap; a real integrator only needs the --wmap-* half.
+       The data palette (bin/value die colours) is separate (colorScheme) and
+       intentionally does NOT follow the accent. */
+
+    body[data-theme="dark"] {
+      /* wmap map */
+      --wmap-canvas-bg: #242426; --wmap-surface: #2a2a2d; --wmap-panel-bg: #202022;
+      --wmap-border: #3a3a3a; --wmap-text: #ccc; --wmap-text-muted: #888;
+      --wmap-icon: #aaa; --wmap-icon-hover: #6af; --wmap-icon-active: #6af;
+      --wmap-bg-hover: #343438; --wmap-bg-active: #2b3a4f;
+      --wmap-menu-hover: #343438; --wmap-menu-active: #2b3a4f;
+      --wmap-separator: #2a2a2a; --wmap-selected: #6af;
+      /* demo page chrome */
+      --bg: #1c1c1e; --surface: #2a2a2d; --border: #3a3a3a;
+      --text: #eee; --text-2: #ccc; --muted: #888; --accent: #6af;
+    }
+    body[data-theme="nord"] {
+      --wmap-canvas-bg: #2e3440; --wmap-surface: #323846; --wmap-panel-bg: #2b303b;
+      --wmap-border: #434c5e; --wmap-text: #e5e9f0; --wmap-text-muted: #a6adbb;
+      --wmap-icon: #d8dee9; --wmap-icon-hover: #88c0d0; --wmap-icon-active: #88c0d0;
+      --wmap-bg-hover: #3b4252; --wmap-bg-active: #3b4a58;
+      --wmap-menu-hover: #3b4252; --wmap-menu-active: #3b4a58;
+      --wmap-separator: #3b4252; --wmap-selected: #88c0d0;
+      --bg: #2b303b; --surface: #323846; --border: #434c5e;
+      --text: #eceff4; --text-2: #e5e9f0; --muted: #a6adbb; --accent: #88c0d0;
+    }
+    body[data-theme="solarized"] {
+      --wmap-canvas-bg: #002b36; --wmap-surface: #073642; --wmap-panel-bg: #00252e;
+      --wmap-border: #0e4653; --wmap-text: #93a1a1; --wmap-text-muted: #657b83;
+      --wmap-icon: #839496; --wmap-icon-hover: #268bd2; --wmap-icon-active: #268bd2;
+      --wmap-bg-hover: #0a3d4a; --wmap-bg-active: #0a3f52;
+      --wmap-menu-hover: #0a3d4a; --wmap-menu-active: #0a3f52;
+      --wmap-separator: #073642; --wmap-selected: #268bd2;
+      --bg: #00252e; --surface: #073642; --border: #0e4653;
+      --text: #fdf6e3; --text-2: #93a1a1; --muted: #657b83; --accent: #268bd2;
+    }
+    body[data-theme="green"] {
+      --wmap-canvas-bg: #f4f8ee; --wmap-surface: #f7fbf1; --wmap-panel-bg: #eef5e2;
+      --wmap-border: #cfe0b5; --wmap-text: #2a3320; --wmap-text-muted: #5f6b4c;
+      --wmap-icon: #3f4a30; --wmap-icon-hover: #6fa62e; --wmap-icon-active: #6fa62e;
+      --wmap-bg-hover: #eef5e2; --wmap-bg-active: #e2f0cc;
+      --wmap-menu-hover: #eef5e2; --wmap-menu-active: #e2f0cc;
+      --wmap-separator: #e0ead0; --wmap-selected: #6fa62e;
+      --bg: #eef5e2; --surface: #f7fbf1; --border: #cfe0b5;
+      --text: #1c2412; --text-2: #2a3320; --muted: #5f6b4c; --accent: #6fa62e;
+    }
+    .theme-btn.active { border-color: var(--accent); color: var(--accent); }
+    /* "light" = wmap defaults + demo.css defaults; no overrides (no attribute). */
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Theming — <code>--wmap-*</code> custom properties</span>
+    <span class="demo-desc">
+      set the tokens on an ancestor of the render container; chrome + canvas follow
+    </span>
+  </header>
+
+  <div class="demo-intro">
+    wmap's chrome (toolbar, gallery cards, summary panel) and the wafer
+    <strong>canvas</strong> (background, axis, grid) are themed entirely through
+    <code>--wmap-*</code> CSS custom properties, each with a light default. Set them
+    on any ancestor of the render container and everything wmap draws follows —
+    switch themes below to watch the gallery re-theme live. The <strong>data
+    palette</strong> (bin colours of the dies) is separate (<code>colorScheme</code>)
+    and deliberately does not follow the chrome accent. See the token reference in
+    the <a href="../api.html#541-theming-wmap-custom-properties">API docs</a>.
+  </div>
+
+  <div class="theme-bar">
+    <label>Theme:</label>
+    <button class="theme-btn active" data-set="light">Light (default)</button>
+    <button class="theme-btn" data-set="dark">Dark</button>
+    <button class="theme-btn" data-set="nord">Nord</button>
+    <button class="theme-btn" data-set="solarized">Solarized</button>
+    <button class="theme-btn" data-set="green">Green</button>
+  </div>
+
+  <div class="demo-content">
+    <div id="gallery-container"></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }      from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferMap, analyzeWaferLot } from 'wafermap/stats';
+    import {
+      makeResults, makeWaferConfig, DIE_CONFIG,
+      HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
+    } from './data.js';
+
+    // ── Build four wafers with varied failure patterns ────────────────────────
+    const waferSpecs = [
+      { seed:  7, quadrant: false, edgeFail: false },
+      { seed: 11, quadrant: false, edgeFail: true  },
+      { seed: 17, quadrant: true,  edgeFail: false },
+      { seed: 31, quadrant: false, edgeFail: true  },
+    ];
+
+    const waferResults = waferSpecs.map((opts, i) =>
+      buildWaferMap({
+        results:     makeResults(opts),
+        waferConfig: makeWaferConfig(i),
+        dieConfig:   DIE_CONFIG,
+        hbinDefs:    HBIN_DEFS,
+        sbinDefs:    SBIN_DEFS,
+        testDefs:    TEST_DEFS,
+        passBins:    [1],
+      })
+    );
+
+    const items = waferResults.map((r, i) => ({
+      ...r,
+      label: `W${String(i + 1).padStart(2, '0')} · ${
+        r.yield.yieldPercent != null ? r.yield.yieldPercent.toFixed(1) + '%' : '—'
+      }`,
+    }));
+
+    const waferSummaries  = waferResults.map(r => analyzeWaferMap(r, { computePerTestStats: true }));
+    const lotStatsSummary = analyzeWaferLot(waferResults, { computePerTestStats: true, perWaferSummaries: waferSummaries });
+
+    const container    = document.getElementById('gallery-container');
+    const galleryItems = items.map((it, i) => ({ ...it, statsSummary: waferSummaries[i] }));
+
+    // Render (or re-render) the gallery. The theme's --wmap-* tokens must be on
+    // the container BEFORE this runs, so the canvas paints themed on first draw.
+    // NOTE: wmap resolves canvas colours at draw time, so changing --wmap-* after
+    // a render doesn't repaint on its own — a host toggling themes at runtime
+    // re-renders (as here). `lotStatsSummary` adds the lot summary/findings panel.
+    let controller = null;
+    function render() {
+      if (controller) controller.destroy();
+      controller = renderWaferGallery(container, galleryItems, {
+        viewOptions: { plotMode: 'hardBin', testDefs: TEST_DEFS },
+        lotStatsSummary,
+        showHelpButton: true,
+      });
+    }
+
+    // ── Theme switcher ────────────────────────────────────────────────────────
+    // data-theme goes on <body> so BOTH the demo page chrome and the embedded map
+    // follow it: the --wmap-* tokens inherit down to the map's canvas/DOM, and the
+    // demo's own --bg/--text tokens retheme the page. Then re-render so the canvas
+    // repaints (wmap resolves canvas colours at draw time — see note above).
+    const applyTheme = (set) => {
+      if (!set || set === 'light') document.body.removeAttribute('data-theme');
+      else document.body.setAttribute('data-theme', set);
+      document.querySelectorAll('.theme-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.set === (set || 'light')));
+      render();
+    };
+    for (const btn of document.querySelectorAll('.theme-btn')) {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.set));
+    }
+
+    // Start theme from ?theme=nord (used by the docs screenshot capture), else light.
+    applyTheme(new URLSearchParams(location.search).get('theme') || 'light');
+  </script>
+
+</body>
+</html>

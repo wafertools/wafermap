@@ -78,6 +78,7 @@ graph LR
         c3["toCanvas"]
         c4["toolbar"]
         c5["summaryPanel"]
+        c6["canvasTheme"]
     end
 
     subgraph Stats[stats]
@@ -101,6 +102,7 @@ graph LR
 
     r1 --> r2
     r2 --> c3
+    c6 --> c3
     c3 --> c1
     c1 --> c4
     c1 --> c5

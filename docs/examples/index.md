@@ -15,6 +15,7 @@ Live interactive demos. Each opens a standalone page rendered in the browser.
 ## Interaction and control
 
 - [Display control](display-control.html) — rotation, flip, plot mode, colour scheme
+- [Theming](theming.html) — theme the chrome and canvas with `--wmap-*` custom properties (light, dark, Nord, Solarized, brand green)
 - [Interaction API](interaction.html) — hover, click, box-select, controller methods
 - [Lot gallery](gallery.html) — card grid of multiple wafers with shared controls
 - [Web Worker](worker.html) — off-main-thread build for large datasets

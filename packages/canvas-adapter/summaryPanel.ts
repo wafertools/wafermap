@@ -26,11 +26,11 @@ export interface SummaryPanelOptions {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const PANEL_BG    = '#fafbfc';
+const PANEL_BG    = CLR.panelBg;
 const BORDER      = `1px solid ${CLR.menuBorder}`;
 const SECTION_GAP = '12px';
-const LABEL_COLOR = '#66788a';
-const VALUE_COLOR = '#1f2f43';
+const LABEL_COLOR = CLR.label;
+const VALUE_COLOR = CLR.value;
 const TITLE_SIZE  = '10px';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -48,13 +48,13 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 function buildWarningsBanner(warnings: string[]): HTMLDivElement {
   const wrap = el('div', {
-    background:   '#fffbe6',
-    border:       '1px solid #f0c040',
+    background:   CLR.warnBg,
+    border:       `1px solid ${CLR.warnBorder}`,
     borderRadius: '4px',
     padding:      '7px 9px',
     marginBottom: '10px',
     fontSize:     '10px',
-    color:        '#7a5800',
+    color:        CLR.warnText,
     lineHeight:   '1.5',
   });
   for (const w of warnings) {
@@ -123,8 +123,8 @@ function collapsibleSection(
     const badgeEl = el('span', {
       fontSize:     '9px',
       fontWeight:   '700',
-      background:   '#fef3c7',
-      color:        '#92400e',
+      background:   CLR.warnBg,
+      color:        CLR.warnText,
       borderRadius: '10px',
       padding:      '1px 5px',
     }, badge);
@@ -187,7 +187,7 @@ function progressRow(
   const track = el('div', {
     position:     'relative',
     height:       '9px',
-    background:   '#e2e5ea',
+    background:   CLR.bgActive,
     borderRadius: '4px',
     overflow:     'hidden',
   });
@@ -236,7 +236,7 @@ function medianOf(sorted: number[]): number {
 /** Big stat card — used for yield % and total dies. */
 function statCard(value: string, label: string): HTMLDivElement {
   const card = el('div', {
-    background:   '#fff',
+    background:   CLR.menuBg,
     border:       BORDER,
     borderRadius: '6px',
     padding:      '8px 10px',
@@ -519,7 +519,7 @@ export function buildFindingsSection(
     borderRadius: '4px',
     cursor:       'pointer',
     fontSize:     '10px',
-    color:        '#2a3f5f',
+    color:        CLR.iconHover,
     padding:      '2px 7px',
     marginBottom: '6px',
     display:      'block',
@@ -530,7 +530,7 @@ export function buildFindingsSection(
 
   const severityRank: Record<StatsFinding['severity'], number> = { unusual: 0, notable: 1, info: 2 };
   function sevColor(s: StatsFinding['severity']): string {
-    return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : '#506784';
+    return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : CLR.icon;
   }
   function worstSeverity(fs: StatsFinding[]): StatsFinding['severity'] {
     return fs.reduce<StatsFinding['severity']>(
@@ -580,13 +580,13 @@ export function buildFindingsSection(
     Object.assign(row.style, {
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(finding.severity)}`,
-      background:   isActive ? CLR.bgActive : '#fff',
+      background:   isActive ? CLR.bgActive : CLR.menuBg,
       borderRadius: '6px',
       padding:      isChild ? '6px 10px' : '8px 10px',
       textAlign:    'left',
       fontSize:     isChild ? '10px' : '11px',
       fontWeight:   isActive ? '600' : '400',
-      color:        '#2a3f5f',
+      color:        CLR.iconHover,
       cursor:       'pointer',
       width:        '100%',
       marginBottom: '4px',
@@ -612,7 +612,7 @@ export function buildFindingsSection(
       flex:       '1',
       fontSize:   '12px',
       lineHeight: '1.5',
-      color:      '#2a3f5f',
+      color:      CLR.iconHover,
     }, narrativeText);
     narrativeBlock.appendChild(narrativeText2);
 
@@ -621,7 +621,7 @@ export function buildFindingsSection(
       border:     'none',
       background: 'none',
       fontSize:   '10px',
-      color:      '#506784',
+      color:      CLR.icon,
       cursor:     'pointer',
       padding:    '0',
       lineHeight: '1.5',
@@ -635,10 +635,10 @@ export function buildFindingsSection(
       const narPara = el('p', {
         fontSize:     '16px',
         lineHeight:   '1.6',
-        color:        '#2a3f5f',
+        color:        CLR.iconHover,
         padding:      '20px 24px 16px',
         margin:       '0',
-        borderBottom: '1px solid #e2e5ea',
+        borderBottom: `1px solid ${CLR.menuBorder}`,
         flexShrink:   '0',
       }, narrativeText);
       handle.contentWrap.appendChild(narPara);
@@ -664,7 +664,7 @@ export function buildFindingsSection(
         }, pf.comparison.left));
         listWrap.appendChild(el('div', {
           fontSize:    '13px',
-          color:       '#2a3f5f',
+          color:       CLR.iconHover,
           padding:     '3px 0 3px 12px',
           borderLeft:  `2px solid ${sevColor(pf.severity)}`,
           marginBottom: '2px',
@@ -673,7 +673,7 @@ export function buildFindingsSection(
         for (const cf of children) {
           listWrap.appendChild(el('div', {
             fontSize:    '12px',
-            color:       '#506784',
+            color:       CLR.icon,
             padding:     '2px 0 2px 20px',
             borderLeft:  `2px solid ${sevColor(cf.severity)}`,
             marginBottom: '2px',
@@ -697,7 +697,7 @@ export function buildFindingsSection(
         for (const f of group.findings) {
           listWrap.appendChild(el('div', {
             fontSize:    '13px',
-            color:       '#2a3f5f',
+            color:       CLR.iconHover,
             padding:     '3px 0 3px 12px',
             borderLeft:  `2px solid ${sevColor(f.severity)}`,
             marginBottom: '2px',
@@ -732,13 +732,13 @@ export function buildFindingsSection(
     Object.assign(parentRow.style, {
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(pf.severity)}`,
-      background:   isActive ? CLR.bgActive : '#fff',
+      background:   isActive ? CLR.bgActive : CLR.menuBg,
       borderRadius: '6px',
       padding:      '8px 32px 8px 10px', // right padding for chevron
       textAlign:    'left',
       fontSize:     '11px',
       fontWeight:   isActive ? '600' : '500',
-      color:        '#2a3f5f',
+      color:        CLR.iconHover,
       cursor:       'pointer',
       width:        '100%',
     });
@@ -768,7 +768,7 @@ export function buildFindingsSection(
         border:     'none',
         background: 'none',
         fontSize:   '10px',
-        color:      '#506784',
+        color:      CLR.icon,
         cursor:     'pointer',
         padding:    '2px 4px',
         lineHeight: '1',
@@ -1140,7 +1140,7 @@ export function renderWaferSummaryContent(
     borderRadius:  '4px',
     cursor:        'pointer',
     fontSize:      '10px',
-    color:         '#2a3f5f',
+    color:         CLR.iconHover,
     padding:       '2px 7px',
     marginBottom:  '10px',
     display:       'block',
@@ -1248,7 +1248,7 @@ export function renderLotSummaryContent(
     borderRadius: '4px',
     cursor:       'pointer',
     fontSize:     '10px',
-    color:        '#2a3f5f',
+    color:        CLR.iconHover,
     padding:      '2px 7px',
     marginBottom: '10px',
     display:      'block',
@@ -1308,7 +1308,7 @@ export function buildWaferDetailHeader(
     justifyContent: 'center',
     border:         BORDER,
     borderRadius:   '4px',
-    background:     '#fff',
+    background:     CLR.menuBg,
     color:          CLR.icon,
     cursor:         'pointer',
     padding:        '3px',

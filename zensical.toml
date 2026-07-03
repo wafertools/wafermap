@@ -34,6 +34,7 @@ nav = [
     ]},
     { "Interaction and control" = [
       { "Display control"                = "examples/display-control.html" },
+      { "Theming"                        = "examples/theming.html"         },
       { "Interaction API"                = "examples/interaction.html"     },
       { "Lot gallery"                    = "examples/gallery.html"         },
       { "Web Worker"                     = "examples/worker.html"          },

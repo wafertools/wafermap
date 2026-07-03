@@ -350,3 +350,25 @@ registerColorScheme('thermal', {
   forBin: binHash(THERMAL_BINS, 0x9e3779b9),
   forValue: (t) => lerpKp(THERMAL_KP, t),
 });
+
+/**
+ * JET keypoints — the classic MATLAB rainbow ramp: dark navy → blue → cyan →
+ * yellow → red → dark red. Distinct from THERMAL_KP by its *dark* endpoints,
+ * which is the look engineers coming from older MATLAB/imaging tooling expect.
+ * Offered for familiarity only — like all rainbow ramps it is not perceptually
+ * uniform; prefer `viridis`/`accessible` when read accuracy or CVD-safety matters.
+ */
+const JET_KP: readonly [number, number, number][] = [
+  [  0,   0, 128],  // dark navy
+  [  0,   0, 255],  // blue
+  [  0, 255, 255],  // cyan
+  [255, 255,   0],  // yellow
+  [255,   0,   0],  // red
+  [128,   0,   0],  // dark red
+];
+
+registerColorScheme('jet', {
+  label: 'Jet (MATLAB rainbow)',
+  forBin:  (bin) => lerpKp(JET_KP, Math.min(bin, 16) / 16),
+  forValue: (t) => lerpKp(JET_KP, t),
+});

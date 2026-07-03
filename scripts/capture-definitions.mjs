@@ -341,6 +341,20 @@ export const CAPTURES = [
     setup: [['hoverFirstCard', '#gallery-container'], ['selectColumns', '3 columns']],
   },
 
+  // ── guide-theming.png — Developer Guide §Theming: 2-col gallery, Nord theme,
+  //    summary panel open. Page starts Nord via ?theme=nord (deterministic).
+  //    Panel + columns set via setup steps (matching guide-summary-panel /
+  //    guide-gallery-per-wafer). Shows chrome + canvas + panel all following
+  //    the --wmap-* tokens. ────────────────────────────────────────────────────
+  {
+    file: 'guide-theming',
+    group: 'gallery',
+    page: '/examples/theming.html?theme=nord',
+    selector: '#gallery-container',
+    wait: 2000,
+    setup: [['selectColumns', '2 columns'], ['openPanel'], ['hideCursor']],
+  },
+
   // ── guide-lot-findings-gallery.png — §13 Lot findings: gallery + lot summary panel ─
   {
     file: 'guide-lot-findings-gallery',

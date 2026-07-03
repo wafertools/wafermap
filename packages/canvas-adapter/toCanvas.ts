@@ -4,6 +4,7 @@ import type { Die } from '../core/dies.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH, contrastTextColor } from '../renderer/colorMap.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
+import { resolveCanvasTheme, type CanvasTheme } from './canvasTheme.js';
 
 /**
  * Append an isosceles triangle to the current path, centred on (cx, cy).
@@ -134,11 +135,17 @@ export function toCanvas(
   view: View,
   options: ToCanvasOptions = {},
 ): ToCanvasResult {
+  // Resolve the canvas chrome palette ONCE per draw from the container's
+  // --wmap-* variables (see canvasTheme.ts). ~µs cost; never read per-primitive.
+  const theme = resolveCanvasTheme(canvas.parentElement ?? canvas);
+
   const {
     padding       = 16,
     showColorbar  = true,
     colorbarWidth = 16,
-    background    = '#f5f5f5',
+    // Default the background to the resolved theme (was hardcoded '#f5f5f5');
+    // an explicit `background` option still wins.
+    background    = theme.background,
     legendPosition   = 'default',
     legendOffset,
     showAxes      = false,
@@ -444,7 +451,7 @@ export function toCanvas(
     ctx.lineTo(baseX + perp.x * ARROW_W, baseY + perp.y * ARROW_W);
     ctx.lineTo(baseX - perp.x * ARROW_W, baseY - perp.y * ARROW_W);
     ctx.closePath();
-    ctx.fillStyle = '#555';
+    ctx.fillStyle = theme.text;
     ctx.fill();
     ctx.restore();
   }
@@ -464,7 +471,7 @@ export function toCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.axisFlip, view.rotation);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.axisFlip, view.rotation, theme);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
@@ -520,7 +527,7 @@ export function toCanvas(
     ctx.strokeRect(cbX, cbY, colorbarWidth, cbH);
 
     // Ticks + labels.
-    ctx.fillStyle   = '#333';
+    ctx.fillStyle   = theme.text;
     ctx.font        = COLORBAR_LABEL_FONT;
     ctx.textAlign   = 'left';
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
@@ -637,7 +644,7 @@ export function toCanvas(
             ctx.stroke();
           }
           // Left-side label in both modes.
-          ctx.fillStyle = '#333';
+          ctx.fillStyle = theme.text;
           ctx.fillText(label, cbX - 3, sy);
 
           // Key: a tiny triangle to the left of the label tying the out-of-spec die
@@ -653,7 +660,7 @@ export function toCanvas(
           ctx.lineWidth   = 2;
           ctx.lineJoin    = 'round';
           ctx.stroke();
-          ctx.fillStyle = '#333';
+          ctx.fillStyle = theme.text;
           ctx.fill();
         }
 
@@ -673,7 +680,7 @@ export function toCanvas(
         : null;
       if (scaleNote) {
         ctx.save();
-        ctx.fillStyle    = '#333';
+        ctx.fillStyle    = theme.text;
         ctx.font         = SCALE_NOTE_FONT;
         ctx.textAlign    = 'right';
         ctx.textBaseline = 'top';
@@ -687,7 +694,7 @@ export function toCanvas(
     // lower-right area below the colorbar.
     if (showTitle && titleSecondary) {
       drawTitleFitted(titleSecondary, cssW - padding, belowCursor, 'right', 'top',
-        belowLimitAt(belowCursor), MAP_SUBTITLE_FONT, '#555');
+        belowLimitAt(belowCursor), MAP_SUBTITLE_FONT, theme.text);
     }
   }
 
@@ -837,12 +844,12 @@ export function toCanvas(
         drawTitleFitted(primary, originXLegend, y, 'left', 'top',
           waferCx - Math.max(waferHalfChordAt(y), waferHalfChordAt(y + 12)) - 8);
         if (secondary) drawTitleFitted(secondary, originXLegend, y + 16, 'left', 'top',
-          leftAlignLimit(y + 16), MAP_SUBTITLE_FONT, '#555');
+          leftAlignLimit(y + 16), MAP_SUBTITLE_FONT, theme.text);
       } else if (legendIsFloating) {
         // Floating box → primary above the box, secondary below it.
         drawTitleFitted(primary, legendBox!.x, legendBox!.y - GAP, 'left', 'bottom', legendBox!.x + legendBox!.w);
         if (secondary) drawTitleFitted(secondary, legendBox!.x, legendBottom + GAP, 'left', 'top',
-          legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT, '#555');
+          legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT, theme.text);
       } else {
         // right / default / compact / left / bottom → primary just above the legend's first row,
         // left-aligned to the swatch column, clamped below the toolbar clearance. Secondary below.
@@ -850,7 +857,7 @@ export function toCanvas(
         drawTitleFitted(primary, originXLegend, yAbove, 'left', 'bottom', sideLimit(yAbove));
         if (secondary) {
           const yBelow = legendBottom + GAP;
-          drawTitleFitted(secondary, originXLegend, yBelow, 'left', 'top', sideLimit(yBelow), MAP_SUBTITLE_FONT, '#555');
+          drawTitleFitted(secondary, originXLegend, yBelow, 'left', 'top', sideLimit(yBelow), MAP_SUBTITLE_FONT, theme.text);
         }
       }
     }
@@ -888,15 +895,15 @@ export function toCanvas(
           const labelMaxW = columnWidths[col] - BIN_SWATCH_SIZE - BIN_LABEL_GAP - BIN_COUNT_W;
           ctx.fillStyle = entry.color;
           ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
-          ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
+          ctx.strokeStyle = isActive ? theme.accent : 'rgba(0,0,0,0.25)';
           ctx.lineWidth = isActive ? 2 : 0.75;
           ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
-          ctx.fillStyle = isActive ? '#1a66cc' : '#333';
+          ctx.fillStyle = isActive ? theme.accent : theme.text;
           ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT}` : COLORBAR_LABEL_FONT;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
           ctx.fillText(truncate(entry.label, labelMaxW), labelX, midY);
-          ctx.fillStyle = '#999';
+          ctx.fillStyle = theme.textMuted;
           ctx.font = COLORBAR_LABEL_FONT;
           ctx.textAlign = 'right';
           ctx.fillText(String(entry.count), x + columnWidths[col] - 2, midY);
@@ -929,16 +936,16 @@ export function toCanvas(
         const displayLabel = entry.label;
         ctx.fillStyle = entry.color;
         ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
-        ctx.strokeStyle = isActive ? '#1a66cc' : 'rgba(0,0,0,0.25)';
+        ctx.strokeStyle = isActive ? theme.accent : 'rgba(0,0,0,0.25)';
         ctx.lineWidth = isActive ? 2 : 0.75;
         ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
-        ctx.fillStyle = isActive ? '#1a66cc' : '#333';
+        ctx.fillStyle = isActive ? theme.accent : theme.text;
         ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT}` : COLORBAR_LABEL_FONT;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(truncate(displayLabel, maxLabelW), labelX, midY);
         if (showCount || legendIsFloating) {
-          ctx.fillStyle = '#999';
+          ctx.fillStyle = theme.textMuted;
           ctx.font = COLORBAR_LABEL_FONT;
           ctx.textAlign = 'right';
           ctx.fillText(String(entry.count), countX, midY);
@@ -954,7 +961,7 @@ export function toCanvas(
         rowY += BIN_ROW_H;
       }
       if (overflow > 0) {
-        ctx.fillStyle = '#aaa';
+        ctx.fillStyle = theme.textMuted;
         ctx.font = COLORBAR_LABEL_FONT;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -1048,14 +1055,15 @@ function drawAxisTicks(
   padding: number,
   axisReserve: number,
   axisLeftReserve: number,
-  diePitchMm?: { x: number; y: number },
-  axisFlip?: { x: boolean; y: boolean },
-  rotation = 0,
+  diePitchMm: { x: number; y: number } | undefined,
+  axisFlip: { x: boolean; y: boolean } | undefined,
+  rotation: number,
+  theme: CanvasTheme,
 ): void {
   ctx.save();
   ctx.font        = AXIS_TICK_FONT;
-  ctx.fillStyle   = '#555';
-  ctx.strokeStyle = '#bbb';
+  ctx.fillStyle   = theme.text;
+  ctx.strokeStyle = theme.axisLine;
   ctx.lineWidth   = 0.5;
 
   const axisY = cssH - axisReserve + 4;
