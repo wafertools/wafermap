@@ -13,6 +13,8 @@
 // literal rgba() in toCanvas. Data-viz colours (the bin/value palette) are the
 // orthogonal `colorScheme`, untouched.
 
+import type { WmapTokenName } from './toolbar.js';
+
 /** Chrome colours drawn onto the canvas, resolved from `--wmap-*` per draw. */
 export interface CanvasTheme {
   /** Canvas background fill. */
@@ -54,16 +56,19 @@ const LIGHT: CanvasTheme = {
 export function resolveCanvasTheme(el: HTMLElement | null): CanvasTheme {
   if (!el || typeof getComputedStyle !== 'function') return { ...LIGHT };
   const cs = getComputedStyle(el);
-  const read = (name: string, fallback: string): string => {
-    const v = cs.getPropertyValue(name).trim();
+  // `name` is constrained to `WmapTokenName` — the same list `CLR` and
+  // `copyWmapThemeTokens` read from in toolbar.ts — so a renamed or typo'd
+  // token fails to compile here instead of silently reading a stale variable.
+  const read = (name: WmapTokenName, fallback: string): string => {
+    const v = cs.getPropertyValue(`--wmap-${name}`).trim();
     return v || fallback;
   };
   return {
-    background: read('--wmap-canvas-bg', read('--wmap-surface', LIGHT.background)),
-    surface:    read('--wmap-surface',    LIGHT.surface),
-    text:       read('--wmap-text',       LIGHT.text),
-    textMuted:  read('--wmap-text-muted',  LIGHT.textMuted),
-    axisLine:   read('--wmap-border',      LIGHT.axisLine),
-    accent:     read('--wmap-icon-active', LIGHT.accent),
+    background: read('canvas-bg', read('surface', LIGHT.background)),
+    surface:    read('surface',    LIGHT.surface),
+    text:       read('text',       LIGHT.text),
+    textMuted:  read('text-muted', LIGHT.textMuted),
+    axisLine:   read('border',     LIGHT.axisLine),
+    accent:     read('icon-active', LIGHT.accent),
   };
 }

@@ -53,7 +53,7 @@ const SNAPSHOTS = {
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
   ],
   './render': [
-    'renderWaferMap', 'renderWaferGallery', 'toCanvas',
+    'renderWaferMap', 'renderWaferGallery', 'setDetachWindowOpener', 'toCanvas',
   ],
 };
 

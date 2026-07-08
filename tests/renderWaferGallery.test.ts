@@ -73,7 +73,8 @@ mock.module('../packages/canvas-adapter/toolbar.js', {
     })),
     buildModeMenuEl:   mock.fn(() => document.createElement('div')),
     buildCheckMenuEl:  mock.fn(() => document.createElement('div')),
-    openModal:         mock.fn(() => ({ close: mock.fn() })),
+    openDetachWindow:  mock.fn(() => null), // no window.open in this unit-test harness; detach silently no-ops
+    copyWmapThemeTokens: mock.fn(),
     CLR: {
       icon: '#506784', iconHover: '#2a3f5f', iconActive: '#1a66cc',
       bgHover: '#edf0f8', bgActive: '#dce8f8', separator: 'rgba(0,0,0,0.12)',

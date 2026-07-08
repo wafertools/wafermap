@@ -7,7 +7,7 @@ import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -194,6 +194,12 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
   /** Override the expand action for both the expand button and the E key. Used by the gallery to route through its own modal logic. */
   onExpand?: () => void;
   /**
+   * Show the toolbar expand button and enable the E-key shortcut. Default true.
+   * Set false when the host already renders the map inside its own expanded/modal
+   * context, where wmap's built-in expand modal would be redundant.
+   */
+  showExpandButton?: boolean;
+  /**
    * Intrinsic height for the map. `renderWaferMap` fills its container, which
    * therefore must have a resolved height — in a plain document a bare `<div>`
    * has none and the map collapses to zero. Set this and the library sizes its
@@ -284,7 +290,15 @@ export function renderWaferMap(
   result: WaferMapResult,
   options: RenderOptions = {},
 ): WaferMapController {
-  if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+  // Derive the window/document this container actually belongs to, rather than
+  // assuming the bare global `window`/`document` — needed so a container
+  // mounted in a different document (e.g. a gallery card detached into its own
+  // popup window) binds its blur/DPR/scheme listeners, and its tooltip, to ITS
+  // OWN window/document, not whichever ones happened to be in lexical scope
+  // when this module was first evaluated.
+  const ownerDocument = container.ownerDocument;
+  const ownerWindow = ownerDocument.defaultView ?? window;
+  if (ownerWindow.getComputedStyle(container).position === 'static') container.style.position = 'relative';
   // Container height as the host laid it out, before we touch anything. A flex/grid
   // child whose ancestors never resolve a height reports 0 here — the case where the
   // fill-parent canvas can't get a height and the map silently collapses or oscillates.
@@ -318,6 +332,7 @@ export function renderWaferMap(
     passBins             = [1],
     showHelpButton       = false,
     onExpand,
+    showExpandButton     = true,
     zIndex,
     viewOptions: initialViewOptions = {},
     ...drawOptions
@@ -526,7 +541,7 @@ export function renderWaferMap(
   // is the local handle used by die-hover code; null when this instance has
   // tooltips disabled, so die hover never shows one. The toolbar still uses the
   // singleton regardless.
-  const tooltip: HTMLDivElement | null = showTooltip ? getTooltip() : null;
+  const tooltip: HTMLDivElement | null = showTooltip ? getTooltip(ownerDocument) : null;
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
   let toolbar:          HTMLDivElement    | null = null;
@@ -596,7 +611,7 @@ export function renderWaferMap(
       // ── Toolbar helpers ──────────────────────────────────────────────────
       // The toolbar uses the shared singleton tooltip — the same node die hover
       // uses when enabled, so the one-tooltip invariant holds across both.
-      const tbTooltip = getTooltip();
+      const tbTooltip = getTooltip(ownerDocument);
       const tbHelpers = createToolbarHelpers(tbTooltip);
       const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
       tbCloseOpenMenu = closeOpenMenu;
@@ -720,6 +735,7 @@ export function renderWaferMap(
             isCurrentEntry, pickEntry,
             { makeMenuRow, makeMenuSection },
             viewOpts.plotMode ?? 'hardBin',
+            btnMode.ownerDocument.defaultView ?? window,
           );
           menuRootFor(btnMode).appendChild(menu);
           setOpenMenu(menu);
@@ -826,15 +842,17 @@ export function renderWaferMap(
         }
 
         // Expand button — reparents canvas into a modal for a larger view.
-        sceneControlsEl!.appendChild(makeSep());
-        btnExpand = makeBtn('expand', 'Expand (E)', onExpand ?? openExpandModal);
-        sceneControlsEl!.appendChild(btnExpand);
+        if (showExpandButton) {
+          sceneControlsEl!.appendChild(makeSep());
+          btnExpand = makeBtn('expand', 'Expand (E)', onExpand ?? openExpandModal);
+          sceneControlsEl!.appendChild(btnExpand);
+        }
 
-        // Help button — opens the end-user guide in a modal (opt-in).
+        // Help button — opens the end-user guide in a non-modal window (opt-in).
         if (showHelpButton) {
           sceneControlsEl!.appendChild(makeSep());
           btnHelp = makeBtn('help', 'User guide', () =>
-            import('./userGuideHtml.js').then(m => openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap }, m.USER_GUIDE_HTML)));
+            import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap }, m.USER_GUIDE_HTML)));
           sceneControlsEl!.appendChild(btnHelp);
         }
       }
@@ -884,8 +902,14 @@ export function renderWaferMap(
 
     // openModal owns shared-tooltip re-homing (into the box on open, back to
     // <body> on close) — correct in both modal and maximized states — so no
-    // onMaximizeChange tooltip wiring is needed here.
+    // onMaximizeChange tooltip wiring is needed here. ownerDocument is passed
+    // explicitly so the modal builds into the SAME document as reparentRoot
+    // (e.g. a gallery card detached into its own popup window) rather than
+    // silently building in whatever document happened to be the bare global
+    // — that would move reparentRoot out of the popup and pop the modal up
+    // on the wrong page.
     const handle = openModal({
+      ownerDocument: ownerDocument,
       onClose: () => {
         if (modalReparentedEl && modalOriginalParent) {
           modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
@@ -955,7 +979,7 @@ export function renderWaferMap(
   function scheduleRender(): void {
     if (rafPending) return;
     rafPending = true;
-    nextFrame(() => { rafPending = false; render(); });
+    nextFrame(() => { rafPending = false; render(); }, ownerWindow);
   }
 
   function render(): void {
@@ -1036,8 +1060,12 @@ export function renderWaferMap(
     ctx.save();
     ctx.setLineDash([]);
 
-    // Amber tint — one batched fill pass.
-    ctx.fillStyle = 'rgba(255,210,0,0.18)';
+    // Neutral dark tint — one batched fill pass. A hue-based tint (the
+    // previous amber wash) reads fine on cool schemes but nearly vanishes on
+    // any scheme with an amber/yellow/orange region of its own (inferno,
+    // plasma, traffic, jet, default/thermal's yellow midpoint, accessible's
+    // orange). A neutral darkening has no hue to collide with.
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
     ctx.beginPath();
     for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
     ctx.fill();
@@ -1049,8 +1077,14 @@ export function renderWaferMap(
     for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
     ctx.stroke();
 
-    // Amber inner stroke — one batched stroke pass.
-    ctx.strokeStyle = 'rgba(245,185,0,1)';
+    // Black inner stroke — one batched stroke pass. White-halo-plus-black-core
+    // is the classic "marching ants" selection pattern: white and black sit at
+    // opposite ends of the luminance range, so at least one of the two always
+    // has strong contrast against any die fill colour, regardless of the
+    // active colour scheme's hue. A single coloured stroke (the previous
+    // amber) can only guarantee that for schemes that don't already use that
+    // hue — this doesn't depend on hue at all.
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
     ctx.lineWidth   = 1.5;
     ctx.beginPath();
     for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
@@ -1067,12 +1101,22 @@ export function renderWaferMap(
     const w   = Math.abs(boxEnd.x - boxStart.x);
     const h   = Math.abs(boxEnd.y - boxStart.y);
     ctx.save();
-    ctx.strokeStyle = 'rgba(30,100,200,0.85)';
-    ctx.lineWidth   = 1.5;
-    ctx.setLineDash([5, 3]);
-    ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = 'rgba(30,100,200,0.08)';
+    // Neutral dark tint, not a hue-based one — same reasoning as
+    // drawSelectionOverlay above: a fixed hue (previously blue) washes out
+    // against any colour scheme sharing that hue range (viridis, jet,
+    // plasma/inferno's dark end).
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
     ctx.fillRect(x, y, w, h);
+    // White-halo + black-core dashed "marching ants" stroke — white and black
+    // sit at opposite luminance extremes, so at least one always contrasts
+    // against any die fill regardless of the active colour scheme's hue.
+    ctx.setLineDash([5, 3]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth   = 3;
+    ctx.strokeRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.lineWidth   = 1.5;
+    ctx.strokeRect(x, y, w, h);
     ctx.restore();
   }
 
@@ -1445,7 +1489,7 @@ export function renderWaferMap(
   }
 
   function onPointerLeave(): void {
-    if (tooltip) hideTooltip();
+    if (tooltip) hideTooltip(ownerDocument);
     onHover?.(null, new MouseEvent('mouseleave'));
     canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
   }
@@ -1462,7 +1506,7 @@ export function renderWaferMap(
     isBoxSelecting    = false;
     legendDragPending = false;
     draggingLegend    = false;
-    if (tooltip) hideTooltip();
+    if (tooltip) hideTooltip(ownerDocument);
     onHover?.(null, new MouseEvent('mouseleave'));
     canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
     render();
@@ -1496,7 +1540,17 @@ export function renderWaferMap(
   }
 
   // ── ResizeObserver ─────────────────────────────────────────────────────────
-  const resizeObserver = new ResizeObserver(() => {
+  // Constructed via the OWNER window's ResizeObserver class, not the bare
+  // global — same bug class as the rAF/matchMedia fixes above. A gallery card
+  // detached into its own popup window has its DOM built by JS running in the
+  // OPENER's realm, so an unqualified `new ResizeObserver(...)` resolves to
+  // the opener's constructor — and observations made through it appear to
+  // stay tied to the opener's rendering/delivery lifecycle rather than the
+  // popup's, so notifications for layout changes IN the popup only get
+  // delivered once something in the OPENER's document triggers a frame (e.g.
+  // the user moving the mouse there). Constructing through the popup's own
+  // `ownerWindow.ResizeObserver` ties delivery to the popup's own lifecycle.
+  const resizeObserver = new ownerWindow.ResizeObserver(() => {
     fittedViewport = null;
     viewport = null;
     render();
@@ -1528,10 +1582,10 @@ export function renderWaferMap(
   // ── DPR change listener (browser zoom / display change) ────────────────────
   // ResizeObserver does not fire when devicePixelRatio changes without a layout
   // size change. Re-register on each change to catch successive zoom steps.
-  let dprMediaQuery = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  let dprMediaQuery = ownerWindow.matchMedia(`(resolution: ${ownerWindow.devicePixelRatio}dppx)`);
   const onDprChange = () => {
     dprMediaQuery.removeEventListener('change', onDprChange);
-    dprMediaQuery = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    dprMediaQuery = ownerWindow.matchMedia(`(resolution: ${ownerWindow.devicePixelRatio}dppx)`);
     dprMediaQuery.addEventListener('change', onDprChange);
     render();
   };
@@ -1543,7 +1597,7 @@ export function renderWaferMap(
   // changes them on a light/dark flip, but nothing re-runs the draw — so
   // re-render to re-resolve the palette. Cheap: one redraw only when the OS
   // scheme actually changes, never per frame.
-  const schemeMediaQuery = matchMedia('(prefers-color-scheme: dark)');
+  const schemeMediaQuery = ownerWindow.matchMedia('(prefers-color-scheme: dark)');
   const onSchemeChange = () => render();
   schemeMediaQuery.addEventListener('change', onSchemeChange);
 
@@ -1551,8 +1605,8 @@ export function renderWaferMap(
   // Alt-tab / app switch (notably in a Tauri WebView) moves the pointer out of
   // the window without firing pointerleave or pointercancel. The shared tooltip
   // would otherwise linger visibly until the next hover reclaims it; hide it now.
-  const onWindowBlur = () => { if (tooltip) hideTooltip(); };
-  window.addEventListener('blur', onWindowBlur);
+  const onWindowBlur = () => { if (tooltip) hideTooltip(ownerDocument); };
+  ownerWindow.addEventListener('blur', onWindowBlur);
 
   // ── Wire canvas events ─────────────────────────────────────────────────────
   function onKeyDown(e: KeyboardEvent): void {
@@ -1561,7 +1615,7 @@ export function renderWaferMap(
       onSelect?.([]);
       render();
     }
-    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only') {
+    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only' && showExpandButton) {
       e.stopPropagation();
       (onExpand ?? openExpandModal)();
     }
@@ -1779,12 +1833,13 @@ export function renderWaferMap(
       resizeObserver.disconnect();
       dprMediaQuery.removeEventListener('change', onDprChange);
       schemeMediaQuery.removeEventListener('change', onSchemeChange);
-      window.removeEventListener('blur', onWindowBlur);
+      ownerWindow.removeEventListener('blur', onWindowBlur);
       disposeOverlayZ();
       // The tooltip is the shared document-level singleton — never destroy it
-      // (other instances may still use it). Just hide it and re-home to <body>
-      // in case this instance had moved it into a now-removed modal.
-      if (tooltip) hideTooltip();
+      // (other instances may still use it). Just hide it; if this instance had
+      // moved it into a modal, openOverlay's close() already re-homed it to
+      // <body> before this destroy() runs.
+      if (tooltip) hideTooltip(ownerDocument);
       toolbar?.remove();
       if (summaryPanelWrapper) {
         summaryPanelWrapper.parentElement?.insertBefore(canvasWrap, summaryPanelWrapper);

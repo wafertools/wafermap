@@ -756,12 +756,13 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
-| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Always | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut. |
-| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a modal |
+| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). |
+| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a non-modal floating window |
 
-The full toolbar is shown when `toolbarControls` is `'full'` (default). Gallery card modals
-also use `'full'`. In the gallery, cards show only the navigation controls (download, zoom,
-pan, select) — the view controls (mode, overlays, orient, etc.) live in the shared gallery bar.
+The full toolbar is shown when `toolbarControls` is `'full'` (default). A gallery card's
+detached window also uses `'full'`. In the gallery, cards show only the navigation controls
+(download, zoom, pan, select) — the view controls (mode, overlays, orient, etc.) live in the
+shared gallery bar.
 
 #### Gallery control bar
 
@@ -782,7 +783,7 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch so all available width is used |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Download all | Always | Exports all cards as a single tiled PNG |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
-| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a modal |
+| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a non-modal floating window |
 
 
 ### Theming the chrome
@@ -1189,7 +1190,7 @@ ctrl.setStatsSummary(newSummary);
 For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Findings" button appears in the control bar giving access to:
 
 - **Lot tab** — cross-wafer patterns and yield outliers
-- **Wafers tab** — per-wafer findings index; clicking any row opens that wafer's card modal with its summary panel
+- **Wafers tab** — per-wafer findings index; clicking any row detaches that wafer's card into its own window with its summary panel
 
 See [§13 Lot-level statistical findings](#13-lot-level-statistical-findings) for the full example.
 
@@ -1204,7 +1205,7 @@ const items = waferResults.map((r, i) => ({
 
 renderWaferGallery(container, items);
 // → Wafers findings panel appears in toolbar
-// → Each card modal shows its own per-wafer summary
+// → Each card's own window shows its own per-wafer summary
 ```
 
 **→ [Demo: Summary panel](examples/summary-panel.html)**
@@ -1255,9 +1256,11 @@ const ctrl = renderWaferGallery(
 ```
 
 Cards reflow responsively as the container resizes.  Each card has an expand
-button (↗) in its header — clicking it opens an enlarged modal overlay with the
-complete toolbar; the card's live canvas is reparented into the modal, so there
-is no view rebuild and the toolbar stays fully interactive.
+button (↗) in its header — clicking it detaches that card into its own real,
+separate window (not an in-page overlay), so it can be moved anywhere on
+screen, including outside the host app's own window. The gallery grid stays
+fully interactive the whole time, and any number of cards can be detached at
+once. See [§6.6 Detaching a card into its own window](api.md#66-detaching-a-card-into-its-own-window) in the API reference for reattach, multi-window, and embedded-host (Tauri/Electron) details.
 
 
 ### Sharing bin and test definitions across cards
@@ -1359,8 +1362,9 @@ the lot data to discover unique tests and bins when entering a stacked mode, and
 generates default labels (e.g. "Test 1050", "Bin 2") automatically.
 
 **Spatial findings.** Each stacked card automatically gets a spatial analysis
-summary — open the card modal and click the findings button to see ring, quadrant,
-sector, and cluster findings on the aggregated map.  No extra code is required.
+summary — detach the card into its own window and click the findings button to
+see ring, quadrant, sector, and cluster findings on the aggregated map.  No extra
+code is required.
 
 **→ [Demo: Building a lot gallery](examples/gallery.html)**  
 See also: [Demo: Lot-level findings with stacked modes](examples/lot-findings.html)
@@ -1400,7 +1404,7 @@ Pass `computePerTestStats: true` to also populate `lotSummary.perWaferTestStats`
 A "Findings" button appears in the gallery control bar. Clicking it opens a panel with two tabs:
 
 - **Lot** — lot-level yield, bin breakdown, ring/quadrant statistics, cross-wafer findings
-- **Wafers** — per-wafer findings index; click any wafer to open its card modal with full per-wafer findings
+- **Wafers** — per-wafer findings index; click any wafer to detach its card into its own window with full per-wafer findings
 
 
 ### What highlighting looks like

@@ -18,9 +18,29 @@ import { ICONS } from './icons.js';
 // (axis text, grid, halos) which a stylesheet can't reach — those need a separate
 // draw-time resolve pass (tracked as a follow-up; see tsmap WMAP_ISSUES #25).
 //
+// `WMAP_TOKEN_NAMES` is the single source of truth for which `--wmap-*` custom
+// properties exist — `CLR` below, `canvasTheme.ts`'s `resolveCanvasTheme`, and
+// `copyWmapThemeTokens` (further down this file) all read/write only names
+// drawn from this list, so the three can't silently drift apart (e.g. a token
+// renamed here but left stale in canvas-theme reads).
+export const WMAP_TOKEN_NAMES = [
+  'z',
+  'icon', 'icon-hover', 'icon-active', 'bg-hover', 'bg-active', 'separator',
+  'surface', 'border', 'menu-hover', 'menu-active',
+  'panel-bg', 'text-muted', 'text',
+  'warn-bg', 'warn-border', 'warn-text',
+  'info-bg', 'info-text',
+  'selected',
+  'canvas-bg',
+] as const;
+
+export type WmapTokenName = (typeof WMAP_TOKEN_NAMES)[number];
+
 // `t(name, fallback)` builds a `var()` reference so the token name and its light
-// default live together, in one place, here.
-const t = (name: string, fallback: string) => `var(--wmap-${name}, ${fallback})`;
+// default live together, in one place, here. `name` is constrained to
+// `WmapTokenName` so a typo'd or renamed token fails to compile instead of
+// silently reading a CSS variable nothing ever sets.
+const t = (name: WmapTokenName, fallback: string) => `var(--wmap-${name}, ${fallback})`;
 
 export const CLR = {
   // Toolbar icons + hover/active affordances.
@@ -104,6 +124,69 @@ export function applyOverlayZ(zIndex: number | undefined): () => void {
   };
 }
 
+// ── Theme token propagation across documents ────────────────────────────────
+//
+// Every `--wmap-*` custom property a host sets lives on ITS page's ancestor
+// elements. A gallery card detached into its own popup window (see
+// `openDetachWindow` below) gets a brand-new, unrelated `document` — its
+// `documentElement` has none of the host's theme values, so without an
+// explicit copy the popup would silently fall back to the light defaults
+// baked into each token's `var(--wmap-*, fallback)`, even for a host running
+// in dark mode. Uses `WMAP_TOKEN_NAMES` (defined above, next to `CLR`) so this
+// copier can't drift out of sync with the tokens `CLR`/canvas-theme actually read.
+
+/** Copy every `--wmap-*` custom property resolved on `src` onto `dest`, so an
+ * element in a different document (e.g. a detached popup's `documentElement`)
+ * renders with the same theme as the host page instead of silently reverting
+ * to light-mode defaults. */
+export function copyWmapThemeTokens(src: Element, dest: HTMLElement): void {
+  const computed = getComputedStyle(src);
+  for (const name of WMAP_TOKEN_NAMES) {
+    const value = computed.getPropertyValue(`--wmap-${name}`).trim();
+    if (value) dest.style.setProperty(`--wmap-${name}`, value);
+  }
+}
+
+// ── Gallery card detach window opener ───────────────────────────────────────
+//
+// A gallery card detached into its own window (see renderWaferGallery.ts's
+// openWindowForCard) needs a real, OS-window-manager-controlled window — not
+// an in-page `position: fixed` div — so it can be dragged outside the host
+// browser/Tauri window's own bounds. `window.open()` is the default, but it is
+// blocked/returns `null` silently in Tauri's WebView (confirmed in tsmap's own
+// history — see WMAP_ISSUES.md and `setReportOpener` below, which solves the
+// same class of problem for a different feature). Mirrors that pattern:
+// a host registers a custom opener at startup; the default falls back to
+// plain `window.open`.
+export type DetachWindowOpener = (label: string) => Window | null;
+
+let detachWindowOpener: DetachWindowOpener | null = null;
+
+/** Register a custom opener for gallery card detach windows — e.g. one backed
+ * by a Tauri `WebviewWindow`, for hosts where `window.open` is blocked. The
+ * opener receives the card's label and must return a `Window`-like handle
+ * (with a usable `.document`) to build into, or `null` to decline (treated
+ * exactly like a blocked popup — the detach silently no-ops). */
+export function setDetachWindowOpener(opener: DetachWindowOpener | null): void {
+  detachWindowOpener = opener;
+}
+
+/** Open a blank window for a detached gallery card. Uses the registered
+ * `setDetachWindowOpener` opener when present, else falls back to a plain
+ * `window.open` popup.
+ *
+ * Known cosmetic quirk: since this never navigates away from `about:blank`,
+ * Chrome's window-title algorithm shows "{title} - Chrome" in the OS window/
+ * tab title instead of just the title we set (an un-navigated about:blank
+ * window is treated as titleless regardless of `document.title`). Navigating
+ * to a real URL would fix it but means either re-running the host page's own
+ * script inside the popup (real risk of double side effects) or requiring a
+ * dedicated blank same-origin asset — not worth it for a cosmetic issue. */
+export function openDetachWindow(label: string): Window | null {
+  if (detachWindowOpener) return detachWindowOpener(label);
+  return window.open('', '_blank', 'width=560,height=600');
+}
+
 export const MODE_LABELS: Record<PlotMode, string> = {
   value:           'Test Value',
   hardBin:         'Hard Bin',
@@ -163,10 +246,21 @@ const MENU_ITEM_SELECTOR = '[role="menuitem"],[role="menuitemradio"],[role="menu
 /**
  * Run `fn` on the next animation frame, falling back to a macrotask in
  * environments without `requestAnimationFrame` (e.g. JSDOM under tests).
- * Used to defer focus moves until the element is laid out.
+ * Used to defer focus moves until the element is laid out, and to schedule
+ * re-renders after a resize.
+ *
+ * Accepts an explicit `ownerWindow` — a bare `requestAnimationFrame` reference
+ * resolves to whichever window this MODULE was first evaluated in (the host
+ * page's), not necessarily the window whose layout the caller actually cares
+ * about. For a gallery card detached into its own popup window, scheduling
+ * against the opener's rAF loop means the callback only fires when the OPENER
+ * repaints (e.g. on mouse movement there) — not when the popup itself does,
+ * which reads as "the map doesn't resize until I move focus back to the main
+ * window." Passing the popup's own `window` fixes this.
  */
-export function nextFrame(fn: () => void): void {
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
+export function nextFrame(fn: () => void, ownerWindow: Window = window): void {
+  const raf = ownerWindow.requestAnimationFrame;
+  if (typeof raf === 'function') raf.call(ownerWindow, fn);
   else setTimeout(fn, 0);
 }
 
@@ -242,16 +336,21 @@ function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close:
   if (first) nextFrame(() => first.focus());
 }
 
-// Menus must be appended inside the nearest modal box, not document.body — the
-// maximized modal box is a high-z-index fixed stacking context that would
-// obscure body-level menus.
+// Menus must be appended inside the nearest overlay box (modal or floating
+// window), not document.body — a maximized/high-z-index box is a fixed
+// stacking context that would obscure body-level menus. The fallback is the
+// ANCHOR's own document.body, not the bare global `document` — a gallery card
+// detached into its own popup window (see renderWaferGallery.ts) has no
+// ancestor overlay box (a real OS window needs none), so falling through to
+// the wrong document would silently render its menus in the opener's page
+// instead of inside the popup.
 export function menuRootFor(anchor: Element): Element {
   let el: Element | null = anchor;
   while (el) {
-    if (el.classList.contains('wmap-modal-box')) return el;
+    if (el.classList.contains('wmap-overlay-box')) return el;
     el = el.parentElement;
   }
-  return document.body;
+  return anchor.ownerDocument.body;
 }
 
 // ── Tooltip ────────────────────────────────────────────────────────────────────
@@ -270,13 +369,23 @@ export function menuRootFor(anchor: Element): Element {
 // layer, it is reused, never destroyed. Instance teardown hides it rather than
 // removing it, since other instances may still be using it.
 
-let sharedTooltip: HTMLDivElement | null = null;
+// One tooltip PER DOCUMENT, not one for the whole process — a gallery card
+// detached into its own popup window (see renderWaferGallery.ts's
+// openWindowForCard) has an entirely separate `document`, and a tooltip
+// created in the opener's document would render invisibly behind/outside that
+// popup. Keyed by document so every render target (the host page, and any
+// number of detached popup documents) gets its own single-instance tooltip,
+// preserving the original "stuck tooltip is structurally impossible" guarantee
+// within each document independently.
+const sharedTooltips = new WeakMap<Document, HTMLDivElement>();
 
-/** The one shared tooltip element, lazily created and appended to <body>. */
-export function getTooltip(): HTMLDivElement {
-  if (sharedTooltip && sharedTooltip.isConnected) return sharedTooltip;
-  const el = sharedTooltip ?? document.createElement('div');
-  if (!sharedTooltip) {
+/** The shared tooltip element for `doc` (default: the host page's own
+ * document), lazily created and appended to `doc.body`. */
+export function getTooltip(doc: Document = document): HTMLDivElement {
+  const existing = sharedTooltips.get(doc);
+  if (existing && existing.isConnected) return existing;
+  const el = existing ?? doc.createElement('div');
+  if (!existing) {
     Object.assign(el.style, {
       position:     'fixed',
       pointerEvents:'none',
@@ -300,31 +409,42 @@ export function getTooltip(): HTMLDivElement {
       fontFamily:   'system-ui, sans-serif',
       boxShadow:    '0 3px 10px rgba(0,0,0,0.45)',
     });
-    sharedTooltip = el;
+    sharedTooltips.set(doc, el);
   }
-  document.body.appendChild(el);
+  doc.body.appendChild(el);
   return el;
 }
 
-/** Hide the shared tooltip and re-home it to <body> if it was re-parented. */
-export function hideTooltip(): void {
-  if (!sharedTooltip) return;
-  sharedTooltip.style.display = 'none';
-  if (sharedTooltip.parentElement !== document.body) {
-    document.body.appendChild(sharedTooltip);
-  }
+/** Hide `doc`'s shared tooltip. Deliberately does NOT re-home it to `doc.body`
+ * — it stays wherever `reparentTooltip()` last placed it (e.g. inside an open
+ * floating window's box). A non-modal floating window can stay open for many
+ * ordinary hover/unhover cycles; snapping the tooltip back to `<body>` on
+ * every hide (as this used to do) meant the very first unhover after opening
+ * a floating window silently evicted the tooltip from the window's stacking
+ * context, and it was never reparented back in — every subsequent hover in
+ * that window then rendered the tooltip at `<body>`'s z-index, BEHIND the
+ * window. Callers that actually close an overlay (see `openOverlay`'s
+ * `close()`) are responsible for reparenting the tooltip back to `<body>`
+ * themselves once the box that owned it is really going away. */
+export function hideTooltip(doc: Document = document): void {
+  const el = sharedTooltips.get(doc);
+  if (!el) return;
+  el.style.display = 'none';
 }
 
 /**
- * Move the shared tooltip into `parent` (e.g. a maximized modal box that creates
- * its own stacking/overflow context). Pass nothing to re-home it to <body>.
+ * Move `parent`'s document's shared tooltip into `parent` (e.g. a maximized
+ * modal box that creates its own stacking/overflow context). Pass nothing to
+ * re-home the host page's tooltip to `document.body`.
  */
 export function reparentTooltip(parent?: HTMLElement): void {
-  const el = getTooltip();
-  (parent ?? document.body).appendChild(el);
+  const doc = parent?.ownerDocument ?? document;
+  const el = getTooltip(doc);
+  (parent ?? doc.body).appendChild(el);
 }
 
 export function positionTooltip(tooltip: HTMLDivElement, clientX: number, clientY: number): void {
+  const ownerWindow = tooltip.ownerDocument.defaultView ?? window;
   tooltip.style.left = '0';
   tooltip.style.top  = '0';
   const tw     = tooltip.offsetWidth;
@@ -332,8 +452,8 @@ export function positionTooltip(tooltip: HTMLDivElement, clientX: number, client
   const margin = 8;
   let x = clientX + 14;
   let y = clientY - 8;
-  if (x + tw + margin > window.innerWidth)  x = clientX - tw - 6;
-  if (y + th + margin > window.innerHeight) y = window.innerHeight - th - margin;
+  if (x + tw + margin > ownerWindow.innerWidth)  x = clientX - tw - 6;
+  if (y + th + margin > ownerWindow.innerHeight) y = ownerWindow.innerHeight - th - margin;
   if (y < margin) y = margin;
   tooltip.style.left = `${x}px`;
   tooltip.style.top  = `${y}px`;
@@ -388,12 +508,13 @@ export function buildModeMenuEl(
   pickEntry: (entry: ModeEntry, menu: HTMLElement) => void,
   helpers: Pick<ToolbarHelpers, 'makeMenuRow' | 'makeMenuSection'>,
   currentMode: PlotMode,
+  ownerWindow: Window = window,
 ): HTMLDivElement {
   const { makeMenuRow, makeMenuSection } = helpers;
 
   const menu = document.createElement('div');
   const modeMinWidth = 180;
-  const modeFitsRight = anchorRect.left + modeMinWidth <= (window.innerWidth ?? Infinity);
+  const modeFitsRight = anchorRect.left + modeMinWidth <= (ownerWindow.innerWidth ?? Infinity);
   const modeLeft = modeFitsRight ? anchorRect.left : Math.max(4, anchorRect.right - modeMinWidth);
   Object.assign(menu.style, {
     position:      'fixed',
@@ -526,12 +647,13 @@ export function buildCheckMenuEl(
   anchorRect: DOMRect,
   rows: CheckMenuRow[],
   helpers: Pick<ToolbarHelpers, 'makeMenuRow' | 'makeMenuSection'>,
+  ownerWindow: Window = window,
 ): HTMLDivElement {
   const { makeMenuRow, makeMenuSection } = helpers;
   const menu = document.createElement('div');
   const minWidth = 168;
   // Prefer left-aligned; flip to right-aligned when button is near the right edge.
-  const fitsRight = anchorRect.left + minWidth <= (window.innerWidth ?? Infinity);
+  const fitsRight = anchorRect.left + minWidth <= (ownerWindow.innerWidth ?? Infinity);
   const leftPx  = fitsRight ? anchorRect.left : Math.max(4, anchorRect.right - minWidth);
   Object.assign(menu.style, {
     position:      'fixed',
@@ -727,8 +849,9 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       if (openMenu) { closeMenu(); return; }
       const menu = document.createElement('div');
       const btnRect = btn.getBoundingClientRect();
+      const ownerWin = btn.ownerDocument.defaultView ?? window;
       const ddMinWidth = 148;
-      const ddFitsRight = btnRect.left + ddMinWidth <= (window.innerWidth ?? Infinity);
+      const ddFitsRight = btnRect.left + ddMinWidth <= (ownerWin.innerWidth ?? Infinity);
       const ddLeft = ddFitsRight ? btnRect.left : Math.max(4, btnRect.right - ddMinWidth);
       Object.assign(menu.style, {
         position:      'fixed',
@@ -814,6 +937,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
           };
         }),
         { makeMenuRow, makeMenuSection },
+        btn.ownerDocument.defaultView ?? window,
       );
     }
     const closeMenu = (): void => {
@@ -860,61 +984,125 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   };
 }
 
-// ── Shared expand modal ────────────────────────────────────────────────────────
+// ── Shared overlay primitive (modal dialogs and floating windows) ──────────────
+//
+// Two presentations share one box/header/chrome builder:
+//   'modal'  — exclusive: dimmed backdrop blocks the rest of the page, scroll is
+//              locked, Tab is trapped inside the box. Used where the box's content
+//              was physically moved out of the page (leaving nothing sensible
+//              behind to interact with) or where stale background state would be
+//              actively misleading (see callers for the reasoning per case).
+//   'window' — non-modal: no backdrop, no scroll lock, no focus trap — the rest of
+//              the page stays fully interactive. Multiple windows may be open at
+//              once, so window mode adds a per-window incrementing z-index (click-
+//              to-front) and a small cascading open position, neither of which
+//              modal mode needs (it's exclusive by construction).
 
-export interface ModalOptions {
+export type OverlayMode = 'modal' | 'window';
+
+export interface OverlayOptions {
   /** Optional title shown in the header left. */
   title?: string;
+  mode: OverlayMode;
   /**
-   * Called when the modal's maximized state changes — use to reparent tooltips
-   * etc. The modal uses a CSS maximize (the box grows to fill its backdrop), not
-   * the real Fullscreen API, for macOS WKWebView compatibility.
+   * Called when the maximized state changes — use to reparent tooltips etc. Uses
+   * a CSS maximize (the box grows to fill its backdrop/the viewport), not the
+   * real Fullscreen API, for macOS WKWebView compatibility.
    */
   onMaximizeChange?: (isMaximized: boolean, box: HTMLElement) => void;
-  /** Called when the modal is closed. */
+  /** Called when the overlay is closed. */
   onClose: () => void;
+  /**
+   * The document to build this overlay into — defaults to the bare global
+   * `document`. Pass the triggering element's `ownerDocument` when the
+   * caller's own container might live in a different document (e.g.
+   * `renderWaferMap`'s own expand modal, whose canvas could be inside a
+   * gallery card detached into its own popup window) — otherwise the overlay
+   * silently builds into the WRONG document, visibly emptying the popup and
+   * popping the box up on the host page instead.
+   */
+  ownerDocument?: Document;
 }
 
-export interface ModalHandle {
-  backdrop: HTMLDivElement;
+export interface OverlayHandle {
+  /** null in 'window' mode — there is no backdrop to block the page. */
+  backdrop: HTMLDivElement | null;
   box: HTMLDivElement;
   /** Flex container inside the box for the canvas/content area. */
   contentWrap: HTMLDivElement;
-  /** Close the modal — removes DOM, restores scroll, removes all listeners, fires onClose. */
+  /** Close the overlay — removes DOM, restores scroll, removes all listeners, fires onClose. */
   close: () => void;
+  /** Raise this window above other open windows. No-op in 'modal' mode. */
+  bringToFront: () => void;
+}
+
+// Window mode needs its own incrementing stacking band, above the (dynamic,
+// host-configurable) modal band, since a floating window must never be hidden
+// behind a still-open modal — and among windows, the most recently focused one
+// must be topmost. This band is a fixed constant rather than derived from
+// `--wmap-z`: windows are independent floating chrome, not anchored overlays for
+// a single map, so they don't need to interleave with a host's modal z-index.
+const WINDOW_Z_BASE = 7000;
+let windowZCounter = 0;
+function nextWindowZ(): number { return WINDOW_Z_BASE + (++windowZCounter); }
+
+// New windows cascade by a fixed offset so repeated opens don't stack exactly on
+// top of each other. Wraps after a handful of opens rather than walking windows
+// off-screen. No drag-to-reposition exists (native `resize: both` covers resize;
+// this is a visualization library, not a windowing system).
+const WINDOW_CASCADE_STEP = 32;
+const WINDOW_CASCADE_MAX = 6;
+let windowOpenCount = 0;
+function nextCascadeOffset(): number {
+  return (windowOpenCount++ % WINDOW_CASCADE_MAX) * WINDOW_CASCADE_STEP;
 }
 
 /**
- * Create and open a resizable, maximizable expand modal.
- * Mounts itself into document.body. Call `handle.close()` to tear down cleanly.
+ * Create and open a resizable, maximizable overlay — either an exclusive modal
+ * dialog or a non-modal floating window. Mounts itself into document.body.
+ * Call `handle.close()` to tear down cleanly.
  */
-export function openModal(opts: ModalOptions): ModalHandle {
-  const savedOverflow = document.body.style.overflow;
-  document.body.style.overflow = 'hidden';
+function openOverlay(opts: OverlayOptions): OverlayHandle {
+  const isModal = opts.mode === 'modal';
+  // Build into the caller-supplied document (e.g. a detached gallery card's
+  // popup) rather than the bare global — otherwise the overlay silently
+  // builds in the WRONG document whenever the triggering element doesn't
+  // live in the host page's own document. Falls back to the bare globals for
+  // backward compatibility when a caller doesn't (or can't) supply one.
+  const doc = opts.ownerDocument ?? document;
+  const win = doc.defaultView ?? window;
+  const savedOverflow = doc.body.style.overflow;
+  if (isModal) doc.body.style.overflow = 'hidden';
 
-  const backdrop = document.createElement('div') as HTMLDivElement;
-  backdrop.id = 'wmap-modal-backdrop';
-  Object.assign(backdrop.style, {
-    position:       'fixed',
-    inset:          '0',
-    background:     'rgba(0,0,0,0.6)',
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'center',
-    zIndex:         Z_ABOVE,
-    backdropFilter: 'blur(3px)',
-  });
+  let backdrop: HTMLDivElement | null = null;
+  if (isModal) {
+    backdrop = doc.createElement('div') as HTMLDivElement;
+    backdrop.id = 'wmap-modal-backdrop';
+    Object.assign(backdrop.style, {
+      position:       'fixed',
+      inset:          '0',
+      background:     'rgba(0,0,0,0.6)',
+      display:        'flex',
+      alignItems:     'center',
+      justifyContent: 'center',
+      zIndex:         Z_ABOVE,
+      backdropFilter: 'blur(3px)',
+    });
+  }
 
-  // Remember what had focus so we can restore it when the modal closes.
-  const previouslyFocused = document.activeElement as HTMLElement | null;
+  // Remember what had focus so we can restore it when the overlay closes.
+  const previouslyFocused = doc.activeElement as HTMLElement | null;
 
-  const box = document.createElement('div') as HTMLDivElement;
-  box.className = 'wmap-modal-box';
+  const box = doc.createElement('div') as HTMLDivElement;
+  box.className = isModal ? 'wmap-modal-box wmap-overlay-box' : 'wmap-window-box wmap-overlay-box';
   box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-modal', 'true');
+  if (isModal) box.setAttribute('aria-modal', 'true');
   box.setAttribute('aria-label', opts.title ?? 'Expanded wafer map');
   box.tabIndex = -1;
   Object.assign(box.style, {
+    // Baseline positioning context for the resize grip's `position: absolute`
+    // (window mode overrides this to `fixed` below; modal mode keeps `relative`).
+    position:      'relative',
     background:    CLR.menuBg,
     borderRadius:  '12px',
     overflow:      'hidden',
@@ -923,15 +1111,29 @@ export function openModal(opts: ModalOptions): ModalHandle {
     width:         'min(90vw, 700px)',
     height:        'min(90vh, 700px)',
     boxShadow:     '0 20px 60px rgba(0,0,0,0.4)',
-    resize:        'both',
+    // No native CSS `resize` — its drag grip is a browser/engine-drawn
+    // affordance with a small, precise hit-region that isn't reliable
+    // everywhere (confirmed broken under WebKitGTK-via-VNC on Linux; visible
+    // but undraggable). A hand-rolled Pointer-Events grip (added below, same
+    // pattern as the header drag-to-reposition) is just an ordinary DOM
+    // element with ordinary listeners, so it behaves identically everywhere.
     minWidth:      '320px',
     minHeight:     '240px',
     maxWidth:      '100vw',
     maxHeight:     '100vh',
-    zIndex:        Z_ABOVE2,
+    zIndex:        isModal ? Z_ABOVE2 : String(nextWindowZ()),
   });
 
-  const header = document.createElement('div');
+  if (!isModal) {
+    const offset = nextCascadeOffset();
+    Object.assign(box.style, {
+      position: 'fixed',
+      top:      `${Math.round(win.innerHeight * 0.08) + offset}px`,
+      left:     `${Math.round(win.innerWidth * 0.08) + offset}px`,
+    });
+  }
+
+  const header = doc.createElement('div');
   Object.assign(header.style, {
     display:      'flex',
     alignItems:   'center',
@@ -941,8 +1143,8 @@ export function openModal(opts: ModalOptions): ModalHandle {
     flexShrink:   '0',
   });
 
-  // Bordered icon buttons, matching the gallery-card expand button so modal and
-  // card chrome read as one system.
+  // Bordered icon buttons, matching the gallery-card expand button so overlay
+  // and card chrome read as one system.
   const btnStyle: Partial<CSSStyleDeclaration> = {
     border:         `1px solid ${CLR.menuBorder}`,
     borderRadius:   '4px',
@@ -959,17 +1161,43 @@ export function openModal(opts: ModalOptions): ModalHandle {
   };
 
   if (opts.title) {
-    const titleEl = document.createElement('span');
+    const titleEl = doc.createElement('span');
     titleEl.textContent = opts.title;
-    Object.assign(titleEl.style, { fontWeight: '700', fontSize: '14px' });
+    titleEl.title = opts.title; // native tooltip so the full text is still readable when truncated
+    titleEl.dataset.wmapWindowTitle = '1';
+    Object.assign(titleEl.style, {
+      fontWeight: '700',
+      fontSize:   '14px',
+      overflow:   'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      minWidth:   '0',
+    });
     header.appendChild(titleEl);
   }
 
-  const spacer = document.createElement('div');
+  const spacer = doc.createElement('div');
   spacer.style.flex = '1';
   header.appendChild(spacer);
 
-  const maximizeBtn = document.createElement('button');
+  // Minimize collapses the box to just its header strip (title + buttons) —
+  // window mode only. A modal's backdrop still blocks the rest of the page
+  // even while "minimized," so minimizing one would be pointless; only a
+  // non-modal floating window benefits (the page/gallery stays usable, and
+  // now the window itself can be tucked out of the way without closing it).
+  let minimizeBtn: HTMLButtonElement | null = null;
+  if (!isModal) {
+    minimizeBtn = doc.createElement('button');
+    minimizeBtn.type = 'button';
+    minimizeBtn.innerHTML = ICONS.windowMinimize;
+    minimizeBtn.title = 'Minimize';
+    minimizeBtn.setAttribute('aria-label', 'Minimize');
+    Object.assign(minimizeBtn.style, btnStyle);
+    minimizeBtn.addEventListener('click', () => setMinimized(!minimized));
+    header.appendChild(minimizeBtn);
+  }
+
+  const maximizeBtn = doc.createElement('button');
   maximizeBtn.type = 'button';
   maximizeBtn.innerHTML = ICONS.maximize;
   maximizeBtn.title = 'Maximize (F)';
@@ -977,7 +1205,7 @@ export function openModal(opts: ModalOptions): ModalHandle {
   Object.assign(maximizeBtn.style, btnStyle);
   maximizeBtn.addEventListener('click', () => setMaximized(!maximized));
 
-  const closeBtn = document.createElement('button');
+  const closeBtn = doc.createElement('button');
   closeBtn.type = 'button';
   closeBtn.innerHTML = ICONS.close;
   closeBtn.title = 'Close (Esc)';
@@ -989,43 +1217,159 @@ export function openModal(opts: ModalOptions): ModalHandle {
   header.appendChild(closeBtn);
 
   // Maximize is a pure CSS toggle — the box grows to fill its fixed-inset
-  // backdrop. We deliberately avoid the real Fullscreen API: macOS WKWebView
-  // (Tauri) only exposes the webkit-prefixed variants and disables element
-  // fullscreen unless the host opts into private API (blocks Mac App Store).
-  // The CSS toggle behaves identically on every target. The close button stays
-  // visible while maximized (no OS chrome to escape), and Esc always closes.
+  // backdrop (modal) or the viewport (window). We deliberately avoid the real
+  // Fullscreen API: macOS WKWebView (Tauri) only exposes the webkit-prefixed
+  // variants and disables element fullscreen unless the host opts into private
+  // API (blocks Mac App Store). The CSS toggle behaves identically on every
+  // target. The close button stays visible while maximized (no OS chrome to
+  // escape), and Esc always closes.
   let maximized = false;
+  let preMaximizeTop = '';
+  let preMaximizeLeft = '';
   function setMaximized(next: boolean): void {
     maximized = next;
     maximizeBtn.innerHTML = maximized ? ICONS.minimize : ICONS.maximize;
     maximizeBtn.title = maximized ? 'Restore (F)' : 'Maximize (F)';
     maximizeBtn.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
+    resizeGrip.style.display = maximized ? 'none' : 'block';
     if (maximized) {
       box.style.borderRadius = '0';
-      box.style.resize = 'none';
       box.style.width = '100vw';
       box.style.height = '100vh';
+      if (!isModal) {
+        preMaximizeTop = box.style.top;
+        preMaximizeLeft = box.style.left;
+        box.style.top = '0';
+        box.style.left = '0';
+      }
     } else {
       box.style.borderRadius = '12px';
-      box.style.resize = 'both';
       box.style.width = 'min(90vw, 700px)';
       box.style.height = 'min(90vh, 700px)';
+      if (!isModal) {
+        box.style.top = preMaximizeTop;
+        box.style.left = preMaximizeLeft;
+      }
     }
     // Keep the onMaximizeChange callback firing on the synthetic toggle so
     // tooltip-reparenting consumers (renderWaferMap / renderWaferGallery) work.
     opts.onMaximizeChange?.(maximized, box);
   }
 
+  // Minimize collapses the box to just its header strip — window mode only
+  // (see minimizeBtn setup above). Unlike maximize, this never runs render
+  // logic in the collapsed state (the map is simply hidden, not resized to
+  // zero), so there's no onMaximizeChange-style callback needed: nothing
+  // downstream cares whether the canvas is visible, only whether its box has
+  // a resolved size, which is unaffected — contentWrap is hidden, not removed.
+  let minimized = false;
+  let preMinimizeHeight = '';
+  let preMinimizeWidth = '';
+  const MINIMIZED_WIDTH = 220;
+  function setMinimized(next: boolean): void {
+    minimized = next;
+    minimizeBtn!.innerHTML = minimized ? ICONS.windowRestore : ICONS.windowMinimize;
+    minimizeBtn!.title = minimized ? 'Restore' : 'Minimize';
+    minimizeBtn!.setAttribute('aria-label', minimized ? 'Restore' : 'Minimize');
+    resizeGrip.style.display = minimized ? 'none' : 'block';
+    if (minimized) {
+      preMinimizeHeight = box.style.height;
+      preMinimizeWidth = box.style.width;
+      // minHeight (240px, set on the base box style) would otherwise floor
+      // `height: auto` well above the header's own natural height, leaving a
+      // large empty rectangle below it instead of a true collapse-to-strip.
+      // minWidth (320px) is similarly overridden so the strip can shrink
+      // narrower than a full-size window, down to just enough for the title
+      // and header buttons — otherwise it stayed as wide as the box was
+      // before minimizing, which reads as a large strip, not a small one.
+      box.style.minHeight = '0';
+      box.style.height = 'auto';
+      box.style.minWidth = '0';
+      box.style.width = `${MINIMIZED_WIDTH}px`;
+      maximizeBtn.disabled = true;
+      maximizeBtn.style.opacity = '0.4';
+      maximizeBtn.style.cursor = 'default';
+      contentWrap.style.display = 'none';
+    } else {
+      box.style.minHeight = '240px';
+      box.style.height = preMinimizeHeight || 'min(90vh, 700px)';
+      box.style.minWidth = '320px';
+      box.style.width = preMinimizeWidth || 'min(90vw, 700px)';
+      maximizeBtn.disabled = false;
+      maximizeBtn.style.opacity = '1';
+      maximizeBtn.style.cursor = 'pointer';
+      contentWrap.style.display = 'flex';
+    }
+  }
+
+  // Both the header drag and the resize grip below move the pointer across
+  // whatever's behind/around the box on every move — without this, the
+  // browser's native mousedown-drag text-selection kicks in and bleeds
+  // selection highlight into page content behind the floating window.
+  // `user-select: none` on doc.body for the duration of the drag (restored on
+  // pointerup) suppresses that; preventDefault() alone doesn't cover it since
+  // Pointer Events don't inherently block the browser's default text-selection
+  // gesture the way a native `resize`/drag-and-drop start would.
+  function suppressTextSelectionDuringDrag(): () => void {
+    const prevUserSelect = doc.body.style.userSelect;
+    doc.body.style.userSelect = 'none';
+    return () => { doc.body.style.userSelect = prevUserSelect; };
+  }
+
+  // Drag-to-reposition, window mode only. There is no OS-level window manager
+  // here — this is a plain `position: fixed` div inside the page (works
+  // identically in a browser tab and in a Tauri WebView on every platform), so
+  // moving it is something this code has to do itself. Pointer Events (not
+  // mouse-specific) so it behaves the same with touch/pen input too. Dragging
+  // is disabled while maximized (no meaningful position to drag to).
+  if (!isModal) {
+    header.style.cursor = 'move';
+    header.addEventListener('pointerdown', (e) => {
+      if (maximized) return;
+      // Let clicks on the maximize/close buttons behave normally, not start a drag.
+      if ((e.target as HTMLElement).closest('button')) return;
+      e.preventDefault();
+      const restoreUserSelect = suppressTextSelectionDuringDrag();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startTop = box.offsetTop;
+      const startLeft = box.offsetLeft;
+      // Cache everything that's constant for the duration of this drag —
+      // viewport size and box/header dimensions can't change mid-drag, so
+      // re-reading them on every pointermove is a wasted (and reflow-forcing)
+      // layout read.
+      const maxTop = win.innerHeight - header.offsetHeight;
+      const maxLeft = win.innerWidth - 40; // keep a grabbable sliver on-screen
+      const minLeft = 40 - box.offsetWidth;
+      header.setPointerCapture(e.pointerId);
+      const onMove = (e: PointerEvent) => {
+        const nextTop = Math.min(Math.max(startTop + (e.clientY - startY), 0), maxTop);
+        const nextLeft = Math.min(Math.max(startLeft + (e.clientX - startX), minLeft), maxLeft);
+        box.style.top = `${nextTop}px`;
+        box.style.left = `${nextLeft}px`;
+      };
+      const onUp = (e: PointerEvent) => {
+        restoreUserSelect();
+        header.releasePointerCapture(e.pointerId);
+        header.removeEventListener('pointermove', onMove);
+        header.removeEventListener('pointerup', onUp);
+      };
+      header.addEventListener('pointermove', onMove);
+      header.addEventListener('pointerup', onUp);
+    });
+  }
+
   // Keep keyboard focus inside the dialog while it is open (a11y focus trap).
+  // Modal-only: a non-modal window must let Tab leave it naturally.
   const FOCUSABLE =
     'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"]),[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
   function trapTab(e: KeyboardEvent): void {
     const focusable = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE))
-      .filter(el => el.offsetParent !== null || el === document.activeElement);
+      .filter(el => el.offsetParent !== null || el === doc.activeElement);
     if (focusable.length === 0) { e.preventDefault(); box.focus(); return; }
     const first = focusable[0];
     const last  = focusable[focusable.length - 1];
-    const active = document.activeElement as HTMLElement | null;
+    const active = doc.activeElement as HTMLElement | null;
     if (e.shiftKey && (active === first || !box.contains(active))) {
       e.preventDefault();
       last.focus();
@@ -1035,26 +1379,48 @@ export function openModal(opts: ModalOptions): ModalHandle {
     }
   }
 
+  // Modal mode: one document-level listener owns Escape/E/F/Tab, correct because
+  // exactly one modal can ever be open and it always holds the focus trap.
+  // Window mode: attached to the box itself (capture phase below), scoped so it
+  // only fires while this specific window has focus — required once the page is
+  // interactive again and other maps/windows have their own shortcuts. `E` is
+  // deliberately NOT a window-close shortcut (unlike modal): a global `E` would
+  // be ambiguous with any other map's own "E expands this map" shortcut now that
+  // the rest of the page can be interacted with.
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') { close(); return; }
-    if (e.key === 'e' || e.key === 'E') { close(); return; }
-    if (e.key === 'Tab') { trapTab(e); return; }
-    if (e.key === 'f' || e.key === 'F') { setMaximized(!maximized); }
+    if (isModal && (e.key === 'e' || e.key === 'E')) { close(); return; }
+    if (isModal && e.key === 'Tab') { trapTab(e); return; }
+    if ((e.key === 'f' || e.key === 'F') && !minimized) { setMaximized(!maximized); }
   };
 
   function close() {
-    document.removeEventListener('keydown', onKeyDown);
-    // Restore the shared tooltip to <body> before tearing down the box it was
-    // re-homed into (see below), otherwise it would be removed with the backdrop.
-    hideTooltip();
-    backdrop.remove();
-    document.body.style.overflow = savedOverflow;
-    // Return focus to whatever was focused before the modal opened.
+    if (isModal) doc.removeEventListener('keydown', onKeyDown);
+    else box.removeEventListener('keydown', onKeyDown);
+    hideTooltip(doc);
+    // Restore doc's shared tooltip to doc.body before tearing down the box it
+    // was re-homed into (see reparentTooltip(box) below), otherwise it would
+    // be removed along with the box. hideTooltip() itself no longer does this
+    // move (see its own comment) since a still-open window must keep the
+    // tooltip parented inside it across ordinary hover/unhover cycles — only
+    // an overlay that's actually closing should hand it back. Pass doc.body
+    // explicitly rather than relying on reparentTooltip()'s no-arg default
+    // (the bare global document.body) — this overlay may have built into a
+    // DIFFERENT document, and the tooltip must return to THAT document's body.
+    reparentTooltip(doc.body);
+    if (backdrop) backdrop.remove(); else box.remove();
+    if (isModal) doc.body.style.overflow = savedOverflow;
+    // Return focus to whatever was focused before the overlay opened.
     previouslyFocused?.focus?.();
     opts.onClose();
   }
 
-  const contentWrap = document.createElement('div') as HTMLDivElement;
+  function bringToFront(): void {
+    if (isModal) return;
+    box.style.zIndex = String(nextWindowZ());
+  }
+
+  const contentWrap = doc.createElement('div') as HTMLDivElement;
   Object.assign(contentWrap.style, {
     flex:      '1',
     minHeight: '0',
@@ -1063,26 +1429,126 @@ export function openModal(opts: ModalOptions): ModalHandle {
     overflow:  'hidden',
   });
 
+  // Hand-rolled resize grip (Pointer Events, same pattern as the header
+  // drag-to-reposition above) instead of native CSS `resize`. Sits as an
+  // absolutely-positioned overlay in the bottom-right corner, above the
+  // content, so it always receives the pointer regardless of what content
+  // wmap or the host renders underneath — no dead-zone/padding needed.
+  // Focusable with a keyboard fallback (arrow keys) — a pointer-only grip
+  // would otherwise be a real accessibility regression versus native CSS
+  // `resize`, which at least some browsers/AT exposed as an adjustable
+  // affordance.
+  const resizeGrip = doc.createElement('div');
+  resizeGrip.tabIndex = 0;
+  resizeGrip.setAttribute('role', 'separator');
+  resizeGrip.setAttribute('aria-label', 'Resize window (arrow keys, or drag)');
+  Object.assign(resizeGrip.style, {
+    position: 'absolute',
+    right:    '0',
+    bottom:   '0',
+    width:    '16px',
+    height:   '16px',
+    cursor:   'nwse-resize',
+    touchAction: 'none',
+  });
+  // A small triangular affordance so the grip is visible, matching the look
+  // of a native resize handle.
+  resizeGrip.innerHTML =
+    '<svg viewBox="0 0 16 16" width="16" height="16" style="display:block"><path d="M15 15 L15 9 M15 15 L9 15 M15 15 L15 3 M15 15 L3 15" stroke="currentColor" stroke-width="1" opacity="0.35" fill="none"/></svg>';
+  resizeGrip.style.color = CLR.label;
+
+  const MIN_BOX_WIDTH = 320;
+  const MIN_BOX_HEIGHT = 240;
+  const RESIZE_KEY_STEP = 20;
+  function resizeBoxBy(dw: number, dh: number): void {
+    const maxWidth = win.innerWidth - box.offsetLeft;
+    const maxHeight = win.innerHeight - box.offsetTop;
+    const nextWidth = Math.min(Math.max(box.offsetWidth + dw, MIN_BOX_WIDTH), maxWidth);
+    const nextHeight = Math.min(Math.max(box.offsetHeight + dh, MIN_BOX_HEIGHT), maxHeight);
+    box.style.width = `${nextWidth}px`;
+    box.style.height = `${nextHeight}px`;
+  }
+  resizeGrip.addEventListener('keydown', (e) => {
+    if (maximized || minimized) return;
+    switch (e.key) {
+      case 'ArrowRight': e.preventDefault(); resizeBoxBy(RESIZE_KEY_STEP, 0); break;
+      case 'ArrowLeft':  e.preventDefault(); resizeBoxBy(-RESIZE_KEY_STEP, 0); break;
+      case 'ArrowDown':  e.preventDefault(); resizeBoxBy(0, RESIZE_KEY_STEP); break;
+      case 'ArrowUp':    e.preventDefault(); resizeBoxBy(0, -RESIZE_KEY_STEP); break;
+    }
+  });
+  resizeGrip.addEventListener('pointerdown', (e) => {
+    if (maximized || minimized) return;
+    e.preventDefault();
+    const restoreUserSelect = suppressTextSelectionDuringDrag();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = box.offsetWidth;
+    const startHeight = box.offsetHeight;
+    // Cache everything constant for the duration of this resize — viewport
+    // size and the box's own left/top can't change mid-resize (only
+    // width/height, which this handler itself is mutating), so re-reading
+    // them on every pointermove is a wasted, reflow-forcing layout read.
+    const maxWidth = win.innerWidth - box.offsetLeft;
+    const maxHeight = win.innerHeight - box.offsetTop;
+    resizeGrip.setPointerCapture(e.pointerId);
+    const onMove = (e: PointerEvent) => {
+      const nextWidth = Math.min(Math.max(startWidth + (e.clientX - startX), MIN_BOX_WIDTH), maxWidth);
+      const nextHeight = Math.min(Math.max(startHeight + (e.clientY - startY), MIN_BOX_HEIGHT), maxHeight);
+      box.style.width = `${nextWidth}px`;
+      box.style.height = `${nextHeight}px`;
+    };
+    const onUp = (e: PointerEvent) => {
+      restoreUserSelect();
+      resizeGrip.releasePointerCapture(e.pointerId);
+      resizeGrip.removeEventListener('pointermove', onMove);
+      resizeGrip.removeEventListener('pointerup', onUp);
+    };
+    resizeGrip.addEventListener('pointermove', onMove);
+    resizeGrip.addEventListener('pointerup', onUp);
+  });
+
   box.appendChild(header);
   box.appendChild(contentWrap);
-  backdrop.appendChild(box);
-  document.body.appendChild(backdrop);
+  box.appendChild(resizeGrip);
+  if (backdrop) { backdrop.appendChild(box); doc.body.appendChild(backdrop); }
+  else doc.body.appendChild(box);
 
-  // Re-home the shared tooltip into the modal box. The tooltip's z-index
-  // (--wmap-z + 1) sits below the box (--wmap-z + 2), so while parented to
-  // <body> it renders *behind* an open modal. Moving it inside the box places it
-  // in the box's stacking context, above the canvas content — correct whether or
-  // not the modal is maximized. Restored to <body> in close().
+  // Re-home the shared tooltip into the box. The tooltip's z-index (--wmap-z + 1)
+  // sits below a modal box (--wmap-z + 2) and could sit below a window box too,
+  // so while parented to <body> it can render *behind* an open overlay. Moving it
+  // inside the box places it in the box's stacking context, above the canvas
+  // content — correct whether or not the overlay is maximized. Restored to
+  // <body> in close().
   reparentTooltip(box);
 
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
-  document.addEventListener('keydown', onKeyDown);
+  if (isModal) {
+    backdrop!.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+    doc.addEventListener('keydown', onKeyDown);
+  } else {
+    box.addEventListener('keydown', onKeyDown);
+    box.addEventListener('mousedown', bringToFront);
+    bringToFront();
+  }
 
   // Move focus into the dialog so the trap has somewhere to start and screen
   // readers announce the dialog. Prefer the close button (a predictable target).
-  nextFrame(() => (closeBtn.isConnected ? closeBtn : box).focus());
+  nextFrame(() => (closeBtn.isConnected ? closeBtn : box).focus(), win);
 
-  return { backdrop, box, contentWrap, close };
+  return { backdrop, box, contentWrap, close, bringToFront };
+}
+
+/** Create and open a resizable, maximizable, exclusive expand modal — dims and
+ * blocks the rest of the page. See `openFloatingWindow` for the non-modal form. */
+export function openModal(opts: Omit<OverlayOptions, 'mode'>): OverlayHandle {
+  return openOverlay({ ...opts, mode: 'modal' });
+}
+
+/** Create and open a resizable, maximizable, non-modal floating window — the
+ * rest of the page stays fully interactive, and multiple windows may be open at
+ * once. See `openModal` for the exclusive/blocking form. */
+export function openFloatingWindow(opts: Omit<OverlayOptions, 'mode'>): OverlayHandle {
+  return openOverlay({ ...opts, mode: 'window' });
 }
 
 // ── Shared toolbar button builders ────────────────────────────────────────────
@@ -1117,16 +1583,18 @@ export function makePaletteBtn(
 
 export function makeLogScaleBtn(
   helpers: ToolbarHelpers,
-  getOpts: () => { plotMode?: PlotMode; logScale?: boolean },
+  getOpts: () => { plotMode?: PlotMode; logScale?: boolean; colorBySpec?: boolean },
   setOpts: (patch: { logScale: boolean }) => void,
 ): { btn: HTMLButtonElement; sync: () => void } {
   const btn = helpers.makeBtn('logScale', 'Toggle log scale', () => {
     setOpts({ logScale: !getOpts().logScale });
   });
   function sync(): void {
-    const m = getOpts().plotMode;
-    btn.style.display = (m === 'value' || m === 'stackedValues') ? '' : 'none';
-    helpers.setActive(btn, !!getOpts().logScale);
+    const opts = getOpts();
+    const m = opts.plotMode;
+    const isValueMode = m === 'value' || m === 'stackedValues';
+    btn.style.display = (isValueMode && !opts.colorBySpec) ? '' : 'none';
+    helpers.setActive(btn, !!opts.logScale);
   }
   return { btn, sync };
 }
@@ -1194,23 +1662,38 @@ export function makeOrientationBtn(
   );
 }
 
-// ── User guide modal ───────────────────────────────────────────────────────────
+// ── User guide window ───────────────────────────────────────────────────────────
+//
+// Non-modal: the guide has no reparented content (it's freshly built HTML,
+// destroyed on close) and a user plausibly wants to keep it open while trying a
+// feature on the live page behind it — unlike the gallery/single-map expand,
+// there's no "hole left behind" risk here. At most one guide window is allowed
+// open at a time (enforced below); this keeps window.__wmapDemoApi safe as a
+// single global without needing to make it instance-scoped, since the guide's
+// demo widgets only ever call the library's own stateless factory functions
+// (buildWaferMap/renderWaferMap/renderWaferGallery/analyzeWaferMap) — never
+// host-app state — so it doesn't matter which map's help button opened it.
+
+let openGuideHandle: OverlayHandle | null = null;
 
 /**
- * Open the embedded user-guide modal and populate its live demos.
+ * Open the embedded user-guide window and populate its live demos. Closes any
+ * previously open guide window first (at most one may be open at a time).
  * `api` must contain the four library functions the guide demos call at runtime.
  * `html` is USER_GUIDE_HTML — passed in so toolbar.ts has no dependency on userGuideHtml.ts.
  */
-export function openUserGuideModal(
+export function openUserGuideWindow(
   api: { buildWaferMap: unknown; renderWaferMap: unknown; renderWaferGallery: unknown; analyzeWaferMap: unknown },
   html: string,
 ): void {
+  if (openGuideHandle) { openGuideHandle.close(); openGuideHandle = null; }
+
   const prevApi = (window as any).__wmapDemoApi;
   (window as any).__wmapDemoApi = api;
   const content = document.createElement('div');
   Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
   content.innerHTML = html;
-  const handle = openModal({
+  const handle = openFloatingWindow({
     title: 'Wafer Map — User Guide',
     // Maximising widens the reading measure (720px → 1000px) so the guide uses
     // the extra space without lines growing uncomfortably long. Toggled via a
@@ -1219,9 +1702,11 @@ export function openUserGuideModal(
       content.querySelector('.wmap-guide')?.classList.toggle('wmap-guide--max', isMaximized);
     },
     onClose: () => {
+      openGuideHandle = null;
       if ((window as any).__wmapDemoApi === api) (window as any).__wmapDemoApi = prevApi;
     },
   });
+  openGuideHandle = handle;
   handle.contentWrap.appendChild(content);
   // innerHTML does not execute scripts; re-run by cloning script text into a new element.
   // The script exposes window.__wmapPopulateGuideDemos — call it immediately after.

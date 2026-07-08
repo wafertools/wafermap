@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, copyWmapThemeTokens, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -57,7 +57,7 @@ export interface WaferMapDisplayItem {
   label?:        string;
   /** Merged on top of the shared gallery options for this card only. */
   viewOptions?:  Partial<WaferViewOptions>;
-  /** Shown in the findings panel when this card is opened in the modal. */
+  /** Shown in the findings panel when this card is opened in its own window. */
   statsSummary?: import('../stats/types.js').StatsSummary;
   onClick?:      (die: Die, event: MouseEvent) => void;
   onSelect?:     (dies: Die[]) => void;
@@ -212,15 +212,44 @@ export function renderWaferGallery(
     ...options.viewOptions,
   };
 
-  let cardControllers: WaferMapController[] = [];
-  let cardContainers: HTMLDivElement[] = [];  // canvasWrapper per card — used for modal reparenting
+  let cardControllers: (WaferMapController | null)[] = [];
+  let cardContainers: HTMLDivElement[] = [];      // canvasWrapper per card
+  let cardExpandBtns: HTMLButtonElement[] = [];   // per-card header button — toggles expand/reattach
   let currentItems:  WaferMapDisplayItem[] = [];
   let originalItems: (WaferMapDisplayItem | null)[] = [];  // per-wafer source items; null = factory not yet resolved
   let buildGeneration = 0;  // incremented on each buildCards call; stale factory callbacks check this
-  let modalReparentedContainer: HTMLDivElement | null = null;
-  let modalReparentedParent: HTMLElement | null = null;
-  let modalCardIndex = -1;
-  let modalHandleGallery: ReturnType<typeof openModal> | null = null;
+  // Tracked separately from `cardControllers` containing nulls, since a detached
+  // card's controller is ALSO null (its live view is in a popup window instead)
+  // — conflating the two would make updateShared() think a factory is still
+  // resolving whenever any card is merely detached, silently skipping the
+  // immediate stacked-mode rebuild it should otherwise take.
+  let pendingFactoryCount = 0;
+
+  // A card can be detached into its own real OS window (via window.open, or a
+  // host-registered opener — see setDetachWindowOpener) rather than an in-page
+  // div, so it can be dragged outside the host browser/Tauri window's own
+  // bounds. Several may be open at once, so state is keyed by a generated
+  // window id rather than by card index (indices shift whenever buildCards()
+  // rebuilds the grid, e.g. on a stacked-mode transition). The popup's
+  // controller is a FRESH renderWaferMap() instance (not the grid card's
+  // original one) — the grid slot's own controller is destroyed at detach time
+  // and only rebuilt on reattach, so exactly one live controller ever exists
+  // for a given wafer at a time.
+  interface DetachedWindow {
+    id: number;
+    ctrl: WaferMapController;      // live controller rendered inside the detached document
+    close: () => void;            // tears down the window/floating box and calls handlePopupClosed
+    closePollId: ReturnType<typeof setInterval> | null; // real popup only — null for the in-page fallback
+    setTitle: (text: string) => void; // updates whatever "title" this detach target has (OS title, or an in-page header)
+    // null once buildCards() can no longer place this window's card in the
+    // rebuilt grid ("unlinked") — this is the single source of truth for that
+    // state; there is deliberately no separate boolean flag, since one would
+    // only ever duplicate what cardIndex's null-ness already says.
+    cardIndex: number | null;
+    label: string;
+  }
+  const detachedWindows = new Map<number, DetachedWindow>();
+  let nextWindowId = 0;
 
 
   let btnLotFindings: HTMLButtonElement | null = null;
@@ -291,9 +320,10 @@ export function renderWaferGallery(
     const targets = cardIndices ?? cardControllers.map((_, i) => i);
     for (const ci of targets) {
       const item = currentItems[ci];
-      if (!item) continue;
+      const ctrl = cardControllers[ci];
+      if (!item || !ctrl) continue;
       const matched = item.dies.filter(d => keySet.has(`${d.x},${d.y}`));
-      cardControllers[ci].setSelection(matched);
+      ctrl.setSelection(matched);
     }
   }
 
@@ -455,8 +485,8 @@ export function renderWaferGallery(
 
         row.appendChild(labelSpan);
         row.appendChild(badge);
-        // Open the modal for this wafer — openModalForCard already calls setFindingsVisible(true)
-        row.addEventListener('click', () => openModalForCard(index, item));
+        // Open this wafer in its own window — openWindowForCard already calls setFindingsVisible(true)
+        row.addEventListener('click', () => openWindowForCard(index, item));
         gallerySummaryPanelEl.appendChild(row);
       }
     }
@@ -835,11 +865,11 @@ export function renderWaferGallery(
     }
   }
 
-  // Help button — opens the end-user guide in a modal (opt-in).
+  // Help button — opens the end-user guide in a non-modal window (opt-in).
   if (showHelpButton) {
     barEl.appendChild(makeSep());
     barEl.appendChild(makeBtn('help', 'User guide', () =>
-      import('./userGuideHtml.js').then(m => openUserGuideModal({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, m.USER_GUIDE_HTML))));
+      import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, m.USER_GUIDE_HTML))));
   }
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
@@ -1235,7 +1265,7 @@ export function renderWaferGallery(
     const newMode    = sharedOpts.plotMode!;
     const nowStacked = STACKED_MODES.has(newMode);
     const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
-    const hasPendingFactories = cardControllers.some(ctrl => ctrl === null);
+    const hasPendingFactories = pendingFactoryCount > 0;
 
     // Switching into a bin mode: reset to default if scheme is not bin-compatible.
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
@@ -1295,7 +1325,7 @@ export function renderWaferGallery(
 
   // ── Card building ──────────────────────────────────────────────────────────
 
-  function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferMapController; canvasWrapper: HTMLDivElement } {
+  function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferMapController; canvasWrapper: HTMLDivElement; expandBtn: HTMLButtonElement } {
     const card = document.createElement('div');
     card.className = 'wmap-gallery-card';
     Object.assign(card.style, {
@@ -1323,7 +1353,8 @@ export function renderWaferGallery(
     Object.assign(labelEl.style, { fontWeight: '700', fontSize: '13px', flex: '1' });
     header.appendChild(labelEl);
 
-    // Expand button — the only affordance that opens the modal.
+    // Expand button — toggles between "detach into its own window" and, once
+    // detached, "reattach to this grid slot" (see updateExpandBtn).
     const expandBtn = document.createElement('button');
     expandBtn.dataset.wmapExpandBtn = '1';
     expandBtn.title = 'Open full view';
@@ -1370,25 +1401,62 @@ export function renderWaferGallery(
       legendPosition:  currentLegendStyle,
       fallbackFormat:  currentFallbackFormat,
       statsSummary:    item.statsSummary,
+      onSaveImage:     options.onSaveImage,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
-      onExpand:        () => openModalForCard(cardIndex, item),
+      onExpand:        () => openWindowForCard(cardIndex, item),
     });
     // In-gallery: hide scene controls (gallery bar owns them) and findings button.
     ctrl.setViewControlsVisible(false);
     ctrl.setFindingsVisible(false);
-    expandBtn.addEventListener('click', () => openModalForCard(cardIndex, item));
+    expandBtn.onclick = () => openWindowForCard(cardIndex, item);
 
-    return { card, ctrl, canvasWrapper };
+    return { card, ctrl, canvasWrapper, expandBtn };
+  }
+
+  /** Sync a card's header button to reflect whether its canvas is currently
+   * detached into its own window — "expand" when attached, "reattach" when a
+   * still-linked window exists for it. A card whose window has been unlinked
+   * (see unlinkAllDetachedWindows) has no grid slot to sync, so this is only
+   * called for indices that are still live in the current cardControllers array. */
+  function updateExpandBtn(cardIndex: number): void {
+    const btn = cardExpandBtns[cardIndex];
+    if (!btn) return;
+    const win = [...detachedWindows.values()].find(w => w.cardIndex === cardIndex);
+    if (win) {
+      btn.innerHTML = ICONS.minimize;
+      btn.title = 'Reattach to gallery';
+      btn.setAttribute('aria-label', 'Reattach to gallery');
+      btn.onclick = () => reattachOrDiscard(win.id);
+    } else {
+      btn.innerHTML = ICONS.expand;
+      btn.title = 'Open full view';
+      btn.setAttribute('aria-label', 'Open full view');
+      btn.onclick = () => openWindowForCard(cardIndex, currentItems[cardIndex]);
+    }
   }
 
   function buildCards(newItems: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): void {
+    // Any card currently detached into its own window can't be assumed to exist
+    // at the same index (or at all) once the grid is rebuilt — e.g. a stacked-mode
+    // transition can collapse many per-wafer cards into fewer aggregate ones, and
+    // WaferMapDisplayItem carries no stable id to remap by. Unlink rather than
+    // close: the window's own controller/canvas/toolbar keep working exactly as
+    // before, it just loses its "reattachable to a grid slot" relationship.
+    unlinkAllDetachedWindows();
+
     getOpenMenu()?.remove(); setOpenMenu(null);
     clearLotFindingHighlight();
     currentItems = [];
+    // Detached cards' grid-slot controller is already null (destroyed at detach
+    // time — its popup window has its own independent controller instead), so
+    // this loop only ever destroys controllers that are actually still live in
+    // the grid.
     for (const ctrl of cardControllers) if (ctrl) ctrl.destroy();
     cardControllers = [];
     cardContainers = [];
+    cardExpandBtns = [];
+    pendingFactoryCount = 0;
     gridEl.innerHTML = '';
 
     currentItemCount = newItems.length;
@@ -1421,12 +1489,15 @@ export function renderWaferGallery(
         currentItems.push(null as unknown as WaferMapDisplayItem); // slot reserved
         cardControllers.push(null as unknown as WaferMapController);
         cardContainers.push(null as unknown as HTMLDivElement);
+        cardExpandBtns.push(null as unknown as HTMLButtonElement);
         factories.push({ index: i, factory: entry, placeholder });
+        pendingFactoryCount++;
       } else {
-        const { ctrl, canvasWrapper } = buildCard(entry, i, newItems.length);
+        const { ctrl, canvasWrapper, expandBtn } = buildCard(entry, i, newItems.length);
         currentItems.push(entry);
         cardControllers.push(ctrl);
         cardContainers.push(canvasWrapper);
+        cardExpandBtns.push(expandBtn);
       }
     }
 
@@ -1458,9 +1529,11 @@ export function renderWaferGallery(
       currentItems[index] = item;
       originalItems[index] = item;
       applyGridColumns([item]);
-      const { card, ctrl, canvasWrapper } = buildCard(item, index, newItems.length);
+      const { card, ctrl, canvasWrapper, expandBtn } = buildCard(item, index, newItems.length);
       cardControllers[index] = ctrl;
       cardContainers[index] = canvasWrapper;
+      cardExpandBtns[index] = expandBtn;
+      pendingFactoryCount--;
       placeholder.replaceWith(card);
       rebuildLegend();
       // If this item introduced per-wafer findings and no panel exists yet, create it now.
@@ -1526,62 +1599,209 @@ export function renderWaferGallery(
   // Initial gallery summary panel render
   if (gallerySummaryPanelEl) renderGallerySummaryPanel();
 
-  // ── Modal ──────────────────────────────────────────────────────────────────
+  // ── Detached windows ─────────────────────────────────────────────────────────
+  // Non-modal: the gallery grid stays fully interactive while any number of
+  // cards are detached into their own floating windows (an engineer comparing
+  // several wafers at once). See DetachedWindow above and buildCards()'s
+  // unlinkAllDetachedWindows() call for what happens when the grid rebuilds.
 
-  function openModalForCard(cardIndex: number, item: WaferMapDisplayItem): void {
-    if (modalReparentedContainer) closeModal();
-
-    const cardContainer = cardContainers[cardIndex];
-    if (!cardContainer) return;
-
-    modalReparentedParent    = cardContainer.parentElement as HTMLElement;
-    modalReparentedContainer = cardContainer;
-    modalCardIndex           = cardIndex;
-
-    cardControllers[cardIndex]?.setViewControlsVisible(true);
-    cardControllers[cardIndex]?.setFindingsVisible(true);
-    cardControllers[cardIndex]?.setExpandVisible(false);
-    cardControllers[cardIndex]?.resetZoom();
-
-    // openModal owns shared-tooltip re-homing into/out of the modal box, so no
-    // onMaximizeChange tooltip wiring is needed here.
-    const handle = openModal({
-      title: item.label ?? '',
-      onClose: () => {
-        modalHandleGallery = null;
-        closeModal();
-      },
-    });
-
-    modalHandleGallery = handle;
-    handle.contentWrap.style.flexDirection = 'column';
-    handle.contentWrap.appendChild(cardContainer);
+  /** Replace a grid card's live canvas with a small "detached" placeholder —
+   * the card's own controller was destroyed at detach time (its popup window
+   * has the only live view of that wafer while detached), so the grid slot
+   * needs *something* occupying its layout space until reattach. */
+  function showDetachedPlaceholder(cardIndex: number): void {
+    const wrapper = cardContainers[cardIndex];
+    if (!wrapper) return;
+    wrapper.innerHTML = '';
+    Object.assign(wrapper.style, { alignItems: 'center', justifyContent: 'center' });
+    const note = document.createElement('span');
+    note.textContent = 'Detached — open in its own window';
+    Object.assign(note.style, { color: CLR.label, fontSize: '12px', textAlign: 'center', padding: '0 12px' });
+    wrapper.appendChild(note);
   }
 
-  function closeModal(): void {
-    if (!modalReparentedContainer) return;
-    // If the modal handle is still live (caller-initiated close, not from onClose),
-    // route through handle.close() so listeners and scroll lock are cleaned up.
-    if (modalHandleGallery) {
-      const h = modalHandleGallery;
-      modalHandleGallery = null;
-      h.close();
-      return;
+  function openWindowForCard(cardIndex: number, item: WaferMapDisplayItem): void {
+    // Guard re-entrancy — other callers (e.g. the findings-index row) could
+    // race a double-open on the same card.
+    for (const w of detachedWindows.values()) if (w.cardIndex === cardIndex) return;
+
+    const label = item.label ?? 'Wafer map';
+    const id = nextWindowId++;
+
+    const popupWin = openDetachWindow(label);
+    // A real popup: full OS-window behaviour, can be dragged outside the host
+    // window's own bounds. Falls back below when unavailable (a blocked
+    // popup — e.g. Tauri's WebView, where window.open() silently returns null
+    // — and no custom setDetachWindowOpener is registered).
+    if (popupWin) {
+      const doc = popupWin.document;
+      // A window.open('', ...) popup already has a valid, empty document (with
+      // <html><head></head><body></body></html>) — document.write() is
+      // unnecessary here and, in at least some engines, appears to leave the
+      // document in a state where later ResizeObserver callbacks silently stop
+      // firing. Building directly via DOM APIs avoids that risk entirely.
+      doc.title = label;
+      Object.assign(doc.documentElement.style, { height: '100%' });
+      // A popup starts as a bare, unstyled document — it never gets the host
+      // page's own font/CSS reset, so set the library's own font stack
+      // explicitly rather than silently falling back to the browser default.
+      Object.assign(doc.body.style, {
+        margin: '0', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+        fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+      });
+      // The popup's documentElement has none of the host page's --wmap-* theme
+      // values (it's an unrelated document) — copy them across so its chrome and
+      // canvas match the host's theme instead of silently reverting to light mode.
+      copyWmapThemeTokens(document.documentElement, doc.documentElement);
+
+      // In-content banner: the OS window/tab title is the only "title bar" a real
+      // popup has, and some hosts (e.g. a decoration-less Tauri window) may not
+      // show it at all — this guarantees the unlinked notice (see
+      // unlinkAllDetachedWindows) is visible regardless of OS chrome.
+      const banner = doc.createElement('div');
+      banner.dataset.wmapWindowBanner = '1';
+      banner.textContent = label;
+      Object.assign(banner.style, {
+        display: 'none', padding: '6px 12px', fontSize: '12px', fontWeight: '700',
+        background: CLR.warnBg, color: CLR.warnText, borderBottom: `1px solid ${CLR.warnBorder}`, flexShrink: '0',
+      });
+      doc.body.appendChild(banner);
+
+      const container = doc.createElement('div');
+      Object.assign(container.style, { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' });
+      doc.body.appendChild(container);
+
+      const ctrl = buildDetachedController(container, item);
+
+      const closePollId = setInterval(() => { if (popupWin.closed) handlePopupClosed(id); }, 400);
+      popupWin.addEventListener('pagehide', () => handlePopupClosed(id));
+
+      detachedWindows.set(id, {
+        id, ctrl, cardIndex, label, closePollId,
+        close: () => { if (!popupWin.closed) popupWin.close(); },
+        setTitle: (text) => {
+          doc.title = text;
+          banner.textContent = text;
+          banner.style.display = 'block';
+        },
+      });
+    } else {
+      // Fallback: window.open() is unavailable (blocked popup, or an embedded
+      // host like Tauri where it silently returns null) and no host opener is
+      // registered. Rather than silently doing nothing, fall back to the
+      // in-page non-modal floating window (openFloatingWindow) — the same
+      // primitive the user-guide window uses. It can't be dragged outside the
+      // host window's own bounds, but the detach feature stays usable instead
+      // of being dead in every embedded host with no window.open() support.
+      const handle = openFloatingWindow({
+        title: label,
+        onClose: () => handlePopupClosed(id),
+      });
+      handle.contentWrap.style.flexDirection = 'column';
+      const ctrl = buildDetachedController(handle.contentWrap, item);
+
+      detachedWindows.set(id, {
+        id, ctrl, cardIndex, label, closePollId: null,
+        close: () => handle.close(),
+        setTitle: (text) => {
+          const titleEl = handle.box.querySelector<HTMLElement>('[data-wmap-window-title]');
+          if (titleEl) { titleEl.textContent = text; titleEl.title = text; }
+        },
+      });
     }
-    if (modalReparentedParent) {
-      modalReparentedParent.appendChild(modalReparentedContainer);
-      modalReparentedParent = null;
+
+    // Destroy the grid slot's own controller — the detached window is now the
+    // only live view of this wafer. cardContainers[cardIndex] is left in
+    // place (it's the card's layout box) but its content becomes a placeholder.
+    cardControllers[cardIndex]?.destroy();
+    cardControllers[cardIndex] = null;
+    showDetachedPlaceholder(cardIndex);
+    updateExpandBtn(cardIndex);
+  }
+
+  /** Build the fresh renderWaferMap instance shared by both the real-popup and
+   * in-page-fallback detach paths — same options either way. */
+  function buildDetachedController(container: HTMLElement, item: WaferMapDisplayItem): WaferMapController {
+    const ctrl = renderWaferMap(container, item as import('../renderer/buildWaferMap.js').WaferMapResult, {
+      viewOptions:    item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts,
+      toolbarControls: 'full',
+      showTooltip:     true,
+      padding:         cardPadding,
+      legendPosition:  currentLegendStyle,
+      fallbackFormat:  currentFallbackFormat,
+      statsSummary:    item.statsSummary,
+      onSaveImage:     options.onSaveImage,
+      onClick:         item.onClick,
+      onSelect:        item.onSelect,
+      // This view is already detached into its own window (a real popup or
+      // the in-page fallback) — there is nowhere sensible for it to "expand"
+      // to, so suppress both the toolbar button and the `E` key entirely
+      // rather than relying only on the runtime setExpandVisible(false)
+      // below, which hides the button but does not gate the keyboard
+      // shortcut (see renderWaferMap.ts's onKeyDown — it checks
+      // showExpandButton, not the button's current visibility).
+      showExpandButton: false,
+    });
+    ctrl.setViewControlsVisible(true);
+    ctrl.setFindingsVisible(true);
+    ctrl.setExpandVisible(false);
+    return ctrl;
+  }
+
+  /** Cleanup shared by both the popup's own OS-level close and the card's
+   * reattach-button click. If still linked to a live grid slot, rebuilds that
+   * slot's card fresh, first reading back the detached window's own live view
+   * options (rotation, colour scheme, log scale, etc. — anything the user
+   * changed from the popup's own full toolbar) so a rebuild doesn't silently
+   * discard them; only options genuinely un-settable from that toolbar fall
+   * back to the gallery's current shared options. If unlinked, there is no
+   * slot to rebuild and the popup's controller is simply released. */
+  function handlePopupClosed(id: number): void {
+    const win = detachedWindows.get(id);
+    if (!win) return; // already handled — poll/pagehide race, or reattach-button already ran this
+    detachedWindows.delete(id);
+    if (win.closePollId != null) clearInterval(win.closePollId);
+    const liveOptions = win.ctrl.getOptions();
+    win.ctrl.destroy();
+
+    if (win.cardIndex === null) return; // unlinked — no grid slot to rebuild
+
+    const cardIndex = win.cardIndex;
+    const item = currentItems[cardIndex];
+    if (!item) return; // defensive — shouldn't happen while linked
+    const rebuiltItem: WaferMapDisplayItem = { ...item, viewOptions: liveOptions };
+    currentItems[cardIndex] = rebuiltItem;
+    const { card, ctrl, canvasWrapper, expandBtn } = buildCard(rebuiltItem, cardIndex, currentItems.length);
+    cardContainers[cardIndex]?.parentElement?.replaceWith(card);
+    cardControllers[cardIndex] = ctrl;
+    cardContainers[cardIndex] = canvasWrapper;
+    cardExpandBtns[cardIndex] = expandBtn;
+  }
+
+  /** Reattach-button click: close the detached window/box (which re-enters
+   * this module via `handlePopupClosed` through the poll/pagehide/onClose
+   * path — but we drive it here directly for an immediate response instead of
+   * waiting on the poll, for the real-popup case). */
+  function reattachOrDiscard(id: number): void {
+    const win = detachedWindows.get(id);
+    if (!win) return;
+    win.close();
+    handlePopupClosed(id);
+  }
+
+  /** Mark every currently open window as no longer tied to a grid slot, ahead of
+   * a buildCards() rebuild. The window's own canvas/controller/toolbar keep
+   * working exactly as before — only its "reattachable" relationship is lost,
+   * since the rebuilt grid may no longer have an equivalent slot for it (e.g. a
+   * stacked-mode transition collapsing many per-wafer cards into fewer aggregate
+   * ones). The title/banner are updated so the user understands why the
+   * reattach affordance is gone; the window can still be closed manually. */
+  function unlinkAllDetachedWindows(): void {
+    for (const win of detachedWindows.values()) {
+      if (win.cardIndex === null) continue; // already unlinked
+      win.cardIndex = null;
+      win.setTitle(`${win.label} — unlinked from gallery`);
     }
-    const closedIndex = modalCardIndex;
-    cardControllers[closedIndex]?.setViewControlsVisible(false);
-    cardControllers[closedIndex]?.setFindingsVisible(false);
-    cardControllers[closedIndex]?.closeSummaryPanel();
-    cardControllers[closedIndex]?.setExpandVisible(true);
-    cardControllers[closedIndex]?.resetZoom();
-    // Re-focus the canvas so E key works again immediately after close.
-    cardContainers[closedIndex]?.querySelector('canvas')?.focus({ preventScroll: true });
-    modalCardIndex           = -1;
-    modalReparentedContainer = null;
   }
 
   // ── Gallery PNG download ───────────────────────────────────────────────────
@@ -1675,7 +1895,16 @@ export function renderWaferGallery(
 
     destroy(): void {
       buildGeneration++; // cancel any pending factory resolvers
-      closeModal();
+      // Close every open popup (linked or already-unlinked) and release its
+      // controller — unlike a linked grid card, a detached card's own controller
+      // was already destroyed at detach time, so there's no grid-side destroy
+      // loop that would otherwise reach it.
+      for (const win of [...detachedWindows.values()]) {
+        if (win.closePollId != null) clearInterval(win.closePollId);
+        win.close();
+        win.ctrl.destroy();
+      }
+      detachedWindows.clear();
       for (const ctrl of cardControllers) if (ctrl) ctrl.destroy();
       cardControllers = [];
       getOpenMenu()?.remove();

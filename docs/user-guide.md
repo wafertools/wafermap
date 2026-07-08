@@ -154,6 +154,12 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/findings.svg" width="20" height="20">  | Summary panel      | Opens or closes the summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                       |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                            |
 
+**This guide's own window** (and a gallery card detached into its own window,
+see [Section 3 — Gallery](#gallery) below) is a floating window, not a modal —
+its header shows minimize, maximize, and close buttons, and it can be dragged
+and resized by its corner grip. Minimizing collapses it to a small title strip
+without closing it; click it again to restore.
+
 **Highlight bin** — in bin modes, click any bin swatch in the legend to highlight
 that bin and dim all others. Click again to clear. Useful for isolating a specific
 failure category across the wafer.
@@ -207,8 +213,11 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/download.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.      |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Opens or closes the lot-level summary panel.          |
 
-Click any gallery card to expand it to a full single-wafer view with the complete
-single-map toolbar.
+Click a card's expand button to detach it into its own separate window with the
+complete single-map toolbar (falls back to a floating window inside the page if
+separate windows aren't available in your environment). The vacated grid card
+becomes a placeholder whose own button reattaches it; closing the detached
+window does the same.
 
 <div data-wmap-demo="gallery" class="wmap-demo"></div>
 
@@ -257,7 +266,7 @@ Each finding shows:
 - **Severity** — Unusual, Notable, or Info (ordered most to least significant)
 - **Description** — plain-language summary of what was detected and where
 - **Click to highlight** — clicking a finding highlights the affected dies on
-  the map in amber
+  the map with a black-and-white outline, visible against every colour scheme
 
 **Severity** reflects how strong the statistical evidence is. *Unusual* findings
 have both a very low adjusted p-value and a large effect size — they are reliably
@@ -272,7 +281,7 @@ highlight the affected dies on the map.*
 
 ![Cluster finding highlighted on map](images/guide-findings-cluster-highlight.png)
 
-*A failure cluster finding: affected dies highlighted in amber.*
+*A failure cluster finding: affected dies highlighted with a white-and-black outline.*
 
 ### Finding types
 

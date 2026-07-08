@@ -187,7 +187,11 @@ export function toCanvas(
   // Row count used for layout reserves applies to whichever legend is active.
   const legendEntryCount = drawSpecLegend ? specSwatches.length : binLegendEntries.length;
 
-  const dpr     = window.devicePixelRatio ?? 1;
+  // Derive DPR from the canvas's own window, not the bare global — a canvas
+  // rendered inside a gallery card detached into its own popup window must use
+  // THAT window's device pixel ratio (it may be on a different display), not
+  // whichever window happened to be in lexical scope when this module loaded.
+  const dpr     = (canvas.ownerDocument.defaultView ?? window).devicePixelRatio ?? 1;
   const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
   const cssH    = Math.floor(canvas.clientHeight || canvas.height);
 
@@ -460,10 +464,31 @@ export function toCanvas(
   ctx.save();
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
+
+  // Die labels share one uniform size per render, sized to fit the *longest*
+  // label currently present (not each die's own text length) and recomputed
+  // here — at draw time, with the live ppm — because buildView doesn't know the
+  // interactive zoom level (pan/zoom re-renders via toCanvas without rebuilding
+  // the view). All dies share one pitch/gap/rotation, so view.rectangles[0]'s
+  // width/height stands in for "the" die box size.
+  let dieLabelFontSize = 0;
+  if (view.rectangles.length > 0) {
+    let maxLen = 1;
+    for (const t of view.texts) {
+      if (t.role === 'indicator') continue;
+      if (t.text.length > maxLen) maxLen = t.text.length;
+    }
+    const boxW = view.rectangles[0].width  * ppm;
+    const boxH = view.rectangles[0].height * ppm;
+    const minSidePx     = Math.min(boxW, boxH);
+    const widthBudgetPx = boxW / maxLen;
+    dieLabelFontSize = Math.max(8, Math.min(64, Math.round(Math.min(minSidePx * 0.55, widthBudgetPx * 1.8))));
+  }
+
   for (const text of view.texts) {
     const sx = originX + text.x * ppm;
     const sy = originY - text.y * ppm;
-    ctx.font      = `${text.fontSize}px system-ui, sans-serif`;
+    ctx.font      = `${text.role === 'indicator' ? text.fontSize : dieLabelFontSize}px system-ui, sans-serif`;
     ctx.fillStyle = text.color;
     ctx.fillText(text.text, sx, sy);
   }

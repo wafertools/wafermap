@@ -841,6 +841,9 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   showToolbar?:            boolean   // default true
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
+  showExpandButton?:       boolean   // show the toolbar expand button and enable the E-key shortcut (default true);
+                                            // set false when the host already renders the map inside its own expanded/modal
+                                            // context, where wmap's built-in expand modal would be redundant
   legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
                                             // initial bin legend position (default 'default'); user can change via toolbar
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
@@ -853,8 +856,9 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // compact and mode-aware (value mode leads with the active test
                                             // + "+N more tests"; bin modes show a test-value count), so it
                                             // never lists tests up to a cap. Kept for back-compat.
-  showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide in a modal
-                                            // (default false); enable in applications that want to surface the guide without linking externally
+  showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide in a
+                                            // non-modal floating window (default false); enable in applications that want to
+                                            // surface the guide without linking externally
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   downloadFilename?:       string    // stem for the PNG download filename (default 'wafermap') — '.png' is appended automatically
@@ -878,7 +882,7 @@ The box-select toolbar button is always shown. Providing `onSelect` lets your ap
 
 When `statsSummary` is provided, a summary panel toggle button (notebook icon) appears in the toolbar. The panel opens hidden by default; clicking the button shows or hides it. Clicking a finding in the panel highlights the affected die zone on the map.
 
-**Overlay z-index (`zIndex` / `--wmap-z`).** Every transient overlay wmap creates — toolbar menus and dropdowns, the die hover tooltip, the expand modal, and the user-guide modal — uses `position: fixed`. By default they stack at a **high** base value (`6000`), so they appear above typical app modal layers with no configuration. wmap layers its own overlays from the base upward: menus and dropdowns at the base, the tooltip and submenus at base + 1, the modal backdrop at base + 1 and the modal box at base + 2.
+**Overlay z-index (`zIndex` / `--wmap-z`).** Every transient overlay wmap creates in the host page — toolbar menus and dropdowns, the die hover tooltip, the expand modal, and the (non-modal) user-guide window — uses `position: fixed`. By default they stack at a **high** base value (`6000`), so they appear above typical app modal layers with no configuration. wmap layers its own overlays from the base upward: menus and dropdowns at the base, the tooltip and submenus at base + 1, the modal backdrop at base + 1 and the modal box at base + 2. The user-guide window uses its own incrementing band above that, so it's never hidden behind a still-open modal. A gallery card detached into its own window (§6.6) is a separate OS window, not an in-page overlay, so none of this stacking applies to it — it's positioned and raised by the OS window manager instead.
 
 To embed a wmap render **inside your own modal or overlay**, pass `zIndex` so wmap's menus and tooltips land above it:
 
@@ -887,7 +891,7 @@ To embed a wmap render **inside your own modal or overlay**, pass `zIndex` so wm
 renderWaferMap(container, result, { zIndex: 5100 });
 ```
 
-`zIndex` is applied for the lifetime of the render and restored on `controller.destroy()`. Internally it writes the `--wmap-z` CSS custom property on `document.documentElement` (overlays that append to `document.body` inherit it from there); you can set `--wmap-z` yourself instead of passing `zIndex` if you prefer to control stacking via CSS. Menus opened from inside the expand modal are appended to the modal box rather than `document.body`, so they always appear above the modal content regardless of the host page's stacking context.
+`zIndex` is applied for the lifetime of the render and restored on `controller.destroy()`. Internally it writes the `--wmap-z` CSS custom property on `document.documentElement` (overlays that append to `document.body` inherit it from there); you can set `--wmap-z` yourself instead of passing `zIndex` if you prefer to control stacking via CSS. Menus opened from inside the expand modal or the user-guide window are appended to that box rather than `document.body`, so they always appear above its content regardless of the host page's stacking context.
 
 #### 5.4.1 Theming (`--wmap-*` custom properties)
 
@@ -1045,7 +1049,7 @@ Choose the right update method:
 | Reset | Return to fitted view (also: double-click canvas) |
 | Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Dropdown: all registered colour schemes |
-| Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Active only in `value` / `stackedValues` modes; dimmed otherwise. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
+| Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Shown only in `value` / `stackedValues` modes, and hidden (not just dimmed) whenever `colorBySpec` is active, since log scale has no effect on pass/fail colouring. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
 | Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. In both states all dies keep the gradient fill and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over that fill. |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
@@ -1057,8 +1061,8 @@ Choose the right update method:
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
-| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards and modals. |
-| User guide | Open the built-in end-user guide in a modal — only shown when `showHelpButton: true` |
+| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window. |
+| User guide | Open the built-in end-user guide in a non-modal floating window — only shown when `showHelpButton: true` |
 
 ### 5.7 Interactions
 
@@ -1117,8 +1121,8 @@ ctrl.destroy();
 ## 6 `renderWaferGallery(container, items, options?)` — gallery
 
 A multi-map gallery with a shared control bar, per-card view-only toolbars, and
-click-to-detail modal. All cards stay in sync — changing mode, colour, rotate, or
-flip in the gallery bar applies to every card instantly.
+click-to-detach into separate windows. All cards stay in sync — changing mode,
+colour, rotate, or flip in the gallery bar applies to every card instantly.
 
 ```ts
 renderWaferGallery(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
@@ -1154,7 +1158,7 @@ interface WaferMapDisplayItem {
 
   label?:        string                               // card header text
   viewOptions?:  Partial<WaferViewOptions>            // per-card overrides merged on top of shared options
-  statsSummary?:  StatsSummary                        // shown in the modal's summary panel and the gallery Wafers panel; when lotStatsSummary is provided, per-wafer findings are available automatically — only set this explicitly when analysing without analyzeWaferLot
+  statsSummary?:  StatsSummary                        // shown in the card's own summary panel when detached into its own window, and in the gallery Wafers panel; when lotStatsSummary is provided, per-wafer findings are available automatically — only set this explicitly when analysing without analyzeWaferLot
   onClick?:       (die: Die, event: MouseEvent) => void
   onSelect?:      (dies: Die[]) => void
 }
@@ -1219,7 +1223,7 @@ to be pre-built.
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
-  showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user guide in a modal (default false)
+  showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user guide in a non-modal floating window (default false)
   lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Findings button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
   zIndex?:                 number            // base z-index for wmap's transient overlays (menus, tooltip, modals); omit for a
@@ -1248,7 +1252,7 @@ to be pre-built.
 | --- | --- |
 | Mode | Dropdown: plot mode for all cards |
 | Palette | Dropdown: colour scheme for all cards |
-| Log scale | Toggle log₁₀ scale for all cards. Active only in `value` / `stackedValues` modes; dimmed otherwise. |
+| Log scale | Toggle log₁₀ scale for all cards. Shown only in `value` / `stackedValues` modes, and hidden whenever `colorBySpec` is active, since log scale has no effect on pass/fail colouring. |
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
 | Labels | Toggle die labels on all cards |
@@ -1267,7 +1271,7 @@ Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, 
 When `lotStatsSummary` is provided or any item carries `statsSummary`, a Findings toggle button appears in the control bar. Clicking it opens a panel alongside the grid. The panel has two tabs when both sources are present:
 
 - **Lot** — lot-level yield, bin breakdown, ring/quadrant yield aggregated across all wafers, test value statistics, and cross-wafer findings (repeated patterns, yield outliers). Only present when `lotStatsSummary` is provided.
-- **Wafers** — a findings index listing every wafer that has notable findings (from `item.statsSummary` or from `lotStatsSummary.perWafer`). Clicking a row opens the card modal with its summary panel. Only present when per-wafer findings exist.
+- **Wafers** — a findings index listing every wafer that has notable findings (from `item.statsSummary` or from `lotStatsSummary.perWafer`). Clicking a row detaches that card into its own window with its summary panel. Only present when per-wafer findings exist.
 
 `analyzeWaferLot` runs per-wafer analysis internally, so passing `lotStatsSummary` alone populates both tabs automatically — no separate `analyzeWaferMap` per item is needed.
 
@@ -1276,15 +1280,79 @@ Clicking a finding highlights the affected area:
 - **Repeated-pattern findings** (e.g. ring or quadrant patterns seen across multiple wafers) — outlines the affected cards and highlights the matching die zone on each
 - **Inter-wafer yield outliers** — outlines the outlier card(s)
 
-Clicking the active finding again clears the highlight. Opening a card modal while a finding is active passes through the card's `statsSummary` so the modal's own per-wafer summary panel is also available.
+Clicking the active finding again clears the highlight. Detaching a card while a finding is active passes through the card's `statsSummary` so the window's own per-wafer summary panel is also available.
 
-### 6.6 Click-to-detail modal
+### 6.6 Detaching a card into its own window
 
-Each card header contains an expand button (↗).  Clicking it opens an enlarged
-modal overlay with `renderWaferMap` mounted at full resolution and with the complete
-toolbar.  Shared view options are passed through so the modal opens in the same
-display state as the gallery.  Close with Esc, the × button, or clicking the
-backdrop.
+Each card header contains an expand button (↗). Clicking it detaches that card
+into its own **real, separate window** (`window.open`) — not an in-page overlay —
+so it can be moved anywhere on screen, including outside the bounds of the host
+browser/app window, same as any other OS-managed window. The gallery grid stays
+fully interactive the whole time (there was never a backdrop or overlay to block
+it), and any number of cards may be detached at once, so several wafers can be
+inspected side by side. The detached window mounts a fresh `renderWaferMap` at
+full resolution with the complete toolbar; shared view options are passed
+through so it opens in the same display state as the gallery.
+
+The card left behind in the grid becomes a small placeholder — its own
+controller is torn down while detached (the popup is the only live view of that
+wafer) — and its header button toggles to a "reattach" affordance (same button,
+no new UI). Clicking it, or closing the popup window itself, tears the popup
+down and rebuilds a fresh card in the grid slot with the gallery's current
+shared view options.
+
+If the gallery's card set changes shape while a card is detached — most notably
+a stacked-mode switch, which can collapse many per-wafer cards into fewer
+aggregate ones — the popup has no equivalent grid slot to return to. Rather than
+closing or breaking, it becomes **unlinked**: its window title and an in-content
+banner both switch to an "— unlinked from gallery" notice, its own canvas/toolbar
+keep working exactly as before, and it can only be closed manually from then on
+(there is no longer a slot to reattach to).
+
+**Embedded hosts where `window.open` is blocked (e.g. Tauri, Electron, WebView2).**
+Just like `openHtmlReport` (§7.9), a plain `window.open` call is blocked/returns
+`null` silently in these environments. Rather than leaving the detach button
+inert there, wmap automatically **falls back to the same in-page non-modal
+floating window the user guide uses** whenever `window.open` is unavailable and
+no custom opener is registered — detach keeps working everywhere, it just can't
+be dragged outside the host window's own bounds in that fallback case.
+
+**Non-modal floating windows can be minimized.** Both the detach fallback
+window above and the user guide's own window (§6.5) show a minimize button in
+their header, alongside maximize/close. Minimizing collapses the window to a
+220px-wide title strip — the map/content is hidden, not destroyed, and
+clicking again restores it to its previous size (including any size the user
+resized it to). The title truncates with an ellipsis and a native hover
+tooltip while minimized. Modal overlays (the single-map expand modal opened
+via the toolbar's expand button or `E`) do not get this button, since a
+modal's backdrop already blocks the rest of the page — minimizing one would
+achieve nothing.
+
+If your host has its own multi-window API and you want a real separate OS
+window instead of the in-page fallback, register a custom opener at startup:
+
+```ts
+import { setDetachWindowOpener } from '@paulrobins/wafermap/render';
+
+setDetachWindowOpener((label) => {
+  // Return a Window-like handle (must expose a usable `.document`, `.closed`,
+  // and `.close()`) backed by your host's own window API. Return null to
+  // decline — falls back to the in-page floating window, same as if no
+  // opener were registered at all.
+  return myApp.openDetachWindow(label);
+});
+```
+
+**Not usable for Tauri as designed.** A Tauri `WebviewWindow` is fully
+isolated — a separate script context with its own `window`/`document` and no
+shared JS state with the window that created it — so it cannot produce the
+synchronous `Window`-with-live-`.document` handle this contract expects. Tauri
+hosts get the in-page fallback automatically with no configuration; a real
+Tauri-backed detach window would need a different mechanism entirely (a
+dedicated bootstrap page + IPC to pass the wafer data across, since there's no
+way to share a DOM reference between Tauri windows) — tracked as an open,
+unscoped item in tsmap's own issue log if you're building a Tauri host and want
+to pick this up.
 
 ### 6.7 Shared bin legend
 

@@ -176,7 +176,7 @@ graph TB
 
 **What this shows**
 
-`buildView()` converts the map result into a drawable scene: rectangles, overlays, labels, colors, and hover targets. `toCanvas()` renders that scene onto a canvas and returns hit-testing and viewport information. `renderWaferMap()` wraps both steps with the interactive toolbar, selection, tooltips, and optional summary panel. `renderWaferGallery()` repeats the same display model across multiple cards and opens a card into the full map renderer when a user clicks it.
+`buildView()` converts the map result into a drawable scene: rectangles, overlays, labels, colors, and hover targets. `toCanvas()` renders that scene onto a canvas and returns hit-testing and viewport information. `renderWaferMap()` wraps both steps with the interactive toolbar, selection, tooltips, and optional summary panel. `renderWaferGallery()` repeats the same display model across multiple cards and, via each card's expand button, detaches a card into its own `renderWaferMap()` instance in a separate window — falling back to an in-page floating window when a real separate window isn't available (e.g. inside Tauri/Electron).
 
 ## 5. Analysis and worker flow
 

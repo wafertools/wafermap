@@ -94,7 +94,12 @@ function setupDom() {
     writable: true,
   });
   globalThis.getComputedStyle = window.getComputedStyle.bind(window);
-  globalThis.matchMedia = window.matchMedia?.bind(window) ?? (() => ({
+  // JSDOM's window has no native matchMedia. The library now derives its window
+  // reference from the rendered container's own document (`ownerDocument.defaultView`)
+  // rather than the bare global, so the shim must live on the JSDOM `window` object
+  // itself, not just on globalThis, or `container.ownerDocument.defaultView.matchMedia`
+  // resolves to undefined.
+  const matchMediaShim = window.matchMedia?.bind(window) ?? (() => ({
     matches: false,
     media: '',
     addEventListener() {},
@@ -103,6 +108,8 @@ function setupDom() {
     removeListener() {},
     dispatchEvent() { return false; },
   }));
+  window.matchMedia = matchMediaShim;
+  globalThis.matchMedia = matchMediaShim;
   globalThis.URL = window.URL;
   if (typeof globalThis.URL.createObjectURL !== 'function') {
     globalThis.URL.createObjectURL = () => 'blob:mock';
@@ -121,6 +128,11 @@ function setupDom() {
     disconnect() {}
     unobserve() {}
   }
+  // Same reasoning as the matchMedia shim above: the library now derives its
+  // ResizeObserver constructor from the rendered container's own window
+  // (`ownerDocument.defaultView.ResizeObserver`) rather than the bare global,
+  // so the shim must live on the JSDOM `window` object itself.
+  window.ResizeObserver = FakeResizeObserver;
   globalThis.ResizeObserver = FakeResizeObserver;
 
   window.devicePixelRatio = 1;
@@ -155,6 +167,23 @@ function setupDom() {
     },
   });
 
+  // Gallery card detach opens a real popup window (see openDetachWindow in
+  // toolbar.ts) — a genuinely separate Window/Document pair, which is exactly
+  // what a second JSDOM instance is. Track every popup opened during this
+  // setupDom() session so cleanup() can close them (mirrors the real browser
+  // API: popups outlive their opener unless explicitly closed).
+  const popups = [];
+  window.open = function open() {
+    const popupDom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+      pretendToBeVisual: true,
+      url: 'http://localhost/',
+    });
+    const popupWindow = popupDom.window;
+    installTestShims(popupWindow);
+    popups.push(popupDom);
+    return popupWindow;
+  };
+
   return {
     window,
     root: window.document.getElementById('root'),
@@ -163,9 +192,59 @@ function setupDom() {
         if (value === undefined) delete globalThis[key];
         else globalThis[key] = value;
       }
+      for (const popupDom of popups) popupDom.window.close();
       dom.window.close();
     },
   };
+}
+
+/** Install the same matchMedia/ResizeObserver/canvas shims setupDom() gives
+ * the main JSDOM window onto a popup window, so a renderWaferMap instance
+ * mounted inside it behaves identically to one in the main document. */
+function installTestShims(win) {
+  win.matchMedia = win.matchMedia?.bind(win) ?? (() => ({
+    matches: false,
+    media: '',
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent() { return false; },
+  }));
+
+  class FakeResizeObserver {
+    constructor(callback) { this.callback = callback; }
+    observe(target) { this.callback([{ target }], this); }
+    disconnect() {}
+    unobserve() {}
+  }
+  win.ResizeObserver = FakeResizeObserver;
+  win.devicePixelRatio = 1;
+
+  const canvasProto = win.HTMLCanvasElement.prototype;
+  canvasProto.getContext = function getContext() {
+    if (!this.__ctx) this.__ctx = makeCanvasContext();
+    return this.__ctx;
+  };
+  canvasProto.toBlob = function toBlob(callback) {
+    callback(new win.Blob(['fake'], { type: 'image/png' }));
+  };
+  canvasProto.focus = function focus() {};
+  canvasProto.setPointerCapture = function setPointerCapture() {};
+  canvasProto.releasePointerCapture = function releasePointerCapture() {};
+  canvasProto.getBoundingClientRect = function getBoundingClientRect() {
+    const width = this.clientWidth || 400;
+    const height = this.clientHeight || 400;
+    return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON() {} };
+  };
+  Object.defineProperty(canvasProto, 'clientWidth', {
+    configurable: true,
+    get() { return this.__clientWidth ?? (Number.parseInt(this.style.width, 10) || 400); },
+  });
+  Object.defineProperty(canvasProto, 'clientHeight', {
+    configurable: true,
+    get() { return this.__clientHeight ?? (Number.parseInt(this.style.height, 10) || 400); },
+  });
 }
 
 function pointerEvent(window, type, init = {}) {
@@ -421,7 +500,7 @@ test('renderWaferMap toolbar menus carry ARIA roles and expanded state', () => {
   }
 });
 
-test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () => {
+test('renderWaferGallery builds cards, detaches a card into a real popup window, and rebuilds items', () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -448,14 +527,160 @@ test('renderWaferGallery builds cards, opens the modal, and rebuilds items', () 
     assert.equal(container.querySelectorAll('button').length > 0, true);
 
     click(window, container.querySelector('[data-wmap-expand-btn]'));
-    assert.ok(window.document.getElementById('wmap-modal-backdrop'));
+    // Card expand opens a real, separate popup window (window.open) — the
+    // host document has no backdrop/modal box at all, since nothing was ever
+    // added to it; the popup is a genuinely different Window/Document.
+    assert.equal(window.document.getElementById('wmap-modal-backdrop'), null);
+    assert.equal(window.document.querySelector('.wmap-window-box'), null);
+    assert.equal(window.document.querySelectorAll('canvas').length, 1); // card A's canvas removed from the grid (its popup is the only live view); card B's remains
 
     ctrl.setItems([{ ...base, label: 'C' }]);
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 1);
 
     ctrl.destroy();
     assert.equal(container.childElementCount, 0);
-    assert.equal(window.document.getElementById('wmap-modal-backdrop'), null);
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery falls back to an in-page floating window when window.open is blocked (e.g. Tauri)', () => {
+  const { window, root, cleanup } = setupDom();
+  // Simulate an embedded host (Tauri's WebView) where window.open() is
+  // blocked and silently returns null — same as tsmap's openHtmlReport gap.
+  window.open = () => null;
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const base = buildWaferMap({
+      results: [
+        { x: 0, y: 0, values: [0.9], hbin: 1 },
+        { x: 1, y: 0, values: [0.7], hbin: 2 },
+        { x: 0, y: 1, values: [0.8], hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+
+    const items = [
+      { ...base, label: 'A' },
+      { ...base, label: 'B' },
+    ];
+
+    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+    const expandBtn = container.querySelector('[data-wmap-expand-btn]');
+
+    click(window, expandBtn);
+    // No real popup available — falls back to the in-page non-modal floating
+    // window instead of silently doing nothing. A fresh controller is built
+    // into the floating window (same as the real-popup case) rather than
+    // reparenting the grid's existing canvas.
+    assert.ok(window.document.querySelector('.wmap-window-box'));
+    assert.equal(window.document.querySelectorAll('canvas').length, 2); // card A's fresh canvas in the floating window + card B's in the grid
+
+    // Reattach via the same toggle button, same as the real-popup case.
+    click(window, expandBtn);
+    assert.equal(window.document.querySelector('.wmap-window-box'), null);
+    assert.equal(container.querySelectorAll('canvas').length, 2);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery supports multiple simultaneous detached popup windows and unlinks them on rebuild', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const base = buildWaferMap({
+      results: [
+        { x: 0, y: 0, values: [0.9], hbin: 1, sbin: 10 },
+        { x: 1, y: 0, values: [0.7], hbin: 2, sbin: 11 },
+        { x: 0, y: 1, values: [0.8], hbin: 1, sbin: 10 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
+      sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
+      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+    });
+
+    const items = [
+      { ...base, label: 'A' },
+      { ...base, label: 'B' },
+      { ...base, label: 'C' },
+    ];
+
+    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+
+    const expandBtns = container.querySelectorAll('[data-wmap-expand-btn]');
+    assert.equal(expandBtns.length, 3);
+
+    // Detach two cards simultaneously — each opens its own independent popup.
+    click(window, expandBtns[0]);
+    click(window, expandBtns[1]);
+    // Non-modal by construction (real separate windows): the grid (still
+    // holding card C) stays fully interactive, with an empty placeholder
+    // where each detached card used to be.
+    assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 3);
+    assert.equal(container.querySelectorAll('canvas').length, 1); // only card C's canvas remains in the grid
+
+    // A stacked-mode transition rebuilds the grid out from under the two
+    // detached cards — this is the scenario the buildCards() unlink guard fixes.
+    ctrl.setOptions({ plotMode: 'stackedBins' });
+    // Both popups must survive the rebuild, not be destroyed — confirmed via
+    // their titles switching to the unlinked notice.
+    const detachBtnLabel = 'Reattach to gallery';
+    const reattachBtnsRemaining = [...container.querySelectorAll('[data-wmap-expand-btn]')]
+      .filter(b => b.getAttribute('aria-label') === detachBtnLabel);
+    assert.equal(reattachBtnsRemaining.length, 0); // no grid slot still offers reattach
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery reattaches a detached card via its own toggle button', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const base = buildWaferMap({
+      results: [
+        { x: 0, y: 0, values: [0.9], hbin: 1 },
+        { x: 1, y: 0, values: [0.7], hbin: 2 },
+        { x: 0, y: 1, values: [0.8], hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+
+    const items = [
+      { ...base, label: 'A' },
+      { ...base, label: 'B' },
+    ];
+
+    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+    const expandBtn = container.querySelector('[data-wmap-expand-btn]');
+
+    click(window, expandBtn);
+    assert.equal(expandBtn.getAttribute('aria-label'), 'Reattach to gallery');
+    assert.equal(container.querySelectorAll('canvas').length, 1); // card A detached, only card B's canvas in the grid
+
+    // Same button, now wired to reattach — closes the popup and rebuilds the
+    // grid slot with a fresh controller.
+    click(window, expandBtn);
+    assert.equal(container.querySelectorAll('canvas').length, 2);
+    const rebuiltBtn = container.querySelector('[data-wmap-expand-btn]');
+    assert.equal(rebuiltBtn.title, 'Open full view');
+
+    ctrl.destroy();
   } finally {
     cleanup();
   }

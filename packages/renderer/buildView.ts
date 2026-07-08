@@ -67,6 +67,12 @@ export interface ViewText {
   fontSize: number;
   color: string;
   align: 'center';
+  /** Marks fixed-size overlay labels (currently only the +X/+Y orientation
+   *  indicators) so canvas-adapter excludes them from die-label uniform sizing.
+   *  Absent = an ordinary die label; its `fontSize` here is a build-time
+   *  (mm-space, zoom-unaware) default for non-canvas consumers of ViewText —
+   *  canvas-adapter recomputes the actual on-screen size at draw time. */
+  role?: 'indicator';
 }
 
 export interface ViewHoverPoint {
@@ -980,8 +986,8 @@ function buildXYIndicatorOverlay(
   const yTip = { x: anchor.x + yDir.x, y: anchor.y + yDir.y };
 
   texts.push(
-    { x: xTip.x + xDir.x * 0.35, y: xTip.y + xDir.y * 0.35, text: '+X', fontSize: 10, color: '#cc3300', align: 'center' },
-    { x: yTip.x + yDir.x * 0.35, y: yTip.y + yDir.y * 0.35, text: '+Y', fontSize: 10, color: '#0044cc', align: 'center' },
+    { x: xTip.x + xDir.x * 0.35, y: xTip.y + xDir.y * 0.35, text: '+X', fontSize: 10, color: '#cc3300', align: 'center', role: 'indicator' },
+    { x: yTip.x + yDir.x * 0.35, y: yTip.y + yDir.y * 0.35, text: '+Y', fontSize: 10, color: '#0044cc', align: 'center', role: 'indicator' },
   );
 
   return [

@@ -1,4 +1,4 @@
-// Inline demo script for the embedded user guide modal.
+// Inline demo script for the embedded user guide window.
 // Reads the library API from window.__wmapDemoApi at call time (not at script
 // execution time) — the API is set by the caller before invoking populateGuideDemos.
 // To add a new demo: add a handler below and a <div data-wmap-demo="id"> in user-guide.md.
@@ -191,7 +191,7 @@
   }
 
   // Expose for callers — __wmapDemoApi must be set before calling:
-  // - Modal (renderWaferMap.ts): sets __wmapDemoApi then calls __wmapPopulateGuideDemos(guideEl)
+  // - Guide window (toolbar.ts openUserGuideWindow): sets __wmapDemoApi then calls __wmapPopulateGuideDemos(guideEl)
   // - Docs site (guide-demos-init.js): sets __wmapDemoApi then calls __wmapPopulateGuideDemos(document)
   window.__wmapPopulateGuideDemos = populateGuideDemos;
 })();

@@ -33,20 +33,21 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
 .wmap-demo[data-wmap-demo="box-select"]{height:280px}
 .wmap-guide--max{max-width:1000px}
 @media print{
-  /* Print only the guide content: hide the dimmed backdrop, the modal frame
+  /* Print only the guide content: hide the host app and the window frame
      chrome (header/buttons), and let the guide flow at full width with its
-     natural height. Without this, the browser prints the centred modal box
-     (modal mode) or a single clipped viewport that is often blank (maximised
-     mode, where the box is 100vh with overflow:hidden). */
+     natural height. Without this, the browser prints the centred window box
+     (normal mode) or a single clipped viewport that is often blank (maximised
+     mode, where the box is 100vh with overflow:hidden). The guide is opened
+     as a non-modal floating window (.wmap-window-box), not a modal — there is
+     no dimmed backdrop to unhide, just the host page's other content. */
   body{overflow:visible!important;height:auto!important}
-  /* Hide the host app behind the modal; print only the backdrop subtree (the guide). */
+  /* Hide the host app; print only the window box subtree (the guide). */
   body > *{display:none!important}
-  body > #wmap-modal-backdrop{position:static!important;background:none!important;backdrop-filter:none!important;display:block!important}
-  .wmap-modal-box{position:static!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important;display:block!important}
-  .wmap-modal-box > div:first-child{display:none!important}
+  body > .wmap-window-box{position:static!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important;display:block!important}
+  .wmap-window-box > div:first-child{display:none!important}
   /* contentWrap (flex container) and the scroll wrapper inside it both clip/scroll;
      unclip them so the full guide paginates instead of one screenful printing. */
-  .wmap-modal-box > div:not(:first-child),.wmap-modal-box > div:not(:first-child) > div{display:block!important;overflow:visible!important;height:auto!important;flex:none!important;min-height:0!important}
+  .wmap-window-box > div:not(:first-child),.wmap-window-box > div:not(:first-child) > div{display:block!important;overflow:visible!important;height:auto!important;flex:none!important;min-height:0!important}
   .wmap-guide,.wmap-guide--max{max-width:none!important;height:auto!important;overflow:visible!important;padding:0!important}
   .wmap-guide-online-link{display:none!important}
 }
@@ -298,6 +299,11 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 <td>Opens this guide.</td>
 </tr>
 </tbody></table>
+<p><strong>This guide&#39;s own window</strong> (and a gallery card detached into its own window,
+see <a href="#gallery" onclick="(function(e){e.preventDefault();var g=e.target.closest('.wmap-guide');var el=g&&g.querySelector('[id=\\'gallery\\']');if(el)el.scrollIntoView({behavior:'smooth'});})(event)">Section 3 — Gallery</a> below) is a floating window, not a modal —
+its header shows minimize, maximize, and close buttons, and it can be dragged
+and resized by its corner grip. Minimizing collapses it to a small title strip
+without closing it; click it again to restore.</p>
 <p><strong>Highlight bin</strong> — in bin modes, click any bin swatch in the legend to highlight
 that bin and dim all others. Click again to clear. Useful for isolating a specific
 failure category across the wafer.</p>
@@ -404,8 +410,11 @@ failure category across the wafer.</p>
 <td>Opens or closes the lot-level summary panel.</td>
 </tr>
 </tbody></table>
-<p>Click any gallery card to expand it to a full single-wafer view with the complete
-single-map toolbar.</p>
+<p>Click a card&#39;s expand button to detach it into its own separate window with the
+complete single-map toolbar (falls back to a floating window inside the page if
+separate windows aren&#39;t available in your environment). The vacated grid card
+becomes a placeholder whose own button reattaches it; closing the detached
+window does the same.</p>
 <div data-wmap-demo="gallery" class="wmap-demo"></div><hr>
 <h2 id="4-interacting-with-dies">4. Interacting with dies</h2>
 <h3 id="41-hover">4.1 Hover</h3>
@@ -438,7 +447,7 @@ detected patterns on the wafer. Open it from the toolbar.</p>
 <li><strong>Severity</strong> — Unusual, Notable, or Info (ordered most to least significant)</li>
 <li><strong>Description</strong> — plain-language summary of what was detected and where</li>
 <li><strong>Click to highlight</strong> — clicking a finding highlights the affected dies on
-the map in amber</li>
+the map with a black-and-white outline, visible against every colour scheme</li>
 </ul>
 <p><strong>Severity</strong> reflects how strong the statistical evidence is. <em>Unusual</em> findings
 have both a very low adjusted p-value and a large effect size — they are reliably
@@ -605,7 +614,7 @@ positions — useful for identifying stepper field signatures, alignment drift, 
 mask defects.</p>
 <div data-wmap-demo="reticle" class="wmap-demo"></div><p>Reticle-position findings in the Findings panel highlight the specific field
 positions that show elevated failure rates.</p>
-<script>// Inline demo script for the embedded user guide modal.
+<script>// Inline demo script for the embedded user guide window.
 // Reads the library API from window.__wmapDemoApi at call time (not at script
 // execution time) — the API is set by the caller before invoking populateGuideDemos.
 // To add a new demo: add a handler below and a <div data-wmap-demo="id"> in user-guide.md.
@@ -798,7 +807,7 @@ positions that show elevated failure rates.</p>
   }
 
   // Expose for callers — __wmapDemoApi must be set before calling:
-  // - Modal (renderWaferMap.ts): sets __wmapDemoApi then calls __wmapPopulateGuideDemos(guideEl)
+  // - Guide window (toolbar.ts openUserGuideWindow): sets __wmapDemoApi then calls __wmapPopulateGuideDemos(guideEl)
   // - Docs site (guide-demos-init.js): sets __wmapDemoApi then calls __wmapPopulateGuideDemos(document)
   window.__wmapPopulateGuideDemos = populateGuideDemos;
 })();
