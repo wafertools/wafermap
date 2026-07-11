@@ -18,5 +18,14 @@ export interface WaferMetadata {
   operator?:    string;
   testProgram?: string;
   temperature?: number;
+  /**
+   * User-assigned experiment/process-corner tag (e.g. "TT", "FF", a custom
+   * group name) — distinct from any parser-derived field. A first-class slot
+   * so hosts that support wafer-split assignment (grouping wafers into
+   * ad-hoc experiment buckets after the fact) get it picked up automatically
+   * by anything that facets/groups on `WaferMetadata` — reports, an
+   * eventual Group-by control — without per-host special-casing.
+   */
+  split?:       string;
   [key: string]: unknown;
 }

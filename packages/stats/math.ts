@@ -23,3 +23,12 @@ export function errorFunction(value: number): number {
 export function normalCdf(value: number): number {
   return 0.5 * (1 + errorFunction(value / Math.sqrt(2)));
 }
+
+/** Linear-interpolation quantile of a pre-sorted array (`q` in [0, 1]). */
+export function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 0) return NaN;
+  const pos = q * (sorted.length - 1);
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}

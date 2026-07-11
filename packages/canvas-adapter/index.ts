@@ -9,9 +9,15 @@ export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, G
 
 export type { SummaryPanelOptions } from './summaryPanel.js';
 
-// setDetachWindowOpener is the one toolbar.ts export exposed publicly — hosts
-// where `window.open` is blocked/unusable (e.g. Tauri) register a custom
-// opener for gallery card detach windows through it. Mirrors setReportOpener
-// (packages/stats/index.ts) for the same class of problem.
+// setDetachWindowOpener is one of two toolbar.ts exports exposed publicly —
+// hosts where `window.open` is blocked/unusable (e.g. Tauri) register a
+// custom opener for gallery card detach windows through it. Mirrors
+// setReportOpener (packages/stats/index.ts) for the same class of problem.
 export { setDetachWindowOpener } from './toolbar.js';
 export type { DetachWindowOpener } from './toolbar.js';
+
+// UserGuideExtension is the type for RenderOptions/GalleryOptions'
+// userGuideExtension option — a host's own documentation inserted into
+// wmap's built-in end-user guide window, so there's one help button instead
+// of two.
+export type { UserGuideExtension } from './toolbar.js';

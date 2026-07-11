@@ -30,3 +30,9 @@ Items here are ideas or half-designed features that need more thought before imp
 
 3. **Is this the right UX at all?**  
    An alternative is to leave removal as a pure host concern (host manages the items array and calls `setItems()`), and just make `setItems()` cheaper/smoother for the partial-removal case rather than adding internal removal logic.
+
+## Issues and idea since the port of charts from tsmap to wmap
+
+### Chart-panel mini-toolbars don't fully match the main toolbar's design
+
+Each Analysis-tab chart card (`cardShell()` in `charts/chartShell.ts`) has its own tiny save/expand button pair — the expand button already reuses the main toolbar's `ICONS.expand` SVG, but the save button uses a raw `⤓` glyph instead of the toolbar's actual PNG-camera icon/primitives (`makeBtn`, `ICONS.download`). Worth unifying so every button across the map/gallery toolbar and the chart cards is built from the same primitives — lower priority than a functional gap, purely a visual-consistency cleanup.

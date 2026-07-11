@@ -79,6 +79,8 @@ graph LR
         c4["toolbar"]
         c5["summaryPanel"]
         c6["canvasTheme"]
+        c7["analysisTab<br/>(internal)"]
+        c8["charts/*<br/>(internal, not a public subpath)"]
     end
 
     subgraph Stats[stats]
@@ -86,6 +88,7 @@ graph LR
         s2["analyzeWaferLot"]
         s3["regions"]
         s4["clusterDetection"]
+        s5["chart data builders<br/>capability, boxplot, histogram,<br/>correlation, scatter, yield, binPareto"]
     end
 
     subgraph Worker[worker]
@@ -106,9 +109,14 @@ graph LR
     c3 --> c1
     c1 --> c4
     c1 --> c5
+    c1 --> c7
+    c2 --> c7
+    c7 --> c8
+    s5 --> c8
 
     r1 --> s1
     r1 --> s2
+    r1 --> s5
     s3 --> s1
     s4 --> s1
 
@@ -120,6 +128,8 @@ graph LR
 **What this shows**
 
 The codebase is organized as a stack. `core` is the pure foundation, `renderer` builds the data model used by the UI, `canvas-adapter` owns DOM and interaction, `stats` builds findings, and `worker` mirrors the expensive paths behind message passing. If you are deciding what to import, start with the highest layer that matches your task and drop lower only when you need more control.
+
+`analysisTab` and `charts/*` are internal to `canvas-adapter` — reachable only through `analysisEnabled` (§5.9/§6.10 in the [API Reference](api.md)), not an independently importable subpath. The chart panels are pure DOM/canvas rendering; the actual per-chart computations (`capability`, `boxplot`, `histogram`, `correlation`, `scatter`, `yield`, `binPareto` under `stats/`) are public and importable from `/stats` on their own, if you want to drive a different chart library from the same numbers.
 
 ## 3. Data construction pipeline
 
@@ -212,6 +222,8 @@ graph LR
 The analysis layer consumes the same `WaferMapResult` that the renderer uses. That keeps the UI and the statistics in sync. `analyzeWaferMap()` produces a wafer-level summary, while `analyzeWaferLot()` adds cross-wafer patterns and trend information. If those computations are too heavy for the main thread, the worker entry point packages the same operations behind `postMessage` and `Promise`-based calls.
 
 The worker helper mirrors that shape: you send in a `WaferMapInput` or a batch of `WaferMapResult` objects, and the promise resolves with the computed `WaferMapResult`, `StatsSummary`, or `LotStatsSummary` depending on the request.
+
+> Don't confuse this with the toolbar's **Analysis tab** (`analysisEnabled`, §2 above) — that's a separate chart-suite view (`analysisTab`/`charts/*`) built on the `stats` package's chart data builders, not on `analyzeWaferMap`/`analyzeWaferLot`. The two "Analysis" names are unrelated: one produces findings/summaries, the other renders charts.
 
 ## 6. How to choose an entry point
 

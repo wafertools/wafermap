@@ -3,7 +3,7 @@ import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import type { Wafer, WaferSpec } from '../core/wafer.js';
 import type { Reticle, ReticleSpec } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
-import { generateDies } from '../core/dies.js';
+import { generateDies, isYieldEligibleDie } from '../core/dies.js';
 import { clipDiesToWafer, isInsideWafer, applyOrientation, transformDies } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
@@ -788,8 +788,8 @@ function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclud
   let failDies = 0;
   let hasBinData = false;
 
-  for (const die of fullDies) {
-    if (die.edgeExcluded) continue;
+  for (const die of dies) {
+    if (!isYieldEligibleDie(die)) continue;
     const bin = die.hbin ?? die.sbin;
     if (bin !== undefined) {
       hasBinData = true;

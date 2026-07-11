@@ -31,3 +31,6 @@ td img {
 .wmap-demo[data-wmap-demo="box-select"] {
   height: 300px;
 }
+.wmap-demo[data-wmap-demo="analysis"] {
+  height: 700px;
+}

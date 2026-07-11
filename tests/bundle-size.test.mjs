@@ -3,7 +3,10 @@
 //
 // Current baselines (gzipped):
 //   wafermap (root):          ~33 KB
-//   wafermap/render (initial): ~62 KB  (userGuideHtml deferred — must not appear in initial chunk)
+//   wafermap/render (initial): ~75 KB  (userGuideHtml deferred — must not appear in initial chunk)
+//   2026-07-10: raised from ~62 KB after capability/boxplot gained per-panel
+//   grouping UI (restrict dropdown, drill-in-place, back button) — legitimate
+//   library growth, not bloat; see wmap/tsmap WMAP_ISSUES.md #31.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,7 +20,7 @@ const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
   'wafermap (root)':            40_000,  // gzipped bytes — baseline ~33 KB
-  'wafermap/render (initial)':  75_000,  // gzipped bytes — baseline ~62 KB, guide excluded
+  'wafermap/render (initial)':  90_000,  // gzipped bytes — baseline ~75 KB, guide excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

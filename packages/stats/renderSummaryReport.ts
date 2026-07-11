@@ -2,8 +2,10 @@ import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { BinDef, TestDef, YieldSummary } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions } from './regions.js';
-import type { StatsFinding, StatsSummary, LotStatsSummary } from './types.js';
+import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
 import { openHtmlReport } from './renderFindingsReport.js';
+import { analyzeWaferLot } from './analyzeWaferLot.js';
+import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
 import {
   formatFindingDelta,
@@ -46,6 +48,7 @@ const KNOWN_META_KEYS: Array<{ key: string; label: string }> = [
   { key: 'operator',  label: 'Operator' },
   { key: 'product',   label: 'Product' },
   { key: 'device',    label: 'Device' },
+  { key: 'split',     label: 'Split' },
 ];
 
 function metaRows(meta: Record<string, unknown>): string {
@@ -168,6 +171,23 @@ function testSection(dies: Die[], testDefs: TestDef[]): string {
   return renderSection('Test Values', renderTable(['Test', 'Min', 'Mean', 'Max'], rows, { className: 'compact' }));
 }
 
+/** Cp/Cpk/Pp/Ppk for every test with both spec limits — empty string (section
+ *  omitted, matching every other section's convention) when none have both. */
+function capabilitySection(items: Array<{ dies?: Die[] }>, testDefs: TestDef[]): string {
+  const data = buildCapabilityData(items, testDefs);
+  if (!data.length) return '';
+  const fmtIndex = (v: number | null) => v === null ? '—' : v.toFixed(2);
+  const rows = data.map(d => [
+    escHtml(d.label),
+    `${fmt(d.lsl, d.unit)} – ${fmt(d.usl, d.unit)}`,
+    fmt(d.mean, d.unit),
+    fmtIndex(d.cp), fmtIndex(d.cpk), fmtIndex(d.pp), fmtIndex(d.ppk),
+  ]);
+  return renderSection('Process Capability', renderTable(
+    ['Test', 'Spec (LSL–USL)', 'Mean', 'Cp', 'Cpk', 'Pp', 'Ppk'], rows, { className: 'compact' },
+  ));
+}
+
 function findingsSection(findings: StatsFinding[], totalWafers?: number): string {
   if (!findings.length) return '';
   const rows = findings.map((f) => {
@@ -229,6 +249,7 @@ export function renderSummaryReportHtml(
     regionYieldSection('Ring Yield', ringRegions, dies, passBins),
     regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins),
     testSection(dies, testDefs),
+    capabilitySection([{ dies }], testDefs),
     statsSummary ? findingsSection(statsSummary.findings) : '',
   ].filter(Boolean).join('\n');
 
@@ -257,13 +278,24 @@ ${reportStyles()}
 // ── Lot summary report ────────────────────────────────────────────────────────
 
 export interface LotSummaryReportParams {
-  lotSummary: LotStatsSummary;
-  items:      Array<{ label: string; wafer?: Wafer; dies?: Die[] }>;
+  /** One entry per wafer/item — grouping, per-group analysis (`analyzeWaferLot`),
+   *  and rendering all happen internally; callers never pre-compute a lotSummary
+   *  or pre-partition by lot identity themselves. */
+  items:      Array<{
+    label: string;
+    wafer?: Wafer;
+    dies?: Die[];
+    /** Reused directly as `analyzeWaferLot`'s `perWaferSummaries` — the expensive
+     *  per-wafer pass (`analyzeWaferMap`) is never re-run here. */
+    statsSummary?: StatsSummary;
+  }>;
   hbinDefs?:  BinDef[];
   sbinDefs?:  BinDef[];
   testDefs?:  TestDef[];
   passBins?:  number[];
   ringCount?: number;
+  /** Passthrough to the internal per-group `analyzeWaferLot` call, e.g. `{ enableTestValueAnalysis: true }`. */
+  analyzeOptions?: AnalyzeWaferMapOptions;
 }
 
 function lotWaferYieldTable(lotSummary: LotStatsSummary, items: LotSummaryReportParams['items']): string {
@@ -273,6 +305,16 @@ function lotWaferYieldTable(lotSummary: LotStatsSummary, items: LotSummaryReport
     return [label, yld !== null ? `${yld.toFixed(1)}%` : 'N/A'];
   });
   return renderTable(['Wafer', 'Yield'], rows, { className: 'compact' });
+}
+
+/** One row per item with a `wafer.metadata.split` assigned; items with no split are omitted. */
+function splitsSection(items: LotSummaryReportParams['items']): string {
+  const rows = items
+    .map(item => [item.label, item.wafer?.metadata?.split] as [string, string | undefined])
+    .filter((r): r is [string, string] => !!r[1])
+    .map(([label, split]) => [escHtml(label), escHtml(split)]);
+  if (!rows.length) return '';
+  return renderSection('Splits', renderTable(['Wafer', 'Split'], rows, { className: 'compact' }));
 }
 
 function lotAggregateBinTable(allDies: Die[], binDefs: BinDef[] | undefined, mode: 'hard' | 'soft'): string {
@@ -348,20 +390,70 @@ function lotTestTable(allDies: Die[], testDefs: TestDef[]): string {
   return testSection(allDies, testDefs);
 }
 
-/** Generate a full lot summary as a standalone HTML string suitable for `openHtmlReport()`. */
-export function renderLotSummaryReportHtml(
-  params: LotSummaryReportParams,
-  options: { title?: string } = {},
-): string {
-  const {
-    lotSummary,
-    items,
-    hbinDefs,
-    sbinDefs,
-    testDefs = [],
-    passBins = [1],
-    ringCount = 4,
-  } = params;
+// Identity fields that must never be silently pooled across a lot report —
+// distinct from buildFacetTable's general "groupable dimension" curation
+// (used by the Analysis tab's interactive "Group by", which deliberately
+// includes `split`): a report explodes into one section per DISTINCT value
+// of these fields, but must never explode just because wafers have
+// different splits — comparing splits *within* one report is the point of
+// that feature, not a reason to separate them into different documents.
+const IDENTITY_FIELDS = ['lot', 'product', 'testProgram', 'temperature'] as const;
+
+/** Partition items by whichever identity fields actually vary across them.
+ *  Single group with an empty label when nothing varies — the common case,
+ *  byte-identical output to a plain single-lot report. `varying` is returned
+ *  alongside each group so a multi-group title can tell whether `lot` was
+ *  already folded into `label` or needs adding separately (see
+ *  `renderLotSummaryReportHtml` — a group split on `temperature` alone must
+ *  still show its lot number, not just the bare temperature value). */
+function groupByIdentity(
+  items: LotSummaryReportParams['items'],
+): Array<{ label: string; items: LotSummaryReportParams['items']; varying: readonly string[] }> {
+  // Single pass collecting every field's distinct-value set together, rather
+  // than one full pass over `items` per field — cheap either way at
+  // wafer-count scale, but there's no reason to walk the list four times
+  // for four independent field lookups.
+  const valuesByField = new Map<string, Set<string>>(IDENTITY_FIELDS.map((f) => [f, new Set<string>()]));
+  for (const item of items) {
+    for (const field of IDENTITY_FIELDS) {
+      const v = item.wafer?.metadata?.[field];
+      if (v !== undefined && v !== null && v !== '') valuesByField.get(field)!.add(String(v));
+    }
+  }
+  const varying = IDENTITY_FIELDS.filter((field) => valuesByField.get(field)!.size > 1);
+  if (varying.length === 0) return [{ label: '', items, varying }];
+
+  const map = new Map<string, LotSummaryReportParams['items']>();
+  const order: string[] = [];
+  for (const item of items) {
+    const key = varying.map((f) => String(item.wafer?.metadata?.[f] ?? '(none)')).join(' · ');
+    if (!map.has(key)) { map.set(key, []); order.push(key); }
+    map.get(key)!.push(item);
+  }
+  return order.map((key) => ({ label: key, items: map.get(key)!, varying }));
+}
+
+/** Renders one identity-homogeneous group's sections (everything that goes
+ *  inside a `<main class="report">` block) plus the `LotStatsSummary` it
+ *  computed, so the caller can derive a title from `lotSummary.lot` for the
+ *  common single-group case without a second, redundant analysis pass. */
+function renderLotGroupSections(
+  items: LotSummaryReportParams['items'],
+  hbinDefs: BinDef[] | undefined,
+  sbinDefs: BinDef[] | undefined,
+  testDefs: TestDef[],
+  passBins: number[],
+  ringCount: number,
+  analyzeOptions: AnalyzeWaferMapOptions | undefined,
+): { lotSummary: LotStatsSummary; sections: string } {
+  const lotSummary = analyzeWaferLot(items, {
+    // Index-aligned; analyzeWaferLot falls back to computing analyzeWaferMap
+    // per-index when an entry is missing (its own `perWaferSummaries?.[i] ??
+    // analyzeWaferMap(...)` logic), so a partial or absent array is safe —
+    // the cast just satisfies the declared StatsSummary[] element type.
+    perWaferSummaries: items.map((i) => i.statsSummary) as StatsSummary[],
+    ...analyzeOptions,
+  });
 
   // diesByWafer keeps each wafer's dies in a parallel array — aligned by index with
   // allWafers — instead of tagging caller-owned Die objects with a hidden field.
@@ -385,24 +477,48 @@ export function renderLotSummaryReportHtml(
   const hasBins = hasHbin || hasSbin;
 
   const lotMeta = lotSummary.lot;
+  // Unweighted across wafers — each wafer counts equally regardless of its die
+  // count. Distinct from totalYieldPercent below (die-count-weighted), which
+  // is the "how many good parts did I actually get" number. Labeled "Mean
+  // wafer yield" (not just "Mean yield") so the two are never confused.
   const waferYields = lotSummary.perWafer
     .map((pw) => pw.summary.stats.yieldPercent)
     .filter((y): y is number => y !== null);
-  const meanYield = waferYields.length
+  const meanWaferYield = waferYields.length
     ? waferYields.reduce((a, b) => a + b, 0) / waferYields.length
     : null;
 
-  const lotTitle = (() => {
-    if (!lotMeta) return '';
-    const lot = lotMeta['lot'] ?? lotMeta['lotId'];
-    return lot ? ` — ${escHtml(String(lot))}` : '';
-  })();
-  const title = options.title ?? `Lot Summary${lotTitle}`;
-  const now = new Date().toLocaleString();
+  // Lot-wide die counts and die-count-weighted total yield — same
+  // partial/edgeExcluded exclusion and hbin??sbin fallback used by
+  // regionYieldSection/lotRegionYieldTable below, just walked once over every
+  // die instead of per-region. Small-lot/characterization workflows need the
+  // exact good/bad part counts, not just a percentage.
+  const passSet = new Set(passBins);
+  let totalDies = 0, analyzedDies = 0, goodDies = 0, edgeExcludedDies = 0, partialDies = 0;
+  for (const d of allDies) {
+    totalDies++;
+    if (d.edgeExcluded) edgeExcludedDies++;
+    if (d.partial) partialDies++;
+    if (d.partial || d.edgeExcluded) continue;
+    const b = d.hbin ?? d.sbin;
+    if (b == null) continue;
+    analyzedDies++;
+    if (passSet.has(b)) goodDies++;
+  }
+  const badDies = analyzedDies - goodDies;
+  const totalYieldPercent = analyzedDies > 0 ? (goodDies / analyzedDies) * 100 : null;
 
   const overviewMetrics = [
     { label: 'Wafers', value: String(lotSummary.stats.waferCount) },
-    ...(meanYield !== null ? [{ label: 'Mean yield', value: `${meanYield.toFixed(1)}%` }] : []),
+    { label: 'Total dies', value: String(totalDies) },
+    ...(hasBins ? [
+      { label: 'Good dies', value: String(goodDies) },
+      { label: 'Bad dies', value: String(badDies) },
+    ] : []),
+    ...(edgeExcludedDies > 0 ? [{ label: 'Edge excluded', value: String(edgeExcludedDies) }] : []),
+    ...(partialDies > 0 ? [{ label: 'Partial dies', value: String(partialDies) }] : []),
+    ...(meanWaferYield !== null ? [{ label: 'Mean wafer yield', value: `${meanWaferYield.toFixed(1)}%` }] : []),
+    ...(totalYieldPercent !== null ? [{ label: 'Total yield', value: `${totalYieldPercent.toFixed(1)}%` }] : []),
   ];
 
   const summaryBody = [
@@ -412,6 +528,7 @@ export function renderLotSummaryReportHtml(
 
   const summarySection = renderSection('Lot Summary', summaryBody);
   const waferYieldSection = renderSection('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
+  const splitsSectionHtml = splitsSection(items);
   const binSection = hasBins
     ? (hasHbin
         ? lotAggregateBinTable(allDies, hbinDefs, 'hard')
@@ -424,19 +541,71 @@ export function renderLotSummaryReportHtml(
     ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBins)
     : '';
   const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs) : '';
+  const capabilitySectionHtml = testDefs.length ? capabilitySection(items, testDefs) : '';
   const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount) : '';
 
-  const body = [
+  const sections = [
     summarySection,
     waferYieldSection,
+    splitsSectionHtml,
     binSection,
     ringSection,
     quadSection,
     testSectionHtml,
+    capabilitySectionHtml,
     findingsSectionHtml,
   ].filter(Boolean).join('\n');
 
-  return `<!DOCTYPE html>
+  return { lotSummary, sections };
+}
+
+function reportMain(title: string, sections: string, now: string): string {
+  return `<main class="report">
+  <header class="report-header">
+    <h1>${escHtml(title)}</h1>
+    <p class="report-subtitle">Generated ${escHtml(now)}</p>
+  </header>
+  ${sections}
+  <p class="footer">Generated ${escHtml(now)}</p>
+</main>`;
+}
+
+/**
+ * Generate a full lot summary as a standalone HTML string suitable for
+ * `openHtmlReport()`. Grouping, per-group analysis, and rendering all
+ * happen internally — see `groupByIdentity` — so a caller never needs to
+ * pre-partition a multi-lot/multi-product/multi-temperature load itself:
+ * a single call always returns one complete document, whether that's one
+ * `<main>` (the common case) or several side by side with a banner
+ * explaining the split.
+ */
+export function renderLotSummaryReportHtml(
+  params: LotSummaryReportParams,
+  options: { title?: string } = {},
+): string {
+  const {
+    items,
+    hbinDefs,
+    sbinDefs,
+    testDefs = [],
+    passBins = [1],
+    ringCount = 4,
+    analyzeOptions,
+  } = params;
+
+  const now = new Date().toLocaleString();
+  const groups = groupByIdentity(items);
+
+  if (groups.length === 1) {
+    const { lotSummary, sections } = renderLotGroupSections(groups[0].items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions);
+    const lotTitle = (() => {
+      const lot = lotSummary.lot;
+      if (!lot) return '';
+      const v = lot['lot'] ?? lot['lotId'];
+      return v ? ` — ${escHtml(String(v))}` : '';
+    })();
+    const title = options.title ?? `Lot Summary${lotTitle}`;
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -446,14 +615,49 @@ ${reportStyles()}
 </style>
 </head>
 <body>
-<main class="report">
-  <header class="report-header">
-    <h1>${escHtml(title)}</h1>
-    <p class="report-subtitle">Generated ${escHtml(now)}</p>
-  </header>
-  ${body}
-  <p class="footer">Generated ${escHtml(now)}</p>
-</main>
+${reportMain(title, sections, now)}
+</body>
+</html>`;
+  }
+
+  // Each group's own title (`${title} — ${label}`) already distinguishes it
+  // via its own `.report-header` — no need for a second, redundant divider
+  // heading. Just space consecutive groups apart with a rule.
+  const baseTitle = options.title ?? 'Lot Summary';
+  const mains = groups.map((g) => {
+    const { lotSummary, sections } = renderLotGroupSections(g.items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions);
+    // `label` already names every field that varies BETWEEN groups (e.g.
+    // "85" when only temperature splits them) — but if `lot` itself doesn't
+    // vary, it's constant across every group and would otherwise never
+    // appear anywhere in a multi-group report. Add it explicitly so a
+    // header is never just a bare non-lot field value with no lot number
+    // visible anywhere in that group's section.
+    const lotTag = !g.varying.includes('lot') ? (lotSummary.lot?.['lot'] ?? lotSummary.lot?.['lotId']) : undefined;
+    const heading = lotTag ? `${g.label} · Lot ${String(lotTag)}` : g.label;
+    return reportMain(`${baseTitle} — ${heading}`, sections, now);
+  });
+
+  const banner = `<p style="max-width:1080px;margin:0 auto 8px;padding:8px 12px;background:var(--report-surface,#f7f8fa);border:1px solid var(--report-line,#d8dee6);border-radius:4px;font-size:12px;color:var(--report-muted,#5c6570);">This load spans ${groups.length} groups by identity — shown separately below so stats are never pooled across them.</p>`;
+
+  const sectionsHtml = mains.map((m, i) => {
+    const spacer = i === 0 ? '' : '<hr style="max-width:1080px;margin:32px auto 0;border:none;border-top:3px solid var(--report-line-strong,#c7ced8);">';
+    return `${spacer}\n${m}`;
+  }).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${escHtml(baseTitle)}</title>
+<style>
+${reportStyles()}
+</style>
+</head>
+<body>
+<div class="report" style="padding-top:24px;">
+${banner}
+</div>
+${sectionsHtml}
 </body>
 </html>`;
 }

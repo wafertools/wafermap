@@ -1677,14 +1677,41 @@ export function makeOrientationBtn(
 let openGuideHandle: OverlayHandle | null = null;
 
 /**
+ * Host-supplied content inserted into wmap's own embedded user-guide window,
+ * so a host app's own documentation and wmap's reference live behind one
+ * help button instead of two separate ones.
+ */
+export interface UserGuideExtension {
+  /**
+   * Host-provided HTML, inserted before wmap's own guide content. Static
+   * content only — must not contain `<script>` tags. wmap re-executes
+   * exactly one inline script (its own live-demo bootstrap, always the
+   * last element in `html`) by finding the content div's first
+   * `<script>` in document order; a `<script>` in this HTML would be
+   * found instead, silently breaking wmap's own live demos.
+   */
+  html: string;
+  /**
+   * Overrides the floating window's title bar text (default
+   * `'Wafer Map — User Guide'`). Use this when the host's own content
+   * should frame the whole document — wmap's own `<h1>` stays as-is
+   * further down the page, so the result reads as one combined guide
+   * with the host's section first, not a title rewrite.
+   */
+  title?: string;
+}
+
+/**
  * Open the embedded user-guide window and populate its live demos. Closes any
  * previously open guide window first (at most one may be open at a time).
  * `api` must contain the four library functions the guide demos call at runtime.
  * `html` is USER_GUIDE_HTML — passed in so toolbar.ts has no dependency on userGuideHtml.ts.
+ * `extension`, when provided, prepends host content and/or overrides the window title — see `UserGuideExtension`.
  */
 export function openUserGuideWindow(
   api: { buildWaferMap: unknown; renderWaferMap: unknown; renderWaferGallery: unknown; analyzeWaferMap: unknown },
   html: string,
+  extension?: UserGuideExtension,
 ): void {
   if (openGuideHandle) { openGuideHandle.close(); openGuideHandle = null; }
 
@@ -1692,9 +1719,9 @@ export function openUserGuideWindow(
   (window as any).__wmapDemoApi = api;
   const content = document.createElement('div');
   Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
-  content.innerHTML = html;
+  content.innerHTML = (extension?.html ?? '') + html;
   const handle = openFloatingWindow({
-    title: 'Wafer Map — User Guide',
+    title: extension?.title ?? 'Wafer Map — User Guide',
     // Maximising widens the reading measure (720px → 1000px) so the guide uses
     // the extra space without lines growing uncomfortably long. Toggled via a
     // class so the cap lives in the guide stylesheet, not inline here.

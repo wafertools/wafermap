@@ -849,6 +849,8 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a summary panel toggle button to the toolbar
   summaryPanel?:           SummaryPanelOptions  // summary panel placement and open/closed initial state
+  analysisEnabled?:        boolean   // adds an Analysis toolbar button that swaps the map for this wafer's own
+                                            // chart suite (process capability, distributions, correlation) — default false. See §5.9.
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
@@ -859,6 +861,8 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide in a
                                             // non-modal floating window (default false); enable in applications that want to
                                             // surface the guide without linking externally
+  userGuideExtension?:     UserGuideExtension  // insert a host app's own documentation into the guide window
+                                            // (see "User guide extension" below) — only relevant when showHelpButton is true
   minZoom?:                number    // default 0.5
   maxZoom?:                number    // default 20
   downloadFilename?:       string    // stem for the PNG download filename (default 'wafermap') — '.png' is appended automatically
@@ -1061,8 +1065,11 @@ Choose the right update method:
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
-| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window. |
+| Analysis | Toggle the Analysis tab — swaps the map for this wafer's chart suite. Only shown when `analysisEnabled: true`. See §5.9. |
+| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window. **While the Analysis tab is open, Expand reparents the chart suite instead of the (hidden) canvas**, so the modal shows what's actually on screen. |
 | User guide | Open the built-in end-user guide in a non-modal floating window — only shown when `showHelpButton: true` |
+
+**While the Analysis tab is open**, Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, and Findings are all hidden as a group — none of them apply to the chart suite, and Findings specifically toggles the map's summary panel, which sits behind the Analysis tab's opaque overlay with no visible effect while it's open. Only Analysis, Expand, and User guide stay visible.
 
 ### 5.7 Interactions
 
@@ -1115,6 +1122,54 @@ ctrl.setOptions({ plotMode: 'value', colorScheme: 'plasma' });
 // Clean up:
 ctrl.destroy();
 ```
+
+### 5.9 Analysis tab
+
+Passing `analysisEnabled: true` adds an **Analysis** toolbar button. Clicking it swaps the map for a chart suite computed from this wafer's own dies — the same panels a gallery's Analysis tab shows (§6.10), scoped to one wafer. Clicking the button again (or the toolbar's Analysis button) returns to the map view; the toolbar itself stays visible and usable the whole time so the Analysis button is always reachable to close the tab.
+
+Panels are laid out in three responsive grid sections, in this order:
+
+- **Yield & bins** — a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)") and a hard/soft bin pareto.
+- **Distributions** — process capability (Cp/Cpk/Pp/Ppk, one box per parametric test with both a lower and upper spec limit — hidden with a compact empty state when no test qualifies), a test-value boxplot, and a value histogram.
+- **Correlation** — a Pearson-r correlation matrix and a die-level X/Y scatter. Clicking a capability box drives the boxplot/histogram's selected test in place; clicking a correlation matrix cell drives the scatter panel's X/Y in place.
+
+For a single wafer there is no "Group by" control (grouping needs more than one wafer to be meaningful — see §6.10) and no click-to-open-wafer action (the map you're looking at already *is* the only wafer there is to open). Everything else — the wafer picker on histogram/correlation/scatter, the capability↔boxplot/histogram cross-link, the correlation↔scatter cross-link — behaves the same as the gallery version.
+
+`analysisEnabled` only changes what the toolbar exposes; it needs no other options. Panels that read parametric test data (capability, boxplot, histogram, correlation, scatter) need `testDefs` passed to `buildWaferMap` to have anything to plot — yield and bin pareto only need `die.hbin`/`die.sbin`.
+
+```ts
+const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs, passBins: [1] });
+renderWaferMap(document.getElementById('map'), result, { analysisEnabled: true });
+```
+
+### 5.10 User guide extension
+
+`showHelpButton: true` (§5.4, §6.2) opens wmap's own built-in end-user guide — but a host application often has its own documentation too, and forcing the user to find two separate help buttons/documents is poor UX. `userGuideExtension` inserts the host's own content **before** wmap's guide content in the same window, so there's one help button and one combined document instead of two:
+
+```ts
+import type { UserGuideExtension } from '@paulrobins/wafermap/render';
+
+interface UserGuideExtension {
+  html:   string   // host-provided HTML, inserted before wmap's own guide content.
+                    // Static content only — must not contain <script> tags (see below).
+  title?: string    // overrides the floating window's title bar text
+                    // (default 'Wafer Map — User Guide')
+}
+```
+
+```ts
+renderWaferMap(container, result, {
+  showHelpButton: true,
+  userGuideExtension: {
+    title: 'My App — Help',
+    html: '<h1>My App</h1><p>App-specific documentation goes here…</p>',
+  },
+});
+```
+
+wmap's own guide content keeps its own `<h1>Wafer Map — User Guide</h1>` further down the page — the result reads as one combined document with the host's section first, not a title rewrite of wmap's own content. `title`, when given, only affects the window chrome (title bar), matching the same convention `renderWaferGallery`'s window uses.
+
+**No `<script>` tags in `html`.** wmap re-executes exactly one inline script after inserting the combined content — its own live-demo bootstrap, always the last element in wmap's guide HTML — by finding the content container's *first* `<script>` in document order. A `<script>` tag in the host's own HTML would be found first instead, silently breaking wmap's live demos. Keep `html` to static markup (headings, prose, images, links).
 
 ---
 
@@ -1224,7 +1279,12 @@ to be pre-built.
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
   showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user guide in a non-modal floating window (default false)
+  userGuideExtension?:     UserGuideExtension  // insert a host app's own documentation into the guide window
+                                            // (see "User guide extension" below) — only relevant when showHelpButton is true
   lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Findings button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
+  analysisEnabled?:        boolean   // adds an Analysis toolbar button that swaps the grid for a lot-wide chart
+                                            // suite (yield, bins, capability, distributions, correlation, with a
+                                            // "Group by" control) — default false. See §6.10.
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
   zIndex?:                 number            // base z-index for wmap's transient overlays (menus, tooltip, modals); omit for a
                                             // safe high default, or set it to embed the gallery inside your own modal/overlay
@@ -1263,8 +1323,12 @@ to be pre-built.
 | Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide and all available width is used. |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
 | Findings | Toggle summary panel — shown when `lotStatsSummary` is provided or any item carries `statsSummary` |
+| Analysis | Toggle the Analysis tab — swaps the grid for a lot-wide chart suite. Only shown when `analysisEnabled: true`. See §6.10. |
+| User guide | Open the built-in end-user guide in a non-modal floating window — only shown when `showHelpButton: true` |
 
 Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
+
+**While the Analysis tab is open**, the grid/mode/palette/overlay/orientation/columns/download controls above, and Findings, are all hidden as a group — none of them apply to the chart suite, and Findings specifically toggles the gallery's summary panel, which lives inside the grid body already hidden underneath. Only Analysis and User guide stay visible.
 
 ### 6.5 Findings panel
 
@@ -1420,6 +1484,34 @@ ctrl.setOptions({ plotMode: 'value' });
 // Clean up:
 ctrl.destroy();
 ```
+
+### 6.10 Analysis tab
+
+Passing `analysisEnabled: true` adds an **Analysis** toolbar button. Clicking it swaps the grid (and summary panel, if open) for a lot-wide chart suite, computed from every gallery item's `dies` — mutually exclusive with the grid view, since the chart suite wants the full body's room, not a side panel. The gallery grid's own state (mode, columns, etc.) is preserved underneath and restored when you switch back.
+
+Panels are the same three sections as the single-wafer version (§5.9) — **Yield & bins**, **Distributions**, **Correlation** — plus:
+
+- **Group by.** When any gallery item's `wafer.metadata` has more than one distinct value for a groupable field (`lot`, `product`, `testProgram`, `temperature`, `split`, or any custom key), a "Group by" dropdown appears above the panels. `waferId` is deliberately never offered — every panel already shows one row/box per wafer when ungrouped, so "grouping" by wafer identity would just recreate that with an extra click. Each panel consumes the active grouping differently, matching what makes sense for that chart type:
+  - **Yield / bin pareto** — one pooled bar per group, click-to-drill into that group's per-wafer bars with a Back button. Grouped bin pareto swaps to a clustered view (one bar per group, side by side, per bin) instead of drilling.
+  - **Boxplot** — one pooled row per group by default, click-to-drill into that group's per-wafer rows with a Back button.
+  - **Histogram** — an overlaid multi-series view, one coloured series per group, with a click-to-emphasize legend.
+  - **Capability / correlation matrix** — a "Group: `<value>` ▾" dropdown that restricts to exactly one group's dies at a time (pooling across groups would be misleading for both — Simpson's paradox for correlation, mixed-population statistics for capability).
+  - **Scatter** — never restricts; every group's points are always plotted together, coloured by group instead of hard bin, with a click-to-filter legend.
+- **Wafer picker.** Histogram, correlation, and scatter each pool every wafer by default when ungrouped (they draw one shared canvas, not one per wafer) — a "Wafer: `All wafers ▾`" selector lets you narrow to a single wafer instead. Narrowing also clears the "Mixed `<fields>` — Simpson's paradox" warning that correlation/scatter show when the pooled wafers vary on a groupable field, since a single wafer can't be mixed with anything.
+- **Click to open a wafer.** Leaf rows in the yield bar and the boxplot (a real per-wafer row — ungrouped, or drilled into a group) open that wafer in a modal, reusing the same detach-window rendering the gallery's card-expand feature uses. A boxplot leaf click opens the wafer already in **test-value mode on the boxplot's currently selected test**, not the default plot mode. Bin pareto/cluster bars and capability/correlation/scatter are not clickable-to-open.
+- **Precomputed lot yield.** When `lotStatsSummary` is also provided, the yield panel reads each wafer's yield directly from `lotStatsSummary.lotYieldSeries` instead of recomputing it from dies — guaranteeing the Analysis tab's yield numbers agree exactly with the gallery's own Findings panel (§6.5) and any report generated from the same `lotStatsSummary`. Falls back to computing from dies (same `passBins`/exclusion rule as `buildWaferMap`) when `lotStatsSummary` is absent.
+
+```ts
+const items = results.map((r, i) => ({ ...r, label: waferIds[i] }));
+const lotSummary = analyzeWaferLot(items.map(it => ({ dies: it.dies, wafer: it.wafer })));
+
+renderWaferGallery(document.getElementById('gallery'), items, {
+  analysisEnabled: true,
+  lotStatsSummary: lotSummary,
+});
+```
+
+`analyzeWaferLot` → §7.2 · `LotStatsSummary` → §7.5
 
 ---
 
@@ -1712,7 +1804,7 @@ import { renderSummaryReportHtml } from '@paulrobins/wafermap/stats';
 renderSummaryReportHtml(params: SummaryReportParams, options?: { title?: string }): string
 ```
 
-Generates a standalone printable HTML **full summary report** — a snapshot of everything shown in the summary panel: metadata, yield, bin breakdown, ring yield, quadrant yield, test value statistics (min/mean/median/stddev/max per test, labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
+Generates a standalone printable HTML **full summary report** — a snapshot of everything shown in the summary panel: metadata, yield, bin breakdown, ring yield, quadrant yield, test value statistics (min/mean/median/stddev/max per test, labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), a **Process Capability** section (Cp/Cpk/Pp/Ppk for every test in `testDefs` with both a lower and upper spec limit — omitted entirely when none qualify, same "appears automatically" convention as every other section), and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
 
 ```ts
 // SummaryReportParams
@@ -1742,28 +1834,31 @@ import { renderLotSummaryReportHtml } from '@paulrobins/wafermap/stats';
 renderLotSummaryReportHtml(params: LotSummaryReportParams, options?: { title?: string }): string
 ```
 
-Generates a standalone printable HTML **full lot summary report** — the lot-level equivalent of `renderSummaryReportHtml`. Covers lot overview stats, per-wafer yield table, bin breakdown, ring and quadrant yield, test value statistics across the lot, and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
+Generates a standalone printable HTML **full lot summary report** — the lot-level equivalent of `renderSummaryReportHtml`. Covers lot overview stats, per-wafer yield table, bin breakdown, ring and quadrant yield, test value statistics across the lot, a **Process Capability** section (same rule as §7.7), a **Splits** section (one row per item with a `wafer.metadata.split` assigned — omitted when none do), and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
 
 ```ts
 // LotSummaryReportParams
 {
-  lotSummary: LotStatsSummary
-  items:      Array<{
-    label?:  string
-    wafer?:  Wafer
-    dies?:   Die[]
+  items: Array<{
+    label:          string
+    wafer?:         Wafer
+    dies?:          Die[]
+    statsSummary?:  StatsSummary   // reused directly as analyzeWaferLot's perWaferSummaries — avoids re-running analyzeWaferMap
   }>
-  hbinDefs?:  BinDef[]
-  sbinDefs?:  BinDef[]
-  testDefs?:  TestDef[]
-  passBins?:  number[]   // default [1]
-  ringCount?: number     // default 4
+  hbinDefs?:       BinDef[]
+  sbinDefs?:       BinDef[]
+  testDefs?:       TestDef[]
+  passBins?:       number[]   // default [1]
+  ringCount?:      number     // default 4
+  analyzeOptions?: AnalyzeWaferMapOptions  // passthrough to the internal per-group analyzeWaferLot call
 }
 ```
 
-`LotStatsSummary` → §7.5 · `Wafer` → §12.2 · `Die` → §12.1 · `BinDef` → §4.1.9 · `TestDef` → §4.1.8
+`Wafer` → §12.2 · `Die` → §12.1 · `BinDef` → §4.1.9 · `TestDef` → §4.1.8 · `StatsSummary` → §7.4 · `AnalyzeWaferMapOptions` → §7.3
 
-The lot summary panel's "Summary report" button calls this automatically when `lotStatsSummary` is provided to `renderWaferGallery`.
+There is no `lotSummary` parameter — grouping, per-group analysis (`analyzeWaferLot`), and rendering all happen internally from the flat `items` list, so callers never pre-compute a lot summary or pre-partition by lot identity themselves. `items` is partitioned by whichever of `lot`/`product`/`testProgram`/`temperature` actually vary across the wafers' `wafer.metadata` (a `split` difference alone never triggers a split — comparing splits *within* one report is the point of that field, not a reason to separate them into different documents). The common single-lot case produces one report identical to a plain single-lot call; a load that spans more than one lot/product/program/temperature is split into multiple side-by-side sections instead of silently pooling stats across populations that shouldn't be averaged together, with a banner explaining the split.
+
+The lot summary panel's "Summary report" button calls this automatically when `lotStatsSummary` is provided to `renderWaferGallery` (the on-screen panel and the generated report can legitimately show different numbers for a heterogeneous multi-lot load — the panel displays the host's own precomputed `lotStatsSummary` as a single pooled view, while the report always applies the identity-based split described above).
 
 ### 7.9 `openHtmlReport` / `setReportOpener`
 
@@ -2049,6 +2144,48 @@ interface PatternFeatures {
 
 See [Pattern Detection](pattern-detection.md) for benchmark accuracy figures and known limitations.
 
+### 7.16 Chart-data builders
+
+Pure, DOM-free data builders for the chart types the Analysis tab (§5.9, §6.10) draws internally. Each takes plain `{ dies?: Die[] }`-shaped items (or a `wafer.metadata`-carrying superset for the faceting ones) and returns plain data — no canvas, no rendering. Public because the underlying math is independently useful (e.g. feeding your own chart library, or a non-DOM report), even though the canvas panels that consume them inside the Analysis tab are not (see §10).
+
+All die-population rules match wmap's own conventions elsewhere: yield/bin builders exclude `partial`/`edgeExcluded` dies via the same `isYieldEligibleDie` rule `buildWaferMap`/`analyzeWaferMap` use (§11.20); a die with no `hbin`/`sbin` is never coerced into a real bin (bin `0` is reserved as the "no data" category everywhere in wmap, matching every registered colour scheme's palette).
+
+```ts
+import {
+  buildYieldData, buildYieldDataCombined,
+  buildBinParetoData, buildBinClusterData,
+  buildCapabilityData,
+  buildTestBoxplotData,
+  buildTestHistogramData, buildTestHistogramSeries,
+  buildCorrelationMatrix, filterCorrelationMatrix,
+  buildScatterData, buildScatterDataGrouped,
+  buildFacetTable, facetValueOf, DEFAULT_FACET_CURATION,
+} from '@paulrobins/wafermap/stats';
+```
+
+| Function | Returns | Notes |
+| --- | --- | --- |
+| `buildYieldData(items, passBins?, sortBy?)` | `ChartDatum[]` | One row per item. Prefers each item's precomputed `yieldPercent` (e.g. from `LotStatsSummary.lotYieldSeries`) over recomputing from `dies`, so it agrees byte-for-byte with whatever else already reports that wafer's yield. `sortBy`: `'yield' \| 'label'` (default `'label'`). |
+| `buildYieldDataCombined(groups, passBins?, sortBy?)` | `ChartDatum[]` | One row per group — the die-count-weighted mean of the group's per-item yields. |
+| `buildBinParetoData(items, binType)` | `ChartDatum[]` | One row per bin (`binType: 'hbin' \| 'sbin'`), sorted by count descending. |
+| `buildBinClusterData(groups, binType)` | `BinClusterData` | Every group's bin counts side by side — `{ groups: string[], bins: BinCluster[] }`, one `BinCluster` per bin with a `counts[]` aligned to `groups`. |
+| `buildCapabilityData(items, testDefs)` | `CapabilityDatum[]` | Cp/Cpk (pooled within-item stddev — each item is treated as the short-term subgroup) and Pp/Ppk (overall stddev), for every test with both `limitLow` and `limitHigh`. `min`/`q1`/`median`/`q3`/`max` are normalized `(v - lsl) / (usl - lsl)`. Sorted worst-Ppk-first. |
+| `buildTestBoxplotData(items, testNumber)` | `BoxplotDatum[]` | One five-number summary (`min`/`q1`/`median`/`q3`/`max`/`count`) per item, for one test. |
+| `buildTestHistogramData(items, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramBucket[]` | Bucketed value counts across `items`, pooled. |
+| `buildTestHistogramSeries(groups, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramSeriesData` | Shared bucket ranges with one count series per group — `{ ranges, series: [{ groupKey, counts }] }`. |
+| `buildCorrelationMatrix(dies, testDefs)` | `CorrelationMatrix` | Pearson r for every parametric test pair. |
+| `filterCorrelationMatrix(matrix, options)` | `{ matrix, strongPairs, moderatePairs, hiddenWeakPairs, strongestPair }` | Caps matrix size (`options.maxTests`) and requires a minimum test count (`options.minTests`), keeping the pairs with the largest correlation magnitude. |
+| `buildScatterData(items, xTest, yTest)` | `ScatterPoint[]` | One point per die with valid values for both tests. |
+| `buildScatterDataGrouped(groups, xTest, yTest)` | `ScatterPoint[]` | Same, with each point tagged `group: string` — every group's points are returned together (this function never restricts to one group). |
+| `buildFacetTable(items, options?)` | `FacetField[]` | The distinct-values table over `wafer.metadata` — "what can I group/compare/split by?" One entry per metadata key present on at least one item, curated via `DEFAULT_FACET_CURATION` (`lot`, `product`, `testProgram`, `temperature`, `split`, `operator`, `testDate`; `waferId` is curated `facet: false` — present but not offered, since it's unique per item by definition). `options.facetableOnly` (default `true`) restricts to curated-`facet:true`-or-uncurated keys; pass `false` to include `waferId` too. |
+| `facetValueOf(metadata, key, curation?)` | `string \| undefined` | The faceting value of one metadata key for one item — date-curated fields (`testDate`) truncate to date-only. |
+
+`WaferMetadata` → §12.3
+
+### 7.17 `LotSummaryReportParams` grouping detail
+
+See §7.8 for the full `renderLotSummaryReportHtml` grouping behavior — items are partitioned by whichever of `lot`/`product`/`testProgram`/`temperature` actually vary, never by `split` alone.
+
 ---
 
 ## 8 Web Worker
@@ -2329,6 +2466,8 @@ const v = getDieTestValue(die, 0, 0);
 Returns `undefined` when no value is present.  Use this in post-build code that reads test values from dies.
 
 Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
+
+> **The Analysis tab's canvas chart panels are not a public subpath.** `analysisEnabled` (§5.9, §6.10) is the supported way to get charts — the DOM/canvas rendering code behind it is internal to `/render` and not independently importable, so you cannot assemble your own page from wmap's chart panels the way you can compose `/render`'s other pieces. The pure data layer those panels are built on (§7.16) *is* public from `/stats`, if you want to drive your own chart library from the same computations.
 
 ---
 
@@ -2766,6 +2905,21 @@ listColorSchemes(): Array<{ name: string; label: string }>
 
 `registerColorScheme` registers a custom palette under `name`; it is then selectable via `colorScheme: name` in view options and appears in the toolbar. `getColorScheme` returns the scheme for `name` (defaults to `'default'`). `listColorSchemes` returns all registered schemes in registration order.
 
+### 11.20 `isYieldEligibleDie(die, options?)`
+
+```ts
+import { isYieldEligibleDie } from '@paulrobins/wafermap';
+// also available from '@paulrobins/wafermap/core'
+
+isYieldEligibleDie(die: Die, options?: { includePartial?: boolean; includeEdgeExcluded?: boolean }): boolean
+```
+
+Whether a die counts toward yield/rollup calculations, per wmap's standard fab-reporting convention: `partial` (boundary-straddling) and `edgeExcluded` dies are skipped by default, even though they may carry real measured values — many fabs exclude them from yield/bin reporting specifically, not from other per-die analysis (a partial/edge-excluded die's test values still belong in distributions, correlations, and scatter plots). Both options default to `false` (excluded).
+
+This is the single source of truth for the rule — `buildWaferMap`'s yield calculation, `analyzeWaferMap`'s eligible-die filter, and the §7.16 chart-data builders' yield/bin-pareto functions all call it, so they never silently drift apart on which dies count.
+
+`Die` → §12.1
+
 ---
 
 ## 12 Important types
@@ -2821,6 +2975,10 @@ Named fields with an open index signature — any extra key is accepted and disp
   operator?:    string
   testProgram?: string
   temperature?: number          // chuck temperature in °C
+  split?:       string          // user-assigned experiment/process-corner tag (e.g. "TT", "FF"),
+                                 // distinct from any parser-derived field — a first-class slot so hosts that
+                                 // support wafer-split assignment get it picked up by the Analysis tab's
+                                 // "Group by" (§6.10) and lot summary reports' Splits section (§7.8) automatically
   [key: string]: unknown        // custom fields — shown in summary panel header
 }
 ```

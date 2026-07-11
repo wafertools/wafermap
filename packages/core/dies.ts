@@ -39,6 +39,33 @@ export interface Die {
   partId?: number;
 }
 
+export interface DieEligibilityOptions {
+  /** Include dies that straddle the wafer boundary (`die.partial`). Default: excluded. */
+  includePartial?: boolean;
+  /** Include dies inside the edge-exclusion zone (`die.edgeExcluded`). Default: excluded. */
+  includeEdgeExcluded?: boolean;
+}
+
+/**
+ * Whether a die counts toward yield/rollup calculations, per wmap's standard
+ * fab-reporting convention: partial (boundary-straddling) and edge-excluded
+ * dies are skipped by default, even though they may carry real measured
+ * values — many fabs exclude them from yield/bin reporting specifically,
+ * not from other per-die analysis (a partial/edge-excluded die's test
+ * values still belong in distributions, correlations, scatter, etc. — this
+ * predicate is for yield-style pass/fail rollups only).
+ *
+ * Single source of truth for this rule — previously duplicated independently
+ * in `renderer/buildWaferMap.ts`'s yield calculation and
+ * `stats/analyzeWaferMap.ts`'s eligible-die filter, which could (and did)
+ * silently drift apart. Both now call this.
+ */
+export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}): boolean {
+  if (!options.includePartial && die.partial) return false;
+  if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
+  return true;
+}
+
 /**
  * Generate a rectangular grid of dies centered on the wafer.
  * Each die carries its width/height for use by the renderer.

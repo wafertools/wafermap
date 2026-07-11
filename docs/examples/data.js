@@ -232,7 +232,12 @@ export const TEST_DEFS = [
 export const WAFER_CONFIG = {
   diameter: 300,
   notch: { type: 'bottom' },
-  metadata: { lot: 'LOT-DEMO', product: 'DEMO-DEVICE', wafer: 'W01' },
+  // waferId (not a bare "wafer" key) — the canonical WaferMetadata field.
+  // The Analysis tab's facet table specifically excludes waferId from its
+  // "Group by"/mixed-population checks (it's unique per wafer by
+  // definition, never a useful grouping axis) — a non-canonical key would
+  // leak through as a bogus "mixed" facet instead.
+  metadata: { lot: 'LOT-DEMO', product: 'DEMO-DEVICE', waferId: 'W01' },
 };
 
 /**
@@ -241,7 +246,7 @@ export const WAFER_CONFIG = {
  */
 export function makeWaferConfig(index) {
   const n = String(index + 1).padStart(2, '0');
-  return { ...WAFER_CONFIG, metadata: { ...WAFER_CONFIG.metadata, wafer: `W${n}` } };
+  return { ...WAFER_CONFIG, metadata: { ...WAFER_CONFIG.metadata, waferId: `W${n}` } };
 }
 
 /** 8 mm × 12 mm die pitch — realistic rectangular die for a leading-edge logic device. */

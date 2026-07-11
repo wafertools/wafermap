@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, copyWmapThemeTokens, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -19,6 +19,7 @@ import {
   createSummaryPanelEl, renderLotSummaryContent,
 } from './summaryPanel.js';
 import { openHtmlReport, renderFindingsReportHtml } from '../stats/renderFindingsReport.js';
+import { createAnalysisTab } from './analysisTab.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -139,6 +140,12 @@ export interface GalleryOptions {
    */
   showHelpButton?:         boolean;
   /**
+   * Host-supplied content inserted into the built-in end-user guide window
+   * (see `showHelpButton`) — e.g. a host app's own documentation, so the user
+   * has one help button instead of two. See `UserGuideExtension`.
+   */
+  userGuideExtension?:     UserGuideExtension;
+  /**
    * Base `z-index` for wmap's transient overlays — toolbar menus, the die
    * tooltip, the expand modal, and the user-guide modal. wmap layers its own
    * overlays from this value upward. Set this when embedding the gallery inside
@@ -148,6 +155,17 @@ export interface GalleryOptions {
    * layers). Applied for the lifetime of this render and restored on `destroy()`.
    */
   zIndex?:                 number;
+  /**
+   * Show an "Analysis" tab in the control bar. Selecting it replaces the
+   * gallery grid (and summary panel) with wmap's own chart/analysis suite —
+   * yield, bin pareto/cluster, process capability, boxplot, histogram,
+   * correlation matrix, and scatter. The tab computes its own "Group by"
+   * facets from each item's `wafer.metadata` (`stats/facets.ts`) and, when
+   * `lotStatsSummary` is also provided, reuses its precomputed per-wafer
+   * yield directly rather than recomputing it — no other host wiring
+   * beyond this flag. Default false.
+   */
+  analysisEnabled?:        boolean;
 }
 
 export interface GalleryController {
@@ -190,6 +208,8 @@ export function renderWaferGallery(
   let currentColumns         = options.columns;
   const showPlotModeSelector = options.showPlotModeSelector ?? true;
   const showHelpButton       = options.showHelpButton       ?? false;
+  const userGuideExtension   = options.userGuideExtension;
+  const analysisEnabled      = options.analysisEnabled      ?? false;
   // Host-supplied overlay stacking (no-op when undefined; safe high default
   // applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ      = applyOverlayZ(options.zIndex);
@@ -832,23 +852,36 @@ export function renderWaferGallery(
     (v) => setColumnsState(v === 'auto' ? undefined : Number(v)),
   );
 
-  if (showPlotModeSelector) barEl.appendChild(btnMode);
-  barEl.appendChild(btnPalette);
-  barEl.appendChild(btnAggrMethod);
-  barEl.appendChild(btnLogScale);
-  barEl.appendChild(btnColorbarRange);
-  barEl.appendChild(makeSep());
-  barEl.appendChild(btnOverlays);
-  barEl.appendChild(makeSep());
-  barEl.appendChild(btnLegendStyle);
-  barEl.appendChild(makeSep());
-  barEl.appendChild(btnOrient);
-  barEl.appendChild(makeSep());
-  barEl.appendChild(btnColumns);
-  barEl.appendChild(makeSep());
-  barEl.appendChild(btnDownloadAll);
+  // Grid-view-specific controls (mode, palette, overlays, columns, download,
+  // etc.) — wrapped so they can be hidden as a group while the Analysis tab
+  // is open, since none of them apply to (or, for download, would silently
+  // capture the wrong thing from) the chart suite. Findings/Analysis/Help
+  // below stay unwrapped directly in barEl since those apply to both views.
+  const galleryViewControlsEl = document.createElement('div');
+  Object.assign(galleryViewControlsEl.style, { display: 'inline-flex', alignItems: 'center', gap: '0' });
+  barEl.appendChild(galleryViewControlsEl);
 
-  // Findings button — toggles the gallery summary panel.
+  if (showPlotModeSelector) galleryViewControlsEl.appendChild(btnMode);
+  galleryViewControlsEl.appendChild(btnPalette);
+  galleryViewControlsEl.appendChild(btnAggrMethod);
+  galleryViewControlsEl.appendChild(btnLogScale);
+  galleryViewControlsEl.appendChild(btnColorbarRange);
+  galleryViewControlsEl.appendChild(makeSep());
+  galleryViewControlsEl.appendChild(btnOverlays);
+  galleryViewControlsEl.appendChild(makeSep());
+  galleryViewControlsEl.appendChild(btnLegendStyle);
+  galleryViewControlsEl.appendChild(makeSep());
+  galleryViewControlsEl.appendChild(btnOrient);
+  galleryViewControlsEl.appendChild(makeSep());
+  galleryViewControlsEl.appendChild(btnColumns);
+  galleryViewControlsEl.appendChild(makeSep());
+  galleryViewControlsEl.appendChild(btnDownloadAll);
+
+  // Findings button — toggles the gallery summary panel. Grouped with
+  // galleryViewControlsEl (not left unwrapped like Analysis/Help) since the
+  // summary panel it controls lives inside bodyEl, which is already hidden
+  // while the Analysis tab is open — toggling it there has no visible effect,
+  // same as mode/palette/overlays/etc.
   // Shown when lotStatsSummary is provided, or when any item carries per-wafer findings.
   {
     if (currentLotStats || hasAnyPerWaferFindings()) {
@@ -860,16 +893,29 @@ export function renderWaferGallery(
         setActive(btnLotFindings!, !isOpen);
         refreshLotFindingsButton();
       });
-      barEl.appendChild(makeSep());
-      barEl.appendChild(btnLotFindings);
+      galleryViewControlsEl.appendChild(makeSep());
+      galleryViewControlsEl.appendChild(btnLotFindings);
     }
+  }
+
+  // Analysis tab — toggles between the gallery grid and wmap's own chart
+  // suite. Mutually exclusive with the grid/summary-panel view (not just an
+  // overlay), since the suite wants the full body's room, not a side panel.
+  let btnAnalysis: HTMLButtonElement | null = null;
+  if (analysisEnabled) {
+    btnAnalysis = makeBtn('analysis', 'Analysis', () => {
+      const isOpen = analysisEl?.style.display !== 'none';
+      setAnalysisOpen(!isOpen);
+    });
+    barEl.appendChild(makeSep());
+    barEl.appendChild(btnAnalysis);
   }
 
   // Help button — opens the end-user guide in a non-modal window (opt-in).
   if (showHelpButton) {
     barEl.appendChild(makeSep());
     barEl.appendChild(makeBtn('help', 'User guide', () =>
-      import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, m.USER_GUIDE_HTML))));
+      import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, m.USER_GUIDE_HTML, userGuideExtension))));
   }
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
@@ -901,6 +947,59 @@ export function renderWaferGallery(
     gap:       '12px',
     alignItems: 'flex-start',
   });
+
+  // ── Analysis tab (opt-in) ────────────────────────────────────────────────────
+  // Takes over the full body when active — swaps out the grid/summary panel
+  // rather than sitting alongside them, since the chart suite wants the room.
+  // First slice: a single Process capability panel plus a shared "Group by"
+  // control (computed from each item's wafer.metadata — see stats/facets.ts).
+  // More panels land incrementally; see tsmap's WMAP_ISSUES.md for the tracked
+  // migration this is part of.
+  //
+  // Built only when `analysisEnabled` — mirrors `renderWaferMap.ts`'s own
+  // gating, so a gallery with the feature off (the default) doesn't pay for
+  // the chart suite's DOM/closures or keep a hidden host in the container.
+  let analysisTab: ReturnType<typeof createAnalysisTab> | null = null;
+  let analysisEl: HTMLElement | null = null;
+  if (analysisEnabled) {
+    analysisTab = createAnalysisTab({
+      getItems: () => originalItems,
+      getLotStats: () => currentLotStats,
+      getColorSchemeName: () => sharedOpts.colorScheme ?? 'default',
+      passBins,
+      onSaveImage: options.onSaveImage,
+      // Opens one wafer's full map in a modal, from a chart panel bar/row
+      // click (yield's leaf rows, boxplot's leaf rows). Reuses
+      // `buildDetachedController` (the same per-item render used for a card
+      // detached into its own window) rather than a third way to turn a
+      // `WaferMapDisplayItem` into a live map, and `openModal` (the same
+      // primitive `openChartExpandModal` already uses for chart panels) for
+      // the shell — no new overlay mechanism, just composing two that
+      // already exist.
+      // `testNumber` (from a boxplot leaf-row click) opens the map straight
+      // into value mode on that same test, instead of always landing on
+      // whatever plot mode the gallery currently shares — see
+      // `buildDetachedController`'s own doc comment.
+      openWafer: (waferIndex, title, testNumber) => {
+        const item = originalItems[waferIndex];
+        if (!item) return;
+        let ctrl: WaferMapController | null = null;
+        const handle = openModal({ title, onClose: () => ctrl?.destroy() });
+        ctrl = buildDetachedController(handle.contentWrap, item, testNumber);
+      },
+    });
+    analysisEl = analysisTab.el;
+  }
+
+  function setAnalysisOpen(open: boolean): void {
+    if (!analysisTab || !analysisEl) return;
+    analysisEl.style.display = open ? 'flex' : 'none';
+    bodyEl.style.display = open ? 'none' : 'flex';
+    legendEl.style.display = open ? 'none' : '';
+    galleryViewControlsEl.style.display = open ? 'none' : 'inline-flex';
+    if (btnAnalysis) setActive(btnAnalysis, open);
+    if (open) analysisTab.render();
+  }
 
   // ── Grid container ─────────────────────────────────────────────────────────
 
@@ -1024,6 +1123,7 @@ export function renderWaferGallery(
   container.appendChild(barEl);
   container.appendChild(legendEl);
   container.appendChild(bodyEl);
+  if (analysisEl) container.appendChild(analysisEl);
 
   // ── Bin legend ─────────────────────────────────────────────────────────────
 
@@ -1564,8 +1664,8 @@ export function renderWaferGallery(
             setActive(btnLotFindings!, !isOpen);
             refreshLotFindingsButton();
           });
-          barEl.appendChild(makeSep());
-          barEl.appendChild(btnLotFindings);
+          galleryViewControlsEl.appendChild(makeSep());
+          galleryViewControlsEl.appendChild(btnLotFindings);
         }
         refreshLotFindingsButton();
       } else if (gallerySummaryPanelEl && gallerySummaryPanelEl.style.display !== 'none') {
@@ -1719,11 +1819,21 @@ export function renderWaferGallery(
     updateExpandBtn(cardIndex);
   }
 
-  /** Build the fresh renderWaferMap instance shared by both the real-popup and
-   * in-page-fallback detach paths — same options either way. */
-  function buildDetachedController(container: HTMLElement, item: WaferMapDisplayItem): WaferMapController {
+  /**
+   * Build the fresh renderWaferMap instance shared by the real-popup and
+   * in-page-fallback detach paths, and the Analysis tab's "open this wafer"
+   * click. `testNumber`, when given (only from the Analysis tab's boxplot
+   * leaf-row click), opens straight into value mode on that test — matching
+   * what the user was already looking at — instead of the gallery's shared
+   * plot mode; omitted (the detach-window paths) leaves plot mode untouched.
+   */
+  function buildDetachedController(container: HTMLElement, item: WaferMapDisplayItem, testNumber?: number): WaferMapController {
+    const baseViewOptions = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
+    const viewOptions = testNumber !== undefined
+      ? { ...baseViewOptions, plotMode: 'value' as const, activeTest: testNumber }
+      : baseViewOptions;
     const ctrl = renderWaferMap(container, item as import('../renderer/buildWaferMap.js').WaferMapResult, {
-      viewOptions:    item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts,
+      viewOptions,
       toolbarControls: 'full',
       showTooltip:     true,
       padding:         cardPadding,
@@ -1918,6 +2028,7 @@ export function renderWaferGallery(
       legendEl.remove();
       bodyEl.remove();
       gallerySummaryPanelEl?.remove();
+      analysisTab?.destroy();
     },
   };
 }

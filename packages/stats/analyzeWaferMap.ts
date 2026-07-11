@@ -1,4 +1,5 @@
 import type { Die } from '../core/dies.js';
+import { isYieldEligibleDie } from '../core/dies.js';
 import { buildWaferMap, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef } from '../renderer/buildWaferMap.js';
 import type {
@@ -87,8 +88,7 @@ function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
 }
 
 function isEligibleDie(die: Die, options: ResolvedOptions): die is EligibleDie {
-  if (!options.includePartial && die.partial) return false;
-  if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
+  if (!isYieldEligibleDie(die, options)) return false;
   return (
     die.hbin !== undefined ||
     die.sbin !== undefined ||
@@ -1274,11 +1274,7 @@ export function analyzeWaferMap(
     stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
   const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, baseResolved));
   const resolved = adaptOptions(baseResolved, eligibleDies.length);
-  const includedDies = result.dies.filter((die) => {
-    if (!resolved.includePartial && die.partial) return false;
-    if (!resolved.includeEdgeExcluded && die.edgeExcluded) return false;
-    return true;
-  });
+  const includedDies = result.dies.filter((die) => isYieldEligibleDie(die, resolved));
   const ringRegions = buildRingRegions(includedDies, result.wafer, resolved.ringCount);
   const quadrantRegions = buildQuadrantRegions(includedDies, result.wafer, resolved.ringCount);
   const reticlePositionRegions = resolved.enableReticlePositionAnalysis

@@ -394,7 +394,43 @@ bin 1 (Pass) or bin 2 (Fail) at that location.*
 
 ---
 
-## 8. Reticle overlay
+## 8. Analysis tab
+
+The **Analysis** toolbar button (single map or gallery) swaps the wafer view for
+a chart suite computed from the same die data — process capability, value
+distributions, and test correlation — without leaving the toolbar. Click it
+again to return to the map.
+
+Panels are grouped into three sections:
+
+- **Yield & bins** — a yield bar (labelled with the pass bins actually in use)
+  and a hard/soft bin pareto.
+- **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
+  lower and upper spec limit), a test-value box plot, and a value histogram.
+  Clicking a capability box drives the box plot and histogram onto that same
+  test automatically.
+- **Correlation** — a test-to-test correlation matrix and a die-level scatter
+  plot. Clicking a matrix cell drives the scatter plot onto that pair.
+
+In a gallery with more than one wafer, a **Group by** control appears whenever
+wafer metadata (lot, product, test program, temperature, split, or a custom
+field) actually varies across the loaded wafers — grouping pools or restricts
+each panel differently depending on what makes sense for that chart type.
+Histogram, correlation, and scatter also offer a **Wafer** picker to narrow
+from "all wafers pooled" down to one wafer at a time. Clicking a yield bar or
+box-plot row for one wafer opens that wafer's own map — a box-plot click opens
+directly on the test you were looking at.
+
+<div data-wmap-demo="analysis" class="wmap-demo"></div>
+
+*Analysis tab open on a single wafer: yield and bin pareto, process
+capability, a test-value box plot and histogram, and a correlation matrix with
+scatter plot — all computed from this wafer's own dies. In a gallery, the same
+tab also gains a "Group by" control and per-wafer yield/box-plot rows.*
+
+---
+
+## 9. Reticle overlay
 
 When reticle (stepper field) geometry is configured, the **Reticle grid** overlay
 draws the stepper field boundaries on the wafer. Each rectangle represents one

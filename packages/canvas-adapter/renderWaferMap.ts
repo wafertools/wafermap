@@ -7,12 +7,13 @@ import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
 } from './summaryPanel.js';
 import { hardBinColor, softBinColor } from '../renderer/colorMap.js';
+import { createAnalysisTab } from './analysisTab.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -191,6 +192,12 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * Default false. Enable in applications that want to surface the guide without linking externally.
    */
   showHelpButton?: boolean;
+  /**
+   * Host-supplied content inserted into the built-in end-user guide window
+   * (see `showHelpButton`) — e.g. a host app's own documentation, so the user
+   * has one help button instead of two. See `UserGuideExtension`.
+   */
+  userGuideExtension?: UserGuideExtension;
   /** Override the expand action for both the expand button and the E key. Used by the gallery to route through its own modal logic. */
   onExpand?: () => void;
   /**
@@ -221,6 +228,16 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * for the lifetime of this render and restored on `destroy()`.
    */
   zIndex?: number;
+  /**
+   * Show an "Analysis" tab in the toolbar. Selecting it replaces the canvas
+   * (and summary panel) with wmap's own chart/analysis suite — yield,
+   * bin pareto, process capability, boxplot, histogram, correlation
+   * matrix, and scatter, all computed over this one wafer's dies (the same
+   * suite `renderWaferGallery`'s own `analysisEnabled` shows for a whole
+   * lot, minus grouping — a single wafer has nothing to group by). Default
+   * false.
+   */
+  analysisEnabled?: boolean;
 }
 
 /** @deprecated Use RenderOptions instead. */
@@ -331,9 +348,11 @@ export function renderWaferMap(
     tooltipTestLimit,
     passBins             = [1],
     showHelpButton       = false,
+    userGuideExtension,
     onExpand,
     showExpandButton     = true,
     zIndex,
+    analysisEnabled      = false,
     viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
@@ -382,6 +401,54 @@ export function renderWaferMap(
     legendPosition:         drawOptions.legendPosition ?? 'default',
     ...initialViewOptions,
   };
+
+  // ── Analysis tab (opt-in) ────────────────────────────────────────────────────
+  // Same shared chart suite `renderWaferGallery`'s own `analysisEnabled` shows
+  // for a whole lot (`analysisTab.ts`), given a single-item population — no
+  // "Group by" ever appears (nothing is splittable with one item), and there
+  // is no click-to-open-wafer (the only wafer is already the one on screen).
+  let analysisTab: ReturnType<typeof createAnalysisTab> | null = null;
+  let analysisOpen = false;
+  if (analysisEnabled) {
+    analysisTab = createAnalysisTab({
+      getItems: () => [{
+        wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
+        label: String(wafer.metadata?.waferId ?? ''),
+        statsSummary: currentStatsSummary,
+      }],
+      getColorSchemeName: () => viewOpts.colorScheme ?? 'default',
+      passBins,
+      onSaveImage: options.onSaveImage,
+      // No openWafer — this map already IS the only wafer there is to open.
+    });
+    // Positioned sibling of canvasWrap covering the same area, but *not*
+    // display:none-ing canvasWrap itself — canvasWrap's floating toolbar
+    // (including the Analysis button that must toggle this back off) is a
+    // child of canvasWrap, so hiding canvasWrap would hide the toolbar with
+    // it. Left with `z-index: auto` (no explicit value), this positioned
+    // element still paints above canvasWrap's own unpositioned canvas
+    // content (position:static content always sits below any positioned
+    // sibling, explicit z-index or not) while sitting below the toolbar
+    // (which sets its own explicit, much higher z-index via `Z_BASE`) — so
+    // it visually replaces the map without ever making the toolbar
+    // unreachable. Needs an opaque background since the analysis grid has
+    // gaps between cards that would otherwise let the covered canvas show
+    // through.
+    Object.assign(analysisTab.el.style, { position: 'absolute', inset: '0', background: CLR.panelBg } as Partial<CSSStyleDeclaration>);
+    container.appendChild(analysisTab.el);
+  }
+
+  function setAnalysisOpen(open: boolean): void {
+    if (!analysisTab) return;
+    analysisOpen = open;
+    analysisTab.el.style.display = open ? 'flex' : 'none';
+    // Map-specific toolbar controls (zoom/pan/select, mode/palette/overlays/etc.)
+    // have no effect on the chart suite — hide them as a group while it's open.
+    // Findings/Expand/Analysis/Help stay visible; they apply to both views.
+    if (mapToolsEl) mapToolsEl.style.display = open ? 'none' : 'flex';
+    if (mapViewControlsEl) mapViewControlsEl.style.display = open ? 'none' : 'flex';
+    if (open) analysisTab.render();
+  }
 
   let currentView:   View;
   let dieKeyIndex:    Map<string, number>;
@@ -546,10 +613,17 @@ export function renderWaferMap(
   // ── Toolbar ────────────────────────────────────────────────────────────────
   let toolbar:          HTMLDivElement    | null = null;
   let sceneControlsEl:  HTMLDivElement    | null = null;
+  // Map-specific controls (zoom/pan/select, mode/palette/overlays/etc.) — hidden
+  // while the Analysis tab is open, since none of them apply to the chart suite.
+  // Findings/Expand/Analysis/Help stay in sceneControlsEl directly, unwrapped,
+  // since those apply to both views.
+  let mapToolsEl:       HTMLDivElement    | null = null;
+  let mapViewControlsEl: HTMLDivElement   | null = null;
   let btnBoxSelect:     HTMLButtonElement | null = null;
   let btnFindings:      HTMLButtonElement | null = null;
   let btnExpand:        HTMLButtonElement | null = null;
   let btnHelp:          HTMLButtonElement | null = null;
+  let btnAnalysisTab:   HTMLButtonElement | null = null;
   // Top clearance reserved on the canvas for the toolbar overlay.
   // toolbar sits at top:4px, is ~32px tall → bottom at ~36px; excess over canvas padding = 24px.
   const TOOLBAR_CLEARANCE = 24;
@@ -630,27 +704,33 @@ export function renderWaferMap(
         canvas.style.cursor = mode === 'pan' ? 'grab' : 'crosshair';
       }
 
+      // Base map tools (camera/zoom/pan/select) — wrapped so they can be hidden
+      // as a group while the Analysis tab is open (see mapToolsEl declaration).
+      mapToolsEl = document.createElement('div');
+      Object.assign(mapToolsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
+      toolbar.appendChild(mapToolsEl);
+
       // Camera first — leftmost
       const btnDownload = makeBtn('download', 'Download PNG', downloadPng);
-      toolbar.appendChild(btnDownload);
-      toolbar.appendChild(makeSep());
+      mapToolsEl.appendChild(btnDownload);
+      mapToolsEl.appendChild(makeSep());
 
       // Zoom group: zoom-region mode + zoom in/out + reset
       const btnZoomMode = makeBtn('zoomMode', 'Zoom (drag to zoom region)', () => setInteractMode('zoom'));
       const btnZoomIn   = makeBtn('zoomIn',   'Zoom in',                    () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.20));
       const btnZoomOut  = makeBtn('zoomOut',  'Zoom out',                   () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.20));
       const btnReset    = makeBtn('reset',    'Reset zoom (double-click)',   () => resetZoom());
-      toolbar.appendChild(btnZoomMode);
-      toolbar.appendChild(btnZoomIn);
-      toolbar.appendChild(btnZoomOut);
-      toolbar.appendChild(btnReset);
-      toolbar.appendChild(makeSep());
+      mapToolsEl.appendChild(btnZoomMode);
+      mapToolsEl.appendChild(btnZoomIn);
+      mapToolsEl.appendChild(btnZoomOut);
+      mapToolsEl.appendChild(btnReset);
+      mapToolsEl.appendChild(makeSep());
 
       // Interaction mode group: pan | box-select
       const btnPanMode = makeBtn('pan', 'Pan (drag to move)', () => setInteractMode('pan'));
-      toolbar.appendChild(btnPanMode);
+      mapToolsEl.appendChild(btnPanMode);
       btnBoxSelect = makeBtn('boxSelect', 'Select (drag to select dies)', () => setInteractMode('select'));
-      toolbar.appendChild(btnBoxSelect);
+      mapToolsEl.appendChild(btnBoxSelect);
 
       // Set initial active state — pan is default
       setActive(btnPanMode, true);
@@ -662,7 +742,15 @@ export function renderWaferMap(
         sceneControlsEl = document.createElement('div');
         Object.assign(sceneControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
         toolbar.appendChild(sceneControlsEl);
-        sceneControlsEl.appendChild(makeSep());
+
+        // Map-view-specific controls (mode, palette, overlays, legend, orientation)
+        // — wrapped so they can be hidden as a group while the Analysis tab is
+        // open, unlike Findings/Expand/Analysis/Help below which stay unwrapped
+        // directly in sceneControlsEl since those apply to both views.
+        mapViewControlsEl = document.createElement('div');
+        Object.assign(mapViewControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
+        sceneControlsEl.appendChild(mapViewControlsEl);
+        mapViewControlsEl.appendChild(makeSep());
 
         // Mode dropdown: when testDefs are defined, show one entry per named test
         // plus the bin modes. Selecting a named test sets plotMode:'value' + activeTest.
@@ -812,18 +900,22 @@ export function renderWaferMap(
           () => viewOpts,
           patch => applyOpts(patch),
         );
-        if (showPlotModeSelector) sceneControlsEl!.appendChild(btnMode);
-        sceneControlsEl!.appendChild(btnPalette);
-        sceneControlsEl!.appendChild(btnLogScale);
-        sceneControlsEl!.appendChild(btnColorbarRange);
-        sceneControlsEl!.appendChild(makeSep());
-        sceneControlsEl!.appendChild(btnOverlays);
-        sceneControlsEl!.appendChild(makeSep());
-        sceneControlsEl!.appendChild(btnLegendStyle);
-        sceneControlsEl!.appendChild(makeSep());
-        sceneControlsEl!.appendChild(btnOrient);
+        if (showPlotModeSelector) mapViewControlsEl!.appendChild(btnMode);
+        mapViewControlsEl!.appendChild(btnPalette);
+        mapViewControlsEl!.appendChild(btnLogScale);
+        mapViewControlsEl!.appendChild(btnColorbarRange);
+        mapViewControlsEl!.appendChild(makeSep());
+        mapViewControlsEl!.appendChild(btnOverlays);
+        mapViewControlsEl!.appendChild(makeSep());
+        mapViewControlsEl!.appendChild(btnLegendStyle);
+        mapViewControlsEl!.appendChild(makeSep());
+        mapViewControlsEl!.appendChild(btnOrient);
 
-        // Findings button — toggles the summary panel.
+        // Findings button — toggles the summary panel. Grouped with
+        // mapViewControlsEl (not left unwrapped like Analysis/Expand/Help)
+        // since the summary panel it controls is map-view-only UI — it sits
+        // behind the Analysis tab's opaque overlay with no visible effect
+        // while that's open, same as mode/palette/overlays/etc.
         // The panel itself is auto-mounted earlier, independently of the toolbar.
         if (currentStatsSummary) {
           btnFindings = makeBtn('findings', 'Summary panel', () => {
@@ -834,8 +926,8 @@ export function renderWaferMap(
             setActive(btnFindings!, !isOpen);
             refreshFindingsButton();
           });
-          sceneControlsEl!.appendChild(makeSep());
-          sceneControlsEl!.appendChild(btnFindings);
+          mapViewControlsEl!.appendChild(makeSep());
+          mapViewControlsEl!.appendChild(btnFindings);
           // Set button active state to match initial panel visibility
           if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnFindings, true);
           refreshFindingsButton();
@@ -848,11 +940,21 @@ export function renderWaferMap(
           sceneControlsEl!.appendChild(btnExpand);
         }
 
+        // Analysis tab — toggles between the canvas and wmap's own chart suite.
+        if (analysisTab) {
+          sceneControlsEl!.appendChild(makeSep());
+          btnAnalysisTab = makeBtn('analysis', 'Analysis', () => {
+            setAnalysisOpen(!analysisOpen);
+            setActive(btnAnalysisTab!, analysisOpen);
+          });
+          sceneControlsEl!.appendChild(btnAnalysisTab);
+        }
+
         // Help button — opens the end-user guide in a non-modal window (opt-in).
         if (showHelpButton) {
           sceneControlsEl!.appendChild(makeSep());
           btnHelp = makeBtn('help', 'User guide', () =>
-            import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap }, m.USER_GUIDE_HTML)));
+            import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap }, m.USER_GUIDE_HTML, userGuideExtension)));
           sceneControlsEl!.appendChild(btnHelp);
         }
       }
@@ -891,14 +993,30 @@ export function renderWaferMap(
   function openExpandModal(): void {
     if (modalHandle) { modalHandle.close(); modalHandle = null; }
 
-    // Determine what to reparent. If a summary-panel wrapper exists, reparent the
-    // whole wrapper (canvas + panel side-by-side). Otherwise reparent just canvasWrap.
+    // Determine what to reparent. When the Analysis tab is open, expand IT —
+    // not the (currently hidden, behind it) canvas — since that's what's
+    // actually on screen. Otherwise: the summary-panel wrapper if one exists
+    // (canvas + panel side-by-side), else just canvasWrap.
+    const usingAnalysis = analysisOpen && !!analysisTab;
     const reparentRoot: HTMLElement =
+      usingAnalysis ? analysisTab!.el :
       summaryPanelWrapper ?? autoSummaryPanelWrapper ?? canvasWrap;
 
     modalReparentedEl   = reparentRoot;
     modalOriginalParent = reparentRoot.parentElement as HTMLElement;
     modalOriginalNext   = reparentRoot.nextSibling;
+
+    // analysisTab.el is normally position:absolute;inset:0 (an overlay sibling
+    // of canvasWrap) — reparented into the modal's flex contentWrap it must
+    // behave as a normal flex child instead, or it would try to absolutely
+    // position itself against whatever ancestor is positioned in there.
+    // Restored on close, below.
+    const savedPosition = usingAnalysis ? reparentRoot.style.position : '';
+    const savedInset     = usingAnalysis ? reparentRoot.style.inset : '';
+    if (usingAnalysis) {
+      reparentRoot.style.position = 'static';
+      reparentRoot.style.inset    = '';
+    }
 
     // openModal owns shared-tooltip re-homing (into the box on open, back to
     // <body> on close) — correct in both modal and maximized states — so no
@@ -913,6 +1031,10 @@ export function renderWaferMap(
       onClose: () => {
         if (modalReparentedEl && modalOriginalParent) {
           modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
+          if (usingAnalysis) {
+            modalReparentedEl.style.position = savedPosition;
+            modalReparentedEl.style.inset    = savedInset;
+          }
           modalReparentedEl   = null;
           modalOriginalParent = null;
           modalOriginalNext   = null;
@@ -1851,6 +1973,7 @@ export function renderWaferMap(
       }
       canvasWrap.remove();
       canvas.style.cursor = '';
+      analysisTab?.destroy();
     },
   };
 }

@@ -31,6 +31,7 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
 .wmap-demo[data-wmap-demo="findings"]{height:280px}
 .wmap-demo[data-wmap-demo="summary-panel"]{height:300px}
 .wmap-demo[data-wmap-demo="box-select"]{height:280px}
+.wmap-demo[data-wmap-demo="analysis"]{height:600px}
 .wmap-guide--max{max-width:1000px}
 @media print{
   /* Print only the guide content: hide the host app and the window frame
@@ -605,7 +606,36 @@ across all wafers in the gallery.</p>
 <div data-wmap-demo="lot-stack" class="wmap-demo"></div><p><em>Stacked Hard Bins mode: each die position is coloured by how many wafers had
 bin 1 (Pass) or bin 2 (Fail) at that location.</em></p>
 <hr>
-<h2 id="8-reticle-overlay">8. Reticle overlay</h2>
+<h2 id="8-analysis-tab">8. Analysis tab</h2>
+<p>The <strong>Analysis</strong> toolbar button (single map or gallery) swaps the wafer view for
+a chart suite computed from the same die data — process capability, value
+distributions, and test correlation — without leaving the toolbar. Click it
+again to return to the map.</p>
+<p>Panels are grouped into three sections:</p>
+<ul>
+<li><strong>Yield &amp; bins</strong> — a yield bar (labelled with the pass bins actually in use)
+and a hard/soft bin pareto.</li>
+<li><strong>Distributions</strong> — process capability (Cp/Cpk/Pp/Ppk for tests with both a
+lower and upper spec limit), a test-value box plot, and a value histogram.
+Clicking a capability box drives the box plot and histogram onto that same
+test automatically.</li>
+<li><strong>Correlation</strong> — a test-to-test correlation matrix and a die-level scatter
+plot. Clicking a matrix cell drives the scatter plot onto that pair.</li>
+</ul>
+<p>In a gallery with more than one wafer, a <strong>Group by</strong> control appears whenever
+wafer metadata (lot, product, test program, temperature, split, or a custom
+field) actually varies across the loaded wafers — grouping pools or restricts
+each panel differently depending on what makes sense for that chart type.
+Histogram, correlation, and scatter also offer a <strong>Wafer</strong> picker to narrow
+from &quot;all wafers pooled&quot; down to one wafer at a time. Clicking a yield bar or
+box-plot row for one wafer opens that wafer&#39;s own map — a box-plot click opens
+directly on the test you were looking at.</p>
+<div data-wmap-demo="analysis" class="wmap-demo"></div><p><em>Analysis tab open on a single wafer: yield and bin pareto, process
+capability, a test-value box plot and histogram, and a correlation matrix with
+scatter plot — all computed from this wafer&#39;s own dies. In a gallery, the same
+tab also gains a &quot;Group by&quot; control and per-wafer yield/box-plot rows.</em></p>
+<hr>
+<h2 id="9-reticle-overlay">9. Reticle overlay</h2>
 <p>When reticle (stepper field) geometry is configured, the <strong>Reticle grid</strong> overlay
 draws the stepper field boundaries on the wafer. Each rectangle represents one
 exposure field from the lithography stepper — the group of dies exposed in a
@@ -789,6 +819,47 @@ positions that show elevated failure rates.</p>
             statsSummary: spSummary || undefined,
             summaryPanel: { defaultOpen: true },
           });
+
+        } else if (id === 'analysis') {
+          // renderWaferGallery is NOT necessarily available here — a guide
+          // window opened from a single-map host (renderWaferMap.ts) passes
+          // renderWaferGallery: undefined to avoid a circular import, so this
+          // demo (unlike 'gallery' above) must use renderWaferMap, which is
+          // always present regardless of which host opened the guide.
+          //
+          // Two parametric tests (one with spec limits, so capability has
+          // something to plot) so distributions/capability/correlation/
+          // scatter all have real data to show, alongside yield/bin pareto.
+          var analysisTestDefs = [
+            { testNumber: 1, name: 'Idsat', unit: 'A', limitLow: 1.5, limitHigh: 8.5 },
+            { testNumber: 2, name: 'Vth', unit: 'V' },
+          ];
+          function makeAnalysisWafer(seed) {
+            var r = 7, out = [];
+            for (var x = -r; x <= r; x++) {
+              for (var y = -r; y <= r; y++) {
+                if (Math.sqrt(x * x + y * y) > r + 0.5) continue;
+                out.push({
+                  x: x, y: y,
+                  hbin: (Math.abs(x * 3 + y * 7 + seed) % 10 < 2) ? 2 : 1,
+                  testValues: {
+                    1: +((x * 0.5 + y * 0.3 + 5 + seed * 0.2).toFixed(3)),
+                    2: +((x * -0.2 + y * 0.4 + 2 + seed * 0.1).toFixed(3)),
+                  },
+                });
+              }
+            }
+            return out;
+          }
+          var analysisResult = buildWaferMap({ results: makeAnalysisWafer(0), hbinDefs: hbinDefs, testDefs: analysisTestDefs, passBins: [1] });
+          renderWaferMap(el, analysisResult, {
+            analysisEnabled: true,
+            viewOptions: { plotMode: 'hardBin' },
+          });
+          // Open the Analysis tab by default — same click a user would make,
+          // just pre-triggered so the feature is visible without interaction.
+          var analysisBtn = el.querySelector('button[aria-label="Analysis"]');
+          if (analysisBtn) analysisBtn.click();
 
         } else if (id === 'reticle') {
           var reticleResult = buildWaferMap({

@@ -23,6 +23,7 @@
   <div class="demo-intro">
     A 300 mm wafer rendered in hard-bin mode from synthetic die results.
     <strong>Hover the canvas</strong> to reveal the toolbar — use it to switch plot mode, change colour scheme, rotate, flip, toggle die labels, zoom, and download a PNG.
+    The toolbar's <strong>Analysis</strong> button (opt-in via <code>analysisEnabled: true</code>) swaps the map for this wafer's own chart suite — process capability, value distribution, and test correlation, all from the same parametric <code>testValues</code> already on each die.
   </div>
 
   <div class="demo-content">
@@ -34,22 +35,29 @@
   <script type="module">
     import { buildWaferMap }  from 'wafermap';
     import { renderWaferMap } from 'wafermap/render';
-    import { makeResults, WAFER_CONFIG, DIE_CONFIG } from './data.js';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS } from './data.js';
 
     // Step 1 — buildWaferMap: pure data layer (no DOM, server-safe).
     // Pass prober step positions in x/y — the library converts to mm internally.
+    // testDefs carries the parametric test metadata (name/unit/spec limits)
+    // the Analysis tab's capability/distribution/correlation panels read.
     const result = buildWaferMap({
       results:     makeResults({ seed: 7 }),
       waferConfig: WAFER_CONFIG,   // { diameter: 300, notch: { type: 'bottom' } }
       dieConfig:   DIE_CONFIG,     // { width: 10, height: 10 }
+      testDefs:    TEST_DEFS,
       passBins:    [1],
     });
 
     // Step 2 — renderWaferMap: mounts a self-contained interactive canvas.
     // The toolbar (mode, colour, rotate, zoom…) appears on hover — no extra HTML needed.
+    // analysisEnabled adds the Analysis toolbar button, which swaps the map
+    // for this single wafer's own chart suite (no "Group by" — nothing to
+    // group with only one wafer).
     renderWaferMap(document.getElementById('map'), result, {
       viewOptions: { plotMode: 'hardBin' },
       showHelpButton: true,
+      analysisEnabled: true,
     });
   </script>
 

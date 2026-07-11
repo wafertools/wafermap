@@ -21,6 +21,25 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-07-11
+
+### Added
+
+- **Analysis tab — an in-toolbar chart suite for wafer/lot data.** Passing `analysisEnabled: true` to `renderWaferMap` or `renderWaferGallery` adds an **Analysis** toolbar button that swaps the map/grid for a suite of canvas chart panels computed from the same data: yield by wafer, hard/soft bin pareto, process capability (Cp/Cpk/Pp/Ppk), boxplot, value histogram, test correlation matrix, and scatter. Panels cross-link (a correlation matrix cell opens that pair in scatter; a boxplot box opens that wafer in value mode) and support an optional "Group by" facet view, with a Simpson's-paradox warning when correlation/scatter data is left ungrouped but spans mixed populations. The chart panels themselves (`analysisTab`/`charts/*`) are internal — not a public subpath — but the pure computations behind every panel are public from `@paulrobins/wafermap/stats` (`capability`, `boxplot`, `histogram`, `correlation`, `scatter`, `yield`, `binPareto`, `facets`), for hosts that want to drive their own chart library from the same numbers. While the Analysis tab is open, map/gallery-view-only toolbar controls (mode, palette, overlays, orientation, Findings, etc.) are hidden as a group — none of them apply to the chart suite — but the toolbar itself (Analysis/Expand/User guide) stays visible and usable the whole time.
+- **`userGuideExtension` render option.** Lets a host application insert its own documentation into wmap's built-in user guide window, ahead of wmap's own content, so there's one help button and one combined document instead of two competing ones.
+
+### Fixed
+
+- **Analysis-tab chart panels no longer fight their own containers for size.** A cluster of related layout bugs surfaced while building the chart suite above: cards not growing to fit their content in the grid, the expand-into-modal resize leaving stale sizing behind on close, flickering/unwanted scrollbars on panels that should never need to scroll, an unintended horizontal scrollbar appearing as a side effect of suppressing the vertical one (the CSS overflow spec forces a `visible` axis to compute as `auto` when paired with a non-`visible` one on the other axis), and a size ratchet in the boxplot panel specifically — its height was measured before its canvas had been given a real size, corrupting the calculation on every redraw and compounding on every option toggle into continuous, visible growth. `cardShell()`'s chart-card body now defaults to no scrolling at all — a panel that promises to size itself to fit its content shouldn't be able to scroll in the first place — with scrolling opted back into explicitly only where content can genuinely outgrow its cap (boxplot, the bin-pareto/yield-by-wafer row lists).
+- **Boxplot now opens the wafer detail view in the correct plot mode** when a box is clicked, instead of the default mode regardless of which test was being viewed.
+
+### Docs
+
+- **`docs/api.md`, `docs/guide.md`, `docs/user-guide.md`** (including a live embedded demo): full reference and walkthrough for the Analysis tab and `userGuideExtension`.
+- **`docs/architecture.md`**: `analysisTab`/`charts/*` added to the package-layer diagram (marked internal), the new `stats` chart-data-builder modules wired in, and a note disambiguating the toolbar's "Analysis tab" from the pre-existing `analyzeWaferMap`/`analyzeWaferLot` analysis layer — the two "Analysis" names are unrelated.
+- **`docs/glossary.md`**: added Process capability (Cp/Cpk/Pp/Ppk), used in the capability chart's UI but previously undefined.
+- **`README.md`**: updated test-count/bundle-size badges and added the Analysis tab to the feature list.
+
 ## [0.18.0] — 2026-07-08
 
 ### Breaking

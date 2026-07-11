@@ -56,6 +56,10 @@ Metadata describing one parametric test: a stable integer ID (`testNumber`), a h
 
 The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) in `value` plot mode. Enable pass/fail colouring by setting `colorBySpec: true` in `WaferViewOptions`, or toggling "Spec pass/fail" in the Overlays toolbar menu. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.colorBySpec`.*
 
+### Process capability (Cp / Cpk / Pp / Ppk)
+
+A statistical measure of how well a parametric test's values fit within its spec limits — the Analysis tab's capability chart plots one box per test, normalized so `limitLow = 0` and `limitHigh = 1`, worst `Ppk` first. `Cp`/`Cpk` ("potential"/short-term capability) use the pooled *within-wafer* standard deviation, treating each wafer as the natural short-term subgroup; `Cp` ignores how centered the distribution is, `Cpk` penalizes an off-center mean. `Pp`/`Ppk` ("performance"/long-term capability) use the plain standard deviation across every die instead. Higher is better; ≥1.33 is a common (but process-specific) threshold for "capable." `Cp`/`Cpk` are omitted when no wafer contributes at least two values (no within-subgroup variance is computable). *Library mapping: `CapabilityDatum` (`@paulrobins/wafermap/stats`).*
+
 ### Reticle
 
 The rectangular exposure field used in photolithography, typically containing a fixed grid of die sites. One reticle field is stepped across the wafer repeatedly to pattern the full surface. The library can overlay the reticle grid and attribute findings to specific reticle positions, which is useful for identifying systematic defects tied to a particular mask location. *Library mapping: `WaferMapInput.reticleConfig`, `ReticleConfig`.*

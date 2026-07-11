@@ -1179,7 +1179,7 @@ export function renderLotSummaryContent(
   panel: HTMLDivElement,
   params: {
     lotSummary:       LotStatsSummary;
-    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[] } | null>;
+    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[]; statsSummary?: StatsSummary } | null>;
     hbinDefs?:        BinDef[];
     sbinDefs?:        BinDef[];
     testDefs?:        TestDef[];
@@ -1255,12 +1255,16 @@ export function renderLotSummaryContent(
   }, 'Summary report');
   summaryReportBtn.type = 'button';
   summaryReportBtn.addEventListener('click', () => {
+    // No `lotSummary` here — grouping, per-group analysis, and rendering
+    // all happen inside renderLotSummaryReportHtml now (see its own doc
+    // comment). The on-screen panel above still uses the pooled `lotSummary`
+    // param for its own display, which is a separate, unaffected concern.
     openHtmlReport(renderLotSummaryReportHtml({
-      lotSummary,
       items: items.map((item, i) => ({
-        label:  item?.label ?? `W${i + 1}`,
-        wafer:  item?.wafer,
-        dies:   item?.dies,
+        label:        item?.label ?? `W${i + 1}`,
+        wafer:        item?.wafer,
+        dies:         item?.dies,
+        statsSummary: item?.statsSummary,
       })),
       hbinDefs, sbinDefs, testDefs,
       passBins,

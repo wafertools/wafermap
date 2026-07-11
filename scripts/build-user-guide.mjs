@@ -139,6 +139,7 @@ const wrappedHtml = `<div class="wmap-guide">
 .wmap-demo[data-wmap-demo="findings"]{height:280px}
 .wmap-demo[data-wmap-demo="summary-panel"]{height:300px}
 .wmap-demo[data-wmap-demo="box-select"]{height:280px}
+.wmap-demo[data-wmap-demo="analysis"]{height:600px}
 .wmap-guide--max{max-width:1000px}
 @media print{
   /* Print only the guide content: hide the host app and the window frame

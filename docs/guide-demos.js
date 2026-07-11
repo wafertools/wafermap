@@ -174,6 +174,47 @@
             summaryPanel: { defaultOpen: true },
           });
 
+        } else if (id === 'analysis') {
+          // renderWaferGallery is NOT necessarily available here — a guide
+          // window opened from a single-map host (renderWaferMap.ts) passes
+          // renderWaferGallery: undefined to avoid a circular import, so this
+          // demo (unlike 'gallery' above) must use renderWaferMap, which is
+          // always present regardless of which host opened the guide.
+          //
+          // Two parametric tests (one with spec limits, so capability has
+          // something to plot) so distributions/capability/correlation/
+          // scatter all have real data to show, alongside yield/bin pareto.
+          var analysisTestDefs = [
+            { testNumber: 1, name: 'Idsat', unit: 'A', limitLow: 1.5, limitHigh: 8.5 },
+            { testNumber: 2, name: 'Vth', unit: 'V' },
+          ];
+          function makeAnalysisWafer(seed) {
+            var r = 7, out = [];
+            for (var x = -r; x <= r; x++) {
+              for (var y = -r; y <= r; y++) {
+                if (Math.sqrt(x * x + y * y) > r + 0.5) continue;
+                out.push({
+                  x: x, y: y,
+                  hbin: (Math.abs(x * 3 + y * 7 + seed) % 10 < 2) ? 2 : 1,
+                  testValues: {
+                    1: +((x * 0.5 + y * 0.3 + 5 + seed * 0.2).toFixed(3)),
+                    2: +((x * -0.2 + y * 0.4 + 2 + seed * 0.1).toFixed(3)),
+                  },
+                });
+              }
+            }
+            return out;
+          }
+          var analysisResult = buildWaferMap({ results: makeAnalysisWafer(0), hbinDefs: hbinDefs, testDefs: analysisTestDefs, passBins: [1] });
+          renderWaferMap(el, analysisResult, {
+            analysisEnabled: true,
+            viewOptions: { plotMode: 'hardBin' },
+          });
+          // Open the Analysis tab by default — same click a user would make,
+          // just pre-triggered so the feature is visible without interaction.
+          var analysisBtn = el.querySelector('button[aria-label="Analysis"]');
+          if (analysisBtn) analysisBtn.click();
+
         } else if (id === 'reticle') {
           var reticleResult = buildWaferMap({
             results: results, hbinDefs: hbinDefs, passBins: [1],

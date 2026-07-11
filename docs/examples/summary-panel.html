@@ -131,7 +131,7 @@
 
     const galleryItems = waferResults.map((r, i) => ({
       ...r,
-      label:        r.wafer.metadata?.wafer ?? `W${i + 1}`,
+      label:        r.wafer.metadata?.waferId ?? `W${i + 1}`,
       statsSummary: waferSummaries[i],
     }));
 
