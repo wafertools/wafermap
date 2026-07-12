@@ -758,7 +758,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
 | <img src="images/icons/analysis.svg" width="20" height="20"> | Analysis | Only when `analysisEnabled: true` | Swaps the map for this wafer's own chart suite — see [§14](#14-the-analysis-tab) |
 | <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). While the Analysis tab is open, expands the chart suite instead. |
-| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a non-modal floating window — `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#510-user-guide-extension) |
+| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#510-user-guide-extension) |
 
 The full toolbar is shown when `toolbarControls` is `'full'` (default). A gallery card's
 detached window also uses `'full'`. In the gallery, cards show only the navigation controls
@@ -791,7 +791,7 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Download all | Always | Exports all cards as a single tiled PNG |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
 | <img src="images/icons/analysis.svg" width="20" height="20"> | Analysis | Only when `analysisEnabled: true` | Swaps the grid for a lot-wide chart suite — see [§14](#14-the-analysis-tab) |
-| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide in a non-modal floating window — `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#510-user-guide-extension) |
+| <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#510-user-guide-extension) |
 
 **While the Analysis tab is open**, every button above except Analysis and User guide is hidden
 — none of the others (mode, palette, overlays, columns, download, etc.) apply to the chart

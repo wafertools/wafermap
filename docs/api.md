@@ -858,9 +858,12 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // compact and mode-aware (value mode leads with the active test
                                             // + "+N more tests"; bin modes show a test-value count), so it
                                             // never lists tests up to a cap. Kept for back-compat.
-  showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide in a
-                                            // non-modal floating window (default false); enable in applications that want to
-                                            // surface the guide without linking externally
+  showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide
+                                            // (default false); enable in applications that want to surface the guide
+                                            // without linking externally. Opens as a real, separate window when
+                                            // `window.open` is available, falling back to an in-page non-modal
+                                            // floating window when it's blocked (some embedded WebViews — Tauri,
+                                            // Electron, WebView2 — silently return null)
   userGuideExtension?:     UserGuideExtension  // insert a host app's own documentation into the guide window
                                             // (see "User guide extension" below) — only relevant when showHelpButton is true
   minZoom?:                number    // default 0.5
@@ -1033,6 +1036,10 @@ Choose the right update method:
   setViewControlsVisible(visible: boolean): void   // show/hide mode, orientation, findings, and expand buttons as a group
   setExpandVisible(visible: boolean): void          // show/hide the expand toolbar button independently
   setHelpButtonVisible(visible: boolean): void      // show/hide the help toolbar button independently
+  openUserGuide(): void   // opens the end-user guide window directly — the same action the help toolbar button
+                                  // performs, but callable regardless of showHelpButton/setHelpButtonVisible, so a host
+                                  // that hides wmap's own help button (e.g. folding it into its own combined help menu)
+                                  // can still trigger the guide without a DOM query
 
   destroy(): void                                    // remove all listeners and DOM elements
 }
@@ -1067,7 +1074,7 @@ Choose the right update method:
 | Findings | Toggle summary panel — only shown when `statsSummary` is provided |
 | Analysis | Toggle the Analysis tab — swaps the map for this wafer's chart suite. Only shown when `analysisEnabled: true`. See §5.9. |
 | Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window. **While the Analysis tab is open, Expand reparents the chart suite instead of the (hidden) canvas**, so the modal shows what's actually on screen. |
-| User guide | Open the built-in end-user guide in a non-modal floating window — only shown when `showHelpButton: true` |
+| User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
 **While the Analysis tab is open**, Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, and Findings are all hidden as a group — none of them apply to the chart suite, and Findings specifically toggles the map's summary panel, which sits behind the Analysis tab's opaque overlay with no visible effect while it's open. Only Analysis, Expand, and User guide stay visible.
 
@@ -1278,7 +1285,10 @@ to be pre-built.
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
-  showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user guide in a non-modal floating window (default false)
+  showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user
+                                            // guide (default false). Opens as a real, separate window when `window.open`
+                                            // is available, falling back to an in-page non-modal floating window when
+                                            // it's blocked (some embedded WebViews)
   userGuideExtension?:     UserGuideExtension  // insert a host app's own documentation into the guide window
                                             // (see "User guide extension" below) — only relevant when showHelpButton is true
   lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Findings button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
@@ -1302,6 +1312,10 @@ to be pre-built.
   setFallbackFormat(format: 'si' | 'engineering'): void
   setLotStatsSummary(summary: LotStatsSummary | undefined): void  // update the lot summary panel at runtime
   setColumns(columns: number | undefined): void  // override or restore auto column count at runtime
+  openUserGuide(): void   // opens the end-user guide window directly — the same action the help toolbar button
+                                  // performs, but callable regardless of showHelpButton, so a host that hides
+                                  // wmap's own help button (e.g. folding it into its own combined help menu) can
+                                  // still trigger the guide without a DOM query
   destroy(): void
 }
 ```
@@ -1324,7 +1338,7 @@ to be pre-built.
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
 | Findings | Toggle summary panel — shown when `lotStatsSummary` is provided or any item carries `statsSummary` |
 | Analysis | Toggle the Analysis tab — swaps the grid for a lot-wide chart suite. Only shown when `analysisEnabled: true`. See §6.10. |
-| User guide | Open the built-in end-user guide in a non-modal floating window — only shown when `showHelpButton: true` |
+| User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
 Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
 
@@ -2165,8 +2179,8 @@ import {
 
 | Function | Returns | Notes |
 | --- | --- | --- |
-| `buildYieldData(items, passBins?, sortBy?)` | `ChartDatum[]` | One row per item. Prefers each item's precomputed `yieldPercent` (e.g. from `LotStatsSummary.lotYieldSeries`) over recomputing from `dies`, so it agrees byte-for-byte with whatever else already reports that wafer's yield. `sortBy`: `'yield' \| 'label'` (default `'label'`). |
-| `buildYieldDataCombined(groups, passBins?, sortBy?)` | `ChartDatum[]` | One row per group — the die-count-weighted mean of the group's per-item yields. |
+| `buildYieldData(items, passBins?, sortBy?)` | `ChartDatum[]` | One row per item. Prefers each item's precomputed `yieldPercent` (e.g. from `LotStatsSummary.lotYieldSeries`) over recomputing from `dies`, so it agrees byte-for-byte with whatever else already reports that wafer's yield. `sortBy`: `'yield' \| 'label'` (default `'label'`). `ChartDatum.key`, when the input item carried one (`YieldItem.key`), is carried through unchanged — resolve a clicked row back to your own item by `key`, not `label` (two items can share a label, e.g. if neither supplies one). |
+| `buildYieldDataCombined(groups, passBins?, sortBy?)` | `ChartDatum[]` | One row per group — the mean of the group's per-item yields, weighted by each item's *yield-eligible* die count (excludes `partial`/`edgeExcluded` dies, matching what the yield rate itself was computed over) — not raw `dies.length`, which would let dies that never counted toward an item's own yield still skew the combined average. |
 | `buildBinParetoData(items, binType)` | `ChartDatum[]` | One row per bin (`binType: 'hbin' \| 'sbin'`), sorted by count descending. |
 | `buildBinClusterData(groups, binType)` | `BinClusterData` | Every group's bin counts side by side — `{ groups: string[], bins: BinCluster[] }`, one `BinCluster` per bin with a `counts[]` aligned to `groups`. |
 | `buildCapabilityData(items, testDefs)` | `CapabilityDatum[]` | Cp/Cpk (pooled within-item stddev — each item is treated as the short-term subgroup) and Pp/Ppk (overall stddev), for every test with both `limitLow` and `limitHigh`. `min`/`q1`/`median`/`q3`/`max` are normalized `(v - lsl) / (usl - lsl)`. Sorted worst-Ppk-first. |

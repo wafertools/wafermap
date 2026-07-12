@@ -129,6 +129,7 @@ export function createAnalysisTab(deps: AnalysisTabDeps): AnalysisTabHandle {
     const withYieldPercent = (item: Item) => ({
       ...item,
       yieldPercent: yieldByWaferIndex.get(item.waferIndex),
+      key: item.waferIndex,
     });
     const yieldItems = items.map(withYieldPercent);
     const yieldGroups = groups?.map(g => ({ key: g.key, items: g.items.map(withYieldPercent) }));
@@ -155,13 +156,13 @@ export function createAnalysisTab(deps: AnalysisTabDeps): AnalysisTabHandle {
         onBack: () => ({ data: makeYieldData(), title: `Yield by ${label} (pass: ${passBinsLabel})` }),
         groupLabelText: label,
       } : undefined,
-      // Sorted rows can't be index-correlated back to `items`, so resolve by
-      // label (unique per wafer, same lookup key the drill callbacks above
-      // already use) — a leaf row's label is always its wafer's own label,
-      // group-drilled or not.
+      // Sorted rows can't be index-correlated back to `items` by position, so
+      // resolve via `datum.key` (set to `waferIndex` above by `withYieldPercent`)
+      // — not `label`, which two items can share (e.g. both fall back to the
+      // same default when neither supplies a label nor a wafer ID), which
+      // would silently open the wrong wafer.
       onOpen: openWafer ? datum => {
-        const waferIndex = items.find(it => it.label === datum.label)?.waferIndex;
-        if (waferIndex !== undefined) openWaferDetailModal(waferIndex, `Wafer ${datum.label}`);
+        if (typeof datum.key === 'number') openWaferDetailModal(datum.key, `Wafer ${datum.label}`);
       } : undefined,
     };
     const yieldPanel = renderBarPanel(yieldPanelConfig, onSaveImage);

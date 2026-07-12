@@ -27,6 +27,18 @@ export interface ChartDatum {
   itemCount: number;
   /** Bin code this datum represents — only set for bin-pareto data. */
   binCode?: number;
+  /**
+   * Stable identity for a leaf row (`itemCount === 1`), independent of
+   * `label` — a caller with an `onOpen` callback should resolve back to its
+   * own item by `key`, not by re-searching for `label`. Labels are only
+   * guaranteed unique when the caller supplies one per item; an item with no
+   * `label` falls back to a shared default elsewhere (e.g. `analysisTab.ts`
+   * falls back to `''` when both `label` and `wafer.metadata.waferId` are
+   * absent), so two rows can carry an identical, ambiguous label — matching
+   * on it would silently resolve to the wrong item. Absent on group rows
+   * (`itemCount > 1`), which are drilled into rather than opened directly.
+   */
+  key?: string | number;
 }
 
 export interface YieldItem {
@@ -38,6 +50,8 @@ export interface YieldItem {
    * Omit to have it computed from `dies` instead.
    */
   yieldPercent?: number | null;
+  /** Carried through to the resulting `ChartDatum.key` unchanged — see its doc comment. */
+  key?: string | number;
 }
 
 export type YieldSortBy = 'yield' | 'label';
@@ -60,6 +74,18 @@ function resolveYieldPercent(item: YieldItem, passBins: number[]): number {
   return yieldPercentFromDies(item.dies ?? [], passBins);
 }
 
+/** Count of dies a yield percentage was actually computed over — excludes
+ *  partial/edge-excluded dies, matching `isYieldEligibleDie` (the same rule
+ *  `buildWaferMap`/`yieldPercentFromDies` use). Using raw `dies.length`
+ *  instead would weight a wafer by dies that never counted toward its own
+ *  yield (e.g. a heavily edge-excluded wafer), skewing a combined/grouped
+ *  average even though those dies are invisible everywhere else. */
+function yieldEligibleDieCount(dies: Die[]): number {
+  let n = 0;
+  for (const d of dies) if (isYieldEligibleDie(d)) n++;
+  return n;
+}
+
 function sortYieldData(data: ChartDatum[], sortBy: YieldSortBy): void {
   if (sortBy === 'yield') data.sort((a, b) => b.value - a.value);
   else data.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
@@ -69,7 +95,7 @@ function sortYieldData(data: ChartDatum[], sortBy: YieldSortBy): void {
 export function buildYieldData(items: YieldItem[], passBins: number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
   const data = items.map((it, i) => {
     const pct = resolveYieldPercent(it, passBins);
-    return { label: it.label ?? `#${i}`, value: pct, percent: pct, itemCount: 1 };
+    return { label: it.label ?? `#${i}`, value: pct, percent: pct, itemCount: 1, key: it.key };
   });
   sortYieldData(data, sortBy);
   return data;
@@ -77,17 +103,22 @@ export function buildYieldData(items: YieldItem[], passBins: number[] = [1], sor
 
 /**
  * Combined yield: one bar per group, pooling the group's items. The pooled
- * yield is the die-count-weighted mean of per-item yields — exact for the
- * standard pass/total definition (Σ pass / Σ total = Σ(yield·dies)/Σ dies).
- * Weighting uses each item's raw die count (`dies.length`), matching
- * tsmap's own `buildYieldDataCombined` — an item's precomputed
- * `yieldPercent` (if supplied) is used as the per-item rate being weighted.
+ * yield is the yield-eligible-die-count-weighted mean of per-item yields —
+ * exact for the standard pass/total definition (Σ pass / Σ total =
+ * Σ(yield·dies)/Σ dies), *provided* `dies` is the same population the rate
+ * was computed over. Weighting uses `yieldEligibleDieCount` (excludes
+ * partial/edge-excluded dies), not raw `dies.length` — a per-item
+ * `yieldPercent` (own or precomputed, e.g. from `analyzeWaferLot`) already
+ * excludes those dies from its own numerator/denominator (`resolveYieldPercent`
+ * → `isYieldEligibleDie`), so weighting by the raw count would let a wafer's
+ * excluded dies (which count toward yield nowhere else) still skew this
+ * combined bar.
  */
 export function buildYieldDataCombined(groups: { key: string; items: YieldItem[] }[], passBins: number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
   const data = groups.map(g => {
     let weighted = 0, dieCount = 0;
     for (const it of g.items) {
-      const dies = it.dies?.length ?? 0;
+      const dies = yieldEligibleDieCount(it.dies ?? []);
       weighted += resolveYieldPercent(it, passBins) * dies;
       dieCount += dies;
     }

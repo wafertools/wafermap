@@ -147,6 +147,40 @@ export function copyWmapThemeTokens(src: Element, dest: HTMLElement): void {
   }
 }
 
+/**
+ * Keeps a popup's copied `--wmap-*` tokens (`copyWmapThemeTokens`, above) in
+ * sync with *later* host theme changes. A one-time copy at open time is a
+ * snapshot, not a live link (CSS custom properties can't inherit across
+ * documents) — if the host flips theme while the popup is still open (e.g. a
+ * dark-mode toggle re-pointing its `--wmap-*` values), nothing would
+ * otherwise re-copy them. Watches attribute changes on `themeSource` and
+ * `<html>` — the two most common places a host actually changes theme (a
+ * toggled class or inline style) — plus the OS light/dark preference. This
+ * can't observe a change on some other ancestor further up that isn't
+ * `themeSource` or `<html>` itself, but that already covers the realistic
+ * cases; watching the whole ancestor chain generically is not something
+ * anything else in this codebase does either. `onResync`, if given, fires
+ * alongside each re-copy — e.g. to force a live map inside the popup to
+ * redraw so its canvas re-resolves the same palette (CSS custom properties
+ * update DOM-driven chrome automatically, but a canvas only re-resolves
+ * `--wmap-*` at its next draw). Returns a disposer to call when the popup closes.
+ */
+export function syncWmapPopupTheme(themeSource: Element, popupDocumentElement: HTMLElement, onResync?: () => void): () => void {
+  const resync = () => {
+    copyWmapThemeTokens(themeSource, popupDocumentElement);
+    onResync?.();
+  };
+  const observer = new window.MutationObserver(resync);
+  observer.observe(themeSource, { attributes: true, attributeFilter: ['style', 'class'] });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
+  const schemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  schemeMediaQuery.addEventListener('change', resync);
+  return () => {
+    observer.disconnect();
+    schemeMediaQuery.removeEventListener('change', resync);
+  };
+}
+
 // ── Gallery card detach window opener ───────────────────────────────────────
 //
 // A gallery card detached into its own window (see renderWaferGallery.ts's
@@ -1674,7 +1708,14 @@ export function makeOrientationBtn(
 // (buildWaferMap/renderWaferMap/renderWaferGallery/analyzeWaferMap) — never
 // host-app state — so it doesn't matter which map's help button opened it.
 
-let openGuideHandle: OverlayHandle | null = null;
+/** Only `.close()` is ever called on this — deliberately narrower than
+ *  `OverlayHandle` so both the floating-window branch (which returns a real
+ *  `OverlayHandle`, a structural superset) and the popup branch (which has
+ *  no backdrop/box/contentWrap to speak of) can satisfy it without a cast. */
+interface GuideHandle { close: () => void; }
+let openGuideHandle: GuideHandle | null = null;
+
+type GuideApi = { buildWaferMap: unknown; renderWaferMap: unknown; renderWaferGallery: unknown; analyzeWaferMap: unknown };
 
 /**
  * Host-supplied content inserted into wmap's own embedded user-guide window,
@@ -1692,13 +1733,122 @@ export interface UserGuideExtension {
    */
   html: string;
   /**
-   * Overrides the floating window's title bar text (default
-   * `'Wafer Map — User Guide'`). Use this when the host's own content
-   * should frame the whole document — wmap's own `<h1>` stays as-is
-   * further down the page, so the result reads as one combined guide
-   * with the host's section first, not a title rewrite.
+   * Overrides the window's title text (default `'Wafer Map — User Guide'`).
+   * Use this when the host's own content should frame the whole document —
+   * wmap's own `<h1>` stays as-is further down the page, so the result
+   * reads as one combined guide with the host's section first, not a title
+   * rewrite.
    */
   title?: string;
+}
+
+/**
+ * Builds the guide's content div in `doc` (its own document — the floating
+ * window shares the host's; a popup has its own) and inserts `contentHtml`.
+ * Does **not** activate the inline live-demo script yet — see
+ * `activateGuideScripts`, which the caller must run only after this `content`
+ * element is connected to `doc`. `targetWindow.__wmapDemoApi` is set here (for
+ * that script to read once it runs) and restored (not just cleared) on close —
+ * guards a race where a second `openUserGuideWindow` call already overwrote it
+ * with a newer api before this older instance's own close handler runs.
+ */
+function buildGuideContent(doc: Document, targetWindow: Window, contentHtml: string, api: GuideApi): { content: HTMLElement; restoreApi: () => void } {
+  const w = targetWindow as any;
+  const prevApi = w.__wmapDemoApi;
+  w.__wmapDemoApi = api;
+  const content = doc.createElement('div');
+  content.innerHTML = contentHtml;
+  return { content, restoreApi: () => { if (w.__wmapDemoApi === api) w.__wmapDemoApi = prevApi; } };
+}
+
+/**
+ * Re-executes the guide's one inline live-demo script and mounts the demos.
+ * `innerHTML` never runs scripts, so the inert one `content` already has (from
+ * `buildGuideContent`) is found and cloned into a fresh `<script>` element,
+ * which *does* execute — but only once inserted into a **connected** document;
+ * a `<script>` appended to a still-detached element does not run (verified
+ * directly: Chromium only performs a script element's insertion steps once it
+ * becomes part of the document tree). So this must be called strictly *after*
+ * `content` has been appended into `doc` (`contentWrap`/`body`) — calling it
+ * before, as an earlier version of this code did, leaves
+ * `window.__wmapPopulateGuideDemos` undefined at the time it's read here,
+ * silently no-opping every demo mount (found via a live guide window showing
+ * empty `data-wmap-demo` divs — the exact regression this split fixes).
+ */
+function activateGuideScripts(content: HTMLElement, targetWindow: Window): void {
+  const w = targetWindow as any;
+  const inert = content.querySelector('script');
+  if (inert) {
+    const s = content.ownerDocument.createElement('script');
+    s.textContent = inert.textContent;
+    content.appendChild(s);
+    const guideEl = content.querySelector<HTMLElement>('.wmap-guide');
+    if (guideEl) w.__wmapPopulateGuideDemos?.(guideEl);
+  }
+}
+
+/** In-page fallback — unchanged from before `window.open` support was added. */
+function openGuideInFloatingWindow(title: string, contentHtml: string, api: GuideApi): OverlayHandle {
+  const { content, restoreApi } = buildGuideContent(document, window, contentHtml, api);
+  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
+  const handle = openFloatingWindow({
+    title,
+    // Maximising widens the reading measure (720px → 1000px) so the guide uses
+    // the extra space without lines growing uncomfortably long. Toggled via a
+    // class so the cap lives in the guide stylesheet, not inline here.
+    onMaximizeChange: (isMaximized) => {
+      content.querySelector('.wmap-guide')?.classList.toggle('wmap-guide--max', isMaximized);
+    },
+    onClose: () => {
+      if (openGuideHandle === handle) openGuideHandle = null;
+      restoreApi();
+    },
+  });
+  handle.contentWrap.appendChild(content);
+  activateGuideScripts(content, window);
+  return handle;
+}
+
+/** Real, separate OS window — draggable outside the host window's own
+ *  bounds, the same upgrade gallery card detach already has. Mirrors
+ *  `renderWaferGallery.ts`'s `openWindowForCard` real-popup branch: bare
+ *  DOM APIs (no `document.write`, which risks silently breaking later
+ *  `ResizeObserver` callbacks in some engines), an explicit font stack
+ *  (a popup never inherits the host page's own CSS reset), and a themed,
+ *  synced `--wmap-*` copy (see `syncWmapPopupTheme`'s doc comment). */
+function openGuideInPopup(popupWin: Window, title: string, contentHtml: string, api: GuideApi): GuideHandle {
+  const doc = popupWin.document;
+  doc.title = title;
+  Object.assign(doc.documentElement.style, { height: '100%' });
+  Object.assign(doc.body.style, {
+    margin: '0', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+    fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+  });
+  // Not tied to any one render container (the guide can be opened from a
+  // single map, a gallery, or programmatically via a controller's own
+  // openUserGuide()) — document.documentElement is the only sensible,
+  // always-available theme source here.
+  copyWmapThemeTokens(document.documentElement, doc.documentElement);
+  const stopThemeSync = syncWmapPopupTheme(document.documentElement, doc.documentElement);
+
+  const { content, restoreApi } = buildGuideContent(doc, popupWin, contentHtml, api);
+  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
+  doc.body.appendChild(content);
+  activateGuideScripts(content, popupWin);
+
+  let closed = false;
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(closePollId);
+    stopThemeSync();
+    restoreApi();
+    if (openGuideHandle === handle) openGuideHandle = null;
+  };
+  const closePollId = setInterval(() => { if (popupWin.closed) cleanup(); }, 400);
+  popupWin.addEventListener('pagehide', cleanup);
+  const handle: GuideHandle = { close: () => { if (!popupWin.closed) popupWin.close(); cleanup(); } };
+  return handle;
 }
 
 /**
@@ -1707,42 +1857,28 @@ export interface UserGuideExtension {
  * `api` must contain the four library functions the guide demos call at runtime.
  * `html` is USER_GUIDE_HTML — passed in so toolbar.ts has no dependency on userGuideHtml.ts.
  * `extension`, when provided, prepends host content and/or overrides the window title — see `UserGuideExtension`.
+ *
+ * Opens a real, separate window when available (draggable outside the host
+ * window's own bounds), falling back to the in-page floating window when
+ * `window.open` is blocked/unavailable — silently returns `null` in some
+ * embedded WebViews (Tauri, Electron, WebView2), same gap `openDetachWindow`
+ * exists for. Unlike gallery card detach, this doesn't go through
+ * `setDetachWindowOpener` — that opener's contract is scoped to per-wafer
+ * detach windows a host may have built specifically for that shape of
+ * content, and reusing it silently for the guide would broaden it without
+ * documentation.
  */
 export function openUserGuideWindow(
-  api: { buildWaferMap: unknown; renderWaferMap: unknown; renderWaferGallery: unknown; analyzeWaferMap: unknown },
+  api: GuideApi,
   html: string,
   extension?: UserGuideExtension,
 ): void {
   if (openGuideHandle) { openGuideHandle.close(); openGuideHandle = null; }
 
-  const prevApi = (window as any).__wmapDemoApi;
-  (window as any).__wmapDemoApi = api;
-  const content = document.createElement('div');
-  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
-  content.innerHTML = (extension?.html ?? '') + html;
-  const handle = openFloatingWindow({
-    title: extension?.title ?? 'Wafer Map — User Guide',
-    // Maximising widens the reading measure (720px → 1000px) so the guide uses
-    // the extra space without lines growing uncomfortably long. Toggled via a
-    // class so the cap lives in the guide stylesheet, not inline here.
-    onMaximizeChange: (isMaximized) => {
-      content.querySelector('.wmap-guide')?.classList.toggle('wmap-guide--max', isMaximized);
-    },
-    onClose: () => {
-      openGuideHandle = null;
-      if ((window as any).__wmapDemoApi === api) (window as any).__wmapDemoApi = prevApi;
-    },
-  });
-  openGuideHandle = handle;
-  handle.contentWrap.appendChild(content);
-  // innerHTML does not execute scripts; re-run by cloning script text into a new element.
-  // The script exposes window.__wmapPopulateGuideDemos — call it immediately after.
-  const inert = content.querySelector('script');
-  if (inert) {
-    const s = document.createElement('script');
-    s.textContent = inert.textContent;
-    content.appendChild(s);
-    const guideEl = content.querySelector<HTMLElement>('.wmap-guide');
-    if (guideEl) (window as any).__wmapPopulateGuideDemos?.(guideEl);
-  }
+  const title = extension?.title ?? 'Wafer Map — User Guide';
+  const contentHtml = (extension?.html ?? '') + html;
+  const popupWin = window.open('', '_blank', 'width=800,height=820');
+  openGuideHandle = popupWin
+    ? openGuideInPopup(popupWin, title, contentHtml, api)
+    : openGuideInFloatingWindow(title, contentHtml, api);
 }

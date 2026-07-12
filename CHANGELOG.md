@@ -21,6 +21,18 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-07-12
+
+### Added
+
+- **`WaferMapController.openUserGuide()` / `GalleryController.openUserGuide()`.** Opens the built-in end-user guide directly — the same action the help toolbar button performs, but callable regardless of `showHelpButton`/`setHelpButtonVisible`, so a host that hides wmap's own help button (e.g. folding it into its own combined help menu) can trigger the guide without a DOM query against wmap's internal button markup.
+- **The user guide now opens in a real, separate window when available**, draggable outside the host window's own bounds — the same upgrade gallery card detach got in 0.18.0. Falls back to the existing in-page non-modal floating window when `window.open` is blocked (some embedded WebViews — Tauri, Electron, WebView2 — silently return `null`), unchanged from before. The popup's `--wmap-*` theme tokens now also stay synced with later host theme changes (a toggled class/style on the render container or `<html>`, or an OS light/dark flip) — previously a one-time snapshot at open time; this fix also applies to gallery card detach windows.
+
+### Fixed
+
+- **`buildYieldDataCombined` weighted a group's combined yield by raw die count, including `partial`/`edgeExcluded` dies that never counted toward any item's own yield.** A wafer with many excluded dies could skew a "Group by" yield bar even though those dies are invisible everywhere else in the library. Now weighted by yield-eligible die count only (`isYieldEligibleDie`), matching the population the per-item yield rate was actually computed over.
+- **Analysis tab: clicking a yield-by-wafer row could open the wrong wafer** when two items shared a label (or both fell back to the same default because neither supplied a label nor a wafer ID) — the click handler resolved the row back to a wafer by re-searching for a matching `label`, and the first match always won. `ChartDatum`/`YieldItem` gain an optional `key` field (additive) carried through unchanged from the input item, used instead of `label` to resolve a clicked row to its item.
+
 ## [0.18.1] — 2026-07-11
 
 ### Added

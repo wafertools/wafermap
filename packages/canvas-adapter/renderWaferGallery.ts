@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -184,6 +184,15 @@ export interface GalleryController {
    * the auto-computed layout based on die pitch.
    */
   setColumns(columns: number | undefined): void;
+  /**
+   * Opens the built-in end-user guide window — the same action the help
+   * toolbar button performs, but callable directly. Works regardless of
+   * `showHelpButton`'s current value, so a host that hides wmap's own help
+   * button (e.g. to fold it into its own combined help menu) can still
+   * trigger the guide without a DOM query against wmap's internal button
+   * markup.
+   */
+  openUserGuide(): void;
   /** Remove all DOM and event listeners. */
   destroy(): void;
 }
@@ -267,6 +276,11 @@ export function renderWaferGallery(
     // only ever duplicate what cardIndex's null-ness already says.
     cardIndex: number | null;
     label: string;
+    // Real popup only (separate document, one-time theme-token copy) — tears
+    // down the observer/listener that keep it in sync with later host theme
+    // changes. Undefined for the in-page floating-window fallback, which
+    // shares the host's own document and so inherits --wmap-* changes live.
+    stopThemeSync?: () => void;
   }
   const detachedWindows = new Map<number, DetachedWindow>();
   let nextWindowId = 0;
@@ -912,10 +926,20 @@ export function renderWaferGallery(
   }
 
   // Help button — opens the end-user guide in a non-modal window (opt-in).
+  // The button's click handler and the controller's own `openUserGuide()`
+  // (below) both call this same function — a host can trigger the guide
+  // programmatically (e.g. from its own combined help menu) whether or not
+  // `showHelpButton` ever rendered a wmap toolbar button at all.
+  function openGuideWindow(): void {
+    import('./userGuideHtml.js').then(m => openUserGuideWindow(
+      { buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap },
+      m.USER_GUIDE_HTML,
+      userGuideExtension,
+    ));
+  }
   if (showHelpButton) {
     barEl.appendChild(makeSep());
-    barEl.appendChild(makeBtn('help', 'User guide', () =>
-      import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap }, m.USER_GUIDE_HTML, userGuideExtension))));
+    barEl.appendChild(makeBtn('help', 'User guide', () => openGuideWindow()));
   }
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
@@ -1750,9 +1774,17 @@ export function renderWaferGallery(
         fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
       });
       // The popup's documentElement has none of the host page's --wmap-* theme
-      // values (it's an unrelated document) — copy them across so its chrome and
-      // canvas match the host's theme instead of silently reverting to light mode.
-      copyWmapThemeTokens(document.documentElement, doc.documentElement);
+      // values (it's an unrelated document) — copy them across, and keep them
+      // synced with later host theme changes (see syncWmapPopupTheme's own doc
+      // comment). Read from the gallery's own render container, not
+      // document.documentElement — getComputedStyle resolves the full cascade
+      // *down to* that element, so this also picks up a --wmap-* override set
+      // on some nearer ancestor of the container rather than on <html> itself
+      // (a host that only themes its own widget wrapper, not the whole page).
+      // Reading from documentElement would silently miss that and copy the
+      // fallback defaults instead.
+      copyWmapThemeTokens(container, doc.documentElement);
+      const stopThemeSync = syncWmapPopupTheme(container, doc.documentElement, () => ctrl.setOptions({}));
 
       // In-content banner: the OS window/tab title is the only "title bar" a real
       // popup has, and some hosts (e.g. a decoration-less Tauri window) may not
@@ -1767,17 +1799,17 @@ export function renderWaferGallery(
       });
       doc.body.appendChild(banner);
 
-      const container = doc.createElement('div');
-      Object.assign(container.style, { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' });
-      doc.body.appendChild(container);
+      const popupBody = doc.createElement('div');
+      Object.assign(popupBody.style, { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' });
+      doc.body.appendChild(popupBody);
 
-      const ctrl = buildDetachedController(container, item);
+      const ctrl = buildDetachedController(popupBody, item);
 
       const closePollId = setInterval(() => { if (popupWin.closed) handlePopupClosed(id); }, 400);
       popupWin.addEventListener('pagehide', () => handlePopupClosed(id));
 
       detachedWindows.set(id, {
-        id, ctrl, cardIndex, label, closePollId,
+        id, ctrl, cardIndex, label, closePollId, stopThemeSync,
         close: () => { if (!popupWin.closed) popupWin.close(); },
         setTitle: (text) => {
           doc.title = text;
@@ -1871,6 +1903,7 @@ export function renderWaferGallery(
     if (!win) return; // already handled — poll/pagehide race, or reattach-button already ran this
     detachedWindows.delete(id);
     if (win.closePollId != null) clearInterval(win.closePollId);
+    win.stopThemeSync?.();
     const liveOptions = win.ctrl.getOptions();
     win.ctrl.destroy();
 
@@ -2002,6 +2035,8 @@ export function renderWaferGallery(
     setColumns(cols: number | undefined): void {
       setColumnsState(cols);
     },
+
+    openUserGuide: openGuideWindow,
 
     destroy(): void {
       buildGeneration++; // cancel any pending factory resolvers

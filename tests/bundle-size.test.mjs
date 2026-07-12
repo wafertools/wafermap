@@ -2,11 +2,15 @@
 // Thresholds are set at ~20% above current baselines — update deliberately when the library grows.
 //
 // Current baselines (gzipped):
-//   wafermap (root):          ~33 KB
-//   wafermap/render (initial): ~75 KB  (userGuideHtml deferred — must not appear in initial chunk)
+//   wafermap (root):          ~37 KB
+//   wafermap/render (initial): ~88 KB  (userGuideHtml deferred — must not appear in initial chunk)
 //   2026-07-10: raised from ~62 KB after capability/boxplot gained per-panel
 //   grouping UI (restrict dropdown, drill-in-place, back button) — legitimate
 //   library growth, not bloat; see wmap/tsmap WMAP_ISSUES.md #31.
+//   2026-07-12: raised from ~75 KB after the Analysis tab chart suite, plus
+//   the user-guide window and gallery card detach gaining real-window
+//   support (window.open with fallback) and live --wmap-* theme resync —
+//   legitimate library growth, not bloat.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,8 +23,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
-  'wafermap (root)':            40_000,  // gzipped bytes — baseline ~33 KB
-  'wafermap/render (initial)':  90_000,  // gzipped bytes — baseline ~75 KB, guide excluded
+  'wafermap (root)':            40_000,   // gzipped bytes — baseline ~37 KB
+  'wafermap/render (initial)':  106_000,  // gzipped bytes — baseline ~88 KB, guide excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

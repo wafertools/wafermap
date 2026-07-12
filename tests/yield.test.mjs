@@ -61,6 +61,17 @@ test('buildYieldData — a precomputed yieldPercent is used directly, ignoring d
   assert.equal(out[0].value, 42);
 });
 
+test('buildYieldData — key is carried through unchanged, distinguishing rows that share a label', () => {
+  // Two items with no distinguishing label — a caller resolving a clicked
+  // row back to its item by label alone would always find the first one.
+  const items = [
+    { label: '', dies: [die(1)], key: 0 },
+    { label: '', dies: [die(2)], key: 1 },
+  ];
+  const out = buildYieldData(items, [1], 'label');
+  assert.deepEqual(out.map(d => d.key).sort(), [0, 1]);
+});
+
 test('buildYieldDataCombined — precomputed per-item yieldPercent is weighted by die count', () => {
   const groups = [{
     key: 'G1',
@@ -71,4 +82,24 @@ test('buildYieldDataCombined — precomputed per-item yieldPercent is weighted b
   }];
   const out = buildYieldDataCombined(groups, [1], 'label');
   assert.equal(out[0].value, 50);
+});
+
+test('buildYieldDataCombined — weights by yield-eligible dies, not raw die count', () => {
+  const groups = [{
+    key: 'G1',
+    items: [
+      // 100% yield, but padded with excluded dies that must not add weight —
+      // if raw dies.length were used, this item's 100 excluded dies would
+      // swamp the other item's real 2, skewing the combined bar toward 100%.
+      {
+        dies: [
+          die(1), die(1), // 2 eligible, both pass
+          ...Array.from({ length: 100 }, () => ({ x: 0, y: 0, hbin: 2, edgeExcluded: true })),
+        ],
+      },
+      { dies: [die(2), die(2)] }, // 2 eligible, 0% pass
+    ],
+  }];
+  const out = buildYieldDataCombined(groups, [1], 'label');
+  assert.ok(Math.abs(out[0].value - 50) < 1e-9); // (100*2 + 0*2) / 4, not swamped by the 100 excluded dies
 });

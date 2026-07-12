@@ -270,6 +270,15 @@ export interface WaferMapController {
   setExpandVisible(visible: boolean): void;
   /** Show or hide the help toolbar button. */
   setHelpButtonVisible(visible: boolean): void;
+  /**
+   * Opens the built-in end-user guide window — the same action the help
+   * toolbar button performs, but callable directly. Works regardless of
+   * `showHelpButton`/`setHelpButtonVisible`'s current value, so a host that
+   * hides wmap's own help button (e.g. to fold it into its own combined help
+   * menu) can still trigger the guide without a DOM query against wmap's
+   * internal button markup.
+   */
+  openUserGuide(): void;
   /** Close the auto-mounted summary panel if it is open. No-op if no panel exists. */
   closeSummaryPanel(): void;
   /** Move the floating tooltip into a different parent (e.g. a maximized modal box). */
@@ -951,10 +960,13 @@ export function renderWaferMap(
         }
 
         // Help button — opens the end-user guide in a non-modal window (opt-in).
+        // The button's click handler and the controller's own `openUserGuide()`
+        // (below) both call this same function — a host can trigger the guide
+        // programmatically (e.g. from its own combined help menu) whether or
+        // not `showHelpButton` ever rendered a wmap toolbar button at all.
         if (showHelpButton) {
           sceneControlsEl!.appendChild(makeSep());
-          btnHelp = makeBtn('help', 'User guide', () =>
-            import('./userGuideHtml.js').then(m => openUserGuideWindow({ buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap }, m.USER_GUIDE_HTML, userGuideExtension)));
+          btnHelp = makeBtn('help', 'User guide', () => openGuideWindow());
           sceneControlsEl!.appendChild(btnHelp);
         }
       }
@@ -1819,6 +1831,14 @@ export function renderWaferMap(
     render();
   }
 
+  function openGuideWindow(): void {
+    import('./userGuideHtml.js').then(m => openUserGuideWindow(
+      { buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap },
+      m.USER_GUIDE_HTML,
+      userGuideExtension,
+    ));
+  }
+
   return {
     setDies(newDies: Die[]): void {
       currentDies = newDies;
@@ -1906,6 +1926,8 @@ export function renderWaferMap(
     setHelpButtonVisible(visible: boolean): void {
       if (btnHelp) btnHelp.style.display = visible ? 'flex' : 'none';
     },
+
+    openUserGuide: openGuideWindow,
 
     closeSummaryPanel(): void {
       const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
