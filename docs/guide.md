@@ -755,9 +755,9 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Spec pass/fail (value mode, test has limits) |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
-| <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Only when `statsSummary` is provided | Toggles the findings and stats panel |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Analysis | Only when `analysisEnabled: true` | Swaps the map for this wafer's own chart suite — see [§14](#14-the-analysis-tab) |
-| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). While the Analysis tab is open, expands the chart suite instead. |
+| <img src="images/icons/findings.svg" width="20" height="20"> | Summary | Only when `statsSummary` is provided | Toggles the Summary panel (metadata, yield, bins, ring/quadrant, test values, findings) |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the map for this wafer's own chart suite — see [§14](#14-the-insights-tab) |
+| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). While the Insights tab is open, expands the chart suite instead. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#510-user-guide-extension) |
 
 The full toolbar is shown when `toolbarControls` is `'full'` (default). A gallery card's
@@ -765,10 +765,10 @@ detached window also uses `'full'`. In the gallery, cards show only the navigati
 (download, zoom, pan, select) — the view controls (mode, overlays, orient, etc.) live in the
 shared gallery bar.
 
-**While the Analysis tab is open**, every button above except Analysis, Expand, and User guide
+**While the Insights tab is open**, every button above except Insights, Expand, and User guide
 is hidden — none of the others (download, zoom/pan/select, mode, palette, overlays, legend,
-orientation) apply to the chart suite underneath, and Summary panel specifically toggles the
-map's own findings panel, which sits behind the Analysis tab's opaque overlay with no visible
+orientation) apply to the chart suite underneath, and Findings specifically toggles the
+map's own findings panel, which sits behind the Insights tab's opaque overlay with no visible
 effect while it's open.
 
 #### Gallery control bar
@@ -790,13 +790,13 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch so all available width is used |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Download all | Always | Exports all cards as a single tiled PNG |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Analysis | Only when `analysisEnabled: true` | Swaps the grid for a lot-wide chart suite — see [§14](#14-the-analysis-tab) |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the grid for a lot-wide chart suite — see [§14](#14-the-insights-tab) |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#510-user-guide-extension) |
 
-**While the Analysis tab is open**, every button above except Analysis and User guide is hidden
+**While the Insights tab is open**, every button above except Insights and User guide is hidden
 — none of the others (mode, palette, overlays, columns, download, etc.) apply to the chart
 suite underneath, and Lot findings specifically toggles the summary panel inside the grid body,
-which is already hidden while the Analysis tab is showing.
+which is already hidden while the Insights tab is showing.
 
 ### Theming the chrome
 
@@ -1135,7 +1135,7 @@ toolbar findings button.
 
 ### Adding a summary panel to a single map
 
-Pass `statsSummary` to `renderWaferMap` and the findings button appears in the toolbar
+Pass `statsSummary` to `renderWaferMap` and the Summary button appears in the toolbar
 automatically.  The panel is hidden by default; clicking the button toggles it open:
 
 ```ts
@@ -1161,7 +1161,7 @@ renderWaferMap(container, result, {
 });
 ```
 
-The toolbar findings button reflects the current open/closed state, and the user can
+The toolbar Summary button reflects the current open/closed state, and the user can
 still toggle the panel closed via that button.  Combine with a `placement` to pin the
 panel to a specific side of the canvas without the toggle behaviour:
 
@@ -1199,7 +1199,7 @@ ctrl.setStatsSummary(newSummary);
 
 ### Summary panel in a gallery
 
-For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Findings" button appears in the control bar giving access to:
+For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Summary" button appears in the control bar giving access to:
 
 - **Lot tab** — cross-wafer patterns and yield outliers
 - **Wafers tab** — per-wafer findings index; clicking any row detaches that wafer's card into its own window with its summary panel
@@ -1216,7 +1216,7 @@ const items = waferResults.map((r, i) => ({
 }));
 
 renderWaferGallery(container, items);
-// → Wafers findings panel appears in toolbar
+// → Wafers tab of the Summary panel appears in toolbar
 // → Each card's own window shows its own per-wafer summary
 ```
 
@@ -1510,21 +1510,21 @@ All `openHtmlReport` calls — including the summary panel buttons — then rout
 
 ![Lot summary report](images/report-lot-summary.png)
 
-## 14. The Analysis tab
+## 14. The Insights tab
 
-`renderWaferMap` and `renderWaferGallery` both support an opt-in **Analysis** tab — a chart suite covering process capability, value distributions, and test correlation, computed from the same dies already on screen. Enable it with one option; there's no per-chart wiring and no host-computed grouping to set up.
+`renderWaferMap` and `renderWaferGallery` both support an opt-in **Insights** tab — a chart suite covering process capability, value distributions, and test correlation, computed from the same dies already on screen. Enable it with one option; there's no per-chart wiring and no host-computed grouping to set up.
 
 ```ts
-renderWaferMap(container, result, { analysisEnabled: true });
+renderWaferMap(container, result, { insights: { enabled: true } });
 ```
 
 ```ts
-renderWaferGallery(container, items, { analysisEnabled: true });
+renderWaferGallery(container, items, { insights: { enabled: true } });
 ```
 
-Either way, an **Analysis** button appears in the toolbar. Clicking it swaps the map (or gallery grid) for the chart suite; clicking it again — the toolbar stays visible and usable throughout — returns to the map. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want capability, box plots, histograms, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
+Either way, an **Insights** button appears in the toolbar. Clicking it swaps the map (or gallery grid) for the chart suite; clicking it again — the toolbar stays visible and usable throughout — returns to the map. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want capability, box plots, histograms, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
 
-The toolbar itself adapts: mode, palette, overlay, orientation, and Findings controls (and, in a gallery, columns/download) are hidden while the Analysis tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery summary panel, which sits behind (or inside the now-hidden grid body of) the Analysis view with no visible effect. Only Analysis, Expand, and User guide stay visible. Expand, in particular, expands the chart suite itself when clicked while Analysis is open, not the map underneath it.
+The toolbar itself adapts: mode, palette, overlay, orientation, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights, Expand, and User guide stay visible. Expand, in particular, expands the chart suite itself when clicked while Insights is open, not the map underneath it.
 
 The tab lays out three sections: **Yield & bins** (a yield bar labelled with the actual pass bins in use, plus a hard/soft bin pareto), **Distributions** (process capability, a test-value box plot, and a value histogram), and **Correlation** (a Pearson-r matrix and a die-level X/Y scatter). Clicking a capability box drives the box plot and histogram's selected test in place; clicking a correlation-matrix cell drives the scatter panel's X/Y in place — the same live cross-linking the toolbar's own mode/colour controls give you elsewhere.
 
@@ -1534,12 +1534,12 @@ With more than one wafer, a **Group by** control appears above the panels whenev
 
 ```ts
 renderWaferGallery(container, items, {
-  analysisEnabled: true,
+  insights: { enabled: true },
   lotStatsSummary: analyzeWaferLot(items),
 });
 ```
 
-Passing `lotStatsSummary` (§13) also makes the yield panel reuse each wafer's already-computed yield instead of recomputing it — so the Analysis tab's numbers always agree with the gallery's own Findings panel and any exported report. Each panel consumes an active grouping in whatever way suits that chart type: yield/bin-pareto/box-plot pool one row per group with click-to-drill; histogram overlays one series per group; capability and correlation restrict to one group at a time via their own "Group:" dropdown (pooling either would be statistically misleading); scatter never restricts, colouring every group's points instead. Full behavior for each panel is in the [API reference](api.md#610-analysis-tab).
+Passing `lotStatsSummary` (§13) also makes the yield panel reuse each wafer's already-computed yield instead of recomputing it — so the Insights tab's numbers always agree with the gallery's own Summary panel and any exported report. Each panel consumes an active grouping in whatever way suits that chart type: yield/bin-pareto/box-plot pool one row per group with click-to-drill; histogram overlays one series per group; capability and correlation restrict to one group at a time via their own "Group:" dropdown (pooling either would be statistically misleading); scatter never restricts, colouring every group's points instead. Full behavior for each panel is in the [API reference](api.md#610-analysis-tab).
 
 For a single wafer, or a gallery where nothing varies, there's simply no "Group by" control to show — every panel already displays that population directly.
 
@@ -1551,7 +1551,7 @@ Histogram, correlation, and scatter each draw one shared chart rather than one p
 
 Clicking a leaf row in the yield bar or the box plot opens that wafer in a modal. A box-plot click is context-aware: it opens the wafer already in **test-value mode on the test you were looking at**, not the toolbar's default plot mode — so drilling from "Idsat" in the box plot lands you on the Idsat colour map, not a hard-bin view you'd have to switch away from.
 
-**→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/gallery.html)** both have the Analysis tab enabled — click the toolbar's Analysis button in either to try it.
+**→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/gallery.html)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
 
 ## 15. Reticle overlays
 
@@ -2084,7 +2084,7 @@ renderWaferMap(container, result, {
 ```
 
 Systematic lot patterns (e.g. an NE-quadrant drift present on every wafer) survive
-averaging and emerge as clear findings on the lot-average map. The summary panel
+averaging and emerge as clear findings on the lot-average map. The Summary panel
 labels the view as "N wafers · mean" so it is unambiguous to the reader.
 
 For cluster and edge-arc detection, dies that exceed a test's spec limits

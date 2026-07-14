@@ -1,18 +1,32 @@
-// ── Summary panel — shared DOM section builders ───────────────────────────────
-// Pure DOM construction — no canvas, no toolbar state.
-// Imported by renderWaferMap and renderWaferGallery.
+// ── Summary panel ───────────────────────────────────────────────────────────
+// Always-available docked panel (toggled via the toolbar) showing metadata,
+// yield, bin breakdown, ring/quadrant yield, test values, and findings for a
+// single wafer or a lot — plus one combined "Report" button
+// (`renderSummaryReportHtml`/`renderLotSummaryReportHtml`, which already
+// embed findings). Imported by renderWaferMap and renderWaferGallery.
+//
+// Bin/ring/quadrant/test/yield numbers here and in the opt-in Insights tab
+// (insightsTab.ts) intentionally read the same shared computation —
+// `StatsSummary.stats.hardBinCounts`/`.perTestStats`/`.testSpecYield`
+// (analyzeWaferMap) and `buildRegionYieldData` (stats/regions.ts) — so the
+// two surfaces can show overlapping numbers (compact text here, charts
+// there) without ever being able to drift apart.
 
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import type { BinDef, TestDef, YieldSummary } from '../renderer/buildWaferMap.js';
-import type { StatsFinding, StatsSummary, LotStatsSummary } from '../stats/types.js';
-import { buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
-import { renderFindingsReportHtml, openHtmlReport } from '../stats/renderFindingsReport.js';
-import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
+import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
+import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData, type StatsRegion } from '../stats/regions.js';
+import { openHtmlReport } from '../stats/renderFindingsReport.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
+import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
+import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
+import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { fmt as fmtValue, fmtAggregationMethod } from '../renderer/fmt.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
+import { quantile } from '../stats/math.js';
+import { makeToggle, makeLabeledSelect } from './charts/chartShell.js';
 import { CLR, openModal } from './toolbar.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
@@ -46,7 +60,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-function buildWarningsBanner(warnings: string[]): HTMLDivElement {
+export function buildWarningsBanner(warnings: string[]): HTMLDivElement {
   const wrap = el('div', {
     background:   CLR.warnBg,
     border:       `1px solid ${CLR.warnBorder}`,
@@ -216,22 +230,12 @@ function progressRow(
   return row;
 }
 
-/** Normalise a value within [min, max] to a fill % in [MIN_FILL, 100].
- *  When all values are equal the fill is fixed at MIN_FILL. */
-const REGION_MIN_FILL = 15;
-function regionFillPct(value: number, min: number, max: number): number {
-  if (max === min) return REGION_MIN_FILL;
-  return REGION_MIN_FILL + ((value - min) / (max - min)) * (100 - REGION_MIN_FILL);
-}
-
 function medianOf(sorted: number[]): number {
   const n = sorted.length;
   if (n === 0) return 0;
   const mid = Math.floor(n / 2);
   return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
-
-
 
 /** Big stat card — used for yield % and total dies. */
 function statCard(value: string, label: string): HTMLDivElement {
@@ -278,23 +282,184 @@ function kvRow(key: string, value: string): HTMLDivElement {
 
 // ── Section builders ──────────────────────────────────────────────────────────
 
-function prettyKey(k: string): string {
-  return k
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/_/g, ' ')
-    .trim()
-    .replace(/^./, s => s.toUpperCase());
+/** Label immediately followed by its value, left-aligned — unlike `kvRow`
+ *  (label/value pinned to opposite ends of the row via `space-between`),
+ *  which reads fine in a narrow sidebar column but pushes the value far
+ *  from its label once the row spans a full-width card, as the metadata
+ *  card does. */
+function metaRow(key: string, value: string): HTMLDivElement {
+  const row = el('div', {
+    display:      'flex',
+    fontSize:     '11px',
+    gap:          '6px',
+    marginBottom: '3px',
+  });
+  const k = el('span', { color: LABEL_COLOR, flexShrink: '0' }, `${key}:`);
+  const v = el('span', { color: VALUE_COLOR, fontWeight: '500', wordBreak: 'break-all' }, value);
+  row.appendChild(k);
+  row.appendChild(v);
+  return row;
 }
 
-export function buildMetadataSection(meta: Record<string, unknown>): HTMLDivElement | null {
-  const entries = Object.entries(meta).filter(([, v]) => v !== null && v !== undefined && v !== '');
+/** Order-preserving [key, value] pairs from a metadata-like record, with
+ *  null/undefined/empty-string entries dropped. The single source of truth
+ *  for "what counts as a displayable metadata field" — shared by the map
+ *  metadata badge and `buildMetadataStripRow`/`buildFacetSummaryChips` so
+ *  they can't drift on what they consider "no metadata". */
+export function metadataEntries(meta: Record<string, unknown>): Array<[string, string]> {
+  return Object.entries(meta)
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => [k, String(v)] as [string, string]);
+}
+
+/** Single-line, wrap-when-needed "Label: value1, value2 [+N more]" chips —
+ *  the gallery's top-of-grid strip summary over a whole (possibly multi-lot)
+ *  population, one chip per `FacetField` from `stats/facets.ts`'s
+ *  `buildFacetTable`. Shows every distinct value a field takes
+ *  across the population — so a mixed-lot gallery still surfaces "Lot:
+ *  LOT123, LOT456" instead of silently dropping a field the moment it
+ *  varies. `field.values` is already sorted by coverage (`buildFacetTable`),
+ *  so the values shown inline are the most common ones. Labels use
+ *  `prettyKey(field.key)`, not `field.label` — `DEFAULT_FACET_CURATION`'s own
+ *  labels (e.g. "Program") differ from the `prettyKey` convention every other
+ *  metadata surface in this library uses ("Test Program"), and this strip
+ *  must read as the same field as those surfaces, not a differently-named one.
+ *  Returns `null` for an empty table. */
+export function buildFacetSummaryChips(
+  table: Array<{ key: string; values: Array<{ value: string }> }>,
+  maxValuesPerField = 3,
+): HTMLDivElement | null {
+  if (!table.length) return null;
+
+  const row = el('div', {
+    display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 10px', fontSize: '11px',
+  });
+  for (const field of table) {
+    const chip = el('span', { whiteSpace: 'nowrap' });
+    const label = el('span', { color: LABEL_COLOR }, `${prettyKey(field.key)}: `);
+    chip.appendChild(label);
+    const shown = field.values.slice(0, maxValuesPerField);
+    const remaining = field.values.length - shown.length;
+    let text = shown.map(v => v.value).join(', ');
+    if (remaining > 0) text += ` +${remaining} more`;
+    chip.appendChild(document.createTextNode(text));
+    row.appendChild(chip);
+  }
+  return row;
+}
+
+export interface MetadataStripStacked {
+  lotSize: number;
+  aggrMethod?: string;
+}
+
+/** The single correct way to summarize a population's identity as an
+ *  always-visible strip: computed via `buildFacetTable`/`buildFacetSummaryChips`
+ *  over every item's own metadata, so a field that varies across items (e.g. a
+ *  lot with mixed `split` values) shows every distinct value it takes — never
+ *  silently collapsed to one item's value (e.g. `analyzeWaferLot`'s
+ *  first-wafer-wins `lot` field), which misrepresents the population (see
+ *  CLAUDE.md: aggregated/filtered populations must be identified). Shared by
+ *  the gallery legend strip and the Insights header strip so the two surfaces
+ *  can't drift on content or field order again. Returns `null` when there's
+ *  nothing to show. */
+export function buildMetadataStripRow(
+  items: Array<{ metadata?: Record<string, unknown> }>,
+  stacked?: MetadataStripStacked,
+  // `facetableOnly` (default true, matching `buildFacetTable`) drops
+  // `waferId` — right for a multi-item population, where every distinct
+  // wafer ID would otherwise clutter the strip with something each card
+  // already shows as its own title. A single-item caller (a lone wafer's own
+  // Insights strip) has no such clutter risk and no other on-screen identity
+  // once Insights covers the badge, so it passes `false` to keep `waferId` visible.
+  options?: { facetableOnly?: boolean },
+): HTMLDivElement | null {
+  const facetTable = buildFacetTable(items as FacetItem[], options);
+  const chips = buildFacetSummaryChips(facetTable);
+  if (!chips && !stacked) return null;
+
+  const row = el('div', { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 14px' });
+  if (stacked) {
+    const span = el('span', { fontWeight: '500', whiteSpace: 'nowrap' },
+      stacked.aggrMethod ? `${stacked.lotSize} wafers stacked · ${stacked.aggrMethod}` : `${stacked.lotSize} wafers stacked`);
+    row.appendChild(span);
+  }
+  if (chips) row.appendChild(chips);
+  return row;
+}
+
+const STRIP_BOX_STYLE: Partial<CSSStyleDeclaration> = {
+  display:       'flex',
+  flexDirection: 'column',
+  gap:           '6px',
+  background:    CLR.menuBg,
+  border:        `1px solid ${CLR.menuBorder}`,
+  borderRadius:  '6px',
+  padding:       '6px 10px',
+  boxShadow:     '0 1px 4px rgba(0,0,0,0.10)',
+  fontSize:      '12px',
+  lineHeight:    '1',
+  boxSizing:     'border-box',
+  width:         '100%',
+  minWidth:      '0',
+};
+
+/** `buildMetadataStripRow` wrapped in the boxed-strip chrome every
+ *  standalone, always-visible metadata strip uses (border/background/shadow
+ *  — the same look as the gallery legend strip). Not used by the gallery
+ *  legend itself, which stacks a bin-swatch row inside the same box below
+ *  the metadata row and so builds its own box around both rather than two
+ *  nested boxes — that caller uses `buildMetadataStripRow` directly. */
+export function buildMetadataStripBox(
+  items: Array<{ metadata?: Record<string, unknown> }>,
+  stacked?: MetadataStripStacked,
+  options?: { facetableOnly?: boolean },
+): HTMLDivElement | null {
+  const row = buildMetadataStripRow(items, stacked, options);
+  if (!row) return null;
+  const box = el('div', STRIP_BOX_STYLE);
+  box.appendChild(row);
+  return box;
+}
+
+/** Same row visual language as `metaRow`/`prettyKey`, one field per line —
+ *  for the metadata badge's expand-on-click popover, where each field
+ *  reading on its own line is more legible than wrapped inline chips and the
+ *  cost is only paid while the popover is open, not by default.
+ *  Returns `null` for empty input. */
+export function buildCompactMetadataRows(meta: Record<string, unknown>): HTMLDivElement | null {
+  const entries = metadataEntries(meta);
   if (!entries.length) return null;
 
   const wrap = el('div');
-  wrap.appendChild(sectionTitle('Wafer Info'));
   for (const [k, v] of entries) {
-    wrap.appendChild(kvRow(prettyKey(k), String(v)));
+    wrap.appendChild(metaRow(prettyKey(k), v));
   }
+  return wrap;
+}
+
+/**
+ * The single source of metadata display in the Summary panel — used by both
+ * the single-wafer and lot paths, always built via `buildMetadataStripRow`/
+ * `buildFacetTable` (the same function the gallery legend strip and Insights
+ * header strip use) rather than reading `wafer.metadata` directly (drifts
+ * from the strip's truncation/formatting) or `LotStatsSummary.lot`
+ * (`analyzeWaferLot`'s first-wafer-wins field, which silently collapses any
+ * field that varies across the lot to one wafer's value — see CLAUDE.md on
+ * identifying aggregated populations). A population of one wafer is just a
+ * facet table where every field has exactly one value, so the single-wafer
+ * and lot panels can never render different content for the same
+ * underlying metadata.
+ */
+export function buildMetadataInfoSection(
+  items: Array<{ metadata?: Record<string, unknown> }>,
+  stacked?: MetadataStripStacked,
+): HTMLDivElement | null {
+  const row = buildMetadataStripRow(items, stacked, { facetableOnly: items.length > 1 });
+  if (!row) return null;
+  const wrap = el('div');
+  wrap.appendChild(sectionTitle('Wafer Info'));
+  wrap.appendChild(row);
   return wrap;
 }
 
@@ -329,12 +494,22 @@ export function buildBinSection(
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
   colorScheme?: string,
+  /**
+   * Precomputed counts (e.g. `StatsSummary.stats.hardBinCounts`/`.softBinCounts`,
+   * already scoped to the yield-eligible population) — used directly instead
+   * of re-walking `dies` when supplied.
+   */
+  precomputedCounts?: Record<number, number>,
 ): HTMLDivElement | null {
   const binCounts = new Map<number, number>();
-  for (const d of dies) {
-    if (d.partial || d.edgeExcluded) continue;
-    const b = mode === 'hard' ? d.hbin : d.sbin;
-    if (b != null) binCounts.set(b, (binCounts.get(b) ?? 0) + 1);
+  if (precomputedCounts) {
+    for (const [binStr, count] of Object.entries(precomputedCounts)) binCounts.set(Number(binStr), count);
+  } else {
+    for (const d of dies) {
+      if (d.partial || d.edgeExcluded) continue;
+      const b = mode === 'hard' ? d.hbin : d.sbin;
+      if (b != null) binCounts.set(b, (binCounts.get(b) ?? 0) + 1);
+    }
   }
   if (!binCounts.size) return null;
 
@@ -355,48 +530,43 @@ export function buildBinSection(
   return wrap;
 }
 
-type RegionBuilder = (dies: Die[], wafer: Wafer, ringCount: number) => ReturnType<typeof buildRingRegions>;
+/** Aggregate bin counts across all wafers in the lot — no lot-pooled
+ *  precomputed bin counts exist (`hardBinCounts`/`softBinCounts` are
+ *  per-wafer only), so this scans the pooled `Die[]` directly, same as
+ *  `buildBinSection` does when it has no `precomputedCounts`. */
+export function buildLotBinSection(
+  allDies: Die[],
+  binDefs: BinDef[] | undefined,
+  mode: 'hard' | 'soft',
+  colorScheme?: string,
+): HTMLDivElement | null {
+  return buildBinSection(allDies, binDefs, mode, colorScheme);
+}
 
+/**
+ * Ring/quadrant yield section — single source of truth for the pass/total
+ * tally is `buildRegionYieldData` (`stats/regions.ts`), the same function
+ * the Insights Overview tab's region-yield diagram consumes. Rendered here
+ * as compact progress rows on an absolute 0–100% scale (not rescaled to the
+ * rows' local min/max — a real spread reads as tight, not exaggerated).
+ * Works uniformly for a single wafer (`diesByWafer: [dies]`,
+ * `allWafers: [wafer]`) or a whole lot.
+ */
 function buildRegionYieldSection(
-  dies: Die[],
-  wafer: Wafer,
+  diesByWafer: Die[][],
+  allWafers: Wafer[],
   ringCount: number,
   passBins: number[],
-  regionBuilder: RegionBuilder,
+  regionBuilder: (dies: Die[], wafer: Wafer, ringCount: number) => StatsRegion[],
   title: string,
 ): HTMLDivElement | null {
-  const hasBins = dies.some(d => d.hbin != null || d.sbin != null);
-  if (!hasBins) return null;
-  const regions = regionBuilder(dies, wafer, ringCount);
-  if (!regions.length) return null;
-
-  const passSet  = new Set(passBins);
-  const dieByKey = new Map<string, Die>(dies.map(d => [`${d.x},${d.y}`, d]));
-
-  const rows: { label: string; yPct: number }[] = [];
-  for (const region of regions) {
-    let pass = 0, total = 0;
-    for (const key of region.dieKeys) {
-      const d = dieByKey.get(key);
-      if (!d || d.partial || d.edgeExcluded) continue;
-      const b = d.hbin ?? d.sbin;
-      if (b == null) continue;
-      total++;
-      if (passSet.has(b)) pass++;
-    }
-    if (!total) continue;
-    rows.push({ label: `${region.label} (N=${total})`, yPct: (pass / total) * 100 });
-  }
-  if (!rows.length) return null;
-
-  const minY = Math.min(...rows.map(r => r.yPct));
-  const maxY = Math.max(...rows.map(r => r.yPct));
-  const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
+  const data = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, regionBuilder);
+  if (!data.length) return null;
 
   const wrap = el('div');
-  wrap.appendChild(sectionTitle(title + rangeNote));
-  for (const { label, yPct } of rows) {
-    wrap.appendChild(progressRow(label, yPct, undefined, regionFillPct(yPct, minY, maxY)));
+  wrap.appendChild(sectionTitle(title));
+  for (const { label, n, yieldPercent } of data) {
+    wrap.appendChild(progressRow(`${label} (N=${n})`, yieldPercent));
   }
   return wrap;
 }
@@ -407,7 +577,7 @@ export function buildRingSection(
   ringCount: number,
   passBins: number[],
 ): HTMLDivElement | null {
-  return buildRegionYieldSection(dies, wafer, ringCount, passBins, buildRingRegions, 'Ring Yield');
+  return buildRegionYieldSection([dies], [wafer], ringCount, passBins, buildRingRegions, 'Ring Yield');
 }
 
 export function buildQuadrantSection(
@@ -416,17 +586,165 @@ export function buildQuadrantSection(
   ringCount: number,
   passBins: number[],
 ): HTMLDivElement | null {
-  return buildRegionYieldSection(dies, wafer, ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
+  return buildRegionYieldSection([dies], [wafer], ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
 }
 
-const TEST_INLINE_LIMIT = 3;
+/** Aggregate ring yield across all wafers in the lot. */
+export function buildLotRingSection(
+  diesByWafer: Die[][],
+  allWafers: Wafer[],
+  ringCount: number,
+  passBins: number[],
+): HTMLDivElement | null {
+  return buildRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildRingRegions, 'Ring Yield');
+}
+
+/** Aggregate quadrant yield across all wafers in the lot. */
+export function buildLotQuadrantSection(
+  diesByWafer: Die[][],
+  allWafers: Wafer[],
+  ringCount: number,
+  passBins: number[],
+): HTMLDivElement | null {
+  return buildRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
+}
+
+/** Lot overview — wafer count and mean (unweighted arithmetic mean of each
+ *  wafer's own yield%, not a die-weighted lot yield — see CLAUDE.md on
+ *  correctly labelling aggregation methods) wafer yield. Metadata is a
+ *  separate section (`buildMetadataInfoSection`) built from the lot's own
+ *  items, not from `lotSummary.lot` — see that function's doc comment. */
+export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivElement {
+  const wrap = el('div');
+  wrap.appendChild(sectionTitle('Lot Summary'));
+
+  const cards = el('div', { display: 'flex', gap: '6px', marginBottom: '8px' });
+  cards.appendChild(statCard(String(lotSummary.stats.waferCount), 'Wafers'));
+
+  const waferYields = lotSummary.perWafer
+    .map(pw => pw.summary.stats.yieldPercent)
+    .filter((y): y is number => y !== null);
+
+  if (waferYields.length) {
+    const mean = waferYields.reduce((a, b) => a + b, 0) / waferYields.length;
+    cards.appendChild(statCard(`${mean.toFixed(1)}%`, 'Mean wafer yield'));
+  }
+  wrap.appendChild(cards);
+
+  return wrap;
+}
+
+/** Per-wafer yield bars, absolute 0–100% scale, with a median marker line and
+ *  below-median wafers muted — lets an engineer spot outlier wafers within
+ *  the lot at a glance. */
+export function buildPerWaferYieldSection(
+  lotSummary: LotStatsSummary,
+  items: Array<{ label?: string } | null>,
+  onWaferClick?: (waferIndex: number) => void,
+): HTMLDivElement | null {
+  const waferData = lotSummary.perWafer
+    .map(pw => ({
+      waferIndex: pw.waferIndex,
+      label: (items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`)
+        .replace(/\s*·\s*\d+(\.\d+)?%$/, ''),
+      yieldPct: pw.summary.stats.yieldPercent,
+    }))
+    .filter(w => w.yieldPct !== null) as Array<{ waferIndex: number; label: string; yieldPct: number }>;
+
+  if (!waferData.length) return null;
+
+  const minY = Math.min(...waferData.map(w => w.yieldPct));
+  const maxY = Math.max(...waferData.map(w => w.yieldPct));
+  const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
+
+  const med = medianOf([...waferData.map(w => w.yieldPct)].sort((a, b) => a - b));
+
+  const wrap = el('div');
+  wrap.appendChild(sectionTitle('Wafer Yield' + rangeNote));
+  for (const { waferIndex, label, yieldPct } of waferData) {
+    const row = progressRow(label, yieldPct, undefined, undefined, med, yieldPct < med);
+    if (onWaferClick) {
+      row.style.cursor = 'pointer';
+      row.style.borderRadius = '4px';
+      row.style.padding = '2px 3px';
+      row.style.marginLeft = '-3px';
+      row.style.marginRight = '-3px';
+      row.addEventListener('mouseenter', () => { row.style.background = CLR.bgHover; });
+      row.addEventListener('mouseleave', () => { row.style.background = ''; });
+      row.addEventListener('click', () => onWaferClick(waferIndex));
+    }
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+/** Full descriptive-stats row used by the Test Values table. */
+interface TestStatRow {
+  testNumber: number;
+  min: number;
+  max: number;
+  mean: number;
+  count: number;
+  stddev: number;
+  median: number;
+  q1: number;
+  q3: number;
+}
+
+function computeDescriptive(vals: number[]): Omit<TestStatRow, 'testNumber'> {
+  const sorted = [...vals].sort((a, b) => a - b);
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const variance = vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length;
+  return {
+    min: sorted[0], max: sorted[sorted.length - 1], mean, count: vals.length,
+    stddev: Math.sqrt(variance),
+    median: quantile(sorted, 0.5), q1: quantile(sorted, 0.25), q3: quantile(sorted, 0.75),
+  };
+}
+
+/** Triggers a browser download of `text` as a file — the `<a download>` dance,
+ *  same mechanism `saveImageBlob` (toolbar.ts) uses for PNG saves, but for
+ *  CSV text; kept local since this is currently its only consumer. */
+function downloadTextFile(text: string, filename: string, mimeType: string): void {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvField(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
 
 export function buildTestSection(
   dies: Die[],
   testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
+  /**
+   * When supplied, each test's descriptive stats and spec-yield are read from
+   * `.perTestStats`/`.testSpecYield` (already computed once by
+   * `analyzeWaferMap`, or pooled across a lot by `buildLotTestSection`)
+   * instead of re-scanning `dies`. A test falls back to a raw-die scan when
+   * it's missing from `perTestStats` entirely, or when `stddev`/`median`/
+   * `q1`/`q3` weren't included (e.g. lot pooling, which can reconstruct
+   * min/max/mean/count exactly across wafers but not quantiles — see
+   * `buildLotTestSection`'s doc comment). Structurally a subset of
+   * `StatsSummary['stats']`, so a real `StatsSummary` can be passed directly.
+   */
+  precomputedTestStats?: {
+    perTestStats?: Array<{
+      testNumber: number; min: number; max: number; mean: number; count: number;
+      stddev?: number; median?: number; q1?: number; q3?: number;
+    }>;
+    testSpecYield?: Array<{ testNumber: number; totalDies: number; yieldPercent: number | null }>;
+  },
 ): HTMLDivElement | null {
   const activeDies = dies.filter(d => !d.partial && !d.edgeExcluded);
+  const perTestStatsByNumber = new Map((precomputedTestStats?.perTestStats ?? []).map(s => [s.testNumber, s]));
+  const specYieldByNumber = new Map((precomputedTestStats?.testSpecYield ?? []).map(s => [s.testNumber, s]));
 
   // Build a unified list of { testNumber, name, unit } from testDefs when present,
   // or from the testNumber keys found in die.testValues when absent.
@@ -452,48 +770,178 @@ export function buildTestSection(
   );
   if (!entriesWithData.length) return null;
 
-  const manyTests = entriesWithData.length > TEST_INLINE_LIMIT;
-  const { outer, content } = collapsibleSection(
-    'Test Values',
-    !manyTests,
-    manyTests ? `${entriesWithData.length}` : undefined,
-  );
+  const hasAnyLimit = entriesWithData.some(e => e.limitLow !== undefined || e.limitHigh !== undefined);
+
+  // One resolved row per test — computed once, shared by both the on-screen
+  // table and the CSV export so the two can never drift apart.
+  type ResolvedRow = {
+    entry: TestEntry;
+    stats: TestStatRow;
+    specYieldPct: number | null;
+    specN: number;
+  };
+  const rows: ResolvedRow[] = [];
 
   for (const entry of entriesWithData) {
-    const vals = activeDies
-      .map(d => d.testValues?.[entry.testNumber])
-      .filter((v): v is number => v !== undefined && isFinite(v));
-    if (!vals.length) continue;
+    const precomputed = perTestStatsByNumber.get(entry.testNumber);
+    const hasFullPrecomputed = precomputed
+      && precomputed.stddev !== undefined && precomputed.median !== undefined
+      && precomputed.q1 !== undefined && precomputed.q3 !== undefined;
 
-    const min  = Math.min(...vals);
-    const max  = Math.max(...vals);
-    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    let stats: TestStatRow;
+    if (hasFullPrecomputed) {
+      const p = precomputed!;
+      stats = {
+        testNumber: entry.testNumber, min: p.min, max: p.max, mean: p.mean, count: p.count,
+        stddev: p.stddev!, median: p.median!, q1: p.q1!, q3: p.q3!,
+      };
+    } else {
+      const vals = activeDies
+        .map(d => d.testValues?.[entry.testNumber])
+        .filter((v): v is number => v !== undefined && isFinite(v));
+      if (!vals.length) continue;
+      stats = { testNumber: entry.testNumber, ...computeDescriptive(vals) };
+    }
+
+    let specYieldPct: number | null = null;
+    let specN = 0;
+    if (entry.limitLow !== undefined || entry.limitHigh !== undefined) {
+      const specYieldEntry = specYieldByNumber.get(entry.testNumber);
+      if (specYieldEntry) {
+        ({ yieldPercent: specYieldPct, totalDies: specN } = specYieldEntry);
+      } else {
+        const vals = activeDies
+          .map(d => d.testValues?.[entry.testNumber])
+          .filter((v): v is number => v !== undefined && isFinite(v));
+        const specFail = vals.filter(v =>
+          (entry.limitLow !== undefined && v < entry.limitLow) ||
+          (entry.limitHigh !== undefined && v > entry.limitHigh),
+        ).length;
+        specN = vals.length;
+        specYieldPct = vals.length > 0 ? ((vals.length - specFail) / vals.length) * 100 : null;
+      }
+    }
+
+    rows.push({ entry, stats, specYieldPct, specN });
+  }
+  if (!rows.length) return null;
+
+  const outer = el('div');
+
+  const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
+  const title = sectionTitle(`Test Values  (${rows.length})`);
+  title.style.marginBottom = '0';
+  headerRow.appendChild(title);
+
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.textContent = 'Export CSV';
+  Object.assign(exportBtn.style, {
+    background:   'none',
+    border:       BORDER,
+    borderRadius: '4px',
+    cursor:       'pointer',
+    fontSize:     '10px',
+    color:        CLR.iconHover,
+    padding:      '2px 7px',
+  } as Partial<CSSStyleDeclaration>);
+  exportBtn.addEventListener('click', () => {
+    // wmap's own unitless "engineering" notation (fmt's fallbackFormat:
+    // 'engineering' — fixed decimal in [0.1, 9999], otherwise E±N in
+    // multiples of 3) — not raw floats, which print with misleading
+    // trailing-digit precision the underlying measurement never actually
+    // had (e.g. `0.001151199649817308`). Units are per-test (see the "Unit"
+    // column) rather than baked into each value, so every value column uses
+    // one consistent notation regardless of the test's own unit/magnitude.
+    const cols = ['Test', 'Unit', 'N', 'Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev'];
+    if (hasAnyLimit) cols.push('LSL', 'USL', 'Spec Yield %', 'Spec Yield N');
+    const lines = [cols.map(csvField).join(',')];
+    const f = (n: number) => fmtValue(n, undefined, 'engineering');
+    for (const { entry, stats, specYieldPct, specN } of rows) {
+      const fields = [
+        entry.name, entry.unit ?? '', String(stats.count), f(stats.min), f(stats.q1), f(stats.median),
+        f(stats.mean), f(stats.q3), f(stats.max), f(stats.stddev),
+      ];
+      if (hasAnyLimit) {
+        fields.push(
+          entry.limitLow !== undefined ? f(entry.limitLow) : '',
+          entry.limitHigh !== undefined ? f(entry.limitHigh) : '',
+          specYieldPct !== null ? specYieldPct.toFixed(1) : '',
+          (entry.limitLow !== undefined || entry.limitHigh !== undefined) ? String(specN) : '',
+        );
+      }
+      lines.push(fields.map(csvField).join(','));
+    }
+    downloadTextFile(lines.join('\n'), 'test-values.csv', 'text/csv');
+  });
+  headerRow.appendChild(exportBtn);
+  outer.appendChild(headerRow);
+
+  const table = el('table', {
+    width:         '100%',
+    borderCollapse: 'collapse',
+    fontSize:      '11px',
+  });
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  const headers = ['Test', 'N', 'Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev'];
+  if (hasAnyLimit) headers.push('LSL', 'USL', 'Spec yield');
+  for (const h of headers) {
+    const th = el('th', {
+      textAlign:    h === 'Test' ? 'left' : 'right',
+      fontWeight:   '700',
+      fontSize:     '10px',
+      letterSpacing: '0.03em',
+      textTransform: 'uppercase',
+      color:        LABEL_COLOR,
+      padding:      '3px 8px 5px',
+      borderBottom: `1px solid ${CLR.menuBorder}`,
+      whiteSpace:   'nowrap',
+    }, h);
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  for (const { entry, stats, specYieldPct, specN } of rows) {
     const f = (n: number) => fmtValue(n, entry.unit, fallbackFormat);
 
-    const section = el('div', { marginBottom: '8px' });
-    section.appendChild(el('div', { fontSize: '11px', fontWeight: '600', color: VALUE_COLOR, marginBottom: '3px' }, entry.name));
-    section.appendChild(kvRow('Min',  f(min)));
-    section.appendChild(kvRow('Mean', f(mean)));
-    section.appendChild(kvRow('Max',  f(max)));
+    const row = document.createElement('tr');
+    const cell = (text: string, align: 'left' | 'right' = 'right') => {
+      const td = el('td', {
+        textAlign:   align,
+        padding:     '4px 8px',
+        borderBottom: `1px solid ${CLR.menuBorder}`,
+        color:       VALUE_COLOR,
+        whiteSpace:  'nowrap',
+      }, text);
+      row.appendChild(td);
+    };
+    cell(entry.name, 'left');
+    cell(`${stats.count}`);
+    cell(f(stats.min));
+    cell(f(stats.q1));
+    cell(f(stats.median));
+    cell(f(stats.mean));
+    cell(f(stats.q3));
+    cell(f(stats.max));
+    cell(f(stats.stddev));
 
-    if (entry.limitLow !== undefined) {
-      section.appendChild(kvRow('LSL', f(entry.limitLow)));
-    }
-    if (entry.limitHigh !== undefined) {
-      section.appendChild(kvRow('USL', f(entry.limitHigh)));
-    }
-    if (entry.limitLow !== undefined || entry.limitHigh !== undefined) {
-      const specFail = vals.filter(v =>
-        (entry.limitLow !== undefined && v < entry.limitLow) ||
-        (entry.limitHigh !== undefined && v > entry.limitHigh),
-      ).length;
-      const specPass = vals.length - specFail;
-      const specYield = vals.length > 0 ? ((specPass / vals.length) * 100).toFixed(1) + '%' : '—';
-      section.appendChild(kvRow(`Spec yield (N=${vals.length})`, specYield));
+    if (hasAnyLimit) {
+      cell(entry.limitLow !== undefined ? f(entry.limitLow) : '—');
+      cell(entry.limitHigh !== undefined ? f(entry.limitHigh) : '—');
+      cell(specYieldPct !== null ? `${specYieldPct.toFixed(1)}% (N=${specN})` : '—');
     }
 
-    content.appendChild(section);
+    tbody.appendChild(row);
   }
+  table.appendChild(tbody);
+
+  const scroll = el('div', { overflowX: 'auto' });
+  scroll.appendChild(table);
+  outer.appendChild(scroll);
   return outer;
 }
 
@@ -502,6 +950,15 @@ export function buildFindingsSection(
   statsSummary: StatsSummary | LotStatsSummary,
   onFindingClick: (finding: StatsFinding, row: HTMLButtonElement) => void,
   activeFindingId: string | null,
+  /**
+   * When true, skips the collapsible "Findings" header/badge and renders
+   * content directly — used by `buildFindingsSectionWithFilter`, which
+   * builds its own collapsible wrapper (header + filter row) around this.
+   * Default false (collapsible-section behavior, used when this is one
+   * section among several, e.g. inside the Insights Overview tab's legacy
+   * embedding).
+   */
+  standalone = false,
 ): HTMLDivElement | null {
   if (!findings.length) return null;
 
@@ -510,23 +967,9 @@ export function buildFindingsSection(
     ? findings.filter(f => f.severity !== 'info').length.toString()
     : undefined;
 
-  const { outer, content } = collapsibleSection('Findings', hasNotable, badge);
-
-  // Report button in the toggle row area — append to outer before content
-  const reportBtn = el('button', {
-    background:   'none',
-    border:       BORDER,
-    borderRadius: '4px',
-    cursor:       'pointer',
-    fontSize:     '10px',
-    color:        CLR.iconHover,
-    padding:      '2px 7px',
-    marginBottom: '6px',
-    display:      'block',
-  }, 'Open Report');
-  reportBtn.type = 'button';
-  reportBtn.addEventListener('click', () => openHtmlReport(renderFindingsReportHtml(statsSummary)));
-  content.appendChild(reportBtn);
+  const { outer, content } = standalone
+    ? (() => { const wrap = el('div'); return { outer: wrap, content: wrap }; })()
+    : collapsibleSection('Findings', hasNotable, badge);
 
   const severityRank: Record<StatsFinding['severity'], number> = { unusual: 0, notable: 1, info: 2 };
   function sevColor(s: StatsFinding['severity']): string {
@@ -813,175 +1256,169 @@ export function buildFindingsSection(
   return outer;
 }
 
+// ── Findings filter row ───────────────────────────────────────────────────────
+
+const FINDINGS_KIND_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '',               label: 'All kinds' },
+  { value: 'yield',          label: 'Yield' },
+  { value: 'hardBin',        label: 'Hard bin' },
+  { value: 'softBin',        label: 'Soft bin' },
+  { value: 'test',           label: 'Test' },
+  { value: 'spatialPattern', label: 'Spatial pattern' },
+];
+
+const FINDINGS_FAMILY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '',                label: 'All regions' },
+  { value: 'ring',             label: 'Ring' },
+  { value: 'quadrant',         label: 'Quadrant' },
+  { value: 'reticle-position', label: 'Reticle position' },
+  { value: 'test-site',        label: 'Test site' },
+  { value: 'wafer',            label: 'Wafer' },
+  { value: 'sector',           label: 'Sector' },
+  { value: 'cluster',          label: 'Cluster' },
+  { value: 'edge-arc',         label: 'Edge arc' },
+  { value: 'spatial-pattern',  label: 'Spatial pattern' },
+];
+
+const FINDINGS_SEVERITIES: StatsSeverity[] = ['unusual', 'notable', 'info'];
+const FINDINGS_SEVERITY_LABEL: Record<StatsSeverity, string> = { unusual: 'Unusual', notable: 'Notable', info: 'Info' };
+
+/** Severity/kind/region filter controls, wired to `stats/filterFindings.ts`.
+ *  Mutates `filter` in place and calls `onChange` after every control
+ *  change — the caller re-renders the findings list below with the updated
+ *  filter. */
+function buildFindingsFilterRow(filter: FindingsFilter, onChange: () => void): HTMLDivElement {
+  const row = el('div', {
+    display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',
+    marginBottom: '10px', paddingBottom: '10px', borderBottom: `1px solid ${CLR.separator}`,
+  });
+
+  const severitySet = new Set<StatsSeverity>(
+    filter.severity === undefined ? [] : Array.isArray(filter.severity) ? filter.severity : [filter.severity],
+  );
+  const severityWrap = el('div', { display: 'flex', gap: '8px' });
+  for (const s of FINDINGS_SEVERITIES) {
+    severityWrap.appendChild(makeToggle(FINDINGS_SEVERITY_LABEL[s], severitySet.has(s), (checked) => {
+      if (checked) severitySet.add(s); else severitySet.delete(s);
+      filter.severity = severitySet.size ? [...severitySet] : undefined;
+      onChange();
+    }));
+  }
+  row.appendChild(severityWrap);
+
+  row.appendChild(makeLabeledSelect('Kind:', FINDINGS_KIND_OPTIONS, (filter.kind as string) ?? '', (v) => {
+    filter.kind = v ? (v as StatsVariableKind) : undefined;
+    onChange();
+  }, { maxWidth: '130px' }));
+
+  row.appendChild(makeLabeledSelect('Region:', FINDINGS_FAMILY_OPTIONS, (filter.family as string) ?? '', (v) => {
+    filter.family = v ? (v as StatsComparisonFamily) : undefined;
+    onChange();
+  }, { maxWidth: '150px' }));
+
+  return row;
+}
+
+/**
+ * Findings section with severity/kind/region filter controls — the
+ * panel-level entry point (wraps `buildFindingsSection(..., standalone:
+ * true)` in its own collapsible "Findings" header + filter row). Returns
+ * `null` when the source has no findings at all (nothing to filter).
+ */
+export function buildFindingsSectionWithFilter(
+  source: StatsSummary | LotStatsSummary,
+  onFindingClick: (finding: StatsFinding, row: HTMLButtonElement) => void,
+  activeFindingId: string | null,
+  filter: FindingsFilter,
+  onFilterChange: () => void,
+): HTMLDivElement | null {
+  if (!source.findings.length) return null;
+
+  const hasNotable = source.findings.some(f => f.severity === 'unusual' || f.severity === 'notable');
+  const badge = hasNotable
+    ? source.findings.filter(f => f.severity !== 'info').length.toString()
+    : undefined;
+
+  const { outer, content } = collapsibleSection('Findings', hasNotable, badge);
+  content.appendChild(buildFindingsFilterRow(filter, onFilterChange));
+
+  const filtered = filterFindings(source, filter);
+  if (!filtered.length) {
+    content.appendChild(el('div', {
+      color: LABEL_COLOR, fontSize: '11px', textAlign: 'center', padding: '16px 8px',
+    }, 'No findings match the current filter.'));
+    return outer;
+  }
+
+  const section = buildFindingsSection(filtered, source, onFindingClick, activeFindingId, true);
+  if (section) content.appendChild(section);
+  return outer;
+}
+
 // ── Lot-level section builders ────────────────────────────────────────────────
 
-export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivElement {
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle('Lot Summary'));
-
-  const cards = el('div', { display: 'flex', gap: '6px', marginBottom: '8px' });
-  cards.appendChild(statCard(String(lotSummary.stats.waferCount), 'Wafers'));
-
-  // Compute lot yield from perWafer data
-  const waferYields = lotSummary.perWafer
-    .map(pw => pw.summary.stats.yieldPercent)
-    .filter((y): y is number => y !== null);
-
-  if (waferYields.length) {
-    const mean = waferYields.reduce((a, b) => a + b, 0) / waferYields.length;
-    cards.appendChild(statCard(`${mean.toFixed(1)}%`, 'Mean wafer yield'));
-  }
-  wrap.appendChild(cards);
-
-  if (lotSummary.lot) {
-    for (const [k, v] of Object.entries(lotSummary.lot)) {
-      if (v !== null && v !== undefined && v !== '') {
-        wrap.appendChild(kvRow(prettyKey(k), String(v)));
-      }
-    }
-  }
-
-  return wrap;
-}
-
-export function buildPerWaferYieldSection(
-  lotSummary: LotStatsSummary,
-  items: Array<{ label?: string } | null>,
-  onWaferClick?: (waferIndex: number) => void,
-): HTMLDivElement | null {
-  const waferData = lotSummary.perWafer
-    .map(pw => ({
-      waferIndex: pw.waferIndex,
-      label: (items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`)
-        .replace(/\s*·\s*\d+(\.\d+)?%$/, ''),
-      yieldPct: pw.summary.stats.yieldPercent,
-    }))
-    .filter(w => w.yieldPct !== null) as Array<{ waferIndex: number; label: string; yieldPct: number }>;
-
-  if (!waferData.length) return null;
-
-  const minY = Math.min(...waferData.map(w => w.yieldPct));
-  const maxY = Math.max(...waferData.map(w => w.yieldPct));
-  const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
-
-  const sorted  = [...waferData.map(w => w.yieldPct)].sort((a, b) => a - b);
-  const med     = medianOf(sorted);
-  const medFill = regionFillPct(med, minY, maxY);
-
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle('Wafer Yield' + rangeNote));
-  for (const { waferIndex, label, yieldPct } of waferData) {
-    const yPct = yieldPct;
-    const row = progressRow(label, yPct, undefined, regionFillPct(yPct, minY, maxY), medFill, yPct < med);
-    if (onWaferClick) {
-      row.style.cursor = 'pointer';
-      row.style.borderRadius = '4px';
-      row.style.padding = '2px 3px';
-      row.style.marginLeft = '-3px';
-      row.style.marginRight = '-3px';
-      row.addEventListener('mouseenter', () => { row.style.background = CLR.bgHover; });
-      row.addEventListener('mouseleave', () => { row.style.background = ''; });
-      row.addEventListener('click', () => onWaferClick(waferIndex));
-    }
-    wrap.appendChild(row);
-  }
-  return wrap;
-}
-
-/** Aggregate bin counts across all wafers in the lot. */
-export function buildLotBinSection(
-  allDies: Die[],
-  binDefs: BinDef[] | undefined,
-  mode: 'hard' | 'soft',
-  colorScheme?: string,
-): HTMLDivElement | null {
-  return buildBinSection(allDies, binDefs, mode, colorScheme);
-}
-
-function buildLotRegionYieldSection(
-  diesByWafer: Die[][],
-  allWafers: Wafer[],
-  ringCount: number,
-  passBins: number[],
-  regionBuilder: RegionBuilder,
-  title: string,
-): HTMLDivElement | null {
-  if (!allWafers.length) return null;
-  const hasBins = diesByWafer.some(wd => wd.some(d => d.hbin != null || d.sbin != null));
-  if (!hasBins) return null;
-
-  const passSet = new Set(passBins);
-  const totals  = new Map<string, { pass: number; total: number }>();
-  const order: string[] = [];
-
-  for (let wi = 0; wi < allWafers.length; wi++) {
-    const wDies = diesByWafer[wi];
-    if (!wDies?.length) continue;
-    const regions  = regionBuilder(wDies, allWafers[wi], ringCount);
-    const dieByKey = new Map(wDies.map(d => [`${d.x},${d.y}`, d]));
-    for (const region of regions) {
-      if (!order.includes(region.label)) order.push(region.label);
-      const acc = totals.get(region.label) ?? { pass: 0, total: 0 };
-      for (const key of region.dieKeys) {
-        const d = dieByKey.get(key);
-        if (!d || d.partial || d.edgeExcluded) continue;
-        const b = d.hbin ?? d.sbin;
-        if (b == null) continue;
-        acc.total++;
-        if (passSet.has(b)) acc.pass++;
-      }
-      totals.set(region.label, acc);
-    }
-  }
-  if (!totals.size) return null;
-
-  const validRows = order
-    .map(label => ({ label, acc: totals.get(label) }))
-    .filter((r): r is { label: string; acc: { pass: number; total: number } } => !!r.acc?.total);
-  if (!validRows.length) return null;
-
-  const yPcts = validRows.map(({ acc }) => (acc.pass / acc.total) * 100);
-  const minY  = Math.min(...yPcts);
-  const maxY  = Math.max(...yPcts);
-  const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
-
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle(title + rangeNote));
-  for (let i = 0; i < validRows.length; i++) {
-    const { label, acc } = validRows[i];
-    const yPct = yPcts[i];
-    wrap.appendChild(progressRow(`${label} (N=${acc.total})`, yPct, undefined, regionFillPct(yPct, minY, maxY)));
-  }
-  return wrap;
-}
-
-/** Aggregate ring yield across all wafers in the lot. */
-export function buildLotRingSection(
-  diesByWafer: Die[][],
-  allWafers: Wafer[],
-  ringCount: number,
-  passBins: number[],
-): HTMLDivElement | null {
-  return buildLotRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildRingRegions, 'Ring Yield');
-}
-
-/** Aggregate quadrant yield across all wafers in the lot. */
-export function buildLotQuadrantSection(
-  diesByWafer: Die[][],
-  allWafers: Wafer[],
-  ringCount: number,
-  passBins: number[],
-): HTMLDivElement | null {
-  return buildLotRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
-}
-
-/** Aggregate test value stats across all wafers in the lot. */
+/**
+ * Aggregate test value stats across all wafers in the lot. When every
+ * wafer's `StatsSummary.stats.perTestStats`/`.testSpecYield` is available
+ * (`perWaferSummaries`), pools mean (n-weighted)/min/max and sums spec
+ * pass/fail counts directly from those instead of re-scanning `allDies` —
+ * exact, since these are the same per-wafer aggregates `analyzeWaferMap`
+ * already computed once each. (Quartiles/median aren't pooled this way —
+ * they aren't reconstructable from per-wafer quartiles alone — but
+ * `buildTestSection`'s display doesn't need them.)
+ */
 export function buildLotTestSection(
   allDies: Die[],
   testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
+  perWaferSummaries?: StatsSummary[],
 ): HTMLDivElement | null {
-  return buildTestSection(allDies, testDefs, fallbackFormat);
+  let pooled: {
+    perTestStats?: Array<{ testNumber: number; min: number; max: number; mean: number; count: number }>;
+    testSpecYield?: Array<{ testNumber: number; totalDies: number; yieldPercent: number | null }>;
+  } | undefined;
+
+  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.perTestStats !== undefined)) {
+    const byTest = new Map<number, { n: number; sum: number; min: number; max: number }>();
+    for (const s of perWaferSummaries) {
+      for (const t of s.stats.perTestStats ?? []) {
+        const acc = byTest.get(t.testNumber);
+        if (!acc) {
+          byTest.set(t.testNumber, { n: t.count, sum: t.mean * t.count, min: t.min, max: t.max });
+        } else {
+          acc.n += t.count;
+          acc.sum += t.mean * t.count;
+          acc.min = Math.min(acc.min, t.min);
+          acc.max = Math.max(acc.max, t.max);
+        }
+      }
+    }
+    pooled = {
+      perTestStats: [...byTest.entries()].map(([testNumber, acc]) => ({
+        testNumber, count: acc.n, min: acc.min, max: acc.max, mean: acc.sum / acc.n,
+      })),
+    };
+  }
+
+  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.testSpecYield !== undefined)) {
+    const byTest = new Map<number, { passDies: number; totalDies: number }>();
+    for (const s of perWaferSummaries) {
+      for (const t of s.stats.testSpecYield ?? []) {
+        const acc = byTest.get(t.testNumber);
+        if (!acc) byTest.set(t.testNumber, { passDies: t.passDies, totalDies: t.totalDies });
+        else { acc.passDies += t.passDies; acc.totalDies += t.totalDies; }
+      }
+    }
+    pooled = {
+      ...pooled,
+      testSpecYield: [...byTest.entries()].map(([testNumber, acc]) => ({
+        testNumber, totalDies: acc.totalDies,
+        yieldPercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null,
+      })),
+    };
+  }
+
+  return buildTestSection(allDies, testDefs, fallbackFormat, pooled);
 }
 
 
@@ -1064,6 +1501,32 @@ export function wrapWithSummaryPanel(
   return wrapper;
 }
 
+function panelHeader(text: string): HTMLDivElement {
+  return el('div', {
+    fontSize:      '13px',
+    fontWeight:    '700',
+    color:         VALUE_COLOR,
+    marginBottom:  '10px',
+  }, text);
+}
+
+function reportButton(label: string, onClick: () => void): HTMLButtonElement {
+  const btn = el('button', {
+    background:   'none',
+    border:       BORDER,
+    borderRadius: '4px',
+    cursor:       'pointer',
+    fontSize:     '10px',
+    color:        CLR.iconHover,
+    padding:      '2px 7px',
+    marginBottom: '10px',
+    display:      'block',
+  }, label);
+  btn.type = 'button';
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
 /** Render all wafer-level sections into a panel element. Clears existing content. */
 export function renderWaferSummaryContent(
   panel: HTMLDivElement,
@@ -1082,6 +1545,8 @@ export function renderWaferSummaryContent(
     fallbackFormat?: 'si' | 'engineering';
     onFindingClick?: (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
+    findingsFilter?: FindingsFilter;
+    onFindingsFilterChange?: () => void;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1092,71 +1557,51 @@ export function renderWaferSummaryContent(
     statsSummary, passBins = [1], ringCount = 4,
     colorScheme, fallbackFormat,
     onFindingClick, activeFindingId = null,
+    findingsFilter, onFindingsFilterChange,
   } = params;
+
+  panel.appendChild(panelHeader('Wafer Summary'));
 
   const warnings = statsSummary?.stats.warnings;
   if (warnings?.length) panel.appendChild(buildWarningsBanner(warnings));
 
+  if (yieldSummary && dataCoverage) {
+    panel.appendChild(reportButton('Summary report', () => {
+      openHtmlReport(renderSummaryReportHtml({
+        wafer, dies, yieldSummary, dataCoverage,
+        hbinDefs, sbinDefs, testDefs,
+        statsSummary,
+        passBins,
+        ringCount,
+      }));
+    }));
+  }
+
   const sections: (HTMLDivElement | null)[] = [];
 
-  const meta = wafer.metadata as Record<string, unknown> | undefined;
   const lotStackStats = statsSummary?.stats.isLotStack ? statsSummary.stats : undefined;
-  const metaWithStack: Record<string, unknown> | undefined = lotStackStats
-    ? {
-        ...(meta ?? {}),
-        'Lot stack': lotStackStats.lotSize !== undefined
-          ? `${lotStackStats.lotSize} wafers · ${fmtAggregationMethod(lotStackStats.aggregationMethod)}`
-          : fmtAggregationMethod(lotStackStats.aggregationMethod),
-      }
-    : meta;
-  if (metaWithStack) sections.push(buildMetadataSection(metaWithStack));
+  const stacked = lotStackStats?.lotSize !== undefined
+    ? { lotSize: lotStackStats.lotSize, aggrMethod: fmtAggregationMethod(lotStackStats.aggregationMethod) }
+    : undefined;
+  sections.push(buildMetadataInfoSection([{ metadata: wafer.metadata ?? undefined }], stacked));
 
   if (yieldSummary && dataCoverage) sections.push(buildYieldSection(yieldSummary, dataCoverage, passBins));
 
   // Use hard bin mode as the primary bin display; fall back to soft if only soft present
   const hasHbin = dies.some(d => d.hbin != null);
   const hasSbin = dies.some(d => d.sbin != null);
-  if (hasHbin) sections.push(buildBinSection(dies, hbinDefs, 'hard', colorScheme));
-  else if (hasSbin) sections.push(buildBinSection(dies, sbinDefs, 'soft', colorScheme));
+  if (hasHbin) sections.push(buildBinSection(dies, hbinDefs, 'hard', colorScheme, statsSummary?.stats.hardBinCounts));
+  else if (hasSbin) sections.push(buildBinSection(dies, sbinDefs, 'soft', colorScheme, statsSummary?.stats.softBinCounts));
 
   sections.push(buildRingSection(dies, wafer, ringCount, passBins));
   sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
 
-  sections.push(buildTestSection(dies, testDefs, fallbackFormat));
+  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats));
 
-  if (statsSummary?.findings.length && onFindingClick) {
-    sections.push(buildFindingsSection(
-      statsSummary.findings,
-      statsSummary,
-      onFindingClick,
-      activeFindingId,
+  if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
+    sections.push(buildFindingsSectionWithFilter(
+      statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange,
     ));
-  }
-
-  // Panel-level "Summary report" button — always shown at the top
-  const summaryReportBtn = el('button', {
-    background:    'none',
-    border:        BORDER,
-    borderRadius:  '4px',
-    cursor:        'pointer',
-    fontSize:      '10px',
-    color:         CLR.iconHover,
-    padding:       '2px 7px',
-    marginBottom:  '10px',
-    display:       'block',
-  }, 'Summary report');
-  summaryReportBtn.type = 'button';
-  if (yieldSummary && dataCoverage) {
-    summaryReportBtn.addEventListener('click', () => {
-      openHtmlReport(renderSummaryReportHtml({
-        wafer, dies, yieldSummary: yieldSummary!, dataCoverage: dataCoverage!,
-        hbinDefs, sbinDefs, testDefs,
-        statsSummary,
-        passBins,
-        ringCount,
-      }));
-    });
-    panel.appendChild(summaryReportBtn);
   }
 
   let first = true;
@@ -1190,6 +1635,8 @@ export function renderLotSummaryContent(
     onFindingClick?:  (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
     onWaferClick?:    (waferIndex: number) => void;
+    findingsFilter?: FindingsFilter;
+    onFindingsFilterChange?: () => void;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1201,60 +1648,17 @@ export function renderLotSummaryContent(
     colorScheme, fallbackFormat,
     onFindingClick, activeFindingId = null,
     onWaferClick,
+    findingsFilter, onFindingsFilterChange,
   } = params;
+
+  panel.appendChild(panelHeader(`Lot Summary — ${lotSummary.stats.waferCount} wafer${lotSummary.stats.waferCount === 1 ? '' : 's'}`));
 
   const allWarnings = [...new Set(
     lotSummary.perWafer.flatMap(pw => pw.summary.stats.warnings ?? []),
   )];
   if (allWarnings.length) panel.appendChild(buildWarningsBanner(allWarnings));
 
-  const allWafers: Wafer[] = [];
-  const diesByWafer: Die[][] = [];
-  const allDies: Die[] = [];
-  for (const item of items) {
-    if (!item) { diesByWafer.push([]); continue; }
-    if (item.wafer) allWafers.push(item.wafer);
-    const wd = item.dies ?? [];
-    diesByWafer.push(wd);
-    allDies.push(...wd);
-  }
-
-  const hasHbin = allDies.some(d => d.hbin != null);
-  const hasSbin = allDies.some(d => d.sbin != null);
-
-  const sections: (HTMLDivElement | null)[] = [
-    buildLotOverviewSection(lotSummary),
-    buildPerWaferYieldSection(lotSummary, items, onWaferClick),
-    hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard', colorScheme)
-            : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft', colorScheme) : null,
-    buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
-    buildLotQuadrantSection(diesByWafer, allWafers, ringCount, passBins),
-    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat) : null,
-  ];
-
-  if (lotSummary.findings.length && onFindingClick) {
-    sections.push(buildFindingsSection(
-      lotSummary.findings,
-      lotSummary,
-      onFindingClick,
-      activeFindingId,
-    ));
-  }
-
-  // Panel-level "Summary report" button
-  const summaryReportBtn = el('button', {
-    background:   'none',
-    border:       BORDER,
-    borderRadius: '4px',
-    cursor:       'pointer',
-    fontSize:     '10px',
-    color:        CLR.iconHover,
-    padding:      '2px 7px',
-    marginBottom: '10px',
-    display:      'block',
-  }, 'Summary report');
-  summaryReportBtn.type = 'button';
-  summaryReportBtn.addEventListener('click', () => {
+  panel.appendChild(reportButton('Summary report', () => {
     // No `lotSummary` here — grouping, per-group analysis, and rendering
     // all happen inside renderLotSummaryReportHtml now (see its own doc
     // comment). The on-screen panel above still uses the pooled `lotSummary`
@@ -1270,8 +1674,39 @@ export function renderLotSummaryContent(
       passBins,
       ringCount,
     }));
-  });
-  panel.appendChild(summaryReportBtn);
+  }));
+
+  const allWafers: Wafer[] = [];
+  const diesByWafer: Die[][] = [];
+  const allDies: Die[] = [];
+  for (const item of items) {
+    if (!item) { diesByWafer.push([]); continue; }
+    if (item.wafer) allWafers.push(item.wafer);
+    const wd = item.dies ?? [];
+    diesByWafer.push(wd);
+    allDies.push(...wd);
+  }
+
+  const hasHbin = allDies.some(d => d.hbin != null);
+  const hasSbin = allDies.some(d => d.sbin != null);
+  const perWaferSummaries = items.map(i => i?.statsSummary).filter((s): s is StatsSummary => !!s);
+
+  const sections: (HTMLDivElement | null)[] = [
+    buildLotOverviewSection(lotSummary),
+    buildMetadataInfoSection(items.filter((it): it is NonNullable<typeof it> => it !== null).map(it => ({ metadata: it.wafer?.metadata }))),
+    buildPerWaferYieldSection(lotSummary, items, onWaferClick),
+    hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard', colorScheme)
+            : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft', colorScheme) : null,
+    buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
+    buildLotQuadrantSection(diesByWafer, allWafers, ringCount, passBins),
+    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries) : null,
+  ];
+
+  if (onFindingClick && findingsFilter && onFindingsFilterChange) {
+    sections.push(buildFindingsSectionWithFilter(
+      lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange,
+    ));
+  }
 
   let first = true;
   for (const s of sections) {
@@ -1286,54 +1721,3 @@ export function renderLotSummaryContent(
   panel.scrollTop = savedScroll;
 }
 
-/** Build the wafer-detail panel header with a back button for gallery drill-down. */
-export function buildWaferDetailHeader(
-  label: string,
-  yieldPct: number | null,
-  onBack: () => void,
-): HTMLDivElement {
-  const header = el('div', {
-    display:       'flex',
-    alignItems:    'center',
-    gap:           '6px',
-    marginBottom:  '10px',
-    paddingBottom: '8px',
-    borderBottom:  `1px solid ${CLR.separator}`,
-    flexShrink:    '0',
-  });
-
-  const backBtn = document.createElement('button');
-  backBtn.type = 'button';
-  backBtn.title = 'Back to lot summary';
-  backBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
-  Object.assign(backBtn.style, {
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'center',
-    border:         BORDER,
-    borderRadius:   '4px',
-    background:     CLR.menuBg,
-    color:          CLR.icon,
-    cursor:         'pointer',
-    padding:        '3px',
-    flexShrink:     '0',
-  });
-  backBtn.addEventListener('click', onBack);
-
-  const titleParts: string[] = [label];
-  if (yieldPct !== null) titleParts.push(`${yieldPct.toFixed(1)}%`);
-
-  const title = el('span', {
-    fontSize:   '11px',
-    fontWeight: '700',
-    color:      VALUE_COLOR,
-    flex:       '1',
-    overflow:   'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  }, titleParts.join(' · '));
-
-  header.appendChild(backBtn);
-  header.appendChild(title);
-  return header;
-}

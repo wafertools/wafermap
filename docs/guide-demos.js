@@ -119,7 +119,7 @@
             showToolbar: true, showTooltip: true,
             viewOptions: { plotMode: 'hardBin' },
             statsSummary: summary || undefined,
-            summaryPanel: summary ? { defaultOpen: true } : undefined,
+            findings: summary ? { defaultOpen: true } : undefined,
           });
 
         } else if (id === 'lot-stack') {
@@ -207,12 +207,12 @@
           }
           var analysisResult = buildWaferMap({ results: makeAnalysisWafer(0), hbinDefs: hbinDefs, testDefs: analysisTestDefs, passBins: [1] });
           renderWaferMap(el, analysisResult, {
-            analysisEnabled: true,
+            insights: { enabled: true },
             viewOptions: { plotMode: 'hardBin' },
           });
-          // Open the Analysis tab by default — same click a user would make,
+          // Open the Insights tab by default — same click a user would make,
           // just pre-triggered so the feature is visible without interaction.
-          var analysisBtn = el.querySelector('button[aria-label="Analysis"]');
+          var analysisBtn = el.querySelector('button[aria-label="Insights"]');
           if (analysisBtn) analysisBtn.click();
 
         } else if (id === 'reticle') {

@@ -105,6 +105,18 @@ export interface StatsSummary {
     testsConsidered: number[];
     hardBinsConsidered: number[];
     softBinsConsidered: number[];
+    /**
+     * Die counts per hard/soft bin, keyed by bin code, over the same
+     * yield-eligible population `YieldSummary`/`buildBinParetoData` use
+     * (`isYieldEligibleDie` — excludes `partial`/`edgeExcluded` dies).
+     * Unlike `hardBinsConsidered`/`softBinsConsidered` (which list every bin
+     * code that appears anywhere, eligible or not), these are the actual
+     * counts a bin-breakdown display should show. Consumed by
+     * `buildBinParetoData`/`buildBinClusterData` and the summary panel's bin
+     * section when supplied, instead of each independently re-walking dies.
+     */
+    hardBinCounts?: Record<number, number>;
+    softBinCounts?: Record<number, number>;
     /** Structured warnings emitted during analysis (e.g. test-count cap exceeded). */
     warnings?: string[];
     /** True when this summary was produced from lot-aggregated data (lotStack). */

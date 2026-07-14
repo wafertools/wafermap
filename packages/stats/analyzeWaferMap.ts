@@ -123,6 +123,8 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
   const testSet = new Set<number>();
   const hardBinSet = new Set<number>();
   const softBinSet = new Set<number>();
+  const hardBinCounts = new Map<number, number>();
+  const softBinCounts = new Map<number, number>();
 
   for (const die of dies) {
     if (die.testValues) {
@@ -134,6 +136,12 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
     }
     if (die.hbin !== undefined) hardBinSet.add(die.hbin);
     if (die.sbin !== undefined) softBinSet.add(die.sbin);
+    // Counts (not just "which bins appear") are only meaningful over the
+    // same yield-eligible population every other bin display uses.
+    if (isYieldEligibleDie(die)) {
+      if (die.hbin !== undefined) hardBinCounts.set(die.hbin, (hardBinCounts.get(die.hbin) ?? 0) + 1);
+      if (die.sbin !== undefined) softBinCounts.set(die.sbin, (softBinCounts.get(die.sbin) ?? 0) + 1);
+    }
   }
 
   return {
@@ -144,6 +152,8 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
     testsConsidered: [...testSet].sort((left, right) => left - right),
     hardBinsConsidered: [...hardBinSet].sort((left, right) => left - right),
     softBinsConsidered: [...softBinSet].sort((left, right) => left - right),
+    ...(hardBinCounts.size ? { hardBinCounts: Object.fromEntries(hardBinCounts) } : {}),
+    ...(softBinCounts.size ? { softBinCounts: Object.fromEntries(softBinCounts) } : {}),
   };
 }
 

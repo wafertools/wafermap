@@ -10,6 +10,23 @@ import type { WaferMetadata } from '../core/metadata.js';
  *  visible (not dropped) so grouped output stays honest about what it's missing. */
 export const FACET_NONE_VALUE = '(none)';
 
+/**
+ * camelCase/snake_case key → "Title Case" label — the one label convention
+ * every metadata surface in this library uses for an uncurated field
+ * (`DEFAULT_FACET_CURATION`'s own `label`s, e.g. "Program", intentionally
+ * differ and are reserved for facet/group-by UI, not general display — see
+ * `buildFacetTable`'s callers in canvas-adapter). Shared by the canvas
+ * (Summary panel, metadata badge) and stats (HTML report) layers so a field
+ * is never labelled two different ways depending which surface rendered it.
+ */
+export function prettyKey(k: string): string {
+  return k
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
+    .trim()
+    .replace(/^./, s => s.toUpperCase());
+}
+
 /** One distinct value of a facet field, with how much data it covers. */
 export interface FacetValue {
   value: string;
@@ -80,6 +97,22 @@ export interface FacetItem {
   metadata?: WaferMetadata;
   /** Die count for this wafer, if known — used for `FacetValue.dieCount` coverage. Omit if not tracked; defaults to 0. */
   dieCount?: number;
+}
+
+/** Fields present with the same value on every item's `metadata` — the
+ *  conservative lot identity a mixed population can safely display. A field
+ *  that varies per item (e.g. `waferId`) is naturally excluded, since it
+ *  won't be common across all items. Returns `{}` for an empty list (no
+ *  false lot-level claim about zero wafers). */
+export function commonMetadata(items: Array<{ metadata?: WaferMetadata }>): WaferMetadata {
+  if (!items.length) return {};
+  const first = items[0].metadata ?? {};
+  const common: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(first)) {
+    if (v === null || v === undefined || v === '') continue;
+    if (items.every(it => (it.metadata ?? {})[k] === v)) common[k] = v;
+  }
+  return common;
 }
 
 export interface BuildFacetTableOptions {

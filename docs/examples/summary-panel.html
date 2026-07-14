@@ -52,16 +52,16 @@
     <div class="demo-sep"></div>
     <span class="demo-title">§11 — Summary panel</span>
     <span class="demo-desc">
-      Persistent summary panel showing metadata, yield, bins, regions, test values and findings.
+      Persistent Summary panel — metadata, yield, bin breakdown, ring/quadrant yield, test values, and findings, always docked next to the map.
       Gallery panel drills down to wafer detail on card-header click.
     </span>
   </header>
 
   <div class="demo-intro">
-    The summary panel shows yield, bin distribution, ring and quadrant breakdown, test value statistics, and findings — all in one persistent view alongside the map.
+    The Summary panel shows metadata, yield, bin breakdown, ring/quadrant yield, test values, and detected anomalies (<code>StatsSummary.findings</code>, with severity/kind/region filter controls), plus a combined "Summary report" button — always docked next to the map so a clicked finding can highlight the affected dies right there.
+    The same bin/ring/quadrant/test-value numbers are also available as charts in the <strong>Insights</strong> tab's Overview sub-tab (see the <a href="gallery.html">gallery demo</a>) — a full-takeover view for deeper exploration, reading the same underlying computation so the two surfaces never disagree.
     The top example uses <code>summaryPanel: { placement: 'right' }</code> for a fixed always-visible panel.
-    The gallery below uses <code>lotStatsSummary</code> for lot-level stats; click a card header to drill into that wafer's per-wafer summary.
-    The <strong>test value statistics</strong> section appears only because this demo passes <code>computePerTestStats: true</code> to <code>analyzeWaferMap</code>; it is off by default, since the per-test scan adds cost (see the <a href="../guide/#which-test-value-setting-to-use">guide</a> for the full breakdown).
+    The gallery below uses <code>lotStatsSummary</code> for lot-level stats and findings; click a card header to drill into that wafer's per-wafer summary.
   </div>
 
   <div class="demo-content">
@@ -100,8 +100,6 @@
       testDefs:    TEST_DEFS,
     });
 
-    // computePerTestStats: true adds the per-test value summary to the panel
-    // (mean / stddev / quartiles) without the heavier regional Welch findings.
     const singleStats = analyzeWaferMap(singleResult, { computePerTestStats: true });
 
     renderWaferMap(

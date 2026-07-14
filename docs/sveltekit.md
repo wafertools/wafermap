@@ -123,7 +123,7 @@ Pass an array of results (or factory functions for large lots) to render a card 
 
 ## Adding statistical findings
 
-`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Findings** button appears in the toolbar automatically.
+`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Summary** button appears in the toolbar automatically.
 
 ```svelte
 <script lang="ts">
@@ -150,7 +150,7 @@ Pass an array of results (or factory functions for large lots) to render a card 
 <div bind:this={host} style="width: 100%; aspect-ratio: 1" />
 ```
 
-To show a persistent summary panel instead of the toolbar button, add a `summaryPanel` option:
+To show a persistent Summary panel instead of the toolbar button, add a `summaryPanel` option:
 
 ```ts
 ctrl = renderWaferMap(host, result, {

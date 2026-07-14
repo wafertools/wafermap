@@ -132,27 +132,28 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 
 ### Single map
 
-|                                                               | Control            | Description                                                                                                                                                                                                                  |
-| ------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Section 2](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                     |
-| <img src="images/icons/aggr.svg" width="20" height="20">      | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count.                                                                                        |
-| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), and spec pass/fail highlighting (Test Value mode with limits). |
-| <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Switches the colour palette used for value and stacked modes. Available schemes depend on what the application has registered.                                                                                               |
-| <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive.                                                                              |
-| <img src="images/icons/legend.svg" width="20" height="20">    | Legend style       | Bin modes only. Controls where the bin legend is positioned relative to the map: Default (right), Compact, Left, Top, Bottom, or Floating.                                                                                   |
-| <img src="images/icons/rotateCW.svg" width="20" height="20">  | Rotate 90°         | Rotates the display 90° clockwise. Applies cumulatively. Die coordinates are unaffected.                                                                                                                                     |
-| <img src="images/icons/flipH.svg" width="20" height="20">     | Flip horizontal    | Mirrors the display left/right. Die coordinates are unaffected.                                                                                                                                                              |
-| <img src="images/icons/flipV.svg" width="20" height="20">     | Flip vertical      | Mirrors the display top/bottom. Die coordinates are unaffected.                                                                                                                                                              |
-| <img src="images/icons/zoomMode.svg" width="20" height="20">  | Zoom mode          | Click and drag to draw a zoom region.                                                                                                                                                                                        |
-| <img src="images/icons/zoomIn.svg" width="20" height="20">    | Zoom in            | Zooms in one step.                                                                                                                                                                                                           |
-| <img src="images/icons/zoomOut.svg" width="20" height="20">   | Zoom out           | Zooms out one step.                                                                                                                                                                                                          |
-| <img src="images/icons/reset.svg" width="20" height="20">     | Reset zoom         | Returns the map to the default fitted view.                                                                                                                                                                                  |
-| <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                               |
-| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)).                                                                                                                                    |
-| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view.                                                                        |
-| <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                     |
-| <img src="images/icons/findings.svg" width="20" height="20">  | Summary panel      | Opens or closes the summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                       |
-| <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                            |
+|                                                               | Control            | Description                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Section 2](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                                                                                               |
+| <img src="images/icons/aggr.svg" width="20" height="20">      | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count.                                                                                                                                                                  |
+| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), and spec pass/fail highlighting (Test Value mode with limits).                                                                           |
+| <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Switches the colour palette used for value and stacked modes. Available schemes depend on what the application has registered.                                                                                                                                                                         |
+| <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive.                                                                                                                                                        |
+| <img src="images/icons/legend.svg" width="20" height="20">    | Legend style       | Bin modes only. Controls where the bin legend is positioned relative to the map: Default (right), Compact, Left, Top, Bottom, or Floating.                                                                                                                                                             |
+| <img src="images/icons/rotateCW.svg" width="20" height="20">  | Rotate 90°         | Rotates the display 90° clockwise. Applies cumulatively. Die coordinates are unaffected.                                                                                                                                                                                                               |
+| <img src="images/icons/flipH.svg" width="20" height="20">     | Flip horizontal    | Mirrors the display left/right. Die coordinates are unaffected.                                                                                                                                                                                                                                        |
+| <img src="images/icons/flipV.svg" width="20" height="20">     | Flip vertical      | Mirrors the display top/bottom. Die coordinates are unaffected.                                                                                                                                                                                                                                        |
+| <img src="images/icons/zoomMode.svg" width="20" height="20">  | Zoom mode          | Click and drag to draw a zoom region.                                                                                                                                                                                                                                                                  |
+| <img src="images/icons/zoomIn.svg" width="20" height="20">    | Zoom in            | Zooms in one step.                                                                                                                                                                                                                                                                                     |
+| <img src="images/icons/zoomOut.svg" width="20" height="20">   | Zoom out           | Zooms out one step.                                                                                                                                                                                                                                                                                    |
+| <img src="images/icons/reset.svg" width="20" height="20">     | Reset zoom         | Returns the map to the default fitted view.                                                                                                                                                                                                                                                            |
+| <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
+| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)).                                                                                                                                                                                                              |
+| <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it.                                                                                                                |
+| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. While the Insights tab is open, this expands the chart suite instead. |
+| <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
+| <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Findings sidebar (see [Section 6](#6-findings-sidebar)).                                                                                                                                                                                                                           |
+| <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                                                                                                      |
 
 **This guide's own window** (and a gallery card detached into its own window,
 see [Section 3 — Gallery](#gallery) below) is a floating window, not a modal —
@@ -203,15 +204,16 @@ Use the **Overlays** menu to toggle optional display layers on and off:
 
 The gallery control bar applies to all cards simultaneously.
 
-|                                                              | Control       | Description                                           |
-| ------------------------------------------------------------ | ------------- | ----------------------------------------------------- |
-| <img src="images/icons/mode.svg" width="20" height="20">     | Plot mode     | Switches the plot mode for all cards.                 |
-| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays      | Toggles display layers for all cards simultaneously.  |
-| <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Switches the colour palette for all cards.            |
-| <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards. |
-| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns in the card grid.          |
-| <img src="images/icons/download.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.      |
-| <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Opens or closes the lot-level summary panel.          |
+|                                                              | Control       | Description                                                                                                                                                                        |
+| ------------------------------------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <img src="images/icons/mode.svg" width="20" height="20">     | Plot mode     | Switches the plot mode for all cards.                                                                                                                                              |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays      | Toggles display layers for all cards simultaneously.                                                                                                                               |
+| <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Switches the colour palette for all cards.                                                                                                                                         |
+| <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
+| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns in the card grid.                                                                                                                                       |
+| <img src="images/icons/download.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
+| <img src="images/icons/findings.svg" width="20" height="20"> | Findings      | Opens or closes the lot-level Findings sidebar.                                                                                                                                     |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a lot-wide chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |
 
 Click a card's expand button to detach it into its own separate window with the
 complete single-map toolbar (falls back to a floating window inside the page if
@@ -306,40 +308,35 @@ supporting detail.
 
 ---
 
-## 6. Summary panel
+## 6. Findings sidebar
 
-The summary panel shows statistics and metadata for the current wafer or lot.
-Open it from the toolbar.
+The Findings sidebar shows detected anomalies for the current wafer or lot,
+always docked next to the map so a clicked finding can highlight the affected
+dies right there. Open it from the toolbar. Severity, kind, and region filter
+controls at the top of the sidebar narrow the list down.
 
 <div data-wmap-demo="summary-panel" class="wmap-demo"></div>
 
-*The summary panel open alongside a single wafer, showing yield, bin breakdown,
-and per-test statistics. Click any finding to highlight the affected dies.*
+*The Findings sidebar open alongside a single wafer. Click any finding to
+highlight the affected dies; use the filter controls to narrow by severity,
+kind, or region.*
 
-For a **single wafer**, the panel shows:
+Yield, bin breakdown, ring/quadrant regional yield, and per-test statistics —
+previously shown in this same panel — now live in the
+[Insights tab](#8-insights-tab)'s Overview sub-tab instead, since that content
+doesn't need the map on screen the way a finding's highlight does.
 
-- Wafer and lot metadata (lot ID, wafer ID, test date — when available)
-- Total die count, yield %, and counts of pass, fail, and edge-excluded dies
-- Hard bin and soft bin breakdown with percentages
-- Per-test descriptive statistics (min, max, mean, std dev, median) when test
-  data is loaded
-- Spec yield per test when limits are defined — pass die count and yield %
-  split by below-limit and above-limit fails
-- Findings list — same findings shown in the Findings panel; click to highlight
-
-A **Summary report** button (when present) opens a printable full-detail report
-in a new window or tab. The report contains everything shown in the panel —
-yield, bin breakdown, ring and quadrant statistics, per-test statistics, and the
-full findings list — and can be saved as a PDF from your browser's print dialog.
+A **Summary report** button (when present) opens a printable full-detail
+report in a new window or tab, still covering everything findings-adjacent —
+yield, bin breakdown, ring and quadrant statistics, per-test statistics, and
+the full findings list — and can be saved as a PDF from your browser's print
+dialog.
 
 ![Wafer summary report](images/report-wafer-summary.png)
 
-For **lot-level views** (gallery), the panel shows:
-
-- Lot metadata and wafer count
-- Per-wafer yield trend
-- Lot-level aggregate bin breakdown
-- Cross-wafer comparison findings
+For **lot-level views** (gallery), the sidebar shows lot-level findings by
+default, with a **Wafers** tab listing every wafer that has its own per-wafer
+findings — click a row to open that wafer.
 
 ![Lot summary report](images/report-lot-summary.png)
 
@@ -394,21 +391,25 @@ bin 1 (Pass) or bin 2 (Fail) at that location.*
 
 ---
 
-## 8. Analysis tab
+## 8. Insights tab
 
-The **Analysis** toolbar button (single map or gallery) swaps the wafer view for
-a chart suite computed from the same die data — process capability, value
-distributions, and test correlation — without leaving the toolbar. Click it
-again to return to the map.
+The **Insights** toolbar button (single map or gallery) swaps the wafer view
+for a chart suite computed from the same die data — without leaving the
+toolbar. Click it again to return to the map. Independent of the Findings
+sidebar (Section 6) — the two toggle independently, and opening one never
+hides the other's toolbar button, since Findings has nothing to highlight
+against once the map is replaced.
 
-Panels are grouped into three sections:
+Insights is organized into three sub-tabs:
 
-- **Yield & bins** — a yield bar (labelled with the pass bins actually in use)
-  and a hard/soft bin pareto.
+- **Overview** — a yield bar (labelled with the pass bins actually in use), a
+  hard/soft bin pareto, and ring/quadrant regional yield and per-test
+  min/mean/max/spec-yield statistics.
 - **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
-  lower and upper spec limit), a test-value box plot, and a value histogram.
-  Clicking a capability box drives the box plot and histogram onto that same
-  test automatically.
+  lower and upper spec limit; tests missing a spec still appear, normalized
+  onto their own range and sorted by variability), a test-value box plot, and
+  a value histogram. Clicking a capability box drives the box plot and
+  histogram onto that same test automatically.
 - **Correlation** — a test-to-test correlation matrix and a die-level scatter
   plot. Clicking a matrix cell drives the scatter plot onto that pair.
 
@@ -423,10 +424,12 @@ directly on the test you were looking at.
 
 <div data-wmap-demo="analysis" class="wmap-demo"></div>
 
-*Analysis tab open on a single wafer: yield and bin pareto, process
-capability, a test-value box plot and histogram, and a correlation matrix with
-scatter plot — all computed from this wafer's own dies. In a gallery, the same
-tab also gains a "Group by" control and per-wafer yield/box-plot rows.*
+*Insights tab open on a single wafer, Overview sub-tab: yield and bin pareto,
+ring/quadrant yield, and per-test statistics — all computed from this wafer's
+own dies. The Distributions sub-tab has process capability, a test-value box
+plot and histogram; Correlation has a correlation matrix with scatter plot.
+In a gallery, Overview also gains a "Group by" control and per-wafer
+yield/box-plot rows.*
 
 ---
 

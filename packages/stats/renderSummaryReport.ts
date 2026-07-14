@@ -12,7 +12,7 @@ import {
   formatFindingCoverage,
   formatFindingTooltip,
   escHtml,
-  renderDefinitionList,
+  renderMetadataSection,
   renderMetricGrid,
   renderSection,
   renderSeverityBadge,
@@ -35,38 +35,6 @@ export interface SummaryReportParams {
 
 function pct(n: number, d: number): string {
   return d === 0 ? '—' : `${((n / d) * 100).toFixed(1)}%`;
-}
-
-const KNOWN_META_KEYS: Array<{ key: string; label: string }> = [
-  { key: 'lot',       label: 'Lot' },
-  { key: 'lotId',     label: 'Lot' },
-  { key: 'wafer',     label: 'Wafer' },
-  { key: 'waferId',   label: 'Wafer' },
-  { key: 'testDate',  label: 'Test date' },
-  { key: 'date',      label: 'Date' },
-  { key: 'temp',      label: 'Temperature' },
-  { key: 'operator',  label: 'Operator' },
-  { key: 'product',   label: 'Product' },
-  { key: 'device',    label: 'Device' },
-  { key: 'split',     label: 'Split' },
-];
-
-function metaRows(meta: Record<string, unknown>): string {
-  const rendered = new Set<string>();
-  const rows: Array<{ label: string; value: string }> = [];
-  for (const { key, label } of KNOWN_META_KEYS) {
-    if (key in meta && meta[key] != null && !rendered.has(label)) {
-      rows.push({ label, value: String(meta[key]) });
-      rendered.add(label);
-    }
-  }
-  for (const [key, val] of Object.entries(meta)) {
-    if (!KNOWN_META_KEYS.some(k => k.key === key) && val != null) {
-      const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').replace(/_/g, ' ');
-      rows.push({ label, value: String(val) });
-    }
-  }
-  return renderDefinitionList(rows);
 }
 
 function titleFromMeta(meta?: Record<string, unknown>): string {
@@ -92,12 +60,22 @@ function yieldSection(y: YieldSummary, cov: SummaryReportParams['dataCoverage'])
   return renderSection('Yield', renderMetricGrid(metrics));
 }
 
-function binSection(dies: Die[], binDefs: BinDef[] | undefined, mode: 'hard' | 'soft'): string {
+function binSection(
+  dies: Die[],
+  binDefs: BinDef[] | undefined,
+  mode: 'hard' | 'soft',
+  /** Precomputed `StatsSummary.stats.{hard,soft}BinCounts`, used directly instead of re-walking `dies` when supplied. */
+  precomputedCounts?: Record<number, number>,
+): string {
   const counts = new Map<number, number>();
-  for (const d of dies) {
-    if (d.partial || d.edgeExcluded) continue;
-    const b = mode === 'hard' ? d.hbin : d.sbin;
-    if (b != null) counts.set(b, (counts.get(b) ?? 0) + 1);
+  if (precomputedCounts) {
+    for (const [binStr, count] of Object.entries(precomputedCounts)) counts.set(Number(binStr), count);
+  } else {
+    for (const d of dies) {
+      if (d.partial || d.edgeExcluded) continue;
+      const b = mode === 'hard' ? d.hbin : d.sbin;
+      if (b != null) counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
   }
   if (!counts.size) return '';
   const total = [...counts.values()].reduce((a, b) => a + b, 0);
@@ -141,24 +119,36 @@ function regionYieldSection(
   return rows.length ? renderSection(title, renderTable(['Region', 'Pass', 'Total', 'Yield'], rows, { className: 'compact' })) : '';
 }
 
-function testSection(dies: Die[], testDefs: TestDef[]): string {
+function testSection(
+  dies: Die[],
+  testDefs: TestDef[],
+  /** Precomputed `StatsSummary.stats.perTestStats`, used directly instead of re-walking `dies` per-test when a test is present. */
+  precomputedPerTestStats?: Array<{ testNumber: number; min: number; max: number; mean: number }>,
+): string {
   if (!testDefs.length) return '';
   const active = dies.filter(d => !d.partial && !d.edgeExcluded);
+  const precomputedByNumber = new Map((precomputedPerTestStats ?? []).map(s => [s.testNumber, s]));
   const rows: string[][] = [];
 
   for (const def of testDefs) {
     const tn = def.testNumber ?? def.index;
     if (tn === undefined) continue;
-    const vals = active
-      .map(d => d.testValues?.[tn] ?? d.values?.[def.index ?? tn])
-      .filter((v): v is number => v !== undefined && isFinite(v));
-    if (!vals.length) continue;
-
-    vals.sort((a, b) => a - b);
-    const min    = vals[0];
-    const max    = vals[vals.length - 1];
-    const mean   = vals.reduce((a, b) => a + b, 0) / vals.length;
     const unit = def.unit || undefined;
+
+    const precomputed = precomputedByNumber.get(tn);
+    let min: number, max: number, mean: number;
+    if (precomputed) {
+      ({ min, max, mean } = precomputed);
+    } else {
+      const vals = active
+        .map(d => d.testValues?.[tn] ?? d.values?.[def.index ?? tn])
+        .filter((v): v is number => v !== undefined && isFinite(v));
+      if (!vals.length) continue;
+      vals.sort((a, b) => a - b);
+      min = vals[0];
+      max = vals[vals.length - 1];
+      mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    }
 
     rows.push([
       escHtml(def.name),
@@ -171,15 +161,18 @@ function testSection(dies: Die[], testDefs: TestDef[]): string {
   return renderSection('Test Values', renderTable(['Test', 'Min', 'Mean', 'Max'], rows, { className: 'compact' }));
 }
 
-/** Cp/Cpk/Pp/Ppk for every test with both spec limits — empty string (section
- *  omitted, matching every other section's convention) when none have both. */
+/** Cp/Cpk/Pp/Ppk for every parametric test with recorded values — tests
+ *  without both spec limits still get a row (spec/index columns show "—")
+ *  since `buildCapabilityData` no longer excludes them. Empty string
+ *  (section omitted, matching every other section's convention) only when
+ *  there are no parametric tests with data at all. */
 function capabilitySection(items: Array<{ dies?: Die[] }>, testDefs: TestDef[]): string {
   const data = buildCapabilityData(items, testDefs);
   if (!data.length) return '';
   const fmtIndex = (v: number | null) => v === null ? '—' : v.toFixed(2);
   const rows = data.map(d => [
     escHtml(d.label),
-    `${fmt(d.lsl, d.unit)} – ${fmt(d.usl, d.unit)}`,
+    d.hasSpec ? `${fmt(d.lsl!, d.unit)} – ${fmt(d.usl!, d.unit)}` : '—',
     fmt(d.mean, d.unit),
     fmtIndex(d.cp), fmtIndex(d.cpk), fmtIndex(d.pp), fmtIndex(d.ppk),
   ]);
@@ -241,14 +234,15 @@ export function renderSummaryReportHtml(
   ];
 
   const sections = [
-    meta ? renderSection('Wafer Info', metaRows(meta)) : '',
+    renderMetadataSection([{ metadata: wafer.metadata }]),
     renderSection('Summary', [
       renderMetricGrid(summaryMetrics),
     ].filter(Boolean).join('\n')),
-    hasHbin ? binSection(dies, hbinDefs, 'hard') : hasSbin ? binSection(dies, sbinDefs, 'soft') : '',
+    hasHbin ? binSection(dies, hbinDefs, 'hard', statsSummary?.stats.hardBinCounts)
+            : hasSbin ? binSection(dies, sbinDefs, 'soft', statsSummary?.stats.softBinCounts) : '',
     regionYieldSection('Ring Yield', ringRegions, dies, passBins),
     regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins),
-    testSection(dies, testDefs),
+    testSection(dies, testDefs, statsSummary?.stats.perTestStats),
     capabilitySection([{ dies }], testDefs),
     statsSummary ? findingsSection(statsSummary.findings) : '',
   ].filter(Boolean).join('\n');
@@ -317,12 +311,31 @@ function splitsSection(items: LotSummaryReportParams['items']): string {
   return renderSection('Splits', renderTable(['Wafer', 'Split'], rows, { className: 'compact' }));
 }
 
-function lotAggregateBinTable(allDies: Die[], binDefs: BinDef[] | undefined, mode: 'hard' | 'soft'): string {
+/**
+ * When every wafer's `StatsSummary.stats.{hard,soft}BinCounts` is available
+ * (`perWaferSummaries`), sums those directly instead of re-walking `allDies`.
+ */
+function lotAggregateBinTable(
+  allDies: Die[],
+  binDefs: BinDef[] | undefined,
+  mode: 'hard' | 'soft',
+  perWaferSummaries?: StatsSummary[],
+): string {
   const counts = new Map<number, number>();
-  for (const d of allDies) {
-    if (d.partial || d.edgeExcluded) continue;
-    const bin = mode === 'hard' ? d.hbin : d.sbin;
-    if (bin != null) counts.set(bin, (counts.get(bin) ?? 0) + 1);
+  const field = mode === 'hard' ? 'hardBinCounts' as const : 'softBinCounts' as const;
+  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats[field] !== undefined)) {
+    for (const s of perWaferSummaries) {
+      for (const [binStr, count] of Object.entries(s.stats[field]!)) {
+        const bin = Number(binStr);
+        counts.set(bin, (counts.get(bin) ?? 0) + count);
+      }
+    }
+  } else {
+    for (const d of allDies) {
+      if (d.partial || d.edgeExcluded) continue;
+      const bin = mode === 'hard' ? d.hbin : d.sbin;
+      if (bin != null) counts.set(bin, (counts.get(bin) ?? 0) + 1);
+    }
   }
   if (!counts.size) return '';
 
@@ -386,8 +399,32 @@ function lotRegionYieldTable(
   return rows.length ? renderSection(title, renderTable(['Region', 'Yield'], rows, { className: 'compact' })) : '';
 }
 
-function lotTestTable(allDies: Die[], testDefs: TestDef[]): string {
-  return testSection(allDies, testDefs);
+/**
+ * When every wafer's `StatsSummary.stats.perTestStats` is available
+ * (`perWaferSummaries`), pools mean (n-weighted)/min/max directly from those
+ * instead of re-walking `allDies` — see `testSection`'s doc comment.
+ */
+function lotTestTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: StatsSummary[]): string {
+  let pooled: Array<{ testNumber: number; min: number; max: number; mean: number }> | undefined;
+  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.perTestStats !== undefined)) {
+    const byTest = new Map<number, { n: number; sum: number; min: number; max: number }>();
+    for (const s of perWaferSummaries) {
+      for (const t of s.stats.perTestStats ?? []) {
+        const acc = byTest.get(t.testNumber);
+        if (!acc) byTest.set(t.testNumber, { n: t.count, sum: t.mean * t.count, min: t.min, max: t.max });
+        else {
+          acc.n += t.count;
+          acc.sum += t.mean * t.count;
+          acc.min = Math.min(acc.min, t.min);
+          acc.max = Math.max(acc.max, t.max);
+        }
+      }
+    }
+    pooled = [...byTest.entries()].map(([testNumber, acc]) => ({
+      testNumber, min: acc.min, max: acc.max, mean: acc.sum / acc.n,
+    }));
+  }
+  return testSection(allDies, testDefs, pooled);
 }
 
 // Identity fields that must never be silently pooled across a lot report —
@@ -476,7 +513,6 @@ function renderLotGroupSections(
   const hasSbin = allDies.some((die) => die.sbin != null);
   const hasBins = hasHbin || hasSbin;
 
-  const lotMeta = lotSummary.lot;
   // Unweighted across wafers — each wafer counts equally regardless of its die
   // count. Distinct from totalYieldPercent below (die-count-weighted), which
   // is the "how many good parts did I actually get" number. Labeled "Mean
@@ -521,18 +557,15 @@ function renderLotGroupSections(
     ...(totalYieldPercent !== null ? [{ label: 'Total yield', value: `${totalYieldPercent.toFixed(1)}%` }] : []),
   ];
 
-  const summaryBody = [
-    lotMeta ? metaRows(lotMeta) : '',
-    renderMetricGrid(overviewMetrics),
-  ].filter(Boolean).join('\n');
-
-  const summarySection = renderSection('Lot Summary', summaryBody);
+  const summarySection = renderSection('Lot Summary', renderMetricGrid(overviewMetrics));
+  const metadataSection = renderMetadataSection(items.map((it) => ({ metadata: it.wafer?.metadata })));
   const waferYieldSection = renderSection('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
   const splitsSectionHtml = splitsSection(items);
+  const perWaferSummaries = lotSummary.perWafer.map((pw) => pw.summary);
   const binSection = hasBins
     ? (hasHbin
-        ? lotAggregateBinTable(allDies, hbinDefs, 'hard')
-        : lotAggregateBinTable(allDies, sbinDefs, 'soft'))
+        ? lotAggregateBinTable(allDies, hbinDefs, 'hard', perWaferSummaries)
+        : lotAggregateBinTable(allDies, sbinDefs, 'soft', perWaferSummaries))
     : '';
   const ringSection = hasBins && allWafers.length
     ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, diesByWafer, allWafers, ringCount, passBins)
@@ -540,12 +573,13 @@ function renderLotGroupSections(
   const quadSection = hasBins && allWafers.length
     ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBins)
     : '';
-  const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs) : '';
+  const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries) : '';
   const capabilitySectionHtml = testDefs.length ? capabilitySection(items, testDefs) : '';
   const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount) : '';
 
   const sections = [
     summarySection,
+    metadataSection,
     waferYieldSection,
     splitsSectionHtml,
     binSection,

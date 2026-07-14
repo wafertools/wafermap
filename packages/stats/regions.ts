@@ -12,6 +12,63 @@ function dieKey(die: Die): string {
   return `${die.x},${die.y}`;
 }
 
+export interface RegionYieldDatum {
+  /** Region identity, e.g. `ring:2` or `quadrant:NE` — parse with `parseRegionKey`. */
+  key: string;
+  label: string;
+  /** `(pass / n) × 100`, in [0, 100]. Only present for regions with n > 0 (see filter below). */
+  yieldPercent: number;
+  /** Yield-eligible, binned die count in this region. */
+  n: number;
+}
+
+/**
+ * Pass/fail yield per region (ring, quadrant, or any other `StatsRegion`
+ * family), pooled across one or more wafers. Single source of truth for this
+ * computation — consumed by both the summary panel's progress-bar rows and
+ * the ring/quadrant yield diagrams, which previously each recomputed the
+ * same pass/total tally independently.
+ */
+export function buildRegionYieldData(
+  diesByWafer: Die[][],
+  allWafers: Wafer[],
+  ringCount: number,
+  passBins: number[],
+  regionBuilder: (dies: Die[], wafer: Wafer, ringCount: number) => StatsRegion[],
+): RegionYieldDatum[] {
+  const passSet = new Set(passBins);
+  const totals = new Map<string, { label: string; pass: number; total: number }>();
+  const order: string[] = [];
+
+  for (let wi = 0; wi < allWafers.length; wi++) {
+    const wDies = diesByWafer[wi];
+    if (!wDies?.length) continue;
+    const regions = regionBuilder(wDies, allWafers[wi], ringCount);
+    const dieByKey = new Map(wDies.map(d => [dieKey(d), d]));
+    for (const region of regions) {
+      if (!order.includes(region.key)) order.push(region.key);
+      const acc = totals.get(region.key) ?? { label: region.label, pass: 0, total: 0 };
+      for (const key of region.dieKeys) {
+        const d = dieByKey.get(key);
+        if (!d || d.partial || d.edgeExcluded) continue;
+        const b = d.hbin ?? d.sbin;
+        if (b == null) continue;
+        acc.total++;
+        if (passSet.has(b)) acc.pass++;
+      }
+      totals.set(region.key, acc);
+    }
+  }
+
+  return order
+    .map((key): RegionYieldDatum | null => {
+      const acc = totals.get(key)!;
+      if (acc.total === 0) return null;
+      return { key, label: acc.label, n: acc.total, yieldPercent: (acc.pass / acc.total) * 100 };
+    })
+    .filter((d): d is RegionYieldDatum => d !== null);
+}
+
 // ── Shared ordering / adjacency utilities ──────────────────────────────────
 // Single source of truth for region ordering, consumed by buildSectorRegions,
 // the adjacent-finding merge pass (analyzeWaferMap.ts), and the narrative builder

@@ -9,6 +9,15 @@
 // tab hands this one the `groups` list directly (it already computes it),
 // rather than a `groupBy` callback over a flat wafer list like tsmap's
 // version — same result, one fewer indirection (see WMAP_ISSUES.md).
+//
+// Deliberate exception to the "prefer StatsSummary.stats.perTestStats over
+// raw Die[]" dedup pattern used elsewhere in this package (boxplot.ts,
+// capability.ts's mean/stddev, binPareto.ts, summaryPanel.ts, etc.):
+// bucket assignment needs every individual value (`Math.floor((v - min) /
+// bucketWidth)`), which a five-number-summary/mean/stddev cannot
+// reconstruct. A histogram is exactly the shape of information
+// `perTestStats` intentionally does not carry, so this module always reads
+// raw `Die[]` and always will.
 
 import type { Die } from '../core/dies.js';
 

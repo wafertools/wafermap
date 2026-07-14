@@ -668,6 +668,64 @@ export function wireMenuA11y(menu: HTMLElement, trigger: HTMLElement | null, clo
   wireMenuKeyboard(menu, trigger, close);
 }
 
+export interface ExpandToggleHandle {
+  isOpen(): boolean;
+  /** Force-close without toggling — used for e.g. a data refresh that should collapse an open panel. */
+  close(): void;
+  destroy(): void;
+}
+
+/**
+ * Shared "click/Enter/Space toggles an expand/collapse state, Escape or an
+ * outside click closes it" wiring — the small interaction pattern behind both
+ * the metadata badge's own expand (metadataBadge.ts) and the gallery card
+ * header's metadata reveal (renderWaferGallery.ts). `trigger` gets
+ * `role="button"`/`tabindex` and the event listeners; `onChange(open)` is
+ * called whenever the state actually changes (never redundantly) — the
+ * caller owns all the resulting DOM (aria-expanded text, panel visibility,
+ * content), this only owns the open/closed boolean and its triggers.
+ */
+export function wireExpandToggle(trigger: HTMLElement, onChange: (open: boolean) => void): ExpandToggleHandle {
+  // Derive the document from the trigger itself, not the bare global — a
+  // gallery card's detached popup window is a genuinely different Document,
+  // and an outside-click listener registered on the wrong one would never
+  // fire (events don't cross document boundaries), leaving the panel stuck open.
+  const ownerDocument = trigger.ownerDocument;
+  let open = false;
+
+  function set(next: boolean): void {
+    if (open === next) return;
+    open = next;
+    onChange(open);
+  }
+  function collapse(): void { set(false); }
+  function toggle(): void {
+    set(!open);
+    if (open) ownerDocument.addEventListener('click', collapse, { once: true });
+  }
+
+  const onClick = (e: MouseEvent): void => { e.stopPropagation(); toggle(); };
+  const onKeydown = (e: KeyboardEvent): void => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    else if (e.key === 'Escape') collapse();
+  };
+
+  trigger.setAttribute('role', 'button');
+  if (trigger.tabIndex < 0) trigger.tabIndex = 0;
+  trigger.addEventListener('click', onClick);
+  trigger.addEventListener('keydown', onKeydown);
+
+  return {
+    isOpen: () => open,
+    close: collapse,
+    destroy() {
+      trigger.removeEventListener('click', onClick);
+      trigger.removeEventListener('keydown', onKeydown);
+      ownerDocument.removeEventListener('click', collapse);
+    },
+  };
+}
+
 export type CheckMenuRow =
   | { section: string }
   | { label: string; active: boolean; enabled?: boolean; onClick: (e: MouseEvent) => void };
@@ -1360,8 +1418,17 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     header.style.cursor = 'move';
     header.addEventListener('pointerdown', (e) => {
       if (maximized) return;
-      // Let clicks on the maximize/close buttons behave normally, not start a drag.
-      if ((e.target as HTMLElement).closest('button')) return;
+      // Let clicks on the maximize/close buttons — or any other button-like
+      // interactive element in the header, e.g. the metadata expand toggle
+      // (role="button", not a real <button>) — behave normally instead of
+      // starting a drag. Without this, pointerdown here calls
+      // setPointerCapture()/preventDefault() before the click ever reaches
+      // that element: the click is silently swallowed (no error, chevron
+      // never flips) and, if the pointer then moves at all — even outside
+      // the page, e.g. into devtools, since pointer capture keeps delivering
+      // move events regardless of where the cursor visually is — the window
+      // drags along with it.
+      if ((e.target as HTMLElement).closest('button, [role="button"]')) return;
       e.preventDefault();
       const restoreUserSelect = suppressTextSelectionDuringDrag();
       const startX = e.clientX;

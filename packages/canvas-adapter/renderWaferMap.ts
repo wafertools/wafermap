@@ -12,8 +12,10 @@ import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
 } from './summaryPanel.js';
+import type { FindingsFilter } from '../stats/filterFindings.js';
 import { hardBinColor, softBinColor } from '../renderer/colorMap.js';
-import { createAnalysisTab } from './analysisTab.js';
+import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
+import { createMetadataBadge, type MetadataBadgeController } from './metadataBadge.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -135,6 +137,17 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
   showTooltip?: boolean;
   /** Show the built-in toolbar. Default true. */
   showToolbar?: boolean;
+  /**
+   * Show a small always-visible metadata badge (lot, wafer ID, product, test
+   * program, temperature, etc.) overlaid bottom-left on the canvas. Default
+   * true. Independent of `showToolbar` and the Insights tab — this exists so
+   * basic wafer/lot identity is never hidden behind a mode or toggle, without
+   * costing any layout space (it's an overlay, not a layout element). Renders
+   * nothing when the result has no metadata at all. Collapsed by default to a
+   * single identifying line; click/Enter/Space expands in place to the full
+   * field set.
+   */
+  showMetadataBadge?: boolean;
   /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
   /**
@@ -169,9 +182,13 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    */
   onSaveImage?: SaveImageHandler;
   /**
-   * When provided, renders a persistent summary panel alongside the canvas.
-   * The panel shows metadata, yield, bins, rings, quadrants, test values, and findings.
-   * The toolbar findings button is hidden when this option is active.
+   * Options for the always-available Summary panel — a docked panel
+   * (metadata, yield, bin breakdown, ring/quadrant yield, test values, and
+   * findings with severity/kind/region filters, click-to-highlight on the
+   * map) toggled via the toolbar's "Summary" button whenever `statsSummary`
+   * is supplied. Independent of `insights` below: this always shows/hides
+   * its own toolbar button regardless of whether Insights is open, since
+   * Insights has no map for a finding to highlight against.
    */
   summaryPanel?: SummaryPanelOptions;
   /**
@@ -229,15 +246,13 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    */
   zIndex?: number;
   /**
-   * Show an "Analysis" tab in the toolbar. Selecting it replaces the canvas
-   * (and summary panel) with wmap's own chart/analysis suite — yield,
-   * bin pareto, process capability, boxplot, histogram, correlation
-   * matrix, and scatter, all computed over this one wafer's dies (the same
-   * suite `renderWaferGallery`'s own `analysisEnabled` shows for a whole
-   * lot, minus grouping — a single wafer has nothing to group by). Default
-   * false.
+   * Show an "Insights" tab in the toolbar (see `InsightsOptions`). Selecting
+   * it replaces the canvas with wmap's own chart suite, computed over this
+   * one wafer's dies (the same suite `renderWaferGallery`'s own `insights`
+   * shows for a whole lot, minus grouping — a single wafer has nothing to
+   * group by).
    */
-  analysisEnabled?: boolean;
+  insights?: InsightsOptions;
 }
 
 /** @deprecated Use RenderOptions instead. */
@@ -260,16 +275,18 @@ export interface WaferMapController {
   resetZoom(): void;
   /** Update the fallback format for unitless values and re-render. */
   setFallbackFormat(format: 'si' | 'engineering'): void;
-  /** Replace the current stats summary used by the built-in findings panel. */
+  /** Replace the current stats summary used by the built-in Summary panel. */
   setStatsSummary(summary: StatsSummary | undefined): void;
-  /** Show or hide the findings toolbar button without affecting the summary. */
-  setFindingsVisible(visible: boolean): void;
+  /** Show or hide the Summary toolbar button without affecting the panel's content. */
+  setSummaryVisible(visible: boolean): void;
   /** Show or hide the scene-control toolbar buttons (mode, orientation, etc). */
   setViewControlsVisible(visible: boolean): void;
   /** Show or hide the expand toolbar button. */
   setExpandVisible(visible: boolean): void;
   /** Show or hide the help toolbar button. */
   setHelpButtonVisible(visible: boolean): void;
+  /** Show or hide the metadata badge without affecting its content. */
+  setMetadataBadgeVisible(visible: boolean): void;
   /**
    * Opens the built-in end-user guide window — the same action the help
    * toolbar button performs, but callable directly. Works regardless of
@@ -279,8 +296,10 @@ export interface WaferMapController {
    * internal button markup.
    */
   openUserGuide(): void;
-  /** Close the auto-mounted summary panel if it is open. No-op if no panel exists. */
+  /** Close the auto-mounted Summary panel if it is open. No-op if no panel exists. */
   closeSummaryPanel(): void;
+  /** Programmatically open/close the Insights tab. No-op if `insights.enabled` was not set. */
+  setInsightsOpen(open: boolean): void;
   /** Move the floating tooltip into a different parent (e.g. a maximized modal box). */
   setTooltipParent(parent: HTMLElement): void;
   /**
@@ -348,6 +367,7 @@ export function renderWaferMap(
     onViewOptionsChange,
     showTooltip          = true,
     showToolbar          = true,
+    showMetadataBadge    = true,
     toolbarControls      = 'full',
     showPlotModeSelector = true,
     minZoom              = 0.4,
@@ -361,10 +381,11 @@ export function renderWaferMap(
     onExpand,
     showExpandButton     = true,
     zIndex,
-    analysisEnabled      = false,
+    insights:            insightsOpts,
     viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
+  const insightsEnabled = insightsOpts?.enabled ?? false;
 
   // Host-supplied overlay stacking (no-op when zIndex is undefined; safe high
   // default applies). Restored on destroy() via the returned disposer.
@@ -391,6 +412,29 @@ export function renderWaferMap(
   let resultAggrMethod: string | undefined = result.aggrMethod;
   let resultLotSize:    number | undefined = result.lotSize;
 
+  // ── Metadata badge (opt-out) ─────────────────────────────────────────────────
+  // Mounted as a child of canvasWrap (not gated by showToolbar) so basic wafer/
+  // lot identity is visible in every mode, including when the toolbar is
+  // hidden — this is the whole point of the feature. Being a child of
+  // canvasWrap means it's automatically covered by insightsTab.el (a sibling
+  // inset:0 overlay inside container) whenever Insights is open, exactly like
+  // the toolbar already is — no extra visibility wiring needed here.
+  let metadataBadge: MetadataBadgeController | null = null;
+  if (showMetadataBadge) {
+    metadataBadge = createMetadataBadge(wafer.metadata, { lotStack: lotStackBadgeContext() });
+    if (!metadataBadge.isEmpty()) canvasWrap.appendChild(metadataBadge.el);
+  }
+  function lotStackBadgeContext(): { lotSize: number; aggrMethod?: string } | undefined {
+    return resultIsLotStack ? { lotSize: resultLotSize ?? 1, aggrMethod: resultAggrMethod } : undefined;
+  }
+  function refreshMetadataBadge(): void {
+    if (!metadataBadge) return;
+    metadataBadge.update(wafer.metadata, lotStackBadgeContext());
+    const inDom = metadataBadge.el.isConnected;
+    if (metadataBadge.isEmpty() && inDom) metadataBadge.el.remove();
+    else if (!metadataBadge.isEmpty() && !inDom) canvasWrap.appendChild(metadataBadge.el);
+  }
+
   const hasCustomColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
 
   let viewOpts: WaferViewOptions = {
@@ -411,15 +455,15 @@ export function renderWaferMap(
     ...initialViewOptions,
   };
 
-  // ── Analysis tab (opt-in) ────────────────────────────────────────────────────
-  // Same shared chart suite `renderWaferGallery`'s own `analysisEnabled` shows
-  // for a whole lot (`analysisTab.ts`), given a single-item population — no
-  // "Group by" ever appears (nothing is splittable with one item), and there
-  // is no click-to-open-wafer (the only wafer is already the one on screen).
-  let analysisTab: ReturnType<typeof createAnalysisTab> | null = null;
-  let analysisOpen = false;
-  if (analysisEnabled) {
-    analysisTab = createAnalysisTab({
+  // ── Insights tab (opt-in) ────────────────────────────────────────────────────
+  // Same shared chart suite `renderWaferGallery`'s own `insights` shows for a
+  // whole lot (`insightsTab.ts`), given a single-item population — no "Group
+  // by" ever appears (nothing is splittable with one item), and there is no
+  // click-to-open-wafer (the only wafer is already the one on screen).
+  let insightsTab: ReturnType<typeof createInsightsTab> | null = null;
+  let insightsOpen = false;
+  if (insightsEnabled) {
+    insightsTab = createInsightsTab({
       getItems: () => [{
         wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
         label: String(wafer.metadata?.waferId ?? ''),
@@ -427,12 +471,14 @@ export function renderWaferMap(
       }],
       getColorSchemeName: () => viewOpts.colorScheme ?? 'default',
       passBins,
+      getRingCount: () => viewOpts.ringCount ?? 4,
       onSaveImage: options.onSaveImage,
+      defaultView: insightsOpts?.defaultView,
       // No openWafer — this map already IS the only wafer there is to open.
     });
     // Positioned sibling of canvasWrap covering the same area, but *not*
     // display:none-ing canvasWrap itself — canvasWrap's floating toolbar
-    // (including the Analysis button that must toggle this back off) is a
+    // (including the Insights button that must toggle this back off) is a
     // child of canvasWrap, so hiding canvasWrap would hide the toolbar with
     // it. Left with `z-index: auto` (no explicit value), this positioned
     // element still paints above canvasWrap's own unpositioned canvas
@@ -440,23 +486,35 @@ export function renderWaferMap(
     // sibling, explicit z-index or not) while sitting below the toolbar
     // (which sets its own explicit, much higher z-index via `Z_BASE`) — so
     // it visually replaces the map without ever making the toolbar
-    // unreachable. Needs an opaque background since the analysis grid has
+    // unreachable. Needs an opaque background since the insights grid has
     // gaps between cards that would otherwise let the covered canvas show
     // through.
-    Object.assign(analysisTab.el.style, { position: 'absolute', inset: '0', background: CLR.panelBg } as Partial<CSSStyleDeclaration>);
-    container.appendChild(analysisTab.el);
+    // overflowY:auto lives HERE, not on insightsTab.el itself — this
+    // wrapper has a genuinely definite height (inset:0 against
+    // `container`), so it's the right place to bound/scroll long content;
+    // insightsTab.el's own root stays auto-height so it also works
+    // correctly for hosts (renderWaferGallery.ts) that mount it as a plain
+    // block child with no such bound, where forcing an internal scroll
+    // region would just clip content at an arbitrary floor height instead
+    // of letting the page grow to show it.
+    Object.assign(insightsTab.el.style, {
+      position: 'absolute', inset: '0', background: CLR.panelBg, overflowY: 'auto',
+    } as Partial<CSSStyleDeclaration>);
+    container.appendChild(insightsTab.el);
   }
 
-  function setAnalysisOpen(open: boolean): void {
-    if (!analysisTab) return;
-    analysisOpen = open;
-    analysisTab.el.style.display = open ? 'flex' : 'none';
+  function setInsightsOpen(open: boolean): void {
+    if (!insightsTab) return;
+    insightsOpen = open;
+    insightsTab.el.style.display = open ? 'flex' : 'none';
     // Map-specific toolbar controls (zoom/pan/select, mode/palette/overlays/etc.)
     // have no effect on the chart suite — hide them as a group while it's open.
-    // Findings/Expand/Analysis/Help stay visible; they apply to both views.
+    // Summary/Expand/Insights/Help live in sceneControlsEl (unwrapped, not
+    // part of this group) and stay visible+reachable the whole time — see
+    // this function's own header comment.
     if (mapToolsEl) mapToolsEl.style.display = open ? 'none' : 'flex';
     if (mapViewControlsEl) mapViewControlsEl.style.display = open ? 'none' : 'flex';
-    if (open) analysisTab.render();
+    if (open) insightsTab.render();
   }
 
   let currentView:   View;
@@ -525,50 +583,10 @@ export function renderWaferMap(
   let summaryPanelEl: HTMLDivElement | null = null;
   let summaryPanelWrapper: HTMLDivElement | null = null;
   let summaryActiveFindingId: string | null = null;
+  let findingsFilter: FindingsFilter = {};
   // Auto-mounted panel: created when statsSummary is provided but no explicit summaryPanel option.
   let autoSummaryPanelEl: HTMLDivElement | null = null;
   let autoSummaryPanelWrapper: HTMLDivElement | null = null;
-
-  function renderSummaryPanelInto(el: HTMLDivElement, rerender: () => void): void {
-    renderWaferSummaryContent(el, {
-      wafer,
-      dies:         currentDies,
-      yieldSummary: currentResult.yield,
-      dataCoverage: currentResult.dataCoverage,
-      hbinDefs,
-      sbinDefs,
-      testDefs,
-      statsSummary:    currentStatsSummary,
-      passBins,
-      ringCount:       viewOpts.ringCount ?? 4,
-      colorScheme:     viewOpts.colorScheme,
-      fallbackFormat:  currentFallbackFormat,
-      activeFindingId: summaryActiveFindingId,
-      onFindingClick: (finding, _row) => {
-        if (summaryActiveFindingId === finding.id) {
-          summaryActiveFindingId = null;
-          selectionFromKeys([]);
-          applyOpts({ highlightBin: undefined });
-        } else {
-          summaryActiveFindingId = finding.id;
-          applyFindingHighlightFromPanel(finding);
-        }
-        rerender();
-      },
-    });
-  }
-
-  function renderSummaryPanel(): void {
-    if (!summaryPanelEl) return;
-    const savedScroll = summaryPanelEl.scrollTop;
-    renderSummaryPanelInto(summaryPanelEl, renderSummaryPanel);
-    summaryPanelEl.scrollTop = savedScroll;
-  }
-
-  function renderAutoSummaryPanel(): void {
-    if (autoSummaryPanelEl) renderSummaryPanelInto(autoSummaryPanelEl, renderAutoSummaryPanel);
-  }
-
 
   function applyFindingHighlightFromPanel(finding: StatsFinding): void {
     const { kind, index } = finding.variable;
@@ -589,6 +607,42 @@ export function renderWaferMap(
     }
   }
 
+  function renderSummaryPanelInto(el: HTMLDivElement): void {
+    renderWaferSummaryContent(el, {
+      wafer, dies: currentDies,
+      yieldSummary: currentResult.yield,
+      dataCoverage: currentResult.dataCoverage,
+      hbinDefs, sbinDefs, testDefs,
+      statsSummary: currentStatsSummary,
+      passBins,
+      ringCount: viewOpts.ringCount ?? 4,
+      colorScheme: viewOpts.colorScheme,
+      fallbackFormat: currentFallbackFormat,
+      activeFindingId: summaryActiveFindingId,
+      findingsFilter,
+      onFindingsFilterChange: renderSummaryPanel,
+      onFindingClick: (finding, _row) => {
+        if (summaryActiveFindingId === finding.id) {
+          summaryActiveFindingId = null;
+          selectionFromKeys([]);
+          applyOpts({ highlightBin: undefined });
+        } else {
+          summaryActiveFindingId = finding.id;
+          applyFindingHighlightFromPanel(finding);
+        }
+        renderSummaryPanel();
+      },
+    });
+  }
+
+  function renderSummaryPanel(): void {
+    if (summaryPanelEl) renderSummaryPanelInto(summaryPanelEl);
+  }
+
+  function renderAutoSummaryPanel(): void {
+    if (autoSummaryPanelEl) renderSummaryPanelInto(autoSummaryPanelEl);
+  }
+
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
     summaryPanelEl = createSummaryPanelEl(placement);
@@ -598,7 +652,7 @@ export function renderWaferMap(
     parent?.insertBefore(summaryPanelWrapper, next);
     renderSummaryPanel();
   } else if (currentStatsSummary) {
-    // Auto-mount a persistent summary panel when statsSummary is provided without an
+    // Auto-mount a persistent Summary panel when statsSummary is provided without an
     // explicit placement. Mounted independently of the toolbar so a chromeless map
     // (showToolbar: false) can still render a persistent panel beside it; the toolbar
     // only owns the toggle button. defaultOpen: true starts the panel visible.
@@ -623,16 +677,16 @@ export function renderWaferMap(
   let toolbar:          HTMLDivElement    | null = null;
   let sceneControlsEl:  HTMLDivElement    | null = null;
   // Map-specific controls (zoom/pan/select, mode/palette/overlays/etc.) — hidden
-  // while the Analysis tab is open, since none of them apply to the chart suite.
-  // Findings/Expand/Analysis/Help stay in sceneControlsEl directly, unwrapped,
+  // while the Insights tab is open, since none of them apply to the chart suite.
+  // Summary/Expand/Insights/Help stay in sceneControlsEl directly, unwrapped,
   // since those apply to both views.
   let mapToolsEl:       HTMLDivElement    | null = null;
   let mapViewControlsEl: HTMLDivElement   | null = null;
   let btnBoxSelect:     HTMLButtonElement | null = null;
-  let btnFindings:      HTMLButtonElement | null = null;
+  let btnSummary:      HTMLButtonElement | null = null;
   let btnExpand:        HTMLButtonElement | null = null;
   let btnHelp:          HTMLButtonElement | null = null;
-  let btnAnalysisTab:   HTMLButtonElement | null = null;
+  let btnInsights:   HTMLButtonElement | null = null;
   // Top clearance reserved on the canvas for the toolbar overlay.
   // toolbar sits at top:4px, is ~32px tall → bottom at ~36px; excess over canvas padding = 24px.
   const TOOLBAR_CLEARANCE = 24;
@@ -655,16 +709,16 @@ export function renderWaferMap(
     render();
   }
 
-  function refreshFindingsButton(): void {
-    if (!btnFindings) return;
+  function refreshSummaryButton(): void {
+    if (!btnSummary) return;
     const hasSummary = !!(summaryPanelEl ?? autoSummaryPanelEl);
-    btnFindings.style.display = (currentStatsSummary && hasSummary) ? 'flex' : 'none';
+    btnSummary.style.display = (currentStatsSummary && hasSummary) ? 'flex' : 'none';
     const activePanelEl = summaryPanelEl ?? autoSummaryPanelEl;
     const panelOpen = activePanelEl ? activePanelEl.style.display !== 'none' : false;
     if (currentStatsSummary?.hasNotableFindings && !panelOpen) {
-      btnFindings.style.color = '#b7551a';
-    } else if (!btnFindings.dataset.active) {
-      btnFindings.style.color = CLR.icon;
+      btnSummary.style.color = '#b7551a';
+    } else if (!btnSummary.dataset.active) {
+      btnSummary.style.color = CLR.icon;
     }
   }
 
@@ -714,7 +768,7 @@ export function renderWaferMap(
       }
 
       // Base map tools (camera/zoom/pan/select) — wrapped so they can be hidden
-      // as a group while the Analysis tab is open (see mapToolsEl declaration).
+      // as a group while the Insights tab is open (see mapToolsEl declaration).
       mapToolsEl = document.createElement('div');
       Object.assign(mapToolsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
       toolbar.appendChild(mapToolsEl);
@@ -753,8 +807,8 @@ export function renderWaferMap(
         toolbar.appendChild(sceneControlsEl);
 
         // Map-view-specific controls (mode, palette, overlays, legend, orientation)
-        // — wrapped so they can be hidden as a group while the Analysis tab is
-        // open, unlike Findings/Expand/Analysis/Help below which stay unwrapped
+        // — wrapped so they can be hidden as a group while the Insights tab is
+        // open, unlike Summary/Expand/Insights/Help below which stay unwrapped
         // directly in sceneControlsEl since those apply to both views.
         mapViewControlsEl = document.createElement('div');
         Object.assign(mapViewControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
@@ -920,26 +974,27 @@ export function renderWaferMap(
         mapViewControlsEl!.appendChild(makeSep());
         mapViewControlsEl!.appendChild(btnOrient);
 
-        // Findings button — toggles the summary panel. Grouped with
-        // mapViewControlsEl (not left unwrapped like Analysis/Expand/Help)
-        // since the summary panel it controls is map-view-only UI — it sits
-        // behind the Analysis tab's opaque overlay with no visible effect
-        // while that's open, same as mode/palette/overlays/etc.
+        // Summary button — toggles the Summary panel. Left unwrapped in
+        // sceneControlsEl (not grouped with mapViewControlsEl) so it stays
+        // reachable and its own open/closed state stays independent of
+        // Insights — the two are separate, non-overlapping surfaces (see
+        // this function's own header comment), not a coordinated pair where
+        // one hides the other's control.
         // The panel itself is auto-mounted earlier, independently of the toolbar.
         if (currentStatsSummary) {
-          btnFindings = makeBtn('findings', 'Summary panel', () => {
+          btnSummary = makeBtn('findings', 'Summary panel', () => {
             const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
             if (!panelEl) return;
             const isOpen = panelEl.style.display !== 'none';
             panelEl.style.display = isOpen ? 'none' : 'block';
-            setActive(btnFindings!, !isOpen);
-            refreshFindingsButton();
+            setActive(btnSummary!, !isOpen);
+            refreshSummaryButton();
           });
-          mapViewControlsEl!.appendChild(makeSep());
-          mapViewControlsEl!.appendChild(btnFindings);
+          sceneControlsEl!.appendChild(makeSep());
+          sceneControlsEl!.appendChild(btnSummary);
           // Set button active state to match initial panel visibility
-          if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnFindings, true);
-          refreshFindingsButton();
+          if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnSummary, true);
+          refreshSummaryButton();
         }
 
         // Expand button — reparents canvas into a modal for a larger view.
@@ -949,14 +1004,14 @@ export function renderWaferMap(
           sceneControlsEl!.appendChild(btnExpand);
         }
 
-        // Analysis tab — toggles between the canvas and wmap's own chart suite.
-        if (analysisTab) {
+        // Insights tab — toggles between the canvas and wmap's own chart suite.
+        if (insightsTab) {
           sceneControlsEl!.appendChild(makeSep());
-          btnAnalysisTab = makeBtn('analysis', 'Analysis', () => {
-            setAnalysisOpen(!analysisOpen);
-            setActive(btnAnalysisTab!, analysisOpen);
+          btnInsights = makeBtn('analysis', 'Insights', () => {
+            setInsightsOpen(!insightsOpen);
+            setActive(btnInsights!, insightsOpen);
           });
-          sceneControlsEl!.appendChild(btnAnalysisTab);
+          sceneControlsEl!.appendChild(btnInsights);
         }
 
         // Help button — opens the end-user guide in a non-modal window (opt-in).
@@ -1005,27 +1060,27 @@ export function renderWaferMap(
   function openExpandModal(): void {
     if (modalHandle) { modalHandle.close(); modalHandle = null; }
 
-    // Determine what to reparent. When the Analysis tab is open, expand IT —
+    // Determine what to reparent. When the Insights tab is open, expand IT —
     // not the (currently hidden, behind it) canvas — since that's what's
     // actually on screen. Otherwise: the summary-panel wrapper if one exists
     // (canvas + panel side-by-side), else just canvasWrap.
-    const usingAnalysis = analysisOpen && !!analysisTab;
+    const usingInsights = insightsOpen && !!insightsTab;
     const reparentRoot: HTMLElement =
-      usingAnalysis ? analysisTab!.el :
+      usingInsights ? insightsTab!.el :
       summaryPanelWrapper ?? autoSummaryPanelWrapper ?? canvasWrap;
 
     modalReparentedEl   = reparentRoot;
     modalOriginalParent = reparentRoot.parentElement as HTMLElement;
     modalOriginalNext   = reparentRoot.nextSibling;
 
-    // analysisTab.el is normally position:absolute;inset:0 (an overlay sibling
+    // insightsTab.el is normally position:absolute;inset:0 (an overlay sibling
     // of canvasWrap) — reparented into the modal's flex contentWrap it must
     // behave as a normal flex child instead, or it would try to absolutely
     // position itself against whatever ancestor is positioned in there.
     // Restored on close, below.
-    const savedPosition = usingAnalysis ? reparentRoot.style.position : '';
-    const savedInset     = usingAnalysis ? reparentRoot.style.inset : '';
-    if (usingAnalysis) {
+    const savedPosition = usingInsights ? reparentRoot.style.position : '';
+    const savedInset     = usingInsights ? reparentRoot.style.inset : '';
+    if (usingInsights) {
       reparentRoot.style.position = 'static';
       reparentRoot.style.inset    = '';
     }
@@ -1043,7 +1098,7 @@ export function renderWaferMap(
       onClose: () => {
         if (modalReparentedEl && modalOriginalParent) {
           modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
-          if (usingAnalysis) {
+          if (usingInsights) {
             modalReparentedEl.style.position = savedPosition;
             modalReparentedEl.style.inset    = savedInset;
           }
@@ -1442,7 +1497,10 @@ export function renderWaferMap(
             currentView.aggrMethod,
             currentView.lotSize,
             tooltipTestLimit,
-            result.metadata,
+            // wafer.metadata, not result.metadata: `result` is the original render-call
+            // parameter and is never reassigned, so it goes stale after any setResult()
+            // call — `wafer` is the local setResult() does keep live.
+            wafer.metadata,
             // Active test from the built View (authoritative, like plotMode above):
             // in value mode the tooltip leads with it; ignored in bin modes.
             currentView.activeTest,
@@ -1859,6 +1917,7 @@ export function renderWaferMap(
       resultIsLotStack = newResult.isLotStack;
       resultAggrMethod = newResult.aggrMethod;
       resultLotSize    = newResult.lotSize;
+      refreshMetadataBadge();
       rebuildView();
       render();
       if (summaryPanelEl) renderSummaryPanel();
@@ -1908,11 +1967,11 @@ export function renderWaferMap(
         parent?.insertBefore(autoSummaryPanelWrapper, next);
         renderAutoSummaryPanel();
       }
-      refreshFindingsButton();
+      refreshSummaryButton();
     },
 
-    setFindingsVisible(visible: boolean): void {
-      if (btnFindings) btnFindings.style.display = visible ? 'flex' : 'none';
+    setSummaryVisible(visible: boolean): void {
+      if (btnSummary) btnSummary.style.display = visible ? 'flex' : 'none';
     },
 
     setViewControlsVisible(visible: boolean): void {
@@ -1927,16 +1986,35 @@ export function renderWaferMap(
       if (btnHelp) btnHelp.style.display = visible ? 'flex' : 'none';
     },
 
+    setMetadataBadgeVisible(visible: boolean): void {
+      if (metadataBadge) metadataBadge.el.style.display = visible ? '' : 'none';
+    },
+
     openUserGuide: openGuideWindow,
+
+    setInsightsOpen(open: boolean): void {
+      setInsightsOpen(open);
+      if (btnInsights) {
+        if (open) {
+          btnInsights.dataset.active   = '1';
+          btnInsights.style.background = CLR.bgActive;
+          btnInsights.style.color      = CLR.iconActive;
+        } else {
+          delete btnInsights.dataset.active;
+          btnInsights.style.background = 'transparent';
+          btnInsights.style.color      = CLR.icon;
+        }
+      }
+    },
 
     closeSummaryPanel(): void {
       const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
       if (!panelEl || panelEl.style.display === 'none') return;
       panelEl.style.display = 'none';
-      if (btnFindings) {
-        delete btnFindings.dataset.active;
-        btnFindings.style.background = 'transparent';
-        btnFindings.style.color      = CLR.icon;
+      if (btnSummary) {
+        delete btnSummary.dataset.active;
+        btnSummary.style.background = 'transparent';
+        btnSummary.style.color      = CLR.icon;
       }
     },
 
@@ -1995,7 +2073,8 @@ export function renderWaferMap(
       }
       canvasWrap.remove();
       canvas.style.cursor = '';
-      analysisTab?.destroy();
+      insightsTab?.destroy();
+      metadataBadge?.destroy();
     },
   };
 }

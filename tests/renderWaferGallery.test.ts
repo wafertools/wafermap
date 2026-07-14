@@ -35,7 +35,7 @@ function makeMockController(): WaferMapController {
     resetZoom:            mock.fn(),
     setFallbackFormat:    mock.fn(),
     setStatsSummary:      mock.fn(),
-    setFindingsVisible:   mock.fn(),
+    setSummaryVisible:    mock.fn(),
     setViewControlsVisible: mock.fn(),
     setExpandVisible:     mock.fn(),
     setTooltipParent:     mock.fn(),

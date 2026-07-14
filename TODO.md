@@ -33,6 +33,6 @@ Items here are ideas or half-designed features that need more thought before imp
 
 ## Issues and idea since the port of charts from tsmap to wmap
 
-### Chart-panel mini-toolbars don't fully match the main toolbar's design
+### Chart-panel mini-toolbars still use their own button chrome, not `makeBtn`
 
-Each Analysis-tab chart card (`cardShell()` in `charts/chartShell.ts`) has its own tiny save/expand button pair — the expand button already reuses the main toolbar's `ICONS.expand` SVG, but the save button uses a raw `⤓` glyph instead of the toolbar's actual PNG-camera icon/primitives (`makeBtn`, `ICONS.download`). Worth unifying so every button across the map/gallery toolbar and the chart cards is built from the same primitives — lower priority than a functional gap, purely a visual-consistency cleanup.
+Each Analysis-tab chart card (`cardShell()` in `charts/chartShell.ts`) has its own tiny save/expand button pair. Both now use the main toolbar's actual icons (`ICONS.expand`, `ICONS.download` — the save button previously used a raw `⤓` glyph, fixed), so the icon mismatch is resolved. What's still open: the buttons themselves are hand-built (22px, native `title` attribute) rather than going through `makeBtn` (28px, `ariaLabel`, the shared custom hover-tooltip system) — full primitive unification would need `cardShell()` to also thread through a `tooltip` element the way `createToolbarHelpers` does. Lower priority than a functional gap, purely a visual-consistency cleanup.

@@ -839,6 +839,11 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                           // 'state' when all are WaferDisplayState, 'mixed' when both
   showTooltip?:            boolean   // default true
   showToolbar?:            boolean   // default true
+  showMetadataBadge?:      boolean   // default true — small always-visible metadata overlay (lot, wafer ID, product,
+                                            // test program, temperature, etc.) bottom-left on the canvas, independent of
+                                            // showToolbar/Insights. Zero layout cost (a canvas overlay, not a layout
+                                            // element); collapsed to one identifying line, expands in place on click/
+                                            // Enter/Space. Renders nothing when the result has no metadata at all.
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
   showExpandButton?:       boolean   // show the toolbar expand button and enable the E-key shortcut (default true);
@@ -847,10 +852,10 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
                                             // initial bin legend position (default 'default'); user can change via toolbar
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
-  statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a summary panel toggle button to the toolbar
-  summaryPanel?:           SummaryPanelOptions  // summary panel placement and open/closed initial state
-  analysisEnabled?:        boolean   // adds an Analysis toolbar button that swaps the map for this wafer's own
-                                            // chart suite (process capability, distributions, correlation) — default false. See §5.9.
+  statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a Summary toggle button to the toolbar
+  summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state
+  insights?:               InsightsOptions  // adds an Insights toolbar button that swaps the map for this wafer's own
+                                            // chart suite (Overview, Distributions, Correlation) — default disabled. See §5.9.
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
@@ -1007,7 +1012,16 @@ Canvas colours are resolved from these variables at draw time and re-resolved on
 }
 ```
 
-The panel's **Test Values** section shows Min/Mean/Max for each test. Test names come from `testDefs` when provided; without `testDefs` each test is labelled `Test {N}` using its testNumber. The section appears whenever dies have `testValues`, regardless of whether `testDefs` is supplied.
+The Summary panel is a docked panel — metadata, yield, bin breakdown, ring/quadrant yield, test values, and detected anomalies (`StatsSummary.findings`, with severity/kind/region filter controls wired to `filterFindings`, §7.x) — plus one combined "Summary report" button that opens the full HTML report (`renderSummaryReportHtml`/`renderLotSummaryReportHtml`, which already includes findings). Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/ring/quadrant/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, `buildRegionYieldData`), so the two surfaces can show overlapping numbers without ever disagreeing.
+
+#### 5.4.3 `InsightsOptions`
+
+```ts
+{
+  enabled?:     boolean                                          // show the Insights toolbar button; default false
+  defaultView?: 'overview' | 'distributions' | 'correlation'      // sub-tab shown first; default 'overview'
+}
+```
 
 ### 5.5 `WaferMapController`
 
@@ -1026,16 +1040,20 @@ Choose the right update method:
   clearSelection(): void
   resetZoom(): void                                  // return to fitted view
   setFallbackFormat(format: 'si' | 'engineering'): void
-  setStatsSummary(summary: StatsSummary | undefined): void  // update the summary panel at runtime
+  setStatsSummary(summary: StatsSummary | undefined): void  // update the Summary panel at runtime
   getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null
     // returns bin legend entries in hardBin/softBin modes; null in all other modes
 
+  closeSummaryPanel(): void              // close the auto-mounted Summary panel if open; no-op if none exists
+  setInsightsOpen(open: boolean): void  // programmatically open/close the Insights tab; no-op if `insights.enabled` was not set
+
   // Toolbar visibility — for host containers that manage layout context (e.g. gallery cards).
   // Not needed in typical standalone use.
-  setFindingsVisible(visible: boolean): void        // show/hide the findings toolbar button
-  setViewControlsVisible(visible: boolean): void   // show/hide mode, orientation, findings, and expand buttons as a group
+  setSummaryVisible(visible: boolean): void        // show/hide the Summary toolbar button
+  setViewControlsVisible(visible: boolean): void   // show/hide mode, orientation, summary, and expand buttons as a group
   setExpandVisible(visible: boolean): void          // show/hide the expand toolbar button independently
   setHelpButtonVisible(visible: boolean): void      // show/hide the help toolbar button independently
+  setMetadataBadgeVisible(visible: boolean): void   // show/hide the metadata badge without affecting its content
   openUserGuide(): void   // opens the end-user guide window directly — the same action the help toolbar button
                                   // performs, but callable regardless of showHelpButton/setHelpButtonVisible, so a host
                                   // that hides wmap's own help button (e.g. folding it into its own combined help menu)
@@ -1071,12 +1089,12 @@ Choose the right update method:
 | Rotate | Rotate 90° clockwise (cycles 0→90→180→270) |
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
-| Findings | Toggle summary panel — only shown when `statsSummary` is provided |
-| Analysis | Toggle the Analysis tab — swaps the map for this wafer's chart suite. Only shown when `analysisEnabled: true`. See §5.9. |
-| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window. **While the Analysis tab is open, Expand reparents the chart suite instead of the (hidden) canvas**, so the modal shows what's actually on screen. |
+| Summary | Toggle the Summary panel — only shown when `statsSummary` is provided |
+| Insights | Toggle the Insights tab — swaps the map for this wafer's chart suite. Only shown when `insights.enabled: true`. See §5.9. |
+| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window. **While the Insights tab is open, Expand reparents the chart suite instead of the (hidden) canvas**, so the modal shows what's actually on screen. |
 | User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
-**While the Analysis tab is open**, Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, and Findings are all hidden as a group — none of them apply to the chart suite, and Findings specifically toggles the map's summary panel, which sits behind the Analysis tab's opaque overlay with no visible effect while it's open. Only Analysis, Expand, and User guide stay visible.
+**While the Insights tab is open**, Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip are all hidden as a group — none of them apply to the chart suite. Summary, Insights, Expand, and User guide stay visible and usable the whole time: Summary's own open/closed state is independent of Insights (its findings section just has nothing to highlight against while the map is replaced), so its toolbar button is never hidden or coordinated with Insights'.
 
 ### 5.7 Interactions
 
@@ -1130,23 +1148,25 @@ ctrl.setOptions({ plotMode: 'value', colorScheme: 'plasma' });
 ctrl.destroy();
 ```
 
-### 5.9 Analysis tab
+### 5.9 Insights tab
 
-Passing `analysisEnabled: true` adds an **Analysis** toolbar button. Clicking it swaps the map for a chart suite computed from this wafer's own dies — the same panels a gallery's Analysis tab shows (§6.10), scoped to one wafer. Clicking the button again (or the toolbar's Analysis button) returns to the map view; the toolbar itself stays visible and usable the whole time so the Analysis button is always reachable to close the tab.
+Passing `insights: { enabled: true }` adds an **Insights** toolbar button. Clicking it swaps the map for a chart suite computed from this wafer's own dies — the same panels a gallery's Insights tab shows (§6.10), scoped to one wafer. Clicking the button again (or the toolbar's Insights button) returns to the map view; the toolbar itself stays visible and usable the whole time so the Insights button is always reachable to close the tab.
 
-Panels are laid out in three responsive grid sections, in this order:
+**Separate from the Summary panel (§5.4.2) on purpose.** A finding's entire value is click-to-highlight-on-map, which can't work inside a full takeover of the map — so the Summary panel (which includes findings) stays docked, always co-visible with the map, while Insights takes over the full view for chart-heavy content that doesn't reference specific dies. The two toggle independently; opening one never hides the other's toolbar button. Insights' Overview numbers and the Summary panel's compact bin/ring/quadrant/test-value rows read the same underlying computation, so they never disagree even though both can be on screen in principle.
 
-- **Yield & bins** — a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)") and a hard/soft bin pareto.
-- **Distributions** — process capability (Cp/Cpk/Pp/Ppk, one box per parametric test with both a lower and upper spec limit — hidden with a compact empty state when no test qualifies), a test-value boxplot, and a value histogram.
+Insights has three sub-tabs:
+
+- **Overview** — a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)"), a hard/soft bin pareto, and a details card with ring/quadrant regional yield and per-test min/mean/max/spec-yield.
+- **Distributions** — process capability (Cp/Cpk/Pp/Ppk, normalized per test — see §7.16's `buildCapabilityData` for how tests without full spec limits are handled), a test-value boxplot, and a value histogram.
 - **Correlation** — a Pearson-r correlation matrix and a die-level X/Y scatter. Clicking a capability box drives the boxplot/histogram's selected test in place; clicking a correlation matrix cell drives the scatter panel's X/Y in place.
 
 For a single wafer there is no "Group by" control (grouping needs more than one wafer to be meaningful — see §6.10) and no click-to-open-wafer action (the map you're looking at already *is* the only wafer there is to open). Everything else — the wafer picker on histogram/correlation/scatter, the capability↔boxplot/histogram cross-link, the correlation↔scatter cross-link — behaves the same as the gallery version.
 
-`analysisEnabled` only changes what the toolbar exposes; it needs no other options. Panels that read parametric test data (capability, boxplot, histogram, correlation, scatter) need `testDefs` passed to `buildWaferMap` to have anything to plot — yield and bin pareto only need `die.hbin`/`die.sbin`.
+`insights.enabled` only changes what the toolbar exposes; it needs no other options. `insights.defaultView` picks which sub-tab shows first (default `'overview'`). Panels that read parametric test data (capability, boxplot, histogram, correlation, scatter) need `testDefs` passed to `buildWaferMap` to have anything to plot — yield and bin pareto only need `die.hbin`/`die.sbin`.
 
 ```ts
 const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs, passBins: [1] });
-renderWaferMap(document.getElementById('map'), result, { analysisEnabled: true });
+renderWaferMap(document.getElementById('map'), result, { insights: { enabled: true } });
 ```
 
 ### 5.10 User guide extension
@@ -1291,10 +1311,11 @@ to be pre-built.
                                             // it's blocked (some embedded WebViews)
   userGuideExtension?:     UserGuideExtension  // insert a host app's own documentation into the guide window
                                             // (see "User guide extension" below) — only relevant when showHelpButton is true
-  lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Findings button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
-  analysisEnabled?:        boolean   // adds an Analysis toolbar button that swaps the grid for a lot-wide chart
-                                            // suite (yield, bins, capability, distributions, correlation, with a
-                                            // "Group by" control) — default false. See §6.10.
+  lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Summary button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
+  summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state (§5.4.2)
+  insights?:               InsightsOptions   // adds an Insights toolbar button that swaps the grid for a lot-wide chart
+                                            // suite (Overview, Distributions, Correlation, with a "Group by" control)
+                                            // — default disabled. See §6.10.
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
   zIndex?:                 number            // base z-index for wmap's transient overlays (menus, tooltip, modals); omit for a
                                             // safe high default, or set it to embed the gallery inside your own modal/overlay
@@ -1336,20 +1357,20 @@ to be pre-built.
 | Orientation | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide and all available width is used. |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
-| Findings | Toggle summary panel — shown when `lotStatsSummary` is provided or any item carries `statsSummary` |
-| Analysis | Toggle the Analysis tab — swaps the grid for a lot-wide chart suite. Only shown when `analysisEnabled: true`. See §6.10. |
+| Summary | Toggle the Summary panel — shown when `lotStatsSummary` is provided or any item carries `statsSummary` |
+| Insights | Toggle the Insights tab — swaps the grid for a lot-wide chart suite. Only shown when `insights.enabled: true`. See §6.10. |
 | User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
 Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
 
-**While the Analysis tab is open**, the grid/mode/palette/overlay/orientation/columns/download controls above, and Findings, are all hidden as a group — none of them apply to the chart suite, and Findings specifically toggles the gallery's summary panel, which lives inside the grid body already hidden underneath. Only Analysis and User guide stay visible.
+**While the Insights tab is open**, the grid/mode/palette/overlay/orientation/columns/download controls above, and Summary, are all hidden as a group — none of them apply to the chart suite, and Summary specifically toggles the gallery's Summary panel, which lives inside the grid body already hidden underneath. Summary, Insights, and User guide stay visible.
 
-### 6.5 Findings panel
+### 6.5 Summary panel
 
-When `lotStatsSummary` is provided or any item carries `statsSummary`, a Findings toggle button appears in the control bar. Clicking it opens a panel alongside the grid. The panel has two tabs when both sources are present:
+When `lotStatsSummary` is provided or any item carries `statsSummary`, a Summary toggle button appears in the control bar. Clicking it opens a panel alongside the grid. The panel has two tabs when both sources are present:
 
-- **Lot** — lot-level yield, bin breakdown, ring/quadrant yield aggregated across all wafers, test value statistics, and cross-wafer findings (repeated patterns, yield outliers). Only present when `lotStatsSummary` is provided.
-- **Wafers** — a findings index listing every wafer that has notable findings (from `item.statsSummary` or from `lotStatsSummary.perWafer`). Clicking a row detaches that card into its own window with its summary panel. Only present when per-wafer findings exist.
+- **Lot** — lot-level yield, bin breakdown, ring/quadrant yield aggregated across all wafers, test value statistics, cross-wafer findings (repeated patterns, yield outliers), and a combined "Summary report" button that opens the full `renderLotSummaryReportHtml` document (stats + findings in one). Only present when `lotStatsSummary` is provided.
+- **Wafers** — a findings index listing every wafer that has notable findings (from `item.statsSummary` or from `lotStatsSummary.perWafer`), plus its own "Findings report" button covering just those wafers' findings. Clicking a row detaches that card into its own window with its summary panel. Only present when per-wafer findings exist.
 
 `analyzeWaferLot` runs per-wafer analysis internally, so passing `lotStatsSummary` alone populates both tabs automatically — no separate `analyzeWaferMap` per item is needed.
 
@@ -1432,23 +1453,53 @@ way to share a DOM reference between Tauri windows) — tracked as an open,
 unscoped item in tsmap's own issue log if you're building a Tauri host and want
 to pick this up.
 
-### 6.7 Shared bin legend
+### 6.7 Shared bin legend & lot metadata strip
 
-For `hardBin` and `softBin` modes a shared legend strip is rendered between the
-control bar and the card grid — one coloured swatch + label per unique bin across
-all items. The legend is hidden for `value`, `stackedValues`, `stackedBins`, and `stackedSoftBins`
-(those modes use a per-card colorbar instead).
+A shared strip is rendered between the control bar and the card grid, combining
+two independent pieces of content:
 
-The legend uses bin definitions from the gallery items — `hbinDefs` for hardBin
-mode, `sbinDefs` for softBin mode. Because hard and soft bin number spaces are
-independent (STDF V4: both 0–32767), the two arrays are kept separate and never
-merged.
+- **Bin swatches** — for `hardBin` and `softBin` modes only, one coloured
+  swatch and label per unique bin across all items. Hidden for `value`,
+  `stackedValues`, `stackedBins`, and `stackedSoftBins` (those modes use a
+  per-card colorbar instead), unchanged from before.
+- **Lot-level metadata** (lot, product, test program, temperature, etc.) — shown
+  in **every** mode, not just bin modes, so basic wafer/lot identity is never
+  hidden behind a mode switch. Built on `buildFacetTable` (`@paulrobins/wafermap/stats`):
+  a field with a single value across every currently-shown item shows it
+  plainly (`Lot: LOT123`); a field that varies shows every distinct value it
+  takes (`Lot: LOT123, LOT456`) — never `analyzeWaferLot`'s first-wafer-wins
+  `lotIdentity`, and never silently dropped just because a gallery spans
+  multiple lots. A field with many distinct values truncates to the top few
+  (by wafer coverage) plus a `+N more` suffix, matching the die-hover
+  tooltip's own `+N more tests` convention, so it never grows unbounded.
+  `waferId` stays excluded from this strip by default (unique per wafer,
+  never a useful summary value — the same curation `buildFacetTable` already
+  applies for the Insights "Group by" control). In a stacked mode, also leads
+  with `"N wafers stacked · <method>"`.
+
+The strip is hidden only when there is nothing to show at all — no metadata and
+no bin swatches for the current mode.
+
+The richer per-wafer fields this strip's distinct-value list doesn't fully spell
+out are also available per card: each card's header is expandable — click it
+(or the chevron next to the label) to reveal that wafer's own full metadata as
+an overlay under the header, not a layout push, so it never resizes the card's
+map. Only rendered when the wafer actually has metadata to show. A card
+detached into its own window — a real popup, or the in-page floating-window
+fallback used when `window.open` is unavailable — carries the exact same
+expandable header, so identity and metadata read identically wherever a
+wafer from this gallery is being viewed.
+
+The bin swatches use bin definitions from the gallery items — `hbinDefs` for
+hardBin mode, `sbinDefs` for softBin mode. Because hard and soft bin number
+spaces are independent (STDF V4: both 0–32767), the two arrays are kept separate
+and never merged.
 
 Clicking a bin entry calls `setOptions({ highlightBin: bin })`, which dims all
 non-matching bins on every card simultaneously. Clicking the active entry clears
 the highlight. The active entry is indicated with a bold label and a blue swatch
-border. The legend rebuilds automatically whenever the mode, colour scheme, or
-highlight changes.
+border. The strip rebuilds automatically whenever the mode, colour scheme,
+highlight, or item set changes.
 
 ### 6.8 Stacked modes
 
@@ -1499,11 +1550,11 @@ ctrl.setOptions({ plotMode: 'value' });
 ctrl.destroy();
 ```
 
-### 6.10 Analysis tab
+### 6.10 Insights tab
 
-Passing `analysisEnabled: true` adds an **Analysis** toolbar button. Clicking it swaps the grid (and summary panel, if open) for a lot-wide chart suite, computed from every gallery item's `dies` — mutually exclusive with the grid view, since the chart suite wants the full body's room, not a side panel. The gallery grid's own state (mode, columns, etc.) is preserved underneath and restored when you switch back.
+Passing `insights: { enabled: true }` adds an **Insights** toolbar button. Clicking it swaps the grid for a lot-wide chart suite, computed from every gallery item's `dies` — mutually exclusive with the grid view, since the chart suite wants the full body's room, not a side panel. The gallery grid's own state (mode, columns, etc.) is preserved underneath and restored when you switch back. Independent of the Summary panel (§6.5, opened separately) — the two toggle independently and neither hides the other's toolbar button, since the Summary panel's click-to-highlight has nothing to act on while Insights has replaced the grid.
 
-Panels are the same three sections as the single-wafer version (§5.9) — **Yield & bins**, **Distributions**, **Correlation** — plus:
+Insights has the same three sub-tabs as the single-wafer version (§5.9) — **Overview**, **Distributions**, **Correlation** — plus:
 
 - **Group by.** When any gallery item's `wafer.metadata` has more than one distinct value for a groupable field (`lot`, `product`, `testProgram`, `temperature`, `split`, or any custom key), a "Group by" dropdown appears above the panels. `waferId` is deliberately never offered — every panel already shows one row/box per wafer when ungrouped, so "grouping" by wafer identity would just recreate that with an extra click. Each panel consumes the active grouping differently, matching what makes sense for that chart type:
   - **Yield / bin pareto** — one pooled bar per group, click-to-drill into that group's per-wafer bars with a Back button. Grouped bin pareto swaps to a clustered view (one bar per group, side by side, per bin) instead of drilling.
@@ -1513,14 +1564,14 @@ Panels are the same three sections as the single-wafer version (§5.9) — **Yie
   - **Scatter** — never restricts; every group's points are always plotted together, coloured by group instead of hard bin, with a click-to-filter legend.
 - **Wafer picker.** Histogram, correlation, and scatter each pool every wafer by default when ungrouped (they draw one shared canvas, not one per wafer) — a "Wafer: `All wafers ▾`" selector lets you narrow to a single wafer instead. Narrowing also clears the "Mixed `<fields>` — Simpson's paradox" warning that correlation/scatter show when the pooled wafers vary on a groupable field, since a single wafer can't be mixed with anything.
 - **Click to open a wafer.** Leaf rows in the yield bar and the boxplot (a real per-wafer row — ungrouped, or drilled into a group) open that wafer in a modal, reusing the same detach-window rendering the gallery's card-expand feature uses. A boxplot leaf click opens the wafer already in **test-value mode on the boxplot's currently selected test**, not the default plot mode. Bin pareto/cluster bars and capability/correlation/scatter are not clickable-to-open.
-- **Precomputed lot yield.** When `lotStatsSummary` is also provided, the yield panel reads each wafer's yield directly from `lotStatsSummary.lotYieldSeries` instead of recomputing it from dies — guaranteeing the Analysis tab's yield numbers agree exactly with the gallery's own Findings panel (§6.5) and any report generated from the same `lotStatsSummary`. Falls back to computing from dies (same `passBins`/exclusion rule as `buildWaferMap`) when `lotStatsSummary` is absent.
+- **Precomputed lot yield.** When `lotStatsSummary` is also provided, the yield panel reads each wafer's yield directly from `lotStatsSummary.lotYieldSeries` instead of recomputing it from dies — guaranteeing the Insights tab's yield numbers agree exactly with the gallery's own Summary panel (§6.5) and any report generated from the same `lotStatsSummary`. Falls back to computing from dies (same `passBins`/exclusion rule as `buildWaferMap`) when `lotStatsSummary` is absent.
 
 ```ts
 const items = results.map((r, i) => ({ ...r, label: waferIds[i] }));
 const lotSummary = analyzeWaferLot(items.map(it => ({ dies: it.dies, wafer: it.wafer })));
 
 renderWaferGallery(document.getElementById('gallery'), items, {
-  analysisEnabled: true,
+  insights: { enabled: true },
   lotStatsSummary: lotSummary,
 });
 ```
@@ -1731,6 +1782,11 @@ Either the rate criterion or the size criterion can trigger the severity level; 
     testsConsidered:      number[]     // test numbers (keys from testValues) that had enough data
     hardBinsConsidered:   number[]
     softBinsConsidered:   number[]
+    hardBinCounts?:  Record<number, number>  // die count per hard bin, over the yield-eligible population
+                                              // (excludes partial/edge-excluded dies) — unlike hardBinsConsidered
+                                              // above (which bin codes appear at all), these are the actual
+                                              // counts a bin-breakdown display should show
+    softBinCounts?:  Record<number, number>  // same, for soft bins
     warnings?:            string[]     // structured warnings, e.g. test-count cap exceeded
     isLotStack?:          boolean      // true when this summary was produced from lot-aggregated (lotStack) data
     aggregationMethod?:   string       // aggregation method used, e.g. 'mean', 'countBin' (present only when isLotStack is true)
@@ -1883,7 +1939,7 @@ openHtmlReport(html: string): void
 setReportOpener(opener: (html: string) => void): void
 ```
 
-`openHtmlReport` opens a rendered HTML report string (from `renderFindingsReportHtml` or `renderSummaryReportHtml`) in a new browser tab. The summary panel's "Open Report" and "Summary report" buttons call it internally.
+`openHtmlReport` opens a rendered HTML report string (from `renderFindingsReportHtml` or `renderSummaryReportHtml`) in a new browser tab. The summary panel's single "Summary report" button calls it internally (with `renderSummaryReportHtml`, which already embeds a findings section); `renderFindingsReportHtml` remains available for a caller that wants a findings-only document of its own.
 
 In embedded hosts where `window.open` is blocked (e.g. Tauri, Electron, WebView2), register a custom opener at startup:
 
@@ -2160,7 +2216,7 @@ See [Pattern Detection](pattern-detection.md) for benchmark accuracy figures and
 
 ### 7.16 Chart-data builders
 
-Pure, DOM-free data builders for the chart types the Analysis tab (§5.9, §6.10) draws internally. Each takes plain `{ dies?: Die[] }`-shaped items (or a `wafer.metadata`-carrying superset for the faceting ones) and returns plain data — no canvas, no rendering. Public because the underlying math is independently useful (e.g. feeding your own chart library, or a non-DOM report), even though the canvas panels that consume them inside the Analysis tab are not (see §10).
+Pure, DOM-free data builders for the chart types the Insights tab (§5.9, §6.10) draws internally. Each takes plain `{ dies?: Die[] }`-shaped items (or a `wafer.metadata`-carrying superset for the faceting ones) and returns plain data — no canvas, no rendering. Public because the underlying math is independently useful (e.g. feeding your own chart library, or a non-DOM report), even though the canvas panels that consume them inside the Insights tab are not (see §10).
 
 All die-population rules match wmap's own conventions elsewhere: yield/bin builders exclude `partial`/`edgeExcluded` dies via the same `isYieldEligibleDie` rule `buildWaferMap`/`analyzeWaferMap` use (§11.20); a die with no `hbin`/`sbin` is never coerced into a real bin (bin `0` is reserved as the "no data" category everywhere in wmap, matching every registered colour scheme's palette).
 
@@ -2181,10 +2237,10 @@ import {
 | --- | --- | --- |
 | `buildYieldData(items, passBins?, sortBy?)` | `ChartDatum[]` | One row per item. Prefers each item's precomputed `yieldPercent` (e.g. from `LotStatsSummary.lotYieldSeries`) over recomputing from `dies`, so it agrees byte-for-byte with whatever else already reports that wafer's yield. `sortBy`: `'yield' \| 'label'` (default `'label'`). `ChartDatum.key`, when the input item carried one (`YieldItem.key`), is carried through unchanged — resolve a clicked row back to your own item by `key`, not `label` (two items can share a label, e.g. if neither supplies one). |
 | `buildYieldDataCombined(groups, passBins?, sortBy?)` | `ChartDatum[]` | One row per group — the mean of the group's per-item yields, weighted by each item's *yield-eligible* die count (excludes `partial`/`edgeExcluded` dies, matching what the yield rate itself was computed over) — not raw `dies.length`, which would let dies that never counted toward an item's own yield still skew the combined average. |
-| `buildBinParetoData(items, binType)` | `ChartDatum[]` | One row per bin (`binType: 'hbin' \| 'sbin'`), sorted by count descending. |
+| `buildBinParetoData(items, binType)` | `ChartDatum[]` | One row per bin (`binType: 'hbin' \| 'sbin'`), sorted by count descending. An item carrying `hardBinCounts`/`softBinCounts` (e.g. `StatsSummary.stats.hardBinCounts`) contributes those directly instead of re-walking its `dies`. |
 | `buildBinClusterData(groups, binType)` | `BinClusterData` | Every group's bin counts side by side — `{ groups: string[], bins: BinCluster[] }`, one `BinCluster` per bin with a `counts[]` aligned to `groups`. |
-| `buildCapabilityData(items, testDefs)` | `CapabilityDatum[]` | Cp/Cpk (pooled within-item stddev — each item is treated as the short-term subgroup) and Pp/Ppk (overall stddev), for every test with both `limitLow` and `limitHigh`. `min`/`q1`/`median`/`q3`/`max` are normalized `(v - lsl) / (usl - lsl)`. Sorted worst-Ppk-first. |
-| `buildTestBoxplotData(items, testNumber)` | `BoxplotDatum[]` | One five-number summary (`min`/`q1`/`median`/`q3`/`max`/`count`) per item, for one test. |
+| `buildCapabilityData(items, testDefs)` | `CapabilityDatum[]` | Cp/Cpk (pooled within-item stddev — each item is treated as the short-term subgroup) and Pp/Ppk (overall stddev), for every parametric test with at least one recorded value. Tests with both `limitLow` and `limitHigh` get `hasSpec: true`, full capability indices, and `min`/`q1`/`median`/`q3`/`max` normalized `(v - lsl) / (usl - lsl)`. Tests missing one or both limits still appear (`hasSpec: false`, `lsl`/`usl`/`cp`/`cpk`/`pp`/`ppk` all absent/null) normalized onto their own observed `[min, max]` instead — a lot with sparse spec coverage no longer renders empty. Sorted spec'd-first (worst-Ppk-first within that tier), then unspec'd (most-variable-first). |
+| `buildTestBoxplotData(items, testNumber)` | `BoxplotDatum[]` | One five-number summary (`min`/`q1`/`median`/`q3`/`max`/`count`) per item, for one test. Excludes partial/edge-excluded dies. An item carrying `testStats` with an entry for the requested test (e.g. from `StatsSummary.stats.perTestStats`) uses it directly instead of re-scanning `dies`. |
 | `buildTestHistogramData(items, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramBucket[]` | Bucketed value counts across `items`, pooled. |
 | `buildTestHistogramSeries(groups, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramSeriesData` | Shared bucket ranges with one count series per group — `{ ranges, series: [{ groupKey, counts }] }`. |
 | `buildCorrelationMatrix(dies, testDefs)` | `CorrelationMatrix` | Pearson r for every parametric test pair. |
@@ -2481,7 +2537,7 @@ Returns `undefined` when no value is present.  Use this in post-build code that 
 
 Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
 
-> **The Analysis tab's canvas chart panels are not a public subpath.** `analysisEnabled` (§5.9, §6.10) is the supported way to get charts — the DOM/canvas rendering code behind it is internal to `/render` and not independently importable, so you cannot assemble your own page from wmap's chart panels the way you can compose `/render`'s other pieces. The pure data layer those panels are built on (§7.16) *is* public from `/stats`, if you want to drive your own chart library from the same computations.
+> **The Insights tab's canvas chart panels are not a public subpath.** `insights.enabled` (§5.9, §6.10) is the supported way to get charts — the DOM/canvas rendering code behind it is internal to `/render` and not independently importable, so you cannot assemble your own page from wmap's chart panels the way you can compose `/render`'s other pieces. The pure data layer those panels are built on (§7.16) *is* public from `/stats`, if you want to drive your own chart library from the same computations.
 
 ---
 
@@ -2991,7 +3047,7 @@ Named fields with an open index signature — any extra key is accepted and disp
   temperature?: number          // chuck temperature in °C
   split?:       string          // user-assigned experiment/process-corner tag (e.g. "TT", "FF"),
                                  // distinct from any parser-derived field — a first-class slot so hosts that
-                                 // support wafer-split assignment get it picked up by the Analysis tab's
+                                 // support wafer-split assignment get it picked up by the Insights tab's
                                  // "Group by" (§6.10) and lot summary reports' Splits section (§7.8) automatically
   [key: string]: unknown        // custom fields — shown in summary panel header
 }

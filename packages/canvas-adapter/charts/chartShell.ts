@@ -7,6 +7,7 @@
 
 import { CLR, saveImageBlob, openModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
+import { fmt } from '../../renderer/fmt.js';
 
 export type { SaveImageHandler };
 
@@ -180,9 +181,17 @@ export function applyCanvasFlow(canvas: HTMLCanvasElement, topOffset = 0): void 
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
+/**
+ * Format a bare numeric value (no unit) for chart labels/tooltips —
+ * callers append their own unit string separately when they have one. Uses
+ * `fmt`'s engineering-notation fallback (fixed decimal for [0.1, 9999],
+ * `NEexp` outside that range) rather than a plain `.toFixed(2)`, which
+ * silently collapsed small-scale measurements (e.g. a 33.3 pA mean, as
+ * `3.33e-11`) to a misleading "0.00".
+ */
 export function formatValue(v: number): string {
   if (!Number.isFinite(v)) return '—';
-  return Number.isInteger(v) ? `${v}` : v.toFixed(2);
+  return Number.isInteger(v) ? `${v}` : fmt(v, undefined, 'engineering');
 }
 
 /** Draw a small "(unit)" label at (x, y), restoring the context's text state afterward. */
@@ -240,10 +249,11 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardSh
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.title = 'Save as PNG';
-  saveBtn.textContent = '⤓';
+  saveBtn.innerHTML = ICONS.download;
   Object.assign(saveBtn.style, {
     border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', background: 'none',
     color: CLR.label, cursor: 'pointer', width: '22px', height: '22px', lineHeight: '1', flexShrink: '0',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   } as Partial<CSSStyleDeclaration>);
   saveBtn.addEventListener('click', () => {
     const canvas = card.querySelector<HTMLCanvasElement>('canvas');

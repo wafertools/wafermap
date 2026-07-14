@@ -1,5 +1,11 @@
 // Die-level X/Y scatter points for two parametric tests — generalized from
 // tsmap's own charts/aggregate.ts. Pure math, no DOM.
+//
+// Deliberate exception to the "prefer StatsSummary.stats.perTestStats over
+// raw Die[]" dedup pattern used elsewhere in this package (same reasoning as
+// correlation.ts): a scatter point is one die's paired (x, y) values across
+// two tests, which per-test marginal summaries cannot provide. Always reads
+// raw `Die[]`.
 
 import type { Die } from '../core/dies.js';
 

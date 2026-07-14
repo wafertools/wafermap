@@ -233,7 +233,7 @@ export const WAFER_CONFIG = {
   diameter: 300,
   notch: { type: 'bottom' },
   // waferId (not a bare "wafer" key) — the canonical WaferMetadata field.
-  // The Analysis tab's facet table specifically excludes waferId from its
+  // The Insights tab's facet table specifically excludes waferId from its
   // "Group by"/mixed-population checks (it's unique per wafer by
   // definition, never a useful grouping axis) — a non-canonical key would
   // leak through as a bogus "mixed" facet instead.

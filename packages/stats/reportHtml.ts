@@ -1,5 +1,6 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { fmt } from '../renderer/fmt.js';
+import { buildFacetTable, prettyKey, type FacetItem } from './facets.js';
 
 export interface MetricItem {
   label: string;
@@ -34,6 +35,33 @@ export function renderDefinitionList(
   return `<dl class="${className}">
 ${items}
 </dl>`;
+}
+
+/**
+ * The single source of metadata content for every report and panel surface
+ * — built from `buildFacetTable` over the actual item(s), never a
+ * first-wafer-wins shortcut (e.g. `LotStatsSummary.lot`) or a per-file
+ * known-key list, both of which can silently drop a field that varies
+ * across the population and can drift from what the live Summary panel
+ * shows (`buildMetadataInfoSection` in canvas-adapter/summaryPanel.ts,
+ * which calls the same `buildFacetTable`). A population of one wafer is
+ * just a facet table where every field has exactly one value, so the
+ * wafer- and lot-level reports render identical content for the same
+ * underlying metadata — never two independently-derived renderings.
+ */
+export function buildMetadataRows(items: FacetItem[]): Array<{ label: string; value: string }> {
+  const table = buildFacetTable(items, { facetableOnly: items.length > 1 });
+  return table.map((field) => ({
+    label: prettyKey(field.key),
+    value: field.values.map((v) => v.value).join(', '),
+  }));
+}
+
+/** `buildMetadataRows` wrapped in a titled section. Returns `''` when there's nothing to show. */
+export function renderMetadataSection(items: FacetItem[]): string {
+  const rows = buildMetadataRows(items);
+  if (!rows.length) return '';
+  return renderSection('Wafer Info', renderDefinitionList(rows));
 }
 
 export function renderMetricGrid(items: MetricItem[]): string {

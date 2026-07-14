@@ -31,7 +31,7 @@
     All cards update together when you change mode, colour, rotation, or flip in the shared toolbar.
     Switch to a <strong>stacked mode</strong> (toolbar mode picker) to aggregate the lot — one card per bin or test parameter.
     Click the <strong>↗ expand</strong> icon on any card to open it as a full interactive map.
-    The toolbar's <strong>Analysis</strong> button (opt-in via <code>analysisEnabled: true</code>) swaps the grid for a lot-wide chart suite — per-wafer yield, bin pareto, process capability, value distributions, and test correlation — with a "Group by" control for any varying wafer metadata field.
+    The toolbar's <strong>Insights</strong> button (opt-in via <code>insights: { enabled: true }</code>) swaps the grid for a lot-wide chart suite — per-wafer yield, bin pareto, process capability, value distributions, and test correlation — with a "Group by" control for any varying wafer metadata field.
   </div>
 
   <div class="demo-content">
@@ -85,7 +85,7 @@
     // Switching to a stacked mode rebuilds the cards as one card per bin or
     // test parameter, aggregated across the full lot.
 
-    // analysisEnabled adds the Analysis toolbar button, which swaps the grid
+    // insights.enabled adds the Insights toolbar button, which swaps the grid
     // for the lot's own chart suite (yield/bins, distributions, correlation),
     // computed from the same wafer results already built above.
     renderWaferGallery(
@@ -97,7 +97,7 @@
           testDefs: TEST_DEFS,
         },
         showHelpButton: true,
-        analysisEnabled: true,
+        insights: { enabled: true },
       },
     );
   </script>

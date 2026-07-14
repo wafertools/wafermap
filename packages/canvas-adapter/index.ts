@@ -8,6 +8,7 @@ export { renderWaferGallery } from './renderWaferGallery.js';
 export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 
 export type { SummaryPanelOptions } from './summaryPanel.js';
+export type { InsightsOptions, InsightsView } from './insightsTab.js';
 
 // setDetachWindowOpener is one of two toolbar.ts exports exposed publicly —
 // hosts where `window.open` is blocked/unusable (e.g. Tauri) register a

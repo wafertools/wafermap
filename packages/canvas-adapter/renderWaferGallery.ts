@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -15,11 +15,11 @@ import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
-import {
-  createSummaryPanelEl, renderLotSummaryContent,
-} from './summaryPanel.js';
-import { openHtmlReport, renderFindingsReportHtml } from '../stats/renderFindingsReport.js';
-import { createAnalysisTab } from './analysisTab.js';
+import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent } from './summaryPanel.js';
+import type { FindingsFilter } from '../stats/filterFindings.js';
+import { openHtmlReport } from '../stats/renderFindingsReport.js';
+import { escHtml, renderSection, renderSeverityBadge, reportStyles } from '../stats/reportHtml.js';
+import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -116,10 +116,14 @@ export interface GalleryOptions {
   /** Precomputed lot-level stats summary. Enables the summary panel toggle button in the control bar. */
   lotStatsSummary?:        LotStatsSummary;
   /**
-   * When provided, renders a persistent summary panel alongside the gallery grid.
-   * The panel starts in lot-level state and drills down to wafer level when a card
-   * is clicked, with a back button to return to lot view.
-   * When active, the findings drawer is suppressed.
+   * Options for the always-available Summary panel alongside the gallery
+   * grid — a "Lot" tab with full lot-level stats (metadata, yield, bin
+   * breakdown, ring/quadrant yield, test values, findings) and a combined
+   * Report button, plus a "Wafers" tab listing every wafer that has its own
+   * per-wafer findings (click a row to open that wafer). Independent of
+   * `insights` below: this always shows/hides its own toolbar button
+   * regardless of whether Insights is open, since Insights has no per-wafer
+   * map for a finding to highlight against.
    */
   summaryPanel?:           SummaryPanelOptions;
   /**
@@ -156,16 +160,15 @@ export interface GalleryOptions {
    */
   zIndex?:                 number;
   /**
-   * Show an "Analysis" tab in the control bar. Selecting it replaces the
-   * gallery grid (and summary panel) with wmap's own chart/analysis suite —
-   * yield, bin pareto/cluster, process capability, boxplot, histogram,
-   * correlation matrix, and scatter. The tab computes its own "Group by"
-   * facets from each item's `wafer.metadata` (`stats/facets.ts`) and, when
-   * `lotStatsSummary` is also provided, reuses its precomputed per-wafer
-   * yield directly rather than recomputing it — no other host wiring
-   * beyond this flag. Default false.
+   * Show an "Insights" tab in the control bar (see `InsightsOptions`).
+   * Selecting it replaces the gallery grid with wmap's own chart suite
+   * across Overview/Distributions/Correlation sub-tabs. The tab computes
+   * its own "Group by" facets from each item's `wafer.metadata`
+   * (`stats/facets.ts`) and, when `lotStatsSummary` is also provided,
+   * reuses its precomputed per-wafer yield directly rather than
+   * recomputing it — no other host wiring beyond this option.
    */
-  analysisEnabled?:        boolean;
+  insights?:               InsightsOptions;
 }
 
 export interface GalleryController {
@@ -177,7 +180,7 @@ export interface GalleryController {
   getOptions(): WaferViewOptions;
   /** Update the fallback format for unitless values across all cards. */
   setFallbackFormat(format: 'si' | 'engineering'): void;
-  /** Replace the lot-level stats summary used by the built-in findings panel. */
+  /** Replace the lot-level stats summary used by the built-in Summary panel. */
   setLotStatsSummary(summary: LotStatsSummary | undefined): void;
   /**
    * Set the number of columns in the gallery grid. Pass `undefined` to restore
@@ -218,11 +221,11 @@ export function renderWaferGallery(
   const showPlotModeSelector = options.showPlotModeSelector ?? true;
   const showHelpButton       = options.showHelpButton       ?? false;
   const userGuideExtension   = options.userGuideExtension;
-  const analysisEnabled      = options.analysisEnabled      ?? false;
+  const insightsEnabled      = options.insights?.enabled ?? false;
   // Host-supplied overlay stacking (no-op when undefined; safe high default
   // applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ      = applyOverlayZ(options.zIndex);
-  const summaryPanelOpts     = options.summaryPanel;
+  const summaryPanelOpts      = options.summaryPanel;
   const passBins             = options.passBins             ?? [1];
   let currentFallbackFormat  = options.fallbackFormat;
   let currentLotStats        = options.lotStatsSummary;
@@ -286,17 +289,18 @@ export function renderWaferGallery(
   let nextWindowId = 0;
 
 
-  let btnLotFindings: HTMLButtonElement | null = null;
+  let btnLotSummary: HTMLButtonElement | null = null;
   let activeLotFindingId: string | null = null;
   // Finding-highlight state: indices of cards implicated by the summary-panel
   // finding the user is currently inspecting (outlined until they clear it).
   let findingHighlightIndices = new Set<number>();
 
-  // Summary panel state
+  // Findings sidebar state
   let gallerySummaryPanelEl: HTMLDivElement | null = null;
-  // 'lot' = lot-level aggregated view (requires currentLotStats)
+  // 'lot' = lot-level findings (requires currentLotStats)
   // 'wafers' = per-wafer findings index (requires items with statsSummary)
   let gallerySummaryTab: 'lot' | 'wafers' = 'lot';
+  let lotFindingsFilter: FindingsFilter = {};
 
   // ── Per-wafer summary helpers ─────────────────────────────────────────────
 
@@ -445,17 +449,36 @@ export function renderWaferGallery(
         textAlign:    'left',
       });
       reportBtn.addEventListener('click', () => {
+        const title = `Findings report — ${wafersWithFindings.length} wafer${wafersWithFindings.length > 1 ? 's' : ''}`;
+        const generatedAt = new Date().toLocaleString();
         const sections = wafersWithFindings
           .map(({ item, index }) => {
             const summary = perWaferSummary(index)!;
             const label = item.label ?? `W${index + 1}`;
-            const rows = summary.findings.map(f => {
-              const dot = f.severity === 'unusual' ? '●' : f.severity === 'notable' ? '◉' : '○';
-              return `<li style="margin:2px 0">${dot} ${f.summary}</li>`;
-            }).join('');
-            return `<section style="margin-bottom:24px"><h2 style="font-size:14px;margin:0 0 8px;color:#2a3f5f">${label}</h2><ul style="margin:0;padding-left:18px;font-size:12px;color:#444">${rows}</ul></section>`;
-          }).join('');
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Findings report</title><style>body{font-family:system-ui,sans-serif;padding:24px;max-width:800px;margin:0 auto}</style></head><body><h1 style="font-size:16px;margin:0 0 20px;color:#1a2f4f">Findings report — ${wafersWithFindings.length} wafer${wafersWithFindings.length > 1 ? 's' : ''}</h1>${sections}</body></html>`;
+            const rows = summary.findings.map(f =>
+              `<li>${renderSeverityBadge(f.severity)} ${escHtml(f.summary)}</li>`,
+            ).join('');
+            return renderSection(escHtml(label), `<ul style="margin:0;padding-left:18px;list-style:none">${rows}</ul>`);
+          }).join('\n');
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${escHtml(title)}</title>
+<style>
+${reportStyles()}
+</style>
+</head>
+<body>
+<main class="report">
+  <header class="report-header">
+    <h1>${escHtml(title)}</h1>
+    <p class="report-subtitle">Generated ${escHtml(generatedAt)}</p>
+  </header>
+  ${sections}
+</main>
+</body>
+</html>`;
         openHtmlReport(html);
       });
       gallerySummaryPanelEl.appendChild(reportBtn);
@@ -519,7 +542,7 @@ export function renderWaferGallery(
 
         row.appendChild(labelSpan);
         row.appendChild(badge);
-        // Open this wafer in its own window — openWindowForCard already calls setFindingsVisible(true)
+        // Open this wafer in its own window — openWindowForCard already calls setSummaryVisible(true)
         row.addEventListener('click', () => openWindowForCard(index, item));
         gallerySummaryPanelEl.appendChild(row);
       }
@@ -535,10 +558,15 @@ export function renderWaferGallery(
     if (!gallerySummaryPanelEl) return;
 
     if (gallerySummaryTab === 'lot' && currentLotStats) {
-      // Lot-level view
+      // Lot-level view — full stats (metadata/yield/bin/ring/quadrant/test
+      // values) plus findings and a combined Report button. Bin/ring/
+      // quadrant/test numbers here and in the Insights tab's Overview
+      // sub-tab intentionally read the same shared computation
+      // (`buildRegionYieldData`, `StatsSummary.stats.*` — see
+      // summaryPanel.ts's header comment), so the two surfaces can overlap
+      // without ever disagreeing.
       const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
       const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
-      const lotActiveFindingId = activeLotFindingId;
       renderLotSummaryContent(gallerySummaryPanelEl, {
         lotSummary: currentLotStats,
         items:      originalItems,
@@ -549,7 +577,9 @@ export function renderWaferGallery(
         ringCount:      sharedOpts.ringCount,
         colorScheme:    sharedOpts.colorScheme,
         fallbackFormat: currentFallbackFormat,
-        activeFindingId: lotActiveFindingId,
+        activeFindingId: activeLotFindingId,
+        findingsFilter: lotFindingsFilter,
+        onFindingsFilterChange: renderGallerySummaryPanel,
         onFindingClick: (finding, row) => {
           if (activeLotFindingId === finding.id) {
             clearLotFindingHighlight();
@@ -637,19 +667,19 @@ export function renderWaferGallery(
     }
   }
 
-  function refreshLotFindingsButton(): void {
-    if (!btnLotFindings) return;
+  function refreshLotSummaryButton(): void {
+    if (!btnLotSummary) return;
     const hasSummaryPanel = !!gallerySummaryPanelEl;
-    btnLotFindings.style.display = ((currentLotStats || hasAnyPerWaferFindings()) && hasSummaryPanel) ? 'flex' : 'none';
+    btnLotSummary.style.display = ((currentLotStats || hasAnyPerWaferFindings()) && hasSummaryPanel) ? 'flex' : 'none';
     const panelOpen = gallerySummaryPanelEl
       ? gallerySummaryPanelEl.style.display !== 'none'
       : false;
     const hasNotable = currentLotStats?.hasNotableFindings
       || originalItems.some(it => it?.statsSummary?.hasNotableFindings);
     if (hasNotable && !panelOpen) {
-      btnLotFindings.style.color = '#b7551a';
-    } else if (!btnLotFindings.dataset.active) {
-      btnLotFindings.style.color = CLR.icon;
+      btnLotSummary.style.color = '#b7551a';
+    } else if (!btnLotSummary.dataset.active) {
+      btnLotSummary.style.color = CLR.icon;
     }
   }
 
@@ -867,9 +897,9 @@ export function renderWaferGallery(
   );
 
   // Grid-view-specific controls (mode, palette, overlays, columns, download,
-  // etc.) — wrapped so they can be hidden as a group while the Analysis tab
+  // etc.) — wrapped so they can be hidden as a group while the Insights tab
   // is open, since none of them apply to (or, for download, would silently
-  // capture the wrong thing from) the chart suite. Findings/Analysis/Help
+  // capture the wrong thing from) the chart suite. Summary/Insights/Help
   // below stay unwrapped directly in barEl since those apply to both views.
   const galleryViewControlsEl = document.createElement('div');
   Object.assign(galleryViewControlsEl.style, { display: 'inline-flex', alignItems: 'center', gap: '0' });
@@ -891,38 +921,38 @@ export function renderWaferGallery(
   galleryViewControlsEl.appendChild(makeSep());
   galleryViewControlsEl.appendChild(btnDownloadAll);
 
-  // Findings button — toggles the gallery summary panel. Grouped with
-  // galleryViewControlsEl (not left unwrapped like Analysis/Help) since the
-  // summary panel it controls lives inside bodyEl, which is already hidden
-  // while the Analysis tab is open — toggling it there has no visible effect,
-  // same as mode/palette/overlays/etc.
+  // Summary button — toggles the gallery Summary panel. Left unwrapped
+  // in barEl (not grouped with galleryViewControlsEl) so it stays reachable
+  // and its own open/closed state stays independent of Insights — the two
+  // are separate, non-overlapping surfaces, not a coordinated pair where
+  // one hides the other's control (see renderWaferMap.ts's setInsightsOpen header comment).
   // Shown when lotStatsSummary is provided, or when any item carries per-wafer findings.
   {
     if (currentLotStats || hasAnyPerWaferFindings()) {
-      btnLotFindings = makeBtn('findings', 'Summary panel', () => {
+      btnLotSummary = makeBtn('findings', 'Summary panel', () => {
         if (!gallerySummaryPanelEl) return;
         const isOpen = gallerySummaryPanelEl.style.display !== 'none';
         if (!isOpen) renderGallerySummaryPanel();
         gallerySummaryPanelEl.style.display = isOpen ? 'none' : 'flex';
-        setActive(btnLotFindings!, !isOpen);
-        refreshLotFindingsButton();
+        setActive(btnLotSummary!, !isOpen);
+        refreshLotSummaryButton();
       });
-      galleryViewControlsEl.appendChild(makeSep());
-      galleryViewControlsEl.appendChild(btnLotFindings);
+      barEl.appendChild(makeSep());
+      barEl.appendChild(btnLotSummary);
     }
   }
 
-  // Analysis tab — toggles between the gallery grid and wmap's own chart
-  // suite. Mutually exclusive with the grid/summary-panel view (not just an
-  // overlay), since the suite wants the full body's room, not a side panel.
-  let btnAnalysis: HTMLButtonElement | null = null;
-  if (analysisEnabled) {
-    btnAnalysis = makeBtn('analysis', 'Analysis', () => {
-      const isOpen = analysisEl?.style.display !== 'none';
-      setAnalysisOpen(!isOpen);
+  // Insights tab — toggles between the gallery grid and wmap's own chart
+  // suite. Mutually exclusive with the grid view (not just an overlay),
+  // since the suite wants the full body's room, not a side panel.
+  let btnInsights: HTMLButtonElement | null = null;
+  if (insightsEnabled) {
+    btnInsights = makeBtn('analysis', 'Insights', () => {
+      const isOpen = insightsEl?.style.display !== 'none';
+      setInsightsOpen(!isOpen);
     });
     barEl.appendChild(makeSep());
-    barEl.appendChild(btnAnalysis);
+    barEl.appendChild(btnInsights);
   }
 
   // Help button — opens the end-user guide in a non-modal window (opt-in).
@@ -944,11 +974,15 @@ export function renderWaferGallery(
 
   // ── Bin legend strip ───────────────────────────────────────────────────────
 
+  // Two independent pieces of content stack as separate lines (metadata, then
+  // bin swatches) rather than sharing one wrapped flex row — metadata summaries
+  // can themselves be long (several distinct-value lists), and mixing them with
+  // bin swatches in one wrap made the whole strip read as a single jumbled line.
   const legendEl = document.createElement('div');
   Object.assign(legendEl.style, {
     display:       'flex',
-    flexWrap:      'wrap',
-    gap:           '6px 14px',
+    flexDirection: 'column',
+    gap:           '6px',
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
     borderRadius:  '6px',
@@ -972,7 +1006,7 @@ export function renderWaferGallery(
     alignItems: 'flex-start',
   });
 
-  // ── Analysis tab (opt-in) ────────────────────────────────────────────────────
+  // ── Insights tab (opt-in) ────────────────────────────────────────────────────
   // Takes over the full body when active — swaps out the grid/summary panel
   // rather than sitting alongside them, since the chart suite wants the room.
   // First slice: a single Process capability panel plus a shared "Group by"
@@ -980,17 +1014,25 @@ export function renderWaferGallery(
   // More panels land incrementally; see tsmap's WMAP_ISSUES.md for the tracked
   // migration this is part of.
   //
-  // Built only when `analysisEnabled` — mirrors `renderWaferMap.ts`'s own
+  // Built only when `insightsEnabled` — mirrors `renderWaferMap.ts`'s own
   // gating, so a gallery with the feature off (the default) doesn't pay for
   // the chart suite's DOM/closures or keep a hidden host in the container.
-  let analysisTab: ReturnType<typeof createAnalysisTab> | null = null;
-  let analysisEl: HTMLElement | null = null;
-  if (analysisEnabled) {
-    analysisTab = createAnalysisTab({
+  let insightsTab: ReturnType<typeof createInsightsTab> | null = null;
+  let insightsEl: HTMLElement | null = null;
+  if (insightsEnabled) {
+    insightsTab = createInsightsTab({
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
       getColorSchemeName: () => sharedOpts.colorScheme ?? 'default',
       passBins,
+      getRingCount: () => sharedOpts.ringCount ?? 4,
+      defaultView: options.insights?.defaultView,
+      // The gallery's own legend strip (rebuildLegend/legendEl) already shows
+      // this metadata, via the same `buildMetadataStripRow` this tab's own
+      // strip would use, and stays mounted above the grid/Insights body in
+      // both views — this tab's own strip would just be a second, redundant
+      // copy of identical content.
+      showMetadataStrip: false,
       onSaveImage: options.onSaveImage,
       // Opens one wafer's full map in a modal, from a chart panel bar/row
       // click (yield's leaf rows, boxplot's leaf rows). Reuses
@@ -1009,20 +1051,29 @@ export function renderWaferGallery(
         if (!item) return;
         let ctrl: WaferMapController | null = null;
         const handle = openModal({ title, onClose: () => ctrl?.destroy() });
+        augmentOverlayTitleWithMetadata(handle, title, item.wafer.metadata ?? undefined);
         ctrl = buildDetachedController(handle.contentWrap, item, testNumber);
       },
     });
-    analysisEl = analysisTab.el;
+    insightsEl = insightsTab.el;
   }
 
-  function setAnalysisOpen(open: boolean): void {
-    if (!analysisTab || !analysisEl) return;
-    analysisEl.style.display = open ? 'flex' : 'none';
+  // Whether the Insights tab is currently showing — read by `rebuildLegend()`
+  // so the shared metadata strip (`legendEl`) stays mounted in the same place
+  // across both views instead of being a second, independent strip inside
+  // Insights; only the bin-legend row (meaningless once the grid of cards is
+  // replaced by the chart suite) is dropped when Insights is open.
+  let insightsOpen = false;
+
+  function setInsightsOpen(open: boolean): void {
+    if (!insightsTab || !insightsEl) return;
+    insightsOpen = open;
+    insightsEl.style.display = open ? 'flex' : 'none';
     bodyEl.style.display = open ? 'none' : 'flex';
-    legendEl.style.display = open ? 'none' : '';
     galleryViewControlsEl.style.display = open ? 'none' : 'inline-flex';
-    if (btnAnalysis) setActive(btnAnalysis, open);
-    if (open) analysisTab.render();
+    if (btnInsights) setActive(btnInsights, open);
+    rebuildLegend();
+    if (open) insightsTab.render();
   }
 
   // ── Grid container ─────────────────────────────────────────────────────────
@@ -1129,10 +1180,10 @@ export function renderWaferGallery(
     }
   }
 
-  refreshLotFindingsButton();
+  refreshLotSummaryButton();
   // Sync toolbar button active state with initial panel visibility
-  if (gallerySummaryPanelEl?.style.display !== 'none' && btnLotFindings) {
-    setActive(btnLotFindings, true);
+  if (gallerySummaryPanelEl?.style.display !== 'none' && btnLotSummary) {
+    setActive(btnLotSummary, true);
   }
 
   const placement = summaryPanelOpts?.placement ?? 'right';
@@ -1147,37 +1198,63 @@ export function renderWaferGallery(
   container.appendChild(barEl);
   container.appendChild(legendEl);
   container.appendChild(bodyEl);
-  if (analysisEl) container.appendChild(analysisEl);
+  if (insightsEl) container.appendChild(insightsEl);
 
   // ── Bin legend ─────────────────────────────────────────────────────────────
 
   function rebuildLegend(): void {
     legendEl.innerHTML = '';
     const mode = sharedOpts.plotMode ?? 'hardBin';
+    // Bin swatches key off the plot mode shown on the grid of cards — with
+    // Insights open the grid is replaced by the chart suite, so the bin
+    // legend row has nothing left to key against and is dropped; the
+    // metadata row above it stays, so the strip never moves or disappears
+    // when switching between gallery and Insights.
+    const hasBinLegendMode = !insightsOpen && BIN_LEGEND_MODES.has(mode);
 
-    if (!BIN_LEGEND_MODES.has(mode)) {
-      legendEl.style.display = 'none';
-      return;
-    }
+    // Lot-level metadata — recomputed on every call since the item set can
+    // change (e.g. gallery filtered to a subset of a mixed lot). Uses
+    // `buildFacetTable`, never `analyzeWaferLot`'s first-wafer-wins
+    // `lotIdentity`: a field that varies across wafers must show every
+    // distinct value it takes, not just the first wafer's, and never be
+    // silently dropped just because it isn't common to every visible wafer.
+    const resolvedItems = currentItems.filter((it): it is WaferMapDisplayItem => it != null);
+    const stackedItem = resolvedItems.find(it => it.isLotStack);
+    const metaRow = buildMetadataStripRow(
+      resolvedItems.map(it => ({ metadata: it.wafer.metadata ?? undefined })),
+      stackedItem
+        ? { lotSize: stackedItem.lotSize ?? resolvedItems.length, aggrMethod: stackedItem.aggrMethod }
+        : undefined,
+    );
 
     // Collect unique bins — use hbin or sbin depending on active mode.
     const binSet = new Set<number>();
-    for (const item of currentItems) {
-      if (!item) continue;  // factory not yet resolved
-      for (const die of item.dies) {
-        if (die.partial) continue;
-        const b = mode === 'softBin' ? die.sbin : die.hbin;
-        if (b != null) binSet.add(b);
+    if (hasBinLegendMode) {
+      for (const item of resolvedItems) {
+        for (const die of item.dies) {
+          if (die.partial) continue;
+          const b = mode === 'softBin' ? die.sbin : die.hbin;
+          if (b != null) binSet.add(b);
+        }
       }
     }
+    const bins = hasBinLegendMode ? [...binSet].sort((a, b) => a - b) : [];
 
-    const bins = [...binSet].sort((a, b) => a - b);
-    if (!bins.length) {
+    if (!metaRow && !bins.length) {
       legendEl.style.display = 'none';
       return;
     }
-
     legendEl.style.display = 'flex';
+
+    if (metaRow) legendEl.appendChild(metaRow);
+
+    if (!bins.length) return;
+
+    const binsRow = document.createElement('div');
+    Object.assign(binsRow.style, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 14px' });
+    if (metaRow) Object.assign(binsRow.style, { borderTop: `1px solid ${CLR.separator}`, paddingTop: '6px' });
+    legendEl.appendChild(binsRow);
+
     const scheme    = getColorScheme(sharedOpts.colorScheme);
     const activeBin = sharedOpts.highlightBin;
     // Hard and soft bins have independent number spaces — pick the correct defs for the active mode.
@@ -1241,7 +1318,7 @@ export function renderWaferGallery(
         updateShared({ highlightBin: next });
       });
 
-      legendEl.appendChild(entry);
+      binsRow.appendChild(entry);
     }
   }
 
@@ -1449,6 +1526,123 @@ export function renderWaferGallery(
 
   // ── Card building ──────────────────────────────────────────────────────────
 
+  /**
+   * A wafer's own label already covers identity (typically lot · waferId) —
+   * the rest of its metadata (product, testProgram, operator, temperature,
+   * etc.) is otherwise only visible via the die hover tooltip. Rather than a
+   * floating badge duplicating the label text, the identity label itself
+   * becomes the expand affordance: a chevron reveals the full field set as
+   * an overlay, only when there's anything to show. Shared by the grid
+   * card's own header and the detached-window paths (real popup and in-page
+   * floating-window fallback) so all three read identically — `doc` is
+   * accepted explicitly since a real popup is a *different* document than
+   * the one this function is otherwise called from.
+   */
+  function buildIdentityHeaderRow(
+    doc: Document,
+    label: string,
+    metadata: import('../core/metadata.js').WaferMetadata | undefined,
+  ): { wrap: HTMLDivElement; metaPanel: HTMLDivElement | null } {
+    const wrap = doc.createElement('div');
+    Object.assign(wrap.style, { display: 'flex', alignItems: 'center', gap: '4px', flex: '1', minWidth: '0' });
+    const labelEl = doc.createElement('span');
+    labelEl.textContent = label;
+    Object.assign(labelEl.style, {
+      fontWeight: '700', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    });
+    wrap.appendChild(labelEl);
+
+    const entries = metadataEntries(metadata ?? {});
+    let metaPanel: HTMLDivElement | null = null;
+    if (entries.length > 0) {
+      const chevron = doc.createElement('span');
+      Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' });
+      chevron.textContent = '▾';
+      wrap.appendChild(chevron);
+      Object.assign(wrap.style, { cursor: 'pointer' });
+
+      metaPanel = doc.createElement('div');
+      metaPanel.dataset.wmapCardMetaPanel = '1';
+      Object.assign(metaPanel.style, {
+        position:     'absolute',
+        top:          '0', left: '0', right: '0',
+        zIndex:       Z_ABOVE,
+        background:   CLR.menuBg,
+        borderBottom: `1px solid ${CLR.menuBorder}`,
+        boxShadow:    '0 2px 6px rgba(0,0,0,0.15)',
+        padding:      '8px 10px',
+        fontSize:     '11px',
+        display:      'none',
+      } as Partial<CSSStyleDeclaration>);
+      const rows = buildCompactMetadataRows(metadata ?? {});
+      if (rows) metaPanel.appendChild(rows);
+
+      wrap.setAttribute('aria-expanded', 'false');
+      wrap.setAttribute('aria-label', `Wafer info for ${label || 'this card'}. Click to expand.`);
+      wireExpandToggle(wrap, (open) => {
+        chevron.textContent = open ? '▴' : '▾';
+        wrap.setAttribute('aria-expanded', String(open));
+        if (metaPanel) metaPanel.style.display = open ? 'block' : 'none';
+      });
+    }
+    return { wrap, metaPanel };
+  }
+
+  /**
+   * For a wafer opened into a wmap-owned overlay (`openModal`/`openFloatingWindow`,
+   * both built on `openOverlay` in toolbar.ts) — that overlay chrome already has
+   * its own always-visible title element (`data-wmap-window-title`); augment it
+   * in place with the same chevron/expand-panel affordance every other wafer
+   * view uses, rather than mounting a second competing header via
+   * `buildIdentityHeaderRow`. toolbar.ts's overlay stays wafer-metadata-agnostic
+   * (it has no idea what `WaferMetadata` is) — this wiring lives here instead.
+   * Shared by the gallery's in-page floating-window detach fallback and the
+   * Insights tab's "open this wafer" modal — both are `OverlayHandle`s with an
+   * identical title/content-wrap shape, so one function covers both call sites.
+   * No-ops if the overlay wasn't given a title, or the wafer has no metadata.
+   */
+  function augmentOverlayTitleWithMetadata(
+    handle: OverlayHandle,
+    label: string,
+    metadata: import('../core/metadata.js').WaferMetadata | undefined,
+  ): void {
+    const titleEl = handle.box.querySelector<HTMLElement>('[data-wmap-window-title]');
+    const entries = metadataEntries(metadata ?? {});
+    if (!titleEl || entries.length === 0) return;
+
+    const titleParent = titleEl.parentElement;
+    const titleWrap = document.createElement('div');
+    Object.assign(titleWrap.style, {
+      display: 'flex', alignItems: 'center', gap: '4px', flex: '1', minWidth: '0', cursor: 'pointer',
+    });
+    titleParent?.insertBefore(titleWrap, titleEl);
+    titleWrap.appendChild(titleEl);
+    const chevron = document.createElement('span');
+    Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' });
+    chevron.textContent = '▾';
+    titleWrap.appendChild(chevron);
+
+    const metaPanel = document.createElement('div');
+    metaPanel.dataset.wmapCardMetaPanel = '1';
+    Object.assign(metaPanel.style, {
+      position: 'absolute', top: '0', left: '0', right: '0', zIndex: Z_ABOVE,
+      background: CLR.menuBg, borderBottom: `1px solid ${CLR.menuBorder}`,
+      boxShadow: '0 2px 6px rgba(0,0,0,0.15)', padding: '8px 10px', fontSize: '11px', display: 'none',
+    } as Partial<CSSStyleDeclaration>);
+    const rows = buildCompactMetadataRows(metadata ?? {});
+    if (rows) metaPanel.appendChild(rows);
+    handle.contentWrap.style.position = 'relative';
+    handle.contentWrap.appendChild(metaPanel);
+
+    titleWrap.setAttribute('aria-expanded', 'false');
+    titleWrap.setAttribute('aria-label', `Wafer info for ${label}. Click to expand.`);
+    wireExpandToggle(titleWrap, (open) => {
+      chevron.textContent = open ? '▴' : '▾';
+      titleWrap.setAttribute('aria-expanded', String(open));
+      metaPanel.style.display = open ? 'block' : 'none';
+    });
+  }
+
   function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferMapController; canvasWrapper: HTMLDivElement; expandBtn: HTMLButtonElement } {
     const card = document.createElement('div');
     card.className = 'wmap-gallery-card';
@@ -1472,10 +1666,8 @@ export function renderWaferGallery(
       flexShrink:     '0',
       gap:            '6px',
     });
-    const labelEl = document.createElement('span');
-    labelEl.textContent = item.label ?? '';
-    Object.assign(labelEl.style, { fontWeight: '700', fontSize: '13px', flex: '1' });
-    header.appendChild(labelEl);
+    const { wrap: identityWrap, metaPanel } = buildIdentityHeaderRow(document, item.label ?? '', item.wafer.metadata ?? undefined);
+    header.appendChild(identityWrap);
 
     // Expand button — toggles between "detach into its own window" and, once
     // detached, "reattach to this grid slot" (see updateExpandBtn).
@@ -1511,6 +1703,11 @@ export function renderWaferGallery(
       flexDirection: 'column',
     });
     card.appendChild(canvasWrapper);
+    // metaPanel overlays the top of the canvas area (not the header, which
+    // stays fixed-height) — an absolute overlay rather than in-flow growth,
+    // so expanding it never shrinks canvasWrapper (flex:1) and therefore
+    // never shrinks the map, matching the standalone badge's own contract.
+    if (metaPanel) canvasWrapper.appendChild(metaPanel);
 
     // Append to DOM before renderWaferMap so the canvas has a resolved CSS
     // layout size when the initial render() fires — avoids a zero-size first
@@ -1529,10 +1726,16 @@ export function renderWaferGallery(
       onClick:         item.onClick,
       onSelect:        item.onSelect,
       onExpand:        () => openWindowForCard(cardIndex, item),
+      // The card's own header already shows item.label (wafer identity), and
+      // the gallery's shared legend strip already shows lot-level metadata —
+      // the per-map badge would be pure duplication here (worse: on a small
+      // card it visually competes with the toolbar for the same corner-ish
+      // space). Only the standalone renderWaferMap use case needs the badge.
+      showMetadataBadge: false,
     });
-    // In-gallery: hide scene controls (gallery bar owns them) and findings button.
+    // In-gallery: hide scene controls (gallery bar owns them) and summary button.
     ctrl.setViewControlsVisible(false);
-    ctrl.setFindingsVisible(false);
+    ctrl.setSummaryVisible(false);
     expandBtn.onclick = () => openWindowForCard(cardIndex, item);
 
     return { card, ctrl, canvasWrapper, expandBtn };
@@ -1678,25 +1881,25 @@ export function renderWaferGallery(
         // Initial render into the hidden panel so content is ready when opened.
         renderGallerySummaryPanel();
         // Create the toolbar button if not already present.
-        if (!btnLotFindings) {
-          btnLotFindings = makeBtn('findings', 'Summary panel', () => {
+        if (!btnLotSummary) {
+          btnLotSummary = makeBtn('findings', 'Summary panel', () => {
             if (!gallerySummaryPanelEl) return;
             const isOpen = gallerySummaryPanelEl.style.display !== 'none';
             // Re-render on open so the index reflects all items resolved so far.
             if (!isOpen) renderGallerySummaryPanel();
             gallerySummaryPanelEl.style.display = isOpen ? 'none' : 'flex';
-            setActive(btnLotFindings!, !isOpen);
-            refreshLotFindingsButton();
+            setActive(btnLotSummary!, !isOpen);
+            refreshLotSummaryButton();
           });
-          galleryViewControlsEl.appendChild(makeSep());
-          galleryViewControlsEl.appendChild(btnLotFindings);
+          barEl.appendChild(makeSep());
+          barEl.appendChild(btnLotSummary);
         }
-        refreshLotFindingsButton();
+        refreshLotSummaryButton();
       } else if (gallerySummaryPanelEl && gallerySummaryPanelEl.style.display !== 'none') {
         // Panel is open — refresh the index to show newly resolved items.
         renderGallerySummaryPanel();
       }
-      refreshLotFindingsButton();
+      refreshLotSummaryButton();
       setTimeout(resolveNext, 0);
     }
     if (factories.length > 0) setTimeout(resolveNext, 0);
@@ -1803,7 +2006,31 @@ export function renderWaferGallery(
       Object.assign(popupBody.style, { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column' });
       doc.body.appendChild(popupBody);
 
-      const ctrl = buildDetachedController(popupBody, item);
+      // Persistent identity header — unlike the (conditional, warning-styled)
+      // unlink banner above, this is always visible: a real popup otherwise
+      // relies solely on the OS window title bar for identity, which some
+      // embedded hosts (a decoration-less Tauri window) don't show at all.
+      // Same header+chevron pattern as the grid card, in this doc's own
+      // document (a popup is a different Document than the page it opened
+      // from — every element here must be created via `doc`, not the bare
+      // global, or it silently belongs to the wrong document).
+      const { wrap: identityWrap, metaPanel } = buildIdentityHeaderRow(doc, label, item.wafer.metadata ?? undefined);
+      const headerRow = doc.createElement('div');
+      Object.assign(headerRow.style, {
+        display: 'flex', alignItems: 'center', padding: '8px 10px 6px',
+        borderBottom: `1px solid ${CLR.menuBorder}`, flexShrink: '0', gap: '6px',
+      });
+      headerRow.appendChild(identityWrap);
+      popupBody.appendChild(headerRow);
+
+      const mapContainer = doc.createElement('div');
+      Object.assign(mapContainer.style, {
+        position: 'relative', flex: '1', minHeight: '0', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      });
+      if (metaPanel) mapContainer.appendChild(metaPanel);
+      popupBody.appendChild(mapContainer);
+
+      const ctrl = buildDetachedController(mapContainer, item);
 
       const closePollId = setInterval(() => { if (popupWin.closed) handlePopupClosed(id); }, 400);
       popupWin.addEventListener('pagehide', () => handlePopupClosed(id));
@@ -1830,6 +2057,7 @@ export function renderWaferGallery(
         onClose: () => handlePopupClosed(id),
       });
       handle.contentWrap.style.flexDirection = 'column';
+      augmentOverlayTitleWithMetadata(handle, label, item.wafer.metadata ?? undefined);
       const ctrl = buildDetachedController(handle.contentWrap, item);
 
       detachedWindows.set(id, {
@@ -1853,8 +2081,8 @@ export function renderWaferGallery(
 
   /**
    * Build the fresh renderWaferMap instance shared by the real-popup and
-   * in-page-fallback detach paths, and the Analysis tab's "open this wafer"
-   * click. `testNumber`, when given (only from the Analysis tab's boxplot
+   * in-page-fallback detach paths, and the Insights tab's "open this wafer"
+   * click. `testNumber`, when given (only from the Insights tab's boxplot
    * leaf-row click), opens straight into value mode on that test — matching
    * what the user was already looking at — instead of the gallery's shared
    * plot mode; omitted (the detach-window paths) leaves plot mode untouched.
@@ -1883,9 +2111,14 @@ export function renderWaferGallery(
       // shortcut (see renderWaferMap.ts's onKeyDown — it checks
       // showExpandButton, not the button's current visibility).
       showExpandButton: false,
+      // Both callers (the real-popup path and the in-page floating-window
+      // fallback, see openWindowForCard) now build their own persistent
+      // expandable identity header before calling this function — the
+      // standalone corner badge would just duplicate it.
+      showMetadataBadge: false,
     });
     ctrl.setViewControlsVisible(true);
-    ctrl.setFindingsVisible(true);
+    ctrl.setSummaryVisible(true);
     ctrl.setExpandVisible(false);
     return ctrl;
   }
@@ -2029,7 +2262,7 @@ export function renderWaferGallery(
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {
       currentLotStats = summary;
       if (gallerySummaryPanelEl) renderGallerySummaryPanel();
-      refreshLotFindingsButton();
+      refreshLotSummaryButton();
     },
 
     setColumns(cols: number | undefined): void {
@@ -2063,7 +2296,7 @@ export function renderWaferGallery(
       legendEl.remove();
       bodyEl.remove();
       gallerySummaryPanelEl?.remove();
-      analysisTab?.destroy();
+      insightsTab?.destroy();
     },
   };
 }

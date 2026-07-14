@@ -79,8 +79,9 @@ graph LR
         c4["toolbar"]
         c5["summaryPanel"]
         c6["canvasTheme"]
-        c7["analysisTab<br/>(internal)"]
+        c7["insightsTab<br/>(internal)"]
         c8["charts/*<br/>(internal, not a public subpath)"]
+        c9["metadataBadge<br/>(internal)"]
     end
 
     subgraph Stats[stats]
@@ -113,6 +114,7 @@ graph LR
     c2 --> c7
     c7 --> c8
     s5 --> c8
+    c1 --> c9
 
     r1 --> s1
     r1 --> s2
@@ -129,7 +131,9 @@ graph LR
 
 The codebase is organized as a stack. `core` is the pure foundation, `renderer` builds the data model used by the UI, `canvas-adapter` owns DOM and interaction, `stats` builds findings, and `worker` mirrors the expensive paths behind message passing. If you are deciding what to import, start with the highest layer that matches your task and drop lower only when you need more control.
 
-`analysisTab` and `charts/*` are internal to `canvas-adapter` — reachable only through `analysisEnabled` (§5.9/§6.10 in the [API Reference](api.md)), not an independently importable subpath. The chart panels are pure DOM/canvas rendering; the actual per-chart computations (`capability`, `boxplot`, `histogram`, `correlation`, `scatter`, `yield`, `binPareto` under `stats/`) are public and importable from `/stats` on their own, if you want to drive a different chart library from the same numbers.
+`insightsTab` and `charts/*` are internal to `canvas-adapter` — reachable only through `insights.enabled` (§5.9/§6.10 in the [API Reference](api.md)), not an independently importable subpath. The chart panels are pure DOM/canvas rendering; the actual per-chart computations (`capability`, `boxplot`, `histogram`, `correlation`, `scatter`, `yield`, `binPareto` under `stats/`) are public and importable from `/stats` on their own, if you want to drive a different chart library from the same numbers.
+
+`metadataBadge` is also internal to `canvas-adapter` — the always-visible wafer/lot metadata overlay `renderWaferMap` mounts bottom-left on the canvas (`RenderOptions.showMetadataBadge`, default `true`). It exists so basic wafer/lot identity (lot, wafer ID, product, test program, temperature) is never hidden behind a toolbar/Insights toggle, without costing map layout space — it's a canvas overlay, not a layout element. `renderWaferGallery` doesn't mount this badge at all (grid cards, detached popups, and the floating-window fallback all pass `showMetadataBadge: false`): it instead (a) folds a lot-wide distinct-values summary, built on `buildFacetTable` (`stats/facets.ts`), into its existing bin-legend strip, and (b) gives every per-wafer view (grid card header, popup window, floating window) its own expandable identity header for that wafer's full metadata, sharing one `buildIdentityHeaderRow` builder and the `wireExpandToggle` interaction helper (`toolbar.ts`) so all three read identically.
 
 ## 3. Data construction pipeline
 
@@ -223,7 +227,7 @@ The analysis layer consumes the same `WaferMapResult` that the renderer uses. Th
 
 The worker helper mirrors that shape: you send in a `WaferMapInput` or a batch of `WaferMapResult` objects, and the promise resolves with the computed `WaferMapResult`, `StatsSummary`, or `LotStatsSummary` depending on the request.
 
-> Don't confuse this with the toolbar's **Analysis tab** (`analysisEnabled`, §2 above) — that's a separate chart-suite view (`analysisTab`/`charts/*`) built on the `stats` package's chart data builders, not on `analyzeWaferMap`/`analyzeWaferLot`. The two "Analysis" names are unrelated: one produces findings/summaries, the other renders charts.
+> Don't confuse this with the toolbar's **Insights tab** (`insights.enabled`, §2 above) — that's a separate chart-suite view (`insightsTab`/`charts/*`) built on the `stats` package's chart data builders, not on `analyzeWaferMap`/`analyzeWaferLot`. The two "Analysis" names are unrelated: one produces findings/summaries, the other renders charts.
 
 ## 6. How to choose an entry point
 

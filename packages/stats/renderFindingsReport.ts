@@ -4,6 +4,7 @@ import {
   formatFindingCoverage,
   formatFindingTooltip,
   escHtml,
+  buildMetadataRows,
   renderDefinitionList,
   renderSection,
   renderSeverityBadge,
@@ -11,39 +12,11 @@ import {
 } from './reportHtml.js';
 import { buildFindingsNarrative } from './findingsNarrative.js';
 
-const KNOWN_META_KEYS: Array<{ key: string; label: string }> = [
-  { key: 'lot',      label: 'Lot' },
-  { key: 'lotId',    label: 'Lot' },
-  { key: 'wafer',    label: 'Wafer' },
-  { key: 'waferId',  label: 'Wafer' },
-  { key: 'testDate', label: 'Test date' },
-  { key: 'date',     label: 'Date' },
-  { key: 'temp',     label: 'Temperature' },
-  { key: 'operator', label: 'Operator' },
-  { key: 'product',  label: 'Product' },
-  { key: 'device',   label: 'Device' },
-];
-
-function metaRowsFromMetadata(meta: Record<string, unknown>): Array<{ label: string; value: string }> {
-  const rendered = new Set<string>();
-  const rows: Array<{ label: string; value: string }> = [];
-
-  for (const { key, label } of KNOWN_META_KEYS) {
-    if (key in meta && meta[key] != null && !rendered.has(label)) {
-      rows.push({ label, value: String(meta[key]) });
-      rendered.add(label);
-    }
-  }
-
-  for (const [key, value] of Object.entries(meta)) {
-    if (KNOWN_META_KEYS.some((entry) => entry.key === key) || value == null) continue;
-    const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').replace(/_/g, ' ');
-    rows.push({ label, value: String(value) });
-  }
-
-  return rows;
-}
-
+/** Metadata rows use `buildMetadataRows` (`buildFacetTable` over every
+ *  item's own metadata) — never `LotStatsSummary.lot`'s first-wafer-wins
+ *  field, which silently drops any field that varies across the lot and can
+ *  drift from what the live Summary panel/`renderSummaryReportHtml` show
+ *  for the same data. See `reportHtml.ts`'s doc comment. */
 function summaryMetaBlock(summary: StatsSummary | LotStatsSummary, generatedAt: string): string {
   if (summary.level === 'lot') {
     const lot = summary as LotStatsSummary;
@@ -54,7 +27,7 @@ function summaryMetaBlock(summary: StatsSummary | LotStatsSummary, generatedAt: 
       .join(', ');
 
     return renderDefinitionList([
-      ...(lot.lot ? metaRowsFromMetadata(lot.lot) : []),
+      ...buildMetadataRows(lot.perWafer.map((entry) => ({ metadata: entry.summary.wafer }))),
       ...(waferIds ? [{ label: 'Wafers', value: waferIds }] : []),
       { label: 'Wafer count', value: String(lot.stats.waferCount) },
       { label: 'Generated', value: generatedAt },
@@ -64,7 +37,7 @@ function summaryMetaBlock(summary: StatsSummary | LotStatsSummary, generatedAt: 
   const wafer = summary as StatsSummary;
   const yld = wafer.stats.yieldPercent !== null ? `${wafer.stats.yieldPercent.toFixed(1)}%` : 'N/A';
   return renderDefinitionList([
-    ...(wafer.wafer ? metaRowsFromMetadata(wafer.wafer) : []),
+    ...buildMetadataRows([{ metadata: wafer.wafer }]),
     { label: 'Total dies', value: String(wafer.stats.totalDies) },
     { label: 'Analysed dies', value: String(wafer.stats.analyzedDies) },
     { label: 'Yield', value: yld },

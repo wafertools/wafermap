@@ -152,7 +152,7 @@ const ctrl = renderWaferGallery(containerRef.current, items);
 
 ## Adding statistical findings
 
-`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Findings** button appears in the toolbar automatically; no extra HTML needed.
+`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Summary** button appears in the toolbar automatically; no extra HTML needed.
 
 ```tsx
 import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
@@ -177,7 +177,7 @@ export function WaferMap({ rows }: { rows: DieResult[] }) {
 }
 ```
 
-To show a persistent summary panel instead of the toolbar button, add a `summaryPanel` option:
+To show a persistent Summary panel instead of the toolbar button, add a `summaryPanel` option:
 
 ```tsx
 renderWaferMap(containerRef.current, result, {

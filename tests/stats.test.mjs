@@ -53,6 +53,25 @@ test('analyzeWaferMap detects ring-level yield loss', () => {
   assert.deepEqual(summary.stats.hardBinsConsidered, [1, 2]);
 });
 
+test('analyzeWaferMap populates hardBinCounts over the yield-eligible population', () => {
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die, i) => ({ ...die, hbin: i % 2 === 0 ? 1 : 2 }));
+  // A partial die with a bin assigned must not be counted — hardBinCounts is
+  // scoped to the same isYieldEligibleDie population every other bin display
+  // (binPareto, summaryPanel's bin section) uses, or the two would disagree.
+  enriched.push({ x: 999, y: 999, hbin: 1, partial: true });
+
+  const result = buildWaferMap({ dies: enriched, waferConfig: { diameter: 60 }, passBins: [1] });
+  const summary = analyzeWaferMap(result, { ringCount: 3 });
+
+  const expectedBin1 = enriched.filter(d => d.hbin === 1 && !d.partial && !d.edgeExcluded).length;
+  const expectedBin2 = enriched.filter(d => d.hbin === 2 && !d.partial && !d.edgeExcluded).length;
+  assert.equal(summary.stats.hardBinCounts[1], expectedBin1);
+  assert.equal(summary.stats.hardBinCounts[2], expectedBin2);
+  const totalCounted = Object.values(summary.stats.hardBinCounts).reduce((a, b) => a + b, 0);
+  assert.equal(totalCounted, expectedBin1 + expectedBin2);
+});
+
 test('analyzeWaferMap detects quadrant-level yield loss and respects filtering options', () => {
   const { dies } = makeBaseDies();
   const enriched = dies.map((die) => ({

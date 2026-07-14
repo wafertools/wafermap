@@ -156,7 +156,7 @@ Call `ctrl.setItems(newFactories)` to replace the lot after mount, or `ctrl.setO
 
 ## Adding statistical findings
 
-`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Findings** button appears in the toolbar automatically.
+`analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Summary** button appears in the toolbar automatically.
 
 ```vue
 <script setup lang="ts">
@@ -184,7 +184,7 @@ onUnmounted(() => ctrl?.destroy());
 </template>
 ```
 
-To show a persistent summary panel instead of the toolbar button, add a `summaryPanel` option:
+To show a persistent Summary panel instead of the toolbar button, add a `summaryPanel` option:
 
 ```ts
 ctrl = renderWaferMap(containerEl.value, result, {

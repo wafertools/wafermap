@@ -30,8 +30,15 @@ test('renderLotSummaryReportHtml — Process Capability section appears when a t
   assert.ok(html.includes('Cpk'));
 });
 
-test('renderLotSummaryReportHtml — Process Capability section absent when no test has both limits', () => {
+test('renderLotSummaryReportHtml — Process Capability section still appears (with "—" spec) when no test has both limits', () => {
   const items = [waferItem('W1', [1, 1, 2], [3, 5, 7])];
+  const html = renderLotSummaryReportHtml({ items, testDefs: testDefsNoLimits });
+  assert.ok(html.includes('Process Capability'));
+  assert.ok(html.includes('Vt'));
+});
+
+test('renderLotSummaryReportHtml — Process Capability section absent when no parametric test has any recorded values', () => {
+  const items = [waferItem('W1', [1, 1, 2])];
   const html = renderLotSummaryReportHtml({ items, testDefs: testDefsNoLimits });
   assert.ok(!html.includes('Process Capability'));
 });

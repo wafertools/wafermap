@@ -1,5 +1,9 @@
-// Process capability panel — one normalized boxplot per parametric test that
-// has both a lower and upper spec limit (LSL→0, USL→1), sorted worst-Ppk-first.
+// Process capability panel — one normalized boxplot per parametric test with
+// recorded values. Tests with both a lower and upper spec limit normalize
+// LSL→0/USL→1 and get full Cp/Cpk/Pp/Ppk, sorted worst-Ppk-first; tests
+// without full limits still render (muted, dashed) normalized onto their own
+// observed range, sorted after the spec'd tests by most-variable-first —
+// see `buildCapabilityData` in stats/capability.ts for the two-tier sort.
 // Ported from tsmap's charts/capability.ts (the first host to build this) —
 // the first panel in wmap's own Analysis tab, proving the pattern: wmap now
 // owns the underlying math (stats/capability.ts). `items` is whatever
@@ -12,7 +16,8 @@ import { getColorScheme } from '../../renderer/colorSchemes.js';
 import { buildCapabilityData, type CapabilityDatum, type CapabilityItem } from '../../stats/capability.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, chartFillHeight, applyCanvasFlow, formatValue, observeResize, makeTooltip, makeLabeledSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, makeLabeledSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { fmt } from '../../renderer/fmt.js';
 
 const CAP_MIN_COL = 30;
 // The Analysis tab always gives this panel the full container width (unlike
@@ -55,14 +60,13 @@ function fmtIndex(v: number | null): string {
 export interface CapabilityPanelHandle {
   card: HTMLElement;
   /**
-   * Whether any test in `testDefs` has both spec limits — capability needs
-   * both to normalize onto a shared axis (see `buildCapabilityData`), so a
-   * lot with no spec limits assigned (common in real-world data — capture
-   * setups don't always carry them) shows an empty state instead of a
-   * chart. This is a property of `testDefs` alone, not the selected group —
-   * spec limits are per-test, not per-wafer, so it doesn't change when the
-   * "Group:" dropdown changes. The Analysis tab uses this to avoid forcing
-   * a large fixed height on a card that has nothing to draw.
+   * Whether any test in `testDefs` is parametric at all (has a `testNumber`)
+   * — a chart with zero parametric tests has nothing to draw regardless of
+   * spec-limit coverage (see `buildCapabilityData`'s fallback tier: tests
+   * without spec limits still render, so lacking limits is no longer an
+   * empty-chart condition on its own). This is a property of `testDefs`
+   * alone, not the selected group. The Analysis tab uses this to avoid
+   * forcing a large fixed height on a card that has nothing to draw.
    */
   hasData: boolean;
   /** Disconnect this panel's own ResizeObserver. Call when removing the card from the DOM. */
@@ -73,7 +77,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
   const { title = 'Process capability', items, testDefs, colorScheme = 'default', onSaveImage, onSelectTest, groups } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage);
 
-  const hasData = testDefs.some(d => d.limitLow !== undefined && d.limitHigh !== undefined);
+  const hasData = testDefs.some(d => d.testNumber !== undefined);
 
   body.style.overflowX = 'auto';
 
@@ -102,19 +106,20 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
   let draw: () => void = () => {};
 
-  function renderCaption(shownCount: number, totalTests: number): void {
+  function renderCaption(shownCount: number, unspecCount: number, totalTests: number): void {
     hintRow.innerHTML = '';
     const hint = document.createElement('span');
-    hint.textContent = 'Each box is one test, normalized so LSL=0, USL=1 · worst Ppk first';
+    hint.textContent = 'Spec-limited tests: normalized LSL=0/USL=1, worst Ppk first · unlimited tests (muted, dashed): normalized to own range, most variable first';
     Object.assign(hint.style, { color: CLR.label, fontSize: '11px' } as Partial<CSSStyleDeclaration>);
     hintRow.appendChild(hint);
 
     const summary = document.createElement('span');
     Object.assign(summary.style, { color: CLR.value, fontSize: '12px', fontWeight: '500' } as Partial<CSSStyleDeclaration>);
     const excluded = totalTests - shownCount;
+    const unspecNote = unspecCount > 0 ? ` (${unspecCount} without spec limits)` : '';
     summary.textContent = excluded > 0
-      ? `${shownCount} of ${totalTests} tests shown — ${excluded} excluded (no spec limits, or only one)`
-      : `${shownCount} test${shownCount !== 1 ? 's' : ''} shown`;
+      ? `${shownCount} of ${totalTests} tests shown${unspecNote} — ${excluded} excluded (no recorded values)`
+      : `${shownCount} test${shownCount !== 1 ? 's' : ''} shown${unspecNote}`;
     hintRow.appendChild(summary);
   }
 
@@ -122,7 +127,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     body.innerHTML = '';
 
     if (rows.length === 0) {
-      renderEmptyState(body, 'No parametric tests have both a lower and upper spec limit — capability needs both to normalize onto a shared axis.', { maxWidth: '480px' } as Partial<CSSStyleDeclaration>);
+      renderEmptyState(body, 'No parametric tests have any recorded values.', { maxWidth: '480px' } as Partial<CSSStyleDeclaration>);
       return () => {};
     }
 
@@ -181,22 +186,6 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       // (see chartShell.ts's resolveChartCanvasColors doc comment).
       const theme = resolveChartCanvasColors(card);
 
-      ctx.font = '10px system-ui, sans-serif';
-      for (const [v, label] of [[0, 'LSL'], [1, 'USL']] as const) {
-        const y = yFor(v, plotTop, plotH);
-        ctx.strokeStyle = theme.warnBorder;
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, y); ctx.lineTo(plotW, y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = theme.warnBorder;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(label, 2, y - 1);
-      }
-
       rows.forEach((d, i) => {
         const x = i * cs;
         const midX = x + cs / 2;
@@ -209,7 +198,28 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
           ctx.fillRect(x, plotTop, cs, plotBottom - plotTop);
         }
 
-        const color = forValue(ppkScore(d.ppk));
+        // LSL/USL reference ticks only make sense for this column's own
+        // normalization — a spec'd test's 0/1 are its real limits, but an
+        // unspec'd test's 0/1 are just its own min/max, so drawing a
+        // full-width line at y=0/y=1 would falsely imply every column shares
+        // one spec. Drawn per-column instead, only where a spec exists.
+        if (d.hasSpec) {
+          const yLsl = yFor(0, plotTop, plotH);
+          const yUsl = yFor(1, plotTop, plotH);
+          ctx.strokeStyle = theme.warnBorder;
+          ctx.setLineDash([3, 3]);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, yLsl); ctx.lineTo(x + cs, yLsl);
+          ctx.moveTo(x, yUsl); ctx.lineTo(x + cs, yUsl);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Unspec'd tests have no Ppk to judge "good/bad" by, so they don't
+        // get the pass/fail color scale — a muted, dashed box signals
+        // "no capability judgment available" rather than implying a score.
+        const color = d.hasSpec ? forValue(ppkScore(d.ppk)) : theme.textMuted;
         const yMin = yFor(d.min, plotTop, plotH);
         const yQ1 = yFor(d.q1, plotTop, plotH);
         const yMedian = yFor(d.median, plotTop, plotH);
@@ -230,7 +240,9 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         ctx.fillRect(midX - boxW / 2, Math.min(yQ1, yQ3), boxW, Math.max(1, Math.abs(yQ3 - yQ1)));
         ctx.globalAlpha = 1;
         ctx.strokeStyle = color;
+        if (!d.hasSpec) ctx.setLineDash([4, 2]);
         ctx.strokeRect(midX - boxW / 2, Math.min(yQ1, yQ3), boxW, Math.max(1, Math.abs(yQ3 - yQ1)));
+        ctx.setLineDash([]);
 
         ctx.strokeStyle = theme.text;
         ctx.lineWidth = 2;
@@ -271,12 +283,18 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       if (col === -1) { tooltip.style.display = 'none'; return; }
       const d = rows[col];
       const cardRect = card.getBoundingClientRect();
-      const unitSuffix = d.unit ? ` ${d.unit}` : '';
+      // fmt(v, unit) applies proper SI-prefix scaling (e.g. "33.3 pA") —
+      // a naive .toFixed(2) collapses pA/nA-scale measurements to "0.00",
+      // which reads as "no signal" rather than a real small value.
+      const fv = (v: number) => fmt(v, d.unit);
       tooltip.innerHTML = `<strong>${d.label}</strong> (n=${d.n})<br>`
-        + `LSL ${formatValue(d.lsl)}${unitSuffix} · USL ${formatValue(d.usl)}${unitSuffix}<br>`
-        + `mean ${formatValue(d.mean)}${unitSuffix}<br>`
-        + `Cp ${fmtIndex(d.cp)} · Cpk ${fmtIndex(d.cpk)}<br>`
-        + `Pp ${fmtIndex(d.pp)} · Ppk ${fmtIndex(d.ppk)}`
+        + (d.hasSpec
+          ? `LSL ${fv(d.lsl!)} · USL ${fv(d.usl!)}<br>`
+            + `mean ${fv(d.mean)}<br>`
+            + `Cp ${fmtIndex(d.cp)} · Cpk ${fmtIndex(d.cpk)}<br>`
+            + `Pp ${fmtIndex(d.pp)} · Ppk ${fmtIndex(d.ppk)}`
+          : `<em>No spec limits — sorted by variability</em><br>`
+            + `mean ${fv(d.mean)} · stddev ${fv(d.stdOverall)}`)
         + (onSelectTest ? '<br><em>click to view in boxplot</em>' : '');
       tooltip.style.display = 'block';
       tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
@@ -297,7 +315,8 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
   function rebuild(): void {
     const data = buildCapabilityData(currentItems(), testDefs);
     const totalTestable = testDefs.filter(d => d.testNumber !== undefined).length;
-    renderCaption(data.length, totalTestable);
+    const unspecCount = data.filter(d => !d.hasSpec).length;
+    renderCaption(data.length, unspecCount, totalTestable);
     draw = buildView(data);
     draw();
   }

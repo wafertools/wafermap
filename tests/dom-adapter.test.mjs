@@ -2,8 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-import { buildWaferMap } from '../dist/index.js';
+import { buildWaferMap, analyzeWaferMap, classifyDie, clipDiesToWafer, createWafer, generateDies } from '../dist/index.js';
 import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
+
+// A wafer with a clean ring-3 (edge) yield loss — triggers a real StatsFinding
+// from analyzeWaferMap (same fixture shape as tests/stats.test.mjs's
+// "detects ring-level yield loss" case), so Findings-sidebar tests exercise
+// a real finding instead of a hand-rolled fixture.
+function buildWaferWithFinding() {
+  const baseWafer = createWafer({ diameter: 60 });
+  const baseDies = clipDiesToWafer(
+    generateDies(baseWafer, { width: 10, height: 10, gridSize: 2 }),
+    baseWafer,
+    { width: 10, height: 10 },
+  ).filter((die) => !die.partial);
+  const enriched = baseDies.map((die) => {
+    const { ring } = classifyDie(die, baseWafer, { ringCount: 3 });
+    return { ...die, hbin: ring === 3 ? 2 : 1 };
+  });
+  const wafer = buildWaferMap({ dies: enriched, waferConfig: { diameter: 60 }, passBins: [1] });
+  const statsSummary = analyzeWaferMap(wafer, { ringCount: 3, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+  return { wafer, statsSummary };
+}
 
 function makeDies() {
   return [
@@ -32,6 +52,7 @@ function makeCanvasContext() {
     fillText() {},
     drawImage() {},
     arc() {},
+    arcTo() {},
     rect() {},
     measureText(text) {
       return { width: String(text).length * 6 };
@@ -544,6 +565,117 @@ test('renderWaferGallery builds cards, detaches a card into a real popup window,
   }
 });
 
+test('renderWaferGallery legend strip: a field with one value shows it plainly; a field that varies shows every distinct value, not first-wafer-wins', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const dieOpts = { results: [{ x: 0, y: 0, hbin: 1 }], dieConfig: { width: 10, height: 10 } };
+    const itemA = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', product: 'ACME-9', waferId: 'W01' } } });
+    const itemB = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', product: 'ACME-9', waferId: 'W02' } } });
+
+    // legendEl is the second child of container (after the toolbar bar), same
+    // convention as tests/renderWaferGallery.test.ts.
+    const legendEl = () => container.children[1];
+
+    renderWaferGallery(container, [itemA, itemB], { viewOptions: { plotMode: 'hardBin' } });
+    assert.match(legendEl().textContent, /Lot: LOT123/, 'a single common value should show plainly, no list');
+    assert.match(legendEl().textContent, /Product: ACME-9/, 'consistent product should be shown');
+    assert.doesNotMatch(legendEl().textContent, /W01/, 'waferId is excluded from faceting by default — unique per wafer, never a useful summary field');
+
+    // Mixed lot — the varying field must show every distinct value it takes
+    // across the visible set, not just the first wafer's (lotIdentity's bug),
+    // and not be dropped entirely either (the earlier, over-conservative fix).
+    const itemC = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT456', product: 'ACME-9' } } });
+    container.innerHTML = '';
+    renderWaferGallery(container, [itemA, itemC], { viewOptions: { plotMode: 'hardBin' } });
+    assert.match(legendEl().textContent, /Lot: LOT123, LOT456/, 'a varying field lists every distinct value present');
+    assert.match(legendEl().textContent, /Product: ACME-9/, 'a field that IS consistent should still show even when lot varies');
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery legend strip: a field with many distinct values truncates to "+N more" rather than growing unbounded', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const dieOpts = { results: [{ x: 0, y: 0, hbin: 1 }], dieConfig: { width: 10, height: 10 } };
+    const lots = ['LOT-A', 'LOT-B', 'LOT-C', 'LOT-D', 'LOT-E'];
+    const items = lots.map(lot => buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot } } }));
+
+    renderWaferGallery(container, items, { viewOptions: { plotMode: 'hardBin' } });
+    const legendEl = container.children[1];
+    assert.match(legendEl.textContent, /Lot: LOT-A, LOT-B, LOT-C \+2 more/, 'shows the top values by coverage then a +N more summary');
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery: per-card floating metadata badge is suppressed, replaced by an expandable card header showing the full per-wafer metadata', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    // Two items sharing lot but differing product/operator — the shared top
+    // strip's commonMetadata will show only "Lot: LOT123" (product/operator
+    // vary), so those two fields are otherwise invisible except through this
+    // card's own expand toggle, letting the test distinguish "shown by the
+    // shared strip" from "revealed by expanding this card".
+    const dieOpts = { results: [{ x: 0, y: 0, hbin: 1 }], dieConfig: { width: 10, height: 10 } };
+    const itemA = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId: 'W01', product: 'ACME-9', operator: 'alice' } } });
+    const itemB = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId: 'W02', product: 'ACME-7', operator: 'bob' } } });
+    renderWaferGallery(container, [{ ...itemA, label: 'LOT123 · W01' }, { ...itemB, label: 'LOT123 · W02' }], {});
+
+    // No standalone floating badge (bottom-left overlay) inside either card's canvas area.
+    const floatingBadges = [...container.querySelectorAll('[aria-label^="Wafer info: "]')];
+    assert.equal(floatingBadges.length, 0, 'the standalone bottom-left metadata badge must not be mounted inside gallery cards');
+
+    // The first card's own expand toggle exists instead, and reveals fields
+    // beyond what the header's label and the shared strip already show
+    // (product, operator), without duplicating the label text.
+    const toggle = container.querySelector('[aria-label^="Wafer info for "]');
+    assert.ok(toggle, 'card header should expose a metadata expand toggle when the wafer has metadata');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+
+    const panel = container.querySelector('[data-wmap-card-meta-panel]');
+    assert.ok(panel, 'metadata panel should exist (hidden) even before expanding');
+    assert.equal(panel.style.display, 'none', 'panel starts hidden — collapsed by default, matching the standalone badge');
+    assert.match(panel.textContent, /ACME-9/, 'panel content includes fields the shared strip omits (they vary across wafers)');
+
+    toggle.click();
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(panel.style.display, 'block', 'panel becomes visible after expanding');
+    assert.match(panel.textContent, /alice/, 'expanding reveals this card\'s own operator');
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery: card header shows no expand toggle when the wafer has no metadata at all', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const item = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }],
+      dieConfig: { width: 10, height: 10 },
+      waferConfig: { diameter: 40 },
+    });
+    renderWaferGallery(container, [{ ...item, label: 'W01' }], {});
+
+    const toggle = container.querySelector('[aria-label^="Wafer info for "]');
+    assert.equal(toggle, null, 'no expand affordance should render when there is nothing to expand');
+  } finally {
+    cleanup();
+  }
+});
+
 test('renderWaferGallery falls back to an in-page floating window when window.open is blocked (e.g. Tauri)', () => {
   const { window, root, cleanup } = setupDom();
   // Simulate an embedded host (Tauri's WebView) where window.open() is
@@ -583,6 +715,140 @@ test('renderWaferGallery falls back to an in-page floating window when window.op
     click(window, expandBtn);
     assert.equal(window.document.querySelector('.wmap-window-box'), null);
     assert.equal(container.querySelectorAll('canvas').length, 2);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery floating-window fallback: title gets an expand chevron revealing full metadata, no separate corner badge', () => {
+  const { window, root, cleanup } = setupDom();
+  window.open = () => null; // force the floating-window fallback path
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const item = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }],
+      dieConfig: { width: 10, height: 10 },
+      waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId: 'W01', product: 'ACME-9' } },
+    });
+    const ctrl = renderWaferGallery(container, [{ ...item, label: 'LOT123 · W01' }], {});
+    const expandBtn = container.querySelector('[data-wmap-expand-btn]');
+    click(window, expandBtn);
+
+    const box = window.document.querySelector('.wmap-window-box');
+    assert.ok(box, 'floating window should open');
+
+    const toggle = box.querySelector('[aria-label^="Wafer info for "]');
+    assert.ok(toggle, 'window title should expose a metadata expand toggle');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+
+    const panel = box.querySelector('[data-wmap-card-meta-panel]');
+    assert.ok(panel, 'metadata panel should exist (hidden) before expanding');
+    assert.equal(panel.style.display, 'none');
+
+    click(window, toggle);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(panel.style.display, 'block');
+    assert.match(panel.textContent, /ACME-9/);
+
+    // No standalone floating badge duplicating this — the window's own title is the one place.
+    assert.equal(box.querySelectorAll('[aria-label^="Wafer info: "]').length, 0);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery floating-window fallback: the header\'s drag-to-move does not swallow a pointerdown on the metadata toggle', () => {
+  const { window, root, cleanup } = setupDom();
+  window.open = () => null; // force the floating-window fallback path
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const item = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }],
+      dieConfig: { width: 10, height: 10 },
+      waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId: 'W01', product: 'ACME-9' } },
+    });
+    const ctrl = renderWaferGallery(container, [{ ...item, label: 'LOT123 · W01' }], {});
+    click(window, container.querySelector('[data-wmap-expand-btn]'));
+
+    const box = window.document.querySelector('.wmap-window-box');
+    const toggle = box.querySelector('[aria-label^="Wafer info for "]');
+
+    // Regression: the window header is draggable (pointerdown starts a
+    // reposition via setPointerCapture + preventDefault), and used to only
+    // exclude real <button> elements from that — the metadata toggle is a
+    // role="button" div/span, so a pointerdown on it also started a drag,
+    // which silently swallowed the following click (no error, chevron never
+    // flipped) and, since the drag keeps tracking the pointer via capture,
+    // visibly dragged the window if the pointer moved afterward (even
+    // outside the page). The header's drag-start handler must skip any
+    // [role="button"] target, not just real <button> tags.
+    const pd = new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1 });
+    toggle.dispatchEvent(pd);
+    assert.equal(pd.defaultPrevented, false, 'pointerdown on the metadata toggle must not be treated as a drag-start');
+
+    // The toggle's own click behavior is unaffected by that pointerdown.
+    click(window, toggle);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery real popup window: persistent identity header with expand chevron, dismissed by an outside click in the popup\'s own document', () => {
+  const { window, root, cleanup } = setupDom();
+  let popupWindow = null;
+  const originalOpen = window.open;
+  window.open = function open(...args) {
+    popupWindow = originalOpen.apply(this, args);
+    return popupWindow;
+  };
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const item = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }],
+      dieConfig: { width: 10, height: 10 },
+      waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId: 'W01', product: 'ACME-9' } },
+    });
+    const ctrl = renderWaferGallery(container, [{ ...item, label: 'LOT123 · W01' }], {});
+    const expandBtn = container.querySelector('[data-wmap-expand-btn]');
+    click(window, expandBtn);
+
+    assert.ok(popupWindow, 'a real popup window should have opened');
+    const doc = popupWindow.document;
+
+    const toggle = doc.querySelector('[aria-label^="Wafer info for "]');
+    assert.ok(toggle, 'popup should show a persistent identity header with an expand toggle');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(doc.querySelectorAll('[aria-label^="Wafer info: "]').length, 0, 'no separate floating badge — the header is the one place');
+
+    const panel = doc.querySelector('[data-wmap-card-meta-panel]');
+    assert.ok(panel, 'metadata panel should exist (hidden) before expanding');
+    assert.equal(panel.style.display, 'none');
+
+    click(popupWindow, toggle);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(panel.style.display, 'block');
+    assert.match(panel.textContent, /ACME-9/);
+
+    // Dismiss via a click elsewhere in the POPUP'S OWN document — this only
+    // works because wireExpandToggle registers its outside-click listener on
+    // trigger.ownerDocument, not the bare global `document`; the popup is a
+    // genuinely different Document than the main page.
+    click(popupWindow, doc.body);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(panel.style.display, 'none');
 
     ctrl.destroy();
   } finally {
@@ -900,6 +1166,163 @@ test('renderWaferGallery handles empty items array', () => {
 
     ctrl.destroy();
     assert.equal(container.childElementCount, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap: summaryPanel option renders a docked Summary panel with severity filter controls, independent of Insights', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '600px', height: '400px' });
+    root.appendChild(container);
+
+    const { wafer, statsSummary } = buildWaferWithFinding();
+    assert.ok(statsSummary.findings.length > 0, 'fixture should produce at least one finding');
+
+    const ctrl = renderWaferMap(container, wafer, {
+      statsSummary,
+      summaryPanel: { defaultOpen: true },
+    });
+
+    const buttons = [...root.querySelectorAll('button')];
+    const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
+    assert.ok(summaryBtn, 'Summary toolbar button should exist');
+
+    // Severity filter toggles (Unusual/Notable/Info) should be present in the panel's findings section.
+    const checkboxes = [...root.querySelectorAll('input[type="checkbox"]')];
+    assert.ok(checkboxes.length >= 3, 'severity filter checkboxes should render');
+
+    // At least one finding row (a button with the finding's summary text) should render.
+    const findingRows = [...root.querySelectorAll('button[data-wmap-finding]')];
+    assert.ok(findingRows.length > 0, 'at least one finding row should render');
+
+    // Summary button stays reachable/independent even without Insights enabled.
+    ctrl.closeSummaryPanel();
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap: insights option renders a full-takeover tab with Overview/Distributions/Correlation sub-tabs, and Summary stays independent of it', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '900px', height: '600px' });
+    root.appendChild(container);
+
+    const { wafer, statsSummary } = buildWaferWithFinding();
+
+    const ctrl = renderWaferMap(container, wafer, {
+      statsSummary,
+      summaryPanel: { defaultOpen: false },
+      insights: { enabled: true },
+    });
+
+    const buttons = [...root.querySelectorAll('button')];
+    const insightsBtn = buttons.find((btn) => btn.ariaLabel === 'Insights');
+    const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
+    assert.ok(insightsBtn, 'Insights toolbar button should exist');
+    assert.ok(summaryBtn, 'Summary toolbar button should exist alongside Insights');
+
+    ctrl.setInsightsOpen(true);
+    const subTabLabels = [...root.querySelectorAll('button')].map((b) => b.textContent);
+    assert.ok(subTabLabels.includes('Overview'), 'Overview sub-tab should render');
+    assert.ok(subTabLabels.includes('Distributions'), 'Distributions sub-tab should render');
+    assert.ok(subTabLabels.includes('Correlation'), 'Correlation sub-tab should render');
+
+    // The Summary button must remain in the DOM and clickable while Insights is open —
+    // the two are independent surfaces, not a coordinated pair where one hides the other.
+    assert.ok(root.contains(summaryBtn), 'Summary button stays mounted while Insights is open');
+    assert.notEqual(summaryBtn.style.display, 'none', 'Summary button stays visible while Insights is open');
+
+    ctrl.setInsightsOpen(false);
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap: metadata badge is mounted by default, absent when disabled, and survives Insights being opened', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '900px', height: '600px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }],
+      waferConfig: { diameter: 60, metadata: { lot: 'LOT123', waferId: 'W01' } },
+    });
+
+    const ctrl = renderWaferMap(container, wafer, { insights: { enabled: true } });
+    const badgeEl = [...container.querySelectorAll('div')].find((d) => /LOT123/.test(d.textContent) && /W01/.test(d.textContent));
+    assert.ok(badgeEl, 'metadata badge should render lot + waferId by default');
+
+    ctrl.setInsightsOpen(true);
+    // Still in the DOM (covered by the Insights overlay, not removed) — same
+    // coverage behaviour the toolbar already relies on.
+    assert.ok(container.contains(badgeEl), 'badge stays mounted (covered, not destroyed) while Insights is open');
+    ctrl.setInsightsOpen(false);
+    ctrl.destroy();
+
+    const container2 = window.document.createElement('div');
+    Object.assign(container2.style, { position: 'relative', width: '900px', height: '600px' });
+    root.appendChild(container2);
+    const ctrl2 = renderWaferMap(container2, wafer, { showMetadataBadge: false });
+    const badgeEl2 = [...container2.querySelectorAll('div')].find((d) => /LOT123/.test(d.textContent) && /W01/.test(d.textContent));
+    assert.equal(badgeEl2, undefined, 'showMetadataBadge:false should render no badge');
+    ctrl2.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap: metadata badge does not render when the wafer has no metadata', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '900px', height: '600px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({ results: [{ x: 0, y: 0, hbin: 1 }], waferConfig: { diameter: 60 } });
+    const ctrl = renderWaferMap(container, wafer);
+    const badgeButtons = [...container.querySelectorAll('[role="button"][aria-expanded]')];
+    assert.equal(badgeButtons.length, 0, 'no badge chrome should exist when metadata is empty');
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery: summary and insights toolbar buttons are independent surfaces', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const { wafer, statsSummary } = buildWaferWithFinding();
+    const item = { wafer: wafer.wafer, dies: wafer.dies, hbinDefs: wafer.hbinDefs, statsSummary, label: 'W01' };
+
+    const ctrl = renderWaferGallery(container, [item], {
+      insights: { enabled: true },
+    });
+
+    const buttons = [...root.querySelectorAll('button')];
+    const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
+    const insightsBtn = buttons.find((btn) => btn.ariaLabel === 'Insights');
+    assert.ok(summaryBtn, 'Summary toolbar button should exist (item carries per-wafer findings)');
+    assert.ok(insightsBtn, 'Insights toolbar button should exist');
+
+    click(window, insightsBtn);
+    const subTabLabels = [...root.querySelectorAll('button')].map((b) => b.textContent);
+    assert.ok(subTabLabels.includes('Overview'), 'Overview sub-tab should render in the gallery Insights tab too');
+
+    assert.ok(root.contains(summaryBtn), 'Summary button stays mounted while Insights is open');
+
+    ctrl.destroy();
   } finally {
     cleanup();
   }

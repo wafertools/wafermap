@@ -2,6 +2,13 @@
 // tsmap's own charts/aggregate.ts. Pure math over dies/testValues, no
 // rendering dependency, so it belongs alongside analyzeWaferMap/Lot rather
 // than locked inside a host's chart layer.
+//
+// Deliberate exception to the "prefer StatsSummary.stats.perTestStats over
+// raw Die[]" dedup pattern used elsewhere in this package: correlation needs
+// each die's *paired* values across two tests (test A and test B on the same
+// die), not each test's marginal distribution independently. `perTestStats`
+// only carries per-test summaries — it cannot reconstruct which die
+// contributed which pair — so this module always reads raw `Die[]`.
 
 import type { Die } from '../core/dies.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
