@@ -20,6 +20,7 @@ nav = [
     { "Detection Analysis" = "detection-analysis.md" },
   ]},
   { "API Reference"     = "api.md"        },
+  { "Performance"       = "performance.md" },
   { "Troubleshooting"   = "troubleshooting.md" },
   { "Examples" = [
     { "Overview" = "examples/index.md" },

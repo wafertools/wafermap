@@ -1539,7 +1539,7 @@ renderWaferGallery(container, items, {
 });
 ```
 
-Passing `lotStatsSummary` (§13) also makes the yield panel reuse each wafer's already-computed yield instead of recomputing it — so the Insights tab's numbers always agree with the gallery's own Summary panel and any exported report. Each panel consumes an active grouping in whatever way suits that chart type: yield/bin-pareto/box-plot pool one row per group with click-to-drill; histogram overlays one series per group; capability and correlation restrict to one group at a time via their own "Group:" dropdown (pooling either would be statistically misleading); scatter never restricts, colouring every group's points instead. Full behavior for each panel is in the [API reference](api.md#610-analysis-tab).
+Passing `lotStatsSummary` (§13) also makes the yield panel reuse each wafer's already-computed yield instead of recomputing it — so the Insights tab's numbers always agree with the gallery's own Summary panel and any exported report. Each panel consumes an active grouping in whatever way suits that chart type: yield/bin-pareto/box-plot pool one row per group with click-to-drill; histogram overlays one series per group; capability and correlation restrict to one group at a time via their own "Group:" dropdown (pooling either would be statistically misleading); scatter never restricts, colouring every group's points instead. Full behavior for each panel is in the [API reference](api.md#610-insights-tab).
 
 For a single wafer, or a gallery where nothing varies, there's simply no "Group by" control to show — every panel already displays that population directly.
 

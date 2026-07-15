@@ -267,6 +267,41 @@ export function saveImageBlob(blob: Blob, filename: string, onSaveImage?: SaveIm
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Host hook for saving a text file (CSV, etc). Mirrors `SaveImageHandler` —
+ * when provided, `saveTextFile` calls this instead of triggering a browser
+ * `<a download>`, letting embedded hosts (Tauri, Electron, WebView2) route
+ * the text through a native save dialog. Receives the raw `text`, a
+ * `suggestedName` (already includes its extension), and the `mimeType`.
+ */
+export type SaveTextHandler = (text: string, suggestedName: string, mimeType: string) => void | Promise<void>;
+
+/**
+ * Persist a text file (e.g. a CSV export). Routes through the host
+ * `onSaveText` hook when provided; otherwise falls back to a browser
+ * `<a download>` click — the same `<a download>` dance `saveImageBlob` uses
+ * for PNG saves, which is silently a no-op in Tauri/Electron/WebView2 (see
+ * `saveImageBlob`'s own doc comment), hence the hook.
+ *
+ * @param text        the file contents
+ * @param filename    filename including extension (e.g. `'test-values.csv'`)
+ * @param mimeType    e.g. `'text/csv'`
+ * @param onSaveText  optional host hook; when present, bypasses `<a download>`
+ */
+export function saveTextFile(text: string, filename: string, mimeType: string, onSaveText?: SaveTextHandler): void {
+  if (onSaveText) {
+    void onSaveText(text, filename, mimeType);
+    return;
+  }
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Accessibility ──────────────────────────────────────────────────────────────
 //
 // Toolbar buttons already carry `ariaLabel` (see makeBtn). Deliberately NO `title`
@@ -837,7 +872,11 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         btn.style.background = CLR.bgHover;
         btn.style.color      = CLR.iconHover;
       }
-      tooltip.innerHTML     = label;
+      // Read the button's current ariaLabel, not the `label` this closure was
+      // created with — some callers (e.g. the colorbar-range and Insights
+      // toggle buttons) update ariaLabel after creation to reflect a changed
+      // state, and the tooltip must track that rather than showing stale text.
+      tooltip.innerHTML     = btn.ariaLabel ?? label;
       tooltip.style.display = 'block';
       positionTooltip(tooltip, e.clientX, e.clientY);
     });

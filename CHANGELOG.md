@@ -54,6 +54,21 @@ under `### Breaking`.
 - **`buildTestBoxplotData` did not exclude `partial`/`edge-excluded` dies**, unlike every other per-test computation in the library (`analyzeWaferMap`'s `perTestStats`, `buildCapabilityData`, the summary panel's Test Values section) — a die that never counted toward a wafer's yield or any other stat could still skew its boxplot. Now filtered via `isYieldEligibleDie`, matching the rest of the package.
 - **Reduced duplicate stats computation across the summary panel, Analysis tab, and standalone HTML reports.** These three surfaces each independently re-walked raw `Die[]` to compute the same yield/bin/test-value numbers `analyzeWaferMap`/`analyzeWaferLot` had already computed once — a correctness risk (the yield panel had a real mismatch bug from this exact pattern, fixed in 0.19.0) as well as wasted work. `buildBinParetoData`, `buildBinClusterData`, `buildTestBoxplotData`, the summary panel's bin/test-value sections, and the summary/lot report generators now all prefer already-computed `StatsSummary`/`LotStatsSummary` fields (`hardBinCounts`/`softBinCounts`, `perTestStats`, `testSpecYield`, `perWaferTestStats`) when supplied, falling back to the original raw-die scan per-item/per-test only when that data isn't available — no behavior change for existing callers, purely additive optional parameters. `buildCorrelationMatrix`/`buildScatterData` (need per-die paired values across two tests) and the histogram builders (need every individual value for bucket assignment) are documented exceptions that must keep reading raw `Die[]` — summary statistics can't reconstruct what they need.
 
+## [0.20.1] — 2026-07-15
+
+### Added
+
+- **`RenderOptions.onSaveText`/`GalleryOptions.onSaveText`** — host hook for the Summary/Insights test-values table's "Export CSV" button, mirroring the existing `onSaveImage`. Previously this button always used a raw `<a download>` click, which is a silent no-op in Tauri/Electron/WebView2 (no dialog, no file, no error) — the same class of bug `onSaveImage` already fixed for PNG saves. New shared `saveTextFile(text, filename, mimeType, onSaveText?)` in `toolbar.ts`, alongside `saveImageBlob`.
+
+### Fixed
+
+- **`renderWaferMap`'s toolbar floated in the wrong place whenever a docked Summary panel or the Insights tab was involved.** The toolbar was a child of the canvas wrapper, which shrinks to share width with a docked `summaryPanel` — but the Insights overlay covers the *entire* render container, not just the (now narrower/offset) canvas wrapper. The toolbar, anchored to the wrong box, would float mid-container instead of at the true corner, often overlapping the Insights tab's own metadata strip. The metadata badge had the identical bug (same architecture, same z-index) and was never hidden while Insights was open. Both are now anchored to the stable outer container; the metadata badge is hidden while Insights is open (its own metadata strip already shows the same info) unless the host explicitly hid it via `setMetadataBadgeVisible(false)`, which now always wins. The Insights tab's content also reserves top clearance so its metadata strip never renders under the toolbar. The "Expand" modal — which previously carried the toolbar along for free as a side effect of it living inside the canvas wrapper — now reparents it explicitly on open and restores it on close.
+
+### Docs
+
+- **New `docs/performance.md`** — measured cost of every optional analysis feature (`computePerTestStats`, `enableTestValueAnalysis`, the Insights tab, lot-level reuse via `perWaferSummaries`) at a few wafer sizes and test counts, with a "what should I enable for my app" recommendation table. Linked from the nav and cross-referenced from `docs/api.md`'s `enableTestValueAnalysis` option.
+- **`docs/api.md`**: documented the new `onSaveText` option on both `RenderOptions` and `GalleryOptions` (the latter was also missing its pre-existing `onSaveImage` entry — added alongside it).
+
 ## [0.19.0] — 2026-07-12
 
 ### Added

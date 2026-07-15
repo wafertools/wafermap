@@ -47,6 +47,33 @@ export const ICONS: Record<string, string> = {
   rings       : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>`,
   rotateCW    : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
   specRange   : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4 L5 20"/><path d="M5 4 L8 4"/><path d="M5 20 L8 20"/><path d="M19 4 L19 20"/><path d="M19 4 L16 4"/><path d="M19 20 L16 20"/><path d="M5 12 L19 12" stroke-dasharray="3 2"/></svg>`,
+  wafer       : `<svg
+     viewBox="0 0 24 24"
+     width="16"
+     height="16"
+     fill="none"
+     stroke="currentColor"
+     stroke-width="1.8"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+
+  <!-- Wafer -->
+  <circle cx="12" cy="11.3" r="9"/>
+
+  <!-- Orientation flat -->
+  <path d="M8.5 19.6h7"/>
+
+  <!-- Vertical grid -->
+  <path d="M8 4.8v13"/>
+  <path d="M12 2.8v16"/>
+  <path d="M16 4.8v13"/>
+
+  <!-- Horizontal grid -->
+  <path d="M5.8 8h12.4"/>
+  <path d="M4.2 12h15.6"/>
+  <path d="M5.8 16h12.4"/>
+
+</svg>`,
   windowMinimize: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19h14"/></svg>`,
   windowRestore: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>`,
   xyIndicator : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 L5 7"/><path d="M5 7 L3 10"/><path d="M5 7 L7 10"/><path d="M5 19 L17 19"/><path d="M17 19 L14 17"/><path d="M17 19 L14 21"/><text x="18" y="8" font-size="6" fill="currentColor" stroke="none">X</text><text x="2" y="6" font-size="6" fill="currentColor" stroke="none">Y</text></svg>`,

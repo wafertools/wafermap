@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -101,6 +101,14 @@ export interface GalleryOptions {
    * default browser download behaviour is unchanged.
    */
   onSaveImage?:          SaveImageHandler;
+  /**
+   * Host hook for saving the Summary/Insights test-values table's "Export CSV"
+   * button. Mirrors `onSaveImage` — when provided, called with
+   * `(text, suggestedName, mimeType)` instead of triggering a browser
+   * `<a download>` (a silent no-op in Tauri/Electron/WebView2). When omitted,
+   * the default browser download behaviour is unchanged.
+   */
+  onSaveText?:           SaveTextHandler;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -248,7 +256,13 @@ export function renderWaferGallery(
   let cardContainers: HTMLDivElement[] = [];      // canvasWrapper per card
   let cardExpandBtns: HTMLButtonElement[] = [];   // per-card header button — toggles expand/reattach
   let currentItems:  WaferMapDisplayItem[] = [];
-  let originalItems: (WaferMapDisplayItem | null)[] = [];  // per-wafer source items; null = factory not yet resolved
+  // Per-wafer source items; null = factory not yet resolved. Populated from `items`
+  // immediately (not lazily before buildCards) so findings-gated UI decided during
+  // this function's own setup — e.g. the Lot Summary button/panel's "any item
+  // carries per-wafer findings" check below — sees real data for plain (non-factory)
+  // items instead of an empty array that hasn't been filled in yet.
+  let originalItems: (WaferMapDisplayItem | null)[] =
+    items.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
   let buildGeneration = 0;  // incremented on each buildCards call; stale factory callbacks check this
   // Tracked separately from `cardControllers` containing nulls, since a detached
   // card's controller is ALSO null (its live view is in a popup window instead)
@@ -580,6 +594,7 @@ ${reportStyles()}
         activeFindingId: activeLotFindingId,
         findingsFilter: lotFindingsFilter,
         onFindingsFilterChange: renderGallerySummaryPanel,
+        onSaveText: options.onSaveText,
         onFindingClick: (finding, row) => {
           if (activeLotFindingId === finding.id) {
             clearLotFindingHighlight();
@@ -670,7 +685,7 @@ ${reportStyles()}
   function refreshLotSummaryButton(): void {
     if (!btnLotSummary) return;
     const hasSummaryPanel = !!gallerySummaryPanelEl;
-    btnLotSummary.style.display = ((currentLotStats || hasAnyPerWaferFindings()) && hasSummaryPanel) ? 'flex' : 'none';
+    btnLotSummary.style.display = ((currentLotStats || hasAnyPerWaferFindings()) && hasSummaryPanel && !insightsOpen) ? 'flex' : 'none';
     const panelOpen = gallerySummaryPanelEl
       ? gallerySummaryPanelEl.style.display !== 'none'
       : false;
@@ -922,10 +937,10 @@ ${reportStyles()}
   galleryViewControlsEl.appendChild(btnDownloadAll);
 
   // Summary button — toggles the gallery Summary panel. Left unwrapped
-  // in barEl (not grouped with galleryViewControlsEl) so it stays reachable
-  // and its own open/closed state stays independent of Insights — the two
-  // are separate, non-overlapping surfaces, not a coordinated pair where
-  // one hides the other's control (see renderWaferMap.ts's setInsightsOpen header comment).
+  // in barEl (not grouped with galleryViewControlsEl), but still hidden
+  // while Insights is open (refreshLotSummaryButton checks insightsOpen) —
+  // its panel sits behind the Insights grid with no visible effect there,
+  // matching every other view-specific control.
   // Shown when lotStatsSummary is provided, or when any item carries per-wafer findings.
   {
     if (currentLotStats || hasAnyPerWaferFindings()) {
@@ -1034,6 +1049,7 @@ ${reportStyles()}
       // copy of identical content.
       showMetadataStrip: false,
       onSaveImage: options.onSaveImage,
+      onSaveText: options.onSaveText,
       // Opens one wafer's full map in a modal, from a chart panel bar/row
       // click (yield's leaf rows, boxplot's leaf rows). Reuses
       // `buildDetachedController` (the same per-item render used for a card
@@ -1071,7 +1087,16 @@ ${reportStyles()}
     insightsEl.style.display = open ? 'flex' : 'none';
     bodyEl.style.display = open ? 'none' : 'flex';
     galleryViewControlsEl.style.display = open ? 'none' : 'inline-flex';
-    if (btnInsights) setActive(btnInsights, open);
+    if (btnInsights) {
+      setActive(btnInsights, open);
+      // The icon itself signals the toggle: a bar-chart glyph means "open
+      // Insights", a wafer glyph (while Insights is showing) means "back to
+      // the gallery grid" — clicking Insights again is otherwise not
+      // obvious as the way back, since the button's position never moves.
+      btnInsights.innerHTML = open ? ICONS.wafer : ICONS.analysis;
+      btnInsights.ariaLabel = open ? 'Back to gallery view' : 'Insights';
+    }
+    refreshLotSummaryButton();
     rebuildLegend();
     if (open) insightsTab.render();
   }
@@ -1723,6 +1748,7 @@ ${reportStyles()}
       fallbackFormat:  currentFallbackFormat,
       statsSummary:    item.statsSummary,
       onSaveImage:     options.onSaveImage,
+      onSaveText:      options.onSaveText,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
       onExpand:        () => openWindowForCard(cardIndex, item),
@@ -1905,8 +1931,8 @@ ${reportStyles()}
     if (factories.length > 0) setTimeout(resolveNext, 0);
   }
 
-  // Pre-populate originalItems with resolved items (factories fill slots as they run).
-  originalItems = items.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
+  // originalItems is already populated (see its declaration) — factories fill their
+  // slots in as they resolve via resolveNext.
   // If the initial plotMode is already a stacked mode, aggregate immediately.
   if (STACKED_MODES.has(sharedOpts.plotMode!) && originalItems.length > 0) {
     const extra = stackedSharedOpts(sharedOpts.plotMode!);
@@ -2101,6 +2127,7 @@ ${reportStyles()}
       fallbackFormat:  currentFallbackFormat,
       statsSummary:    item.statsSummary,
       onSaveImage:     options.onSaveImage,
+      onSaveText:      options.onSaveText,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
       // This view is already detached into its own window (a real popup or

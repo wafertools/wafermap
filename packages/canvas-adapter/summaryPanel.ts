@@ -27,7 +27,7 @@ import { fmt as fmtValue, fmtAggregationMethod } from '../renderer/fmt.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
 import { makeToggle, makeLabeledSelect } from './charts/chartShell.js';
-import { CLR, openModal } from './toolbar.js';
+import { CLR, openModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
 
@@ -702,19 +702,6 @@ function computeDescriptive(vals: number[]): Omit<TestStatRow, 'testNumber'> {
   };
 }
 
-/** Triggers a browser download of `text` as a file — the `<a download>` dance,
- *  same mechanism `saveImageBlob` (toolbar.ts) uses for PNG saves, but for
- *  CSV text; kept local since this is currently its only consumer. */
-function downloadTextFile(text: string, filename: string, mimeType: string): void {
-  const blob = new Blob([text], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a   = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function csvField(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
@@ -741,6 +728,8 @@ export function buildTestSection(
     }>;
     testSpecYield?: Array<{ testNumber: number; totalDies: number; yieldPercent: number | null }>;
   },
+  /** Optional host hook for the "Export CSV" button — see `saveTextFile` (toolbar.ts). */
+  onSaveText?: SaveTextHandler,
 ): HTMLDivElement | null {
   const activeDies = dies.filter(d => !d.partial && !d.edgeExcluded);
   const perTestStatsByNumber = new Map((precomputedTestStats?.perTestStats ?? []).map(s => [s.testNumber, s]));
@@ -872,7 +861,7 @@ export function buildTestSection(
       }
       lines.push(fields.map(csvField).join(','));
     }
-    downloadTextFile(lines.join('\n'), 'test-values.csv', 'text/csv');
+    saveTextFile(lines.join('\n'), 'test-values.csv', 'text/csv', onSaveText);
   });
   headerRow.appendChild(exportBtn);
   outer.appendChild(headerRow);
@@ -1372,6 +1361,8 @@ export function buildLotTestSection(
   testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
   perWaferSummaries?: StatsSummary[],
+  /** Optional host hook for the "Export CSV" button — see `saveTextFile` (toolbar.ts). */
+  onSaveText?: SaveTextHandler,
 ): HTMLDivElement | null {
   let pooled: {
     perTestStats?: Array<{ testNumber: number; min: number; max: number; mean: number; count: number }>;
@@ -1418,7 +1409,7 @@ export function buildLotTestSection(
     };
   }
 
-  return buildTestSection(allDies, testDefs, fallbackFormat, pooled);
+  return buildTestSection(allDies, testDefs, fallbackFormat, pooled, onSaveText);
 }
 
 
@@ -1547,6 +1538,7 @@ export function renderWaferSummaryContent(
     activeFindingId?: string | null;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
+    onSaveText?: SaveTextHandler;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1558,6 +1550,7 @@ export function renderWaferSummaryContent(
     colorScheme, fallbackFormat,
     onFindingClick, activeFindingId = null,
     findingsFilter, onFindingsFilterChange,
+    onSaveText,
   } = params;
 
   panel.appendChild(panelHeader('Wafer Summary'));
@@ -1596,7 +1589,7 @@ export function renderWaferSummaryContent(
   sections.push(buildRingSection(dies, wafer, ringCount, passBins));
   sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
 
-  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats));
+  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText));
 
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
     sections.push(buildFindingsSectionWithFilter(
@@ -1637,6 +1630,7 @@ export function renderLotSummaryContent(
     onWaferClick?:    (waferIndex: number) => void;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
+    onSaveText?: SaveTextHandler;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1649,6 +1643,7 @@ export function renderLotSummaryContent(
     onFindingClick, activeFindingId = null,
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
+    onSaveText,
   } = params;
 
   panel.appendChild(panelHeader(`Lot Summary — ${lotSummary.stats.waferCount} wafer${lotSummary.stats.waferCount === 1 ? '' : 's'}`));
@@ -1699,7 +1694,7 @@ export function renderLotSummaryContent(
             : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft', colorScheme) : null,
     buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
     buildLotQuadrantSection(diesByWafer, allWafers, ringCount, passBins),
-    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries) : null,
+    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText) : null,
   ];
 
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {

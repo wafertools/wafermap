@@ -7,12 +7,13 @@ import { buildWaferMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
 } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
+import { ICONS } from './icons.js';
 import { hardBinColor, softBinColor } from '../renderer/colorMap.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
 import { createMetadataBadge, type MetadataBadgeController } from './metadataBadge.js';
@@ -181,6 +182,14 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * default browser download behaviour is unchanged.
    */
   onSaveImage?: SaveImageHandler;
+  /**
+   * Host hook for saving the Summary/Insights test-values table's "Export CSV"
+   * button. Mirrors `onSaveImage` — when provided, called with
+   * `(text, suggestedName, mimeType)` instead of triggering a browser
+   * `<a download>` (a silent no-op in Tauri/Electron/WebView2). When omitted,
+   * the default browser download behaviour is unchanged.
+   */
+  onSaveText?: SaveTextHandler;
   /**
    * Options for the always-available Summary panel — a docked panel
    * (metadata, yield, bin breakdown, ring/quadrant yield, test values, and
@@ -415,10 +424,16 @@ export function renderWaferMap(
   // ── Metadata badge (opt-out) ─────────────────────────────────────────────────
   // Mounted as a child of canvasWrap (not gated by showToolbar) so basic wafer/
   // lot identity is visible in every mode, including when the toolbar is
-  // hidden — this is the whole point of the feature. Being a child of
-  // canvasWrap means it's automatically covered by insightsTab.el (a sibling
-  // inset:0 overlay inside container) whenever Insights is open, exactly like
-  // the toolbar already is — no extra visibility wiring needed here.
+  // hidden — this is the whole point of the feature. It carries the same
+  // explicit `Z_BASE` z-index the toolbar does, so — unlike ordinary
+  // unpositioned canvasWrap content — it is NOT actually covered by
+  // insightsTab.el's overlay; setInsightsOpen explicitly hides it while
+  // Insights is open (the Insights tab shows this wafer's metadata in its
+  // own strip anyway, so nothing is lost).
+  // Tracks whether the *host* has asked for it hidden via
+  // setMetadataBadgeVisible(false), independent of Insights toggling it —
+  // so closing Insights doesn't un-hide a badge the host explicitly hid.
+  let metadataBadgeHostHidden = false;
   let metadataBadge: MetadataBadgeController | null = null;
   if (showMetadataBadge) {
     metadataBadge = createMetadataBadge(wafer.metadata, { lotStack: lotStackBadgeContext() });
@@ -473,19 +488,18 @@ export function renderWaferMap(
       passBins,
       getRingCount: () => viewOpts.ringCount ?? 4,
       onSaveImage: options.onSaveImage,
+      onSaveText: options.onSaveText,
       defaultView: insightsOpts?.defaultView,
       // No openWafer — this map already IS the only wafer there is to open.
     });
-    // Positioned sibling of canvasWrap covering the same area, but *not*
-    // display:none-ing canvasWrap itself — canvasWrap's floating toolbar
-    // (including the Insights button that must toggle this back off) is a
-    // child of canvasWrap, so hiding canvasWrap would hide the toolbar with
-    // it. Left with `z-index: auto` (no explicit value), this positioned
-    // element still paints above canvasWrap's own unpositioned canvas
-    // content (position:static content always sits below any positioned
-    // sibling, explicit z-index or not) while sitting below the toolbar
-    // (which sets its own explicit, much higher z-index via `Z_BASE`) — so
-    // it visually replaces the map without ever making the toolbar
+    // Positioned sibling of canvasWrap covering the same area. Left with
+    // `z-index: auto` (no explicit value), this positioned element still
+    // paints above canvasWrap's own unpositioned canvas content
+    // (position:static content always sits below any positioned sibling,
+    // explicit z-index or not) while sitting below the toolbar (a direct
+    // child of `container`, not canvasWrap — see its own creation comment —
+    // with its own explicit, much higher z-index via `Z_BASE`) — so it
+    // visually replaces the map without ever making the toolbar
     // unreachable. Needs an opaque background since the insights grid has
     // gaps between cards that would otherwise let the covered canvas show
     // through.
@@ -499,6 +513,13 @@ export function renderWaferMap(
     // of letting the page grow to show it.
     Object.assign(insightsTab.el.style, {
       position: 'absolute', inset: '0', background: CLR.panelBg, overflowY: 'auto',
+      // Reserve room above the tab's own content (its metadata strip sits at
+      // the very top) so the floating toolbar — an absolutely-positioned
+      // sibling anchored to the same `container` corner — never renders on
+      // top of it. Only needed when there's a toolbar to clear; the gallery's
+      // equivalent toolbar is a real in-flow header instead, so it needs no
+      // such reservation.
+      paddingTop: showToolbar ? '44px' : '0',
     } as Partial<CSSStyleDeclaration>);
     container.appendChild(insightsTab.el);
   }
@@ -509,11 +530,28 @@ export function renderWaferMap(
     insightsTab.el.style.display = open ? 'flex' : 'none';
     // Map-specific toolbar controls (zoom/pan/select, mode/palette/overlays/etc.)
     // have no effect on the chart suite — hide them as a group while it's open.
-    // Summary/Expand/Insights/Help live in sceneControlsEl (unwrapped, not
-    // part of this group) and stay visible+reachable the whole time — see
-    // this function's own header comment.
+    // Summary is hidden too (refreshSummaryButton checks insightsOpen) since
+    // its panel sits behind the Insights overlay with no visible effect.
+    // Expand/Insights/Help live in sceneControlsEl (unwrapped, not part of
+    // this group) and stay visible+reachable the whole time — see this
+    // function's own header comment.
     if (mapToolsEl) mapToolsEl.style.display = open ? 'none' : 'flex';
     if (mapViewControlsEl) mapViewControlsEl.style.display = open ? 'none' : 'flex';
+    // The metadata badge is a child of canvasWrap and (like the toolbar used
+    // to be) floats at canvasWrap's own corner, not the Insights overlay's —
+    // and the Insights tab already shows this wafer's metadata in its own
+    // strip. Hide it rather than let it float in the wrong place on top of
+    // that strip. Never un-hides a badge the host explicitly hid.
+    if (metadataBadge) metadataBadge.el.style.display = (open || metadataBadgeHostHidden) ? 'none' : '';
+    refreshSummaryButton();
+    if (btnInsights) {
+      // The icon itself signals the toggle: a bar-chart glyph means "open
+      // Insights", a wafer glyph (while Insights is showing) means "back to
+      // the wafer view" — clicking Insights again is otherwise not obvious
+      // as the way back, since the button's position/label never move.
+      btnInsights.innerHTML = open ? ICONS.wafer : ICONS.analysis;
+      btnInsights.ariaLabel = open ? 'Back to wafer view' : 'Insights';
+    }
     if (open) insightsTab.render();
   }
 
@@ -621,6 +659,7 @@ export function renderWaferMap(
       activeFindingId: summaryActiveFindingId,
       findingsFilter,
       onFindingsFilterChange: renderSummaryPanel,
+      onSaveText: options.onSaveText,
       onFindingClick: (finding, _row) => {
         if (summaryActiveFindingId === finding.id) {
           summaryActiveFindingId = null;
@@ -712,7 +751,7 @@ export function renderWaferMap(
   function refreshSummaryButton(): void {
     if (!btnSummary) return;
     const hasSummary = !!(summaryPanelEl ?? autoSummaryPanelEl);
-    btnSummary.style.display = (currentStatsSummary && hasSummary) ? 'flex' : 'none';
+    btnSummary.style.display = (currentStatsSummary && hasSummary && !insightsOpen) ? 'flex' : 'none';
     const activePanelEl = summaryPanelEl ?? autoSummaryPanelEl;
     const panelOpen = activePanelEl ? activePanelEl.style.display !== 'none' : false;
     if (currentStatsSummary?.hasNotableFindings && !panelOpen) {
@@ -723,9 +762,7 @@ export function renderWaferMap(
   }
 
   if (showToolbar) {
-    const parent = canvasWrap;
     {
-
       toolbar = document.createElement('div');
       toolbar.dataset.wmapToolbar = 'single';
       Object.assign(toolbar.style, {
@@ -1026,7 +1063,17 @@ export function renderWaferMap(
         }
       }
 
-      canvasWrap.appendChild(toolbar);
+      // Anchored to `container`, not `canvasWrap` — canvasWrap shrinks to
+      // share width with a docked summary panel (wrapWithSummaryPanel wraps
+      // it in a flex row), and the Insights overlay covers the *full*
+      // container, not just canvasWrap's own (possibly narrower/offset) box.
+      // A toolbar parented to canvasWrap would float at canvasWrap's edge —
+      // the wrong spot once the panel takes up real width, and often
+      // overlapping the Insights tab's own top-of-content metadata strip.
+      // `container` is always position:relative (set above) and always
+      // spans the true, stable render area regardless of what's docked or
+      // which view (map vs. Insights) is currently showing.
+      container.appendChild(toolbar);
 
       // ── Hover show/hide (with linger so clicks register) ─────────────────
       function showBar(): void {
@@ -1106,6 +1153,7 @@ export function renderWaferMap(
           modalOriginalParent = null;
           modalOriginalNext   = null;
         }
+        if (toolbar) container.appendChild(toolbar);
         modalHandle = null;
         if (btnExpand) btnExpand.style.display = 'flex';
         canvas.focus({ preventScroll: true });
@@ -1117,6 +1165,18 @@ export function renderWaferMap(
     reparentRoot.style.minWidth  = '0';
     reparentRoot.style.minHeight = '0';
     handle.contentWrap.appendChild(reparentRoot);
+
+    // toolbar lives in `container` (a sibling of reparentRoot), not inside
+    // reparentRoot itself, so it must be moved into the modal explicitly —
+    // otherwise it stays behind in the now-empty original container and the
+    // expanded view has no toolbar at all. contentWrap has no `position` of
+    // its own (flex child, static); give it one so toolbar's `position:
+    // absolute; top:4px; right:4px` resolves against the modal's content
+    // area, the same top-right corner it occupies outside the modal.
+    if (toolbar) {
+      handle.contentWrap.style.position = 'relative';
+      handle.contentWrap.appendChild(toolbar);
+    }
 
     modalHandle = handle;
     if (btnExpand) btnExpand.style.display = 'none';
@@ -1987,7 +2047,8 @@ export function renderWaferMap(
     },
 
     setMetadataBadgeVisible(visible: boolean): void {
-      if (metadataBadge) metadataBadge.el.style.display = visible ? '' : 'none';
+      metadataBadgeHostHidden = !visible;
+      if (metadataBadge) metadataBadge.el.style.display = (visible && !insightsOpen) ? '' : 'none';
     },
 
     openUserGuide: openGuideWindow,

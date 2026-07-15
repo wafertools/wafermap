@@ -28,7 +28,7 @@ import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from 
 import type { TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, type SaveImageHandler } from './toolbar.js';
+import { CLR, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
 import { renderCapabilityPanel } from './charts/capability.js';
 import { renderBoxplotPanel } from './charts/boxplot.js';
 import { renderHistogramPanel } from './charts/histogram.js';
@@ -70,6 +70,8 @@ export interface InsightsTabDeps {
   /** Read fresh each render — used by the Overview tab's ring/quadrant regional yield cards. Default 4. */
   getRingCount?: () => number;
   onSaveImage?: SaveImageHandler;
+  /** Optional host hook for the Overview tab's test-values "Export CSV" button — see `saveTextFile` (toolbar.ts). */
+  onSaveText?: SaveTextHandler;
   /**
    * Opens one wafer's detail view — omit to disable click-to-open (e.g. a
    * single-wafer host, where the only wafer is already the one on screen).
@@ -115,7 +117,7 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
 ];
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
-  const { getItems, getLotStats, getColorSchemeName, passBins, getRingCount, onSaveImage, openWafer } = deps;
+  const { getItems, getLotStats, getColorSchemeName, passBins, getRingCount, onSaveImage, onSaveText, openWafer } = deps;
   const showMetadataStrip = deps.showMetadataStrip ?? true;
 
   // Deliberately auto-height, normal block/flex flow — no forced minHeight,
@@ -405,7 +407,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // grid item.
     let testValuesCard: HTMLElement | null = null;
     if (testDefs.length) {
-      const testValues = buildLotTestSection(allDies, testDefs, undefined, perWaferSummaries);
+      const testValues = buildLotTestSection(allDies, testDefs, undefined, perWaferSummaries, onSaveText);
       if (testValues) { const c = plainCard(); c.appendChild(testValues); testValuesCard = c; }
     }
     return { elements, testValuesCard, destroy: () => { for (const d of destroyFns) d(); } };

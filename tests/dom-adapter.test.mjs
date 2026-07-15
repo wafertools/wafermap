@@ -410,6 +410,57 @@ test('renderWaferMap onSaveImage hook intercepts the PNG download', () => {
   }
 });
 
+test('renderWaferMap onSaveText hook intercepts the Summary panel\'s CSV export', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '700px', height: '500px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, testValues: { 1010: 0.5 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 1010: 2.5 }, hbin: 1 },
+        { x: 0, y: 1, testValues: { 1010: 5.0 }, hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      testDefs: [{ testNumber: 1010, name: 'Vth', unit: 'V' }],
+    });
+    const statsSummary = analyzeWaferMap(wafer);
+
+    const saved = [];
+    // Same bypass-the-<a-download> contract as onSaveImage — tsmap (WMAP_ISSUES.md
+    // #33) hit this exact gap: the CSV export button had no host hook at all, so
+    // it always fell through to a raw anchor click, a silent no-op in Tauri.
+    let anchorClicks = 0;
+    const origClick = window.HTMLAnchorElement.prototype.click;
+    window.HTMLAnchorElement.prototype.click = function () { anchorClicks++; };
+
+    try {
+      renderWaferMap(container, wafer, {
+        statsSummary,
+        summaryPanel: { placement: 'right', defaultOpen: true },
+        onSaveText: (text, name, mimeType) => { saved.push({ text, name, mimeType }); },
+      });
+
+      const exportBtn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Export CSV');
+      assert.ok(exportBtn, 'Export CSV button should exist in the Test Values section');
+      click(window, exportBtn);
+
+      assert.equal(saved.length, 1, 'onSaveText should be called exactly once');
+      assert.match(saved[0].text, /Vth/, 'hook receives the CSV text, including the test name');
+      assert.equal(saved[0].name, 'test-values.csv', 'suggestedName matches the export');
+      assert.equal(saved[0].mimeType, 'text/csv');
+      assert.equal(anchorClicks, 0, 'default <a download> path is bypassed when onSaveText is set');
+    } finally {
+      window.HTMLAnchorElement.prototype.click = origClick;
+    }
+  } finally {
+    cleanup();
+  }
+});
+
 test('renderWaferMap zIndex option sets --wmap-z for its lifetime and restores on destroy', () => {
   const { window, root, cleanup } = setupDom();
   try {
@@ -1206,7 +1257,7 @@ test('renderWaferMap: summaryPanel option renders a docked Summary panel with se
   }
 });
 
-test('renderWaferMap: insights option renders a full-takeover tab with Overview/Distributions/Correlation sub-tabs, and Summary stays independent of it', () => {
+test('renderWaferMap: insights option renders a full-takeover tab with Overview/Distributions/Correlation sub-tabs, and hides the Summary button while open', () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -1233,12 +1284,19 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.ok(subTabLabels.includes('Distributions'), 'Distributions sub-tab should render');
     assert.ok(subTabLabels.includes('Correlation'), 'Correlation sub-tab should render');
 
-    // The Summary button must remain in the DOM and clickable while Insights is open —
-    // the two are independent surfaces, not a coordinated pair where one hides the other.
+    // The Summary button stays mounted (so it's still there when Insights closes) but
+    // hidden while Insights is open — its panel sits behind the Insights overlay with
+    // no visible effect, and only Insights/Expand/User guide remain reachable, per docs.
     assert.ok(root.contains(summaryBtn), 'Summary button stays mounted while Insights is open');
-    assert.notEqual(summaryBtn.style.display, 'none', 'Summary button stays visible while Insights is open');
+    assert.strictEqual(summaryBtn.style.display, 'none', 'Summary button is hidden while Insights is open');
+
+    // The Insights button's own icon flips to signal "click to go back" while open.
+    assert.strictEqual(insightsBtn.ariaLabel, 'Back to wafer view', 'Insights button label flips while open');
 
     ctrl.setInsightsOpen(false);
+    assert.notEqual(summaryBtn.style.display, 'none', 'Summary button reappears once Insights closes');
+    assert.strictEqual(insightsBtn.ariaLabel, 'Insights', 'Insights button label reverts once closed');
+
     ctrl.destroy();
   } finally {
     cleanup();
@@ -1297,7 +1355,7 @@ test('renderWaferMap: metadata badge does not render when the wafer has no metad
   }
 });
 
-test('renderWaferGallery: summary and insights toolbar buttons are independent surfaces', () => {
+test('renderWaferGallery: Insights hides the Summary button and flips its own icon/label to signal the way back', () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -1320,7 +1378,15 @@ test('renderWaferGallery: summary and insights toolbar buttons are independent s
     const subTabLabels = [...root.querySelectorAll('button')].map((b) => b.textContent);
     assert.ok(subTabLabels.includes('Overview'), 'Overview sub-tab should render in the gallery Insights tab too');
 
+    // Summary stays mounted (so it's there when Insights closes) but hidden while
+    // Insights is open — its panel sits behind the Insights grid with no visible effect.
     assert.ok(root.contains(summaryBtn), 'Summary button stays mounted while Insights is open');
+    assert.strictEqual(summaryBtn.style.display, 'none', 'Summary button is hidden while Insights is open');
+    assert.strictEqual(insightsBtn.ariaLabel, 'Back to gallery view', 'Insights button label flips while open');
+
+    click(window, insightsBtn);
+    assert.notEqual(summaryBtn.style.display, 'none', 'Summary button reappears once Insights closes');
+    assert.strictEqual(insightsBtn.ariaLabel, 'Insights', 'Insights button label reverts once closed');
 
     ctrl.destroy();
   } finally {

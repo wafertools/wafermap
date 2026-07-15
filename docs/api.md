@@ -879,6 +879,11 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // button calls it instead of triggering a browser <a download>, letting
                                             // embedded hosts (Tauri, Electron, WebView2) route the image through a native
                                             // dialog. When omitted, the default download behaviour is unchanged.
+  onSaveText?:             (text: string, suggestedName: string, mimeType: string) => void | Promise<void>
+                                            // host hook for the Summary/Insights test-values table's "Export CSV" button.
+                                            // Mirrors onSaveImage — when provided, called instead of a browser <a download>
+                                            // (a silent no-op in Tauri/Electron/WebView2). When omitted, the default
+                                            // download behaviour is unchanged.
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   zIndex?:                 number    // base z-index for wmap's transient overlays (menus, tooltip, expand/help modals).
                                             // Omit for a safe high default (above typical app modal layers); set it to
@@ -1303,6 +1308,12 @@ to be pre-built.
                                             // 'default' auto-adapts: compact below 280 px card width, floating below 180 px
   cardPadding?:            number             // CSS-px padding inside each card canvas (default 6)
   downloadFilename?:       string             // stem for the composite PNG filename (default 'wafer-gallery')
+  onSaveImage?:            (blob: Blob, suggestedName: string) => void | Promise<void>
+                                            // host hook for persisting the composite gallery PNG (and each card's own
+                                            // save). Mirrors renderWaferMap's onSaveImage — see §5.4 for full semantics.
+  onSaveText?:             (text: string, suggestedName: string, mimeType: string) => void | Promise<void>
+                                            // host hook for the Summary/Insights test-values table's "Export CSV" button.
+                                            // Mirrors onSaveImage — see §5.4 for full semantics.
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   showPlotModeSelector?:   boolean           // show the mode dropdown in the gallery bar (default true)
   showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user
@@ -1672,6 +1683,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
   enableTestValueAnalysis?:       boolean  // default FALSE — expensive regional Welch pass on test values
                                            // (scales with regions × tests × dies). Opt in only when you
                                            // display the regional test-value findings. Implies perTestStats.
+                                           // See the Performance guide for measured costs: performance.md
   computePerTestStats?:           boolean  // default false — cheap per-test quartile scan into perTestStats
                                            // (mean/stddev/median/q1/q3) WITHOUT the regional Welch pass.
                                            // Use this for box-plot / histogram panels. Implied by

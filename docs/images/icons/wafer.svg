@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 24 24"
+     width="16"
+     height="16"
+     fill="none"
+     stroke="currentColor"
+     stroke-width="1.8"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+
+  <!-- Wafer -->
+  <circle cx="12" cy="11.3" r="9"/>
+
+  <!-- Orientation flat -->
+  <path d="M8.5 19.6h7"/>
+
+  <!-- Vertical grid -->
+  <path d="M8 4.8v13"/>
+  <path d="M12 2.8v16"/>
+  <path d="M16 4.8v13"/>
+
+  <!-- Horizontal grid -->
+  <path d="M5.8 8h12.4"/>
+  <path d="M4.2 12h15.6"/>
+  <path d="M5.8 16h12.4"/>
+
+</svg>
