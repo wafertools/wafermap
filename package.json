@@ -1,6 +1,6 @@
 {
   "name": "@paulrobins/wafermap",
-  "version": "0.20.1",
+  "version": "0.20.2",
   "description": "Interactive wafer map visualization and yield analysis for semiconductor test data. Hard bins, soft bins, test values, retests, edge exclusion, reticle overlays, spatial statistics, failure clustering, and lot-level trend analysis — pure ES modules, no runtime dependencies, no server required.",
   "type": "module",
   "license": "MIT",
@@ -107,6 +107,7 @@
     "jsdom": "^29.1.1",
     "marked": "^18.0.3",
     "playwright": "^1.60.0",
+    "semble": "^0.1.1",
     "serve": "^14.2.0",
     "typescript": "^5.6.3"
   },

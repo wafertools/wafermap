@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common mistakes and how to fix them.
+**For:** developers integrating the library. Common mistakes and how to fix them.
 
 ---
 

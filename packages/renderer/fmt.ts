@@ -39,6 +39,17 @@ export function fmtAggregationMethod(method: string | undefined): string {
 }
 
 /**
+ * Map internal bin terms to plain language for display — "HBin 2" →
+ * "hard bin 2" (CLAUDE.md: internal API terms must never appear in the UI).
+ * Shared by the Summary panel and the printable reports so both surfaces
+ * speak the same language; stats-level `StatsFinding` text keeps the
+ * compact internal terms (they're also machine-consumed and test-asserted).
+ */
+export function plainBinTerms(text: string): string {
+  return text.replace(/\bHBin\b/g, 'hard bin').replace(/\bSBin\b/g, 'soft bin');
+}
+
+/**
  * Format a numeric value for display (tooltips, overlays, single-value labels).
  *
  * - With a unit: always uses SI prefix (e.g. `12 µV`).

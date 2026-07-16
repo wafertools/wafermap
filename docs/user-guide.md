@@ -229,12 +229,15 @@ window does the same.
 
 ### 4.1 Hover
 
-Hovering over a die shows a tooltip with:
+Hovering over a die shows a compact tooltip. It always includes the die grid
+coordinates (x, y), and a retest count if the die was probed more than once.
+The rest depends on the active plot mode:
 
-- Die grid coordinates (x, y)
-- Hard bin and/or soft bin (with name, if named)
-- Test values for all loaded tests
-- Retest count if the die was probed more than once
+- **Bin modes** — the die's bin verdict (number and name, if named), plus a
+  note of how many test values are recorded for the die
+- **Test Value mode** — the active test's value in bold, flagged when it is
+  out of spec, with the remaining tests summarised as "+N more tests"
+- **Stacked modes** — the single aggregated value or count at that position
 
 ### 4.2 Zoom and pan
 
@@ -430,6 +433,26 @@ own dies. The Distributions sub-tab has process capability, a test-value box
 plot and histogram; Correlation has a correlation matrix with scatter plot.
 In a gallery, Overview also gains a "Group by" control and per-wafer
 yield/box-plot rows.*
+
+![Gallery Insights — Overview sub-tab](images/guide-insights-overview.png)
+
+*Gallery Insights, Overview sub-tab: lot-wide yield by wafer (click a bar to
+open that wafer's map), hard/soft bin pareto, ring and quadrant yield, and
+pooled per-test statistics. The "‹ Gallery" tab returns to the card grid.*
+
+![Gallery Insights — Distributions sub-tab](images/guide-insights-distributions.png)
+
+*Distributions sub-tab: process capability (coloured by Ppk — green capable,
+orange marginal, red poor; tests without spec limits are muted and dashed), a
+per-wafer test-value box plot, and a value histogram. Clicking a capability
+box drives the box plot and histogram onto that test.*
+
+![Gallery Insights — Correlation sub-tab](images/guide-insights-correlation.png)
+
+*Correlation sub-tab: test-to-test Pearson correlation matrix (blue =
+positive, orange = negative; intensity = strength) and a die-level scatter
+plot coloured by hard bin. Clicking a matrix cell drives the scatter plot
+onto that pair.*
 
 ---
 

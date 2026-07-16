@@ -429,12 +429,15 @@ window does the same.</p>
 <div data-wmap-demo="gallery" class="wmap-demo"></div><hr>
 <h2 id="4-interacting-with-dies">4. Interacting with dies</h2>
 <h3 id="41-hover">4.1 Hover</h3>
-<p>Hovering over a die shows a tooltip with:</p>
+<p>Hovering over a die shows a compact tooltip. It always includes the die grid
+coordinates (x, y), and a retest count if the die was probed more than once.
+The rest depends on the active plot mode:</p>
 <ul>
-<li>Die grid coordinates (x, y)</li>
-<li>Hard bin and/or soft bin (with name, if named)</li>
-<li>Test values for all loaded tests</li>
-<li>Retest count if the die was probed more than once</li>
+<li><strong>Bin modes</strong> — the die&#39;s bin verdict (number and name, if named), plus a
+note of how many test values are recorded for the die</li>
+<li><strong>Test Value mode</strong> — the active test&#39;s value in bold, flagged when it is
+out of spec, with the remaining tests summarised as &quot;+N more tests&quot;</li>
+<li><strong>Stacked modes</strong> — the single aggregated value or count at that position</li>
 </ul>
 <h3 id="42-zoom-and-pan">4.2 Zoom and pan</h3>
 <p>Scroll to zoom in and out. Click and drag to pan when in Pan mode. The toolbar
@@ -643,6 +646,17 @@ own dies. The Distributions sub-tab has process capability, a test-value box
 plot and histogram; Correlation has a correlation matrix with scatter plot.
 In a gallery, Overview also gains a &quot;Group by&quot; control and per-wafer
 yield/box-plot rows.</em></p>
+<p><em>Gallery Insights, Overview sub-tab: lot-wide yield by wafer (click a bar to
+open that wafer&#39;s map), hard/soft bin pareto, ring and quadrant yield, and
+pooled per-test statistics. The &quot;‹ Gallery&quot; tab returns to the card grid.</em></p>
+<p><em>Distributions sub-tab: process capability (coloured by Ppk — green capable,
+orange marginal, red poor; tests without spec limits are muted and dashed), a
+per-wafer test-value box plot, and a value histogram. Clicking a capability
+box drives the box plot and histogram onto that test.</em></p>
+<p><em>Correlation sub-tab: test-to-test Pearson correlation matrix (blue =
+positive, orange = negative; intensity = strength) and a die-level scatter
+plot coloured by hard bin. Clicking a matrix cell drives the scatter plot
+onto that pair.</em></p>
 <hr>
 <h2 id="9-reticle-overlay">9. Reticle overlay</h2>
 <p>When reticle (stepper field) geometry is configured, the <strong>Reticle grid</strong> overlay

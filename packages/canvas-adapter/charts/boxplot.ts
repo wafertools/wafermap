@@ -18,11 +18,12 @@
 // Analysis tab). Tracked in tsmap's WMAP_ISSUES.md as explicit follow-ups,
 // not silently dropped.
 
-import { getColorScheme } from '../../renderer/colorSchemes.js';
 import { buildTestBoxplotData, type BoxplotDatum, type BoxplotItem } from '../../stats/boxplot.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, formatValue, observeResize, makeTooltip, makeBackButton, makeTestSelect, makeToggle, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
+import { fmt as fmtUnit } from '../../renderer/fmt.js';
+import { QUANTITY } from './palette.js';
+import { cardShell, observeResize, makeTooltip, makeBackButton, makeTestSelect, makeToggle, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
 
 const BOX_ROW_HEIGHT = 24;
 const BOX_ROW_GAP = 5;
@@ -69,7 +70,9 @@ export interface BoxplotPanelHandle {
 }
 
 export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHandle {
-  const { title = 'Test value distribution', items, testDefs, colorScheme = 'default', onSaveImage, groups, groupLabelText = 'group', onOpen } = options;
+  // `colorScheme` is deliberately no longer read — box fills are the fixed
+  // neutral quantity colour (palette.ts); the option stays for API compatibility.
+  const { title = 'Test value distribution', items, testDefs, onSaveImage, groups, groupLabelText = 'group', onOpen } = options;
   const { card, heading, body, controlsRow } = cardShell(title, onSaveImage);
 
   // Unlike capability's fill-the-container canvas, this panel's canvas is an
@@ -221,7 +224,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     const logMax = useLog ? Math.log10(globalMax) : 0;
     const logSpan = logMax - logMin || 1;
 
-    const forValue = getColorScheme(colorScheme).forValue;
+    const axis = makeAxisFormat(Math.max(Math.abs(globalMin), Math.abs(globalMax)), unit);
 
     function plotRect() {
       const plotX = PADDING + BOX_LABEL_WIDTH;
@@ -299,14 +302,15 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         ctx.moveTo(xMax, boxTop); ctx.lineTo(xMax, boxBottom);
         ctx.stroke();
 
-        const normalizedMedian = useLog ? (Math.log10(datum.median) - logMin) / logSpan : (datum.median - globalMin) / span;
-        const boxColor = forValue(Math.max(0, Math.min(1, normalizedMedian)));
-
-        ctx.fillStyle = boxColor;
+        // One neutral box fill for every row — the box's position along the
+        // axis already encodes the median; tinting the box by that same
+        // position (as the map value ramp used to) duplicated the axis as
+        // colour noise (see palette.ts).
+        ctx.fillStyle = QUANTITY;
         ctx.globalAlpha = 0.35;
         ctx.fillRect(xQ1, boxTop, Math.max(1, xQ3 - xQ1), boxBottom - boxTop);
         ctx.globalAlpha = 1;
-        ctx.strokeStyle = boxColor;
+        ctx.strokeStyle = QUANTITY;
         ctx.strokeRect(xQ1, boxTop, Math.max(1, xQ3 - xQ1), boxBottom - boxTop);
 
         ctx.strokeStyle = theme.text;
@@ -318,7 +322,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
 
         ctx.fillStyle = theme.textMuted;
         ctx.textAlign = 'left';
-        ctx.fillText(`med ${formatValue(datum.median)}${unit ? ` ${unit}` : ''}`, plotX + plotMaxWidth + 10, midY);
+        ctx.fillText(`med ${fmtUnit(datum.median, unit, 'engineering')}`, plotX + plotMaxWidth + 10, midY);
       });
 
       const axisY = PADDING + data.length * (BOX_ROW_HEIGHT + BOX_ROW_GAP);
@@ -355,7 +359,15 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         ctx.beginPath();
         ctx.moveTo(x, axisY); ctx.lineTo(x, axisY + 4);
         ctx.stroke();
-        ctx.fillText(formatValue(tick), x, axisY + 6);
+        ctx.fillText(axis.tick(tick), x, axisY + 6);
+      }
+      if (axis.unitLabel) {
+        ctx.textAlign = 'left';
+        ctx.font = '10px system-ui, sans-serif';
+        // +22 clears the last tick label, which is centred on the axis end
+        // and extends past it.
+        ctx.fillText(`(${axis.unitLabel})`, plotX + plotMaxWidth + 22, axisY + 6);
+        ctx.font = '11px system-ui, sans-serif';
       }
       ctx.textBaseline = 'middle';
     }
@@ -365,7 +377,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       return index >= 0 && index < data.length ? index : -1;
     }
 
-    function fmt(v: number): string { return `${formatValue(v)}${unit ? ` ${unit}` : ''}`; }
+    function fmt(v: number): string { return fmtUnit(v, unit, 'engineering'); }
 
     const isGroupOverview = !!groups && groups.length > 0 && drillGroup === null;
     const leafClickable = (row: number) => !isGroupOverview && !!onOpen && rowItems[row]?.waferIndex !== undefined;

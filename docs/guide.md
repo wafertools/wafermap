@@ -1,9 +1,17 @@
 # Developer Guide — wafermap
 
+**For:** developers integrating the library. **Read first:** [Quick Start](quickstart.md). If you're an engineer *using* an app built with wafermap, you want the [Application User Guide](user-guide.md) instead.
+
 This guide walks through building wafer map visualisations in a real application,
 from a single interactive map up to a multi-wafer gallery with statistical findings.
 It focuses on practical patterns; for the full type reference see [API Reference](api.md).
 For a visual overview of how the library fits together, see [Architecture](architecture.md).
+
+**How to read this guide.** Sections 1–6 are the core path — read them in order
+to go from install to a map coloured by bins or test values. Everything after
+that is a topic jump: pick the section for the feature you need (§10 findings,
+§12 gallery, §14 Insights, §17 worker, …). Each feature section ends with a **→ Demo**
+link to a live example page showing the same feature as working code.
 
 ## Architecture at a glance
 

@@ -1,5 +1,7 @@
 # Quick Start — @paulrobins/wafermap
 
+**For:** developers integrating the library. No wafermap knowledge assumed. **Next:** [Developer Guide](guide.md).
+
 `@paulrobins/wafermap` renders interactive wafer maps from semiconductor die test data — colour-coded by bin or parametric value, with a built-in toolbar, tooltips, and zoom.
 
 ## Install

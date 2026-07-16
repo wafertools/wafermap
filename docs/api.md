@@ -1,7 +1,14 @@
 # API Reference
 
+**For:** developers integrating the library. This is a reference, not a tutorial — if you're new, start with the [Quick Start](quickstart.md) and [Developer Guide](guide.md).
+
 This document describes the public API exposed by `wafermap`.
 For the system-level overview and recommended entry points, see [Architecture](architecture.md).
+
+**How to read this document.** §3 is the section map — find your entry point there.
+§4 (`buildWaferMap`, the data layer) plus §5 or §6 (the renderers) cover most
+applications; §7 adds the findings engine. Cross-references use §N.N notation
+throughout; shared types live in §12.
 
 ---
 
@@ -22,6 +29,8 @@ Physical mm positions appear only on the `Die` output objects (`die.physX`, `die
 
 ## 2 Quick Start
 
+The step-by-step tutorial is [Quick Start](quickstart.md); this is the condensed call shape as a memory jogger:
+
 ```ts
 import { buildWaferMap } from '@paulrobins/wafermap';
 import { renderWaferMap } from '@paulrobins/wafermap/render';
@@ -37,25 +46,7 @@ const result = buildWaferMap({
 renderWaferMap(document.getElementById('map'), result);
 ```
 
-The map renders with a full built-in toolbar — no extra HTML or JavaScript needed.
-
-**Adding statistical findings** — the stats engine is pure (no DOM) and lives in the `/stats` subpath:
-
-```ts
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-
-// Pass the full WaferMapResult — passBins and testDefs are inferred automatically.
-const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
-const summary = analyzeWaferMap(result);
-
-renderWaferMap(container, result, { statsSummary: summary });
-// A "Findings" button now appears in the toolbar automatically.
-
-// Access findings directly — array is pre-sorted: 'unusual' first, then 'notable', then 'info'.
-const top = summary.findings[0];
-if (top) console.log(`[${top.severity}] ${top.summary}`);
-// e.g. "[unusual] Ring 4 (edge) yield is lower than the rest of the wafer"
-```
+The map renders with a full built-in toolbar — no extra HTML or JavaScript needed. To add a statistical findings panel, pass the result through `analyzeWaferMap` — see §7.1.
 
 ---
 
@@ -766,7 +757,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `colorBySpec` | `boolean` | `false` | In `value` mode: replace the gradient with categorical pass/fail colours when the active test has spec limits. Toggled via the Overlays toolbar menu. |
 | `highlightBin` | `number` | — | Dim all bins except this one |
-| `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the scene auto-scales — use this to safely fix a range computed for a specific test. |
+| `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the view auto-scales — use this to safely fix a range computed for a specific test. |
 | `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
 | `aggregationMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |

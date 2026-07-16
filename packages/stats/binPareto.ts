@@ -49,7 +49,7 @@ export function buildBinParetoData(items: BinItem[], binType: BinType): ChartDat
     }
   }
   const data: ChartDatum[] = Array.from(counts.entries()).map(([bin, count]) => ({
-    label: `${binType === 'hbin' ? 'HBin' : 'SBin'} ${bin}`,
+    label: `Bin ${bin}`,
     value: count,
     percent: totalDies > 0 ? (count / totalDies) * 100 : 0,
     itemCount: 1,
@@ -115,7 +115,7 @@ export function buildBinClusterData(groups: { key: string; items: BinItem[] }[],
     const b = bins.get(bin)!;
     return {
       binCode: bin,
-      label: `${binType === 'hbin' ? 'HBin' : 'SBin'} ${bin}`,
+      label: `Bin ${bin}`,
       total: b.total,
       counts: groupOrder.map((_, gi) => b.counts[gi] ?? 0),
     };

@@ -1,5 +1,7 @@
 # Spatial Detection Analysis
 
+**For:** engineers and developers deciding how much to trust the automatic detections. This is a validation report — benchmark method, detection rates, false-positive characterisation — not a how-to; for usage see [Pattern Detection](pattern-detection.md).
+
 This page documents the investigation into the combined detection capability of
 the library's two spatial analysis systems, the false positive characterisation,
 and the design decisions that resulted from it.

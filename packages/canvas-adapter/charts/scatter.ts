@@ -14,12 +14,13 @@
 // helper, matching histogram's same trim.
 
 import { getColorScheme } from '../../renderer/colorSchemes.js';
+import { categorical } from './palette.js';
 import { buildScatterData, buildScatterDataGrouped, type ScatterItem, type ScatterPoint } from '../../stats/scatter.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, formatValue, observeResize, makeTooltip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, type SaveImageHandler } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -124,13 +125,14 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   // "missing bin ≠ bin 0/any bin" rule.
   const categoryOf = (p: ScatterPoint): string => byGroup ? (p.group ?? '—') : String(p.hbin ?? 0);
   const colorOfCategory = (cat: string): string => {
-    if (byGroup) {
-      const n = groupKeys.length;
-      return scheme.forValue(n <= 1 ? 0.5 : (groupColorIndex.get(cat) ?? 0) / (n - 1));
-    }
+    // Bin identity keeps the map's registered scheme (`forBin`) so a bin is
+    // the same colour here as on the wafer map — including the accessible
+    // scheme when selected. Facet groups have no map identity, so they use
+    // the fixed CVD-safe categorical palette instead (palette.ts).
+    if (byGroup) return categorical(groupColorIndex.get(cat) ?? 0);
     return forBin(Number(cat));
   };
-  const labelOfCategory = (cat: string): string => byGroup ? cat : cat === '0' ? 'No bin data' : `HBin ${cat}`;
+  const labelOfCategory = (cat: string): string => byGroup ? cat : cat === '0' ? 'No bin data' : `Bin ${cat}`;
   const activeCats = new Set<string>();
 
   const legend = document.createElement('div');
@@ -221,6 +223,10 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     }
 
     const ticks = 4;
+    // One shared SI scale per axis (makeAxisFormat) — bare "861E-6" ticks
+    // with a lone "(A)" in the corner become "861 · 1020 · …" with "(µA)".
+    const xAxisFmt = makeAxisFormat(Math.max(Math.abs(xLo), Math.abs(xHi)), activeX !== null ? testMeta(activeX).unit : undefined);
+    const yAxisFmt = makeAxisFormat(Math.max(Math.abs(yLo), Math.abs(yHi)), activeY !== null ? testMeta(activeY).unit : undefined);
     ctx.font = '10px system-ui, sans-serif';
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 0.5;
@@ -231,19 +237,17 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       const cx = SCATTER_LEFT + (i / ticks) * plotW;
       ctx.beginPath(); ctx.moveTo(cx, SCATTER_TOP); ctx.lineTo(cx, SCATTER_TOP + plotH); ctx.stroke();
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillText(formatValue(xv), cx, SCATTER_TOP + plotH + 4);
+      ctx.fillText(xAxisFmt.tick(xv), cx, SCATTER_TOP + plotH + 4);
 
       const yv = yLo + (ySpan * i) / ticks;
       const cy = SCATTER_TOP + (1 - i / ticks) * plotH;
       ctx.beginPath(); ctx.moveTo(SCATTER_LEFT, cy); ctx.lineTo(SCATTER_LEFT + plotW, cy); ctx.stroke();
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      ctx.fillText(formatValue(yv), SCATTER_LEFT - 4, cy);
+      ctx.fillText(yAxisFmt.tick(yv), SCATTER_LEFT - 4, cy);
     }
 
-    const xUnit = activeX !== null ? testMeta(activeX).unit : undefined;
-    const yUnit = activeY !== null ? testMeta(activeY).unit : undefined;
-    if (xUnit) drawAxisUnit(ctx, xUnit, SCATTER_LEFT + plotW / 2, SCATTER_TOP + plotH + 24, theme.textMuted);
-    if (yUnit) {
+    if (xAxisFmt.unitLabel) drawAxisUnit(ctx, xAxisFmt.unitLabel, SCATTER_LEFT + plotW / 2, SCATTER_TOP + plotH + 24, theme.textMuted);
+    if (yAxisFmt.unitLabel) {
       ctx.save();
       ctx.font = '10px system-ui, sans-serif';
       ctx.fillStyle = theme.textMuted;
@@ -251,7 +255,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       ctx.textBaseline = 'middle';
       ctx.translate(6, SCATTER_TOP + plotH / 2);
       ctx.rotate(-Math.PI / 2);
-      ctx.fillText(`(${yUnit})`, 0, 0);
+      ctx.fillText(`(${yAxisFmt.unitLabel})`, 0, 0);
       ctx.restore();
     }
 
@@ -297,8 +301,10 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
         ctx.moveTo(SCATTER_LEFT, cy);
         ctx.lineTo(SCATTER_LEFT + plotW, cy);
         ctx.stroke();
-        ctx.textAlign = 'right';
-        ctx.fillText(label, SCATTER_LEFT + plotW - 2, cy + 2);
+        // Label at the left end of the line, inside the plot — at the right
+        // end it collided with the card border / scrollbar gutter.
+        ctx.textAlign = 'left';
+        ctx.fillText(label, SCATTER_LEFT + 3, cy + 2);
       }
 
       ctx.setLineDash([]);

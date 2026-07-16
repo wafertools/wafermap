@@ -18,7 +18,7 @@
 
 import type { RegionYieldDatum } from '../../stats/regions.js';
 import { parseRegionKey } from '../../stats/regions.js';
-import { getColorScheme } from '../../renderer/colorSchemes.js';
+import { yieldFill } from './palette.js';
 import {
   cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent,
   renderEmptyState, type SaveImageHandler, type ChartCanvasColors,
@@ -95,7 +95,9 @@ function drawLabelChip(
 }
 
 export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): RegionYieldDiagramHandle {
-  const { mode, rows, colorScheme = 'default', onSaveImage } = options;
+  // `colorScheme` is deliberately no longer read — region fills use the fixed
+  // yield ramp (palette.ts); the option stays for API compatibility.
+  const { mode, rows, onSaveImage } = options;
   const title = options.title ?? (mode === 'ring' ? 'Ring yield' : 'Quadrant yield');
   const { card, body } = cardShell(title, onSaveImage);
 
@@ -132,8 +134,10 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
     ctx.clearRect(0, 0, size, size);
 
     const theme = resolveChartCanvasColors(card);
-    const { forValue } = getColorScheme(colorScheme);
-    const fillFor = (yieldPercent: number) => forValue(Math.max(0, Math.min(1, yieldPercent / 100)));
+    // Fixed-domain sequential ramp (palette.ts) — NOT the map's value scheme,
+    // whose data-range normalization let a better region render more alarming
+    // than a worse one. Same yield ⇒ same colour, everywhere, always.
+    const fillFor = yieldFill;
 
     const cx = size / 2, cy = size / 2;
     const margin = 34; // room for label chips near the outer edge

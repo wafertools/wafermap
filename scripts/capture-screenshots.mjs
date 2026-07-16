@@ -36,6 +36,12 @@
  *   ['clickFindingByText', 'Failure cluster']   click the first finding whose text contains string
  *   ['clickFindingByText', 'Failure cluster', '#my-map']
  *
+ *   ['clickButton', 'Insights']             click a button by aria-label
+ *   ['clickButton', 'Insights', '#gallery-container']
+ *
+ *   ['clickTab', 'Distributions']           click a button (e.g. Insights sub-tab) by exact text
+ *   ['clickTab', 'Distributions', '#gallery-container']
+ *
  *   ['boxSelect']                           activate box-select, drag rect, leave mouse held
  *   ['boxSelect', '#my-map']                (release mouse with ['mouseUp'] to commit selection)
  *
@@ -444,6 +450,28 @@ async function runSetup(page, steps) {
         await clickFindingByText(page, args[1] ?? '#map', args[0]);
         break;
 
+      // Click a button by aria-label (e.g. the Insights toolbar button).
+      // args: [ariaLabel, containerSel?]
+      case 'clickButton':
+        await page.evaluate(({ label, sel }) => {
+          const root = document.querySelector(sel) ?? document;
+          const btn = [...root.querySelectorAll('button')].find(b => b.ariaLabel === label);
+          if (btn) btn.click();
+        }, { label: args[0], sel: args[1] ?? '#map' });
+        await page.waitForTimeout(600);
+        break;
+
+      // Click an Insights sub-tab (or any button) by its exact text.
+      // args: [buttonText, containerSel?]
+      case 'clickTab':
+        await page.evaluate(({ text, sel }) => {
+          const root = document.querySelector(sel) ?? document;
+          const btn = [...root.querySelectorAll('button')].find(b => (b.textContent ?? '').trim() === text);
+          if (btn) btn.click();
+        }, { text: args[0], sel: args[1] ?? '#map' });
+        await page.waitForTimeout(600);
+        break;
+
       case 'boxSelect':
         await drawBoxSelect(page, args[0] ?? '#map');
         break;
@@ -621,7 +649,9 @@ async function main() {
   const { server, port } = await startServer(ROOT);
   const base = `http://127.0.0.1:${port}`;
 
-  const browser = await chromium.launch();
+  // Playwright's bundled Chromium isn't available on every OS release; fall
+  // back to the system Chrome install when the download is missing/unsupported.
+  const browser = await chromium.launch().catch(() => chromium.launch({ channel: 'chrome' }));
 
   let ok = 0, fail = 0;
 

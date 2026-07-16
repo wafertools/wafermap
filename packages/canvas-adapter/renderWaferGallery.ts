@@ -1042,6 +1042,9 @@ ${reportStyles()}
       passBins,
       getRingCount: () => sharedOpts.ringCount ?? 4,
       defaultView: options.insights?.defaultView,
+      // Leading "‹ Gallery" tab in the Insights tab bar — a visible way back
+      // to the card grid, alongside the toolbar's icon toggle.
+      backTab: { label: 'Gallery', onBack: () => setInsightsOpen(false) },
       // The gallery's own legend strip (rebuildLegend/legendEl) already shows
       // this metadata, via the same `buildMetadataStripRow` this tab's own
       // strip would use, and stays mounted above the grid/Insights body in

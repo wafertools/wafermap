@@ -341,6 +341,47 @@ export const CAPTURES = [
     setup: [['hoverFirstCard', '#gallery-container'], ['selectColumns', '3 columns']],
   },
 
+  // ── guide-insights-overview.png — §8 Insights: gallery Overview sub-tab ──
+  {
+    file: 'guide-insights-overview',
+    group: 'insights',
+    page: '/examples/gallery.html',
+    selector: '#gallery-container',
+    wait: 2000,
+    setup: [
+      ['clickButton', 'Insights', '#gallery-container'],
+      ['wait', 800],
+    ],
+  },
+
+  // ── guide-insights-distributions.png — §8 Insights: Distributions sub-tab ──
+  {
+    file: 'guide-insights-distributions',
+    group: 'insights',
+    page: '/examples/gallery.html',
+    selector: '#gallery-container',
+    wait: 2000,
+    setup: [
+      ['clickButton', 'Insights', '#gallery-container'],
+      ['clickTab', 'Distributions', '#gallery-container'],
+      ['wait', 800],
+    ],
+  },
+
+  // ── guide-insights-correlation.png — §8 Insights: Correlation sub-tab ──
+  {
+    file: 'guide-insights-correlation',
+    group: 'insights',
+    page: '/examples/gallery.html',
+    selector: '#gallery-container',
+    wait: 2000,
+    setup: [
+      ['clickButton', 'Insights', '#gallery-container'],
+      ['clickTab', 'Correlation', '#gallery-container'],
+      ['wait', 800],
+    ],
+  },
+
   // ── guide-theming.png — Developer Guide §Theming: 2-col gallery, Nord theme,
   //    summary panel open. Page starts Nord via ?theme=nord (deterministic).
   //    Panel + columns set via setup steps (matching guide-summary-panel /

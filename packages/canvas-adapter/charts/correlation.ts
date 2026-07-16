@@ -16,8 +16,8 @@
 // warning) itself from `items`/`groups`, and owns its own matrix-size state
 // internally — same end-user behavior, one fewer indirection.
 
-import { getColorScheme } from '../../renderer/colorSchemes.js';
 import { buildCorrelationMatrix, filterCorrelationMatrix, type CorrelationMatrix, type CorrelationTestInfo } from '../../stats/correlation.js';
+import { CORRELATION_POSITIVE, CORRELATION_NEGATIVE } from './palette.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
@@ -75,10 +75,16 @@ function blendTowardBg(colour: string, bg: [number, number, number], t: number):
 }
 
 export function renderCorrelationPanel(options: CorrelationPanelOptions): CorrelationPanelHandle {
-  const { title = 'Test correlation matrix', items, testDefs, colorScheme = 'default', onSaveImage, groups, onSelectPair } = options;
+  // `colorScheme` is deliberately no longer read — cells use the fixed
+  // sign-aware correlation hues (palette.ts); the option stays for API compatibility.
+  const { title = 'Test correlation matrix', items, testDefs, onSaveImage, groups, onSelectPair } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage);
 
   body.style.overflowX = 'auto';
+  // Size to the matrix's own content instead of stretching to the grid
+  // row's tallest neighbour (the scatter panel) — a 3×3 matrix in a
+  // scatter-height card is mostly dead space (same opt-out boxplot uses).
+  card.style.alignSelf = 'start';
 
   let limit = MATRIX_LIMIT_DEFAULT;
   let activeGroup: string | undefined = groups && groups.length > 0 ? groups[0].key : undefined;
@@ -89,7 +95,8 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   let activeWaferIndex: number | null = null;
 
   const matrixLimitLabel = document.createElement('label');
-  matrixLimitLabel.textContent = 'Matrix size:';
+  matrixLimitLabel.textContent = 'Max tests:';
+  matrixLimitLabel.title = 'Cap on how many tests the matrix includes (strongest correlations kept first)';
   Object.assign(matrixLimitLabel.style, { color: CLR.label, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
   const matrixLimitInput = document.createElement('input');
   matrixLimitInput.type = 'number';
@@ -141,9 +148,25 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       hintRow.appendChild(warn);
     }
 
+    // One-line key with an inline colour scale — the sign hues were
+    // previously unexplained anywhere on the card.
     const hint = document.createElement('span');
-    hint.textContent = 'Pearson r · –1 = anti-correlated, +1 = correlated · click cell to view that pair in scatter';
-    Object.assign(hint.style, { color: CLR.label, fontSize: '11px' } as Partial<CSSStyleDeclaration>);
+    Object.assign(hint.style, { display: 'inline-flex', alignItems: 'center', gap: '6px', color: CLR.label, fontSize: '11px', flexWrap: 'wrap' } as Partial<CSSStyleDeclaration>);
+    const hintText = document.createElement('span');
+    hintText.textContent = 'Pearson r · click a cell to view that pair in scatter ·';
+    hint.appendChild(hintText);
+    const scaleWrap = document.createElement('span');
+    Object.assign(scaleWrap.style, { display: 'inline-flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
+    const lo = document.createElement('span'); lo.textContent = '−1';
+    const bar = document.createElement('span');
+    Object.assign(bar.style, {
+      display: 'inline-block', width: '64px', height: '8px', borderRadius: '2px',
+      border: `1px solid ${CLR.menuBorder}`,
+      background: `linear-gradient(to right, ${CORRELATION_NEGATIVE}, ${CLR.menuBg}, ${CORRELATION_POSITIVE})`,
+    } as Partial<CSSStyleDeclaration>);
+    const hi = document.createElement('span'); hi.textContent = '+1';
+    scaleWrap.append(lo, bar, hi);
+    hint.appendChild(scaleWrap);
     hintRow.appendChild(hint);
 
     const summaryLine = document.createElement('span');
@@ -178,7 +201,6 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     body.appendChild(canvas);
 
     const n = matrix.tests.length;
-    const { forValue } = getColorScheme(colorScheme);
 
     const shortLabel = (t: CorrelationTestInfo) => t.label.split(' (#')[0];
     const maxLabelChars = Math.min(14, Math.max(...matrix.tests.map(t => shortLabel(t).length)));
@@ -270,7 +292,10 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
           if (isDiag) {
             ctx.fillStyle = theme.bgHover;
           } else {
-            ctx.fillStyle = blendTowardBg(forValue(Math.abs(r)), bgRgb, Math.abs(r));
+            // Sign carried by hue (blue = positive, vermillion = negative —
+            // palette.ts), magnitude by intensity. The old |r| ramp threw the
+            // sign away entirely: r = −0.9 and r = +0.9 drew identically.
+            ctx.fillStyle = blendTowardBg(r >= 0 ? CORRELATION_POSITIVE : CORRELATION_NEGATIVE, bgRgb, Math.abs(r));
           }
           ctx.fillRect(cx + 1, cy + 1, cs - 2, cs - 2);
 

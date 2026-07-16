@@ -24,7 +24,10 @@ test('buildBinParetoData — sbin uses the sbin field, not hbin', () => {
   const items = [{ dies: [die(1, 10), die(1, 20)] }];
   const out = buildBinParetoData(items, 'sbin');
   assert.equal(out.length, 2);
-  assert.ok(out.every(r => r.label.startsWith('SBin')));
+  // Labels are plain "Bin N" (the panel's title/toggle names the bin type);
+  // the sbin selection shows through the bin codes.
+  assert.deepEqual(out.map(r => r.binCode).sort((a, b) => a - b), [10, 20]);
+  assert.ok(out.every(r => r.label === `Bin ${r.binCode}`));
 });
 
 test('buildBinClusterData — one cluster per bin, counts aligned to group order', () => {

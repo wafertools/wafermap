@@ -1241,9 +1241,10 @@ test('renderWaferMap: summaryPanel option renders a docked Summary panel with se
     const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
     assert.ok(summaryBtn, 'Summary toolbar button should exist');
 
-    // Severity filter toggles (Unusual/Notable/Info) should be present in the panel's findings section.
-    const checkboxes = [...root.querySelectorAll('input[type="checkbox"]')];
-    assert.ok(checkboxes.length >= 3, 'severity filter checkboxes should render');
+    // Severity filter chips (e.g. "Unusual 2") should be present in the
+    // panel's findings section — toggle buttons with per-severity counts.
+    const chips = [...root.querySelectorAll('button')].filter((btn) => /^(Unusual|Notable|Info) \d+$/.test(btn.textContent ?? ''));
+    assert.ok(chips.length >= 1, 'severity filter chips should render');
 
     // At least one finding row (a button with the finding's summary text) should render.
     const findingRows = [...root.querySelectorAll('button[data-wmap-finding]')];

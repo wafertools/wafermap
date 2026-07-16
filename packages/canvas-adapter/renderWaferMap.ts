@@ -490,6 +490,9 @@ export function renderWaferMap(
       onSaveImage: options.onSaveImage,
       onSaveText: options.onSaveText,
       defaultView: insightsOpts?.defaultView,
+      // Leading "‹ Map" tab in the Insights tab bar — a visible way back to
+      // the wafer view, alongside the toolbar's icon toggle.
+      backTab: { label: 'Map', onBack: () => setInsightsOpen(false) },
       // No openWafer — this map already IS the only wafer there is to open.
     });
     // Positioned sibling of canvasWrap covering the same area. Left with
@@ -682,9 +685,21 @@ export function renderWaferMap(
     if (autoSummaryPanelEl) renderSummaryPanelInto(autoSummaryPanelEl);
   }
 
+  // The floating toolbar is an absolutely-positioned overlay anchored to the
+  // container's top-right corner — a panel laid out under that corner
+  // ('right' beside the map, or 'top' spanning the full width) would have its
+  // header rendered underneath it. Reserve the same top clearance the
+  // Insights overlay does (toolbar bottom ~36px + breathing room = 44px).
+  function reserveToolbarClearance(panel: HTMLDivElement, placement: 'right' | 'left' | 'top' | 'bottom'): void {
+    if (showToolbar && (placement === 'right' || placement === 'top')) {
+      panel.style.paddingTop = '44px';
+    }
+  }
+
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
     summaryPanelEl = createSummaryPanelEl(placement);
+    reserveToolbarClearance(summaryPanelEl, placement);
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
     summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
@@ -697,6 +712,7 @@ export function renderWaferMap(
     // only owns the toggle button. defaultOpen: true starts the panel visible.
     const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
     autoSummaryPanelEl = createSummaryPanelEl('right');
+    reserveToolbarClearance(autoSummaryPanelEl, 'right');
     autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;

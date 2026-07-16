@@ -23,10 +23,10 @@ import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { fmt as fmtValue, fmtAggregationMethod } from '../renderer/fmt.js';
+import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
-import { makeToggle, makeLabeledSelect } from './charts/chartShell.js';
+import { makeLabeledSelect } from './charts/chartShell.js';
 import { CLR, openModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
@@ -237,8 +237,11 @@ function medianOf(sorted: number[]): number {
   return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/** Big stat card — used for yield % and total dies. */
-function statCard(value: string, label: string): HTMLDivElement {
+/** Big stat card — used for yield % and total dies. `sublabel` renders as
+ *  its own smaller line under the label, so qualifying context ("pass:
+ *  bin 1") wraps as a deliberate second line instead of breaking a
+ *  parenthetical mid-word at narrow panel widths. */
+function statCard(value: string, label: string, sublabel?: string): HTMLDivElement {
   const card = el('div', {
     background:   CLR.menuBg,
     border:       BORDER,
@@ -260,6 +263,13 @@ function statCard(value: string, label: string): HTMLDivElement {
   }, label);
   card.appendChild(v);
   card.appendChild(lbl);
+  if (sublabel) {
+    card.appendChild(el('div', {
+      fontSize: '9px',
+      color:    LABEL_COLOR,
+      opacity:  '0.85',
+    }, sublabel));
+  }
   return card;
 }
 
@@ -478,7 +488,7 @@ export function buildYieldSection(
   }
   if (yieldSummary.yieldPercent !== null) {
     const binLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
-    cards.appendChild(statCard(`${yieldSummary.yieldPercent.toFixed(1)}%`, `Yield (pass: ${binLabel})`));
+    cards.appendChild(statCard(`${yieldSummary.yieldPercent.toFixed(1)}%`, 'Yield', `pass: ${binLabel}`));
   }
   wrap.appendChild(cards);
 
@@ -934,6 +944,37 @@ export function buildTestSection(
   return outer;
 }
 
+// ── Findings display vocabulary ──────────────────────────────────────────────
+// Severity is encoded exactly once per element: a small dot on group headers,
+// a thin left border on rows. Coloured all-caps headings on top of both made
+// an ordinary findings list read like an incident page.
+
+const severityRank: Record<StatsFinding['severity'], number> = { unusual: 0, notable: 1, info: 2 };
+function sevColor(s: StatsFinding['severity']): string {
+  return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : CLR.icon;
+}
+function sevDot(s: StatsFinding['severity']): HTMLSpanElement {
+  return el('span', {
+    display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
+    background: sevColor(s), flexShrink: '0',
+  });
+}
+
+
+/** Row text for a finding shown under a group header that already names the
+ *  region/wafer: drop the redundant leading context the header carries
+ *  ("Ring 4 (edge) has HBin 2 …" × 6 rows was a wall of near-identical
+ *  prose), map bin terms to plain language, and re-capitalize. */
+function findingRowText(finding: StatsFinding, groupLeft?: string): string {
+  let text = finding.summary;
+  if (groupLeft) {
+    if (text.startsWith(`${groupLeft} has `)) text = text.slice(groupLeft.length + 5);
+    else if (text.startsWith(`${groupLeft} `)) text = text.slice(groupLeft.length + 1);
+  }
+  text = plainBinTerms(text);
+  return text.length ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
 export function buildFindingsSection(
   findings: StatsFinding[],
   statsSummary: StatsSummary | LotStatsSummary,
@@ -958,12 +999,8 @@ export function buildFindingsSection(
 
   const { outer, content } = standalone
     ? (() => { const wrap = el('div'); return { outer: wrap, content: wrap }; })()
-    : collapsibleSection('Findings', hasNotable, badge);
+    : collapsibleSection(`Findings (${findings.length})`, hasNotable, badge);
 
-  const severityRank: Record<StatsFinding['severity'], number> = { unusual: 0, notable: 1, info: 2 };
-  function sevColor(s: StatsFinding['severity']): string {
-    return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : CLR.icon;
-  }
   function worstSeverity(fs: StatsFinding[]): StatsFinding['severity'] {
     return fs.reduce<StatsFinding['severity']>(
       (best, f) => severityRank[f.severity] < severityRank[best] ? f.severity : best,
@@ -991,7 +1028,10 @@ export function buildFindingsSection(
       'reticle-position': 'Reticle', 'test-site': 'Test site',
       cluster: 'Cluster', 'edge-arc': 'Edge arc', wafer: 'Wafer',
     };
-    return `${familyMap[family] ?? family}: ${left}`;
+    const fam = familyMap[family] ?? family;
+    // "Edge arc ~NNW" already names its own family — prefixing it again
+    // produced headers like "Edge arc: Edge arc ~NNW".
+    return left.toLowerCase().startsWith(fam.toLowerCase()) ? left : `${fam}: ${left}`;
   }
 
   // Separate spatial-pattern (parent) findings from the rest
@@ -1002,13 +1042,15 @@ export function buildFindingsSection(
   );
   const groups = buildGroups(standaloneFindings);
 
-  // Helper: build a clickable finding row button
-  function makeFindingRow(finding: StatsFinding, isChild = false): HTMLButtonElement {
+  // Helper: build a clickable finding row button. `groupLeft` is the group
+  // header's own subject — passed so the row can drop that redundant prefix.
+  function makeFindingRow(finding: StatsFinding, isChild = false, groupLeft?: string): HTMLButtonElement {
     const isActive = activeFindingId === finding.id;
     const row = document.createElement('button');
     row.type = 'button';
     row.dataset.wmapFinding = finding.id;
-    row.textContent = finding.summary;
+    row.textContent = findingRowText(finding, groupLeft);
+    row.title = finding.summary;
     Object.assign(row.style, {
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(finding.severity)}`,
@@ -1028,7 +1070,7 @@ export function buildFindingsSection(
   }
 
   // Narrative block — elevated styling with a "Detail ▸" expand button
-  const narrativeText = buildFindingsNarrative(findings);
+  const narrativeText = plainBinTerms(buildFindingsNarrative(findings) ?? '');
   if (narrativeText) {
     const narrativeBlock = el('div', {
       background:    CLR.bgActive,
@@ -1082,58 +1124,46 @@ export function buildFindingsSection(
         flex:      '1',
       });
 
+      const modalGroupHeader = (severity: StatsFinding['severity'], text: string) => {
+        const h = el('div', {
+          display: 'flex', alignItems: 'center', gap: '7px',
+          fontSize: '13px', fontWeight: '600', color: VALUE_COLOR,
+          marginTop: '10px', marginBottom: '4px',
+        });
+        h.appendChild(sevDot(severity));
+        h.appendChild(el('span', {}, text));
+        return h;
+      };
+
       for (const pf of patternFindings) {
-        listWrap.appendChild(el('div', {
-          fontSize:      '11px',
-          fontWeight:    '700',
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          color:         sevColor(pf.severity),
-          padding:       '6px 0 4px 8px',
-          borderLeft:    `3px solid ${sevColor(pf.severity)}`,
-          marginTop:     '10px',
-          marginBottom:  '4px',
-        }, pf.comparison.left));
+        listWrap.appendChild(modalGroupHeader(pf.severity, pf.comparison.left));
         listWrap.appendChild(el('div', {
           fontSize:    '13px',
           color:       CLR.iconHover,
-          padding:     '3px 0 3px 12px',
-          borderLeft:  `2px solid ${sevColor(pf.severity)}`,
+          padding:     '3px 0 3px 15px',
           marginBottom: '2px',
-        }, pf.summary));
+        }, plainBinTerms(pf.summary)));
         const children = findings.filter(f => pf.relatedIds?.includes(f.id));
         for (const cf of children) {
           listWrap.appendChild(el('div', {
             fontSize:    '12px',
             color:       CLR.icon,
-            padding:     '2px 0 2px 20px',
-            borderLeft:  `2px solid ${sevColor(cf.severity)}`,
+            padding:     '2px 0 2px 23px',
             marginBottom: '2px',
-          }, cf.summary));
+          }, plainBinTerms(cf.summary)));
         }
       }
 
       for (const group of groups) {
         const [fam, left] = group.key.split('\0');
-        listWrap.appendChild(el('div', {
-          fontSize:      '11px',
-          fontWeight:    '700',
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          color:         sevColor(group.worst),
-          padding:       '6px 0 4px 8px',
-          borderLeft:    `3px solid ${sevColor(group.worst)}`,
-          marginTop:     '10px',
-          marginBottom:  '4px',
-        }, groupLabel(fam, left)));
+        listWrap.appendChild(modalGroupHeader(group.worst, groupLabel(fam, left)));
         for (const f of group.findings) {
           listWrap.appendChild(el('div', {
             fontSize:    '13px',
             color:       CLR.iconHover,
-            padding:     '3px 0 3px 12px',
-            borderLeft:  `2px solid ${sevColor(f.severity)}`,
+            padding:     '3px 0 3px 15px',
             marginBottom: '2px',
-          }, f.summary));
+          }, findingRowText(f, left)));
         }
       }
       handle.contentWrap.appendChild(listWrap);
@@ -1174,7 +1204,8 @@ export function buildFindingsSection(
       cursor:       'pointer',
       width:        '100%',
     });
-    parentRow.textContent = pf.summary;
+    parentRow.textContent = plainBinTerms(pf.summary);
+    parentRow.title = pf.summary;
     parentRow.addEventListener('click', () => onFindingClick(pf, parentRow));
     parentWrap.appendChild(parentRow);
 
@@ -1226,19 +1257,19 @@ export function buildFindingsSection(
     firstItem = false;
 
     const [family, left] = group.key.split('\0');
-    content.appendChild(el('div', {
-      fontSize:      '10px',
-      fontWeight:    '700',
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      color:         sevColor(group.worst),
-      padding:       '2px 0 2px 6px',
-      borderLeft:    `3px solid ${sevColor(group.worst)}`,
-      marginBottom:  '3px',
-    }, groupLabel(family, left)));
+    // Sentence-case neutral header; severity carried by the dot alone (the
+    // rows below keep their thin left border as their own single encoding).
+    const header = el('div', {
+      display: 'flex', alignItems: 'center', gap: '6px',
+      fontSize: '11px', fontWeight: '600', color: VALUE_COLOR,
+      margin: '2px 0 4px',
+    });
+    header.appendChild(sevDot(group.worst));
+    header.appendChild(el('span', {}, groupLabel(family, left)));
+    content.appendChild(header);
 
     for (const finding of group.findings) {
-      content.appendChild(makeFindingRow(finding));
+      content.appendChild(makeFindingRow(finding, false, left));
     }
   }
 
@@ -1275,23 +1306,52 @@ const FINDINGS_SEVERITY_LABEL: Record<StatsSeverity, string> = { unusual: 'Unusu
 /** Severity/kind/region filter controls, wired to `stats/filterFindings.ts`.
  *  Mutates `filter` in place and calls `onChange` after every control
  *  change — the caller re-renders the findings list below with the updated
- *  filter. */
-function buildFindingsFilterRow(filter: FindingsFilter, onChange: () => void): HTMLDivElement {
+ *  filter.
+ *
+ *  Severity is a row of toggle *chips* with counts ("Unusual 2"), all lit by
+ *  default — the previous three unchecked checkboxes meant "no filter", which
+ *  read as "nothing selected" while everything showed. A chip that is
+ *  visibly on and shows how many findings it covers has no such ambiguity. */
+function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFilter, onChange: () => void): HTMLDivElement {
   const row = el('div', {
     display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',
     marginBottom: '10px', paddingBottom: '10px', borderBottom: `1px solid ${CLR.separator}`,
   });
 
-  const severitySet = new Set<StatsSeverity>(
-    filter.severity === undefined ? [] : Array.isArray(filter.severity) ? filter.severity : [filter.severity],
+  const counts: Record<StatsSeverity, number> = { unusual: 0, notable: 0, info: 0 };
+  for (const f of allFindings) counts[f.severity]++;
+  const present = FINDINGS_SEVERITIES.filter(s => counts[s] > 0);
+
+  // `filter.severity === undefined` means "no severity filter" — every chip lit.
+  const enabled = new Set<StatsSeverity>(
+    filter.severity === undefined ? present
+      : Array.isArray(filter.severity) ? filter.severity : [filter.severity],
   );
-  const severityWrap = el('div', { display: 'flex', gap: '8px' });
-  for (const s of FINDINGS_SEVERITIES) {
-    severityWrap.appendChild(makeToggle(FINDINGS_SEVERITY_LABEL[s], severitySet.has(s), (checked) => {
-      if (checked) severitySet.add(s); else severitySet.delete(s);
-      filter.severity = severitySet.size ? [...severitySet] : undefined;
+
+  const severityWrap = el('div', { display: 'flex', gap: '4px', flexWrap: 'wrap' });
+  for (const s of present) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    const paint = () => {
+      const on = enabled.has(s);
+      Object.assign(chip.style, {
+        display: 'inline-flex', alignItems: 'center', gap: '5px',
+        border: `1px solid ${CLR.menuBorder}`, borderRadius: '10px',
+        background: on ? CLR.bgActive : 'none',
+        opacity: on ? '1' : '0.5',
+        color: CLR.text, fontSize: '11px', padding: '2px 8px', cursor: 'pointer',
+      } as Partial<CSSStyleDeclaration>);
+    };
+    chip.appendChild(sevDot(s));
+    chip.appendChild(el('span', {}, `${FINDINGS_SEVERITY_LABEL[s]} ${counts[s]}`));
+    chip.title = enabled.has(s) ? 'Click to hide these findings' : 'Click to show these findings';
+    paint();
+    chip.addEventListener('click', () => {
+      if (enabled.has(s)) enabled.delete(s); else enabled.add(s);
+      filter.severity = enabled.size === present.length ? undefined : [...enabled];
       onChange();
-    }));
+    });
+    severityWrap.appendChild(chip);
   }
   row.appendChild(severityWrap);
 
@@ -1328,8 +1388,8 @@ export function buildFindingsSectionWithFilter(
     ? source.findings.filter(f => f.severity !== 'info').length.toString()
     : undefined;
 
-  const { outer, content } = collapsibleSection('Findings', hasNotable, badge);
-  content.appendChild(buildFindingsFilterRow(filter, onFilterChange));
+  const { outer, content } = collapsibleSection(`Findings (${source.findings.length})`, hasNotable, badge);
+  content.appendChild(buildFindingsFilterRow(source.findings, filter, onFilterChange));
 
   const filtered = filterFindings(source, filter);
   if (!filtered.length) {
@@ -1435,7 +1495,9 @@ export function createSummaryPanelEl(
   });
 
   if (!isVertical) {
-    panel.style.width    = '220px';
+    // 260px, up from 220 — at 220 the findings narrative wrapped every two
+    // or three words and stat-tile labels broke mid-parenthetical.
+    panel.style.width    = '260px';
     // Bound the panel by its container (the flex row), not the viewport. A
     // viewport-relative cap (e.g. 100vh) overflows a container shorter than the
     // viewport, stretching the row and clipping the wafer. With the wrapper

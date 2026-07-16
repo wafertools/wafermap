@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/telecasterer/wafermap/actions/workflows/ci.yml/badge.svg)](https://github.com/telecasterer/wafermap/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@paulrobins/wafermap.svg)](https://www.npmjs.com/package/@paulrobins/wafermap)
-![tests](https://img.shields.io/badge/tests-414%20passing-brightgreen)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 ![bundle](https://img.shields.io/badge/core%20min%2Bgz-~37%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -11,7 +10,7 @@
 
 Browser-first wafer map visualization for semiconductor test data.
 
-**414 tests · zero runtime dependencies · ~37 kB min+gz (core entry).** Pure ES modules with TypeScript types — works in React, Svelte, Vue, plain HTML, or a Web Worker.
+**Zero runtime dependencies · ~37 kB min+gz (core entry).** Pure ES modules with TypeScript types — works in React, Svelte, Vue, plain HTML, or a Web Worker.
 
 **[Project Portal: Docs & Interactive Demos →](https://telecasterer.github.io/wafermap/)**
 
@@ -22,7 +21,7 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 - Geometry inference — pass full physical dimensions or raw prober step positions; die pitch, wafer diameter, and coordinate origin are resolved automatically
 - `renderWaferMap` — interactive canvas map with toolbar, zoom/pan, tooltips, die selection, and summary panel
 - `renderWaferGallery` — lot-level card grid with shared controls and click-to-expand
-- Analysis tab (`analysisEnabled: true`) — an in-toolbar chart suite (yield, bin pareto, capability, boxplot, histogram, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
+- Insights tab (`insights: { enabled: true }`) — an in-toolbar chart suite (yield, bin pareto, capability, boxplot, histogram, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
 - `analyzeWaferMap` / `analyzeWaferLot` — spatial analysis across rings, quadrants, sectors, and reticle positions; failure cluster detection; lot trend series
 - Pure ES modules, no server, no runtime dependencies — works in React, Svelte, Vue, plain HTML, or a Web Worker
 
@@ -45,11 +44,19 @@ renderWaferMap(document.getElementById('map'), result);
 
 ## Docs
 
+**Building an app with wafermap** (developers):
+
 - [Quick start](https://telecasterer.github.io/wafermap/quickstart/)
-- [Guide](https://telecasterer.github.io/wafermap/guide/)
+- [Developer Guide](https://telecasterer.github.io/wafermap/guide/)
+- [SvelteKit](https://telecasterer.github.io/wafermap/sveltekit/) · [React](https://telecasterer.github.io/wafermap/react/) · [Vue 3](https://telecasterer.github.io/wafermap/vue/) integration guides
 - [API Reference](https://telecasterer.github.io/wafermap/api/)
+- [Architecture](https://telecasterer.github.io/wafermap/architecture/) · [Performance](https://telecasterer.github.io/wafermap/performance/) · [Troubleshooting](https://telecasterer.github.io/wafermap/troubleshooting/)
+- [Live examples](https://telecasterer.github.io/wafermap/examples/)
+
+**Using an app built with wafermap** (test / device / yield engineers):
+
+- [Application User Guide](https://telecasterer.github.io/wafermap/user-guide/) — also embedded in apps via the toolbar help button
 - [Glossary](https://telecasterer.github.io/wafermap/glossary/)
-- [Demo catalog](https://telecasterer.github.io/wafermap/)
 
 ## Built with wafermap
 

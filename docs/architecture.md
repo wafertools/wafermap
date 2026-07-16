@@ -1,5 +1,7 @@
 # Architecture
 
+**For:** developers choosing an entry point or wanting the system picture. Not needed for basic use — the [Quick Start](quickstart.md) and [Developer Guide](guide.md) stand alone.
+
 This page explains the structure of `wafermap` from the outside in:
 
 1. what a user passes in,
@@ -190,7 +192,7 @@ graph TB
 
 **What this shows**
 
-`buildView()` converts the map result into a drawable scene: rectangles, overlays, labels, colors, and hover targets. `toCanvas()` renders that scene onto a canvas and returns hit-testing and viewport information. `renderWaferMap()` wraps both steps with the interactive toolbar, selection, tooltips, and optional summary panel. `renderWaferGallery()` repeats the same display model across multiple cards and, via each card's expand button, detaches a card into its own `renderWaferMap()` instance in a separate window — falling back to an in-page floating window when a real separate window isn't available (e.g. inside Tauri/Electron).
+`buildView()` converts the map result into a drawable view: rectangles, overlays, labels, colors, and hover targets. `toCanvas()` renders that view onto a canvas and returns hit-testing and viewport information. `renderWaferMap()` wraps both steps with the interactive toolbar, selection, tooltips, and optional summary panel. `renderWaferGallery()` repeats the same display model across multiple cards and, via each card's expand button, detaches a card into its own `renderWaferMap()` instance in a separate window — falling back to an in-page floating window when a real separate window isn't available (e.g. inside Tauri/Electron).
 
 ## 5. Analysis and worker flow
 

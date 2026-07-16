@@ -15,11 +15,15 @@
 // `title` attribute instead of porting tsmap's `attachTooltip` chrome
 // helper (that's tsmap app chrome, not chart-panel logic).
 
-import { getColorScheme } from '../../renderer/colorSchemes.js';
 import { buildTestHistogramData, buildTestHistogramSeries, type HistogramBucket, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, formatValue, observeResize, makeTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, PADDING, type SaveImageHandler } from './chartShell.js';
+import { fmt } from '../../renderer/fmt.js';
+import { QUANTITY, categorical } from './palette.js';
+import { cardShell, observeResize, makeTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler } from './chartShell.js';
+// `colorScheme` (HistogramPanelOptions) is deliberately no longer read —
+// quantity/series colours are fixed (palette.ts); the option stays for API
+// compatibility with existing callers.
 
 const HIST_HEIGHT = 230;
 const HIST_AXIS_HEIGHT = 36;
@@ -85,7 +89,7 @@ export interface HistogramPanelHandle {
 }
 
 export function renderHistogramPanel(options: HistogramPanelOptions): HistogramPanelHandle {
-  const { title = 'Test value distribution', items, testDefs, colorScheme = 'default', onSaveImage, groups } = options;
+  const { title = 'Test value distribution', items, testDefs, onSaveImage, groups } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage);
 
   const testOptions = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
@@ -161,9 +165,10 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
     let hovered = -1;
     const dpr = window.devicePixelRatio || 1;
-    const { forValue } = getColorScheme(colorScheme);
     const bucketMin = buckets[0].rangeLow;
-    const bucketSpan = buckets[buckets.length - 1].rangeHigh - bucketMin || 1;
+    const bucketMax = buckets[buckets.length - 1].rangeHigh;
+    const bucketSpan = bucketMax - bucketMin || 1;
+    const axis = makeAxisFormat(Math.max(Math.abs(bucketMin), Math.abs(bucketMax)), unit);
 
     function plotRect(height: number) {
       const plotX = PADDING + 36;
@@ -208,10 +213,11 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         const barHeight = (bucket.count / maxCount) * plotMaxHeight;
         const x = plotX + i * barWidth;
         const y = plotBottom - barHeight;
-        const center = (bucket.rangeLow + bucket.rangeHigh) / 2;
-        const barColor = forValue(Math.max(0, Math.min(1, (center - bucketMin) / bucketSpan)));
 
-        ctx.fillStyle = i === hovered ? theme.text : barColor;
+        // One neutral fill for all bars — the x position already says where a
+        // bucket sits; colouring bars by that same position (as the map value
+        // ramp used to) adds no information, just noise (see palette.ts).
+        ctx.fillStyle = i === hovered ? theme.text : QUANTITY;
         ctx.globalAlpha = i === hovered ? 1 : 0.7;
         ctx.fillRect(x + 1, y, Math.max(1, barWidth - 2), barHeight);
         ctx.globalAlpha = 1;
@@ -262,16 +268,15 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         ctx.beginPath();
         ctx.moveTo(x, plotBottom); ctx.lineTo(x, plotBottom + 4);
         ctx.stroke();
-        ctx.fillText(formatValue(value), x, plotBottom + 6);
+        ctx.fillText(axis.tick(value), x, plotBottom + 6);
       }
-      if (unit) {
+      if (axis.unitLabel) {
         ctx.save();
         ctx.font = '10px system-ui, sans-serif';
         ctx.fillStyle = theme.textMuted;
-        ctx.globalAlpha = 0.55;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'top';
-        ctx.fillText(`(${unit})`, plotX + plotMaxWidth, plotBottom + 20);
+        ctx.fillText(`(${axis.unitLabel})`, plotX + plotMaxWidth, plotBottom + 20);
         ctx.restore();
       }
     }
@@ -283,7 +288,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       if (bar >= 0) {
         const b = buckets[bar];
         const cardRect = card.getBoundingClientRect();
-        tooltip.innerHTML = `<strong>${formatValue(b.rangeLow)} – ${formatValue(b.rangeHigh)}${unit ? ` ${unit}` : ''}</strong><br>${b.count} dies`;
+        tooltip.innerHTML = `<strong>${fmt(b.rangeLow, unit, 'engineering')} – ${fmt(b.rangeHigh, unit, 'engineering')}</strong><br>${b.count} dies`;
         tooltip.style.display = 'block';
         tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
         tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
@@ -301,8 +306,10 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const ranges = facet.ranges;
     const series = facet.series;
 
-    const { forValue } = getColorScheme(colorScheme);
-    const colorOf = (i: number) => forValue(series.length <= 1 ? 0.5 : i / (series.length - 1));
+    // Group identity → the CVD-safe categorical palette (see palette.ts) —
+    // facet groups have no wafer-map identity, so unlike bin colours there
+    // is nothing to keep in sync with the map's registered scheme.
+    const colorOf = categorical;
 
     if (emphasizedGroup && !series.some(s => s.groupKey === emphasizedGroup)) emphasizedGroup = null;
 
@@ -340,7 +347,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
     const dpr = window.devicePixelRatio || 1;
     const bucketMin = ranges[0].rangeLow;
-    const bucketSpan = ranges[ranges.length - 1].rangeHigh - bucketMin || 1;
+    const bucketMax = ranges[ranges.length - 1].rangeHigh;
+    const bucketSpan = bucketMax - bucketMin || 1;
+    const axis = makeAxisFormat(Math.max(Math.abs(bucketMin), Math.abs(bucketMax)), unit);
     const siblingH = () => statsLabel.offsetHeight + legend.offsetHeight;
 
     let hoveredBucket = -1;
@@ -454,16 +463,15 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         ctx.beginPath();
         ctx.moveTo(x, plotBottom); ctx.lineTo(x, plotBottom + 4);
         ctx.stroke();
-        ctx.fillText(formatValue(value), x, plotBottom + 6);
+        ctx.fillText(axis.tick(value), x, plotBottom + 6);
       }
-      if (unit) {
+      if (axis.unitLabel) {
         ctx.save();
         ctx.font = '10px system-ui, sans-serif';
         ctx.fillStyle = theme.textMuted;
-        ctx.globalAlpha = 0.55;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'top';
-        ctx.fillText(`(${unit})`, plotX + plotMaxWidth, plotBottom + 20);
+        ctx.fillText(`(${axis.unitLabel})`, plotX + plotMaxWidth, plotBottom + 20);
         ctx.restore();
       }
     }
@@ -485,7 +493,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
           `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${colorOf(i)};margin-right:5px;"></span>${s.groupKey}: ${s.counts[b]}`
         ).join('<br>');
         const cardRect = card.getBoundingClientRect();
-        tooltip.innerHTML = `<strong>${formatValue(r.rangeLow)} – ${formatValue(r.rangeHigh)}${unit ? ` ${unit}` : ''}</strong><br>${rows}`;
+        tooltip.innerHTML = `<strong>${fmt(r.rangeLow, unit, 'engineering')} – ${fmt(r.rangeHigh, unit, 'engineering')}</strong><br>${rows}`;
         tooltip.style.display = 'block';
         tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
         tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;

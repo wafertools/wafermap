@@ -12,8 +12,8 @@
 // this panel doesn't compute or own grouping itself, matching every other
 // panel in the tab reacting to one shared selection.
 
-import { getColorScheme } from '../../renderer/colorSchemes.js';
 import { buildCapabilityData, type CapabilityDatum, type CapabilityItem } from '../../stats/capability.js';
+import { capabilityColor } from './palette.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
 import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, makeLabeledSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
@@ -48,11 +48,6 @@ export interface CapabilityPanelOptions {
   groups?: { key: string; items: CapabilityItem[] }[];
 }
 
-function ppkScore(ppk: number | null): number {
-  if (ppk === null) return 1;
-  return Math.max(0, Math.min(1, ppk / 1.33));
-}
-
 function fmtIndex(v: number | null): string {
   return v === null ? '—' : v.toFixed(2);
 }
@@ -74,7 +69,9 @@ export interface CapabilityPanelHandle {
 }
 
 export function renderCapabilityPanel(options: CapabilityPanelOptions): CapabilityPanelHandle {
-  const { title = 'Process capability', items, testDefs, colorScheme = 'default', onSaveImage, onSelectTest, groups } = options;
+  // `colorScheme` is deliberately no longer read — boxes use the fixed
+  // capable/marginal/poor hues (palette.ts); the option stays for API compatibility.
+  const { title = 'Process capability', items, testDefs, onSaveImage, onSelectTest, groups } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage);
 
   const hasData = testDefs.some(d => d.testNumber !== undefined);
@@ -108,19 +105,29 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
   function renderCaption(shownCount: number, unspecCount: number, totalTests: number): void {
     hintRow.innerHTML = '';
-    const hint = document.createElement('span');
-    hint.textContent = 'Spec-limited tests: normalized LSL=0/USL=1, worst Ppk first · unlimited tests (muted, dashed): normalized to own range, most variable first';
-    Object.assign(hint.style, { color: CLR.label, fontSize: '11px' } as Partial<CSSStyleDeclaration>);
-    hintRow.appendChild(hint);
+    const line = document.createElement('span');
+    Object.assign(line.style, { display: 'inline-flex', alignItems: 'center', gap: '6px', color: CLR.value, fontSize: '12px', fontWeight: '500' } as Partial<CSSStyleDeclaration>);
 
-    const summary = document.createElement('span');
-    Object.assign(summary.style, { color: CLR.value, fontSize: '12px', fontWeight: '500' } as Partial<CSSStyleDeclaration>);
     const excluded = totalTests - shownCount;
-    const unspecNote = unspecCount > 0 ? ` (${unspecCount} without spec limits)` : '';
+    const unspecNote = unspecCount > 0 ? ` · ${unspecCount} without spec limits` : '';
+    const summary = document.createElement('span');
     summary.textContent = excluded > 0
-      ? `${shownCount} of ${totalTests} tests shown${unspecNote} — ${excluded} excluded (no recorded values)`
+      ? `${shownCount} of ${totalTests} tests shown${unspecNote} · ${excluded} excluded (no recorded values)`
       : `${shownCount} test${shownCount !== 1 ? 's' : ''} shown${unspecNote}`;
-    hintRow.appendChild(summary);
+    line.appendChild(summary);
+
+    // Methodology moved behind an ⓘ hover (native title, same convention as
+    // the legend swatches) — as always-visible text it was two dense lines
+    // squeezed above the chart that most readers only ever need once.
+    const info = document.createElement('span');
+    info.textContent = 'ⓘ';
+    info.title = 'Spec-limited tests are normalized so LSL=0 and USL=1, sorted worst Ppk first. '
+      + 'Tests without both spec limits (muted, dashed) are normalized to their own observed range, sorted most-variable first. '
+      + 'Box colour: green Ppk ≥ 1.33 (capable), orange Ppk ≥ 1.0 (marginal), red Ppk < 1.0 (poor).';
+    Object.assign(info.style, { color: CLR.label, cursor: 'help', fontSize: '12px' } as Partial<CSSStyleDeclaration>);
+    line.appendChild(info);
+
+    hintRow.appendChild(line);
   }
 
   function buildView(rows: CapabilityDatum[]): () => void {
@@ -137,7 +144,6 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     body.appendChild(canvas);
 
     const n = rows.length;
-    const { forValue } = getColorScheme(colorScheme);
 
     const domainMin = Math.min(0, ...rows.map(d => d.min));
     const domainMax = Math.max(1, ...rows.map(d => d.max));
@@ -217,9 +223,12 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         }
 
         // Unspec'd tests have no Ppk to judge "good/bad" by, so they don't
-        // get the pass/fail color scale — a muted, dashed box signals
+        // get the semantic capability colours — a muted, dashed box signals
         // "no capability judgment available" rather than implying a score.
-        const color = d.hasSpec ? forValue(ppkScore(d.ppk)) : theme.textMuted;
+        // Spec'd tests use the fixed capable/marginal/poor hues (palette.ts)
+        // against the conventional Ppk 1.33/1.0 thresholds, not the map's
+        // value ramp (whose colours carry no capability meaning).
+        const color = d.hasSpec ? capabilityColor(d.ppk) : theme.textMuted;
         const yMin = yFor(d.min, plotTop, plotH);
         const yQ1 = yFor(d.q1, plotTop, plotH);
         const yMedian = yFor(d.median, plotTop, plotH);

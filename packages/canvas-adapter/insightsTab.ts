@@ -36,6 +36,7 @@ import { renderCorrelationPanel } from './charts/correlation.js';
 import { renderScatterPanel } from './charts/scatter.js';
 import { renderBarPanel, type ChartPanel } from './charts/barPanel.js';
 import { renderBinClusterPanel } from './charts/binCluster.js';
+import { QUANTITY } from './charts/palette.js';
 import { makeChartGridWrap, makeLabeledSelect } from './charts/chartShell.js';
 import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../stats/yield.js';
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
@@ -83,6 +84,13 @@ export interface InsightsTabDeps {
   openWafer?: (waferIndex: number, label: string, testNumber?: number) => void;
   /** Default sub-tab shown on first render. Default 'overview'. */
   defaultView?: InsightsView;
+  /**
+   * When provided, the tab bar gets a leading "‹ Map"/"‹ Gallery" tab that
+   * exits Insights back to the host's normal view — one visible navigation
+   * model (a tab row) instead of relying on the host toolbar's icon-swap
+   * toggle alone, whose "way back" is discoverable only via tooltip.
+   */
+  backTab?: { label: string; onBack: () => void };
   /**
    * Show this tab's own identity strip (lot/wafer/product/etc.), mounted
    * above the Overview/Distributions/Correlation tab bar so it stays in the
@@ -182,11 +190,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       .filter((it): it is Item => it != null);
   }
 
-  function makeTabButton(view: InsightsView, label: string): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = label;
-    const isActive = view === activeView;
+  function styleTabButton(btn: HTMLButtonElement, isActive: boolean): void {
     Object.assign(btn.style, {
       background:   'none',
       border:       'none',
@@ -198,7 +202,24 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       cursor:       'pointer',
       marginBottom: '-1px',
     } as Partial<CSSStyleDeclaration>);
+  }
+
+  function makeTabButton(view: InsightsView, label: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    styleTabButton(btn, view === activeView);
     btn.addEventListener('click', () => { if (activeView !== view) { activeView = view; render(); } });
+    return btn;
+  }
+
+  /** Leading "‹ Map"/"‹ Gallery" tab — exits Insights via `deps.backTab`. */
+  function makeBackTabButton(back: { label: string; onBack: () => void }): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = `‹ ${back.label}`;
+    styleTabButton(btn, false);
+    btn.addEventListener('click', back.onBack);
     return btn;
   }
 
@@ -213,6 +234,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     items: Item[],
     groups: { key: string; items: Item[] }[] | undefined,
     groupLabelText: string | undefined,
+    /** False for a single-wafer host — a one-bar "Yield by wafer" chart with
+     *  sort controls that can never reorder anything is noise; the caller
+     *  renders stat tiles instead (see renderSingleWaferTiles). */
+    includeYieldPanel = true,
   ): { card: HTMLElement; destroy: () => void } {
     const wrap = makeChartGridWrap();
 
@@ -237,6 +262,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const yieldByWaferIndex = new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent]));
     const withYieldPercent = (item: Item) => ({
       ...item,
+      // Host card labels often embed the yield themselves ("W01 · 92.7%") —
+      // strip that here, since this panel prints the % in its own value
+      // column and the doubled number read as two different stats.
+      label: item.label.replace(/\s*·\s*\d+(\.\d+)?%$/, ''),
       yieldPercent: yieldByWaferIndex.get(item.waferIndex),
       key: item.waferIndex,
     });
@@ -255,7 +284,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         options: [['yield', 'Sort: yield'], ['label', groups ? `Sort: ${label}` : 'Sort: wafer ID']],
         onChange: v => { yieldSortBy = v as YieldSortBy; return { data: makeYieldData() }; },
       },
-      barColor: datum => scheme.forValue(Math.max(0, Math.min(100, datum.percent)) / 100),
+      // One neutral fill for every yield bar (palette.ts) — bar length and
+      // the printed % already carry the value. The map value ramp here made
+      // good yields render in alarm colours, and its data-range
+      // normalization could paint a *better* wafer redder than a worse one.
+      barColor: () => QUANTITY,
       valueLabel: datum => `${datum.percent.toFixed(1)}%`,
       drill: yieldGroups ? {
         onOpenGroup: datum => {
@@ -274,9 +307,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         if (typeof datum.key === 'number') openWaferDetailModal(datum.key, `Wafer ${datum.label}`);
       } : undefined,
     };
-    const yieldPanel = renderBarPanel(yieldPanelConfig, onSaveImage);
-    yieldPanel.card.style.minHeight = '360px';
-    wrap.appendChild(yieldPanel.card);
+    let yieldPanel: ReturnType<typeof renderBarPanel> | null = null;
+    if (includeYieldPanel) {
+      yieldPanel = renderBarPanel(yieldPanelConfig, onSaveImage);
+      yieldPanel.card.style.minHeight = '360px';
+      wrap.appendChild(yieldPanel.card);
+    }
 
     if (groups) {
       const binCluster = renderBinClusterPanel({
@@ -294,7 +330,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       });
       binCluster.card.style.minHeight = '360px';
       wrap.appendChild(binCluster.card);
-      return { card: wrap, destroy: () => { yieldPanel.destroy(); binCluster.destroy(); } };
+      return { card: wrap, destroy: () => { yieldPanel?.destroy(); binCluster.destroy(); } };
     }
 
     let binType: BinType = 'hbin';
@@ -316,12 +352,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         options: [['hbin', 'Hard bins'], ['sbin', 'Soft bins']],
         onChange: v => { binType = v as BinType; return { data: makeBinData(), title: `${binType === 'hbin' ? 'Hard' : 'Soft'} bin pareto` }; },
       },
-      barColor: datum => datum.binCode === undefined ? scheme.forValue(0) : binColorFn(datum.binCode),
+      // Bin identity keeps the map's registered scheme (forBin) so bins match
+      // the wafer view — including the accessible scheme when selected.
+      // binCode undefined ⇒ bin 0, the codebase-wide no-data grey sentinel.
+      barColor: datum => binColorFn(datum.binCode ?? 0),
     };
     const binPanel = renderBarPanel(binPanelConfig, onSaveImage);
     binPanel.card.style.minHeight = '360px';
     wrap.appendChild(binPanel.card);
-    return { card: wrap, destroy: () => { yieldPanel.destroy(); binPanel.destroy(); } };
+    return { card: wrap, destroy: () => { yieldPanel?.destroy(); binPanel.destroy(); } };
   }
 
   /** A plain (non-canvas) content card matching the chart panels' own
@@ -413,6 +452,38 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return { elements, testValuesCard, destroy: () => { for (const d of destroyFns) d(); } };
   }
 
+  /** Single-wafer replacement for the "Yield by wafer" bar chart — a one-bar
+   *  chart with sort controls that can never reorder anything communicates
+   *  nothing a stat tile doesn't. Yield comes from the same `buildYieldData`
+   *  path the bar chart used, so the number is identical either way. */
+  function renderSingleWaferTiles(item: Item): HTMLElement {
+    const passBinsLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
+    const yieldPct = buildYieldData([{ ...item, key: item.waferIndex }], passBins)[0]?.percent;
+
+    const card = plainCard();
+    Object.assign(card.style, { flexDirection: 'row', flexWrap: 'wrap', gap: '8px' } as Partial<CSSStyleDeclaration>);
+
+    function tile(value: string, label: string): HTMLDivElement {
+      const t = document.createElement('div');
+      Object.assign(t.style, {
+        border: `1px solid ${CLR.menuBorder}`, borderRadius: '6px', padding: '8px 16px',
+        textAlign: 'center', minWidth: '110px',
+      } as Partial<CSSStyleDeclaration>);
+      const v = document.createElement('div');
+      v.textContent = value;
+      Object.assign(v.style, { fontSize: '20px', fontWeight: '700', color: CLR.value, lineHeight: '1.2' } as Partial<CSSStyleDeclaration>);
+      const l = document.createElement('div');
+      l.textContent = label;
+      Object.assign(l.style, { fontSize: '10px', color: CLR.label, marginTop: '2px' } as Partial<CSSStyleDeclaration>);
+      t.append(v, l);
+      return t;
+    }
+
+    if (yieldPct !== undefined) card.appendChild(tile(`${yieldPct.toFixed(1)}%`, `Yield · pass: ${passBinsLabel}`));
+    card.appendChild(tile(String(item.dies.length), 'Total dies'));
+    return card;
+  }
+
   function renderOverviewSection(
     items: Item[],
     testDefs: TestDef[],
@@ -422,7 +493,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const outer = document.createElement('div');
     Object.assign(outer.style, { display: 'flex', flexDirection: 'column', gap: '10px' } as Partial<CSSStyleDeclaration>);
 
-    const yieldBins = renderYieldBinsSection(items, groups, groupLabelText);
+    const single = items.length === 1 && !groups;
+    if (single) outer.appendChild(renderSingleWaferTiles(items[0]));
+
+    const yieldBins = renderYieldBinsSection(items, groups, groupLabelText, !single);
     outer.appendChild(yieldBins.card);
 
     // Ring/quadrant cards join the same grid `yieldBins.card` already is (see
@@ -525,6 +599,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     bodyEl.innerHTML = '';
     tabBar.innerHTML = '';
 
+    if (deps.backTab) tabBar.appendChild(makeBackTabButton(deps.backTab));
     for (const v of VIEWS) tabBar.appendChild(makeTabButton(v.key, v.label));
 
     const allItems = facetItems();

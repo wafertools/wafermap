@@ -21,6 +21,39 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.20.2] — 2026-07-16
+
+Design-review pass over the newer UI surfaces (Insights, Summary panel, findings). Visual and display-language changes only — no public API changes; the chart panels' `colorScheme` option is now deliberately ignored where colour used to carry no information (interfaces unchanged for compatibility).
+
+### Changed
+
+- **Insights chart colours decoupled from the wafer map's value scheme** (new fixed chart palette, `canvas-adapter/charts/palette.ts`). The default thermal ramp rendered a 95% yield ring in saturated red, and data-range normalization could paint a *better* wafer more alarmingly than a worse one; the histogram re-encoded its own x-axis as a rainbow. Now:
+  - **Quantity encodings** (yield bars, boxplot boxes, histogram mass) use one neutral blue — geometry carries the value; inherently colour-vision-safe.
+  - **Ring/quadrant yield diagrams** use a fixed-domain sequential blue ramp (light ≤50% → deep at 100%), so the same yield is always the same colour across wafers, lots, and renders.
+  - **Process capability** boxes use fixed CVD-safe semantic hues against the conventional Ppk thresholds — green ≥ 1.33 (capable), orange ≥ 1.0 (marginal), vermillion < 1.0 (poor) — instead of an arbitrary slice of the map ramp.
+  - **Correlation matrix cells** are now sign-aware (blue = positive, vermillion = negative, intensity = |r|) — the old |r| ramp drew r = −0.9 and r = +0.9 identically. An inline −1…+1 colour scale documents the encoding on the card.
+  - **Facet-group series** (overlaid histogram, clustered pareto, grouped scatter) use the Okabe-Ito colour-blind-safe categorical palette.
+  - **Bin identity keeps following the map's registered colour scheme** (`forBin`) everywhere — a bin is the same colour in Insights as on the map, including the accessible scheme when the user selects it. This is why Insights needs no colour-scheme picker of its own.
+- **Findings presentation reworked for signal over noise:**
+  - Group headers are sentence-case and neutral with a single severity dot — no more all-caps coloured headings that triple-encoded severity, and no more doubled labels ("Edge arc: Edge arc ~NNW").
+  - Rows under a group drop the group's own repeated subject ("Ring 4 (edge) has …" × 6 near-identical sentences becomes six compact per-bin rows); the full original sentence is preserved as hover text.
+  - Internal bin terms are mapped to plain language in every user-facing surface — panel rows, narrative, Detail modal, and the printable report — via a shared `plainBinTerms` helper (`renderer/fmt.ts`): "HBin 2" → "hard bin 2". Pareto rows and the scatter legend say "Bin N" (the panel title/toggle already names the bin type).
+  - Severity filter checkboxes replaced with lit toggle chips carrying counts ("Unusual 2 · Notable 3") — unchecked-boxes-meaning-show-all read as "nothing selected". The section header now reads "Findings (N)".
+- **Chart number formatting unified on the shared SI formatter** (`fmt`/`fmtColorbarAxis`, via new `makeAxisFormat` in `chartShell.ts`): boxplot medians read "1.15 mA" instead of "1.15E-3 A"; histogram/boxplot/scatter axes show ticks on one shared SI scale with the scaled unit stated once ("(µA)") instead of raw exponent ticks ("861E-6") with a bare "(A)" in a corner.
+- **Insights navigation:** the tab bar gains a leading **"‹ Map" / "‹ Gallery"** tab that exits Insights — a visible way back, complementing the toolbar's icon-swap toggle whose return path was discoverable only via tooltip.
+- **Single-wafer Insights Overview** replaces the one-bar "Yield by wafer" chart (whose sort controls could never reorder anything) with stat tiles (yield with pass-bin label, total dies); the remaining three cards then fill the grid row cleanly.
+- **Smaller polish:** capability methodology text moved behind an ⓘ hover with a one-line status kept visible; correlation's "Matrix size" control relabelled "Max tests" with a tooltip; the correlation card sizes to its matrix instead of stretching to the scatter panel's height; scatter y-axis limit labels moved inside the left plot edge (they collided with the card border); the docked Summary panel widened 220 → 260px and the yield tile's pass-bin qualifier renders as its own sub-line instead of wrapping mid-parenthetical; Insights yield rows no longer print the yield twice when host card labels embed it.
+
+### Fixed
+
+- **Docked Summary panel content rendered underneath the floating toolbar** in `renderWaferMap` when the panel sat under the toolbar's corner (`placement: 'right'`, `'top'`, or the auto-mounted panel) — the "Wafer Summary" header was covered. The panel now reserves the same 44px top clearance the Insights overlay already reserves, in both the docked and expanded-modal states.
+
+### Docs
+
+- **User guide §8 (Insights) gains three gallery screenshots** — Overview, Distributions, Correlation — with captions covering the cross-panel interactions and colour semantics; new `insights` capture group in `scripts/capture-definitions.mjs` and two new reusable capture steps (`clickButton`, `clickTab`).
+- `scripts/capture-screenshots.mjs` falls back to system Chrome (`channel: 'chrome'`) when Playwright's bundled Chromium is unavailable for the host OS.
+- Regenerated screenshots affected by the visual changes (findings panels, summary panel, reports).
+
 ## [0.20.0] — 2026-07-14
 
 ### Breaking

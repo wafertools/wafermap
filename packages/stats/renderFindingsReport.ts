@@ -11,6 +11,7 @@ import {
   reportStyles,
 } from './reportHtml.js';
 import { buildFindingsNarrative } from './findingsNarrative.js';
+import { plainBinTerms } from '../renderer/fmt.js';
 
 /** Metadata rows use `buildMetadataRows` (`buildFacetTable` over every
  *  item's own metadata) — never `LotStatsSummary.lot`'s first-wafer-wins
@@ -55,7 +56,7 @@ function findingsRows(findings: StatsFinding[], totalWafers?: number): string {
     return `<tr title="${tooltip}">
       <td class="tight">${renderSeverityBadge(finding.severity)}</td>
       <td class="tight">${escHtml(finding.comparison.left)}</td>
-      <td>${escHtml(finding.variable.label)}</td>
+      <td>${escHtml(plainBinTerms(finding.variable.label))}</td>
       <td class="numeric">${escHtml(formatFindingDelta(finding))}</td>
       <td class="numeric">${escHtml(formatFindingCoverage(finding, totalWafers))}</td>
     </tr>`;
@@ -89,7 +90,7 @@ export function renderFindingsReportHtml(
   const generatedAt = new Date().toLocaleString();
   const findings = summary.findings;
   const totalWafers = summary.level === 'lot' ? summary.stats.waferCount : undefined;
-  const narrativeText = buildFindingsNarrative(findings);
+  const narrativeText = plainBinTerms(buildFindingsNarrative(findings) ?? '');
   const narrativeParagraph = narrativeText
     ? `<p class="findings-narrative">${escHtml(narrativeText)}</p>\n` : '';
   const body = [

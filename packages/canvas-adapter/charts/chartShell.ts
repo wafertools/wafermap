@@ -7,7 +7,7 @@
 
 import { CLR, saveImageBlob, openModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
-import { fmt } from '../../renderer/fmt.js';
+import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 
 export type { SaveImageHandler };
 
@@ -192,6 +192,21 @@ export function applyCanvasFlow(canvas: HTMLCanvasElement, topOffset = 0): void 
 export function formatValue(v: number): string {
   if (!Number.isFinite(v)) return '—';
   return Number.isInteger(v) ? `${v}` : fmt(v, undefined, 'engineering');
+}
+
+/**
+ * Shared axis formatter for a numeric chart axis: one SI scale chosen from
+ * the largest-magnitude endpoint, applied to every tick, with the scaled
+ * unit returned once as the axis label (e.g. ticks "861 · 1040 · 1220"
+ * with label "(µA)") — the same `fmtColorbarAxis` contract the map's
+ * colorbar uses, so axes never show raw exponent soup like "861E-6" next
+ * to a tooltip that says "861 µA". Falls back to `formatValue` ticks and
+ * no label when the test has no unit.
+ */
+export function makeAxisFormat(vRef: number, unit: string | undefined): { tick: (v: number) => string; unitLabel: string } {
+  if (!unit) return { tick: formatValue, unitLabel: '' };
+  const { tickFmt, axisLabel } = fmtColorbarAxis(vRef, null, unit);
+  return { tick: tickFmt, unitLabel: axisLabel };
 }
 
 /** Draw a small "(unit)" label at (x, y), restoring the context's text state afterward. */

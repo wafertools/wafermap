@@ -1,5 +1,7 @@
 # Performance
 
+**For:** developers sizing up the library or tuning large-lot workloads.
+
 The wafermap library is fast. Rendering the map is effectively instant, and every
 optional analysis feature — the Summary panel's statistics, the Insights
 tab's charts, automatic spatial finding detection — completes in single-digit

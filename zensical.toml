@@ -13,15 +13,21 @@ nav = [
   { "Home"              = "index.md"      },
   { "Quick Start"       = "quickstart.md" },
   { "Developer Guide"   = "guide.md"      },
-  { "Architecture"      = "architecture.md" },
-  { "Application User Guide" = "user-guide.md" },
-  { "Pattern Detection" = [
-    { "Overview"         = "pattern-detection.md" },
+  { "Integration Guides" = [
+    { "SvelteKit" = "sveltekit.md" },
+    { "React"     = "react.md"     },
+    { "Vue 3"     = "vue.md"       },
+  ]},
+  { "Reference" = [
+    { "API Reference"   = "api.md"             },
+    { "Performance"     = "performance.md"     },
+    { "Troubleshooting" = "troubleshooting.md" },
+  ]},
+  { "Deep Dives" = [
+    { "Architecture"       = "architecture.md"       },
+    { "Pattern Detection"  = "pattern-detection.md"  },
     { "Detection Analysis" = "detection-analysis.md" },
   ]},
-  { "API Reference"     = "api.md"        },
-  { "Performance"       = "performance.md" },
-  { "Troubleshooting"   = "troubleshooting.md" },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
     { "Getting started" = [
@@ -56,12 +62,10 @@ nav = [
       { "wafermap vs Plotly.js"          = "examples/comparison.html"      },
     ]},
   ]},
-  { "Integration Guides" = [
-    { "SvelteKit" = "sveltekit.md" },
-    { "React"     = "react.md"     },
-    { "Vue 3"     = "vue.md"       },
+  { "For App Users" = [
+    { "Application User Guide" = "user-guide.md" },
+    { "Glossary"               = "glossary.md"   },
   ]},
-  { "Glossary"          = "glossary.md"   },
 ]
 
 [project.theme]

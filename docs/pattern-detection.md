@@ -1,9 +1,11 @@
 # Spatial Pattern Detection
 
+**For:** developers enabling pattern classification, and engineers wanting to know what the pattern labels mean and how far to trust them.
+
 The library provides two complementary analysis systems that both surface
 results as findings in the summary panel:
 
-**Statistical region analysis** (covered in [§10 of the User Guide](guide.md#10-adding-statistical-findings))
+**Statistical region analysis** (covered in [§10 of the Developer Guide](guide.md#10-adding-statistical-findings))
 compares specific zones of the wafer — rings, quadrants, angular sectors,
 contiguous clusters, and edge arcs — against the rest of the wafer using
 significance tests. It answers: *"is this ring statistically worse than the

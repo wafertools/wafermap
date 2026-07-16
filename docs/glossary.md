@@ -1,6 +1,8 @@
 # Glossary
 
-Quick-reference definitions for semiconductor and library terms used in `@paulrobins/wafermap`. Aimed at software engineers without a semiconductor background.
+**For:** both audiences — developers without a semiconductor background, and app users who meet an unfamiliar term on screen.
+
+Quick-reference definitions for semiconductor and library terms used in `@paulrobins/wafermap`. The *Library mapping* notes on each entry are developer-facing; app users can ignore them.
 
 ---
 

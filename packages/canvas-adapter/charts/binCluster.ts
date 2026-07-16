@@ -9,8 +9,8 @@
 // Trimmed from tsmap's version for this port: no click-to-open-wafer, same
 // deferral as the rest of this pass (see WMAP_ISSUES.md).
 
-import { getColorScheme } from '../../renderer/colorSchemes.js';
 import { buildBinClusterData, type BinItem, type BinType } from '../../stats/binPareto.js';
+import { categorical } from './palette.js';
 import { CLR } from '../toolbar.js';
 import { cardShell, observeResize, makeTooltip, makeSegmented, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
 
@@ -33,7 +33,9 @@ export interface BinClusterPanelHandle {
 }
 
 export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClusterPanelHandle {
-  const { groups, colorScheme = 'default', onSaveImage } = options;
+  // `colorScheme` is deliberately no longer read — sub-bars use the fixed
+  // categorical palette (palette.ts); the option stays for API compatibility.
+  const { groups, onSaveImage } = options;
   let binType: BinType = 'hbin';
   let titleText = options.title ?? 'Hard bin pareto';
   const { card, heading, body, controlsRow } = cardShell(titleText, onSaveImage);
@@ -65,8 +67,9 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
 
     const clusterGroups = data.groups;
     const bins = data.bins;
-    const { forValue } = getColorScheme(colorScheme);
-    const colorOf = (i: number) => forValue(clusterGroups.length <= 1 ? 0.5 : i / (clusterGroups.length - 1));
+    // Group identity → the CVD-safe categorical palette (palette.ts), not a
+    // slice of the map's value ramp — groups have no map identity to match.
+    const colorOf = categorical;
     const maxCount = Math.max(1, ...bins.flatMap(b => b.counts));
     const clusterHeight = clusterGroups.length * SUBBAR_HEIGHT + (clusterGroups.length - 1) * SUBBAR_GAP;
     const rowPitch = clusterHeight + CLUSTER_GAP;
