@@ -21,6 +21,19 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.20.3] — 2026-07-19
+
+### Added
+
+- **Functional tests** — a test with no measured value, only a recorded pass/fail outcome (continuity, boundary scan, or any other go/no-go test). Set `testType: 'F'` on a `TestDef` (default `'P'`, parametric) and record the outcome per die in the new `DieResult.testPass: Record<number, boolean>`, keyed by `testNumber` like `testValues`. Functional tests are excluded from every parametric statistic (per-test stats, capability, correlation, distribution charts, value stacks, regional value findings) and instead get pass-rate analysis: `stats.functionalYield`, a "Functional Tests" table in the summary panel, and regional pass-rate findings (`kind: 'functionalTest'`).
+- **`passFailDisplay: 'off' | 'spec' | 'test'`** (`WaferViewOptions`, `ToCanvasOptions`) — replaces the boolean `colorBySpec` with a two-way choice: `'spec'` judges dies against the active test's spec limits (unchanged behaviour, still the `colorBySpec: true` equivalent); `'test'` colours dies by the tester's own verdict (`die.testPass`) instead, green pass / red fail, undirected. The library resolves the effective display and degrades an invalid request to `'off'`; a functional active test always renders as `'test'`. Toggled via two entries in the Overlays toolbar menu ("Spec pass/fail", "Test pass/fail"), each shown only when valid for the active test. The map title's secondary line names which is shown — `Spec pass/fail`, `Tester pass/fail`, or `Functional pass/fail`.
+- New helper exports from `@paulrobins/wafermap`: `getTestPassStatus(die, testNumber, testDef?)` (the single read-path for verdicts — reads `testPass` first, then falls back to a legacy 0/1 `testValues` encoding for functional tests with no `testPass` entry), `dieHasTestData(die)`, and `isParametricTest(def)`.
+- `computeFunctionalYield(dies, testDefs)` (`@paulrobins/wafermap/stats`) — the pure per-test pass-rate computation backing `stats.functionalYield`.
+
+### Changed
+
+- `colorBySpec: boolean` (`WaferViewOptions`, `ToCanvasOptions`) is now a deprecated alias for `passFailDisplay: 'spec'`, ignored whenever `passFailDisplay` is set.
+
 ## [0.20.2] — 2026-07-16
 
 Design-review pass over the newer UI surfaces (Insights, Summary panel, findings). Visual and display-language changes only — no public API changes; the chart panels' `colorScheme` option is now deliberately ignored where colour used to carry no information (interfaces unchanged for compatibility).

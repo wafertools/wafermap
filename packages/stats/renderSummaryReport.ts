@@ -1,10 +1,11 @@
 import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
-import type { BinDef, TestDef, YieldSummary } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type BinDef, type TestDef, type YieldSummary } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
 import { openHtmlReport } from './renderFindingsReport.js';
 import { analyzeWaferLot } from './analyzeWaferLot.js';
+import { computeFunctionalYield } from './analyzeWaferMap.js';
 import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
 import {
@@ -130,7 +131,8 @@ function testSection(
   const precomputedByNumber = new Map((precomputedPerTestStats ?? []).map(s => [s.testNumber, s]));
   const rows: string[][] = [];
 
-  for (const def of testDefs) {
+  // Min/mean/max are parametric statistics — functional (pass/fail) tests are excluded.
+  for (const def of testDefs.filter(isParametricTest)) {
     const tn = def.testNumber ?? def.index;
     if (tn === undefined) continue;
     const unit = def.unit || undefined;
@@ -159,6 +161,29 @@ function testSection(
   }
   if (!rows.length) return '';
   return renderSection('Test Values', renderTable(['Test', 'Min', 'Mean', 'Max'], rows, { className: 'compact' }));
+}
+
+/**
+ * "Functional Tests" table — pass/fail counts and pass rate for every
+ * functional (`testType: 'F'`) test. `precomputed` accepts
+ * `StatsSummary.stats.functionalYield` (or a lot-pooled equivalent); without
+ * it the rows come from `computeFunctionalYield` over `dies`.
+ */
+function functionalSection(
+  dies: Die[],
+  testDefs: TestDef[],
+  precomputed?: NonNullable<StatsSummary['stats']['functionalYield']>,
+): string {
+  const data = precomputed ?? computeFunctionalYield(dies, testDefs);
+  if (!data?.length) return '';
+  const rows = data.map(r => [
+    escHtml(r.label),
+    String(r.totalDies),
+    String(r.passDies),
+    String(r.failDies),
+    r.passRatePercent !== null ? `${r.passRatePercent.toFixed(1)}%` : '—',
+  ]);
+  return renderSection('Functional Tests', renderTable(['Test', 'N', 'Pass', 'Fail', 'Pass Rate'], rows, { className: 'compact' }));
 }
 
 /** Cp/Cpk/Pp/Ppk for every parametric test with recorded values — tests
@@ -243,6 +268,7 @@ export function renderSummaryReportHtml(
     regionYieldSection('Ring Yield', ringRegions, dies, passBins),
     regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins),
     testSection(dies, testDefs, statsSummary?.stats.perTestStats),
+    functionalSection(dies, testDefs, statsSummary?.stats.functionalYield),
     capabilitySection([{ dies }], testDefs),
     statsSummary ? findingsSection(statsSummary.findings) : '',
   ].filter(Boolean).join('\n');
@@ -427,6 +453,33 @@ function lotTestTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: S
   return testSection(allDies, testDefs, pooled);
 }
 
+/**
+ * Lot-pooled "Functional Tests" table: sums pass/fail/verdict counts across
+ * per-wafer `StatsSummary.stats.functionalYield` when every wafer has one
+ * (counts pool losslessly); otherwise recomputes from the pooled dies.
+ */
+function lotFunctionalTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: StatsSummary[]): string {
+  let pooled: NonNullable<StatsSummary['stats']['functionalYield']> | undefined;
+  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.functionalYield !== undefined)) {
+    const byTest = new Map<number, { label: string; passDies: number; failDies: number; totalDies: number }>();
+    for (const s of perWaferSummaries) {
+      for (const t of s.stats.functionalYield ?? []) {
+        const acc = byTest.get(t.testNumber) ?? { label: t.label, passDies: 0, failDies: 0, totalDies: 0 };
+        acc.passDies += t.passDies;
+        acc.failDies += t.failDies;
+        acc.totalDies += t.totalDies;
+        byTest.set(t.testNumber, acc);
+      }
+    }
+    pooled = [...byTest.entries()].map(([testNumber, acc]) => ({
+      testNumber,
+      ...acc,
+      passRatePercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null,
+    }));
+  }
+  return functionalSection(allDies, testDefs, pooled?.length ? pooled : undefined);
+}
+
 // Identity fields that must never be silently pooled across a lot report —
 // distinct from buildFacetTable's general "groupable dimension" curation
 // (used by the Analysis tab's interactive "Group by", which deliberately
@@ -574,6 +627,7 @@ function renderLotGroupSections(
     ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBins)
     : '';
   const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries) : '';
+  const functionalSectionHtml = testDefs.length ? lotFunctionalTable(allDies, testDefs, perWaferSummaries) : '';
   const capabilitySectionHtml = testDefs.length ? capabilitySection(items, testDefs) : '';
   const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount) : '';
 
@@ -586,6 +640,7 @@ function renderLotGroupSections(
     ringSection,
     quadSection,
     testSectionHtml,
+    functionalSectionHtml,
     capabilitySectionHtml,
     findingsSectionHtml,
   ].filter(Boolean).join('\n');

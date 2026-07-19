@@ -2,7 +2,7 @@ import type { WaferMapInput, WaferMapResult } from '../renderer/buildWaferMap.js
 
 export type StatsSeverity = 'info' | 'notable' | 'unusual';
 export type StatsLevel = 'wafer' | 'lot' | 'inter-wafer';
-export type StatsVariableKind = 'yield' | 'hardBin' | 'softBin' | 'test' | 'spatialPattern';
+export type StatsVariableKind = 'yield' | 'hardBin' | 'softBin' | 'test' | 'functionalTest' | 'spatialPattern';
 export type StatsComparisonFamily =
   | 'ring'
   | 'quadrant'
@@ -138,6 +138,24 @@ export interface StatsSummary {
       totalDies:    number;
       /** `(passDies / totalDies) × 100` in [0, 100], or `null` when no dies had this test. */
       yieldPercent: number | null;
+    }>;
+    /**
+     * Per-test pass rate for each functional (`testType: 'F'`) test — "functional
+     * yield" in fab terms. Verdicts are read via `getTestPassStatus` (recorded
+     * `testPass` first, then the legacy 0/1 `testValues` fallback). The
+     * denominator is dies with a recorded verdict for the test — partial and
+     * edge-excluded dies are excluded, dies never tested are not counted as fails.
+     * Only populated when functional testDefs are provided.
+     */
+    functionalYield?: Array<{
+      testNumber:      number;
+      label:           string;
+      passDies:        number;
+      failDies:        number;
+      /** Dies with a recorded pass/fail verdict for this test. */
+      totalDies:       number;
+      /** `(passDies / totalDies) × 100` in [0, 100], or `null` when no dies had a verdict. */
+      passRatePercent: number | null;
     }>;
     /**
      * Descriptive statistics for each test's values across all eligible dies.

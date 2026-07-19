@@ -86,8 +86,13 @@
     import { analyzeWaferMap, analyzeWaferLot }   from 'wafermap/stats';
     import {
       makeResults, makeWaferConfig, DIE_CONFIG,
-      HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
+      HBIN_DEFS, SBIN_DEFS, TEST_DEFS, FUNCTIONAL_TEST_DEF,
     } from './data.js';
+
+    // Adds the functional Continuity test (1080) alongside the three parametric
+    // tests, so the Summary panel's "Functional Tests" section (pass rate, not
+    // mean/σ) has something to show.
+    const ALL_TEST_DEFS = [...TEST_DEFS, FUNCTIONAL_TEST_DEF];
 
     // ── Single wafer ────────────────────────────────────────────────────────────
 
@@ -97,7 +102,7 @@
       dieConfig:   DIE_CONFIG,
       hbinDefs:    HBIN_DEFS,
       sbinDefs:    SBIN_DEFS,
-      testDefs:    TEST_DEFS,
+      testDefs:    ALL_TEST_DEFS,
     });
 
     const singleStats = analyzeWaferMap(singleResult, { computePerTestStats: true });
@@ -116,12 +121,12 @@
     // ── Gallery ─────────────────────────────────────────────────────────────────
 
     const waferResults = [
-      buildWaferMap({ results: makeResults({ seed: 1 }),                         waferConfig: makeWaferConfig(0), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
-      buildWaferMap({ results: makeResults({ seed: 2, edgeFail: true }),          waferConfig: makeWaferConfig(1), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
-      buildWaferMap({ results: makeResults({ seed: 3, edgeFail: true }),          waferConfig: makeWaferConfig(2), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
-      buildWaferMap({ results: makeResults({ seed: 4, cluster: true, edgeArc: true }), waferConfig: makeWaferConfig(3), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
-      buildWaferMap({ results: makeResults({ seed: 5, center: true }),            waferConfig: makeWaferConfig(4), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
-      buildWaferMap({ results: makeResults({ seed: 6, edgeFail: true, center: true }), waferConfig: makeWaferConfig(5), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 1 }),                         waferConfig: makeWaferConfig(0), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: ALL_TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 2, edgeFail: true }),          waferConfig: makeWaferConfig(1), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: ALL_TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 3, edgeFail: true }),          waferConfig: makeWaferConfig(2), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: ALL_TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 4, cluster: true, edgeArc: true }), waferConfig: makeWaferConfig(3), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: ALL_TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 5, center: true }),            waferConfig: makeWaferConfig(4), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: ALL_TEST_DEFS }),
+      buildWaferMap({ results: makeResults({ seed: 6, edgeFail: true, center: true }), waferConfig: makeWaferConfig(5), dieConfig: DIE_CONFIG, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: ALL_TEST_DEFS }),
     ];
 
     const waferSummaries = waferResults.map(r => analyzeWaferMap(r, { computePerTestStats: true }));

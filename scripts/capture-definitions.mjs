@@ -244,6 +244,27 @@ export const CAPTURES = [
     setup: [['toggleOverlay', 'Spec pass/fail'], ['showCursorOn', 'Overlays', 90, 140]],
   },
 
+  // ── guide-test-values-functional.png — §6 Functional tests: Continuity forced into Test pass/fail ─
+  {
+    file: 'guide-test-values-functional',
+    group: 'maps',
+    page: '/examples/test-values.html',
+    selector: '.demo-content',
+    wait: 800,
+    screenshotFn: async (page, outFile) => {
+      // Select the functional Continuity test (1080) via the external selector —
+      // the library forces passFailDisplay: 'test' since it has no measured value.
+      await page.evaluate(() => {
+        const sel = document.getElementById('sel-test');
+        sel.value = '1080';
+        sel.dispatchEvent(new Event('change'));
+      });
+      await page.waitForTimeout(500);
+      const el = await page.$('.demo-content');
+      await el.screenshot({ path: outFile });
+    },
+  },
+
   // ── guide-retests.png — §7 Retests: map + retested-die list sidebar ─────────
   {
     file: 'guide-retests',

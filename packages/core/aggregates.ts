@@ -7,6 +7,8 @@ export interface DieLike {
   x: number;
   y: number;
   testValues?: Record<number, number>;
+  /** Recorded per-test pass/fail verdicts (true = pass). Never aggregated — always stripped from outputs. */
+  testPass?: Record<number, boolean>;
   /** @deprecated */
   values?: number[];
   hbin?: number;
@@ -59,8 +61,10 @@ export function aggregateValues(
   const result: DieLike[] = [];
   for (const [key, template] of dieTemplate) {
     const vals = valuesMap.get(key);
+    // testPass is always stripped: it is one wafer's verdicts, meaningless on
+    // a lot-aggregated die.
     if (!vals?.length) {
-      result.push({ ...template, testValues: undefined });
+      result.push({ ...template, testValues: undefined, testPass: undefined });
       continue;
     }
 
@@ -72,7 +76,7 @@ export function aggregateValues(
       const mid = Math.floor(sorted.length / 2);
       agg = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     } else if (method === 'stddev') {
-      if (vals.length < 2) { result.push({ ...template, testValues: { 0: 0 } }); continue; }
+      if (vals.length < 2) { result.push({ ...template, testValues: { 0: 0 }, testPass: undefined }); continue; }
       const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
       agg = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1));
     } else if (method === 'min') {
@@ -83,7 +87,7 @@ export function aggregateValues(
       agg = vals.length; // 'count'
     }
 
-    result.push({ ...template, testValues: { 0: agg } });
+    result.push({ ...template, testValues: { 0: agg }, testPass: undefined });
   }
 
   return result;
@@ -139,6 +143,7 @@ export function aggregateBinCounts(
   return (diesByWafer[0] ?? []).map((die) => ({
     ...die,
     testValues: { 0: countMap.get(`${die.x},${die.y}`) ?? 0 },
+    testPass: undefined,
     ...(binSpace === 'soft' ? { sbin: targetBin } : { hbin: targetBin }),
   }));
 }

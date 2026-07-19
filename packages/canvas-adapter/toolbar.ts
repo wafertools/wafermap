@@ -1721,9 +1721,43 @@ export function makePaletteBtn(
   );
 }
 
+/** Requested pass/fail display resolved from the new option and its deprecated alias. */
+export function requestedPassFailDisplay(
+  opts: { passFailDisplay?: 'off' | 'spec' | 'test'; colorBySpec?: boolean },
+): 'off' | 'spec' | 'test' {
+  return opts.passFailDisplay ?? (opts.colorBySpec ? 'spec' : 'off');
+}
+
+/**
+ * The two mutually exclusive pass/fail display entries for the overlays menu,
+ * shared by renderWaferMap and renderWaferGallery. Each entry appears only when
+ * valid for the active test (library-derived): "Spec pass/fail" needs limits,
+ * "Test pass/fail" needs at least one recorded verdict. A functional active
+ * test returns no entries at all — its value mode IS test pass/fail, there is
+ * no alternative display to choose.
+ */
+export function passFailMenuRows(
+  state: { functionalActive: boolean; hasLimits: boolean; hasRecorded: boolean; display: 'off' | 'spec' | 'test' },
+  setDisplay: (d: 'off' | 'spec' | 'test') => void,
+): CheckMenuRow[] {
+  if (state.functionalActive) return [];
+  const rows: CheckMenuRow[] = [];
+  if (state.hasLimits) rows.push({
+    label: 'Spec pass/fail',
+    active: state.display === 'spec',
+    onClick: () => setDisplay(state.display === 'spec' ? 'off' : 'spec'),
+  });
+  if (state.hasRecorded) rows.push({
+    label: 'Test pass/fail',
+    active: state.display === 'test',
+    onClick: () => setDisplay(state.display === 'test' ? 'off' : 'test'),
+  });
+  return rows;
+}
+
 export function makeLogScaleBtn(
   helpers: ToolbarHelpers,
-  getOpts: () => { plotMode?: PlotMode; logScale?: boolean; colorBySpec?: boolean },
+  getOpts: () => { plotMode?: PlotMode; logScale?: boolean; colorBySpec?: boolean; passFailDisplay?: 'off' | 'spec' | 'test'; functionalActive?: boolean },
   setOpts: (patch: { logScale: boolean }) => void,
 ): { btn: HTMLButtonElement; sync: () => void } {
   const btn = helpers.makeBtn('logScale', 'Toggle log scale', () => {
@@ -1733,7 +1767,9 @@ export function makeLogScaleBtn(
     const opts = getOpts();
     const m = opts.plotMode;
     const isValueMode = m === 'value' || m === 'stackedValues';
-    btn.style.display = (isValueMode && !opts.colorBySpec) ? '' : 'none';
+    // Hidden under any solid pass/fail display (no value axis to scale) and for a
+    // functional active test (which never has a value axis).
+    btn.style.display = (isValueMode && requestedPassFailDisplay(opts) === 'off' && !opts.functionalActive) ? '' : 'none';
     helpers.setActive(btn, !!opts.logScale);
   }
   return { btn, sync };

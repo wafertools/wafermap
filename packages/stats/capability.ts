@@ -38,7 +38,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
-import type { TestDef } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { quantile } from './math.js';
 
 export interface CapabilityDatum {
@@ -105,7 +105,7 @@ export function buildCapabilityData(items: CapabilityItem[], testDefs: TestDef[]
   const defByTestNumber = new Map<number, TestDef>();
   for (const def of testDefs) {
     const testNumber = def.testNumber;
-    if (testNumber === undefined) continue;
+    if (testNumber === undefined || !isParametricTest(def)) continue;
     defByTestNumber.set(testNumber, def);
     const lsl = def.limitLow;
     const usl = def.limitHigh;

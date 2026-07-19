@@ -159,6 +159,13 @@ export function makeResults({
       //   Ioff: off-state leakage grows exponentially toward edge
       const ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
 
+      // Continuity: a functional (pass/fail-only) probe-contact test, no measured
+      // value. Physically motivated: probe-pin contact quality degrades toward the
+      // wafer edge, so pass rate drops there (~97.5% interior, ~80% outer ring).
+      const continuityRoll = rng(i, j, seed + 900);
+      const continuityPassProb = t > 0.82 ? 0.80 : 0.975;
+      const continuityPass = continuityRoll < continuityPassProb;
+
       // Compute siteNum and partId when requested.
       let siteNum, partId;
       if (siteCount > 0) {
@@ -182,7 +189,11 @@ export function makeResults({
         partId = partIdCounter++;
       }
 
-      const die = { x: i, y: j, hbin, sbin, testValues: { 1050: idsat, 1060: vth, 1070: ioff } };
+      const die = {
+        x: i, y: j, hbin, sbin,
+        testValues: { 1050: idsat, 1060: vth, 1070: ioff },
+        testPass:   { 1080: continuityPass },
+      };
       if (siteNum !== undefined) die.siteNum = siteNum;
       if (partId  !== undefined) die.partId  = partId;
       results.push(die);
@@ -227,6 +238,15 @@ export const TEST_DEFS = [
   { testNumber: 1060, name: 'Vth',   unit: 'V',  limitLow: 0.44, limitHigh: 0.57 },
   { testNumber: 1070, name: 'Ioff',  unit: 'A' },
 ];
+
+/**
+ * Functional (pass/fail-only) test — every die from `makeResults` carries a
+ * `testPass[1080]` verdict, but this def is kept separate from `TEST_DEFS` so
+ * existing demos that pass `testDefs: TEST_DEFS` are unaffected. Opt in with
+ * `testDefs: [...TEST_DEFS, FUNCTIONAL_TEST_DEF]` to exercise functional-test
+ * rendering (forced `passFailDisplay: 'test'`) and `stats.functionalYield`.
+ */
+export const FUNCTIONAL_TEST_DEF = { testNumber: 1080, name: 'Continuity', testType: 'F' };
 
 /** Standard 300 mm production wafer with bottom notch. */
 export const WAFER_CONFIG = {

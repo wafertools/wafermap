@@ -63,25 +63,25 @@ test('bin mode — shows the bin verdict then a test-value COUNT, never a list',
     [{ bin: 2, name: 'Contact Open' }],
   );
   assert.match(html, /HBin: 2 · Contact Open/, 'bin verdict is primary in bin mode');
-  assert.match(html, /48 test values recorded/, 'tests collapse to a count in bin mode');
+  assert.match(html, /48 test results recorded/, 'tests collapse to a count in bin mode');
   // No individual test rows are listed.
   assert.equal((html.match(/T\d+:/g) || []).length, 0, 'bin mode must not list any test rows');
 });
 
 test('singular/plural and empty edges', () => {
-  // Exactly one test value, bin mode → singular "1 test value recorded".
+  // Exactly one test result, bin mode → singular "1 test result recorded".
   const oneTestBin = { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0 } };
   const defs1 = [{ testNumber: 1010, name: 'A', unit: 'V' }];
   const binHtml = buildHoverText(oneTestBin, 'hardBin', defs1);
-  assert.match(binHtml, /1 test value recorded/);
-  assert.doesNotMatch(binHtml, /1 test values recorded/, 'no incorrect plural');
+  assert.match(binHtml, /1 test result recorded/);
+  assert.doesNotMatch(binHtml, /1 test results recorded/, 'no incorrect plural');
 
   // No test values at all → no count line, no "more" line.
   const noTests = { x: 0, y: 0, hbin: 1 };
   const noneHtml = buildHoverText(noTests, 'value', defs1, undefined, undefined,
     undefined, undefined, undefined, undefined, undefined, 1010);
   assert.doesNotMatch(noneHtml, /more test/);
-  assert.doesNotMatch(noneHtml, /test value.* recorded/);
+  assert.doesNotMatch(noneHtml, /test result.* recorded/);
 });
 
 test('stacked modes are untouched — still show a single aggregated value', () => {

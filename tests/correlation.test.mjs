@@ -39,3 +39,11 @@ test('filterCorrelationMatrix — selects correlated tests normally when data ha
   assert.ok(strongestPair !== null);
   assert.ok(Math.abs(Math.abs(strongestPair.r) - 1) < 1e-5);
 });
+
+test('buildCorrelationMatrix — functional tests (testType F) are excluded from the matrix', () => {
+  const dies = Array.from({ length: 5 }, (_, i) => ({ x: i, y: 0, testValues: { 1: i, 2: i * 2, 9: i % 2 } }));
+  const defs = [...testDefs, { testNumber: 9, name: 'scan_chain', testType: 'F' }];
+  const matrix = buildCorrelationMatrix(dies, defs);
+  assert.ok(!matrix.tests.some(t => t.testNumber === 9), 'functional test must not appear on matrix axes');
+  assert.ok(matrix.tests.some(t => t.testNumber === 1), 'parametric tests still present');
+});

@@ -160,10 +160,14 @@ export function toCanvas(
     showTitle     = true,
   } = options;
 
-  const drawColorbar   = showColorbar && COLORBAR_MODES.has(view.plotMode) && !view.colorBySpec;
+  // Any solid pass/fail display (spec-limit judgement or recorded test verdict)
+  // replaces the colorbar with a categorical legend.
+  const drawColorbar   = showColorbar && COLORBAR_MODES.has(view.plotMode) && view.passFailDisplay === 'off';
   const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(view.plotMode);
-  const drawSpecLegend = showColorbar && view.plotMode === 'value' && view.colorBySpec && view.specCounts !== undefined;
-  // The bin and spec legends share the same layout/rendering machinery.
+  const drawSpecLegend = showColorbar && view.plotMode === 'value' && (
+    (view.passFailDisplay === 'spec' && view.specCounts !== undefined) ||
+    (view.passFailDisplay === 'test' && view.passFailCounts !== undefined));
+  // The bin and pass/fail legends share the same layout/rendering machinery.
   const drawLegend     = drawBinLegend || drawSpecLegend;
 
   const binLegendEntries: Array<[number, number]> = drawBinLegend && view.binCounts
@@ -175,7 +179,12 @@ export function toCanvas(
   // hit-row plumbing work unchanged; spec entries use negative sentinel keys that never match a bin.
   type LegendSwatch = { key: number; color: string; label: string; compactLabel: string; count: number; tooltip: string };
   const specSwatches: LegendSwatch[] = [];
-  if (drawSpecLegend) {
+  if (drawSpecLegend && view.passFailDisplay === 'test') {
+    // Recorded test verdict: a single undirected fail category.
+    const pc = view.passFailCounts!;
+    specSwatches.push({ key: -1, color: SPEC_PASS_FILL, label: 'Pass', compactLabel: 'Pass', count: pc.pass, tooltip: `Pass · ${pc.pass} dies` });
+    specSwatches.push({ key: -2, color: SPEC_FAIL_HIGH, label: 'Fail', compactLabel: 'Fail', count: pc.fail, tooltip: `Fail · ${pc.fail} dies` });
+  } else if (drawSpecLegend) {
     const sc = view.specCounts!;
     const td = findTestDef(view.testDefs, view.activeTest);
     specSwatches.push({ key: -1, color: SPEC_PASS_FILL, label: 'Pass', compactLabel: 'Pass', count: sc.pass, tooltip: `Pass · ${sc.pass} dies` });

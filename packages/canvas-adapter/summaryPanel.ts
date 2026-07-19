@@ -14,9 +14,10 @@
 
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
-import type { BinDef, TestDef, YieldSummary } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type BinDef, type TestDef, type YieldSummary } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData, type StatsRegion } from '../stats/regions.js';
+import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 import { openHtmlReport } from '../stats/renderFindingsReport.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
@@ -751,7 +752,10 @@ export function buildTestSection(
   let entries: TestEntry[];
 
   if (testDefs?.length) {
+    // Functional (pass/fail) tests are excluded — every column in this table
+    // (mean/σ/median/quartiles) is a parametric statistic.
     entries = testDefs
+      .filter(isParametricTest)
       .map(def => ({ testNumber: def.testNumber ?? def.index!, name: def.name, unit: def.unit, limitLow: def.limitLow, limitHigh: def.limitHigh }))
       .filter(e => e.testNumber !== undefined);
   } else {
@@ -942,6 +946,143 @@ export function buildTestSection(
   scroll.appendChild(table);
   outer.appendChild(scroll);
   return outer;
+}
+
+/**
+ * "Functional Tests" section — one row per functional (`testType: 'F'`) test
+ * with pass/fail counts and pass rate. The functional counterpart of
+ * `buildTestSection`, which shows parametric statistics functional tests are
+ * excluded from. Shared by the Summary panel, the Insights Overview tab, and
+ * the pooled lot variant (`buildLotFunctionalSection`).
+ *
+ * `precomputed` takes `StatsSummary.stats.functionalYield` (already computed
+ * by `analyzeWaferMap`, or pooled by `buildLotFunctionalSection`); without it
+ * the rows are computed from `dies` via `computeFunctionalYield`, so both
+ * paths share one computation.
+ */
+export function buildFunctionalTestSection(
+  dies: Die[],
+  testDefs: TestDef[] | undefined,
+  precomputed?: NonNullable<StatsSummary['stats']['functionalYield']>,
+  /** Optional host hook for the "Export CSV" button — see `saveTextFile` (toolbar.ts). */
+  onSaveText?: SaveTextHandler,
+): HTMLDivElement | null {
+  const rows = precomputed ?? computeFunctionalYield(dies, testDefs);
+  if (!rows?.length) return null;
+
+  const outer = el('div');
+
+  const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
+  const title = sectionTitle(`Functional Tests  (${rows.length})`);
+  title.style.marginBottom = '0';
+  headerRow.appendChild(title);
+
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.textContent = 'Export CSV';
+  Object.assign(exportBtn.style, {
+    background:   'none',
+    border:       BORDER,
+    borderRadius: '4px',
+    cursor:       'pointer',
+    fontSize:     '10px',
+    color:        CLR.iconHover,
+    padding:      '2px 7px',
+  } as Partial<CSSStyleDeclaration>);
+  exportBtn.addEventListener('click', () => {
+    const lines = [['Test', 'N', 'Pass', 'Fail', 'Pass Rate %'].map(csvField).join(',')];
+    for (const r of rows) {
+      lines.push([
+        r.label, String(r.totalDies), String(r.passDies), String(r.failDies),
+        r.passRatePercent !== null ? r.passRatePercent.toFixed(1) : '',
+      ].map(csvField).join(','));
+    }
+    saveTextFile(lines.join('\n'), 'functional-tests.csv', 'text/csv', onSaveText);
+  });
+  headerRow.appendChild(exportBtn);
+  outer.appendChild(headerRow);
+
+  const table = el('table', {
+    width:          '100%',
+    borderCollapse: 'collapse',
+    fontSize:       '11px',
+  });
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const h of ['Test', 'N', 'Pass', 'Fail', 'Pass rate']) {
+    headRow.appendChild(el('th', {
+      textAlign:     h === 'Test' ? 'left' : 'right',
+      fontWeight:    '700',
+      fontSize:      '10px',
+      letterSpacing: '0.03em',
+      textTransform: 'uppercase',
+      color:         LABEL_COLOR,
+      padding:       '3px 8px 5px',
+      borderBottom:  `1px solid ${CLR.menuBorder}`,
+      whiteSpace:    'nowrap',
+    }, h));
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const r of rows) {
+    const row = document.createElement('tr');
+    const cell = (text: string, align: 'left' | 'right' = 'right') => {
+      row.appendChild(el('td', {
+        textAlign:    align,
+        padding:      '4px 8px',
+        borderBottom: `1px solid ${CLR.menuBorder}`,
+        color:        VALUE_COLOR,
+        whiteSpace:   'nowrap',
+      }, text));
+    };
+    cell(r.label, 'left');
+    cell(String(r.totalDies));
+    cell(String(r.passDies));
+    cell(String(r.failDies));
+    cell(r.passRatePercent !== null ? `${r.passRatePercent.toFixed(1)}% (N=${r.totalDies})` : '—');
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+
+  const scroll = el('div', { overflowX: 'auto' });
+  scroll.appendChild(table);
+  outer.appendChild(scroll);
+  return outer;
+}
+
+/**
+ * Lot-pooled "Functional Tests" section: when every wafer's
+ * `StatsSummary.stats.functionalYield` is available, sums pass/fail/total
+ * counts across wafers (exact — counts pool losslessly, unlike quantiles);
+ * otherwise recomputes from the pooled dies.
+ */
+export function buildLotFunctionalSection(
+  allDies: Die[],
+  testDefs: TestDef[] | undefined,
+  perWaferSummaries?: StatsSummary[],
+  onSaveText?: SaveTextHandler,
+): HTMLDivElement | null {
+  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.functionalYield !== undefined)) {
+    const byTest = new Map<number, { label: string; passDies: number; failDies: number; totalDies: number }>();
+    for (const s of perWaferSummaries) {
+      for (const t of s.stats.functionalYield ?? []) {
+        const acc = byTest.get(t.testNumber) ?? { label: t.label, passDies: 0, failDies: 0, totalDies: 0 };
+        acc.passDies += t.passDies;
+        acc.failDies += t.failDies;
+        acc.totalDies += t.totalDies;
+        byTest.set(t.testNumber, acc);
+      }
+    }
+    const pooled = [...byTest.entries()].map(([testNumber, acc]) => ({
+      testNumber,
+      ...acc,
+      passRatePercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null,
+    }));
+    if (pooled.length) return buildFunctionalTestSection(allDies, testDefs, pooled, onSaveText);
+  }
+  return buildFunctionalTestSection(allDies, testDefs, undefined, onSaveText);
 }
 
 // ── Findings display vocabulary ──────────────────────────────────────────────
@@ -1283,7 +1424,8 @@ const FINDINGS_KIND_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'yield',          label: 'Yield' },
   { value: 'hardBin',        label: 'Hard bin' },
   { value: 'softBin',        label: 'Soft bin' },
-  { value: 'test',           label: 'Test' },
+  { value: 'test',           label: 'Test value' },
+  { value: 'functionalTest', label: 'Functional test' },
   { value: 'spatialPattern', label: 'Spatial pattern' },
 ];
 
@@ -1652,6 +1794,7 @@ export function renderWaferSummaryContent(
   sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
 
   sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText));
+  sections.push(buildFunctionalTestSection(dies, testDefs, statsSummary?.stats.functionalYield, onSaveText));
 
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
     sections.push(buildFindingsSectionWithFilter(
@@ -1757,6 +1900,7 @@ export function renderLotSummaryContent(
     buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
     buildLotQuadrantSection(diesByWafer, allWafers, ringCount, passBins),
     testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText) : null,
+    testDefs?.length ? buildLotFunctionalSection(allDies, testDefs, perWaferSummaries, onSaveText) : null,
   ];
 
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {

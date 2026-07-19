@@ -22,6 +22,14 @@ export interface Die {
    * Example: `{ 1050: 1.42e-3, 1060: 0.487, 1070: 8.3e-12 }`
    */
   testValues?: Record<number, number>;
+  /**
+   * Recorded per-test pass/fail verdicts keyed by test number (true = pass),
+   * parallel to `testValues`. Parametric tests carry a value in `testValues`
+   * and may optionally carry a verdict here; functional tests (`testType: 'F'`)
+   * carry a verdict here ONLY — they have no measured value.
+   * Example: `{ 2001: true, 2002: false }`
+   */
+  testPass?: Record<number, boolean>;
   /** @deprecated Use `testValues` instead. Positional array — fragile when tests are added or removed. */
   values?: number[];
   hbin?: number;       // hard bin (physical sort result)

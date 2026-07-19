@@ -3,11 +3,11 @@ import { buildView, buildHoverText, findTestDef, resolveTestNumber, getUniqueTes
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
-import { buildWaferMap } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -65,11 +65,13 @@ export interface WaferPreferences {
 export interface WaferDisplayState {
   plotMode?:     PlotMode;
   /**
-   * When true and `plotMode` is `'value'`, colours in-spec dies with a fixed pass colour
-   * instead of the continuous gradient. Out-of-spec dies (blue/red) are unaffected.
-   * Only meaningful when the active test has `limitLow` or `limitHigh` defined.
-   * Toggled by the Overlays toolbar menu when the active test has limits.
+   * Requested pass/fail display for `value` mode — `'spec'` (spec-limit judgement),
+   * `'test'` (the tester's recorded verdict from `die.testPass`), or `'off'` (gradient).
+   * The library resolves the effective display from the data; a functional active
+   * test always renders as `'test'`. Toggled by the Overlays toolbar menu.
    */
+  passFailDisplay?: 'off' | 'spec' | 'test';
+  /** @deprecated Use `passFailDisplay: 'spec'` instead — alias, ignored when `passFailDisplay` is set. */
   colorBySpec?:  boolean;
   /**
    * Which test number to display in `value` plot mode. Default `0`.
@@ -608,6 +610,7 @@ export function renderWaferMap(
       dataAxisFlip,
       colorbarRangeMode:      so.colorbarRangeMode,
       colorBySpec:            so.colorBySpec,
+      passFailDisplay:        so.passFailDisplay,
       fallbackFormat:         currentFallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
@@ -882,8 +885,8 @@ export function renderWaferMap(
             // Apply test's logScale default when switching tests.
             applyOpts({ plotMode: entry.plotMode, activeTest: entry.activeTest, logScale: entry.logScale });
           } else {
-            // Switching to a bin/stacked mode — clear colorBySpec (only valid in value mode).
-            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false });
+            // Switching to a bin/stacked mode — clear the pass/fail display (only valid in value mode).
+            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false, passFailDisplay: 'off' });
           }
           menu.remove();
           setOpenMenu(null);
@@ -901,6 +904,9 @@ export function renderWaferMap(
           // Only include modes for which data is actually present.
           const dies     = currentView.dies;
           const testDefs = currentView.testDefs;
+          // Value mode is available for any per-test data — numeric values or recorded
+          // pass/fail verdicts (functional tests). Stacked values need numeric values.
+          const hasTestData = dies.some(dieHasTestData);
           const hasValues = dies.some(d =>
             (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
             (d.values?.length ?? 0) > 0
@@ -908,7 +914,7 @@ export function renderWaferMap(
           const hasHbin = dies.some(d => d.hbin != null);
           const hasSbin = dies.some(d => d.sbin != null);
 
-          const testEntries: ModeEntry[] = hasValues
+          const testEntries: ModeEntry[] = hasTestData
             ? (testDefs?.length
                 ? testDefs.map(t => ({
                     plotMode: 'value' as PlotMode,
@@ -961,19 +967,26 @@ export function renderWaferMap(
             const isValueMode   = (viewOpts.plotMode ?? 'hardBin') === 'value';
             const { testNumber: resolvedTest } = resolveTestNumber(viewOpts.activeTest ?? 0, currentView.testDefs);
             const activeTestDef = findTestDef(currentView.testDefs, resolvedTest);
-            const hasLimits     = isValueMode && (activeTestDef?.limitLow !== undefined || activeTestDef?.limitHigh !== undefined);
+            const functionalActive = isValueMode && activeTestDef !== undefined && !isParametricTest(activeTestDef);
+            const hasLimits     = isValueMode && !functionalActive &&
+              (activeTestDef?.limitLow !== undefined || activeTestDef?.limitHigh !== undefined);
+            const hasRecorded   = isValueMode && !functionalActive &&
+              currentView.dies.some(d => getTestPassStatus(d, resolvedTest, activeTestDef) !== undefined);
             return [
               { label: 'Ring boundaries', active: !!viewOpts.showRingBoundaries,     onClick: () => applyOpts({ showRingBoundaries:   !viewOpts.showRingBoundaries   }) },
               { label: 'Quadrant lines',  active: !!viewOpts.showQuadrantBoundaries, onClick: () => applyOpts({ showQuadrantBoundaries: !viewOpts.showQuadrantBoundaries }) },
               { label: 'Die labels',      active: !!viewOpts.showDieLabels,          onClick: () => applyOpts({ showDieLabels:          !viewOpts.showDieLabels          }) },
               { label: 'Reticle grid',    active: !!viewOpts.showReticle,            enabled: hasReticleNow, onClick: () => applyOpts({ showReticle: !viewOpts.showReticle }) },
               { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:        !viewOpts.showXYIndicator        }) },
-              { label: 'Spec pass/fail',  active: !!viewOpts.colorBySpec,            enabled: hasLimits,    onClick: () => applyOpts({ colorBySpec: !viewOpts.colorBySpec }) },
+              ...passFailMenuRows(
+                { functionalActive, hasLimits, hasRecorded, display: requestedPassFailDisplay(viewOpts) },
+                d => applyOpts({ passFailDisplay: d, colorBySpec: false }),
+              ),
             ];
           },
           () => !!(viewOpts.showRingBoundaries || viewOpts.showQuadrantBoundaries ||
                    viewOpts.showDieLabels || viewOpts.showReticle || viewOpts.showXYIndicator ||
-                   viewOpts.colorBySpec),
+                   requestedPassFailDisplay(viewOpts) !== 'off'),
         );
         const { btn: btnLegendStyle, sync: syncLegendStyle } = makeLegendStyleBtn(
           tbHelpers,
@@ -983,9 +996,14 @@ export function renderWaferMap(
         syncLegendStyleBtnFn = syncLegendStyle;
         syncLegendStyleBtnFn();
 
+        const activeTestIsFunctional = () => {
+          const { testNumber: resolvedTest } = resolveTestNumber(viewOpts.activeTest ?? 0, testDefs);
+          const td = findTestDef(testDefs, resolvedTest);
+          return td !== undefined && !isParametricTest(td);
+        };
         const { btn: btnLogScale, sync: syncLogScale } = makeLogScaleBtn(
           tbHelpers,
-          () => viewOpts,
+          () => ({ ...viewOpts, functionalActive: activeTestIsFunctional() }),
           patch => applyOpts(patch),
         );
         syncLogScaleBtnFn = syncLogScale;
@@ -1001,7 +1019,9 @@ export function renderWaferMap(
           applyOpts({ colorbarRangeMode: next });
         });
         syncColorbarRangeBtnFn = () => {
-          const visible = viewOpts.plotMode === 'value' && activeTestDefHasLimits() && !viewOpts.colorBySpec;
+          // No colorbar exists under a solid pass/fail display or a functional active test.
+          const visible = viewOpts.plotMode === 'value' && activeTestDefHasLimits() &&
+            requestedPassFailDisplay(viewOpts) === 'off' && !activeTestIsFunctional();
           btnColorbarRange.style.display = visible ? '' : 'none';
           const isSpec = (viewOpts.colorbarRangeMode ?? 'spec') === 'spec';
           setActive(btnColorbarRange, isSpec);

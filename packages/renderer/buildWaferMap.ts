@@ -34,6 +34,15 @@ export interface DieResult {
    */
   testValues?: Record<number, number>;
   /**
+   * Recorded per-test pass/fail verdicts keyed by test number (true = pass),
+   * parallel to `testValues`. Parametric tests carry a value in `testValues`
+   * and may optionally carry the tester's recorded verdict here (e.g. STDF
+   * PTR TEST_FLG); functional tests (`testType: 'F'` in `testDefs`) carry a
+   * verdict here ONLY — they have no measured value.
+   * Example: `{ 2001: true, 2002: false }`
+   */
+  testPass?: Record<number, boolean>;
+  /**
    * @deprecated Use `testValues` instead.
    * Positional array of test measurements — fragile when tests are added,
    * removed, or reordered between runs.
@@ -226,6 +235,27 @@ export interface TestDef {
    * When set, values above this limit are considered out-of-spec.
    */
   limitHigh?: number;
+  /**
+   * Test kind: `'P'` (parametric — a continuous measured value) or `'F'`
+   * (functional — a pass/fail outcome, conventionally recorded as 1 = pass,
+   * 0 = fail, e.g. an STDF FTR). Functional tests render on the wafer map
+   * like any other test value, but are excluded from parametric statistics —
+   * per-test descriptive stats, capability, correlation, distribution charts,
+   * and regional value findings — where a mean or Cpk of a binary outcome
+   * would be meaningless. Default: `'P'`.
+   */
+  testType?: 'P' | 'F';
+}
+
+/**
+ * True when `def` describes a parametric (continuous-value) test — i.e. its
+ * values are valid input for parametric statistics (mean, quartiles, Cpk,
+ * correlation). Functional tests (`testType: 'F'`) record pass/fail outcomes,
+ * not measurements. An undefined def or undefined `testType` defaults to
+ * parametric, so untyped callers keep today's behaviour.
+ */
+export function isParametricTest(def: TestDef | undefined): boolean {
+  return def?.testType !== 'F';
 }
 
 /**
@@ -674,18 +704,29 @@ function resolveAxisFlips(
 
 // ── Lot-stack aggregation ─────────────────────────────────────────────────────
 
-function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>): DieResult[] {
+function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, testDefs?: TestDef[]): DieResult[] {
   const { results: waferResults, method, targetBin } = lotStack;
 
   // 1. Scalar numeric aggregations: mean, median, stddev, min, max, count.
   // Collect all unique testValues keys across all wafers, then run aggregateValues
   // once per key and merge results back so multi-test data isn't silently dropped.
+  // Functional tests (testType 'F') are skipped — a mean/median/σ of a pass/fail
+  // outcome is meaningless; this also keeps legacy 0/1-encoded functional values
+  // out of value stacks. Keys with no matching def default to parametric.
   if (method === 'mean' || method === 'median' || method === 'stddev' || method === 'min' || method === 'max' || method === 'count') {
+    const functionalKeys = new Set(
+      (testDefs ?? []).filter(td => !isParametricTest(td))
+        .map(td => td.testNumber ?? td.index)
+        .filter((n): n is number => n !== undefined),
+    );
     const testKeys = new Set<number>();
     for (const wafer of waferResults) {
       for (const die of wafer) {
         if (die.testValues) {
-          for (const k of Object.keys(die.testValues)) testKeys.add(Number(k));
+          for (const k of Object.keys(die.testValues)) {
+            const key = Number(k);
+            if (!functionalKeys.has(key)) testKeys.add(key);
+          }
         }
       }
     }
@@ -766,9 +807,7 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
   const totalDies = dies.length;
   const edgeExcludedDies = dies.filter(d => d.edgeExcluded).length;
   const filledDies = dies.filter(
-    d => (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
-         (d.values?.length ?? 0) > 0 ||
-         d.hbin !== undefined || d.sbin !== undefined,
+    d => dieHasTestData(d) || d.hbin !== undefined || d.sbin !== undefined,
   ).length;
   return {
     filledDies,
@@ -922,6 +961,45 @@ export function getDieTestValue(die: Die, testNumber: number, fallbackIndex?: nu
   return fallbackIndex !== undefined ? die.values?.[fallbackIndex] : undefined;
 }
 
+/**
+ * Single read-path for "did this die pass test `testNumber`".
+ *
+ * Primary source: `die.testPass[testNumber]` (the tester's recorded verdict).
+ * Migration fallback — the ONLY place this rule exists: a functional test
+ * (`testType: 'F'`) with no `testPass` entry but a `testValues` entry of
+ * exactly 0 or 1 is legacy encoding (1 = pass, 0 = fail) from callers that
+ * predate `testPass`. The fallback is never applied to parametric tests,
+ * whose values are measurements.
+ *
+ * Returns `undefined` when no verdict is recorded — callers must treat that
+ * as no-data, never as a fail.
+ */
+export function getTestPassStatus(
+  die: Pick<Die, 'testValues' | 'testPass'>,
+  testNumber: number,
+  testDef?: TestDef,
+): boolean | undefined {
+  const recorded = die.testPass?.[testNumber];
+  if (recorded !== undefined) return recorded;
+  if (testDef !== undefined && !isParametricTest(testDef)) {
+    const v = die.testValues?.[testNumber];
+    if (v === 0 || v === 1) return v === 1;
+  }
+  return undefined;
+}
+
+/**
+ * True when the die carries any per-test data — a test value (preferred or
+ * deprecated positional form) or a recorded pass/fail verdict. The single
+ * source for "does this die have test data", used by coverage, plot-mode
+ * inference, and the toolbar's value-mode availability checks.
+ */
+export function dieHasTestData(die: Pick<Die, 'testValues' | 'testPass' | 'values'>): boolean {
+  return (die.testValues !== undefined && Object.keys(die.testValues).length > 0) ||
+         (die.testPass   !== undefined && Object.keys(die.testPass).length > 0) ||
+         (die.values?.length ?? 0) > 0;
+}
+
 // ── Data attachment ───────────────────────────────────────────────────────────
 
 function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
@@ -932,6 +1010,7 @@ function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
   if (pt.siteNum     !== undefined) base.siteNum     = pt.siteNum;
   if (pt.partId      !== undefined) base.partId      = pt.partId;
   if (pt.metadata    !== undefined) base.metadata    = pt.metadata;
+  if (pt.testPass    !== undefined) base.testPass    = pt.testPass;
 
   // Preferred path: testValues map supplied directly — use as-is.
   if (pt.testValues) {
@@ -962,8 +1041,7 @@ function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
 
 function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
   if (opts.plotMode) return opts.plotMode;
-  const hasValues = results.some(d => (d.testValues && Object.keys(d.testValues).length > 0) || (d.values?.length ?? 0) > 0);
-  return hasValues ? 'value' : 'hardBin';
+  return results.some(dieHasTestData) ? 'value' : 'hardBin';
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -1044,7 +1122,7 @@ export function buildWaferMap(
   const norm = normalizeInput(input);
   const { debug: _debug, ...viewOpts } = options ?? {};
 
-  const rawResults = norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts) : norm.results;
+  const rawResults = norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts, norm.testDefs) : norm.results;
 
   // Fail fast on string coordinates — common mistake when piping CSV without numeric casting
   for (let i = 0; i < Math.min(5, rawResults.length); i++) {

@@ -261,3 +261,86 @@ test('buildView stackedValues mode produces grey fills when aggregation used wro
   const fills = scene.rectangles.map((r) => r.fill);
   assert.ok(fills.every((f) => f === '#d6d9dd'), `Expected all grey fills, got: ${fills.join(', ')}`);
 });
+
+test('testPass survives buildWaferMap onto result dies, through orientation transforms', () => {
+  const results = [
+    { x: 0, y: 0, testValues: { 1050: 1.2 }, testPass: { 1050: true, 2001: true }, hbin: 1 },
+    { x: 1, y: 0, testValues: { 1050: 3.4 }, testPass: { 1050: false, 2001: false }, hbin: 2 },
+    { x: 0, y: 1, testPass: { 2001: true } }, // functional-only die: no testValues at all
+  ];
+  const result = buildWaferMap({
+    results,
+    waferConfig: { diameter: 40, notch: { type: 'bottom' } },
+    viewOptions: { rotation: 90, flipX: true },
+    testDefs: [
+      { testNumber: 1050, name: 'Idsat' },
+      { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+    ],
+  });
+
+  const d00 = findDie(result, 0, 0);
+  assert.deepEqual(d00.testPass, { 1050: true, 2001: true });
+  const d10 = findDie(result, 1, 0);
+  assert.deepEqual(d10.testPass, { 1050: false, 2001: false });
+  const d01 = findDie(result, 0, 1);
+  assert.deepEqual(d01.testPass, { 2001: true });
+  assert.equal(d01.testValues, undefined);
+  // functional-only data still counts as test data for plot-mode inference
+  assert.equal(result.plotMode, 'value');
+});
+
+test('getTestPassStatus — recorded verdict, legacy 0/1 fallback for F tests only, undefined otherwise', async () => {
+  const { getTestPassStatus } = await import('../dist/index.js');
+  const fDef = { testNumber: 2001, name: 'scan_chain', testType: 'F' };
+  const pDef = { testNumber: 1050, name: 'Idsat' };
+
+  // recorded verdict wins
+  assert.equal(getTestPassStatus({ testPass: { 2001: false }, testValues: { 2001: 1 } }, 2001, fDef), false);
+  // legacy 0/1 fallback for F tests
+  assert.equal(getTestPassStatus({ testValues: { 2001: 1 } }, 2001, fDef), true);
+  assert.equal(getTestPassStatus({ testValues: { 2001: 0 } }, 2001, fDef), false);
+  // never applied to parametric tests, even at exactly 0/1
+  assert.equal(getTestPassStatus({ testValues: { 1050: 1 } }, 1050, pDef), undefined);
+  // non-binary value on an F test is not a verdict
+  assert.equal(getTestPassStatus({ testValues: { 2001: 0.5 } }, 2001, fDef), undefined);
+  // no data at all
+  assert.equal(getTestPassStatus({}, 2001, fDef), undefined);
+});
+
+test('lot aggregation never carries per-wafer testPass into aggregated dies', async () => {
+  const { aggregateBinCounts } = await import('../dist/index.js');
+  const w1 = [
+    { id: '0_0', x: 0, y: 0, testValues: { 0: 10 }, testPass: { 0: true }, width: 10, height: 10, physX: 0, physY: 0 },
+    { id: '1_0', x: 1, y: 0, testPass: { 2001: false }, hbin: 5, width: 10, height: 10, physX: 10, physY: 0 },
+  ];
+  const w2 = [
+    { id: '0_0', x: 0, y: 0, testValues: { 0: 30 }, testPass: { 0: false }, width: 10, height: 10, physX: 0, physY: 0 },
+    { id: '1_0', x: 1, y: 0, testPass: { 2001: true }, hbin: 5, width: 10, height: 10, physX: 10, physY: 0 },
+  ];
+  for (const die of aggregateValues([w1, w2], 'mean')) assert.equal(die.testPass, undefined);
+  for (const die of aggregateBinCounts([w1, w2], 5, 'hard')) assert.equal(die.testPass, undefined);
+});
+
+test('lotStack value aggregation skips functional tests (including legacy 0/1 encoding)', () => {
+  const testDefs = [
+    { testNumber: 1010, name: 'Vth', unit: 'V' },
+    { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+  ];
+  const w1 = [
+    { x: 0, y: 0, testValues: { 1010: 1.0, 2001: 1 } },
+    { x: 1, y: 0, testValues: { 1010: 2.0, 2001: 0 } },
+  ];
+  const w2 = [
+    { x: 0, y: 0, testValues: { 1010: 3.0, 2001: 1 } },
+    { x: 1, y: 0, testValues: { 1010: 4.0, 2001: 1 } },
+  ];
+  const result = buildWaferMap({
+    lotStack: { results: [w1, w2], method: 'mean' },
+    waferConfig: { diameter: 40 },
+    dieConfig: { width: 10, height: 10 },
+    testDefs,
+  });
+  const d00 = findDie(result, 0, 0);
+  approxEqual(d00.testValues[1010], 2.0);
+  assert.equal(d00.testValues[2001], undefined, 'functional test never aggregated into value stacks');
+});

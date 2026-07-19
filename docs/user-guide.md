@@ -61,12 +61,20 @@ and name if the application has supplied bin names.
 
 **Value mode** shows a continuous colorbar: the colour scale runs from the minimum
 to maximum value, with units when available. The colorbar is informational only —
-clicking it has no effect. To filter by spec status, use the **Spec pass/fail**
-option in the Overlays menu (available when spec limits are defined for the active test).
+clicking it has no effect. To switch to a pass/fail view, use the **Spec pass/fail**
+or **Test pass/fail** option in the Overlays menu (available when spec limits are
+defined, or a recorded verdict exists, for the active test).
 
 **Spec pass/fail mode** replaces the colorbar with a small **spec legend**: Pass,
 Fail high, and Fail low swatches (only the categories that apply to the test's
-limits) with a die count beside each.
+limits) with a die count beside each. This judges dies against the test's spec
+limits (`limitLow` / `limitHigh`).
+
+**Test pass/fail mode** replaces the colorbar with a **Pass / Fail legend** and die
+counts, coloured by the tester's own **recorded** verdict for that test — not a
+spec-limit judgement. A test with no measured value (a functional, go/no-go test)
+always displays this way; selecting it switches the map into Test pass/fail
+automatically, since there is nothing to plot on a gradient.
 
 Every map also shows a short **title** by the colorbar or legend naming what is
 displayed — the test name (and number, in spec mode), the bin type, or the stacked
@@ -116,6 +124,15 @@ become available:
   independently; a die can be flagged on either or both limits. A spec legend
   replaces the colorbar, listing each applicable category with its die count.
 
+Some tests have no measured value at all — a continuity check or any other
+go/no-go test, where the only result is a recorded pass or fail. Selecting one
+of these **functional tests** as the active test switches the map into
+**Test pass/fail** automatically: a Pass/Fail legend by die count, coloured by
+the tester's own recorded verdict rather than a spec-limit judgement (there is
+no gradient to fall back to). **Test pass/fail** is also available as an
+Overlays option on an ordinary parametric test when it carries recorded
+verdicts, as an alternative to spec-limit judgement.
+
 <div data-wmap-demo="value-heatmap" class="wmap-demo"></div>
 
 <div data-wmap-demo="spec-passfail" class="wmap-demo"></div>
@@ -136,9 +153,9 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | ------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Section 2](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                                                                                               |
 | <img src="images/icons/aggr.svg" width="20" height="20">      | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count.                                                                                                                                                                  |
-| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), and spec pass/fail highlighting (Test Value mode with limits).                                                                           |
+| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Spec pass/fail (Test Value mode with limits), and Test pass/fail (Test Value mode, active test is functional or has recorded verdicts). |
 | <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Switches the colour palette used for value and stacked modes. Available schemes depend on what the application has registered.                                                                                                                                                                         |
-| <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive.                                                                                                                                                        |
+| <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive. Hidden whenever a pass/fail display is active or the active test is functional.                                                                       |
 | <img src="images/icons/legend.svg" width="20" height="20">    | Legend style       | Bin modes only. Controls where the bin legend is positioned relative to the map: Default (right), Compact, Left, Top, Bottom, or Floating.                                                                                                                                                             |
 | <img src="images/icons/rotateCW.svg" width="20" height="20">  | Rotate 90°         | Rotates the display 90° clockwise. Applies cumulatively. Die coordinates are unaffected.                                                                                                                                                                                                               |
 | <img src="images/icons/flipH.svg" width="20" height="20">     | Flip horizontal    | Mirrors the display left/right. Die coordinates are unaffected.                                                                                                                                                                                                                                        |
@@ -178,7 +195,8 @@ Use the **Overlays** menu to toggle optional display layers on and off:
 - **Quadrant lines** — divides the wafer into N, S, E, W quadrants
 - **Die coordinate labels** — draws the (x, y) grid position inside each die (useful at high zoom)
 - **Reticle grid** — stepper field grid (only shown when reticle geometry is configured)
-- **Colour by spec** — pass/fail colouring for Test Value mode when spec limits are defined
+- **Spec pass/fail** — pass/fail colouring for Test Value mode, judged against spec limits, when the active test defines them
+- **Test pass/fail** — pass/fail colouring for Test Value mode, coloured by the tester's recorded verdict; always on for a functional (no measured value) active test
 
 <div data-wmap-demo="overlays" class="wmap-demo"></div>
 

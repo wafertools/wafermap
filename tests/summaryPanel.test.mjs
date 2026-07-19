@@ -112,3 +112,49 @@ test('buildMetadataStripBox — null for empty input, otherwise wraps the row in
   assert.match(box.textContent, /Lot: LOT123/);
   assert.equal(box.style.border !== '', true, 'has boxed chrome, unlike the bare row');
 });
+
+test('buildFunctionalTestSection — pass-rate rows from recorded verdicts and legacy 0/1 data', async () => {
+  const { buildFunctionalTestSection } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+  const defs = [
+    { testNumber: 1050, name: 'Idsat' },
+    { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+    { testNumber: 2002, name: 'bist', testType: 'F' },
+  ];
+  const dies = [
+    die({ testPass: { 2001: true },  testValues: { 1050: 1, 2002: 1 } }),
+    die({ testPass: { 2001: false }, testValues: { 1050: 2, 2002: 0 } }),
+    die({ testPass: { 2001: true },  testValues: { 1050: 3 } }),          // no bist verdict
+    die({ testPass: { 2001: true },  testValues: { 2002: 1 }, partial: true }), // excluded
+  ];
+  const section = buildFunctionalTestSection(dies, defs);
+  assert.ok(section, 'section renders when functional defs exist');
+  assert.match(section.textContent, /Functional Tests/);
+  assert.match(section.textContent, /scan_chain/);
+  assert.match(section.textContent, /bist/);
+  // scan_chain: 3 verdicts, 2 pass → 66.7% (N=3)
+  assert.match(section.textContent, /66\.7% \(N=3\)/);
+  // bist (legacy 0/1): 2 verdicts, 1 pass → 50.0% (N=2)
+  assert.match(section.textContent, /50\.0% \(N=2\)/);
+  // parametric test never appears
+  assert.doesNotMatch(section.textContent, /Idsat/);
+});
+
+test('buildFunctionalTestSection — null without functional defs; precomputed rows win', async () => {
+  const { buildFunctionalTestSection } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+  assert.equal(buildFunctionalTestSection([die({ testValues: { 1050: 1 } })], [{ testNumber: 1050, name: 'Idsat' }]), null);
+
+  const precomputed = [{ testNumber: 2001, label: 'scan_chain', passDies: 90, failDies: 10, totalDies: 100, passRatePercent: 90 }];
+  const section = buildFunctionalTestSection([], [{ testNumber: 2001, name: 'scan_chain', testType: 'F' }], precomputed);
+  assert.match(section.textContent, /90\.0% \(N=100\)/);
+});
+
+test('buildLotFunctionalSection — pools per-wafer functionalYield counts exactly', async () => {
+  const { buildLotFunctionalSection } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+  const defs = [{ testNumber: 2001, name: 'scan_chain', testType: 'F' }];
+  const mkSummary = (passDies, failDies) => ({
+    stats: { functionalYield: [{ testNumber: 2001, label: 'scan_chain', passDies, failDies, totalDies: passDies + failDies, passRatePercent: (passDies / (passDies + failDies)) * 100 }] },
+  });
+  const section = buildLotFunctionalSection([], defs, [mkSummary(8, 2), mkSummary(6, 4)]);
+  // pooled: 14 pass / 20 total = 70.0% (N=20)
+  assert.match(section.textContent, /70\.0% \(N=20\)/);
+});

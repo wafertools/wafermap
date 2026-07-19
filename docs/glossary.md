@@ -56,7 +56,15 @@ Metadata describing one parametric test: a stable integer ID (`testNumber`), a h
 
 ### Spec limit
 
-The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) in `value` plot mode. Enable pass/fail colouring by setting `colorBySpec: true` in `WaferViewOptions`, or toggling "Spec pass/fail" in the Overlays toolbar menu. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.colorBySpec`.*
+The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) in `value` plot mode. Enable pass/fail colouring by setting `passFailDisplay: 'spec'` in `WaferViewOptions`, or toggling "Spec pass/fail" in the Overlays toolbar menu (`colorBySpec: true` is a deprecated alias). *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.passFailDisplay`.*
+
+### Functional test
+
+A test with no measured value — only a recorded pass/fail outcome (a continuity check, boundary scan, or any other go/no-go test). Set `testType: 'F'` on the test's `TestDef` (default `'P'`, parametric) and record the outcome per die in `testPass`, keyed by `testNumber` like `testValues`. Selecting a functional test as the active test always displays as **Test pass/fail** — there is no value to put on a gradient. Functional tests are excluded from every parametric statistic (per-test stats, capability, correlation, distribution charts) and instead get pass-rate analysis: `stats.functionalYield`, a "Functional Tests" summary-panel table, and regional pass-rate findings. *Library mapping: `TestDef.testType`, `DieResult.testPass`, `isParametricTest()`, `getTestPassStatus()`.*
+
+### Pass/fail display
+
+The solid, categorical colouring shown in `value` plot mode in place of the continuous gradient — set via `WaferViewOptions.passFailDisplay`. `'spec'` judges dies against the active test's spec limits (green pass / blue fail-low / red fail-high). `'test'` colours dies by the tester's own **recorded** verdict (`DieResult.testPass`) instead — green pass / red fail, undirected — and is what a functional test (no measured value) always renders as, regardless of the requested display. *Library mapping: `WaferViewOptions.passFailDisplay`, `ToCanvasOptions` §9.4.*
 
 ### Process capability (Cp / Cpk / Pp / Ppk)
 

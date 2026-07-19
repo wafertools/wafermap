@@ -11,7 +11,7 @@
 // contributed which pair — so this module always reads raw `Die[]`.
 
 import type { Die } from '../core/dies.js';
-import type { TestDef } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 
 /** Minimal per-test identity carried on a correlation matrix's axes. */
 export interface CorrelationTestInfo {
@@ -33,7 +33,7 @@ export interface CorrelationMatrix {
 
 function testInfoFrom(testDefs: TestDef[]): CorrelationTestInfo[] {
   return testDefs
-    .filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined)
+    .filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined && isParametricTest(d))
     .map(d => ({ testNumber: d.testNumber, label: d.name, unit: d.unit }));
 }
 

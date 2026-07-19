@@ -487,3 +487,115 @@ test('analyzeWaferMap respects minimum sample size filtering', () => {
 
   assert.equal(summary.hasNotableFindings, false);
 });
+
+test('functional tests (testType F) are excluded from perTestStats and test-value findings', () => {
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die, i) => {
+    const { quadrant } = classifyDie(die, wafer, { ringCount: 3 });
+    return {
+      ...die,
+      testValues: {
+        1050: quadrant === 'NE' ? 10 : 1,   // parametric, with a strong regional signal
+        2001: i % 7 === 0 ? 0 : 1,          // functional pass/fail outcome
+      },
+    };
+  });
+  const testDefs = [
+    { testNumber: 1050, name: 'Idsat', unit: 'A' },
+    { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+  ];
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs,
+  }, { enableTestValueAnalysis: true, computePerTestStats: true, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+
+  assert.ok(summary.stats.perTestStats.some(s => s.testNumber === 1050),
+    'parametric test should appear in perTestStats');
+  assert.ok(!summary.stats.perTestStats.some(s => s.testNumber === 2001),
+    'functional test must not appear in perTestStats');
+  assert.ok(!summary.findings.some(f => f.variable.kind === 'test' && f.variable.index === 2001),
+    'functional test must not produce test-value findings');
+});
+
+test('functional tests are excluded even when explicitly requested via testNumbers', () => {
+  const { dies } = makeBaseDies();
+  const enriched = dies.map((die, i) => ({ ...die, testValues: { 2001: i % 2 } }));
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs: [{ testNumber: 2001, name: 'scan_chain', testType: 'F' }],
+  }, { computePerTestStats: true, testNumbers: [2001] });
+
+  assert.equal(summary.stats.perTestStats, undefined,
+    'no perTestStats when the only requested test is functional');
+});
+
+test('functionalYield: per-test pass rate with verdict-only denominators', () => {
+  const { dies } = makeBaseDies();
+  const enriched = dies.map((die, i) => ({
+    ...die,
+    // 2001 via recorded verdicts: every 5th die has NO verdict, every 3rd fails.
+    ...(i % 5 === 0 ? {} : { testPass: { 2001: i % 3 !== 0 } }),
+    // 2002 via legacy 0/1 encoding.
+    testValues: { 2002: i % 4 === 0 ? 0 : 1 },
+  }));
+  const testDefs = [
+    { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+    { testNumber: 2002, name: 'bist', testType: 'F' },
+  ];
+
+  const summary = analyzeWaferMap({ dies: enriched, waferConfig: { diameter: 60 }, testDefs });
+  const fy = summary.stats.functionalYield;
+  assert.ok(fy, 'functionalYield populated when functional defs exist');
+
+  const scan = fy.find(t => t.testNumber === 2001);
+  const active = enriched.filter(d => !d.partial && !d.edgeExcluded);
+  const expectedTotal = active.filter((_, ) => true).filter(d => d.testPass?.[2001] !== undefined).length;
+  assert.equal(scan.totalDies, expectedTotal, 'denominator = dies with a verdict only');
+  assert.equal(scan.passDies + scan.failDies, scan.totalDies);
+  assert.ok(scan.passRatePercent > 0 && scan.passRatePercent < 100);
+
+  const bist = fy.find(t => t.testNumber === 2002);
+  assert.ok(bist, 'legacy 0/1-encoded functional test gets a pass rate too');
+  assert.equal(bist.passDies + bist.failDies, bist.totalDies);
+
+  // A parametric test never appears in functionalYield.
+  assert.ok(!fy.some(t => t.testNumber === 1050));
+});
+
+test('regional functional pass-rate finding fires on a low-pass-rate quadrant', () => {
+  const { wafer, dies } = makeBaseDies();
+  const enriched = dies.map((die) => {
+    const { quadrant } = classifyDie(die, wafer, { ringCount: 3 });
+    return { ...die, hbin: 1, testPass: { 2001: quadrant === 'NE' ? false : true } };
+  });
+  const testDefs = [{ testNumber: 2001, name: 'scan_chain', testType: 'F' }];
+
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs,
+  }, { enableTestValueAnalysis: true, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+
+  const f = summary.findings.find(x => x.variable.kind === 'functionalTest');
+  assert.ok(f, 'a functionalTest finding should be produced');
+  assert.equal(f.stats.method, 'two-proportion-z');
+  assert.match(f.variable.label, /scan_chain pass rate/);
+  assert.match(f.summary, /pass rate .* percentage points lower/);
+  assert.equal(f.highlight?.kind, 'region');
+});
+
+test('no functional findings or functionalYield without functional defs', () => {
+  const { dies } = makeBaseDies();
+  const enriched = dies.map((die, i) => ({ ...die, hbin: 1, testValues: { 1050: i } }));
+  const summary = analyzeWaferMap({
+    dies: enriched,
+    waferConfig: { diameter: 60 },
+    testDefs: [{ testNumber: 1050, name: 'Idsat' }],
+  }, { enableTestValueAnalysis: true });
+  assert.equal(summary.stats.functionalYield, undefined);
+  assert.ok(!summary.findings.some(f => f.variable.kind === 'functionalTest'));
+});

@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -11,7 +11,7 @@ import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferViewOptions, WaferMapController } from './renderWaferMap.js';
 import { classifyChanged } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
-import { buildWaferMap } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
@@ -730,6 +730,9 @@ ${reportStyles()}
     // in stacked modes, which don't accurately reflect the full data availability.
     const dies      = originalItems.flatMap(it => it?.dies ?? []);
     const testDefs  = originalItems.find(it => it?.testDefs?.length)?.testDefs;
+    // Value mode is available for any per-test data — numeric values or recorded
+    // pass/fail verdicts (functional tests). Stacked values need numeric values.
+    const hasTestData = dies.some(dieHasTestData);
     const hasValues = dies.some(d =>
       (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
       (d.values?.length ?? 0) > 0
@@ -751,14 +754,14 @@ ${reportStyles()}
         updateShared({ plotMode: 'value', activeTest: entry.activeTest, logScale: entry.logScale });
       } else {
         // Leaving value mode → clear spec pass/fail (only valid in value mode), matching single-map.
-        updateShared({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false });
+        updateShared({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false, passFailDisplay: 'off' });
       }
       menu.remove();
       setOpenMenu(null);
       markMenuTrigger(btnMode, false);
     }
 
-    const testEntries: ModeEntry[] = hasValues
+    const testEntries: ModeEntry[] = hasTestData
       ? (testDefs?.length
           ? testDefs.map(t => ({
               plotMode: 'value' as PlotMode,
@@ -809,14 +812,28 @@ ${reportStyles()}
 
   const hasReticleInItems = items.some(it => typeof it !== 'function' && ((it as WaferMapDisplayItem).reticles?.length ?? 0) > 0);
 
-  // True when the shared active test (the one all value cards show) has at least one spec limit.
-  // Gates the "Spec pass/fail" overlay and the "Colorbar range" button, mirroring single-map.
-  function activeTestHasLimits(): boolean {
-    if ((sharedOpts.plotMode ?? 'hardBin') !== 'value') return false;
+  // Resolve the shared active test's def (the one all value cards show) — gates the
+  // pass/fail display entries, the "Colorbar range" button, and the log-scale button,
+  // mirroring single-map.
+  function activeTestDefShared(): { testNumber: number; td: import('../renderer/buildWaferMap.js').TestDef | undefined } {
     const testDefs = originalItems.find(it => it?.testDefs?.length)?.testDefs;
     const { testNumber } = resolveTestNumber(sharedOpts.activeTest ?? 0, testDefs);
-    const td = findTestDef(testDefs, testNumber);
+    return { testNumber, td: findTestDef(testDefs, testNumber) };
+  }
+  function activeTestHasLimits(): boolean {
+    if ((sharedOpts.plotMode ?? 'hardBin') !== 'value') return false;
+    const { td } = activeTestDefShared();
     return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
+  }
+  function activeTestIsFunctional(): boolean {
+    if ((sharedOpts.plotMode ?? 'hardBin') !== 'value') return false;
+    const { td } = activeTestDefShared();
+    return td !== undefined && !isParametricTest(td);
+  }
+  function activeTestHasRecordedStatus(): boolean {
+    if ((sharedOpts.plotMode ?? 'hardBin') !== 'value') return false;
+    const { testNumber, td } = activeTestDefShared();
+    return originalItems.some(it => it?.dies?.some(d => getTestPassStatus(d, testNumber, td) !== undefined));
   }
 
   const btnOverlays = makeOverlaysBtn(
@@ -827,11 +844,19 @@ ${reportStyles()}
       { label: 'Die labels',      active: !!sharedOpts.showDieLabels,          onClick: () => updateShared({ showDieLabels:          !sharedOpts.showDieLabels          }) },
       { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: () => updateShared({ showReticle: !sharedOpts.showReticle }) },
       { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: () => updateShared({ showXYIndicator:        !sharedOpts.showXYIndicator        }) },
-      { label: 'Spec pass/fail',  active: !!sharedOpts.colorBySpec,            enabled: activeTestHasLimits(), onClick: () => updateShared({ colorBySpec: !sharedOpts.colorBySpec }) },
+      ...passFailMenuRows(
+        {
+          functionalActive: activeTestIsFunctional(),
+          hasLimits: activeTestHasLimits() && !activeTestIsFunctional(),
+          hasRecorded: activeTestHasRecordedStatus() && !activeTestIsFunctional(),
+          display: requestedPassFailDisplay(sharedOpts),
+        },
+        d => updateShared({ passFailDisplay: d, colorBySpec: false }),
+      ),
     ],
     () => !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
              sharedOpts.showDieLabels || sharedOpts.showReticle || sharedOpts.showXYIndicator ||
-             sharedOpts.colorBySpec),
+             requestedPassFailDisplay(sharedOpts) !== 'off'),
   );
 
   const { btn: btnLegendStyle, sync: syncLegendStyleBtn } = makeLegendStyleBtn(
@@ -867,7 +892,7 @@ ${reportStyles()}
 
   const { btn: btnLogScale, sync: syncLogScaleBtn } = makeLogScaleBtn(
     tbHelpers,
-    () => sharedOpts,
+    () => ({ ...sharedOpts, functionalActive: activeTestIsFunctional() }),
     patch => updateShared(patch),
   );
   syncLogScaleBtn();
@@ -879,7 +904,9 @@ ${reportStyles()}
     updateShared({ colorbarRangeMode: next });
   });
   function syncColorbarRangeBtn(): void {
-    const visible = (sharedOpts.plotMode ?? 'hardBin') === 'value' && activeTestHasLimits() && !sharedOpts.colorBySpec;
+    // No colorbar exists under a solid pass/fail display or a functional active test.
+    const visible = (sharedOpts.plotMode ?? 'hardBin') === 'value' && activeTestHasLimits() &&
+      requestedPassFailDisplay(sharedOpts) === 'off' && !activeTestIsFunctional();
     btnColorbarRange.style.display = visible ? '' : 'none';
     const isSpec = (sharedOpts.colorbarRangeMode ?? 'spec') === 'spec';
     setActive(btnColorbarRange, isSpec);
@@ -1382,14 +1409,22 @@ ${reportStyles()}
 
     if (mode === 'stackedValues') {
       // Collect testDefs from items (now on WaferMapResult, not sharedOpts).
-      let defs = resolvedItems.find(it => it.testDefs?.length)?.testDefs;
+      // Functional tests are excluded: mean/median/σ of a pass/fail outcome is
+      // meaningless. (A dedicated stacked functional representation — per-position
+      // fail count across the lot, countBin-style — is a deferred enhancement.)
+      const itemDefs = resolvedItems.find(it => it.testDefs?.length)?.testDefs;
+      let defs = itemDefs?.filter(isParametricTest);
 
-      // If no testDefs on items, discover unique test numbers from the actual data
-      if (!defs || defs.length === 0) {
+      // If no testDefs on items at all, discover unique test numbers from the actual
+      // data (untyped keys default to parametric). Never falls back when defs exist
+      // but are all functional — that would resurrect legacy 0/1-encoded functional
+      // values as parametric stacks.
+      if (!itemDefs?.length) {
         const uniqueNums = getUniqueTestNumbers(resolvedItems.flatMap(it => it.dies));
 
         defs = uniqueNums.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
       }
+      if (!defs?.length) return [];
 
       const method = (sharedOpts.aggregationMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => {

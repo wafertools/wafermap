@@ -1394,3 +1394,94 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
     cleanup();
   }
 });
+
+test('pass/fail display toolbar: menu entries appear per data validity; log button hides for F test', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+
+    const testDefs = [
+      { testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 },
+      { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+    ];
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0 }, testPass: { 1010: true, 2001: true } },
+        { x: 1, y: 0, hbin: 2, testValues: { 1010: 1.1 }, testPass: { 1010: false, 2001: false } },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      testDefs,
+    });
+
+    const ctrl = renderWaferMap(container, wafer, { viewOptions: { plotMode: 'value', activeTest: 1010 } });
+    const buttons = [...root.querySelectorAll('button')];
+    const overlaysBtn = buttons.find((btn) => btn.ariaLabel === 'Overlays');
+    const logBtn = buttons.find((btn) => btn.ariaLabel === 'Toggle log scale');
+    assert.ok(overlaysBtn && logBtn);
+
+    const menuRowByLabel = (label) =>
+      [...window.document.querySelectorAll('div')].find((el) =>
+        [...el.children].some((ch) => ch.children.length === 0 && ch.textContent === label));
+
+    // P test with limits AND recorded verdicts: both entries offered.
+    click(window, overlaysBtn);
+    assert.ok(menuRowByLabel('Spec pass/fail'), 'spec entry offered for a limited P test');
+    const testRow = menuRowByLabel('Test pass/fail');
+    assert.ok(testRow, 'test entry offered when recorded verdicts exist');
+    click(window, testRow);
+    assert.equal(ctrl.getOptions().passFailDisplay, 'test');
+    assert.equal(logBtn.style.display, 'none', 'log scale hidden under a solid pass/fail display');
+
+    // Functional active test: neither entry offered (its value mode IS test pass/fail),
+    // log scale hidden.
+    ctrl.setOptions({ activeTest: 2001, passFailDisplay: 'off' });
+    click(window, overlaysBtn); // close
+    click(window, overlaysBtn); // reopen with fresh rows
+    assert.equal(menuRowByLabel('Spec pass/fail'), undefined, 'no spec entry for an F test');
+    assert.equal(menuRowByLabel('Test pass/fail'), undefined, 'no test entry for an F test');
+    assert.equal(logBtn.style.display, 'none', 'log scale hidden for a functional test');
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery stackedValues excludes functional tests from value stacks', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const testDefs = [
+      { testNumber: 1010, name: 'Vth', unit: 'V' },
+      { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+    ];
+    const base = buildWaferMap({
+      results: [
+        // scan_chain arrives the legacy way (0/1 in testValues) — the worst case:
+        // it must STILL not get a mean/median stacked card.
+        { x: 0, y: 0, hbin: 1, testValues: { 1010: 0.9, 2001: 1 } },
+        { x: 1, y: 0, hbin: 2, testValues: { 1010: 0.7, 2001: 0 } },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      testDefs,
+    });
+    const ctrl = renderWaferGallery(container, [{ ...base, label: 'A' }, { ...base, label: 'B' }], {
+      viewOptions: { plotMode: 'stackedValues' },
+    });
+
+    const cards = [...container.querySelectorAll('.wmap-gallery-card')];
+    assert.equal(cards.length, 1, 'only the parametric test gets a stacked card');
+    assert.match(container.textContent, /Vth/, 'the parametric stack is present');
+    assert.doesNotMatch(container.textContent, /scan_chain · mean/, 'no functional value stack');
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});

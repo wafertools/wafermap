@@ -103,3 +103,13 @@ test('buildCapabilityData — returns an empty array when no test has any record
   const testDefs = [{ testNumber: 1, name: 'T' }];
   assert.deepEqual(buildCapabilityData(items, testDefs), []);
 });
+
+test('buildCapabilityData — functional tests (testType F) are excluded', () => {
+  const items = [{ dies: Array.from({ length: 8 }, (_, i) => ({ x: i, y: 0, testValues: { 1: 20 + i, 2: i % 2 } })) }];
+  const testDefs = [
+    { testNumber: 1, name: 'Vth', limitLow: 15, limitHigh: 30 },
+    { testNumber: 2, name: 'scan_chain', testType: 'F' },
+  ];
+  const out = buildCapabilityData(items, testDefs);
+  assert.deepEqual(out.map(d => d.testNumber), [1], 'only the parametric test should appear');
+});

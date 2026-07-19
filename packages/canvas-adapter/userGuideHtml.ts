@@ -113,11 +113,18 @@ not counted in yield calculations.</p>
 and name if the application has supplied bin names.</p>
 <p><strong>Value mode</strong> shows a continuous colorbar: the colour scale runs from the minimum
 to maximum value, with units when available. The colorbar is informational only —
-clicking it has no effect. To filter by spec status, use the <strong>Spec pass/fail</strong>
-option in the Overlays menu (available when spec limits are defined for the active test).</p>
+clicking it has no effect. To switch to a pass/fail view, use the <strong>Spec pass/fail</strong>
+or <strong>Test pass/fail</strong> option in the Overlays menu (available when spec limits are
+defined, or a recorded verdict exists, for the active test).</p>
 <p><strong>Spec pass/fail mode</strong> replaces the colorbar with a small <strong>spec legend</strong>: Pass,
 Fail high, and Fail low swatches (only the categories that apply to the test&#39;s
-limits) with a die count beside each.</p>
+limits) with a die count beside each. This judges dies against the test&#39;s spec
+limits (<code>limitLow</code> / <code>limitHigh</code>).</p>
+<p><strong>Test pass/fail mode</strong> replaces the colorbar with a <strong>Pass / Fail legend</strong> and die
+counts, coloured by the tester&#39;s own <strong>recorded</strong> verdict for that test — not a
+spec-limit judgement. A test with no measured value (a functional, go/no-go test)
+always displays this way; selecting it switches the map into Test pass/fail
+automatically, since there is nothing to plot on a gradient.</p>
 <p>Every map also shows a short <strong>title</strong> by the colorbar or legend naming what is
 displayed — the test name (and number, in spec mode), the bin type, or the stacked
 wafer count.</p>
@@ -189,6 +196,14 @@ and dies outside spec are highlighted — <strong>blue for below the Lower Spec 
 independently; a die can be flagged on either or both limits. A spec legend
 replaces the colorbar, listing each applicable category with its die count.</li>
 </ul>
+<p>Some tests have no measured value at all — a continuity check or any other
+go/no-go test, where the only result is a recorded pass or fail. Selecting one
+of these <strong>functional tests</strong> as the active test switches the map into
+<strong>Test pass/fail</strong> automatically: a Pass/Fail legend by die count, coloured by
+the tester&#39;s own recorded verdict rather than a spec-limit judgement (there is
+no gradient to fall back to). <strong>Test pass/fail</strong> is also available as an
+Overlays option on an ordinary parametric test when it carries recorded
+verdicts, as an alternative to spec-limit judgement.</p>
 <div data-wmap-demo="value-heatmap" class="wmap-demo"></div><div data-wmap-demo="spec-passfail" class="wmap-demo"></div><hr>
 <h2 id="3-toolbar-controls">3. Toolbar controls</h2>
 <p>The toolbar sits at the top-right of the map and is always visible. Controls that
@@ -217,7 +232,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yIDEyczMuNi03IDEwLTcgMTAgNyAxMCA3LTMuNiA3LTEwIDctMTAtNy0xMC03eiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiLz48L3N2Zz4K" width="20" height="20"></td>
 <td>Overlays</td>
-<td>Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), and spec pass/fail highlighting (Test Value mode with limits).</td>
+<td>Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Spec pass/fail (Test Value mode with limits), and Test pass/fail (Test Value mode, active test is functional or has recorded verdicts).</td>
 </tr>
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Im0xNC42MjIgMTcuODk3LTEwLjY4LTIuOTEzIi8+PHBhdGggZD0iTTE4LjM3NiAyLjYyMmExIDEgMCAxIDEgMy4wMDIgMy4wMDJMMTcuMzYgOS42NDNhLjUuNSAwIDAgMCAwIC43MDdsLjk0NC45NDRhMi40MSAyLjQxIDAgMCAxIDAgMy40MDhsLS45NDQuOTQ0YS41LjUgMCAwIDEtLjcwNyAwTDguMzU0IDcuMzQ4YS41LjUgMCAwIDEgMC0uNzA3bC45NDQtLjk0NGEyLjQxIDIuNDEgMCAwIDEgMy40MDggMGwuOTQ0Ljk0NGEuNS41IDAgMCAwIC43MDcgMHoiLz48cGF0aCBkPSJNOSA4Yy0xLjgwNCAyLjcxLTMuOTcgMy40Ni02LjU4MyAzLjk0OGEuNTA3LjUwNyAwIDAgMC0uMzAyLjgxOWw3LjMyIDguODgzYTEgMSAwIDAgMCAxLjE4NS4yMDRDMTIuNzM1IDIwLjQwNSAxNiAxNi43OTIgMTYgMTUiLz48L3N2Zz4K" width="20" height="20"></td>
@@ -227,7 +242,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik01IDIxIEw1IDMiLz48cGF0aCBkPSJNMy41IDUgTDUgMyBMNi41IDUiLz48cGF0aCBkPSJNNSAyMSBMMjEgMjEiLz48cGF0aCBkPSJNMTkgMTkuNSBMMjEgMjEgTDE5IDIyLjUiLz48cGF0aCBkPSJNNiAyMCBDIDYgMTIsIDEwIDcsIDIwIDYiLz48L3N2Zz4K" width="20" height="20"></td>
 <td>Log scale</td>
-<td>Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive.</td>
+<td>Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive. Hidden whenever a pass/fail display is active or the active test is functional.</td>
 </tr>
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHdpZHRoPSI3IiBoZWlnaHQ9IjciIHg9IjMiIHk9IjMiIHJ4PSIxIi8+PHJlY3Qgd2lkdGg9IjciIGhlaWdodD0iNyIgeD0iMyIgeT0iMTQiIHJ4PSIxIi8+PHBhdGggZD0iTTE0IDRoNyIvPjxwYXRoIGQ9Ik0xNCA5aDciLz48cGF0aCBkPSJNMTQgMTVoNyIvPjxwYXRoIGQ9Ik0xNCAyMGg3Ii8+PC9zdmc+Cg==" width="20" height="20"></td>
@@ -322,7 +337,8 @@ failure category across the wafer.</p>
 <li><strong>Quadrant lines</strong> — divides the wafer into N, S, E, W quadrants</li>
 <li><strong>Die coordinate labels</strong> — draws the (x, y) grid position inside each die (useful at high zoom)</li>
 <li><strong>Reticle grid</strong> — stepper field grid (only shown when reticle geometry is configured)</li>
-<li><strong>Colour by spec</strong> — pass/fail colouring for Test Value mode when spec limits are defined</li>
+<li><strong>Spec pass/fail</strong> — pass/fail colouring for Test Value mode, judged against spec limits, when the active test defines them</li>
+<li><strong>Test pass/fail</strong> — pass/fail colouring for Test Value mode, coloured by the tester&#39;s recorded verdict; always on for a functional (no measured value) active test</li>
 </ul>
 <div data-wmap-demo="overlays" class="wmap-demo"></div><p><em>Ring boundaries, quadrant lines, and XY indicator all active.</em></p>
 <h3 id="keyboard-shortcuts">Keyboard shortcuts</h3>
@@ -734,7 +750,7 @@ positions that show elevated failure rates.</p>
         } else if (id === 'spec-passfail') {
           renderWaferMap(el, valueResult, {
             showToolbar: false, showTooltip: true,
-            viewOptions: { plotMode: 'value', activeTest: 1, colorBySpec: true }
+            viewOptions: { plotMode: 'value', activeTest: 1, passFailDisplay: 'spec' }
           });
 
         } else if (id === 'bin-highlight') {

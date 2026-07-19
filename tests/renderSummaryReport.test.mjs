@@ -134,3 +134,34 @@ test('renderSummaryReportHtml (single-wafer) — gets a Process Capability secti
   assert.ok(html.includes('Process Capability'));
   assert.ok(!html.includes('>Splits<'));
 });
+
+test('report includes a Functional Tests section with pass rates; functional tests stay out of Test Values', () => {
+  const testDefs = [
+    { testNumber: 1050, name: 'Idsat', unit: 'A' },
+    { testNumber: 2001, name: 'scan_chain', testType: 'F' },
+  ];
+  const built = buildWaferMap({
+    results: [
+      { x: 0, y: 0, hbin: 1, testValues: { 1050: 1.0 }, testPass: { 2001: true } },
+      { x: 1, y: 0, hbin: 1, testValues: { 1050: 2.0 }, testPass: { 2001: false } },
+      { x: 0, y: 1, hbin: 2, testValues: { 1050: 3.0 }, testPass: { 2001: true } },
+    ],
+    waferConfig: { diameter: 300 },
+    dieConfig: { width: 10, height: 10 },
+    passBins: [1],
+    testDefs,
+  });
+  const html = renderSummaryReportHtml({
+    wafer: built.wafer,
+    dies: built.dies,
+    yieldSummary: built.yield,
+    dataCoverage: dataCoverageOf(built),
+    testDefs,
+  });
+  assert.match(html, /Functional Tests/);
+  assert.match(html, /scan_chain/);
+  assert.match(html, /66\.7%/);
+  // scan_chain must not appear in the parametric Test Values table (min/mean/max).
+  const testValuesSection = html.split('Functional Tests')[0];
+  assert.doesNotMatch(testValuesSection.split('Test Values')[1] ?? '', /scan_chain/);
+});

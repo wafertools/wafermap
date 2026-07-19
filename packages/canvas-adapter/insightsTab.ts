@@ -25,7 +25,7 @@ import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { LotStatsSummary, StatsSummary } from '../stats/types.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from '../stats/facets.js';
-import type { TestDef } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { CLR, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
@@ -40,7 +40,7 @@ import { QUANTITY } from './charts/palette.js';
 import { makeChartGridWrap, makeLabeledSelect } from './charts/chartShell.js';
 import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../stats/yield.js';
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
-import { buildLotTestSection, buildMetadataStripBox } from './summaryPanel.js';
+import { buildLotTestSection, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
 import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
@@ -414,8 +414,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   function renderOverviewDetailsCards(
     items: Item[],
     testDefs: TestDef[],
-  ): { elements: HTMLElement[]; testValuesCard: HTMLElement | null; destroy: () => void } {
-    if (!items.length) return { elements: [], testValuesCard: null, destroy: () => {} };
+    /** UNFILTERED defs — the functional-tests card needs the `testType: 'F'` entries
+     *  that `render()` strips from `testDefs` for every parametric panel. */
+    allTestDefs: TestDef[],
+  ): { elements: HTMLElement[]; testValuesCard: HTMLElement | null; functionalCard: HTMLElement | null; destroy: () => void } {
+    if (!items.length) return { elements: [], testValuesCard: null, functionalCard: null, destroy: () => {} };
     const allWafers = items.map(it => it.wafer);
     const diesByWafer = items.map(it => it.dies);
     const allDies = items.flatMap(it => it.dies);
@@ -449,7 +452,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const testValues = buildLotTestSection(allDies, testDefs, undefined, perWaferSummaries, onSaveText);
       if (testValues) { const c = plainCard(); c.appendChild(testValues); testValuesCard = c; }
     }
-    return { elements, testValuesCard, destroy: () => { for (const d of destroyFns) d(); } };
+    // Functional tests get their own pass-rate card — they are excluded from the
+    // parametric test-values table above (mean/σ of a pass/fail outcome is
+    // meaningless), not silently dropped from Insights.
+    let functionalCard: HTMLElement | null = null;
+    if (allTestDefs.length) {
+      const functional = buildLotFunctionalSection(allDies, allTestDefs, perWaferSummaries, onSaveText);
+      if (functional) { const c = plainCard(); c.appendChild(functional); functionalCard = c; }
+    }
+    return { elements, testValuesCard, functionalCard, destroy: () => { for (const d of destroyFns) d(); } };
   }
 
   /** Single-wafer replacement for the "Yield by wafer" bar chart — a one-bar
@@ -487,6 +498,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   function renderOverviewSection(
     items: Item[],
     testDefs: TestDef[],
+    allTestDefs: TestDef[],
     groups: { key: string; items: Item[] }[] | undefined,
     groupLabelText: string | undefined,
   ): { card: HTMLElement; destroy: () => void } {
@@ -506,9 +518,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // active — regional/test stats aren't a per-group chart like yield/bins,
     // and pooling them across groups is still a meaningful, single "how does
     // this wafer/lot look overall" summary.
-    const details = renderOverviewDetailsCards(items, testDefs);
+    const details = renderOverviewDetailsCards(items, testDefs, allTestDefs);
     for (const c of details.elements) yieldBins.card.appendChild(c);
     if (details.testValuesCard) outer.appendChild(details.testValuesCard);
+    if (details.functionalCard) outer.appendChild(details.functionalCard);
 
     return { card: outer, destroy: () => { yieldBins.destroy(); details.destroy(); } };
   }
@@ -622,7 +635,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
     bodyEl.appendChild(controlsRow);
 
-    const testDefs = getItems().find(it => it?.testDefs?.length)?.testDefs ?? [];
+    // Functional (pass/fail) tests are excluded from every parametric Insights
+    // panel — boxplot/histogram/capability/correlation/scatter and the
+    // test-values table all present parametric statistics, which are
+    // meaningless for a binary outcome. They get their own pass-rate card in
+    // the Overview view instead (renderOverviewDetailsCards receives the
+    // unfiltered defs) and remain visible on the wafer map itself.
+    const allTestDefs = getItems().find(it => it?.testDefs?.length)?.testDefs ?? [];
+    const testDefs = allTestDefs.filter(isParametricTest);
     let groups: { key: string; items: Item[] }[] | undefined;
     if (analysisGroupKey) {
       const byKey = new Map<string, Item[]>();
@@ -636,7 +656,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
 
     const section =
-      activeView === 'overview'      ? renderOverviewSection(allItems, testDefs, groups, groupLabelText) :
+      activeView === 'overview'      ? renderOverviewSection(allItems, testDefs, allTestDefs, groups, groupLabelText) :
       activeView === 'distributions' ? renderDistributionsSection(allItems, testDefs, groups, groupLabelText) :
       renderCorrelationSection(allItems, testDefs, groups);
     panelHandles.push(section);

@@ -65,7 +65,7 @@
         } else if (id === 'spec-passfail') {
           renderWaferMap(el, valueResult, {
             showToolbar: false, showTooltip: true,
-            viewOptions: { plotMode: 'value', activeTest: 1, colorBySpec: true }
+            viewOptions: { plotMode: 'value', activeTest: 1, passFailDisplay: 'spec' }
           });
 
         } else if (id === 'bin-highlight') {

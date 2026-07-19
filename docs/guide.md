@@ -436,7 +436,7 @@ The colorbar always shows LSL / USL labels at the limit positions. Exactly how d
 
 In **both** ranges, all dies are coloured by the gradient so the value distribution stays readable and the bar and die colours agree; out-of-spec dies additionally carry a triangle marker — **▽** (below `limitLow`) / **△** (above `limitHigh`), each tagged with a matching key beside the LSL / USL labels — so they remain flagged without dropping out of the distribution. The triangle is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme, and its **shape** (not colour) carries the below/above-limit meaning — readable even in greyscale or with colour-vision deficiency.
 
-**With `colorBySpec: true`** — a categorical pass/fail view instead of the continuous gradient:
+**With `passFailDisplay: 'spec'`** — a categorical pass/fail view instead of the continuous gradient, judged against the spec limits:
 - Pass (in spec): green (`#2ecc71`)
 - Fail low (below LSL): blue (`#3498db`)
 - Fail high (above USL): red (`#e74c3c`)
@@ -460,13 +460,15 @@ const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 // Enable pass/fail colouring for Vth to see spec status at a glance
 renderWaferMap(container, result, {
   viewOptions: {
-    plotMode:    'value',
-    colorBySpec: true,
-    activeTest:  1060,
+    plotMode:        'value',
+    passFailDisplay: 'spec',
+    activeTest:      1060,
     // testDefs inherited automatically from the result
   },
 });
 ```
+
+> `colorBySpec: true` still works as a deprecated alias for `passFailDisplay: 'spec'`, ignored whenever `passFailDisplay` is set.
 
 Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.stats.testSpecYield` with per-test spec yield, fail-low count, and fail-high count for every test that has at least one limit defined.
 
@@ -478,6 +480,33 @@ Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.sta
 The same map with the view option 'Spec pass/fail' selected. Now the map shows the dies in spec limits in green and the dies out of limits in red, for the given test.
 
 ![Spec pass/fail colouring active](images/guide-test-values-spec-passfail.png)
+
+### Functional tests (pass/fail only, no measured value)
+
+Not every test produces a number. A continuity check, a boundary-scan pass, or any go/no-go test has only an outcome — set `testType: 'F'` on that test's `TestDef` (default is `'P'`, parametric) and record the verdict on the die in `testPass`, keyed by `testNumber` the same way `testValues` is:
+
+```ts
+const testDefs = [
+  { testNumber: 1050, name: 'Idsat', unit: 'A' },
+  { testNumber: 1080, name: 'Continuity', testType: 'F' },  // no unit, no limits — verdict only
+];
+
+const results = [
+  { x: 0, y: 0, hbin: 1, testValues: { 1050: 1.42e-3 }, testPass: { 1080: true } },
+  { x: 1, y: 0, hbin: 2, testValues: { 1050: 1.38e-3 }, testPass: { 1080: false } },
+  // ...
+];
+
+const result = buildWaferMap({ results, testDefs, passBins: [1] });
+```
+
+Selecting a functional test as the active test always renders as **Test pass/fail** (`passFailDisplay: 'test'`) — coloured by the tester's *recorded* verdict from `die.testPass`, green pass / red fail, undirected (there is no "which side" the way spec limits have a high/low side). This is forced regardless of the requested display; a functional test has nothing to put on a gradient. The Overlays menu's "Test pass/fail" toggle is also available on a **parametric** test that happens to carry recorded verdicts (e.g. a tester-recorded PTR `TEST_FLG`), as an alternative to spec-limit judgement.
+
+Functional tests are excluded from every parametric statistic — per-test stats, capability, correlation, distribution charts, value stacks, and regional value findings — since a mean or Cpk of a binary outcome is meaningless. They get their own pass-rate analysis instead: `stats.functionalYield` (one entry per functional test, with `passDies`/`failDies`/`totalDies`/`passRatePercent`), a **Functional Tests** table in the summary panel (§11) alongside — not replacing — the parametric Test values table, and regional pass-rate findings (`kind: 'functionalTest'`).
+
+**Legacy encoding.** If your data predates `testPass` and encodes a functional outcome as a `testValues` entry of `1` (pass) / `0` (fail), that keeps working — `getTestPassStatus(die, testNumber, testDef)` is the single read-path for verdicts everywhere in the library (rendering, stats, findings) and falls back to that encoding for a functional test with no `testPass` entry. New code should write `testPass` and leave functional tests out of `testValues` entirely.
+
+![Test pass/fail colouring on a functional test](images/guide-test-values-functional.png)
 
 
 ## 7. Retests and enriching dies after build
@@ -758,9 +787,9 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select | Always | Drag to select a group of dies; fires `onSelect` when provided |
 | <img src="images/icons/mode.svg" width="20" height="20"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, and Stacked modes (only when map was built with `lotStack`) |
 | <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Opens colour scheme picker |
-| <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0 |
-| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, Spec pass/fail off | Toggles the colorbar's numeric range between spec-limit range (`[limitLow, limitHigh]`) and data range (actual min/max). Out-of-spec dies are flagged with ▽/△ markers in both. |
-| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Spec pass/fail (value mode, test has limits) |
+| <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0; hidden whenever a solid pass/fail display is active or the active test is functional (log scale has no effect on pass/fail colouring) |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range between spec-limit range (`[limitLow, limitHigh]`) and data range (actual min/max). Out-of-spec dies are flagged with ▽/△ markers in both. |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Spec pass/fail (value mode, test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary | Only when `statsSummary` is provided | Toggles the Summary panel (metadata, yield, bins, ring/quadrant, test values, findings) |
@@ -791,8 +820,8 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Colour scheme picker; applies to all cards |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Applies to all cards |
-| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, active test has `limitLow` or `limitHigh`, Spec pass/fail off | Toggles the colorbar's numeric range: spec-limit range ↔ data range. Out-of-spec dies are flagged with ▽/△ markers in both; applies to all cards |
-| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator, Spec pass/fail (value mode, active test has limits) — applies to all cards |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, active test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range: spec-limit range ↔ data range. Out-of-spec dies are flagged with ▽/△ markers in both; applies to all cards |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator, Spec pass/fail (value mode, active test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) — applies to all cards |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position; applies to all cards |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch so all available width is used |
@@ -1191,7 +1220,8 @@ The panel is divided into sections:
 | **Soft Bins** | Count and percentage per soft bin (when sbin data is present) |
 | **Ring analysis** | Per-ring yield breakdown (Ring 1 = centre, Ring N = edge) |
 | **Quadrant analysis** | Per-quadrant yield and die count |
-| **Test values** | Min, mean, max per test parameter — labelled by `TestDef.name` when provided, otherwise `Test {N}` using the testNumber |
+| **Test values** | Min, mean, max per **parametric** test parameter (`testType` unset or `'P'`) — labelled by `TestDef.name` when provided, otherwise `Test {N}` using the testNumber |
+| **Functional Tests** | Pass/fail counts and pass rate per **functional** test (`testType: 'F'`) — shown instead of mean/max, since a functional test has no measured value; only appears when at least one functional test has data |
 | **Findings** | All `StatsFinding` entries grouped by severity — clicking a finding highlights the affected die zone on the map |
 
 ### Updating the panel after data changes

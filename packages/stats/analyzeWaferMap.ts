@@ -1,6 +1,6 @@
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
-import { buildWaferMap, type WaferMapResult } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, getTestPassStatus, isParametricTest, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef } from '../renderer/buildWaferMap.js';
 import type {
   AnalyzeWaferMapInput,
@@ -103,7 +103,7 @@ function makeClusterFailurePredicate(
 ): ((die: Die) => boolean) | undefined {
   if (!isLotStack || hasBinData) return undefined;
   const limited = (testDefs ?? []).filter(
-    td => td.limitLow !== undefined || td.limitHigh !== undefined,
+    td => isParametricTest(td) && (td.limitLow !== undefined || td.limitHigh !== undefined),
   );
   if (limited.length === 0) return undefined;
   return (die: Die): boolean => {
@@ -134,6 +134,9 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
         if (value !== undefined) testSet.add(index);
       });
     }
+    if (die.testPass) {
+      for (const k of Object.keys(die.testPass)) testSet.add(Number(k));
+    }
     if (die.hbin !== undefined) hardBinSet.add(die.hbin);
     if (die.sbin !== undefined) softBinSet.add(die.sbin);
     // Counts (not just "which bins appear") are only meaningful over the
@@ -162,7 +165,7 @@ function computeTestSpecYield(
   testDefs: TestDef[] | undefined,
 ): StatsSummary['stats']['testSpecYield'] {
   if (!testDefs?.length) return undefined;
-  const limited = testDefs.filter(td => td.limitLow !== undefined || td.limitHigh !== undefined);
+  const limited = testDefs.filter(td => isParametricTest(td) && (td.limitLow !== undefined || td.limitHigh !== undefined));
   if (!limited.length) return undefined;
 
   const result: NonNullable<StatsSummary['stats']['testSpecYield']> = [];
@@ -191,6 +194,44 @@ function computeTestSpecYield(
       failHighDies,
       totalDies,
       yieldPercent: totalDies > 0 ? (passDies / totalDies) * 100 : null,
+    });
+  }
+  return result.length ? result : undefined;
+}
+
+/**
+ * Per-test pass rate for functional (`testType: 'F'`) tests — the functional
+ * counterpart of `computeTestSpecYield`. Same population convention: partial and
+ * edge-excluded dies are skipped; the denominator is dies with a recorded
+ * verdict for the test (read via `getTestPassStatus`, so legacy 0/1-encoded
+ * functional data is counted identically); dies never tested count as neither.
+ */
+export function computeFunctionalYield(
+  dies: Die[],
+  testDefs: TestDef[] | undefined,
+): StatsSummary['stats']['functionalYield'] {
+  if (!testDefs?.length) return undefined;
+  const fDefs = testDefs.filter(td => !isParametricTest(td) && (td.testNumber ?? td.index) !== undefined);
+  if (!fDefs.length) return undefined;
+
+  const result: NonNullable<StatsSummary['stats']['functionalYield']> = [];
+  for (const td of fDefs) {
+    const tn = (td.testNumber ?? td.index)!;
+    let passDies = 0, failDies = 0;
+    for (const die of dies) {
+      if (die.partial || die.edgeExcluded) continue;
+      const status = getTestPassStatus(die, tn, td);
+      if (status === undefined) continue;
+      if (status) passDies++; else failDies++;
+    }
+    const totalDies = passDies + failDies;
+    result.push({
+      testNumber:      tn,
+      label:           td.name,
+      passDies,
+      failDies,
+      totalDies,
+      passRatePercent: totalDies > 0 ? (passDies / totalDies) * 100 : null,
     });
   }
   return result.length ? result : undefined;
@@ -331,6 +372,17 @@ function summarizeBinFinding(
   return `${familyLabel} has ${binLabel} occurrence ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
 }
 
+function summarizeFunctionalFinding(
+  label: string,
+  testName: string,
+  delta: number,
+  family: RegionFamily,
+): string {
+  const familyLabel = summarizeRegionLabel(label, family);
+  const pp = (Math.abs(delta) * 100).toFixed(1);
+  return `${familyLabel} has ${testName} pass rate ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
+}
+
 function summarizeTestFinding(
   label: string,
   testLabel: string,
@@ -361,16 +413,16 @@ function labelForTest(testNumber: number, defs: TestDef[] | undefined): { label:
   return { label: def?.name ?? `Test ${testNumber}`, unit: def?.unit };
 }
 
-function buildYieldFindings(
+/**
+ * Assign each eligible die to its region's bucket. Regions are non-overlapping,
+ * so a "rest of the map" comparison is simply the sum of all other buckets.
+ * Shared preamble of every proportion-findings builder (yield, bin, functional).
+ */
+function bucketDiesByRegion(
   eligibleDies: EligibleDie[],
   regionFamily: StatsRegion[],
-  passBins: number[],
-  options: ResolvedOptions,
-): RawFinding[] {
-  const passSet = new Set(passBins);
+): Map<string, EligibleDie[]> {
   const dieMap = new Map(eligibleDies.map((die) => [`${die.x},${die.y}`, die]));
-  // Pre-build per-region die arrays once so "right" is all-regions minus left bucket.
-  // Pre-build per-region die arrays once; right = all other buckets (regions are non-overlapping).
   const buckets = new Map<string, EligibleDie[]>();
   for (const region of regionFamily) {
     const bucket: EligibleDie[] = [];
@@ -380,6 +432,43 @@ function buildYieldFindings(
     }
     buckets.set(region.key, bucket);
   }
+  return buckets;
+}
+
+/**
+ * Shared tail of every proportion-findings builder: BH-adjust the p-values over
+ * the family, drop insignificant / small-effect findings, then map the survivors
+ * to their severity. Extracted so yield, bin, and functional pass-rate findings
+ * can never drift in how significance is applied.
+ */
+function finalizeProportionFindings(findings: RawFinding[], options: ResolvedOptions): RawFinding[] {
+  adjustPValues(findings);
+  return findings
+    .filter((finding) => {
+      const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
+      const delta = Math.abs(finding.effect.absoluteDelta ?? 0);
+      const relDelta = Math.abs(finding.effect.relativeDelta ?? 0);
+      return adjusted <= options.significanceLevel &&
+        (delta >= options.minimumEffectSize || relDelta >= options.minimumRelativeEffect);
+    })
+    .map((finding) => ({
+      ...finding,
+      severity: severityForFinding(
+        finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
+        finding.effect.absoluteDelta ?? 0,
+        finding.effect.relativeDelta,
+      ),
+    }));
+}
+
+function buildYieldFindings(
+  eligibleDies: EligibleDie[],
+  regionFamily: StatsRegion[],
+  passBins: number[],
+  options: ResolvedOptions,
+): RawFinding[] {
+  const passSet = new Set(passBins);
+  const buckets = bucketDiesByRegion(eligibleDies, regionFamily);
 
   // Pre-count pass dies and the hbin-bearing population per bucket. The yield
   // denominator must be dies that HAVE a hard bin — a die eligible only via sbin
@@ -456,24 +545,7 @@ function buildYieldFindings(
     });
   }
 
-  adjustPValues(findings);
-
-  return findings
-    .filter((finding) => {
-      const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
-      const delta = Math.abs(finding.effect.absoluteDelta ?? 0);
-      const relDelta = Math.abs(finding.effect.relativeDelta ?? 0);
-      return adjusted <= options.significanceLevel &&
-        (delta >= options.minimumEffectSize || relDelta >= options.minimumRelativeEffect);
-    })
-    .map((finding) => ({
-      ...finding,
-      severity: severityForFinding(
-        finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
-        finding.effect.absoluteDelta ?? 0,
-        finding.effect.relativeDelta,
-      ),
-    }));
+  return finalizeProportionFindings(findings, options);
 }
 
 function buildBinFindings(
@@ -485,21 +557,12 @@ function buildBinFindings(
   options: ResolvedOptions,
 ): RawFinding[] {
   const getBin = (d: EligibleDie) => binSpace === 'soft' ? d.sbin : d.hbin;
-  const dieMap = new Map(eligibleDies.map((die) => [`${die.x},${die.y}`, die]));
   const bins = [...new Set(
     eligibleDies
       .map(getBin)
       .filter((bin): bin is number => bin !== undefined),
   )].sort((left, right) => left - right);
-  const buckets = new Map<string, EligibleDie[]>();
-  for (const region of regionFamily) {
-    const bucket: EligibleDie[] = [];
-    for (const key of region.dieKeys) {
-      const d = dieMap.get(key);
-      if (d) bucket.push(d);
-    }
-    buckets.set(region.key, bucket);
-  }
+  const buckets = bucketDiesByRegion(eligibleDies, regionFamily);
   // Pre-count bin occurrences per bucket to avoid O(N_bucket × bins) filter per region.
   const binCounts = new Map<string, Map<number, number>>();
   const bucketSizes = new Map<string, number>();
@@ -575,24 +638,110 @@ function buildBinFindings(
     }
   }
 
-  adjustPValues(findings);
+  return finalizeProportionFindings(findings, options);
+}
 
-  return findings
-    .filter((finding) => {
-      const adjusted = finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1;
-      const delta = Math.abs(finding.effect.absoluteDelta ?? 0);
-      const relDelta = Math.abs(finding.effect.relativeDelta ?? 0);
-      return adjusted <= options.significanceLevel &&
-        (delta >= options.minimumEffectSize || relDelta >= options.minimumRelativeEffect);
-    })
-    .map((finding) => ({
-      ...finding,
-      severity: severityForFinding(
-        finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
-        finding.effect.absoluteDelta ?? 0,
-        finding.effect.relativeDelta,
-      ),
-    }));
+/**
+ * Regional pass-rate findings for functional (`testType: 'F'`) tests: for each
+ * functional test, compare each region's pass rate against the rest of the wafer
+ * with the same two-proportion z-test the yield/bin findings use. Verdicts are
+ * read via `getTestPassStatus`, so legacy 0/1-encoded functional data is analysed
+ * identically. Denominators are dies with a recorded verdict for that test —
+ * `minimumSampleSize` gates apply to those counts, not the raw bucket sizes.
+ */
+function buildFunctionalPassFindings(
+  eligibleDies: EligibleDie[],
+  regionFamily: StatsRegion[],
+  testDefs: TestDef[] | undefined,
+  options: ResolvedOptions,
+): RawFinding[] {
+  const fDefs = (testDefs ?? []).filter(
+    (td): td is TestDef & { name: string } =>
+      !isParametricTest(td) && (td.testNumber ?? td.index) !== undefined,
+  );
+  if (!fDefs.length) return [];
+  const testNumbers = fDefs.map(td => (td.testNumber ?? td.index)!);
+  const buckets = bucketDiesByRegion(eligibleDies, regionFamily);
+
+  // Pre-count per bucket, per functional test: passes and dies-with-verdict.
+  const passCounts = new Map<string, Uint32Array>();
+  const verdictCounts = new Map<string, Uint32Array>();
+  for (const [regionKey, bucket] of buckets) {
+    const passes = new Uint32Array(fDefs.length);
+    const verdicts = new Uint32Array(fDefs.length);
+    for (const d of bucket) {
+      for (let i = 0; i < fDefs.length; i++) {
+        const status = getTestPassStatus(d, testNumbers[i], fDefs[i]);
+        if (status === undefined) continue;
+        verdicts[i]++;
+        if (status) passes[i]++;
+      }
+    }
+    passCounts.set(regionKey, passes);
+    verdictCounts.set(regionKey, verdicts);
+  }
+
+  const findings: RawFinding[] = [];
+
+  for (const region of regionFamily) {
+    const leftPasses = passCounts.get(region.key)!;
+    const leftVerdicts = verdictCounts.get(region.key)!;
+    for (let i = 0; i < fDefs.length; i++) {
+      let rightPass = 0;
+      let rightSize = 0;
+      for (const [key, verdicts] of verdictCounts) {
+        if (key === region.key) continue;
+        rightSize += verdicts[i];
+        rightPass += passCounts.get(key)![i];
+      }
+      const leftSize = leftVerdicts[i];
+      const leftPass = leftPasses[i];
+      if (leftSize < options.minimumSampleSize || rightSize < options.minimumSampleSize) continue;
+
+      const leftRate = leftPass / leftSize;
+      const rightRate = rightPass / rightSize;
+      const delta = leftRate - rightRate;
+      const pValue = twoProportionPValue(leftPass, leftSize, rightPass, rightSize);
+      const testNumber = testNumbers[i];
+
+      findings.push({
+        id: `functional:${testNumber}:${region.key}`,
+        level: 'wafer',
+        severity: 'info',
+        variable: {
+          kind: 'functionalTest',
+          index: testNumber,
+          label: `${fDefs[i].name} pass rate`,
+        },
+        comparison: {
+          family: region.family,
+          left: region.label,
+          right: comparisonRight(region.family),
+        },
+        effect: {
+          direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
+          absoluteDelta: delta,
+          relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
+          effectSize: delta,
+        },
+        stats: {
+          method: 'two-proportion-z',
+          pValue,
+          sampleSizeLeft: leftSize,
+          sampleSizeRight: rightSize,
+        },
+        summary: summarizeFunctionalFinding(region.label, fDefs[i].name, delta, region.family),
+        highlight: {
+          kind: 'region',
+          regionFamily: region.family,
+          regionKeys: [region.key],
+          dieKeys: [...region.dieKeys],
+        },
+      });
+    }
+  }
+
+  return finalizeProportionFindings(findings, options);
 }
 
 function mean(values: number[]): number {
@@ -657,12 +806,20 @@ const TEST_COUNT_WARN_THRESHOLD = 250;
  * caller-supplied subset. Shared by the cheap perTestStats pass and the regional
  * findings pass so the auto-cap behaviour is defined in exactly one place.
  * Stops scanning once the cap is exceeded and returns a warning instead.
+ *
+ * Functional tests (`testType: 'F'` in `testDefs`) are excluded from the
+ * result — both discovered and explicitly requested — because every consumer
+ * of this list computes parametric statistics, which are meaningless for a
+ * pass/fail outcome. A test number with no matching def counts as parametric.
  */
 function discoverTestNumbers(
   dies: Die[],
   explicit: number[] | undefined,
+  testDefs: TestDef[] | undefined,
 ): { testNumbers: number[]; warning?: string } {
-  if (explicit) return { testNumbers: explicit.slice().sort((a, b) => a - b) };
+  const parametricOnly = (numbers: number[]): number[] =>
+    numbers.filter(tn => isParametricTest(testDefs?.find(td => (td.testNumber ?? td.index) === tn)));
+  if (explicit) return { testNumbers: parametricOnly(explicit.slice().sort((a, b) => a - b)) };
 
   const testNumberSet = new Set<number>();
   let capped = false;
@@ -687,7 +844,7 @@ function discoverTestNumbers(
     console.warn(warning);
     return { testNumbers: [], warning };
   }
-  return { testNumbers: [...testNumberSet].sort((a, b) => a - b) };
+  return { testNumbers: parametricOnly([...testNumberSet].sort((a, b) => a - b)) };
 }
 
 /**
@@ -717,7 +874,7 @@ function buildTestValueFindings(
   defs: TestDef[] | undefined,
   options: ResolvedOptions,
 ): { findings: RawFinding[]; warning?: string; activeTestNumbers?: number[] } {
-  const discovered = discoverTestNumbers(dies, options.testNumbers);
+  const discovered = discoverTestNumbers(dies, options.testNumbers, defs);
   if (discovered.warning) return { findings: [], warning: discovered.warning };
   const activeTestNumbers = discovered.testNumbers;
 
@@ -851,7 +1008,7 @@ function buildSpecLimitFindings(
   options: ResolvedOptions,
 ): RawFinding[] {
   if (!testDefs?.length) return [];
-  const limited = testDefs.filter(td => td.limitLow !== undefined || td.limitHigh !== undefined);
+  const limited = testDefs.filter(td => isParametricTest(td) && (td.limitLow !== undefined || td.limitHigh !== undefined));
   if (!limited.length) return [];
 
   const allFindings: RawFinding[] = [];
@@ -1347,6 +1504,17 @@ export function analyzeWaferMap(
       result.testDefs,
       resolved,
     ));
+
+    // Functional tests get pass-rate findings (two-proportion, like yield/bin)
+    // instead of the parametric Welch comparisons above, from which they are
+    // excluded. No-op unless a functional testDef exists.
+    findings.push(
+      ...buildFunctionalPassFindings(eligibleDies, ringRegions, result.testDefs, resolved),
+      ...buildFunctionalPassFindings(eligibleDies, quadrantRegions, result.testDefs, resolved),
+      ...buildFunctionalPassFindings(eligibleDies, reticlePositionRegions, result.testDefs, resolved),
+      ...buildFunctionalPassFindings(eligibleDies, testSiteRegions, result.testDefs, resolved),
+      ...buildFunctionalPassFindings(eligibleDies, sectorRegions, result.testDefs, resolved),
+    );
   }
   if (resolved.enableClusterAnalysis) {
     const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.testDefs);
@@ -1488,12 +1656,14 @@ export function analyzeWaferMap(
   }
   const specYield = computeTestSpecYield(result.dies, result.testDefs);
   if (specYield) stats.testSpecYield = specYield;
+  const functionalYield = computeFunctionalYield(result.dies, result.testDefs);
+  if (functionalYield) stats.functionalYield = functionalYield;
   // Per-test descriptive stats (quartiles for box plots). Produced when the full
   // test-value analysis ran (reusing its discovered test numbers) OR when the
   // caller asked for the cheap computePerTestStats pass on its own. This may push
   // a cap warning, so it must run BEFORE stats.warnings is assigned below.
   if (activeTestNumbers === undefined && resolved.computePerTestStats) {
-    const discovered = discoverTestNumbers(eligibleDies, resolved.testNumbers);
+    const discovered = discoverTestNumbers(eligibleDies, resolved.testNumbers, result.testDefs);
     if (discovered.warning) warnings.push(discovered.warning);
     activeTestNumbers = discovered.testNumbers;
   }

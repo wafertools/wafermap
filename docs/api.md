@@ -174,6 +174,10 @@ A single die record from wafer test equipment.
                                            // e.g. { 1050: 1.42e-3, 1060: 0.487, 1070: 8.3e-12 }
                                            // the key is any stable integer per test — for example an STDF TEST_NUM,
                                            // a database test ID, or an application-defined constant
+  testPass?:   Record<number, boolean>     // recorded per-test pass/fail verdicts keyed the same way (true = pass)
+                                           // parametric tests: value in testValues, optionally the tester's verdict here
+                                           // (e.g. STDF PTR TEST_FLG); functional tests (testType 'F'): verdict here ONLY —
+                                           // they have no measured value. e.g. { 2001: true, 2002: false }
   values?:     number[]                    // @deprecated: use testValues. Positional array — fragile when tests are added or removed
   hbin?:       number                      // hard bin assignment (physical sort result; STDF V4 range 0–32767)
   sbin?:       number                      // soft bin assignment (test-program failure category; independent 0–32767 space)
@@ -347,10 +351,25 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
   limitHigh?:  number  // upper specification limit in the same units as the test value
                        // values above this are out-of-spec
                        // both limits are optional independently — one-sided limits are valid
+  testType?:   'P' | 'F'  // 'P' = parametric (continuous measured value, the default),
+                       // 'F' = functional (pass/fail outcome ONLY, no measured value —
+                       // e.g. an STDF FTR; the verdict lives in DieResult.testPass).
+                       // Functional tests stay selectable in value mode but always render
+                       // as test pass/fail (solid green/red with a Pass/Fail legend), and
+                       // are excluded from all parametric statistics — per-test stats
+                       // tables, capability, correlation, distribution charts, value
+                       // stacks, and regional value findings (a mean or Cpk of a binary
+                       // outcome would be meaningless). They get pass-rate analysis
+                       // instead: stats.functionalYield, "Functional Tests" tables, and
+                       // regional pass-rate findings (kind 'functionalTest')
 }
 ```
 
 `testNumber` is preferred. When `testNumber` is set it must match the key used in `DieResult.testValues`. Use `index` only when working with the deprecated `values[]` array.
+
+`isParametricTest(def)` (exported) returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric, so untyped callers are unaffected.
+
+**Legacy functional encoding:** callers that predate `DieResult.testPass` encoded a functional outcome as a `testValues` entry of `1` (pass) / `0` (fail). That data keeps working everywhere — rendering, stats, and findings all read verdicts through `getTestPassStatus` (§10.1), which documents the fallback. New code should write `testPass` and leave functional tests out of `testValues` entirely.
 
 #### 4.1.9 `BinDef`
 
@@ -755,7 +774,8 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` |
 | `colorScheme` | `string` | `'default'` | Built-in: `'default'` `'viridis'` `'greyscale'` `'accessible'` `'plasma'` `'inferno'` `'traffic'` `'thermal'`. Custom schemes via `registerColorScheme()`. |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
-| `colorBySpec` | `boolean` | `false` | In `value` mode: replace the gradient with categorical pass/fail colours when the active test has spec limits. Toggled via the Overlays toolbar menu. |
+| `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Spec pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
+| `colorBySpec` | `boolean` | `false` | **Deprecated** — alias for `passFailDisplay: 'spec'`; ignored when `passFailDisplay` is set. |
 | `highlightBin` | `number` | — | Dim all bins except this one |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the view auto-scales — use this to safely fix a range computed for a specific test. |
 | `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
@@ -1074,7 +1094,7 @@ Choose the right update method:
 | Reset | Return to fitted view (also: double-click canvas) |
 | Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Dropdown: all registered colour schemes |
-| Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Shown only in `value` / `stackedValues` modes, and hidden (not just dimmed) whenever `colorBySpec` is active, since log scale has no effect on pass/fail colouring. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
+| Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Shown only in `value` / `stackedValues` modes, and hidden (not just dimmed) whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
 | Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. In both states all dies keep the gradient fill and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over that fill. |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
@@ -1349,7 +1369,7 @@ to be pre-built.
 | --- | --- |
 | Mode | Dropdown: plot mode for all cards |
 | Palette | Dropdown: colour scheme for all cards |
-| Log scale | Toggle log₁₀ scale for all cards. Shown only in `value` / `stackedValues` modes, and hidden whenever `colorBySpec` is active, since log scale has no effect on pass/fail colouring. |
+| Log scale | Toggle log₁₀ scale for all cards. Shown only in `value` / `stackedValues` modes, and hidden whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. |
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
 | Labels | Toggle die labels on all cards |
@@ -1802,6 +1822,16 @@ Either the rate criterion or the size criterion can trigger the severity level; 
       totalDies:    number            // dies that had a value for this test
       yieldPercent: number | null     // (passDies / totalDies) × 100 ∈ [0, 100]; null when totalDies = 0
     }>
+    functionalYield?: Array<{         // one entry per functional (testType 'F') test — "functional yield" in fab terms;
+                                      // verdicts read via getTestPassStatus (recorded testPass first, then the
+                                      // legacy 0/1 testValues fallback); partial/edge-excluded dies excluded
+      testNumber:      number
+      label:           string         // testDef.name
+      passDies:        number
+      failDies:        number
+      totalDies:       number         // dies with a recorded verdict — never counts untested dies as fails
+      passRatePercent: number | null  // (passDies / totalDies) × 100 ∈ [0, 100]; null when totalDies = 0
+    }>
     perTestStats?: Array<{            // present only when computePerTestStats or enableTestValueAnalysis is set;
                                       // one entry per active test with enough data
       testNumber: number
@@ -1964,7 +1994,7 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`. 
   severity: 'unusual' | 'notable' | 'info'
             // ranking (highest → lowest): unusual > notable > info
   variable: {
-    kind:   'yield' | 'hardBin' | 'softBin' | 'test' | 'spatialPattern'
+    kind:   'yield' | 'hardBin' | 'softBin' | 'test' | 'functionalTest' | 'spatialPattern'
     index?: number          // test number — the key from testValues (for 'test' kind)
     bin?:   number          // bin value (for 'hardBin'/'softBin' kind)
     label:  string          // human-readable name
@@ -2243,6 +2273,7 @@ import {
 | `buildBinParetoData(items, binType)` | `ChartDatum[]` | One row per bin (`binType: 'hbin' \| 'sbin'`), sorted by count descending. An item carrying `hardBinCounts`/`softBinCounts` (e.g. `StatsSummary.stats.hardBinCounts`) contributes those directly instead of re-walking its `dies`. |
 | `buildBinClusterData(groups, binType)` | `BinClusterData` | Every group's bin counts side by side — `{ groups: string[], bins: BinCluster[] }`, one `BinCluster` per bin with a `counts[]` aligned to `groups`. |
 | `buildCapabilityData(items, testDefs)` | `CapabilityDatum[]` | Cp/Cpk (pooled within-item stddev — each item is treated as the short-term subgroup) and Pp/Ppk (overall stddev), for every parametric test with at least one recorded value. Tests with both `limitLow` and `limitHigh` get `hasSpec: true`, full capability indices, and `min`/`q1`/`median`/`q3`/`max` normalized `(v - lsl) / (usl - lsl)`. Tests missing one or both limits still appear (`hasSpec: false`, `lsl`/`usl`/`cp`/`cpk`/`pp`/`ppk` all absent/null) normalized onto their own observed `[min, max]` instead — a lot with sparse spec coverage no longer renders empty. Sorted spec'd-first (worst-Ppk-first within that tier), then unspec'd (most-variable-first). |
+| `computeFunctionalYield(dies, testDefs)` | `StatsSummary['stats']['functionalYield']` | Per-test pass rate for every functional (`testType: 'F'`) test — pass/fail/verdict counts and `passRatePercent`. Verdicts read via `getTestPassStatus` (recorded `testPass` first, then the legacy 0/1 fallback); partial/edge-excluded dies excluded; dies with no verdict are never counted as fails. The same computation `analyzeWaferMap` uses for `stats.functionalYield` and the "Functional Tests" tables. |
 | `buildTestBoxplotData(items, testNumber)` | `BoxplotDatum[]` | One five-number summary (`min`/`q1`/`median`/`q3`/`max`/`count`) per item, for one test. Excludes partial/edge-excluded dies. An item carrying `testStats` with an entry for the requested test (e.g. from `StatsSummary.stats.perTestStats`) uses it directly instead of re-scanning `dies`. |
 | `buildTestHistogramData(items, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramBucket[]` | Bucketed value counts across `items`, pooled. |
 | `buildTestHistogramSeries(groups, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramSeriesData` | Shared bucket ranges with one count series per group — `{ ranges, series: [{ groupKey, counts }] }`. |
@@ -2447,7 +2478,7 @@ interface ToCanvasOptions {
 
 | Mode | Legend |
 | --- | --- |
-| `value` | Continuous colorbar (gradient with min/max ticks). When `colorBySpec` is true the colorbar is replaced by a **spec legend**: Pass / Fail high / Fail low swatches with per-category die counts, adaptive to the active test's limits (a one-sided spec omits the absent fail side). |
+| `value` | Continuous colorbar (gradient with min/max ticks). Under `passFailDisplay: 'spec'` the colorbar is replaced by a **spec legend**: Pass / Fail high / Fail low swatches with per-category die counts, adaptive to the active test's limits (a one-sided spec omits the absent fail side). Under `passFailDisplay: 'test'` (always the case for a functional active test) it is replaced by a **Pass / Fail legend** with per-category die counts. |
 | `stackedValues` | Continuous colorbar. |
 | `stackedBins`, `stackedSoftBins` | Continuous colorbar (counts). |
 | `hardBin`, `softBin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"`. |
@@ -2457,7 +2488,8 @@ interface ToCanvasOptions {
 | Mode | Title (primary · secondary) |
 | --- | --- |
 | `value` | `Vth (mV)` |
-| `value` + `colorBySpec` | `Vth (mV) · #1050` · `Spec pass/fail` |
+| `value` + `passFailDisplay: 'spec'` | `Vth (mV) · #1050` · `Spec pass/fail` |
+| `value` + `passFailDisplay: 'test'` | `Vth (mV) · #1050` · `Tester pass/fail` — or `Functional pass/fail` for a functional test |
 | `stackedValues` | `Vth (mV) · mean` · `stacked (6 wafers)` |
 | `hardBin` / `softBin` | `Hard Bin` / `Soft Bin` |
 | `stackedBins` / `stackedSoftBins` | `Hard Bin 2 · Leakage` · `stacked (6 wafers)` |
@@ -2516,12 +2548,15 @@ Only `renderWaferMap` and `toCanvas` (both from `/render`) require a browser env
 ### 10.1 Helper exports
 
 ```ts
-import { getDieKey, getDieTestValue } from '@paulrobins/wafermap';
+import { getDieKey, getDieTestValue, getTestPassStatus, dieHasTestData, isParametricTest } from '@paulrobins/wafermap';
 ```
 
 ```ts
 getDieKey(die: { x: number; y: number }): string
 getDieTestValue(die: Die, testNumber: number, fallbackIndex?: number): number | undefined
+getTestPassStatus(die: Die, testNumber: number, testDef?: TestDef): boolean | undefined
+dieHasTestData(die: Die): boolean
+isParametricTest(def: TestDef | undefined): boolean
 ```
 
 `getDieKey` returns a stable `"x,y"` string for map lookups (see §11.17 for details). `Die` → §12.1
@@ -2537,6 +2572,12 @@ const v = getDieTestValue(die, 0, 0);
 ```
 
 Returns `undefined` when no value is present.  Use this in post-build code that reads test values from dies.
+
+`getTestPassStatus` is the single read-path for "did this die pass test N" (true = pass). Primary source: `die.testPass[testNumber]`. **Migration fallback — this is the only place the rule exists:** for a functional test (`testType: 'F'`) with no `testPass` entry but a `testValues` entry of exactly `0` or `1`, the legacy encoding is interpreted as `1` = pass / `0` = fail. The fallback is never applied to parametric tests. Returns `undefined` when no verdict is recorded — treat that as no-data, never as a fail.
+
+`dieHasTestData` is true when a die carries any per-test data — a test value or a recorded pass/fail verdict.
+
+`isParametricTest` returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric.
 
 Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
 
@@ -2842,7 +2883,9 @@ Builds the renderer-agnostic view. `Wafer` → §12.2 · `Die` → §12.1
 ```ts
 interface ViewOptions {
   plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
-  colorBySpec?:            boolean           // colours in-spec dies with fixed pass colour instead of gradient; only in 'value' mode with limits
+  passFailDisplay?:        'off' | 'spec' | 'test'  // solid pass/fail display: 'spec' = limits judgement, 'test' = recorded verdict (die.testPass);
+                                             // library-resolved — degrades to 'off' when invalid; functional tests always render as 'test'
+  colorBySpec?:            boolean           // @deprecated: alias for passFailDisplay: 'spec'; ignored when passFailDisplay is set
   showDieLabels?:          boolean
   showPartialDies?:        boolean   // default true; set false to hide edge dies outside the wafer circle
   showReticle?:            boolean
