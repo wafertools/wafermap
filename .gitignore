@@ -1,5 +1,6 @@
 dist/
 docs/dist/
+packages/canvas-adapter/version.ts
 node_modules/
 _site/
 CLAUDE.md

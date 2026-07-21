@@ -794,7 +794,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary | Only when `statsSummary` is provided | Toggles the Summary panel (metadata, yield, bins, ring/quadrant, test values, findings) |
 | <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the map for this wafer's own chart suite — see [§14](#14-the-insights-tab) |
-| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). While the Insights tab is open, expands the chart suite instead. |
+| <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). Hidden (and `E` disabled) while the Insights tab is open — see below. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#510-user-guide-extension) |
 
 The full toolbar is shown when `toolbarControls` is `'full'` (default). A gallery card's
@@ -802,11 +802,12 @@ detached window also uses `'full'`. In the gallery, cards show only the navigati
 (download, zoom, pan, select) — the view controls (mode, overlays, orient, etc.) live in the
 shared gallery bar.
 
-**While the Insights tab is open**, every button above except Insights, Expand, and User guide
+**While the Insights tab is open**, every button above except Insights and User guide
 is hidden — none of the others (download, zoom/pan/select, mode, palette, overlays, legend,
-orientation) apply to the chart suite underneath, and Findings specifically toggles the
+orientation, Expand) apply to the chart suite underneath, and Findings specifically toggles the
 map's own findings panel, which sits behind the Insights tab's opaque overlay with no visible
-effect while it's open.
+effect while it's open. Expand is hidden rather than repurposed: each chart panel inside
+Insights has its own expand button for enlarging that one chart instead.
 
 #### Gallery control bar
 
@@ -1562,7 +1563,7 @@ renderWaferGallery(container, items, { insights: { enabled: true } });
 
 Either way, an **Insights** button appears in the toolbar. Clicking it swaps the map (or gallery grid) for the chart suite; clicking it again — the toolbar stays visible and usable throughout — returns to the map. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want capability, box plots, histograms, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
 
-The toolbar itself adapts: mode, palette, overlay, orientation, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights, Expand, and User guide stay visible. Expand, in particular, expands the chart suite itself when clicked while Insights is open, not the map underneath it.
+The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button instead, for enlarging just that chart.
 
 The tab lays out three sections: **Yield & bins** (a yield bar labelled with the actual pass bins in use, plus a hard/soft bin pareto), **Distributions** (process capability, a test-value box plot, and a value histogram), and **Correlation** (a Pearson-r matrix and a die-level X/Y scatter). Clicking a capability box drives the box plot and histogram's selected test in place; clicking a correlation-matrix cell drives the scatter panel's X/Y in place — the same live cross-linking the toolbar's own mode/colour controls give you elsewhere.
 

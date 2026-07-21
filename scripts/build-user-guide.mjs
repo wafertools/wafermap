@@ -20,6 +20,7 @@ const root          = fileURLToPath(new URL('..', import.meta.url));
 const mdPath        = join(root, 'docs/user-guide.md');
 const outFile       = join(root, 'packages/canvas-adapter/userGuideHtml.ts');
 const demosScript   = readFileSync(join(root, 'docs/guide-demos.js'), 'utf8');
+const pkg           = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
 // ── Load all SVG icons as base64 data URIs ───────────────────────────────────
 const iconDir = join(root, 'docs/images/icons');
@@ -85,6 +86,16 @@ renderer.heading = ({ text, depth, tokens }) => {
 // ── Convert to HTML ───────────────────────────────────────────────────────────
 let bodyHtml = marked(md, { renderer });
 
+// Version badge in the <h1>'s top-right (matches tsmap's own guide header —
+// see tsmap's scripts/build-user-guide.mjs). Build time is on hover only, not
+// in the visible text — see toolbar.ts's logWmapVersionOnce doc comment for
+// why the build time matters (linked local dev doesn't bump the semver).
+bodyHtml = bodyHtml.replace(
+  /(<h1[^>]*>)(.*?)(<\/h1>)/s,
+  (_, open, inner, close) =>
+    `${open}${inner}<span class="wmap-guide-version" title="Built ${new Date().toISOString()}">v${pkg.version}</span>${close}`,
+);
+
 // Inject online docs link after the <h1>. Opens in new tab in browsers;
 // silently does nothing in Tauri/Electron (WebView blocks external navigation)
 // but the URL remains visible so users can copy it.
@@ -114,7 +125,8 @@ bodyHtml = bodyHtml.replace(
 const wrappedHtml = `<div class="wmap-guide">
 <style>
 .wmap-guide{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:var(--wmap-text,#1a1a1a);padding:24px 32px;max-width:720px;margin:0 auto;overflow-y:auto;height:100%;box-sizing:border-box}
-.wmap-guide h1{font-size:1.35em;font-weight:700;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--wmap-border,#e2e5ea);color:var(--wmap-text,#111)}
+.wmap-guide h1{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:1.35em;font-weight:700;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--wmap-border,#e2e5ea);color:var(--wmap-text,#111)}
+.wmap-guide-version{font-size:11px;font-weight:400;color:var(--wmap-text-muted,#888);white-space:nowrap}
 .wmap-guide h2{font-size:1.1em;font-weight:700;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--wmap-border,#e9eaec);color:var(--wmap-text,#1a1a1a)}
 .wmap-guide h3{font-size:1em;font-weight:700;margin:20px 0 6px;color:var(--wmap-text,#222);display:flex;align-items:center;gap:6px}
 .wmap-guide h3 img{width:20px;height:20px;display:inline;vertical-align:middle;border:none;border-radius:0;margin:0}
@@ -142,16 +154,30 @@ const wrappedHtml = `<div class="wmap-guide">
 .wmap-demo[data-wmap-demo="analysis"]{height:600px}
 .wmap-guide--max{max-width:1000px}
 @media print{
-  /* Print only the guide content: hide the host app and the window frame
-     chrome (header/buttons), and let the guide flow at full width with its
-     natural height. Without this, the browser prints the centred window box
-     (normal mode) or a single clipped viewport that is often blank (maximised
-     mode, where the box is 100vh with overflow:hidden). The guide is opened
-     as a non-modal floating window (.wmap-window-box), not a modal — there is
-     no dimmed backdrop to unhide, just the host page's other content. */
+  /* Print only the guide's own content, never the host page, and never a
+     clipped single screenful. The guide window opens one of two ways
+     (toolbar.ts's openUserGuideWindow) and this must handle both:
+     - a real popup (openGuideInPopup): buildGuideContent's content div
+       (class wmap-guide-content) is body's ONLY child directly — body
+       itself is height:100vh;overflow:hidden for the screen layout, which
+       without an override clips print to a single blank-looking page.
+     - the in-page floating-window fallback (openGuideInFloatingWindow,
+       used whenever window.open() is blocked — e.g. always in Tauri):
+       the same content div sits inside .wmap-window-box, itself a sibling
+       of the rest of the host page's own content, which must stay hidden.
+     Both need: undo the screen-only height/overflow clipping (100vh/
+     overflow:hidden bodies, flex:1/overflow:auto content panes) so the
+     guide can paginate over multiple printed pages instead of clipping to
+     one, hide anything that isn't the guide itself, and drop the
+     print-irrelevant "view online" banner. */
   body{overflow:visible!important;height:auto!important}
-  /* Hide the host app; print only the window box subtree (the guide). */
-  body > *{display:none!important}
+  /* Hide everything except the guide's own content div (covers the real-
+     popup case, where content is body's only child) and .wmap-window-box
+     (covers the floating-window case, where content is nested inside it —
+     that subtree gets its own unclip rules below rather than being hidden
+     here). */
+  body > *:not(.wmap-guide-content):not(.wmap-window-box){display:none!important}
+  .wmap-guide-content{flex:none!important;overflow:visible!important;height:auto!important;min-height:0!important}
   body > .wmap-window-box{position:static!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important;display:block!important}
   .wmap-window-box > div:first-child{display:none!important}
   /* contentWrap (flex container) and the scroll wrapper inside it both clip/scroll;

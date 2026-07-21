@@ -52,48 +52,56 @@
     var binResult = buildWaferMap({ results: results, hbinDefs: hbinDefs, passBins: [1], waferConfig: { notch: { type: 'right' } }, });
     var valueResult = buildWaferMap({ results: results, hbinDefs: hbinDefs, testDefs: testDefs, passBins: [1], waferConfig: { notch: { type: 'right' } }, });
 
+    // Every renderWaferMap/renderWaferGallery call below returns a controller
+    // with its own ResizeObserver + matchMedia listeners. Collect every handle
+    // so the caller (toolbar.ts's guide close paths) can destroy() them all —
+    // otherwise they leak for the lifetime of the host page whenever the guide
+    // is shown as an in-page overlay rather than a real popup (the popup path
+    // masks the leak by tearing down its own window/realm on close).
+    var handles = [];
+
     for (var i = 0; i < demos.length; i++) {
       var el = demos[i];
       var id = el.dataset.wmapDemo;
       try {
         if (id === 'value-heatmap') {
-          renderWaferMap(el, valueResult, {
+          handles.push(renderWaferMap(el, valueResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'value', activeTest: 1 }
-          });
+          }));
 
         } else if (id === 'spec-passfail') {
-          renderWaferMap(el, valueResult, {
+          handles.push(renderWaferMap(el, valueResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'value', activeTest: 1, passFailDisplay: 'spec' }
-          });
+          }));
 
         } else if (id === 'bin-highlight') {
           // Show bin 2 highlighted (dimmed all others) so the feature is visible without interaction.
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', highlightBin: 2 }
-          });
+          }));
 
         } else if (id === 'bin-map') {
           // basic hardbin map with no toolbar, just the wafer display.
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', showXYIndicator: true }
-          });
+          }));
 
         } else if (id === 'orientation') {
           // Show the wafer rotated 90° so the notch is clearly on the left side,
           // illustrating that the display orientation can be adjusted.
 
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', rotation: 90, showXYIndicator: true }
-          });
+          }));
 
         } else if (id === 'overlays') {
           // Show ring boundaries, quadrant lines, and XY indicator all active.
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: {
               plotMode: 'hardBin',
@@ -101,26 +109,35 @@
               showQuadrantBoundaries: true,
               showXYIndicator: true,
             }
-          });
+          }));
 
         } else if (id === 'gallery') {
+          if (!renderWaferGallery) {
+            // Expected, not a bug: a guide opened from a single-wafer host
+            // (renderWaferMap.ts's openGuideWindow) deliberately omits
+            // renderWaferGallery to avoid a circular import between the two
+            // render entry points — see its own doc comment. Skip this one
+            // demo rather than falling into the catch below and logging a
+            // scary "failed" warning for an intentional gap.
+            continue;
+          }
           var items = [0, 1, 2, 3].map(function (n) {
             var r = buildWaferMap({ results: makeDemoWafer(6 + n), hbinDefs: hbinDefs, passBins: [1] });
             return Object.assign({}, r, { label: 'Wafer ' + (n + 1) });
           });
-          renderWaferGallery(el, items);
+          handles.push(renderWaferGallery(el, items));
 
         } else if (id === 'findings') {
           // Build a wafer with a strong edge-ring failure pattern so findings are guaranteed.
           var edgeResults = makeEdgeFailWafer(7);
           var edgeResult = buildWaferMap({ results: edgeResults, hbinDefs: hbinDefs, passBins: [1] });
           var summary = analyzeWaferMap ? analyzeWaferMap(edgeResult) : null;
-          renderWaferMap(el, edgeResult, {
+          handles.push(renderWaferMap(el, edgeResult, {
             showToolbar: true, showTooltip: true,
             viewOptions: { plotMode: 'hardBin' },
             statsSummary: summary || undefined,
             findings: summary ? { defaultOpen: true } : undefined,
-          });
+          }));
 
         } else if (id === 'lot-stack') {
           // Count how many wafers (out of 3) each die failed (bin 2) — shown as a heatmap.
@@ -139,10 +156,10 @@
             hbinDefs: hbinDefs,
             passBins: [1],
           });
-          renderWaferMap(el, stackResult, {
+          handles.push(renderWaferMap(el, stackResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'stackedBins' }
-          });
+          }));
 
         } else if (id === 'box-select') {
           // Box-select is interactive — render WITH the toolbar so the box-select
@@ -154,6 +171,7 @@
             viewOptions: { plotMode: 'hardBin' },
             onSelect: function () { /* host app would show selection stats here */ },
           });
+          handles.push(bsCtrl);
           // Highlight a 3×3 block near the centre as an illustrative initial selection.
           var preSel = bsResult.dies.filter(function (d) {
             return d.x >= -1 && d.x <= 1 && d.y >= -1 && d.y <= 1;
@@ -167,12 +185,12 @@
           // computePerTestStats: true adds the cheap per-test value summary to the
           // panel without the heavier regional test-value findings pass.
           var spSummary = analyzeWaferMap ? analyzeWaferMap(spResult, { computePerTestStats: true }) : null;
-          renderWaferMap(el, spResult, {
+          handles.push(renderWaferMap(el, spResult, {
             showTooltip: true,
             viewOptions: { plotMode: 'hardBin' },
             statsSummary: spSummary || undefined,
             summaryPanel: { defaultOpen: true },
-          });
+          }));
 
         } else if (id === 'analysis') {
           // renderWaferGallery is NOT necessarily available here — a guide
@@ -206,10 +224,10 @@
             return out;
           }
           var analysisResult = buildWaferMap({ results: makeAnalysisWafer(0), hbinDefs: hbinDefs, testDefs: analysisTestDefs, passBins: [1] });
-          renderWaferMap(el, analysisResult, {
+          handles.push(renderWaferMap(el, analysisResult, {
             insights: { enabled: true },
             viewOptions: { plotMode: 'hardBin' },
-          });
+          }));
           // Open the Insights tab by default — same click a user would make,
           // just pre-triggered so the feature is visible without interaction.
           var analysisBtn = el.querySelector('button[aria-label="Insights"]');
@@ -220,15 +238,29 @@
             results: results, hbinDefs: hbinDefs, passBins: [1],
             reticleConfig: { width: 3, height: 2, anchorDie: { x: -1, y: 0 } },
           });
-          renderWaferMap(el, reticleResult, {
+          handles.push(renderWaferMap(el, reticleResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', showReticle: true }
-          });
+          }));
         }
       } catch (e) {
         console.warn('wmap guide demo failed:', id, e);
       }
     }
+
+    // Exposed so the guide's close paths (toolbar.ts openGuideInFloatingWindow/
+    // openGuideInPopup) can tear every demo down — see the `handles` comment
+    // above. Guarded by identity (like __wmapDemoApi's restoreApi below) so a
+    // stale/delayed close (e.g. the popup-closed poll firing after a rapid
+    // reopen already overwrote this) can't destroy a newer instance's demos.
+    var destroyer = function () {
+      if (window.__wmapDestroyGuideDemos === destroyer) window.__wmapDestroyGuideDemos = null;
+      for (var j = 0; j < handles.length; j++) {
+        try { handles[j] && handles[j].destroy && handles[j].destroy(); } catch (e) { /* best-effort teardown */ }
+      }
+      handles = [];
+    };
+    window.__wmapDestroyGuideDemos = destroyer;
   }
 
   // Expose for callers — __wmapDemoApi must be set before calling:

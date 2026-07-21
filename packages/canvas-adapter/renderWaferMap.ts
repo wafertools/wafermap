@@ -7,7 +7,7 @@ import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } fr
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -346,6 +346,7 @@ export function renderWaferMap(
   result: WaferMapResult,
   options: RenderOptions = {},
 ): WaferMapController {
+  logWmapVersionOnce();
   // Derive the window/document this container actually belongs to, rather than
   // assuming the bare global `window`/`document` — needed so a container
   // mounted in a different document (e.g. a gallery card detached into its own
@@ -537,11 +538,16 @@ export function renderWaferMap(
     // have no effect on the chart suite — hide them as a group while it's open.
     // Summary is hidden too (refreshSummaryButton checks insightsOpen) since
     // its panel sits behind the Insights overlay with no visible effect.
-    // Expand/Insights/Help live in sceneControlsEl (unwrapped, not part of
-    // this group) and stay visible+reachable the whole time — see this
-    // function's own header comment.
+    // Insights/Help live in sceneControlsEl (unwrapped, not part of this
+    // group) and stay visible+reachable the whole time. Expand does NOT —
+    // reparenting insightsTab.el into the modal left the original container
+    // blank behind it, and switching back to the wafer view *inside* the
+    // modal left that blank too (canvasWrap was never moved there — it has
+    // no expand target once Insights owns the screen). Hide it entirely
+    // rather than ship a control that produces two blank views.
     if (mapToolsEl) mapToolsEl.style.display = open ? 'none' : 'flex';
     if (mapViewControlsEl) mapViewControlsEl.style.display = open ? 'none' : 'flex';
+    if (btnExpand) btnExpand.style.display = open ? 'none' : 'flex';
     // The metadata badge is a child of canvasWrap and (like the toolbar used
     // to be) floats at canvasWrap's own corner, not the Insights overlay's —
     // and the Insights tab already shows this wafer's metadata in its own
@@ -736,8 +742,11 @@ export function renderWaferMap(
   let sceneControlsEl:  HTMLDivElement    | null = null;
   // Map-specific controls (zoom/pan/select, mode/palette/overlays/etc.) — hidden
   // while the Insights tab is open, since none of them apply to the chart suite.
-  // Summary/Expand/Insights/Help stay in sceneControlsEl directly, unwrapped,
-  // since those apply to both views.
+  // Insights/Help stay in sceneControlsEl directly, unwrapped, since those
+  // apply to both views. Summary/Expand also live there but are hidden while
+  // Insights is open instead (refreshSummaryButton / setInsightsOpen) — Summary's
+  // panel has no visible effect behind the Insights overlay, and Expand has no
+  // sensible target once Insights owns the whole view (see setInsightsOpen).
   let mapToolsEl:       HTMLDivElement    | null = null;
   let mapViewControlsEl: HTMLDivElement   | null = null;
   let btnBoxSelect:     HTMLButtonElement | null = null;
@@ -810,7 +819,12 @@ export function renderWaferMap(
       tbCloseOpenMenu = closeOpenMenu;
       tbGetOpenMenu   = getOpenMenu;
       // Single persistent listener — closes any open dropdown on outside click.
-      document.addEventListener('click', closeOpenMenu, true);
+      // Must be ownerDocument, not the bare global: a gallery card detached
+      // into a real popup window (renderWaferGallery.ts's openWindowForCard)
+      // renders this toolbar into an entirely separate document, and a
+      // listener on the wrong one never sees clicks made inside the popup —
+      // dropdowns opened there would never close on an outside click.
+      ownerDocument.addEventListener('click', closeOpenMenu, true);
 
       // ── Wire up toolbar buttons ──────────────────────────────────────────
 
@@ -864,8 +878,9 @@ export function renderWaferMap(
 
         // Map-view-specific controls (mode, palette, overlays, legend, orientation)
         // — wrapped so they can be hidden as a group while the Insights tab is
-        // open, unlike Summary/Expand/Insights/Help below which stay unwrapped
-        // directly in sceneControlsEl since those apply to both views.
+        // open, unlike Summary/Expand/Insights/Help below, which stay unwrapped
+        // directly in sceneControlsEl (individually hidden/shown as needed —
+        // see setInsightsOpen — rather than as part of this group).
         mapViewControlsEl = document.createElement('div');
         Object.assign(mapViewControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
         sceneControlsEl.appendChild(mapViewControlsEl);
@@ -1134,85 +1149,53 @@ export function renderWaferMap(
   }
 
   // ── Expand modal ──────────────────────────────────────────────────────────
-  let modalHandle: ReturnType<typeof openModal> | null = null;
-  // The element that was reparented into the modal and must be returned on close.
-  let modalReparentedEl: HTMLElement | null = null;
-  let modalOriginalParent: HTMLElement | null = null;
-  let modalOriginalNext: ChildNode | null = null;
+  let modalHandle: OverlayHandle | null = null;
 
   function openExpandModal(): void {
     if (modalHandle) { modalHandle.close(); modalHandle = null; }
 
-    // Determine what to reparent. When the Insights tab is open, expand IT —
-    // not the (currently hidden, behind it) canvas — since that's what's
-    // actually on screen. Otherwise: the summary-panel wrapper if one exists
+    // Only reachable while Insights is closed — the button and the 'E'
+    // shortcut are both hidden/disabled while insightsOpen (see
+    // setInsightsOpen's own comment: reparenting insightsTab.el here used to
+    // leave both the original view and the modal's own "back to wafer view"
+    // blank). What to reparent: the summary-panel wrapper if one exists
     // (canvas + panel side-by-side), else just canvasWrap.
-    const usingInsights = insightsOpen && !!insightsTab;
-    const reparentRoot: HTMLElement =
-      usingInsights ? insightsTab!.el :
-      summaryPanelWrapper ?? autoSummaryPanelWrapper ?? canvasWrap;
+    const reparentRoot: HTMLElement = summaryPanelWrapper ?? autoSummaryPanelWrapper ?? canvasWrap;
 
-    modalReparentedEl   = reparentRoot;
-    modalOriginalParent = reparentRoot.parentElement as HTMLElement;
-    modalOriginalNext   = reparentRoot.nextSibling;
+    reparentRoot.style.flex      = '1';
+    reparentRoot.style.minWidth  = '0';
+    reparentRoot.style.minHeight = '0';
 
-    // insightsTab.el is normally position:absolute;inset:0 (an overlay sibling
-    // of canvasWrap) — reparented into the modal's flex contentWrap it must
-    // behave as a normal flex child instead, or it would try to absolutely
-    // position itself against whatever ancestor is positioned in there.
-    // Restored on close, below.
-    const savedPosition = usingInsights ? reparentRoot.style.position : '';
-    const savedInset     = usingInsights ? reparentRoot.style.inset : '';
-    if (usingInsights) {
-      reparentRoot.style.position = 'static';
-      reparentRoot.style.inset    = '';
-    }
-
-    // openModal owns shared-tooltip re-homing (into the box on open, back to
-    // <body> on close) — correct in both modal and maximized states — so no
-    // onMaximizeChange tooltip wiring is needed here. ownerDocument is passed
-    // explicitly so the modal builds into the SAME document as reparentRoot
-    // (e.g. a gallery card detached into its own popup window) rather than
-    // silently building in whatever document happened to be the bare global
-    // — that would move reparentRoot out of the popup and pop the modal up
-    // on the wrong page.
-    const handle = openModal({
-      ownerDocument: ownerDocument,
-      onClose: () => {
-        if (modalReparentedEl && modalOriginalParent) {
-          modalOriginalParent.insertBefore(modalReparentedEl, modalOriginalNext);
-          if (usingInsights) {
-            modalReparentedEl.style.position = savedPosition;
-            modalReparentedEl.style.inset    = savedInset;
-          }
-          modalReparentedEl   = null;
-          modalOriginalParent = null;
-          modalOriginalNext   = null;
-        }
-        if (toolbar) container.appendChild(toolbar);
+    // toolbar lives in `container` (a sibling of reparentRoot), not inside
+    // reparentRoot itself, so openReparentedModal must move it in too —
+    // otherwise it stays behind in the now-empty original container and the
+    // expanded view has no toolbar at all. Reparented alongside reparentRoot,
+    // not as a separate call, so the shared helper's own stale-reference
+    // guard sees both moves as one unit — see its own header comment in
+    // toolbar.ts for why that matters (this pairing is exactly the case that
+    // used to throw NotFoundError on close).
+    //
+    // ownerDocument is passed explicitly so the modal builds into the SAME
+    // document as reparentRoot (e.g. a gallery card detached into its own
+    // popup window) rather than silently building in whatever document
+    // happened to be the bare global — that would move reparentRoot out of
+    // the popup and pop the modal up on the wrong page.
+    const handle = openReparentedModal(toolbar ? [reparentRoot, toolbar] : [reparentRoot], {
+      ownerDocument,
+      onClosed: () => {
         modalHandle = null;
         if (btnExpand) btnExpand.style.display = 'flex';
         canvas.focus({ preventScroll: true });
         // Fit will recompute via ResizeObserver firing on reparent.
       },
     });
+    if (!handle) return; // re-entrancy guard — shouldn't trip, modalHandle.close() above already cleared it
 
-    reparentRoot.style.flex      = '1';
-    reparentRoot.style.minWidth  = '0';
-    reparentRoot.style.minHeight = '0';
-    handle.contentWrap.appendChild(reparentRoot);
-
-    // toolbar lives in `container` (a sibling of reparentRoot), not inside
-    // reparentRoot itself, so it must be moved into the modal explicitly —
-    // otherwise it stays behind in the now-empty original container and the
-    // expanded view has no toolbar at all. contentWrap has no `position` of
-    // its own (flex child, static); give it one so toolbar's `position:
-    // absolute; top:4px; right:4px` resolves against the modal's content
-    // area, the same top-right corner it occupies outside the modal.
-    if (toolbar) {
-      handle.contentWrap.style.position = 'relative';
-      handle.contentWrap.appendChild(toolbar);
-    }
+    // contentWrap has no `position` of its own (flex child, static); give it
+    // one so toolbar's `position: absolute; top:4px; right:4px` resolves
+    // against the modal's content area, the same top-right corner it
+    // occupies outside the modal.
+    if (toolbar) handle.contentWrap.style.position = 'relative';
 
     modalHandle = handle;
     if (btnExpand) btnExpand.style.display = 'none';
@@ -1903,7 +1886,7 @@ export function renderWaferMap(
       onSelect?.([]);
       render();
     }
-    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only' && showExpandButton) {
+    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only' && showExpandButton && !insightsOpen) {
       e.stopPropagation();
       (onExpand ?? openExpandModal)();
     }
@@ -2137,7 +2120,7 @@ export function renderWaferMap(
       modalHandle?.close();
       if (hideTimer) clearTimeout(hideTimer);
       tbGetOpenMenu?.()?.remove();
-      if (tbCloseOpenMenu) document.removeEventListener('click', tbCloseOpenMenu, true);
+      if (tbCloseOpenMenu) ownerDocument.removeEventListener('click', tbCloseOpenMenu, true);
 
       canvas.removeEventListener('wheel',        onWheel);
       canvas.removeEventListener('pointerdown',  onPointerDown);

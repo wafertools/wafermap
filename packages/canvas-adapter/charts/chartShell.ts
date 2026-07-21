@@ -5,33 +5,42 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { CLR, saveImageBlob, openModal, type SaveImageHandler } from '../toolbar.js';
+import { CLR, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 
 export type { SaveImageHandler };
 
 // ── Expand modal ─────────────────────────────────────────────────────────────
-// Reuses wmap's own `openModal` (canvas-adapter/toolbar.ts) — the same
-// generic, resizable/maximizable overlay primitive the user guide window
-// already uses (not something specific to wafer-map canvases) — rather than
-// building a second one. A chart card gets resize/maximize/Esc/focus-trap for
-// free this way, matching the wafer-map popups' own feature set.
+// Reuses wmap's own `openReparentedModal` (canvas-adapter/toolbar.ts) — the
+// same reparent-into-a-modal-and-restore helper renderWaferMap.ts's own
+// expand button uses, not something specific to chart cards or wafer-map
+// canvases — rather than building a second, parallel version of the same
+// dance (and its same two easy-to-get-wrong edge cases; see that helper's
+// own header comment). A chart card gets resize/maximize/Esc/focus-trap for
+// free this way too, matching the wafer-map popups' own feature set.
 
-export function openChartExpandModal(card: HTMLElement, title: string): void {
-  const originalParent = card.parentElement;
-  const originalNext = card.nextSibling;
+/**
+ * `triggerBtn`, when given, is hidden for the modal's duration and shown
+ * again on close — a card already sitting inside its own expand modal must
+ * not offer a second "expand" of itself: clicking it would reparent the same
+ * card into a *second*, nested modal, leaving the first one open but empty
+ * (found via exactly that — every card kept its expand icon once expanded).
+ */
+export function openChartExpandModal(card: HTMLElement, title: string, triggerBtn?: HTMLButtonElement): void {
   const savedStyle = card.getAttribute('style') ?? '';
+  Object.assign(card.style, { flex: '1', minHeight: '0', border: 'none', borderRadius: '0' } as Partial<CSSStyleDeclaration>);
 
-  const handle = openModal({
+  const handle = openReparentedModal([card], {
     title,
-    onClose: () => {
+    onClosed: () => {
       card.setAttribute('style', savedStyle);
-      originalParent?.insertBefore(card, originalNext);
+      if (triggerBtn) triggerBtn.style.display = 'flex';
     },
   });
-  Object.assign(card.style, { flex: '1', minHeight: '0', border: 'none', borderRadius: '0' } as Partial<CSSStyleDeclaration>);
-  handle.contentWrap.appendChild(card);
+  if (!handle) { card.setAttribute('style', savedStyle); return; } // already expanded — re-entrancy guard
+
+  if (triggerBtn) triggerBtn.style.display = 'none';
 }
 
 // ── Canvas-safe theme colors ─────────────────────────────────────────────────
@@ -285,7 +294,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardSh
     color: CLR.label, cursor: 'pointer', width: '22px', height: '22px', lineHeight: '1', flexShrink: '0',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   } as Partial<CSSStyleDeclaration>);
-  expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title));
+  expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title, expandBtn));
   headingRow.appendChild(expandBtn);
   card.appendChild(headingRow);
 

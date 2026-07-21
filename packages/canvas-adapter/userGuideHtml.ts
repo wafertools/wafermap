@@ -6,7 +6,8 @@
 export const USER_GUIDE_HTML = `<div class="wmap-guide">
 <style>
 .wmap-guide{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:var(--wmap-text,#1a1a1a);padding:24px 32px;max-width:720px;margin:0 auto;overflow-y:auto;height:100%;box-sizing:border-box}
-.wmap-guide h1{font-size:1.35em;font-weight:700;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--wmap-border,#e2e5ea);color:var(--wmap-text,#111)}
+.wmap-guide h1{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:1.35em;font-weight:700;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--wmap-border,#e2e5ea);color:var(--wmap-text,#111)}
+.wmap-guide-version{font-size:11px;font-weight:400;color:var(--wmap-text-muted,#888);white-space:nowrap}
 .wmap-guide h2{font-size:1.1em;font-weight:700;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--wmap-border,#e9eaec);color:var(--wmap-text,#1a1a1a)}
 .wmap-guide h3{font-size:1em;font-weight:700;margin:20px 0 6px;color:var(--wmap-text,#222);display:flex;align-items:center;gap:6px}
 .wmap-guide h3 img{width:20px;height:20px;display:inline;vertical-align:middle;border:none;border-radius:0;margin:0}
@@ -34,16 +35,30 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
 .wmap-demo[data-wmap-demo="analysis"]{height:600px}
 .wmap-guide--max{max-width:1000px}
 @media print{
-  /* Print only the guide content: hide the host app and the window frame
-     chrome (header/buttons), and let the guide flow at full width with its
-     natural height. Without this, the browser prints the centred window box
-     (normal mode) or a single clipped viewport that is often blank (maximised
-     mode, where the box is 100vh with overflow:hidden). The guide is opened
-     as a non-modal floating window (.wmap-window-box), not a modal — there is
-     no dimmed backdrop to unhide, just the host page's other content. */
+  /* Print only the guide's own content, never the host page, and never a
+     clipped single screenful. The guide window opens one of two ways
+     (toolbar.ts's openUserGuideWindow) and this must handle both:
+     - a real popup (openGuideInPopup): buildGuideContent's content div
+       (class wmap-guide-content) is body's ONLY child directly — body
+       itself is height:100vh;overflow:hidden for the screen layout, which
+       without an override clips print to a single blank-looking page.
+     - the in-page floating-window fallback (openGuideInFloatingWindow,
+       used whenever window.open() is blocked — e.g. always in Tauri):
+       the same content div sits inside .wmap-window-box, itself a sibling
+       of the rest of the host page's own content, which must stay hidden.
+     Both need: undo the screen-only height/overflow clipping (100vh/
+     overflow:hidden bodies, flex:1/overflow:auto content panes) so the
+     guide can paginate over multiple printed pages instead of clipping to
+     one, hide anything that isn't the guide itself, and drop the
+     print-irrelevant "view online" banner. */
   body{overflow:visible!important;height:auto!important}
-  /* Hide the host app; print only the window box subtree (the guide). */
-  body > *{display:none!important}
+  /* Hide everything except the guide's own content div (covers the real-
+     popup case, where content is body's only child) and .wmap-window-box
+     (covers the floating-window case, where content is nested inside it —
+     that subtree gets its own unclip rules below rather than being hidden
+     here). */
+  body > *:not(.wmap-guide-content):not(.wmap-window-box){display:none!important}
+  .wmap-guide-content{flex:none!important;overflow:visible!important;height:auto!important;min-height:0!important}
   body > .wmap-window-box{position:static!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important;display:block!important}
   .wmap-window-box > div:first-child{display:none!important}
   /* contentWrap (flex container) and the scroll wrapper inside it both clip/scroll;
@@ -53,7 +68,7 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
   .wmap-guide-online-link{display:none!important}
 }
 </style>
-<h1 id="wafer-map-user-guide">Wafer Map — User Guide</h1>
+<h1 id="wafer-map-user-guide">Wafer Map — User Guide<span class="wmap-guide-version" title="Built 2026-07-21T20:09:41.979Z">v0.20.4</span></h1>
 <p class="wmap-guide-online-link">This is a quick reference. <a href="https://telecasterer.github.io/wafermap/user-guide/" target="_blank" rel="noopener">View the full illustrated guide online ↗</a></p>
 <p>This guide describes the display and analysis features of the wafer map viewer.
 It is written for users who may be semiconductor test engineers, device engineers, and yield engineers
@@ -302,7 +317,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xNSAzaDZ2NiIvPjxwYXRoIGQ9Ik05IDIxSDN2LTYiLz48cGF0aCBkPSJNMjEgM2wtNyA3Ii8+PHBhdGggZD0iTTMgMjFsNy03Ii8+PC9zdmc+Cg==" width="20" height="20"></td>
 <td>Expand</td>
-<td>Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press <strong>F</strong>). Press <strong>Esc</strong> or click outside to close. Useful for detailed inspection without changing the main view. While the Insights tab is open, this expands the chart suite instead.</td>
+<td>Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press <strong>F</strong>). Press <strong>Esc</strong> or click outside to close. Useful for detailed inspection without changing the main view. Hidden while the Insights tab is open — each chart inside Insights has its own expand button instead.</td>
 </tr>
 <tr>
 <td><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNzQxNTEiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMy45OTcgNGEyIDIgMCAwIDEgMS43NiAxLjA1bC40ODYuOUEyIDIgMCAwIDAgMTguMDAzIDdIMjBhMiAyIDAgMCAxIDIgMnY5YTIgMiAwIDAgMS0yIDJINGEyIDIgMCAwIDEtMi0yVjlhMiAyIDAgMCAxIDItMmgxLjk5N2EyIDIgMCAwIDAgMS43NTktMS4wNDhsLjQ4OS0uOTA0QTIgMiAwIDAgMSAxMC4wMDQgNHoiLz48Y2lyY2xlIGN4PSIxMiIgY3k9IjEzIiByPSIzIi8+PC9zdmc+Cg==" width="20" height="20"></td>
@@ -737,48 +752,56 @@ positions that show elevated failure rates.</p>
     var binResult = buildWaferMap({ results: results, hbinDefs: hbinDefs, passBins: [1], waferConfig: { notch: { type: 'right' } }, });
     var valueResult = buildWaferMap({ results: results, hbinDefs: hbinDefs, testDefs: testDefs, passBins: [1], waferConfig: { notch: { type: 'right' } }, });
 
+    // Every renderWaferMap/renderWaferGallery call below returns a controller
+    // with its own ResizeObserver + matchMedia listeners. Collect every handle
+    // so the caller (toolbar.ts's guide close paths) can destroy() them all —
+    // otherwise they leak for the lifetime of the host page whenever the guide
+    // is shown as an in-page overlay rather than a real popup (the popup path
+    // masks the leak by tearing down its own window/realm on close).
+    var handles = [];
+
     for (var i = 0; i < demos.length; i++) {
       var el = demos[i];
       var id = el.dataset.wmapDemo;
       try {
         if (id === 'value-heatmap') {
-          renderWaferMap(el, valueResult, {
+          handles.push(renderWaferMap(el, valueResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'value', activeTest: 1 }
-          });
+          }));
 
         } else if (id === 'spec-passfail') {
-          renderWaferMap(el, valueResult, {
+          handles.push(renderWaferMap(el, valueResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'value', activeTest: 1, passFailDisplay: 'spec' }
-          });
+          }));
 
         } else if (id === 'bin-highlight') {
           // Show bin 2 highlighted (dimmed all others) so the feature is visible without interaction.
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', highlightBin: 2 }
-          });
+          }));
 
         } else if (id === 'bin-map') {
           // basic hardbin map with no toolbar, just the wafer display.
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', showXYIndicator: true }
-          });
+          }));
 
         } else if (id === 'orientation') {
           // Show the wafer rotated 90° so the notch is clearly on the left side,
           // illustrating that the display orientation can be adjusted.
 
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', rotation: 90, showXYIndicator: true }
-          });
+          }));
 
         } else if (id === 'overlays') {
           // Show ring boundaries, quadrant lines, and XY indicator all active.
-          renderWaferMap(el, binResult, {
+          handles.push(renderWaferMap(el, binResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: {
               plotMode: 'hardBin',
@@ -786,26 +809,35 @@ positions that show elevated failure rates.</p>
               showQuadrantBoundaries: true,
               showXYIndicator: true,
             }
-          });
+          }));
 
         } else if (id === 'gallery') {
+          if (!renderWaferGallery) {
+            // Expected, not a bug: a guide opened from a single-wafer host
+            // (renderWaferMap.ts's openGuideWindow) deliberately omits
+            // renderWaferGallery to avoid a circular import between the two
+            // render entry points — see its own doc comment. Skip this one
+            // demo rather than falling into the catch below and logging a
+            // scary "failed" warning for an intentional gap.
+            continue;
+          }
           var items = [0, 1, 2, 3].map(function (n) {
             var r = buildWaferMap({ results: makeDemoWafer(6 + n), hbinDefs: hbinDefs, passBins: [1] });
             return Object.assign({}, r, { label: 'Wafer ' + (n + 1) });
           });
-          renderWaferGallery(el, items);
+          handles.push(renderWaferGallery(el, items));
 
         } else if (id === 'findings') {
           // Build a wafer with a strong edge-ring failure pattern so findings are guaranteed.
           var edgeResults = makeEdgeFailWafer(7);
           var edgeResult = buildWaferMap({ results: edgeResults, hbinDefs: hbinDefs, passBins: [1] });
           var summary = analyzeWaferMap ? analyzeWaferMap(edgeResult) : null;
-          renderWaferMap(el, edgeResult, {
+          handles.push(renderWaferMap(el, edgeResult, {
             showToolbar: true, showTooltip: true,
             viewOptions: { plotMode: 'hardBin' },
             statsSummary: summary || undefined,
             findings: summary ? { defaultOpen: true } : undefined,
-          });
+          }));
 
         } else if (id === 'lot-stack') {
           // Count how many wafers (out of 3) each die failed (bin 2) — shown as a heatmap.
@@ -824,10 +856,10 @@ positions that show elevated failure rates.</p>
             hbinDefs: hbinDefs,
             passBins: [1],
           });
-          renderWaferMap(el, stackResult, {
+          handles.push(renderWaferMap(el, stackResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'stackedBins' }
-          });
+          }));
 
         } else if (id === 'box-select') {
           // Box-select is interactive — render WITH the toolbar so the box-select
@@ -839,6 +871,7 @@ positions that show elevated failure rates.</p>
             viewOptions: { plotMode: 'hardBin' },
             onSelect: function () { /* host app would show selection stats here */ },
           });
+          handles.push(bsCtrl);
           // Highlight a 3×3 block near the centre as an illustrative initial selection.
           var preSel = bsResult.dies.filter(function (d) {
             return d.x >= -1 && d.x <= 1 && d.y >= -1 && d.y <= 1;
@@ -852,12 +885,12 @@ positions that show elevated failure rates.</p>
           // computePerTestStats: true adds the cheap per-test value summary to the
           // panel without the heavier regional test-value findings pass.
           var spSummary = analyzeWaferMap ? analyzeWaferMap(spResult, { computePerTestStats: true }) : null;
-          renderWaferMap(el, spResult, {
+          handles.push(renderWaferMap(el, spResult, {
             showTooltip: true,
             viewOptions: { plotMode: 'hardBin' },
             statsSummary: spSummary || undefined,
             summaryPanel: { defaultOpen: true },
-          });
+          }));
 
         } else if (id === 'analysis') {
           // renderWaferGallery is NOT necessarily available here — a guide
@@ -891,10 +924,10 @@ positions that show elevated failure rates.</p>
             return out;
           }
           var analysisResult = buildWaferMap({ results: makeAnalysisWafer(0), hbinDefs: hbinDefs, testDefs: analysisTestDefs, passBins: [1] });
-          renderWaferMap(el, analysisResult, {
+          handles.push(renderWaferMap(el, analysisResult, {
             insights: { enabled: true },
             viewOptions: { plotMode: 'hardBin' },
-          });
+          }));
           // Open the Insights tab by default — same click a user would make,
           // just pre-triggered so the feature is visible without interaction.
           var analysisBtn = el.querySelector('button[aria-label="Insights"]');
@@ -905,15 +938,29 @@ positions that show elevated failure rates.</p>
             results: results, hbinDefs: hbinDefs, passBins: [1],
             reticleConfig: { width: 3, height: 2, anchorDie: { x: -1, y: 0 } },
           });
-          renderWaferMap(el, reticleResult, {
+          handles.push(renderWaferMap(el, reticleResult, {
             showToolbar: false, showTooltip: true,
             viewOptions: { plotMode: 'hardBin', showReticle: true }
-          });
+          }));
         }
       } catch (e) {
         console.warn('wmap guide demo failed:', id, e);
       }
     }
+
+    // Exposed so the guide's close paths (toolbar.ts openGuideInFloatingWindow/
+    // openGuideInPopup) can tear every demo down — see the \`handles\` comment
+    // above. Guarded by identity (like __wmapDemoApi's restoreApi below) so a
+    // stale/delayed close (e.g. the popup-closed poll firing after a rapid
+    // reopen already overwrote this) can't destroy a newer instance's demos.
+    var destroyer = function () {
+      if (window.__wmapDestroyGuideDemos === destroyer) window.__wmapDestroyGuideDemos = null;
+      for (var j = 0; j < handles.length; j++) {
+        try { handles[j] && handles[j].destroy && handles[j].destroy(); } catch (e) { /* best-effort teardown */ }
+      }
+      handles = [];
+    };
+    window.__wmapDestroyGuideDemos = destroyer;
   }
 
   // Expose for callers — __wmapDemoApi must be set before calling:

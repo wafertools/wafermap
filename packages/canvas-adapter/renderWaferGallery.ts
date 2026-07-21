@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -223,6 +223,7 @@ export function renderWaferGallery(
   items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>,
   options: GalleryOptions = {},
 ): GalleryController {
+  logWmapVersionOnce();
   const cardPadding          = options.cardPadding          ?? 6;
   const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
   let currentColumns         = options.columns;
@@ -340,7 +341,10 @@ export function renderWaferGallery(
   const tooltip = getTooltip();
   const tbHelpers = createToolbarHelpers(tooltip);
   const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
-  document.addEventListener('click', closeOpenMenu, true);
+  // container.ownerDocument, not the bare global — matches renderWaferMap.ts's
+  // own fix for the same gap (see its comment): a host could in principle
+  // mount the gallery into a container that belongs to a different document.
+  container.ownerDocument.addEventListener('click', closeOpenMenu, true);
   // Window focus loss (alt-tab / app switch, notably in a Tauri WebView) does
   // not fire mouseleave, which would leave a toolbar tooltip lingering visible.
   const onWindowBlur = () => hideTooltip();
@@ -2353,7 +2357,7 @@ ${reportStyles()}
       cardControllers = [];
       getOpenMenu()?.remove();
       gridResizeObserver.disconnect();
-      document.removeEventListener('click', closeOpenMenu, true);
+      container.ownerDocument.removeEventListener('click', closeOpenMenu, true);
       window.removeEventListener('blur', onWindowBlur);
       disposeOverlayZ();
       // Shared singleton — hide, never destroy (other instances may use it).

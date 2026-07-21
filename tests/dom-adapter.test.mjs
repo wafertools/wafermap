@@ -363,6 +363,68 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
   }
 });
 
+test('renderWaferMap Expand modal reparents the toolbar and canvas via openReparentedModal, and restores both intact on close (including across repeated open/close cycles)', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [{ x: 0, y: 0, values: [0.9], hbin: 1 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+    renderWaferMap(container, wafer, {});
+
+    const canvas = container.querySelector('canvas');
+    assert.ok(canvas, 'canvas should be mounted inside container');
+    const findExpandBtn = () =>
+      [...root.querySelectorAll('button')].find((btn) => btn.ariaLabel === 'Expand (E)');
+    assert.ok(findExpandBtn(), 'Expand button should be present');
+
+    // Open → close → open again: exercises both halves of openReparentedModal
+    // (toolbar.ts). Close must restore canvas+toolbar to their exact original
+    // position without throwing (the stale-sibling-reference bug: toolbar was
+    // canvasWrap's own original nextSibling, and both are reparented together
+    // in one call — restoring the second-moved element first left the
+    // first's `insertBefore(el, staleNextSibling)` reference no longer a
+    // child of its recorded parent). The second open must actually reopen
+    // (the WeakSet re-entrancy guard must not still think canvasWrap/toolbar
+    // are "already in a modal" after the first legitimate close).
+    for (let cycle = 1; cycle <= 2; cycle++) {
+      click(window, findExpandBtn());
+
+      const backdrop = window.document.getElementById('wmap-modal-backdrop');
+      assert.ok(backdrop, `modal backdrop should appear on open #${cycle}`);
+      const dialog = backdrop.querySelector('[role="dialog"]');
+      assert.ok(dialog, `modal dialog should exist on open #${cycle}`);
+      assert.ok(dialog.contains(canvas), `canvas should be reparented into the modal on open #${cycle}`);
+      assert.ok(
+        dialog.querySelector('[data-wmap-toolbar="single"]'),
+        `toolbar should be reparented into the modal alongside the canvas on open #${cycle}`,
+      );
+      assert.equal(container.contains(canvas), false, `canvas should have left container while expanded on open #${cycle}`);
+
+      const closeBtn = dialog.querySelector('button[aria-label="Close"]');
+      assert.ok(closeBtn, `modal should expose a Close button on open #${cycle}`);
+      click(window, closeBtn);
+
+      assert.equal(
+        window.document.getElementById('wmap-modal-backdrop'), null,
+        `modal backdrop should be gone after close #${cycle}`,
+      );
+      assert.ok(container.contains(canvas), `canvas should be restored to container after close #${cycle}`);
+      assert.ok(
+        container.querySelector('[data-wmap-toolbar="single"]'),
+        `toolbar should be restored to container after close #${cycle}`,
+      );
+    }
+  } finally {
+    cleanup();
+  }
+});
+
 test('renderWaferMap onSaveImage hook intercepts the PNG download', () => {
   const { window, root, cleanup } = setupDom();
   try {

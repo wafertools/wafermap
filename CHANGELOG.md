@@ -21,6 +21,20 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.20.4] — 2026-07-21
+
+### Fixed
+
+- The Test Value submenu (shown when a wafer has more than 6 tests) and the Insights chart-panel hover tooltips now clamp to the viewport instead of overflowing off the right/bottom edge of the screen.
+- The wafer-map and chart-panel "expand into a modal" feature no longer risks a stale-reference error on close (when two reparented elements' original DOM order interfered with restoring the first) or a duplicate, nested modal if the same content is expanded again while already expanded.
+- Printing an expanded wafer-map/chart modal, or the in-app user guide window, now prints the actual content instead of a blank or single clipped page.
+- Click-outside-to-close menu listeners (map/gallery toolbars) and the user guide's live demo widgets now correctly target the document the container or popup window actually belongs to, rather than the host page's document — previously this could leave dropdown menus unable to close, or leak `ResizeObserver`/`matchMedia` listeners, inside a detached gallery-card popup or the guide's floating-window fallback.
+- The **Expand** toolbar button (and its `E` shortcut) is now hidden while the Insights tab is open, instead of remaining visible but producing a blank view when clicked. Each chart panel inside Insights has its own expand button for enlarging just that chart. Developer guide and API reference corrected to match (both previously described the old, pre-fix behaviour).
+
+### Added
+
+- A version + build-time banner is now logged once to the console on first render, and shown in the in-app user guide's header — makes it possible to tell which build is actually loaded during linked local development, where `package.json`'s version alone doesn't change between edits. Dev/debugging aid only, not part of the public API.
+
 ## [0.20.3] — 2026-07-19
 
 ### Added
