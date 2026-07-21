@@ -620,18 +620,23 @@ export function buildModeMenuEl(
       const openSub = () => {
         if (subMenu) return;
         const rowRect = cascadeRow.getBoundingClientRect();
+        const subMinWidth = 160;
+        const subMaxHeight = 320;
+        const subFitsRight = rowRect.right + 2 + subMinWidth <= (ownerWindow.innerWidth ?? Infinity);
+        const subLeft = subFitsRight ? rowRect.right + 2 : Math.max(4, rowRect.left - 2 - subMinWidth);
+        const subTop = Math.min(rowRect.top - 4, Math.max(4, (ownerWindow.innerHeight ?? Infinity) - subMaxHeight - 4));
         subMenu = document.createElement('div');
         Object.assign(subMenu.style, {
           position:      'fixed',
-          top:           `${rowRect.top - 4}px`,
-          left:          `${rowRect.right + 2}px`,
+          top:           `${subTop}px`,
+          left:          `${subLeft}px`,
           background:    CLR.menuBg,
           border:        `1px solid ${CLR.menuBorder}`,
           borderRadius:  '4px',
           boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
           zIndex:        Z_ABOVE,
-          minWidth:      '160px',
-          maxHeight:     '320px',
+          minWidth:      `${subMinWidth}px`,
+          maxHeight:     `${subMaxHeight}px`,
           overflowY:     'auto',
           padding:       '4px 0',
           pointerEvents: 'auto',

@@ -12,7 +12,7 @@
 import { buildBinClusterData, type BinItem, type BinType } from '../../stats/binPareto.js';
 import { categorical } from './palette.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, observeResize, makeTooltip, makeSegmented, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeSegmented, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
 
 const CLUSTER_LABEL_WIDTH = 90;
 const CLUSTER_GAP = 8;
@@ -182,11 +182,9 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
         const bin = bins[hit.bin];
         const count = bin.counts[hit.group];
         const pct = bin.total > 0 ? (count / bin.total) * 100 : 0;
-        const cardRect = card.getBoundingClientRect();
         tooltip.innerHTML = `<strong>${bin.label}</strong> · ${clusterGroups[hit.group]}<br>${count} dies (${pct.toFixed(1)}% of bin)`;
         tooltip.style.display = 'block';
-        tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
-        tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
+        positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else {
         tooltip.style.display = 'none';
       }

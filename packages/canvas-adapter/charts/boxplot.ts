@@ -23,7 +23,7 @@ import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, makeBackButton, makeTestSelect, makeToggle, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeTestSelect, makeToggle, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
 
 const BOX_ROW_HEIGHT = 24;
 const BOX_ROW_GAP = 5;
@@ -389,14 +389,12 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       if (row !== hovered) { hovered = row; canvas.style.cursor = clickable ? 'pointer' : 'default'; draw(); }
       if (row >= 0 && data[row].count > 0) {
         const d = data[row];
-        const cardRect = card.getBoundingClientRect();
         const clickHint = isGroupOverview
           ? `<br><em>click to see this ${groupLabelText} by wafer</em>`
           : (leafClickable(row) ? '<br><em>click to open this wafer</em>' : '');
         tooltip.innerHTML = `<strong>${d.label}</strong> (${d.count} dies)<br>max ${fmt(d.max)}<br>q3 ${fmt(d.q3)}<br>median ${fmt(d.median)}<br>q1 ${fmt(d.q1)}<br>min ${fmt(d.min)}${clickHint}`;
         tooltip.style.display = 'block';
-        tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
-        tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
+        positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else {
         tooltip.style.display = 'none';
       }

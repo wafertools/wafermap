@@ -3,7 +3,7 @@
 
 import type { ChartDatum } from '../../stats/yield.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, formatValue, observeResize, makeTooltip, makeBackButton, makeSegmented, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
+import { cardShell, formatValue, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeSegmented, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
 
 const ROW_HEIGHT = 24;
 const ROW_GAP = 5;
@@ -213,14 +213,12 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
     if (row !== hovered) { hovered = row; canvas.style.cursor = clickable ? 'pointer' : 'default'; draw(); }
     if (row >= 0) {
       const d = data[row];
-      const cardRect = card.getBoundingClientRect();
       const hintLine = isGroupRow
         ? `<br><em>click to see this ${drill!.groupLabelText} by wafer</em>`
         : (panel.onOpen ? '<br><em>click to open this wafer</em>' : '');
       tooltip.innerHTML = `<strong>${d.label}</strong><br>${valueTextOf(d)}${hintLine}`;
       tooltip.style.display = 'block';
-      tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
-      tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
+      positionChartTooltip(tooltip, card, e.clientX, e.clientY);
     } else { tooltip.style.display = 'none'; }
   });
   canvas.addEventListener('mouseleave', () => { if (hovered !== -1) { hovered = -1; draw(); } tooltip.style.display = 'none'; });

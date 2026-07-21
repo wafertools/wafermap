@@ -22,7 +22,7 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, observeResize, makeTooltip, makeLabeledSelect, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
 
 const MATRIX_LIMIT_MIN = 5;
 const MATRIX_LIMIT_MAX = 100;
@@ -346,7 +346,6 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       const cell = matrix.cells.find(c => c.xIndex === xi && c.yIndex === yi);
       const xLabel = matrix.tests[xi].label;
       const yLabel = matrix.tests[yi].label;
-      const cardRect = card.getBoundingClientRect();
       if (isDiag) {
         tooltip.innerHTML = `<strong>${xLabel}</strong>`;
       } else if (cell?.r !== null && cell?.r !== undefined) {
@@ -355,8 +354,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
         tooltip.innerHTML = `${yLabel} vs ${xLabel}<br><em>insufficient data</em>`;
       }
       tooltip.style.display = 'block';
-      tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
-      tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
+      positionChartTooltip(tooltip, card, e.clientX, e.clientY);
     });
     canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
 

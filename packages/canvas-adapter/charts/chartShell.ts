@@ -547,3 +547,28 @@ export function makeTooltip(card: HTMLElement): HTMLElement {
   card.appendChild(tooltip);
   return tooltip;
 }
+
+/**
+ * Position a `makeTooltip` element from a mousemove event, flipping to the
+ * opposite side of the cursor when the default placement would overflow
+ * `card`'s own bounds (the tooltip is an absolutely-positioned child of
+ * `card`, so staying within its rect keeps it on-screen without needing the
+ * window's own bounds).
+ */
+export function positionChartTooltip(tooltip: HTMLElement, card: HTMLElement, clientX: number, clientY: number): void {
+  const cardRect = card.getBoundingClientRect();
+  const offset = 14;
+  const margin = 4;
+  tooltip.style.left = '0';
+  tooltip.style.top  = '0';
+  const tw = tooltip.offsetWidth;
+  const th = tooltip.offsetHeight;
+  let x = clientX - cardRect.left + offset;
+  let y = clientY - cardRect.top + offset;
+  if (x + tw + margin > cardRect.width)  x = clientX - cardRect.left - offset - tw;
+  if (y + th + margin > cardRect.height) y = clientY - cardRect.top - offset - th;
+  x = Math.max(margin, x);
+  y = Math.max(margin, y);
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top  = `${y}px`;
+}

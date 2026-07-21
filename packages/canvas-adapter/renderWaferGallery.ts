@@ -791,6 +791,7 @@ ${reportStyles()}
       isCurrentEntry, pickEntry,
       { makeMenuRow, makeMenuSection },
       currentMode,
+      btnMode.ownerDocument.defaultView ?? window,
     );
     document.body.appendChild(menu);
     setOpenMenu(menu);

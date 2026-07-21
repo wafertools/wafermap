@@ -20,7 +20,7 @@ import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { QUANTITY, categorical } from './palette.js';
-import { cardShell, observeResize, makeTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler } from './chartShell.js';
 // `colorScheme` (HistogramPanelOptions) is deliberately no longer read —
 // quantity/series colours are fixed (palette.ts); the option stays for API
 // compatibility with existing callers.
@@ -287,11 +287,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       if (bar !== hovered) { hovered = bar; draw(); }
       if (bar >= 0) {
         const b = buckets[bar];
-        const cardRect = card.getBoundingClientRect();
         tooltip.innerHTML = `<strong>${fmt(b.rangeLow, unit, 'engineering')} – ${fmt(b.rangeHigh, unit, 'engineering')}</strong><br>${b.count} dies`;
         tooltip.style.display = 'block';
-        tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
-        tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
+        positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else { tooltip.style.display = 'none'; }
     });
     canvas.addEventListener('mouseleave', () => { if (hovered !== -1) { hovered = -1; draw(); } tooltip.style.display = 'none'; });
@@ -492,11 +490,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         const rows = series.map((s, i) =>
           `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${colorOf(i)};margin-right:5px;"></span>${s.groupKey}: ${s.counts[b]}`
         ).join('<br>');
-        const cardRect = card.getBoundingClientRect();
         tooltip.innerHTML = `<strong>${fmt(r.rangeLow, unit, 'engineering')} – ${fmt(r.rangeHigh, unit, 'engineering')}</strong><br>${rows}`;
         tooltip.style.display = 'block';
-        tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
-        tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
+        positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else {
         tooltip.style.display = 'none';
       }

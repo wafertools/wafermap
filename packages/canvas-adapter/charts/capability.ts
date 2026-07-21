@@ -16,7 +16,7 @@ import { buildCapabilityData, type CapabilityDatum, type CapabilityItem } from '
 import { capabilityColor } from './palette.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, makeLabeledSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
 import { fmt } from '../../renderer/fmt.js';
 
 const CAP_MIN_COL = 30;
@@ -291,7 +291,6 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       if (col !== hovered) { hovered = col; drawChart(); }
       if (col === -1) { tooltip.style.display = 'none'; return; }
       const d = rows[col];
-      const cardRect = card.getBoundingClientRect();
       // fmt(v, unit) applies proper SI-prefix scaling (e.g. "33.3 pA") —
       // a naive .toFixed(2) collapses pA/nA-scale measurements to "0.00",
       // which reads as "no signal" rather than a real small value.
@@ -306,8 +305,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
             + `mean ${fv(d.mean)} · stddev ${fv(d.stdOverall)}`)
         + (onSelectTest ? '<br><em>click to view in boxplot</em>' : '');
       tooltip.style.display = 'block';
-      tooltip.style.left = `${e.clientX - cardRect.left + 14}px`;
-      tooltip.style.top = `${e.clientY - cardRect.top + 14}px`;
+      positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       canvas.style.cursor = onSelectTest ? 'pointer' : 'default';
     });
     canvas.addEventListener('mouseleave', () => { if (hovered !== -1) { hovered = -1; drawChart(); } tooltip.style.display = 'none'; });
