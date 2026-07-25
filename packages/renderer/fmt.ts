@@ -3,13 +3,42 @@ const SI_PREFIXES: [number, string][] = [
   [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'],
 ];
 
+const SI_PREFIX_SCALE: Record<string, number> = {
+  T: 1e12, G: 1e9, M: 1e6, k: 1e3,
+  m: 1e-3, µ: 1e-6, u: 1e-6, n: 1e-9, p: 1e-12, f: 1e-15,
+};
+
+// Base units test defs commonly carry (electrical + frequency). Used only to detect a caller
+// passing an already-prefixed unit (e.g. "MHz", "nA") despite the documented contract that
+// `unit` must be the bare base unit — see docs/api.md's TestDef.unit note.
+const KNOWN_BASE_UNITS = ['Hz', 'V', 'A', 'W', 'F', 'Ω', 'Ohm', 'S', 'H', 'J', 'C', 's'];
+
+/**
+ * If `unit` looks like a known base unit with a single SI-prefix letter stuck on the front
+ * (e.g. "MHz" = M + Hz, "nA" = n + A), return the scale that converts a value already expressed
+ * in that prefixed unit back to the bare base unit, plus the bare unit itself. Otherwise `unit`
+ * is treated as already bare (scale 1) — this is what keeps `fmt(2100, 'MHz')` from rendering as
+ * the double-prefixed "kMHz" instead of "2.10 GHz".
+ */
+function resolveUnitPrefix(unit: string): { preScale: number; base: string } {
+  for (const base of KNOWN_BASE_UNITS) {
+    if (unit.length === base.length + 1 && unit.endsWith(base)) {
+      const p = unit[0];
+      if (p in SI_PREFIX_SCALE) return { preScale: SI_PREFIX_SCALE[p], base };
+    }
+  }
+  return { preScale: 1, base: unit };
+}
+
 function siFormat(v: number, unit: string): string {
-  const abs = Math.abs(v);
+  const { preScale, base } = resolveUnitPrefix(unit);
+  const baseValue = v * preScale;
+  const abs = Math.abs(baseValue);
   const [scale, prefix] = SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f'];
-  const scaled = v / scale;
+  const scaled = baseValue / scale;
   const a = Math.abs(scaled);
   const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
-  return `${scaled.toFixed(digits)} ${prefix}${unit}`;
+  return `${scaled.toFixed(digits)} ${prefix}${base}`;
 }
 
 function engFormat(v: number): string {
@@ -102,14 +131,18 @@ export function fmtColorbarAxis(
   const abs = Math.abs(vRef);
 
   if (unit) {
-    // With unit: pick SI prefix from vRef, ticks are bare scaled numbers, label carries prefix+unit.
-    const [scale, prefix] = abs === 0
+    // With unit: pick SI prefix from vRef (folded back to the bare base unit first, in case
+    // `unit` itself is already prefixed — see resolveUnitPrefix), ticks are bare scaled numbers,
+    // label carries prefix+unit.
+    const { preScale, base } = resolveUnitPrefix(unit);
+    const baseAbs = abs * preScale;
+    const [scale, prefix] = baseAbs === 0
       ? ([1, ''] as [number, string])
-      : (SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f']);
+      : (SI_PREFIXES.find(([s]) => baseAbs >= s * 0.9999) ?? [1e-15, 'f']);
 
-    const scaledUnit = `${prefix}${unit}`;
+    const scaledUnit = `${prefix}${base}`;
     const axisLabel  = name ? `${name} (${scaledUnit})` : scaledUnit;
-    return { tickFmt: makeTickFormatter(scale), axisLabel };
+    return { tickFmt: makeTickFormatter(scale / preScale), axisLabel };
   }
 
   // No unit. Values in the normal display range [0.1, 9999] need no scaling —
