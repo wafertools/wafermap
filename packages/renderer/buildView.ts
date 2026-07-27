@@ -5,9 +5,10 @@ import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import { rotatePoint } from '../core/transforms.js';
 import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
-import type { TestDef, BinDef } from './buildWaferMap.js';
+import type { TestDef, BinDef, MetadataFieldDef } from './buildWaferMap.js';
 import { getDieTestValue, getTestPassStatus, isParametricTest } from './buildWaferMap.js';
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
+import { metadataValueColor } from './colorMap.js';
 
 type BinDefMap = Map<number, BinDef>;
 
@@ -33,7 +34,7 @@ export function getUniqueTestNumbers(dies: Die[]): number[] {
   return [...new Set(dies.flatMap(d => d.testValues ? Object.keys(d.testValues).map(Number) : []))].sort((a, b) => a - b);
 }
 
-export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins';
+export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'metadata';
 
 interface Point {
   x: number;
@@ -46,7 +47,7 @@ export interface ViewRect {
   width: number;
   height: number;
   fill: string | number;
-  type: 'hardBin' | 'softBin' | 'value' | 'stacked';
+  type: 'hardBin' | 'softBin' | 'value' | 'stacked' | 'metadata';
   stack?: number[];
   metadata?: DieMetadata;
   /**
@@ -148,6 +149,20 @@ export interface View {
   notchDir: { x: number; y: number } | null;
   /** Bin → die count for the active bin mode (hardBin or softBin). Undefined in value modes. */
   binCounts?: Map<number, number>;
+  /** Value → die count for the active metadata field, `'metadata'` mode only. */
+  metadataCounts?: Map<string, number>;
+  /**
+   * Value → resolved fill colour for the active metadata field, `'metadata'` mode only. The
+   * single source of truth for metadata colours — built from the same filtered die population
+   * as `metadataCounts`, so legend swatches (built from this map) always match die fills (also
+   * built from this map). Consumers must read this rather than recomputing colours from
+   * `metadataCounts`'s keys, or the two can diverge in ranking whenever iteration order differs.
+   */
+  metadataColorMap?: Map<string, string> | null;
+  /** Which `die.metadata` key is active in `'metadata'` mode. */
+  activeMetadataKey?: string;
+  /** Named metadata-field definitions — populated when `metadataFields` is passed to `buildWaferMap`. */
+  metadataFields?: MetadataFieldDef[];
   /**
    * Per-category die counts for `value` + `colorBySpec` mode — drives the spec legend. Counts only
    * dies with a value (no-data dies excluded). Undefined outside spec mode.
@@ -176,6 +191,8 @@ export interface ViewOptions {
   /** Named colour scheme — any scheme registered via registerColorScheme(). Default: 'default'. */
   colorScheme?: string;
   highlightBin?: number;
+  /** Dim every die except this metadata value, `'metadata'` mode's analogue of `highlightBin`. */
+  highlightMetadataValue?: string;
   interactiveTransform?: { rotation?: number; flipX?: boolean; flipY?: boolean };
   /**
    * Explicit value colour normalization range.
@@ -208,6 +225,13 @@ export interface ViewOptions {
    * When `testDefs` is provided, the toolbar mode dropdown offers one item per test.
    */
   activeTest?: number;
+  /**
+   * Which `die.metadata` key to display in `'metadata'` plot mode. Must match
+   * a `key` in `metadataFields` (passed to `buildWaferMap`, not here — see
+   * the `binDefs` parameter of `buildView`) for the field to be colored/
+   * legended; dies without that key set render as no-data.
+   */
+  activeMetadataKey?: string;
   /**
    * When true, apply log₁₀ scale to value normalization and the colorbar.
    * Overrides the per-test `TestDef.logScale` default.
@@ -283,6 +307,20 @@ const PARTIAL_DIE_FILL = '#d3d6db';
 const DIM_FILL = '#e8e9ea';
 const EDGE_EXCLUDED_FILL = '#eceef0';
 const NO_DATA_FILL     = '#d6d9dd';
+
+/**
+ * Read `die.metadata[key]` for `'metadata'` plot mode, stringified. Non-primitive values
+ * (objects/arrays) and missing values both resolve to `undefined` (no-data) — there is no
+ * sensible swatch/colour for `[object Object]`. The single read-path for every metadata-mode
+ * consumer (die fill, text overlay, distinct-value/colour-map scan) so they can never diverge
+ * on which dies count as having a value.
+ */
+function getDieMetadataValue(die: Die, key: string | undefined): string | undefined {
+  const raw = key ? die.metadata?.[key] : undefined;
+  return raw !== undefined && raw !== null &&
+    (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean')
+    ? String(raw) : undefined;
+}
 
 /** A die's spec classification for `value` mode against the active test's limits. */
 export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
@@ -645,6 +683,21 @@ export interface MapTitleParts {
  * @param binDefs the active bin defs (hbinDefs for hard modes, sbinDefs for soft) — used to name
  *   the bin on single-bin stacked cards.
  */
+/**
+ * camelCase/snake_case key → "Title Case" label — matches `stats/facets.ts`'s `prettyKey`
+ * (the toolbar's metadata mode-menu entries use it via `prettyKey` directly), duplicated
+ * here in miniature because `renderer/` must not depend on `stats/`. Keep in sync if
+ * `prettyKey` changes — the two must agree or the same field shows a different label in
+ * the toolbar dropdown than in the on-canvas map title.
+ */
+function titleCaseMetadataKey(key: string): string {
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
+    .trim()
+    .replace(/^./, s => s.toUpperCase());
+}
+
 export function buildMapTitle(
   view: View,
   fallbackFormat: 'si' | 'engineering' = 'engineering',
@@ -672,6 +725,11 @@ export function buildMapTitle(
       return { primary: stackedBinPrimary('Hard'), secondary: stackedContext };
     case 'stackedSoftBins':
       return { primary: stackedBinPrimary('Soft'), secondary: stackedContext };
+    case 'metadata': {
+      const def = view.metadataFields?.find(f => f.key === view.activeMetadataKey);
+      const fallback = view.activeMetadataKey ? titleCaseMetadataKey(view.activeMetadataKey) : 'Metadata';
+      return { primary: def?.label ?? fallback, secondary: '' };
+    }
     case 'stackedValues': {
       const def = view.testDefs?.[0];
       const vRef = view.valueRange[1] || view.valueRange[0] || 0;
@@ -718,9 +776,12 @@ export function generateTextOverlay(
     fallbackFormat?: 'si' | 'engineering';
     /** Effective pass/fail display (see View.passFailDisplay). 'test' renders P/F verdict labels. */
     passFailDisplay?: 'off' | 'spec' | 'test';
+    /** Active `die.metadata` key + its resolved value→color map, `'metadata'` mode only. */
+    activeMetadataKey?: string;
+    metadataColorMap?: Map<string, string> | null;
   },
 ): ViewText[] {
-  const { plotMode, colorFns, normalize, activeTest, valueRange, testDefs, fallbackFormat, passFailDisplay = 'off' } = options;
+  const { plotMode, colorFns, normalize, activeTest, valueRange, testDefs, fallbackFormat, passFailDisplay = 'off', activeMetadataKey, metadataColorMap } = options;
 
   // Build a tick formatter matched to the colorbar scale so die labels are consistent.
   const testDef = findTestDef(testDefs, activeTest);
@@ -748,6 +809,11 @@ export function generateTextOverlay(
       if (bin === undefined) return [];
       text = String(bin);
       color = contrastTextColor(colorFns.forBin(bin));
+    } else if (plotMode === 'metadata') {
+      const value = getDieMetadataValue(die, activeMetadataKey);
+      if (value === undefined) return [];
+      text = value;
+      color = contrastTextColor(metadataColorMap?.get(text) ?? NO_DATA_FILL);
     } else {
       // stackedValues / stackedBins: aggregated scalar in testValues[0] or values[0]
       const v = getDieTestValue(die, 0, 0);
@@ -911,8 +977,13 @@ function buildReticleOverlays(reticles: Reticle[], wafer: Wafer, transform: Tran
       kind: 'reticle',
       points: rectPoints(transformedCenter, reticle.width, reticle.height, transform),
       closed: true,
-      lineColor: 'rgba(0,100,220,0.45)',
-      lineWidth: 1,
+      // lineColor/lineWidth below are unused for 'reticle' — like ring/quadrant
+      // boundaries, toCanvas.ts special-cases this kind with a dual black-halo
+      // + white-core stroke so the field grid reads against any die colour or
+      // gap, rather than a single flat colour that can blend into a same-toned
+      // fill or the canvas background. Kept only for ViewOverlay shape parity.
+      lineColor: 'rgba(255,255,255,0.7)',
+      lineWidth: 1.5,
       fill: 'rgba(0,0,0,0)',
     };
   });
@@ -949,6 +1020,9 @@ function pushDieRectangles(
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
   passFailDisplay: 'off' | 'spec' | 'test' = 'off',
+  activeMetadataKey?: string,
+  metadataColorMap?: Map<string, string> | null,
+  highlightMetadataValue?: string,
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -961,6 +1035,7 @@ function pushDieRectangles(
   const sh = swapAxes ? rw : rh;
 
   const getBin = (d: Die) => plotMode === 'softBin' ? d.sbin : d.hbin;
+  const getMetadataValue = (d: Die) => getDieMetadataValue(d, activeMetadataKey);
 
   if (die.partial) {
     rectangles.push({
@@ -984,6 +1059,16 @@ function pushDieRectangles(
     rectangles.push({
       x: physX, y: physY, width: sw, height: sh,
       fill: DIM_FILL, type: 'hardBin', metadata: die.metadata,
+    });
+    return;
+  }
+
+  if (highlightMetadataValue !== undefined &&
+      plotMode === 'metadata' &&
+      getMetadataValue(die) !== highlightMetadataValue) {
+    rectangles.push({
+      x: physX, y: physY, width: sw, height: sh,
+      fill: DIM_FILL, type: 'metadata', metadata: die.metadata,
     });
     return;
   }
@@ -1029,6 +1114,13 @@ function pushDieRectangles(
     const bin = getBin(die);
     const fill = bin != null ? colorFns.forBin(bin) : NO_DATA_FILL;
     rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: plotMode, metadata: die.metadata });
+    return;
+  }
+
+  if (plotMode === 'metadata') {
+    const key = getMetadataValue(die);
+    const fill = key !== undefined ? (metadataColorMap?.get(key) ?? NO_DATA_FILL) : NO_DATA_FILL;
+    rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'metadata', metadata: die.metadata });
     return;
   }
 
@@ -1082,7 +1174,7 @@ export function buildView(
   wafer: Wafer,
   dies: Die[],
   options: ViewOptions = {},
-  binDefs?: { hbinDefs?: BinDef[]; sbinDefs?: BinDef[] },
+  binDefs?: { hbinDefs?: BinDef[]; sbinDefs?: BinDef[]; metadataFields?: MetadataFieldDef[] },
 ): View {
   const reticles = options.reticles ?? [];
 
@@ -1101,10 +1193,12 @@ export function buildView(
     // 'default' entry for active-state highlighting.
     colorScheme = 'default',
     highlightBin,
+    highlightMetadataValue,
     interactiveTransform,
     valueRange: valueRangeOpt,
     testDefs,
     activeTest = 0,
+    activeMetadataKey,
     fallbackFormat = 'engineering' as const,
     aggregationMethod,
     lotSize,
@@ -1122,6 +1216,8 @@ export function buildView(
 
   const hbinDefs = binDefs?.hbinDefs;
   const sbinDefs = binDefs?.sbinDefs;
+  const metadataFields = binDefs?.metadataFields;
+  const activeMetadataFieldDef = metadataFields?.find(f => f.key === activeMetadataKey);
 
   // Total effective axis flip for display: data-pipeline flip XOR interactive flip.
   const axisFlip = {
@@ -1323,6 +1419,36 @@ export function buildView(
   const passFailCounts = plotMode === 'value' && passFailDisplay === 'test'
     ? { pass: 0, fail: 0 } : undefined;
 
+  // 'metadata' mode: color is resolved once per distinct value, not per die —
+  // ordered (alphabetical) assignment rather than hashing, so a small known
+  // set of values gets maximally-distinct colours deterministically (not
+  // dependent on die array iteration order). Never routed through colorFns/
+  // the toolbar's colorScheme picker — those are spectrum schemes for
+  // hard/soft bins with no string-keyed concept to extend; an arbitrary
+  // metadata field has no universal "good/bad" meaning to encode either, so
+  // it always uses the dedicated ordered palette + explicit overrides.
+  const isMetadataMode = plotMode === 'metadata';
+  let metadataCounts: Map<string, number> | undefined = isMetadataMode ? new Map() : undefined;
+  let metadataColorMap: Map<string, string> | null = null;
+  if (isMetadataMode && activeMetadataKey) {
+    // Same population, same filter, as the `metadataCounts` tally below — a partial/
+    // edge-excluded die never reaches the metadata fill branch in pushDieRectangles
+    // (it returns early with PARTIAL_DIE_FILL/EDGE_EXCLUDED_FILL), so letting it into the
+    // alphabetical ranking here would assign colours based on values no visible die
+    // actually shows, shifting every later value's colour for no reason a user could see.
+    const distinct = new Set<string>();
+    for (const die of dies) {
+      if (die.partial || die.edgeExcluded) continue;
+      const value = getDieMetadataValue(die, activeMetadataKey);
+      if (value !== undefined) distinct.add(value);
+    }
+    const sorted = [...distinct].sort();
+    metadataColorMap = new Map(sorted.map((value, index) => [
+      value,
+      activeMetadataFieldDef?.values?.find(v => v.value === value)?.color ?? metadataValueColor(index),
+    ]));
+  }
+
   for (let i = 0; i < dies.length; i++) {
     const die = dies[i];
     const physX = txCoords ? txCoords[i * 2]     : die.physX;
@@ -1348,16 +1474,21 @@ export function buildView(
       const p = getTestPassStatus(die, activeTestNumber, activeTestDef);
       if (p !== undefined) passFailCounts[p ? 'pass' : 'fail']++;
     }
+    if (metadataCounts && !die.partial && !die.edgeExcluded) {
+      const value = getDieMetadataValue(die, activeMetadataKey);
+      if (value !== undefined) metadataCounts.set(value, (metadataCounts.get(value) ?? 0) + 1);
+    }
     if (die.partial && !showPartialDies) continue;
     // centerTransform (not the full transform): dies are axis-aligned rects centred
     // on the already-oriented physX/physY, so the AABB width/height swap must key off
     // the interactive rotation only — matching how the centre position was derived.
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, passFailDisplay);
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValue);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {
     plotMode, colorFns, normalize, activeTest,
     valueRange: [vMin, vMax], testDefs, fallbackFormat, passFailDisplay,
+    activeMetadataKey, metadataColorMap,
   }) : [];
   const overlays = buildBoundaryOverlay(wafer, transform);
 
@@ -1414,6 +1545,10 @@ export function buildView(
     waferRadius: wafer.radius,
     notchDir,
     binCounts,
+    metadataCounts,
+    metadataColorMap,
+    activeMetadataKey,
+    metadataFields,
     specCounts,
     passFailCounts,
     dieBounds,

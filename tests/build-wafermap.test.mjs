@@ -344,3 +344,50 @@ test('lotStack value aggregation skips functional tests (including legacy 0/1 en
   approxEqual(d00.testValues[1010], 2.0);
   assert.equal(d00.testValues[2001], undefined, 'functional test never aggregated into value stacks');
 });
+
+// ── metadataFields (generic categorical/layout plot mode) ───────────────────
+
+test('metadataFields is promoted onto WaferMapResult', () => {
+  const results = [
+    { x: 0, y: 0, hbin: 1, metadata: { project: 'our-project' } },
+    { x: 1, y: 0, hbin: 1, metadata: { project: 'vendor' } },
+  ];
+  const metadataFields = [{ key: 'project', label: 'Project' }];
+  const result = buildWaferMap({
+    results,
+    waferConfig: { diameter: 40 },
+    dieConfig: { width: 10, height: 10 },
+    metadataFields,
+  });
+  assert.deepEqual(result.metadataFields, metadataFields);
+});
+
+test('a die can carry both hbin and metadata — neither is dropped', () => {
+  const results = [{ x: 0, y: 0, hbin: 1, metadata: { project: 'our-project' } }];
+  const result = buildWaferMap({
+    results,
+    waferConfig: { diameter: 40 },
+    dieConfig: { width: 10, height: 10 },
+    metadataFields: [{ key: 'project' }],
+  });
+  const d00 = findDie(result, 0, 0);
+  assert.equal(d00.hbin, 1);
+  assert.deepEqual(d00.metadata, { project: 'our-project' });
+});
+
+test('autoPlotMode never selects metadata mode, even when metadataFields is configured', () => {
+  // No test values and no bins — historically falls back to 'hardBin' (all no-data
+  // grey). Configuring metadataFields must not change this default, since there is
+  // no principled key to pick automatically — 'metadata' is purely opt-in.
+  const results = [
+    { x: 0, y: 0, metadata: { project: 'our-project' } },
+    { x: 1, y: 0, metadata: { project: 'vendor' } },
+  ];
+  const result = buildWaferMap({
+    results,
+    waferConfig: { diameter: 40 },
+    dieConfig: { width: 10, height: 10 },
+    metadataFields: [{ key: 'project' }],
+  });
+  assert.equal(result.plotMode, 'hardBin');
+});

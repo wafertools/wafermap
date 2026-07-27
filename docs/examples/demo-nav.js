@@ -6,6 +6,7 @@ const DEMOS = [
   'geometry.html',
   'partial-data.html',
   'named-bins.html',
+  'metadata-mode.html',
   'test-values.html',
   'retests.html',
   'display-control.html',

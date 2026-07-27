@@ -36,6 +36,7 @@ nav = [
       { "Geometry inference"             = "examples/geometry.html"       },
       { "Partial data"                   = "examples/partial-data.html" },
       { "Bins and yield"                 = "examples/named-bins.html"     },
+      { "Metadata / layout mode"         = "examples/metadata-mode.html"  },
       { "Test values"                    = "examples/test-values.html"    },
       { "Retests"                        = "examples/retests.html"        },
     ]},

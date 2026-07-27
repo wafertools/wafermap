@@ -1607,7 +1607,8 @@ const result = buildWaferMap({
   reticleConfig: {
     width:  4,    // 4 dies wide per stepper field
     height: 2,    // 2 dies tall per stepper field
-    // anchorDie: { x: 1, y: 0 }  // optional: pin a specific die to a field corner
+    // anchorDie: { x: 1, y: 0 }  // optional: pin a specific die (die.x/die.y) to a
+                                    // field's min-x/min-y corner (bottom-left, since +Y is up)
   },
 });
 
@@ -2192,3 +2193,78 @@ toCanvas(document.getElementById('map'), view);
 ```
 
 **→ [Demo: Advanced — the rendering pipeline](examples/pipeline.html)**
+
+## 21. Metadata / layout plot mode
+
+Sometimes a grid position represents a classification rather than a test result —
+which project a die belongs to on a multiproject wafer, vendor/third-party
+ownership, or reserved/shared area. Mapping that onto hard bins borrows
+pass/fail-flavoured colours and "Hard Bin" terminology for data that isn't a bin
+at all. The `'metadata'` plot mode is a generic alternative: it colours and
+legends the map from whatever key you already have in `die.metadata`, no new
+per-die field required.
+
+### Opting a field in
+
+A key is only offered in the toolbar's mode menu once it's listed in
+`metadataFields` — never auto-detected:
+
+```ts
+const result = buildWaferMap({
+  results: [
+    { x: 4, y: -2, hbin: 1, metadata: { project: 'our-project' } },
+    { x: 5, y: -2, metadata: { project: 'vendor' } }, // vendor die — no test data at all
+  ],
+  metadataFields: [
+    { key: 'project', label: 'Project', values: [
+      { value: 'our-project', color: '#4e79a7' },
+      { value: 'vendor',      label: 'Third-party vendor', color: '#bab0ac' },
+    ] },
+  ],
+});
+
+renderWaferMap(container, result, {
+  viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project' },
+});
+```
+
+`values` is optional per field — distinct values with no override are still
+shown, auto-labelled with the raw value and auto-coloured from an ordered
+palette (assigned alphabetically, so colours are stable across reloads).
+
+### Coexists with test/bin data
+
+A die can carry `hbin`/`testValues` *and* a metadata classification at the same
+time — `'metadata'` is just another selectable toolbar view of the same die,
+the way `hardBin`/`softBin`/`value` already are. `die.metadata` already renders
+in every tooltip regardless of plot mode, so switching into `'metadata'` mode
+changes the map's colour/legend without changing what the tooltip shows.
+
+### Click-to-highlight in the legend
+
+Clicking a legend swatch dims every other value, exactly like `hardBin`/
+`softBin` — click the same swatch again to clear it. This is
+`highlightMetadataValue`, the string-keyed analogue of `highlightBin`:
+
+```ts
+renderWaferMap(container, result, {
+  viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project', highlightMetadataValue: 'vendor' },
+});
+```
+
+### What's deliberately absent
+
+- **No lot-stacking.** A die's layout classification is a constant of the
+  design, not a per-wafer measurement — there's nothing meaningful to
+  aggregate across a lot, so `'metadata'` has no `stackedX` counterpart.
+- **No colour-scheme picker.** The palette control is hidden in this mode —
+  colouring always uses the dedicated ordered palette plus `values[].color`
+  overrides, never the built-in schemes.
+- **Never affects yield.** `die.metadata` was never part of the
+  yield-eligibility pipeline, so a die's yield/pass-fail status (if it has
+  one) is entirely unaffected by its metadata classification.
+
+Selection, zoom, and PNG export need no special handling — none of them are
+plot-mode-aware.
+
+**→ [Demo: Metadata / layout plot mode](examples/metadata-mode.html)**

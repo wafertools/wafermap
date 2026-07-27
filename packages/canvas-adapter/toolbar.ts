@@ -245,9 +245,15 @@ export const MODE_LABELS: Record<PlotMode, string> = {
   stackedValues:   'Stacked Test Values',
   stackedBins:     'Stacked Hard Bins',
   stackedSoftBins: 'Stacked Soft Bins',
+  // Fallback only — real toolbar entries are labeled per metadata field (see
+  // MetadataFieldDef.label), the same way 'value' entries are labeled per test.
+  metadata:        'Metadata',
 };
 
-export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardBin', 'softBin']);
+export const BIN_LEGEND_MODES = new Set<PlotMode>(['hardBin', 'softBin', 'metadata']);
+// 'metadata' deliberately excluded from stacking — a layout/classification field is a constant
+// of the design, not a per-lot measurement that varies wafer-to-wafer, so
+// "stacking" it across a lot has no meaningful aggregation (see plan §Gallery).
 export const STACKED_MODES    = new Set<PlotMode>(['stackedValues', 'stackedBins', 'stackedSoftBins']);
 
 // ── Image save ───────────────────────────────────────────────────────────────
@@ -602,7 +608,7 @@ export interface ToolbarHelpers {
   setOpenMenu(menu: HTMLDivElement | null): void;
 }
 
-export type ModeEntry = { plotMode: PlotMode; activeTest?: number; label: string; logScale?: boolean };
+export type ModeEntry = { plotMode: PlotMode; activeTest?: number; activeMetadataKey?: string; label: string; logScale?: boolean };
 
 /**
  * Build the plot-mode dropdown menu element.
@@ -619,6 +625,7 @@ export function buildModeMenuEl(
   helpers: Pick<ToolbarHelpers, 'makeMenuRow' | 'makeMenuSection'>,
   currentMode: PlotMode,
   ownerWindow: Window = window,
+  metadataEntries: ModeEntry[] = [],
 ): HTMLDivElement {
   const { makeMenuRow, makeMenuSection } = helpers;
 
@@ -716,6 +723,17 @@ export function buildModeMenuEl(
   if (binEntries.length) {
     menu.appendChild(makeMenuSection('Bins'));
     for (const entry of binEntries) {
+      menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+        e.stopPropagation();
+        pickEntry(entry, menu);
+      }));
+    }
+  }
+
+  // ── Metadata section ────────────────────────────────────────────────────────
+  if (metadataEntries.length) {
+    menu.appendChild(makeMenuSection('Metadata'));
+    for (const entry of metadataEntries) {
       menu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
         e.stopPropagation();
         pickEntry(entry, menu);
@@ -1903,14 +1921,23 @@ export function openReparentedModal(elements: HTMLElement[], opts: ReparentModal
 // any circular imports. Each returns { btn, sync } — call sync() after any
 // view-options change to update button visibility/active state.
 
+/**
+ * `sync()` hides the button entirely in `'metadata'` mode — that mode never
+ * consults `colorFns`/the active colour scheme at all (always the dedicated
+ * ordered palette + `MetadataFieldDef.values[].color` overrides, see
+ * `pushDieRectangles`), so every scheme choice would be a real control with
+ * zero visible effect, not just a restricted one — worse than the existing
+ * hardBin/softBin restriction (which still changes the die colours, just from
+ * a smaller scheme set).
+ */
 export function makePaletteBtn(
   helpers: ToolbarHelpers,
   getPlotMode: () => PlotMode,
   getColorScheme: () => string,
   hasCustomColors: () => boolean,
   setColorScheme: (v: string) => void,
-): HTMLButtonElement {
-  return helpers.makeDropdown(
+): { btn: HTMLButtonElement; sync: () => void } {
+  const btn = helpers.makeDropdown(
     'palette', 'Colour scheme',
     () => {
       const isBinMode = getPlotMode() === 'hardBin' || getPlotMode() === 'softBin';
@@ -1925,6 +1952,10 @@ export function makePaletteBtn(
     () => getColorScheme(),
     v => setColorScheme(v),
   );
+  function sync(): void {
+    btn.style.display = getPlotMode() === 'metadata' ? 'none' : '';
+  }
+  return { btn, sync };
 }
 
 /** Requested pass/fail display resolved from the new option and its deprecated alias. */
@@ -2003,7 +2034,7 @@ export function makeLegendStyleBtn(
   );
   function sync(): void {
     const m = getOpts().plotMode;
-    btn.style.display = (m === 'hardBin' || m === 'softBin') ? '' : 'none';
+    btn.style.display = (m === 'hardBin' || m === 'softBin' || m === 'metadata') ? '' : 'none';
   }
   return { btn, sync };
 }

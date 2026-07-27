@@ -11,6 +11,7 @@ import {
   contrastTextColor,
   HARD_BIN_COLORS,
   HARD_BIN_GREY,
+  metadataValueColor,
 } from '../dist/packages/renderer/colorMap.js';
 
 // ── lerpKp ───────────────────────────────────────────────────────────────────
@@ -182,4 +183,38 @@ test('contrastTextColor — light hex yields black', () => {
 
 test('contrastTextColor — dark hex yields white', () => {
   assert.equal(contrastTextColor('#2c3e50'), '#ffffff');
+});
+
+// ── metadataValueColor ──────────────────────────────────────────────────────
+
+test('metadataValueColor — same index always returns same colour (deterministic)', () => {
+  assert.equal(metadataValueColor(0), metadataValueColor(0));
+  assert.equal(metadataValueColor(3), metadataValueColor(3));
+});
+
+test('metadataValueColor — distinct indices in the ordered range produce distinct colours', () => {
+  const colors = new Set(Array.from({ length: 10 }, (_, i) => metadataValueColor(i)));
+  assert.equal(colors.size, 10);
+});
+
+test('metadataValueColor — returns a CSS colour string for any index', () => {
+  for (const i of [0, 5, 9, 10, 50, 1000]) {
+    assert.match(metadataValueColor(i), /^#[0-9a-f]{6}$/i);
+  }
+});
+
+test('metadataValueColor — never returns bin 1/2\'s pass/fail-flavoured colours', () => {
+  for (let i = 0; i < 12; i++) {
+    assert.notEqual(metadataValueColor(i), hardBinColor(1)); // green "pass"
+    assert.notEqual(metadataValueColor(i), hardBinColor(2)); // red "fail"
+  }
+});
+
+test('metadataValueColor — falls back to the hash palette beyond the ordered range', () => {
+  // Index 10 is past the fixed ordered palette — must still resolve to a valid,
+  // deterministic colour via the hash fallback, not throw or return undefined.
+  const a = metadataValueColor(10);
+  const b = metadataValueColor(10);
+  assert.match(a, /^#[0-9a-f]{6}$/i);
+  assert.equal(a, b);
 });

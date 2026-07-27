@@ -21,6 +21,19 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.20.6] — 2026-07-28
+
+### Added
+
+- **`'metadata'` plot mode** — colour, legend, and label dies by an arbitrary `die.metadata` key instead of a test result or bin, for wafer data whose grid represents a layout/classification field (e.g. per-die product/project ownership on a multiproject wafer) rather than a measurement. Opt in per key via the new `metadataFields` option on `buildWaferMap` (`MetadataFieldDef`: `key`, optional `label`, optional per-value `{ value, label, color }` overrides) — a key is only selectable once named there, never auto-detected. Distinct values are auto-collected, auto-labelled, and auto-coloured from a dedicated ordered palette (deterministic, alphabetical — independent of die iteration order and of the map's `colorScheme`, which has no meaning for an arbitrary categorical field). Supported end-to-end: toolbar mode-menu entry per configured field (single-map and per-card in the gallery), legend with click-to-highlight (`highlightMetadataValue`, dims non-matching dies exactly like the existing bin highlight), map title, and die-label text. The tooltip already showed `die.metadata` for every plot mode before this change, so no new tooltip code was needed. Deliberately **not** available as a lot-stacked mode — a layout/classification field is a constant of the design, not a per-wafer measurement, so there is no meaningful cross-lot aggregation for it. New demo: `docs/examples/metadata-mode.html`; see `docs/guide.md` §21 and `docs/api.md`.
+
+### Fixed
+
+- Metadata-mode legend swatch colours could disagree with the colour a die was actually filled with, when a metadata value existed only on partial or edge-excluded dies (which never receive a metadata fill themselves) — the colour ranking scan and the legend's population were built from two differently-filtered passes over the dies. Both now read from one colour map built from a single, consistently-filtered scan.
+- An unlabeled `metadataFields` entry showed a different name in the toolbar dropdown (Title Case, e.g. "Project") than in the on-canvas map title (raw key, e.g. "project"). Both now agree.
+- Reticle field boundaries could drift off die edges for wafer data whose die grid is not centred on the wafer by a whole die pitch (e.g. partial/off-centre coverage) — `generateReticleGrid` placed fields relative to the wafer centre regardless of that fractional remainder. `buildWaferMap` now passes the die grid's actual physical origin through to reticle placement.
+- Reticle overlay lines could render invisibly thin/flat against a same-toned die fill or the canvas background — reticle boundaries now use the same dual-stroke (dark halo + light core) technique as ring/quadrant boundaries, instead of a plain single stroke.
+
 ## [0.20.5] — 2026-07-25
 
 ### Fixed

@@ -166,7 +166,7 @@ export interface DieConfig {
 /**
  * Reticle (stepper field) overlay configuration.
  * Dimensions are in die counts; `anchorDie` pins a specific die index to the
- * reticle's internal (0,0) corner.
+ * reticle's min-x/min-y corner (bottom-left, since +Y is up).
  */
 export interface ReticleConfig {
   /** Field width in number of dies. */
@@ -174,9 +174,11 @@ export interface ReticleConfig {
   /** Field height in number of dies. */
   height: number;
   /**
-   * Die grid index (x, y) that sits at the reticle field's internal (0,0) corner.
-   * Controls the phase (alignment) of the reticle grid.
-   * Defaults to `{x: 0, y: 0}`.
+   * Die grid index (x, y) — in original die coordinates (`die.x`/`die.y`) — that
+   * sits at the reticle field's min-x/min-y corner (bottom-left, since +Y is up).
+   * That die becomes the leftmost, bottom-most die of the field it belongs to;
+   * every field boundary is placed relative to it. Controls the phase
+   * (alignment) of the reticle grid. Defaults to `{x: 0, y: 0}`.
    */
   anchorDie?: { x: number; y: number };
 }
@@ -275,6 +277,25 @@ export interface BinDef {
   color?: string;
 }
 
+/**
+ * Named definition for one `die.metadata` key, opting it into the `'metadata'`
+ * plot mode's toolbar entry, color fill, and legend. Presence in
+ * `metadataFields` is what makes a key selectable — wmap never guesses which
+ * metadata keys are "categorical enough" to plot.
+ */
+export interface MetadataFieldDef {
+  /** The `die.metadata` key this definition applies to. */
+  key: string;
+  /** Display name for the toolbar entry and map title. Defaults to a Title-Cased version of `key`. */
+  label?: string;
+  /**
+   * Optional per-value name/color overrides. Distinct values not listed here
+   * are still shown — auto-labeled with the raw (stringified) value and
+   * auto-colored from an ordered palette.
+   */
+  values?: Array<{ value: string; label?: string; color?: string }>;
+}
+
 /** Input accepted by {@link buildWaferMap}.  All fields are optional. */
 /** Fields common to both single-wafer and lot-stack inputs. */
 export interface WaferMapInputBase {
@@ -335,6 +356,15 @@ export interface WaferMapInputBase {
    * Both spaces range 0–32767 and may overlap — define them separately.
    */
   sbinDefs?: BinDef[];
+  /**
+   * Named definitions for `die.metadata` keys that should be selectable as the
+   * `'metadata'` plot mode — a generic categorical view driven by whatever
+   * per-die classification a host already has in `metadata` (project, vendor,
+   * test site, wafer zone, …), distinct from test/bin results. A key only
+   * appears in the toolbar when it's listed here (opt-in, never auto-detected)
+   * and at least one die actually has that key set.
+   */
+  metadataFields?: MetadataFieldDef[];
   /**
    * Controls how edge-excluded dies (dies within the edge exclusion zone) are counted in yield.
    *
@@ -489,6 +519,8 @@ export interface WaferMapResult {
   sbinDefs?: BinDef[];
   /** Named test definitions passed to `buildWaferMap`. Consumed automatically by the renderer — no need to pass again to `renderWaferMap`. */
   testDefs?: TestDef[];
+  /** Named metadata-field definitions passed to `buildWaferMap`. Consumed automatically by the renderer — no need to pass again to `renderWaferMap`. */
+  metadataFields?: MetadataFieldDef[];
   /**
    * Lot-stack aggregation method used when `lotStack` was passed to `buildWaferMap`.
    * `undefined` for single-wafer results.
@@ -514,6 +546,7 @@ interface Normalized {
   testDefs:     TestDef[] | undefined;
   hbinDefs:     BinDef[]  | undefined;
   sbinDefs:     BinDef[]  | undefined;
+  metadataFields: MetadataFieldDef[] | undefined;
   retestPolicy:      'last' | 'first' | 'best' | 'worst';
   edgeDieYieldMode:  'exclude' | 'denominator-only';
 }
@@ -541,6 +574,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       testDefs:         undefined,
       hbinDefs:         undefined,
       sbinDefs:         undefined,
+      metadataFields:   undefined,
       retestPolicy:     'last',
       edgeDieYieldMode: 'exclude',
     };
@@ -556,6 +590,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     testDefs:         input.testDefs,
     hbinDefs:         input.hbinDefs,
     sbinDefs:         input.sbinDefs,
+    metadataFields:   input.metadataFields,
     retestPolicy:     input.retestPolicy ?? 'last',
     edgeDieYieldMode: input.edgeDieYieldMode ?? 'exclude',
   };
@@ -865,14 +900,28 @@ function buildReticles(
   dies: Die[],
   diePitchX: number,
   diePitchY: number,
+  // Grid-centering shift applied when building `dies` (see resolveGridOriginOffset):
+  // die.x/die.y = col/row + offsetX/offsetY. anchorDie is specified in public
+  // die.x/die.y coordinates, but generateReticleGrid places fields in the
+  // internal col/row (physX/physY) space, so it must be converted here.
+  offsetX = 0,
+  offsetY = 0,
+  // Physical placement of col/row (0,0) — i.e. physX/physY = col*pitchX - colMidX
+  // (see resolveCenterAnchor). The die grid is not necessarily centred on the
+  // wafer by a whole die pitch (partial/off-centre data), so this fractional
+  // remainder must be passed through or field boundaries drift off die edges.
+  colMidX = 0,
+  colMidY = 0,
 ): Reticle[] {
   if (!reticleOpts) return [];
+  const anchorDie = reticleOpts.anchorDie ?? { x: 0, y: 0 };
   const all = generateReticleGrid(wafer, {
     width:      reticleOpts.width,
     height:     reticleOpts.height,
     diePitchX,
     diePitchY,
-    anchorDie:  reticleOpts.anchorDie ?? { x: 0, y: 0 },
+    anchorDie:  { x: anchorDie.x - offsetX, y: anchorDie.y - offsetY },
+    gridOrigin: { x: -colMidX, y: -colMidY },
   });
   // Only keep reticles that contain at least one die — fields that merely
   // overlap the wafer circle boundary but hold no dies should not be drawn.
@@ -1174,7 +1223,7 @@ export function buildWaferMap(
       plotMode:   autoPlotMode(results, viewOpts),
       testDefs:   norm.testDefs,
       isLotStack: false,
-    }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs });
+    }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
     return {
       wafer, dies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
@@ -1188,6 +1237,7 @@ export function buildWaferMap(
       hbinDefs: norm.hbinDefs,
       sbinDefs: norm.sbinDefs,
       testDefs: norm.testDefs,
+      metadataFields: norm.metadataFields,
     };
   }
 
@@ -1321,7 +1371,7 @@ export function buildWaferMap(
     dies = applyEdgeExclusion(dies, wafer, norm.waferOpts.edgeExclusion);
   }
 
-  const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY);
+  const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY, offsetX, offsetY, colMidX, colMidY);
   const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
   const view = buildView(wafer, dies, {
@@ -1334,7 +1384,7 @@ export function buildWaferMap(
     isLotStack:   norm.lotStackOpts !== undefined,
     aggregationMethod: norm.lotStackOpts?.method,
     lotSize:      norm.lotStackOpts?.results.length,
-  }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs });
+  }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
   return {
     wafer, dies, view, reticleConfig: norm.reticleOpts, units, inference,
@@ -1348,6 +1398,7 @@ export function buildWaferMap(
     hbinDefs: norm.hbinDefs,
     sbinDefs: norm.sbinDefs,
     testDefs: norm.testDefs,
+    metadataFields: norm.metadataFields,
     aggrMethod: view.aggrMethod,
     lotSize: view.lotSize,
   };

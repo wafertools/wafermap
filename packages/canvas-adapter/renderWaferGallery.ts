@@ -1,6 +1,7 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../renderer/buildView.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
+import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
 import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
@@ -17,6 +18,7 @@ import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
+import { prettyKey } from '../stats/facets.js';
 import { openHtmlReport } from '../stats/renderFindingsReport.js';
 import { escHtml, renderSection, renderSeverityBadge, reportStyles } from '../stats/reportHtml.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
@@ -45,6 +47,7 @@ export interface WaferMapDisplayItem {
   hbinDefs?:  import('../renderer/buildWaferMap.js').BinDef[];
   sbinDefs?:  import('../renderer/buildWaferMap.js').BinDef[];
   testDefs?:  import('../renderer/buildWaferMap.js').TestDef[];
+  metadataFields?: import('../renderer/buildWaferMap.js').MetadataFieldDef[];
   reticles?:  import('../core/reticle.js').Reticle[];
 
   // Lot-stack context carried from buildWaferMap (or set by the gallery on synthetic stacked
@@ -214,6 +217,47 @@ export interface GalleryController {
 function deduplicateDefs(defs: BinDef[]): BinDef[] {
   const seen = new Set<number>();
   return defs.filter(d => seen.has(d.bin) ? false : (seen.add(d.bin), true));
+}
+
+/**
+ * One clickable swatch+label row in the gallery's DOM legend strip — shared by the bin
+ * (hardBin/softBin) and metadata legend branches in `rebuildLegend()` so the two can never
+ * drift apart in markup/styling.
+ */
+function renderLegendSwatchRow(
+  container: HTMLElement,
+  opts: { color: string; label: string; isActive: boolean; onClick: () => void },
+): void {
+  const entry = document.createElement('div');
+  Object.assign(entry.style, {
+    display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer',
+    userSelect: 'none', padding: '2px 4px', borderRadius: '3px',
+  });
+
+  const swatch = document.createElement('span');
+  Object.assign(swatch.style, {
+    display: 'inline-block', width: '13px', height: '13px', flexShrink: '0',
+    background: opts.color,
+    border: opts.isActive ? `2px solid ${CLR.iconActive}` : `1px solid ${CLR.menuBorder}`,
+    borderRadius: '2px', boxSizing: 'border-box',
+  });
+
+  const lbl = document.createElement('span');
+  lbl.textContent = opts.label;
+  Object.assign(lbl.style, {
+    fontWeight: opts.isActive ? '700' : '400',
+    color:      opts.isActive ? CLR.iconActive : CLR.text,
+    whiteSpace: 'nowrap',
+  });
+
+  entry.appendChild(swatch);
+  entry.appendChild(lbl);
+
+  entry.addEventListener('mouseenter', () => { entry.style.background = CLR.bgHover; });
+  entry.addEventListener('mouseleave', () => { entry.style.background = 'transparent'; });
+  entry.addEventListener('click', opts.onClick);
+
+  container.appendChild(entry);
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -750,15 +794,18 @@ ${reportStyles()}
     function isCurrentEntry(e: ModeEntry): boolean {
       if (e.plotMode !== currentMode) return false;
       if (e.plotMode === 'value') return currentTestIdx === (e.activeTest ?? 0);
+      if (e.plotMode === 'metadata') return sharedOpts.activeMetadataKey === e.activeMetadataKey;
       return true;
     }
 
     function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
       if (entry.activeTest !== undefined) {
-        updateShared({ plotMode: 'value', activeTest: entry.activeTest, logScale: entry.logScale });
+        updateShared({ plotMode: 'value', activeTest: entry.activeTest, activeMetadataKey: undefined, logScale: entry.logScale });
+      } else if (entry.activeMetadataKey !== undefined) {
+        updateShared({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: entry.activeMetadataKey, colorBySpec: false, passFailDisplay: 'off' });
       } else {
         // Leaving value mode → clear spec pass/fail (only valid in value mode), matching single-map.
-        updateShared({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false, passFailDisplay: 'off' });
+        updateShared({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: undefined, colorBySpec: false, passFailDisplay: 'off' });
       }
       menu.remove();
       setOpenMenu(null);
@@ -788,6 +835,16 @@ ${reportStyles()}
       ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
       ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
     ];
+    // One entry per configured metadataFields[].key actually present across the
+    // lot (opt-in, never auto-detected — see MetadataFieldDef). Deduplicated by
+    // key, first item's def wins, mirroring the hbinDefs/sbinDefs dedup pattern
+    // used elsewhere in this file (e.g. itemsHaveCustomColors's neighbours).
+    const seenMetadataKeys = new Set<string>();
+    const metadataModeEntries: ModeEntry[] = originalItems
+      .flatMap(it => it?.metadataFields ?? [])
+      .filter(f => !seenMetadataKeys.has(f.key) && seenMetadataKeys.add(f.key))
+      .filter(f => dies.some(d => d.metadata?.[f.key] !== undefined && d.metadata?.[f.key] !== null))
+      .map(f => ({ plotMode: 'metadata' as PlotMode, activeMetadataKey: f.key, label: f.label ?? prettyKey(f.key) }));
 
     const menu = buildModeMenuEl(
       btnMode.getBoundingClientRect(),
@@ -796,6 +853,7 @@ ${reportStyles()}
       { makeMenuRow, makeMenuSection },
       currentMode,
       btnMode.ownerDocument.defaultView ?? window,
+      metadataModeEntries,
     );
     overlayRootFor(btnMode).appendChild(menu);
     setOpenMenu(menu);
@@ -807,13 +865,14 @@ ${reportStyles()}
   const itemsHaveCustomColors = (): boolean =>
     currentItems.flatMap(it => it ? [...(it.hbinDefs ?? []), ...(it.sbinDefs ?? [])] : []).some(d => d.color);
 
-  const btnPalette = makePaletteBtn(
+  const { btn: btnPalette, sync: syncPaletteBtn } = makePaletteBtn(
     tbHelpers,
     () => sharedOpts.plotMode ?? 'hardBin',
     () => sharedOpts.colorScheme ?? 'default',
     itemsHaveCustomColors,
     v => updateShared({ colorScheme: v }),
   );
+  syncPaletteBtn();
 
   const hasReticleInItems = items.some(it => typeof it !== 'function' && ((it as WaferMapDisplayItem).reticles?.length ?? 0) > 0);
 
@@ -1288,9 +1347,12 @@ ${reportStyles()}
         : undefined,
     );
 
+    const isMetadataMode = mode === 'metadata';
+    const activeMetadataKey = sharedOpts.activeMetadataKey;
+
     // Collect unique bins — use hbin or sbin depending on active mode.
     const binSet = new Set<number>();
-    if (hasBinLegendMode) {
+    if (hasBinLegendMode && !isMetadataMode) {
       for (const item of resolvedItems) {
         for (const die of item.dies) {
           if (die.partial) continue;
@@ -1299,9 +1361,27 @@ ${reportStyles()}
         }
       }
     }
-    const bins = hasBinLegendMode ? [...binSet].sort((a, b) => a - b) : [];
+    const bins = hasBinLegendMode && !isMetadataMode ? [...binSet].sort((a, b) => a - b) : [];
 
-    if (!metaRow && !bins.length) {
+    // 'metadata' mode's own values — string-keyed, collected across every visible
+    // card the same way bin counts are, sorted alphabetically (same determinism
+    // as buildView.ts's color assignment).
+    const metadataValueSet = new Set<string>();
+    if (hasBinLegendMode && isMetadataMode && activeMetadataKey) {
+      for (const item of resolvedItems) {
+        for (const die of item.dies) {
+          if (die.partial) continue;
+          const raw = die.metadata?.[activeMetadataKey];
+          if (raw !== undefined && raw !== null &&
+              (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean')) {
+            metadataValueSet.add(String(raw));
+          }
+        }
+      }
+    }
+    const metadataValues = hasBinLegendMode && isMetadataMode ? [...metadataValueSet].sort() : [];
+
+    if (!metaRow && !bins.length && !metadataValues.length) {
       legendEl.style.display = 'none';
       return;
     }
@@ -1309,7 +1389,7 @@ ${reportStyles()}
 
     if (metaRow) legendEl.appendChild(metaRow);
 
-    if (!bins.length) return;
+    if (!bins.length && !metadataValues.length) return;
 
     const binsRow = document.createElement('div');
     Object.assign(binsRow.style, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 14px' });
@@ -1318,6 +1398,25 @@ ${reportStyles()}
 
     const scheme    = getColorScheme(sharedOpts.colorScheme);
     const activeBin = sharedOpts.highlightBin;
+
+    if (isMetadataMode) {
+      const activeMetadataValue = sharedOpts.highlightMetadataValue;
+      const activeMetadataFieldDef = currentItems.flatMap(it => it?.metadataFields ?? []).find(f => f.key === activeMetadataKey);
+      metadataValues.forEach((value, index) => {
+        const isActive = activeMetadataValue === value;
+        const valueDef = activeMetadataFieldDef?.values?.find(v => v.value === value);
+        const color = valueDef?.color ?? metadataValueColor(index);
+        renderLegendSwatchRow(binsRow, {
+          color, isActive, label: valueDef?.label ?? value,
+          onClick: () => {
+            const next = sharedOpts.highlightMetadataValue === value ? undefined : value;
+            updateShared({ highlightMetadataValue: next });
+          },
+        });
+      });
+      return;
+    }
+
     // Hard and soft bins have independent number spaces — pick the correct defs for the active mode.
     // Collect from items (defs now live on WaferMapResult, not on sharedOpts).
     const itemDefs = mode === 'softBin'
@@ -1334,52 +1433,14 @@ ${reportStyles()}
     for (const bin of bins) {
       const isActive = activeBin === bin;
       const binDef   = binDefMap?.get(bin);
-      const entry = document.createElement('div');
-      Object.assign(entry.style, {
-        display:     'flex',
-        alignItems:  'center',
-        gap:         '5px',
-        cursor:      'pointer',
-        userSelect:  'none',
-        padding:     '2px 4px',
-        borderRadius: '3px',
+      const color = (sharedOpts.colorScheme === 'custom' ? binDef?.color : undefined) ?? scheme.forBin(bin);
+      renderLegendSwatchRow(binsRow, {
+        color, isActive, label: binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`,
+        onClick: () => {
+          const next = sharedOpts.highlightBin === bin ? undefined : bin;
+          updateShared({ highlightBin: next });
+        },
       });
-
-      const swatch = document.createElement('span');
-      Object.assign(swatch.style, {
-        display:      'inline-block',
-        width:        '13px',
-        height:       '13px',
-        flexShrink:   '0',
-        background:   (sharedOpts.colorScheme === 'custom' ? binDef?.color : undefined) ?? scheme.forBin(bin),
-        border:       isActive ? `2px solid ${CLR.iconActive}` : `1px solid ${CLR.menuBorder}`,
-        borderRadius: '2px',
-        boxSizing:    'border-box',
-      });
-
-      const lbl = document.createElement('span');
-      lbl.textContent = binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`;
-      Object.assign(lbl.style, {
-        fontWeight: isActive ? '700' : '400',
-        color:      isActive ? CLR.iconActive : CLR.text,
-        whiteSpace: 'nowrap',
-      });
-
-      entry.appendChild(swatch);
-      entry.appendChild(lbl);
-
-      entry.addEventListener('mouseenter', () => {
-        entry.style.background = CLR.bgHover;
-      });
-      entry.addEventListener('mouseleave', () => {
-        entry.style.background = 'transparent';
-      });
-      entry.addEventListener('click', () => {
-        const next = sharedOpts.highlightBin === bin ? undefined : bin;
-        updateShared({ highlightBin: next });
-      });
-
-      binsRow.appendChild(entry);
     }
   }
 
@@ -1583,6 +1644,7 @@ ${reportStyles()}
     rebuildLegend();
     syncAggrMethodBtn();
     syncLegendStyleBtn();
+    syncPaletteBtn();
     const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
     if (partial.colorScheme !== undefined || modeChanged) renderGallerySummaryPanel();
     syncLogScaleBtn();

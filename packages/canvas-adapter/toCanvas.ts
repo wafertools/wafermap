@@ -46,8 +46,8 @@ export interface ToCanvasOptions {
    * zoom/pan. Also accepts a zoom-adjusted `snapDist` for hit testing.
    */
   viewport?: ViewportTransform;
-  /** Currently highlighted bin — drawn with an active indicator in the bin legend. */
-  activeBin?: number;
+  /** Currently highlighted bin (or metadata value) — drawn with an active indicator in the bin legend. */
+  activeBin?: number | string;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -63,6 +63,8 @@ export interface ToCanvasOptions {
   hbinDefs?: import('../renderer/buildWaferMap.js').BinDef[];
   /** Named soft bin definitions — used to label the bin legend. */
   sbinDefs?: import('../renderer/buildWaferMap.js').BinDef[];
+  /** Named metadata-field definitions — used to label/color the metadata legend. */
+  metadataFields?: import('../renderer/buildWaferMap.js').MetadataFieldDef[];
   /**
    * Draw the map title (test name / mode + stack context) above the colorbar or bin legend.
    * Default true. The title is placed in empty space adjacent to the legend/colorbar and does NOT
@@ -87,9 +89,9 @@ export interface HitTarget {
 /** @deprecated Use HitTarget instead. */
 export type CanvasHitTarget = HitTarget;
 
-/** A hit-testable row in the bin legend — one entry per unique bin. */
+/** A hit-testable row in the bin legend — one entry per unique bin (or metadata value). */
 export interface BinLegendRow {
-  bin: number;
+  bin: number | string;
   x: number;
   /** Top CSS-pixel of the row (relative to canvas). */
   y: number;
@@ -112,7 +114,7 @@ export interface ToCanvasResult {
 }
 
 const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins', 'stackedSoftBins']);
-const BIN_LEGEND_MODES = new Set(['hardBin', 'softBin']);
+const BIN_LEGEND_MODES = new Set(['hardBin', 'softBin', 'metadata']);
 const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
 const MAP_TITLE_FONT      = '600 12px system-ui, sans-serif';  // primary identifier, above scale
 const MAP_SUBTITLE_FONT   = '11px system-ui, sans-serif';      // secondary context, below scale
@@ -157,6 +159,7 @@ export function toCanvas(
     minRightReserve,
     hbinDefs,
     sbinDefs,
+    metadataFields,
     showTitle     = true,
   } = options;
 
@@ -170,8 +173,13 @@ export function toCanvas(
   // The bin and pass/fail legends share the same layout/rendering machinery.
   const drawLegend     = drawBinLegend || drawSpecLegend;
 
-  const binLegendEntries: Array<[number, number]> = drawBinLegend && view.binCounts
+  const binLegendEntries: Array<[number, number]> = drawBinLegend && view.plotMode !== 'metadata' && view.binCounts
     ? [...view.binCounts.entries()].sort(([a], [b]) => a - b)
+    : [];
+  // 'metadata' mode's own entries — string-keyed, sorted alphabetically (same
+  // determinism as the color assignment in buildView.ts).
+  const metadataLegendEntries: Array<[string, number]> = drawBinLegend && view.plotMode === 'metadata' && view.metadataCounts
+    ? [...view.metadataCounts.entries()].sort(([a], [b]) => a.localeCompare(b))
     : [];
 
   // Unified legend entries: a swatch colour + label + count, sourced from bin counts (bin modes)
@@ -194,7 +202,9 @@ export function toCanvas(
       specSwatches.push({ key: -3, color: SPEC_FAIL_LOW, label: 'Fail low', compactLabel: 'Fail lo', count: sc.failLow, tooltip: `Fail low · ${sc.failLow} dies` });
   }
   // Row count used for layout reserves applies to whichever legend is active.
-  const legendEntryCount = drawSpecLegend ? specSwatches.length : binLegendEntries.length;
+  const legendEntryCount = drawSpecLegend ? specSwatches.length
+    : view.plotMode === 'metadata' ? metadataLegendEntries.length
+    : binLegendEntries.length;
 
   // Derive DPR from the canvas's own window, not the bare global — a canvas
   // rendered inside a gallery card detached into its own popup window must use
@@ -415,8 +425,13 @@ export function toCanvas(
       ctx.fillStyle = overlay.fill;
       ctx.fill();
     }
-    // Ring and quadrant boundaries use dual-stroke so they read on any die colour or gap.
-    if (overlay.kind === 'ring-boundary' || overlay.kind === 'quadrant-boundary') {
+    // Ring, quadrant, and reticle overlays use dual-stroke (dark halo + light
+    // core) so they read on any die colour or gap — a single flat colour
+    // (even white) disappears against a same-toned fill or the canvas
+    // background. This ignores overlay.lineColor/lineWidth entirely for these
+    // three kinds; those fields only apply to the plain single-stroke overlays
+    // in the else branch (wafer boundary, probe path).
+    if (overlay.kind === 'ring-boundary' || overlay.kind === 'quadrant-boundary' || overlay.kind === 'reticle') {
       ctx.strokeStyle = 'rgba(0,0,0,0.45)';
       ctx.lineWidth   = 3 / (ppm * dpr);
       ctx.stroke();
@@ -748,7 +763,7 @@ export function toCanvas(
     };
 
     type LegendEntry = {
-      key: number;       // bin number, or negative sentinel for spec categories (for activeBin/hit-rows)
+      key: number | string;  // bin number, negative sentinel for spec categories, or a metadata value string
       color: string;
       count: number;
       label: string;
@@ -765,10 +780,23 @@ export function toCanvas(
       return { labelWidth, countWidth, totalWidth };
     };
 
+    const activeMetadataFieldDef = metadataFields?.find(f => f.key === view.activeMetadataKey);
+
     const legendEntries: LegendEntry[] = drawSpecLegend
       ? specSwatches.map(s => {
           const label = isCompact ? s.compactLabel : s.label;
           return { key: s.key, color: s.color, count: s.count, label, tooltipLabel: s.tooltip, ...measure(label, s.count) };
+        })
+      : view.plotMode === 'metadata'
+      ? metadataLegendEntries.map(([value, count]) => {
+          const valueDef = activeMetadataFieldDef?.values?.find(v => v.value === value);
+          const fullLabel = valueDef?.label ?? value;
+          const label = isCompact ? value : fullLabel;
+          // Read the resolved colour straight off the view — built by buildView from the same
+          // filtered die population as metadataLegendEntries, so this can never diverge from
+          // the colour dies are actually filled with. See View.metadataColorMap.
+          const color = view.metadataColorMap?.get(value) ?? '#d6d9dd';
+          return { key: value, color, count, label, tooltipLabel: `${fullLabel} · ${count} dies`, ...measure(label, count) };
         })
       : binLegendEntries.map(([bin, count]) => {
           const binDef = binDefMap?.get(bin);

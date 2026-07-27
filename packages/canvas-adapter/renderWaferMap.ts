@@ -4,7 +4,7 @@ import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
-import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
+import type { TestDef, BinDef, MetadataFieldDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
@@ -13,8 +13,9 @@ import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
 } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
+import { prettyKey } from '../stats/facets.js';
 import { ICONS } from './icons.js';
-import { hardBinColor, softBinColor } from '../renderer/colorMap.js';
+import { hardBinColor, softBinColor, metadataValueColor } from '../renderer/colorMap.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
 import { createMetadataBadge, type MetadataBadgeController } from './metadataBadge.js';
 
@@ -78,7 +79,15 @@ export interface WaferDisplayState {
    * Controlled by the mode dropdown when the result has testDefs.
    */
   activeTest?:   number;
+  /**
+   * Which `die.metadata` key to display in `'metadata'` plot mode. Must match
+   * a `key` in the result's `metadataFields`. Controlled by the mode dropdown
+   * when the result has `metadataFields`.
+   */
+  activeMetadataKey?: string;
   highlightBin?: number;
+  /** Dim every die except this metadata value in `'metadata'` mode — the analogue of `highlightBin`. */
+  highlightMetadataValue?: string;
   /**
    * Explicit value colour normalization range.
    *
@@ -314,10 +323,10 @@ export interface WaferMapController {
   /** Move the floating tooltip into a different parent (e.g. a maximized modal box). */
   setTooltipParent(parent: HTMLElement): void;
   /**
-   * Returns the current bin legend entries in `hardBin`/`softBin` modes, `null` in other modes.
-   * Each entry includes the bin number, display name, and color.
+   * Returns the current legend entries in `hardBin`/`softBin`/`metadata` modes, `null` in other
+   * modes. Each entry includes the bin number (or metadata value string), display name, and color.
    */
-  getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null;
+  getActiveLegend(): Array<{ bin: number | string; name: string; color: string }> | null;
   /** Remove all event listeners and DOM elements. */
   destroy(): void;
 }
@@ -416,6 +425,7 @@ export function renderWaferMap(
   let hbinDefs: BinDef[]    | undefined = result.hbinDefs;
   let sbinDefs: BinDef[]    | undefined = result.sbinDefs;
   let testDefs: TestDef[]   | undefined = result.testDefs;
+  let metadataFields: MetadataFieldDef[] | undefined = result.metadataFields;
   let reticles: Reticle[]   | undefined = result.reticles?.length ? result.reticles : undefined;
   let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.axisFlip;
   // Lot-stack context is the library's own derived truth — sourced from the result, never the
@@ -606,7 +616,9 @@ export function renderWaferMap(
       reticles,
       ringCount:              so.ringCount,
       highlightBin:           so.highlightBin,
+      highlightMetadataValue: so.highlightMetadataValue,
       activeTest:              so.activeTest,
+      activeMetadataKey:       so.activeMetadataKey,
       testDefs,
       valueRange:             so.valueRange,
       logScale:               so.logScale,
@@ -623,7 +635,7 @@ export function renderWaferMap(
         flipX:    so.flipX   ?? false,
         flipY:    so.flipY   ?? false,
       },
-    } satisfies ViewOptions, { hbinDefs, sbinDefs });
+    } satisfies ViewOptions, { hbinDefs, sbinDefs, metadataFields });
     dieKeyIndex = new Map(currentView.dies.map((d, i) => [`${d.x},${d.y}`, i]));
   }
 
@@ -765,6 +777,7 @@ export function renderWaferMap(
   let tbGetOpenMenu:   (() => HTMLDivElement | null) | null = null;
   // Called after every option change to keep the legend style button in sync.
   let syncLegendStyleBtnFn: (() => void) | null = null;
+  let syncPaletteBtnFn: (() => void) | null = null;
   // Called after every option change to keep the log scale button in sync.
   let syncLogScaleBtnFn: (() => void) | null = null;
   // Called after every option change to keep the colorbar range mode button in sync.
@@ -892,16 +905,19 @@ export function renderWaferMap(
         function isCurrentEntry(e: ModeEntry): boolean {
           if (e.plotMode !== (viewOpts.plotMode ?? 'hardBin')) return false;
           if (e.plotMode === 'value') return (viewOpts.activeTest ?? 0) === (e.activeTest ?? 0);
+          if (e.plotMode === 'metadata') return viewOpts.activeMetadataKey === e.activeMetadataKey;
           return true;
         }
 
         function pickEntry(entry: ModeEntry, menu: HTMLElement): void {
           if (entry.activeTest !== undefined) {
             // Apply test's logScale default when switching tests.
-            applyOpts({ plotMode: entry.plotMode, activeTest: entry.activeTest, logScale: entry.logScale });
+            applyOpts({ plotMode: entry.plotMode, activeTest: entry.activeTest, activeMetadataKey: undefined, logScale: entry.logScale });
+          } else if (entry.activeMetadataKey !== undefined) {
+            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: entry.activeMetadataKey, colorBySpec: false, passFailDisplay: 'off' });
           } else {
             // Switching to a bin/stacked mode — clear the pass/fail display (only valid in value mode).
-            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, colorBySpec: false, passFailDisplay: 'off' });
+            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: undefined, colorBySpec: false, passFailDisplay: 'off' });
           }
           menu.remove();
           setOpenMenu(null);
@@ -928,6 +944,16 @@ export function renderWaferMap(
           );
           const hasHbin = dies.some(d => d.hbin != null);
           const hasSbin = dies.some(d => d.sbin != null);
+
+          // Metadata entries: one per configured metadataFields[].key actually
+          // present in the dies (opt-in, never auto-detected — see MetadataFieldDef).
+          const metadataEntries: ModeEntry[] = (metadataFields ?? [])
+            .filter(f => dies.some(d => d.metadata?.[f.key] !== undefined && d.metadata?.[f.key] !== null))
+            .map(f => ({
+              plotMode: 'metadata' as PlotMode,
+              activeMetadataKey: f.key,
+              label: f.label ?? prettyKey(f.key),
+            }));
 
           const testEntries: ModeEntry[] = hasTestData
             ? (testDefs?.length
@@ -961,6 +987,7 @@ export function renderWaferMap(
             { makeMenuRow, makeMenuSection },
             viewOpts.plotMode ?? 'hardBin',
             btnMode.ownerDocument.defaultView ?? window,
+            metadataEntries,
           );
           overlayRootFor(btnMode).appendChild(menu);
           setOpenMenu(menu);
@@ -968,13 +995,15 @@ export function renderWaferMap(
           wireMenuA11y(menu, btnMode, closeModeMenu);
         });
         markMenuTrigger(btnMode, false);
-        const btnPalette = makePaletteBtn(
+        const { btn: btnPalette, sync: syncPalette } = makePaletteBtn(
           tbHelpers,
           () => viewOpts.plotMode ?? 'hardBin',
           () => viewOpts.colorScheme ?? 'default',
           () => hasCustomColors,
           v => applyOpts({ colorScheme: v }),
         );
+        syncPaletteBtnFn = syncPalette;
+        syncPaletteBtnFn();
         const btnOverlays = makeOverlaysBtn(
           tbHelpers,
           (): CheckMenuRow[] => {
@@ -1226,6 +1255,7 @@ export function renderWaferMap(
     const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendPosition');
     if (!onlyLegendStyle) rebuildView();
     syncLegendStyleBtnFn?.();
+    syncPaletteBtnFn?.();
     syncLogScaleBtnFn?.();
     syncColorbarRangeBtnFn?.();
     render();
@@ -1286,9 +1316,10 @@ export function renderWaferMap(
       fallbackFormat: currentFallbackFormat,
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
       viewport: vp,
-      activeBin: viewOpts.highlightBin,
+      activeBin: viewOpts.plotMode === 'metadata' ? viewOpts.highlightMetadataValue : viewOpts.highlightBin,
       hbinDefs,
       sbinDefs,
+      metadataFields,
     });
 
     binLegendRows = result.binLegendRows;
@@ -1711,10 +1742,17 @@ export function renderWaferMap(
 
   function handleClick(cssPx: number, cssPy: number, multi: boolean, e: PointerEvent): void {
     // Check bin legend hit first — legend rows take priority over die clicks.
+    // hardBin/softBin rows toggle the numeric highlightBin; metadata rows
+    // (string key) toggle its string analogue, highlightMetadataValue.
     for (const row of binLegendRows) {
       if (cssPx >= row.x && cssPx < row.x + row.w && cssPy >= row.y && cssPy < row.y + row.h) {
-        const next = viewOpts.highlightBin === row.bin ? undefined : row.bin;
-        applyOpts({ highlightBin: next });
+        if (typeof row.bin === 'number') {
+          const next = viewOpts.highlightBin === row.bin ? undefined : row.bin;
+          applyOpts({ highlightBin: next });
+        } else {
+          const next = viewOpts.highlightMetadataValue === row.bin ? undefined : row.bin;
+          applyOpts({ highlightMetadataValue: next });
+        }
         return;
       }
     }
@@ -1992,6 +2030,7 @@ export function renderWaferMap(
       hbinDefs      = newResult.hbinDefs;
       sbinDefs      = newResult.sbinDefs;
       testDefs      = newResult.testDefs;
+      metadataFields = newResult.metadataFields;
       reticles      = newResult.reticles?.length ? newResult.reticles : undefined;
       dataAxisFlip  = newResult.view?.axisFlip;
       resultIsLotStack = newResult.isLotStack;
@@ -2103,8 +2142,25 @@ export function renderWaferMap(
       if (tooltip) reparentTooltip(parent);
     },
 
-    getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null {
+    getActiveLegend(): Array<{ bin: number | string; name: string; color: string }> | null {
       const mode = viewOpts.plotMode;
+      if (mode === 'metadata') {
+        const key = viewOpts.activeMetadataKey;
+        if (!key) return null;
+        const fieldDef = metadataFields?.find(f => f.key === key);
+        const values = [...new Set(
+          currentDies.map(d => d.metadata?.[key])
+            .filter((v): v is string | number | boolean => v !== undefined && v !== null &&
+              (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'))
+            .map(String),
+        )].sort();
+        if (!values.length) return null;
+        return values.map((value, index) => {
+          const valueDef = fieldDef?.values?.find(v => v.value === value);
+          const color = valueDef?.color ?? metadataValueColor(index);
+          return { bin: value, name: valueDef?.label ?? value, color };
+        });
+      }
       if (mode !== 'hardBin' && mode !== 'softBin') return null;
       const isHard = mode === 'hardBin';
       const defs = isHard ? hbinDefs : sbinDefs;

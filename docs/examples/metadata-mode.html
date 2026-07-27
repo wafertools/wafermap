@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metadata plot mode — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+</head>
+
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Metadata plot mode</span>
+    <span class="demo-desc">Generic categorical/layout views from die.metadata — coexists with test/bin data</span>
+  </header>
+
+  <div class="demo-intro">
+    Colour and legend the map by any per-die classification you already carry in <code>die.metadata</code> —
+    project ownership on a multiproject wafer, vendor/third-party boundaries, reserved/shared areas, or any
+    other host-defined grouping. Pass <code>metadataFields</code> to opt a key in, then switch to it from the
+    toolbar's <strong>Metadata</strong> mode-menu section. No new die-level field is required — the example
+    below deliberately mixes dies that have <strong>both</strong> a metadata classification <em>and</em> real
+    hard-bin test results with dies that have metadata only, to show the two coexisting. The product mix is
+    laid out the way a real multiproject reticle actually works: one reticle field holds several products
+    (including two positions of the same product), and that fixed pattern is stepped across the whole wafer —
+    toggle the toolbar's <strong>Reticle</strong> overlay to see the field boundaries the pattern repeats within.
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <div id="map"></div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap } from 'wafermap';
+    import { renderWaferMap } from 'wafermap/render';
+
+    // A real MPW reticle holds several products in fixed positions — often
+    // with more than one shot of the same product — and that field is stepped
+    // (repeated) across the whole wafer, not laid out as one contiguous block
+    // per product. Model that directly: a small RETICLE_W x RETICLE_H pattern,
+    // indexed by die position relative to ANCHOR_DIE — 'our-project'
+    // deliberately occupies two different positions in the same field.
+    //
+    // ANCHOR_DIE is the same value passed to reticleConfig below (the die that
+    // lands at a field's bottom-left corner — see ReticleConfig.anchorDie) and
+    // is genuinely non-zero here: a real reticle field's phase relative to the
+    // die grid is essentially arbitrary (wherever the first full field
+    // happened to land), not conveniently (0, 0).
+    const RETICLE_W = 3, RETICLE_H = 2;
+    const ANCHOR_DIE = { x: 1, y: -1 };
+    const RETICLE_PATTERN = [
+      ['our-project', 'other-project', 'vendor'],        // reticle row 0
+      ['shared',      'our-project',   'other-project'], // reticle row 1
+    ];
+    function productAt(x, y) {
+      const rx = (((x - ANCHOR_DIE.x) % RETICLE_W) + RETICLE_W) % RETICLE_W;
+      const ry = (((y - ANCHOR_DIE.y) % RETICLE_H) + RETICLE_H) % RETICLE_H;
+      return RETICLE_PATTERN[ry][rx];
+    }
+
+    const results = [];
+    for (let x = -4; x <= 5; x++) {
+      for (let y = -4; y <= 5; y++) {
+        const dist = Math.hypot(x + 0.5, y + 0.5);
+        if (dist > 5.4) continue; // clip to a roughly circular wafer
+
+        const project = productAt(x, y);
+        const die = { x, y, metadata: { project } };
+        // Only "our-project" shots carry real test/bin data — demonstrates that
+        // a die can carry both a metadata classification and test results at
+        // once, independently of where that product's shots land on the wafer.
+        if (project === 'our-project') {
+          die.hbin = (x + y) % 3 === 0 ? 1 : 2;
+        }
+        results.push(die);
+      }
+    }
+
+    const result = buildWaferMap({
+      results,
+      waferConfig:   { diameter: 90 },
+      dieConfig:     { width: 8, height: 8 },
+      reticleConfig: { width: RETICLE_W, height: RETICLE_H, anchorDie: ANCHOR_DIE },
+      metadataFields: [
+        { key: 'project', label: 'Project', values: [
+          { value: 'our-project',   label: 'Our project',    color: '#4e79a7' },
+          { value: 'other-project', label: 'Other project',  color: '#f28e2b' },
+          { value: 'vendor',        label: 'Third-party vendor', color: '#bab0ac' },
+          { value: 'shared',        label: 'Shared / reserved',  color: '#e15759' },
+        ] },
+      ],
+    });
+
+    renderWaferMap(document.getElementById('map'), result, {
+      viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project', showReticle: true },
+      showHelpButton: true,
+    });
+  </script>
+
+</body>
+
+</html>

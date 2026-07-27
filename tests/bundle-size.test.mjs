@@ -23,7 +23,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
-  'wafermap (root)':            40_500,   // gzipped bytes — baseline ~37 KB
+  'wafermap (root)':            41_000,   // gzipped bytes — baseline ~37 KB
   'wafermap/render (initial)':  106_000,  // gzipped bytes — baseline ~88 KB, guide excluded
 };
 

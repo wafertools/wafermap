@@ -143,6 +143,7 @@ type WaferMapInputBase = {
   testDefs?:         TestDef[],        // named test definitions — one per testValues entry
   hbinDefs?:         BinDef[],         // named hard bin definitions — one per distinct hbin value
   sbinDefs?:         BinDef[],         // named soft bin definitions — one per distinct sbin value
+  metadataFields?:   MetadataFieldDef[], // opts a die.metadata key into the 'metadata' plot mode — §4.1.10
 }
 
 // Single-wafer variant (WaferMapInputSingle):
@@ -259,8 +260,11 @@ circular-wafer aspect-ratio constraint.
   width:      number               // stepper field width in number of dies (e.g. 4 means 4 dies wide)
   height:     number               // stepper field height in number of dies
   anchorDie?: { x: number; y: number }
-               // die grid index (x, y) that sits at the reticle field's internal (0,0) corner.
-               // Shifts the entire reticle grid so this die aligns to a field boundary.
+               // die grid index (x, y), in original die coordinates (die.x/die.y),
+               // that sits at the reticle field's min-x/min-y corner (bottom-left,
+               // since +Y is up) — i.e. it becomes the leftmost, bottom-most die
+               // of the field it belongs to. Shifts the entire reticle grid so
+               // this die aligns to a field boundary.
                // Default {0,0} — die (0,0) is at a corner.
 }
 ```
@@ -413,6 +417,47 @@ const { yieldPercent, yieldPercentGross } = result.yield;
 // yieldPercentGross — gross die yield (edge dies counted against you)
 ```
 
+#### 4.1.11 `MetadataFieldDef`
+
+Named definition for one `die.metadata` key, opting it into the **`'metadata'` plot mode** — a generic categorical/layout view, distinct from test results and bins. Use this for any per-die classification that isn't a test outcome: which project a die belongs to on a multiproject wafer, vendor/third-party ownership, reserved/shared/unassigned areas, or any other host-defined grouping already carried in `die.metadata`.
+
+```ts
+{
+  key:     string    // the die.metadata key this definition applies to
+  label?:  string     // display name for the toolbar entry and map title — default: Title Case of key
+  values?: Array<{ value: string; label?: string; color?: string }>  // optional per-value overrides
+}
+```
+
+A key is only offered in the toolbar's "Metadata" mode-menu section when it appears in `metadataFields` **and** at least one die actually has that key set — presence in `metadataFields` is an explicit opt-in, never auto-detected. `values` is optional per field: distinct values with no override are still shown, auto-labeled with the raw (stringified) value and auto-colored from an ordered qualitative palette (assigned alphabetically by value, so colors are stable across reloads — not the pass/fail-flavored palette `hardBinColor` uses, since an arbitrary metadata field has no universal "good/bad" meaning).
+
+```ts
+const result = buildWaferMap({
+  results: [
+    { x: 4, y: -2, hbin: 1, metadata: { project: 'Project A', device: 'Device 12' } },
+    { x: 5, y: -2, metadata: { project: 'vendor' } }, // vendor die — no test/bin data at all
+  ],
+  waferConfig: { diameter: 300 },
+  dieConfig:   { width: 10, height: 10 },
+  metadataFields: [
+    { key: 'project', label: 'Project', values: [
+      { value: 'Project A', color: '#4e79a7' },
+      { value: 'vendor',    label: 'Third-party vendor', color: '#bab0ac' },
+    ] },
+  ],
+});
+
+renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project' } });
+```
+
+**Key properties of this mode:**
+
+- **Coexists with test/bin data** — a die can carry `hbin`/`testValues` *and* a metadata classification at the same time; `'metadata'` is just another selectable toolbar view of the same underlying die, the same way `hardBin`/`softBin`/`value` already are. `die.metadata` already renders in every tooltip regardless of plot mode, so switching into `'metadata'` mode changes the map's colour/legend without changing what the tooltip shows.
+- **No lot-stacking.** `'metadata'` is deliberately excluded from the stacked/lot-aggregation modes (`stackedValues`/`stackedBins`/`stackedSoftBins`) — a die's layout classification is a constant of the design, not a per-wafer measurement, so there is nothing meaningful to aggregate across a lot.
+- **Never affects yield.** `die.metadata` was never part of the yield-eligibility pipeline, so a `'metadata'`-classified die's yield/pass-fail status (if it has one) is entirely unaffected by this mode.
+- **Click-to-highlight in the legend**, exactly like `hardBin`/`softBin`: clicking a legend swatch dims every die except that value (`highlightMetadataValue`, the string-keyed analogue of `highlightBin`); clicking the same swatch again clears it.
+- Reuses wafer geometry, tooltip, selection, zoom, and PNG export unchanged — none of those are plot-mode-aware. The one thing genuinely new is the colour fill, the legend, and the toolbar entry.
+
 ### 4.2 Return value
 
 ```ts
@@ -427,6 +472,7 @@ const { yieldPercent, yieldPercentGross } = result.yield;
   hbinDefs?:     BinDef[]       // named hard bin definitions passed to buildWaferMap
   sbinDefs?:     BinDef[]       // named soft bin definitions passed to buildWaferMap
   testDefs?:     TestDef[]      // named test definitions passed to buildWaferMap
+  metadataFields?: MetadataFieldDef[]  // named metadata-field definitions passed to buildWaferMap — §4.1.11
   reticles:      Reticle[]      // generated reticle geometry — wired automatically when passed as a WaferMapDisplayItem
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
@@ -771,12 +817,14 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` |
-| `colorScheme` | `string` | `'default'` | Built-in: `'default'` `'viridis'` `'greyscale'` `'accessible'` `'plasma'` `'inferno'` `'traffic'` `'thermal'`. Custom schemes via `registerColorScheme()`. |
+| `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` \| `'metadata'` |
+| `colorScheme` | `string` | `'default'` | Built-in: `'default'` `'viridis'` `'greyscale'` `'accessible'` `'plasma'` `'inferno'` `'traffic'` `'thermal'`. Custom schemes via `registerColorScheme()`. Not used in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.11). |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
+| `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.11) |
 | `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Spec pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
 | `colorBySpec` | `boolean` | `false` | **Deprecated** — alias for `passFailDisplay: 'spec'`; ignored when `passFailDisplay` is set. |
-| `highlightBin` | `number` | — | Dim all bins except this one |
+| `highlightBin` | `number` | — | Dim all bins except this one. Clicking a bin/soft-bin legend swatch toggles it. |
+| `highlightMetadataValue` | `string` | — | `'metadata'` mode's analogue of `highlightBin` — dim every die except this metadata value. Clicking a metadata legend swatch toggles it. |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the view auto-scales — use this to safely fix a range computed for a specific test. |
 | `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
@@ -798,7 +846,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 
 `WaferViewOptions` is the intersection of two named sub-types:
 - **`WaferPreferences`** — stable settings worth saving (colour scheme, rotation, overlays, legend position, log scale, colorbar range mode)
-- **`WaferDisplayState`** — transient session state (plot mode, active test, value range, highlight bin)
+- **`WaferDisplayState`** — transient session state (plot mode, active test, active metadata key, value range, highlight bin)
 
 The `onViewOptionsChange` callback receives a `category` hint (`'preference' | 'state' | 'mixed'`) so you can decide what to persist without filtering keys manually:
 
@@ -1059,8 +1107,9 @@ Choose the right update method:
   resetZoom(): void                                  // return to fitted view
   setFallbackFormat(format: 'si' | 'engineering'): void
   setStatsSummary(summary: StatsSummary | undefined): void  // update the Summary panel at runtime
-  getActiveLegend(): Array<{ bin: number; name: string; color: string }> | null
-    // returns bin legend entries in hardBin/softBin modes; null in all other modes
+  getActiveLegend(): Array<{ bin: number | string; name: string; color: string }> | null
+    // returns legend entries in hardBin/softBin/metadata modes (bin is a metadata value string
+    // in 'metadata' mode); null in all other modes, or when 'metadata' has no activeMetadataKey set
 
   closeSummaryPanel(): void              // close the auto-mounted Summary panel if open; no-op if none exists
   setInsightsOpen(open: boolean): void  // programmatically open/close the Insights tab; no-op if `insights.enabled` was not set
@@ -1103,7 +1152,7 @@ Choose the right update method:
 | Labels | Toggle die index text labels |
 | Reticle | Toggle reticle field overlay — only shown when `reticles` are present |
 | XY indicator | Toggle axis-orientation arrows showing +X/+Y directions |
-| Legend style | Dropdown: bin legend position — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating** (draggable). Disabled when not in a bin mode. |
+| Legend style | Dropdown: bin legend position — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating** (draggable). Disabled outside hardBin/softBin/metadata modes. |
 | Rotate | Rotate 90° clockwise (cycles 0→90→180→270) |
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
@@ -1254,6 +1303,7 @@ interface WaferMapDisplayItem {
   hbinDefs?:     BinDef[]                             // hard bin names/colors
   sbinDefs?:     BinDef[]                             // soft bin names/colors
   testDefs?:     TestDef[]                            // named test definitions
+  metadataFields?: MetadataFieldDef[]                 // opts die.metadata keys into 'metadata' plot mode — §4.1.11
   reticles?:     Reticle[]                            // reticle field geometry
 
   label?:        string                               // card header text
@@ -1370,14 +1420,14 @@ to be pre-built.
 | Button | Action |
 | --- | --- |
 | Mode | Dropdown: plot mode for all cards |
-| Palette | Dropdown: colour scheme for all cards |
+| Palette | Dropdown: colour scheme for all cards. Hidden in `'metadata'` mode — that mode always uses its own dedicated ordered palette (§4.1.11), never the colour scheme picker, so the control would have no visible effect. |
 | Log scale | Toggle log₁₀ scale for all cards. Shown only in `value` / `stackedValues` modes, and hidden whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. |
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
 | Labels | Toggle die labels on all cards |
 | Reticle | Toggle reticle overlay on all cards — only shown when at least one item has reticle geometry |
 | XY indicator | Toggle axis-orientation arrows on all cards |
-| Legend style | Dropdown: bin legend position for all cards — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating**. Disabled when not in a bin mode. |
+| Legend style | Dropdown: bin legend position for all cards — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating**. Disabled outside hardBin/softBin/metadata modes. |
 | Orientation | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide and all available width is used. |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
@@ -2800,6 +2850,17 @@ Generates reticle rectangles covering the wafer area.  Accepts a `ReticleSpec`:
   diePitchX:   number
   diePitchY:   number
   anchorDie?:  { x: number; y: number }
+               // die index at the field's min-x/min-y corner (bottom-left,
+               // since +Y is up) — see §4.1.4
+  gridOrigin?: { x: number; y: number }
+               // physical position of die index (0,0). Default {0,0} (the
+               // wafer centre) — correct only when the die grid is itself
+               // centred on the wafer. `buildWaferMap` passes this
+               // automatically; pass it yourself only when calling
+               // generateReticleGrid directly against a die grid whose
+               // physical placement is offset from the wafer centre by a
+               // non-whole-die-pitch amount (e.g. partial/off-centre data),
+               // otherwise field boundaries silently drift off die edges.
 }
 ```
 
@@ -2884,7 +2945,7 @@ Builds the renderer-agnostic view. `Wafer` → §12.2 · `Die` → §12.1
 
 ```ts
 interface ViewOptions {
-  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins'
+  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'metadata'
   passFailDisplay?:        'off' | 'spec' | 'test'  // solid pass/fail display: 'spec' = limits judgement, 'test' = recorded verdict (die.testPass);
                                              // library-resolved — degrades to 'off' when invalid; functional tests always render as 'test'
   colorBySpec?:            boolean           // @deprecated: alias for passFailDisplay: 'spec'; ignored when passFailDisplay is set
@@ -2899,13 +2960,16 @@ interface ViewOptions {
   dieGap?:                 number    // visual kerf gap in mm, default 1
   colorScheme?:            string    // default 'default'
   highlightBin?:           number
+  highlightMetadataValue?: string    // 'metadata' mode's analogue of highlightBin
   valueRange?:             [number, number] | { test: number; range: [number, number] }
   interactiveTransform?:   { rotation?: number; flipX?: boolean; flipY?: boolean }
   reticles?:               Reticle[]
   testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
   hbinDefs?:               BinDef[]    // named hard bin definitions (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
+  metadataFields?:         MetadataFieldDef[]  // opts die.metadata keys into 'metadata' plot mode — §4.1.11
   activeTest?:              number      // testNumber to display in 'value' mode (matches testDef.testNumber, NOT a positional index); defaults to first available test
+  activeMetadataKey?:      string      // die.metadata key to display in 'metadata' mode (matches a metadataFields[].key)
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
   colorbarRangeMode?:      'spec' | 'data'  // sets colorbar range only: 'spec' (default) spans [limitLow, limitHigh],
                                             // 'data' spans actual data min/max. In both, dies keep the gradient fill and
@@ -2915,7 +2979,7 @@ interface ViewOptions {
 }
 ```
 
-Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggregationMethod`, `lotSize`.
+Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggregationMethod`, `lotSize`, and (for `'metadata'` mode) `metadataFields`, `activeMetadataKey`, `metadataCounts` (`Map<string, number>` — value → die count, mirroring `binCounts`).
 
 `hoverPoints` is `{ x, y }[]` — one entry per die, in physical mm coordinates. Used internally by `renderWaferMap` for hit-testing; you rarely need it directly when using `toCanvas` (use `hitTarget.getDieAtPoint` instead).
 

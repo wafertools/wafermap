@@ -160,6 +160,45 @@ export function softBinColor(bin: number): string {
 /** @deprecated Use BIN_PALETTE directly if you need the raw array. */
 export const SOFT_BIN_COLORS: readonly string[] = BIN_PALETTE;
 
+/**
+ * Ordered qualitative palette for the `'metadata'` plot mode's first ~10
+ * distinct values. Deliberately NOT the pass/fail-flavoured
+ * `HARD_BIN_OVERRIDES` (green=pass/red=fail) — an arbitrary metadata field
+ * (project, vendor, test site, …) has no universal "good/bad" meaning, so
+ * this is a plain maximally-distinct hue set with no implied ordering.
+ */
+const METADATA_PALETTE: readonly string[] = [
+  '#4e79a7',
+  '#f28e2b',
+  '#e15759',
+  '#76b7b2',
+  '#59a14f',
+  '#edc948',
+  '#b07aa1',
+  '#ff9da7',
+  '#9c755f',
+  '#bab0ac',
+];
+
+/** Salt for the hash fallback beyond METADATA_PALETTE's fixed slots. */
+const METADATA_SALT = 0x27d4eb2f;
+
+/**
+ * Categorical colour for the `index`-th distinct value of an active
+ * `'metadata'` field, where `index` comes from sorting the field's distinct
+ * values alphabetically (deterministic — never dependent on die array
+ * iteration order). Ordered assignment, not hashing, for the first
+ * `METADATA_PALETTE.length` slots — this maximizes distinctness for the
+ * common case of a handful of categories, unlike a hash which doesn't
+ * optimize for a *known* small set. Falls back to the same
+ * hash+`BIN_PALETTE` mechanism `hardBinColor`/`softBinColor` use (a new
+ * salt) for wafers with an unusually large category count.
+ */
+export function metadataValueColor(index: number): string {
+  if (index < METADATA_PALETTE.length) return METADATA_PALETTE[index];
+  return BIN_PALETTE[(wangHash(index ^ METADATA_SALT) % PALETTE_SIZE) + 1];
+}
+
 /** Categorical greyscale shades for hard bins. Index 0 = no data. */
 export const HARD_BIN_GREY: readonly string[] = [
   '#aaaaaa', // 0: no data

@@ -1547,3 +1547,116 @@ test('renderWaferGallery stackedValues excludes functional tests from value stac
     cleanup();
   }
 });
+
+test('renderWaferMap: metadata mode menu entry appears only when a configured field is actually present, switches mode/legend on click', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, hbin: 1, metadata: { project: 'our-project' } },
+        { x: 1, y: 0, hbin: 2, metadata: { project: 'vendor' } },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+      metadataFields: [
+        { key: 'project', label: 'Project' },
+        { key: 'unused' }, // configured but present on no die — must not appear
+      ],
+    });
+
+    const ctrl = renderWaferMap(container, wafer);
+    const buttons = [...root.querySelectorAll('button')];
+    const modeBtn = buttons.find((b) => b.ariaLabel === 'Plot mode');
+
+    const menuRowByLabel = (label) =>
+      [...window.document.querySelectorAll('[role="menuitemradio"]')].find((el) => el.textContent === label);
+
+    click(window, modeBtn);
+    const projectRow = menuRowByLabel('Project');
+    assert.ok(projectRow, 'entry offered for a configured field actually present in the dies');
+    assert.equal(menuRowByLabel('Unused'), undefined, 'no entry for a configured field absent from every die');
+
+    click(window, projectRow);
+    assert.equal(ctrl.getOptions().plotMode, 'metadata');
+    assert.equal(ctrl.getOptions().activeMetadataKey, 'project');
+
+    const legend = ctrl.getActiveLegend();
+    assert.ok(legend, 'getActiveLegend returns entries in metadata mode');
+    const names = legend.map((e) => e.name).sort();
+    assert.deepEqual(names, ['our-project', 'vendor']);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery: metadata mode legend strip shows every distinct value across cards, coloured and labelled from metadataFields', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const metadataFields = [{ key: 'project', label: 'Project', values: [
+      { value: 'our-project', label: 'Our Project' },
+    ] }];
+    const a = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1, metadata: { project: 'our-project' } }],
+      waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 }, metadataFields,
+    });
+    const b = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1, metadata: { project: 'vendor' } }],
+      waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 }, metadataFields,
+    });
+
+    const ctrl = renderWaferGallery(container, [{ ...a, label: 'A' }, { ...b, label: 'B' }], {
+      viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project' },
+    });
+
+    assert.match(container.textContent, /Our Project/, 'override label used for our-project');
+    assert.match(container.textContent, /vendor/, 'raw value used for vendor (no override)');
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery: clicking a metadata legend swatch toggles highlightMetadataValue, exactly like hardBin/softBin swatches toggle highlightBin', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const metadataFields = [{ key: 'project', label: 'Project' }];
+    const a = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1, metadata: { project: 'our-project' } }],
+      waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 }, metadataFields,
+    });
+    const b = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1, metadata: { project: 'vendor' } }],
+      waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 }, metadataFields,
+    });
+
+    const ctrl = renderWaferGallery(container, [{ ...a, label: 'A' }, { ...b, label: 'B' }], {
+      viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project' },
+    });
+
+    const swatchRow = [...container.querySelectorAll('div')].find((el) => el.textContent === 'our-project');
+    assert.ok(swatchRow, 'a clickable row exists for the our-project value');
+
+    click(window, swatchRow);
+    assert.equal(ctrl.getOptions().highlightMetadataValue, 'our-project');
+
+    click(window, swatchRow); // clicking the active value again clears it
+    assert.equal(ctrl.getOptions().highlightMetadataValue, undefined);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});

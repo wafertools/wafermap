@@ -11,6 +11,7 @@ Live interactive demos. Each opens a standalone page rendered in the browser.
 - [Geometry inference](geometry.html) — omit die size and let the library infer it · [Guide §4](../guide.md#4-adding-die-size-and-wafer-geometry)
 - [Partial data](partial-data.html) — anchoring the wafer centre for partial coverage, and why sparse data doesn't need it · [Guide §4](../guide.md#4-adding-die-size-and-wafer-geometry)
 - [Bins and yield](named-bins.html) — named hard bins, pass/fail colours, yield label · [Guide §5](../guide.md#5-working-with-bins)
+- [Metadata / layout mode](metadata-mode.html) — generic categorical colouring from `die.metadata`, coexists with test/bin data · [Guide §21](../guide.md#21-metadata-layout-plot-mode)
 - [Test values](test-values.html) — parametric measurements, spec limits, colorbar · [Guide §6](../guide.md#6-working-with-test-values)
 - [Retests](retests.html) — multi-touch probe sequences and retest policy · [Guide §7](../guide.md#7-retests-and-enriching-dies-after-build)
 
