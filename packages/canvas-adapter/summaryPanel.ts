@@ -1244,7 +1244,7 @@ export function buildFindingsSection(
     }, 'Detail ▸');
     (detailBtn as HTMLButtonElement).type = 'button';
     detailBtn.addEventListener('click', () => {
-      const handle = openModal({ title: 'Findings Summary', onClose: () => {} });
+      const handle = openModal({ title: 'Findings Summary', onClose: () => {}, anchor: detailBtn });
 
       // Narrative paragraph
       const narPara = el('p', {

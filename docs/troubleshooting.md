@@ -132,6 +132,30 @@ Use a dynamic import with `ssr: false`, or guard with `typeof window !== 'undefi
 
 ---
 
+## Tooltips, menus, or the expand modal render behind my own modal/overlay
+
+**Cause:** depends on how your modal is built.
+
+- **A plain `fixed`/`absolute` overlay div** (most modal libraries, including Flowbite's default): wmap's overlays stack at a high default z-index (`6000`) specifically so this doesn't normally happen. If your modal's own z-index is higher than that, wmap's overlays lose.
+- **A native `<dialog>` element shown via `.showModal()`:** the dialog is promoted into the browser's **top layer**, which paints above the *entire* normal stacking order unconditionally — no z-index, however high, lets a `document.body`-level element paint above it. This is a different mechanism from ordinary z-index stacking.
+
+**Fix:**
+
+- For the plain-div case, pass `zIndex` so wmap's overlays stack above your modal:
+
+  ```ts
+  // Host modal at z-index 5000; put wmap's overlays above it:
+  renderWaferMap(container, result, { zIndex: 5100 });
+  ```
+
+- For the native `<dialog>` case, **no configuration is needed** — wmap detects a modally-shown `<dialog>` ancestor automatically and roots its overlays (tooltip, menus, the expand modal, the user-guide window's in-page fallback) inside it instead of `document.body`, so they land in the same top-layer subtree. If you're still seeing this on a current wmap version, confirm the element is genuinely a `<dialog>` shown via `.showModal()` (not `.show()` — a non-modal dialog never enters the top layer and doesn't need this) by checking `dialogEl.matches(':modal')` in DevTools.
+
+**How to confirm:** in DevTools, find the tooltip/menu/modal element (search for `wmap-overlay-box` or the tooltip's inline `position: fixed` style) and check where it sits in the DOM — if it's a child of `document.body` while your own modal is a native `<dialog>` elsewhere in the tree, you're on a wmap version predating this fix.
+
+See also: [API Reference §5.4, "Overlay z-index"](api.md#54-renderoptions) for the full stacking model.
+
+---
+
 ## Further reading
 
 - [API Reference](api.md)

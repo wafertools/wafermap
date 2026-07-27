@@ -21,6 +21,13 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.20.5] — 2026-07-25
+
+### Fixed
+
+- `fmt()`/`fmtColorbarAxis()` no longer double-prefix a value when its `unit` is already SI-prefixed (e.g. a test def with `unit: 'MHz'` or `'nA'`) — previously rendered nonsense like "1.50 kMHz" instead of "1.50 GHz". Affects every display path that formats a unit-bearing value: tooltips, the colorbar legend, Insights charts, the summary panel, and printable reports.
+- Tooltips, toolbar menus, the expand modal, and the user-guide window's in-page fallback now render correctly when the map is embedded inside a host's own modal built on the native `<dialog>` element (shown via `.showModal()`). Previously these overlays always appended to `document.body`, which sits behind a `<dialog>`'s browser-level "top layer" regardless of `z-index` — no host configuration could work around it. wmap now detects a modally-shown `<dialog>` ancestor and roots its overlays inside it automatically. Unrelated to the existing `zIndex` option, which only applies to ordinary (non-`<dialog>`) host modals.
+
 ## [0.20.4] — 2026-07-21
 
 ### Fixed

@@ -3,7 +3,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../rendere
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -797,7 +797,7 @@ ${reportStyles()}
       currentMode,
       btnMode.ownerDocument.defaultView ?? window,
     );
-    document.body.appendChild(menu);
+    overlayRootFor(btnMode).appendChild(menu);
     setOpenMenu(menu);
     markMenuTrigger(btnMode, true);
     wireMenuA11y(menu, btnMode, closeModeMenu);
@@ -1012,6 +1012,7 @@ ${reportStyles()}
       { buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap },
       m.USER_GUIDE_HTML,
       userGuideExtension,
+      container,
     ));
   }
   if (showHelpButton) {
@@ -1101,7 +1102,7 @@ ${reportStyles()}
         const item = originalItems[waferIndex];
         if (!item) return;
         let ctrl: WaferMapController | null = null;
-        const handle = openModal({ title, onClose: () => ctrl?.destroy() });
+        const handle = openModal({ title, onClose: () => ctrl?.destroy(), anchor: container });
         augmentOverlayTitleWithMetadata(handle, title, item.wafer.metadata ?? undefined);
         ctrl = buildDetachedController(handle.contentWrap, item, testNumber);
       },
@@ -2124,6 +2125,7 @@ ${reportStyles()}
       const handle = openFloatingWindow({
         title: label,
         onClose: () => handlePopupClosed(id),
+        anchor: container,
       });
       handle.contentWrap.style.flexDirection = 'column';
       augmentOverlayTitleWithMetadata(handle, label, item.wafer.metadata ?? undefined);

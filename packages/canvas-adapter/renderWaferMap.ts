@@ -7,7 +7,7 @@ import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } fr
 import type { TestDef, BinDef, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -962,7 +962,7 @@ export function renderWaferMap(
             viewOpts.plotMode ?? 'hardBin',
             btnMode.ownerDocument.defaultView ?? window,
           );
-          menuRootFor(btnMode).appendChild(menu);
+          overlayRootFor(btnMode).appendChild(menu);
           setOpenMenu(menu);
           markMenuTrigger(btnMode, true);
           wireMenuA11y(menu, btnMode, closeModeMenu);
@@ -1536,7 +1536,7 @@ export function renderWaferMap(
       if (tooltip) {
         tooltip.innerHTML     = legendRow.label ?? `Bin ${legendRow.bin}`;
         tooltip.style.display = 'block';
-        positionTooltip(tooltip, e.clientX, e.clientY);
+        positionTooltip(tooltip, canvas, e.clientX, e.clientY);
       }
       onHover?.(null, e);
       return;
@@ -1558,7 +1558,7 @@ export function renderWaferMap(
               tooltip.appendChild(content);
             }
             tooltip.style.display = 'block';
-            positionTooltip(tooltip, e.clientX, e.clientY);
+            positionTooltip(tooltip, canvas, e.clientX, e.clientY);
           }
         } else {
           tooltip.innerHTML = buildHoverText(
@@ -1585,7 +1585,7 @@ export function renderWaferMap(
             currentView.activeTest,
           );
           tooltip.style.display = 'block';
-          positionTooltip(tooltip, e.clientX, e.clientY);
+          positionTooltip(tooltip, canvas, e.clientX, e.clientY);
         }
       } else {
         tooltip.style.display = 'none';
@@ -1973,6 +1973,7 @@ export function renderWaferMap(
       { buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap },
       m.USER_GUIDE_HTML,
       userGuideExtension,
+      container,
     ));
   }
 

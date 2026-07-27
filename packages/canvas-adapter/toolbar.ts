@@ -422,18 +422,31 @@ function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close:
   if (first) nextFrame(() => first.focus());
 }
 
-// Menus must be appended inside the nearest overlay box (modal or floating
-// window), not document.body — a maximized/high-z-index box is a fixed
-// stacking context that would obscure body-level menus. The fallback is the
-// ANCHOR's own document.body, not the bare global `document` — a gallery card
-// detached into its own popup window (see renderWaferGallery.ts) has no
-// ancestor overlay box (a real OS window needs none), so falling through to
-// the wrong document would silently render its menus in the opener's page
-// instead of inside the popup.
-export function menuRootFor(anchor: Element): Element {
+// Menus and the tooltip must be appended inside the nearest overlay root, not
+// always document.body:
+//
+// - A wmap-own maximized modal/floating-window box (marked `wmap-overlay-box`)
+//   is a fixed stacking context that would obscure body-level menus/tooltip.
+// - A HOST's own modal built on the native <dialog> element, shown via
+//   `.showModal()`, is promoted into the browser's top layer — a rendering
+//   layer that paints above the ENTIRE normal stacking order unconditionally.
+//   No z-index on a body-level element (however high `--wmap-z` is set) can
+//   ever paint above top-layer content; the only fix is to make the overlay a
+//   DESCENDANT of that dialog, so it's part of the same top-layer subtree.
+//   `:modal` is the standard CSS pseudo-class matching precisely this case
+//   (a <dialog> shown via showModal, not a plain `.show()`/`open`-attribute
+//   dialog, which never enters the top layer and needs no special handling).
+//
+// The fallback is the ANCHOR's own document.body, not the bare global
+// `document` — a gallery card detached into its own popup window (see
+// renderWaferGallery.ts) has no ancestor overlay box (a real OS window needs
+// none), so falling through to the wrong document would silently render its
+// menus in the opener's page instead of inside the popup.
+export function overlayRootFor(anchor: Element): Element {
   let el: Element | null = anchor;
   while (el) {
     if (el.classList.contains('wmap-overlay-box')) return el;
+    if (el.tagName === 'DIALOG' && (el as HTMLDialogElement).matches(':modal')) return el;
     el = el.parentElement;
   }
   return anchor.ownerDocument.body;
@@ -529,7 +542,18 @@ export function reparentTooltip(parent?: HTMLElement): void {
   (parent ?? doc.body).appendChild(el);
 }
 
-export function positionTooltip(tooltip: HTMLDivElement, clientX: number, clientY: number): void {
+/**
+ * Position the shared tooltip near (clientX, clientY), re-homing it under
+ * `anchor`'s nearest overlay root first (see overlayRootFor) if it isn't there
+ * already. Re-resolving on every call is deliberate and cheap (a short
+ * ancestor walk) — anchor's overlay root can change over the tooltip's
+ * lifetime (e.g. a host opens its own <dialog> around an already-rendered
+ * map), and the `parentElement !==` guard means the DOM is only actually
+ * touched when the root has changed, not on every mousemove.
+ */
+export function positionTooltip(tooltip: HTMLDivElement, anchor: Element, clientX: number, clientY: number): void {
+  const root = overlayRootFor(anchor);
+  if (tooltip.parentElement !== root) root.appendChild(tooltip);
   const ownerWindow = tooltip.ownerDocument.defaultView ?? window;
   tooltip.style.left = '0';
   tooltip.style.top  = '0';
@@ -675,7 +699,7 @@ export function buildModeMenuEl(
         // `document` from the one this module first loaded in. Listening on
         // the wrong one means outside clicks inside the popup never reach
         // this handler, so the submenu never closes there (same class of bug
-        // as menuRootFor's own doc comment, and the identical fix used by the
+        // as overlayRootFor's own doc comment, and the identical fix used by the
         // collapsible-section `collapse` listener further down this file).
         ownerWindow.document.addEventListener('click', closeSub, { once: true });
       };
@@ -874,7 +898,7 @@ export function buildCheckMenuEl(
 
 export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   let openMenu: HTMLDivElement | null = null;
-  const menuRoot = (anchor: Element): Element => menuRootFor(anchor);
+  const menuRoot = (anchor: Element): Element => overlayRootFor(anchor);
 
   function makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -908,10 +932,10 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       // state, and the tooltip must track that rather than showing stale text.
       tooltip.innerHTML     = btn.ariaLabel ?? label;
       tooltip.style.display = 'block';
-      positionTooltip(tooltip, e.clientX, e.clientY);
+      positionTooltip(tooltip, btn, e.clientX, e.clientY);
     });
     btn.addEventListener('mousemove', (e) => {
-      if (tooltip.style.display === 'block') positionTooltip(tooltip, e.clientX, e.clientY);
+      if (tooltip.style.display === 'block') positionTooltip(tooltip, btn, e.clientX, e.clientY);
     });
     btn.addEventListener('mouseleave', () => {
       if (!btn.dataset.active) {
@@ -1183,6 +1207,21 @@ export interface OverlayOptions {
    * popping the box up on the host page instead.
    */
   ownerDocument?: Document;
+  /**
+   * An element from the triggering render's own live DOM subtree — used to
+   * resolve the overlay's root via `overlayRootFor` instead of always
+   * `doc.body`. Needed so this overlay itself (not just the tooltip/menus)
+   * lands inside a host's own native `<dialog>` (shown via `.showModal()`,
+   * which promotes it into the browser's top layer — see `overlayRootFor`'s
+   * own doc comment) when the map is embedded inside one; without it, the
+   * modal/window box would build straight onto `doc.body`, which sits BEHIND
+   * that top-layer dialog regardless of z-index. Any still-attached element
+   * from the render works equally well — the exact choice doesn't matter,
+   * only that it lives in the correct subtree at call time. Omit when no
+   * such element exists (e.g. a click handler with no natural anchor); the
+   * overlay then falls back to `doc.body`, matching prior behaviour exactly.
+   */
+  anchor?: Element;
 }
 
 export interface OverlayHandle {
@@ -1219,8 +1258,28 @@ function nextCascadeOffset(): number {
 }
 
 /**
+ * Mark the direct child of `doc.body` that (indirectly) contains `el`, so the
+ * overlay print stylesheet — which only inspects `body`'s direct children,
+ * see the `body>*` rule below — doesn't hide it. Needed only when `el` isn't
+ * `doc.body` itself and isn't already a `.wmap-overlay-box` (that class is
+ * already exempted directly): concretely, when the overlay was rooted inside
+ * a host's own `<dialog>` rather than `doc.body`. Returns a disposer that
+ * removes the marker; a no-op disposer if `el` IS `doc.body` or is itself
+ * already a direct child of it with nothing to walk.
+ */
+function markPrintVisible(doc: Document, el: Element): () => void {
+  if (el === doc.body) return () => {};
+  let cur: Element = el;
+  while (cur.parentElement && cur.parentElement !== doc.body) cur = cur.parentElement;
+  if (cur === doc.body) return () => {};
+  cur.classList.add('wmap-overlay-ancestor');
+  return () => cur.classList.remove('wmap-overlay-ancestor');
+}
+
+/**
  * Create and open a resizable, maximizable overlay — either an exclusive modal
- * dialog or a non-modal floating window. Mounts itself into document.body.
+ * dialog or a non-modal floating window. Mounts into `doc.body` by default, or
+ * under `opts.anchor`'s resolved overlay root when given (see `OverlayOptions.anchor`).
  * Call `handle.close()` to tear down cleanly.
  */
 function openOverlay(opts: OverlayOptions): OverlayHandle {
@@ -1568,6 +1627,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     if (isModal) doc.removeEventListener('keydown', onKeyDown);
     else box.removeEventListener('keydown', onKeyDown);
     printStyle.remove();
+    unmarkPrintVisible();
     hideTooltip(doc);
     // Restore doc's shared tooltip to doc.body before tearing down the box it
     // was re-homed into (see reparentTooltip(box) below), otherwise it would
@@ -1682,8 +1742,14 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   box.appendChild(header);
   box.appendChild(contentWrap);
   box.appendChild(resizeGrip);
-  if (backdrop) { backdrop.appendChild(box); doc.body.appendChild(backdrop); }
-  else doc.body.appendChild(box);
+  // Default root is doc.body (prior behaviour, unchanged). An anchor moves
+  // this overlay inside its resolved overlay root instead — a wmap-own box
+  // it's nested within, or a host's own modally-shown <dialog> — see
+  // OverlayOptions.anchor's own doc comment for why that matters.
+  const root = opts.anchor ? overlayRootFor(opts.anchor) : doc.body;
+  if (backdrop) { backdrop.appendChild(box); root.appendChild(backdrop); }
+  else root.appendChild(box);
+  const unmarkPrintVisible = markPrintVisible(doc, root);
 
   // Makes ANY overlay print sensibly instead of clipping to a single blank-
   // looking page — the same bug the user guide's own print CSS
@@ -1696,6 +1762,12 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   // lingered after close() with no overlay left open, the *next* unrelated
   // print of the host page would come out blank instead.
   //
+  // `.wmap-overlay-ancestor` (see markPrintVisible above) covers the case
+  // where `root` isn't `doc.body` itself — the overlay is then nested several
+  // levels deep (e.g. inside a host's <dialog>), so the direct-body-child
+  // ancestor of that nesting needs its own exemption; the rule only ever
+  // inspects body's immediate children, not the whole subtree.
+  //
   // Only handles the overlay chrome itself (backdrop/box/header/contentWrap/
   // resizeGrip) — content placed inside contentWrap that has its OWN
   // internal overflow:hidden clipping (a live wafer-map canvas's own
@@ -1705,7 +1777,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   const printStyle = doc.createElement('style');
   printStyle.textContent = `@media print{
 body{overflow:visible!important;height:auto!important}
-body>*:not(.wmap-overlay-box):not(#wmap-modal-backdrop){display:none!important}
+body>*:not(.wmap-overlay-box):not(#wmap-modal-backdrop):not(.wmap-overlay-ancestor){display:none!important}
 #wmap-modal-backdrop{position:static!important;background:none!important;backdrop-filter:none!important;display:block!important}
 .wmap-overlay-box{position:static!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;min-width:0!important;min-height:0!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important;display:block!important}
 .wmap-overlay-box>div:first-child{display:none!important}
@@ -1799,6 +1871,10 @@ export function openReparentedModal(elements: HTMLElement[], opts: ReparentModal
   const handle = openModal({
     ownerDocument: opts.ownerDocument,
     title: opts.title,
+    // elements[0]'s CURRENT position (before the reparent loop below moves it)
+    // — resolves the modal's own root from wherever the caller's live content
+    // actually sits right now, e.g. inside a host's own <dialog>.
+    anchor: elements[0],
     onClose: () => {
       for (const r of records) {
         reparentedByModal.delete(r.el);
@@ -2074,7 +2150,7 @@ function activateGuideScripts(content: HTMLElement, targetWindow: Window): (() =
 }
 
 /** In-page fallback — unchanged from before `window.open` support was added. */
-function openGuideInFloatingWindow(title: string, contentHtml: string, api: GuideApi): OverlayHandle {
+function openGuideInFloatingWindow(title: string, contentHtml: string, api: GuideApi, anchor?: Element): OverlayHandle {
   const { content, restoreApi } = buildGuideContent(document, window, contentHtml, api);
   Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
   // Assigned below, after activateGuideScripts runs — but onClose only ever
@@ -2082,6 +2158,7 @@ function openGuideInFloatingWindow(title: string, contentHtml: string, api: Guid
   let destroyDemos: (() => void) | undefined;
   const handle = openFloatingWindow({
     title,
+    anchor,
     // Maximising widens the reading measure (720px → 1000px) so the guide uses
     // the extra space without lines growing uncomfortably long. Toggled via a
     // class so the cap lives in the guide stylesheet, not inline here.
@@ -2172,6 +2249,9 @@ export function openUserGuideWindow(
   api: GuideApi,
   html: string,
   extension?: UserGuideExtension,
+  // Only used by the in-page fallback below — a real popup (the common case)
+  // is a separate OS window, unaffected by the host page's own stacking.
+  anchor?: Element,
 ): void {
   if (openGuideHandle) { openGuideHandle.close(); openGuideHandle = null; }
 
@@ -2180,5 +2260,5 @@ export function openUserGuideWindow(
   const popupWin = window.open('', '_blank', 'width=800,height=820');
   openGuideHandle = popupWin
     ? openGuideInPopup(popupWin, title, contentHtml, api)
-    : openGuideInFloatingWindow(title, contentHtml, api);
+    : openGuideInFloatingWindow(title, contentHtml, api, anchor);
 }
