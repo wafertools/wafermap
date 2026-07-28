@@ -71,10 +71,10 @@ Of the 2,915 wafers the classifier missed, the regional analysis recovered:
 
 | Measure | Rate |
 |---|---|
-| Any regional finding fired | 92.9% of misses |
-| Semantically matched finding | 92.0% of misses |
+| Any regional finding fired | 94.7% of misses |
+| Semantically matched finding | 93.7% of misses |
 
-**Combined detection rate: 99.0%** (any) / **98.9%** (semantically matched)
+**Combined detection rate: 99.3%** (any) / **99.1%** (semantically matched)
 
 The any/match gap is small — regional findings on classifier misses are almost
 always semantically correct, not noise.
@@ -83,11 +83,26 @@ Per-label rescue breakdown (classifier misses only):
 
 | Label | Misses | Any rescue | Match rescue |
 |---|---|---|---|
-| center | 690 | 98.8% | 98.8% |
-| donut | 238 | 98.7% | 98.3% |
-| edge-local | 940 | 93.1% | 93.1% |
-| edge-ring | 488 | 81.1% | 79.5% |
-| scratch | 559 | 93.0% | 90.2% |
+| center | 690 | 97.8% | 97.8% |
+| donut | 238 | 97.5% | 95.0% |
+| edge-local | 940 | 94.3% | 94.3% |
+| edge-ring | 488 | 94.7% | 93.2% |
+| scratch | 559 | 90.3% | 87.3% |
+
+> **Re-run 2026-07-28 (v0.20.9).** Numbers above were re-measured after the fix
+> that stopped `buildWaferMap` from mislabelling real probed edge dies as
+> `partial` (see CHANGELOG). Regional/statistical findings exclude `partial`
+> dies by convention (real fabs don't count boundary-straddling dies in
+> yield/regional reporting), so the previous phantom-partial bug was silently
+> stripping genuine edge dies out of the ring/edge-arc population it fed to
+> **edge-ring** and **edge-local** detection specifically — the two classes
+> whose signature *is* the boundary. Edge-ring rescue moved the most (81.1% →
+> 94.7% any / 79.5% → 93.2% matched); edge-local also improved (93.1% → 94.3%).
+> Center/donut/scratch shifted down by 1–3 points, consistent with a larger,
+> correctly-populated edge ring slightly diluting the statistical significance
+> of non-edge regional findings — not a regression, a more accurate population.
+> The classifier-alone numbers above (`classifyPattern`) are unaffected: that
+> path doesn't filter on `partial`.
 
 ---
 
@@ -98,8 +113,8 @@ Per-label rescue breakdown (classifier misses only):
 | Method | FP rate |
 |---|---|
 | Classifier only | 41.2% |
-| Regional analysis only | 87.7% |
-| Combined | 91.8% |
+| Regional analysis only | 87.4% |
+| Combined | 90.7% |
 
 **Important caveat:** WM-811K "Random" is a catch-all label — ambiguous,
 multi-modal, or low-confidence wafers all end up there. Some fraction genuinely
@@ -113,12 +128,22 @@ WM-811K's range):
 
 | Fail rate | Regional FP rate |
 |---|---|
-| 2% | 13.9% |
+| 2% | 13.7% |
 | 5% | 15.1% |
-| 10% | 55.9% ← known issue |
-| 20% | 2.6% |
-| 40% | 2.2% |
-| 60% | 3.7% |
+| 10% | 49.5% ← known issue |
+| 20% | 2.4% |
+| 40% | 2.1% |
+| 60% | 2.9% |
+
+> **Re-run 2026-07-28 (v0.20.9).** Same fix as above — the synthetic generator
+> masks to a disc, so its own boundary dies were previously being dropped from
+> the regional-analysis population as phantom `partial` dies. The 10% spike
+> shrank (55.9% → 49.5%) but is not eliminated; it remains the same underlying
+> statistical-power issue, just measured over a slightly larger, correct
+> population. (Aside, not related to the `partial` fix: `run-benchmark-synthetic-fp.mjs`
+> now also sweeps `minimumRegionExcessFails` — all swept values produced
+> identical results, which is worth a follow-up look at whether that option is
+> actually wired into the regional-analysis path.)
 
 The **10% failure rate spike** is a fundamental statistical power problem: with
 1,700+ dies on a large wafer, the two-proportion z-test is powerful enough to
@@ -135,7 +160,7 @@ globally) is a larger refactor; this spike is documented as a known limitation.
 | Method | Accuracy on WM-811K | Notes |
 |---|---|---|
 | Our classifier (exact match) | 64% | Rule-based, no training |
-| Our system (any detection) | 86.2% / 99.0% combined | |
+| Our system (any detection) | 86.2% / 99.3% combined | |
 | Decision tree + Radon features | >98% | 59 handcrafted features, trained ensemble |
 | CNN-based (various) | 96–99.9% | Trained on balanced/oversampled subsets |
 

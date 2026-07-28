@@ -4,7 +4,7 @@ import type { Wafer, WaferSpec } from '../core/wafer.js';
 import type { Reticle, ReticleSpec } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
 import { generateDies, isYieldEligibleDie, getDieKey} from '../core/dies.js';
-import { clipDiesToWafer, isInsideWafer, applyOrientation, transformDies } from '../core/transforms.js';
+import { applyOrientation, transformDies } from '../core/transforms.js';
 import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
@@ -13,7 +13,6 @@ import { generateReticleGrid } from '../core/reticle.js';
 import { buildView, type View, type ViewOptions, type PlotMode } from './buildView.js';
 import { modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
-import { percentile98 } from '../core/utils.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
