@@ -3,13 +3,18 @@ import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { getReticleCell } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
-import { rotatePoint, rotateAndFlip } from '../core/transforms.js';
+import {
+  type Affine, affineRotation, affineMirror, affineCompose,
+  affinePoint, affineVector, affineSwapsAxes,
+} from '../core/transforms.js';
 import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWaferMap.js';
 import { getDieTestValue, getTestPassStatus, isParametricTest } from './buildWaferMap.js';
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 import { metadataValueColor } from './colorMap.js';
+import { compareNatural, clamp01 } from '../core/utils.js';
+import { prettyKey } from '../core/utils.js';
 
 type BinDefMap = Map<number, BinDef>;
 
@@ -120,10 +125,34 @@ export interface View {
   aggrMethod?: string;
   /** Total wafers in lot — for `stackedBins` hover percentage calculation. */
   lotSize?: number;
-  /** Total effective axis flip for tick labels (data-pipeline flip XOR interactive flip). */
+  /**
+   * Total effective axis flip (data-pipeline flip XOR interactive flip).
+   *
+   * @deprecated for coordinate maths — this and {@link rotation} are a *lossy*
+   * summary: a summed angle plus XOR'd flip flags cannot represent
+   * rotate→mirror→rotate, because rotation and mirroring don't commute. They are
+   * correct only while `wafer.orientation` is 0. Use {@link gridToScreen} (or its
+   * inverse) for anything positional. Retained for display code that only needs a
+   * rough orientation hint, and because it is read back as a data-flip hint below.
+   */
   axisFlip: { x: boolean; y: boolean };
-  /** Total effective rotation in degrees (wafer orientation + interactive rotation). */
+  /**
+   * The data-pipeline axis flip ALONE (from `xAxisDirection`/`yAxisDirection`/
+   * `coordinateOrigin`), with no interactive flip mixed in. `renderWaferMap` feeds
+   * this back into `buildView` as `dataAxisFlip` on every rebuild; reading
+   * {@link axisFlip} for that purpose double-counts an active interactive flip.
+   */
+  dataAxisFlip: { x: boolean; y: boolean };
+  /** Total effective rotation in degrees (wafer orientation + interactive rotation). See {@link axisFlip} on why this is lossy. */
   rotation: number;
+  /**
+   * Die-grid geometry → screen. THE authoritative display transform: composed from
+   * the real pipeline in order, so it stays correct for any combination of wafer
+   * orientation, data-axis flip and interactive rotate/flip. Invert it
+   * (`affineInvert`) to map a screen position back to a die-grid position — this is
+   * what axis tick labels do.
+   */
+  gridToScreen: Affine<'grid', 'screen'>;
   /** True when reticle geometry is present — used to conditionally show the reticle toolbar button. */
   hasReticle: boolean;
   /** True when the scene was built from lot-aggregated data (lotStack). Controls toolbar stacked-mode visibility. */
@@ -293,12 +322,6 @@ export interface ViewOptions {
 }
 
 
-interface TransformState {
-  rotation: number;
-  flipX: boolean;
-  flipY: boolean;
-}
-
 interface ColorFns {
   forValue: (t: number) => string;
   forBin: (bin: number) => string;
@@ -350,59 +373,70 @@ export function classifySpec(
   return 'pass';
 }
 
-function normalizeTransform(
-  wafer: Wafer,
-  interactiveTransform: ViewOptions['interactiveTransform']
-): TransformState {
-  return {
-    rotation: wafer.orientation + (interactiveTransform?.rotation ?? 0),
-    flipX: interactiveTransform?.flipX ?? false,
-    flipY: interactiveTransform?.flipY ?? false,
-  };
-}
-
 /**
- * Transform for die *centre positions* (`physX`/`physY`). These already have
- * `wafer.orientation` baked in by `applyOrientation` in `buildWaferMap`, so we
- * must NOT re-apply it here — only the interactive rotation/flip. Applying the
- * full `normalizeTransform` (which adds `wafer.orientation`) to the already-
- * oriented centres double-rotates the dies relative to the wafer boundary, which
- * is built live from un-oriented geometry and so correctly carries orientation in
- * its transform. The die rectangle *shape* (and all overlays) keep the full
- * transform; only the pre-baked centre offset is interactive-only.
+ * The complete set of display transforms for one view, each tagged with the
+ * coordinate frame it starts from. Built once per `buildView` by composing the
+ * real pipeline in order, so a caller picks a frame rather than re-deriving
+ * "which subset of the transforms has already been applied to my input?" — the
+ * question that previously had four different, partly-wrong answers in this file
+ * and produced a family of misplaced-overlay bugs.
+ *
+ * The real pipeline, in order:
+ * ```
+ *   physical --rot(wafer.orientation)--> [bake-rot]
+ *            --mirror(dataAxisFlip)----> baked        (done in buildWaferMap)
+ *            --rot(interactive)--------> [live-rot]
+ *            --mirror(interactive)-----> screen       (done here)
+ * ```
  */
-function dieCenterTransform(
-  interactiveTransform: ViewOptions['interactiveTransform']
-): TransformState {
-  return {
-    rotation: interactiveTransform?.rotation ?? 0,
-    flipX: interactiveTransform?.flipX ?? false,
-    flipY: interactiveTransform?.flipY ?? false,
-  };
+interface ViewTransforms {
+  /**
+   * Physical wafer features (boundary/notch, ring and quadrant borders) → screen.
+   * Deliberately EXCLUDES the data-axis flip: that flip exists to make the render
+   * physically truthful for a prober convention (`yAxisDirection: 'down'` ⇒ row 1
+   * at the top), so the wafer itself must hold still while the die grid moves
+   * relative to it.
+   */
+  physicalToScreen: Affine<'physical', 'screen'>;
+  /**
+   * Die-grid-aligned geometry generated in the pre-bake frame (reticle fields,
+   * the +X/+Y indicator directions, die rectangle shape) → screen. INCLUDES the
+   * data-axis flip, because this geometry must stay locked to the dies.
+   */
+  gridToScreen: Affine<'grid', 'screen'>;
+  /** Already-baked die centres (`Die.physX`/`physY`) → screen: interactive only. */
+  bakedToScreen: Affine<'baked', 'screen'>;
 }
 
-function transformVector(dx: number, dy: number, transform: TransformState): Point {
-  const rad = (transform.rotation * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  let x = dx * cos + dy * sin;
-  let y = -dx * sin + dy * cos;
+function buildViewTransforms(
+  wafer: Wafer,
+  dataAxisFlip: { x: boolean; y: boolean } | undefined,
+  interactiveTransform: ViewOptions['interactiveTransform'],
+): ViewTransforms {
+  const { x: cx, y: cy } = wafer.center;
 
-  if (transform.flipX) x = -x;
-  if (transform.flipY) y = -y;
+  // Both pre-bake frames land in the same post-bake display space ('baked'); they
+  // differ only in whether the data-axis mirror is part of the route there.
+  const physicalToBaked = affineRotation<'physical', 'baked'>(wafer.orientation, cx, cy);
+  const gridToBaked = affineCompose(
+    affineMirror<'physical', 'baked'>(dataAxisFlip?.x ?? false, dataAxisFlip?.y ?? false, cx, cy),
+    affineRotation<'grid', 'physical'>(wafer.orientation, cx, cy),
+  );
 
-  return { x, y };
+  const bakedToScreen = affineCompose(
+    affineMirror<'baked', 'screen'>(interactiveTransform?.flipX ?? false, interactiveTransform?.flipY ?? false, cx, cy),
+    affineRotation<'baked', 'baked'>(interactiveTransform?.rotation ?? 0, cx, cy),
+  );
+
+  return {
+    bakedToScreen,
+    physicalToScreen: affineCompose(bakedToScreen, physicalToBaked),
+    gridToScreen:     affineCompose(bakedToScreen, gridToBaked),
+  };
 }
 
 function polyline(points: Point[], close = false): { points: Point[][]; closed: boolean } {
   return { points: [points], closed: close };
-}
-
-function transformPoint(point: Point, center: Point, transform: TransformState): Point {
-  let next = transform.rotation ? rotatePoint(point.x, point.y, transform.rotation, center.x, center.y) : point;
-  if (transform.flipX) next = { x: 2 * center.x - next.x, y: next.y };
-  if (transform.flipY) next = { x: next.x, y: 2 * center.y - next.y };
-  return next;
 }
 
 /**
@@ -676,21 +710,6 @@ export interface MapTitleParts {
  * @param binDefs the active bin defs (hbinDefs for hard modes, sbinDefs for soft) — used to name
  *   the bin on single-bin stacked cards.
  */
-/**
- * camelCase/snake_case key → "Title Case" label — matches `stats/facets.ts`'s `prettyKey`
- * (the toolbar's metadata mode-menu entries use it via `prettyKey` directly), duplicated
- * here in miniature because `renderer/` must not depend on `stats/`. Keep in sync if
- * `prettyKey` changes — the two must agree or the same field shows a different label in
- * the toolbar dropdown than in the on-canvas map title.
- */
-function titleCaseMetadataKey(key: string): string {
-  return key
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/_/g, ' ')
-    .trim()
-    .replace(/^./, s => s.toUpperCase());
-}
-
 export function buildMapTitle(
   view: View,
   fallbackFormat: 'si' | 'engineering' = 'engineering',
@@ -720,7 +739,7 @@ export function buildMapTitle(
       return { primary: stackedBinPrimary('Soft'), secondary: stackedContext };
     case 'metadata': {
       const def = view.metadataFields?.find(f => f.key === view.activeMetadataKey);
-      const fallback = view.activeMetadataKey ? titleCaseMetadataKey(view.activeMetadataKey) : 'Metadata';
+      const fallback = view.activeMetadataKey ? prettyKey(view.activeMetadataKey) : 'Metadata';
       return { primary: def?.label ?? fallback, secondary: '' };
     }
     case 'stackedValues': {
@@ -847,8 +866,9 @@ function notchAngle(type: 'top' | 'bottom' | 'left' | 'right'): number {
  *   spliced into the uniform circle trace so the notch renders as a sharp
  *   triangular indentation (~3.5 mm wide, ~1.25 mm deep — SEMI M1 standard).
  */
-function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 720): ViewOverlay[] {
+function buildBoundaryOverlay(wafer: Wafer, toScreen: Affine<'physical', 'screen'>, steps = 720): ViewOverlay[] {
   const { center, radius, notch } = wafer;
+  const tx = (p: Point): Point => affinePoint(toScreen, p.x, p.y);
 
   // Determine rendering style from diameter — same threshold used in resolveNotch.
   const isVNotch = notch !== undefined && wafer.diameter > 150;
@@ -858,7 +878,7 @@ function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 7
     const points: Point[] = [];
     for (let index = 0; index <= steps; index++) {
       const angle = (2 * Math.PI * index) / steps;
-      points.push(transformPoint(boundaryPointAtAngle(wafer, angle), center, transform));
+      points.push(tx(boundaryPointAtAngle(wafer, angle)));
     }
     return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#888888', lineWidth: 1 }];
   }
@@ -890,22 +910,18 @@ function buildBoundaryOverlay(wafer: Wafer, transform: TransformState, steps = 7
         const entry = { x: center.x + radius * Math.cos(θ0 - Δ), y: center.y + radius * Math.sin(θ0 - Δ) };
         const apex  = { x: center.x + apexRadius * Math.cos(θ0), y: center.y + apexRadius * Math.sin(θ0) };
         const exit_ = { x: center.x + radius * Math.cos(θ0 + Δ), y: center.y + radius * Math.sin(θ0 + Δ) };
-        points.push(
-          transformPoint(entry, center, transform),
-          transformPoint(apex,  center, transform),
-          transformPoint(exit_, center, transform),
-        );
+        points.push(tx(entry), tx(apex), tx(exit_));
       }
       continue;
     }
 
-    points.push(transformPoint({ x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) }, center, transform));
+    points.push(tx({ x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) }));
   }
 
   return [{ kind: 'wafer-boundary', ...polyline(points, true), lineColor: '#888888', lineWidth: 1 }];
 }
 
-function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: number, steps = 360): ViewOverlay[] {
+function buildRingOverlays(wafer: Wafer, toScreen: Affine<'physical', 'screen'>, ringCount: number, steps = 360): ViewOverlay[] {
   const overlays: ViewOverlay[] = [];
   const safeRingCount = Math.max(1, Math.floor(ringCount));
 
@@ -919,7 +935,7 @@ function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: n
         x: wafer.center.x + radius * Math.cos(angle),
         y: wafer.center.y + radius * Math.sin(angle),
       };
-      points.push(transformPoint(localPoint, wafer.center, transform));
+      points.push(affinePoint(toScreen, localPoint.x, localPoint.y));
     }
 
     overlays.push({
@@ -933,21 +949,22 @@ function buildRingOverlays(wafer: Wafer, transform: TransformState, ringCount: n
   return overlays;
 }
 
-function buildQuadrantOverlays(wafer: Wafer, transform: TransformState, splitX: number, splitY: number): ViewOverlay[] {
+function buildQuadrantOverlays(wafer: Wafer, toScreen: Affine<'physical', 'screen'>, splitX: number, splitY: number): ViewOverlay[] {
   const { x: cx, y: cy } = wafer.center;
   const r = wafer.radius;
+  const tx = (x: number, y: number): Point => affinePoint(toScreen, x, y);
 
   // Vertical chord at x = splitX.
   const dxV = splitX - cx;
   const dyV = Math.sqrt(Math.max(0, r * r - dxV * dxV));
-  const vStart = transformPoint({ x: splitX, y: cy - dyV }, wafer.center, transform);
-  const vEnd   = transformPoint({ x: splitX, y: cy + dyV }, wafer.center, transform);
+  const vStart = tx(splitX, cy - dyV);
+  const vEnd   = tx(splitX, cy + dyV);
 
   // Horizontal chord at y = splitY.
   const dyH = splitY - cy;
   const dxH = Math.sqrt(Math.max(0, r * r - dyH * dyH));
-  const hStart = transformPoint({ x: cx - dxH, y: splitY }, wafer.center, transform);
-  const hEnd   = transformPoint({ x: cx + dxH, y: splitY }, wafer.center, transform);
+  const hStart = tx(cx - dxH, splitY);
+  const hEnd   = tx(cx + dxH, splitY);
 
   return [
     { kind: 'quadrant-boundary', ...polyline([vStart, vEnd]), lineColor: 'rgba(255,255,255,0.7)', lineWidth: 1.5 },
@@ -956,39 +973,17 @@ function buildQuadrantOverlays(wafer: Wafer, transform: TransformState, splitX: 
 }
 
 /**
- * `generateReticleGrid` computes field rectangles in the PRE-transform physical
- * frame — unlike `die.physX/physY`, which already have `wafer.orientation` and
- * the resolved data-pipeline axis flip (`xAxisDirection`/`yAxisDirection`/
- * `coordinateOrigin`) baked in by `buildWaferMap` (`applyOrientation` then
- * `transformDies`). A single combined rotation angle can't correctly stand in
- * for that bake because a mirror sits between the two rotations in the real
- * pipeline (bake-rotate → bake-flip → interactive-rotate → interactive-flip),
- * and rotation/mirror don't commute — so each reticle's corners are replayed
- * through both steps individually via `rotateAndFlip`, exactly matching the
- * order `dies` went through, instead of collapsing into one TransformState.
+ * Reticle fields are generated by `generateReticleGrid` in the pre-bake `grid`
+ * frame, so they take `gridToScreen` — the route that includes the data-axis
+ * flip, keeping the field boundaries locked to the dies they enclose.
  */
-function buildReticleOverlays(
-  reticles: Reticle[],
-  wafer: Wafer,
-  dataAxisFlip: { x: boolean; y: boolean } | undefined,
-  interactiveTransform: ViewOptions['interactiveTransform'],
-): ViewOverlay[] {
+function buildReticleOverlays(reticles: Reticle[], toScreen: Affine<'grid', 'screen'>): ViewOverlay[] {
   return reticles.map((reticle) => {
     const hw = reticle.width / 2, hh = reticle.height / 2;
-    const rawCorners: Point[] = [
-      { x: reticle.x - hw, y: reticle.y - hh }, { x: reticle.x + hw, y: reticle.y - hh },
-      { x: reticle.x + hw, y: reticle.y + hh }, { x: reticle.x - hw, y: reticle.y + hh },
-    ];
-    const points = rawCorners
-      .map(c => rotateAndFlip(
-        c.x, c.y, wafer.orientation, dataAxisFlip?.x ?? false, dataAxisFlip?.y ?? false,
-        wafer.center.x, wafer.center.y,
-      ))
-      .map(c => rotateAndFlip(
-        c.x, c.y, interactiveTransform?.rotation ?? 0,
-        interactiveTransform?.flipX ?? false, interactiveTransform?.flipY ?? false,
-        wafer.center.x, wafer.center.y,
-      ));
+    const points = ([
+      [reticle.x - hw, reticle.y - hh], [reticle.x + hw, reticle.y - hh],
+      [reticle.x + hw, reticle.y + hh], [reticle.x - hw, reticle.y + hh],
+    ] as const).map(([x, y]) => affinePoint(toScreen, x, y));
 
     return {
       kind: 'reticle',
@@ -1027,7 +1022,7 @@ function pushDieRectangles(
   physX: number,
   physY: number,
   plotMode: PlotMode,
-  transform: TransformState,
+  swapAxes: boolean,
   gap: number,
   colorFns: ColorFns,
   highlightBin: number | undefined,
@@ -1044,10 +1039,11 @@ function pushDieRectangles(
   const rw = die.width - gap;
   const rh = die.height - gap;
   // For 90°/270° rotations the axis-aligned bounding box swaps width and height.
-  // ViewRect width/height must reflect the post-rotation AABB for correct
-  // canvas drawing and hit-testing.
-  const normRot = ((transform.rotation % 360) + 360) % 360;
-  const swapAxes = normRot === 90 || normRot === 270;
+  // `swapAxes` is derived from the FULL grid→screen transform by the caller: a die
+  // rectangle is axis-aligned in the pre-bake grid frame, so the swap must account
+  // for wafer.orientation as well as the interactive rotation. Keying it off the
+  // interactive rotation alone left non-square dies drawn at their unrotated size
+  // under a baked wafer orientation — visibly overlapping their neighbours.
   const sw = swapAxes ? rh : rw;
   const sh = swapAxes ? rw : rh;
 
@@ -1149,16 +1145,23 @@ function pushDieRectangles(
 
 function buildXYIndicatorOverlay(
   wafer: Wafer,
-  transform: TransformState,
+  gridToScreen: Affine<'grid', 'screen'>,
   texts: ViewText[]
 ): ViewOverlay[] {
   // Anchor is fixed at the bottom-left corner in data space (outside the wafer circle).
   // 0.9 per axis → distance ≈ 1.27 × radius: outside the circle but inside the chart area.
   // Do NOT transform the anchor — it stays in the corner regardless of wafer rotation/flip.
   // Only the arrow directions rotate, so they still correctly indicate the data axes.
+  //
+  // These arrows name the DIE-GRID axes (+X = increasing die.x), so they must take
+  // `gridToScreen` — including the data-axis flip. Using a transform that omitted
+  // that flip previously made the arrows point opposite to the way the die indices
+  // actually run under xAxisDirection/yAxisDirection/a non-'center' coordinateOrigin,
+  // directly contradicting the axis tick labels on the same map. As directions rather
+  // than positions they go through `affineVector`, which ignores translation.
   const len = wafer.radius * 0.15;
-  const xDir = transformVector(len, 0, transform);
-  const yDir = transformVector(0, len, transform);
+  const xDir = affineVector(gridToScreen, len, 0);
+  const yDir = affineVector(gridToScreen, 0, len);
   // Place anchor in the corner the arrows point away from, so they never clip.
   const signX = (xDir.x + yDir.x) >= 0 ? -1 : 1;
   const signY = (xDir.y + yDir.y) >= 0 ? -1 : 1;
@@ -1380,19 +1383,21 @@ export function buildView(
     const logRange = Math.log10(vMax) - logMin;
     normalize = (v: number) => {
       if (v <= 0) return 0;
-      return Math.max(0, Math.min(1, (Math.log10(v) - logMin) / logRange));
+      return clamp01((Math.log10(v) - logMin) / logRange);
     };
   } else {
-    normalize = (v: number) => Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
+    normalize = (v: number) => clamp01((v - vMin) / (vMax - vMin));
   }
 
-  const transform = normalizeTransform(wafer, interactiveTransform);
+  const tf = buildViewTransforms(wafer, dataAxisFlip, interactiveTransform);
 
-  // Notch direction in display space (post-transform unit vector).
+  // Notch direction in display space (post-transform unit vector). The notch is a
+  // physical wafer feature, so it takes `physicalToScreen` — matching the boundary
+  // outline it belongs to.
   let notchDir: { x: number; y: number } | null = null;
   if (wafer.notch) {
     const θ0 = notchAngle(wafer.notch.type);
-    const tv = transformVector(Math.cos(θ0) * wafer.radius, Math.sin(θ0) * wafer.radius, transform);
+    const tv = affineVector(tf.physicalToScreen, Math.cos(θ0) * wafer.radius, Math.sin(θ0) * wafer.radius);
     const len = Math.hypot(tv.x, tv.y);
     if (len > 0) notchDir = { x: tv.x / len, y: tv.y / len };
   }
@@ -1413,20 +1418,24 @@ export function buildView(
   // Pre-compute transformed physical positions — only physX/physY move under
   // rotation/flip; all other die fields are unchanged. Storing coords in a
   // parallel Float64Array pair avoids allocating a new Die object per die.
-  // Die CENTRES use the interactive-only transform: wafer.orientation is already
-  // baked into physX/physY (see dieCenterTransform). The die rectangle shapes and
-  // overlays below keep the full `transform` (orientation + interactive).
-  const centerTransform = dieCenterTransform(interactiveTransform);
-  const needsTransform = !!(centerTransform.rotation || centerTransform.flipX || centerTransform.flipY);
+  // Die CENTRES take `bakedToScreen`: wafer.orientation and the data-axis flip are
+  // already baked into physX/physY by buildWaferMap, so only the interactive leg
+  // remains. Die rectangle SHAPES key off `gridToScreen` instead (see swapAxes
+  // below) — a die rect is axis-aligned in the pre-bake grid frame, so its
+  // width/height swap must include the baked orientation the centres already carry.
+  const isIdentity = tf.bakedToScreen.a === 1 && tf.bakedToScreen.b === 0
+    && tf.bakedToScreen.c === 0 && tf.bakedToScreen.d === 1
+    && tf.bakedToScreen.e === 0 && tf.bakedToScreen.f === 0;
   let txCoords: Float64Array | null = null;
-  if (needsTransform) {
+  if (!isIdentity) {
     txCoords = new Float64Array(dies.length * 2);
     for (let i = 0; i < dies.length; i++) {
-      const tp = transformPoint({ x: dies[i].physX, y: dies[i].physY }, wafer.center, centerTransform);
+      const tp = affinePoint(tf.bakedToScreen, dies[i].physX, dies[i].physY);
       txCoords[i * 2]     = tp.x;
       txCoords[i * 2 + 1] = tp.y;
     }
   }
+  const dieSwapAxes = affineSwapsAxes(tf.gridToScreen);
 
   const isBinMode = plotMode === 'hardBin' || plotMode === 'softBin' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
   const useSoftBin = plotMode === 'softBin' || plotMode === 'stackedSoftBins';
@@ -1437,7 +1446,7 @@ export function buildView(
     ? { pass: 0, fail: 0 } : undefined;
 
   // 'metadata' mode: color is resolved once per distinct value, not per die —
-  // ordered (alphabetical) assignment rather than hashing, so a small known
+  // ordered (natural alphanumeric) assignment rather than hashing, so a small known
   // set of values gets maximally-distinct colours deterministically (not
   // dependent on die array iteration order). Never routed through colorFns/
   // the toolbar's colorScheme picker — those are spectrum schemes for
@@ -1451,7 +1460,7 @@ export function buildView(
     // Same population, same filter, as the `metadataCounts` tally below — a partial/
     // edge-excluded die never reaches the metadata fill branch in pushDieRectangles
     // (it returns early with PARTIAL_DIE_FILL/EDGE_EXCLUDED_FILL), so letting it into the
-    // alphabetical ranking here would assign colours based on values no visible die
+    // natural-order ranking here would assign colours based on values no visible die
     // actually shows, shifting every later value's colour for no reason a user could see.
     const distinct = new Set<string>();
     for (const die of dies) {
@@ -1459,7 +1468,10 @@ export function buildView(
       const value = getDieMetadataValue(die, activeMetadataKey);
       if (value !== undefined) distinct.add(value);
     }
-    const sorted = [...distinct].sort();
+    // Natural order, so D0, D1, D2, D10 reads correctly in the legend instead of
+    // the lexicographic D0, D1, D10, D2. This ordering also fixes colour assignment
+    // (index → palette entry), so legend order and die colours stay in step.
+    const sorted = [...distinct].sort(compareNatural);
     metadataColorMap = new Map(sorted.map((value, index) => [
       value,
       activeMetadataFieldDef?.values?.find(v => v.value === value)?.color ?? metadataValueColor(index),
@@ -1496,10 +1508,7 @@ export function buildView(
       if (value !== undefined) metadataCounts.set(value, (metadataCounts.get(value) ?? 0) + 1);
     }
     if (die.partial && !showPartialDies) continue;
-    // centerTransform (not the full transform): dies are axis-aligned rects centred
-    // on the already-oriented physX/physY, so the AABB width/height swap must key off
-    // the interactive rotation only — matching how the centre position was derived.
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, centerTransform, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValue);
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, dieSwapAxes, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValue);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {
@@ -1507,9 +1516,9 @@ export function buildView(
     valueRange: [vMin, vMax], testDefs, fallbackFormat, passFailDisplay,
     activeMetadataKey, metadataColorMap,
   }) : [];
-  const overlays = buildBoundaryOverlay(wafer, transform);
+  const overlays = buildBoundaryOverlay(wafer, tf.physicalToScreen);
 
-  if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, transform, ringCount));
+  if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, tf.physicalToScreen, ringCount));
   if (showQuadrantBoundaries) {
     // The classification boundary in classifyDie is a hard cut at the wafer
     // centre (dx >= 0 / dy >= 0, i.e. physX/physY vs wafer.center). Draw the
@@ -1517,11 +1526,11 @@ export function buildView(
     // die columns: when a column sits on the centre (odd column count) that
     // midpoint lands half a pitch off-centre, while classifyDie still assigns
     // the centre column to E/N.
-    overlays.push(...buildQuadrantOverlays(wafer, transform, wafer.center.x, wafer.center.y));
+    overlays.push(...buildQuadrantOverlays(wafer, tf.physicalToScreen, wafer.center.x, wafer.center.y));
   }
-  if (showReticle) overlays.push(...buildReticleOverlays(reticles, wafer, dataAxisFlip, interactiveTransform));
+  if (showReticle) overlays.push(...buildReticleOverlays(reticles, tf.gridToScreen));
   if (showProbePath) overlays.push(...buildProbeOverlay(dies));
-  if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, transform, texts));
+  if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, tf.gridToScreen, texts));
 
   // Pre-compute bounding box for viewport fitting.
   // Use the wafer circle (center ± radius) rather than die extents so the viewport
@@ -1552,7 +1561,9 @@ export function buildView(
     aggrMethod: aggregationMethod,
     lotSize,
     axisFlip,
-    rotation: ((transform.rotation % 360) + 360) % 360,
+    dataAxisFlip: { x: dataAxisFlip?.x ?? false, y: dataAxisFlip?.y ?? false },
+    gridToScreen: tf.gridToScreen,
+    rotation: (((wafer.orientation + (interactiveTransform?.rotation ?? 0)) % 360) + 360) % 360,
     hasReticle: reticles.length > 0,
     isLotStack,
     passFailDisplay,
@@ -1575,14 +1586,11 @@ export function buildView(
 // ── Die lookup helpers ────────────────────────────────────────────────────────
 
 /**
- * Return a stable string key for a die — guaranteed format `"i,j"`.
- * Use this for Map keys and post-enrichment lookups instead of ad-hoc template literals.
+ * Return a stable string key for a die — guaranteed format `"x,y"`.
  *
- * ```ts
- * const map = new Map(result.dies.map(d => [getDieKey(d), d]));
- * const die = map.get(getDieKey({ x: 3, y: -2 }));
- * ```
+ * Re-exported from `core/dies.ts`, where the canonical implementation lives so
+ * that `stats/` and `canvas-adapter/` can share it without depending on
+ * `renderer/`. Kept exported here to preserve the public `@paulrobins/wafermap/renderer`
+ * entry point.
  */
-export function getDieKey(die: { x: number; y: number }): string {
-  return `${die.x},${die.y}`;
-}
+export { getDieKey } from '../core/dies.js';

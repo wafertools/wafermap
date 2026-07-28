@@ -1,4 +1,4 @@
-import { classifyDie, getReticleCell, getRingLabel, type Die, type Wafer } from '../core/index.js';
+import { classifyDie, getReticleCell, getRingLabel, type Die, type Wafer, getDieKey} from '../core/index.js';
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
 
 export interface StatsRegion {
@@ -9,7 +9,7 @@ export interface StatsRegion {
 }
 
 function dieKey(die: Die): string {
-  return `${die.x},${die.y}`;
+  return getDieKey(die);
 }
 
 export interface RegionYieldDatum {

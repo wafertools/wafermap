@@ -29,6 +29,7 @@ import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
 import { makeLabeledSelect } from './charts/chartShell.js';
 import { CLR, openModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
+import { medianOfSorted } from '../core/utils.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
 
@@ -229,13 +230,6 @@ function progressRow(
   row.appendChild(top);
   row.appendChild(track);
   return row;
-}
-
-function medianOf(sorted: number[]): number {
-  const n = sorted.length;
-  if (n === 0) return 0;
-  const mid = Math.floor(n / 2);
-  return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 /** Big stat card — used for yield % and total dies. `sublabel` renders as
@@ -668,7 +662,7 @@ export function buildPerWaferYieldSection(
   const maxY = Math.max(...waferData.map(w => w.yieldPct));
   const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
 
-  const med = medianOf([...waferData.map(w => w.yieldPct)].sort((a, b) => a - b));
+  const med = medianOfSorted([...waferData.map(w => w.yieldPct)].sort((a, b) => a - b));
 
   const wrap = el('div');
   wrap.appendChild(sectionTitle('Wafer Yield' + rangeNote));

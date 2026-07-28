@@ -1,9 +1,4 @@
-function percentile98(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.floor(sorted.length * 0.98);
-  return sorted[Math.min(idx, sorted.length - 1)];
-}
+import { percentile98, clamp01 } from '../utils.js';
 
 const STANDARD_DIAMETERS = [25, 50, 75, 100, 150, 200, 300, 450];
 // Industry-standard sizes used in high-volume manufacturing today — snap to
@@ -45,7 +40,7 @@ export function inferWaferFromXY(points: Array<{ x: number; y: number }>): Wafer
   const meanR = radii.reduce((s, r) => s + r, 0) / radii.length;
   const stdR = Math.sqrt(radii.reduce((s, r) => s + (r - meanR) ** 2, 0) / radii.length);
   const cv = meanR > 0 ? stdR / meanR : 1;
-  const confidence = Math.max(0, Math.min(1, 1 - cv * 0.5));
+  const confidence = clamp01(1 - cv * 0.5);
 
   return {
     center: { x: cx, y: cy },

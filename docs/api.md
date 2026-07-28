@@ -429,7 +429,7 @@ Named definition for one `die.metadata` key, opting it into the **`'metadata'` p
 }
 ```
 
-A key is only offered in the toolbar's "Metadata" mode-menu section when it appears in `metadataFields` **and** at least one die actually has that key set — presence in `metadataFields` is an explicit opt-in, never auto-detected. `values` is optional per field: distinct values with no override are still shown, auto-labeled with the raw (stringified) value and auto-colored from an ordered qualitative palette (assigned alphabetically by value, so colors are stable across reloads — not the pass/fail-flavored palette `hardBinColor` uses, since an arbitrary metadata field has no universal "good/bad" meaning).
+A key is only offered in the toolbar's "Metadata" mode-menu section when it appears in `metadataFields` **and** at least one die actually has that key set — presence in `metadataFields` is an explicit opt-in, never auto-detected. `values` is optional per field: distinct values with no override are still shown, auto-labeled with the raw (stringified) value and auto-colored from an ordered qualitative palette (assigned in natural alphanumeric order by value — so `D2` precedes `D10` rather than following it — making colors stable across reloads and the legend order predictable — not the pass/fail-flavored palette `hardBinColor` uses, since an arbitrary metadata field has no universal "good/bad" meaning).
 
 ```ts
 const result = buildWaferMap({
@@ -2981,6 +2981,12 @@ interface ViewOptions {
 
 Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggregationMethod`, `lotSize`, and (for `'metadata'` mode) `metadataFields`, `activeMetadataKey`, `metadataCounts` (`Map<string, number>` — value → die count, mirroring `binCounts`).
 
+Display-transform fields:
+
+- **`gridToScreen`** (`Affine<'grid','screen'>`, §11.21) — the authoritative die-grid → screen transform. Use this (or `affineInvert` of it) for anything positional; it is composed from the real pipeline in order and stays correct for every combination of wafer orientation, data-axis flip and interactive rotate/flip.
+- **`dataAxisFlip`** — the data-pipeline flip alone (from `xAxisDirection`/`yAxisDirection`/`coordinateOrigin`), with no interactive flip mixed in.
+- **`axisFlip`** / **`rotation`** — a *lossy* summary (total flip as an XOR, total rotation as a sum). These cannot represent `rotate → mirror → rotate` and are only exact while `wafer.orientation` is `0`; they remain for coarse orientation hints. Prefer `gridToScreen` for coordinate maths.
+
 `hoverPoints` is `{ x, y }[]` — one entry per die, in physical mm coordinates. Used internally by `renderWaferMap` for hit-testing; you rarely need it directly when using `toCanvas` (use `hitTarget.getDieAtPoint` instead).
 
 ---
@@ -3107,7 +3113,64 @@ This is the single source of truth for the rule — `buildWaferMap`'s yield calc
 
 ---
 
-### 11.21 `getReticleCell(die, config)`
+### 11.21 Affine display transforms
+
+```ts
+import {
+  affineIdentity, affineRotation, affineMirror, affineCompose,
+  affineInvert, affinePoint, affineVector, affineSwapsAxes,
+} from '@paulrobins/wafermap';
+// also available from '@paulrobins/wafermap/core'
+
+interface Affine<From extends CoordFrame, To extends CoordFrame> {
+  a: number; b: number; c: number; d: number; e: number; f: number
+}
+// applied as:  x' = a·x + c·y + e     y' = b·x + d·y + f
+
+type CoordFrame = 'physical' | 'grid' | 'baked' | 'screen'
+```
+
+Every rotation and mirror in the library is composed through this one type. It exists because **rotation and mirroring do not commute**: the real display pipeline is `rotate → mirror → rotate → mirror` (wafer orientation → data-axis flip → interactive rotation → interactive flip), and
+
+```text
+mirror ∘ rot(θ) = rot(−θ) ∘ mirror
+```
+
+so collapsing that sequence into a single summed angle plus XOR'd flip flags is valid **only** when the first rotation is zero. Matrices compose associatively and get it right by construction.
+
+| function | purpose |
+| --- | --- |
+| `affineIdentity()` | the identity transform |
+| `affineRotation(deg, cx?, cy?)` | clockwise rotation about a centre — matches `rotatePoint` |
+| `affineMirror(flipX, flipY, cx?, cy?)` | mirror through a centre on each requested axis |
+| `affineCompose(outer, inner)` | `inner` first, then `outer`; frame tags must meet |
+| `affineInvert(m)` | inverse — e.g. screen → grid for axis labels |
+| `affinePoint(m, x, y)` | transform a **position** (translation applies) |
+| `affineVector(m, dx, dy)` | transform a **direction** (translation ignored) |
+| `affineSwapsAxes(m)` | whether an axis-aligned rect must exchange width/height |
+
+The `From`/`To` tags are **phantom** (type-level only; the runtime value is a plain 6-number object). They make composing in the wrong order, or applying a matrix to a point from the wrong frame, a compile error. The frames are:
+
+- **`physical`** — wafer-local mm for a *physical wafer feature* (boundary outline, notch, ring/quadrant borders). Follows `wafer.orientation` but **not** the data-axis flip: that flip exists to make the render physically truthful for a prober convention (`yAxisDirection: 'down'` puts row 1 at the top), so the wafer holds still while the die grid moves relative to it.
+- **`grid`** — wafer-local mm for geometry *aligned to the die grid* (reticle fields, the +X/+Y indicator). **Does** follow the data-axis flip, so it stays locked to the dies.
+- **`baked`** — what `Die.physX`/`physY` holds after `buildWaferMap`.
+- **`screen`** — final display mm after the interactive rotate/flip; what `View.hoverPoints` holds.
+
+Use these when a custom `toCanvas` pipeline draws its own overlays: take `view.gridToScreen` (§11.15) and transform your geometry through it rather than re-deriving rotation and flip by hand.
+
+```ts
+import { affinePoint, affineInvert } from '@paulrobins/wafermap';
+
+// place a marker that must sit on a specific die-grid position
+const p = affinePoint(view.gridToScreen, gridX, gridY);
+
+// go the other way: screen mm → die-grid mm
+const back = affinePoint(affineInvert(view.gridToScreen), p.x, p.y);
+```
+
+---
+
+### 11.22 `getReticleCell(die, config)`
 
 ```ts
 import { getReticleCell } from '@paulrobins/wafermap';
@@ -3122,6 +3185,8 @@ getReticleCell(
 The field-local `(column, row)` a die occupies within its reticle field, per the `anchorDie` convention documented on `generateReticleGrid` (§11.9): `anchorDie` is the field's min-x/min-y (bottom-left) corner, so a die's local position is `die − anchorDie`, wrapped to the field dimensions. Both `column` and `row` are `0`-indexed.
 
 This is the single source of truth for "which reticle cell is this die in" — `buildReticlePositionRegions` (§7) and `buildHoverText`'s (§11.16) `Reticle (column, row)` tooltip line both call it, so field geometry, findings labels, and tooltip text can never drift apart.
+
+Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by any display convention — `xAxisDirection`, `coordinateOrigin`, wafer orientation, and interactive rotate/flip change only where a die is *drawn* (see §11.21), never which reticle cell it belongs to.
 
 `ReticleConfig` → §4.1.4
 

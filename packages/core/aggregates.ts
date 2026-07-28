@@ -1,4 +1,5 @@
 import type { Die } from './dies.js';
+import { getDieKey } from './dies.js';
 
 export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count';
 
@@ -43,7 +44,7 @@ export function aggregateValues(
 
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
-      const key = `${die.x},${die.y}`;
+      const key = getDieKey(die);
       // Read from testValues (preferred) then fall back to deprecated values[].
       const v = die.testValues?.[paramIndex] ?? die.values?.[paramIndex];
       if (v !== undefined) {
@@ -134,7 +135,7 @@ export function aggregateBinCounts(
     for (const die of waferDies) {
       const b = binSpace === 'soft' ? die.sbin : die.hbin;
       if (b === targetBin) {
-        const key = `${die.x},${die.y}`;
+        const key = getDieKey(die);
         countMap.set(key, (countMap.get(key) ?? 0) + 1);
       }
     }
@@ -142,7 +143,7 @@ export function aggregateBinCounts(
 
   return (diesByWafer[0] ?? []).map((die) => ({
     ...die,
-    testValues: { 0: countMap.get(`${die.x},${die.y}`) ?? 0 },
+    testValues: { 0: countMap.get(getDieKey(die)) ?? 0 },
     testPass: undefined,
     ...(binSpace === 'soft' ? { sbin: targetBin } : { hbin: targetBin }),
   }));

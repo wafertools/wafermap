@@ -7,7 +7,7 @@ import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } fr
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -18,6 +18,7 @@ import { ICONS } from './icons.js';
 import { hardBinColor, softBinColor, metadataValueColor } from '../renderer/colorMap.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
 import { createMetadataBadge, type MetadataBadgeController } from './metadataBadge.js';
+import { getDieKey } from '../core/dies.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -428,7 +429,10 @@ export function renderWaferMap(
   let metadataFields: MetadataFieldDef[] | undefined = result.metadataFields;
   let reticles: Reticle[]   | undefined = result.reticles?.length ? result.reticles : undefined;
   let reticleConfig: ReticleConfig | undefined = result.reticleConfig;
-  let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.axisFlip;
+  // view.dataAxisFlip, NOT view.axisFlip: axisFlip is data XOR interactive, and this
+  // value is fed straight back into buildView as `dataAxisFlip` on every rebuild —
+  // reading the XOR'd form would double-count any interactive flip already applied.
+  let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.dataAxisFlip;
   // Lot-stack context is the library's own derived truth — sourced from the result, never the
   // caller's viewOptions. Drives the stacked-mode availability and the map title's stack qualifier.
   let resultIsLotStack: boolean        = result.isLotStack;
@@ -637,7 +641,7 @@ export function renderWaferMap(
         flipY:    so.flipY   ?? false,
       },
     } satisfies ViewOptions, { hbinDefs, sbinDefs, metadataFields });
-    dieKeyIndex = new Map(currentView.dies.map((d, i) => [`${d.x},${d.y}`, i]));
+    dieKeyIndex = new Map(currentView.dies.map((d, i) => [getDieKey(d), i]));
   }
 
   rebuildView();
@@ -938,48 +942,15 @@ export function renderWaferMap(
           const testDefs = currentView.testDefs;
           // Value mode is available for any per-test data — numeric values or recorded
           // pass/fail verdicts (functional tests). Stacked values need numeric values.
-          const hasTestData = dies.some(dieHasTestData);
-          const hasValues = dies.some(d =>
-            (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
-            (d.values?.length ?? 0) > 0
-          );
-          const hasHbin = dies.some(d => d.hbin != null);
-          const hasSbin = dies.some(d => d.sbin != null);
+          // Stacked modes are only valid for lot-aggregated data — the view knows via isLotStack.
+          const { testEntries, binEntries, stackedEntries } =
+            buildDataModeEntries(dies, testDefs, { includeStacked: currentView.isLotStack });
 
-          // Metadata entries: one per configured metadataFields[].key actually
-          // present in the dies (opt-in, never auto-detected — see MetadataFieldDef).
+          // One entry per configured metadataFields[].key actually present in the
+          // dies (opt-in, never auto-detected — see MetadataFieldDef).
           const metadataEntries: ModeEntry[] = (metadataFields ?? [])
-            .filter(f => dies.some(d => d.metadata?.[f.key] !== undefined && d.metadata?.[f.key] !== null))
-            .map(f => ({
-              plotMode: 'metadata' as PlotMode,
-              activeMetadataKey: f.key,
-              label: f.label ?? prettyKey(f.key),
-            }));
-
-          const testEntries: ModeEntry[] = hasTestData
-            ? (testDefs?.length
-                ? testDefs.map(t => ({
-                    plotMode: 'value' as PlotMode,
-                    activeTest: t.testNumber ?? t.index ?? 0,
-                    label: t.unit ? `${t.name} (${t.unit})` : t.name,
-                    logScale: t.logScale,
-                  }))
-                : getUniqueTestNumbers(dies).map(tn => ({
-                    plotMode: 'value' as PlotMode,
-                    activeTest: tn,
-                    label: `Test ${tn}`,
-                  })))
-            : [];
-          const binEntries: ModeEntry[] = [
-            ...(hasHbin ? [{ plotMode: 'hardBin' as PlotMode, label: MODE_LABELS.hardBin }] : []),
-            ...(hasSbin ? [{ plotMode: 'softBin' as PlotMode, label: MODE_LABELS.softBin }] : []),
-          ];
-          // Stacked modes are only valid for lot-aggregated data — the scene knows this via isLotStack.
-          const stackedEntries: ModeEntry[] = currentView.isLotStack ? [
-            ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
-            ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
-            ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
-          ] : [];
+            .filter(f => metadataKeyHasData(dies, f.key))
+            .map(metadataModeEntry);
 
           const menu = buildModeMenuEl(
             btnMode.getBoundingClientRect(),
@@ -1701,12 +1672,12 @@ export function renderWaferMap(
         }
         if (multi) {
           for (const d of boxDies) {
-            const key = `${d.x},${d.y}`;
+            const key = getDieKey(d);
             if (selectedKeys.has(key)) selectedKeys.delete(key);
             else selectedKeys.add(key);
           }
         } else {
-          selectedKeys = new Set(boxDies.map(d => `${d.x},${d.y}`));
+          selectedKeys = new Set(boxDies.map(d => getDieKey(d)));
         }
         onSelect?.(selectionAsDies());
       }
@@ -1770,7 +1741,7 @@ export function renderWaferMap(
 
     if (die) {
       onClick?.(die, e);
-      const key = `${die.x},${die.y}`;
+      const key = getDieKey(die);
       if (multi) {
         // Toggle this die.
         if (selectedKeys.has(key)) selectedKeys.delete(key);
@@ -1794,7 +1765,7 @@ export function renderWaferMap(
     const pts = currentView.hoverPoints;
     for (let i = 0; i < pts.length; i++) {
       const d = currentView.dies[i];
-      if (d && selectedKeys.has(`${d.x},${d.y}`)) result.push(d);
+      if (d && selectedKeys.has(getDieKey(d))) result.push(d);
     }
     return result;
   }
@@ -2035,7 +2006,7 @@ export function renderWaferMap(
       metadataFields = newResult.metadataFields;
       reticles      = newResult.reticles?.length ? newResult.reticles : undefined;
       reticleConfig = newResult.reticleConfig;
-      dataAxisFlip  = newResult.view?.axisFlip;
+      dataAxisFlip  = newResult.view?.dataAxisFlip;
       resultIsLotStack = newResult.isLotStack;
       resultAggrMethod = newResult.aggrMethod;
       resultLotSize    = newResult.lotSize;
@@ -2056,7 +2027,7 @@ export function renderWaferMap(
     resetZoom,
 
     setSelection(dies: Die[]): void {
-      selectedKeys = new Set(dies.map(d => `${d.x},${d.y}`));
+      selectedKeys = new Set(dies.map(d => getDieKey(d)));
       render();
     },
 

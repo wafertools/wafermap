@@ -1,6 +1,8 @@
 import type { View, ViewRect } from '../renderer/buildView.js';
 import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
+import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
+import { compareNatural } from '../core/utils.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH, contrastTextColor } from '../renderer/colorMap.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
@@ -176,10 +178,14 @@ export function toCanvas(
   const binLegendEntries: Array<[number, number]> = drawBinLegend && view.plotMode !== 'metadata' && view.binCounts
     ? [...view.binCounts.entries()].sort(([a], [b]) => a - b)
     : [];
-  // 'metadata' mode's own entries — string-keyed, sorted alphabetically (same
-  // determinism as the color assignment in buildView.ts).
+  // 'metadata' mode's own entries. Order comes from `metadataColorMap`, which
+  // buildView already built in natural (alphanumeric) order — reading it rather than
+  // re-sorting `metadataCounts` here means the legend order and the colour assignment
+  // are the same list by construction and cannot drift apart. `metadataCounts` is
+  // keyed in die-iteration order, so it only supplies the counts.
   const metadataLegendEntries: Array<[string, number]> = drawBinLegend && view.plotMode === 'metadata' && view.metadataCounts
-    ? [...view.metadataCounts.entries()].sort(([a], [b]) => a.localeCompare(b))
+    ? [...(view.metadataColorMap?.keys() ?? [...view.metadataCounts.keys()].sort(compareNatural))]
+        .map((value): [string, number] => [value, view.metadataCounts!.get(value) ?? 0])
     : [];
 
   // Unified legend entries: a swatch colour + label + count, sourced from bin counts (bin modes)
@@ -520,7 +526,7 @@ export function toCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.axisFlip, view.rotation, theme);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.gridToScreen, view.rotation, theme);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
@@ -1118,7 +1124,7 @@ function drawAxisTicks(
   axisReserve: number,
   axisLeftReserve: number,
   diePitchMm: { x: number; y: number } | undefined,
-  axisFlip: { x: boolean; y: boolean } | undefined,
+  gridToScreen: Affine<'grid', 'screen'>,
   rotation: number,
   theme: CanvasTheme,
 ): void {
@@ -1133,37 +1139,46 @@ function drawAxisTicks(
 
   // Convert a display-space mm position to the die grid index for axis labels.
   //
-  // CW rotation R maps die coords to display coords as:
-  //   display_x =  cos(R)*die_x + sin(R)*die_y
-  //   display_y = -sin(R)*die_x + cos(R)*die_y
-  // Inverting for the 4 cardinal cases (before any flip):
-  //   R=0:   die_x =  display_x/px,  die_y =  display_y/py
-  //   R=90:  die_x =  display_y/px,  die_y =  display_x/py
-  //   R=180: die_x = -display_x/px,  die_y = -display_y/py
-  //   R=270: die_x = -display_y/px,  die_y = -display_x/py
+  // Derived by INVERTING the authoritative grid→screen matrix rather than
+  // re-deriving the inverse by hand from a summed rotation + XOR'd flip flags.
+  // That summary is lossy — rotate→mirror→rotate cannot be collapsed into one
+  // angle plus flip booleans, because rotation and mirroring don't commute — so
+  // the hand-rolled version silently mislabeled ticks (dies named as their mirror
+  // image) whenever a baked wafer orientation, a data-axis flip and an interactive
+  // rotation were combined. The matrix inverse is correct for every combination.
   //
-  // axisFlip (XOR of data-pipeline and interactive flips) negates the display coordinate
-  // before the rotation inverse, so flip sign is applied to the mm value first.
-  const r = ((rotation % 360) + 360) % 360;
-  const fx = axisFlip?.x ? -1 : 1;  // flip applied to display-X before inversion
-  const fy = axisFlip?.y ? -1 : 1;  // flip applied to display-Y before inversion
+  // Screen→grid maps each screen axis back onto whichever grid axis feeds it; for
+  // the cardinal rotations exactly one component is non-zero, which is what makes a
+  // single-coordinate (per-axis) tick label well defined. Non-cardinal rotations
+  // don't separate into independent axes, so ticks fall back to raw mm.
+  const screenToGrid = affineInvert(gridToScreen);
+  const srcOfScreenX = affineVector(screenToGrid, 1, 0); // which grid axis screen +X reads from
+  const srcOfScreenY = affineVector(screenToGrid, 0, 1);
+  const CARDINAL = 1e-9;
+
+  /** Resolve one screen axis to (grid pitch, sign), or null when not axis-separable. */
+  function axisSource(src: { x: number; y: number }): { pitch: number; sign: number } | null {
+    if (!diePitchMm) return null;
+    if (Math.abs(src.y) < CARDINAL && Math.abs(src.x) > CARDINAL) {
+      return { pitch: diePitchMm.x, sign: Math.sign(src.x) };
+    }
+    if (Math.abs(src.x) < CARDINAL && Math.abs(src.y) > CARDINAL) {
+      return { pitch: diePitchMm.y, sign: Math.sign(src.y) };
+    }
+    return null;
+  }
+
+  const xAxisSrc = axisSource(srcOfScreenX);
+  const yAxisSrc = axisSource(srcOfScreenY);
 
   function dieIndexForDisplayX(mm: number): number {
-    if (!diePitchMm) return mm;
-    const ux = fx * mm; // unflipped display-X
-    if (r === 0)   return Math.round( ux / diePitchMm.x);
-    if (r === 90)  return Math.round( ux / diePitchMm.y);
-    if (r === 180) return Math.round(-ux / diePitchMm.x);
-    /* 270 */      return Math.round(-ux / diePitchMm.y);
+    if (!xAxisSrc) return mm;
+    return Math.round((mm * xAxisSrc.sign) / xAxisSrc.pitch);
   }
 
   function dieIndexForDisplayY(mm: number): number {
-    if (!diePitchMm) return mm;
-    const uy = fy * mm; // unflipped display-Y
-    if (r === 0)   return Math.round( uy / diePitchMm.y);
-    if (r === 90)  return Math.round(-uy / diePitchMm.x);
-    if (r === 180) return Math.round(-uy / diePitchMm.y);
-    /* 270 */      return Math.round( uy / diePitchMm.x);
+    if (!yAxisSrc) return mm;
+    return Math.round((mm * yAxisSrc.sign) / yAxisSrc.pitch);
   }
 
   // When displaying die indices, snap ticks to whole-die boundaries and pick
@@ -1176,13 +1191,10 @@ function drawAxisTicks(
     return dieStep * pitchMm;
   }
 
-  // Which pitch drives each screen axis depends on current rotation.
-  const xPitchMm = diePitchMm
-    ? (r === 0 || r === 180 ? diePitchMm.x : diePitchMm.y)
-    : undefined;
-  const yPitchMm = diePitchMm
-    ? (r === 0 || r === 180 ? diePitchMm.y : diePitchMm.x)
-    : undefined;
+  // Which pitch drives each screen axis — from the same inverse-derived mapping
+  // the labels use, so tick spacing and tick labels can never disagree.
+  const xPitchMm = xAxisSrc?.pitch;
+  const yPitchMm = yAxisSrc?.pitch;
 
   const tickStepX = tickStep(xPitchMm);
   const tickStepY = tickStep(yPitchMm);

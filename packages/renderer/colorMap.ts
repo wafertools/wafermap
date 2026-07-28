@@ -1,3 +1,4 @@
+import { clamp01 } from '../core/utils.js';
 /**
  * Spec pass/fail die colours, shared by the value-map renderer and the spec legend so both use one
  * definition. Pass = green, fail-low (below limitLow) = blue, fail-high (above limitHigh) = red.
@@ -127,7 +128,7 @@ export const HARD_BIN_COLORS: readonly string[] = BIN_PALETTE;
 
 /** Linear interpolation across RGB keypoints for t ∈ [0, 1]. */
 export function lerpKp(kp: readonly [number, number, number][], t: number): string {
-  const c = Math.max(0, Math.min(1, t));
+  const c = clamp01(t);
   const pos = c * (kp.length - 1);
   const lo = Math.floor(pos);
   const hi = Math.min(lo + 1, kp.length - 1);
@@ -224,7 +225,7 @@ export function hardBinGreyscale(bin: number): string {
 
 /** Map t ∈ [0, 1] to a greyscale rgb string (range 30–230 to avoid pure black/white). */
 export function valueToGreyscale(t: number): string {
-  const v = Math.round(Math.max(0, Math.min(1, t)) * 200 + 30);
+  const v = Math.round(clamp01(t) * 200 + 30);
   return `rgb(${v},${v},${v})`;
 }
 

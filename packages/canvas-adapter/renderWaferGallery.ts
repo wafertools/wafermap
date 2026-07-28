@@ -4,7 +4,7 @@ import { getColorScheme } from '../renderer/colorSchemes.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -15,6 +15,7 @@ import type { BinDef } from '../renderer/buildWaferMap.js';
 import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
+import { compareNatural } from '../core/utils.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
@@ -22,6 +23,7 @@ import { prettyKey } from '../stats/facets.js';
 import { openHtmlReport } from '../stats/renderFindingsReport.js';
 import { escHtml, renderSection, renderSeverityBadge, reportStyles } from '../stats/reportHtml.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
+import { getDieKey } from '../core/dies.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -422,7 +424,7 @@ export function renderWaferGallery(
       const item = currentItems[ci];
       const ctrl = cardControllers[ci];
       if (!item || !ctrl) continue;
-      const matched = item.dies.filter(d => keySet.has(`${d.x},${d.y}`));
+      const matched = item.dies.filter(d => keySet.has(getDieKey(d)));
       ctrl.setSelection(matched);
     }
   }
@@ -780,13 +782,9 @@ ${reportStyles()}
     const testDefs  = originalItems.find(it => it?.testDefs?.length)?.testDefs;
     // Value mode is available for any per-test data — numeric values or recorded
     // pass/fail verdicts (functional tests). Stacked values need numeric values.
-    const hasTestData = dies.some(dieHasTestData);
-    const hasValues = dies.some(d =>
-      (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
-      (d.values?.length ?? 0) > 0
-    );
-    const hasHbin = dies.some(d => d.hbin != null);
-    const hasSbin = dies.some(d => d.sbin != null);
+    // Gallery aggregates across its own items, so stacked modes are always offered.
+    const { testEntries, binEntries, stackedEntries } =
+      buildDataModeEntries(dies, testDefs, { includeStacked: true });
 
     const currentMode    = sharedOpts.plotMode ?? 'hardBin';
     const currentTestIdx = sharedOpts.activeTest ?? 0;
@@ -812,29 +810,6 @@ ${reportStyles()}
       markMenuTrigger(btnMode, false);
     }
 
-    const testEntries: ModeEntry[] = hasTestData
-      ? (testDefs?.length
-          ? testDefs.map(t => ({
-              plotMode: 'value' as PlotMode,
-              activeTest: t.testNumber ?? t.index ?? 0,
-              label: t.unit ? `${t.name} (${t.unit})` : t.name,
-              logScale: t.logScale,
-            }))
-          : getUniqueTestNumbers(dies).map(tn => ({
-              plotMode: 'value' as PlotMode,
-              activeTest: tn,
-              label: `Test ${tn}`,
-            })))
-      : [];
-    const binEntries: ModeEntry[] = [
-      ...(hasHbin ? [{ plotMode: 'hardBin' as PlotMode, label: MODE_LABELS.hardBin }] : []),
-      ...(hasSbin ? [{ plotMode: 'softBin' as PlotMode, label: MODE_LABELS.softBin }] : []),
-    ];
-    const stackedEntries: ModeEntry[] = [
-      ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
-      ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
-      ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
-    ];
     // One entry per configured metadataFields[].key actually present across the
     // lot (opt-in, never auto-detected — see MetadataFieldDef). Deduplicated by
     // key, first item's def wins, mirroring the hbinDefs/sbinDefs dedup pattern
@@ -843,8 +818,8 @@ ${reportStyles()}
     const metadataModeEntries: ModeEntry[] = originalItems
       .flatMap(it => it?.metadataFields ?? [])
       .filter(f => !seenMetadataKeys.has(f.key) && seenMetadataKeys.add(f.key))
-      .filter(f => dies.some(d => d.metadata?.[f.key] !== undefined && d.metadata?.[f.key] !== null))
-      .map(f => ({ plotMode: 'metadata' as PlotMode, activeMetadataKey: f.key, label: f.label ?? prettyKey(f.key) }));
+      .filter(f => metadataKeyHasData(dies, f.key))
+      .map(metadataModeEntry);
 
     const menu = buildModeMenuEl(
       btnMode.getBoundingClientRect(),
@@ -1379,7 +1354,9 @@ ${reportStyles()}
         }
       }
     }
-    const metadataValues = hasBinLegendMode && isMetadataMode ? [...metadataValueSet].sort() : [];
+    // Natural order — must match buildView's colour-assignment order, or this
+    // lot-level strip would list values in a different order to the per-card legends.
+    const metadataValues = hasBinLegendMode && isMetadataMode ? [...metadataValueSet].sort(compareNatural) : [];
 
     if (!metaRow && !bins.length && !metadataValues.length) {
       legendEl.style.display = 'none';

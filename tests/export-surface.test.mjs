@@ -11,6 +11,8 @@ import * as canvasApi       from '../dist/packages/canvas-adapter/index.js';
 
 const SNAPSHOTS = {
   '.' : [
+    'affineCompose', 'affineIdentity', 'affineInvert', 'affineMirror',
+    'affinePoint', 'affineRotation', 'affineSwapsAxes', 'affineVector',
     'aggregateBinCounts', 'aggregateValues', 'analyzeWaferLot', 'analyzeWaferMap',
     'applyOrientation', 'applyProbeSequence', 'areQuadrantsAdjacent',
     'buildBinClusterData', 'buildBinParetoData',
@@ -34,10 +36,12 @@ const SNAPSHOTS = {
     'softBinColor', 'transformDies', 'valueToGreyscale', 'valueToViridis',
   ],
   './core': [
+    'affineCompose', 'affineIdentity', 'affineInvert', 'affineMirror',
+    'affinePoint', 'affineRotation', 'affineSwapsAxes', 'affineVector',
     'aggregateBinCounts', 'aggregateValues',
     'applyOrientation', 'applyProbeSequence',
     'classifyDie', 'clipDiesToWafer', 'createWafer',
-    'generateDies', 'generateReticleGrid', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
+    'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
     'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'transformDies',
   ],
   './renderer': [

@@ -3,8 +3,9 @@ import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import type { Wafer, WaferSpec } from '../core/wafer.js';
 import type { Reticle, ReticleSpec } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
-import { generateDies, isYieldEligibleDie } from '../core/dies.js';
-import { clipDiesToWafer, isInsideWafer, applyOrientation, transformDies, rotateAndFlip } from '../core/transforms.js';
+import { generateDies, isYieldEligibleDie, getDieKey} from '../core/dies.js';
+import { clipDiesToWafer, isInsideWafer, applyOrientation, transformDies } from '../core/transforms.js';
+import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
@@ -12,6 +13,7 @@ import { generateReticleGrid } from '../core/reticle.js';
 import { buildView, type View, type ViewOptions, type PlotMode } from './buildView.js';
 import { modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
+import { percentile98 } from '../core/utils.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
@@ -551,12 +553,6 @@ interface Normalized {
   edgeDieYieldMode:  'exclude' | 'denominator-only';
 }
 
-function percentile98(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.floor(sorted.length * 0.98);
-  return sorted[Math.min(idx, sorted.length - 1)];
-}
 
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
   if (!Array.isArray(input) && 'results' in input && input.results !== undefined && 'lotStack' in input && input.lotStack !== undefined) {
@@ -780,7 +776,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
     for (let ki = 0; ki < keyList.length; ki++) {
       const testKey = keyList[ki]!;
       for (const die of perKey[ki]!) {
-        const pos = `${die.x},${die.y}`;
+        const pos = getDieKey(die);
         if (!mergedMap.has(pos)) mergedMap.set(pos, { template: die, testValues: {} });
         const entry = mergedMap.get(pos)!;
         const v = die.testValues?.[0];  // aggregateValues stores result at key 0
@@ -815,7 +811,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
     const grouped = new Map<string, DieResult[]>();
     for (const waferPoints of waferResults) {
       for (const pt of waferPoints) {
-        const key = `${pt.x},${pt.y}`;
+        const key = getDieKey(pt);
         if (!grouped.has(key)) grouped.set(key, []);
         grouped.get(key)!.push(pt);
       }
@@ -935,12 +931,19 @@ function buildReticles(
   });
   // Only keep reticles that contain at least one die — fields that merely
   // overlap the wafer circle boundary but hold no dies should not be drawn.
+  // `dies` here are already baked (applyOrientation → transformDies), while
+  // generateReticleGrid emits pre-bake geometry, so replay the identical bake on
+  // each candidate before testing containment — same composition, same order.
+  const gridToBaked = affineCompose(
+    affineMirror<'physical', 'baked'>(flipX, flipY, wafer.center.x, wafer.center.y),
+    affineRotation<'grid', 'physical'>(orientation, wafer.center.x, wafer.center.y),
+  );
   return all.filter(r => {
     const hw = r.width / 2, hh = r.height / 2;
-    const corners = [
-      { x: r.x - hw, y: r.y - hh }, { x: r.x + hw, y: r.y - hh },
-      { x: r.x + hw, y: r.y + hh }, { x: r.x - hw, y: r.y + hh },
-    ].map(c => rotateAndFlip(c.x, c.y, orientation, flipX, flipY, wafer.center.x, wafer.center.y));
+    const corners = ([
+      [r.x - hw, r.y - hh], [r.x + hw, r.y - hh],
+      [r.x + hw, r.y + hh], [r.x - hw, r.y + hh],
+    ] as const).map(([x, y]) => affinePoint(gridToBaked, x, y));
     const x0 = Math.min(...corners.map(c => c.x));
     const x1 = Math.max(...corners.map(c => c.x));
     const y0 = Math.min(...corners.map(c => c.y));
@@ -998,7 +1001,7 @@ function applyRetestPolicy(
 
   const winners = new Map<string, DieResult>();
   for (const d of results) {
-    const key = `${d.x},${d.y}`;
+    const key = getDieKey(d);
     const existing = winners.get(key);
     if (policy === 'first' && existing) continue;
     if ((policy === 'best' || policy === 'worst') && existing) {
@@ -1213,9 +1216,9 @@ export function buildWaferMap(
     let dies = norm.explicitDies;
 
     if (results.length > 0) {
-      const lookup = new Map(results.map(d => [`${d.x},${d.y}`, d]));
+      const lookup = new Map(results.map(d => [getDieKey(d), d]));
       dies = dies.map(die => {
-        const pt = lookup.get(`${die.x},${die.y}`);
+        const pt = lookup.get(getDieKey(die));
         return pt ? attachData(die, pt, norm.testDefs) : die;
       });
     }

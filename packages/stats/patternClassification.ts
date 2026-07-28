@@ -1,4 +1,6 @@
 import type { Die, Wafer } from '../core/index.js';
+import { getDieKey } from '../core/dies.js';
+import { clamp01 } from '../core/utils.js';
 
 export type PatternLabel =
   | 'center'
@@ -132,13 +134,13 @@ function findConnectedComponents(failing: Die[]): Die[][] {
   if (failing.length === 0) return [];
 
   const byKey = new Map<string, Die>();
-  for (const d of failing) byKey.set(`${d.x},${d.y}`, d);
+  for (const d of failing) byKey.set(getDieKey(d), d);
 
   const visited = new Set<string>();
   const components: Die[][] = [];
 
   for (const d of failing) {
-    const k = `${d.x},${d.y}`;
+    const k = getDieKey(d);
     if (visited.has(k)) continue;
 
     // BFS
@@ -196,7 +198,7 @@ function computeEccentricity(dies: Die[], cx: number, cy: number): number {
   const lambda1 = trace / 2 + Math.sqrt(disc);
   const lambda2 = trace / 2 - Math.sqrt(disc);
   if (lambda1 <= 0) return 0;
-  const ratio = Math.max(0, Math.min(1, lambda2 / lambda1));
+  const ratio = clamp01(lambda2 / lambda1);
   return Math.sqrt(1 - ratio);
 }
 

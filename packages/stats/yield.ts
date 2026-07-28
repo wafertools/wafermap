@@ -17,6 +17,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { compareNatural } from '../core/utils.js';
 
 /** Shared row shape for every bar-chart panel (yield, bin pareto, ...). */
 export interface ChartDatum {
@@ -88,7 +89,7 @@ function yieldEligibleDieCount(dies: Die[]): number {
 
 function sortYieldData(data: ChartDatum[], sortBy: YieldSortBy): void {
   if (sortBy === 'yield') data.sort((a, b) => b.value - a.value);
-  else data.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  else data.sort((a, b) => compareNatural(a.label, b.label));
 }
 
 /** One bar per item. */

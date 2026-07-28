@@ -5,6 +5,7 @@
 // host-specific raw-field shape. Pure and DOM-free.
 
 import type { WaferMetadata } from '../core/metadata.js';
+import { compareNatural } from '../core/utils.js';
 
 /** Bucket label for wafers with no value for the active facet field — kept
  *  visible (not dropped) so grouped output stays honest about what it's missing. */
@@ -19,13 +20,7 @@ export const FACET_NONE_VALUE = '(none)';
  * (Summary panel, metadata badge) and stats (HTML report) layers so a field
  * is never labelled two different ways depending which surface rendered it.
  */
-export function prettyKey(k: string): string {
-  return k
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/_/g, ' ')
-    .trim()
-    .replace(/^./, s => s.toUpperCase());
-}
+export { prettyKey } from '../core/utils.js';
 
 /** One distinct value of a facet field, with how much data it covers. */
 export interface FacetValue {
@@ -165,7 +160,7 @@ export function buildFacetTable(items: FacetItem[], options: BuildFacetTableOpti
     values.sort((a, b) =>
       (a.value === FACET_NONE_VALUE ? 1 : 0) - (b.value === FACET_NONE_VALUE ? 1 : 0) ||
       b.waferCount - a.waferCount ||
-      a.value.localeCompare(b.value, undefined, { numeric: true }));
+      compareNatural(a.value, b.value));
 
     table.push({ key, label: known?.label ?? key, values, splittable: values.length > 1 });
   }

@@ -68,6 +68,25 @@ export interface DieEligibilityOptions {
  * `stats/analyzeWaferMap.ts`'s eligible-die filter, which could (and did)
  * silently drift apart. Both now call this.
  */
+/**
+ * Return a stable string key for a die — guaranteed format `"x,y"`.
+ *
+ * THE way to build a die key. Use it for Map keys and post-enrichment lookups
+ * rather than an ad-hoc template literal: findings carry `dieKeys` in this exact
+ * format and the renderer resolves highlights by matching them, so a single site
+ * that formats keys differently silently breaks click-to-highlight. Same reason
+ * it lives in `core/` — `renderer/`, `stats/` and `canvas-adapter/` all need to
+ * agree on one format.
+ *
+ * ```ts
+ * const map = new Map(result.dies.map(d => [getDieKey(d), d]));
+ * const die = map.get(getDieKey({ x: 3, y: -2 }));
+ * ```
+ */
+export function getDieKey(die: { x: number; y: number }): string {
+  return `${die.x},${die.y}`;
+}
+
 export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}): boolean {
   if (!options.includePartial && die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;

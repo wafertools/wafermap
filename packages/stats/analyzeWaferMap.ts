@@ -1,5 +1,5 @@
 import type { Die } from '../core/dies.js';
-import { isYieldEligibleDie } from '../core/dies.js';
+import { isYieldEligibleDie, getDieKey} from '../core/dies.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef } from '../renderer/buildWaferMap.js';
 import type {
@@ -19,6 +19,8 @@ import {
 import { buildClusterFindings } from './clusterDetection.js';
 import { classifyPattern } from './patternClassification.js';
 import { normalCdf } from './math.js';
+import { quantile } from './math.js';
+import { mean, clamp01 } from '../core/utils.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -237,13 +239,6 @@ export function computeFunctionalYield(
   return result.length ? result : undefined;
 }
 
-function quantile(sorted: number[], p: number): number {
-  const pos = p * (sorted.length - 1);
-  const lo = Math.floor(pos);
-  const hi = Math.min(lo + 1, sorted.length - 1);
-  return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
-}
-
 function computePerTestStats(
   dies: Die[],
   testNumbers: number[],
@@ -289,7 +284,7 @@ function twoProportionPValue(
   const variance = pooled * (1 - pooled) * ((1 / leftTotal) + (1 / rightTotal));
   if (!Number.isFinite(variance) || variance <= 0) return 1;
   const z = ((leftPass / leftTotal) - (rightPass / rightTotal)) / Math.sqrt(variance);
-  return Math.max(0, Math.min(1, 2 * (1 - normalCdf(Math.abs(z)))));
+  return clamp01(2 * (1 - normalCdf(Math.abs(z))));
 }
 
 function adjustPValues(findings: RawFinding[]): RawFinding[] {
@@ -422,7 +417,7 @@ function bucketDiesByRegion(
   eligibleDies: EligibleDie[],
   regionFamily: StatsRegion[],
 ): Map<string, EligibleDie[]> {
-  const dieMap = new Map(eligibleDies.map((die) => [`${die.x},${die.y}`, die]));
+  const dieMap = new Map(eligibleDies.map((die) => [getDieKey(die), die]));
   const buckets = new Map<string, EligibleDie[]>();
   for (const region of regionFamily) {
     const bucket: EligibleDie[] = [];
@@ -744,10 +739,6 @@ function buildFunctionalPassFindings(
   return finalizeProportionFindings(findings, options);
 }
 
-function mean(values: number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
 function sampleVariance(values: number[], avg: number): number {
   if (values.length < 2) return 0;
   return values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (values.length - 1);
@@ -779,7 +770,7 @@ function welchFromStats(
   const pooledSd = Math.sqrt(Math.max(0, ((leftVar + rightVar) / 2)));
   const effectSize = pooledSd === 0 ? delta : delta / pooledSd;
   return {
-    pValue: Math.max(0, Math.min(1, 2 * (1 - normalCdf(Math.abs(z))))),
+    pValue: clamp01(2 * (1 - normalCdf(Math.abs(z)))),
     effectSize,
     delta,
   };
@@ -888,7 +879,7 @@ function buildTestValueFindings(
   const regionDies: Die[] = [];
   const regionIdx: number[] = [];
   for (const die of dies) {
-    const r = keyToRegion.get(`${die.x},${die.y}`);
+    const r = keyToRegion.get(getDieKey(die));
     if (r !== undefined) { regionDies.push(die); regionIdx.push(r); }
   }
 
@@ -1013,7 +1004,7 @@ function buildSpecLimitFindings(
 
   const allFindings: RawFinding[] = [];
 
-  const dieMap = new Map(dies.map(d => [`${d.x},${d.y}`, d]));
+  const dieMap = new Map(dies.map(d => [getDieKey(d), d]));
 
   for (const td of limited) {
     const tn = td.testNumber ?? td.index;
@@ -1294,8 +1285,8 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     kind === 'softBin' ? ctx.softEligibleDies :
     kind === 'test'    ? ctx.testDies :
     ctx.eligibleDies;
-  const leftDies = pool.filter(d => leftKeySet.has(`${d.x},${d.y}`));
-  const rightDies = pool.filter(d => !leftKeySet.has(`${d.x},${d.y}`));
+  const leftDies = pool.filter(d => leftKeySet.has(getDieKey(d)));
+  const rightDies = pool.filter(d => !leftKeySet.has(getDieKey(d)));
 
   let effect: RawFinding['effect'];
   let stats: RawFinding['stats'];
@@ -1636,7 +1627,7 @@ export function analyzeWaferMap(
           sampleSizeRight: eligibleDies.length,
         },
         summary: `Spatial pattern: ${label.toLowerCase()} (${patternResult.confidence} confidence) — ${detail}${patternResult.note ? ` [${patternResult.note}]` : ''}`,
-        highlight: { kind: 'dies', dieKeys: failingDies.map(d => `${d.x},${d.y}`) },
+        highlight: { kind: 'dies', dieKeys: failingDies.map(d => getDieKey(d)) },
         relatedIds: relatedIds.length > 0 ? relatedIds : undefined,
       });
     }

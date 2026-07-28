@@ -190,3 +190,35 @@ test('non-primitive metadata values (objects/arrays) are treated as no-data, not
   assert.equal(rectFillAt(view, 1, 0), NO_DATA_FILL);
   assert.equal(rectFillAt(view, 0, 1), NO_DATA_FILL);
 });
+
+// ── Natural (alphanumeric) ordering of metadata values ───────────────────────
+
+test('metadata values sort naturally, so D2 precedes D10 rather than following it', () => {
+  // Semiconductor labels are overwhelmingly <prefix><number>. A plain lexicographic
+  // sort yields D0, D1, D10, D11, D2 — which reads as scrambled in a legend and
+  // (because the same order drives palette assignment) also scrambles die colours.
+  const labels = ['D10', 'D2', 'D0', 'D11', 'D1'];
+  const results = labels.map((device, i) => ({ x: i, y: 0, hbin: 1, metadata: { device } }));
+  const { wafer, dies } = buildWaferMap({
+    results, waferConfig: { diameter: 200 }, dieConfig: { width: 10, height: 10 },
+  });
+  const view = buildView(wafer, dies, { plotMode: 'metadata', activeMetadataKey: 'device' });
+
+  assert.deepEqual([...view.metadataColorMap.keys()], ['D0', 'D1', 'D2', 'D10', 'D11']);
+  // Palette assignment follows that same order.
+  assert.equal(view.metadataColorMap.get('D2'), metadataValueColor(2));
+  assert.equal(view.metadataColorMap.get('D10'), metadataValueColor(3));
+});
+
+test('natural ordering is locale-independent, so colours are reproducible across machines', () => {
+  // compareNatural pins locale 'en' deliberately: this ordering assigns colours, and
+  // the same wafer must not come out differently coloured on a differently-configured host.
+  const results = ['b2', 'B10', 'a1', 'A2'].map((device, i) => ({ x: i, y: 0, hbin: 1, metadata: { device } }));
+  const { wafer, dies } = buildWaferMap({
+    results, waferConfig: { diameter: 200 }, dieConfig: { width: 10, height: 10 },
+  });
+  const order = [...buildView(wafer, dies, { plotMode: 'metadata', activeMetadataKey: 'device' }).metadataColorMap.keys()];
+  assert.equal(order.length, 4);
+  assert.deepEqual(order.map(v => v.toLowerCase()), ['a1', 'a2', 'b2', 'b10'],
+    'numbers must order by value within each alpha prefix');
+});

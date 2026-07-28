@@ -2238,7 +2238,9 @@ renderWaferMap(container, result, {
 
 `values` is optional per field — distinct values with no override are still
 shown, auto-labelled with the raw value and auto-coloured from an ordered
-palette (assigned alphabetically, so colours are stable across reloads).
+palette (assigned in natural alphanumeric order — `D0, D1, D2, D10`, not the
+lexicographic `D0, D1, D10, D2` — so colours are stable across reloads and the
+legend reads in the order an engineer expects).
 
 ### Coexists with test/bin data
 

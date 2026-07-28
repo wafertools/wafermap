@@ -1,3 +1,4 @@
+import { clamp01 } from '../../core/utils.js';
 // Chart-only colour vocabulary for the Insights panels.
 //
 // Deliberately decoupled from the wafer map's registered colour schemes
@@ -55,7 +56,7 @@ function lerpHex(a: string, b: string, t: number): string {
  * carrier of the number; this fill is reinforcement only.
  */
 export function yieldFill(yieldPercent: number): string {
-  const t = Math.max(0, Math.min(1, (yieldPercent - 50) / 50));
+  const t = clamp01((yieldPercent - 50) / 50);
   return lerpHex('#e7eef6', '#2f6395', t);
 }
 

@@ -1,6 +1,7 @@
 import type { Die, Wafer } from '../core/index.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { normalCdf } from './math.js';
+import { getDieKey } from '../core/dies.js';
 
 // 16-point compass for edge-arc bearing labels.
 const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW', 'SW', 'SSW', 'S', 'SSE', 'SE', 'ESE'];
@@ -82,10 +83,10 @@ export function buildClusterFindings(
   // Grid index for O(1) neighbour lookups by integer grid coordinate.
   // Adjacency uses the die's integer x,y grid position (8-connected: |dx|<=1, |dy|<=1).
   const failingByKey = new Map<string, Die>();
-  for (const d of failing) failingByKey.set(`${d.x},${d.y}`, d);
+  for (const d of failing) failingByKey.set(getDieKey(d), d);
 
   const allByKey = new Map<string, Die>();
-  for (const d of dies) allByKey.set(`${d.x},${d.y}`, d);
+  for (const d of dies) allByKey.set(getDieKey(d), d);
 
   // Neighbourhood radius in grid steps (ceil to cover the physical radius).
   const neighStepsX = Math.ceil(neighbourRadius / pitchX);
@@ -96,7 +97,7 @@ export function buildClusterFindings(
   const components: Die[][] = [];
 
   for (const seed of failing) {
-    const seedKey = `${seed.x},${seed.y}`;
+    const seedKey = getDieKey(seed);
     if (visited.has(seedKey)) continue;
 
     const component: Die[] = [];
@@ -132,7 +133,7 @@ export function buildClusterFindings(
 
     // Neighbourhood: all eligible dies within neighbourRadius of any cluster member.
     // Use grid-step window around each cluster member for O(component × window) lookup.
-    const clusterKeySet = new Set(component.map(d => `${d.x},${d.y}`));
+    const clusterKeySet = new Set(component.map(d => getDieKey(d)));
     const neighbourKeySet = new Set<string>(clusterKeySet);
     for (const m of component) {
       for (let dy = -neighStepsY; dy <= neighStepsY; dy++) {

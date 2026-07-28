@@ -1,4 +1,5 @@
 import { analyzeWaferMap } from './analyzeWaferMap.js';
+import { median } from '../core/utils.js';
 import type {
   AnalyzeWaferLotInput,
   AnalyzeWaferMapOptions,
@@ -10,14 +11,6 @@ import type {
 
 const OUTLIER_THRESHOLD = 1.3;
 const REPEATED_PATTERN_MIN_WAFERS = 2;
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[middle - 1] + sorted[middle]) / 2
-    : sorted[middle];
-}
 
 function maxSeverity(left: StatsSeverity, right: StatsSeverity): StatsSeverity {
   const rank: Record<StatsSeverity, number> = { info: 0, notable: 1, unusual: 2 };

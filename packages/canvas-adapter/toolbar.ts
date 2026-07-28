@@ -2,6 +2,11 @@
 // Internal module. Do not re-export from index.ts.
 
 import type { PlotMode } from '../renderer/buildView.js';
+import { getUniqueTestNumbers } from '../renderer/buildView.js';
+import type { Die } from '../core/dies.js';
+import type { TestDef, MetadataFieldDef } from '../renderer/buildWaferMap.js';
+import { dieHasTestData } from '../renderer/buildWaferMap.js';
+import { prettyKey } from '../core/utils.js';
 import { listColorSchemes } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
 import { WMAP_VERSION, WMAP_BUILD_TIME } from './version.js';
@@ -609,6 +614,85 @@ export interface ToolbarHelpers {
 }
 
 export type ModeEntry = { plotMode: PlotMode; activeTest?: number; activeMetadataKey?: string; label: string; logScale?: boolean };
+
+/**
+ * Which plot modes the data actually supports — the single derivation shared by
+ * `renderWaferMap` and `renderWaferGallery`.
+ *
+ * This is a correctness surface, not a convenience: the library's rule is that UI
+ * controls must derive validity from the data the library built, never from a
+ * caller-supplied flag. Two copies of that derivation can silently disagree about
+ * which modes are offered (and adding a new plot mode means remembering both),
+ * so it lives here with the rest of the shared toolbar primitives.
+ *
+ * `includeStacked` is the one genuine difference between the two callers, and is
+ * a deliberate parameter rather than an inferred value: stacked modes are valid
+ * for `renderWaferMap` only when the result was built from a `lotStack`
+ * (`view.isLotStack`), whereas `renderWaferGallery` aggregates across its own
+ * items and can always offer them.
+ */
+export function buildDataModeEntries(
+  dies: Die[],
+  testDefs: TestDef[] | undefined,
+  options: { includeStacked: boolean },
+): { testEntries: ModeEntry[]; binEntries: ModeEntry[]; stackedEntries: ModeEntry[] } {
+  // Value modes need a numeric measurement or a recorded verdict (functional
+  // tests); stacked values need numeric values specifically.
+  const hasTestData = dies.some(dieHasTestData);
+  const hasValues = dies.some(d =>
+    (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
+    (d.values?.length ?? 0) > 0
+  );
+  const hasHbin = dies.some(d => d.hbin != null);
+  const hasSbin = dies.some(d => d.sbin != null);
+
+  const testEntries: ModeEntry[] = hasTestData
+    ? (testDefs?.length
+        ? testDefs.map(t => ({
+            plotMode: 'value' as PlotMode,
+            activeTest: t.testNumber ?? t.index ?? 0,
+            label: t.unit ? `${t.name} (${t.unit})` : t.name,
+            logScale: t.logScale,
+          }))
+        : getUniqueTestNumbers(dies).map(tn => ({
+            plotMode: 'value' as PlotMode,
+            activeTest: tn,
+            label: `Test ${tn}`,
+          })))
+    : [];
+
+  const binEntries: ModeEntry[] = [
+    ...(hasHbin ? [{ plotMode: 'hardBin' as PlotMode, label: MODE_LABELS.hardBin }] : []),
+    ...(hasSbin ? [{ plotMode: 'softBin' as PlotMode, label: MODE_LABELS.softBin }] : []),
+  ];
+
+  const stackedEntries: ModeEntry[] = options.includeStacked ? [
+    ...(hasValues ? [{ plotMode: 'stackedValues'   as PlotMode, label: MODE_LABELS.stackedValues }]   : []),
+    ...(hasHbin   ? [{ plotMode: 'stackedBins'     as PlotMode, label: MODE_LABELS.stackedBins }]     : []),
+    ...(hasSbin   ? [{ plotMode: 'stackedSoftBins' as PlotMode, label: MODE_LABELS.stackedSoftBins }] : []),
+  ] : [];
+
+  return { testEntries, binEntries, stackedEntries };
+}
+
+/**
+ * True when at least one die actually carries a value for this metadata key.
+ * Presence in `metadataFields` is an opt-in declaration; this is the "and there
+ * is data for it" half of the same check, shared so the single map and the
+ * gallery can't disagree on which fields to offer.
+ */
+export function metadataKeyHasData(dies: Die[], key: string): boolean {
+  return dies.some(d => d.metadata?.[key] !== undefined && d.metadata?.[key] !== null);
+}
+
+/** A configured metadata field → its mode-menu entry, with the shared label fallback. */
+export function metadataModeEntry(field: MetadataFieldDef): ModeEntry {
+  return {
+    plotMode: 'metadata' as PlotMode,
+    activeMetadataKey: field.key,
+    label: field.label ?? prettyKey(field.key),
+  };
+}
 
 /**
  * Build the plot-mode dropdown menu element.
