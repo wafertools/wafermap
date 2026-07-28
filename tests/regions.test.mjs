@@ -136,6 +136,23 @@ test('buildReticlePositionRegions — sorted by key lexicographically', () => {
   }
 });
 
+test('buildReticlePositionRegions — anchorDie itself always lands in cell (0,0)', () => {
+  // anchorDie is defined as the field's min-x/min-y corner (see generateReticleGrid),
+  // so whatever die matches anchorDie must be labeled column 0, row 0 — regardless of
+  // the anchor's own value. A sign error in the column/row formula previously shifted
+  // this by 2*anchorDie for non-zero anchors while leaving anchorDie={0,0} looking fine.
+  for (const anchorDie of [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]) {
+    const regions = buildReticlePositionRegions(rDies, { width: 2, height: 2, anchorDie });
+    const anchorKey = `${anchorDie.x},${anchorDie.y}`;
+    const cellForAnchor = regions.find(r => r.dieKeys.includes(anchorKey));
+    assert.ok(cellForAnchor, `anchor die ${anchorKey} should appear in some region`);
+    assert.equal(
+      cellForAnchor.key, 'reticle-position:cell:0,0',
+      `anchor die ${anchorKey} should map to cell (0,0) for anchorDie=${JSON.stringify(anchorDie)}`,
+    );
+  }
+});
+
 test('buildReticlePositionRegions — same set of cell positions with different anchorDie', () => {
   const baseline = buildReticlePositionRegions(rDies, { width: 2, height: 2 });
   const shifted  = buildReticlePositionRegions(rDies, { width: 2, height: 2, anchorDie: { x: 1, y: 0 } });

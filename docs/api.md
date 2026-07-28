@@ -3000,6 +3000,7 @@ buildHoverText(
   testLimit?:        number,            // @deprecated — no longer used (see below); kept for back-compat
   waferMeta?:        WaferMetadata | null, // wafer-level metadata; per-die keys override
   activeTest?:       number,            // active test number (value mode) — leads the tooltip
+  reticleConfig?:    ReticleConfig,     // when set, adds a "Reticle (column, row)" line below "Die (x, y)"
 ): string
 ```
 
@@ -3013,7 +3014,9 @@ The tooltip is **compact and mode-aware**, so it never becomes an unwieldy block
 
 `testLimit` is **deprecated and ignored** — the tooltip no longer lists tests up to a cap, so there is nothing to limit. It is retained only so existing positional calls keep working.
 
-`Die` → §12.1 · `TestDef` → §4.1.8 · `BinDef` → §4.1.9
+When `reticleConfig` is passed, a `Reticle (column, row)` line is inserted immediately after `Die (x, y)`, computed via `getReticleCell` (§11.21) — the same function `buildReticlePositionRegions` (§7) uses for reticle-position findings, so the tooltip and findings labels always agree. Omitted entirely when `reticleConfig` is not passed. `renderWaferMap`/`renderWaferGallery` pass this automatically from `result.reticleConfig` whenever a reticle was configured on `buildWaferMap` — no action needed for the built-in tooltip.
+
+`Die` → §12.1 · `TestDef` → §4.1.8 · `BinDef` → §4.1.9 · `ReticleConfig` → §4.1.4
 
 ```ts
 import { buildHoverText } from '@paulrobins/wafermap/renderer';
@@ -3101,6 +3104,26 @@ Whether a die counts toward yield/rollup calculations, per wmap's standard fab-r
 This is the single source of truth for the rule — `buildWaferMap`'s yield calculation, `analyzeWaferMap`'s eligible-die filter, and the §7.16 chart-data builders' yield/bin-pareto functions all call it, so they never silently drift apart on which dies count.
 
 `Die` → §12.1
+
+---
+
+### 11.21 `getReticleCell(die, config)`
+
+```ts
+import { getReticleCell } from '@paulrobins/wafermap';
+// also available from '@paulrobins/wafermap/core'
+
+getReticleCell(
+  die:    { x: number; y: number },
+  config: { width: number; height: number; anchorDie?: { x: number; y: number } },
+): { column: number; row: number }
+```
+
+The field-local `(column, row)` a die occupies within its reticle field, per the `anchorDie` convention documented on `generateReticleGrid` (§11.9): `anchorDie` is the field's min-x/min-y (bottom-left) corner, so a die's local position is `die − anchorDie`, wrapped to the field dimensions. Both `column` and `row` are `0`-indexed.
+
+This is the single source of truth for "which reticle cell is this die in" — `buildReticlePositionRegions` (§7) and `buildHoverText`'s (§11.16) `Reticle (column, row)` tooltip line both call it, so field geometry, findings labels, and tooltip text can never drift apart.
+
+`ReticleConfig` → §4.1.4
 
 ---
 

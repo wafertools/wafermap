@@ -486,4 +486,6 @@ mask defects.
 <div data-wmap-demo="reticle" class="wmap-demo"></div>
 
 Reticle-position findings in the Findings panel highlight the specific field
-positions that show elevated failure rates.
+positions that show elevated failure rates. Hovering any die also shows its
+**Reticle (column, row)** position — its location within its own stepper
+field — just below the die's coordinate in the tooltip.

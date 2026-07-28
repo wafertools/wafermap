@@ -1,4 +1,4 @@
-import { classifyDie, getRingLabel, type Die, type Wafer } from '../core/index.js';
+import { classifyDie, getReticleCell, getRingLabel, type Die, type Wafer } from '../core/index.js';
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
 
 export interface StatsRegion {
@@ -161,26 +161,16 @@ export function buildQuadrantRegions(dies: Die[], wafer: Wafer, ringCount: numbe
   return [...regions.values()].sort((left, right) => (rank.get(left.key) ?? 4) - (rank.get(right.key) ?? 4));
 }
 
-function normalizePhase(anchor: number, span: number): number {
-  return ((anchor % span) + span) % span;
-}
-
 export function buildReticlePositionRegions(
   dies: Die[],
   reticleConfig: ReticleConfig | undefined,
 ): StatsRegion[] {
   if (!reticleConfig) return [];
 
-  const { width, height, anchorDie = { x: 0, y: 0 } } = reticleConfig;
-  const safeWidth = Math.max(1, Math.floor(width));
-  const safeHeight = Math.max(1, Math.floor(height));
-  const phaseX = normalizePhase(anchorDie.x, safeWidth);
-  const phaseY = normalizePhase(anchorDie.y, safeHeight);
   const regions = new Map<string, StatsRegion>();
 
   for (const die of dies) {
-    const column = normalizePhase(die.x + phaseX, safeWidth);
-    const row = normalizePhase(die.y + phaseY, safeHeight);
+    const { column, row } = getReticleCell(die, reticleConfig);
     const key = `reticle-position:cell:${column},${row}`;
     const existing = regions.get(key) ?? {
       family: 'reticle-position' as const,

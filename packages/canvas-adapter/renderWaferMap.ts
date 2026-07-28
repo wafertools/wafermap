@@ -4,7 +4,7 @@ import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
-import type { TestDef, BinDef, MetadataFieldDef, WaferMapResult } from '../renderer/buildWaferMap.js';
+import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle } from './toolbar.js';
@@ -427,6 +427,7 @@ export function renderWaferMap(
   let testDefs: TestDef[]   | undefined = result.testDefs;
   let metadataFields: MetadataFieldDef[] | undefined = result.metadataFields;
   let reticles: Reticle[]   | undefined = result.reticles?.length ? result.reticles : undefined;
+  let reticleConfig: ReticleConfig | undefined = result.reticleConfig;
   let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.axisFlip;
   // Lot-stack context is the library's own derived truth — sourced from the result, never the
   // caller's viewOptions. Drives the stacked-mode availability and the map title's stack qualifier.
@@ -1614,6 +1615,7 @@ export function renderWaferMap(
             // Active test from the built View (authoritative, like plotMode above):
             // in value mode the tooltip leads with it; ignored in bin modes.
             currentView.activeTest,
+            reticleConfig,
           );
           tooltip.style.display = 'block';
           positionTooltip(tooltip, canvas, e.clientX, e.clientY);
@@ -2032,6 +2034,7 @@ export function renderWaferMap(
       testDefs      = newResult.testDefs;
       metadataFields = newResult.metadataFields;
       reticles      = newResult.reticles?.length ? newResult.reticles : undefined;
+      reticleConfig = newResult.reticleConfig;
       dataAxisFlip  = newResult.view?.axisFlip;
       resultIsLotStack = newResult.isLotStack;
       resultAggrMethod = newResult.aggrMethod;

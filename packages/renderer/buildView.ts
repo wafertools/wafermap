@@ -1,11 +1,12 @@
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
+import { getReticleCell } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import { rotatePoint } from '../core/transforms.js';
 import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
-import type { TestDef, BinDef, MetadataFieldDef } from './buildWaferMap.js';
+import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWaferMap.js';
 import { getDieTestValue, getTestPassStatus, isParametricTest } from './buildWaferMap.js';
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 import { metadataValueColor } from './colorMap.js';
@@ -540,10 +541,16 @@ export function buildHoverText(
   waferMeta?: WaferMetadata | null,
   /** Active test number (value mode only) — leads the tooltip and gets an out-of-spec note. */
   activeTest?: number,
+  /** Reticle geometry, when configured — appended as a "Reticle (col, row)" line below Die (x, y). */
+  reticleConfig?: ReticleConfig,
 ): string {
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
   const lines: string[] = [`Die (${die.x}, ${die.y})`];
+  if (reticleConfig) {
+    const cell = getReticleCell(die, reticleConfig);
+    lines.push(`Reticle (${cell.column}, ${cell.row})`);
+  }
 
   if (plotMode === 'stackedValues') {
     // Aggregated scalar is stored in testValues[0] (preferred) or values[0] (deprecated).

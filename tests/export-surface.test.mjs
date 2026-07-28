@@ -26,7 +26,7 @@ const SNAPSHOTS = {
     'filterFindings', 'findTestDef', 'generateDies', 'generateReticleGrid', 'generateTextOverlay',
     'parseRegionKey', 'sectorCompassNames',
     'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
-    'getRingLabel', 'getUniqueBins', 'getUniqueTestNumbers',
+    'getReticleCell', 'getRingLabel', 'getUniqueBins', 'getUniqueTestNumbers',
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isYieldEligibleDie', 'listColorSchemes',
     'mapDataToDies', 'openHtmlReport', 'registerColorScheme', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
@@ -37,7 +37,7 @@ const SNAPSHOTS = {
     'aggregateBinCounts', 'aggregateValues',
     'applyOrientation', 'applyProbeSequence',
     'classifyDie', 'clipDiesToWafer', 'createWafer',
-    'generateDies', 'generateReticleGrid', 'getRingLabel', 'getUniqueBins',
+    'generateDies', 'generateReticleGrid', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
     'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'transformDies',
   ],
   './renderer': [

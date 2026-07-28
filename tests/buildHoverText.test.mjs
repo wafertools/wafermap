@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildHoverText } from '../dist/packages/renderer/buildView.js';
 
 // buildHoverText(die, plotMode, testDefs?, hbinDefs?, sbinDefs?, fallbackFormat?,
-//                aggrMethod?, lotSize?, testLimit?, waferMeta?, activeTest?)
+//                aggrMethod?, lotSize?, testLimit?, waferMeta?, activeTest?, reticleConfig?)
 
 // A die with many parametric tests — the case that previously produced a giant block.
 function manyTestDie(n) {
@@ -92,4 +92,33 @@ test('stacked modes are untouched — still show a single aggregated value', () 
     undefined, undefined, undefined, 'mean',
   );
   assert.match(html, /Vth \(mean\): /, 'stackedValues still shows its single aggregated value');
+});
+
+test('no reticleConfig — no Reticle line in the tooltip', () => {
+  const die = { x: 0, y: 0, hbin: 1 };
+  const html = buildHoverText(die, 'hardBin', undefined, [{ bin: 1, name: 'Pass' }]);
+  assert.doesNotMatch(html, /Reticle \(/, 'no reticle geometry configured → no Reticle line');
+});
+
+test('reticleConfig present — Reticle (col, row) appears right after Die (x, y)', () => {
+  const die = { x: 5, y: 3, hbin: 1 };
+  const html = buildHoverText(
+    die, 'hardBin', undefined, [{ bin: 1, name: 'Pass' }],
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    { width: 4, height: 4, anchorDie: { x: 1, y: 1 } },
+  );
+  const lines = html.split('<br>');
+  assert.equal(lines[0], 'Die (5, 3)');
+  // column = (5 - 1) mod 4 = 0, row = (3 - 1) mod 4 = 2
+  assert.equal(lines[1], 'Reticle (0, 2)');
+});
+
+test('reticleConfig present with default anchorDie — column/row read straight off die.x/die.y', () => {
+  const die = { x: 2, y: 1, hbin: 1 };
+  const html = buildHoverText(
+    die, 'hardBin', undefined, [{ bin: 1, name: 'Pass' }],
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    { width: 4, height: 4 },
+  );
+  assert.match(html, /^Die \(2, 1\)<br>Reticle \(2, 1\)/);
 });

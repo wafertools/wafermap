@@ -27,6 +27,35 @@ export interface Reticle {
   height: number;
 }
 
+/** Wrap `value` into the half-open range [0, span). */
+function normalizePhase(value: number, span: number): number {
+  return ((value % span) + span) % span;
+}
+
+/**
+ * The field-local (column, row) that a die occupies within its reticle field,
+ * per the `anchorDie` convention documented on `generateReticleGrid`:
+ * `anchorDie` is the field's min-x/min-y (bottom-left) corner, so a die's
+ * local position is `die - anchorDie`, wrapped to the field dimensions.
+ *
+ * This is the single source of truth for "which reticle cell is this die
+ * in" — every consumer that needs the answer (e.g. stats findings, region
+ * labeling) must call this rather than re-deriving the phase math, so field
+ * geometry and cell labeling can never drift apart again.
+ */
+export function getReticleCell(
+  die: { x: number; y: number },
+  config: { width: number; height: number; anchorDie?: { x: number; y: number } },
+): { column: number; row: number } {
+  const { width, height, anchorDie = { x: 0, y: 0 } } = config;
+  const safeWidth = Math.max(1, Math.floor(width));
+  const safeHeight = Math.max(1, Math.floor(height));
+  return {
+    column: normalizePhase(die.x - anchorDie.x, safeWidth),
+    row: normalizePhase(die.y - anchorDie.y, safeHeight),
+  };
+}
+
 /**
  * Generate the grid of reticle rectangles that cover the wafer area.
  * Returns positions in wafer-local coordinates (before orientation rotation).
@@ -47,8 +76,8 @@ export function generateReticleGrid(wafer: Wafer, config: ReticleSpec): Reticle[
   const fh = H * diePitchY;
 
   // Phase: which column/row within a field the anchor die occupies.
-  const phaseX = ((anchorDie.x % W) + W) % W;
-  const phaseY = ((anchorDie.y % H) + H) % H;
+  const phaseX = normalizePhase(anchorDie.x, W);
+  const phaseY = normalizePhase(anchorDie.y, H);
 
   // Field centres are placed relative to gridOrigin (the physical position of
   // die index (0,0)), not the wafer centre — the die grid may itself be offset

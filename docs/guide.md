@@ -1618,6 +1618,14 @@ renderWaferMap(container, result);
 
 The toolbar shows a Reticle toggle button whenever `reticles` is non-empty.
 
+Once a `reticleConfig` is set, every die's hover tooltip also gains a
+`Reticle (column, row)` line directly below `Die (x, y)`, showing that die's
+field-local position (`0`-indexed, relative to `anchorDie`) — independent of
+whether the reticle overlay is currently toggled on. This is on by default
+with no extra configuration; custom `toCanvas` pipelines calling
+`buildHoverText` directly can pass `reticleConfig` as its final argument to
+get the same line.
+
 ### Reticle analysis in the stats engine
 
 When a `reticleConfig` was used, `analyzeWaferMap` automatically includes

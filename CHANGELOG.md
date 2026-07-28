@@ -21,6 +21,15 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **`Reticle (column, row)` tooltip line** — when a `reticleConfig` is configured, every die's hover tooltip now shows its field-local position directly below `Die (x, y)`, independent of whether the reticle overlay is toggled on. `buildHoverText` gained a new optional trailing `reticleConfig` parameter for custom `toCanvas` pipelines; `renderWaferMap`/`renderWaferGallery` pass it automatically. See `docs/guide.md` §15 and `docs/api.md` §11.16.
+- **`getReticleCell(die, config)`** (new export from `@paulrobins/wafermap` / `@paulrobins/wafermap/core`) — the shared, single source of truth for a die's field-local `(column, row)` within its reticle field. See `docs/api.md` §11.21.
+
+### Fixed
+
+- **Reticle-position findings could be mislabeled.** `buildReticlePositionRegions` (the stats engine's reticle-position region builder) independently re-derived a die's field-local column/row with the anchor sign inverted (`die.x + anchorDie.x` instead of `die.x - anchorDie.x`), a bug distinct from — and not caught by — the reticle *geometry* fix in 0.20.6. Because the error was a constant shift applied uniformly, the dies grouped into each finding were still correct (the right field was highlighted on the map); only the printed cell label was wrong, by `2 × anchorDie mod (width, height)` — invisible whenever `anchorDie` was `{0,0}` (the default), which is why it slipped through the 0.20.6 review. `buildReticlePositionRegions` now calls the new shared `getReticleCell` helper instead of reimplementing the phase math, so the geometry and the label can no longer drift apart.
+
 ## [0.20.6] — 2026-07-28
 
 ### Added

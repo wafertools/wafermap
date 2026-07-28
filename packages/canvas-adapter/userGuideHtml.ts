@@ -68,7 +68,7 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
   .wmap-guide-online-link{display:none!important}
 }
 </style>
-<h1 id="wafer-map-user-guide">Wafer Map — User Guide<span class="wmap-guide-version" title="Built 2026-07-27T22:25:35.961Z">v0.20.6</span></h1>
+<h1 id="wafer-map-user-guide">Wafer Map — User Guide<span class="wmap-guide-version" title="Built 2026-07-28T05:34:55.726Z">v0.20.6</span></h1>
 <p class="wmap-guide-online-link">This is a quick reference. <a href="https://telecasterer.github.io/wafermap/user-guide/" target="_blank" rel="noopener">View the full illustrated guide online ↗</a></p>
 <p>This guide describes the display and analysis features of the wafer map viewer.
 It is written for users who may be semiconductor test engineers, device engineers, and yield engineers
@@ -697,7 +697,9 @@ single step. This lets you correlate failure patterns with specific reticle
 positions — useful for identifying stepper field signatures, alignment drift, or
 mask defects.</p>
 <div data-wmap-demo="reticle" class="wmap-demo"></div><p>Reticle-position findings in the Findings panel highlight the specific field
-positions that show elevated failure rates.</p>
+positions that show elevated failure rates. Hovering any die also shows its
+<strong>Reticle (column, row)</strong> position — its location within its own stepper
+field — just below the die&#39;s coordinate in the tooltip.</p>
 <script>// Inline demo script for the embedded user guide window.
 // Reads the library API from window.__wmapDemoApi at call time (not at script
 // execution time) — the API is set by the caller before invoking populateGuideDemos.
