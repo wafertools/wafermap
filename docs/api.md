@@ -479,8 +479,21 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
   warnings: WaferWarning[]       // structured geometry-inference advisories — always present (may be empty).
                                   // Read this instead of relying on console.warn.
                                   // { code: string; message: string; confidence?: number }
-                                  // Current code: 'partial-coverage' — data does not span a full wafer;
-                                  //   inferred diameter/centre may be wrong. Supply waferConfig.center + .diameter.
+                                  // Codes:
+                                  //   'partial-coverage'  — data does not span a full wafer; inferred
+                                  //     diameter/centre may be wrong. Supply waferConfig.center + .diameter.
+                                  //   'geometry-conflict' — waferConfig.diameter AND dieConfig.width/
+                                  //     height were BOTH supplied, and are too small to contain the
+                                  //     probed dies. A die with results is a real prober position and is
+                                  //     always fully on the wafer, so the two supplied values contradict
+                                  //     each other; check them against the real device.
+                                  //   'inferred-pitch' — waferConfig.diameter was supplied without a die
+                                  //     pitch, so pitch was derived as diameter ÷ grid span (assumes the
+                                  //     data spans the full wafer — wrong whenever edge dies are absent).
+                                  //     Supply dieConfig.width/height. NOTE: 'geometry-conflict' is never
+                                  //     raised in this case — pitch is a free scaling parameter, so with
+                                  //     no supplied pitch there is always one that "fits", and a fit
+                                  //     check would otherwise fire on perfectly good full-wafer data.
   inference: {
     wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1.
                                                         // method is 'inferred-partial' when partial data was detected
@@ -3211,12 +3224,19 @@ Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by 
   sbin?:         number    // soft bin (test-program failure category; independent 0–32767 space)
   metadata?:     DieMetadata
   insideWafer?:  boolean
-  partial?:      boolean   // straddles the wafer boundary
+  partial?:      boolean   // straddles the wafer boundary — always false for dies
+                           // built from `results` (see note below)
   edgeExcluded?: boolean   // centre falls within the edge exclusion zone
   probeIndex?:   number
   retestCount?:  number    // set when this position appeared more than once in input results
 }
 ```
+
+> **A die with test results is always fully on the wafer.** A prober can only step to sites that lie entirely on the wafer, so a prober map never contains edge-straddling dies. `buildWaferMap` therefore never sets `partial` on a die built from `results`, and floors the *inferred* wafer diameter so it always contains every die.
+>
+> It follows that a die falling outside the wafer boundary is proof the **geometry** is wrong, not the die — the measured positions are ground truth and the inferred diameter/pitch is the guess. If you supply `waferConfig.diameter` and it cannot contain the probed dies, wmap does not silently resize it (you asserted it); it adds an entry to `result.inference.warnings` naming the shortfall and the likely cause. The most common cause is supplying `diameter` **without** `dieConfig.width`/`height`: the pitch is then derived as `diameter ÷ gridSpan`, which assumes your data spans the full wafer — wrong whenever edge dies are absent. Supply the die pitch, which is the value that actually matters.
+>
+> `partial` remains meaningful for a synthesized die grid clipped to a wafer — see `clipDiesToWafer` (§11.3), where straddling dies legitimately arise.
 
 ### 12.2 `Wafer`
 

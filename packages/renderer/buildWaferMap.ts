@@ -440,11 +440,23 @@ export interface WaferWarning {
    * `message` (which is prose and may be reworded). Known codes:
    * - `'partial-coverage'` — data does not span a full symmetric wafer; the
    *   inferred diameter and centre may be wrong and dies may be mis-positioned.
+   * - `'geometry-conflict'` — `waferConfig.diameter` and `dieConfig.width`/`height`
+   *   were BOTH supplied, and the wafer is too small to contain the probed dies.
+   *   Since a die with test results is a real prober position and is always fully
+   *   on the wafer, the two supplied values contradict each other and the die
+   *   positions are the trustworthy side. wmap does not silently resize a diameter
+   *   you asserted — it reports this so you can correct one of them. Only raised
+   *   when the pitch was supplied: pitch is a free scaling parameter, so with an
+   *   inferred pitch "the dies don't fit" is not a statement about your data.
+   * - `'inferred-pitch'` — `waferConfig.diameter` was supplied without a die pitch,
+   *   so the pitch was derived as `diameter ÷ grid span`, assuming the grid spans
+   *   the full wafer. That assumption fails whenever edge dies are absent, which
+   *   silently scales every die position. Supply `dieConfig.width`/`height`.
    *
    * The union is intentionally open to string so future advisory codes can be
    * added without a breaking change; switch with a `default` branch.
    */
-  code: 'partial-coverage' | (string & {});
+  code: 'partial-coverage' | 'geometry-conflict' | 'inferred-pitch' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /** Inference confidence in [0, 1] for the related quantity, when one exists. */
@@ -1176,11 +1188,31 @@ function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
  */
 function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
   return (inference.warnings ?? []).map(message => ({
-    code: 'partial-coverage' as const,
+    code: codeForAdvisory(message),
     message,
     confidence: inference.wafer.confidence,
   }));
 }
+
+/**
+ * Map an advisory message to its stable machine-readable code.
+ *
+ * `inference.warnings` is the (deprecated) string channel and is the one place
+ * both advisories are recorded, so the code is recovered here rather than being
+ * assumed. Hosts branch on `code`, so stamping every message `'partial-coverage'`
+ * — as this did before `'geometry-conflict'` existed — silently misclassifies it.
+ * Keep this in step with the push sites in `buildWaferMap`.
+ */
+function codeForAdvisory(message: string): WaferWarning['code'] {
+  if (message.includes(GEOMETRY_CONFLICT_MARKER)) return 'geometry-conflict';
+  if (message.includes(INFERRED_PITCH_MARKER))    return 'inferred-pitch';
+  return 'partial-coverage';
+}
+
+/** Distinctive phrase identifying the geometry-conflict advisory in the string channel. */
+const GEOMETRY_CONFLICT_MARKER = 'do not fit inside the supplied';
+/** Distinctive phrase identifying the inferred-pitch advisory in the string channel. */
+const INFERRED_PITCH_MARKER = 'The die pitch was inferred as';
 
 export function buildWaferMap(
   input: DieResult[] | WaferMapInput,
@@ -1291,18 +1323,32 @@ export function buildWaferMap(
 
   let waferDiameter = norm.waferOpts?.diameter;
 
+  // Physical positions in the same frame as die placement (relative to the
+  // resolved wafer centre), so an anchored centre yields a circle that encloses
+  // the data about the true centre — not the data midpoint.
+  const physPoints = gridPoints.map(p => ({
+    x: (Math.round(p.x) - offsetX) * pitchX - colMidX,
+    y: (Math.round(p.y) - offsetY) * pitchY - colMidY,
+  }));
+
+  /**
+   * Distance from the wafer centre to the furthest corner of the furthest die.
+   *
+   * Every die here came from `results`, i.e. a real tested prober position — and a
+   * prober can only step to sites that sit entirely on the wafer, so a probed die
+   * is never edge-straddling. The wafer must therefore be at least this big; the
+   * die extent is ground truth and the inferred diameter is the guess.
+   */
+  const requiredRadius = physPoints.length > 0
+    ? Math.max(...physPoints.map(({ x: px, y: py }) =>
+        Math.hypot(Math.abs(px) + pitchX / 2, Math.abs(py) + pitchY / 2)))
+    : 0;
+
   if (waferDiameter === undefined) {
     if (gridPoints.length > 0) {
-      // Physical positions in the same frame as die placement (relative to the
-      // resolved wafer centre), so an anchored centre yields a circle that
-      // encloses the data about the true centre — not the data midpoint.
-      const physPoints = gridPoints.map(p => ({
-        x: (Math.round(p.x) - offsetX) * pitchX - colMidX,
-        y: (Math.round(p.y) - offsetY) * pitchY - colMidY,
-      }));
       if (units === 'mm') {
         // pitchX/pitchY are real mm — physPoints are true physical positions.
-        const wi = inferWaferFromXY(physPoints);
+        const wi = inferWaferFromXY(physPoints, { minRadius: requiredRadius });
         waferDiameter = wi.diameter;
         inference.wafer = { confidence: wi.confidence, method: wi.method };
       } else {
@@ -1312,17 +1358,9 @@ export function buildWaferMap(
         // furthest corner distance for each data die is the radius the circle must
         // reach to fully enclose that die. Using corners (not centres) handles
         // asymmetric grids where one side extends further from (0,0) than the other.
-        // p98 of corner distances excludes rectangular-corner outliers in dense grids.
-        const hpx = pitchX / 2, hpy = pitchY / 2;
-        const cornerRadii = physPoints.map(({ x: px, y: py }) =>
-          Math.max(
-            Math.sqrt((px - hpx) ** 2 + (py - hpy) ** 2),
-            Math.sqrt((px + hpx) ** 2 + (py - hpy) ** 2),
-            Math.sqrt((px + hpx) ** 2 + (py + hpy) ** 2),
-            Math.sqrt((px - hpx) ** 2 + (py + hpy) ** 2),
-          ),
-        );
-        waferDiameter = percentile98(cornerRadii) * 2;
+        // Uses the true maximum, not a percentile: every die is a real probed site
+        // and must fit inside the circle, so there are no outliers to trim here.
+        waferDiameter = requiredRadius * 2;
         inference.wafer = { confidence: pitchResult.confidence * 0.8, method: 'extent' };
       }
     } else {
@@ -1343,6 +1381,45 @@ export function buildWaferMap(
     );
   }
 
+  // Geometry advisories for caller-supplied `waferConfig.diameter`.
+  //
+  // A "these dies don't fit" claim is only meaningful when the die pitch was ALSO
+  // supplied. Pitch is a free scaling parameter: for any set of grid positions and
+  // any diameter there is always a pitch small enough to fit them, so with an
+  // inferred pitch "doesn't fit" says nothing about the data. Worse, the inference
+  // used when a diameter is given but a pitch is not derives pitch = diameter ÷
+  // grid span, which makes the data span the diameter edge-to-edge by construction
+  // — corners then necessarily fall outside the circle, so the check would fire on
+  // perfectly good full-wafer data. It would be reporting a contradiction it had
+  // itself created.
+  if (norm.waferOpts?.diameter !== undefined) {
+    const pitchWasSupplied = norm.dieOpts?.width !== undefined && norm.dieOpts?.height !== undefined;
+
+    if (pitchWasSupplied && requiredRadius > waferDiameter / 2 + 1e-9) {
+      // Both quantities were asserted by the caller, so this is a genuine
+      // contradiction between two independent facts — and by the prober invariant
+      // the die positions are the trustworthy one. We do NOT silently resize.
+      const outside = physPoints.filter(({ x: px, y: py }) =>
+        Math.hypot(Math.abs(px) + pitchX / 2, Math.abs(py) + pitchY / 2) > waferDiameter / 2 + 1e-9).length;
+      (inference.warnings ??= []).push(
+        `${outside} of ${physPoints.length} probed die positions ${GEOMETRY_CONFLICT_MARKER} ${waferDiameter} mm wafer ` +
+        `at the supplied die pitch of ${pitchX} × ${pitchY} mm. A die with test results is a real prober position and is ` +
+        `always fully on the wafer, so one of the two supplied values must be wrong: containing these dies at this pitch ` +
+        `would need a diameter of at least ${(requiredRadius * 2).toFixed(1)} mm. Check waferConfig.diameter and ` +
+        `dieConfig.width/height against the real device.`,
+      );
+    } else if (!pitchWasSupplied) {
+      // Nothing is detectable here — only worth flagging that an unverifiable
+      // assumption was made on the caller's behalf.
+      (inference.warnings ??= []).push(
+        `${INFERRED_PITCH_MARKER} ${pitchX.toFixed(3)} × ${pitchY.toFixed(3)} mm by assuming the die grid spans the full ` +
+        `${waferDiameter} mm wafer. That assumption fails whenever edge dies are absent from the data (a reticle-complete ` +
+        `map, or partial dies filtered out upstream), which silently scales every die position. Supply dieConfig.width and ` +
+        `dieConfig.height — the die pitch, not the diameter, is what fixes placement.`,
+      );
+    }
+  }
+
   const wafer = createWafer({
     diameter:    waferDiameter,
     notch:       norm.waferOpts?.notch,
@@ -1351,26 +1428,31 @@ export function buildWaferMap(
   });
 
   const dieConfigGeom = { width: pitchX, height: pitchY };
-  const hw = pitchX / 2, hh = pitchY / 2;
 
   // Build dies directly from data positions — never generate positions without data.
-  // partial flag is set when any die corner falls outside the wafer circle.
+  //
+  // `partial` is always false here. Each of these dies came from `results`, i.e. a
+  // real tested prober position, and a prober only steps to sites that lie entirely
+  // on the wafer — a prober map never contains edge-straddling dies. Deriving the
+  // flag by testing die corners against the wafer circle inverted that: it treated
+  // the (often inferred) geometry as truth and the measured data as suspect, so an
+  // undersized circle invented partial dies that cannot physically exist, greyed
+  // them out, and silently dropped them from yield. When the geometry genuinely
+  // cannot contain the data we now say so via inference.warnings above instead.
+  //
+  // `partial` remains meaningful for a synthesized die grid clipped to a wafer —
+  // see `clipDiesToWafer`, which is where straddling dies legitimately arise.
   let dies: Die[] = results.map(pt => {
     const col = Math.round(pt.x) - offsetX;
     const row = Math.round(pt.y) - offsetY;
-    const physX = col * pitchX - colMidX;
-    const physY = row * pitchY - colMidY;
-    const corners: [number,number][] = [
-      [physX-hw, physY-hh], [physX+hw, physY-hh],
-      [physX+hw, physY+hh], [physX-hw, physY+hh],
-    ];
     const base: Die = {
       id: `${col}_${row}`,
       x: col, y: row,
-      physX, physY,
+      physX: col * pitchX - colMidX,
+      physY: row * pitchY - colMidY,
       width: pitchX, height: pitchY,
       insideWafer: true,
-      partial: corners.filter(([cx, cy]) => isInsideWafer(cx, cy, wafer)).length < 4,
+      partial: false,
     };
     return attachData(base, pt, norm.testDefs);
   });

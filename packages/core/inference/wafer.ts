@@ -16,8 +16,20 @@ export interface WaferInference {
 /**
  * Infer wafer geometry (center + diameter) from a set of XY die positions.
  * Snaps to standard wafer sizes; prefers 200mm/300mm if within ±10%.
+ *
+ * `minRadius` is a HARD floor: the resulting wafer is never smaller than this.
+ * Callers pass the distance to the furthest corner of the furthest die, because a
+ * die carrying test results is a real tested prober position and is therefore
+ * always fully on the wafer — a prober cannot step to a site that overhangs the
+ * edge. That makes the die extent ground truth and the inferred diameter the
+ * guess, so the guess must yield to it. Without this floor the p98 sizing below
+ * can undersize the wafer and manufacture "partial" dies that cannot physically
+ * exist.
  */
-export function inferWaferFromXY(points: Array<{ x: number; y: number }>): WaferInference {
+export function inferWaferFromXY(
+  points: Array<{ x: number; y: number }>,
+  options: { minRadius?: number } = {},
+): WaferInference {
   if (points.length === 0) {
     return { center: { x: 0, y: 0 }, diameter: 300, radius: 150, confidence: 0, method: 'default' };
   }
@@ -34,9 +46,11 @@ export function inferWaferFromXY(points: Array<{ x: number; y: number }>): Wafer
 
   // Die centers sit inside the wafer boundary — add a 5% buffer to account for
   // the half-die extent between the outermost die center and the wafer edge.
-  const estimatedDiameter = boundaryR * 2 * 1.05;
+  // The floor wins over the estimate whenever the two disagree — see `minRadius`.
+  const minDiameter = (options.minRadius ?? 0) * 2;
+  const estimatedDiameter = Math.max(boundaryR * 2 * 1.05, minDiameter);
 
-  const snapped = snapToStandardDiameter(estimatedDiameter);
+  const snapped = snapToStandardDiameter(estimatedDiameter, minDiameter);
   const meanR = radii.reduce((s, r) => s + r, 0) / radii.length;
   const stdR = Math.sqrt(radii.reduce((s, r) => s + (r - meanR) ** 2, 0) / radii.length);
   const cv = meanR > 0 ? stdR / meanR : 1;
@@ -51,9 +65,17 @@ export function inferWaferFromXY(points: Array<{ x: number; y: number }>): Wafer
   };
 }
 
-function snapToStandardDiameter(estimated: number): { diameter: number; method: string } {
+/**
+ * Snap to a standard wafer size, never returning a diameter below `minDiameter`.
+ * Snapping is a guess; `minDiameter` is a physical fact (see `inferWaferFromXY`),
+ * so a snap that would cut through real dies steps UP to the next standard size
+ * instead of down to the nearest one.
+ */
+function snapToStandardDiameter(estimated: number, minDiameter = 0): { diameter: number; method: string } {
+  const fits = (d: number): boolean => d >= minDiameter;
+
   for (const d of PREFERRED_DIAMETERS) {
-    if (Math.abs(estimated - d) / d <= 0.10) {
+    if (fits(d) && Math.abs(estimated - d) / d <= 0.10) {
       return { diameter: d, method: `snapped-${d}mm` };
     }
   }
@@ -61,6 +83,7 @@ function snapToStandardDiameter(estimated: number): { diameter: number; method: 
   let closestDiff = Infinity;
   let closestDiameter = estimated;
   for (const d of STANDARD_DIAMETERS) {
+    if (!fits(d)) continue;
     const diff = Math.abs(estimated - d);
     if (diff < closestDiff) {
       closestDiff = diff;
@@ -68,10 +91,10 @@ function snapToStandardDiameter(estimated: number): { diameter: number; method: 
     }
   }
 
-  if (closestDiff / estimated <= 0.20) {
+  if (closestDiff !== Infinity && closestDiff / estimated <= 0.20) {
     return { diameter: closestDiameter, method: `snapped-${closestDiameter}mm` };
   }
 
-  const rounded = Math.ceil(estimated / 10) * 10;
+  const rounded = Math.max(Math.ceil(estimated / 10) * 10, minDiameter);
   return { diameter: rounded, method: 'rounded' };
 }

@@ -11,6 +11,9 @@
 //   the user-guide window and gallery card detach gaining real-window
 //   support (window.open with fallback) and live --wmap-* theme resync —
 //   legitimate library growth, not bloat.
+//   2026-07-28: root raised from 41 KB after the affine display-transform
+//   primitives, the shared core/utils helpers, and the wafer-geometry
+//   contradiction warning — legitimate library growth, not bloat.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,7 +26,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
-  'wafermap (root)':            41_000,   // gzipped bytes — baseline ~37 KB
+  'wafermap (root)':            44_000,   // gzipped bytes — baseline ~41 KB
   'wafermap/render (initial)':  106_000,  // gzipped bytes — baseline ~88 KB, guide excluded
 };
 

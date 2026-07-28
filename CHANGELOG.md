@@ -21,6 +21,19 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.20.9] — 2026-07-28
+
+### Fixed
+
+- **Wafer geometry no longer invents "partial" dies that cannot physically exist.** A die carrying test results is a real tested prober position, and a prober only steps to sites lying entirely on the wafer — a prober map never contains edge-straddling dies. The library had this backwards: it derived `partial` by testing die corners against the (usually *inferred*) wafer circle, treating the guessed geometry as truth and the measured data as suspect. An undersized circle therefore manufactured partial dies, greyed them out, and silently dropped them from yield. Measured before the fix: `waferConfig.diameter` supplied without `dieConfig.width`/`height` flagged **124 of 400** real probed sites partial with 84 centres outside the wafer, and even `docs/data/dummy-fulldata.csv` with no config produced 4 phantom partial dies. Three changes:
+  - Dies built from `results` are never `partial`. The flag stays meaningful for a synthesized grid clipped to a wafer (`clipDiesToWafer`), where straddling dies legitimately arise.
+  - **Inferred** geometry is floored so it always fully contains every die (`inferWaferFromXY` gained `minRadius`; snapping now steps *up* to the next standard size rather than down through real data). The normalized-units path likewise uses the true maximum corner extent instead of a 98th-percentile, since every die is a real probed site and there are no outliers to trim.
+  - **Caller-supplied** geometry gets two new advisories on `result.warnings` (structured, with a stable `code`) and the deprecated `result.inference.warnings` (strings, mirrored):
+    - **`'geometry-conflict'`** — `waferConfig.diameter` **and** `dieConfig.width`/`height` were both supplied and contradict each other (the dies don't fit). Not silently resized — you asserted both values — but reported precisely, naming how many dies don't fit and the diameter actually required at the pitch in use.
+    - **`'inferred-pitch'`** — `waferConfig.diameter` was supplied **without** a die pitch. This is deliberately *not* a fit check: pitch is a free scaling parameter (for any grid and any diameter there is always a pitch small enough to fit), and the inference used in this case derives `pitch = diameter ÷ gridSpan`, which makes the data span the diameter edge-to-edge by construction — a fit check here would fire on perfectly good full-wafer data, reporting a contradiction it had itself created. It instead flags the unverifiable assumption and points at `dieConfig.width`/`height`, which is what actually fixes placement.
+
+  Yield and any `partial`-excluding statistic will shift slightly on datasets that previously produced phantom partial dies — in the correct direction, since those dies are real measured results that were being discarded.
+
 ## [0.20.8] — 2026-07-28
 
 ### Added
