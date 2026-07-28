@@ -36,6 +36,27 @@ export function rotatePoint(
   return { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
 }
 
+/**
+ * Rotate (x, y) around (cx, cy), then mirror the result through the same
+ * centre on each flipped axis — rotate first, then flipX, then flipY. This
+ * is the exact order `applyOrientation` (rotate by wafer.orientation) then
+ * `transformDies` (mirror by the resolved axis flip) apply to die centres,
+ * and the order `dieCenterTransform`/`transformPoint` apply the interactive
+ * rotation/flip on top at render time. Any geometry generated independently
+ * of the die pipeline (e.g. reticle field rectangles) must replay both steps
+ * through this same helper to land on the same on-screen dies its index-based
+ * assignment says it should — see `buildReticleOverlays` in buildView.ts and
+ * the reticle containment filter in buildWaferMap.ts.
+ */
+export function rotateAndFlip(
+  x: number, y: number, angleDegrees: number, flipX: boolean, flipY: boolean, cx = 0, cy = 0,
+): { x: number; y: number } {
+  let p = angleDegrees ? rotatePoint(x, y, angleDegrees, cx, cy) : { x, y };
+  if (flipX) p = { x: 2 * cx - p.x, y: p.y };
+  if (flipY) p = { x: p.x, y: 2 * cy - p.y };
+  return p;
+}
+
 /** Perpendicular distance from wafer centre to notch/flat chord: sqrt(r² − (L/2)²). */
 function alignmentChordDistance(radius: number, chordLength: number): number {
   return Math.sqrt(radius * radius - (chordLength / 2) ** 2);

@@ -68,7 +68,7 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
   .wmap-guide-online-link{display:none!important}
 }
 </style>
-<h1 id="wafer-map-user-guide">Wafer Map — User Guide<span class="wmap-guide-version" title="Built 2026-07-28T05:34:55.726Z">v0.20.6</span></h1>
+<h1 id="wafer-map-user-guide">Wafer Map — User Guide<span class="wmap-guide-version" title="Built 2026-07-28T06:31:41.656Z">v0.20.7</span></h1>
 <p class="wmap-guide-online-link">This is a quick reference. <a href="https://telecasterer.github.io/wafermap/user-guide/" target="_blank" rel="noopener">View the full illustrated guide online ↗</a></p>
 <p>This guide describes the display and analysis features of the wafer map viewer.
 It is written for users who may be semiconductor test engineers, device engineers, and yield engineers

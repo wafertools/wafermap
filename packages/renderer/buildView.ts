@@ -3,7 +3,7 @@ import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { getReticleCell } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
-import { rotatePoint } from '../core/transforms.js';
+import { rotatePoint, rotateAndFlip } from '../core/transforms.js';
 import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from './colorMap.js';
 import { getColorScheme } from './colorSchemes.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWaferMap.js';
@@ -396,20 +396,6 @@ function transformVector(dx: number, dy: number, transform: TransformState): Poi
 
 function polyline(points: Point[], close = false): { points: Point[][]; closed: boolean } {
   return { points: [points], closed: close };
-}
-
-function rectPoints(center: Point, width: number, height: number, transform: TransformState): Point[][] {
-  if (!transform.rotation && !transform.flipX && !transform.flipY) {
-    const x1 = center.x - width / 2, y1 = center.y - height / 2;
-    const x2 = center.x + width / 2, y2 = center.y + height / 2;
-    return [[{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }]];
-  }
-  return [[
-    transformVector(-width / 2, -height / 2, transform),
-    transformVector( width / 2, -height / 2, transform),
-    transformVector( width / 2,  height / 2, transform),
-    transformVector(-width / 2,  height / 2, transform),
-  ].map(c => ({ x: center.x + c.x, y: center.y + c.y }))];
 }
 
 function transformPoint(point: Point, center: Point, transform: TransformState): Point {
@@ -969,20 +955,44 @@ function buildQuadrantOverlays(wafer: Wafer, transform: TransformState, splitX: 
   ];
 }
 
-function buildReticleOverlays(reticles: Reticle[], wafer: Wafer, transform: TransformState): ViewOverlay[] {
+/**
+ * `generateReticleGrid` computes field rectangles in the PRE-transform physical
+ * frame — unlike `die.physX/physY`, which already have `wafer.orientation` and
+ * the resolved data-pipeline axis flip (`xAxisDirection`/`yAxisDirection`/
+ * `coordinateOrigin`) baked in by `buildWaferMap` (`applyOrientation` then
+ * `transformDies`). A single combined rotation angle can't correctly stand in
+ * for that bake because a mirror sits between the two rotations in the real
+ * pipeline (bake-rotate → bake-flip → interactive-rotate → interactive-flip),
+ * and rotation/mirror don't commute — so each reticle's corners are replayed
+ * through both steps individually via `rotateAndFlip`, exactly matching the
+ * order `dies` went through, instead of collapsing into one TransformState.
+ */
+function buildReticleOverlays(
+  reticles: Reticle[],
+  wafer: Wafer,
+  dataAxisFlip: { x: boolean; y: boolean } | undefined,
+  interactiveTransform: ViewOptions['interactiveTransform'],
+): ViewOverlay[] {
   return reticles.map((reticle) => {
-    const rotatedCenter = transform.rotation
-      ? rotatePoint(reticle.x, reticle.y, transform.rotation, wafer.center.x, wafer.center.y)
-      : { x: reticle.x, y: reticle.y };
-
-    const transformedCenter = {
-      x: transform.flipX ? 2 * wafer.center.x - rotatedCenter.x : rotatedCenter.x,
-      y: transform.flipY ? 2 * wafer.center.y - rotatedCenter.y : rotatedCenter.y,
-    };
+    const hw = reticle.width / 2, hh = reticle.height / 2;
+    const rawCorners: Point[] = [
+      { x: reticle.x - hw, y: reticle.y - hh }, { x: reticle.x + hw, y: reticle.y - hh },
+      { x: reticle.x + hw, y: reticle.y + hh }, { x: reticle.x - hw, y: reticle.y + hh },
+    ];
+    const points = rawCorners
+      .map(c => rotateAndFlip(
+        c.x, c.y, wafer.orientation, dataAxisFlip?.x ?? false, dataAxisFlip?.y ?? false,
+        wafer.center.x, wafer.center.y,
+      ))
+      .map(c => rotateAndFlip(
+        c.x, c.y, interactiveTransform?.rotation ?? 0,
+        interactiveTransform?.flipX ?? false, interactiveTransform?.flipY ?? false,
+        wafer.center.x, wafer.center.y,
+      ));
 
     return {
       kind: 'reticle',
-      points: rectPoints(transformedCenter, reticle.width, reticle.height, transform),
+      points: [points],
       closed: true,
       // lineColor/lineWidth below are unused for 'reticle' — like ring/quadrant
       // boundaries, toCanvas.ts special-cases this kind with a dual black-halo
@@ -1509,7 +1519,7 @@ export function buildView(
     // the centre column to E/N.
     overlays.push(...buildQuadrantOverlays(wafer, transform, wafer.center.x, wafer.center.y));
   }
-  if (showReticle) overlays.push(...buildReticleOverlays(reticles, wafer, transform));
+  if (showReticle) overlays.push(...buildReticleOverlays(reticles, wafer, dataAxisFlip, interactiveTransform));
   if (showProbePath) overlays.push(...buildProbeOverlay(dies));
   if (showXYIndicator) overlays.push(...buildXYIndicatorOverlay(wafer, transform, texts));
 

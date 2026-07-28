@@ -4,7 +4,7 @@ import type { Wafer, WaferSpec } from '../core/wafer.js';
 import type { Reticle, ReticleSpec } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
 import { generateDies, isYieldEligibleDie } from '../core/dies.js';
-import { clipDiesToWafer, isInsideWafer, applyOrientation, transformDies } from '../core/transforms.js';
+import { clipDiesToWafer, isInsideWafer, applyOrientation, transformDies, rotateAndFlip } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
@@ -912,6 +912,16 @@ function buildReticles(
   // remainder must be passed through or field boundaries drift off die edges.
   colMidX = 0,
   colMidY = 0,
+  // wafer.orientation (notch rotation) and the resolved data-pipeline axis flip
+  // (xAxisDirection/yAxisDirection/coordinateOrigin) — both already baked into
+  // `dies[].physX/physY` by applyOrientation/transformDies before this is called.
+  // generateReticleGrid returns rectangles in the PRE-bake physical frame, so the
+  // same bake must be replayed on each candidate here or the "does this field
+  // contain a die" test below compares mismatched frames and silently drops or
+  // keeps the wrong fields (see rotateAndFlip's doc comment).
+  orientation = 0,
+  flipX = false,
+  flipY = false,
 ): Reticle[] {
   if (!reticleOpts) return [];
   const anchorDie = reticleOpts.anchorDie ?? { x: 0, y: 0 };
@@ -926,10 +936,15 @@ function buildReticles(
   // Only keep reticles that contain at least one die — fields that merely
   // overlap the wafer circle boundary but hold no dies should not be drawn.
   return all.filter(r => {
-    const x0 = r.x - r.width  / 2;
-    const x1 = r.x + r.width  / 2;
-    const y0 = r.y - r.height / 2;
-    const y1 = r.y + r.height / 2;
+    const hw = r.width / 2, hh = r.height / 2;
+    const corners = [
+      { x: r.x - hw, y: r.y - hh }, { x: r.x + hw, y: r.y - hh },
+      { x: r.x + hw, y: r.y + hh }, { x: r.x - hw, y: r.y + hh },
+    ].map(c => rotateAndFlip(c.x, c.y, orientation, flipX, flipY, wafer.center.x, wafer.center.y));
+    const x0 = Math.min(...corners.map(c => c.x));
+    const x1 = Math.max(...corners.map(c => c.x));
+    const y0 = Math.min(...corners.map(c => c.y));
+    const y1 = Math.max(...corners.map(c => c.y));
     return dies.some(d => d.physX >= x0 && d.physX < x1 && d.physY >= y0 && d.physY < y1);
   });
 }
@@ -1213,7 +1228,14 @@ export function buildWaferMap(
       metadata:    norm.waferOpts?.metadata,
     });
 
-    const reticles    = buildReticles(norm.reticleOpts, wafer, dies, 1, 1);
+    // Pre-built dies carry the caller's own physX/physY, but waferConfig.orientation
+    // is still honored — applyOrientation rotates them to match, the same as the
+    // main (results-based) path. Without this, the wafer notch and any overlay that
+    // rotates with wafer.orientation (reticle fields, quadrant boundaries) would
+    // rotate while the dies themselves stayed put.
+    if (wafer.orientation !== 0) dies = applyOrientation(dies, wafer);
+
+    const reticles    = buildReticles(norm.reticleOpts, wafer, dies, 1, 1, 0, 0, 0, 0, wafer.orientation);
     const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
     const view = buildView(wafer, dies, {
@@ -1371,7 +1393,7 @@ export function buildWaferMap(
     dies = applyEdgeExclusion(dies, wafer, norm.waferOpts.edgeExclusion);
   }
 
-  const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY, offsetX, offsetY, colMidX, colMidY);
+  const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY, offsetX, offsetY, colMidX, colMidY, wafer.orientation, flipX, flipY);
   const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
   const view = buildView(wafer, dies, {
