@@ -44,7 +44,7 @@ export interface ToCanvasOptions {
   diePitchMm?: { x: number; y: number };
   /**
    * Override the viewport transform. When provided, `originX`, `originY`,
-   * and `ppm` replace the auto-fitted values — used by mountWaferCanvas for
+   * and `ppm` replace the auto-fitted values — used by renderWaferMap for
    * zoom/pan. Also accepts a zoom-adjusted `snapDist` for hit testing.
    */
   viewport?: ViewportTransform;
@@ -75,7 +75,7 @@ export interface ToCanvasOptions {
   showTitle?: boolean;
 }
 
-/** Internal viewport state shared between toCanvas and mountWaferCanvas. */
+/** Internal viewport state shared between toCanvas and renderWaferMap. */
 export interface ViewportTransform {
   originX:  number;
   originY:  number;
@@ -87,9 +87,6 @@ export interface HitTarget {
   /** Given a CSS-pixel position on the canvas, return the die at that point or null. */
   getDieAtPoint(x: number, y: number): Die | null;
 }
-
-/** @deprecated Use HitTarget instead. */
-export type CanvasHitTarget = HitTarget;
 
 /** A hit-testable row in the bin legend — one entry per unique bin (or metadata value). */
 export interface BinLegendRow {
@@ -107,7 +104,7 @@ export interface BinLegendRow {
 
 export interface ToCanvasResult {
   hitTarget:      HitTarget;
-  /** The fitted viewport — useful as initial state for mountWaferCanvas. */
+  /** The fitted viewport — useful as initial state for renderWaferMap. */
   viewport:       ViewportTransform;
   /** Non-empty only when a bin legend was drawn (hardbin / softbin modes). */
   binLegendRows:  BinLegendRow[];

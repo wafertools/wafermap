@@ -14,3 +14,9 @@ export {
   affineInvert, affinePoint, affineVector, affineSwapsAxes,
 } from './transforms.js';
 export * from './wafer.js';
+// The one deliberate exception to "inference/ is internal": callers doing their own
+// pre-flight on prober coordinates need the same pitch derivation buildWaferMap uses,
+// and re-deriving it host-side is how grid geometry silently diverges. Nothing else
+// from inference/ is public.
+export type { PitchResult } from './inference/pitch.js';
+export { resolveGridPitch } from './inference/pitch.js';

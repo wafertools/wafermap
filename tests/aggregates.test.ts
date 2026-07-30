@@ -53,7 +53,7 @@ describe('Core Aggregates', () => {
 
     it('should fall back to deprecated values[] array', () => {
       const wLegacy: Die[] = [
-        { id: '0_0', x: 0, y: 0, values: [100], width: 10, height: 10, physX: 0, physY: 0 }
+        { id: '0_0', x: 0, y: 0, testValues: { 0: 100 }, width: 10, height: 10, physX: 0, physY: 0 }
       ];
       const res = aggregateValues([wLegacy], 'mean');
       assert.strictEqual(res[0].testValues?.[0], 100);

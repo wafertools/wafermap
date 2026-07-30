@@ -73,8 +73,6 @@ export interface WaferDisplayState {
    * test always renders as `'test'`. Toggled by the Overlays toolbar menu.
    */
   passFailDisplay?: 'off' | 'spec' | 'test';
-  /** @deprecated Use `passFailDisplay: 'spec'` instead — alias, ignored when `passFailDisplay` is set. */
-  colorBySpec?:  boolean;
   /**
    * Which test number to display in `value` plot mode. Default `0`.
    * Controlled by the mode dropdown when the result has testDefs.
@@ -219,13 +217,6 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    */
   renderTooltip?: (die: Die) => string | HTMLElement | null;
   /**
-   * @deprecated No longer used. The die hover tooltip is now compact and mode-aware:
-   * in value mode it leads with the active test then summarises the rest as "+N more
-   * tests"; in bin modes it shows a "N test values recorded" count. It never lists
-   * tests up to a cap, so there is nothing to limit. Kept for back-compat.
-   */
-  tooltipTestLimit?: number;
-  /**
    * Show a help button in the toolbar that opens the built-in end-user guide in a modal.
    * Default false. Enable in applications that want to surface the guide without linking externally.
    */
@@ -275,9 +266,6 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    */
   insights?: InsightsOptions;
 }
-
-/** @deprecated Use RenderOptions instead. */
-export type MountOptions = RenderOptions;
 
 export interface WaferMapController {
   /** Update the die data (e.g. after a data reload) — rebuilds scene, preserves zoom/pan. */
@@ -331,9 +319,6 @@ export interface WaferMapController {
   /** Remove all event listeners and DOM elements. */
   destroy(): void;
 }
-
-/** @deprecated Use WaferMapController instead. */
-export type WaferCanvasController = WaferMapController;
 
 // Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
@@ -396,7 +381,6 @@ export function renderWaferMap(
     maxZoom              = 20,
     summaryPanel:        summaryPanelOpts,
     renderTooltip,
-    tooltipTestLimit,
     passBins             = [1],
     showHelpButton       = false,
     userGuideExtension,
@@ -632,7 +616,6 @@ export function renderWaferMap(
       lotSize:                resultLotSize ?? so.lotSize,
       dataAxisFlip,
       colorbarRangeMode:      so.colorbarRangeMode,
-      colorBySpec:            so.colorBySpec,
       passFailDisplay:        so.passFailDisplay,
       fallbackFormat:         currentFallbackFormat,
       interactiveTransform: {
@@ -919,10 +902,10 @@ export function renderWaferMap(
             // Apply test's logScale default when switching tests.
             applyOpts({ plotMode: entry.plotMode, activeTest: entry.activeTest, activeMetadataKey: undefined, logScale: entry.logScale });
           } else if (entry.activeMetadataKey !== undefined) {
-            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: entry.activeMetadataKey, colorBySpec: false, passFailDisplay: 'off' });
+            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: entry.activeMetadataKey, passFailDisplay: 'off' });
           } else {
             // Switching to a bin/stacked mode — clear the pass/fail display (only valid in value mode).
-            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: undefined, colorBySpec: false, passFailDisplay: 'off' });
+            applyOpts({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: undefined, passFailDisplay: 'off' });
           }
           menu.remove();
           setOpenMenu(null);
@@ -996,7 +979,7 @@ export function renderWaferMap(
               { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:        !viewOpts.showXYIndicator        }) },
               ...passFailMenuRows(
                 { functionalActive, hasLimits, hasRecorded, display: requestedPassFailDisplay(viewOpts) },
-                d => applyOpts({ passFailDisplay: d, colorBySpec: false }),
+                d => applyOpts({ passFailDisplay: d }),
               ),
             ];
           },
@@ -1564,30 +1547,27 @@ export function renderWaferMap(
             positionTooltip(tooltip, canvas, e.clientX, e.clientY);
           }
         } else {
-          tooltip.innerHTML = buildHoverText(
-            die,
-            currentView.plotMode,
+          tooltip.innerHTML = buildHoverText(die, currentView.plotMode, {
             testDefs,
             hbinDefs,
             sbinDefs,
-            currentFallbackFormat,
+            fallbackFormat: currentFallbackFormat,
             // Read aggregation context from the built View, not viewOpts: a
             // buildWaferMap({ lotStack }) result carries these on the result
             // (→ currentView.aggrMethod/lotSize), and the caller need not repeat
             // them in viewOptions. Using viewOpts here showed the wrong/missing
             // aggregation method on stacked-map tooltips.
-            currentView.aggrMethod,
-            currentView.lotSize,
-            tooltipTestLimit,
+            aggrMethod: currentView.aggrMethod,
+            lotSize: currentView.lotSize,
             // wafer.metadata, not result.metadata: `result` is the original render-call
             // parameter and is never reassigned, so it goes stale after any setResult()
             // call — `wafer` is the local setResult() does keep live.
-            wafer.metadata,
+            waferMeta: wafer.metadata,
             // Active test from the built View (authoritative, like plotMode above):
             // in value mode the tooltip leads with it; ignored in bin modes.
-            currentView.activeTest,
+            activeTest: currentView.activeTest,
             reticleConfig,
-          );
+          });
           tooltip.style.display = 'block';
           positionTooltip(tooltip, canvas, e.clientX, e.clientY);
         }

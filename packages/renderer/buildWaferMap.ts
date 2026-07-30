@@ -28,9 +28,8 @@ export interface DieResult {
   y: number;
   /**
    * Test values keyed by test number — a stable per-test identity such as
-   * STDF TEST_NUM or an equivalent application-defined integer.
-   * Preferred over the deprecated `values` array because it is unaffected by
-   * test ordering changes in the test program.
+   * STDF TEST_NUM or an equivalent application-defined integer. Keying by test
+   * number is unaffected by test ordering changes in the test program.
    * Example: `{ 1050: 1.42e-3, 1060: 0.487, 1070: 8.3e-12 }`
    */
   testValues?: Record<number, number>;
@@ -43,12 +42,6 @@ export interface DieResult {
    * Example: `{ 2001: true, 2002: false }`
    */
   testPass?: Record<number, boolean>;
-  /**
-   * @deprecated Use `testValues` instead.
-   * Positional array of test measurements — fragile when tests are added,
-   * removed, or reordered between runs.
-   */
-  values?: number[];
   /** Hard bin assignment (physical sort result). */
   hbin?: number;
   /** Soft bin assignment (test-program failure category). */
@@ -202,22 +195,14 @@ export interface LotStackConfig {
  * Metadata for one test measurement.
  * Provides a human-readable name and optional unit for display in tooltips,
  * the colorbar, and the mode selector.
- *
- * At least one of `testNumber` or `index` must be set.
  */
 export interface TestDef {
   /**
    * Stable per-test identity — an application-defined integer that uniquely
    * identifies this test within a test program (for example, STDF TEST_NUM).
-   * Preferred over `index` because it is unaffected by test ordering changes.
+   * Must match the key used in `DieResult.testValues` / `DieResult.testPass`.
    */
-  testNumber?: number;
-  /**
-   * @deprecated Use `testNumber` instead.
-   * Positional index into the deprecated `die.values[]` array.
-   * Required only when using the deprecated `values` field.
-   */
-  index?: number;
+  testNumber: number;
   /** Human-readable test name, e.g. `"Idsat"` or `"Vth"`. */
   name: string;
   /** Physical unit string, e.g. `"A"`, `"V"`, `"Ω"`. Shown in tooltip and colorbar. */
@@ -757,9 +742,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
   // out of value stacks. Keys with no matching def default to parametric.
   if (method === 'mean' || method === 'median' || method === 'stddev' || method === 'min' || method === 'max' || method === 'count') {
     const functionalKeys = new Set(
-      (testDefs ?? []).filter(td => !isParametricTest(td))
-        .map(td => td.testNumber ?? td.index)
-        .filter((n): n is number => n !== undefined),
+      (testDefs ?? []).filter(td => !isParametricTest(td)).map(td => td.testNumber),
     );
     const testKeys = new Set<number>();
     for (const wafer of waferResults) {
@@ -1030,13 +1013,9 @@ function applyRetestPolicy(
 
 // ── Test value helpers ────────────────────────────────────────────────────────
 
-/**
- * Read a test value from a die by test number.
- * Falls back to `values[fallbackIndex]` when `testValues` is absent (deprecated path).
- */
-export function getDieTestValue(die: Die, testNumber: number, fallbackIndex?: number): number | undefined {
-  if (die.testValues) return die.testValues[testNumber];
-  return fallbackIndex !== undefined ? die.values?.[fallbackIndex] : undefined;
+/** Read a test value from a die by test number. */
+export function getDieTestValue(die: Die, testNumber: number): number | undefined {
+  return die.testValues?.[testNumber];
 }
 
 /**
@@ -1067,20 +1046,19 @@ export function getTestPassStatus(
 }
 
 /**
- * True when the die carries any per-test data — a test value (preferred or
- * deprecated positional form) or a recorded pass/fail verdict. The single
- * source for "does this die have test data", used by coverage, plot-mode
- * inference, and the toolbar's value-mode availability checks.
+ * True when the die carries any per-test data — a measured test value or a
+ * recorded pass/fail verdict. The single source for "does this die have test
+ * data", used by coverage, plot-mode inference, and the toolbar's value-mode
+ * availability checks.
  */
-export function dieHasTestData(die: Pick<Die, 'testValues' | 'testPass' | 'values'>): boolean {
+export function dieHasTestData(die: Pick<Die, 'testValues' | 'testPass'>): boolean {
   return (die.testValues !== undefined && Object.keys(die.testValues).length > 0) ||
-         (die.testPass   !== undefined && Object.keys(die.testPass).length > 0) ||
-         (die.values?.length ?? 0) > 0;
+         (die.testPass   !== undefined && Object.keys(die.testPass).length > 0);
 }
 
 // ── Data attachment ───────────────────────────────────────────────────────────
 
-function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
+function attachData(die: Die, pt: DieResult): Die {
   const base: Partial<Die> = {};
   if (pt.hbin        !== undefined) base.hbin        = pt.hbin;
   if (pt.sbin        !== undefined) base.sbin        = pt.sbin;
@@ -1089,30 +1067,7 @@ function attachData(die: Die, pt: DieResult, testDefs?: TestDef[]): Die {
   if (pt.partId      !== undefined) base.partId      = pt.partId;
   if (pt.metadata    !== undefined) base.metadata    = pt.metadata;
   if (pt.testPass    !== undefined) base.testPass    = pt.testPass;
-
-  // Preferred path: testValues map supplied directly — use as-is.
-  if (pt.testValues) {
-    return { ...die, ...base, testValues: pt.testValues };
-  }
-
-  // Deprecated path: convert positional values[] to testValues using TestDef mappings.
-  if (pt.values?.length) {
-    base.values = pt.values; // keep for backwards-compat reads
-    const testValues: Record<number, number> = {};
-    if (testDefs?.length) {
-      for (const def of testDefs) {
-        const key = def.testNumber ?? def.index;
-        const idx = def.index ?? def.testNumber;
-        if (key !== undefined && idx !== undefined && pt.values[idx] !== undefined) {
-          testValues[key] = pt.values[idx]!;
-        }
-      }
-    } else {
-      // No testDefs — key by positional index.
-      pt.values.forEach((v, i) => { testValues[i] = v; });
-    }
-    return { ...die, ...base, testValues };
-  }
+  if (pt.testValues  !== undefined) base.testValues  = pt.testValues;
 
   return { ...die, ...base };
 }
@@ -1250,7 +1205,7 @@ export function buildWaferMap(
       const lookup = new Map(results.map(d => [getDieKey(d), d]));
       dies = dies.map(die => {
         const pt = lookup.get(getDieKey(die));
-        return pt ? attachData(die, pt, norm.testDefs) : die;
+        return pt ? attachData(die, pt) : die;
       });
     }
 
@@ -1453,7 +1408,7 @@ export function buildWaferMap(
       insideWafer: true,
       partial: false,
     };
-    return attachData(base, pt, norm.testDefs);
+    return attachData(base, pt);
   });
 
   // Shift x/y from centred grid indices to original input coordinates.

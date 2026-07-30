@@ -670,10 +670,7 @@ export function buildDataModeEntries(
   // Value modes need a numeric measurement or a recorded verdict (functional
   // tests); stacked values need numeric values specifically.
   const hasTestData = dies.some(dieHasTestData);
-  const hasValues = dies.some(d =>
-    (d.testValues !== undefined && Object.keys(d.testValues).length > 0) ||
-    (d.values?.length ?? 0) > 0
-  );
+  const hasValues = dies.some(d => d.testValues !== undefined && Object.keys(d.testValues).length > 0);
   const hasHbin = dies.some(d => d.hbin != null);
   const hasSbin = dies.some(d => d.sbin != null);
 
@@ -681,7 +678,7 @@ export function buildDataModeEntries(
     ? (testDefs?.length
         ? testDefs.map(t => ({
             plotMode: 'value' as PlotMode,
-            activeTest: t.testNumber ?? t.index ?? 0,
+            activeTest: t.testNumber,
             label: t.unit ? `${t.name} (${t.unit})` : t.name,
             logScale: t.logScale,
           }))
@@ -2142,11 +2139,11 @@ export function makePaletteBtn(
   return { btn, sync };
 }
 
-/** Requested pass/fail display resolved from the new option and its deprecated alias. */
+/** Requested pass/fail display, defaulting to 'off' when unset. */
 export function requestedPassFailDisplay(
-  opts: { passFailDisplay?: 'off' | 'spec' | 'test'; colorBySpec?: boolean },
+  opts: { passFailDisplay?: 'off' | 'spec' | 'test' },
 ): 'off' | 'spec' | 'test' {
-  return opts.passFailDisplay ?? (opts.colorBySpec ? 'spec' : 'off');
+  return opts.passFailDisplay ?? 'off';
 }
 
 /**
@@ -2178,7 +2175,7 @@ export function passFailMenuRows(
 
 export function makeLogScaleBtn(
   helpers: ToolbarHelpers,
-  getOpts: () => { plotMode?: PlotMode; logScale?: boolean; colorBySpec?: boolean; passFailDisplay?: 'off' | 'spec' | 'test'; functionalActive?: boolean },
+  getOpts: () => { plotMode?: PlotMode; logScale?: boolean; passFailDisplay?: 'off' | 'spec' | 'test'; functionalActive?: boolean },
   setOpts: (patch: { logScale: boolean }) => void,
 ): { btn: HTMLButtonElement; sync: () => void } {
   const btn = helpers.makeBtn('logScale', 'Toggle log scale', () => {

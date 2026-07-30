@@ -115,13 +115,13 @@ test('requested displays degrade to off when invalid for the active test (librar
   assert.equal(tst.passFailDisplay, 'off');
 });
 
-test('colorBySpec remains a working alias for passFailDisplay: spec', () => {
+test("passFailDisplay: 'spec' sets the view's colorBySpec flag and solid spec fills", () => {
   const results = [
     { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0 } },
     { x: 1, y: 0, hbin: 2, testValues: { 1010: 5.0 } }, // above limitHigh
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs: [P_DEF] });
-  const view = buildView(wafer, dies, { plotMode: 'value', testDefs: [P_DEF], activeTest: 1010, colorBySpec: true });
+  const view = buildView(wafer, dies, { plotMode: 'value', testDefs: [P_DEF], activeTest: 1010, passFailDisplay: 'spec' });
   assert.equal(view.passFailDisplay, 'spec');
   assert.equal(view.colorBySpec, true);
   assert.equal(rectFillAt(view, 1, 0), SPEC_FAIL_HIGH);
@@ -130,18 +130,15 @@ test('colorBySpec remains a working alias for passFailDisplay: spec', () => {
 
 test('tooltip: functional lead reads Pass/Fail; parametric rows get a recorded-fail note', () => {
   const fDie = { x: 0, y: 0, hbin: 1, testPass: { 2001: true } };
-  const fHtml = buildHoverText(fDie, 'value', [F_DEF], undefined, undefined,
-    undefined, undefined, undefined, undefined, undefined, 2001);
+  const fHtml = buildHoverText(fDie, 'value', { testDefs: [F_DEF], activeTest: 2001 });
   assert.match(fHtml, /<b>scan_chain: Pass<\/b>/);
 
   const fFail = { x: 1, y: 0, hbin: 2, testPass: { 2001: false } };
-  const fFailHtml = buildHoverText(fFail, 'value', [F_DEF], undefined, undefined,
-    undefined, undefined, undefined, undefined, undefined, 2001);
+  const fFailHtml = buildHoverText(fFail, 'value', { testDefs: [F_DEF], activeTest: 2001 });
   assert.match(fFailHtml, /<b>scan_chain: Fail<\/b>/);
 
   const pDie = { x: 0, y: 0, hbin: 2, testValues: { 1010: 1.1 }, testPass: { 1010: false } };
-  const pHtml = buildHoverText(pDie, 'value', [P_DEF], undefined, undefined,
-    undefined, undefined, undefined, undefined, undefined, 1010);
+  const pHtml = buildHoverText(pDie, 'value', { testDefs: [P_DEF], activeTest: 1010 });
   assert.match(pHtml, /recorded fail/, 'recorded FAIL on a parametric test is noted');
 });
 

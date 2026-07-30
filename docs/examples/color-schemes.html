@@ -92,11 +92,11 @@
   <div class="demo-content">
     <div class="canvas-grid-3">
 
-      <!-- Built-in 'color' (default) -->
+      <!-- Built-in 'default' -->
       <div class="scheme-card">
         <div id="map-color"></div>
         <div class="scheme-caption">
-          <div class="scheme-name">'color'  <span style="color:var(--muted); font-weight:400">(built-in default)</span></div>
+          <div class="scheme-name">'default'  <span style="color:var(--muted); font-weight:400">(built-in default)</span></div>
           <div class="scheme-desc">Categorical palette — visually distinct bins, blue→cyan→yellow→red (thermal) gradient for continuous values.</div>
           <div class="swatch-row" id="sw-color"></div>
         </div>
@@ -187,7 +187,7 @@
     const sharedOpts = { viewOptions: { plotMode: 'hardBin' }, showToolbar: true, showHelpButton: true };
 
     renderWaferMap(document.getElementById('map-color'),
-      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'color'     } });
+      result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'default'   } });
 
     renderWaferMap(document.getElementById('map-plasma'),
       result, { ...sharedOpts, viewOptions: { ...sharedOpts.viewOptions, colorScheme: 'plasma'    } });

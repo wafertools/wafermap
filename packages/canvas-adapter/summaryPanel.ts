@@ -760,8 +760,7 @@ export function buildTestSection(
     // (mean/σ/median/quartiles) is a parametric statistic.
     entries = testDefs
       .filter(isParametricTest)
-      .map(def => ({ testNumber: def.testNumber ?? def.index!, name: def.name, unit: def.unit, limitLow: def.limitLow, limitHigh: def.limitHigh }))
-      .filter(e => e.testNumber !== undefined);
+      .map(def => ({ testNumber: def.testNumber, name: def.name, unit: def.unit, limitLow: def.limitLow, limitHigh: def.limitHigh }));
   } else {
     const testNumbers = getUniqueTestNumbers(activeDies);
     entries = testNumbers.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));

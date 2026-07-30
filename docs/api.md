@@ -192,8 +192,6 @@ A single die record from wafer test equipment.
 }
 ```
 
-Use `testValues` (keyed map) rather than `values` (positional array). A keyed map is stable when tests are added, removed, or reordered between test program revisions; a positional array is not.
-
 A single test result: `testValues: { 1050: 0.95 }`
 
 When a die position appears more than once in the `results` array (a retest), the
@@ -340,10 +338,8 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
 
 ```ts
 {
-  testNumber?: number  // preferred: stable test identity matching the key used in DieResult.testValues
+  testNumber:  number  // required: stable test identity matching the key used in DieResult.testValues
                        // e.g. an STDF TEST_NUM, a database test ID, or an application-defined constant
-  index?:      number  // @deprecated: use testNumber. Positional index into the deprecated values[] array.
-                       // At least one of testNumber or index must be provided.
   name:        string  // e.g. "Idsat", "Vth", "Continuity"
   unit?:       string  // SI base unit, e.g. "A", "V", "Ω", "F" — the formatter applies SI prefixes
                        // automatically (0.03 Ω → "30 mΩ"), so always pass the base unit, never a
@@ -369,7 +365,7 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
 }
 ```
 
-`testNumber` is preferred. When `testNumber` is set it must match the key used in `DieResult.testValues`. Use `index` only when working with the deprecated `values[]` array.
+`testNumber` must match the key used in `DieResult.testValues` / `DieResult.testPass`.
 
 `isParametricTest(def)` (exported) returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric, so untyped callers are unaffected.
 
@@ -835,11 +831,10 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.11) |
 | `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Spec pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
-| `colorBySpec` | `boolean` | `false` | **Deprecated** — alias for `passFailDisplay: 'spec'`; ignored when `passFailDisplay` is set. |
 | `highlightBin` | `number` | — | Dim all bins except this one. Clicking a bin/soft-bin legend swatch toggles it. |
 | `highlightMetadataValue` | `string` | — | `'metadata'` mode's analogue of `highlightBin` — dim every die except this metadata value. Clicking a metadata legend swatch toggles it. |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the view auto-scales — use this to safely fix a range computed for a specific test. |
-| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored when `colorBySpec` is true (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
+| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored under `passFailDisplay: 'spec'` (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
 | `aggregationMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
 | `lotSize` | `number` | — | Total wafers in lot — percentage denominator in `stackedBins`/`stackedSoftBins` tooltips |
@@ -873,7 +868,6 @@ renderWaferMap(container, result, {
 
 Use `=== 'preference'` (not `!== 'state'`) so that `'mixed'` events — which may include transient fields like `plotMode` or `activeTest` — do not get written to storage.
 
-> **`colorScheme` note:** `'color'` is a deprecated alias for `'default'` — it works but does not appear in `listColorSchemes()` output. Use `'default'` in new code.
 
 ### 5.2 Hover tooltip content by mode
 
@@ -931,10 +925,6 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
-  tooltipTestLimit?:       number    // @deprecated — no longer used. The die hover tooltip is now
-                                            // compact and mode-aware (value mode leads with the active test
-                                            // + "+N more tests"; bin modes show a test-value count), so it
-                                            // never lists tests up to a cap. Kept for back-compat.
   showHelpButton?:         boolean   // show a help button in the toolbar that opens the built-in end-user guide
                                             // (default false); enable in applications that want to surface the guide
                                             // without linking externally. Opens as a real, separate window when
@@ -963,7 +953,6 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
 }
 ```
 
-> **`MountOptions`** is a deprecated alias for `RenderOptions` — it still works but will be removed in a future release. Use `RenderOptions` in new code.
 
 > **Sizing.** `renderWaferMap` fills its container, so the container must have a resolved height (width comes from document flow). A plain block `<div>` grows to fit the map; a flex/grid child needs a height-resolved parent or it collapses to zero — the library logs a warning when it detects this. Pass `height` to have the library size the container for you. See [Troubleshooting → Map is blank, invisible, or the wrong height](troubleshooting.md).
 
@@ -1143,7 +1132,6 @@ Choose the right update method:
 }
 ```
 
-> **`WaferCanvasController`** is a deprecated alias for `WaferMapController` — it still works but will be removed in a future release. Use `WaferMapController` in new code.
 
 ### 5.6 Toolbar buttons (full mode)
 
@@ -2581,7 +2569,7 @@ canvas.addEventListener('mousemove', e => {
 });
 ```
 
-> `hitTarget` is a `HitTarget` object. **`CanvasHitTarget`** is a deprecated alias — use `HitTarget` in new code.
+> `hitTarget` is a `HitTarget` object.
 
 `toCanvas` reads `window.devicePixelRatio` automatically and snaps canvas dimensions to integer CSS pixels to prevent sub-pixel interpolation blur.  Set canvas size in CSS only; do not set `canvas.width`/`canvas.height` directly.
 
@@ -2608,6 +2596,13 @@ import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
 
 Only `renderWaferMap` and `toCanvas` (both from `/render`) require a browser environment.
 
+> **The renderers are not on the root entry point.** `renderWaferMap`, `renderWaferGallery`
+> and `toCanvas` are exported **only** from `@paulrobins/wafermap/render` — so
+> `import { renderWaferMap } from '@paulrobins/wafermap'` will fail. This is deliberate:
+> the root entry stays DOM-free (and therefore usable in Node and tree-shakeable) by
+> re-exporting only `core`, `renderer` and `stats`. Import the geometry/data layer from the
+> root and the renderer from `/render`.
+
 > **`buildView` and `View`** are no longer exported from the root `@paulrobins/wafermap` package. They are available from `@paulrobins/wafermap/renderer` for advanced use (see §11 Manual Pipeline). If you were importing them from the root, update your import path.
 
 ### 10.1 Helper exports
@@ -2618,7 +2613,7 @@ import { getDieKey, getDieTestValue, getTestPassStatus, dieHasTestData, isParame
 
 ```ts
 getDieKey(die: { x: number; y: number }): string
-getDieTestValue(die: Die, testNumber: number, fallbackIndex?: number): number | undefined
+getDieTestValue(die: Die, testNumber: number): number | undefined
 getTestPassStatus(die: Die, testNumber: number, testDef?: TestDef): boolean | undefined
 dieHasTestData(die: Die): boolean
 isParametricTest(def: TestDef | undefined): boolean
@@ -2629,11 +2624,7 @@ isParametricTest(def: TestDef | undefined): boolean
 `getDieTestValue` reads a test value from a die by test number:
 
 ```ts
-// Preferred — reads from die.testValues
 const idsat = getDieTestValue(die, 1050);
-
-// Deprecated path — reads from die.values by position (fallback)
-const v = getDieTestValue(die, 0, 0);
 ```
 
 Returns `undefined` when no value is present.  Use this in post-build code that reads test values from dies.
@@ -2961,7 +2952,6 @@ interface ViewOptions {
   plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'metadata'
   passFailDisplay?:        'off' | 'spec' | 'test'  // solid pass/fail display: 'spec' = limits judgement, 'test' = recorded verdict (die.testPass);
                                              // library-resolved — degrades to 'off' when invalid; functional tests always render as 'test'
-  colorBySpec?:            boolean           // @deprecated: alias for passFailDisplay: 'spec'; ignored when passFailDisplay is set
   showDieLabels?:          boolean
   showPartialDies?:        boolean   // default true; set false to hide edge dies outside the wafer circle
   showReticle?:            boolean
@@ -3004,22 +2994,23 @@ Display-transform fields:
 
 ---
 
-### 11.16 `buildHoverText(die, plotMode, ...)`
+### 11.16 `buildHoverText(die, plotMode, opts?)`
 
 ```ts
 buildHoverText(
-  die:               Die,
-  plotMode:          PlotMode,
-  testDefs?:         TestDef[],
-  hbinDefs?:         BinDef[],
-  sbinDefs?:         BinDef[],
-  fallbackFormat?:   'si' | 'engineering',
-  aggregationMethod?: string,
-  lotSize?:          number,
-  testLimit?:        number,            // @deprecated — no longer used (see below); kept for back-compat
-  waferMeta?:        WaferMetadata | null, // wafer-level metadata; per-die keys override
-  activeTest?:       number,            // active test number (value mode) — leads the tooltip
-  reticleConfig?:    ReticleConfig,     // when set, adds a "Reticle (column, row)" line below "Die (x, y)"
+  die:      Die,
+  plotMode: PlotMode,
+  opts?: {
+    testDefs?:       TestDef[]
+    hbinDefs?:       BinDef[]
+    sbinDefs?:       BinDef[]
+    fallbackFormat?: 'si' | 'engineering'
+    aggrMethod?:     string                 // lot-stack aggregation method name
+    lotSize?:        number                 // wafers in the stack — annotates a count with its lot share
+    waferMeta?:      WaferMetadata | null   // wafer-level metadata; per-die keys override
+    activeTest?:     number                 // active test number (value mode) — leads the tooltip
+    reticleConfig?:  ReticleConfig          // when set, adds "Reticle (column, row)" below "Die (x, y)"
+  },
 ): string
 ```
 
@@ -3031,8 +3022,6 @@ The tooltip is **compact and mode-aware**, so it never becomes an unwieldy block
 - **`hardBin` / `softBin` mode** — shows the bin verdict (`HBin` / `SBin`), then a `N test values recorded` count rather than listing individual tests (no single test is privileged in bin mode).
 - **stacked modes** — show the single aggregated value.
 
-`testLimit` is **deprecated and ignored** — the tooltip no longer lists tests up to a cap, so there is nothing to limit. It is retained only so existing positional calls keep working.
-
 When `reticleConfig` is passed, a `Reticle (column, row)` line is inserted immediately after `Die (x, y)`, computed via `getReticleCell` (§11.21) — the same function `buildReticlePositionRegions` (§7) uses for reticle-position findings, so the tooltip and findings labels always agree. Omitted entirely when `reticleConfig` is not passed. `renderWaferMap`/`renderWaferGallery` pass this automatically from `result.reticleConfig` whenever a reticle was configured on `buildWaferMap` — no action needed for the built-in tooltip.
 
 `Die` → §12.1 · `TestDef` → §4.1.8 · `BinDef` → §4.1.9 · `ReticleConfig` → §4.1.4
@@ -3040,7 +3029,7 @@ When `reticleConfig` is passed, a `Reticle (column, row)` line is inserted immed
 ```ts
 import { buildHoverText } from '@paulrobins/wafermap/renderer';
 
-const html = buildHoverText(die, 'hardBin', testDefs, hbinDefs, sbinDefs);
+const html = buildHoverText(die, 'hardBin', { testDefs, hbinDefs, sbinDefs });
 tooltipEl.innerHTML = html;
 ```
 
@@ -3202,6 +3191,43 @@ This is the single source of truth for "which reticle cell is this die in" — `
 Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by any display convention — `xAxisDirection`, `coordinateOrigin`, wafer orientation, and interactive rotate/flip change only where a die is *drawn* (see §11.21), never which reticle cell it belongs to.
 
 `ReticleConfig` → §4.1.4
+
+---
+
+### 11.23 `resolveGridPitch(gridPoints, dieOpts?, waferDiameter?)`
+
+```ts
+import { resolveGridPitch } from '@paulrobins/wafermap';
+// also available from '@paulrobins/wafermap/core'
+
+resolveGridPitch(
+  gridPoints:     Array<{ x: number; y: number }>,
+  dieOpts?:       { width?: number; height?: number },
+  waferDiameter?: number,
+): {
+  pitchX:     number
+  pitchY:     number
+  units:      'mm' | 'normalized'   // 'normalized' when no physical dimension was known
+  confidence: number
+}
+```
+
+The exact pitch derivation `buildWaferMap` uses internally, exposed so a host doing its
+own pre-flight on prober coordinates gets the same answer rather than re-deriving it (a
+host-side re-derivation is how grid geometry silently diverges from what the map renders).
+
+`gridPoints` are integer prober step coordinates, not mm — physical position is
+`grid_pos × pitch`. When both die dimensions are supplied the result is exact and in `mm`.
+Otherwise nearest-neighbour step analysis is tried first (reliable for regular grids with
+≥ 4 points), falling back to the circular-wafer aspect-ratio constraint; when no physical
+dimension is known at all, `units` is `'normalized'` and `confidence` drops accordingly.
+
+Check `confidence` before trusting the result, and prefer `result.warnings` (§4.2) for
+judging whether the geometry wmap actually built is sound — this helper answers "what pitch
+do these coordinates imply", not "is my configuration valid", which the library owns.
+
+This is the one deliberate exception to `inference/` being internal; nothing else from that
+directory is public.
 
 ---
 

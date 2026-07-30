@@ -107,7 +107,7 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
     const jitter = (((die.x * 7 + die.y * 13) % 10) - 4.5) * 0.05; // ~±0.225
     return {
       ...die,
-      values: [(quadrant === 'NE' ? 10 : 1) + jitter],
+      testValues: { 0: (quadrant === 'NE' ? 10 : 1) + jitter },
       hbin: quadrant === 'NE' ? 8 : 1,
       sbin: ring === 3 ? 23 : 1,
     };
@@ -117,7 +117,7 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
     dies: enriched,
     waferConfig: { diameter: 60 },
     passBins: [1],
-    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+    testDefs: [{ testNumber: 0, name: 'Idsat', unit: 'A' }],
     hbinDefs: [{ bin: 8, name: 'NE Fail' }],
     sbinDefs: [{ bin: 23, name: 'Edge Signature' }],
   }, {
@@ -163,7 +163,7 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
     const jitter = (((die.x * 7 + die.y * 13) % 10) - 4.5) * 0.05;
     return {
       ...die,
-      values: [(isBadCell ? 10 : 1) + jitter],
+      testValues: { 0: (isBadCell ? 10 : 1) + jitter },
       hbin: isBadCell ? 9 : 1,
       sbin: isBadCell ? 31 : 1,
     };
@@ -174,7 +174,7 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
     waferConfig: { diameter: 60 },
     reticleConfig: { width: 2, height: 2 },
     passBins: [1],
-    testDefs: [{ index: 0, name: 'Leakage', unit: 'A' }],
+    testDefs: [{ testNumber: 0, name: 'Leakage', unit: 'A' }],
     hbinDefs: [{ bin: 9, name: 'Reticle Cell Fail' }],
     sbinDefs: [{ bin: 31, name: 'Reticle Cell Soft Fail' }],
   }, {

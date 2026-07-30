@@ -56,7 +56,7 @@ Metadata describing one parametric test: a stable integer ID (`testNumber`), a h
 
 ### Spec limit
 
-The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) in `value` plot mode. Enable pass/fail colouring by setting `passFailDisplay: 'spec'` in `WaferViewOptions`, or toggling "Spec pass/fail" in the Overlays toolbar menu (`colorBySpec: true` is a deprecated alias). *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.passFailDisplay`.*
+The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) in `value` plot mode. Enable pass/fail colouring by setting `passFailDisplay: 'spec'` in `WaferViewOptions`, or toggling "Spec pass/fail" in the Overlays toolbar menu. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.passFailDisplay`.*
 
 ### Functional test
 

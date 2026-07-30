@@ -110,8 +110,7 @@ function makeClusterFailurePredicate(
   if (limited.length === 0) return undefined;
   return (die: Die): boolean => {
     for (const td of limited) {
-      const tn = td.testNumber ?? td.index;
-      if (tn === undefined) continue;
+      const tn = td.testNumber;
       const v = die.testValues?.[tn];
       if (v === undefined) continue;
       if (td.limitLow  !== undefined && v < td.limitLow)  return true;
@@ -131,10 +130,6 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
   for (const die of dies) {
     if (die.testValues) {
       for (const k of Object.keys(die.testValues)) testSet.add(Number(k));
-    } else {
-      die.values?.forEach((value, index) => {
-        if (value !== undefined) testSet.add(index);
-      });
     }
     if (die.testPass) {
       for (const k of Object.keys(die.testPass)) testSet.add(Number(k));
@@ -172,12 +167,11 @@ function computeTestSpecYield(
 
   const result: NonNullable<StatsSummary['stats']['testSpecYield']> = [];
   for (const td of limited) {
-    const tn = td.testNumber ?? td.index;
-    if (tn === undefined) continue;
+    const tn = td.testNumber;
     let passDies = 0, failLowDies = 0, failHighDies = 0, totalDies = 0;
     for (const die of dies) {
       if (die.partial || die.edgeExcluded) continue;
-      const v = die.testValues?.[tn] ?? die.values?.[tn];
+      const v = die.testValues?.[tn];
       if (v === undefined) continue;
       totalDies++;
       if (td.limitLow !== undefined && v < td.limitLow) {
@@ -213,12 +207,12 @@ export function computeFunctionalYield(
   testDefs: TestDef[] | undefined,
 ): StatsSummary['stats']['functionalYield'] {
   if (!testDefs?.length) return undefined;
-  const fDefs = testDefs.filter(td => !isParametricTest(td) && (td.testNumber ?? td.index) !== undefined);
+  const fDefs = testDefs.filter(td => !isParametricTest(td));
   if (!fDefs.length) return undefined;
 
   const result: NonNullable<StatsSummary['stats']['functionalYield']> = [];
   for (const td of fDefs) {
-    const tn = (td.testNumber ?? td.index)!;
+    const tn = td.testNumber;
     let passDies = 0, failDies = 0;
     for (const die of dies) {
       if (die.partial || die.edgeExcluded) continue;
@@ -250,14 +244,14 @@ function computePerTestStats(
     const values: number[] = [];
     for (const die of dies) {
       if (die.partial || die.edgeExcluded) continue;
-      const v = die.testValues?.[tn] ?? die.values?.[tn];
+      const v = die.testValues?.[tn];
       if (v !== undefined) values.push(v);
     }
     if (values.length < minimumSampleSize) continue;
     const avg = mean(values);
     const stddev = Math.sqrt(sampleVariance(values, avg));
     const sorted = values.slice().sort((a, b) => a - b);
-    const label = testDefs?.find(td => (td.testNumber ?? td.index) === tn)?.name ?? String(tn);
+    const label = testDefs?.find(td => td.testNumber === tn)?.name ?? String(tn);
     result.push({
       testNumber: tn,
       label,
@@ -404,7 +398,7 @@ function labelForBin(bin: number, defs: BinDef[] | undefined, prefix: 'HBin' | '
 
 function labelForTest(testNumber: number, defs: TestDef[] | undefined): { label: string; unit?: string } {
   // Match by testNumber first, then fall back to index for the deprecated path.
-  const def = defs?.find((entry) => (entry.testNumber ?? entry.index) === testNumber);
+  const def = defs?.find((entry) => entry.testNumber === testNumber);
   return { label: def?.name ?? `Test ${testNumber}`, unit: def?.unit };
 }
 
@@ -652,10 +646,10 @@ function buildFunctionalPassFindings(
 ): RawFinding[] {
   const fDefs = (testDefs ?? []).filter(
     (td): td is TestDef & { name: string } =>
-      !isParametricTest(td) && (td.testNumber ?? td.index) !== undefined,
+      !isParametricTest(td),
   );
   if (!fDefs.length) return [];
-  const testNumbers = fDefs.map(td => (td.testNumber ?? td.index)!);
+  const testNumbers = fDefs.map(td => td.testNumber);
   const buckets = bucketDiesByRegion(eligibleDies, regionFamily);
 
   // Pre-count per bucket, per functional test: passes and dies-with-verdict.
@@ -809,16 +803,13 @@ function discoverTestNumbers(
   testDefs: TestDef[] | undefined,
 ): { testNumbers: number[]; warning?: string } {
   const parametricOnly = (numbers: number[]): number[] =>
-    numbers.filter(tn => isParametricTest(testDefs?.find(td => (td.testNumber ?? td.index) === tn)));
+    numbers.filter(tn => isParametricTest(testDefs?.find(td => td.testNumber === tn)));
   if (explicit) return { testNumbers: parametricOnly(explicit.slice().sort((a, b) => a - b)) };
 
   const testNumberSet = new Set<number>();
   let capped = false;
   outer: for (const die of dies) {
-    const keys = die.testValues
-      ? Object.keys(die.testValues)
-      : (die.values ?? []).map((v, i) => v !== undefined ? String(i) : null).filter(Boolean) as string[];
-    for (const k of keys) {
+    for (const k of Object.keys(die.testValues ?? {})) {
       const n = Number(k);
       if (!testNumberSet.has(n)) {
         testNumberSet.add(n);
@@ -903,7 +894,7 @@ function buildTestValueFindings(
     let shift: number | undefined;
     for (let i = 0; i < regionDies.length; i++) {
       const die = regionDies[i];
-      const raw = die.testValues?.[testNumber] ?? die.values?.[testNumber];
+      const raw = die.testValues?.[testNumber];
       if (raw === undefined) continue;
       if (shift === undefined) shift = raw;
       const v = raw - shift;
@@ -1007,8 +998,7 @@ function buildSpecLimitFindings(
   const dieMap = new Map(dies.map(d => [getDieKey(d), d]));
 
   for (const td of limited) {
-    const tn = td.testNumber ?? td.index;
-    if (tn === undefined) continue;
+    const tn = td.testNumber;
 
     for (const regionFamily of regionFamilies) {
       const buckets = new Map<string, Die[]>();
@@ -1029,9 +1019,9 @@ function buildSpecLimitFindings(
           if (key !== region.key) for (const d of bucket) rightDies.push(d);
         }
 
-        const hasValue = (d: Die) => (d.testValues?.[tn] ?? d.values?.[tn]) !== undefined;
+        const hasValue = (d: Die) => (d.testValues?.[tn]) !== undefined;
         const isSpecFail = (d: Die) => {
-          const v = d.testValues?.[tn] ?? d.values?.[tn];
+          const v = d.testValues?.[tn];
           if (v === undefined) return false;
           if (td.limitLow !== undefined && v < td.limitLow) return true;
           if (td.limitHigh !== undefined && v > td.limitHigh) return true;
@@ -1296,7 +1286,7 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
 
   if (kind === 'test') {
     const testNumber = template.variable.index!;
-    const read = (d: Die) => d.testValues?.[testNumber] ?? d.values?.[testNumber];
+    const read = (d: Die) => d.testValues?.[testNumber];
     const leftValues = leftDies.map(read).filter((v): v is number => v !== undefined);
     const rightValues = rightDies.map(read).filter((v): v is number => v !== undefined);
     const { pValue, effectSize, delta } = welchPValue(leftValues, rightValues);

@@ -21,6 +21,70 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-07-30
+
+### Breaking
+
+Removal of long-deprecated aliases and the positional test-value path. This is a
+minor bump (`0.21.0`) per the versioning policy above. Every removal below had a
+documented non-deprecated replacement already in use.
+
+- **`DieResult.values` / `Die.values` (positional test-value array) removed** — use
+  `testValues`, keyed by test number. This was not merely clutter: the fallback read was
+  spelled `die.testValues?.[tn] ?? die.values?.[tn]` in `analyzeWaferMap` and
+  `aggregateValues`, i.e. it indexed a **positional array with a test number**, so for any
+  real test number (`1050`) it silently resolved to `undefined` — while
+  `renderSummaryReport` did it correctly via `def.index`. Two incompatible semantics for
+  one field, in code that computes yield. Deleting it removes the wrong-data path.
+- **`TestDef.index` removed and `TestDef.testNumber` is now required.** The
+  `def.testNumber ?? def.index` idiom appeared at ~25 call sites across `renderer/`,
+  `stats/` and `canvas-adapter/`; all now read `def.testNumber` directly.
+- **`getDieTestValue(die, testNumber, fallbackIndex?)` → `getDieTestValue(die, testNumber)`.**
+  The third parameter only existed to read the positional array.
+- **`mapDataToDies` now writes `testValues` instead of appending to `values`.** Each call
+  still attaches one value, keyed by how many are already present, so the first call lands
+  at `testValues[0]` — the key `plotMode: 'value'` selects by default when no `testDefs`
+  are supplied. Read the result as `die.testValues[0]`, not `die.values[0]`.
+- **`ViewOptions.colorBySpec` / `WaferDisplayState.colorBySpec` removed** — use
+  `passFailDisplay: 'spec'`. No rendering behaviour changed, and **`View.colorBySpec`
+  remains** as a live output field (still `passFailDisplay === 'spec'`), so consumers
+  reading it are unaffected.
+- **`colorScheme: 'color'` removed** — use `'default'`. `ColorScheme.isAlias`, which
+  existed only to hide this entry from `listColorSchemes()`, is gone with it.
+- **`buildHoverText` now takes an options object:**
+  `buildHoverText(die, plotMode, opts?)` where `opts` is
+  `{ testDefs, hbinDefs, sbinDefs, fallbackFormat, aggrMethod, lotSize, waferMeta, activeTest, reticleConfig }`.
+  It previously took **12 positional parameters, 11 optional**, including a dead
+  `testLimit` at position 9 retained purely so positions 10–12 would not shift.
+  `testLimit` is gone, as is the matching no-op `RenderOptions.tooltipTestLimit`.
+- **Deprecated type/const aliases removed:** `HARD_BIN_COLORS` and `SOFT_BIN_COLORS`
+  (use `BIN_PALETTE`), `CanvasHitTarget` (use `HitTarget`), `MountOptions` (use
+  `RenderOptions`), `WaferCanvasController` (use `WaferMapController`), `GalleryItem` /
+  `GalleryItemFactory` (use `WaferMapDisplayItem` / `WaferMapDisplayItemFactory`).
+
+### Added
+
+- **`resolveGridPitch` is now public** — exported from the root package and
+  `@paulrobins/wafermap/core`, along with its `PitchResult` type. It already existed and
+  is what `buildWaferMap` uses internally; it was simply unreachable through the public
+  facade, so hosts re-derived pitch themselves and diverged from what the map rendered.
+  This is the one deliberate exception to `core/inference/` being internal.
+
+### Fixed
+
+- **`aggregateValues`' documented contract now matches its behaviour.** Its JSDoc
+  described `paramIndex` as "which index in `die.values[]`" while the code read
+  `die.testValues[paramIndex]` — a test-number key. The two readings disagreed for every
+  real test number.
+
+### Documentation
+
+- The root vs `/render` entry-point split is now stated explicitly in `README.md`,
+  `docs/api.md` §10, and as a named symptom in `docs/troubleshooting.md`.
+  `renderWaferMap`/`renderWaferGallery`/`toCanvas` are exported **only** from
+  `@paulrobins/wafermap/render` — the root entry stays DOM-free and tree-shakeable — but
+  nothing said so, and the failed root import is the first thing a new user hits.
+
 ## [0.20.9] — 2026-07-28
 
 ### Fixed

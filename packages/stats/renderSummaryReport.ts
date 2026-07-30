@@ -134,8 +134,7 @@ function testSection(
 
   // Min/mean/max are parametric statistics — functional (pass/fail) tests are excluded.
   for (const def of testDefs.filter(isParametricTest)) {
-    const tn = def.testNumber ?? def.index;
-    if (tn === undefined) continue;
+    const tn = def.testNumber;
     const unit = def.unit || undefined;
 
     const precomputed = precomputedByNumber.get(tn);
@@ -144,7 +143,7 @@ function testSection(
       ({ min, max, mean } = precomputed);
     } else {
       const vals = active
-        .map(d => d.testValues?.[tn] ?? d.values?.[def.index ?? tn])
+        .map(d => d.testValues?.[tn])
         .filter((v): v is number => v !== undefined && isFinite(v));
       if (!vals.length) continue;
       vals.sort((a, b) => a - b);

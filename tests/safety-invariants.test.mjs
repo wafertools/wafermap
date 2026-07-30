@@ -135,7 +135,7 @@ test('wafer.orientation composes correctly with interactive rotation', () => {
 test('stackedBins hover labels percent aggregate as % and does not derive a second percentage', () => {
   const die = { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, hbin: 2, testValues: { 0: 66 } };
   // method 'percent', lotSize 3 — the value 66 is ALREADY a percentage.
-  const text = buildHoverText(die, 'stackedBins', undefined, undefined, undefined, undefined, 'percent', 3);
+  const text = buildHoverText(die, 'stackedBins', { aggrMethod: 'percent', lotSize: 3 });
   assert.match(text, /66%/, 'percent aggregate must render as N%');
   assert.doesNotMatch(text, /\(\d+% of lot\)/, 'must not derive a second percentage from a percentage');
   assert.match(text, /occurrence %/, 'must name the aggregation method');
@@ -144,7 +144,7 @@ test('stackedBins hover labels percent aggregate as % and does not derive a seco
 test('stackedBins hover labels countBin aggregate as a count with optional lot share', () => {
   const die = { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, hbin: 2, testValues: { 0: 2 } };
   // method 'countBin', lotSize 3 — the value 2 is an occurrence count (2 of 3 wafers).
-  const text = buildHoverText(die, 'stackedBins', undefined, undefined, undefined, undefined, 'countBin', 3);
+  const text = buildHoverText(die, 'stackedBins', { aggrMethod: 'countBin', lotSize: 3 });
   assert.match(text, /Bin 2: 2/, 'count aggregate shows the raw count');
   assert.match(text, /67% of lot/, 'count aggregate annotates its share of the lot');
   assert.match(text, /occurrence count/, 'must name the aggregation method');
@@ -208,7 +208,7 @@ test('out-of-spec dies are flagged via specMark regardless of colorbarRangeMode=
     plotMode: 'value',
     colorbarRangeMode: 'spec',
     activeTest: 0,
-    testDefs: [{ index: 0, name: 'Vt', unit: 'V', limitLow: 0.5, limitHigh: 4.5 }],
+    testDefs: [{ testNumber: 0, name: 'Vt', unit: 'V', limitLow: 0.5, limitHigh: 4.5 }],
   });
 
   // rectangles use physX/physY as x/y
@@ -237,7 +237,7 @@ test('out-of-spec dies are always distinguishable from in-spec in BOTH colorbarR
     { id: '1_0', x: 1, y: 0, physX: 10, physY: 0,  width: 10, height: 10, testValues: { 0: 5.0 } },
     { id: '0_1', x: 0, y: 1, physX: 0,  physY: 10, width: 10, height: 10, testValues: { 0: 2.5 } },
   ];
-  const testDefs = [{ index: 0, name: 'Vt', unit: 'V', limitLow: 0.5, limitHigh: 4.5 }];
+  const testDefs = [{ testNumber: 0, name: 'Vt', unit: 'V', limitLow: 0.5, limitHigh: 4.5 }];
 
   for (const colorbarRangeMode of ['spec', 'data']) {
     const view = buildView(wafer, dies, { plotMode: 'value', colorbarRangeMode, activeTest: 0, testDefs });

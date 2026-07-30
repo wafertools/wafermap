@@ -27,10 +27,10 @@ function buildWaferWithFinding() {
 
 function makeDies() {
   return [
-    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, values: [0.9], hbin: 1 },
-    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, values: [0.7], hbin: 2 },
-    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, values: [0.8], hbin: 1 },
-    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, values: [0.6], hbin: 2 },
+    { id: '0_0', i: 0, j: 0, x: 0, y: 0, width: 10, height: 10, testValues: { 0: 0.9 }, hbin: 1 },
+    { id: '1_0', i: 1, j: 0, x: 10, y: 0, width: 10, height: 10, testValues: { 0: 0.7 }, hbin: 2 },
+    { id: '0_1', i: 0, j: 1, x: 0, y: 10, width: 10, height: 10, testValues: { 0: 0.8 }, hbin: 1 },
+    { id: '1_1', i: 1, j: 1, x: 10, y: 10, width: 10, height: 10, testValues: { 0: 0.6 }, hbin: 2 },
   ];
 }
 
@@ -297,9 +297,9 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
 
     const wafer = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], hbin: 1 },
-        { x: 1, y: 0, values: [0.7], hbin: 2 },
-        { x: 0, y: 1, values: [0.8], hbin: 1 },
+        { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 0: 0.7 }, hbin: 2 },
+        { x: 0, y: 1, testValues: { 0: 0.8 }, hbin: 1 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -371,7 +371,7 @@ test('renderWaferMap Expand modal reparents the toolbar and canvas via openRepar
     root.appendChild(container);
 
     const wafer = buildWaferMap({
-      results: [{ x: 0, y: 0, values: [0.9], hbin: 1 }],
+      results: [{ x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1 }],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
     });
@@ -642,9 +642,9 @@ test('renderWaferGallery builds cards, detaches a card into a real popup window,
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], hbin: 1 },
-        { x: 1, y: 0, values: [0.7], hbin: 2 },
-        { x: 0, y: 1, values: [0.8], hbin: 1 },
+        { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 0: 0.7 }, hbin: 2 },
+        { x: 0, y: 1, testValues: { 0: 0.8 }, hbin: 1 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -800,9 +800,9 @@ test('renderWaferGallery falls back to an in-page floating window when window.op
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], hbin: 1 },
-        { x: 1, y: 0, values: [0.7], hbin: 2 },
-        { x: 0, y: 1, values: [0.8], hbin: 1 },
+        { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 0: 0.7 }, hbin: 2 },
+        { x: 0, y: 1, testValues: { 0: 0.8 }, hbin: 1 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -977,15 +977,15 @@ test('renderWaferGallery supports multiple simultaneous detached popup windows a
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], hbin: 1, sbin: 10 },
-        { x: 1, y: 0, values: [0.7], hbin: 2, sbin: 11 },
-        { x: 0, y: 1, values: [0.8], hbin: 1, sbin: 10 },
+        { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1, sbin: 10 },
+        { x: 1, y: 0, testValues: { 0: 0.7 }, hbin: 2, sbin: 11 },
+        { x: 0, y: 1, testValues: { 0: 0.8 }, hbin: 1, sbin: 10 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
       hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
       sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
-      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+      testDefs: [{ testNumber: 0, name: 'Test', unit: 'V' }],
     });
 
     const items = [
@@ -1032,9 +1032,9 @@ test('renderWaferGallery reattaches a detached card via its own toggle button', 
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], hbin: 1 },
-        { x: 1, y: 0, values: [0.7], hbin: 2 },
-        { x: 0, y: 1, values: [0.8], hbin: 1 },
+        { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 0: 0.7 }, hbin: 2 },
+        { x: 0, y: 1, testValues: { 0: 0.8 }, hbin: 1 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
@@ -1073,15 +1073,15 @@ test('renderWaferGallery restores original cards when leaving stacked mode', () 
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], hbin: 1, sbin: 10 },
-        { x: 1, y: 0, values: [0.7], hbin: 2, sbin: 11 },
-        { x: 0, y: 1, values: [0.8], hbin: 1, sbin: 10 },
+        { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1, sbin: 10 },
+        { x: 1, y: 0, testValues: { 0: 0.7 }, hbin: 2, sbin: 11 },
+        { x: 0, y: 1, testValues: { 0: 0.8 }, hbin: 1, sbin: 10 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
       hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
       sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
-      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+      testDefs: [{ testNumber: 0, name: 'Test', unit: 'V' }],
     });
 
     const items = [
@@ -1114,15 +1114,15 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
 
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [0.9], hbin: 1, sbin: 10 },
-        { x: 1, y: 0, values: [0.7], hbin: 2, sbin: 11 },
-        { x: 0, y: 1, values: [0.8], hbin: 1, sbin: 10 },
+        { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 1, sbin: 10 },
+        { x: 1, y: 0, testValues: { 0: 0.7 }, hbin: 2, sbin: 11 },
+        { x: 0, y: 1, testValues: { 0: 0.8 }, hbin: 1, sbin: 10 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
       hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
       sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
-      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+      testDefs: [{ testNumber: 0, name: 'Test', unit: 'V' }],
     });
 
     const items = [
@@ -1165,15 +1165,15 @@ test('renderWaferGallery computes correct valueRange for stackedValues mode', ()
     // Create test data with known value ranges
     const base = buildWaferMap({
       results: [
-        { x: 0, y: 0, values: [1.0], hbin: 1, sbin: 10 },
-        { x: 1, y: 0, values: [2.0], hbin: 2, sbin: 11 },
-        { x: 0, y: 1, values: [3.0], hbin: 1, sbin: 10 },
+        { x: 0, y: 0, testValues: { 0: 1.0 }, hbin: 1, sbin: 10 },
+        { x: 1, y: 0, testValues: { 0: 2.0 }, hbin: 2, sbin: 11 },
+        { x: 0, y: 1, testValues: { 0: 3.0 }, hbin: 1, sbin: 10 },
       ],
       waferConfig: { diameter: 40 },
       dieConfig: { width: 10, height: 10 },
       hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
       sbinDefs: [{ bin: 10, name: 'Soft A' }, { bin: 11, name: 'Soft B' }],
-      testDefs: [{ index: 0, name: 'Test', unit: 'V' }],
+      testDefs: [{ testNumber: 0, name: 'Test', unit: 'V' }],
     });
 
     const items = [
@@ -1255,11 +1255,11 @@ test('renderWaferGallery exposes Spec pass/fail and Colorbar range for value map
     assert.ok(specRow, 'Spec pass/fail row present (enabled) when active test has limits');
 
     // Enabling spec mode hides the colorbar-range button (bar irrelevant in pass/fail).
-    ctrl.setOptions({ colorBySpec: true });
+    ctrl.setOptions({ passFailDisplay: 'spec' });
     assert.equal(rangeBtn.style.display, 'none', 'Colorbar range hidden while colouring by spec');
 
     // Leaving value mode clears spec colouring.
-    ctrl.setOptions({ plotMode: 'hardBin', activeTest: undefined, colorBySpec: false });
+    ctrl.setOptions({ plotMode: 'hardBin', activeTest: undefined, passFailDisplay: 'off' });
     assert.equal(rangeBtn.style.display, 'none', 'Colorbar range hidden outside value mode');
 
     ctrl.destroy();

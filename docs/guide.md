@@ -468,8 +468,6 @@ renderWaferMap(container, result, {
 });
 ```
 
-> `colorBySpec: true` still works as a deprecated alias for `passFailDisplay: 'spec'`, ignored whenever `passFailDisplay` is set.
-
 Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.stats.testSpecYield` with per-test spec yield, fail-low count, and fail-high count for every test that has at least one limit defined.
 
 **→ [Demo: Working with test values](examples/test-values.html)**

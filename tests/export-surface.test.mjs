@@ -26,7 +26,7 @@ const SNAPSHOTS = {
     'DEFAULT_FACET_CURATION', 'facetValueOf', 'FACET_NONE_VALUE', 'filterCorrelationMatrix',
     'dieHasTestData',
     'filterFindings', 'findTestDef', 'generateDies', 'generateReticleGrid', 'generateTextOverlay',
-    'parseRegionKey', 'sectorCompassNames',
+    'parseRegionKey', 'resolveGridPitch', 'sectorCompassNames',
     'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
     'getReticleCell', 'getRingLabel', 'getUniqueBins', 'getUniqueTestNumbers',
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isYieldEligibleDie', 'listColorSchemes',
@@ -42,7 +42,7 @@ const SNAPSHOTS = {
     'applyOrientation', 'applyProbeSequence',
     'classifyDie', 'clipDiesToWafer', 'createWafer',
     'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
-    'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'transformDies',
+    'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'resolveGridPitch', 'transformDies',
   ],
   './renderer': [
     'buildHoverText', 'buildMapTitle', 'buildView', 'buildWaferMap',

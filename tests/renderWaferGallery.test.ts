@@ -195,8 +195,8 @@ describe('renderWaferGallery stacked modes with definition discovery', () => {
     assert.strictEqual(capturedRenderWaferMapCalls.length, 2);
     // testDefs now live on result.testDefs, not viewOptions
     assert.strictEqual(capturedRenderWaferMapCalls[0].options.viewOptions.plotMode, 'stackedValues');
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.testDefs, [{ index: 0, name: 'Test 100' }]);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].result.testDefs, [{ index: 0, name: 'Test 100' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.testDefs, [{ testNumber: 0, name: 'Test 100' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[1].result.testDefs, [{ testNumber: 0, name: 'Test 100' }]);
   });
 
   it('discovers hbinDefs for stackedBins mode when not provided', () => {
@@ -223,7 +223,7 @@ describe('renderWaferGallery stacked modes with definition discovery', () => {
     capturedRenderWaferMapCalls = [];
     c2.setOptions({ plotMode: 'stackedValues' });
     assert.strictEqual(capturedRenderWaferMapCalls.length, 1);
-    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.testDefs, [{ index: 0, name: 'Custom Test A', unit: 'V' }]);
+    assert.deepStrictEqual(capturedRenderWaferMapCalls[0].result.testDefs, [{ testNumber: 0, name: 'Custom Test A', unit: 'V' }]);
   });
 
   it('reverts to original items when leaving stacked mode', () => {

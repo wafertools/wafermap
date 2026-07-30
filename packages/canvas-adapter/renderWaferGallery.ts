@@ -77,11 +77,6 @@ export interface WaferMapDisplayItem {
  */
 export type WaferMapDisplayItemFactory = () => WaferMapDisplayItem;
 
-/** @deprecated Use WaferMapDisplayItem instead. */
-export type GalleryItem = WaferMapDisplayItem;
-/** @deprecated Use WaferMapDisplayItemFactory instead. */
-export type GalleryItemFactory = WaferMapDisplayItemFactory;
-
 export interface GalleryOptions {
   /** Initial shared scene options applied to all cards. */
   viewOptions?:         WaferViewOptions;
@@ -803,10 +798,10 @@ ${reportStyles()}
       if (entry.activeTest !== undefined) {
         updateShared({ plotMode: 'value', activeTest: entry.activeTest, activeMetadataKey: undefined, logScale: entry.logScale });
       } else if (entry.activeMetadataKey !== undefined) {
-        updateShared({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: entry.activeMetadataKey, colorBySpec: false, passFailDisplay: 'off' });
+        updateShared({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: entry.activeMetadataKey, passFailDisplay: 'off' });
       } else {
         // Leaving value mode → clear spec pass/fail (only valid in value mode), matching single-map.
-        updateShared({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: undefined, colorBySpec: false, passFailDisplay: 'off' });
+        updateShared({ plotMode: entry.plotMode, activeTest: undefined, activeMetadataKey: undefined, passFailDisplay: 'off' });
       }
       menu.remove();
       setOpenMenu(null);
@@ -893,7 +888,7 @@ ${reportStyles()}
           hasRecorded: activeTestHasRecordedStatus() && !activeTestIsFunctional(),
           display: requestedPassFailDisplay(sharedOpts),
         },
-        d => updateShared({ passFailDisplay: d, colorBySpec: false }),
+        d => updateShared({ passFailDisplay: d }),
       ),
     ],
     () => !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
@@ -1475,7 +1470,7 @@ ${reportStyles()}
 
       const method = (sharedOpts.aggregationMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => {
-        const dies = aggregateValues(allDies, method, def.testNumber ?? def.index) as Die[];
+        const dies = aggregateValues(allDies, method, def.testNumber) as Die[];
         const cardTestDef = { testNumber: 0, name: def.name, unit: def.unit };
         return {
           wafer: stackedWafer,

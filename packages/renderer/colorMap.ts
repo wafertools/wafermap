@@ -123,9 +123,6 @@ export function hardBinColor(bin: number): string {
   return HARD_BIN_OVERRIDES[bin] ?? BIN_PALETTE[(wangHash(bin ^ HARD_SALT) % PALETTE_SIZE) + 1];
 }
 
-/** @deprecated Use BIN_PALETTE directly if you need the raw array. */
-export const HARD_BIN_COLORS: readonly string[] = BIN_PALETTE;
-
 /** Linear interpolation across RGB keypoints for t ∈ [0, 1]. */
 export function lerpKp(kp: readonly [number, number, number][], t: number): string {
   const c = clamp01(t);
@@ -157,9 +154,6 @@ export function valueToViridis(t: number): string {
 export function softBinColor(bin: number): string {
   return BIN_PALETTE[(wangHash(bin ^ SOFT_SALT) % PALETTE_SIZE) + 1];
 }
-
-/** @deprecated Use BIN_PALETTE directly if you need the raw array. */
-export const SOFT_BIN_COLORS: readonly string[] = BIN_PALETTE;
 
 /**
  * Ordered qualitative palette for the `'metadata'` plot mode's first ~10

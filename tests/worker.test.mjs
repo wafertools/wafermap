@@ -26,7 +26,7 @@ test('createWafermapWorker forwards requests, resolves results, and rejects fail
   const wrapper = createWafermapWorker(worker);
 
   const input = {
-    results: [{ x: 0, y: 0, values: [1], hbin: 1 }],
+    results: [{ x: 0, y: 0, testValues: { 0: 1 }, hbin: 1 }],
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   };
@@ -59,7 +59,7 @@ test('createWafermapWorker handles malformed messages', async () => {
   const wrapper = createWafermapWorker(worker);
 
   const input = {
-    results: [{ x: 0, y: 0, values: [1], hbin: 1 }],
+    results: [{ x: 0, y: 0, testValues: { 0: 1 }, hbin: 1 }],
     waferConfig: { diameter: 40 },
     dieConfig: { width: 10, height: 10 },
   };
@@ -82,8 +82,8 @@ test('createWafermapWorker handles out-of-order responses', async () => {
   const worker = new FakeWorker();
   const wrapper = createWafermapWorker(worker);
 
-  const input1 = { results: [{ x: 0, y: 0, values: [1], hbin: 1 }], waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 } };
-  const input2 = { results: [{ x: 1, y: 1, values: [2], hbin: 2 }], waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 } };
+  const input1 = { results: [{ x: 0, y: 0, testValues: { 0: 1 }, hbin: 1 }], waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 } };
+  const input2 = { results: [{ x: 1, y: 1, testValues: { 0: 2 }, hbin: 2 }], waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 } };
 
   const promise1 = wrapper.run(input1);
   const promise2 = wrapper.run(input2);

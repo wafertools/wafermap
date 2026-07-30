@@ -42,10 +42,10 @@ function approxEqual(actual, expected, epsilon = 1e-9) {
 
 function buildSampleDies() {
   return [
-    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [0.9], hbin: 1 },
-    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [0.7], hbin: 2 },
-    { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10, values: [0.8], hbin: 1 },
-    { id: '1_1', x: 1, y: 1, physX: 10, physY: 10, width: 10, height: 10, values: [0.6], hbin: 2 },
+    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, testValues: { 0: 0.9 }, hbin: 1 },
+    { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, testValues: { 0: 0.7 }, hbin: 2 },
+    { id: '0_1', x: 0, y: 1, physX: 0, physY: 10, width: 10, height: 10, testValues: { 0: 0.8 }, hbin: 1 },
+    { id: '1_1', x: 1, y: 1, physX: 10, physY: 10, width: 10, height: 10, testValues: { 0: 0.6 }, hbin: 2 },
   ];
 }
 
@@ -74,13 +74,13 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
     { x: 1, y: 0, value: 0.88 },
     { x: 1, y: 0, value: 0.91 },
   ], { valueField: 'value', matchBy: 'ij' });
-  assert.deepEqual(mapped.find((die) => die.x === 0 && die.y === 0)?.values, [0.97]);
-  assert.deepEqual(mapped.find((die) => die.x === 1 && die.y === 0)?.values, [0.91]);
+  assert.deepEqual(mapped.find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 0.97 });
+  assert.deepEqual(mapped.find((die) => die.x === 1 && die.y === 0)?.testValues, { 0: 0.91 });
 
   const mappedXY = mapDataToDies(clipped, [
     { x: 0, y: 0, value: 0.97 },
   ], { valueField: 'value' });
-  assert.deepEqual(mappedXY.find((die) => die.x === 0 && die.y === 0)?.values, [0.97]);
+  assert.deepEqual(mappedXY.find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 0.97 });
 
   const oriented = applyOrientation([
     { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
@@ -129,16 +129,16 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
 test('aggregation, inference, classification, formatting, and color helpers are deterministic', () => {
   const diesByWafer = [
     [
-      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [1], hbin: 2 },
-      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [9], hbin: 1 },
+      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, testValues: { 0: 1 }, hbin: 2 },
+      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, testValues: { 0: 9 }, hbin: 1 },
     ],
     [
-      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [3], hbin: 2 },
-      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [7], hbin: 2 },
+      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, testValues: { 0: 3 }, hbin: 2 },
+      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, testValues: { 0: 7 }, hbin: 2 },
     ],
     [
-      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, values: [5], hbin: 1 },
-      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, values: [11], hbin: 2 },
+      { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 10, height: 10, testValues: { 0: 5 }, hbin: 1 },
+      { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10, testValues: { 0: 11 }, hbin: 2 },
     ],
   ];
 
@@ -263,7 +263,7 @@ test('renderer scene assembly preserves the public contract', () => {
     ringCount: 4,
     reticles,
     highlightBin: 1,
-    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+    testDefs: [{ testNumber: 0, name: 'Idsat', unit: 'A' }],
   }, { hbinDefs, sbinDefs });
 
   assert.equal(scene.metadata?.lot, 'LOT-001');
@@ -274,7 +274,7 @@ test('renderer scene assembly preserves the public contract', () => {
   assert.ok(scene.texts.some((text) => text.text === '+X'));
   assert.ok(scene.texts.some((text) => text.text === '+Y'));
   const firstDie = scene.dies[0];
-  const hoverText = buildHoverText(firstDie, 'hardBin', undefined, hbinDefs, sbinDefs);
+  const hoverText = buildHoverText(firstDie, 'hardBin', { hbinDefs, sbinDefs });
   assert.ok(hoverText.includes('Die ('));
   assert.ok(hoverText.includes('HBin:'));
   assert.ok(scene.overlays.some((overlay) => overlay.kind === 'wafer-boundary'));
@@ -292,7 +292,7 @@ test('renderer scene assembly preserves the public contract', () => {
     normalize: (v) => v,
     activeTest: 0,
     valueRange: [0.6, 0.9],
-    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+    testDefs: [{ testNumber: 0, name: 'Idsat', unit: 'A' }],
   });
   assert.equal(textOverlay.length, dies.length);
 });
@@ -351,7 +351,7 @@ test('buildHoverText merges wafer-level metadata under per-die overrides', () =>
 
   // Wafer-level facts appear with no per-die metadata at all — wmap renders
   // whatever keys the host supplies, including waferId.
-  const base = buildHoverText(die, 'hardBin', undefined, undefined, undefined, undefined, undefined, undefined, undefined, waferMeta);
+  const base = buildHoverText(die, 'hardBin', { waferMeta });
   assert.ok(base.includes('lot: LOT-001'), 'wafer lot should appear');
   assert.ok(base.includes('product: WidgetA'), 'wafer product should appear');
   assert.ok(base.includes('temperature: 25'), 'wafer temperature should appear');
@@ -359,7 +359,7 @@ test('buildHoverText merges wafer-level metadata under per-die overrides', () =>
 
   // A per-die key overrides the wafer value of the same name; other wafer facts remain.
   const dieWithOverride = { ...die, metadata: { testProgram: 'PGM_RETEST', site: 3 } };
-  const merged = buildHoverText(dieWithOverride, 'hardBin', undefined, undefined, undefined, undefined, undefined, undefined, undefined, waferMeta);
+  const merged = buildHoverText(dieWithOverride, 'hardBin', { waferMeta });
   assert.ok(merged.includes('testProgram: PGM_RETEST'), 'die value overrides wafer value');
   assert.ok(!merged.includes('PGM_X'), 'overridden wafer value should not also appear');
   assert.ok(merged.includes('lot: LOT-001'), 'non-overridden wafer facts still present');

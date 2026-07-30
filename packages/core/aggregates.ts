@@ -10,8 +10,6 @@ export interface DieLike {
   testValues?: Record<number, number>;
   /** Recorded per-test pass/fail verdicts (true = pass). Never aggregated — always stripped from outputs. */
   testPass?: Record<number, boolean>;
-  /** @deprecated */
-  values?: number[];
   hbin?: number;
   sbin?: number;
 }
@@ -21,10 +19,12 @@ export interface DieLike {
  *
  * @param diesByWafer  One `Die[]` per wafer — all wafers must share the same grid layout.
  * @param method       Aggregation function applied per (x,y) position across all wafers.
- * @param paramIndex   Which index in `die.values[]` to aggregate (default 0).
- * @returns One Die per unique (x,y) position with `values[0]` set to the aggregate result.
- *          Dies that had no values on any wafer are included with `values: undefined` as a
- *          "no data" signal — they are not filtered out.
+ * @param paramIndex   Which `die.testValues` key to aggregate — a test number such as
+ *                     `1050`, not a positional index (default 0).
+ * @returns One Die per unique (x,y) position with the aggregate stored at
+ *          `testValues[0]` regardless of the input key. Dies that had no value on any
+ *          wafer are included with `testValues: undefined` as a "no data" signal —
+ *          they are not filtered out.
  *
  * @example Compute mean test value across a lot:
  * ```ts
@@ -45,8 +45,7 @@ export function aggregateValues(
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
       const key = getDieKey(die);
-      // Read from testValues (preferred) then fall back to deprecated values[].
-      const v = die.testValues?.[paramIndex] ?? die.values?.[paramIndex];
+      const v = die.testValues?.[paramIndex];
       if (v !== undefined) {
         if (!valuesMap.has(key)) {
           valuesMap.set(key, []);

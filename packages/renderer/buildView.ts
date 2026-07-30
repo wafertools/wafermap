@@ -19,20 +19,17 @@ import { prettyKey } from '../core/utils.js';
 type BinDefMap = Map<number, BinDef>;
 
 /** Resolve a toolbar activeTest cursor to the canonical test number for getDieTestValue. */
-export function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { testNumber: number; fallbackIndex: number } {
+export function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { testNumber: number } {
   if (testDefs?.length) {
     const def = findTestDef(testDefs, activeTest) ?? testDefs[0];
-    return {
-      testNumber:    def.testNumber ?? def.index ?? activeTest,
-      fallbackIndex: def.index     ?? activeTest,
-    };
+    return { testNumber: def.testNumber };
   }
-  return { testNumber: activeTest, fallbackIndex: activeTest };
+  return { testNumber: activeTest };
 }
 
-/** Find a TestDef by its testNumber (or legacy index field). Returns undefined when testDefs is absent or no match. */
+/** Find a TestDef by its testNumber. Returns undefined when testDefs is absent or no match. */
 export function findTestDef(testDefs: TestDef[] | undefined, testNumber: number): TestDef | undefined {
-  return testDefs?.find(t => (t.testNumber ?? t.index) === testNumber);
+  return testDefs?.find(t => t.testNumber === testNumber);
 }
 
 /** Return sorted unique test numbers present across a set of dies (from testValues keys). */
@@ -61,8 +58,8 @@ export interface ViewRect {
    * The die keeps its gradient fill (so the distribution stays readable) and the
    * renderer draws a ▽ (`failLow`) / △ (`failHigh`) marker on top so the die is
    * never shown as plain in-spec. Set in both `'spec'` and `'data'` colorbar
-   * ranges. Absent only under `colorBySpec`, where the solid categorical fill is
-   * itself the indication and no marker is needed.
+   * ranges. Absent only under a pass/fail display (`passFailDisplay: 'spec'`),
+   * where the solid categorical fill is itself the indication and no marker is needed.
    */
   specMark?: 'failLow' | 'failHigh';
 }
@@ -194,7 +191,7 @@ export interface View {
   /** Named metadata-field definitions — populated when `metadataFields` is passed to `buildWaferMap`. */
   metadataFields?: MetadataFieldDef[];
   /**
-   * Per-category die counts for `value` + `colorBySpec` mode — drives the spec legend. Counts only
+   * Per-category die counts for `value` + `passFailDisplay: 'spec'` — drives the spec legend. Counts only
    * dies with a value (no-data dies excluded). Undefined outside spec mode.
    */
   specCounts?: { pass: number; failHigh: number; failLow: number };
@@ -308,11 +305,6 @@ export interface ViewOptions {
    */
   passFailDisplay?: 'off' | 'spec' | 'test';
   /**
-   * @deprecated Use `passFailDisplay: 'spec'` instead. `colorBySpec: true` is an
-   * alias for `passFailDisplay: 'spec'`; ignored when `passFailDisplay` is set.
-   */
-  colorBySpec?: boolean;
-  /**
    * When true (default), partial (edge) dies — positions that only partially
    * overlap the wafer circle — are rendered in a muted grey.
    * Set to false to hide them entirely, matching real prober behaviour where
@@ -357,7 +349,7 @@ export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
  * Out-of-spec *classification* depends ONLY on whether limits are defined — never on
  * `colorbarRangeMode`. An out-of-spec die is always flagged when limits exist, regardless of
  * how the colorbar is scaled. The *form* of the indication, decided in `pushDieRectangles`,
- * depends only on `colorBySpec`: under `colorBySpec` (pass/fail mode) the die gets a solid
+ * depends only on the effective `passFailDisplay`: under `'spec'` (pass/fail mode) the die gets a solid
  * green/blue/red categorical fill; in normal value/gradient mode it keeps the value gradient
  * fill (like every other die, so the distribution stays readable and out-of-spec colours don't
  * collide with the scheme) and is flagged with a ▽/△ marker (`ViewRect.specMark`). Either way
@@ -510,14 +502,13 @@ function collectTestRows(
 ): Array<{ key: number; label: string; value: string }> {
   if (testDefs?.length) {
     const rows = testDefs.flatMap(def => {
-      const key = def.testNumber ?? def.index;
-      if (key === undefined) return [];
+      const key = def.testNumber;
       if (!isParametricTest(def)) {
         const p = getTestPassStatus(die, key, def);
         if (p === undefined) return [];
         return [{ key, label: def.name, value: p ? 'Pass' : 'Fail' }];
       }
-      const v = getDieTestValue(die, key, def.index);
+      const v = getDieTestValue(die, key);
       if (v === undefined) return [];
       const recordedFail = die.testPass?.[key] === false ? ' <i>(recorded fail)</i>' : '';
       return [{ key, label: def.name, value: `${fmt(v, def.unit, fallbackFormat)}${recordedFail}` }];
@@ -529,13 +520,6 @@ function collectTestRows(
       key: Number(k), label: `Test ${k}`, value: fmt(v, undefined, fallbackFormat),
     }));
   }
-  if (die.values?.length) {
-    // Deprecated positional values[].
-    return die.values.map((v, i) => {
-      const def = testDefs?.find(t => t.index === i);
-      return { key: i, label: def?.name ?? `Test ${i}`, value: fmt(v, def?.unit, fallbackFormat) };
-    });
-  }
   // Verdict-only dies with no matching defs: a recorded pass/fail is still a result.
   if (die.testPass && Object.keys(die.testPass).length > 0) {
     return Object.entries(die.testPass).map(([k, p]) => ({
@@ -545,25 +529,32 @@ function collectTestRows(
   return [];
 }
 
+/** Options for {@link buildHoverText}. All fields are optional. */
+export interface HoverTextOptions {
+  testDefs?: TestDef[];
+  hbinDefs?: BinDef[];
+  sbinDefs?: BinDef[];
+  fallbackFormat?: 'si' | 'engineering';
+  /** Lot-stack aggregation method name — shown so the reader knows what the scalar means. */
+  aggrMethod?: string;
+  /** Number of wafers in the stack, used to annotate a count with its share of the lot. */
+  lotSize?: number;
+  waferMeta?: WaferMetadata | null;
+  /** Active test number (value mode only) — leads the tooltip and gets an out-of-spec note. */
+  activeTest?: number;
+  /** Reticle geometry, when configured — appended as a "Reticle (col, row)" line below Die (x, y). */
+  reticleConfig?: ReticleConfig;
+}
+
 export function buildHoverText(
   die: Die,
   plotMode: PlotMode,
-  testDefs?: TestDef[],
-  hbinDefs?: BinDef[],
-  sbinDefs?: BinDef[],
-  fallbackFormat?: 'si' | 'engineering',
-  aggrMethod?: string,
-  lotSize?: number,
-  /** @deprecated No longer used. The tooltip is now compact and mode-aware (value mode
-   * leads with the active test + a "+N more" summary; bin modes show a test-value
-   * count), so it never lists tests up to a cap. Kept for positional back-compat. */
-  testLimit?: number,
-  waferMeta?: WaferMetadata | null,
-  /** Active test number (value mode only) — leads the tooltip and gets an out-of-spec note. */
-  activeTest?: number,
-  /** Reticle geometry, when configured — appended as a "Reticle (col, row)" line below Die (x, y). */
-  reticleConfig?: ReticleConfig,
+  opts: HoverTextOptions = {},
 ): string {
+  const {
+    testDefs, hbinDefs, sbinDefs, fallbackFormat,
+    aggrMethod, lotSize, waferMeta, activeTest, reticleConfig,
+  } = opts;
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
   const lines: string[] = [`Die (${die.x}, ${die.y})`];
@@ -574,16 +565,16 @@ export function buildHoverText(
 
   if (plotMode === 'stackedValues') {
     // Aggregated scalar is stored in testValues[0] (preferred) or values[0] (deprecated).
-    const v = getDieTestValue(die, 0, 0);
+    const v = getDieTestValue(die, 0);
     if (v !== undefined) {
       const def   = testDefs?.[0];
-      const tn    = def?.testNumber ?? def?.index;
+      const tn    = def?.testNumber;
       const name  = def?.name ?? (tn != null ? `Test ${tn}` : 'Value');
       const method = aggrMethod ? ` (${aggrMethod})` : '';
       lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
     }
   } else if (plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
-    const value = getDieTestValue(die, 0, 0);
+    const value = getDieTestValue(die, 0);
     const bin   = plotMode === 'stackedSoftBins' ? die.sbin : die.hbin;
     if (value !== undefined) {
       const defMap  = plotMode === 'stackedSoftBins' ? sbinMap : hbinMap;
@@ -623,9 +614,9 @@ export function buildHoverText(
       // unresolvable or has no result for this die. Rows exist only for tests
       // with a result (value or verdict), so locating by key covers both
       // parametric and functional active tests.
-      const { testNumber, fallbackIndex } = resolveTestNumber(activeTest ?? 0, testDefs);
+      const { testNumber } = resolveTestNumber(activeTest ?? 0, testDefs);
       const activeDef = findTestDef(testDefs, testNumber);
-      const activeVal = getDieTestValue(die, testNumber, fallbackIndex);
+      const activeVal = getDieTestValue(die, testNumber);
       let leadIdx = testRows.findIndex(r => r.key === testNumber);
       if (leadIdx < 0) leadIdx = 0; // degrade: lead with the first present test
       const lead = testRows[leadIdx];
@@ -760,7 +751,7 @@ export function buildMapTitle(
         // Pass/fail display: identify the test (name + number) above the legend, and name
         // WHICH pass/fail is shown below it — spec-limit judgement vs the tester's recorded
         // verdict — so the two can never be confused even when they disagree.
-        const num = def?.testNumber ?? def?.index ?? view.activeTest;
+        const num = def?.testNumber ?? view.activeTest;
         const primary = named ? `${named} · #${num}` : `Test ${num}`;
         const secondary = view.passFailDisplay === 'spec'
           ? 'Spec pass/fail'
@@ -798,7 +789,7 @@ export function generateTextOverlay(
   // Build a tick formatter matched to the colorbar scale so die labels are consistent.
   const testDef = findTestDef(testDefs, activeTest);
   const { tickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
-  const { testNumber: tn, fallbackIndex: fi } = resolveTestNumber(activeTest, testDefs);
+  const { testNumber: tn } = resolveTestNumber(activeTest, testDefs);
 
   return dies.flatMap((die, i) => {
     let text = '';
@@ -812,7 +803,7 @@ export function generateTextOverlay(
       text = p ? 'P' : 'F';
       color = contrastTextColor(p ? SPEC_PASS_FILL : SPEC_FAIL_HIGH);
     } else if (plotMode === 'value') {
-      const v = getDieTestValue(die, tn, fi);
+      const v = getDieTestValue(die, tn);
       if (v === undefined) return [];
       text = formatValueLabel([v], tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(v)));
@@ -828,7 +819,7 @@ export function generateTextOverlay(
       color = contrastTextColor(metadataColorMap?.get(text) ?? NO_DATA_FILL);
     } else {
       // stackedValues / stackedBins: aggregated scalar in testValues[0] or values[0]
-      const v = getDieTestValue(die, 0, 0);
+      const v = getDieTestValue(die, 0);
       if (v === undefined) return [];
       text = formatValueLabel([v], tickFmt);
       color = contrastTextColor(colorFns.forValue(normalize(v)));
@@ -1028,7 +1019,6 @@ function pushDieRectangles(
   highlightBin: number | undefined,
   normalize: (v: number) => number,
   testNumber: number,
-  fallbackIndex: number,
   binDefMap: Map<number, BinDef> | null,
   activeTestDef?: TestDef,
   passFailDisplay: 'off' | 'spec' | 'test' = 'off',
@@ -1097,7 +1087,7 @@ function pushDieRectangles(
       rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
       return;
     }
-    const value = getDieTestValue(die, testNumber, fallbackIndex);
+    const value = getDieTestValue(die, testNumber);
     const spec = classifySpec(value, activeTestDef);
     // Two distinct out-of-spec presentations:
     //  - spec pass/fail display: the die fill *is* the indication — solid
@@ -1138,7 +1128,7 @@ function pushDieRectangles(
   }
 
   // stackedValues / stackedBins: aggregated scalar in testValues[0] (preferred) or values[0].
-  const aggValue = getDieTestValue(die, 0, 0);
+  const aggValue = getDieTestValue(die, 0);
   const fill = aggValue !== undefined ? colorFns.forValue(normalize(aggValue)) : NO_DATA_FILL;
   rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: 'value', metadata: die.metadata });
 }
@@ -1226,13 +1216,11 @@ export function buildView(
     isLotStack = false,
     logScale: logScaleOption,
     colorbarRangeMode: colorbarRangeModeOpt = 'spec' as const,
-    colorBySpec = false,
     passFailDisplay: passFailDisplayOpt,
     showPartialDies = true,
   } = options;
 
-  // Requested pass/fail display — `colorBySpec: true` is the deprecated alias for 'spec'.
-  const requestedPassFail: 'off' | 'spec' | 'test' = passFailDisplayOpt ?? (colorBySpec ? 'spec' : 'off');
+  const requestedPassFail: 'off' | 'spec' | 'test' = passFailDisplayOpt ?? 'off';
 
   const hbinDefs = binDefs?.hbinDefs;
   const sbinDefs = binDefs?.sbinDefs;
@@ -1261,8 +1249,7 @@ export function buildView(
   };
 
   // Resolve activeTest (toolbar cursor) → canonical test number for getDieTestValue.
-  let { testNumber: activeTestNumber, fallbackIndex: activeTestFallback } =
-    resolveTestNumber(activeTest, testDefs);
+  let { testNumber: activeTestNumber } = resolveTestNumber(activeTest, testDefs);
 
   // When no testDefs are provided the toolbar passes actual testNumbers as activeTest.
   // If the resolved testNumber doesn't exist in any die (e.g. default activeTest=0 but data
@@ -1277,8 +1264,7 @@ export function buildView(
         return lo !== undefined && (min === undefined || lo < min) ? lo : min;
       }, undefined);
       if (firstKey !== undefined) {
-        activeTestNumber  = firstKey;
-        activeTestFallback = firstKey;
+        activeTestNumber = firstKey;
       }
     }
   }
@@ -1349,8 +1335,8 @@ export function buildView(
     let allIntegers = true;
     for (const die of dies) {
       const v = isStacked
-        ? getDieTestValue(die, 0, 0)
-        : getDieTestValue(die, activeTestNumber, activeTestFallback);
+        ? getDieTestValue(die, 0)
+        : getDieTestValue(die, activeTestNumber);
       if (v !== undefined) {
         if (v < lo) lo = v;
         if (v > hi) hi = v;
@@ -1495,7 +1481,7 @@ export function buildView(
     }
     if (specCounts && !die.partial && !die.edgeExcluded) {
       // Same classification the colouring uses (shared helper) so counts match the drawn colours.
-      const cat = classifySpec(getDieTestValue(die, activeTestNumber, activeTestFallback), activeTestDef);
+      const cat = classifySpec(getDieTestValue(die, activeTestNumber), activeTestDef);
       if (cat) specCounts[cat]++;
     }
     if (passFailCounts && !die.partial && !die.edgeExcluded) {
@@ -1508,7 +1494,7 @@ export function buildView(
       if (value !== undefined) metadataCounts.set(value, (metadataCounts.get(value) ?? 0) + 1);
     }
     if (die.partial && !showPartialDies) continue;
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, dieSwapAxes, gap, colorFns, highlightBin, normalize, activeTestNumber, activeTestFallback, binDefMap, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValue);
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, dieSwapAxes, gap, colorFns, highlightBin, normalize, activeTestNumber, binDefMap, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValue);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {

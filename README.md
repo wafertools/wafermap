@@ -42,6 +42,12 @@ const result = buildWaferMap({
 renderWaferMap(document.getElementById('map'), result);
 ```
 
+Note the two import paths. The renderers (`renderWaferMap`, `renderWaferGallery`,
+`toCanvas`) live **only** at `@paulrobins/wafermap/render`, so importing them from the
+root package will fail. That keeps the root entry DOM-free — usable in Node for a
+build-and-analyse pipeline, and tree-shakeable when you only need the geometry, data
+and stats layers.
+
 ## Docs
 
 **Building an app with wafermap** (developers):

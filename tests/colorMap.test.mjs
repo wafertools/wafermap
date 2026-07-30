@@ -9,7 +9,7 @@ import {
   valueToGreyscale,
   softBinColor,
   contrastTextColor,
-  HARD_BIN_COLORS,
+  BIN_PALETTE,
   HARD_BIN_GREY,
   metadataValueColor,
 } from '../dist/packages/renderer/colorMap.js';
@@ -88,7 +88,7 @@ test('hardBinColor — same bin always returns same colour (deterministic)', () 
 });
 
 test('hardBinColor — never returns the no-data grey', () => {
-  const noData = HARD_BIN_COLORS[0];
+  const noData = BIN_PALETTE[0];
   for (const b of [1, 2, 14, 15, 100, 9999]) {
     assert.notEqual(hardBinColor(b), noData);
   }
@@ -142,8 +142,8 @@ test('valueToGreyscale — brightness is monotonically increasing', () => {
 // ── softBinColor ──────────────────────────────────────────────────────────────
 
 test('softBinColor — returns a string from BIN_PALETTE', () => {
-  assert.ok(HARD_BIN_COLORS.includes(softBinColor(1)));
-  assert.ok(HARD_BIN_COLORS.includes(softBinColor(10000)));
+  assert.ok(BIN_PALETTE.includes(softBinColor(1)));
+  assert.ok(BIN_PALETTE.includes(softBinColor(10000)));
 });
 
 test('softBinColor — same bin number gives different colour than hardBinColor', () => {

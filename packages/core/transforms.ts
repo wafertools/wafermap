@@ -281,19 +281,23 @@ export function mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions)
   const { valueField, matchBy = 'xy' } = options;
   const lookup = new Map<string, number>();
 
+  // Each call appends one more mapped value, keyed by how many are already
+  // present — so the first call lands at testValues[0], which is the key
+  // `plotMode: 'value'` selects by default when no testDefs are supplied.
+  const attach = (d: Die): Die => {
+    const v = lookup.get(getDieKey(d));
+    if (v === undefined) return { ...d };
+    const existing = d.testValues ?? {};
+    return { ...d, testValues: { ...existing, [Object.keys(existing).length]: v } };
+  };
+
   if (matchBy === 'ij') {
     const iField = options.iField ?? 'x', jField = options.jField ?? 'y';
     for (const row of data) lookup.set(`${+row[iField]},${+row[jField]}`, +row[valueField]);
-    return dies.map((d) => {
-      const v = lookup.get(getDieKey(d));
-      return v !== undefined ? { ...d, values: [...(d.values ?? []), v] } : { ...d };
-    });
+    return dies.map(attach);
   }
 
   const xField = options.xField ?? 'x', yField = options.yField ?? 'y';
   for (const row of data) lookup.set(`${+row[xField]},${+row[yField]}`, +row[valueField]);
-  return dies.map((d) => {
-    const v = lookup.get(getDieKey(d));
-    return v !== undefined ? { ...d, values: [...(d.values ?? []), v] } : { ...d };
-  });
+  return dies.map(attach);
 }

@@ -98,6 +98,26 @@ const result = buildWaferMap({
 
 ---
 
+## `renderWaferMap is not exported by @paulrobins/wafermap`
+
+**Cause:** the renderers are not on the root entry point. `renderWaferMap`,
+`renderWaferGallery` and `toCanvas` are exported **only** from the `/render` subpath.
+Depending on your bundler this surfaces as a build-time "no export named
+`renderWaferMap`" error or a runtime `undefined is not a function`.
+
+**Fix:** import them from `@paulrobins/wafermap/render`.
+
+```ts
+import { buildWaferMap } from '@paulrobins/wafermap';         // geometry + data
+import { renderWaferMap } from '@paulrobins/wafermap/render';  // the renderer
+```
+
+This split is deliberate: the root entry re-exports only the DOM-free layers (`core`,
+`renderer`, `stats`) so it stays usable in Node and tree-shakeable. See §10 of the
+[API reference](api.md) for the full subpath list.
+
+---
+
 ## `window is not defined` or `document is not defined` on the server
 
 **Cause:** `renderWaferMap` (and `toCanvas`) require a browser DOM. They will throw if called during SSR in Next.js, Nuxt, SvelteKit, or Remix.

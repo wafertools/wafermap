@@ -18,9 +18,9 @@ test('buildWaferMap applies retest policy and chooses plot mode from the data', 
     { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
   ];
   const results = [
-    { x: 0, y: 0, values: [0.4], hbin: 1 },
-    { x: 0, y: 0, values: [0.9], hbin: 2 },
-    { x: 1, y: 0, values: [0.8], hbin: 1 },
+    { x: 0, y: 0, testValues: { 0: 0.4 }, hbin: 1 },
+    { x: 0, y: 0, testValues: { 0: 0.9 }, hbin: 2 },
+    { x: 1, y: 0, testValues: { 0: 0.8 }, hbin: 1 },
   ];
 
   const first = buildWaferMap({
@@ -65,7 +65,7 @@ test('buildWaferMap accepts explicit dies and enables reticles by default when c
 
   const result = buildWaferMap({
     dies,
-    results: [{ x: 0, y: 0, values: [1.23], hbin: 1 }],
+    results: [{ x: 0, y: 0, testValues: { 0: 1.23 }, hbin: 1 }],
     waferConfig: {
       diameter: 60,
       metadata: { lot: 'LOT-9', waferNumber: 7 },
@@ -84,16 +84,16 @@ test('buildWaferMap accepts explicit dies and enables reticles by default when c
 test('buildWaferMap collapses lot stacks before rendering', () => {
   const lotStack = [
     [
-      { x: 0, y: 0, values: [1], hbin: 2 },
-      { x: 1, y: 0, values: [9], hbin: 1 },
+      { x: 0, y: 0, testValues: { 0: 1 }, hbin: 2 },
+      { x: 1, y: 0, testValues: { 0: 9 }, hbin: 1 },
     ],
     [
-      { x: 0, y: 0, values: [3], hbin: 2 },
-      { x: 1, y: 0, values: [7], hbin: 2 },
+      { x: 0, y: 0, testValues: { 0: 3 }, hbin: 2 },
+      { x: 1, y: 0, testValues: { 0: 7 }, hbin: 2 },
     ],
     [
-      { x: 0, y: 0, values: [5], hbin: 1 },
-      { x: 1, y: 0, values: [11], hbin: 2 },
+      { x: 0, y: 0, testValues: { 0: 5 }, hbin: 1 },
+      { x: 1, y: 0, testValues: { 0: 11 }, hbin: 2 },
     ],
   ];
 
@@ -199,8 +199,8 @@ test('buildWaferMap handles explicit dies without results', () => {
 test('buildWaferMap infers wafer diameter from grid extent when not provided', () => {
   const result = buildWaferMap({
     results: [
-      { x: -5, y: -5, values: [1], hbin: 1 },
-      { x: 5, y: 5, values: [1], hbin: 1 },
+      { x: -5, y: -5, testValues: { 0: 1 }, hbin: 1 },
+      { x: 5, y: 5, testValues: { 0: 1 }, hbin: 1 },
     ],
     dieConfig: { width: 10, height: 10 },
   });
@@ -242,7 +242,7 @@ test('buildView stackedValues mode produces non-grey fills when dies have testVa
   const aggregated = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 1050);
   const scene = buildView(wafer, aggregated, {
     plotMode: 'stackedValues',
-    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+    testDefs: [{ testNumber: 0, name: 'Idsat', unit: 'A' }],
   });
   const fills = scene.rectangles.map((r) => r.fill);
   // All dies with data must render with a colour other than the no-data grey
@@ -256,7 +256,7 @@ test('buildView stackedValues mode produces grey fills when aggregation used wro
   const badAggregated = aggregateValues([WAFER_A_DIES, WAFER_B_DIES], 'mean', 0);
   const scene = buildView(wafer, badAggregated, {
     plotMode: 'stackedValues',
-    testDefs: [{ index: 0, name: 'Idsat', unit: 'A' }],
+    testDefs: [{ testNumber: 0, name: 'Idsat', unit: 'A' }],
   });
   const fills = scene.rectangles.map((r) => r.fill);
   assert.ok(fills.every((f) => f === '#d6d9dd'), `Expected all grey fills, got: ${fills.join(', ')}`);

@@ -19,11 +19,7 @@ export interface ColorScheme {
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
-interface SchemeRecord extends ColorScheme {
-  isAlias?: boolean;
-}
-
-const registry = new Map<string, SchemeRecord>();
+const registry = new Map<string, ColorScheme>();
 
 /**
  * Register a named colour scheme, making it available to buildView via the
@@ -40,7 +36,7 @@ const registry = new Map<string, SchemeRecord>();
  * });
  */
 export function registerColorScheme(name: string, scheme: ColorScheme): void {
-  registry.set(name, scheme as SchemeRecord);
+  registry.set(name, scheme);
 }
 
 /**
@@ -53,9 +49,7 @@ export function getColorScheme(name?: string): ColorScheme {
 
 /** Return all registered schemes as { name, label } pairs, in insertion order. */
 export function listColorSchemes(): Array<{ name: string; label: string }> {
-  return [...registry.entries()]
-    .filter(([, s]) => !s.isAlias)
-    .map(([name, s]) => ({ name, label: s.label }));
+  return [...registry.entries()].map(([name, s]) => ({ name, label: s.label }));
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -106,9 +100,6 @@ registerColorScheme('viridis', {
   forBin:  (bin) => lerpKp(VIRIDIS, Math.min(bin, 16) / 16),
   forValue: (t) => lerpKp(VIRIDIS, 1 - t),
 });
-
-// 'color' kept as an alias so existing code that passed colorScheme:'color' still works.
-registry.set('color', { ...registry.get('default')!, isAlias: true });
 
 /**
  * GREYSCALE — grey categorical bins, grey continuous gradient.

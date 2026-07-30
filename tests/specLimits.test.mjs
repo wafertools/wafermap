@@ -93,9 +93,9 @@ test('specLimit — only limitLow defined: low end is limitLow, high end is data
   assert.equal(scene.valueRange[1], 4.0);
 });
 
-// ── colorBySpec view option ───────────────────────────────────────────────────
+// ── passFailDisplay: 'spec' view option ──────────────────────────────────────
 
-test('colorBySpec — rectangles are colored by pass/fail category', () => {
+test("passFailDisplay 'spec' — rectangles are colored by pass/fail category", () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
     makeResult(0, 0, 1.0),  // within limits → pass (green)
@@ -104,7 +104,7 @@ test('colorBySpec — rectangles are colored by pass/fail category', () => {
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
-  const scene = buildView(wafer, dies, { plotMode: 'value', colorBySpec: true, testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'value', passFailDisplay: 'spec', testDefs, activeTest: 1010 });
 
   const getRectForDie = (x, y) => {
     const die = scene.dies.find(d => d.x === x && d.y === y);
@@ -131,7 +131,7 @@ test('value mode — out-of-spec dies keep the gradient fill but carry a specMar
   // agree. Out-of-spec dies are NOT filled solid blue/red — instead they carry a
   // `specMark` ('failLow'/'failHigh') the renderer draws as a marker, so an
   // out-of-spec die is flagged without losing its place in the distribution.
-  // (In 'spec' range mode and under colorBySpec the fill IS solid blue/red — see
+  // (In 'spec' range mode and under passFailDisplay 'spec' the fill IS solid blue/red — see
   // the 'spec'-mode tests above; this is the 'data'-mode-only behaviour.)
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
@@ -141,7 +141,7 @@ test('value mode — out-of-spec dies keep the gradient fill but carry a specMar
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
 
-  // NOTE: plain value mode (NOT colorBySpec), explicitly colorbarRangeMode: 'data'.
+  // NOTE: plain value mode (NOT passFailDisplay 'spec'), explicitly colorbarRangeMode: 'data'.
   const scene = buildView(wafer, dies, {
     plotMode: 'value', testDefs, activeTest: 1010, colorbarRangeMode: 'data',
   });
@@ -194,8 +194,8 @@ test('value mode — out-of-spec dies keep the gradient fill and carry a specMar
   assert.equal(getRectForDie(0, 0).specMark,  undefined, 'in-spec die must not carry a specMark');
 });
 
-test('value mode — colorBySpec keeps solid spec fills (no specMark) even with colorbarRangeMode: data', () => {
-  // colorBySpec coerces range mode to 'spec' internally (buildView), so spec
+test("value mode — passFailDisplay 'spec' keeps solid spec fills (no specMark) even with colorbarRangeMode: data", () => {
+  // passFailDisplay 'spec' coerces range mode to 'spec' internally (buildView), so spec
   // colouring is always solid blue/red/green and no marker is emitted.
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
@@ -205,7 +205,7 @@ test('value mode — colorBySpec keeps solid spec fills (no specMark) even with 
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
   const scene = buildView(wafer, dies, {
-    plotMode: 'value', testDefs, activeTest: 1010, colorBySpec: true, colorbarRangeMode: 'data',
+    plotMode: 'value', testDefs, activeTest: 1010, passFailDisplay: 'spec', colorbarRangeMode: 'data',
   });
 
   const getRectForDie = (x, y) => {
@@ -213,20 +213,20 @@ test('value mode — colorBySpec keeps solid spec fills (no specMark) even with 
     return die ? scene.rectangles.find(r => Math.abs(r.x - die.physX) < 0.1 && Math.abs(r.y - die.physY) < 0.1) : null;
   };
 
-  assert.equal(getRectForDie(1, 0).fill,  '#3498db', 'fail-low solid blue under colorBySpec');
-  assert.equal(getRectForDie(-1, 0).fill, '#e74c3c', 'fail-high solid red under colorBySpec');
-  assert.equal(getRectForDie(0, 0).fill,  '#2ecc71', 'in-spec solid green under colorBySpec');
-  assert.equal(getRectForDie(1, 0).specMark, undefined, 'colorBySpec emits no marker');
+  assert.equal(getRectForDie(1, 0).fill,  '#3498db', "fail-low solid blue under passFailDisplay 'spec'");
+  assert.equal(getRectForDie(-1, 0).fill, '#e74c3c', "fail-high solid red under passFailDisplay 'spec'");
+  assert.equal(getRectForDie(0, 0).fill,  '#2ecc71', "in-spec solid green under passFailDisplay 'spec'");
+  assert.equal(getRectForDie(1, 0).specMark, undefined, "passFailDisplay 'spec' emits no marker");
 });
 
-test('colorBySpec — die with no value gets no-data fill', () => {
+test("passFailDisplay 'spec' — die with no value gets no-data fill", () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 3.0 }];
   const results = [
     { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0 } },
     { x: 1, y: 0, hbin: 1 }, // no testValues
   ];
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs });
-  const scene = buildView(wafer, dies, { plotMode: 'value', colorBySpec: true, testDefs, activeTest: 1010 });
+  const scene = buildView(wafer, dies, { plotMode: 'value', passFailDisplay: 'spec', testDefs, activeTest: 1010 });
 
   const noDataDie = scene.dies.find(d => d.x === 1 && d.y === 0);
   const noDataRect = noDataDie && scene.rectangles.find(
@@ -407,7 +407,7 @@ test('specCounts — tallies pass / failHigh / failLow against both limits', () 
     ],
     waferConfig, dieConfig, testDefs,
   });
-  const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010, colorBySpec: true });
+  const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010, passFailDisplay: 'spec' });
   assert.deepEqual(view.specCounts, { pass: 2, failHigh: 2, failLow: 1 });
 });
 
@@ -417,7 +417,7 @@ test('specCounts — one-sided (high only) limit never classifies fail-low', () 
     results: [makeResult(0, 0, 1.0), makeResult(1, 0, 0.05), makeResult(0, 1, 9.0)],
     waferConfig, dieConfig, testDefs,
   });
-  const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010, colorBySpec: true });
+  const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010, passFailDisplay: 'spec' });
   // 0.05 has no low limit to fail → counts as pass; 9.0 fails high.
   assert.deepEqual(view.specCounts, { pass: 2, failHigh: 1, failLow: 0 });
 });
