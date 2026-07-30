@@ -204,6 +204,41 @@ test('aggregation, inference, classification, formatting, and color helpers are 
     confidence: 0,
   });
 
+  // Case 4 (diameter only, no die size): an asymmetric/circular grid where the
+  // widest row and tallest column don't line up on both axes at once — every
+  // die's corner must still fit inside the given diameter (containment clamp),
+  // even though the naive per-axis "spans the full diameter" estimate would
+  // place some corners outside it.
+  {
+    const asymmetricGrid = [];
+    for (let y = -8; y <= 8; y++) {
+      const halfWidth = Math.round(12 * Math.sqrt(1 - (y / 8.5) ** 2));
+      for (let x = -halfWidth; x <= halfWidth; x++) asymmetricGrid.push({ x, y });
+    }
+    const diameter = 300;
+    const asymmetricPitch = resolveGridPitch(asymmetricGrid, undefined, diameter);
+    const radius = diameter / 2;
+    const xs = asymmetricGrid.map(p => p.x), ys = asymmetricGrid.map(p => p.y);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    for (const p of asymmetricGrid) {
+      const cornerDist = Math.hypot(
+        asymmetricPitch.pitchX * (Math.abs(p.x - cx) + 0.5),
+        asymmetricPitch.pitchY * (Math.abs(p.y - cy) + 0.5),
+      );
+      assert.ok(cornerDist <= radius + 1e-9, `die (${p.x},${p.y}) corner at ${cornerDist} exceeds radius ${radius}`);
+    }
+
+    // The clamp only ever shrinks the naive per-axis estimate (never grows it)
+    // and preserves its aspect ratio.
+    const xs2 = asymmetricGrid.map(p => p.x), ys2 = asymmetricGrid.map(p => p.y);
+    const naiveX = diameter / (Math.max(...xs2) - Math.min(...xs2) + 1);
+    const naiveY = diameter / (Math.max(...ys2) - Math.min(...ys2) + 1);
+    assert.ok(asymmetricPitch.pitchX <= naiveX + 1e-9);
+    assert.ok(asymmetricPitch.pitchY <= naiveY + 1e-9);
+    approxEqual(asymmetricPitch.pitchY / asymmetricPitch.pitchX, naiveY / naiveX);
+  }
+
   assert.equal(fmt(0), '0');
   assert.equal(fmt(1234), '1234');
   assert.equal(fmt(1e6, undefined, 'engineering'), '1.00E+6');

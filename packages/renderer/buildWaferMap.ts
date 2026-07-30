@@ -1340,12 +1340,13 @@ export function buildWaferMap(
   // A "these dies don't fit" claim is only meaningful when the die pitch was ALSO
   // supplied. Pitch is a free scaling parameter: for any set of grid positions and
   // any diameter there is always a pitch small enough to fit them, so with an
-  // inferred pitch "doesn't fit" says nothing about the data. Worse, the inference
-  // used when a diameter is given but a pitch is not derives pitch = diameter ÷
-  // grid span, which makes the data span the diameter edge-to-edge by construction
-  // — corners then necessarily fall outside the circle, so the check would fire on
-  // perfectly good full-wafer data. It would be reporting a contradiction it had
-  // itself created.
+  // inferred pitch "doesn't fit" says nothing about the data. `resolveGridPitch`
+  // already clamps an inferred pitch so it's guaranteed to fit the given diameter
+  // (see its containment clamp), so this check would never have anything to
+  // report for that path anyway — it's restricted to the case below where the
+  // caller supplied both diameter and pitch, which is the only case where "doesn't
+  // fit" is a genuine, checkable contradiction rather than something the inference
+  // itself would have prevented.
   if (norm.waferOpts?.diameter !== undefined) {
     const pitchWasSupplied = norm.dieOpts?.width !== undefined && norm.dieOpts?.height !== undefined;
 
@@ -1363,12 +1364,15 @@ export function buildWaferMap(
         `dieConfig.width/height against the real device.`,
       );
     } else if (!pitchWasSupplied) {
-      // Nothing is detectable here — only worth flagging that an unverifiable
-      // assumption was made on the caller's behalf.
+      // Containment is guaranteed (resolveGridPitch clamps to fit the diameter),
+      // but the assumed aspect ratio may still not match the true die shape when
+      // edge dies are absent from the data (a reticle-complete map, or partial
+      // dies filtered out upstream) — only worth flagging that as an
+      // unverifiable assumption made on the caller's behalf.
       (inference.warnings ??= []).push(
-        `${INFERRED_PITCH_MARKER} ${pitchX.toFixed(3)} × ${pitchY.toFixed(3)} mm by assuming the die grid spans the full ` +
-        `${waferDiameter} mm wafer. That assumption fails whenever edge dies are absent from the data (a reticle-complete ` +
-        `map, or partial dies filtered out upstream), which silently scales every die position. Supply dieConfig.width and ` +
+        `${INFERRED_PITCH_MARKER} ${pitchX.toFixed(3)} × ${pitchY.toFixed(3)} mm by assuming the die grid fits within the ` +
+        `${waferDiameter} mm wafer. The assumed aspect ratio may not match the true die shape whenever edge dies are ` +
+        `absent from the data (a reticle-complete map, or partial dies filtered out upstream). Supply dieConfig.width and ` +
         `dieConfig.height — the die pitch, not the diameter, is what fixes placement.`,
       );
     }

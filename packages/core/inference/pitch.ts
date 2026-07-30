@@ -132,49 +132,78 @@ export function resolveGridPitch(
   const xRange = xMax - xMin + 1;
   const yRange = yMax - yMin + 1;
 
-  // Case 2: Width only — derive height from circular aspect ratio.
+  let pitchX: number, pitchY: number, units: 'mm' | 'normalized', confidence: number;
+
   if (hasWidth) {
-    const pitchX = dieOpts!.width!;
-    return { pitchX, pitchY: pitchX * xRange / yRange, units: 'mm', confidence: 0.8 };
+    // Case 2: Width only — derive height from circular aspect ratio.
+    pitchX = dieOpts!.width!;
+    pitchY = pitchX * xRange / yRange;
+    units = 'mm';
+    confidence = 0.8;
+  } else if (hasHeight) {
+    // Case 3: Height only — derive width from circular aspect ratio.
+    pitchY = dieOpts!.height!;
+    pitchX = pitchY * yRange / xRange;
+    units = 'mm';
+    confidence = 0.8;
+  } else if (waferDiameter !== undefined) {
+    // Case 4: Wafer diameter provided but no die size.
+    // Each axis independently spans approximately the full diameter in steps.
+    // This is only a starting estimate — the containment clamp below pulls it
+    // back if it would place any die outside the given diameter.
+    pitchX = waferDiameter / xRange;
+    pitchY = waferDiameter / yRange;
+    units = 'mm';
+    confidence = 0.6;
+  } else {
+    // Case 5: Nothing provided — attempt nearest-neighbour step analysis first,
+    // then apply the circular-wafer constraint to recover the aspect ratio.
+    //
+    // NN finds the step size in each axis (e.g. pitchX=1, pitchY=1 for integer
+    // grid coordinates). When NN returns equal steps in both directions the ratio
+    // is uninformative (all integer grids look the same), so we use the circular
+    // constraint: a wafer is always round, therefore physical X and Y extents must
+    // be equal, giving pitchY/pitchX = xRange/yRange.
+    //
+    // When NN finds genuinely different step sizes (e.g. a 2-step coarse grid on
+    // one axis), those steps carry real aspect-ratio information and we use them
+    // directly — the circular constraint is not applied on top.
+    const nn = computeNearestNeighborPitch(gridPoints);
+    const nnRatio = nn !== null ? nn.pitchY / nn.pitchX : 1;
+    const useCircular = nnRatio === 1;
+    const aspectRatio = useCircular && yRange > 0 ? xRange / yRange : nnRatio;
+    pitchX = 1;
+    pitchY = aspectRatio;
+    units = 'normalized';
+    confidence = nn !== null ? 0.5 : 0.4;
   }
 
-  // Case 3: Height only — derive width from circular aspect ratio.
-  if (hasHeight) {
-    const pitchY = dieOpts!.height!;
-    return { pitchX: pitchY * yRange / xRange, pitchY, units: 'mm', confidence: 0.8 };
-  }
-
-  // Case 4: Wafer diameter provided but no die size.
-  // Each axis independently spans approximately the full diameter in steps.
+  // Containment clamp: a die with test results is always a real, fully-on-wafer
+  // prober position (see the project's wafer-domain invariant), so whenever a
+  // wafer diameter is known, an inferred (not caller-specified) pitch must never
+  // place a die outside it. The cases above only estimate a starting pitch from
+  // axis extents independently, which can overshoot on points that are far from
+  // centre on both axes at once (a diagonal corner) even when no single axis
+  // alone exceeds the radius. Shrink pitchX/pitchY uniformly — preserving
+  // whichever aspect ratio the case above chose — until the worst point fits.
+  // This only pulls an overshoot back; it never grows a pitch that already fits.
   if (waferDiameter !== undefined) {
-    return {
-      pitchX: waferDiameter / xRange,
-      pitchY: waferDiameter / yRange,
-      units: 'mm',
-      confidence: 0.6,
-    };
+    const radius = waferDiameter / 2;
+    const cx = (xMin + xMax) / 2, cy = (yMin + yMax) / 2;
+    let maxCorner = 0;
+    for (const p of gridPoints) {
+      const d = Math.hypot(
+        pitchX * (Math.abs(p.x - cx) + 0.5),
+        pitchY * (Math.abs(p.y - cy) + 0.5),
+      );
+      if (d > maxCorner) maxCorner = d;
+    }
+    if (maxCorner > radius) {
+      const scale = radius / maxCorner;
+      pitchX *= scale;
+      pitchY *= scale;
+    }
   }
 
-  // Case 5: Nothing provided — attempt nearest-neighbour step analysis first,
-  // then apply the circular-wafer constraint to recover the aspect ratio.
-  //
-  // NN finds the step size in each axis (e.g. pitchX=1, pitchY=1 for integer
-  // grid coordinates). When NN returns equal steps in both directions the ratio
-  // is uninformative (all integer grids look the same), so we use the circular
-  // constraint: a wafer is always round, therefore physical X and Y extents must
-  // be equal, giving pitchY/pitchX = xRange/yRange.
-  //
-  // When NN finds genuinely different step sizes (e.g. a 2-step coarse grid on
-  // one axis), those steps carry real aspect-ratio information and we use them
-  // directly — the circular constraint is not applied on top.
-  const nn = computeNearestNeighborPitch(gridPoints);
-  const nnRatio = nn !== null ? nn.pitchY / nn.pitchX : 1;
-  const useCircular = nnRatio === 1;
-  const aspectRatio = useCircular && yRange > 0 ? xRange / yRange : nnRatio;
-  return {
-    pitchX: 1,
-    pitchY: aspectRatio,
-    units: 'normalized',
-    confidence: nn !== null ? 0.5 : 0.4,
-  };
+  return { pitchX, pitchY, units, confidence };
 }
