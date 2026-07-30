@@ -158,6 +158,23 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
   const tabBar = document.createElement('div');
   Object.assign(tabBar.style, { display: 'flex', gap: '4px', borderBottom: `1px solid ${CLR.menuBorder}`, marginBottom: '2px' } as Partial<CSSStyleDeclaration>);
+  tabBar.setAttribute('role', 'tablist');
+  // Registered once, not per-`render()` — `tabBar` itself persists across
+  // sub-tab switches (only its children are torn down and rebuilt), so this
+  // would otherwise accumulate a duplicate listener on every switch. Left/
+  // Right roving focus per the APG Tabs pattern; only targets `[role="tab"]`
+  // children, so the leading "‹ Map"/"‹ Gallery" back button (a plain
+  // button, not part of this tablist) is never included.
+  tabBar.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const tabs = Array.from(tabBar.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const idx = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    if (idx === -1) return;
+    e.preventDefault();
+    const next = tabs[(idx + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+    next.focus();
+    next.click();
+  });
 
   // Same reasoning as rootEl above — auto-height, no flex-grow/min-height:0
   // "fill and scroll" pattern, since there's no guaranteed bounded ancestor
@@ -208,7 +225,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
-    styleTabButton(btn, view === activeView);
+    const isActive = view === activeView;
+    styleTabButton(btn, isActive);
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    // Roving tabindex (APG Tabs pattern): only the active tab sits in the
+    // page's Tab order; Left/Right (wired on tabBar above) moves among the
+    // rest without adding every tab to it.
+    btn.tabIndex = isActive ? 0 : -1;
     btn.addEventListener('click', () => { if (activeView !== view) { activeView = view; render(); } });
     return btn;
   }

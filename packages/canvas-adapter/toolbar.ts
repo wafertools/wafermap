@@ -10,6 +10,7 @@ import { prettyKey } from '../core/utils.js';
 import { listColorSchemes } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
 import { WMAP_VERSION, WMAP_BUILD_TIME } from './version.js';
+import type { StatsSeverity } from '../stats/types.js';
 
 // ── Version banner ───────────────────────────────────────────────────────────
 //
@@ -49,10 +50,10 @@ export const WMAP_TOKEN_NAMES = [
   'z',
   'icon', 'icon-hover', 'icon-active', 'bg-hover', 'bg-active', 'separator',
   'surface', 'border', 'menu-hover', 'menu-active',
-  'panel-bg', 'text-muted', 'text',
+  'panel-bg', 'text-muted', 'text', 'text-strong',
   'warn-bg', 'warn-border', 'warn-text',
   'info-bg', 'info-text',
-  'selected',
+  'selected', 'finding-indicator',
   'canvas-bg',
 ] as const;
 
@@ -68,7 +69,10 @@ export const CLR = {
   // Toolbar icons + hover/active affordances.
   icon:        t('icon',         '#506784'),
   iconHover:   t('icon-hover',   '#2a3f5f'),
-  iconActive:  t('icon-active',  '#1a66cc'),
+  // #1a65ca (not #1a66cc) — the smallest darkening that clears WCAG AA
+  // (4.5:1) as *text* colour against `bgActive`/`menuActive` (#dce8f8), which
+  // this token doubles as (selected menu-row text, active toolbar icon).
+  iconActive:  t('icon-active',  '#1a65ca'),
   bgHover:     t('bg-hover',     '#edf0f8'),
   bgActive:    t('bg-active',    '#dce8f8'),
   separator:   t('separator',    'rgba(0,0,0,0.12)'),
@@ -79,8 +83,16 @@ export const CLR = {
   menuActive:  t('menu-active',  '#dce8f8'),
   // Summary-panel surfaces + text.
   panelBg:     t('panel-bg',     '#fafbfc'),
-  label:       t('text-muted',   '#66788a'),
-  value:       t('text',         '#1f2f43'),
+  // #647687 (not #66788a) — the smallest darkening that clears WCAG AA
+  // (4.5:1) against `panelBg` (#fafbfc), the lightest surface this muted-text
+  // token is used on.
+  label:       t('text-muted',   '#647687'),
+  // Distinct token from `text` below (`--wmap-text-strong`, not `--wmap-text`)
+  // even though both are near-black — `value` is the deliberately-darker
+  // emphasis shade used for headings/big stat numbers/metadata values, and a
+  // host theming plain body text via `--wmap-text` must not silently recolor
+  // every heading/value in the UI along with it.
+  value:       t('text-strong',  '#1f2f43'),
   text:        t('text',         '#333'),
   // Semantic — warning banner.
   warnBg:      t('warn-bg',      '#fffbe6'),
@@ -94,13 +106,32 @@ export const CLR = {
   // Orange default stands out against light chrome; hosts can theme it. The CSS
   // token stays `--wmap-selected` for theme back-compat.
   findingHighlight: t('selected', '#e07a20'),
+  // The "this toolbar button's wafer/lot has notable findings" text-colour
+  // indicator (renderWaferMap's and renderWaferGallery's Summary button) —
+  // a different orange from `findingHighlight` above (a border, not text, with
+  // its own contrast needs) but was hardcoded identically in both files
+  // instead of sharing one themeable token.
+  findingIndicator: t('finding-indicator', '#b7551a'),
 };
+
+/**
+ * Findings-severity → colour, shared by summaryPanel.ts (severity dots/borders
+ * on the findings list) and renderWaferGallery.ts (its own copy drifted from
+ * this one only by name, never by value — hoisted here so the two can't
+ * silently diverge again).
+ */
+export function sevColor(s: StatsSeverity): string {
+  return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : CLR.icon;
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 export const ROTATIONS: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
 
 export const INLINE_TEST_LIMIT = 6;
+
+/** Above this many rows, a scrollable list (test cascade submenu, chart test picker) gets a filter box. */
+export const MENU_SEARCH_THRESHOLD = 8;
 
 // ── Overlay stacking ─────────────────────────────────────────────────────────
 //
@@ -695,6 +726,49 @@ export function metadataModeEntry(field: MetadataFieldDef): ModeEntry {
 }
 
 /**
+ * A text input for filtering a list of rows by their label text, meant to sit
+ * at the top of a scrollable menu/list once it gets long enough that scanning
+ * beats scrolling. Shared by the plot-mode test-value cascade submenu here and
+ * the chart test picker (`chartShell.ts`'s `makeSearchableTestSelect`) so both
+ * get the same filter-as-you-type box instead of building it twice.
+ *
+ * `onFilter` receives the lowercased query on every keystroke; the caller
+ * owns showing/hiding its own rows. Autofocuses on mount. Click/keydown are
+ * stopped from bubbling so typing (including Space/arrow keys) lands in the
+ * input rather than triggering the host menu's own keyboard navigation.
+ */
+export function makeMenuSearchBox(onFilter: (query: string) => void, placeholder = 'Filter…'): HTMLInputElement {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = placeholder;
+  input.setAttribute('aria-label', placeholder);
+  Object.assign(input.style, {
+    display:      'block',
+    width:        'calc(100% - 20px)',
+    margin:       '2px 10px 6px',
+    padding:      '4px 8px',
+    fontSize:     '12px',
+    boxSizing:    'border-box',
+    background:   CLR.menuBg,
+    color:        CLR.text,
+    border:       `1px solid ${CLR.menuBorder}`,
+    borderRadius: '4px',
+    outline:      'none',
+  } as Partial<CSSStyleDeclaration>);
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('mousedown', e => e.stopPropagation());
+  input.addEventListener('keydown', e => e.stopPropagation());
+  input.addEventListener('input', () => onFilter(input.value.trim().toLowerCase()));
+  // Native outline suppressed above (it's clipped by the menu's own border-
+  // radius/overflow) — replaced with a visible border-colour swap so keyboard
+  // focus is never invisible.
+  input.addEventListener('focus', () => { input.style.borderColor = CLR.iconActive; });
+  input.addEventListener('blur',  () => { input.style.borderColor = CLR.menuBorder; });
+  queueMicrotask(() => input.focus());
+  return input;
+}
+
+/**
  * Build the plot-mode dropdown menu element.
  * Shared between renderWaferMap and renderWaferGallery.
  * The caller provides data-derived entry arrays and pick/active callbacks.
@@ -748,7 +822,19 @@ export function buildModeMenuEl(
       cascadeRow.style.justifyContent = 'space-between';
       cascadeRow.style.alignItems     = 'center';
       let subMenu: HTMLDivElement | null = null;
-      const closeSub = () => { subMenu?.remove(); subMenu = null; };
+      // Closing on mouseleave is deferred by a short grace period rather than
+      // fired immediately: the submenu is rendered a couple pixels away from
+      // cascadeRow (see subLeft below), so a straight-line move from the row
+      // into the submenu crosses that gap over empty space — a mouseleave
+      // with no useful relatedTarget — before mouseenter reaches the
+      // submenu. Without the grace period that reads as "left the whole
+      // cascade" and withdraws the submenu mid-move, making it very hard to
+      // actually land a pointer on it. Any mouseenter on either the row or
+      // the submenu itself cancels the pending close.
+      let closeTimer: ReturnType<typeof setTimeout> | null = null;
+      const cancelClose = () => { if (closeTimer !== null) { clearTimeout(closeTimer); closeTimer = null; } };
+      const closeSub = () => { cancelClose(); subMenu?.remove(); subMenu = null; };
+      const scheduleClose = () => { cancelClose(); closeTimer = setTimeout(closeSub, 300); };
       const openSub = () => {
         if (subMenu) return;
         const rowRect = cascadeRow.getBoundingClientRect();
@@ -773,13 +859,30 @@ export function buildModeMenuEl(
           padding:       '4px 0',
           pointerEvents: 'auto',
         });
-        for (const entry of testEntries) {
-          subMenu.appendChild(makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
-            e.stopPropagation();
-            subMenu?.remove(); subMenu = null;
-            pickEntry(entry, menu);
-          }));
+        if (testEntries.length > MENU_SEARCH_THRESHOLD) {
+          const searchBox = makeMenuSearchBox(query => {
+            for (const row of testRows) {
+              row.row.style.display = row.label.includes(query) ? '' : 'none';
+            }
+          }, 'Filter tests…');
+          // Sticky, not a separate non-scrolling wrapper — subMenu is itself
+          // the scroll container (overflowY: auto above), so this keeps the
+          // box visible while the rows beneath it scroll.
+          Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
+          subMenu.appendChild(searchBox);
         }
+        const testRows: { row: HTMLDivElement; label: string }[] = [];
+        for (const entry of testEntries) {
+          const row = makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
+            e.stopPropagation();
+            closeSub();
+            pickEntry(entry, menu);
+          });
+          testRows.push({ row, label: entry.label.toLowerCase() });
+          subMenu.appendChild(row);
+        }
+        subMenu.addEventListener('mouseenter', cancelClose);
+        subMenu.addEventListener('mouseleave', scheduleClose);
         // Append into the same stacking root as the parent menu so the submenu
         // is visible when the menu is inside a maximized modal box (no real
         // fullscreen element exists — see openModal's CSS maximize).
@@ -794,11 +897,8 @@ export function buildModeMenuEl(
         // collapsible-section `collapse` listener further down this file).
         ownerWindow.document.addEventListener('click', closeSub, { once: true });
       };
-      cascadeRow.addEventListener('mouseenter', openSub);
-      cascadeRow.addEventListener('mouseleave', e => {
-        if (subMenu && subMenu.contains(e.relatedTarget as Node)) return;
-        closeSub();
-      });
+      cascadeRow.addEventListener('mouseenter', () => { cancelClose(); openSub(); });
+      cascadeRow.addEventListener('mouseleave', scheduleClose);
       menu.appendChild(cascadeRow);
     }
   }

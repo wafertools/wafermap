@@ -28,7 +28,7 @@ import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../rendere
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
 import { makeLabeledSelect } from './charts/chartShell.js';
-import { CLR, openModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
+import { CLR, sevColor, openModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
 import { medianOfSorted } from '../core/utils.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
@@ -132,6 +132,7 @@ function collapsibleSection(
     flex:          '1',
   }, label);
 
+  toggle.setAttribute('aria-expanded', defaultOpen ? 'true' : 'false');
   toggle.appendChild(arrow);
   toggle.appendChild(titleEl);
 
@@ -155,6 +156,7 @@ function collapsibleSection(
     open = !open;
     content.style.display = open ? 'block' : 'none';
     arrow.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 
   outer.appendChild(toggle);
@@ -222,7 +224,7 @@ function progressRow(
       bottom:     '0',
       left:       `${medianLinePct}%`,
       width:      '1px',
-      background: '#334155',
+      background: CLR.infoText,
       opacity:    '0.5',
     });
     track.appendChild(line);
@@ -674,9 +676,17 @@ export function buildPerWaferYieldSection(
       row.style.padding = '2px 3px';
       row.style.marginLeft = '-3px';
       row.style.marginRight = '-3px';
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', `${label}, ${yieldPct.toFixed(1)}% yield — view wafer`);
+      row.tabIndex = 0;
       row.addEventListener('mouseenter', () => { row.style.background = CLR.bgHover; });
       row.addEventListener('mouseleave', () => { row.style.background = ''; });
+      row.addEventListener('focus', () => { row.style.background = CLR.bgHover; });
+      row.addEventListener('blur',  () => { row.style.background = ''; });
       row.addEventListener('click', () => onWaferClick(waferIndex));
+      row.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onWaferClick(waferIndex); }
+      });
     }
     wrap.appendChild(row);
   }
@@ -1085,9 +1095,6 @@ export function buildLotFunctionalSection(
 // an ordinary findings list read like an incident page.
 
 const severityRank: Record<StatsFinding['severity'], number> = { unusual: 0, notable: 1, info: 2 };
-function sevColor(s: StatsFinding['severity']): string {
-  return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : CLR.icon;
-}
 function sevDot(s: StatsFinding['severity']): HTMLSpanElement {
   return el('span', {
     display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
@@ -1470,6 +1477,7 @@ function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFil
     chip.type = 'button';
     const paint = () => {
       const on = enabled.has(s);
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
       Object.assign(chip.style, {
         display: 'inline-flex', alignItems: 'center', gap: '5px',
         border: `1px solid ${CLR.menuBorder}`, borderRadius: '10px',

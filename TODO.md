@@ -31,6 +31,89 @@ Items here are ideas or half-designed features that need more thought before imp
 3. **Is this the right UX at all?**  
    An alternative is to leave removal as a pure host concern (host manages the items array and calls `setItems()`), and just make `setItems()` cheaper/smoother for the partial-removal case rather than adding internal removal logic.
 
+## Non-uniform die pitch per reticle field (MPW / multi-site reticles)
+
+**Motivation:** MPW (multi-project wafer) layouts commonly place several device
+types or test vehicles inside one reticle field, at a finer pitch than the
+spacing between reticle fields. A given test program may only test one of
+those device types, so `results` only covers a subset of the physical die
+positions — the rest are real, untested silicon, not absent positions. A user
+raised this wanting the untested sites to render as recognisable "ghost"
+dies (no-data grey) rather than simply being missing from the plot.
+
+**Current workaround (already works, no code change):** dies present in
+`results` with no `hbin`/`sbin`/`testValues` already render as no-data grey
+(`NO_DATA_FILL`, `buildView.ts`). A caller can pre-build the **full** physical
+die grid (including untested sites) and pass it via `WaferMapInputBase.dies`
+(`buildWaferMap.ts:1246-1298`) — `results` are matched onto it by `x,y` key,
+and unmatched grid positions stay no-data grey automatically. For a plain
+uniform grid this is just `generateDies` + `clipDiesToWafer`.
+
+**The actual gap:** `generateDies` (`core/dies.ts`) only produces a uniform
+single-pitch grid. It cannot express "2-3 sites at a finer pitch within each
+reticle field, with a coarser pitch between fields" — a caller would have to
+hand-build that `Die[]` themselves today. Two areas of the library also
+assume one global pitch and would misbehave even if a caller *did* hand-build
+a non-uniform grid:
+
+1. **Reticle field-boundary geometry** (`core/reticle.ts`,
+   `generateReticleGrid`) takes a single scalar `diePitchX`/`diePitchY` for
+   the whole wafer and computes field rectangles as `W*pitchX`/`H*pitchY`.
+   The explicit-`dies` path in `buildWaferMap.ts:1272` currently hardcodes
+   `diePitchX=1, diePitchY=1`, so reticle overlay boxes are already wrong
+   for any physical (mm-scale) grid passed via `dies` — this is arguably a
+   pre-existing bug independent of the non-uniform-pitch question.
+   `getReticleCell`'s cell-label math (grid-index modulo) is pitch-independent
+   and unaffected.
+2. **Cluster-detection stats** (`stats/clusterDetection.ts:74-93`) derives its
+   neighbour-search radius from a single sampled die's `width`/`height`
+   (the first die in the array), assumed representative of the whole wafer.
+   With intra-field vs. inter-field pitch differing, this would over- or
+   under-merge spatial clusters depending on which pitch that first die
+   happened to have.
+
+Everything else (die-rect drawing, hit-testing, hover, `stats/regions.ts`
+distance math) already reads per-die `physX`/`physY`/`width`/`height` and
+would render/compute correctly with a non-uniform grid.
+
+**Shape of a fix (not yet scoped in detail):**
+
+- A `DieSpec`-like construct that describes a reticle field's internal site
+  layout (site count/positions/pitch within the field) plus the field-to-field
+  pitch across the wafer, and a generator (e.g. `generateDiesFromReticle`)
+  that expands it into a full `Die[]` — sparing callers from hand-rolling grid
+  math themselves, consistent with the library's "enforce validity
+  internally, don't rely on the caller" principle.
+- Each die presumably needs a way to identify which device type / test
+  vehicle it is (an MPW reticle may contain several), so results for one
+  device type match only the corresponding sites — likely a new optional
+  `Die` field, and`results`-matching logic that can key on it in addition to
+  `x,y`. Needs design: is this per-die `metadata`, a new typed field, or
+  something reticle-config-driven?
+- `generateReticleGrid`/`getReticleCell` need to accept non-uniform pitch
+  (per-field site layout) instead of one `diePitchX`/`diePitchY` scalar, and
+  the explicit-`dies` path's hardcoded `diePitchX=1, diePitchY=1` needs
+  fixing regardless.
+- `clusterDetection.ts`'s neighbour-radius estimation needs to stop assuming
+  one representative die size — likely sample per local neighbourhood, or
+  take an explicit pitch input rather than inferring from `dies[0]`.
+
+**Open questions:**
+
+1. Does the caller supply the reticle-internal site layout explicitly (site
+   count + positions/pitch), or should the library attempt to infer it from a
+   sparse `results` footprint the way `inferWaferFromXY` currently infers a
+   uniform grid? Inference seems risky here — multi-device MPW footprints are
+   inherently ambiguous without an explicit spec.
+2. How does device-type identity flow through `results` matching, tooltips,
+   and stats? Do stats need to be scoped per device type (e.g. yield is
+   meaningless mixed across device types sharing a wafer)?
+3. Does the reticle overlay need to show sub-field site boundaries as well as
+   field boundaries, or just the field grid as today?
+4. Interaction with `partial`/edge-clipping: `clipDiesToWafer` logic assumes
+   dies are checked individually against the wafer circle — should still work
+   per-site, but needs verification once site layout is non-uniform.
+
 ## Issues and idea since the port of charts from tsmap to wmap
 
 ### Chart-panel mini-toolbars still use their own button chrome, not `makeBtn`

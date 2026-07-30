@@ -5,7 +5,7 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { CLR, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
+import { CLR, Z_BASE, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 
@@ -273,6 +273,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardSh
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.title = 'Save as PNG';
+  saveBtn.setAttribute('aria-label', 'Save as PNG');
   saveBtn.innerHTML = ICONS.download;
   Object.assign(saveBtn.style, {
     border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', background: 'none',
@@ -288,6 +289,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardSh
   const expandBtn = document.createElement('button');
   expandBtn.type = 'button';
   expandBtn.title = 'Expand';
+  expandBtn.setAttribute('aria-label', 'Expand');
   expandBtn.innerHTML = ICONS.expand;
   Object.assign(expandBtn.style, {
     border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', background: 'none',
@@ -419,13 +421,29 @@ export interface TestSelectItem {
   name?: string;
 }
 
+/**
+ * Below `MENU_SEARCH_THRESHOLD` tests this is a plain native `<select>`. Past
+ * it, a long native dropdown becomes hard to scan, so it's replaced by a
+ * button + filterable popup list (`makeSearchableTestCombo` below) — sharing
+ * `makeMenuSearchBox` with the plot-mode test-value cascade submenu
+ * (toolbar.ts's `buildModeMenuEl`) so both long test lists get the same
+ * filter-as-you-type box instead of two independent implementations. Either
+ * shape exposes a settable `.value` (string of the testNumber, same as a real
+ * `<select>`) so callers (boxplot/histogram/scatter, syncing from an external
+ * click-through) don't need to know which one they got.
+ */
 export function makeTestSelect(
   testOptions: readonly TestSelectItem[],
   selected: number | null,
   onChange: (testNumber: number) => void,
   opts: { maxWidth?: string; emptyText?: string } = {},
-): HTMLSelectElement {
+): HTMLElement & { value: string } {
   const { maxWidth = '200px', emptyText = 'No parametric tests' } = opts;
+
+  if (testOptions.length > MENU_SEARCH_THRESHOLD) {
+    return makeSearchableTestCombo(testOptions, selected, onChange, maxWidth);
+  }
+
   const select = document.createElement('select');
   Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
   if (testOptions.length === 0) {
@@ -444,6 +462,167 @@ export function makeTestSelect(
     select.addEventListener('change', () => onChange(Number(select.value)));
   }
   return select;
+}
+
+/**
+ * The long-list combobox behind `makeTestSelect` above `MENU_SEARCH_THRESHOLD`
+ * tests. A button showing the current test opens a filterable popup list
+ * (same visual language as toolbar.ts's menus); setting `.value` (a
+ * plain-string testNumber, matching `<select>.value`) jumps the selection
+ * without calling `onChange` — a real `<select>`'s `.value` setter doesn't
+ * fire a `change` event either, and callers rely on that to sync from an
+ * external click-through (e.g. the correlation matrix picking a cell) without
+ * re-triggering their own onChange loop.
+ */
+function makeSearchableTestCombo(
+  testOptions: readonly TestSelectItem[],
+  selected: number | null,
+  onChange: (testNumber: number) => void,
+  maxWidth: string,
+): HTMLElement & { value: string } {
+  const labelFor = (tn: number): string => testOptions.find(t => t.testNumber === tn)?.name || `Test ${tn}`;
+  let current = selected;
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  Object.assign(btn.style, {
+    fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text,
+    border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth, textAlign: 'left',
+    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px',
+    justifyContent: 'space-between',
+  } as Partial<CSSStyleDeclaration>);
+  markMenuTrigger(btn, false);
+
+  const labelSpan = document.createElement('span');
+  Object.assign(labelSpan.style, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
+  const caret = document.createElement('span');
+  caret.textContent = '▾';
+  caret.style.flex = '0 0 auto';
+  btn.append(labelSpan, caret);
+
+  const syncLabel = (): void => { labelSpan.textContent = current !== null ? labelFor(current) : '(none)'; };
+  syncLabel();
+
+  let menu: HTMLDivElement | null = null;
+  const closeMenu = (): void => {
+    if (!menu) return;
+    menu.remove();
+    menu = null;
+    markMenuTrigger(btn, false);
+  };
+  // Same pick-closes-and-returns-focus contract as toolbar.ts's own menus —
+  // Escape/selecting an option are both "I'm done, give focus back to the
+  // trigger"; a generic outside click is not (whatever the user clicked
+  // should keep focus), so that path (below) deliberately doesn't call this.
+  const closeMenuAndRefocus = (): void => { closeMenu(); btn.focus(); };
+
+  function openMenu(): void {
+    const rect = btn.getBoundingClientRect();
+    const win = btn.ownerDocument.defaultView ?? window;
+    const menuMinWidth = Math.max(rect.width, 220);
+    const menuMaxHeight = 320;
+    const left = Math.min(rect.left, Math.max(4, (win.innerWidth ?? Infinity) - menuMinWidth - 4));
+    menu = document.createElement('div');
+    Object.assign(menu.style, {
+      position: 'fixed', top: `${rect.bottom + 4}px`, left: `${left}px`,
+      background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: Z_BASE, minWidth: `${menuMinWidth}px`,
+      maxHeight: `${menuMaxHeight}px`, overflowY: 'auto', padding: '4px 0', pointerEvents: 'auto',
+    } as Partial<CSSStyleDeclaration>);
+
+    const rows: { row: HTMLDivElement; label: string }[] = [];
+    const visibleRows = (): HTMLDivElement[] => rows.filter(r => r.row.style.display !== 'none').map(r => r.row);
+
+    // `makeMenuSearchBox` stops all keydown propagation on the input itself
+    // (so typing doesn't trigger a host menu's own key handling) — which
+    // means arrow-key row navigation has to be wired here explicitly rather
+    // than relying on bubbling into a delegated listener the way mouse/focus
+    // events do below.
+    const searchBox = makeMenuSearchBox(query => {
+      for (const r of rows) r.row.style.display = r.label.includes(query) ? '' : 'none';
+    }, 'Filter tests…');
+    Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
+    searchBox.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closeMenuAndRefocus(); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); visibleRows()[0]?.focus(); }
+    });
+    menu.appendChild(searchBox);
+
+    for (const t of testOptions) {
+      const label = t.name || `Test ${t.testNumber}`;
+      const active = t.testNumber === current;
+      const row = document.createElement('div');
+      row.textContent = label;
+      row.setAttribute('role', 'menuitemradio');
+      row.setAttribute('aria-checked', active ? 'true' : 'false');
+      row.tabIndex = -1;
+      Object.assign(row.style, {
+        padding: '6px 14px', fontSize: '12px', cursor: 'pointer',
+        color: active ? CLR.iconActive : CLR.text, fontWeight: active ? '700' : '400',
+        background: active ? CLR.menuActive : 'transparent', whiteSpace: 'nowrap', outline: 'none',
+      } as Partial<CSSStyleDeclaration>);
+      const highlightOn  = (): void => { if (!active) row.style.background = CLR.menuHover; };
+      const highlightOff = (): void => { row.style.background = active ? CLR.menuActive : 'transparent'; };
+      row.addEventListener('mouseenter', highlightOn);
+      row.addEventListener('mouseleave', highlightOff);
+      row.addEventListener('focus', highlightOn);
+      row.addEventListener('blur',  highlightOff);
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        current = t.testNumber;
+        syncLabel();
+        closeMenuAndRefocus();
+        onChange(t.testNumber);
+      });
+      menu.appendChild(row);
+      rows.push({ row, label: label.toLowerCase() });
+    }
+    // Row-to-row keyboard nav — deliberately not `wireMenuA11y`: that helper
+    // auto-focuses its first item on mount, which here would steal focus
+    // right back off the search box's own autofocus.
+    menu.addEventListener('keydown', e => {
+      const list = visibleRows();
+      if (list.length === 0) return;
+      const idx = list.indexOf(document.activeElement as HTMLDivElement);
+      switch (e.key) {
+        case 'ArrowDown': e.preventDefault(); list[idx < 0 || idx === list.length - 1 ? 0 : idx + 1].focus(); break;
+        case 'ArrowUp':   e.preventDefault(); list[idx <= 0 ? list.length - 1 : idx - 1].focus(); break;
+        case 'Home':      e.preventDefault(); list[0].focus(); break;
+        case 'End':       e.preventDefault(); list[list.length - 1].focus(); break;
+        case 'Enter':
+        case ' ':         if (idx >= 0) { e.preventDefault(); list[idx].click(); } break;
+        case 'Escape':
+        case 'Tab':       e.preventDefault(); closeMenuAndRefocus(); break;
+      }
+    });
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Test');
+    btn.ownerDocument.body.appendChild(menu);
+    markMenuTrigger(btn, true);
+  }
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (menu) { closeMenu(); return; }
+    openMenu();
+  });
+  // Registered once (not per-open) and harmless while closed (menu is null) —
+  // same outside-click-closes shape as toolbar.ts's own menus, just self-
+  // contained since a standalone chart card isn't wired into toolbar.ts's
+  // shared openMenu/closeOpenMenu registry. Self-unregisters the first time
+  // it fires after `btn` has been removed from the document (panel
+  // destroyed/rebuilt) rather than holding a live reference to a dead widget
+  // for the lifetime of the whole document.
+  const onDocClick = (e: MouseEvent): void => {
+    if (!btn.isConnected) { btn.ownerDocument.removeEventListener('click', onDocClick); return; }
+    if (menu && !menu.contains(e.target as Node) && !btn.contains(e.target as Node)) closeMenu();
+  };
+  btn.ownerDocument.addEventListener('click', onDocClick);
+
+  return Object.defineProperty(btn, 'value', {
+    get: () => (current !== null ? String(current) : ''),
+    set: (v: string) => { current = v === '' ? null : Number(v); syncLabel(); },
+  }) as HTMLButtonElement & { value: string };
 }
 
 // ── Wafer picker ─────────────────────────────────────────────────────────────

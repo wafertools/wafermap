@@ -4,7 +4,7 @@ import { getColorScheme } from '../renderer/colorSchemes.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { CLR, sevColor, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -255,9 +255,17 @@ function renderLegendSwatchRow(
   entry.appendChild(swatch);
   entry.appendChild(lbl);
 
+  entry.setAttribute('role', 'button');
+  entry.setAttribute('aria-pressed', opts.isActive ? 'true' : 'false');
+  entry.tabIndex = 0;
   entry.addEventListener('mouseenter', () => { entry.style.background = CLR.bgHover; });
   entry.addEventListener('mouseleave', () => { entry.style.background = 'transparent'; });
+  entry.addEventListener('focus', () => { entry.style.background = CLR.bgHover; });
+  entry.addEventListener('blur',  () => { entry.style.background = 'transparent'; });
   entry.addEventListener('click', opts.onClick);
+  entry.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opts.onClick(); }
+  });
 
   container.appendChild(entry);
 }
@@ -431,11 +439,6 @@ export function renderWaferGallery(
 
   // ── Gallery summary panel ──────────────────────────────────────────────────
 
-  // Severity colour — matches summaryPanel.ts sevColor
-  function gallerySevColor(s: 'unusual' | 'notable' | 'info'): string {
-    return s === 'unusual' ? '#a84112' : s === 'notable' ? '#8a6500' : CLR.icon;
-  }
-
   // Tab row shown when both lot stats and per-wafer findings are present.
   function buildPanelTabRow(): HTMLDivElement {
     const row = document.createElement('div');
@@ -571,7 +574,7 @@ ${reportStyles()}
           padding:        '5px 8px',
           marginBottom:   '4px',
           border:         'none',
-          borderLeft:     `3px solid ${gallerySevColor(topSeverity)}`,
+          borderLeft:     `3px solid ${sevColor(topSeverity)}`,
           borderRadius:   '3px',
           background:     CLR.bgHover,
           cursor:         'pointer',
@@ -596,7 +599,7 @@ ${reportStyles()}
         Object.assign(badge.style, {
           marginLeft:   '6px',
           flexShrink:   '0',
-          background:   gallerySevColor(topSeverity),
+          background:   sevColor(topSeverity),
           color:        '#fff',
           borderRadius: '8px',
           padding:      '1px 5px',
@@ -742,7 +745,7 @@ ${reportStyles()}
     const hasNotable = currentLotStats?.hasNotableFindings
       || originalItems.some(it => it?.statsSummary?.hasNotableFindings);
     if (hasNotable && !panelOpen) {
-      btnLotSummary.style.color = '#b7551a';
+      btnLotSummary.style.color = CLR.findingIndicator;
     } else if (!btnLotSummary.dataset.active) {
       btnLotSummary.style.color = CLR.icon;
     }

@@ -801,7 +801,7 @@ export function renderWaferMap(
     const activePanelEl = summaryPanelEl ?? autoSummaryPanelEl;
     const panelOpen = activePanelEl ? activePanelEl.style.display !== 'none' : false;
     if (currentStatsSummary?.hasNotableFindings && !panelOpen) {
-      btnSummary.style.color = '#b7551a';
+      btnSummary.style.color = CLR.findingIndicator;
     } else if (!btnSummary.dataset.active) {
       btnSummary.style.color = CLR.icon;
     }

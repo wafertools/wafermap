@@ -75,7 +75,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   const currentItems = (): ScatterPanelItem[] =>
     activeWaferIndex !== null ? (items[activeWaferIndex] ? [items[activeWaferIndex]] : []) : items;
 
-  function makeLabeledTestSelect(labelText: string, selected: number | null, onChange: (n: number) => void): { wrap: HTMLElement; select: HTMLSelectElement } {
+  function makeLabeledTestSelect(labelText: string, selected: number | null, onChange: (n: number) => void): { wrap: HTMLElement; select: HTMLElement & { value: string } } {
     const wrap = document.createElement('label');
     Object.assign(wrap.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: CLR.label } as Partial<CSSStyleDeclaration>);
     const lbl = document.createElement('span');
@@ -172,7 +172,12 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       const cat = btn.dataset.cat!;
       const active = activeCats.size === 0 || activeCats.has(cat);
       btn.style.opacity = active ? '1' : '0.35';
-      btn.style.outline = activeCats.has(cat) ? `2px solid ${CLR.text}` : 'none';
+      // box-shadow, not `outline` — this is the "actively filtering on this
+      // category" indicator, a static state unrelated to keyboard focus.
+      // Using `outline` for it clobbered the browser's real focus ring
+      // (forced to 'none' on every non-active swatch, so a keyboard-focused
+      // inactive swatch showed no focus indicator at all).
+      btn.style.boxShadow = activeCats.has(cat) ? `0 0 0 2px ${CLR.text}` : 'none';
     }
   }
 
