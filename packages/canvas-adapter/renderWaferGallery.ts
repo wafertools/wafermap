@@ -147,6 +147,16 @@ export interface GalleryOptions {
    */
   columns?:                number;
   /**
+   * Cap each gallery card's rendered width and height at this many CSS pixels.
+   * Cards pack from the left rather than stretching to fill the grid width.
+   *
+   * Omit it and the cap is derived from die density: 480px for an ordinary
+   * wafer, widening (to at most 720px) for high-DPW wafers that need the room
+   * to keep dies readable. Set it to take hard control instead — an explicit
+   * value is never widened, so you own the readability trade-off at high DPW.
+   */
+  maxSize?:                number;
+  /**
    * Show a help button in the gallery control bar that opens the built-in end-user guide in a modal.
    * Default false. Enable in applications that want to surface the guide without linking externally.
    */
@@ -1173,31 +1183,100 @@ ${reportStyles()}
 
   const TARGET_DIE_PX = 4;   // minimum readable die pixel size at gallery scale
   const MIN_CARD_PX   = 240; // absolute floor
-  const MAX_CARD_PX   = 480; // cap to avoid monopolising width on dense grids
+  // Bounds for the *default* card size cap (used when `options.maxSize` is not
+  // set). The cap is derived from die pitch rather than fixed, because a single
+  // number can't serve both ends of the DPW range: 480px keeps an ordinary
+  // wafer compact instead of monopolising a wide screen, but at high DPW it
+  // silently starves the TARGET_DIE_PX readability target (a 3mm pitch / ~7.8k
+  // DPW wafer needs 524px for 4px dies; 2mm / ~17.7k needs 724px). So the cap
+  // grows with density up to the ceiling, then dies shrink rather than the card
+  // growing without bound — past this point the map is a density overview and
+  // reading individual dies is the expand/zoom view's job.
+  const CARD_CAP_FLOOR_PX   = 480;
+  const CARD_CAP_CEILING_PX = 720;
   // A card at the bare MIN floor is legible but cramped. When the container is
   // wide enough, auto packs more columns rather than inflating a few cards past
   // this comfortable width — using the available width instead of wasting it.
   const COMFORTABLE_CARD_FACTOR = 1.25;
 
-  // Compute the minimum card width (px) so that each die is at least TARGET_DIE_PX wide.
-  // Uses die.width (mm) and wafer.radius from the first item that has die data.
-  function computeMinCardPx(its: (WaferMapDisplayItem | null)[]): number {
-    const result = its.find(it => it != null && it.dies?.length > 0);
-    if (!result) return MIN_CARD_PX;
-    const diePitchMm  = result.dies[0].width;
-    const waferDiamMm = result.wafer.radius * 2;
-    const minPpm      = TARGET_DIE_PX / diePitchMm;
-    const minCanvasPx = waferDiamMm * minPpm;
+  // An explicit `maxSize` is a hard cap and is never widened for density — the
+  // caller asked for a specific ceiling and owns the readability trade-off.
+  // Otherwise the cap is derived per-density in refreshCardSizeCap().
+  const explicitMaxSize = options.maxSize;
+  let currentMaxCardPx = explicitMaxSize ?? CARD_CAP_FLOOR_PX;
+
+  /**
+   * Card width (px) at which each die renders at TARGET_DIE_PX, before any
+   * clamping — the single source of truth for both the readability floor
+   * (computeMinCardPx) and the density-derived cap (refreshCardSizeCap).
+   * Returns null when no item has die data to measure.
+   *
+   * Measures the *densest* wafer, not the first one carrying dies: every card
+   * is sized alike, so sizing off an arbitrary item would silently starve a
+   * finer-pitch wafer elsewhere in the lot. Lots are usually uniform, but
+   * "usually" is not something the library can lean on.
+   */
+  function cardPxForTargetDieSize(its: (WaferMapDisplayItem | null)[]): number | null {
     // card chrome: cardPadding on each side + bin legend reserve + 2px border
     const chrome = cardPadding * 2 + 110 + 2;
-    return Math.min(MAX_CARD_PX, Math.max(MIN_CARD_PX, Math.ceil(minCanvasPx + chrome)));
+    let needed: number | null = null;
+    for (const it of its) {
+      if (it == null || !it.dies?.length) continue;
+      const diePitchMm = it.dies[0].width;
+      if (!(diePitchMm > 0)) continue; // nothing to measure against — never divide by zero
+      const minCanvasPx = it.wafer.radius * 2 * (TARGET_DIE_PX / diePitchMm);
+      const px = Math.ceil(minCanvasPx + chrome);
+      if (needed == null || px > needed) needed = px;
+    }
+    return needed;
+  }
+
+  // Compute the minimum card width (px) so that each die is at least TARGET_DIE_PX wide.
+  function computeMinCardPx(its: (WaferMapDisplayItem | null)[]): number {
+    const needed = cardPxForTargetDieSize(its);
+    if (needed == null) return MIN_CARD_PX;
+    return Math.min(currentMaxCardPx, Math.max(MIN_CARD_PX, needed));
+  }
+
+  /**
+   * Widen the default cap toward what this item's die density needs. Grow-only,
+   * mirroring currentMinCardPx: items arrive incrementally (factories resolve
+   * one at a time), so the cap must settle on the densest wafer seen rather
+   * than whatever resolved last. No-op when the caller set an explicit maxSize.
+   * Returns true when the cap changed, so callers can re-apply it to live cards.
+   */
+  function refreshCardSizeCap(its: (WaferMapDisplayItem | null)[]): boolean {
+    if (explicitMaxSize != null) return false;
+    const needed = cardPxForTargetDieSize(its);
+    if (needed == null) return false;
+    const next = Math.min(CARD_CAP_CEILING_PX, Math.max(CARD_CAP_FLOOR_PX, needed));
+    if (next <= currentMaxCardPx) return false;
+    currentMaxCardPx = next;
+    return true;
+  }
+
+  /** Re-apply the current cap to every card already in the grid. */
+  function applyCardSizeCap(): void {
+    for (const card of Array.from(gridEl.children) as HTMLElement[]) {
+      if (!card.classList.contains('wmap-gallery-card')) continue; // skip factory placeholders
+      card.style.maxWidth  = `${currentMaxCardPx}px`;
+      card.style.maxHeight = `${currentMaxCardPx}px`;
+    }
   }
 
   let currentMinCardPx = MIN_CARD_PX;
   let currentItemCount = 0;
 
   function applyGridColumns(its: (WaferMapDisplayItem | null)[]): void {
-    if (currentColumns != null) return; // fixed column count overrides auto-sizing
+    // The size cap is derived from die density alone, so it is refreshed even
+    // under a fixed column count (which only overrides the auto column maths
+    // below) — and before computeMinCardPx, which clamps to the current cap.
+    const capChanged = refreshCardSizeCap(its);
+    if (capChanged) applyCardSizeCap();
+    if (currentColumns != null) {
+      if (capChanged) applyGridTemplate(); // tracks are sized by the cap
+      return;
+    }
     const newMin = computeMinCardPx(its);
     if (newMin > currentMinCardPx) currentMinCardPx = newMin;
     applyGridTemplate();
@@ -1208,9 +1287,20 @@ ${reportStyles()}
     applyGridTemplate();
   }
 
+  // Tracks are capped at the current card cap rather than `1fr`: a `1fr` track always
+  // takes an equal share of the full container width, so a card clamped by its
+  // own max-size sits at the left edge of an oversized track and the leftover
+  // shows up as whitespace bands between columns. minmax(0, cap) lets a track
+  // shrink below the cap when the container is narrow (grid grows tracks
+  // equally until the space runs out) but never exceed it, so columns stay
+  // adjacent and the grid packs left via justify-content: start.
+  function trackTemplate(cols: number): string {
+    return `repeat(${cols}, minmax(0, ${currentMaxCardPx}px))`;
+  }
+
   function applyGridTemplate(): void {
     if (currentColumns != null) {
-      gridEl.style.gridTemplateColumns = `repeat(${currentColumns}, 1fr)`;
+      gridEl.style.gridTemplateColumns = trackTemplate(currentColumns);
       return;
     }
     const N = Math.max(1, currentItemCount);
@@ -1230,10 +1320,10 @@ ${reportStyles()}
       // Down pass — enforce the hard readability floor.
       while (cols > 1 && cardWidthAt(cols) < currentMinCardPx) cols--;
       // Up pass — pack more columns while they stay comfortably sized.
-      const comfortablePx = Math.min(MAX_CARD_PX, currentMinCardPx * COMFORTABLE_CARD_FACTOR);
+      const comfortablePx = Math.min(currentMaxCardPx, currentMinCardPx * COMFORTABLE_CARD_FACTOR);
       while (cols < N && cardWidthAt(cols + 1) >= comfortablePx) cols++;
     }
-    gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    gridEl.style.gridTemplateColumns = trackTemplate(cols);
   }
 
   const gridEl = document.createElement('div');
@@ -1241,8 +1331,10 @@ ${reportStyles()}
     flex:                    '1 1 0',
     minWidth:                '0',
     display:                 'grid',
-    gridTemplateColumns:     `repeat(1, 1fr)`,
+    gridTemplateColumns:     trackTemplate(1),
     gap:                     '12px',
+    justifyContent:          'start',
+    alignContent:            'start',
   });
 
   // Build gallery summary panel.
@@ -1761,6 +1853,11 @@ ${reportStyles()}
       flexDirection: 'column',
       position:      'relative',
       aspectRatio:   '1',
+      // Grid items default to `stretch`; a max-size smaller than the track
+      // clamps the card there and falls back to start (top-left) alignment
+      // for the leftover cell space — no justify-items/-self override needed.
+      maxWidth:      `${currentMaxCardPx}px`,
+      maxHeight:     `${currentMaxCardPx}px`,
     });
 
     const header = document.createElement('div');

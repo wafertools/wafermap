@@ -246,6 +246,15 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    */
   height?: number | string;
   /**
+   * Cap the map's rendered width and height at this many CSS pixels. When
+   * the container is larger, the map sits top-left aligned within it rather
+   * than stretching to fill it. Number only (a fixed pixel ceiling, not a
+   * responsive length like `height`). Omit for no cap (fills the container,
+   * current behaviour). The expand button/E-key still opens the map at full
+   * size, unaffected by this cap.
+   */
+  maxSize?: number;
+  /**
    * Base `z-index` for wmap's transient overlays — toolbar menus, the die
    * tooltip, the expand modal, and the user-guide modal. wmap layers its own
    * overlays from this value upward (tooltip and the modal box sit one or two
@@ -360,12 +369,28 @@ export function renderWaferMap(
   if (options.height != null) {
     container.style.height = typeof options.height === 'number' ? `${options.height}px` : options.height;
   }
+  // mapBox is the actual sizing/positioning box for everything the map owns
+  // (canvas, toolbar, Insights overlay) — `container` itself is host-owned and
+  // may be arbitrarily large, so it can't be capped directly without fighting
+  // the host's own layout. mapBox fills `container` unless `maxSize` caps it,
+  // in which case (being a plain block box, not a flex/grid item) it naturally
+  // sizes to the cap and sits flush at container's top-left — no alignment
+  // properties needed. `position: relative` is unconditional: toolbar and the
+  // Insights overlay are absolutely positioned against their nearest positioned
+  // ancestor, which must be mapBox (so they track the capped box), not container.
+  const mapBox = document.createElement('div');
+  Object.assign(mapBox.style, { position: 'relative', width: '100%', height: '100%' });
+  if (options.maxSize != null) {
+    mapBox.style.maxWidth = `${options.maxSize}px`;
+    mapBox.style.maxHeight = `${options.maxSize}px`;
+  }
+  container.appendChild(mapBox);
   const canvasWrap = document.createElement('div');
   Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
   const canvas = document.createElement('canvas');
   Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block' });
   canvasWrap.appendChild(canvas);
-  container.appendChild(canvasWrap);
+  mapBox.appendChild(canvasWrap);
 
   const {
     onHover,
@@ -502,7 +527,7 @@ export function renderWaferMap(
     // paints above canvasWrap's own unpositioned canvas content
     // (position:static content always sits below any positioned sibling,
     // explicit z-index or not) while sitting below the toolbar (a direct
-    // child of `container`, not canvasWrap — see its own creation comment —
+    // child of `mapBox`, not canvasWrap — see its own creation comment —
     // with its own explicit, much higher z-index via `Z_BASE`) — so it
     // visually replaces the map without ever making the toolbar
     // unreachable. Needs an opaque background since the insights grid has
@@ -510,23 +535,24 @@ export function renderWaferMap(
     // through.
     // overflowY:auto lives HERE, not on insightsTab.el itself — this
     // wrapper has a genuinely definite height (inset:0 against
-    // `container`), so it's the right place to bound/scroll long content;
-    // insightsTab.el's own root stays auto-height so it also works
-    // correctly for hosts (renderWaferGallery.ts) that mount it as a plain
-    // block child with no such bound, where forcing an internal scroll
-    // region would just clip content at an arbitrary floor height instead
-    // of letting the page grow to show it.
+    // `mapBox`, so it also respects a `maxSize` cap), so it's the right
+    // place to bound/scroll long content; insightsTab.el's own root stays
+    // auto-height so it also works correctly for hosts
+    // (renderWaferGallery.ts) that mount it as a plain block child with no
+    // such bound, where forcing an internal scroll region would just clip
+    // content at an arbitrary floor height instead of letting the page grow
+    // to show it.
     Object.assign(insightsTab.el.style, {
       position: 'absolute', inset: '0', background: CLR.panelBg, overflowY: 'auto',
       // Reserve room above the tab's own content (its metadata strip sits at
       // the very top) so the floating toolbar — an absolutely-positioned
-      // sibling anchored to the same `container` corner — never renders on
+      // sibling anchored to the same `mapBox` corner — never renders on
       // top of it. Only needed when there's a toolbar to clear; the gallery's
       // equivalent toolbar is a real in-flow header instead, so it needs no
       // such reservation.
       paddingTop: showToolbar ? '44px' : '0',
     } as Partial<CSSStyleDeclaration>);
-    container.appendChild(insightsTab.el);
+    mapBox.appendChild(insightsTab.el);
   }
 
   function setInsightsOpen(open: boolean): void {
@@ -1098,17 +1124,18 @@ export function renderWaferMap(
         }
       }
 
-      // Anchored to `container`, not `canvasWrap` — canvasWrap shrinks to
+      // Anchored to `mapBox`, not `canvasWrap` — canvasWrap shrinks to
       // share width with a docked summary panel (wrapWithSummaryPanel wraps
       // it in a flex row), and the Insights overlay covers the *full*
-      // container, not just canvasWrap's own (possibly narrower/offset) box.
+      // mapBox, not just canvasWrap's own (possibly narrower/offset) box.
       // A toolbar parented to canvasWrap would float at canvasWrap's edge —
       // the wrong spot once the panel takes up real width, and often
       // overlapping the Insights tab's own top-of-content metadata strip.
-      // `container` is always position:relative (set above) and always
-      // spans the true, stable render area regardless of what's docked or
-      // which view (map vs. Insights) is currently showing.
-      container.appendChild(toolbar);
+      // `mapBox` is always position:relative (set at its creation) and always
+      // spans the true, stable render area (the whole map, capped by
+      // `maxSize` if set) regardless of what's docked or which view (map vs.
+      // Insights) is currently showing.
+      mapBox.appendChild(toolbar);
 
       // ── Hover show/hide (with linger so clicks register) ─────────────────
       function showBar(): void {
@@ -1150,10 +1177,13 @@ export function renderWaferMap(
     reparentRoot.style.minWidth  = '0';
     reparentRoot.style.minHeight = '0';
 
-    // toolbar lives in `container` (a sibling of reparentRoot), not inside
+    // toolbar lives in `mapBox` (a sibling of reparentRoot), not inside
     // reparentRoot itself, so openReparentedModal must move it in too —
-    // otherwise it stays behind in the now-empty original container and the
-    // expanded view has no toolbar at all. Reparented alongside reparentRoot,
+    // otherwise it stays behind in the now-empty mapBox and the expanded view
+    // has no toolbar at all. This also means expanding escapes any `maxSize`
+    // cap entirely (the cap lives on mapBox, which the expanded content
+    // physically leaves) — the modal always opens at full size. Reparented
+    // alongside reparentRoot,
     // not as a separate call, so the shared helper's own stale-reference
     // guard sees both moves as one unit — see its own header comment in
     // toolbar.ts for why that matters (this pairing is exactly the case that
@@ -2166,6 +2196,7 @@ export function renderWaferMap(
       canvas.style.cursor = '';
       insightsTab?.destroy();
       metadataBadge?.destroy();
+      mapBox.remove();
     },
   };
 }

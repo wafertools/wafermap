@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>maxSize demo</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .section { padding: 12px; border-bottom: 2px solid #ccc; }
+  h3 { margin: 0 0 4px; font-size: 15px; }
+  .note { margin: 0 0 8px; font-size: 13px; color: #555; }
+  .readout { font-family: ui-monospace, monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; }
+  .ok   { background: #e6f4ea; color: #137333; }
+  .bad  { background: #fce8e6; color: #c5221f; }
+  /* Hatched backdrop makes the container's full extent visible, so you can see
+     exactly how much of it the capped map/card actually occupies. */
+  .bigbox { width: 100%; background: repeating-linear-gradient(45deg, #f5f5f5, #f5f5f5 10px, #eee 10px, #eee 20px); }
+</style>
+</head>
+<body>
+  <div class="section">
+    <h3>1. renderWaferMap — no maxSize <span id="r1" class="readout"></span></h3>
+    <p class="note">Baseline, unchanged behaviour: fills the container's full width. Expected: width = container width.</p>
+    <div id="map-nocap" class="bigbox" style="height: 300px;"></div>
+  </div>
+
+  <div class="section">
+    <h3>2. renderWaferMap — maxSize: 300 <span id="r2" class="readout"></span></h3>
+    <p class="note">Expected: exactly 300&times;300, flush to the container's top-left, toolbar in <em>its</em> corner (not the container's).</p>
+    <div id="map-cap" class="bigbox" style="height: 500px;"></div>
+  </div>
+
+  <div class="section">
+    <h3>3. renderWaferMap — maxSize: 200, interactive <span id="r3" class="readout"></span></h3>
+    <p class="note">Deliberately a different cap from case 2 so the two aren't confusable.
+       <strong>Click into it and press E</strong> (or use the toolbar expand button): the modal should open the map
+       at full size, escaping the 200px cap. Closing it should snap back to 200.</p>
+    <div id="map-expand" class="bigbox" style="height: 500px;"></div>
+  </div>
+
+  <div class="section">
+    <h3>4. renderWaferGallery — 1 item, no maxSize <span id="r4" class="readout"></span></h3>
+    <p class="note">The originally reported bug. Previously stretched to full container width and overflowed vertically;
+       expected now: capped at the 480px density-derived default, not stretched.</p>
+    <div id="gallery-nocap" style="height: 620px;"></div>
+  </div>
+
+  <div class="section">
+    <h3>5. renderWaferGallery — 1 item, maxSize: 250 <span id="r5" class="readout"></span></h3>
+    <p class="note">Explicit hard cap. Expected: 250&times;250 card at the top-left.</p>
+    <div id="gallery-cap" style="height: 400px;"></div>
+  </div>
+
+  <div class="section">
+    <h3>6. renderWaferGallery — 3 items, maxSize: 250 <span id="r6" class="readout"></span></h3>
+    <p class="note">Expected: three 250px cards packed adjacent from the left (12px gaps only) &mdash; no wide
+       whitespace bands between columns.</p>
+    <div id="gallery-cap3" style="height: 400px;"></div>
+  </div>
+
+  <div class="section">
+    <h3>7. renderWaferGallery — 300mm wafer, 3mm pitch (~7.9k DPW), no maxSize <span id="r7" class="readout"></span></h3>
+    <p class="note">Mid-density. The cap is <em>derived</em>, not a fixed step: 300mm &divide; 3mm needs
+       300&times;(4/3)+124 = <strong>524px</strong> to keep dies at 4px, so it should land exactly there &mdash;
+       above the 480 default, below the 720 ceiling.</p>
+    <div id="gallery-mid" style="height: 660px;"></div>
+  </div>
+
+  <div class="section">
+    <h3>8. renderWaferGallery — 300mm wafer, 2mm pitch (~17.7k DPW), no maxSize <span id="r8" class="readout"></span></h3>
+    <p class="note">High density. This one needs 724px, which exceeds the ceiling &mdash; expected to clamp at
+       <strong>720px</strong> and let dies shrink rather than growing without bound.</p>
+    <div id="gallery-dense" style="height: 860px;"></div>
+  </div>
+
+<script type="module">
+import { buildWaferMap } from '/dist/index.js';
+import { renderWaferMap, renderWaferGallery } from '/dist/packages/canvas-adapter/index.js';
+
+// n = grid radius in dies; pitch = die size in mm. Larger n + smaller pitch = higher DPW.
+function makeResults(seed, n = 8) {
+  const results = [];
+  for (let x = -n; x <= n; x++) {
+    for (let y = -n; y <= n; y++) {
+      if (Math.hypot(x, y) > n) continue;
+      const m = (x + y + seed) % 3;
+      results.push({ x, y, hbin: m === 0 ? 1 : (m === 1 ? 2 : 3), testValues: { 1050: 10 + Math.sin(x + y + seed) * 5 } });
+    }
+  }
+  return results;
+}
+const build = (seed, n, pitch) =>
+  buildWaferMap({ results: makeResults(seed, n), dieConfig: { width: pitch, height: pitch }, passBins: [1] });
+
+const sparse = build(0, 8, 5);
+renderWaferMap(document.getElementById('map-nocap'), sparse, { showToolbar: true });
+renderWaferMap(document.getElementById('map-cap'),   sparse, { showToolbar: true, maxSize: 300 });
+renderWaferMap(document.getElementById('map-expand'), sparse, { showToolbar: true, maxSize: 200 });
+
+const item = (seed, label, n = 8, pitch = 5) => ({ ...build(seed, n, pitch), label });
+renderWaferGallery(document.getElementById('gallery-nocap'), [item(0, 'W01')], {});
+renderWaferGallery(document.getElementById('gallery-cap'),   [item(0, 'W01')], { maxSize: 250 });
+renderWaferGallery(document.getElementById('gallery-cap3'),
+  [item(0, 'W01'), item(1, 'W02'), item(2, 'W03')], { maxSize: 250 });
+
+// NB: buildWaferMap INFERS the wafer from the data and floors the diameter so it
+// CONTAINS every die (corners included), so the wafer is somewhat larger than
+// 2*n*pitch. That's why the expected cap below is derived from the wafer the
+// library actually built rather than from an assumed diameter — it checks the
+// formula, not a number that happens to be right for one fixture.
+const midItem   = item(0, 'W01', 50, 3);
+const denseItem = item(0, 'W01', 75, 2);
+renderWaferGallery(document.getElementById('gallery-mid'),   [midItem],   {});
+renderWaferGallery(document.getElementById('gallery-dense'), [denseItem], {});
+
+// Mirrors the library's own derivation: cardPxForTargetDieSize clamped to
+// [CARD_CAP_FLOOR_PX, CARD_CAP_CEILING_PX] (see renderWaferGallery.ts).
+const TARGET_DIE_PX = 4, CHROME = 6 * 2 + 110 + 2, FLOOR = 480, CEILING = 720;
+function expectedCap(it) {
+  const pitchMm = it.dies[0].width;
+  const needed = Math.ceil(it.wafer.radius * 2 * (TARGET_DIE_PX / pitchMm) + CHROME);
+  return { needed, cap: Math.min(CEILING, Math.max(FLOOR, needed)) };
+}
+
+// ── Measured readouts ──────────────────────────────────────────────────────
+// Report the actual rendered box so each case is verifiable by reading a
+// number rather than eyeballing similar-looking wafers.
+function measure(id, containerId, sel, expect) {
+  const container = document.getElementById(containerId);
+  const el = sel ? container.querySelector(sel) : container.firstElementChild;
+  const out = document.getElementById(id);
+  if (!el) { out.textContent = 'not found'; out.className = 'readout bad'; return; }
+  const r = el.getBoundingClientRect();
+  const w = Math.round(r.width), h = Math.round(r.height);
+  const cw = Math.round(container.getBoundingClientRect().width);
+  const verdict = expect(w, h, cw);
+  out.textContent = `${w}×${h}px  (container ${cw}px wide) — ${verdict.msg}`;
+  out.className = 'readout ' + (verdict.ok ? 'ok' : 'bad');
+}
+
+const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
+
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  measure('r1', 'map-nocap', null, (w, _h, cw) =>
+    near(w, cw) ? { ok: true, msg: 'fills container (expected)' } : { ok: false, msg: `expected to fill ${cw}px` });
+  measure('r2', 'map-cap', null, (w, h) =>
+    near(w, 300) && near(h, 300) ? { ok: true, msg: 'capped at 300' } : { ok: false, msg: 'expected 300×300' });
+  measure('r3', 'map-expand', null, (w, h) =>
+    near(w, 200) && near(h, 200) ? { ok: true, msg: 'capped at 200' } : { ok: false, msg: 'expected 200×200' });
+  measure('r4', 'gallery-nocap', '.wmap-gallery-card', (w, _h, cw) =>
+    near(w, 480) ? { ok: true, msg: 'capped at 480 default (not stretched)' }
+                 : { ok: false, msg: `expected 480, container is ${cw}px` });
+  measure('r5', 'gallery-cap', '.wmap-gallery-card', (w, h) =>
+    near(w, 250) && near(h, 250) ? { ok: true, msg: 'capped at 250' } : { ok: false, msg: 'expected 250×250' });
+
+  // Case 6: verify the cards actually sit adjacent, not spread across the width.
+  const cards = document.querySelectorAll('#gallery-cap3 .wmap-gallery-card');
+  const out6 = document.getElementById('r6');
+  if (cards.length === 3) {
+    const xs = [...cards].map(c => Math.round(c.getBoundingClientRect().left));
+    const gaps = [xs[1] - xs[0] - 250, xs[2] - xs[1] - 250];
+    const packed = gaps.every(g => g <= 14);
+    out6.textContent = `3 cards, inter-card gaps ${gaps.map(Math.round).join('px, ')}px — ` +
+      (packed ? 'packed left (expected)' : 'NOT packed — whitespace bands remain');
+    out6.className = 'readout ' + (packed ? 'ok' : 'bad');
+  }
+
+  const mid = expectedCap(midItem), dense = expectedCap(denseItem);
+  measure('r7', 'gallery-mid', '.wmap-gallery-card', (w) =>
+    near(w, mid.cap) ? { ok: true, msg: `derived ${mid.cap} for a ${Math.round(midItem.wafer.radius * 2)}mm / 3mm wafer — tracks density, not a fixed step` }
+                     : { ok: false, msg: `expected ${mid.cap} (needs ${mid.needed})` });
+  measure('r8', 'gallery-dense', '.wmap-gallery-card', (w) =>
+    near(w, dense.cap) ? { ok: true, msg: `clamped at the ${CEILING} ceiling (needed ${dense.needed})` }
+                       : { ok: false, msg: `expected ${dense.cap} (needs ${dense.needed})` });
+}));
+</script>
+</body>
+</html>

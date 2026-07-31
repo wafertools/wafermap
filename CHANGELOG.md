@@ -21,6 +21,51 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.21.1] — 2026-07-31
+
+### Added
+
+- **`maxSize` render option** (`RenderOptions.maxSize` for `renderWaferMap`, `GalleryOptions.maxSize` for
+  `renderWaferGallery`) — a single number of CSS pixels capping the rendered map (or each gallery card) in
+  **both** width and height. Beyond the cap the map is aligned to the top-left of the space it was given
+  rather than stretching to fill it, so a map on a large screen no longer expands to whatever size its
+  container happens to be. Expanding (⛶ / `E`) still opens at full size; the cap governs the inline view only.
+
+  `maxSize` is independent of the existing `height` option: `height` *establishes* the space a map renders
+  into (`renderWaferMap` fills its container, which must therefore resolve a height), while `maxSize`
+  *limits* how much of that space is used. They compose — `{ height: 600, maxSize: 400 }` is valid — and
+  `maxSize` is not a substitute for giving the container a height.
+
+### Fixed
+
+- **A single-item gallery no longer stretches to the full container width and overflows vertically.** Gallery
+  cards are square (`aspect-ratio: 1`) but were laid out in `1fr` grid tracks, so with one card the track took
+  the container's entire width and the card's height grew to match it — on a wide screen that pushed the card
+  well past the bottom of the viewport. The existing 480px `MAX_CARD_PX` constant did not prevent this: it only
+  influenced how many columns to create, and never capped a card's rendered size.
+- **The gallery's card-size calculation measured only the first wafer carrying dies, not the densest.** All
+  cards are sized alike, so in a lot with mixed die pitches a coarse-pitch wafer arriving first would size the
+  grid and silently starve a finer-pitch wafer later in the lot of the resolution needed to read it. The
+  measurement now takes the densest wafer, and ignores a missing or zero die pitch rather than dividing by it.
+
+### Changed
+
+- **Gallery cards are now size-capped and pack from the left instead of stretching to fill the grid width.**
+  Grid tracks changed from `1fr` to `minmax(0, cap)` with `justify-content: start`, so columns sit adjacent
+  (separated only by the 12px gap) rather than spreading across the container with whitespace bands between
+  them. Tracks still shrink below the cap on narrow containers, so no readability behaviour is lost.
+
+  With no `maxSize` given, the cap is **derived from die density** rather than fixed: 480px for an ordinary
+  wafer, widening as far as needed to keep dies at the existing 4px readability target, up to a 720px ceiling.
+  A fixed 480px could not serve both ends of the DPW range — a 3mm-pitch (~7.9k DPW) wafer needs 524px for 4px
+  dies and a 2mm-pitch (~17.7k DPW) wafer needs 724px, so at high DPW the old constant quietly abandoned the
+  library's own readability target. Past the ceiling dies shrink rather than the card growing without bound.
+  An explicit `maxSize` is a hard cap and is never widened for density — the caller owns that trade-off.
+
+  This changes gallery layout for existing consumers (cards that previously filled the width are now capped).
+  No public field, option, return value, or export changed type or semantics, so this remains a patch release
+  per the versioning policy above; pass an explicit `maxSize` to take direct control of card size.
+
 ## [0.21.0] — 2026-07-30
 
 ### Breaking

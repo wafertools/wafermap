@@ -780,6 +780,16 @@ renderWaferMap(container, result, { height: 600 }); // px, or '70vh', etc.
 See [Troubleshooting → Map is blank, invisible, or the wrong height](troubleshooting.md)
 for all four valid sizing patterns.
 
+`maxSize` is an independent cap, not a substitute for giving the container a
+resolved height: it stops the map from growing past a fixed pixel ceiling once
+the container (or `height`) is large, top-left aligning the map within any
+leftover space rather than stretching to fill it.
+
+```ts
+// Container/viewport may be huge; the map itself never exceeds 400×400px:
+renderWaferMap(container, result, { height: 600, maxSize: 400 });
+```
+
 Passing an `HTMLCanvasElement` directly is deprecated but still works for one release.
 
 The toolbar gives users direct access to every display option without any app-level
@@ -894,6 +904,9 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // therefore have a resolved height; set this and the library sizes its own
                                             // wrapper, so the map renders with no container CSS. Number = px, or any CSS
                                             // length ('600px', '70vh'). Omit when the container already has a height.
+  maxSize?:                number            // cap the map's rendered width/height in px; top-left aligns within the
+                                            // container when smaller than it. Independent of `height` — see above.
+                                            // The expand button/E-key still opens at full size, unaffected by this cap.
   showAxes?:               boolean            // draw axis tick marks and die grid index labels (default false)
   viewOptions?:           WaferViewOptions  // initial display state; plotMode, testDefs, and reticles are pre-seeded from the result automatically
   onHover?:                (die: Die | null, event: MouseEvent) => void
@@ -1392,6 +1405,10 @@ to be pre-built.
                                             // suite (Overview, Distributions, Correlation, with a "Group by" control)
                                             // — default disabled. See §6.10.
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
+  maxSize?:                number            // cap each card's rendered width/height in px; cards pack from the left rather
+                                            // than stretching. Omit and the cap is derived from die density — 480px for an
+                                            // ordinary wafer, widening to at most 720px for high-DPW wafers so dies stay
+                                            // readable. An explicit value is a hard cap and is never widened.
   zIndex?:                 number            // base z-index for wmap's transient overlays (menus, tooltip, modals); omit for a
                                             // safe high default, or set it to embed the gallery inside your own modal/overlay
                                             // (same semantics as renderWaferMap — see "Overlay z-index" in §5.4)
@@ -1430,7 +1447,7 @@ to be pre-built.
 | XY indicator | Toggle axis-orientation arrows on all cards |
 | Legend style | Dropdown: bin legend position for all cards — **Default (right)**, **Compact (right)**, **Left**, **Top**, **Bottom**, **Floating**. Disabled outside hardBin/softBin/metadata modes. |
 | Orientation | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
-| Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide and all available width is used. |
+| Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide. Cards are capped (see `maxSize`) and pack from the left rather than stretching to fill the width. |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
 | Summary | Toggle the Summary panel — shown when `lotStatsSummary` is provided or any item carries `statsSummary` |
 | Insights | Toggle the Insights tab — swaps the grid for a lot-wide chart suite. Only shown when `insights.enabled: true`. See §6.10. |

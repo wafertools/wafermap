@@ -332,3 +332,98 @@ describe('renderWaferGallery shared bin legend', () => {
     assert.strictEqual(getLegendEntries(container).length, 3);
   });
 });
+
+// ── Tests: card size cap (maxSize) ─────────────────────────────────────────────
+
+describe('renderWaferGallery card size cap', () => {
+  /** bodyEl → gridEl → card divs (see container.appendChild order in renderWaferGallery). */
+  function getCards(container: HTMLElement): HTMLElement[] {
+    const bodyEl = container.children[2] as HTMLElement;
+    const gridEl = bodyEl.children[0] as HTMLElement;
+    return Array.from(gridEl.children) as HTMLElement[];
+  }
+
+  /** ITEMS use a 10mm die on a 300mm wafer; `pitchMm` re-pitches that fixture. */
+  function itemWithPitch(pitchMm: number): WaferMapDisplayItem {
+    return { ...ITEMS[0], dies: ITEMS[0].dies.map(d => ({ ...d, width: pitchMm, height: pitchMm })) };
+  }
+
+  it('caps a single card at the default 480px, not stretched to fill the container', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, [ITEMS[0]], {});
+    const [card] = getCards(container);
+    assert.strictEqual(card.style.maxWidth, '480px');
+    assert.strictEqual(card.style.maxHeight, '480px');
+  });
+
+  it('widens the default cap for high-DPW wafers so dies stay readable', () => {
+    // 3mm pitch on a 300mm wafer needs 300*(4/3)+124 = 524px for 4px dies —
+    // above the 480 floor, below the 720 ceiling, so the cap tracks it exactly.
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, [itemWithPitch(3)], {});
+    const [card] = getCards(container);
+    assert.strictEqual(card.style.maxWidth, '524px');
+    assert.strictEqual(card.style.maxHeight, '524px');
+  });
+
+  it('stops widening the default cap at the 720px ceiling', () => {
+    // 1mm pitch would need 1324px for 4px dies; the ceiling holds it at 720
+    // rather than letting a dense wafer fill the container again.
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, [itemWithPitch(1)], {});
+    const [card] = getCards(container);
+    assert.strictEqual(card.style.maxWidth, '720px');
+    assert.strictEqual(card.style.maxHeight, '720px');
+  });
+
+  it('sizes the cap from the densest wafer, not the first one in the lot', () => {
+    // Cards are all sized alike, so a coarse-pitch wafer arriving first must
+    // not starve a finer-pitch wafer later in the lot.
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, [itemWithPitch(10), { ...itemWithPitch(1), label: 'W02' }], {});
+    for (const card of getCards(container)) {
+      assert.strictEqual(card.style.maxWidth, '720px');
+    }
+  });
+
+  it('never widens an explicit maxSize, however dense the wafer', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, [itemWithPitch(1)], { maxSize: 300 });
+    const [card] = getCards(container);
+    assert.strictEqual(card.style.maxWidth, '300px');
+    assert.strictEqual(card.style.maxHeight, '300px');
+  });
+
+  it('packs columns from the left instead of stretching tracks to full width', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, ITEMS, { maxSize: 250 });
+    const gridEl = (container.children[2] as HTMLElement).children[0] as HTMLElement;
+    assert.strictEqual(gridEl.style.justifyContent, 'start');
+    assert.match(gridEl.style.gridTemplateColumns, /minmax\(0(px)?, 250px\)/);
+  });
+
+  it('overrides the cap with options.maxSize', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, [ITEMS[0]], { maxSize: 200 });
+    const [card] = getCards(container);
+    assert.strictEqual(card.style.maxWidth, '200px');
+    assert.strictEqual(card.style.maxHeight, '200px');
+  });
+
+  it('applies the same cap to every card, regardless of item count', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderWaferGallery(container, ITEMS, { maxSize: 300 });
+    for (const card of getCards(container)) {
+      assert.strictEqual(card.style.maxWidth, '300px');
+      assert.strictEqual(card.style.maxHeight, '300px');
+    }
+  });
+});
