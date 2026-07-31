@@ -19,6 +19,7 @@
   "private": false,
   "files": [
     "dist",
+    "!dist/**/*.map",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -73,9 +74,10 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "build:site": "rm -rf docs/dist && cp -r dist docs/ && ${ZENSICAL:-.venv/bin/zensical} build --clean && cp -r docs/data site/data && rm -rf docs/dist && node scripts/bundle-docs.mjs",
     "preview:site": "npm run build:site && echo \"\\nServing bundled site at http://localhost:8002/examples/ — Ctrl-C to stop\\n\" && cd site && python3 -m http.server 8002",
-    "prepack": "npm run build",
+    "prepack": "npm run build && node scripts/minify-dist.mjs",
     "pack:check": "npm pack --dry-run",
     "prepublishOnly": "npm test",
+    "postpublish": "echo \"\\ndist/ was minified for publish — run 'npm run build' to restore the readable dev build.\\n\"",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "screenshots:list": "node scripts/capture-screenshots.mjs --list",
     "build:images": "npm run build && node scripts/capture-screenshots.mjs"

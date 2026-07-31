@@ -215,15 +215,20 @@ test('buildView value mode — no more than 2× slower than hardBin', () => {
 });
 
 test('buildView — complexity is sub-quadratic (2× die count ≤ 4× time)', () => {
+  // Median over many runs, not a single time() call — buildView on these wafer
+  // sizes finishes in low-single-digit ms, where a single sample is dominated by
+  // timer jitter/GC (same rationale as the value-mode test above).
   const small = makeWafer({ pitchX: 8, pitchY: 8 });
   const large = makeWafer({ pitchX: 4, pitchY: 4 });
   const wmrSmall = buildWaferMap({ results: small.results, passBins: [1] });
   const wmrLarge = buildWaferMap({ results: large.results, passBins: [1] });
+  const buildSmall = () => buildView(wmrSmall.wafer, wmrSmall.dies, { plotMode: 'hardBin' });
+  const buildLarge = () => buildView(wmrLarge.wafer, wmrLarge.dies, { plotMode: 'hardBin' });
   // Warmup
-  buildView(wmrSmall.wafer, wmrSmall.dies, { plotMode: 'hardBin' });
-  buildView(wmrLarge.wafer, wmrLarge.dies, { plotMode: 'hardBin' });
-  const tSmall = time(() => buildView(wmrSmall.wafer, wmrSmall.dies, { plotMode: 'hardBin' }));
-  const tLarge = time(() => buildView(wmrLarge.wafer, wmrLarge.dies, { plotMode: 'hardBin' }));
+  buildSmall();
+  buildLarge();
+  const tSmall = median(buildSmall);
+  const tLarge = median(buildLarge);
   const dieRatio = wmrLarge.dies.length / wmrSmall.dies.length;
   const timeRatio = tLarge / Math.max(tSmall, 0.1);
   assert.ok(

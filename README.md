@@ -3,14 +3,14 @@
 [![CI](https://github.com/telecasterer/wafermap/actions/workflows/ci.yml/badge.svg)](https://github.com/telecasterer/wafermap/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@paulrobins/wafermap.svg)](https://www.npmjs.com/package/@paulrobins/wafermap)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
-![bundle](https://img.shields.io/badge/core%20min%2Bgz-~37%20kB-blue)
+![bundle](https://img.shields.io/badge/core%20min%2Bgz-~40%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 <img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
 
 Browser-first wafer map visualization for semiconductor test data.
 
-**Zero runtime dependencies · ~37 kB min+gz (core entry).** Pure ES modules with TypeScript types — works in React, Svelte, Vue, plain HTML, or a Web Worker.
+**Zero runtime dependencies · ~40 kB min+gz (core entry).** Pure ES modules with TypeScript types — works in React, Svelte, Vue, plain HTML, or a Web Worker.
 
 **[Project Portal: Docs & Interactive Demos →](https://telecasterer.github.io/wafermap/)**
 
