@@ -1,7 +1,7 @@
 # wafermap
 
-[![CI](https://github.com/telecasterer/wafermap/actions/workflows/ci.yml/badge.svg)](https://github.com/telecasterer/wafermap/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@paulrobins/wafermap.svg)](https://www.npmjs.com/package/@paulrobins/wafermap)
+[![CI](https://github.com/wafertools/wafermap/actions/workflows/ci.yml/badge.svg)](https://github.com/wafertools/wafermap/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@wafertools/wafermap.svg)](https://www.npmjs.com/package/@wafertools/wafermap)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 ![bundle](https://img.shields.io/badge/core%20min%2Bgz-~40%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -12,7 +12,7 @@ Browser-first wafer map visualization for semiconductor test data.
 
 **Zero runtime dependencies · ~40 kB min+gz (core entry).** Pure ES modules with TypeScript types — works in React, Svelte, Vue, plain HTML, or a Web Worker.
 
-**[Project Portal: Docs & Interactive Demos →](https://telecasterer.github.io/wafermap/)**
+**[Project Portal: Docs & Interactive Demos →](https://wafertools.github.io/wafermap/)**
 
 ## Overview
 
@@ -28,12 +28,12 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 ## Quick start
 
 ```bash
-npm install @paulrobins/wafermap
+npm install @wafertools/wafermap
 ```
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 const result = buildWaferMap({
   results: rows.map(r => ({ x: +r.x, y: +r.y, hbin: +r.hbin })),
@@ -43,7 +43,7 @@ renderWaferMap(document.getElementById('map'), result);
 ```
 
 Note the two import paths. The renderers (`renderWaferMap`, `renderWaferGallery`,
-`toCanvas`) live **only** at `@paulrobins/wafermap/render`, so importing them from the
+`toCanvas`) live **only** at `@wafertools/wafermap/render`, so importing them from the
 root package will fail. That keeps the root entry DOM-free — usable in Node for a
 build-and-analyse pipeline, and tree-shakeable when you only need the geometry, data
 and stats layers.
@@ -52,21 +52,21 @@ and stats layers.
 
 **Building an app with wafermap** (developers):
 
-- [Quick start](https://telecasterer.github.io/wafermap/quickstart/)
-- [Developer Guide](https://telecasterer.github.io/wafermap/guide/)
-- [SvelteKit](https://telecasterer.github.io/wafermap/sveltekit/) · [React](https://telecasterer.github.io/wafermap/react/) · [Vue 3](https://telecasterer.github.io/wafermap/vue/) integration guides
-- [API Reference](https://telecasterer.github.io/wafermap/api/)
-- [Architecture](https://telecasterer.github.io/wafermap/architecture/) · [Performance](https://telecasterer.github.io/wafermap/performance/) · [Troubleshooting](https://telecasterer.github.io/wafermap/troubleshooting/)
-- [Live examples](https://telecasterer.github.io/wafermap/examples/)
+- [Quick start](https://wafertools.github.io/wafermap/quickstart/)
+- [Developer Guide](https://wafertools.github.io/wafermap/guide/)
+- [SvelteKit](https://wafertools.github.io/wafermap/sveltekit/) · [React](https://wafertools.github.io/wafermap/react/) · [Vue 3](https://wafertools.github.io/wafermap/vue/) integration guides
+- [API Reference](https://wafertools.github.io/wafermap/api/)
+- [Architecture](https://wafertools.github.io/wafermap/architecture/) · [Performance](https://wafertools.github.io/wafermap/performance/) · [Troubleshooting](https://wafertools.github.io/wafermap/troubleshooting/)
+- [Live examples](https://wafertools.github.io/wafermap/examples/)
 
 **Using an app built with wafermap** (test / device / yield engineers):
 
-- [Application User Guide](https://telecasterer.github.io/wafermap/user-guide/) — also embedded in apps via the toolbar help button
-- [Glossary](https://telecasterer.github.io/wafermap/glossary/)
+- [Application User Guide](https://wafertools.github.io/wafermap/user-guide/) — also embedded in apps via the toolbar help button
+- [Glossary](https://wafertools.github.io/wafermap/glossary/)
 
 ## Built with wafermap
 
-- **[tsmap](https://github.com/telecasterer/tsmap)** — cross-platform desktop app for loading STDF, ATDF, CSV, and JSON wafer data
+- **[tsmap](https://github.com/wafertools/tsmap)** — cross-platform desktop app for loading STDF, ATDF, CSV, and JSON wafer data
 
 ## Local preview
 

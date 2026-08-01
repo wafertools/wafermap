@@ -25,7 +25,7 @@ execution.
 Install the package:
 
 ```bash
-npm install @paulrobins/wafermap
+npm install @wafertools/wafermap
 ```
 
 The preferred canvas renderers have no external dependencies.
@@ -33,17 +33,17 @@ The preferred canvas renderers have no external dependencies.
 ### With a bundler (Vite, webpack, etc.)
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 ```
 
 ### Plain HTML (CDN / script tags)
 
 ```html
 <script type="module">
-  import { buildWaferMap } from 'https://esm.sh/@paulrobins/wafermap';
-  import { renderWaferMap, renderWaferGallery } from 'https://esm.sh/@paulrobins/wafermap/render';
+  import { buildWaferMap } from 'https://esm.sh/@wafertools/wafermap';
+  import { renderWaferMap, renderWaferGallery } from 'https://esm.sh/@wafertools/wafermap/render';
 </script>
 ```
 
@@ -65,8 +65,8 @@ sized to the desired display area:
 ```
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 // Minimum input: x/y die grid positions. The library infers everything else.
 const result = buildWaferMap([
@@ -119,8 +119,8 @@ LOT123,W01,-7,-1,1,10,1.099,0.772,5.966
 Parse the CSV and map each row to a `DieResult`. **All numeric fields must be cast to `number` — CSV parsers return strings.** `buildWaferMap` will throw a descriptive error if it detects string `x`/`y` coordinates, but other fields such as `hbin` and `testValues` values must also be cast to avoid silent NaN artefacts.
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 async function loadAndRender(csvText: string, container: HTMLElement) {
   const rows = parseCsv(csvText);  // your CSV parser of choice
@@ -541,7 +541,7 @@ positions — for example, merging test values from a separate parametric table 
 a map already built from a bin summary:
 
 ```ts
-import { buildWaferMap, getDieKey } from '@paulrobins/wafermap';
+import { buildWaferMap, getDieKey } from '@wafertools/wafermap';
 
 // Step 1: build the map from the bin data
 const result = buildWaferMap({ results: binRows.map(r => ({
@@ -945,9 +945,9 @@ Pass the result of `analyzeWaferMap` to `renderWaferMap` as `statsSummary`.
 That's all most users need — the library handles the rest.
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';  // note: /stats subpath, not root
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';  // note: /stats subpath, not root
 
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result);   // passBins inferred from result — no need to repeat it
@@ -1175,9 +1175,9 @@ Pass `statsSummary` to `renderWaferMap` and the Summary button appears in the to
 automatically.  The panel is hidden by default; clicking the button toggles it open:
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const summary = analyzeWaferMap(result);
@@ -1277,8 +1277,8 @@ to fit its cards automatically.  `width: 100%` is the typical choice:
 ### Basic gallery
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferGallery } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferGallery } from '@wafertools/wafermap/render';
 
 // Build a result per wafer
 const waferResults = waferDatasets.map(data =>
@@ -1433,7 +1433,7 @@ See also: [Demo: Lot-level findings with stacked modes](examples/lot-findings.ht
 It runs per-wafer analysis internally, so a single call gives you everything — no separate `analyzeWaferMap` per item is needed.
 
 ```ts
-import { analyzeWaferLot } from '@paulrobins/wafermap/stats';
+import { analyzeWaferLot } from '@wafertools/wafermap/stats';
 
 const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
 
@@ -1486,7 +1486,7 @@ The library can generate standalone printable HTML reports that open in a new br
 **Wafer summary report** — everything shown in a single wafer's summary panel (yield, bins, ring/quadrant yield, test stats, findings):
 
 ```ts
-import { renderSummaryReportHtml, openHtmlReport } from '@paulrobins/wafermap/stats';
+import { renderSummaryReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
 
 const html = renderSummaryReportHtml({
   wafer, dies,
@@ -1504,7 +1504,7 @@ openHtmlReport(html);
 **Lot summary report** — the lot-level equivalent, covering per-wafer yield table, bin breakdown, ring/quadrant yield, lot-level test stats, and lot findings. Grouping, per-group analysis, and rendering all happen internally — pass the raw `items` list, never a pre-computed `lotSummary`; a mixed multi-lot/multi-product/multi-temperature load is automatically split into separate labelled sections rather than pooled:
 
 ```ts
-import { renderLotSummaryReportHtml, openHtmlReport } from '@paulrobins/wafermap/stats';
+import { renderLotSummaryReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
 
 const html = renderLotSummaryReportHtml({
   items: waferMapResults.map((r, i) => ({
@@ -1523,7 +1523,7 @@ openHtmlReport(html);
 **Findings-only report** — a lighter report with just the severity-coded findings table, works for both wafer and lot summaries:
 
 ```ts
-import { renderFindingsReportHtml, openHtmlReport } from '@paulrobins/wafermap/stats';
+import { renderFindingsReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
 
 openHtmlReport(renderFindingsReportHtml(lotSummary));
 ```
@@ -1533,7 +1533,7 @@ The summary panel's "Summary report" button in `renderWaferMap` and `renderWafer
 **Embedded hosts (Tauri, Electron, WebView2).** In hosts where `window.open` is blocked, register a custom opener once at startup:
 
 ```ts
-import { setReportOpener } from '@paulrobins/wafermap/stats';
+import { setReportOpener } from '@wafertools/wafermap/stats';
 
 setReportOpener(html => {
   // route to a host-managed window, IPC call, etc.
@@ -1744,15 +1744,15 @@ main thread to avoid blocking the UI.
 ### Setup
 
 ```ts
-import { createWafermapWorker } from '@paulrobins/wafermap/worker';
+import { createWafermapWorker } from '@wafertools/wafermap/worker';
 
 // Vite / webpack — import the pre-built worker script
-import workerUrl from '@paulrobins/wafermap/worker-script?url';
+import workerUrl from '@wafertools/wafermap/worker-script?url';
 const wmWorker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
 
 // Plain HTML / CDN
 const wmWorker = createWafermapWorker(
-  new Worker('https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/worker/wafermap.worker.js', { type: 'module' })
+  new Worker('https://cdn.jsdelivr.net/npm/@wafertools/wafermap/dist/packages/worker/wafermap.worker.js', { type: 'module' })
 );
 ```
 
@@ -1817,7 +1817,7 @@ The built-in colour schemes are `'default'`, `'viridis'`, `'greyscale'`, `'acces
 thematic colouring, or specialised analysis:
 
 ```ts
-import { registerColorScheme, listColorSchemes } from '@paulrobins/wafermap';
+import { registerColorScheme, listColorSchemes } from '@wafertools/wafermap';
 
 registerColorScheme('my-brand', {
   label: 'My Brand',
@@ -1875,8 +1875,8 @@ The typical first integration: parse a multi-wafer CSV, group rows by wafer, and
 render them all as a gallery.
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferGallery } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferGallery } from '@wafertools/wafermap/render';
 
 // 1. Parse — cast all numeric fields; CSV parsers return strings
 const rows = csvText.trim().split('\n').slice(1).map(line => {
@@ -2016,7 +2016,7 @@ const { yieldPercent, yieldPercentGross } = result.yield;
 array:
 
 ```ts
-import { filterFindings } from '@paulrobins/wafermap/stats';
+import { filterFindings } from '@wafertools/wafermap/stats';
 
 // Only ring or quadrant findings at unusual severity:
 const critical = filterFindings(summary, {
@@ -2037,8 +2037,8 @@ exploration:
 ```js
 // analyse-lot.mjs  —  node analyse-lot.mjs
 import { readFileSync } from 'node:fs';
-import { buildWaferMap }   from '@paulrobins/wafermap';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { buildWaferMap }   from '@wafertools/wafermap';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 
 const csv    = readFileSync('data/wafers.csv', 'utf8');
 const lines  = csv.trim().split('\n');
@@ -2102,9 +2102,9 @@ directly when you need one or more of:
 - A **fixed aggregation method** set at build time rather than chosen interactively
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 
 // Aggregate six wafers into a single mean map
 const result = buildWaferMap({
@@ -2157,9 +2157,9 @@ import {
   transformDies,
   generateReticleGrid,
   getDieKey,
-} from '@paulrobins/wafermap';
-import { buildView } from '@paulrobins/wafermap/renderer';
-import { toCanvas } from '@paulrobins/wafermap/render';
+} from '@wafertools/wafermap';
+import { buildView } from '@wafertools/wafermap/renderer';
+import { toCanvas } from '@wafertools/wafermap/render';
 
 // 1. Create the wafer geometry
 const wafer = createWafer({ diameter: 300, notch: { type: 'bottom' } });

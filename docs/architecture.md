@@ -236,10 +236,10 @@ The worker helper mirrors that shape: you send in a `WaferMapInput` or a batch o
 Use these imports as your default decision tree:
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap, renderWaferGallery } from '@paulrobins/wafermap/render';
-import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
-import { createWafermapWorker } from '@paulrobins/wafermap/worker';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap, renderWaferGallery } from '@wafertools/wafermap/render';
+import { analyzeWaferMap, analyzeWaferLot } from '@wafertools/wafermap/stats';
+import { createWafermapWorker } from '@wafertools/wafermap/worker';
 ```
 
 - Use `buildWaferMap()` when you have raw die rows and need a reusable result

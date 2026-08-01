@@ -5,9 +5,9 @@ extra_javascript = [
   { path = "guide-demos.js",                  defer = true },
 ]
 site_name   = "Wafermap"
-site_url    = "https://telecasterer.github.io/wafermap/"
+site_url    = "https://wafertools.github.io/wafermap/"
 site_author = "Paul Robins"
-repo_url    = "https://github.com/telecasterer/wafermap"
+repo_url    = "https://github.com/wafertools/wafermap"
 
 nav = [
   { "Home"              = "index.md"      },

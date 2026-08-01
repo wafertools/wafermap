@@ -5,7 +5,7 @@ This guide is for developers integrating `wafermap` into a TypeScript + Vue 3 ap
 ## Install
 
 ```bash
-npm install @paulrobins/wafermap
+npm install @wafertools/wafermap
 ```
 
 ## What each side owns
@@ -36,8 +36,8 @@ Your Vue app owns: fetching data, reactive state, component lifecycle, mount and
 ```vue
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
-import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
+import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+import { renderWaferMap, type WaferMapController } from '@wafertools/wafermap/render';
 
 const props = defineProps<{ rows: DieResult[] }>();
 
@@ -72,8 +72,8 @@ When only display options change (plot mode, colour scheme, rotation), call `ctr
 ```vue
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
-import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferMapController, type WaferViewOptions } from '@paulrobins/wafermap/render';
+import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+import { renderWaferMap, type WaferMapController, type WaferViewOptions } from '@wafertools/wafermap/render';
 
 const props = defineProps<{
   rows: DieResult[];
@@ -121,8 +121,8 @@ Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` wi
 ```vue
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/render';
+import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@wafertools/wafermap/render';
 
 const props = defineProps<{
   wafers: Array<{ label: string; rows: DieResult[] }>;
@@ -161,9 +161,9 @@ Call `ctrl.setItems(newFactories)` to replace the lot after mount, or `ctrl.setO
 ```vue
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
+import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
+import { renderWaferMap, type WaferMapController } from '@wafertools/wafermap/render';
 
 const props = defineProps<{ rows: DieResult[] }>();
 const containerEl = ref<HTMLDivElement | null>(null);
@@ -200,7 +200,7 @@ ctrl = renderWaferMap(containerEl.value, result, {
 ```ts
 // stores/wafer.ts
 import { defineStore } from 'pinia';
-import { buildWaferMap, type WaferMapResult } from '@paulrobins/wafermap';
+import { buildWaferMap, type WaferMapResult } from '@wafertools/wafermap';
 
 export const useWaferStore = defineStore('wafer', {
   state: () => ({ result: null as WaferMapResult | null }),

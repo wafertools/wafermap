@@ -103,7 +103,7 @@ bodyHtml = bodyHtml.replace(
   /(<h1[^>]*>.*?<\/h1>)/s,
   `$1\n<p class="wmap-guide-online-link">` +
   `This is a quick reference. ` +
-  `<a href="https://telecasterer.github.io/wafermap/user-guide/" target="_blank" rel="noopener">` +
+  `<a href="https://wafertools.github.io/wafermap/user-guide/" target="_blank" rel="noopener">` +
   `View the full illustrated guide online ↗</a></p>`,
 );
 

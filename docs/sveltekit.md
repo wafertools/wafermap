@@ -5,7 +5,7 @@ This guide is for a developer who wants to try `wafermap` inside a TypeScript + 
 ## Install
 
 ```bash
-npm install @paulrobins/wafermap
+npm install @wafertools/wafermap
 ```
 
 For local testing from a checkout:
@@ -36,8 +36,8 @@ Your SvelteKit app owns: fetching or loading wafer data, UI state, Svelte compon
 ```svelte
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
+  import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+  import { renderWaferMap, type WaferMapController } from '@wafertools/wafermap/render';
 
   export let rows: DieResult[] = [];
 
@@ -65,8 +65,8 @@ Hold the controller and call `ctrl.setOptions()` to update display options witho
 ```svelte
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { renderWaferMap, type WaferMapController, type WaferViewOptions } from '@paulrobins/wafermap/render';
+  import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+  import { renderWaferMap, type WaferMapController, type WaferViewOptions } from '@wafertools/wafermap/render';
 
   export let rows: DieResult[] = [];
   export let plotMode: WaferViewOptions['plotMode'] = 'hardBin';
@@ -96,8 +96,8 @@ Pass an array of results (or factory functions for large lots) to render a card 
 ```svelte
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/render';
+  import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+  import { renderWaferGallery, type GalleryController, type WaferMapDisplayItemFactory } from '@wafertools/wafermap/render';
 
   export let wafers: Array<{ label: string; rows: DieResult[] }> = [];
 
@@ -128,9 +128,9 @@ Pass an array of results (or factory functions for large lots) to render a card 
 ```svelte
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-  import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-  import { renderWaferMap, type WaferMapController } from '@paulrobins/wafermap/render';
+  import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+  import { analyzeWaferMap } from '@wafertools/wafermap/stats';
+  import { renderWaferMap, type WaferMapController } from '@wafertools/wafermap/render';
 
   export let rows: DieResult[] = [];
 

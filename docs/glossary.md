@@ -2,7 +2,7 @@
 
 **For:** both audiences — developers without a semiconductor background, and app users who meet an unfamiliar term on screen.
 
-Quick-reference definitions for semiconductor and library terms used in `@paulrobins/wafermap`. The *Library mapping* notes on each entry are developer-facing; app users can ignore them.
+Quick-reference definitions for semiconductor and library terms used in `@wafertools/wafermap`. The *Library mapping* notes on each entry are developer-facing; app users can ignore them.
 
 ---
 
@@ -68,7 +68,7 @@ The solid, categorical colouring shown in `value` plot mode in place of the cont
 
 ### Process capability (Cp / Cpk / Pp / Ppk)
 
-A statistical measure of how well a parametric test's values fit within its spec limits — the Insights tab's Distributions sub-tab plots one box per test with both spec limits defined, normalized so `limitLow = 0` and `limitHigh = 1`, worst `Ppk` first. `Cp`/`Cpk` ("potential"/short-term capability) use the pooled *within-wafer* standard deviation, treating each wafer as the natural short-term subgroup; `Cp` ignores how centered the distribution is, `Cpk` penalizes an off-center mean. `Pp`/`Ppk` ("performance"/long-term capability) use the plain standard deviation across every die instead. Higher is better; ≥1.33 is a common (but process-specific) threshold for "capable." `Cp`/`Cpk` are omitted when no wafer contributes at least two values (no within-subgroup variance is computable). Tests missing one or both spec limits are not omitted from the chart — they still appear (muted, dashed, no capability indices), normalized onto their own observed range instead, and sorted after spec'd tests by most-variable-first, since a lot with sparse spec coverage would otherwise render an all-but-empty chart. *Library mapping: `CapabilityDatum.hasSpec` (`@paulrobins/wafermap/stats`).*
+A statistical measure of how well a parametric test's values fit within its spec limits — the Insights tab's Distributions sub-tab plots one box per test with both spec limits defined, normalized so `limitLow = 0` and `limitHigh = 1`, worst `Ppk` first. `Cp`/`Cpk` ("potential"/short-term capability) use the pooled *within-wafer* standard deviation, treating each wafer as the natural short-term subgroup; `Cp` ignores how centered the distribution is, `Cpk` penalizes an off-center mean. `Pp`/`Ppk` ("performance"/long-term capability) use the plain standard deviation across every die instead. Higher is better; ≥1.33 is a common (but process-specific) threshold for "capable." `Cp`/`Cpk` are omitted when no wafer contributes at least two values (no within-subgroup variance is computable). Tests missing one or both spec limits are not omitted from the chart — they still appear (muted, dashed, no capability indices), normalized onto their own observed range instead, and sorted after spec'd tests by most-variable-first, since a lot with sparse spec coverage would otherwise render an all-but-empty chart. *Library mapping: `CapabilityDatum.hasSpec` (`@wafertools/wafermap/stats`).*
 
 ### Reticle
 

@@ -16,7 +16,7 @@ sys.modules['pandas.indexes'] = pandas.core.indexes
 import pickle
 
 PICKLE_PATH = '/home/paul/projects/LSWMD.pkl'
-OUTPUT_PATH = '/home/paul/projects/wmap/tests/fixtures/wm811k-benchmark.json'
+OUTPUT_PATH = '/home/paul/projects/wafermap/tests/fixtures/wm811k-benchmark.json'
 
 print('Loading LSWMD.pkl...', flush=True)
 with open(PICKLE_PATH, 'rb') as f:

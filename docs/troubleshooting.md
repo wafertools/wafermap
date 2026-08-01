@@ -98,18 +98,18 @@ const result = buildWaferMap({
 
 ---
 
-## `renderWaferMap is not exported by @paulrobins/wafermap`
+## `renderWaferMap is not exported by @wafertools/wafermap`
 
 **Cause:** the renderers are not on the root entry point. `renderWaferMap`,
 `renderWaferGallery` and `toCanvas` are exported **only** from the `/render` subpath.
 Depending on your bundler this surfaces as a build-time "no export named
 `renderWaferMap`" error or a runtime `undefined is not a function`.
 
-**Fix:** import them from `@paulrobins/wafermap/render`.
+**Fix:** import them from `@wafertools/wafermap/render`.
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';         // geometry + data
-import { renderWaferMap } from '@paulrobins/wafermap/render';  // the renderer
+import { buildWaferMap } from '@wafertools/wafermap';         // geometry + data
+import { renderWaferMap } from '@wafertools/wafermap/render';  // the renderer
 ```
 
 This split is deliberate: the root entry re-exports only the DOM-free layers (`core`,

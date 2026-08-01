@@ -139,7 +139,7 @@ Pattern classification runs automatically as part of `analyzeWaferMap` and
 appears in the findings panel. No configuration is required.
 
 ```js
-import { buildWaferMap, analyzeWaferMap } from '@paulrobins/wafermap';
+import { buildWaferMap, analyzeWaferMap } from '@wafertools/wafermap';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig });
 const summary = analyzeWaferMap(result, { passBins: [1] });
@@ -169,8 +169,8 @@ this function directly and use the `features` object as input to your own
 model or reporting pipeline:
 
 ```js
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { classifyPattern } from '@paulrobins/wafermap/stats';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { classifyPattern } from '@wafertools/wafermap/stats';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig });
 const classification = classifyPattern(result.dies, result.wafer, {

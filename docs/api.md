@@ -32,8 +32,8 @@ Physical mm positions appear only on the `Die` output objects (`die.physX`, `die
 The step-by-step tutorial is [Quick Start](quickstart.md); this is the condensed call shape as a memory jogger:
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 // x,y are prober step positions (die grid indices), not mm.
 const result = buildWaferMap({
@@ -112,7 +112,7 @@ is missing and returns a fully constructed wafer model.
 effects.  It can run in Node.js, Deno, a Web Worker, or any server-side environment.
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
+import { buildWaferMap } from '@wafertools/wafermap';
 ```
 
 ### 4.1 Input
@@ -724,7 +724,7 @@ When you need to attach additional values after the map is built, use `getDieKey
 for stable lookups:
 
 ```ts
-import { buildWaferMap, getDieKey } from '@paulrobins/wafermap';
+import { buildWaferMap, getDieKey } from '@wafertools/wafermap';
 
 const result = buildWaferMap({ results: primaryData, waferConfig, dieConfig });
 
@@ -799,8 +799,8 @@ opens the map in an enlarged modal overlay using canvas reparenting — no secon
 controller is created. A maximise button inside the modal grows it to fill the window.
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 const result = buildWaferMap({ results, passBins });
 const ctrl = renderWaferMap(document.getElementById('map'), result, { showToolbar: true });
@@ -1082,7 +1082,7 @@ Canvas colours are resolved from these variables at draw time and re-resolved on
 }
 ```
 
-> The reference host [tsmap](https://github.com/telecasterer/tsmap) implements a full theme picker (light, dark, Nord, Solarized, a brand green, high-contrast) this way — its `index.html` `:root` blocks are a worked example of the complete token set across multiple themes.
+> The reference host [tsmap](https://github.com/wafertools/tsmap) implements a full theme picker (light, dark, Nord, Solarized, a brand green, high-contrast) this way — its `index.html` `:root` blocks are a worked example of the complete token set across multiple themes.
 
 #### 5.4.2 `SummaryPanelOptions`
 
@@ -1201,8 +1201,8 @@ Choose the right update method:
 ### 5.8 Example usage
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig });
 
@@ -1255,7 +1255,7 @@ renderWaferMap(document.getElementById('map'), result, { insights: { enabled: tr
 `showHelpButton: true` (§5.4, §6.2) opens wmap's own built-in end-user guide — but a host application often has its own documentation too, and forcing the user to find two separate help buttons/documents is poor UX. `userGuideExtension` inserts the host's own content **before** wmap's guide content in the same window, so there's one help button and one combined document instead of two:
 
 ```ts
-import type { UserGuideExtension } from '@paulrobins/wafermap/render';
+import type { UserGuideExtension } from '@wafertools/wafermap/render';
 
 interface UserGuideExtension {
   html:   string   // host-provided HTML, inserted before wmap's own guide content.
@@ -1300,7 +1300,7 @@ card content will be clipped.
 ```
 
 ```ts
-import { renderWaferGallery } from '@paulrobins/wafermap/render';
+import { renderWaferGallery } from '@wafertools/wafermap/render';
 
 renderWaferGallery(document.getElementById('gallery'), items, galleryOptions);
 ```
@@ -1523,7 +1523,7 @@ If your host has its own multi-window API and you want a real separate OS
 window instead of the in-page fallback, register a custom opener at startup:
 
 ```ts
-import { setDetachWindowOpener } from '@paulrobins/wafermap/render';
+import { setDetachWindowOpener } from '@wafertools/wafermap/render';
 
 setDetachWindowOpener((label) => {
   // Return a Window-like handle (must expose a usable `.document`, `.closed`,
@@ -1556,7 +1556,7 @@ two independent pieces of content:
   per-card colorbar instead), unchanged from before.
 - **Lot-level metadata** (lot, product, test program, temperature, etc.) — shown
   in **every** mode, not just bin modes, so basic wafer/lot identity is never
-  hidden behind a mode switch. Built on `buildFacetTable` (`@paulrobins/wafermap/stats`):
+  hidden behind a mode switch. Built on `buildFacetTable` (`@wafertools/wafermap/stats`):
   a field with a single value across every currently-shown item shows it
   plainly (`Lot: LOT123`); a field that varies shows every distinct value it
   takes (`Lot: LOT123, LOT456`) — never `analyzeWaferLot`'s first-wafer-wins
@@ -1615,8 +1615,8 @@ items — the gallery re-aggregates automatically if a stacked mode is active.
 ### 6.9 Gallery example
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 const results = waferIds.map(id => buildWaferMap({ results: dataByWafer[id], dieConfig }));
 const items = results.map((r, i) => ({
@@ -1679,7 +1679,7 @@ The stats engine detects statistically significant spatial patterns in wafer tes
 Use `analyzeWaferMap` for a single wafer. Use `analyzeWaferLot` when you have a full lot and want cross-wafer patterns and outlier detection on top.
 
 ```ts
-import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
+import { analyzeWaferMap, analyzeWaferLot } from '@wafertools/wafermap/stats';
 ```
 
 ### 7.1 `analyzeWaferMap(input, options?)`
@@ -1960,7 +1960,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 ### 7.6 `renderFindingsReportHtml`
 
 ```ts
-import { renderFindingsReportHtml } from '@paulrobins/wafermap/stats';
+import { renderFindingsReportHtml } from '@wafertools/wafermap/stats';
 
 renderFindingsReportHtml(summary: StatsSummary | LotStatsSummary, options?: { title?: string }): string
 ```
@@ -1972,7 +1972,7 @@ Generates a standalone printable HTML **findings-only** report from a `StatsSumm
 ### 7.7 `renderSummaryReportHtml`
 
 ```ts
-import { renderSummaryReportHtml } from '@paulrobins/wafermap/stats';
+import { renderSummaryReportHtml } from '@wafertools/wafermap/stats';
 
 renderSummaryReportHtml(params: SummaryReportParams, options?: { title?: string }): string
 ```
@@ -2002,7 +2002,7 @@ The summary panel's "Summary report" button calls this automatically when `stats
 ### 7.8 `renderLotSummaryReportHtml`
 
 ```ts
-import { renderLotSummaryReportHtml } from '@paulrobins/wafermap/stats';
+import { renderLotSummaryReportHtml } from '@wafertools/wafermap/stats';
 
 renderLotSummaryReportHtml(params: LotSummaryReportParams, options?: { title?: string }): string
 ```
@@ -2036,7 +2036,7 @@ The lot summary panel's "Summary report" button calls this automatically when `l
 ### 7.9 `openHtmlReport` / `setReportOpener`
 
 ```ts
-import { openHtmlReport, setReportOpener } from '@paulrobins/wafermap/stats';
+import { openHtmlReport, setReportOpener } from '@wafertools/wafermap/stats';
 
 openHtmlReport(html: string): void
 setReportOpener(opener: (html: string) => void): void
@@ -2129,9 +2129,9 @@ type HighlightTarget =
 ### 7.12 Integrating with `renderWaferMap`
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
-import { analyzeWaferMap, analyzeWaferLot } from '@paulrobins/wafermap/stats';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
+import { analyzeWaferMap, analyzeWaferLot } from '@wafertools/wafermap/stats';
 
 // Single wafer with summary panel toggle:
 const result  = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
@@ -2151,7 +2151,7 @@ renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 
 ### 7.13 Region builder utilities
 
-These are exported from `@paulrobins/wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
+These are exported from `@wafertools/wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
 
 ```ts
 import {
@@ -2160,7 +2160,7 @@ import {
   buildReticlePositionRegions,
   buildSectorRegions,
   buildTestSiteRegions,
-} from '@paulrobins/wafermap/stats';
+} from '@wafertools/wafermap/stats';
 
 buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[]
 // family: 'ring'; keys 'ring:1' ... 'ring:N'
@@ -2199,7 +2199,7 @@ Each `StatsRegion` has:
 }
 ```
 
-Three region-ordering helpers are also exported from `@paulrobins/wafermap/stats`. They are the
+Three region-ordering helpers are also exported from `@wafertools/wafermap/stats`. They are the
 single source of truth for sector and quadrant ordering, used by `buildSectorRegions` and by the
 internal adjacent-finding merge:
 
@@ -2225,7 +2225,7 @@ Filters findings from a `StatsSummary` or `LotStatsSummary` by any combination o
 `StatsSummary` → §7.4 · `LotStatsSummary` → §7.5 · `StatsFinding` → §7.10
 
 ```ts
-import { filterFindings } from '@paulrobins/wafermap/stats';
+import { filterFindings } from '@wafertools/wafermap/stats';
 
 // Unusual ring or quadrant findings only:
 const critical = filterFindings(summary, {
@@ -2266,7 +2266,7 @@ Classifies the spatial failure pattern of a wafer from its die data. Returns `nu
 Called automatically by `analyzeWaferMap` when `enablePatternClassification` is `true` (the default). Call directly when you need the geometry features without the full analysis pipeline, or to use the raw `PatternFeatures` as input to your own classifier.
 
 ```ts
-import { classifyPattern } from '@paulrobins/wafermap/stats';
+import { classifyPattern } from '@wafertools/wafermap/stats';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
 const c = classifyPattern(result.dies, result.wafer, { passBins: [1] });
@@ -2333,7 +2333,7 @@ import {
   buildCorrelationMatrix, filterCorrelationMatrix,
   buildScatterData, buildScatterDataGrouped,
   buildFacetTable, facetValueOf, DEFAULT_FACET_CURATION,
-} from '@paulrobins/wafermap/stats';
+} from '@wafertools/wafermap/stats';
 ```
 
 | Function | Returns | Notes |
@@ -2365,7 +2365,7 @@ See §7.8 for the full `renderLotSummaryReportHtml` grouping behavior — items 
 ## 8 Web Worker
 
 `buildWaferMap` and the analysis functions can be moved off the main thread so a
-large build does not freeze the UI.  The `@paulrobins/wafermap/worker` subpackage
+large build does not freeze the UI.  The `@wafertools/wafermap/worker` subpackage
 provides a thin wrapper around a pre-built worker script.
 
 **The worker is a responsiveness tool, not a speed tool.** The worker runs the
@@ -2399,15 +2399,15 @@ object instead of one.
 ### 8.1 Setup
 
 ```ts
-import { createWafermapWorker } from '@paulrobins/wafermap/worker';
+import { createWafermapWorker } from '@wafertools/wafermap/worker';
 
 // Bundler (Vite, webpack…) — import the worker script URL
-import workerUrl from '@paulrobins/wafermap/worker-script?url';
+import workerUrl from '@wafertools/wafermap/worker-script?url';
 const worker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
 
 // Plain HTML / CDN
 const worker = createWafermapWorker(
-  new Worker('https://cdn.jsdelivr.net/npm/@paulrobins/wafermap/dist/packages/worker/wafermap.worker.js', { type: 'module' })
+  new Worker('https://cdn.jsdelivr.net/npm/@wafertools/wafermap/dist/packages/worker/wafermap.worker.js', { type: 'module' })
 );
 ```
 
@@ -2528,7 +2528,7 @@ Renders a view directly onto an HTML `<canvas>` element using the 2D Canvas API.
 No toolbar is provided — this is a one-shot draw call.
 
 ```ts
-import { toCanvas } from '@paulrobins/wafermap/render';
+import { toCanvas } from '@wafertools/wafermap/render';
 ```
 
 ```ts
@@ -2573,7 +2573,7 @@ Returns `{ hitTarget, viewport, binLegendRows }`:
 - `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardBin/softBin; the spec legend also populates this, using negative sentinel `bin` keys for its Pass/Fail rows)
 
 ```ts
-import { buildView } from '@paulrobins/wafermap/renderer';
+import { buildView } from '@wafertools/wafermap/renderer';
 
 const result  = buildWaferMap({ results, waferConfig, dieConfig });
 const view   = buildView(result.wafer, result.dies, { plotMode: 'hardBin' });
@@ -2597,35 +2597,35 @@ canvas.addEventListener('mousemove', e => {
 ## 10 Package surface
 
 ```ts
-import { buildWaferMap }                       from '@paulrobins/wafermap';
-import { renderWaferMap }                      from '@paulrobins/wafermap/render';
-import { analyzeWaferMap, analyzeWaferLot }    from '@paulrobins/wafermap/stats';
-import { createWafermapWorker }                from '@paulrobins/wafermap/worker';
+import { buildWaferMap }                       from '@wafertools/wafermap';
+import { renderWaferMap }                      from '@wafertools/wafermap/render';
+import { analyzeWaferMap, analyzeWaferLot }    from '@wafertools/wafermap/stats';
+import { createWafermapWorker }                from '@wafertools/wafermap/worker';
 ```
 
 The statistics engine (`analyzeWaferMap`, `analyzeWaferLot`, `filterFindings`) is also available from the **`/stats` subpath** and is re-exported from the root package. It has no DOM dependency, so you can run a complete build-and-analyse pipeline in Node.js:
 
 ```ts
 // Node.js — no DOM required
-import { buildWaferMap }   from '@paulrobins/wafermap';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
+import { buildWaferMap }   from '@wafertools/wafermap';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 ```
 
 Only `renderWaferMap` and `toCanvas` (both from `/render`) require a browser environment.
 
 > **The renderers are not on the root entry point.** `renderWaferMap`, `renderWaferGallery`
-> and `toCanvas` are exported **only** from `@paulrobins/wafermap/render` — so
-> `import { renderWaferMap } from '@paulrobins/wafermap'` will fail. This is deliberate:
+> and `toCanvas` are exported **only** from `@wafertools/wafermap/render` — so
+> `import { renderWaferMap } from '@wafertools/wafermap'` will fail. This is deliberate:
 > the root entry stays DOM-free (and therefore usable in Node and tree-shakeable) by
 > re-exporting only `core`, `renderer` and `stats`. Import the geometry/data layer from the
 > root and the renderer from `/render`.
 
-> **`buildView` and `View`** are no longer exported from the root `@paulrobins/wafermap` package. They are available from `@paulrobins/wafermap/renderer` for advanced use (see §11 Manual Pipeline). If you were importing them from the root, update your import path.
+> **`buildView` and `View`** are no longer exported from the root `@wafertools/wafermap` package. They are available from `@wafertools/wafermap/renderer` for advanced use (see §11 Manual Pipeline). If you were importing them from the root, update your import path.
 
 ### 10.1 Helper exports
 
 ```ts
-import { getDieKey, getDieTestValue, getTestPassStatus, dieHasTestData, isParametricTest } from '@paulrobins/wafermap';
+import { getDieKey, getDieTestValue, getTestPassStatus, dieHasTestData, isParametricTest } from '@wafertools/wafermap';
 ```
 
 ```ts
@@ -2652,7 +2652,7 @@ Returns `undefined` when no value is present.  Use this in post-build code that 
 
 `isParametricTest` returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric.
 
-Available subpath exports: `@paulrobins/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
+Available subpath exports: `@wafertools/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
 
 > **The Insights tab's canvas chart panels are not a public subpath.** `insights.enabled` (§5.9, §6.10) is the supported way to get charts — the DOM/canvas rendering code behind it is internal to `/render` and not independently importable, so you cannot assemble your own page from wmap's chart panels the way you can compose `/render`'s other pieces. The pure data layer those panels are built on (§7.16) *is* public from `/stats`, if you want to drive your own chart library from the same computations.
 
@@ -2667,9 +2667,9 @@ The [Advanced pipeline demo](examples/pipeline.html) is the reference for this p
 **Minimal working example:**
 
 ```ts
-import { createWafer, generateDies, clipDiesToWafer } from '@paulrobins/wafermap/core';
-import { buildView } from '@paulrobins/wafermap/renderer';
-import { toCanvas } from '@paulrobins/wafermap/render';
+import { createWafer, generateDies, clipDiesToWafer } from '@wafertools/wafermap/core';
+import { buildView } from '@wafertools/wafermap/renderer';
+import { toCanvas } from '@wafertools/wafermap/render';
 
 const wafer = createWafer({ diameter: 300 });
 const dies  = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer);
@@ -3044,7 +3044,7 @@ When `reticleConfig` is passed, a `Reticle (column, row)` line is inserted immed
 `Die` → §12.1 · `TestDef` → §4.1.8 · `BinDef` → §4.1.9 · `ReticleConfig` → §4.1.4
 
 ```ts
-import { buildHoverText } from '@paulrobins/wafermap/renderer';
+import { buildHoverText } from '@wafertools/wafermap/renderer';
 
 const html = buildHoverText(die, 'hardBin', { testDefs, hbinDefs, sbinDefs });
 tooltipEl.innerHTML = html;
@@ -3118,8 +3118,8 @@ listColorSchemes(): Array<{ name: string; label: string }>
 ### 11.20 `isYieldEligibleDie(die, options?)`
 
 ```ts
-import { isYieldEligibleDie } from '@paulrobins/wafermap';
-// also available from '@paulrobins/wafermap/core'
+import { isYieldEligibleDie } from '@wafertools/wafermap';
+// also available from '@wafertools/wafermap/core'
 
 isYieldEligibleDie(die: Die, options?: { includePartial?: boolean; includeEdgeExcluded?: boolean }): boolean
 ```
@@ -3138,8 +3138,8 @@ This is the single source of truth for the rule — `buildWaferMap`'s yield calc
 import {
   affineIdentity, affineRotation, affineMirror, affineCompose,
   affineInvert, affinePoint, affineVector, affineSwapsAxes,
-} from '@paulrobins/wafermap';
-// also available from '@paulrobins/wafermap/core'
+} from '@wafertools/wafermap';
+// also available from '@wafertools/wafermap/core'
 
 interface Affine<From extends CoordFrame, To extends CoordFrame> {
   a: number; b: number; c: number; d: number; e: number; f: number
@@ -3178,7 +3178,7 @@ The `From`/`To` tags are **phantom** (type-level only; the runtime value is a pl
 Use these when a custom `toCanvas` pipeline draws its own overlays: take `view.gridToScreen` (§11.15) and transform your geometry through it rather than re-deriving rotation and flip by hand.
 
 ```ts
-import { affinePoint, affineInvert } from '@paulrobins/wafermap';
+import { affinePoint, affineInvert } from '@wafertools/wafermap';
 
 // place a marker that must sit on a specific die-grid position
 const p = affinePoint(view.gridToScreen, gridX, gridY);
@@ -3192,8 +3192,8 @@ const back = affinePoint(affineInvert(view.gridToScreen), p.x, p.y);
 ### 11.22 `getReticleCell(die, config)`
 
 ```ts
-import { getReticleCell } from '@paulrobins/wafermap';
-// also available from '@paulrobins/wafermap/core'
+import { getReticleCell } from '@wafertools/wafermap';
+// also available from '@wafertools/wafermap/core'
 
 getReticleCell(
   die:    { x: number; y: number },
@@ -3214,8 +3214,8 @@ Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by 
 ### 11.23 `resolveGridPitch(gridPoints, dieOpts?, waferDiameter?)`
 
 ```ts
-import { resolveGridPitch } from '@paulrobins/wafermap';
-// also available from '@paulrobins/wafermap/core'
+import { resolveGridPitch } from '@wafertools/wafermap';
+// also available from '@wafertools/wafermap/core'
 
 resolveGridPitch(
   gridPoints:     Array<{ x: number; y: number }>,

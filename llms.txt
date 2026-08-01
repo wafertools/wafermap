@@ -10,11 +10,11 @@ Primary entry point: build wafer models with `buildWaferMap()`, then render with
 - [Examples](examples/) - runnable demo applications.
 
 ## Public package entry points
-- `@paulrobins/wafermap`
-- `@paulrobins/wafermap/render`
-- `@paulrobins/wafermap/stats`
-- `@paulrobins/wafermap/worker`
-- `@paulrobins/wafermap/worker-script`
+- `@wafertools/wafermap`
+- `@wafertools/wafermap/render`
+- `@wafertools/wafermap/stats`
+- `@wafertools/wafermap/worker`
+- `@wafertools/wafermap/worker-script`
 
 ## Important notes
 - `x` and `y` in `DieResult` are die grid positions (prober step integers), not millimetres.

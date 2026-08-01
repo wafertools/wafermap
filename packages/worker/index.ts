@@ -35,7 +35,7 @@ export interface WafermapWorker {
  *
  * @example
  * // With a bundler (Vite, webpack…)
- * import workerUrl from 'wafermap/worker?url';
+ * import workerUrl from '@wafertools/wafermap/worker-script?url';
  * const worker = createWafermapWorker(new Worker(workerUrl, { type: 'module' }));
  *
  * @example

@@ -5,7 +5,7 @@ This guide is for developers integrating `wafermap` into a TypeScript + React ap
 ## Install
 
 ```bash
-npm install @paulrobins/wafermap
+npm install @wafertools/wafermap
 ```
 
 ## What each side owns
@@ -36,8 +36,8 @@ Your React app owns: fetching data, UI state, component lifecycle, mount and cle
 
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
-import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferMap, type WaferViewOptions } from '@paulrobins/wafermap/render';
+import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+import { renderWaferMap, type WaferViewOptions } from '@wafertools/wafermap/render';
 
 interface WaferMapProps {
   rows: DieResult[];
@@ -106,8 +106,8 @@ Pass an array of `WaferMapDisplayItem` objects — each is a `WaferMapResult` wi
 
 ```tsx
 import { useEffect, useRef, useMemo } from 'react';
-import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { renderWaferGallery, type WaferMapDisplayItem } from '@paulrobins/wafermap/render';
+import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+import { renderWaferGallery, type WaferMapDisplayItem } from '@wafertools/wafermap/render';
 
 interface WaferGalleryProps {
   datasets: { label: string; rows: DieResult[] }[];
@@ -139,7 +139,7 @@ export function WaferGallery({ datasets }: WaferGalleryProps) {
 For large lots, pass factory functions instead of pre-built items. The gallery inserts placeholder cards immediately and calls each factory in a deferred browser task, keeping the page responsive:
 
 ```tsx
-import { renderWaferGallery, type WaferMapDisplayItemFactory } from '@paulrobins/wafermap/render';
+import { renderWaferGallery, type WaferMapDisplayItemFactory } from '@wafertools/wafermap/render';
 
 const items = datasets.map(({ label, rows }): WaferMapDisplayItemFactory => () => ({
   ...buildWaferMap({ results: rows }),
@@ -155,9 +155,9 @@ const ctrl = renderWaferGallery(containerRef.current, items);
 `analyzeWaferMap` is a pure function — run it alongside `buildWaferMap` and pass the result to `renderWaferMap`. A **Summary** button appears in the toolbar automatically; no extra HTML needed.
 
 ```tsx
-import { buildWaferMap, type DieResult } from '@paulrobins/wafermap';
-import { analyzeWaferMap } from '@paulrobins/wafermap/stats';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap, type DieResult } from '@wafertools/wafermap';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 export function WaferMap({ rows }: { rows: DieResult[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -192,7 +192,7 @@ For React Router or TanStack Router, run `buildWaferMap` in the route loader so 
 
 ```ts
 // loader.ts
-import { buildWaferMap } from '@paulrobins/wafermap';
+import { buildWaferMap } from '@wafertools/wafermap';
 
 export async function loader() {
   const rows = await fetchWaferData();

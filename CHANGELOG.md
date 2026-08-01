@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `@paulrobins/wafermap` are documented here.
+All notable changes to `@wafertools/wafermap` are documented here.
 
 ## Versioning policy
 
@@ -20,6 +20,13 @@ under `### Breaking`.
 ---
 
 ## [Unreleased]
+
+### Changed
+
+- **Package renamed from `@paulrobins/wafermap` to `@wafertools/wafermap`.** The GitHub repo
+  moved from `telecasterer/wafermap` to `wafertools/wafermap` along with it — repository,
+  homepage, and issue-tracker URLs all point at the new org. `@paulrobins/wafermap` is
+  deprecated on npm in favour of this package; no functional changes.
 
 ## [0.21.1] — 2026-07-31
 

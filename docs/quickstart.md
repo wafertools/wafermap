@@ -1,13 +1,13 @@
-# Quick Start — @paulrobins/wafermap
+# Quick Start — @wafertools/wafermap
 
 **For:** developers integrating the library. No wafermap knowledge assumed. **Next:** [Developer Guide](guide.md).
 
-`@paulrobins/wafermap` renders interactive wafer maps from semiconductor die test data — colour-coded by bin or parametric value, with a built-in toolbar, tooltips, and zoom.
+`@wafertools/wafermap` renders interactive wafer maps from semiconductor die test data — colour-coded by bin or parametric value, with a built-in toolbar, tooltips, and zoom.
 
 ## Install
 
 ```bash
-npm install @paulrobins/wafermap
+npm install @wafertools/wafermap
 ```
 
 ## Minimal example
@@ -27,8 +27,8 @@ Copy this into an HTML file and open it in a browser. No bundler required.
   <div id="map" style="width:600px; height:600px;"></div>
 
   <script type="module">
-    import { buildWaferMap }  from 'https://esm.sh/@paulrobins/wafermap';
-    import { renderWaferMap } from 'https://esm.sh/@paulrobins/wafermap/render';
+    import { buildWaferMap }  from 'https://esm.sh/@wafertools/wafermap';
+    import { renderWaferMap } from 'https://esm.sh/@wafertools/wafermap/render';
 
     // x, y are integer die grid positions output by the prober — NOT millimetres.
     // hbin is the hard bin: the pass/fail category assigned by the test equipment.

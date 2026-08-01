@@ -1576,7 +1576,7 @@ export function buildView(
  *
  * Re-exported from `core/dies.ts`, where the canonical implementation lives so
  * that `stats/` and `canvas-adapter/` can share it without depending on
- * `renderer/`. Kept exported here to preserve the public `@paulrobins/wafermap/renderer`
+ * `renderer/`. Kept exported here to preserve the public `@wafertools/wafermap/renderer`
  * entry point.
  */
 export { getDieKey } from '../core/dies.js';

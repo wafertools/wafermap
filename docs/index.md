@@ -11,12 +11,12 @@ hide:
 A JavaScript library for rendering interactive wafer maps from semiconductor test data. Hard bins, soft bins, test values, retest runs, edge exclusion, and spec limits are native inputs — no pre-processing required.
 
 ```bash
-npm install @paulrobins/wafermap
+npm install @wafertools/wafermap
 ```
 
 ```ts
-import { buildWaferMap } from '@paulrobins/wafermap';
-import { renderWaferMap } from '@paulrobins/wafermap/render';
+import { buildWaferMap } from '@wafertools/wafermap';
+import { renderWaferMap } from '@wafertools/wafermap/render';
 
 const result = buildWaferMap({ results });
 renderWaferMap(document.getElementById('map'), result);
