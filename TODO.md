@@ -2,6 +2,33 @@
 
 Items here are ideas or half-designed features that need more thought before implementation.
 
+Convention (borrowed from `../tsmap/IDEAS.md`, which does this well): when an item
+is done, check it off (`[x]`) and add a one-line implementation note or commit
+reference rather than deleting the entry — the history of *why* something was
+done the way it was is the useful part.
+
+---
+
+## Extract the shared screenshot harness
+
+**Idea:** `scripts/capture-screenshots.mjs` here (706 lines) and
+`../tsmap/scripts/capture-screenshots.mjs` (827 lines) are the same harness —
+static file server, headless Chromium, the setup-step vocabulary, `--only` /
+`--list` filtering — pointed at different apps. Only the *definitions*
+(`capture-definitions.mjs`) are legitimately per-project.
+
+**Why it hasn't been done:** it needs a home. Neither repo should depend on the
+other for a build script, so it would mean a third published (or vendored)
+package for what is currently ~500 shared lines. Both files now carry a
+`FORKED —` header noting the duplication so it isn't mistaken for accidental.
+
+**Open questions:**
+
+1. Vendor a copy into both (status quo, but with the header) vs. a real
+   `@wafertools/capture-harness` package?
+2. If a package: does it pull `playwright` into the dependency tree of a
+   library that currently has no runtime deps at all?
+
 ---
 
 ## Gallery card removal (× button)

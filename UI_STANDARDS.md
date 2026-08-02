@@ -5,6 +5,16 @@ Internal engineering doc — not part of the published docs site. For contributo
 `packages/canvas-adapter/toolbar.ts`, `charts/*.ts`, `renderWaferMap.ts`,
 `renderWaferGallery.ts`, `summaryPanel.ts`, `insightsTab.ts`.
 
+**This is also the baseline for [tsmap](../tsmap) — it is the single copy for
+both projects, not a wmap-only document.** The "Baseline standards" and
+"Checklist for any new custom widget" sections below are project-agnostic and
+apply equally to tsmap's `menuSelect.ts`, help/recent popups, and full-screen
+overlays. Only the "Existing project conventions" section is wmap-specific
+(`CLR` / `--wmap-*` tokens); tsmap's counterpart vocabulary — its
+`--z-modal`/`--z-tooltip` scale, theme tokens, and cross-platform CSS rules —
+lives in [`../tsmap/CLAUDE.md`](../tsmap/CLAUDE.md) §Styling. Keep both sides
+cross-referenced when either changes.
+
 This does not cover semiconductor-domain display correctness (labelling,
 aggregation, terminology) — that's in [CLAUDE.md](CLAUDE.md)'s own Design
 Principles section. This is about the UI being a *correctly-behaved* piece of

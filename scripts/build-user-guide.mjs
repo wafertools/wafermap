@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+// FORKED BY DESIGN — ../tsmap/scripts/build-user-guide.mjs shares this name but
+// is a different program and must not be reconciled with it: this one emits a TS
+// module embedded in the published bundle, tsmap's emits a standalone offline
+// HTML page opened in a real browser. Same input format, deliberately different
+// output. Do not "sync" them.
+//
 // Converts docs/user-guide.md → packages/canvas-adapter/userGuideHtml.ts
 // Run via: node scripts/build-user-guide.mjs
 // Also called automatically as part of `npm run build`.

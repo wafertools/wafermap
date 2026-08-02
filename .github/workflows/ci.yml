@@ -5,18 +5,23 @@ on:
     branches:
       - main
   pull_request:
+  # Reusable: deploy.yml calls this so the docs site is never published from a
+  # tree that fails typecheck, tests, or the pack check.
+  workflow_call:
 
 jobs:
   test-and-pack:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        # Must match the version deploy.yml builds the site with — otherwise the
+        # version validated here is not the version actually shipped.
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install

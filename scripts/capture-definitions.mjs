@@ -1,6 +1,11 @@
 /**
  * Capture definitions — add new screenshots here.
  *
+ * NOT shared with ../tsmap/scripts/capture-definitions.mjs, and never should be:
+ * this file is data, not logic — the list of pages and UI states to shoot for
+ * *this* project. The same-named file over there describes tsmap's overlays.
+ * Only their harness (capture-screenshots.mjs) has anything in common.
+ *
  * Each entry:
  *   page          — path under /docs/ (served as /path)
  *   file          — output filename in docs/images/ (no extension)
