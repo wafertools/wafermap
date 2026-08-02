@@ -1,5 +1,7 @@
 # wafermap
 
+<img src="docs/images/wafermap-readme-header-256.png" width="64" height="64" alt="wafermap icon">
+
 [![CI](https://github.com/wafertools/wafermap/actions/workflows/ci.yml/badge.svg)](https://github.com/wafertools/wafermap/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@wafertools/wafermap.svg)](https://www.npmjs.com/package/@wafertools/wafermap)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)

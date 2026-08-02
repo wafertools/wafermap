@@ -70,6 +70,8 @@ nav = [
 ]
 
 [project.theme]
+favicon = "images/wafermap-favicon.ico"
+logo    = "images/wafermap-readme-header-256.png"
 features = [
   "navigation.tabs",
   "navigation.sections",
