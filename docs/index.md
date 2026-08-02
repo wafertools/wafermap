@@ -70,3 +70,7 @@ renderWaferMap(document.getElementById('map'), result);
 **Analysis.** `analyzeWaferMap` runs spatial analysis across rings, quadrants, sectors, and reticle positions, and detects contiguous failure clusters and edge arcs. `analyzeWaferLot` adds lot-level trend series and cross-wafer patterns. Results wire directly into the summary panel.
 
 **Integration.** Pure ES modules, no server, no runtime dependencies. Works in React, Svelte, Vue, plain HTML, or a Web Worker.
+
+## Community
+
+Questions, ideas, or want to show off a wafer map you built? Use [GitHub Discussions](https://github.com/wafertools/.github/discussions).

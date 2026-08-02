@@ -14,6 +14,11 @@ Browser-first wafer map visualization for semiconductor test data.
 
 **[Project Portal: Docs & Interactive Demos →](https://wafertools.github.io/wafermap/)**
 
+## Community
+
+Questions, ideas, or want to show off a wafer map you built? Use [GitHub
+Discussions](https://github.com/wafertools/.github/discussions).
+
 ## Overview
 
 wafermap renders interactive wafer maps from semiconductor prober output. Hard bins, soft bins, test values, retest runs, edge exclusion, and spec limits are native inputs.
