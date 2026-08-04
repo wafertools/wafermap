@@ -8,6 +8,11 @@ export { renderWaferGallery } from './renderWaferGallery.js';
 export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 
 export type { SummaryPanelOptions } from './summaryPanel.js';
+// Warning surfacing — `WarningsOptions` configures the built-in indicator and
+// the `onWarning` stream; `collectWarnings` is exported so a host that turns the
+// UI off can reproduce exactly the set the library would have shown.
+export { collectWarnings, severityOf } from './warnings.js';
+export type { WarningsOptions } from './warnings.js';
 export type { InsightsOptions, InsightsView } from './insightsTab.js';
 
 // setDetachWindowOpener is one of two toolbar.ts exports exposed publicly —

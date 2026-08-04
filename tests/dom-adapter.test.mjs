@@ -1660,3 +1660,144 @@ test('renderWaferGallery: clicking a metadata legend swatch toggles highlightMet
     cleanup();
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toolbar overflow.
+//
+// The toolbar is pinned by its RIGHT edge, so with no width bound its overflow
+// grows leftward — out of the container and across whatever sits beside it. It
+// had always been wider than a ~400px container; adding the warning indicator
+// pushed the threshold to ~467px and made it visible in a 3-up demo, where each
+// map's toolbar ran across its neighbour.
+//
+// jsdom does no layout, so this asserts the constraint is DECLARED rather than
+// measuring the result. Real widths are checked in a browser; this is the guard
+// that stops the declaration being dropped in an unrelated edit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('renderWaferMap toolbar is width-bounded so it cannot overflow across neighbouring content', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '300px', height: '300px' });
+    root.appendChild(container);
+
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, hbin: 1 },
+        { x: 1, y: 0, hbin: 2 },
+        { x: 0, y: 1, hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+
+    renderWaferMap(container, wafer, {});
+
+    const toolbar = container.querySelector('[data-wmap-toolbar="single"]');
+    assert.ok(toolbar, 'expected a toolbar');
+
+    assert.ok(
+      /calc\(100% - \d+px\)|100%/.test(toolbar.style.maxWidth),
+      `toolbar needs a max-width bound relative to its container, got '${toolbar.style.maxWidth}'`,
+    );
+    assert.equal(
+      toolbar.style.flexWrap, 'wrap-reverse',
+      'toolbar must wrap rather than overflow, and wrap-REVERSE keeps the trailing '
+      + 'group (ending in Expand) on the top row where it always sits',
+    );
+    assert.equal(
+      toolbar.style.justifyContent, 'flex-end',
+      'rows stay right-aligned to match the toolbar\'s right-pinned edge',
+    );
+
+    // The toolbar's direct children are the control GROUPS, which is what makes
+    // it break on a group boundary instead of mid-group.
+    const groups = [...toolbar.children].filter(c => c.tagName === 'DIV');
+    assert.ok(groups.length >= 1, 'toolbar should be composed of group containers');
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap warning indicator: hidden when clean, shown with an accessible name when not', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    // A half-wafer with no geometry supplied raises 'partial-coverage'.
+    const results = [];
+    for (let x = 0; x <= 8; x++) {
+      for (let y = -8; y <= 8; y++) {
+        if (Math.hypot(x, y) > 8) continue;
+        results.push({ x, y, hbin: 1 });
+      }
+    }
+    const warned = buildWaferMap({ results, passBins: [1] });
+    assert.ok(warned.warnings.length > 0, 'fixture should raise a geometry advisory');
+
+    const c1 = window.document.createElement('div');
+    Object.assign(c1.style, { position: 'relative', width: '600px', height: '600px' });
+    root.appendChild(c1);
+    renderWaferMap(c1, warned, {});
+
+    const btn = [...c1.querySelectorAll('button')]
+      .find(b => (b.getAttribute('aria-label') ?? '').toLowerCase().includes('warning'));
+    assert.ok(btn, 'expected a warning indicator when the result carries advisories');
+    assert.notEqual(btn.style.display, 'none', 'indicator must be visible when there is something to say');
+    // Severity must not be conveyed by colour alone (WCAG 1.4.1).
+    assert.match(btn.getAttribute('aria-label'), /positionally wrong/,
+      'an error-severity advisory must say so in the accessible name, not just in red');
+
+    // Clean wafer → the indicator exists but stays hidden.
+    const clean = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }],
+      waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 }, passBins: [1],
+    });
+    assert.equal(clean.warnings.length, 0, 'fixture should be clean');
+
+    const c2 = window.document.createElement('div');
+    Object.assign(c2.style, { position: 'relative', width: '600px', height: '600px' });
+    root.appendChild(c2);
+    renderWaferMap(c2, clean, {});
+
+    const hidden = [...c2.querySelectorAll('button')]
+      .find(b => (b.getAttribute('aria-label') ?? '').toLowerCase().includes('warning'));
+    assert.ok(!hidden || hidden.style.display === 'none',
+      'an unremarkable map must carry no visible warning chrome');
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferMap warnings display:false suppresses the indicator but still calls onWarning', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const results = [];
+    for (let x = 0; x <= 8; x++) {
+      for (let y = -8; y <= 8; y++) {
+        if (Math.hypot(x, y) > 8) continue;
+        results.push({ x, y, hbin: 1 });
+      }
+    }
+    const warned = buildWaferMap({ results, passBins: [1] });
+
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '600px', height: '600px' });
+    root.appendChild(container);
+
+    const seen = [];
+    renderWaferMap(container, warned, {
+      warnings: { display: false, onWarning: (w) => seen.push(w) },
+    });
+
+    const btn = [...container.querySelectorAll('button')]
+      .find(b => (b.getAttribute('aria-label') ?? '').toLowerCase().includes('warning'));
+    assert.ok(!btn, 'display:false must render no indicator at all');
+
+    // The host owns presentation, but the library still owns collection —
+    // turning the UI off must not turn the information off.
+    assert.equal(seen.length, 1, 'onWarning fires once on mount');
+    assert.ok(seen[0].some(w => w.code === 'partial-coverage'));
+  } finally {
+    cleanup();
+  }
+});

@@ -229,6 +229,16 @@ so for any partial dataset set `waferConfig.center` explicitly rather than relyi
 on the warning. (`result.inference.warnings` is a deprecated string-array mirror
 of the same messages — use `result.warnings` in new code.)
 
+You do not have to display this yourself. `renderWaferMap` and `renderWaferGallery`
+show a ⚠ indicator in the toolbar whenever the result carries advisories, so an
+engineer looking at a map built on guessed geometry is told so on screen. Geometry
+advisories are severity `'error'` — they mean dies may be drawn in the wrong place,
+not that a feature is missing. If your app already has its own notification system,
+pass `warnings: { display: false, onWarning }` and render them yourself; the library
+still does the collecting and de-duplicating. See [API §5.10](api.md#warningsoptions).
+
+**→ [Demo: Warnings the library surfaces](examples/geometry.html#warnings)**
+
 ### Edge exclusion
 
 ```ts
@@ -264,7 +274,7 @@ buildWaferMap({
 
 ![Four maps showing geometry inference levels](images/guide-geometry-inference.png)
 
-**→ [Demo: Partial data](examples/partial-data.html)**
+**→ [Demo: Partial data](examples/geometry.html#centre-anchoring)**
 
 
 ![Partial data — sparse die coverage with anchored centre](images/guide-geometry-partial-data.png)
@@ -1085,8 +1095,8 @@ The **test-value row is off by default** because it is the expensive one — it 
 
 `enableTestValueAnalysis` also produces the per-test descriptive stats, so you never need both. The cost multipliers are illustrative (measured at ~2.8k dies × 200 tests); the absolute numbers scale with your test count.
 
-**→ [Demo: Summary panel](examples/summary-panel.html)** uses `computePerTestStats: true` to populate the per-test value section of the panel.  
-See also: **[Demo: Standalone stacked map with spatial analysis](examples/lot-stack-analysis.html)**, which uses `enableTestValueAnalysis: true` to surface regional test-value findings on a lot-averaged map.
+**→ [Demo: Summary panel](examples/statistics.html#summary-panel)** uses `computePerTestStats: true` to populate the per-test value section of the panel.  
+See also: **[Demo: Standalone stacked map with spatial analysis](examples/statistics.html#lot-stack)**, which uses `enableTestValueAnalysis: true` to surface regional test-value findings on a lot-averaged map.
 
 #### Cluster and edge-arc highlights
 
@@ -1125,6 +1135,32 @@ for (const finding of summary.findings) {
 `summary.findings` is sorted by severity — `'unusual'` first, then `'notable'`, then `'info'`.
 `findings[0]` is always the highest-severity finding; no manual sort needed.
 
+#### De-duplicating for display
+
+`summary.findings` is the **complete** list, including findings that restate one
+another. Several passes legitimately detect the same phenomenon, so one edge
+failure can appear as a hard-bin row, its soft-bin twin with an identical delta,
+a pass-bin row, and a yield row saying the same thing as the pass-bin row.
+
+The library marks these: a finding's `absorbedIds` names the findings it
+restates. The built-in panel and report hide them; if you are driving your own
+UI, do the same, or you will show one fact several times:
+
+```ts
+const absorbed = new Set(summary.findings.flatMap(f => f.absorbedIds ?? []));
+const forDisplay = summary.findings.filter(f => !absorbed.has(f.id));
+```
+
+The surviving finding's `summary` names what it absorbed — for example
+`"Ring 4 (edge) has hard bin 3 and soft bin 3 (same dies) occurrence 8.8
+percentage points higher…"` — so nothing is silently lost from the sentence.
+Everything absorbed is still in `summary.findings` and still returned by
+`filterFindings`; the collapse is display-only.
+
+Note `relatedIds` is a *different* relationship and is not interchangeable: it
+records a finding's finer-grained supporting detail, and some of the ids it names
+were replaced by a merge and no longer exist in `findings`.
+
 ### Updating findings after a data change
 
 ```ts
@@ -1157,7 +1193,7 @@ select or colour dies associated with the finding.
 For running the stats engine in Node.js without a browser, see the
 [recipe in §19](#analyse-a-lot-in-nodejs-without-a-browser).
 
-**→ [Demo: Statistical findings](examples/findings.html)**
+**→ [Demo: Statistical findings](examples/statistics.html#findings)**
 
 
 ![Findings panel open with first finding selected](images/guide-findings-panel.png)
@@ -1257,7 +1293,7 @@ renderWaferGallery(container, items);
 // → Each card's own window shows its own per-wafer summary
 ```
 
-**→ [Demo: Summary panel](examples/summary-panel.html)**
+**→ [Demo: Summary panel](examples/statistics.html#summary-panel)**
 
 
 ![Summary panel open on single wafer](images/guide-summary-panel.png)
@@ -1415,8 +1451,8 @@ summary — detach the card into its own window and click the findings button to
 see ring, quadrant, sector, and cluster findings on the aggregated map.  No extra
 code is required.
 
-**→ [Demo: Building a lot gallery](examples/gallery.html)**  
-See also: [Demo: Lot-level findings with stacked modes](examples/lot-findings.html)
+**→ [Demo: Building a lot gallery](examples/statistics.html#lot-gallery)**  
+See also: [Demo: Lot-level findings with stacked modes](examples/statistics.html#lot-findings)
 
 ![Gallery in Stacked Hard Bins mode — one card per bin aggregated across the lot](images/guide-gallery-stacked-bins.png)
 
@@ -1474,7 +1510,7 @@ const newLotSummary = analyzeWaferLot(newResults);
 ctrl.setLotStatsSummary(newLotSummary);
 ```
 
-**→ [Demo: Lot-level statistical findings](examples/lot-findings.html)**
+**→ [Demo: Lot-level statistical findings](examples/statistics.html#lot-findings)**
 
 
 ![Lot findings gallery with panel open](images/guide-lot-findings-gallery.png)
@@ -1588,7 +1624,7 @@ Histogram, correlation, and scatter each draw one shared chart rather than one p
 
 Clicking a leaf row in the yield bar or the box plot opens that wafer in a modal. A box-plot click is context-aware: it opens the wafer already in **test-value mode on the test you were looking at**, not the toolbar's default plot mode — so drilling from "Idsat" in the box plot lands you on the Idsat colour map, not a hard-bin view you'd have to switch away from.
 
-**→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/gallery.html)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
+**→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
 
 ## 15. Reticle overlays
 
@@ -1848,7 +1884,7 @@ ctrl.setOptions({ colorScheme: 'my-brand' });
 Register your schemes once, before any `renderWaferMap` call.
 They are global and persist for the lifetime of the page.
 
-**→ [Demo: Custom colour schemes](examples/color-schemes.html)**
+**→ [Demo: Custom colour schemes](examples/display-control.html#custom-schemes)**
 
 
 ![Colour scheme dropdown open on three-wafer layout](images/guide-color-schemes.png)
@@ -2137,7 +2173,7 @@ For cluster and edge-arc detection, dies that exceed a test's spec limits
 (`limitLow` / `limitHigh` in `testDefs`) are used as the failure proxy. If no spec
 limits are defined, cluster detection is skipped automatically.
 
-**→ [Demo: Standalone stacked map with spatial analysis](examples/lot-stack-analysis.html)**
+**→ [Demo: Standalone stacked map with spatial analysis](examples/statistics.html#lot-stack)**
 
 
 ## 20. Advanced: the rendering pipeline

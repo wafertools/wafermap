@@ -15,6 +15,7 @@ import type { BinDef } from '../renderer/buildWaferMap.js';
 import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
+import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { compareNatural } from '../core/utils.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent } from './summaryPanel.js';
@@ -51,6 +52,13 @@ export interface WaferMapDisplayItem {
   testDefs?:  import('../renderer/buildWaferMap.js').TestDef[];
   metadataFields?: import('../renderer/buildWaferMap.js').MetadataFieldDef[];
   reticles?:  import('../core/reticle.js').Reticle[];
+  /**
+   * Geometry advisories carried from `buildWaferMap`. Present automatically when
+   * an item is spread from a `WaferMapResult` (the usual `{ ...result, label }`
+   * shape); the gallery collects them across cards and surfaces them once in the
+   * lot bar's warning indicator.
+   */
+  warnings?: import('../renderer/buildWaferMap.js').WaferWarning[];
 
   // Lot-stack context carried from buildWaferMap (or set by the gallery on synthetic stacked
   // cards). Drives the map title's "(N wafers · method)" qualifier so a stacked card is
@@ -187,6 +195,12 @@ export interface GalleryOptions {
    * recomputing it — no other host wiring beyond this option.
    */
   insights?:               InsightsOptions;
+  /**
+   * Built-in surfacing of the library's own data warnings (see `WarningsOptions`).
+   * Defaults on. The gallery collects across every item and de-duplicates, so a
+   * geometry advisory affecting the whole lot is stated once, not per card.
+   */
+  warnings?:               WarningsOptions;
 }
 
 export interface GalleryController {
@@ -650,6 +664,7 @@ ${reportStyles()}
         colorScheme:    sharedOpts.colorScheme,
         fallbackFormat: currentFallbackFormat,
         activeFindingId: activeLotFindingId,
+        warnings: (options.warnings?.display ?? true) ? currentWarnings : [],
         findingsFilter: lotFindingsFilter,
         onFindingsFilterChange: renderGallerySummaryPanel,
         onSaveText: options.onSaveText,
@@ -1030,6 +1045,64 @@ ${reportStyles()}
       barEl.appendChild(btnLotSummary);
     }
   }
+
+  // Warning indicator — one per gallery, not one per card. The same geometry
+  // advisory legitimately fires on every wafer of a lot; twenty identical
+  // badges would bury the one that differs, so collectWarnings de-duplicates
+  // and the lot bar states each distinct problem once.
+  let btnWarnings: HTMLButtonElement | null = null;
+  let btnWarningsSep: HTMLDivElement | null = null;
+  let currentWarnings: WaferWarning[] = [];
+  let warningsNotified = false;
+
+  function refreshGalleryWarnings(): void {
+    const next = collectWarnings({
+      lotStatsSummary: currentLotStats,
+      // Per-item geometry advisories live on the items themselves — each card is
+      // a built WaferMapResult, so `warnings` is already on it.
+      result: { warnings: originalItems.flatMap(it => it?.warnings ?? []) },
+    });
+    const changed = next.length !== currentWarnings.length
+      || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
+    currentWarnings = next;
+    if (changed || !warningsNotified) {
+      warningsNotified = true;
+      options.warnings?.onWarning?.(next);
+    }
+    syncWarningButton();
+  }
+
+  function syncWarningButton(): void {
+    if (!btnWarnings || !btnWarningsSep) return;
+    const count = currentWarnings.length;
+    const show  = count > 0;
+    btnWarnings.style.display    = show ? 'flex' : 'none';
+    btnWarningsSep.style.display = show ? '' : 'none';
+    if (!show) return;
+    const worst = severityOf(currentWarnings[0]);
+    const label = `${count} data ${count === 1 ? 'warning' : 'warnings'}`;
+    btnWarnings.style.color = worst === 'error' ? CLR.errText : CLR.warnText;
+    btnWarnings.ariaLabel = worst === 'error'
+      ? `${label} — wafers in this lot may be positionally wrong`
+      : label;
+  }
+
+  if (options.warnings?.display ?? true) {
+    btnWarningsSep = makeSep();
+    btnWarnings = makeBtn('warning', 'Data warnings', () => {
+      const existing = getOpenMenu();
+      closeOpenMenu(new MouseEvent('click'));
+      if (existing) return;
+      const menu = buildWarningsMenuEl(btnWarnings!.getBoundingClientRect(), currentWarnings);
+      overlayRootFor(container).appendChild(menu);
+      setOpenMenu(menu);
+      wireMenuA11y(menu, btnWarnings!, () => closeOpenMenu(new MouseEvent('click')));
+    });
+    markMenuTrigger(btnWarnings, false);
+    barEl.appendChild(btnWarningsSep);
+    barEl.appendChild(btnWarnings);
+  }
+  refreshGalleryWarnings();
 
   // Insights tab — toggles between the gallery grid and wmap's own chart
   // suite. Mutually exclusive with the grid view (not just an overlay),
@@ -2467,6 +2540,9 @@ ${reportStyles()}
 
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {
       currentLotStats = summary;
+      // Lot analysis raises its own advisories (the test-count cap among them),
+      // so a summary arriving late can introduce warnings the bar has not shown.
+      refreshGalleryWarnings();
       if (gallerySummaryPanelEl) renderGallerySummaryPanel();
       refreshLotSummaryButton();
     },

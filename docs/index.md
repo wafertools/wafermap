@@ -38,6 +38,7 @@ renderWaferMap(document.getElementById('map'), result);
 
 **Evaluating the library?** Judge it quickly:
 
+- [**Download the examples package**](wafermap-examples.zip) — every example plus the bundled library, running on your own machine in about a minute. No npm, no network.
 - [Showcase](examples/showcase.html) — all features on one page
 - [wafermap vs Plotly.js](examples/comparison.html) — side-by-side timings and features
 - [Performance](performance.md) — measured cost by wafer size and option

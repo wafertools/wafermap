@@ -1,4 +1,6 @@
-import type { WaferMapInput, WaferMapResult } from '../renderer/buildWaferMap.js';
+import type { WaferMapInput, WaferMapResult, WaferWarning } from '../renderer/buildWaferMap.js';
+
+export type { WaferWarning };
 
 export type StatsSeverity = 'info' | 'notable' | 'unusual';
 export type StatsLevel = 'wafer' | 'lot' | 'inter-wafer';
@@ -85,8 +87,25 @@ export interface StatsFinding {
   };
   summary: string;
   highlight: HighlightTarget;
-  /** IDs of other findings that describe the same signal at a finer level of detail. */
+  /**
+   * IDs of other findings that describe the same signal at a finer level of
+   * detail. Note these do NOT all resolve to entries in `findings`: when a run
+   * of per-region findings is merged into one (e.g. `Rings 3–4`), this is the
+   * audit trail of the constituents it REPLACED, and those no longer exist.
+   */
   relatedIds?: string[];
+  /**
+   * IDs of findings that state exactly the same fact as this one and are
+   * therefore hidden from reading surfaces (the Summary panel, the findings
+   * report) in favour of it.
+   *
+   * Distinct from `relatedIds` deliberately: everything named here IS still
+   * present in `findings` and can be read programmatically — nothing is
+   * discarded, it is only de-duplicated for display. Two cases are collapsed:
+   * a soft-bin finding whose hard-bin twin covers provably the same dies, and
+   * the single pass bin's row against the yield row that restates it.
+   */
+  absorbedIds?: string[];
 }
 
 export interface StatsSummary {
@@ -117,8 +136,20 @@ export interface StatsSummary {
      */
     hardBinCounts?: Record<number, number>;
     softBinCounts?: Record<number, number>;
-    /** Structured warnings emitted during analysis (e.g. test-count cap exceeded). */
-    warnings?: string[];
+    /**
+     * Structured advisories raised during analysis — the same `WaferWarning`
+     * shape used by `WaferMapResult.warnings`, so a host has one warning
+     * vocabulary to handle rather than two. Branch on `warning.code`.
+     *
+     * The one raised today is `'test-count-capped'`: more tests were found than
+     * the analysis cap allows, so test-value analysis was skipped and no test
+     * findings exist. That is a silent absence — nothing throws — so check this
+     * rather than assuming an empty findings list means "nothing to report".
+     *
+     * `renderWaferMap`/`renderWaferGallery` surface these automatically in the
+     * toolbar's warning indicator; a host does not have to render them itself.
+     */
+    warnings?: WaferWarning[];
     /** True when this summary was produced from lot-aggregated data (lotStack). */
     isLotStack?: boolean;
     /** Aggregation method used to produce the lot-stack (e.g. 'mean', 'countBin'). Present only when isLotStack is true. */

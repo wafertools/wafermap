@@ -88,7 +88,14 @@ export function renderFindingsReportHtml(
   const isLot = summary.level === 'lot';
   const title = options.title ?? (isLot ? 'Lot Findings Report' : 'Wafer Findings Report');
   const generatedAt = new Date().toLocaleString();
-  const findings = summary.findings;
+  // Drop findings another finding has claimed as an exact restatement of itself
+  // (a soft-bin twin covering the same dies, the single pass bin's row against
+  // the yield row). The claimer's label names what it absorbed, so listing both
+  // would print the same fact twice — once merged, once not. Matches what the
+  // Summary panel shows; the full list is still on `summary.findings` for any
+  // host that wants it.
+  const claimedIds = new Set(summary.findings.flatMap(f => f.absorbedIds ?? []));
+  const findings = summary.findings.filter(f => !claimedIds.has(f.id));
   const totalWafers = summary.level === 'lot' ? summary.stats.waferCount : undefined;
   const narrativeText = plainBinTerms(buildFindingsNarrative(findings) ?? '');
   const narrativeParagraph = narrativeText

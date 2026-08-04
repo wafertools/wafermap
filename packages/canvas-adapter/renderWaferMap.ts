@@ -13,6 +13,7 @@ import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
 } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
+import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { prettyKey } from '../stats/facets.js';
 import { ICONS } from './icons.js';
 import { hardBinColor, softBinColor, metadataValueColor } from '../renderer/colorMap.js';
@@ -274,6 +275,19 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * group by).
    */
   insights?: InsightsOptions;
+  /**
+   * Built-in surfacing of the library's own data warnings (see `WarningsOptions`).
+   *
+   * Defaults to showing them: the library raises geometry advisories that mean
+   * dies may be drawn in the wrong place, and analysis advisories that mean a
+   * feature silently produced nothing. It has the information, so telling the
+   * user is its responsibility rather than the caller's.
+   *
+   * Hosts with their own notification system should pass
+   * `{ display: false, onWarning }` — the library still collects, de-duplicates
+   * and severity-orders, and the host owns only presentation.
+   */
+  warnings?: WarningsOptions;
 }
 
 export interface WaferMapController {
@@ -413,10 +427,16 @@ export function renderWaferMap(
     showExpandButton     = true,
     zIndex,
     insights:            insightsOpts,
+    warnings:            warningsOpts,
     viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
   const insightsEnabled = insightsOpts?.enabled ?? false;
+
+  // Warnings default to ON. The library knows the map may mislead; telling the
+  // user is its job, not the caller's. Hosts with their own notification UI opt
+  // out via `warnings: { display: false }` and read `onWarning` instead.
+  const warningsDisplay = warningsOpts?.display ?? true;
 
   // Host-supplied overlay stacking (no-op when zIndex is undefined; safe high
   // default applies). Restored on destroy() via the returned disposer.
@@ -424,6 +444,28 @@ export function renderWaferMap(
 
   let currentFallbackFormat = drawOptions.fallbackFormat;
   let currentStatsSummary = options.statsSummary;
+
+  // Collected once from every source the library has — geometry advisories on
+  // the result AND analysis advisories on the summary. Recomputed whenever the
+  // stats summary changes so the indicator, the panel banner and `onWarning`
+  // can never drift apart.
+  let currentWarnings: WaferWarning[] = [];
+  let warningsNotified = false;
+  function refreshWarnings(): void {
+    const next = collectWarnings({ result, statsSummary: currentStatsSummary });
+    const changed = next.length !== currentWarnings.length
+      || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
+    currentWarnings = next;
+    // Always fire once on mount, even with an empty list, so a host can clear
+    // its own display without having to special-case "never called".
+    if (changed || !warningsNotified) {
+      warningsNotified = true;
+      warningsOpts?.onWarning?.(next);
+    }
+  }
+  // Before anything that reads currentWarnings — the summary panel can mount
+  // ahead of the toolbar when `summaryPanel.placement` is set.
+  refreshWarnings();
   let currentResult = result;
 
   // ── Mutable state ──────────────────────────────────────────────────────────
@@ -690,6 +732,9 @@ export function renderWaferMap(
       dataCoverage: currentResult.dataCoverage,
       hbinDefs, sbinDefs, testDefs,
       statsSummary: currentStatsSummary,
+      // Same collected set the toolbar indicator shows — including the geometry
+      // advisories, which no UI surfaced before.
+      warnings: warningsDisplay ? currentWarnings : [],
       passBins,
       ringCount: viewOpts.ringCount ?? 4,
       colorScheme: viewOpts.colorScheme,
@@ -780,6 +825,27 @@ export function renderWaferMap(
   let btnExpand:        HTMLButtonElement | null = null;
   let btnHelp:          HTMLButtonElement | null = null;
   let btnInsights:   HTMLButtonElement | null = null;
+  let btnWarnings:   HTMLButtonElement | null = null;
+  let btnWarningsSep: HTMLDivElement | null = null;
+
+  /** Reflect `currentWarnings` onto the toolbar indicator (hidden when empty). */
+  function syncWarningButton(): void {
+    if (!btnWarnings || !btnWarningsSep) return;
+    const count = currentWarnings.length;
+    const show  = count > 0;
+    btnWarnings.style.display    = show ? 'flex' : 'none';
+    btnWarningsSep.style.display = show ? '' : 'none';
+    if (!show) return;
+
+    const worst = severityOf(currentWarnings[0]);
+    const label = `${count} data ${count === 1 ? 'warning' : 'warnings'}`;
+    // Colour carries severity, but never colour ALONE — the accessible name
+    // says it too (UI_STANDARDS.md / WCAG 1.4.1 Use of Color).
+    btnWarnings.style.color = worst === 'error' ? CLR.errText : CLR.warnText;
+    btnWarnings.ariaLabel = worst === 'error'
+      ? `${label} — the map may be positionally wrong`
+      : label;
+  }
   // Top clearance reserved on the canvas for the toolbar overlay.
   // toolbar sits at top:4px, is ~32px tall → bottom at ~36px; excess over canvas padding = 24px.
   const TOOLBAR_CLEARANCE = 24;
@@ -827,6 +893,29 @@ export function renderWaferMap(
         display:       'flex',
         flexDirection: 'row',
         alignItems:    'center',
+        // The toolbar is pinned by its RIGHT edge, so without a width bound its
+        // overflow grows leftward — straight out of the container and across
+        // whatever sits beside it (a neighbouring gallery card, the next map in
+        // a grid). It has always been wider than a ~400px container; every
+        // button added narrows the window further.
+        //
+        // Wrapping rather than scrolling or hiding: every control stays visible
+        // and reachable, no scrollbar appears inside a 28px-tall bar, and
+        // nothing has to decide which buttons are "less important" — a call this
+        // library is badly placed to make, since the warning indicator is the
+        // one most worth keeping and the least used.
+        // wrap-REVERSE, not wrap. The toolbar's direct children are the two
+        // control groups (map tools, then view controls), so it already breaks
+        // on a group boundary rather than mid-group. But plain `wrap` puts the
+        // FIRST group on top, which pushes Expand — always the top-right control
+        // — down to a second row. wrap-reverse stacks the lines the other way, so
+        // the trailing group stays on top and Expand keeps its corner.
+        //
+        // Rows stay right-aligned (flex-end) to match the toolbar's own
+        // right-pinned edge; the slack falls on the left of the lower row.
+        flexWrap:       'wrap-reverse',
+        justifyContent: 'flex-end',
+        maxWidth:       'calc(100% - 8px)',
         background:    CLR.menuBg,
         border:        `1px solid ${CLR.menuBorder}`,
         borderRadius:  '4px',
@@ -867,7 +956,11 @@ export function renderWaferMap(
       // Base map tools (camera/zoom/pan/select) — wrapped so they can be hidden
       // as a group while the Insights tab is open (see mapToolsEl declaration).
       mapToolsEl = document.createElement('div');
-      Object.assign(mapToolsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
+      // flexWrap here is a last resort, not the normal path: the toolbar wraps
+      // between groups first. It only engages when a SINGLE group is wider than
+      // the container (~230px), where splitting the group is still better than
+      // spilling across neighbouring content.
+      Object.assign(mapToolsEl.style, { display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'wrap', justifyContent: 'flex-end' });
       toolbar.appendChild(mapToolsEl);
 
       // Camera first — leftmost
@@ -900,7 +993,7 @@ export function renderWaferMap(
       // whole group at once (used when reparenting a card into the expand modal).
       if (toolbarControls !== 'view-only') {
         sceneControlsEl = document.createElement('div');
-        Object.assign(sceneControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
+        Object.assign(sceneControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'wrap', justifyContent: 'flex-end' });
         toolbar.appendChild(sceneControlsEl);
 
         // Map-view-specific controls (mode, palette, overlays, legend, orientation)
@@ -1093,6 +1186,34 @@ export function renderWaferMap(
           // Set button active state to match initial panel visibility
           if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnSummary, true);
           refreshSummaryButton();
+        }
+
+        // Warning indicator. Deliberately NOT a toast: these are persistent
+        // conditions about whether the map can be trusted, and a message that
+        // dismisses itself leaves the map still wrong with no way back to the
+        // explanation. It is also hidden entirely when there is nothing to say,
+        // so an unremarkable map carries no extra chrome.
+        //
+        // Created unconditionally (when enabled) and shown/hidden by
+        // syncWarningButton: analysis raises its own advisories, so a
+        // statsSummary arriving after mount can introduce warnings that did not
+        // exist when this ran. Toggling visibility avoids rebuilding a toolbar
+        // that holds a lot of live button state.
+        if (warningsDisplay) {
+          btnWarningsSep = makeSep();
+          btnWarnings = makeBtn('warning', 'Data warnings', () => {
+            const existing = getOpenMenu();
+            closeOpenMenu(new MouseEvent('click'));
+            if (existing) return;
+            const menu = buildWarningsMenuEl(btnWarnings!.getBoundingClientRect(), currentWarnings);
+            overlayRootFor(mapBox).appendChild(menu);
+            setOpenMenu(menu);
+            wireMenuA11y(menu, btnWarnings!, () => closeOpenMenu(new MouseEvent('click')));
+          });
+          markMenuTrigger(btnWarnings, false);
+          sceneControlsEl!.appendChild(btnWarningsSep);
+          sceneControlsEl!.appendChild(btnWarnings);
+          syncWarningButton();
         }
 
         // Expand button — reparents canvas into a modal for a larger view.
@@ -2055,6 +2176,11 @@ export function renderWaferMap(
 
     setStatsSummary(summary: StatsSummary | undefined): void {
       currentStatsSummary = summary;
+      // Analysis raises its own advisories (e.g. the test-count cap), so a
+      // summary arriving late can introduce warnings that were not present when
+      // the toolbar was built. Rebuild it rather than leaving them unreachable.
+      refreshWarnings();
+      syncWarningButton();
       if (summaryPanelEl) {
         renderSummaryPanel();
       } else if (autoSummaryPanelEl) {

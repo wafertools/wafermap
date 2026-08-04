@@ -211,6 +211,6 @@ The component receives the full `WaferMapResult` as loader data and passes it st
 ## Further reading
 
 - [API reference](api.md)
-- [Statistical findings](examples/findings.html)
-- [Lot gallery](examples/gallery.html)
+- [Statistical findings](examples/statistics.html#findings)
+- [Lot gallery](examples/statistics.html#lot-gallery)
 - [Web Worker](examples/worker.html)

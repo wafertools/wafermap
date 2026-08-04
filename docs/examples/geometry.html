@@ -3,16 +3,53 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Die size and wafer geometry — wafermap guide</title>
+  <title>Geometry and inference — wafermap guide</title>
   <link rel="stylesheet" href="demo.css">
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
-    "wafermap":                "../dist/index.js",
-    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
   } }</script>
   <style>
-    /* Layout uses the shared .canvas-grid-4 (2×2) helper from demo.css. */
+    /* Layout uses the shared .canvas-grid-4 / -3 / -2 helpers from demo.css —
+       no bespoke grid here. Only demo-specific chrome below. */
+    .demo-content { flex-direction: column; overflow-y: auto; }
     .card-caption { font-size: 11px; }
+
+    .stage-heading {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin: 4px 0 -4px;
+    }
+    .stage-heading:not(:first-child) { margin-top: 18px; }
+    .stage-heading small {
+      display: block;
+      font-size: 11px;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--text-2);
+      margin-top: 4px;
+    }
+
+    /* Inference-status readouts surfaced from result.inference.warnings */
+    .warn-note, .ok-note {
+      font-size: 11px;
+      line-height: 1.45;
+      margin-top: 6px;
+      padding: 7px 9px;
+      border: 1px solid;
+      border-left-width: 3px;
+      border-radius: 4px;
+    }
+    .warn-note { border-color: #f59e0b; background: #fffbeb; color: #78350f; }
+    .warn-note strong { color: #92400e; }
+    .ok-note   { border-color: #22c55e; background: #f0fdf4; color: #14532d; }
+    .ok-note strong { color: #166534; }
   </style>
 </head>
 <body class="demo-page">
@@ -20,17 +57,33 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§4 — Die size and wafer geometry</span>
-    <span class="demo-desc">Four inference levels — same data, different geometry context</span>
+    <span class="demo-title">§4 — Geometry and inference</span>
+    <span class="demo-desc">How much geometry you supply, and what the library infers when you don't</span>
   </header>
 
   <div class="demo-intro">
-    The same die grid rendered four ways depending on how much geometry is supplied to <code>buildWaferMap</code>.
-    <strong>A</strong> — no geometry, normalized units. <strong>B</strong> — die size only, diameter inferred.
-    <strong>C</strong> — diameter only, pitch estimated, notch visible. <strong>D</strong> — fully specified with a 5 mm edge exclusion band (dimmed dies are excluded from yield).
+    <code>buildWaferMap</code> infers whatever geometry you leave out, working backwards
+    from the extent of your data. This page is that one question from three angles:
+    <strong>how much you supply</strong> (how the map changes as <code>dieConfig</code>
+    and <code>waferConfig</code> are filled in), <strong>when inference alone is not
+    enough</strong> (data that does not span the whole wafer, where the extent is a
+    misleading guide), and <strong>how you get told</strong> when the library knows the
+    geometry is a guess.
+    Cards A–G are all built from one identical <code>results</code> array.
   </div>
 
   <div class="demo-content">
+
+    <p class="stage-heading" id="inference">
+      Inference levels — same data, different geometry context
+      <small>
+        <strong>A</strong> — no geometry, normalized units.
+        <strong>B</strong> — die size only, diameter inferred.
+        <strong>C</strong> — diameter only, pitch estimated, notch visible.
+        <strong>D</strong> — fully specified with a 5 mm edge exclusion band (dimmed dies are excluded from yield).
+      </small>
+    </p>
+
     <div class="canvas-grid-4">
 
       <!-- Card A: nothing supplied → normalized units -->
@@ -75,16 +128,124 @@
       </div>
 
     </div>
+
+    <p class="stage-heading" id="centre-anchoring">
+      Centre anchoring — when inference needs help, and when it doesn't
+      <small>
+        Inference cannot tell a small full wafer apart from a slice of a big one.
+        <strong>E</strong> — a tested half-wafer with no geometry is mistaken for a small full wafer and mis-centred.
+        <strong>F</strong> — supplying <code>waferConfig.center</code> (the prober coordinate of the wafer centre) anchors it correctly.
+        <strong>G</strong> — <em>sparse</em> data is different: positions are missing but the extent still reaches the wafer edge, so centre and diameter resolve without a hint.
+        <br>
+        The notes under each card read <code>result.inference.warnings</code> directly. <strong>Hover card E</strong> and
+        you will also see the library's own ⚠ indicator in its toolbar — it raises <code>partial-coverage</code> and now
+        says so on screen, without the page doing anything (see the next section).
+      </small>
+    </p>
+
+    <div class="canvas-grid-3">
+
+      <!-- Card E: partial, no geometry → inference is wrong -->
+      <div class="canvas-card">
+        <div class="canvas-badge">E — partial, inferred (wrong)</div>
+        <div id="map-e"></div>
+        <div class="card-caption">
+          <strong>Half wafer, no geometry.</strong>
+          The right-half data is treated as a small full wafer and re-centred on its own midpoint.
+          <span id="diam-e"></span>
+          <div class="warn-note" id="warn-e"></div>
+        </div>
+      </div>
+
+      <!-- Card F: partial + center anchor → correct -->
+      <div class="canvas-card">
+        <div class="canvas-badge">F — partial, anchored (correct)</div>
+        <div id="map-f"></div>
+        <div class="card-caption">
+          <strong>Same half + waferConfig.center: { x: 0, y: 0 }</strong>, diameter 300, die 8×12 mm.
+          <code>center</code> anchors prober (0,0) to the true wafer centre, so the tested half sits on
+          the right side of a full 300 mm wafer.
+          <span id="diam-f"></span>
+          <div class="ok-note" id="ok-f"></div>
+        </div>
+      </div>
+
+      <!-- Card G: sparse but full extent → inference correct, no hints -->
+      <div class="canvas-card">
+        <div class="canvas-badge">G — sparse, inferred (correct)</div>
+        <div id="map-g"></div>
+        <div class="card-caption">
+          <strong>Every other row &amp; column; die 8×12 mm, no <code>center</code>.</strong>
+          Positions are missing across the whole wafer, but the extent still reaches the edge — so the
+          centre and diameter resolve correctly without a <code>center</code> hint.
+          <span id="diam-g"></span>
+          <div class="ok-note" id="ok-g"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="stage-heading" id="warnings">
+      Warnings the library surfaces itself
+      <small>
+        Bad geometry is only worth detecting if somebody is told. The library raises structured
+        advisories — <code>result.warnings</code> from inference, <code>summary.stats.warnings</code>
+        from analysis — and now shows them itself: a <strong>⚠ indicator appears in the toolbar</strong>
+        only when there is something to say. It is not a toast; these are persistent conditions about
+        whether the map can be trusted, so the explanation stays retrievable.
+        <strong>H</strong> — an analysis advisory (amber ⚠). <strong>I</strong> — the opt-out for apps
+        with their own notification UI.
+      </small>
+    </p>
+
+    <div class="canvas-grid-2">
+
+      <!-- Card H: analysis advisory, a different severity from the geometry ones -->
+      <div class="canvas-card">
+        <div class="canvas-badge">H — analysis advisory (warning)</div>
+        <div id="map-h"></div>
+        <div class="card-caption">
+          <strong>300 tests per die, above the analysis cap.</strong>
+          <code>analyzeWaferMap</code> computed <strong>no test findings at all</strong> — a silent
+          absence, since nothing throws and the map renders fine. Severity <strong>warning</strong>
+          (⚠ amber): what is drawn is correct, a feature just produced nothing. Geometry advisories
+          are <strong>error</strong> (⛔ red) instead, because the dies themselves may be misplaced.
+          <div class="ok-note" id="note-h"></div>
+        </div>
+      </div>
+
+      <!-- Card I: host owns presentation -->
+      <div class="canvas-card">
+        <div class="canvas-badge">I — host owns presentation</div>
+        <div id="map-i"></div>
+        <div class="card-caption">
+          <strong>warnings: { display: false, onWarning }</strong> — no toolbar indicator, but the
+          library still collects, de-duplicates and severity-orders, then hands the list over. The
+          box below was rendered by this page, not by wmap. Use this when your app already has a
+          notification system; use <code>collectWarnings</code> if you want the same set without
+          mounting a map at all.
+          <div class="ok-note" id="host-log">(waiting for onWarning…)</div>
+        </div>
+      </div>
+
+    </div>
+
   </div>
 
   <script type="module">
-    import { buildWaferMap }  from 'wafermap';
-    import { renderWaferMap } from 'wafermap/render';
+    import { buildWaferMap }   from 'wafermap';
+    import { renderWaferMap }  from 'wafermap/render';
+    import { analyzeWaferMap } from 'wafermap/stats';
     import { makeResults, HBIN_DEFS } from './data.js';
 
-    const results = makeResults({ seed: 3, edgeFail: true });
-    const shared  = { results, hbinDefs: HBIN_DEFS, passBins: [1] };
-    const opts    = { viewOptions: { plotMode: 'hardBin' }, showHelpButton: true };
+    // One dataset drives every card on the page. The only thing that varies is
+    // how much geometry each buildWaferMap call is told, and (below) how much of
+    // the data it is given.
+    const full   = makeResults({ seed: 3, edgeFail: true });
+    const shared = { results: full, hbinDefs: HBIN_DEFS, passBins: [1] };
+    const opts   = { viewOptions: { plotMode: 'hardBin' }, showHelpButton: true };
+
+    // ── Inference levels ──────────────────────────────────────────────────────
 
     // A — nothing supplied: normalized units, no physical scale
     {
@@ -118,6 +279,108 @@
         dieConfig:   { width: 8, height: 12 },
       });
       renderWaferMap(document.getElementById('map-d'), result, opts);
+    }
+
+    // ── Centre anchoring ──────────────────────────────────────────────────────
+
+    function status(id, warnings, okMessage) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (id.startsWith('warn')) {
+        if (warnings.length) el.innerHTML = `<strong>inference.warnings:</strong> ${warnings[0]}`;
+        else el.remove();
+      } else {
+        if (warnings.length === 0) el.innerHTML = `<strong>inference.warnings:</strong> ${okMessage}`;
+        else el.remove();
+      }
+    }
+
+    // E — partial (right half), no geometry: diameter and centre inferred from the
+    // data footprint, so the half-wafer is mistaken for a small full wafer.
+    {
+      const results = full.filter(d => d.x >= 0);
+      const result = buildWaferMap({ results, hbinDefs: HBIN_DEFS, passBins: [1] });
+      renderWaferMap(document.getElementById('map-e'), result, opts);
+      document.getElementById('diam-e').textContent =
+        `Inferred units: '${result.units}', diameter ≈ ${result.wafer.diameter.toFixed(1)} (not the true 300 mm).`;
+      status('warn-e', result.inference.warnings ?? []);
+    }
+
+    // F — same partial data, anchored with diameter + center: positioned correctly.
+    {
+      const results = full.filter(d => d.x >= 0);
+      const result = buildWaferMap({
+        results, hbinDefs: HBIN_DEFS, passBins: [1],
+        waferConfig: { diameter: 300, notch: { type: 'bottom' }, center: { x: 0, y: 0 } },
+        dieConfig:   { width: 8, height: 12 },
+      });
+      renderWaferMap(document.getElementById('map-f'), result, opts);
+      document.getElementById('diam-f').textContent =
+        `Result units: '${result.units}', diameter ${result.wafer.diameter} mm.`;
+      status('ok-f', result.inference.warnings ?? [], 'none — geometry is anchored, placement is correct.');
+    }
+
+    // G — sparse but full-extent (every other row & column), no geometry: the extent
+    // still reaches the wafer edge, so inference resolves the geometry correctly.
+    {
+      const results = full.filter(d => (d.x % 2 === 0) && (d.y % 2 === 0));
+      const result = buildWaferMap({
+        results, hbinDefs: HBIN_DEFS, passBins: [1],
+        dieConfig: { width: 8, height: 12 },
+      });
+      renderWaferMap(document.getElementById('map-g'), result, opts);
+      document.getElementById('diam-g').textContent =
+        `Inferred units: '${result.units}', diameter ${result.wafer.diameter} mm (correct).`;
+      status('ok-g', result.inference.warnings ?? [], 'none — full-extent coverage, geometry inferred correctly.');
+    }
+
+    // ── Warnings the library surfaces itself ──────────────────────────────────
+
+    // H — more tests than analyzeWaferMap will analyse. It returns NO test
+    // findings rather than a trimmed set, and records why in stats.warnings.
+    // Nothing throws, so without the indicator this is invisible.
+    {
+      const results = [];
+      for (let x = -7; x <= 7; x++) {
+        for (let y = -7; y <= 7; y++) {
+          if (Math.hypot(x, y) > 7) continue;
+          const testValues = {};
+          for (let t = 0; t < 300; t++) testValues[1000 + t] = Math.random();
+          results.push({ x, y, hbin: (x + y) % 4 === 0 ? 2 : 1, testValues });
+        }
+      }
+      const result = buildWaferMap({
+        results, hbinDefs: HBIN_DEFS, passBins: [1],
+        waferConfig: { diameter: 200, notch: { type: 'bottom' } },
+        dieConfig:   { width: 12, height: 12 },
+      });
+      const summary = analyzeWaferMap(result, { computePerTestStats: true });
+      renderWaferMap(document.getElementById('map-h'), result, { ...opts, statsSummary: summary });
+
+      const w = summary.stats.warnings?.[0];
+      document.getElementById('note-h').innerHTML = w
+        ? `<strong>stats.warnings[0].code:</strong> ${w.code} (severity: ${w.severity ?? 'warning'})`
+        : '<strong>stats.warnings:</strong> none';
+    }
+
+    // I — the library's own UI turned off, this page rendering the same set.
+    {
+      const results = full.filter(d => d.x >= 0);
+      const result  = buildWaferMap({ results, hbinDefs: HBIN_DEFS, passBins: [1] });
+      const log = document.getElementById('host-log');
+
+      renderWaferMap(document.getElementById('map-i'), result, {
+        ...opts,
+        warnings: {
+          display: false,
+          onWarning(warnings) {
+            log.innerHTML = warnings.length
+              ? warnings.map(w =>
+                  `<strong>[${w.severity ?? 'warning'}] ${w.code}</strong><br>${w.message}`).join('<br><br>')
+              : 'onWarning([]) — nothing to report';
+          },
+        },
+      });
     }
   </script>
 

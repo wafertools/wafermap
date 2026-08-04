@@ -1,7 +1,7 @@
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie, getDieKey} from '../core/dies.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest, type WaferMapResult } from '../renderer/buildWaferMap.js';
-import type { BinDef, TestDef } from '../renderer/buildWaferMap.js';
+import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 import type {
   AnalyzeWaferMapInput,
   AnalyzeWaferMapOptions,
@@ -801,7 +801,7 @@ function discoverTestNumbers(
   dies: Die[],
   explicit: number[] | undefined,
   testDefs: TestDef[] | undefined,
-): { testNumbers: number[]; warning?: string } {
+): { testNumbers: number[]; warning?: WaferWarning } {
   const parametricOnly = (numbers: number[]): number[] =>
     numbers.filter(tn => isParametricTest(testDefs?.find(td => td.testNumber === tn)));
   if (explicit) return { testNumbers: parametricOnly(explicit.slice().sort((a, b) => a - b)) };
@@ -819,12 +819,18 @@ function discoverTestNumbers(
   }
 
   if (capped) {
-    const warning =
-      `[wafermap] analyzeWaferMap: more than ${TEST_COUNT_WARN_THRESHOLD} tests found in die data. ` +
-      `Pass testNumbers: [...] in options to enable test value analysis for specific tests. ` +
-      `Auto-cap threshold is ${TEST_COUNT_WARN_THRESHOLD}.`;
-    console.warn(warning);
-    return { testNumbers: [], warning };
+    // Deliberately explicit that the OUTCOME is "no test findings at all", not
+    // "some tests were skipped". The failure is silent — findings are simply
+    // absent — so the message has to say so, since nothing else will.
+    const message =
+      `Test-value analysis was skipped: more than ${TEST_COUNT_WARN_THRESHOLD} tests were found ` +
+      `in the die data, so no test findings were computed. Pass testNumbers: [...] to ` +
+      `analyse specific tests.`;
+    console.warn(`[wafermap] analyzeWaferMap: ${message}`);
+    return {
+      testNumbers: [],
+      warning: { code: 'test-count-capped', message, severity: 'warning' },
+    };
   }
   return { testNumbers: parametricOnly([...testNumberSet].sort((a, b) => a - b)) };
 }
@@ -855,7 +861,7 @@ function buildTestValueFindings(
   regionFamily: StatsRegion[],
   defs: TestDef[] | undefined,
   options: ResolvedOptions,
-): { findings: RawFinding[]; warning?: string; activeTestNumbers?: number[] } {
+): { findings: RawFinding[]; warning?: WaferWarning; activeTestNumbers?: number[] } {
   const discovered = discoverTestNumbers(dies, options.testNumbers, defs);
   if (discovered.warning) return { findings: [], warning: discovered.warning };
   const activeTestNumbers = discovered.testNumbers;
@@ -1410,6 +1416,145 @@ function mergeAdjacentFindings(findings: RawFinding[], ctx: MergeContext): RawFi
   return [...passthrough, ...merged];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Redundancy collapse.
+//
+// The same physical phenomenon is legitimately detected by several independent
+// passes, and the findings list then restates one fact many times. On a wafer
+// with an edge failure the list can read:
+//
+//   Hard bin 1  -22.2 pp   Soft bin 1  -22.2 pp   Yield  -22.2 pp
+//   Hard bin 2   +8.1 pp   Soft bin 2   +8.1 pp
+//   Hard bin 3   +8.8 pp   Soft bin 3   +8.8 pp
+//
+// — seven rows for what an engineer would state in one sentence. Two exact
+// redundancies are responsible, and both are collapsed here by CLAIMING the
+// duplicate via `relatedIds` rather than deleting it: the panel and the report
+// hide claimed findings, while `filterFindings` and any host reading
+// `summary.findings` still see every finding individually. Nothing is lost.
+//
+// The merge conditions are deliberately structural, never "the numbers look the
+// same":
+//
+//  1. Hard/soft twins. Hard and soft bins are INDEPENDENT number spaces — "hard
+//     bin 3" and "soft bin 3" usually mean different things, and merging on the
+//     bin number would conflate two unrelated populations. They are merged only
+//     when the die sets are provably identical, computed from the dies.
+//
+//  2. Pass bin ≡ yield. When exactly one pass bin is configured, "hard bin 1
+//     occurrence is 22.2 pp lower" and "yield is 22.2 pp lower" are the same
+//     statement by definition. With several pass bins no single bin finding
+//     equals yield, so the rule correctly does not fire.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Hard/soft bin pairs whose die sets are exactly equal, as `"h:s"` keys.
+ * Only such pairs may be presented as one finding.
+ */
+function coincidentBinPairs(dies: EligibleDie[]): Set<string> {
+  const hard = new Map<number, Set<string>>();
+  const soft = new Map<number, Set<string>>();
+  for (const d of dies) {
+    const key = getDieKey(d);
+    if (d.hbin !== undefined && d.hbin !== null) {
+      (hard.get(d.hbin) ?? hard.set(d.hbin, new Set()).get(d.hbin)!).add(key);
+    }
+    if (d.sbin !== undefined && d.sbin !== null) {
+      (soft.get(d.sbin) ?? soft.set(d.sbin, new Set()).get(d.sbin)!).add(key);
+    }
+  }
+  const out = new Set<string>();
+  for (const [h, hKeys] of hard) {
+    for (const [sb, sKeys] of soft) {
+      if (hKeys.size !== sKeys.size) continue;
+      let same = true;
+      for (const k of hKeys) if (!sKeys.has(k)) { same = false; break; }
+      if (same) out.add(`${h}:${sb}`);
+    }
+  }
+  return out;
+}
+
+/** Region identity for redundancy purposes: same family, same region label. */
+function regionKeyOf(f: RawFinding): string {
+  return `${f.comparison.family}\u0000${f.comparison.left}`;
+}
+
+function collapseRedundantFindings(
+  findings: RawFinding[],
+  eligibleDies: EligibleDie[],
+  passBins: number[],
+): void {
+  // `absorbedIds`, not `relatedIds`: the latter already means two things —
+  // a run-merge's audit trail of constituents it REPLACED (which no longer
+  // exist) and a spatial pattern's supporting detail. Everything absorbed here
+  // is still live and readable, so it needs a field that says so.
+  const claim = (owner: RawFinding, claimed: RawFinding): void => {
+    owner.absorbedIds = [...(owner.absorbedIds ?? []), claimed.id];
+  };
+
+  const byRegion = new Map<string, RawFinding[]>();
+  for (const f of findings) {
+    const k = regionKeyOf(f);
+    (byRegion.get(k) ?? byRegion.set(k, []).get(k)!).push(f);
+  }
+
+  const coincident = coincidentBinPairs(eligibleDies);
+  const alreadyClaimed = new Set<string>();
+
+  for (const group of byRegion.values()) {
+    // ── 1. Hard/soft twins ──────────────────────────────────────────────────
+    for (const hardF of group) {
+      if (hardF.variable.kind !== 'hardBin' || hardF.variable.bin === undefined) continue;
+      for (const softF of group) {
+        if (softF.variable.kind !== 'softBin' || softF.variable.bin === undefined) continue;
+        if (alreadyClaimed.has(softF.id)) continue;
+        if (!coincident.has(`${hardF.variable.bin}:${softF.variable.bin}`)) continue;
+        // Same dies AND the same statement about them.
+        if (softF.effect.direction !== hardF.effect.direction) continue;
+
+        claim(hardF, softF);
+        alreadyClaimed.add(softF.id);
+
+        // Name BOTH bins, rather than silently showing only the hard-bin row:
+        // an engineer who filters on soft bins must not conclude the soft
+        // finding was never raised. "(same dies)" is load-bearing — without it
+        // "hard bin 3 and soft bin 3" could be read as two populations summed.
+        //
+        // Built from the findings' own labels in the internal `HBin N`/`SBin N`
+        // vocabulary so `plainBinTerms` expands them to "hard bin"/"soft bin"
+        // on every display surface, exactly as it does for unmerged findings.
+        const both = `${hardF.variable.label} and ${softF.variable.label} (same dies)`;
+        // Replace the bin term inside the sentence rather than anchoring at the
+        // start: the summary reads "<region> has <binLabel> occurrence …", so
+        // the bin term is mid-string.
+        hardF.summary = hardF.summary.replace(hardF.variable.label, both);
+        hardF.variable.label = both;
+        break;
+      }
+    }
+
+    // ── 2. Pass bin ≡ yield ─────────────────────────────────────────────────
+    if (passBins.length !== 1) continue;
+    const yieldF = group.find(f => f.variable.kind === 'yield');
+    if (!yieldF) continue;
+    for (const f of group) {
+      if (f === yieldF || alreadyClaimed.has(f.id)) continue;
+      const isPassBinRow =
+        (f.variable.kind === 'hardBin' || f.variable.kind === 'softBin') &&
+        f.variable.bin === passBins[0];
+      if (!isPassBinRow) continue;
+      claim(yieldF, f);
+      alreadyClaimed.add(f.id);
+      // Anything the pass-bin row had already absorbed moves across too, so a
+      // claimed finding is never orphaned behind a claimed claimer.
+      for (const id of f.absorbedIds ?? []) {
+        yieldF.absorbedIds = [...(yieldF.absorbedIds ?? []), id];
+      }
+    }
+  }
+}
+
 export function analyzeWaferMap(
   input: AnalyzeWaferMapInput,
   options: AnalyzeWaferMapOptions = {},
@@ -1466,7 +1611,7 @@ export function analyzeWaferMap(
       ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.sbinDefs, 'softBin', resolved),
     );
   }
-  const warnings: string[] = [];
+  const warnings: WaferWarning[] = [];
   let activeTestNumbers: number[] | undefined;
   if (resolved.enableTestValueAnalysis) {
     const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.testDefs, resolved);
@@ -1655,6 +1800,10 @@ export function analyzeWaferMap(
   // Assign warnings last so cap warnings raised by the cheap perTestStats path
   // above are not lost (they are pushed after the earlier assignment point).
   if (warnings.length > 0) stats.warnings = warnings;
+
+  // Runs last, over the complete list: the spatial-pattern pass above also
+  // claims findings, and collapsing before it would leave those claims dangling.
+  collapseRedundantFindings(findings, eligibleDies, resolved.passBins);
 
   return {
     level: 'wafer',

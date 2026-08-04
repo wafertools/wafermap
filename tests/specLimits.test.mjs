@@ -298,7 +298,12 @@ test('stats.warnings — populated when >250 tests present without testNumbers f
   });
   const summary = analyzeWaferMap(input, { enableTestValueAnalysis: true });
   assert.ok(summary.stats.warnings?.length, 'should have at least one warning');
-  assert.ok(summary.stats.warnings[0].includes('tests found'));
+  // Structured WaferWarning, not a bare string — branch on `code`, which is
+  // stable, rather than on prose that may be reworded.
+  const w = summary.stats.warnings[0];
+  assert.equal(w.code, 'test-count-capped');
+  assert.equal(typeof w.message, 'string');
+  assert.equal(w.severity, 'warning');
 });
 
 test('stats.warnings — undefined when testNumbers filter provided', () => {
@@ -325,7 +330,10 @@ test('stats.warnings — cap warning from computePerTestStats reaches stats.warn
   });
   const summary = analyzeWaferMap(input, { computePerTestStats: true });
   assert.ok(summary.stats.warnings?.length, 'cap warning should reach stats.warnings');
-  assert.ok(summary.stats.warnings[0].includes('tests found'));
+  assert.equal(summary.stats.warnings[0].code, 'test-count-capped');
+  // The outcome is "no test findings at all", not "some tests skipped" — the
+  // message has to say so, because nothing else will.
+  assert.match(summary.stats.warnings[0].message, /no test findings|skipped/i);
 });
 
 // ── colorbarRangeMode ─────────────────────────────────────────────────────────

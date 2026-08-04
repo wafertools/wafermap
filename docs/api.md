@@ -473,8 +473,12 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
   warnings: WaferWarning[]       // structured geometry-inference advisories — always present (may be empty).
-                                  // Read this instead of relying on console.warn.
-                                  // { code: string; message: string; confidence?: number }
+                                  // Surfaced automatically by renderWaferMap/renderWaferGallery in the
+                                  // toolbar's warning indicator; read here for programmatic use. §4.2.2
+                                  // { code: string; message: string;
+                                  //   severity?: 'error' | 'warning' | 'info'; confidence?: number }
+                                  // All three geometry codes below are severity 'error': they mean die
+                                  // positions may be wrong, not that a feature is missing.
                                   // Codes:
                                   //   'partial-coverage'  — data does not span a full wafer; inferred
                                   //     diameter/centre may be wrong. Supply waferConfig.center + .diameter.
@@ -553,6 +557,37 @@ standard sizes (25 / 50 / 75 / 450 mm) are tried next (±20%); remaining values
 are rounded to the nearest 10 mm.
 
 **Origin:** defaults to `'center'` (centroid offset applied automatically). Set `coordinateOrigin: { type: 'LL' }` explicitly for standard STDF/KLA output where (0,0) is at the lower-left corner.
+
+#### 4.2.2 `WaferWarning`
+
+The library's one warning vocabulary. Raised by geometry inference on
+`WaferMapResult.warnings`, and by analysis on `StatsSummary.stats.warnings`.
+
+```ts
+{
+  code:      string   // stable machine-readable key — BRANCH ON THIS, not on message
+  message:   string   // human-readable, suitable for direct display
+  severity?: 'error' | 'warning' | 'info'   // default 'warning' when absent
+  confidence?: number // inference confidence 0–1, when one applies
+}
+```
+
+**Codes**
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| `partial-coverage` | `error` | Data does not span a full wafer; inferred diameter/centre may be wrong and dies may be mis-positioned. Supply `waferConfig.center` + `.diameter`. |
+| `geometry-conflict` | `error` | `waferConfig.diameter` and `dieConfig.width`/`height` were both supplied and cannot contain the probed dies. |
+| `inferred-pitch` | `error` | `diameter` supplied without a die pitch, so pitch was derived as `diameter ÷ grid span` — wrong whenever edge dies are absent. |
+| `test-count-capped` | `warning` | More tests found than `analyzeWaferMap` will analyse, so **no test findings were computed at all**. Pass `testNumbers` to scope it. |
+
+`severity` is about trust in what is on screen, not about how loud the message is:
+`'error'` means the map may be **positionally wrong**; `'warning'` means something
+expected is missing or degraded but what is drawn is correct. The union of `code`
+is deliberately open to `string` so new advisories are not a breaking change —
+switch with a `default` branch.
+
+These are surfaced automatically — see [`WarningsOptions`](#warningsoptions).
 
 #### Minimum geometry for partial data
 
@@ -935,6 +970,9 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state
   insights?:               InsightsOptions  // adds an Insights toolbar button that swaps the map for this wafer's own
                                             // chart suite (Overview, Distributions, Correlation) — default disabled. See §5.9.
+  warnings?:               WarningsOptions  // built-in surfacing of the library's own advisories — ON by default.
+                                            // { display?: boolean; onWarning?: (w: WaferWarning[]) => void }
+                                            // See §4.2.2 and the note below.
   renderTooltip?:          (die: Die) => string | HTMLElement | null
                                             // custom tooltip renderer — replaces built-in tooltip content
                                             // string → innerHTML; HTMLElement → appended; null → suppress tooltip
@@ -1250,7 +1288,64 @@ const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs, passBi
 renderWaferMap(document.getElementById('map'), result, { insights: { enabled: true } });
 ```
 
-### 5.10 User guide extension
+### 5.10 Warnings {#warningsoptions}
+
+`renderWaferMap` and `renderWaferGallery` surface the library's own advisories
+themselves. A ⚠ indicator appears in the toolbar **only when there is something to
+say**; clicking it lists each advisory with its code and explanation. The same set
+feeds the Summary panel's banner.
+
+This is on by default and needs no wiring. The reasoning: the library raises
+advisories that mean the map may be *positionally wrong* (`partial-coverage` and
+friends — §4.2.2), and it is the only party that knows. Leaving it to the caller to
+notice and display them means, in practice, that nobody is told.
+
+It is deliberately **not** a toast. These are persistent conditions about whether the
+map can be trusted, and a message that dismisses itself leaves the map still wrong
+with no way back to the explanation.
+
+```ts
+interface WarningsOptions {
+  display?:   boolean                              // default true
+  onWarning?: (warnings: WaferWarning[]) => void   // collected, de-duplicated, severity-ordered
+}
+```
+
+**Hosts with their own notification system** should pass both:
+
+```ts
+renderWaferMap(el, result, {
+  warnings: {
+    display: false,                    // suppress the built-in indicator
+    onWarning: (warnings) => myToastSystem.show(warnings),
+  },
+});
+```
+
+The library still does the collecting, de-duplicating and severity ordering; the host
+owns only presentation. `onWarning` fires once on mount — with an empty array when
+there is nothing to report, so you can clear your own display — and again whenever the
+set changes (for example when a `statsSummary` arrives later and raises the
+test-count cap).
+
+Turning `display` off *without* wiring `onWarning` means nobody is told, which is the
+situation this feature exists to end.
+
+**Collecting without a map.** `collectWarnings` and `severityOf` are exported from
+`@wafertools/wafermap/render`, so a host can reproduce exactly the set the built-in UI
+would show rather than re-deriving it from two separate sources:
+
+```ts
+import { collectWarnings } from '@wafertools/wafermap/render';
+
+const warnings = collectWarnings({ result, statsSummary });   // most severe first
+```
+
+Warnings are de-duplicated on `code` + `message`. A lot legitimately raises the same
+geometry advisory on every wafer; repeating it twenty times would bury the one that
+differs.
+
+### 5.11 User guide extension
 
 `showHelpButton: true` (§5.4, §6.2) opens wmap's own built-in end-user guide — but a host application often has its own documentation too, and forcing the user to find two separate help buttons/documents is poor UX. `userGuideExtension` inserts the host's own content **before** wmap's guide content in the same window, so there's one help button and one combined document instead of two:
 
@@ -1404,6 +1499,9 @@ to be pre-built.
   insights?:               InsightsOptions   // adds an Insights toolbar button that swaps the grid for a lot-wide chart
                                             // suite (Overview, Distributions, Correlation, with a "Group by" control)
                                             // — default disabled. See §6.10.
+  warnings?:               WarningsOptions   // built-in surfacing of the library's own advisories — ON by default.
+                                            // Collected across every card and de-duplicated, so a problem affecting
+                                            // the whole lot is stated once, not per wafer.
   columns?:                number            // fix the number of grid columns; omit to let the gallery auto-size based on die pitch
   maxSize?:                number            // cap each card's rendered width/height in px; cards pack from the left rather
                                             // than stretching. Omit and the cap is derived from die density — 480px for an
@@ -1780,7 +1878,9 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
   // ── Test-value scope ──────────────────────────────────────────────────────
   testNumbers?:   number[]  // restrict test-value analysis to these test numbers;
                             // when omitted: all tests up to 100 — beyond that analysis is skipped
-                            // and a warning appears in summary.stats.warnings[]
+                            // and a 'test-count-capped' WaferWarning appears in
+                            // summary.stats.warnings[] (§4.2.2) and in the map's
+                            // warning indicator
 
   // ── Statistical thresholds (rarely need changing) ─────────────────────────
   significanceLevel?:       number  // adjusted p-value threshold (default 0.05)
@@ -1853,7 +1953,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 **Behavioural notes:**
 
 - Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the view.
-- Test-value analysis is auto-skipped if the data contains more than 250 distinct tests unless `testNumbers` is provided. A warning is emitted via `console.warn` and also surfaced in `summary.stats.warnings[]` for programmatic inspection.
+- Test-value analysis is auto-skipped if the data contains more than 250 distinct tests unless `testNumbers` is provided. **The result is no test findings at all, not a trimmed set** — nothing throws, so an empty findings list is indistinguishable from "nothing to report" unless you check. A `WaferWarning` with code `'test-count-capped'` appears in `summary.stats.warnings[]` (§4.2.2), is shown by the renderers' warning indicator, and is also logged via `console.warn`.
 
 ### 7.4 `StatsSummary`
 
@@ -1880,7 +1980,10 @@ Either the rate criterion or the size criterion can trigger the severity level; 
                                               // above (which bin codes appear at all), these are the actual
                                               // counts a bin-breakdown display should show
     softBinCounts?:  Record<number, number>  // same, for soft bins
-    warnings?:            string[]     // structured warnings, e.g. test-count cap exceeded
+    warnings?:            WaferWarning[]  // structured advisories — §4.2.2. Same shape as
+                                          // WaferMapResult.warnings, so a host has ONE warning
+                                          // vocabulary. Branch on warning.code, e.g.
+                                          // 'test-count-capped'. Was string[] before 0.22.0.
     isLotStack?:          boolean      // true when this summary was produced from lot-aggregated (lotStack) data
     aggregationMethod?:   string       // aggregation method used, e.g. 'mean', 'countBin' (present only when isLotStack is true)
     testSpecYield?: Array<{            // one entry per testDef that has at least one limit; absent when no testDefs with limits
@@ -1966,6 +2069,8 @@ renderFindingsReportHtml(summary: StatsSummary | LotStatsSummary, options?: { ti
 ```
 
 Generates a standalone printable HTML **findings-only** report from a `StatsSummary` or `LotStatsSummary`. Includes wafer/lot identity fields, yield and die count stats, and a severity-coded findings table. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
+
+Findings that another finding absorbs as an exact restatement (§7.10, `absorbedIds`) are omitted, matching the Summary panel — the surviving row's text names what it absorbed, so printing both would state the same fact twice.
 
 `StatsSummary` → §7.4 · `LotStatsSummary` → §7.5
 
@@ -2096,6 +2201,16 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`. 
   relatedIds?: string[]     // ids of findings this one summarises at a finer level:
                             // a spatial-pattern's supporting regional findings, or the per-region
                             // findings collapsed into a merged band ("Rings 1–3"). Audit/drill-down.
+                            // NOTE: these do not all resolve to entries in `findings` — a merged
+                            // band names the constituents it REPLACED, and those are gone.
+  absorbedIds?: string[]    // ids of findings that state exactly the same fact as this one, hidden
+                            // from the Summary panel and the findings report in favour of it.
+                            // Unlike relatedIds, everything here IS still in `findings`.
+                            // Two cases: a soft-bin finding whose hard-bin twin covers provably the
+                            // same dies (merged label reads "Hard and soft bin 3 (same dies)"), and
+                            // the single pass bin's row against the yield row restating it.
+                            // Merging is on die-set identity, never bin number — hard and soft bins
+                            // are independent number spaces.
 }
 ```
 
@@ -2221,6 +2336,8 @@ filterFindings(source: StatsSummary | LotStatsSummary, filter: FindingsFilter): 
 ```
 
 Filters findings from a `StatsSummary` or `LotStatsSummary` by any combination of severity, kind, family, and level. All criteria are ANDed; each accepts a single value or an array.
+
+Operates on the **complete** findings list and deliberately does not apply the display de-duplication: a filter on `kind: 'softBin'` returns every soft-bin finding, including ones a hard-bin twin absorbed for display. If you are building a list for a human to read rather than querying, exclude `absorbedIds` as well — see [§7.10](#710-statsfinding) and the [Developer Guide](guide.md#de-duplicating-for-display).
 
 `StatsSummary` → §7.4 · `LotStatsSummary` → §7.5 · `StatsFinding` → §7.10
 

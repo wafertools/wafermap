@@ -63,8 +63,9 @@ and stats layers.
 - [Developer Guide](https://wafertools.github.io/wafermap/guide/)
 - [SvelteKit](https://wafertools.github.io/wafermap/sveltekit/) · [React](https://wafertools.github.io/wafermap/react/) · [Vue 3](https://wafertools.github.io/wafermap/vue/) integration guides
 - [API Reference](https://wafertools.github.io/wafermap/api/)
+- [Using wafermap with an AI coding agent](https://wafertools.github.io/wafermap/agents/) — rules to paste into Claude Code / Codex / Copilot / Cursor, also shipped as `AGENTS.md` in this package
 - [Architecture](https://wafertools.github.io/wafermap/architecture/) · [Performance](https://wafertools.github.io/wafermap/performance/) · [Troubleshooting](https://wafertools.github.io/wafermap/troubleshooting/)
-- [Live examples](https://wafertools.github.io/wafermap/examples/)
+- [Live examples](https://wafertools.github.io/wafermap/examples/) — or [download them](https://wafertools.github.io/wafermap/wafermap-examples.zip) to run and edit locally, offline, with the library bundled in
 
 **Using an app built with wafermap** (test / device / yield engineers):
 

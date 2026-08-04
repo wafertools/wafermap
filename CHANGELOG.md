@@ -19,14 +19,163 @@ under `### Breaking`.
 
 ---
 
-## [Unreleased]
+## [0.22.0] — 2026-08-04
+
+### Breaking
+
+- **`StatsSummary.stats.warnings` is now `WaferWarning[]`, not `string[]`.** The
+  library raised advisories in two incompatible shapes — structured
+  `{ code, message }` on `WaferMapResult.warnings`, raw prose strings on the stats
+  summary — so a host had two vocabularies to handle and no stable key to branch
+  on for half of them. Both are now `WaferWarning`.
+
+  Migration: read `w.message` where you previously read the string, and branch on
+  the new stable `w.code` (`'test-count-capped'` is the one raised today) instead
+  of matching prose. Code that did `warnings[0].includes('…')` is exactly what
+  this replaces — that string was never a contract.
+
+### Added
+
+- **The library now surfaces its own data warnings.** A ⚠ indicator appears in the
+  toolbar only when there is something to say; clicking it lists each advisory with
+  its code and explanation. It also feeds the Summary panel's banner and a new
+  `onWarning` callback, all from one collected, de-duplicated, severity-ordered set.
+
+  This closes a real gap rather than adding a nicety: **geometry advisories were
+  rendered by no UI at all.** `'partial-coverage'` means the inferred diameter and
+  centre may be wrong and dies may be drawn in the wrong place, and nothing ever
+  told the person looking at the map. Analysis advisories fared little better — they
+  appeared only if the host both passed `statsSummary` and the user opened the
+  Summary panel. The library has the information to know the display may mislead,
+  so showing it is its responsibility, not the caller's.
+
+  Deliberately not a toast: these are persistent conditions about whether the map
+  can be trusted, and a message that dismisses itself leaves the map still wrong
+  with no way back to the explanation.
+
+- **`WarningsOptions` on `renderWaferMap` and `renderWaferGallery`** —
+  `{ display?: boolean; onWarning?: (warnings: WaferWarning[]) => void }`. Hosts
+  with their own notification system pass `{ display: false, onWarning }`: the
+  library still collects, de-duplicates and severity-orders, and the host owns only
+  presentation. `collectWarnings` and `severityOf` are exported from
+  `@wafertools/wafermap/render` so such a host can reproduce exactly the set the
+  built-in UI would have shown rather than re-deriving it from two sources.
+
+- **`WaferWarning.severity`** — `'error' | 'warning' | 'info'`, defaulting to
+  `'warning'`. Geometry advisories are `'error'` (the map may be positionally
+  wrong); the test-count cap is `'warning'` (a feature produced nothing, but what
+  is drawn is correct). Drives the indicator's colour and ordering — and the
+  severity is always in the accessible name too, never colour alone.
+
+- New `--wmap-err-bg` / `--wmap-err-border` / `--wmap-err-text` theme tokens
+  (9.55:1 contrast on their background, clearing WCAG AA on all three surfaces
+  they appear on).
+
+
+- **Downloadable examples package.** `site/wafermap-examples.zip`, built as part of
+  `npm run build:site` and published alongside the docs. Contains every example, the
+  bundled library, the sample datasets, and a `starter/` skeleton to copy as the seed
+  of an application. Unzip, run `sh serve.sh` (or `serve.cmd` on Windows), and it works
+  with no npm install and no network — the offline path matters for locked-down fab
+  networks. The bundled `serve.py` pins the MIME type for `.js` rather than trusting
+  the platform: Python's stdlib server reads MIME types from the Windows registry, and
+  where that mapping has been altered it serves JavaScript as `text/plain`, which
+  browsers refuse to execute as a module — failing every page on Windows while working
+  on Linux.
+- **`AGENTS.md` — usage rules for AI coding agents.** Most consumers now write wafer
+  map code through Claude Code, Codex, Copilot or Cursor, and this library's inputs
+  invite confident wrong guesses: `die.hbin ?? 0` reads as ordinary defensive coding
+  but turns no-data dies into bin 0 and moves the yield number; `activeTest` reads
+  like an index but is a test number. The file's core is a copy-paste block for the
+  consumer's own agent config, surfaced at
+  [/agents/](https://wafertools.github.io/wafermap/agents/), shipped in the npm
+  package (`node_modules/@wafertools/wafermap/AGENTS.md`) and at the root of the
+  examples archive. `scripts/check-agents-guide.mjs` verifies it against
+  `dist/**/*.d.ts` on every `npm run check` and CI run — every recommended symbol
+  must exist, every symbol in the removal table (parsed from the table itself, not a
+  duplicate list) must be absent, and structural claims are checked rather than
+  trusted. An agent guide that names a removed API is worse than none.
+- `llms.txt` now ships in the npm package and the examples archive, with its
+  repo-relative links replaced by absolute ones — they resolved to nothing in both
+  of those locations.
+- `docs/examples/manifest.json` — single source for the examples list, consumed by
+  `demo-nav.js`, the `index.md` generator, the archive builder, and a nav consistency
+  check wired into `npm run check` and the test suite.
 
 ### Changed
+
+- **Findings no longer restate the same fact several times.** One edge failure
+  could produce, per region: a hard-bin row, its soft-bin twin with an identical
+  delta, a pass-bin row, and a yield row saying the same thing as the pass-bin row
+  — up to seven rows for what an engineer would state in one sentence. Two exact
+  redundancies now collapse:
+
+  - A soft-bin finding whose hard-bin twin covers **provably the same dies** is
+    absorbed, and the surviving row says so (`Hard and soft bin 3 (same dies)`).
+    The test is die-set identity computed from the dies, never bin-number
+    equality — hard and soft bins are independent number spaces, and merging on
+    the number would report one population under the other's name.
+  - When exactly one pass bin is configured, that bin's row and the yield row are
+    the same statement by definition, so the bin row is absorbed into the yield
+    row. With several pass bins no single bin equals yield, and the rule correctly
+    does not fire.
+
+  The surviving row names what it absorbed — "Ring 4 (edge) has hard bin 3 and
+  soft bin 3 (same dies) occurrence 8.8 percentage points higher…" — rather than
+  quietly dropping the other half. "(same dies)" is load-bearing: without it the
+  wording could be read as two populations summed.
+
+  This applies at lot level too. `analyzeWaferLot` skips per-wafer findings that
+  were absorbed, so a twin does not reappear as its own lot row — which is where
+  the duplication was most misleading, since every lot row is annotated "seen on
+  N/M wafers" and one fact stated twice reads as two signals corroborating
+  each other.
+
+  Nothing is discarded: absorbed findings remain in `summary.findings` and are
+  still returned by `filterFindings`. Only the Summary panel and the findings
+  report hide them, via the new `StatsFinding.absorbedIds`.
+
+- `StatsFinding.absorbedIds` — IDs of findings another finding restates. Kept
+  separate from `relatedIds`, which already meant two different things (a
+  run-merge's audit trail of constituents it *replaced*, which no longer exist,
+  and a spatial pattern's live supporting detail). Anything in `absorbedIds` is
+  guaranteed still present in `findings`.
+
+- **Examples consolidated from 26 pages to 20.** Several demos differed only by which
+  option was enabled. `findings`, `summary-panel`, `lot-findings`, `gallery` and
+  `lot-stack-analysis` are now one `statistics.html` with a scope selector
+  (single wafer / lot gallery / lot stack) whose banner names the exact calls and
+  options in force; `color-schemes` folded into `display-control.html`, where the
+  existing scheme dropdown already did the same job; `partial-data` folded into
+  `geometry.html` as a second section. Every old URL keeps a redirect stub pointing at
+  the merged page and the anchor that reproduces what it used to show, and the Guide
+  cross-links now target those anchors, so per-topic granularity is unchanged.
 
 - **Package renamed from `@paulrobins/wafermap` to `@wafertools/wafermap`.** The GitHub repo
   moved from `telecasterer/wafermap` to `wafertools/wafermap` along with it — repository,
   homepage, and issue-tracker URLs all point at the new org. `@paulrobins/wafermap` is
   deprecated on npm in favour of this package; no functional changes.
+
+### Fixed
+
+- **The toolbar could overflow across neighbouring content.** It is pinned by its
+  right edge with no width bound, so once wider than its container the excess grew
+  leftward — out of the card and over whatever sat beside it (the next map in a
+  grid, an adjacent gallery card). It had always been wider than a ~400px
+  container. It now wraps within the container, breaking between control groups
+  rather than mid-group, with `wrap-reverse` so the trailing group keeps the top
+  row and Expand keeps its top-right corner.
+
+
+- **Custom colour schemes did not work on the built documentation site.**
+  `scripts/bundle-docs.mjs` built each importmap entry point as an independent esbuild
+  bundle, so `wafermap` and `wafermap/render` each inlined a private copy of the
+  colour-scheme registry. `registerColorScheme` imported from `wafermap` wrote into a
+  registry the renderer never read, and a custom scheme rendered pixel-identical to the
+  default palette — silently, with no error. All entry points are now built in one
+  invocation with code splitting, so shared module state lives in a common chunk. Only
+  ever affected the bundled site build; `npm run dev` serves unbundled modules that
+  resolve to one shared file, which is why it went unnoticed.
 
 ## [0.21.1] — 2026-07-31
 

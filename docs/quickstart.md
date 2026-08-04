@@ -10,6 +10,8 @@
 npm install @wafertools/wafermap
 ```
 
+**Prefer to poke at something working first?** [Download the examples package](wafermap-examples.zip) — every example plus the bundled library and a minimal starter app. Unzip it, run `sh serve.sh` (or `serve.cmd` on Windows), and edit the pages in place. It works fully offline, which is often the deciding factor on a locked-down fab network.
+
 ## Minimal example
 
 Copy this into an HTML file and open it in a browser. No bundler required.

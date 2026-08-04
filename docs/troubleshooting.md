@@ -98,6 +98,61 @@ const result = buildWaferMap({
 
 ---
 
+## No statistical findings appear, and nothing errors
+
+**Cause:** `analyzeWaferMap` skips test-value analysis entirely when the die data
+contains more than 250 distinct tests. It returns **no test findings at all** rather
+than a trimmed set, and nothing throws — so an empty findings list looks identical to
+"this wafer is unremarkable". This bites when a data source hands you a full
+parametric test program and only a handful of tests are ever displayed.
+
+**Diagnosis:** check the warning, don't infer it from the silence.
+
+```ts
+const summary = analyzeWaferMap(result, { enableTestValueAnalysis: true });
+const capped = summary.stats.warnings?.find(w => w.code === 'test-count-capped');
+if (capped) console.warn(capped.message);
+```
+
+From 0.22.0 the renderers show this themselves — a ⚠ appears in the toolbar and names
+the reason, so you do not have to have thought to check.
+
+**Fix:** scope the analysis to the tests you actually display.
+
+```ts
+const summary = analyzeWaferMap(result, {
+  enableTestValueAnalysis: true,
+  testNumbers: [1050, 1060, 1070],   // only these are analysed
+});
+```
+
+Better still, filter `testDefs` before `buildWaferMap` — the cost of the whole
+pipeline scales with test count, and test correlation scales quadratically. See
+[Performance](performance.md#only-pass-the-tests-youll-actually-use).
+
+---
+
+## The map looks right but the dies are in the wrong place
+
+**Cause:** geometry was inferred, and inference cannot tell a small full wafer from a
+slice of a large one. With partial coverage the diameter and centre are both guesses,
+so every die can be misplaced relative to the true wafer boundary.
+
+**Diagnosis:** `result.warnings` carries a structured advisory, and from 0.22.0 the
+toolbar shows a red ⚠ for it — geometry advisories are severity `'error'` precisely
+because they mean the picture may be wrong, not merely incomplete.
+
+```ts
+for (const w of result.warnings) console.warn(w.code, w.message);
+// 'partial-coverage' | 'geometry-conflict' | 'inferred-pitch'
+```
+
+**Fix:** supply what is being guessed — `dieConfig.width`/`height` always, plus
+`waferConfig.diameter` and `waferConfig.center` for partial data. See
+[Guide §4](guide.md#4-adding-die-size-and-wafer-geometry).
+
+---
+
 ## `renderWaferMap is not exported by @wafertools/wafermap`
 
 **Cause:** the renderers are not on the root entry point. `renderWaferMap`,

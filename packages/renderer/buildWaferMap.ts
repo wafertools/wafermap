@@ -436,13 +436,28 @@ export interface WaferWarning {
    *   so the pitch was derived as `diameter ÷ grid span`, assuming the grid spans
    *   the full wafer. That assumption fails whenever edge dies are absent, which
    *   silently scales every die position. Supply `dieConfig.width`/`height`.
+   * - `'test-count-capped'` — raised by `analyzeWaferMap`: more tests were found in
+   *   the die data than the analysis cap allows, so test-value analysis was skipped
+   *   entirely and NO test findings were produced. Pass `testNumbers` to scope it.
    *
    * The union is intentionally open to string so future advisory codes can be
    * added without a breaking change; switch with a `default` branch.
    */
-  code: 'partial-coverage' | 'geometry-conflict' | 'inferred-pitch' | (string & {});
+  code: 'partial-coverage' | 'geometry-conflict' | 'inferred-pitch'
+      | 'test-count-capped' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
+  /**
+   * How much this affects trust in what is on screen. Drives the built-in
+   * warning indicator's colour and ordering; default `'warning'` when absent.
+   *
+   * - `'error'` — the map may be *positionally wrong* (dies drawn in the wrong
+   *   place). Nothing downstream of the geometry can be trusted.
+   * - `'warning'` — something the viewer expected is absent or degraded, but what
+   *   is drawn is correct.
+   * - `'info'` — worth knowing, no impact on correctness.
+   */
+  severity?: 'error' | 'warning' | 'info';
   /** Inference confidence in [0, 1] for the related quantity, when one exists. */
   confidence?: number;
 }
@@ -1144,6 +1159,9 @@ function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
   return (inference.warnings ?? []).map(message => ({
     code: codeForAdvisory(message),
     message,
+    // Every geometry advisory means die positions may be wrong — a wrong-looking
+    // map, not a missing feature — so all three are errors rather than notices.
+    severity: 'error' as const,
     confidence: inference.wafer.confidence,
   }));
 }

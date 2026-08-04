@@ -54,6 +54,20 @@
     .prog-btn strong {
       color: var(--accent);
     }
+
+    /* Swatch strip for the custom registered scheme */
+    .swatch-row {
+      display: flex;
+      gap: 3px;
+      margin-top: 5px;
+    }
+
+    .swatch {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 0, 0, .08);
+    }
   </style>
 </head>
 
@@ -62,9 +76,9 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§8 — Controlling the display</span>
+    <span class="demo-title">§8, §16 — Controlling the display</span>
     <span class="demo-desc">
-      setOptions · onViewOptionsChange · toolbar ↔ external controls stay in sync
+      setOptions · onViewOptionsChange · registerColorScheme · toolbar ↔ external controls stay in sync
     </span>
   </header>
 
@@ -72,6 +86,13 @@
     Use <code>ctrl.setOptions()</code> to drive the map programmatically, and <code>onViewOptionsChange</code> to receive toolbar changes back into your app.
     The external controls in the sidebar stay in sync with the toolbar — change either one and both update.
     The programmatic action buttons demonstrate <code>resetZoom()</code> and <code>highlightBin</code>.
+    <br><br>
+    The colour-scheme dropdown includes <strong>teal-rose</strong>, a custom palette this page registers with
+    <code>registerColorScheme()</code> before rendering — pick it here, or open the toolbar's own palette
+    picker and see it listed there too. That is the point of registering rather than passing colours per
+    call: a registered scheme becomes available everywhere, with no further wiring.
+    Note this is the <em>data</em> palette (die colours). Theming the surrounding chrome is a separate
+    mechanism — see the <a href="theming.html">theming demo</a>.
   </div>
 
   <div class="demo-content">
@@ -111,6 +132,7 @@
                 <option value="greyscale">greyscale</option>
                 <option value="accessible">accessible</option>
                 <option value="traffic">traffic</option>
+                <option value="teal-rose">teal-rose (custom)</option>
               </select>
             </div>
 
@@ -137,6 +159,22 @@
             </div>
 
           </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- ── The custom scheme registered by this page ── -->
+        <div class="section" id="custom-schemes">
+          <div class="section-heading">Custom colour scheme</div>
+          <div class="info-box">
+            <code>registerColorScheme('teal-rose', { forBin, forValue })</code>
+            <br><br>
+            <code>forBin(bin)</code> returns a CSS colour for categorical bin modes.
+            <code>forValue(t)</code> interpolates a colour for continuous value modes, t ∈ [0, 1].
+            Schemes are global, persist for the life of the page, and appear in every
+            toolbar palette picker automatically.
+          </div>
+          <div class="swatch-row" id="sw-custom"></div>
         </div>
 
         <div class="section-divider"></div>
@@ -192,9 +230,51 @@
   </div>
 
   <script type="module">
-    import { buildWaferMap } from 'wafermap';
+    import { buildWaferMap, registerColorScheme } from 'wafermap';
     import { renderWaferMap } from 'wafermap/render';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS } from './data.js';
+
+    // ── Register a custom colour scheme before any renderWaferMap call ────────────
+    //
+    // forBin(bin)  — categorical colour for hardBin / softBin modes
+    // forValue(t)  — continuous colour for t ∈ [0, 1] in value / stackedValues modes
+    //
+    // Schemes are global and persist for the lifetime of the page. Once registered,
+    // 'teal-rose' is selectable from the sidebar dropdown below AND from the canvas
+    // toolbar's own palette picker — nothing else has to be told about it.
+    //
+    // Note the HBIN_DEFS below carry no `color` field. A BinDef.color overrides the
+    // scheme entirely, so leaving it off is what lets forBin() drive the die colours.
+
+    const TEAL_ROSE_BINS = [
+      '#0d9488', // bin 1 — pass (teal)
+      '#f43f5e', // bin 2 — fail A (rose)
+      '#fb923c', // bin 3 — fail B (orange)
+      '#a78bfa', // bin 4 — fail C (violet)
+    ];
+
+    registerColorScheme('teal-rose', {
+      label: 'Teal / Rose',
+
+      // Return a CSS colour for a given bin number
+      forBin(bin) {
+        return TEAL_ROSE_BINS[(bin - 1) % TEAL_ROSE_BINS.length] ?? '#888';
+      },
+
+      // Interpolate teal → white → rose across a normalized value t ∈ [0, 1]
+      forValue(t) {
+        const r = Math.round(t < 0.5 ? t * 2 * 250 : 244 + (t - 0.5) * 2 * 11);
+        const g = Math.round(t < 0.5 ? 148 + t * 2 * (250 - 148) : 250 - (t - 0.5) * 2 * 188);
+        const b = Math.round(t < 0.5 ? 136 + t * 2 * (250 - 136) : 250 - (t - 0.5) * 2 * 156);
+        return `rgb(${r},${g},${b})`;
+      },
+    });
+
+    // Swatch strip for the registered palette.
+    for (const c of TEAL_ROSE_BINS) {
+      document.getElementById('sw-custom').insertAdjacentHTML('beforeend',
+        `<div class="swatch" style="background:${c}" title="${c}"></div>`);
+    }
 
     // ── Shared definitions ────────────────────────────────────────────────────────
 

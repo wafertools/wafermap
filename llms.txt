@@ -4,10 +4,14 @@ Browser-first wafer map visualization toolkit for semiconductor test data.
 Primary entry point: build wafer models with `buildWaferMap()`, then render with a canvas.
 
 ## Core docs
-- [Developer Guide](docs/guide.md) - end-to-end usage, CSV loading, display controls, stats, galleries, and worker usage.
-- [API Reference](docs/api.md) - public API, input types, coordinate system rules, and configuration details.
-- [README](README.md) - package overview and quick start.
-- [Examples](examples/) - runnable demo applications.
+Absolute URLs: this file ships inside the npm package and the examples archive,
+where repo-relative paths do not resolve.
+- [Agent rules](https://wafertools.github.io/wafermap/agents/) - the traps that produce silently wrong maps. Read this first.
+- [Developer Guide](https://wafertools.github.io/wafermap/guide/) - end-to-end usage, CSV loading, display controls, stats, galleries, and worker usage.
+- [API Reference](https://wafertools.github.io/wafermap/api/) - public API, input types, coordinate system rules, and configuration details.
+- [Quick start](https://wafertools.github.io/wafermap/quickstart/) - install and first map.
+- [Troubleshooting](https://wafertools.github.io/wafermap/troubleshooting/) - common failure modes.
+- [Examples](https://wafertools.github.io/wafermap/examples/) - 20 runnable demo pages, also downloadable at https://wafertools.github.io/wafermap/wafermap-examples.zip to run offline.
 
 ## Public package entry points
 - `@wafertools/wafermap`
@@ -23,6 +27,11 @@ Primary entry point: build wafer models with `buildWaferMap()`, then render with
 - All coordinates shown to the user (axis ticks, tooltips) must be original die grid positions (`die.x` / `die.y`), not post-transform display coordinates.
 - `buildWaferMap()` is pure and server-safe; renderers require the DOM.
 - Recommended path for most users: `buildWaferMap()` + `renderWaferMap()`.
+- `passBins` sets both the yield number and the wording of its label — do not assume `[1]`.
+- `activeTest` takes a test number (e.g. `1050`), not a positional index.
+- Functional tests (`testType: 'F'`) have no value; read verdicts only via `getTestPassStatus()`. A missing verdict is no-data, never a fail.
+- `PlotMode` values are camelCase (`'hardBin'`, `'stackedValues'`), never snake_case.
+- Full rules, including the removed-API table: see AGENTS.md, shipped alongside this file.
 
 ## Development
 - Build: `npm run build`

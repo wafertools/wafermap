@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>wafermap starter</title>
+
+  <!--
+    The importmap is what lets `import ... from 'wafermap'` work with no bundler
+    and no build step. The paths point at the bundled library shipped alongside
+    this folder.
+
+    Moving to Vite / webpack / esbuild later? Delete this whole block and run
+    `npm install @wafertools/wafermap` — the import statements in app.js do not
+    change, because 'wafermap' resolves to the package name either way.
+    (The package's real name is '@wafertools/wafermap'; the short alias here just
+    keeps the two paths identical.)
+  -->
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: #1e293b;
+      background: #f8fafc;
+    }
+    header {
+      padding: 14px 20px;
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    header h1 { font-size: 16px; margin: 0 0 3px; }
+    header p  { margin: 0; font-size: 12px; color: #64748b; }
+    header code {
+      background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px;
+    }
+
+    /* The map fills whatever box you give it. It needs a real height — a
+       zero-height parent is the single most common "nothing rendered" cause. */
+    #map {
+      height: calc(100vh - 130px);
+      min-height: 400px;
+      margin: 16px 20px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>wafermap starter</h1>
+    <p>
+      Edit <code>app.js</code> to change what is rendered ·
+      <code>generate-data.js</code> for the synthetic data ·
+      <code>load-csv.js</code> to read your own CSV instead
+    </p>
+  </header>
+
+  <div id="map"></div>
+
+  <script type="module" src="./app.js"></script>
+
+</body>
+</html>

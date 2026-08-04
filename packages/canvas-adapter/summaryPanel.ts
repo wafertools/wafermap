@@ -24,6 +24,8 @@ import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
+import { buildWarningsBanner, collectWarnings, type WaferWarning } from './warnings.js';
+export { buildWarningsBanner };
 import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
@@ -60,23 +62,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (styles) Object.assign(e.style, styles);
   if (text !== undefined) e.textContent = text;
   return e;
-}
-
-export function buildWarningsBanner(warnings: string[]): HTMLDivElement {
-  const wrap = el('div', {
-    background:   CLR.warnBg,
-    border:       `1px solid ${CLR.warnBorder}`,
-    borderRadius: '4px',
-    padding:      '7px 9px',
-    marginBottom: '10px',
-    fontSize:     '10px',
-    color:        CLR.warnText,
-    lineHeight:   '1.5',
-  });
-  for (const w of warnings) {
-    wrap.appendChild(el('div', {}, `⚠ ${w}`));
-  }
-  return wrap;
 }
 
 function sectionTitle(label: string): HTMLDivElement {
@@ -1177,7 +1162,19 @@ export function buildFindingsSection(
 
   // Separate spatial-pattern (parent) findings from the rest
   const patternFindings = findings.filter(f => f.comparison.family === 'spatial-pattern');
-  const relatedIdSet    = new Set(patternFindings.flatMap(f => f.relatedIds ?? []));
+  // Hidden from this list if a spatial pattern claims it as supporting detail,
+  // OR if another finding absorbed it as an exact restatement (a soft-bin twin
+  // over the same dies; the single pass bin against the yield row that says the
+  // same thing). Without the second, one edge failure reports itself up to three
+  // times per region. Both sets are still in `summary.findings` for any host
+  // reading them programmatically — only this list hides them.
+  //
+  // Deliberately NOT every finding's relatedIds: a run-merge records the
+  // constituents it replaced there, and those are already gone.
+  const relatedIdSet = new Set([
+    ...patternFindings.flatMap(f => f.relatedIds ?? []),
+    ...findings.flatMap(f => f.absorbedIds ?? []),
+  ]);
   const standaloneFindings = findings.filter(
     f => f.comparison.family !== 'spatial-pattern' && !relatedIdSet.has(f.id),
   );
@@ -1735,6 +1732,13 @@ export function renderWaferSummaryContent(
     sbinDefs?:    BinDef[];
     testDefs?:    TestDef[];
     statsSummary?: StatsSummary;
+    /**
+     * Warnings to show above the panel. Collected by the renderer via
+     * `collectWarnings` so this banner, the toolbar indicator and `onWarning`
+     * all show the same set. Falls back to the summary's own analysis warnings
+     * when omitted, which is the only set a bare panel could know about.
+     */
+    warnings?: WaferWarning[];
     passBins?:    number[];
     ringCount?:   number;
     colorScheme?: string;
@@ -1760,8 +1764,8 @@ export function renderWaferSummaryContent(
 
   panel.appendChild(panelHeader('Wafer Summary'));
 
-  const warnings = statsSummary?.stats.warnings;
-  if (warnings?.length) panel.appendChild(buildWarningsBanner(warnings));
+  const warnings = params.warnings ?? collectWarnings({ statsSummary });
+  if (warnings.length) panel.appendChild(buildWarningsBanner(warnings));
 
   if (yieldSummary && dataCoverage) {
     panel.appendChild(reportButton('Summary report', () => {
@@ -1837,6 +1841,8 @@ export function renderLotSummaryContent(
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
     onSaveText?: SaveTextHandler;
+    /** See the wafer panel's `warnings` — collected by the renderer so every surface agrees. */
+    warnings?: WaferWarning[];
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1854,9 +1860,10 @@ export function renderLotSummaryContent(
 
   panel.appendChild(panelHeader(`Lot Summary — ${lotSummary.stats.waferCount} wafer${lotSummary.stats.waferCount === 1 ? '' : 's'}`));
 
-  const allWarnings = [...new Set(
-    lotSummary.perWafer.flatMap(pw => pw.summary.stats.warnings ?? []),
-  )];
+  // collectWarnings de-duplicates on code+message: the same geometry advisory
+  // legitimately fires on many wafers of a lot, and listing it once per wafer
+  // would bury the one that differs.
+  const allWarnings = params.warnings ?? collectWarnings({ lotStatsSummary: lotSummary });
   if (allWarnings.length) panel.appendChild(buildWarningsBanner(allWarnings));
 
   panel.appendChild(reportButton('Summary report', () => {

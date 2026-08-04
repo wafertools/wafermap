@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Statistics, findings and lot views — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":          "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    /* The stage is re-rendered in place when the scope changes. A single wafer
+       needs a fixed-height box; a gallery needs to scroll its own card grid. */
+    .demo-content { padding: 0; overflow-y: auto; }
+    #stage { width: 100%; }
+    #stage.scope-single { padding: 14px; height: 560px; box-sizing: border-box; }
+    #stage.scope-single > div { width: 100%; height: 100%; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">§10–13, §20 — Statistics, findings and lot views</span>
+    <!-- Rewritten on every scope change to name the exact calls and options in
+         force, so what is on screen is never ambiguous. -->
+    <span class="demo-desc" id="banner"></span>
+  </header>
+
+  <div class="demo-intro">
+    One page, one statistics pipeline: <code>analyzeWaferMap</code> /
+    <code>analyzeWaferLot</code> produce a summary, and that summary is handed to a
+    renderer as <code>statsSummary</code> or <code>lotStatsSummary</code>. The three
+    <strong>scopes</strong> below are the only real difference between them — the
+    analysis call and the display options are otherwise identical, which is why they
+    share a page.
+    <br><br>
+    <strong>Single wafer</strong> — <code>analyzeWaferMap</code> scans five families:
+    rings, quadrants, angular sectors (16 compass directions), failure clusters
+    (contiguous failing dies denser than background), and edge arcs. This wafer has a
+    particle/ESD cluster, a handling arc near the perimeter, and the natural radial
+    gradient that drives ring and sector findings. Click any finding to highlight the
+    affected dies.
+    <br>
+    <strong>Lot gallery</strong> — <code>analyzeWaferLot</code> surfaces patterns that
+    repeat across wafers and flags yield outliers. W01, W03 and W05 share the same
+    edge-ring failure (detected as a repeated lot pattern); W06 has stacked failures
+    and is flagged an outlier.
+    <br>
+    <strong>Lot stack</strong> — <code>buildWaferMap({ lotStack })</code> aggregates the
+    lot into one map, then <code>analyzeWaferMap</code> runs on the aggregate. Use this
+    when you need a standalone stacked map outside a gallery, or programmatic access to
+    the findings before rendering. The NE-quadrant Vth drift present on every wafer
+    survives averaging and dominates the result.
+  </div>
+
+  <div class="demo-controls">
+    <!-- Primary dimension. Everything else on this page is contextual to it. -->
+    <div class="ctrl-group">
+      <span class="ctrl-label">Scope</span>
+      <button class="toggle-btn active" data-scope="single">Single wafer</button>
+      <button class="toggle-btn"        data-scope="gallery">Lot gallery</button>
+      <button class="toggle-btn"        data-scope="stack">Lot stack</button>
+    </div>
+
+    <div class="ctrl-sep"></div>
+
+    <!-- Contextual: exactly one control group is visible per scope. -->
+    <div class="ctrl-group" data-for="single">
+      <span class="ctrl-label">Summary panel</span>
+      <button class="toggle-btn active" data-panel="overlay">Overlay</button>
+      <button class="toggle-btn"        data-panel="right">Docked right</button>
+    </div>
+
+    <div class="ctrl-group" data-for="gallery">
+      <span class="ctrl-label">Lot findings panel</span>
+      <button class="toggle-btn active" data-open="true">Open</button>
+      <button class="toggle-btn"        data-open="false">Closed</button>
+    </div>
+
+    <div class="ctrl-group" data-for="stack">
+      <span class="ctrl-label">Aggregation method</span>
+      <button class="toggle-btn active" data-method="mean">mean</button>
+      <button class="toggle-btn"        data-method="median">median</button>
+      <button class="toggle-btn"        data-method="stddev">stddev</button>
+    </div>
+  </div>
+
+  <div class="demo-content">
+    <div id="stage" class="scope-single"></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }                      from 'wafermap';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferMap, analyzeWaferLot }   from 'wafermap/stats';
+    import {
+      makeResults, makeWaferConfig, WAFER_CONFIG, DIE_CONFIG,
+      HBIN_DEFS, SBIN_DEFS, TEST_DEFS, FUNCTIONAL_TEST_DEF,
+    } from './data.js';
+
+    // The functional Continuity test (1080) sits alongside the three parametric
+    // tests so the Summary panel's "Functional Tests" section — a pass rate, not
+    // a mean/sigma — has something to show.
+    const ALL_TEST_DEFS = [...TEST_DEFS, FUNCTIONAL_TEST_DEF];
+
+    const RING_COUNT = 4;
+    const VTH_TEST   = 1060;
+
+    // ── Data, built once per scope on first use ───────────────────────────────
+
+    let singleCache = null;
+    function singleWafer() {
+      if (singleCache) return singleCache;
+
+      // Deliberate spatial patterns: a particle/ESD failure cluster, a handling
+      // arc near the wafer edge, and the natural radial yield gradient.
+      const result = buildWaferMap({
+        results:     makeResults({ seed: 1, cluster: true, edgeArc: true }),
+        waferConfig: WAFER_CONFIG,
+        dieConfig:   DIE_CONFIG,
+        hbinDefs:    HBIN_DEFS,
+        sbinDefs:    SBIN_DEFS,
+        testDefs:    ALL_TEST_DEFS,
+        passBins:    [1],
+      });
+
+      // All default thresholds — the cluster and angular passes are the only
+      // opt-ins, and computePerTestStats fills the panel's test-value section.
+      const summary = analyzeWaferMap(result, {
+        ringCount:             RING_COUNT,
+        passBins:              [1],
+        enableClusterAnalysis: true,
+        enableAngularAnalysis: true,
+        computePerTestStats:   true,
+      });
+
+      singleCache = { result, summary };
+      return singleCache;
+    }
+
+    let lotCache = null;
+    function lot() {
+      if (lotCache) return lotCache;
+
+      // W01/W03/W05 share the same edge-ring failure → repeated lot pattern.
+      // W06 stacks edge + cluster + centre failures → low-yield outlier.
+      const waferSpecs = [
+        { seed:  7, edgeFail: true                          },  // W01 — repeated edge pattern
+        { seed: 11                                          },  // W02 — normal
+        { seed: 17, edgeFail: true                          },  // W03 — repeated edge pattern
+        { seed: 23, cluster: true, edgeArc: true            },  // W04 — cluster + edge arc
+        { seed: 31, edgeFail: true                          },  // W05 — repeated edge pattern
+        { seed: 37, edgeFail: true, cluster: true, center: true }, // W06 — low-yield outlier
+      ];
+
+      const results = waferSpecs.map((spec, i) =>
+        buildWaferMap({
+          results:     makeResults(spec),
+          waferConfig: makeWaferConfig(i),
+          dieConfig:   DIE_CONFIG,
+          hbinDefs:    HBIN_DEFS,
+          sbinDefs:    SBIN_DEFS,
+          testDefs:    ALL_TEST_DEFS,
+          passBins:    [1],
+        })
+      );
+
+      // Per-wafer analyses feed each card's own findings panel in its expand modal.
+      const waferSummaries = results.map(r =>
+        analyzeWaferMap(r, { ringCount: RING_COUNT, passBins: [1], computePerTestStats: true })
+      );
+
+      // Lot-level analysis: repeated ring/quadrant patterns and outlier wafers.
+      const lotSummary = analyzeWaferLot(results, {
+        ringCount:           RING_COUNT,
+        computePerTestStats: true,
+        perWaferSummaries:   waferSummaries,
+      });
+
+      const items = results.map((r, i) => ({
+        ...r,
+        label: `W${String(i + 1).padStart(2, '0')} · ${
+          r.yield.yieldPercent != null ? r.yield.yieldPercent.toFixed(1) + '%' : '—'
+        }`,
+        statsSummary: waferSummaries[i],
+      }));
+
+      lotCache = { items, lotSummary };
+      return lotCache;
+    }
+
+    // Stacking is cheap enough to redo per method, and the method is the whole
+    // point of this scope — caching it per method would hide the recomputation.
+    function stacked(method) {
+      // Six per-wafer datasets, all carrying the NE-quadrant Vth elevation.
+      // Different seeds give natural wafer-to-wafer variation while preserving
+      // the systematic lot pattern.
+      const waferResults = [1, 2, 3, 4, 5, 6].map(seed =>
+        makeResults({ seed, quadrant: true }),
+      );
+
+      const result = buildWaferMap({
+        lotStack:    { results: waferResults, method },
+        waferConfig: makeWaferConfig(0),
+        dieConfig:   DIE_CONFIG,
+        testDefs:    TEST_DEFS,
+      });
+
+      // Vth has limitHigh 0.57 V in TEST_DEFS — dies above it act as the failure
+      // proxy for cluster/edge-arc detection on the aggregated map.
+      // enableTestValueAnalysis runs the regional Welch comparisons on test
+      // values; it is off by default because it scales with regions × tests × dies.
+      const summary = analyzeWaferMap(result, {
+        ringCount:               RING_COUNT,
+        enableTestValueAnalysis: true,
+        // Restrict to Vth for a focused demo; drop testNumbers to analyse all tests.
+        testNumbers:             [VTH_TEST],
+      });
+
+      return { result, summary };
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────────
+
+    const stage    = document.getElementById('stage');
+    const bannerEl = document.getElementById('banner');
+
+    // Current selection. `scope` is the primary dimension; the rest are only
+    // meaningful for the scope that owns them.
+    const state = { scope: 'single', panel: 'overlay', open: true, method: 'mean' };
+
+    function render() {
+      stage.replaceChildren();
+      stage.className = `scope-${state.scope}`;
+
+      // Stable id: the screenshot definitions in scripts/capture-definitions.mjs
+      // scope their setup steps to this element, and it survives every scope change.
+      const host = document.createElement('div');
+      host.id = 'wmap-host';
+      stage.appendChild(host);
+
+      if (state.scope === 'single') {
+        const { result, summary } = singleWafer();
+
+        // statsSummary is what turns on the findings panel. placement 'right'
+        // docks it permanently beside the map; omitting placement leaves it an
+        // overlay opened from the toolbar's notebook icon.
+        renderWaferMap(host, result, {
+          viewOptions:  { plotMode: 'hardBin', ringCount: RING_COUNT },
+          statsSummary: summary,
+          summaryPanel: state.panel === 'right'
+            ? { placement: 'right' }
+            : { defaultOpen: true },
+          insights:       { enabled: true },
+          showHelpButton: true,
+        });
+
+        bannerEl.textContent = state.panel === 'right'
+          ? "analyzeWaferMap → renderWaferMap · summaryPanel { placement: 'right' } · insights { enabled: true }"
+          : 'analyzeWaferMap → renderWaferMap · summaryPanel { defaultOpen: true } · insights { enabled: true }';
+
+      } else if (state.scope === 'gallery') {
+        const { items, lotSummary } = lot();
+
+        // lotStatsSummary adds the Findings button to the shared gallery bar and
+        // opens the lot findings drawer. Stacked modes in the mode picker work
+        // with no extra wiring — the gallery aggregates its own items.
+        renderWaferGallery(host, items, {
+          viewOptions:     { plotMode: 'hardBin', testDefs: ALL_TEST_DEFS },
+          lotStatsSummary: lotSummary,
+          summaryPanel:    { defaultOpen: state.open },
+          insights:        { enabled: true },
+          showHelpButton:  true,
+        });
+
+        bannerEl.textContent =
+          `analyzeWaferLot → renderWaferGallery · summaryPanel { defaultOpen: ${state.open} } · insights { enabled: true }`;
+
+      } else {
+        const { result, summary } = stacked(state.method);
+
+        console.log('isLotStack:', summary.stats.isLotStack);               // true
+        console.log('aggregationMethod:', summary.stats.aggregationMethod); // state.method
+        console.log('findings:', summary.findings.length);
+
+        // The stacked map is a value map, not a bin map — plot mode is set by
+        // the scope, so this page deliberately leaves mode selection to the
+        // built-in toolbar rather than offering its own selector.
+        renderWaferMap(host, result, {
+          viewOptions: {
+            plotMode:   'value',
+            testDefs:   TEST_DEFS,
+            activeTest: VTH_TEST,
+          },
+          statsSummary:   summary,
+          summaryPanel:   { defaultOpen: true },
+          showHelpButton: true,
+        });
+
+        bannerEl.textContent =
+          `buildWaferMap({ lotStack: { method: '${state.method}' } }) → analyzeWaferMap · 6 wafers · plotMode 'value' on Vth`;
+      }
+    }
+
+    // ── Controls ──────────────────────────────────────────────────────────────
+
+    function syncControls() {
+      for (const g of document.querySelectorAll('.ctrl-group[data-for]')) {
+        g.style.display = g.dataset.for === state.scope ? '' : 'none';
+      }
+      const mark = (sel, isActive) => {
+        for (const b of document.querySelectorAll(sel)) {
+          b.classList.toggle('active', isActive(b));
+        }
+      };
+      mark('[data-scope]',  b => b.dataset.scope  === state.scope);
+      mark('[data-panel]',  b => b.dataset.panel  === state.panel);
+      mark('[data-open]',   b => (b.dataset.open === 'true') === state.open);
+      mark('[data-method]', b => b.dataset.method === state.method);
+    }
+
+    document.querySelector('.demo-controls').addEventListener('click', (e) => {
+      const btn = e.target.closest('.toggle-btn');
+      if (!btn) return;
+      const d = btn.dataset;
+      if (d.scope)       state.scope  = d.scope;
+      else if (d.panel)  state.panel  = d.panel;
+      else if (d.open)   state.open   = d.open === 'true';
+      else if (d.method) state.method = d.method;
+      else return;
+      syncControls();
+      render();
+    });
+
+    // ── Deep links ────────────────────────────────────────────────────────────
+    //
+    // The pages this demo replaces each had their own URL, and the Guide still
+    // links to them by section. Each old page maps to a scope *and* the option
+    // that made it distinctive, so a Guide link lands on the state it describes
+    // rather than on whatever the default happens to be.
+    const SCENES = {
+      '#findings':      { scope: 'single',  panel: 'overlay' },
+      '#single':        { scope: 'single',  panel: 'right'   },
+      '#summary-panel': { scope: 'single',  panel: 'right'   },
+      '#lot-gallery':   { scope: 'gallery', open: false      },
+      '#lot-findings':  { scope: 'gallery', open: true       },
+      '#lot-stack':     { scope: 'stack',   method: 'mean'   },
+    };
+
+    function applyHash() {
+      const scene = SCENES[location.hash];
+      if (scene) Object.assign(state, scene);
+      syncControls();
+      render();
+    }
+
+    window.addEventListener('hashchange', applyHash);
+    applyHash();
+  </script>
+
+</body>
+</html>

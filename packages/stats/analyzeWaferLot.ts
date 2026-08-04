@@ -26,7 +26,16 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
 
   for (const entry of perWafer) {
     const seen = new Set<string>();
+    // Skip findings that another finding in the SAME wafer already absorbs as an
+    // exact restatement (a soft-bin twin over identical dies; the single pass
+    // bin against the yield row). `summary.findings` is deliberately the full
+    // uncollapsed list, so without this the duplication removed at wafer level
+    // reappears here — one lot row per twin, each annotated "seen on N/M wafers",
+    // which is where it is most misleading because it looks like corroboration.
+    // The absorbing finding still buckets normally and carries the merged label.
+    const absorbed = new Set(entry.summary.findings.flatMap(f => f.absorbedIds ?? []));
     for (const finding of entry.summary.findings) {
+      if (absorbed.has(finding.id)) continue;
       const key = [
         finding.variable.kind,
         finding.variable.index ?? '',

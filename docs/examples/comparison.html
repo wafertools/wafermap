@@ -720,6 +720,28 @@
   // ── Run ────────────────────────────────────────────────────────────────────
   async function run() {
     const btn = document.getElementById('run-btn');
+
+    // This is the one page here that needs the network: Plotly is the thing
+    // being compared against, and it loads from a CDN. In the offline examples
+    // package that script simply never arrives, so say so plainly rather than
+    // failing with a bare "Plotly is not defined".
+    if (typeof Plotly === 'undefined') {
+      btn.disabled = true;
+      btn.textContent = 'Plotly unavailable';
+      document.getElementById('plotly-container').innerHTML =
+        '<div style="padding:24px; font-size:13px; line-height:1.6; color:#78350f; ' +
+        'background:#fffbeb; border:1px solid #f59e0b; border-left-width:3px; border-radius:6px">' +
+        '<strong>Plotly.js could not be loaded.</strong><br>' +
+        'This comparison benchmarks wafermap against Plotly, which is fetched from ' +
+        '<code>cdn.plot.ly</code> — so this page, alone among the examples, needs an ' +
+        'internet connection. Every other page works offline.<br><br>' +
+        'Connect and reload, or see the published version at ' +
+        '<a href="https://wafertools.github.io/wafermap/examples/comparison.html">' +
+        'wafertools.github.io/wafermap</a>.' +
+        '</div>';
+      return;
+    }
+
     btn.disabled = true;
     btn.textContent = '⏳ Running…';
     resetTimings();

@@ -2,114 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Spatial analysis on lot-stack data — wafermap guide</title>
-  <link rel="stylesheet" href="demo.css">
-  <script src="demo-nav.js" defer></script>
-  <script type="importmap">{ "imports": {
-    "wafermap":                "../dist/index.js",
-    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
-    "wafermap/stats":          "../dist/packages/stats/index.js"
-  } }</script>
+  <!-- This demo was consolidated in 0.22.0. The page it moved to reproduces
+       what this URL used to show; the anchor selects the matching state. -->
+  <title>Moved — wafermap guide</title>
+  <link rel="canonical" href="statistics.html#lot-stack">
+  <meta http-equiv="refresh" content="0; url=statistics.html#lot-stack">
 </head>
-<body class="demo-page">
-
-  <header class="demo-header">
-    <span class="demo-logo">wafer<em>map</em></span>
-    <div class="demo-sep"></div>
-    <span class="demo-title">§20 — Spatial analysis on lot-stack data</span>
-    <span class="demo-desc">
-      analyzeWaferMap works on lot-aggregated maps — ring, quadrant, sector, and cluster findings on mean test values
-    </span>
-  </header>
-
-  <div class="demo-intro">
-    For most use cases, the gallery's built-in stacked modes (see
-    <a href="lot-findings.html">lot-findings demo</a>) handle lot-average spatial analysis
-    automatically with no extra code.  Use this pattern instead when you need a
-    <strong>standalone stacked map</strong> outside a gallery, or when you need
-    <strong>programmatic access to the findings</strong> before rendering — for
-    example to filter, store, or feed them into your own UI.
-    <br><br>
-    This example stacks six wafers using <code>buildWaferMap({ lotStack })</code>
-    with <code>method: 'mean'</code>, then runs <code>analyzeWaferMap</code>
-    directly on the aggregated result.  The NE-quadrant Vth drift that appears on
-    every wafer produces clear quadrant and sector findings on the lot average.
-    Because these are findings on a <strong>measured test value</strong> (Vth), the call
-    passes <code>enableTestValueAnalysis: true</code> — the regional test-value pass is
-    off by default (it is the expensive one; see the
-    <a href="../guide/#which-test-value-setting-to-use">guide</a>).  Yield and bin
-    findings need no such flag.
-    Because Vth has spec limits (<code>limitHigh: 0.57&thinsp;V</code>), dies where
-    the lot-average Vth exceeds spec are used as the failure proxy for cluster
-    detection — revealing the spatial extent of the out-of-spec zone.
-    The summary panel labels the view as "6 wafers &middot; mean" so it is unambiguous.
-    <code>summary.stats.isLotStack</code> and <code>summary.stats.aggregationMethod</code>
-    are available for the host application to use programmatically.
-  </div>
-
-  <div class="demo-content">
-
-    <div class="canvas-card flex-1">
-      <div id="map"></div>
-    </div>
-
-  </div>
-
-  <script type="module">
-    import { buildWaferMap }   from 'wafermap';
-    import { renderWaferMap }  from 'wafermap/render';
-    import { analyzeWaferMap } from 'wafermap/stats';
-    import {
-      makeResults, makeWaferConfig,
-      DIE_CONFIG, HBIN_DEFS, SBIN_DEFS, TEST_DEFS,
-    } from './data.js';
-
-    // Build six per-wafer datasets — all have the NE-quadrant Vth elevation.
-    // Different seeds give natural wafer-to-wafer variation while preserving the
-    // systematic lot pattern.
-    const waferResults = [1, 2, 3, 4, 5, 6].map(seed =>
-      makeResults({ seed, quadrant: true }),
-    );
-
-    // Stack the lot using mean aggregation.  The NE-quadrant Vth gradient —
-    // present on every wafer — survives averaging and becomes the dominant spatial signal.
-    const result = buildWaferMap({
-      lotStack:    { results: waferResults, method: 'mean' },
-      waferConfig: makeWaferConfig(0),
-      dieConfig:   DIE_CONFIG,
-      testDefs:    TEST_DEFS,
-    });
-
-    // analyzeWaferMap detects spatial patterns in the averaged test values.
-    // Vth has limitHigh: 0.57 V in TEST_DEFS — dies above this are treated as
-    // "failing" for cluster/edge-arc detection on the lot-average map.
-    const summary = analyzeWaferMap(result, {
-      ringCount:  4,
-      // enableTestValueAnalysis runs the regional Welch comparisons on test
-      // values — off by default because it scales with regions × tests × dies.
-      enableTestValueAnalysis: true,
-      // Restrict to Vth only for a focused demo; remove testNumbers to analyse all tests.
-      testNumbers: [1060],
-    });
-
-    console.log('isLotStack:', summary.stats.isLotStack);           // true
-    console.log('aggregationMethod:', summary.stats.aggregationMethod); // 'mean'
-    console.log('findings:', summary.findings.length);
-
-    renderWaferMap(document.getElementById('map'), result, {
-      viewOptions: {
-        plotMode: 'value',
-        testDefs: TEST_DEFS,
-        // Start on Vth — pass the testNumber directly.
-        activeTest: 1060,
-      },
-      statsSummary: summary,
-      waferResult:  result,
-      summaryPanel: { defaultOpen: true },
-      showHelpButton: true,
-    });
-  </script>
-
+<body>
+  <p>This demo moved to <a href="statistics.html#lot-stack">statistics.html#lot-stack</a>.</p>
 </body>
 </html>

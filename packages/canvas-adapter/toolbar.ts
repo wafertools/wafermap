@@ -52,6 +52,7 @@ export const WMAP_TOKEN_NAMES = [
   'surface', 'border', 'menu-hover', 'menu-active',
   'panel-bg', 'text-muted', 'text', 'text-strong',
   'warn-bg', 'warn-border', 'warn-text',
+  'err-bg', 'err-border', 'err-text',
   'info-bg', 'info-text',
   'selected', 'finding-indicator',
   'canvas-bg',
@@ -98,6 +99,15 @@ export const CLR = {
   warnBg:      t('warn-bg',      '#fffbe6'),
   warnBorder:  t('warn-border',  '#f0c040'),
   warnText:    t('warn-text',    '#7a5800'),
+  // Semantic — error advisory. Distinct from `warn*` because the two mean
+  // genuinely different things: a warning says something is missing or degraded,
+  // an error says the map may be positionally WRONG (geometry advisories), and
+  // flattening those into one colour hides the difference that matters.
+  // #7a1c1c clears WCAG AA comfortably on all three surfaces it lands on:
+  // errBg 9.55:1, panelBg 10.08:1, menuBg 10.45:1.
+  errBg:       t('err-bg',       '#fef2f2'),
+  errBorder:   t('err-border',   '#dc8a8a'),
+  errText:     t('err-text',     '#7a1c1c'),
   // Semantic — info / callout.
   infoBg:      t('info-bg',      '#dce8f8'),
   infoText:    t('info-text',    '#334155'),

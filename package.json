@@ -1,6 +1,6 @@
 {
   "name": "@wafertools/wafermap",
-  "version": "0.21.1",
+  "version": "0.22.0",
   "description": "Interactive wafer map visualization and yield analysis for semiconductor test data. Hard bins, soft bins, test values, retests, edge exclusion, reticle overlays, spatial statistics, failure clustering, and lot-level trend analysis — pure ES modules, no runtime dependencies, no server required.",
   "type": "module",
   "license": "MIT",
@@ -25,7 +25,9 @@
     "!dist/**/*.map",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "llms.txt"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -72,11 +74,12 @@
     "build": "node scripts/build-user-guide.mjs && node scripts/sync-icons.mjs && node scripts/sync-version.mjs && rm -rf dist && tsc -p tsconfig.build.json",
     "build:guide": "node scripts/build-user-guide.mjs",
     "clean": "rm -rf dist",
-    "check": "node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json",
+    "check": "node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json && node scripts/check-examples-manifest.mjs && node scripts/build-agents-page.mjs --check && node scripts/check-agents-guide.mjs && node scripts/check-toolbar-docs.mjs",
+    "build:examples-index": "node scripts/build-examples-index.mjs",
     "check:drift": "node scripts/check-drift.mjs",
     "dev": "rm -rf docs/dist && cp -r dist docs/dist && ./.venv/bin/zensical serve --dev-addr localhost:8001",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "build:site": "rm -rf docs/dist && cp -r dist docs/ && ${ZENSICAL:-.venv/bin/zensical} build --clean && cp -r docs/data site/data && rm -rf docs/dist && node scripts/bundle-docs.mjs",
+    "build:site": "rm -rf docs/dist && cp -r dist docs/ && ${ZENSICAL:-.venv/bin/zensical} build --clean && cp -r docs/data site/data && rm -rf docs/dist && node scripts/bundle-docs.mjs && node scripts/build-examples-archive.mjs",
     "preview:site": "npm run build:site && echo \"\\nServing bundled site at http://localhost:8002/examples/ — Ctrl-C to stop\\n\" && cd site && python3 -m http.server 8002",
     "prepack": "npm run build && node scripts/minify-dist.mjs",
     "pack:check": "npm pack --dry-run",
@@ -84,7 +87,8 @@
     "postpublish": "echo \"\\ndist/ was minified for publish — run 'npm run build' to restore the readable dev build.\\n\"",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "screenshots:list": "node scripts/capture-screenshots.mjs --list",
-    "build:images": "npm run build && node scripts/capture-screenshots.mjs"
+    "build:images": "npm run build && node scripts/capture-screenshots.mjs",
+    "build:agents-page": "node scripts/build-agents-page.mjs"
   },
   "keywords": [
     "wafer-map",

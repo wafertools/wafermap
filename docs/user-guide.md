@@ -152,14 +152,12 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 |                                                               | Control            | Description                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Section 2](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                                                                                               |
-| <img src="images/icons/aggr.svg" width="20" height="20">      | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count.                                                                                                                                                                  |
 | <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Spec pass/fail (Test Value mode with limits), and Test pass/fail (Test Value mode, active test is functional or has recorded verdicts). |
 | <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Switches the colour palette used for value and stacked modes. Available schemes depend on what the application has registered.                                                                                                                                                                         |
 | <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive. Hidden whenever a pass/fail display is active or the active test is functional.                                                                       |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range     | Test Value mode with spec limits only. Toggles the colorbar between the **spec-limit range** (default — the colours mean the same thing on every wafer, so maps are comparable) and the **data range** (stretches the scale to the values actually present, which shows more contrast but is not comparable between wafers). |
 | <img src="images/icons/legend.svg" width="20" height="20">    | Legend style       | Bin modes only. Controls where the bin legend is positioned relative to the map: Default (right), Compact, Left, Top, Bottom, or Floating.                                                                                                                                                             |
-| <img src="images/icons/rotateCW.svg" width="20" height="20">  | Rotate 90°         | Rotates the display 90° clockwise. Applies cumulatively. Die coordinates are unaffected.                                                                                                                                                                                                               |
-| <img src="images/icons/flipH.svg" width="20" height="20">     | Flip horizontal    | Mirrors the display left/right. Die coordinates are unaffected.                                                                                                                                                                                                                                        |
-| <img src="images/icons/flipV.svg" width="20" height="20">     | Flip vertical      | Mirrors the display top/bottom. Die coordinates are unaffected.                                                                                                                                                                                                                                        |
+| <img src="images/icons/orient.svg" width="20" height="20">   | Orientation        | Menu of display transforms: **Rotate 90° clockwise** (applies cumulatively), **Flip horizontal**, **Flip vertical**. These change only how the wafer is drawn — die coordinates in tooltips and labels are always the original values, whatever the orientation. |
 | <img src="images/icons/zoomMode.svg" width="20" height="20">  | Zoom mode          | Click and drag to draw a zoom region.                                                                                                                                                                                                                                                                  |
 | <img src="images/icons/zoomIn.svg" width="20" height="20">    | Zoom in            | Zooms in one step.                                                                                                                                                                                                                                                                                     |
 | <img src="images/icons/zoomOut.svg" width="20" height="20">   | Zoom out           | Zooms out one step.                                                                                                                                                                                                                                                                                    |
@@ -170,6 +168,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Hidden while the Insights tab is open — each chart inside Insights has its own expand button instead. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
 | <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Findings sidebar (see [Section 6](#6-findings-sidebar)).                                                                                                                                                                                                                           |
+| <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                                                                                                      |
 
 **This guide's own window** (and a gallery card detached into its own window,
@@ -229,9 +228,15 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Switches the colour palette for all cards.                                                                                                                                         |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
 | <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns in the card grid.                                                                                                                                       |
-| <img src="images/icons/download.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
+| <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
+| <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
+| <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
+| <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | Bin modes only. Sets where the bin legend sits relative to each card. |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with spec limits only. Toggles all cards between the spec-limit range and the data range. Leave it on spec limits when comparing wafers — the data range rescales per view. |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Findings      | Opens or closes the lot-level Findings sidebar.                                                                                                                                     |
 | <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a lot-wide chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |
+| <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the lot. Collected across every wafer and de-duplicated, so a problem affecting the whole lot is stated once rather than repeated per card. |
+| <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
 
 Click a card's expand button to detach it into its own separate window with the
 complete single-map toolbar (falls back to a floating window inside the page if
@@ -350,10 +355,26 @@ doesn't need the map on screen the way a finding's highlight does.
 A **Summary report** button (when present) opens a printable full-detail
 report in a new window or tab, still covering everything findings-adjacent —
 yield, bin breakdown, ring and quadrant statistics, per-test statistics, and
-the full findings list — and can be saved as a PDF from your browser's print
+the findings list — and can be saved as a PDF from your browser's print
 dialog.
 
 ![Wafer summary report](images/report-wafer-summary.png)
+
+### Why some findings name two bins
+
+A finding may read **"hard bin 3 and soft bin 3 (same dies)"**. That is one
+group of dies counted in two bin spaces, not two separate groups added together.
+Hard and soft bins are independent numbering systems, so this wording appears
+only when the two happen to cover exactly the same dies — reporting it twice
+would look like two independent problems.
+
+For the same reason, when a single pass bin is configured you will see the
+**yield** finding for a region but not a separate finding for the pass bin
+itself: "pass-bin occurrence is 22 points lower" and "yield is 22 points lower"
+are the same sentence.
+
+Nothing is discarded — an application reading the findings programmatically
+still receives every one of them.
 
 For **lot-level views** (gallery), the sidebar shows lot-level findings by
 default, with a **Wafers** tab listing every wafer that has its own per-wafer

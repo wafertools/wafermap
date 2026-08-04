@@ -71,6 +71,11 @@ const SNAPSHOTS = {
   ],
   './render': [
     'renderWaferMap', 'renderWaferGallery', 'setDetachWindowOpener', 'toCanvas',
+    // Warning surfacing. `collectWarnings` is public so a host that turns the
+    // built-in UI off (`warnings: { display: false }`) can reproduce exactly the
+    // set the library would have shown, rather than re-deriving it from two
+    // separate sources and getting the de-duplication subtly different.
+    'collectWarnings', 'severityOf',
   ],
 };
 

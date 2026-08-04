@@ -200,8 +200,10 @@ export const CAPTURES = [
   {
     file: 'guide-geometry-partial-data',
     group: 'maps',
-    page: '/examples/partial-data.html',
-    selector: '.demo-content',
+    page: '/examples/geometry.html#centre-anchoring',
+    // The page also carries the four inference-level cards above; .canvas-grid-3
+    // is the centre-anchoring row alone.
+    selector: '.canvas-grid-3',
     wait: 1200,
   },
 
@@ -333,7 +335,7 @@ export const CAPTURES = [
   {
     file: 'guide-findings-panel',
     group: 'maps',
-    page: '/examples/findings.html',
+    page: '/examples/statistics.html#findings',
     selector: '.demo-content',
     wait: 1500,
     setup: [
@@ -347,11 +349,11 @@ export const CAPTURES = [
   {
     file: 'guide-summary-panel',
     group: 'maps',
-    page: '/examples/summary-panel.html',
-    selector: '#single-map-wrap',
+    page: '/examples/statistics.html#summary-panel',
+    selector: '#stage',
     wait: 1000,
     setup: [
-      ['openPanel', '#single-map'],
+      ['openPanel', '#wmap-host'],
       ['hoverEl', 'Summary panel'],
       ['showCursorOn', 'Summary panel'],
     ],
@@ -361,21 +363,21 @@ export const CAPTURES = [
   {
     file: 'guide-gallery-per-wafer',
     group: 'gallery',
-    page: '/examples/gallery.html',
-    selector: '#gallery-container',
+    page: '/examples/statistics.html#lot-gallery',
+    selector: '#wmap-host',
     wait: 2000,
-    setup: [['hoverFirstCard', '#gallery-container'], ['selectColumns', '3 columns']],
+    setup: [['hoverFirstCard', '#wmap-host'], ['selectColumns', '3 columns']],
   },
 
   // ── guide-insights-overview.png — §8 Insights: gallery Overview sub-tab ──
   {
     file: 'guide-insights-overview',
     group: 'insights',
-    page: '/examples/gallery.html',
-    selector: '#gallery-container',
+    page: '/examples/statistics.html#lot-gallery',
+    selector: '#wmap-host',
     wait: 2000,
     setup: [
-      ['clickButton', 'Insights', '#gallery-container'],
+      ['clickButton', 'Insights', '#wmap-host'],
       ['wait', 800],
     ],
   },
@@ -384,12 +386,12 @@ export const CAPTURES = [
   {
     file: 'guide-insights-distributions',
     group: 'insights',
-    page: '/examples/gallery.html',
-    selector: '#gallery-container',
+    page: '/examples/statistics.html#lot-gallery',
+    selector: '#wmap-host',
     wait: 2000,
     setup: [
-      ['clickButton', 'Insights', '#gallery-container'],
-      ['clickTab', 'Distributions', '#gallery-container'],
+      ['clickButton', 'Insights', '#wmap-host'],
+      ['clickTab', 'Distributions', '#wmap-host'],
       ['wait', 800],
     ],
   },
@@ -398,12 +400,12 @@ export const CAPTURES = [
   {
     file: 'guide-insights-correlation',
     group: 'insights',
-    page: '/examples/gallery.html',
-    selector: '#gallery-container',
+    page: '/examples/statistics.html#lot-gallery',
+    selector: '#wmap-host',
     wait: 2000,
     setup: [
-      ['clickButton', 'Insights', '#gallery-container'],
-      ['clickTab', 'Correlation', '#gallery-container'],
+      ['clickButton', 'Insights', '#wmap-host'],
+      ['clickTab', 'Correlation', '#wmap-host'],
       ['wait', 800],
     ],
   },
@@ -426,14 +428,14 @@ export const CAPTURES = [
   {
     file: 'guide-lot-findings-gallery',
     group: 'gallery',
-    page: '/examples/lot-findings.html',
+    page: '/examples/statistics.html#lot-findings',
     selector: '.demo-content',
     wait: 2000,
     setup: [
       ['selectColumns', '3 columns'],
-      ['openPanel', '#gallery-container'],
+      ['openPanel', '#wmap-host'],
       ['wait', 400],
-      ['clickFinding', '#gallery-container'],
+      ['clickFinding', '#wmap-host'],
       ['showCursorOn', '[data-wmap-finding-active]']
     ],
   },
@@ -442,7 +444,7 @@ export const CAPTURES = [
   {
     file: 'report-wafer-summary',
     group: 'maps',
-    page: '/examples/summary-panel.html',
+    page: '/examples/statistics.html#summary-panel',
     wait: 1000,
     screenshotFn: async (page, outFile) => {
       // Open the summary panel
@@ -471,7 +473,7 @@ export const CAPTURES = [
   {
     file: 'report-lot-summary',
     group: 'gallery',
-    page: '/examples/lot-findings.html',
+    page: '/examples/statistics.html#lot-findings',
     wait: 2000,
     screenshotFn: async (page, outFile) => {
       // Panel opens by default (defaultOpen: true in this demo).
@@ -508,7 +510,7 @@ export const CAPTURES = [
   {
     file: 'guide-findings-cluster-highlight',
     group: 'maps',
-    page: '/examples/findings.html',
+    page: '/examples/statistics.html#findings',
     selector: '.demo-content',
     wait: 1500,
     setup: [
@@ -523,8 +525,8 @@ export const CAPTURES = [
   {
     file: 'guide-gallery-stacked-bins',
     group: 'gallery',
-    page: '/examples/gallery.html',
-    selector: '#gallery-container',
+    page: '/examples/statistics.html#lot-gallery',
+    selector: '#wmap-host',
     wait: 2000,
     setup: [
       ['selectColumns', '2 columns'],
@@ -557,16 +559,18 @@ export const CAPTURES = [
     setup: [['hover'], ['showCursorOn', '#map canvas', -120, -100]],
   },
 
-  // ── guide-color-schemes.png — §16 Colour schemes: three wafers side by side ──
+  // ── guide-color-schemes.png — §16 Colour schemes: the registered 'teal-rose'
+  //    scheme shown in the toolbar's own palette picker, which is the point —
+  //    registerColorScheme puts it there with no further wiring. ──────────────
   {
     file: 'guide-color-schemes',
     group: 'maps',
-    page: '/examples/color-schemes.html',
-    selector: '.canvas-grid-3',
+    page: '/examples/display-control.html#custom-schemes',
+    selector: '.demo-content',
     wait: 1200,
     setup: [
-      ['hover', '#map-custom'],
-      ['openDropdown', 'Colour scheme', undefined, '#map-custom'],
+      ['hover', '#map'],
+      ['openDropdown', 'Colour scheme', undefined, '#map'],
       ['showCursorOn', '[data-wmap-dropdown-value="teal-rose"]', 10, 10],
     ]
   },
@@ -597,7 +601,7 @@ export const CAPTURES = [
   {
     file: 'toolbar-gallery',
     group: 'toolbar',
-    page: '/examples/gallery.html',
+    page: '/examples/statistics.html#lot-gallery',
     wait: 2000,
     viewport: { width: 1450, height: 900 },
     selector: '[data-wmap-toolbar="gallery"]',

@@ -1,0 +1,297 @@
+{
+  "$comment": [
+    "Single source of truth for the examples list.",
+    "",
+    "One entry per CONCEPT, not per file: merged pages contribute several entries",
+    "that share a `file` and differ by `anchor`, so a Guide cross-link still lands",
+    "on the exact thing it describes.",
+    "",
+    "Consumers:",
+    "  demo-nav.js                     prev/next order (derived from distinct files)",
+    "  scripts/build-examples-index.mjs  regenerates docs/examples/index.md",
+    "  scripts/build-examples-archive.mjs  file + data list for the download",
+    "  scripts/check-examples-manifest.mjs enforces agreement with zensical.toml",
+    "",
+    "`nav: false` marks a page deliberately absent from the zensical nav.",
+    "`dataFiles` paths are relative to docs/examples/."
+  ],
+
+  "demos": [
+    {
+      "section": "Getting started",
+      "id": "first-map",
+      "file": "first-map.html",
+      "title": "Your first wafer map",
+      "blurb": "minimal two-call example, no CSV",
+      "guide": { "label": "Guide §2", "href": "../guide.md#2-your-first-wafer-map" },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
+      "id": "csv-data",
+      "file": "csv-data.html",
+      "title": "Loading CSV data",
+      "blurb": "parse and map real columnar data",
+      "guide": { "label": "Guide §3", "href": "../guide.md#3-loading-real-data-from-a-csv" },
+      "dataFiles": ["../data/dummy-fulldata.csv"]
+    },
+    {
+      "section": "Getting started",
+      "id": "geometry",
+      "file": "geometry.html",
+      "anchor": "#inference",
+      "title": "Geometry inference",
+      "blurb": "omit die size and let the library infer it",
+      "guide": { "label": "Guide §4", "href": "../guide.md#4-adding-die-size-and-wafer-geometry" },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
+      "id": "partial-data",
+      "file": "geometry.html",
+      "anchor": "#centre-anchoring",
+      "title": "Partial data and centre anchoring",
+      "blurb": "anchoring the wafer centre for partial coverage, and why sparse data doesn't need it",
+      "guide": { "label": "Guide §4", "href": "../guide.md#4-adding-die-size-and-wafer-geometry" },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
+      "id": "warnings",
+      "file": "geometry.html",
+      "anchor": "#warnings",
+      "title": "Warnings the library surfaces",
+      "blurb": "the built-in ⚠ indicator, warning severity, and the `onWarning` opt-out for hosts with their own notification UI",
+      "guide": { "label": "Guide §4", "href": "../guide.md#4-adding-die-size-and-wafer-geometry" },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
+      "id": "named-bins",
+      "file": "named-bins.html",
+      "title": "Bins and yield",
+      "blurb": "named hard bins, pass/fail colours, yield label",
+      "guide": { "label": "Guide §5", "href": "../guide.md#5-working-with-bins" },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
+      "id": "metadata-mode",
+      "file": "metadata-mode.html",
+      "title": "Metadata / layout mode",
+      "blurb": "generic categorical colouring from `die.metadata`, coexists with test/bin data",
+      "guide": { "label": "Guide §21", "href": "../guide.md#21-metadata-layout-plot-mode" },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
+      "id": "test-values",
+      "file": "test-values.html",
+      "title": "Test values",
+      "blurb": "parametric measurements, spec limits, colorbar",
+      "guide": { "label": "Guide §6", "href": "../guide.md#6-working-with-test-values" },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
+      "id": "retests",
+      "file": "retests.html",
+      "title": "Retests",
+      "blurb": "multi-touch probe sequences and retest policy",
+      "guide": { "label": "Guide §7", "href": "../guide.md#7-retests-and-enriching-dies-after-build" },
+      "dataFiles": []
+    },
+
+    {
+      "section": "Interaction and control",
+      "id": "display-control",
+      "file": "display-control.html",
+      "title": "Display control",
+      "blurb": "rotation, flip, plot mode, colour scheme",
+      "guide": { "label": "Guide §8", "href": "../guide.md#8-controlling-the-display" },
+      "dataFiles": []
+    },
+    {
+      "section": "Interaction and control",
+      "id": "color-schemes",
+      "file": "display-control.html",
+      "anchor": "#custom-schemes",
+      "title": "Custom colour schemes",
+      "blurb": "register your own bin/value palette with `registerColorScheme`",
+      "guide": { "label": "Guide §18", "href": "../guide.md#18-custom-colour-schemes" },
+      "dataFiles": []
+    },
+    {
+      "section": "Interaction and control",
+      "id": "theming",
+      "file": "theming.html",
+      "title": "Theming",
+      "blurb": "theme the chrome and canvas with `--wmap-*` custom properties (light, dark, Nord, Solarized, brand green)",
+      "guide": { "label": "Guide §8", "href": "../guide.md#8-controlling-the-display" },
+      "dataFiles": []
+    },
+    {
+      "section": "Interaction and control",
+      "id": "interaction",
+      "file": "interaction.html",
+      "title": "Interaction API",
+      "blurb": "hover, click, box-select, controller methods",
+      "guide": { "label": "Guide §9", "href": "../guide.md#9-responding-to-user-interaction" },
+      "dataFiles": []
+    },
+    {
+      "section": "Interaction and control",
+      "id": "worker",
+      "file": "worker.html",
+      "title": "Web Worker",
+      "blurb": "off-main-thread build for large datasets",
+      "guide": { "label": "Guide §17", "href": "../guide.md#17-processing-large-datasets-with-a-web-worker" },
+      "dataFiles": []
+    },
+
+    {
+      "section": "Analysis and layout",
+      "id": "findings",
+      "file": "statistics.html",
+      "anchor": "#findings",
+      "title": "Statistical findings",
+      "blurb": "ring, quadrant, cluster, edge-arc analysis on a single wafer",
+      "guide": { "label": "Guide §10", "href": "../guide.md#10-adding-statistical-findings" },
+      "dataFiles": []
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "summary-panel",
+      "file": "statistics.html",
+      "anchor": "#summary-panel",
+      "title": "Summary panel",
+      "blurb": "persistent metadata and stats sidebar docked beside the map",
+      "guide": { "label": "Guide §11", "href": "../guide.md#11-summary-panel" },
+      "dataFiles": []
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "gallery",
+      "file": "statistics.html",
+      "anchor": "#lot-gallery",
+      "title": "Lot gallery",
+      "blurb": "card grid of multiple wafers with shared controls and stacked modes",
+      "guide": { "label": "Guide §12", "href": "../guide.md#12-building-a-lot-gallery" },
+      "dataFiles": []
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "lot-findings",
+      "file": "statistics.html",
+      "anchor": "#lot-findings",
+      "title": "Lot-level findings",
+      "blurb": "cross-wafer trend detection with `analyzeWaferLot`",
+      "guide": { "label": "Guide §13", "href": "../guide.md#13-lot-level-statistical-findings" },
+      "dataFiles": []
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "lot-stack",
+      "file": "statistics.html",
+      "anchor": "#lot-stack",
+      "title": "Lot-stack spatial analysis",
+      "blurb": "mean/median/stddev maps aggregated across a lot",
+      "guide": { "label": "Guide §19", "href": "../guide.md#19-recipes" },
+      "dataFiles": []
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "reticle",
+      "file": "reticle.html",
+      "title": "Reticle overlays",
+      "blurb": "photolithography field grid and reticle-position findings",
+      "guide": { "label": "Guide §15", "href": "../guide.md#15-reticle-overlays" },
+      "dataFiles": []
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "test-sites",
+      "file": "test-sites.html",
+      "title": "Multi-site parallel testing",
+      "blurb": "site-based analysis across a multi-site prober card",
+      "dataFiles": []
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "real-data",
+      "file": "real-data.html",
+      "title": "Real wafer data (WM-811K)",
+      "blurb": "open dataset with 811 000 wafer records",
+      "guide": { "label": "Guide §10", "href": "../guide.md#10-adding-statistical-findings" },
+      "dataFiles": ["wm811k-sample.json"]
+    },
+    {
+      "section": "Analysis and layout",
+      "id": "mixedwm38",
+      "file": "mixedwm38.html",
+      "title": "Mixed patterns (MixedWM38)",
+      "blurb": "classified failure pattern dataset",
+      "guide": { "label": "Pattern Detection", "href": "../pattern-detection.md" },
+      "dataFiles": ["mixedwm38-sample.json"]
+    },
+
+    {
+      "section": "Compatibility and advanced",
+      "id": "pipeline",
+      "file": "pipeline.html",
+      "title": "Rendering pipeline",
+      "blurb": "low-level buildView / toCanvas pipeline",
+      "guide": { "label": "Guide §20", "href": "../guide.md#20-advanced-the-rendering-pipeline" },
+      "dataFiles": []
+    },
+    {
+      "section": "Compatibility and advanced",
+      "id": "comparison",
+      "file": "comparison.html",
+      "title": "wafermap vs Plotly.js",
+      "blurb": "side-by-side render timings and feature comparison",
+      "guide": { "label": "Performance", "href": "../performance.md" },
+      "dataFiles": ["wm811k-sample.json", "../data/large-test.csv"]
+    },
+
+    {
+      "section": "Unlisted",
+      "id": "showcase",
+      "file": "showcase.html",
+      "nav": false,
+      "title": "Showcase",
+      "blurb": "all features in one page, good for a quick overview once you know the basics",
+      "dataFiles": [
+        "data/cluster.csv",
+        "data/edge-ring.csv",
+        "data/high-yield.csv",
+        "data/parametric.csv",
+        "../data/dummy-fulldata.csv"
+      ]
+    },
+    {
+      "section": "Unlisted",
+      "id": "quickstart-live",
+      "file": "quickstart-live.html",
+      "nav": false,
+      "title": "Quick Start — live",
+      "blurb": "the minimal inline-generated example linked from the Quick Start page",
+      "dataFiles": []
+    }
+  ],
+
+  "$redirectComment": [
+    "Pages consolidated in 0.22.0. Their URLs are live on the published site, so",
+    "each keeps a meta-refresh stub pointing at the merged page and the anchor",
+    "that reproduces what it used to show."
+  ],
+  "redirects": {
+    "findings.html": "statistics.html#findings",
+    "summary-panel.html": "statistics.html#summary-panel",
+    "gallery.html": "statistics.html#lot-gallery",
+    "lot-findings.html": "statistics.html#lot-findings",
+    "lot-stack-analysis.html": "statistics.html#lot-stack",
+    "color-schemes.html": "display-control.html#custom-schemes",
+    "partial-data.html": "geometry.html#centre-anchoring"
+  }
+}
