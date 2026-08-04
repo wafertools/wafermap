@@ -5,10 +5,20 @@
 // failure signatures for the demo pages. This one is meant to be read and edited.
 
 // ── Knobs ────────────────────────────────────────────────────────────────────
-
-export const GRID_RADIUS = 18;    // dies from centre to edge
-export const YIELD       = 0.92;  // baseline pass probability at the wafer centre
-export const EDGE_LOSS   = 0.35;  // extra failure probability at the very edge
+//
+// Must match the geometry passed to buildWaferMap in app.js. The cutoff below
+// is computed in physical mm, using DIE_WIDTH/DIE_HEIGHT/WAFER_DIAMETER — not
+// in die-index space — because a rectangular die pitch (8x12) makes an
+// index-space circle (hypot(x, y) / GRID_RADIUS) an ELLIPSE in mm. Left
+// unclipped to the real wafer circle, that ellipse pokes outside the actual
+// 300mm wafer outline on the tall axis, which is exactly the jagged,
+// non-circular map this constant exists to prevent.
+export const GRID_RADIUS    = 18;    // dies from centre to edge
+export const DIE_WIDTH      = 8;     // mm — must match app.js's dieConfig.width
+export const DIE_HEIGHT     = 12;    // mm — must match app.js's dieConfig.height
+export const WAFER_DIAMETER = 300;   // mm — must match app.js's waferConfig.diameter
+export const YIELD          = 0.92;  // baseline pass probability at the wafer centre
+export const EDGE_LOSS      = 0.35;  // extra failure probability at the very edge
 
 // ── Bin and test definitions ─────────────────────────────────────────────────
 //
@@ -44,9 +54,13 @@ function rand(x, y, seed) {
 export function generateResults({ seed = 1 } = {}) {
   const results = [];
 
+  const waferRadius = WAFER_DIAMETER / 2;
+
   for (let x = -GRID_RADIUS; x <= GRID_RADIUS; x++) {
     for (let y = -GRID_RADIUS; y <= GRID_RADIUS; y++) {
-      const r = Math.hypot(x, y) / GRID_RADIUS;
+      // Physical distance from centre, in mm — not index space, since the die
+      // pitch is rectangular (see the comment on the constants above).
+      const r = Math.hypot(x * DIE_WIDTH, y * DIE_HEIGHT) / waferRadius;
 
       // A prober only steps to sites that lie fully on the wafer, so anything
       // outside the circle is simply never probed — not a "partial" die.
