@@ -27,6 +27,12 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Build
+        # check-agents-guide.mjs (part of `npm run check`) verifies AGENTS.md
+        # against dist/**/*.d.ts, so dist/ must exist before Typecheck runs —
+        # a fresh CI checkout has no local dist/ lying around like a dev machine.
+        run: npm run build
+
       - name: Typecheck
         run: npm run check
 
