@@ -34,6 +34,16 @@ under `### Breaking`.
   of matching prose. Code that did `warnings[0].includes('…')` is exactly what
   this replaces — that string was never a contract.
 
+- **`findTestDef`, `resolveTestNumber`, `getUniqueTestNumbers` and
+  `generateTextOverlay` are no longer exported from `/renderer` (or the root).**
+  They are internal helpers of the view pipeline with no documented contract, and
+  nothing outside the library used them. An export nobody can look up is still API
+  surface you cannot change later, so they were withdrawn rather than documented.
+
+  Migration: none expected. If you did depend on one, import it from
+  `@wafertools/wafermap/renderer/buildView.js` and open an issue saying what for —
+  the fix is to give you a supported entry point, not to re-widen the surface.
+
 ### Added
 
 - **The library now surfaces its own data warnings.** A ⚠ indicator appears in the

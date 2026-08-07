@@ -25,14 +25,13 @@ const SNAPSHOTS = {
     'classifyDie', 'classifyPattern', 'clipDiesToWafer', 'computeFunctionalYield', 'contrastTextColor', 'createWafer',
     'DEFAULT_FACET_CURATION', 'facetValueOf', 'FACET_NONE_VALUE', 'filterCorrelationMatrix',
     'dieHasTestData',
-    'filterFindings', 'findTestDef', 'generateDies', 'generateReticleGrid', 'generateTextOverlay',
+    'filterFindings', 'generateDies', 'generateReticleGrid',
     'parseRegionKey', 'resolveGridPitch', 'sectorCompassNames',
     'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
-    'getReticleCell', 'getRingLabel', 'getUniqueBins', 'getUniqueTestNumbers',
+    'getReticleCell', 'getRingLabel', 'getUniqueBins',
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isYieldEligibleDie', 'listColorSchemes',
     'mapDataToDies', 'openHtmlReport', 'registerColorScheme', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
-    'resolveTestNumber',
     'softBinColor', 'transformDies', 'valueToGreyscale', 'valueToViridis',
   ],
   './core': [
@@ -44,15 +43,16 @@ const SNAPSHOTS = {
     'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
     'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'resolveGridPitch', 'transformDies',
   ],
+  // findTestDef / generateTextOverlay / getUniqueTestNumbers / resolveTestNumber were
+  // removed from the public surface in 0.22.0 — internal view-pipeline helpers with no
+  // documented contract. In-repo callers import them from './buildView.js' directly.
   './renderer': [
     'buildHoverText', 'buildMapTitle', 'buildView', 'buildWaferMap',
-    'contrastTextColor', 'dieHasTestData', 'findTestDef', 'generateTextOverlay',
+    'contrastTextColor', 'dieHasTestData',
     'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
-    'getUniqueTestNumbers',
     'hardBinColor', 'hardBinGreyscale',
     'isParametricTest',
     'listColorSchemes', 'registerColorScheme',
-    'resolveTestNumber',
     'softBinColor', 'valueToGreyscale', 'valueToViridis',
   ],
   './stats': [

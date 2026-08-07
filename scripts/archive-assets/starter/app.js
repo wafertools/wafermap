@@ -29,18 +29,24 @@ import { generateResults, HBIN_DEFS, TEST_DEFS } from './generate-data.js';
 // x and y are the prober's integer step positions. Pass them straight through —
 // the library converts to millimetres itself using dieConfig.
 
-const results = generateResults({ seed: 1 });
+// Geometry. Both are optional on buildWaferMap: leave either out and the library
+// infers it from the data's extent. Supplying real values is always better —
+// inference cannot tell a small full wafer from a slice of a large one.
+//
+// Declared here rather than inline because the synthetic generator needs the same
+// numbers: dies laid out on a different grid to the one the map is built with is
+// what makes a wafer map render as a ragged non-circle.
+const waferConfig = { diameter: 300, notch: { type: 'bottom' } };
+const dieConfig   = { width: 8, height: 12 };   // millimetres
+
+const results = generateResults({ seed: 1, waferConfig, dieConfig });
 
 // ── 2. Build ─────────────────────────────────────────────────────────────────
 
 const result = buildWaferMap({
   results,
-
-  // Geometry. Both are optional: leave either out and the library infers it
-  // from the data's extent. Supplying real values is always better — inference
-  // cannot tell a small full wafer from a slice of a large one.
-  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
-  dieConfig:   { width: 8, height: 12 },   // millimetres
+  waferConfig,
+  dieConfig,
 
   // Which bins count as passing. This drives the yield number AND the yield
   // label's wording, so set it honestly — do not assume bin 1.

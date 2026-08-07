@@ -1,9 +1,10 @@
+// resolveTestNumber / findTestDef / getUniqueTestNumbers / generateTextOverlay are
+// deliberately NOT re-exported: they are internal helpers of the view pipeline with
+// no documented contract, and every consumer inside this repo imports them straight
+// from './buildView.js'. Keeping them off the public surface is what stops the API
+// growing by accident — add them back only with docs and a reason a host needs them.
 export {
   buildView,
-  resolveTestNumber,
-  findTestDef,
-  getUniqueTestNumbers,
-  generateTextOverlay,
   getDieKey,
   buildHoverText,
   buildMapTitle,

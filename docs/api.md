@@ -587,7 +587,7 @@ expected is missing or degraded but what is drawn is correct. The union of `code
 is deliberately open to `string` so new advisories are not a breaking change —
 switch with a `default` branch.
 
-These are surfaced automatically — see [`WarningsOptions`](#warningsoptions).
+These are surfaced automatically — see [`WarningsOptions`](#510-warnings).
 
 #### Minimum geometry for partial data
 
@@ -1288,7 +1288,7 @@ const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs, passBi
 renderWaferMap(document.getElementById('map'), result, { insights: { enabled: true } });
 ```
 
-### 5.10 Warnings {#warningsoptions}
+### 5.10 Warnings
 
 `renderWaferMap` and `renderWaferGallery` surface the library's own advisories
 themselves. A ⚠ indicator appears in the toolbar **only when there is something to
@@ -2449,7 +2449,7 @@ import {
   buildTestHistogramData, buildTestHistogramSeries,
   buildCorrelationMatrix, filterCorrelationMatrix,
   buildScatterData, buildScatterDataGrouped,
-  buildFacetTable, facetValueOf, DEFAULT_FACET_CURATION,
+  buildFacetTable, facetValueOf, DEFAULT_FACET_CURATION, FACET_NONE_VALUE,
 } from '@wafertools/wafermap/stats';
 ```
 
@@ -2470,6 +2470,14 @@ import {
 | `buildScatterDataGrouped(groups, xTest, yTest)` | `ScatterPoint[]` | Same, with each point tagged `group: string` — every group's points are returned together (this function never restricts to one group). |
 | `buildFacetTable(items, options?)` | `FacetField[]` | The distinct-values table over `wafer.metadata` — "what can I group/compare/split by?" One entry per metadata key present on at least one item, curated via `DEFAULT_FACET_CURATION` (`lot`, `product`, `testProgram`, `temperature`, `split`, `operator`, `testDate`; `waferId` is curated `facet: false` — present but not offered, since it's unique per item by definition). `options.facetableOnly` (default `true`) restricts to curated-`facet:true`-or-uncurated keys; pass `false` to include `waferId` too. |
 | `facetValueOf(metadata, key, curation?)` | `string \| undefined` | The faceting value of one metadata key for one item — date-curated fields (`testDate`) truncate to date-only. |
+
+`FACET_NONE_VALUE` (`'(none)'`) is the residual bucket: `buildFacetTable` emits it as a
+`FacetValue.value` for items whose metadata has no value for that field, so the counts
+still add up to the full population instead of silently dropping the gap. It always
+sorts last regardless of size. **Compare against the constant, not the literal string** —
+and treat it as "field missing", not as a real metadata value, when labelling anything a
+user reads. A wafer genuinely carrying the string `"(none)"` is indistinguishable from a
+missing one, which is the one case where this bucket is ambiguous.
 
 `WaferMetadata` → §12.3
 
@@ -3479,6 +3487,60 @@ onClick: (die) => {
   const probeCard = die.metadata?.probeCard;
 }
 ```
+
+### 12.5 Other exported type names
+
+Every type below is reachable from a function documented above — these are the names
+to `import type` when you need to annotate a variable rather than let inference do it.
+Their shapes are described at the function that produces or consumes them; this table
+exists so the name is discoverable, not to restate the shape.
+
+The `*Item` types are **input** shapes for the §7.16 chart builders (what you pass in);
+the `*Datum` / `*Data` types they return are documented there. All accept `dies?: Die[]`
+and, where noted, precomputed statistics that are used in preference to re-walking `dies`.
+
+| Type | Subpath | Role |
+| --- | --- | --- |
+| `WaferNotch` | `/core` | `{ type: 'top' \| 'bottom' \| 'left' \| 'right' }` — `WaferConfig.notch`. |
+| `Quadrant` | `/core` | `'NE' \| 'NW' \| 'SW' \| 'SE'`. |
+| `DieClassification` | `/core` | `classifyDie` result — `{ ring, quadrant }`. |
+| `ClassifyOptions` | `/core` | `classifyDie` options — `{ ringCount? }`. |
+| `DieEligibilityOptions` | `/core` | `isYieldEligibleDie` options — `includePartial?` / `includeEdgeExcluded?`. |
+| `DieLike` | `/core` | Minimal die shape the aggregation helpers accept — satisfied by both `Die` and `DieResult`. |
+| `AggregationMethod` | `/core` | `'mean' \| 'median' \| 'stddev' \| 'min' \| 'max' \| 'count'`. |
+| `PitchResult` | `/core` | `resolveGridPitch` return — §11.23. |
+| `WaferMapOptions` | `/renderer` | `buildWaferMap`'s second argument — `ViewOptions` plus `debug?`. |
+| `ViewRect` | `/renderer` | One drawn die rectangle on `View.rects`. |
+| `ViewText` | `/renderer` | One positioned text run on the `View`. |
+| `ViewOverlay` | `/renderer` | One overlay polyline set — wafer boundary, reticle, probe path, ring/quadrant boundary, XY indicator. |
+| `ViewHoverPoint` | `/renderer` | `{ x, y }` hover probe point. |
+| `ToCanvasResult` | `/render` | `toCanvas` return — `hitTarget`, fitted `viewport`, `binLegendRows`. |
+| `ViewportTransform` | `/render` | Pan/zoom state — `{ originX, originY, ppm, snapDist }`. Usable as `renderWaferMap`'s initial viewport. |
+| `InsightsView` | `/render` | `'overview' \| 'distributions' \| 'correlation'`. |
+| `DetachWindowOpener` | `/render` | `(label) => Window \| null` — `setDetachWindowOpener`, for hosts where `window.open` is blocked. |
+| `AnalyzeWaferMapInput` | `/stats` | `WaferMapInput \| WaferMapResult`. |
+| `AnalyzeWaferLotInput` | `/stats` | `Array<WaferMapInput \| WaferMapResult>`. |
+| `HighlightRegionTarget` | `/stats` | `StatsFinding.highlight` variant `kind: 'region'`. |
+| `HighlightBinTarget` | `/stats` | Variant `kind: 'bin'`. |
+| `HighlightWaferTarget` | `/stats` | Variant `kind: 'wafer'`. |
+| `HighlightDieTarget` | `/stats` | Variant `kind: 'dies'`. |
+| `ParsedRegionKey` | `/stats` | `parseRegionKey` return — `{ family, ring?, quadrant?, sector? }`. |
+| `BinItem` | `/stats` | Input to `buildBinParetoData` / `buildBinClusterData`; may carry precomputed `hardBinCounts`/`softBinCounts`. |
+| `BinType` | `/stats` | `'hbin' \| 'sbin'`. |
+| `BoxplotItem` | `/stats` | Input to `buildTestBoxplotData`; may carry precomputed `testStats`. |
+| `CapabilityItem` | `/stats` | Input to `buildCapabilityData` — one item is the short-term subgroup for Cp/Cpk. |
+| `HistogramItem` | `/stats` | Input to `buildTestHistogramData`. |
+| `HistogramSeries` | `/stats` | One group's counts in `HistogramSeriesData`, aligned to the shared `ranges`. |
+| `ScatterItem` | `/stats` | Input to `buildScatterData` / `buildScatterDataGrouped`. |
+| `RegionYieldDatum` | `/stats` | `buildRegionYieldData` row — `key` parses with `parseRegionKey`. |
+| `YieldSortBy` | `/stats` | `'yield' \| 'label'`. |
+| `CorrelationCell` | `/stats` | One matrix cell — `{ xIndex, yIndex, r }` (`r` is `null` when undefined). |
+| `CorrelationTestInfo` | `/stats` | A matrix axis entry — `{ testNumber, label, unit? }`. |
+| `CorrelationSummary` | `/stats` | `filterCorrelationMatrix` return. |
+| `FacetItem` | `/stats` | Input to `buildFacetTable` — `{ metadata?, dieCount? }`. |
+| `FacetValue` | `/stats` | One distinct value — `{ value, waferCount, dieCount }`. |
+| `FacetCuration` | `/stats` | One curation entry — `label`, `facet?`, `date?`. |
+| `BuildFacetTableOptions` | `/stats` | `buildFacetTable` options — `curation?`, `facetableOnly?`. |
 
 ---
 

@@ -5,20 +5,9 @@
 // failure signatures for the demo pages. This one is meant to be read and edited.
 
 // ── Knobs ────────────────────────────────────────────────────────────────────
-//
-// Must match the geometry passed to buildWaferMap in app.js. The cutoff below
-// is computed in physical mm, using DIE_WIDTH/DIE_HEIGHT/WAFER_DIAMETER — not
-// in die-index space — because a rectangular die pitch (8x12) makes an
-// index-space circle (hypot(x, y) / GRID_RADIUS) an ELLIPSE in mm. Left
-// unclipped to the real wafer circle, that ellipse pokes outside the actual
-// 300mm wafer outline on the tall axis, which is exactly the jagged,
-// non-circular map this constant exists to prevent.
-export const GRID_RADIUS    = 18;    // dies from centre to edge
-export const DIE_WIDTH      = 8;     // mm — must match app.js's dieConfig.width
-export const DIE_HEIGHT     = 12;    // mm — must match app.js's dieConfig.height
-export const WAFER_DIAMETER = 300;   // mm — must match app.js's waferConfig.diameter
-export const YIELD          = 0.92;  // baseline pass probability at the wafer centre
-export const EDGE_LOSS      = 0.35;  // extra failure probability at the very edge
+
+export const YIELD     = 0.92;  // baseline pass probability at the wafer centre
+export const EDGE_LOSS = 0.35;  // extra failure probability at the very edge
 
 // ── Bin and test definitions ─────────────────────────────────────────────────
 //
@@ -50,21 +39,37 @@ function rand(x, y, seed) {
 /**
  * Build a DieResult[] for one wafer.
  * Positions are prober step positions centred on (0, 0).
+ *
+ * `waferConfig` and `dieConfig` are the same objects passed to buildWaferMap —
+ * generating dies on a different grid to the one the map is built with is what
+ * makes a wafer map render as a ragged non-circle, so they come from one place.
  */
-export function generateResults({ seed = 1 } = {}) {
+export function generateResults({ seed = 1, waferConfig, dieConfig } = {}) {
   const results = [];
 
-  const waferRadius = WAFER_DIAMETER / 2;
+  const waferRadius = waferConfig.diameter / 2;
+  const pitchX = dieConfig.width, pitchY = dieConfig.height;
 
-  for (let x = -GRID_RADIUS; x <= GRID_RADIUS; x++) {
-    for (let y = -GRID_RADIUS; y <= GRID_RADIUS; y++) {
-      // Physical distance from centre, in mm — not index space, since the die
-      // pitch is rectangular (see the comment on the constants above).
-      const r = Math.hypot(x * DIE_WIDTH, y * DIE_HEIGHT) / waferRadius;
+  // Sweep enough index steps to cover the wafer in each direction. Derived, not
+  // hardcoded: a hardcoded index radius silently crops the map into a rectangle
+  // as soon as the die size shrinks.
+  const iMax = Math.ceil(waferRadius / pitchX);
+  const jMax = Math.ceil(waferRadius / pitchY);
 
-      // A prober only steps to sites that lie fully on the wafer, so anything
-      // outside the circle is simply never probed — not a "partial" die.
-      if (r > 1) continue;
+  // A prober only steps to sites lying ENTIRELY on the wafer, so require the die
+  // centre to sit at least one half-diagonal inside the edge. Testing the centre
+  // alone admits dies that straddle the boundary and render poking out past the
+  // wafer outline — and a die built from results is never a "partial" die.
+  const halfDiag = Math.hypot(pitchX / 2, pitchY / 2);
+
+  for (let x = -iMax; x <= iMax; x++) {
+    for (let y = -jMax; y <= jMax; y++) {
+      // Physical distance from centre, in mm — not index space, since a
+      // rectangular die pitch makes an index-space circle an ellipse in mm.
+      const rMm = Math.hypot(x * pitchX, y * pitchY);
+      if (rMm + halfDiag > waferRadius) continue;
+
+      const r = rMm / waferRadius;   // normalised radial position [0, 1]
 
       // Yield falls off towards the edge, as it usually does in reality.
       const passProb = YIELD - EDGE_LOSS * Math.pow(r, 4);

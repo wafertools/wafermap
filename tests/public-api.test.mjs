@@ -13,7 +13,6 @@ import {
   createWafer,
   generateDies,
   generateReticleGrid,
-  generateTextOverlay,
   getColorScheme,
   getDieKey,
   getRingLabel,
@@ -269,7 +268,7 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   assert.ok(listColorSchemes().some((scheme) => scheme.name === 'custom-suite'));
 });
 
-test('renderer scene assembly preserves the public contract', () => {
+test('renderer scene assembly preserves the public contract', async () => {
   const wafer = createWafer({
     diameter: 60,
     metadata: {
@@ -321,6 +320,10 @@ test('renderer scene assembly preserves the public contract', () => {
 
   assert.equal(getDieKey({ x: 3, y: -2 }), '3,-2');
 
+  // No longer a public export (0.22.0) — imported from its module so the coverage
+  // survives the surface reduction. Asserted here rather than deleted because this
+  // is the only check that the overlay emits one text run per die.
+  const { generateTextOverlay } = await import('../dist/packages/renderer/buildView.js');
   const textOverlay = generateTextOverlay(dies, null, {
     plotMode: 'value',
     colorFns: getColorScheme('default'),
