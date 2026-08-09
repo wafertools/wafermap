@@ -22,7 +22,7 @@ where repo-relative paths do not resolve.
 
 ## Important notes
 - `x` and `y` in `DieResult` are die grid positions (prober step integers), not millimetres.
-- Use `testValues: Record<number, number>` (keyed by stable test number) rather than the deprecated `values: number[]` (positional array). Example: `testValues: { 1050: 0.95 }`.
+- Use `testValues: Record<number, number>` (keyed by stable test number). Example: `testValues: { 1050: 0.95 }`. The positional `values: number[]` array was **removed** in 0.21.0 — passing it is a type error and is ignored at runtime; do not add a compatibility shim.
 - Hard bins go in `hbin`; soft bins go in `sbin`. Their number spaces are independent. Never merge them, and never fall back to `?? 0` — a missing bin is not bin 0.
 - All coordinates shown to the user (axis ticks, tooltips) must be original die grid positions (`die.x` / `die.y`), not post-transform display coordinates.
 - `buildWaferMap()` is pure and server-safe; renderers require the DOM.

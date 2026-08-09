@@ -18,3 +18,8 @@ tests/fixtures/mixedwm38-benchmark.json
 tests/fixtures/Description.pdf
 site/
 docs/examples/presentation.html
+
+# npm auth tokens. `npm config set` can land a token here in the project root
+# instead of ~/.npmrc — a publish credential one `git add .` away from being
+# pushed. Auth belongs in ~/.npmrc; this makes the accident unstageable.
+.npmrc

@@ -226,6 +226,77 @@ if (viewOpts && /^\s+colorBySpec\??:/m.test(viewOpts[1])) {
   fail("AGENTS.md says ViewOptions.colorBySpec was removed, but it is declared on ViewOptions");
 }
 
+// ── 4c. Optionality claims ──────────────────────────────────────────────────
+//
+// Symbol existence is not enough. `result.warnings` is required and always an
+// array; `summary.stats.warnings` is optional and is `undefined` on a clean
+// wafer — which is most wafers. A guide that flattens the two into "both are
+// WaferWarning[]" produces `summary.stats.warnings.length`, a TypeError that
+// passes local testing (no warnings) and fails in production. That is the same
+// silently-wrong-shape class as the string[] → WaferWarning[] change the guide
+// already warns about, so it gets a checker rather than a comment.
+
+/** Body of `name`'s declaration, brace-matched so nested objects survive. */
+function blockOf(src, header) {
+  const m = src.match(header);
+  if (!m) return null;
+  let i = src.indexOf('{', m.index);
+  if (i < 0) return null;
+  for (let depth = 0, j = i; j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}' && --depth === 0) return src.slice(i + 1, j);
+  }
+  return null;
+}
+
+/**
+ * 'required' | 'optional' | null for `prop` declared at the TOP level of `body`.
+ *
+ * Depth matters: WaferMapResult holds both a top-level `warnings: WaferWarning[]`
+ * and, nested inside `inference`, the deprecated `warnings?: string[]` mirror. A
+ * plain multiline regex finds the nested one first and reports the opposite
+ * answer, so nested blocks are elided before matching.
+ */
+function optionality(body, prop) {
+  if (body == null) return null;
+  let flat = '', depth = 0;
+  for (const ch of body) {
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    else if (depth === 0) flat += ch;
+  }
+  const m = flat.match(new RegExp(`(?:^|\\n)\\s*${prop}(\\??):`));
+  return m ? (m[1] ? 'optional' : 'required') : null;
+}
+
+const statsBody = blockOf(types, /interface StatsSummary\b/);
+
+const OPTIONALITY = [
+  // [label, interface body, property, expected, why it matters]
+  ['WaferMapResult.warnings', blockOf(types, /interface WaferMapResult\b/), 'warnings', 'required',
+   'the guide tells agents they can read it unguarded'],
+  ['StatsSummary.stats.warnings', statsBody && blockOf(statsBody, /^\s*stats\s*:/m), 'warnings', 'optional',
+   'the guide tells agents to reach for it with `?.`'],
+];
+
+for (const [label, body, prop, expected, why] of OPTIONALITY) {
+  const actual = optionality(body, prop);
+  if (actual === null) {
+    fail(`could not locate '${label}' in dist/**/*.d.ts — AGENTS.md describes its ` +
+         `optionality and can no longer be verified`);
+  } else if (actual !== expected) {
+    fail(`AGENTS.md assumes ${label} is ${expected}, but it is declared ${actual} — ` +
+         `${why}, so the guidance is now wrong`);
+  }
+}
+
+// The guide must actually carry the distinction, not merely happen to be
+// consistent with it: an optional-chained read of stats.warnings has to appear.
+if (!/summary\.stats\.warnings\?\./.test(rulesText())) {
+  fail('AGENTS.md must show `summary.stats.warnings?.` — stats.warnings is optional ' +
+       'and undefined on a clean wafer, so an unguarded read is a TypeError');
+}
+
 // ── 5. The terminology rule applies to the guide itself ─────────────────────
 
 const rules = block ? block[1] : guide;

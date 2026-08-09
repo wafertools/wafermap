@@ -53,15 +53,26 @@ correctness guarantee that comes with it.
   sites that fit. Never recompute a `partial` flag by testing die corners against
   the wafer circle — that manufactures fake partial dies which are then greyed out
   and dropped from yield. A die outside the wafer means the *geometry* is wrong.
-- **Check `result.warnings` and `summary.stats.warnings`.** Both are
-  `WaferWarning[]` — `{ code, message, severity }`. Branch on `code`, never on the
-  prose. Geometry advisories are severity `'error'`: they mean dies may be drawn in
+- **Check `result.warnings` and `summary.stats.warnings`.** Both carry
+  `WaferWarning` — `{ code, message, severity }`. Branch on `code`, never on the
+  prose. **The two differ in shape and the difference throws:**
+  `result.warnings` is required and always an array (`[]` when clean), but
+  `summary.stats.warnings` is *optional* and is `undefined` when there is nothing
+  to report. Write `summary.stats.warnings?.length` — a bare
+  `summary.stats.warnings.length` is a TypeError on every clean wafer, which is
+  most of them, so it will pass your testing and fail in production.
+  Geometry advisories are severity `'error'`: they mean dies may be drawn in
   the wrong place. The renderers surface these themselves in a toolbar indicator, so
   do NOT hand-roll a second display — pass
   `warnings: { display: false, onWarning }` if the app has its own notification UI.
   (`result.inference.warnings` is a deprecated string mirror; do not use it.)
-- **Container needs a real height.** A zero-height parent renders nothing. This is
-  the most common "it didn't work" report.
+- **Give the container a resolved height.** `renderWaferMap` fills its container.
+  A bare block-flow `<div>` is fine — it grows to the canvas. The real failure is a
+  flex/grid child whose ancestors never resolve a height: it stays 0-tall and the
+  map is invisible. The library detects exactly that case after layout settles and
+  `console.warn`s with the fix, so read the console before debugging further. Either
+  give the container a real CSS height, or pass `{ height: 600 }` in the render
+  options and the library will size it for you.
 
 ### API facts that are easy to guess wrong
 

@@ -9,7 +9,7 @@
 // Run via: node scripts/build-user-guide.mjs
 // Also called automatically as part of `npm run build`.
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { marked, Renderer } from 'marked';
@@ -96,10 +96,26 @@ let bodyHtml = marked(md, { renderer });
 // see tsmap's scripts/build-user-guide.mjs). Build time is on hover only, not
 // in the visible text — see toolbar.ts's logWmapVersionOnce doc comment for
 // why the build time matters (linked local dev doesn't bump the semver).
+//
+// The stamp is the newest mtime of the guide's own inputs, NOT `new Date()`.
+// userGuideHtml.ts is a committed generated file, so a wall-clock stamp made
+// every single `npm run build` dirty the working tree with a one-line diff —
+// noise in every `git status`, and a spurious conflict on every rebase. Source
+// mtimes carry the signal that was actually wanted (has the guide changed since
+// the copy I'm looking at?) and are stable across rebuilds that changed nothing.
+const guideInputs = [
+  mdPath,
+  join(root, 'docs/guide-demos.js'),
+  join(root, 'package.json'),
+];
+const builtAt = new Date(
+  Math.max(...guideInputs.map((p) => statSync(p).mtimeMs)),
+).toISOString();
+
 bodyHtml = bodyHtml.replace(
   /(<h1[^>]*>)(.*?)(<\/h1>)/s,
   (_, open, inner, close) =>
-    `${open}${inner}<span class="wmap-guide-version" title="Built ${new Date().toISOString()}">v${pkg.version}</span>${close}`,
+    `${open}${inner}<span class="wmap-guide-version" title="Built ${builtAt}">v${pkg.version}</span>${close}`,
 );
 
 // Inject online docs link after the <h1>. Opens in new tab in browsers;
