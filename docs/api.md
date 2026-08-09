@@ -1040,6 +1040,7 @@ This is the same mechanism `--wmap-z` uses for stacking. It is theme-agnostic: w
 | `--wmap-border` | Borders, dividers, axis tick lines | `rgba(0,0,0,0.12)` |
 | `--wmap-text` | Primary text (chrome + canvas axis/legend) | `#333` |
 | `--wmap-text-muted` | Secondary/muted text | `#66788a` |
+| `--wmap-text-strong` | Emphasis text — Summary-panel headings, big stat numbers, metadata badge values | `#1f2f43` |
 | `--wmap-icon` | Toolbar icon default | `#506784` |
 | `--wmap-icon-hover` | Toolbar icon hover | `#2a3f5f` |
 | `--wmap-icon-active` | Active icon / on-canvas accent | `#1a66cc` |
@@ -1047,8 +1048,12 @@ This is the same mechanism `--wmap-z` uses for stacking. It is theme-agnostic: w
 | `--wmap-menu-hover` / `--wmap-menu-active` | Menu-item hover / active | `#f0f4fc` / `#dce8f8` |
 | `--wmap-separator` | Faint separators | `rgba(0,0,0,0.12)` |
 | `--wmap-warn-bg` / `--wmap-warn-border` / `--wmap-warn-text` | Warning banner | `#fffbe6` / `#f0c040` / `#7a5800` |
+| `--wmap-err-bg` / `--wmap-err-border` / `--wmap-err-text` | Error banner (geometry advisories — dies may be mis-positioned) | `#fef2f2` / `#dc8a8a` / `#7a1c1c` |
 | `--wmap-info-bg` / `--wmap-info-text` | Info callout | `#dce8f8` / `#334155` |
 | `--wmap-selected` | Finding-drilldown card outline (gallery) | `#e07a20` |
+| `--wmap-finding-indicator` | Summary button text colour when the wafer/lot has notable findings | `#b7551a` |
+
+`--wmap-err-*` and `--wmap-warn-*` are visually distinct on purpose — a warning says something is missing or degraded, an error says the map may be positionally **wrong** (geometry advisories), and flattening the two into one colour hides the difference that matters. **Every token that pairs a background with text on it — `warn-*`, `err-*`, `text-strong` against `panel-bg`/`surface` — needs its own AA-contrasting pair when you theme it.** Overriding only the surfaces and leaving these unset does not make them invisible; it makes them fall back to the *light-theme* defaults above, which is how a dark theme silently ends up with near-black text on a near-black panel. §5.4.1's dark/Nord examples below set all of them for exactly this reason.
 
 Canvas colours are resolved from these variables at draw time and re-resolved on a theme change or OS light/dark flip, so the wafer repaints to match.
 
@@ -1086,6 +1091,7 @@ Canvas colours are resolved from these variables at draw time and re-resolved on
   --wmap-border:      #3a3a3a;
   --wmap-text:        #ccc;
   --wmap-text-muted:  #888;
+  --wmap-text-strong: #f2f2f2;
   --wmap-icon:        #aaa;
   --wmap-icon-hover:  #6af;
   --wmap-icon-active: #6af;
@@ -1094,9 +1100,20 @@ Canvas colours are resolved from these variables at draw time and re-resolved on
   --wmap-menu-hover:  #343438;
   --wmap-menu-active: #2b3a4f;
   --wmap-separator:   #2a2a2a;
+  --wmap-warn-bg:     #3a2f0f;
+  --wmap-warn-border: #7a6222;
+  --wmap-warn-text:   #f0c04d;
+  --wmap-err-bg:      #3a1414;
+  --wmap-err-border:  #7a3030;
+  --wmap-err-text:    #ff8a8a;
+  --wmap-info-bg:     #1a2b3d;
+  --wmap-info-text:   #8ecbff;
   --wmap-selected:    #6af;
+  --wmap-finding-indicator: #ffa057;
 }
 ```
+
+Every one of these matters: the six tokens that used to be left unset here — `--wmap-text-strong` plus the `warn-*`/`err-*`/`info-*`/`finding-indicator` group — do not go unstyled when omitted. They fall back to wmap's *light*-theme defaults, and `--wmap-text-strong` (the Summary panel's heading/big-number colour) defaults to `#1f2f43`, near-black. Near-black text on the `#202022` panel above is under 1.1:1 contrast — invisible, not merely dim. Omitting any of this block's tokens reproduces that bug for whichever surface reads the one you left out.
 
 **Example — Nord** (a branded palette; shows the same structure with a different accent):
 
@@ -1108,6 +1125,7 @@ Canvas colours are resolved from these variables at draw time and re-resolved on
   --wmap-border:      #434c5e;
   --wmap-text:        #e5e9f0;
   --wmap-text-muted:  #a6adbb;
+  --wmap-text-strong: #eceff4;
   --wmap-icon:        #d8dee9;
   --wmap-icon-hover:  #88c0d0;
   --wmap-icon-active: #88c0d0;
@@ -1116,7 +1134,16 @@ Canvas colours are resolved from these variables at draw time and re-resolved on
   --wmap-menu-hover:  #3b4252;
   --wmap-menu-active: #3b4a58;
   --wmap-separator:   #3b4252;
+  --wmap-warn-bg:     #3b3220;
+  --wmap-warn-border: #7a6a3a;
+  --wmap-warn-text:   #ebcb8b;
+  --wmap-err-bg:      #3b2020;
+  --wmap-err-border:  #7a4040;
+  --wmap-err-text:    #f39a9a;
+  --wmap-info-bg:     #20303a;
+  --wmap-info-text:   #88c0d0;
   --wmap-selected:    #88c0d0;
+  --wmap-finding-indicator: #dc9a80;
 }
 ```
 

@@ -37,16 +37,33 @@
            switcher) matches, for a cohesive look. These are DEMO styling, NOT
            part of wmap; a real integrator only needs the --wmap-* half.
        The data palette (bin/value die colours) is separate (colorScheme) and
-       intentionally does NOT follow the accent. */
+       intentionally does NOT follow the accent.
+
+       Map every --wmap-* token, not just the obvious surfaces. An unmapped
+       token does NOT go unstyled — it falls back to wmap's own light-theme
+       default, since that default is what keeps the library usable in a host
+       with no theme at all. --wmap-text-strong (Summary-panel headings, big
+       stat numbers) defaults to #1f2f43, near-black; leave it unmapped on a
+       dark theme and it lands on a near-black panel at well under the 1.1:1
+       contrast this exact bug once shipped at. The warn/err/info token groups
+       are the same trap one level worse: each is a background PAIRED with text
+       meant to read on it, so mapping the background alone still leaves
+       light-default text sitting on your dark background. See docs/api.md
+       §5.4.1 for the full token reference. */
 
     body[data-theme="dark"] {
       /* wmap map */
       --wmap-canvas-bg: #242426; --wmap-surface: #2a2a2d; --wmap-panel-bg: #202022;
       --wmap-border: #3a3a3a; --wmap-text: #ccc; --wmap-text-muted: #888;
+      --wmap-text-strong: #f2f2f2;
       --wmap-icon: #aaa; --wmap-icon-hover: #6af; --wmap-icon-active: #6af;
       --wmap-bg-hover: #343438; --wmap-bg-active: #2b3a4f;
       --wmap-menu-hover: #343438; --wmap-menu-active: #2b3a4f;
       --wmap-separator: #2a2a2a; --wmap-selected: #6af;
+      --wmap-warn-bg: #3a2f0f; --wmap-warn-border: #7a6222; --wmap-warn-text: #f0c04d;
+      --wmap-err-bg: #3a1414; --wmap-err-border: #7a3030; --wmap-err-text: #ff8a8a;
+      --wmap-info-bg: #1a2b3d; --wmap-info-text: #8ecbff;
+      --wmap-finding-indicator: #ffa057;
       /* demo page chrome */
       --bg: #1c1c1e; --surface: #2a2a2d; --border: #3a3a3a;
       --text: #eee; --text-2: #ccc; --muted: #888; --accent: #6af;
@@ -54,30 +71,45 @@
     body[data-theme="nord"] {
       --wmap-canvas-bg: #2e3440; --wmap-surface: #323846; --wmap-panel-bg: #2b303b;
       --wmap-border: #434c5e; --wmap-text: #e5e9f0; --wmap-text-muted: #a6adbb;
+      --wmap-text-strong: #eceff4;
       --wmap-icon: #d8dee9; --wmap-icon-hover: #88c0d0; --wmap-icon-active: #88c0d0;
       --wmap-bg-hover: #3b4252; --wmap-bg-active: #3b4a58;
       --wmap-menu-hover: #3b4252; --wmap-menu-active: #3b4a58;
       --wmap-separator: #3b4252; --wmap-selected: #88c0d0;
+      --wmap-warn-bg: #3b3220; --wmap-warn-border: #7a6a3a; --wmap-warn-text: #ebcb8b;
+      --wmap-err-bg: #3b2020; --wmap-err-border: #7a4040; --wmap-err-text: #f39a9a;
+      --wmap-info-bg: #20303a; --wmap-info-text: #88c0d0;
+      --wmap-finding-indicator: #dc9a80;
       --bg: #2b303b; --surface: #323846; --border: #434c5e;
       --text: #eceff4; --text-2: #e5e9f0; --muted: #a6adbb; --accent: #88c0d0;
     }
     body[data-theme="solarized"] {
       --wmap-canvas-bg: #002b36; --wmap-surface: #073642; --wmap-panel-bg: #00252e;
       --wmap-border: #0e4653; --wmap-text: #93a1a1; --wmap-text-muted: #657b83;
+      --wmap-text-strong: #fdf6e3;
       --wmap-icon: #839496; --wmap-icon-hover: #268bd2; --wmap-icon-active: #268bd2;
       --wmap-bg-hover: #0a3d4a; --wmap-bg-active: #0a3f52;
       --wmap-menu-hover: #0a3d4a; --wmap-menu-active: #0a3f52;
       --wmap-separator: #073642; --wmap-selected: #268bd2;
+      --wmap-warn-bg: #2a2410; --wmap-warn-border: #5c4f1a; --wmap-warn-text: #c99a10;
+      --wmap-err-bg: #2a1414; --wmap-err-border: #5c3030; --wmap-err-text: #e58687;
+      --wmap-info-bg: #0d2733; --wmap-info-text: #6ab0de;
+      --wmap-finding-indicator: #e2984a;
       --bg: #00252e; --surface: #073642; --border: #0e4653;
       --text: #fdf6e3; --text-2: #93a1a1; --muted: #657b83; --accent: #268bd2;
     }
     body[data-theme="green"] {
       --wmap-canvas-bg: #f4f8ee; --wmap-surface: #f7fbf1; --wmap-panel-bg: #eef5e2;
       --wmap-border: #cfe0b5; --wmap-text: #2a3320; --wmap-text-muted: #5f6b4c;
+      --wmap-text-strong: #1c2414;
       --wmap-icon: #3f4a30; --wmap-icon-hover: #6fa62e; --wmap-icon-active: #6fa62e;
       --wmap-bg-hover: #eef5e2; --wmap-bg-active: #e2f0cc;
       --wmap-menu-hover: #eef5e2; --wmap-menu-active: #e2f0cc;
       --wmap-separator: #e0ead0; --wmap-selected: #6fa62e;
+      --wmap-warn-bg: #fdf6d8; --wmap-warn-border: #d9c060; --wmap-warn-text: #7a5800;
+      --wmap-err-bg: #fbeaea; --wmap-err-border: #e0a0a0; --wmap-err-text: #7a1c1c;
+      --wmap-info-bg: #e4f0d4; --wmap-info-text: #2f5233;
+      --wmap-finding-indicator: #8a4415;
       --bg: #eef5e2; --surface: #f7fbf1; --border: #cfe0b5;
       --text: #1c2412; --text-2: #2a3320; --muted: #5f6b4c; --accent: #6fa62e;
     }
