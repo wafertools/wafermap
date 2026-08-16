@@ -1196,6 +1196,12 @@ export function buildFindingsSection(
     row.dataset.wmapFinding = finding.id;
     row.textContent = findingRowText(finding, groupLeft);
     row.title = finding.summary;
+    // isActive already drives the row's highlighted background/font-weight
+    // visually; aria-current carries the same "this is the one currently
+    // shown on the map" state to a screen reader, which colour/weight alone
+    // doesn't reach. Rebuilt fresh with each render (same as the style props
+    // above), so no separate sync path is needed when the selection changes.
+    row.setAttribute('aria-current', isActive ? 'true' : 'false');
     Object.assign(row.style, {
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(finding.severity)}`,
@@ -1351,6 +1357,9 @@ export function buildFindingsSection(
     });
     parentRow.textContent = plainBinTerms(pf.summary);
     parentRow.title = pf.summary;
+    // See makeFindingRow's identical comment — isActive already drives the
+    // visual highlight, this exposes the same state to a screen reader.
+    parentRow.setAttribute('aria-current', isActive ? 'true' : 'false');
     parentRow.addEventListener('click', () => onFindingClick(pf, parentRow));
     parentWrap.appendChild(parentRow);
 
@@ -1383,12 +1392,22 @@ export function buildFindingsSection(
       }, '▸') as HTMLButtonElement;
       chevron.type = 'button';
       chevron.title = 'Show supporting findings';
+      // The glyph alone (▸/▾) carries no name a screen reader will read, and
+      // `title` is a hover-only hint a keyboard/AT user never sees —
+      // aria-label is the one that actually reaches them, and aria-expanded
+      // exposes the open/closed state `childWrap`'s visibility otherwise only
+      // conveys visually.
+      chevron.setAttribute('aria-label', 'Show supporting findings');
+      chevron.setAttribute('aria-expanded', 'false');
       chevron.addEventListener('click', (e) => {
         e.stopPropagation();
         expanded = !expanded;
         childWrap.style.display = expanded ? 'block' : 'none';
         chevron.textContent = expanded ? '▾' : '▸';
-        chevron.title = expanded ? 'Hide supporting findings' : 'Show supporting findings';
+        const label = expanded ? 'Hide supporting findings' : 'Show supporting findings';
+        chevron.title = label;
+        chevron.setAttribute('aria-label', label);
+        chevron.setAttribute('aria-expanded', String(expanded));
       });
       parentWrap.appendChild(chevron);
     }

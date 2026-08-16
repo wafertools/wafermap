@@ -177,7 +177,11 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       // Using `outline` for it clobbered the browser's real focus ring
       // (forced to 'none' on every non-active swatch, so a keyboard-focused
       // inactive swatch showed no focus indicator at all).
-      btn.style.boxShadow = activeCats.has(cat) ? `0 0 0 2px ${CLR.text}` : 'none';
+      const filtering = activeCats.has(cat);
+      btn.style.boxShadow = filtering ? `0 0 0 2px ${CLR.text}` : 'none';
+      // Same "actively filtering" state, exposed to a screen reader — the
+      // box-shadow ring alone doesn't reach one.
+      btn.setAttribute('aria-pressed', filtering ? 'true' : 'false');
     }
   }
 

@@ -333,6 +333,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       const dim = emphasizedGroup !== null && emphasizedGroup !== s.groupKey;
       item.style.opacity = dim ? '0.45' : '1';
       if (emphasizedGroup === s.groupKey) item.style.background = CLR.bgHover;
+      // Which group is emphasized was only conveyed by opacity/background —
+      // aria-pressed exposes the same on/off state to a screen reader.
+      item.setAttribute('aria-pressed', emphasizedGroup === s.groupKey ? 'true' : 'false');
       item.addEventListener('click', () => { emphasizedGroup = emphasizedGroup === s.groupKey ? null : s.groupKey; rebuildBody(); });
       legend.appendChild(item);
     });

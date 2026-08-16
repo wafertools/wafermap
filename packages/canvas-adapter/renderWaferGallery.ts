@@ -11,6 +11,7 @@ import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferViewOptions, WaferMapController } from './renderWaferMap.js';
 import { classifyChanged } from './renderWaferMap.js';
+import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
@@ -41,31 +42,20 @@ import { getDieKey, hasPosition } from '../core/dies.js';
  * ]);
  * ```
  */
-export interface WaferMapDisplayItem {
-  // Required — the geometry and die data the gallery needs to render a card.
-  wafer: import('../core/wafer.js').Wafer;
-  dies:  Die[];
-
-  // Definitions carried from buildWaferMap — all optional for synthetic items.
-  hbinDefs?:  import('../renderer/buildWaferMap.js').BinDef[];
-  sbinDefs?:  import('../renderer/buildWaferMap.js').BinDef[];
-  testDefs?:  import('../renderer/buildWaferMap.js').TestDef[];
-  metadataFields?: import('../renderer/buildWaferMap.js').MetadataFieldDef[];
-  reticles?:  import('../core/reticle.js').Reticle[];
-  /**
-   * Geometry advisories carried from `buildWaferMap`. Present automatically when
-   * an item is spread from a `WaferMapResult` (the usual `{ ...result, label }`
-   * shape); the gallery collects them across cards and surfaces them once in the
-   * lot bar's warning indicator.
-   */
-  warnings?: import('../renderer/buildWaferMap.js').WaferWarning[];
-
-  // Lot-stack context carried from buildWaferMap (or set by the gallery on synthetic stacked
-  // cards). Drives the map title's "(N wafers · method)" qualifier so a stacked card is
-  // self-identifying. Undefined for single-wafer cards.
-  isLotStack?: boolean;
-  aggrMethod?: string;
-  lotSize?:    number;
+export interface WaferMapDisplayItem extends RenderableWaferMap {
+  // Everything above the per-card overrides below comes from RenderableWaferMap:
+  // `wafer` and `dies` required, and every other WaferMapResult field optional —
+  // hbinDefs/sbinDefs/testDefs/metadataFields/reticles, the geometry `warnings`
+  // the gallery collects into the lot bar's indicator, and the isLotStack/
+  // aggrMethod/lotSize stack context that drives the map title's
+  // "(N wafers · method)" qualifier.
+  //
+  // This used to restate a hand-picked subset of those fields. The two lists
+  // drifted — renderWaferMap reads `dataCoverage`, `viewport`, `legendBox`,
+  // `binLegendRows` and `reticleConfig` off the item, none of which were
+  // declared here, and the gallery bridged the gap with `item as WaferMapResult`.
+  // Extending the render function's own input type means a card is, by
+  // construction, something renderWaferMap can accept.
 
   // Per-card display overrides.
   label?:        string;
@@ -1993,7 +1983,7 @@ ${reportStyles()}
     // render that the ResizeObserver would otherwise need to correct.
     gridEl.appendChild(card);
 
-    const ctrl = renderWaferMap(canvasWrapper, item as import('../renderer/buildWaferMap.js').WaferMapResult, {
+    const ctrl = renderWaferMap(canvasWrapper, item, {
       viewOptions:    item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts,
       toolbarControls: 'full',
       showTooltip:     true,
@@ -2391,7 +2381,7 @@ ${reportStyles()}
     const viewOptions = testNumber !== undefined
       ? { ...withLive, plotMode: 'value' as const, activeTest: testNumber }
       : withLive;
-    const ctrl = renderWaferMap(container, item as import('../renderer/buildWaferMap.js').WaferMapResult, {
+    const ctrl = renderWaferMap(container, item, {
       viewOptions,
       toolbarControls: 'full',
       showTooltip:     true,

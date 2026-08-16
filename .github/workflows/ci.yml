@@ -12,6 +12,11 @@ on:
 jobs:
   test-and-pack:
     runs-on: ubuntu-latest
+    # Recent runs finish in well under a minute; a real run this repo produces
+    # never approaches this. Without a cap, a hung test (e.g. an uncleared timer
+    # keeping the process alive) runs until GitHub's 6-hour default instead of
+    # failing fast.
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v5

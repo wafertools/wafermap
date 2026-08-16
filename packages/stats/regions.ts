@@ -1,4 +1,4 @@
-import { classifyDie, getReticleCell, getRingLabel, hasPosition, type Die, type PositionedDie, type Wafer, getDieKey} from '../core/index.js';
+import { classifyDie, getReticleCell, getRingLabel, isPositionedDie, type Die, type PositionedDie, type Wafer, getDieKey} from '../core/index.js';
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
 
 export interface StatsRegion {
@@ -47,11 +47,9 @@ export function buildRegionYieldData(
     // spatial — unpositioned dies never enter a region, but dieByKey below
     // still looks results up against the full population so a positioned
     // die's yield tally is unaffected either way.
-    // physX/physY are always set alongside x/y by construction (buildWaferMap
-    // never produces one without the other) — hasPosition only narrows x/y at
-    // the type level, so the cast below just makes that existing invariant
-    // explicit rather than checking it again at runtime.
-    const regions = regionBuilder(wDies.filter(hasPosition) as PositionedDie[], allWafers[wi], ringCount);
+    // isPositionedDie (not hasPosition) narrows physX/physY too, which is what
+    // a regionBuilder's PositionedDie[] needs — no cast required.
+    const regions = regionBuilder(wDies.filter(isPositionedDie), allWafers[wi], ringCount);
     const dieByKey = new Map(wDies.map(d => [dieKey(d), d]));
     for (const region of regions) {
       if (!order.includes(region.key)) order.push(region.key);

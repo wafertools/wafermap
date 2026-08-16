@@ -125,6 +125,7 @@ export function buildDieListSection(
     ...(options.maxHeight ? { maxHeight: options.maxHeight } : {}),
   });
   const table = el('table', { width: '100%', borderCollapse: 'collapse', fontSize: '11px' });
+  table.setAttribute('aria-label', options.title ?? `Die list (${dies.length} dies)`);
 
   const columns: Array<{ label: string; get: (die: Die) => string }> = [
     ...(options.extraColumn ? [{ label: options.extraColumn.label, get: (d: Die) => options.extraColumn!.get(d) ?? '' }] : []),
@@ -146,11 +147,13 @@ export function buildDieListSection(
   const thead = el('thead');
   const headRow = el('tr');
   for (const col of columns) {
-    headRow.appendChild(el('th', {
+    const th = el('th', {
       textAlign: 'left', padding: '4px 8px', position: 'sticky', top: '0',
       background: CLR.panelBg, color: CLR.label, fontWeight: '600', borderBottom: `1px solid ${CLR.menuBorder}`,
       whiteSpace: 'nowrap',
-    }, col.label));
+    }, col.label);
+    th.scope = 'col';
+    headRow.appendChild(th);
   }
   thead.appendChild(headRow);
   table.appendChild(thead);

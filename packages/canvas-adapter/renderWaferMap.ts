@@ -19,7 +19,7 @@ import { ICONS } from './icons.js';
 import { hardBinColor, softBinColor, metadataValueColor } from '../renderer/colorMap.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
 import { createMetadataBadge, type MetadataBadgeController } from './metadataBadge.js';
-import { getDieKey, hasPosition } from '../core/dies.js';
+import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
 import { buildDieListSection } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 
@@ -361,9 +361,27 @@ export function classifyChanged(keys: (keyof WaferViewOptions)[]): 'preference' 
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+/**
+ * What `renderWaferMap` actually needs: a wafer and its dies, plus anything
+ * else `buildWaferMap` would have produced *if* the caller went through it.
+ *
+ * A `WaferMapResult` satisfies this, so nothing changes for the ordinary
+ * `buildWaferMap` → `renderWaferMap` path. The reason it isn't simply
+ * `WaferMapResult` is `renderWaferGallery`: it renders every card through this
+ * same function, but a card is a `WaferMapDisplayItem` — a hand-built or
+ * gallery-synthesised shape carrying no `dataCoverage`, `viewport`,
+ * `legendBox`, `binLegendRows` or `reticleConfig`. Those cards used to arrive
+ * as `item as WaferMapResult`, which told the type checker the fields were
+ * there when at runtime they were simply absent; reading one unguarded threw,
+ * and each such read had to be found the hard way. Declaring them optional
+ * hands that job back to the compiler.
+ */
+export type RenderableWaferMap =
+  Pick<WaferMapResult, 'wafer' | 'dies'> & Partial<Omit<WaferMapResult, 'wafer' | 'dies'>>;
+
 export function renderWaferMap(
   container: HTMLElement,
-  result: WaferMapResult,
+  result: RenderableWaferMap,
   options: RenderOptions = {},
 ): WaferMapController {
   logWmapVersionOnce();
@@ -392,7 +410,19 @@ export function renderWaferMap(
   // (result is a plain function parameter, available immediately — no
   // ordering hazard) so both the overlay block and the toolbar-construction
   // block below can share one definition.
-  const isMapless = result.dataCoverage.totalDies === 0 && result.dataCoverage.unpositionedDies > 0;
+  // `result.dataCoverage` is populated by buildWaferMap(), but this function is
+  // also called per-card by renderWaferGallery with a WaferMapDisplayItem — a
+  // shape that never carries dataCoverage, which is why RenderableWaferMap
+  // declares it optional. Count result.dies directly when it's absent; that
+  // matches computeCoverage's own definition, where totalDies is the positioned
+  // dies and unpositionedDies is the remainder.
+  const unpositionedDieCount = result.dataCoverage
+    ? result.dataCoverage.unpositionedDies
+    : result.dies.filter((d) => !hasPosition(d)).length;
+  const positionedDieCount = result.dataCoverage
+    ? result.dataCoverage.totalDies
+    : result.dies.length - unpositionedDieCount;
+  const isMapless = positionedDieCount === 0 && unpositionedDieCount > 0;
 
   // mapBox is the actual sizing/positioning box for everything the map owns
   // (canvas, toolbar, Insights overlay) — `container` itself is host-owned and
@@ -426,10 +456,10 @@ export function renderWaferMap(
   // subset instead. Both default to buildMaplessSummary (a bin breakdown or
   // mini histogram matching the current plot mode, reusing the map's own
   // colour scheme) rather than the dense buildDieListSection table — a
-  // "View table" toggle still reaches the table for CSV export / per-die
+  // "View die list" toggle still reaches the table for CSV export / per-die
   // inspection. See WMAP_ISSUES.md #39.
   let refreshMaplessPanel: (() => void) | null = null;
-  if (result.dataCoverage.unpositionedDies > 0) {
+  if (unpositionedDieCount > 0) {
     const unpositionedDies = result.dies.filter((d) => !hasPosition(d));
     let showingTable = false;
 
@@ -468,11 +498,11 @@ export function renderWaferMap(
         fontSize: '10px', padding: '2px 6px', borderRadius: '4px', flexShrink: '0',
         border: `1px solid ${CLR.menuBorder}`, background: CLR.menuBg, color: CLR.text, cursor: 'pointer',
       });
-      btn.textContent = showingTable ? 'View summary' : 'View table';
+      btn.textContent = showingTable ? 'View chart' : 'View die list';
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         showingTable = !showingTable;
-        btn.textContent = showingTable ? 'View summary' : 'View table';
+        btn.textContent = showingTable ? 'View chart' : 'View die list';
         onToggle();
       });
       return btn;
@@ -662,7 +692,9 @@ export function renderWaferMap(
   let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.dataAxisFlip;
   // Lot-stack context is the library's own derived truth — sourced from the result, never the
   // caller's viewOptions. Drives the stacked-mode availability and the map title's stack qualifier.
-  let resultIsLotStack: boolean        = result.isLotStack;
+  // `?? false`: absent on a WaferMapDisplayItem that isn't a stacked card,
+  // which is the common case for a gallery card.
+  let resultIsLotStack: boolean        = result.isLotStack ?? false;
   let resultAggrMethod: string | undefined = result.aggrMethod;
   let resultLotSize:    number | undefined = result.lotSize;
 
@@ -841,7 +873,7 @@ export function renderWaferMap(
     const so = viewOpts;
     // The canvas draw list only ever shows positioned dies — an unpositioned
     // die is never placed on the map, only surfaced via the die-list.
-    currentView = buildView(wafer, currentDies.filter(hasPosition) as PositionedDie[], {
+    currentView = buildView(wafer, currentDies.filter(isPositionedDie), {
       plotMode:               so.plotMode,
       colorScheme:            so.colorScheme,
       showDieLabels:               so.showDieLabels,
@@ -1223,7 +1255,7 @@ export function renderWaferMap(
 
           // Only include modes for which data is actually present. currentDies
           // (the full, unfiltered die set), not currentView.dies — the view is
-          // built from currentDies.filter(hasPosition) (see rebuildView), so
+          // built from currentDies.filter(isPositionedDie) (see rebuildView), so
           // for a fully coordinate-less wafer currentView.dies is always [],
           // which silently emptied this menu entirely (no bin/value entries
           // ever appeared, even though the dies have hbin/sbin/test data —

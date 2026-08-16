@@ -67,15 +67,39 @@ function el<K extends keyof HTMLElementTagNameMap>(
  * different, browser-native tooltip: slow to appear (OS hover delay) and an
  * unthemed system font/colour, unlike this instant, small, dark tooltip
  * every other hover surface in the app already uses.
+ *
+ * Unlike the map canvas (where per-die hover data has no DOM equivalent to
+ * fall back to), these bars are real elements — so the bucket range/count
+ * this tooltip carries is real information with no other visible copy. Also
+ * wires focus/blur alongside mouse events (WCAG 1.4.13 — content shown on
+ * hover must also be reachable and dismissable via keyboard) and sets
+ * `aria-label` so the same text reaches a screen reader without requiring
+ * either hover or focus. `tabIndex=0`/`role="img"` make the bar a stop on
+ * the page's own tab order and announce it as a single data point, not an
+ * unlabelled generic `div`.
  */
 function wireHoverTooltip(target: HTMLElement, text: string): void {
-  target.addEventListener('mousemove', (e) => {
+  target.tabIndex = 0;
+  target.setAttribute('role', 'img');
+  target.setAttribute('aria-label', text);
+  const show = (e?: MouseEvent) => {
     const tooltip = getTooltip(target.ownerDocument);
     tooltip.textContent = text;
     tooltip.style.display = 'block';
-    positionTooltip(tooltip, target, e.clientX, e.clientY);
-  });
-  target.addEventListener('mouseleave', () => hideTooltip(target.ownerDocument));
+    if (e) {
+      positionTooltip(tooltip, target, e.clientX, e.clientY);
+    } else {
+      // Keyboard focus carries no pointer coordinates — anchor the tooltip to
+      // the bar's own box instead of a cursor position that doesn't exist.
+      const r = target.getBoundingClientRect();
+      positionTooltip(tooltip, target, r.left + r.width / 2, r.top);
+    }
+  };
+  const hide = () => hideTooltip(target.ownerDocument);
+  target.addEventListener('mousemove', show);
+  target.addEventListener('mouseleave', hide);
+  target.addEventListener('focus', () => show());
+  target.addEventListener('blur', hide);
 }
 
 /**

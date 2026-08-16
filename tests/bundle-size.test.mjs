@@ -14,6 +14,13 @@
 //   2026-07-28: root raised from 41 KB after the affine display-transform
 //   primitives, the shared core/utils helpers, and the wafer-geometry
 //   contradiction warning — legitimate library growth, not bloat.
+//   2026-08-16: render threshold raised 106 KB -> 130 KB (measured ~106 KB at
+//   the time) after the coordinate-less die/wafer support — buildDieListSection,
+//   the mapless-summary panel (bin breakdown / histogram), and the map's "no
+//   position data" footer — legitimate library growth, not bloat.
+//   Each line above states the THRESHOLD move; the inline comment on each entry
+//   states what was actually measured when it was set. Keep both — reading only
+//   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +34,7 @@ const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
   'wafermap (root)':            44_000,   // gzipped bytes — baseline ~41 KB
-  'wafermap/render (initial)':  106_000,  // gzipped bytes — baseline ~88 KB, guide excluded
+  'wafermap/render (initial)':  130_000,  // gzipped bytes — baseline ~106 KB, guide excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

@@ -90,11 +90,31 @@ export function hasPosition<T extends { x?: number | null; y?: number | null }>(
 /**
  * A `Die` known to carry a spatial position — every geometry-only function
  * (ring/quadrant classification, probe-sequence spatial sort, cluster/pattern
- * detection) takes this instead of plain `Die`, so the "caller must filter to
- * `hasPosition` first" invariant is enforced at the type level rather than by
- * convention. Get one via `dies.filter(hasPosition)`.
+ * detection) takes this instead of plain `Die`, so the "caller must filter
+ * first" invariant is enforced at the type level rather than by convention.
+ * Get one via `dies.filter(isPositionedDie)`.
  */
 export type PositionedDie = Die & { x: number; y: number; physX: number; physY: number };
+
+/**
+ * `hasPosition` narrowed for a real `Die`, yielding a `PositionedDie` — i.e.
+ * `physX`/`physY` are narrowed too, not just `x`/`y`.
+ *
+ * Both exist because `hasPosition` is also applied to inputs that carry `x`/`y`
+ * and no `physX` at all (a raw `DieResult`, before any layout has happened), so
+ * it cannot promise the physical pair. Anything working with built `Die`s wants
+ * this one: before it existed every such caller wrote
+ * `dies.filter(hasPosition) as PositionedDie[]`, asserting this same invariant
+ * by hand — six copies of one cast, each a place the type checker had been told
+ * to stop looking.
+ *
+ * The invariant is real, which is why the runtime check need only look at
+ * `x`/`y`: a die is either fully positioned or fully unpositioned, never half
+ * (`buildWaferMap` rejects the half-state at build time).
+ */
+export function isPositionedDie<T extends Die>(die: T): die is T & PositionedDie {
+  return die.x != null && die.y != null;
+}
 
 /**
  * Return a stable string key for a die — guaranteed format `"x,y"` for a

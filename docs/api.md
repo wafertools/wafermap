@@ -793,8 +793,16 @@ owns view building internally, and provides a **built-in toolbar** that appears 
 hover — wafermap-specific controls always in the same place.
 
 ```ts
-renderWaferMap(container: HTMLElement, result: WaferMapResult, options?: RenderOptions): WaferMapController
+renderWaferMap(container: HTMLElement, result: RenderableWaferMap, options?: RenderOptions): WaferMapController
 ```
+
+`RenderableWaferMap` is `{ wafer, dies }` plus every other `WaferMapResult` field
+as optional. A `WaferMapResult` satisfies it, so the usual `buildWaferMap` →
+`renderWaferMap` path is unchanged; the wider type exists because
+`renderWaferGallery` renders each card through this same function, and a card is
+a `WaferMapDisplayItem` that carries no `dataCoverage`, `viewport`, `legendBox`,
+`binLegendRows` or `reticleConfig`. Supply what you have — anything absent is
+derived or skipped rather than assumed.
 
 `renderWaferMap` accepts any block `HTMLElement` as `container` — the function
 creates and manages its own `<canvas>` inside it, sized to fill the container
@@ -3438,7 +3446,7 @@ directory is public.
 >
 > `partial` remains meaningful for a synthesized die grid clipped to a wafer — see `clipDiesToWafer` (§11.3), where straddling dies legitimately arise.
 
-> **A die can have no reported position at all.** `x`/`y`/`physX`/`physY` are optional for exactly this case — real-world data sometimes has no spatial layout (wafer-number-only logs), or a lot where some wafers have positions and others don't, including a single wafer mixing both. A die is either fully positioned or fully unpositioned, never half (`buildWaferMap` throws if only one of `x`/`y` is supplied). Use the `hasPosition(die)` type guard (`@wafertools/wafermap/core`) to narrow to `PositionedDie` (the same shape, `x`/`y`/`physX`/`physY` required) before calling anything that assumes a position — every spatial function in this library (region builders, cluster/pattern detection, `buildView`) already takes `PositionedDie[]`, not `Die[]`, so the type system catches a missing filter at compile time. `getDieKey(die)` falls back to `` `id:${die.id}` `` for an unpositioned die, so two of them never collide on the same key. Non-spatial consumers (yield, bin counts, per-test stats) are unaffected — they never read position and see coordinate-less dies like any other.
+> **A die can have no reported position at all.** `x`/`y`/`physX`/`physY` are optional for exactly this case — real-world data sometimes has no spatial layout (wafer-number-only logs), or a lot where some wafers have positions and others don't, including a single wafer mixing both. A die is either fully positioned or fully unpositioned, never half (`buildWaferMap` throws if only one of `x`/`y` is supplied). Use the `isPositionedDie(die)` type guard (`@wafertools/wafermap/core`) to narrow to `PositionedDie` (the same shape, `x`/`y`/`physX`/`physY` required) before calling anything that assumes a position — its looser sibling `hasPosition(die)` narrows only `x`/`y`, for inputs such as a raw `DieResult` that have no `physX`/`physY` to narrow — every spatial function in this library (region builders, cluster/pattern detection, `buildView`) already takes `PositionedDie[]`, not `Die[]`, so the type system catches a missing filter at compile time. `getDieKey(die)` falls back to `` `id:${die.id}` `` for an unpositioned die, so two of them never collide on the same key. Non-spatial consumers (yield, bin counts, per-test stats) are unaffected — they never read position and see coordinate-less dies like any other.
 >
 > `renderWaferMap`/`renderWaferGallery` render a coordinate-less wafer as a die-list table or a compact bin/value summary **in place of the map**, never as a wafer-shaped mosaic with fabricated positions — see the end-user guide's "Dies with no reported position" section for what a host actually sees, and `dataCoverage.unpositionedDies` (§7) below for how a card's build result reports how many.
 

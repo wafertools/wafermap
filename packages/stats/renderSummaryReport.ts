@@ -8,7 +8,7 @@ import { analyzeWaferLot } from './analyzeWaferLot.js';
 import { computeFunctionalYield } from './analyzeWaferMap.js';
 import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
-import { getDieKey, hasPosition } from '../core/dies.js';
+import { getDieKey, isPositionedDie } from '../core/dies.js';
 import {
   formatFindingDelta,
   formatFindingCoverage,
@@ -253,7 +253,7 @@ export function renderSummaryReportHtml(
   const hasSbin = dies.some(d => d.sbin != null);
 
   // physX/physY are always set alongside x/y by construction.
-  const positionedDies = dies.filter(hasPosition) as PositionedDie[];
+  const positionedDies = dies.filter(isPositionedDie);
   const ringRegions     = buildRingRegions(positionedDies, wafer, ringCount);
   const quadrantRegions = buildQuadrantRegions(positionedDies, wafer, ringCount);
 
@@ -405,7 +405,7 @@ function lotRegionYieldTable(
     const wafer = allWafers[wi];
     const wDies = diesByWafer[wi] ?? [];
     if (!wDies.length) continue;
-    const regions = regionFn(wDies.filter(hasPosition) as PositionedDie[], wafer, ringCount);
+    const regions = regionFn(wDies.filter(isPositionedDie), wafer, ringCount);
     const dieByKey = new Map(wDies.map((die) => [getDieKey(die), die]));
 
     for (const region of regions) {

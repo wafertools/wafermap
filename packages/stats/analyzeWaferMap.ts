@@ -1,5 +1,5 @@
 import type { Die, PositionedDie } from '../core/dies.js';
-import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
+import { isYieldEligibleDie, getDieKey, isPositionedDie } from '../core/dies.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 import type {
@@ -1570,16 +1570,16 @@ export function analyzeWaferMap(
   // shape features) — an unpositioned die can't belong to a spatial cluster
   // or contribute to a spatial pattern, so both take this instead of
   // eligibleDies directly.
-  const positionedEligibleDies = eligibleDies.filter(hasPosition) as (EligibleDie & PositionedDie)[];
+  const positionedEligibleDies = eligibleDies.filter(isPositionedDie);
   const resolved = adaptOptions(baseResolved, eligibleDies.length);
   const includedDies = result.dies.filter((die) => isYieldEligibleDie(die, resolved));
   // Ring/quadrant/reticle-position/sector are spatial — an unpositioned die
   // has no ring/quadrant/etc. by definition, so it's excluded from every one
   // of these region families. buildTestSiteRegions is deliberately exempt
   // (keyed by siteNum, not coordinates) and stays on the full includedDies.
-  // physX/physY are always set alongside x/y by construction, so the cast
-  // just makes that existing invariant explicit for the type checker.
-  const positionedIncludedDies = includedDies.filter(hasPosition) as PositionedDie[];
+  // isPositionedDie narrows physX/physY alongside x/y, so this filter produces
+  // the PositionedDie[] the region builders require without a cast.
+  const positionedIncludedDies = includedDies.filter(isPositionedDie);
   const ringRegions = buildRingRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
   const quadrantRegions = buildQuadrantRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
   const reticlePositionRegions = resolved.enableReticlePositionAnalysis

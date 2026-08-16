@@ -29,7 +29,7 @@ const SNAPSHOTS = {
     'parseRegionKey', 'resolveGridPitch', 'sectorCompassNames',
     'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
     'getReticleCell', 'getRingLabel', 'getUniqueBins', 'hasPosition',
-    'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isYieldEligibleDie', 'listColorSchemes',
+    'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isPositionedDie', 'isYieldEligibleDie', 'listColorSchemes',
     'mapDataToDies', 'openHtmlReport', 'registerColorScheme', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
     'softBinColor', 'transformDies', 'valueToGreyscale', 'valueToViridis',
@@ -41,7 +41,7 @@ const SNAPSHOTS = {
     'applyOrientation', 'applyProbeSequence',
     'classifyDie', 'clipDiesToWafer', 'createWafer',
     'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
-    'hasPosition', 'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'resolveGridPitch', 'transformDies',
+    'hasPosition', 'isInsideWafer', 'isPositionedDie', 'isYieldEligibleDie', 'mapDataToDies', 'resolveGridPitch', 'transformDies',
   ],
   // findTestDef / generateTextOverlay / getUniqueTestNumbers / resolveTestNumber were
   // removed from the public surface in 0.22.0 — internal view-pipeline helpers with no
