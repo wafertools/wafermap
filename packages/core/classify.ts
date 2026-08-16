@@ -1,5 +1,5 @@
 import type { Wafer } from './wafer.js';
-import type { Die } from './dies.js';
+import type { PositionedDie } from './dies.js';
 
 export type Quadrant = 'NE' | 'NW' | 'SW' | 'SE';
 
@@ -21,8 +21,12 @@ export interface ClassifyOptions {
  * to its notch, so they must follow orientation and stay invariant to how the user
  * has rotated the on-screen view. (Not "screen" coordinates — those are post-
  * interactive-transform and live only in the renderer.)
+ *
+ * Takes a `PositionedDie`, not `Die` — callers must filter to `hasPosition`
+ * first (region builders only ever classify positioned dies; an unpositioned
+ * die has no ring/quadrant by definition).
  */
-export function classifyDie(die: Die, wafer: Wafer, options: ClassifyOptions = {}): DieClassification {
+export function classifyDie(die: PositionedDie, wafer: Wafer, options: ClassifyOptions = {}): DieClassification {
   const ringCount = Math.max(1, options.ringCount ?? 4);
   const dx = die.physX - wafer.center.x;
   const dy = die.physY - wafer.center.y;

@@ -1,4 +1,4 @@
-import type { Die } from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions } from './regions.js';
@@ -8,7 +8,7 @@ import { analyzeWaferLot } from './analyzeWaferLot.js';
 import { computeFunctionalYield } from './analyzeWaferMap.js';
 import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
-import { getDieKey } from '../core/dies.js';
+import { getDieKey, hasPosition } from '../core/dies.js';
 import {
   formatFindingDelta,
   formatFindingCoverage,
@@ -51,7 +51,11 @@ function titleFromMeta(meta?: Record<string, unknown>): string {
 
 function yieldSection(y: YieldSummary, cov: SummaryReportParams['dataCoverage']): string {
   const metrics = [
-    { label: 'Total dies', value: String(cov.totalDies) },
+    // y.totalDies, not cov.totalDies: yield is deliberately non-spatial and
+    // already includes coordinate-less dies with bin data, while
+    // dataCoverage.totalDies is scoped to positioned dies only (the map's
+    // fill-coverage denominator, used correctly below for "Filled dies").
+    { label: 'Total dies', value: String(y.totalDies) },
     { label: 'Filled dies', value: String(cov.filledDies), hint: `${pct(cov.filledDies, cov.totalDies)} fill` },
     { label: 'Pass dies', value: String(y.passDies) },
     { label: 'Fail dies', value: String(y.failDies) },
@@ -248,11 +252,15 @@ export function renderSummaryReportHtml(
   const hasHbin = dies.some(d => d.hbin != null);
   const hasSbin = dies.some(d => d.sbin != null);
 
-  const ringRegions     = buildRingRegions(dies, wafer, ringCount);
-  const quadrantRegions = buildQuadrantRegions(dies, wafer, ringCount);
+  // physX/physY are always set alongside x/y by construction.
+  const positionedDies = dies.filter(hasPosition) as PositionedDie[];
+  const ringRegions     = buildRingRegions(positionedDies, wafer, ringCount);
+  const quadrantRegions = buildQuadrantRegions(positionedDies, wafer, ringCount);
 
   const summaryMetrics = [
-    { label: 'Total dies', value: String(dataCoverage.totalDies) },
+    // yieldSummary.totalDies, not dataCoverage.totalDies — see yieldSection's
+    // comment above for why.
+    { label: 'Total dies', value: String(yieldSummary.totalDies) },
     ...(yieldSummary.partialDies > 0 ? [{ label: 'Partial', value: String(yieldSummary.partialDies) }] : []),
     ...(yieldSummary.yieldPercent !== null ? [{ label: `Yield (pass: ${passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`})`, value: `${yieldSummary.yieldPercent.toFixed(1)}%` }] : []),
     ...(yieldSummary.edgeExcludedDies > 0 ? [{ label: 'Edge excluded (outer zone)', value: String(yieldSummary.edgeExcludedDies) }] : []),
@@ -397,7 +405,7 @@ function lotRegionYieldTable(
     const wafer = allWafers[wi];
     const wDies = diesByWafer[wi] ?? [];
     if (!wDies.length) continue;
-    const regions = regionFn(wDies, wafer, ringCount);
+    const regions = regionFn(wDies.filter(hasPosition) as PositionedDie[], wafer, ringCount);
     const dieByKey = new Map(wDies.map((die) => [getDieKey(die), die]));
 
     for (const region of regions) {

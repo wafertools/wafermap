@@ -1,4 +1,4 @@
-import type { Die, Wafer } from '../core/index.js';
+import type { PositionedDie, Wafer } from '../core/index.js';
 import { getDieKey } from '../core/dies.js';
 import { clamp01 } from '../core/utils.js';
 
@@ -130,22 +130,22 @@ export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
 
 // ── Connected-component labelling (8-connected) ───────────────────────────────
 
-function findConnectedComponents(failing: Die[]): Die[][] {
+function findConnectedComponents(failing: PositionedDie[]): PositionedDie[][] {
   if (failing.length === 0) return [];
 
-  const byKey = new Map<string, Die>();
+  const byKey = new Map<string, PositionedDie>();
   for (const d of failing) byKey.set(getDieKey(d), d);
 
   const visited = new Set<string>();
-  const components: Die[][] = [];
+  const components: PositionedDie[][] = [];
 
   for (const d of failing) {
     const k = getDieKey(d);
     if (visited.has(k)) continue;
 
     // BFS
-    const component: Die[] = [];
-    const queue: Die[] = [d];
+    const component: PositionedDie[] = [];
+    const queue: PositionedDie[] = [d];
     visited.add(k);
 
     while (queue.length > 0) {
@@ -171,7 +171,7 @@ function findConnectedComponents(failing: Die[]): Die[][] {
 
 // ── Feature computation ────────────────────────────────────────────────────────
 
-function isEdgeDie(die: Die, wafer: Wafer, ringCount: number): boolean {
+function isEdgeDie(die: PositionedDie, wafer: Wafer, ringCount: number): boolean {
   const dx = die.physX - wafer.center.x;
   const dy = die.physY - wafer.center.y;
   const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;
@@ -179,7 +179,7 @@ function isEdgeDie(die: Die, wafer: Wafer, ringCount: number): boolean {
   return ring === ringCount;
 }
 
-function computeEccentricity(dies: Die[], cx: number, cy: number): number {
+function computeEccentricity(dies: PositionedDie[], cx: number, cy: number): number {
   if (dies.length < 3) return 0;
   let mxx = 0, myy = 0, mxy = 0;
   for (const d of dies) {
@@ -202,7 +202,7 @@ function computeEccentricity(dies: Die[], cx: number, cy: number): number {
   return Math.sqrt(1 - ratio);
 }
 
-function computeLinearScore(dies: Die[], total: number): number {
+function computeLinearScore(dies: PositionedDie[], total: number): number {
   if (total === 0) return 0;
   // Axis-aligned: count per row and column
   const rowCounts = new Map<number, number>();
@@ -225,8 +225,8 @@ function computeLinearScore(dies: Die[], total: number): number {
 }
 
 function computeFeatures(
-  failing: Die[],
-  all: Die[],
+  failing: PositionedDie[],
+  all: PositionedDie[],
   wafer: Wafer,
   ringCount: number,
 ): PatternFeatures {
@@ -405,7 +405,7 @@ function classify(
  * (`thresholds.minimumFailingDies`, default 5) — too few failures to classify.
  */
 export function classifyPattern(
-  dies: Die[],
+  dies: PositionedDie[],
   wafer: Wafer,
   options: {
     passBins: number[];

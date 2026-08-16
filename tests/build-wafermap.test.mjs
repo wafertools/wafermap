@@ -391,3 +391,72 @@ test('autoPlotMode never selects metadata mode, even when metadataFields is conf
   });
   assert.equal(result.plotMode, 'hardBin');
 });
+
+test('coordinate-less dies (no x/y) are kept, not dropped, and excluded from positioned coverage', () => {
+  const results = [
+    { x: 0, y: 0, hbin: 1, testValues: { 0: 1.0 } },
+    { x: 1, y: 0, hbin: 2, testValues: { 0: 2.0 } },
+    { hbin: 1, testValues: { 0: 3.0 } },
+    { hbin: 2, testValues: { 0: 4.0 } },
+    { hbin: 1, testValues: { 0: 5.0 } },
+  ];
+  const result = buildWaferMap({
+    results,
+    waferConfig: { diameter: 40 },
+    dieConfig: { width: 10, height: 10 },
+  });
+
+  assert.equal(result.dies.length, 5, 'unpositioned dies must still appear in dies[]');
+  const unpositioned = result.dies.filter((d) => d.x === undefined);
+  assert.equal(unpositioned.length, 3);
+  for (const d of unpositioned) {
+    assert.equal(d.y, undefined);
+    assert.equal(d.physX, undefined);
+    assert.equal(d.physY, undefined);
+    assert.ok(d.id.startsWith('unpositioned_'));
+  }
+  // Every unpositioned die must have a distinct id (and therefore key).
+  const ids = new Set(unpositioned.map((d) => d.id));
+  assert.equal(ids.size, 3);
+
+  // dataCoverage.totalDies/filledDies/ratio are scoped to POSITIONED dies only.
+  assert.equal(result.dataCoverage.totalDies, 2);
+  assert.equal(result.dataCoverage.filledDies, 2);
+  assert.equal(result.dataCoverage.unpositionedDies, 3);
+
+  // Yield is not spatial — unpositioned dies with bin data still count.
+  assert.equal(result.yield.totalDies, 5);
+  assert.equal(result.yield.passDies, 3); // hbin 1, three times
+  assert.equal(result.yield.failDies, 2); // hbin 2, twice
+});
+
+test('a die with only one of x/y set throws — no half-positioned state', () => {
+  assert.throws(() => {
+    buildWaferMap({
+      results: [{ x: 0, hbin: 1 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+  }, TypeError);
+  assert.throws(() => {
+    buildWaferMap({
+      results: [{ y: 0, hbin: 1 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+  }, TypeError);
+});
+
+test('a fully coordinate-less wafer (no positioned dies at all) does not throw', () => {
+  const results = [
+    { hbin: 1, testValues: { 0: 1.0 } },
+    { hbin: 2, testValues: { 0: 2.0 } },
+  ];
+  const result = buildWaferMap({ results, waferConfig: { diameter: 40 } });
+
+  assert.equal(result.dies.length, 2);
+  assert.equal(result.dataCoverage.totalDies, 0);
+  assert.equal(result.dataCoverage.unpositionedDies, 2);
+  assert.equal(result.dataCoverage.ratio, 0, 'ratio must not be NaN when totalDies is 0');
+  assert.equal(result.yield.totalDies, 2, 'yield still counts unpositioned dies — it is not spatial');
+});

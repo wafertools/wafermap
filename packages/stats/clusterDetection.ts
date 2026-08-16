@@ -1,4 +1,4 @@
-import type { Die, Wafer } from '../core/index.js';
+import type { Die, PositionedDie, Wafer } from '../core/index.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { normalCdf } from './math.js';
 import { getDieKey } from '../core/dies.js';
@@ -53,7 +53,7 @@ interface ClusterOptions {
 }
 
 export function buildClusterFindings(
-  dies: Die[],
+  dies: PositionedDie[],
   wafer: Wafer,
   options: ClusterOptions,
 ): StatsFinding[] {
@@ -82,10 +82,10 @@ export function buildClusterFindings(
 
   // Grid index for O(1) neighbour lookups by integer grid coordinate.
   // Adjacency uses the die's integer x,y grid position (8-connected: |dx|<=1, |dy|<=1).
-  const failingByKey = new Map<string, Die>();
+  const failingByKey = new Map<string, PositionedDie>();
   for (const d of failing) failingByKey.set(getDieKey(d), d);
 
-  const allByKey = new Map<string, Die>();
+  const allByKey = new Map<string, PositionedDie>();
   for (const d of dies) allByKey.set(getDieKey(d), d);
 
   // Neighbourhood radius in grid steps (ceil to cover the physical radius).
@@ -94,14 +94,14 @@ export function buildClusterFindings(
 
   // Flood-fill connected components of failing dies using 8-connected grid adjacency.
   const visited = new Set<string>();
-  const components: Die[][] = [];
+  const components: PositionedDie[][] = [];
 
   for (const seed of failing) {
     const seedKey = getDieKey(seed);
     if (visited.has(seedKey)) continue;
 
-    const component: Die[] = [];
-    const queue: Die[] = [seed];
+    const component: PositionedDie[] = [];
+    const queue: PositionedDie[] = [seed];
     visited.add(seedKey);
 
     while (queue.length > 0) {

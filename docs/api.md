@@ -503,11 +503,16 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
   }
   dataCoverage: {
     filledDies:       number   // dies with at least one value or bin attached
-    totalDies:        number   // all dies inside the wafer boundary (including partial)
+    totalDies:        number   // POSITIONED dies inside the wafer boundary (including partial) — 0 for a
+                                // fully coordinate-less wafer; see unpositionedDies below, not this, for
+                                // "how many dies does this wafer actually have"
     edgeExcludedDies: number   // dies whose centres fall within the edge exclusion band
-    ratio:            number   // filledDies / totalDies ∈ [0, 1]
+    ratio:            number   // filledDies / totalDies ∈ [0, 1] — undefined/misleading when totalDies is 0
+    unpositionedDies: number   // dies with no reported x/y at all (see §12.1's coordinate-less note) —
+                                // always present, 0 when every die has a position
   }
-  yield: YieldSummary   // pass/fail statistics computed against passBins
+  yield: YieldSummary   // pass/fail statistics computed against passBins — NOT scoped to positioned dies,
+                         // unlike dataCoverage above; a coordinate-less die with bin data still counts
 }
 ```
 
@@ -3407,10 +3412,10 @@ directory is public.
 ```ts
 {
   id:            string
-  x:             number    // die grid X position — prober step coordinate (equals input x for centred grids)
-  y:             number    // die grid Y position — prober step coordinate (equals input y for centred grids)
-  physX:         number    // physical X in mm (or normalized units)
-  physY:         number    // physical Y in mm (or normalized units)
+  x?:            number    // die grid X position — prober step coordinate (equals input x for centred grids)
+  y?:            number    // die grid Y position — prober step coordinate (equals input y for centred grids)
+  physX?:        number    // physical X in mm (or normalized units)
+  physY?:        number    // physical Y in mm (or normalized units)
   width:         number    // die width in mm (or normalized units)
   height:        number    // die height in mm (or normalized units)
   testValues?:   Record<number, number>  // test measurements keyed by test number
@@ -3432,6 +3437,10 @@ directory is public.
 > It follows that a die falling outside the wafer boundary is proof the **geometry** is wrong, not the die — the measured positions are ground truth and the inferred diameter/pitch is the guess. If you supply `waferConfig.diameter` and it cannot contain the probed dies, wmap does not silently resize it (you asserted it); it adds an entry to `result.inference.warnings` naming the shortfall and the likely cause. The most common cause is supplying `diameter` **without** `dieConfig.width`/`height`: the pitch is then derived as `diameter ÷ gridSpan`, which assumes your data spans the full wafer — wrong whenever edge dies are absent. Supply the die pitch, which is the value that actually matters.
 >
 > `partial` remains meaningful for a synthesized die grid clipped to a wafer — see `clipDiesToWafer` (§11.3), where straddling dies legitimately arise.
+
+> **A die can have no reported position at all.** `x`/`y`/`physX`/`physY` are optional for exactly this case — real-world data sometimes has no spatial layout (wafer-number-only logs), or a lot where some wafers have positions and others don't, including a single wafer mixing both. A die is either fully positioned or fully unpositioned, never half (`buildWaferMap` throws if only one of `x`/`y` is supplied). Use the `hasPosition(die)` type guard (`@wafertools/wafermap/core`) to narrow to `PositionedDie` (the same shape, `x`/`y`/`physX`/`physY` required) before calling anything that assumes a position — every spatial function in this library (region builders, cluster/pattern detection, `buildView`) already takes `PositionedDie[]`, not `Die[]`, so the type system catches a missing filter at compile time. `getDieKey(die)` falls back to `` `id:${die.id}` `` for an unpositioned die, so two of them never collide on the same key. Non-spatial consumers (yield, bin counts, per-test stats) are unaffected — they never read position and see coordinate-less dies like any other.
+>
+> `renderWaferMap`/`renderWaferGallery` render a coordinate-less wafer as a die-list table or a compact bin/value summary **in place of the map**, never as a wafer-shaped mosaic with fabricated positions — see the end-user guide's "Dies with no reported position" section for what a host actually sees, and `dataCoverage.unpositionedDies` (§7) below for how a card's build result reports how many.
 
 ### 12.2 `Wafer`
 

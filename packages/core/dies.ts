@@ -10,10 +10,19 @@ export interface DieSpec {
 
 export interface Die {
   id: string;
-  x: number;
-  y: number;
-  physX: number;       // physical position in mm (or normalized units)
-  physY: number;
+  /**
+   * Grid position. Absent (together with `y`/`physX`/`physY`) means this die
+   * has no reported spatial position at all — it still carries real
+   * measured data (`testValues`, `hbin`, …) and counts toward every
+   * non-spatial stat, but is never placed on a wafer map/gallery canvas and
+   * never enters ring/quadrant/sector/reticle/cluster/pattern analysis. Use
+   * `hasPosition()` rather than checking `x`/`y` individually — a die is
+   * either fully positioned or fully unpositioned, never half.
+   */
+  x?: number;
+  y?: number;
+  physX?: number;       // physical position in mm (or normalized units)
+  physY?: number;
   width: number;       // die size in mm — set by generateDies
   height: number;
   /**
@@ -66,7 +75,30 @@ export interface DieEligibilityOptions {
  * silently drift apart. Both now call this.
  */
 /**
- * Return a stable string key for a die — guaranteed format `"x,y"`.
+ * Whether a die has a reported spatial position. The single source of truth
+ * every spatial function (region builders, cluster/pattern detection, the
+ * renderer's grid/geometry inference) filters on — never check `x`/`y`
+ * individually elsewhere, since a die is either fully positioned or fully
+ * unpositioned (`buildWaferMap` rejects the half-state at build time).
+ */
+export function hasPosition<T extends { x?: number | null; y?: number | null }>(
+  die: T,
+): die is T & { x: number; y: number } {
+  return die.x != null && die.y != null;
+}
+
+/**
+ * A `Die` known to carry a spatial position — every geometry-only function
+ * (ring/quadrant classification, probe-sequence spatial sort, cluster/pattern
+ * detection) takes this instead of plain `Die`, so the "caller must filter to
+ * `hasPosition` first" invariant is enforced at the type level rather than by
+ * convention. Get one via `dies.filter(hasPosition)`.
+ */
+export type PositionedDie = Die & { x: number; y: number; physX: number; physY: number };
+
+/**
+ * Return a stable string key for a die — guaranteed format `"x,y"` for a
+ * positioned die, or `"id:<id>"` for an unpositioned one (see `hasPosition`).
  *
  * THE way to build a die key. Use it for Map keys and post-enrichment lookups
  * rather than an ad-hoc template literal: findings carry `dieKeys` in this exact
@@ -75,13 +107,19 @@ export interface DieEligibilityOptions {
  * it lives in `core/` — `renderer/`, `stats/` and `canvas-adapter/` all need to
  * agree on one format.
  *
+ * An unpositioned die has no `x`/`y` to key on — every one would collide on
+ * the same key without the `id:` fallback, since `id` is the only field
+ * guaranteed unique for a die with no position (`buildWaferMap` assigns
+ * unpositioned dies an id like `unpositioned_3`).
+ *
  * ```ts
  * const map = new Map(result.dies.map(d => [getDieKey(d), d]));
  * const die = map.get(getDieKey({ x: 3, y: -2 }));
  * ```
  */
-export function getDieKey(die: { x: number; y: number }): string {
-  return `${die.x},${die.y}`;
+export function getDieKey(die: { x?: number; y?: number; id?: string }): string {
+  if (hasPosition(die)) return `${die.x},${die.y}`;
+  return `id:${die.id}`;
 }
 
 export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}): boolean {

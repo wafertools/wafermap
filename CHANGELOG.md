@@ -19,6 +19,91 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Breaking
+
+- **`Die.x`/`y`/`physX`/`physY` are now optional**, not `number`. Existing code
+  that reads `die.x` as a bare number (e.g. arithmetic without a guard) now gets
+  a type error under strict TS — the runtime value for already-positioned data
+  is unchanged, only the type widened. New `hasPosition(die): die is PositionedDie`
+  (`@wafertools/wafermap/core`) narrows it back; every spatial function in the
+  library (region builders, cluster/pattern detection, `buildView`) now takes
+  `PositionedDie[]` rather than `Die[]`, so a caller passing unfiltered `Die[]`
+  into one of these will see the type error at the call site rather than a
+  runtime surprise.
+
+### Added
+
+- **Support for dies/wafers with no reported X/Y position.** Real-world data
+  sometimes has no spatial layout at all (wafer-number-only test logs), or a
+  lot/wafer where some dies report a position and others don't — previously
+  such a die was silently dropped by every parser upstream of this library, and
+  wmap itself had no representation for "no position" beyond crashing or
+  drawing garbage.
+  - `hasPosition(die)` (`packages/core/dies.ts`) is the one predicate every
+    spatial code path filters on. `getDieKey` falls back to `` `id:${id}` ``
+    for an unpositioned die so two of them never collide.
+  - `buildWaferMap` partitions positioned/unpositioned dies before geometry
+    inference runs; unpositioned dies are folded back into the returned
+    `dies`/`dataCoverage`/`yield` afterward. `dataCoverage` gained
+    `unpositionedDies: number` (always present); `totalDies`/`filledDies`/
+    `ratio` stay scoped to positioned dies only. Yield is deliberately
+    **not** spatial — a coordinate-less die with bin data still counts toward
+    it, same as `isYieldEligibleDie` always ignored position.
+  - `analyzeWaferMap`/`regions.ts` exclude unpositioned dies from spatial
+    region families only (ring/quadrant/sector/reticle-position, cluster and
+    pattern detection). Everything value-based (yield, bin counts, per-test
+    stats, spec-limit yield) is unaffected — coordinate-less dies still count.
+  - A wafer with **zero** positioned dies never renders as a wafer-shaped
+    visual — a fabricated mosaic risks being misread as real spatial data.
+    `renderWaferMap`/`renderWaferGallery` instead show a compact,
+    plot-mode-aware summary in its place: a bin breakdown (reusing the
+    existing summary-panel component, so colours match the map's own bin
+    legend) for hard/soft-bin modes, or a small histogram for value mode
+    (coloured through the same colour-scheme/log-scale/spec-range resolution
+    the map's own colorbar uses). A **View table** toggle reaches the full
+    per-die table (`buildDieListSection`, new, exported from `/render`) for
+    CSV export and per-die inspection. A mixed wafer keeps its normal map for
+    the positioned dies, plus an expandable "+N dies without position data"
+    footer giving the same summary/table for the rest.
+  - The toolbar's spatial-only controls (zoom/pan/select/download,
+    orientation, overlays, legend position) are hidden on a fully
+    coordinate-less card — nothing to act on with no map drawn. Plot mode and
+    colour scheme stay, since both drive the summary's own appearance.
+  - A gallery card's own "expand" button now preserves that card's live view
+    state (plot mode, active test, colour scheme, …) when opening the
+    detached window/popup, rather than always reverting to the gallery's
+    shared default — a pre-existing gap for any card (not specific to
+    coordinate-less data) that became far more visible once a card's
+    representation could change shape between modes (bin breakdown vs.
+    histogram vs. map).
+
+### Fixed
+
+- **`buildDieListSection`'s table was capped at a fixed 360px**, regardless of
+  how much room its container actually had — a short table floated in a
+  half-empty card, and a host mounting it inside a scrolling container of its
+  own got two nested scrollbars. It now fills its container by default
+  (`flex: 1; min-height: 0`); a new optional `maxHeight` re-imposes a cap for a
+  host with no definite-height container to fill.
+
+### Known gaps (not fixed this pass, tracked for a follow-up)
+
+- Stacked plot modes (`stackedValues`/`stackedBins`/`stackedSoftBins`) discard
+  every individual wafer card from the gallery grid and pool across the lot —
+  a coordinate-less wafer's dies are correctly excluded from those pooled
+  aggregates (stacking is inherently position-based), but nothing in the UI
+  currently indicates a wafer was excluded; it's indistinguishable from that
+  wafer not existing in the lot at all.
+- `hasPosition`, `PositionedDie`, `dataCoverage.unpositionedDies`, and
+  `buildDieListSection`/`DieListOptions` are documented in `docs/api.md`
+  (§12.1, §7); a dedicated numbered reference entry for `hasPosition` and
+  `buildDieListSection` alongside the library's other numbered API entries
+  has not been added yet.
+
+---
+
 ## [0.22.0] — 2026-08-04
 
 ### Breaking

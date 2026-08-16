@@ -8,6 +8,14 @@ export { renderWaferGallery } from './renderWaferGallery.js';
 export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 
 export type { SummaryPanelOptions } from './summaryPanel.js';
+
+// The general-purpose die-list table + CSV export — used internally for a
+// fully coordinate-less wafer's map replacement and a mixed wafer's "+N
+// unpositioned" footer, and exported here so a host can also build its own
+// lot-level combined view (concatenating every wafer's `dies` with its own
+// wafer-id column) rather than reimplementing the same table/CSV logic.
+export { buildDieListSection } from './dieList.js';
+export type { DieListOptions } from './dieList.js';
 // Warning surfacing — `WarningsOptions` configures the built-in indicator and
 // the `onWarning` stream; `collectWarnings` is exported so a host that turns the
 // UI off can reproduce exactly the set the library would have shown.

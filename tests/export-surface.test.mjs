@@ -28,7 +28,7 @@ const SNAPSHOTS = {
     'filterFindings', 'generateDies', 'generateReticleGrid',
     'parseRegionKey', 'resolveGridPitch', 'sectorCompassNames',
     'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
-    'getReticleCell', 'getRingLabel', 'getUniqueBins',
+    'getReticleCell', 'getRingLabel', 'getUniqueBins', 'hasPosition',
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isYieldEligibleDie', 'listColorSchemes',
     'mapDataToDies', 'openHtmlReport', 'registerColorScheme', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
@@ -41,7 +41,7 @@ const SNAPSHOTS = {
     'applyOrientation', 'applyProbeSequence',
     'classifyDie', 'clipDiesToWafer', 'createWafer',
     'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
-    'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'resolveGridPitch', 'transformDies',
+    'hasPosition', 'isInsideWafer', 'isYieldEligibleDie', 'mapDataToDies', 'resolveGridPitch', 'transformDies',
   ],
   // findTestDef / generateTextOverlay / getUniqueTestNumbers / resolveTestNumber were
   // removed from the public surface in 0.22.0 — internal view-pipeline helpers with no
@@ -76,6 +76,11 @@ const SNAPSHOTS = {
     // set the library would have shown, rather than re-deriving it from two
     // separate sources and getting the de-duplication subtly different.
     'collectWarnings', 'severityOf',
+    // General-purpose die-list table + CSV export (position/site/bins/per-test
+    // values) — used internally for coordinate-less wafers, and exposed so a
+    // host (tsmap's lot-level "Die list…" toolbar button) can build its own
+    // combined view. See WMAP_ISSUES.md #39.
+    'buildDieListSection',
   ],
 };
 

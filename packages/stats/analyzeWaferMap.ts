@@ -1,5 +1,5 @@
-import type { Die } from '../core/dies.js';
-import { isYieldEligibleDie, getDieKey} from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
+import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 import type {
@@ -1566,12 +1566,24 @@ export function analyzeWaferMap(
   const hasHbinData = !isLotStack ||
     stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
   const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, baseResolved));
+  // Cluster/pattern detection are spatial (physX/physY-based flood-fill and
+  // shape features) — an unpositioned die can't belong to a spatial cluster
+  // or contribute to a spatial pattern, so both take this instead of
+  // eligibleDies directly.
+  const positionedEligibleDies = eligibleDies.filter(hasPosition) as (EligibleDie & PositionedDie)[];
   const resolved = adaptOptions(baseResolved, eligibleDies.length);
   const includedDies = result.dies.filter((die) => isYieldEligibleDie(die, resolved));
-  const ringRegions = buildRingRegions(includedDies, result.wafer, resolved.ringCount);
-  const quadrantRegions = buildQuadrantRegions(includedDies, result.wafer, resolved.ringCount);
+  // Ring/quadrant/reticle-position/sector are spatial — an unpositioned die
+  // has no ring/quadrant/etc. by definition, so it's excluded from every one
+  // of these region families. buildTestSiteRegions is deliberately exempt
+  // (keyed by siteNum, not coordinates) and stays on the full includedDies.
+  // physX/physY are always set alongside x/y by construction, so the cast
+  // just makes that existing invariant explicit for the type checker.
+  const positionedIncludedDies = includedDies.filter(hasPosition) as PositionedDie[];
+  const ringRegions = buildRingRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
+  const quadrantRegions = buildQuadrantRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
   const reticlePositionRegions = resolved.enableReticlePositionAnalysis
-    ? buildReticlePositionRegions(includedDies, result.reticleConfig)
+    ? buildReticlePositionRegions(positionedIncludedDies, result.reticleConfig)
     : [];
   // enableTestSiteAnalysis: undefined means auto (guard in buildTestSiteRegions decides);
   // true forces it on; false suppresses it.
@@ -1579,7 +1591,7 @@ export function analyzeWaferMap(
     ? []
     : buildTestSiteRegions(includedDies, resolved.enableTestSiteAnalysis === true);
   const sectorRegions = resolved.enableAngularAnalysis
-    ? buildSectorRegions(includedDies, result.wafer, resolved.sectorCount)
+    ? buildSectorRegions(positionedIncludedDies, result.wafer, resolved.sectorCount)
     : [];
 
   const findings: RawFinding[] = [];
@@ -1645,7 +1657,7 @@ export function analyzeWaferMap(
   if (resolved.enableClusterAnalysis) {
     const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.testDefs);
     if (!isLotStack || hasHbinData || failPredicate !== undefined) {
-      findings.push(...buildClusterFindings(eligibleDies, result.wafer, {
+      findings.push(...buildClusterFindings(positionedEligibleDies, result.wafer, {
         ...resolved,
         isFailingDie: failPredicate,
       }));
@@ -1669,7 +1681,7 @@ export function analyzeWaferMap(
   findings.push(...mergedFindings);
 
   if (resolved.enablePatternClassification && hasHbinData) {
-    const patternResult = classifyPattern(eligibleDies, result.wafer, {
+    const patternResult = classifyPattern(positionedEligibleDies, result.wafer, {
       passBins:  resolved.passBins,
       ringCount: resolved.ringCount,
     });

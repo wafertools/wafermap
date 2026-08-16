@@ -1,9 +1,9 @@
-import type { Die, DieSpec } from '../core/dies.js';
+import type { Die, DieSpec, PositionedDie } from '../core/dies.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import type { Wafer, WaferSpec } from '../core/wafer.js';
 import type { Reticle, ReticleSpec } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
-import { generateDies, isYieldEligibleDie, getDieKey} from '../core/dies.js';
+import { generateDies, isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
 import { applyOrientation, transformDies } from '../core/transforms.js';
 import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
@@ -22,10 +22,19 @@ import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggr
  * such as −7, 0, 5.  They are NOT millimetre values.
  */
 export interface DieResult {
-  /** Die grid X position (prober step coordinate). */
-  x: number;
-  /** Die grid Y position (prober step coordinate). */
-  y: number;
+  /**
+   * Die grid X position (prober step coordinate). Omit (together with `y`)
+   * when this die has no reported spatial position at all — it still counts
+   * toward every non-spatial stat (yield, bin counts, per-test
+   * histograms/correlation/scatter) but is never placed on a wafer
+   * map/gallery canvas and never enters ring/quadrant/sector/reticle/
+   * cluster/pattern analysis. A die must be either fully positioned (both
+   * `x` and `y`) or fully unpositioned (neither) — `buildWaferMap` rejects
+   * the half-state.
+   */
+  x?: number;
+  /** Die grid Y position (prober step coordinate). See `x`. */
+  y?: number;
   /**
    * Test values keyed by test number — a stable per-test identity such as
    * STDF TEST_NUM or an equivalent application-defined integer. Keying by test
@@ -513,13 +522,21 @@ export interface WaferMapResult {
   warnings: WaferWarning[];
   /** Die population statistics. */
   dataCoverage: {
-    /** Dies inside the wafer boundary that have at least one value or bin. */
+    /** Positioned dies inside the wafer boundary that have at least one value or bin. */
     filledDies: number;
-    /** Total dies inside the wafer boundary (including partial). */
+    /** Total positioned dies inside the wafer boundary (including partial). Excludes unpositioned dies — see `unpositionedDies`. */
     totalDies: number;
-    /** Dies falling within the edge exclusion zone. */
+    /** Positioned dies falling within the edge exclusion zone. */
     edgeExcludedDies: number;
-    /** `filledDies / totalDies` in [0, 1]. */
+    /**
+     * Dies with no reported x/y position at all (see `Die.x`/`hasPosition`).
+     * Always present, `0` when every die is positioned. These dies are
+     * counted in `dies` and in every non-spatial stat (yield, bin counts,
+     * per-test analysis) but never in `totalDies`/`filledDies`/`ratio`
+     * above, and never drawn on the map/gallery canvas.
+     */
+    unpositionedDies: number;
+    /** `filledDies / totalDies` in [0, 1] — `0` when there are no positioned dies, even if `unpositionedDies` is large. */
     ratio: number;
   };
   /** Yield statistics computed against `passBins`. */
@@ -747,7 +764,13 @@ function resolveAxisFlips(
 // ── Lot-stack aggregation ─────────────────────────────────────────────────────
 
 function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, testDefs?: TestDef[]): DieResult[] {
-  const { results: waferResults, method, targetBin } = lotStack;
+  const { method, targetBin } = lotStack;
+  // Lot-stack aggregation combines multiple wafers' values at "the same
+  // physical die" — a concept that only makes sense by position. An
+  // unpositioned die has no cross-wafer position identity to aggregate by,
+  // so it's excluded from the stack entirely rather than aggregated
+  // meaninglessly.
+  const waferResults = lotStack.results.map(wafer => wafer.filter(hasPosition));
 
   // 1. Scalar numeric aggregations: mean, median, stddev, min, max, count.
   // Collect all unique testValues keys across all wafers, then run aggregateValues
@@ -844,15 +867,17 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
 // ── Coverage & yield ──────────────────────────────────────────────────────────
 
 function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
-  const totalDies = dies.length;
-  const edgeExcludedDies = dies.filter(d => d.edgeExcluded).length;
-  const filledDies = dies.filter(
+  const positioned = dies.filter(hasPosition);
+  const totalDies = positioned.length;
+  const edgeExcludedDies = positioned.filter(d => d.edgeExcluded).length;
+  const filledDies = positioned.filter(
     d => dieHasTestData(d) || d.hbin !== undefined || d.sbin !== undefined,
   ).length;
   return {
     filledDies,
     totalDies,
     edgeExcludedDies,
+    unpositionedDies: dies.length - positioned.length,
     ratio: totalDies > 0 ? filledDies / totalDies : 0,
   };
 }
@@ -902,7 +927,7 @@ function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclud
 function buildReticles(
   reticleOpts: ReticleConfig | undefined,
   wafer: Wafer,
-  dies: Die[],
+  dies: PositionedDie[],
   diePitchX: number,
   diePitchY: number,
   // Grid-centering shift applied when building `dies` (see resolveGridOriginOffset):
@@ -963,7 +988,7 @@ function buildReticles(
 
 // ── Edge exclusion ────────────────────────────────────────────────────────────
 
-function applyEdgeExclusion(dies: Die[], wafer: Wafer, exclusionMm: number): Die[] {
+function applyEdgeExclusion(dies: PositionedDie[], wafer: Wafer, exclusionMm: number): PositionedDie[] {
   const innerRadiusSq = (wafer.radius - exclusionMm) ** 2;
   return dies.map(die => {
     const dx = die.physX - wafer.center.x;
@@ -975,10 +1000,18 @@ function applyEdgeExclusion(dies: Die[], wafer: Wafer, exclusionMm: number): Die
 // ── Retest deduplication ──────────────────────────────────────────────────────
 
 function applyRetestPolicy(
-  results: DieResult[],
+  allResults: DieResult[],
   policy: 'last' | 'first' | 'best' | 'worst',
   passBins: number[],
 ): DieResult[] {
+  // Retesting is inherently a "same x/y tested more than once" concept — an
+  // unpositioned die has no coordinate identity to dedupe by at this stage
+  // (DieResult doesn't carry an id the way a built Die does), so it passes
+  // through untouched, one result in, one result out, never merged with
+  // another unpositioned entry.
+  const results = allResults.filter(hasPosition);
+  const unpositioned = allResults.filter(r => !hasPosition(r));
+
   const counts = new Map<number, Map<number, number>>();
   for (const d of results) {
     let yCounts = counts.get(d.x);
@@ -1008,7 +1041,7 @@ function applyRetestPolicy(
     }
   }
 
-  const winners = new Map<string, DieResult>();
+  const winners = new Map<string, DieResult & { x: number; y: number }>();
   for (const d of results) {
     const key = getDieKey(d);
     const existing = winners.get(key);
@@ -1019,11 +1052,13 @@ function applyRetestPolicy(
     winners.set(key, d);
   }
 
-  return Array.from(winners.values()).map(d => {
+  const deduped = Array.from(winners.values()).map(d => {
     const xMap = counts.get(d.x);
     const count = xMap?.get(d.y) ?? 1;
     return count > 1 ? { ...d, retestCount: count } : d;
   });
+
+  return [...deduped, ...unpositioned];
 }
 
 // ── Test value helpers ────────────────────────────────────────────────────────
@@ -1073,7 +1108,7 @@ export function dieHasTestData(die: Pick<Die, 'testValues' | 'testPass'>): boole
 
 // ── Data attachment ───────────────────────────────────────────────────────────
 
-function attachData(die: Die, pt: DieResult): Die {
+function attachData<D extends Die>(die: D, pt: DieResult): D {
   const base: Partial<Die> = {};
   if (pt.hbin        !== undefined) base.hbin        = pt.hbin;
   if (pt.sbin        !== undefined) base.sbin        = pt.sbin;
@@ -1206,6 +1241,23 @@ export function buildWaferMap(
     }
   }
 
+  // A die is either fully positioned (both x and y) or fully unpositioned
+  // (neither) — see hasPosition(). A caller that supplies only one of the
+  // two almost certainly has a bug (a null x with a real y, say), and
+  // silently treating it as "unpositioned" would hide that; fail fast
+  // instead. Checked over every result, not just a sample, since this is
+  // cheap and a partial-half-state bug could easily hide past the first few
+  // rows of a real file.
+  for (const r of rawResults) {
+    if ((r.x == null) !== (r.y == null)) {
+      throw new TypeError(
+        `buildWaferMap: die has only one of x/y set (x=${String(r.x)}, y=${String(r.y)}). ` +
+        `A die must be either fully positioned (both x and y) or fully unpositioned ` +
+        `(neither) — omit both to mark a die as having no reported position.`
+      );
+    }
+  }
+
   const results: DieResult[] = applyRetestPolicy(rawResults, norm.retestPolicy, norm.passBins);
 
   const inference: WaferMapResult['inference'] = {
@@ -1219,8 +1271,16 @@ export function buildWaferMap(
   if (norm.explicitDies) {
     let dies = norm.explicitDies;
 
-    if (results.length > 0) {
-      const lookup = new Map(results.map(d => [getDieKey(d), d]));
+    // Pre-built dies always carry their own position (they're a caller-supplied
+    // layout) — only `results` (the data to attach) can include unpositioned
+    // entries. Those never match anything by getDieKey (an unpositioned die
+    // keys by id, which no pre-built die shares), so they're carried through
+    // separately below rather than silently dropped.
+    const positionedResults = results.filter(hasPosition);
+    const unpositionedResults = results.filter(r => !hasPosition(r));
+
+    if (positionedResults.length > 0) {
+      const lookup = new Map(positionedResults.map(d => [getDieKey(d), d]));
       dies = dies.map(die => {
         const pt = lookup.get(getDieKey(die));
         return pt ? attachData(die, pt) : die;
@@ -1240,12 +1300,14 @@ export function buildWaferMap(
     // main (results-based) path. Without this, the wafer notch and any overlay that
     // rotates with wafer.orientation (reticle fields, quadrant boundaries) would
     // rotate while the dies themselves stayed put.
-    if (wafer.orientation !== 0) dies = applyOrientation(dies, wafer);
+    // explicitDies is a caller-supplied pre-built layout, always positioned
+    // by convention (not part of the coordinate-less data path).
+    if (wafer.orientation !== 0) dies = applyOrientation(dies as PositionedDie[], wafer);
 
-    const reticles    = buildReticles(norm.reticleOpts, wafer, dies, 1, 1, 0, 0, 0, 0, wafer.orientation);
+    const reticles    = buildReticles(norm.reticleOpts, wafer, dies as PositionedDie[], 1, 1, 0, 0, 0, 0, wafer.orientation);
     const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
 
-    const view = buildView(wafer, dies, {
+    const view = buildView(wafer, dies as PositionedDie[], {
       ...viewOpts,
       reticles,
       showReticle,
@@ -1254,14 +1316,19 @@ export function buildWaferMap(
       isLotStack: false,
     }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
+    const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
+      attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt),
+    );
+    const allDies = [...dies, ...unpositionedDies];
+
     return {
-      wafer, dies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
+      wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
       warnings: buildWarnings(inference),
       plotMode: view.plotMode,
       metadata: view.metadata,
       isLotStack: false,
-      dataCoverage: computeCoverage(dies),
-      yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
+      dataCoverage: computeCoverage(allDies),
+      yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode),
       reticles,
       hbinDefs: norm.hbinDefs,
       sbinDefs: norm.sbinDefs,
@@ -1272,14 +1339,22 @@ export function buildWaferMap(
 
   // ── Grid-position path ─────────────────────────────────────────────────────
 
-  const gridPoints = results.map(d => ({ x: d.x, y: d.y }));
+  // Geometry inference (pitch, origin, grid, wafer diameter, orientation,
+  // edge-exclusion, reticle assignment) runs only on positioned dies —
+  // unpositioned ones have no coordinates to infer from and are folded back
+  // in at the very end, after `dies`/`view`/`reticles` are all built from
+  // the positioned subset only.
+  const positionedResults = results.filter(hasPosition);
+  const unpositionedResults = results.filter(r => !hasPosition(r));
+
+  const gridPoints = positionedResults.map(d => ({ x: d.x, y: d.y }));
 
   const pitchResult = resolveGridPitch(gridPoints, norm.dieOpts, norm.waferOpts?.diameter);
   inference.diePitch = { confidence: pitchResult.confidence, units: pitchResult.units as 'mm' | 'normalized' };
   const { pitchX, pitchY } = pitchResult;
   const units = pitchResult.units as 'mm' | 'normalized';
 
-  const origin      = detectOrigin(results, norm.dieOpts);
+  const origin      = detectOrigin(positionedResults, norm.dieOpts);
   const ga          = assignGridIndices(gridPoints);
   inference.grid    = { confidence: ga.confidence };
   const { offsetX, offsetY } = resolveGridOriginOffset(gridPoints, origin, ga);
@@ -1418,10 +1493,10 @@ export function buildWaferMap(
   //
   // `partial` remains meaningful for a synthesized die grid clipped to a wafer —
   // see `clipDiesToWafer`, which is where straddling dies legitimately arise.
-  let dies: Die[] = results.map(pt => {
+  let dies: PositionedDie[] = positionedResults.map(pt => {
     const col = Math.round(pt.x) - offsetX;
     const row = Math.round(pt.y) - offsetY;
-    const base: Die = {
+    const base: PositionedDie = {
       id: `${col}_${row}`,
       x: col, y: row,
       physX: col * pitchX - colMidX,
@@ -1469,14 +1544,23 @@ export function buildWaferMap(
     lotSize:      norm.lotStackOpts?.results.length,
   }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
+  // Unpositioned dies never went through grid/geometry inference above (no
+  // coordinates to infer from) — folded in only now, so `view`/`reticles`
+  // (the render draw list) reflect positioned dies only, while the returned
+  // `dies` and every stat computed below sees the full population.
+  const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
+    attachData({ id: `unpositioned_${i}`, width: pitchX, height: pitchY }, pt),
+  );
+  const allDies = [...dies, ...unpositionedDies];
+
   return {
-    wafer, dies, view, reticleConfig: norm.reticleOpts, units, inference,
+    wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units, inference,
     warnings: buildWarnings(inference),
     plotMode: view.plotMode,
     metadata: view.metadata,
     isLotStack: norm.lotStackOpts !== undefined,
-    dataCoverage: computeCoverage(dies),
-    yield: computeYield(dies, norm.passBins, norm.edgeDieYieldMode),
+    dataCoverage: computeCoverage(allDies),
+    yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode),
     reticles,
     hbinDefs: norm.hbinDefs,
     sbinDefs: norm.sbinDefs,

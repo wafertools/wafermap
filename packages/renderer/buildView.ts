@@ -1,5 +1,6 @@
 import type { Wafer } from '../core/wafer.js';
-import type { Die } from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
+import { hasPosition } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { getReticleCell } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
@@ -558,7 +559,10 @@ export function buildHoverText(
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
   const lines: string[] = [`Die (${die.x}, ${die.y})`];
-  if (reticleConfig) {
+  // Only a positioned die can belong to a reticle field — hover text is only
+  // ever generated for a rendered (i.e. positioned) die in practice, but the
+  // guard keeps this correct if that assumption ever changes.
+  if (reticleConfig && hasPosition(die)) {
     const cell = getReticleCell(die, reticleConfig);
     lines.push(`Reticle (${cell.column}, ${cell.row})`);
   }
@@ -767,7 +771,7 @@ export function buildMapTitle(
 
 
 export function generateTextOverlay(
-  dies: Die[],
+  dies: PositionedDie[],
   txCoords: Float64Array | null,
   options: {
     plotMode: PlotMode;
@@ -992,7 +996,7 @@ function buildReticleOverlays(reticles: Reticle[], toScreen: Affine<'grid', 'scr
   });
 }
 
-function buildProbeOverlay(dies: Die[]): ViewOverlay[] {
+function buildProbeOverlay(dies: PositionedDie[]): ViewOverlay[] {
   const ordered = dies
     .filter((die) => die.probeIndex !== undefined)
     .sort((left, right) => (left.probeIndex ?? 0) - (right.probeIndex ?? 0));
@@ -1182,7 +1186,7 @@ function buildXYIndicatorOverlay(
  */
 export function buildView(
   wafer: Wafer,
-  dies: Die[],
+  dies: PositionedDie[],
   options: ViewOptions = {},
   binDefs?: { hbinDefs?: BinDef[]; sbinDefs?: BinDef[]; metadataFields?: MetadataFieldDef[] },
 ): View {

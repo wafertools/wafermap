@@ -24,7 +24,7 @@ import { prettyKey } from '../stats/facets.js';
 import { openHtmlReport } from '../stats/renderFindingsReport.js';
 import { escHtml, renderSection, renderSeverityBadge, reportStyles } from '../stats/reportHtml.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
-import { getDieKey } from '../core/dies.js';
+import { getDieKey, hasPosition } from '../core/dies.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -1591,7 +1591,10 @@ ${reportStyles()}
   function buildStackedItems(mode: PlotMode): WaferMapDisplayItem[] {
     const resolvedItems = originalItems.filter((it): it is WaferMapDisplayItem => it !== null);
     if (!resolvedItems.length) return [];
-    const allDies   = resolvedItems.map(item => item.dies);
+    // Stacking combines wafers' values at "the same physical die" — a
+    // position-only concept. Unpositioned dies have no cross-wafer position
+    // identity to stack by, so they're excluded from these cards.
+    const allDies   = resolvedItems.map(item => item.dies.filter(hasPosition));
     const baseWafer = resolvedItems[0].wafer;
     const lotSize   = resolvedItems.length;
 
@@ -2231,6 +2234,10 @@ ${reportStyles()}
 
     const label = item.label ?? 'Wafer map';
     const id = nextWindowId++;
+    // The grid card's own current view state (plot mode, active test, etc.)
+    // — read before it's destroyed below, so the detached window opens
+    // showing the same thing the card was, not the gallery's shared default.
+    const liveOptions = cardControllers[cardIndex]?.getOptions();
 
     const popupWin = openDetachWindow(label);
     // A real popup: full OS-window behaviour, can be dragged outside the host
@@ -2307,7 +2314,7 @@ ${reportStyles()}
       if (metaPanel) mapContainer.appendChild(metaPanel);
       popupBody.appendChild(mapContainer);
 
-      const ctrl = buildDetachedController(mapContainer, item);
+      const ctrl = buildDetachedController(mapContainer, item, undefined, liveOptions);
 
       const closePollId = setInterval(() => { if (popupWin.closed) handlePopupClosed(id); }, 400);
       popupWin.addEventListener('pagehide', () => handlePopupClosed(id));
@@ -2336,7 +2343,7 @@ ${reportStyles()}
       });
       handle.contentWrap.style.flexDirection = 'column';
       augmentOverlayTitleWithMetadata(handle, label, item.wafer.metadata ?? undefined);
-      const ctrl = buildDetachedController(handle.contentWrap, item);
+      const ctrl = buildDetachedController(handle.contentWrap, item, undefined, liveOptions);
 
       detachedWindows.set(id, {
         id, ctrl, cardIndex, label, closePollId: null,
@@ -2365,11 +2372,25 @@ ${reportStyles()}
    * what the user was already looking at — instead of the gallery's shared
    * plot mode; omitted (the detach-window paths) leaves plot mode untouched.
    */
-  function buildDetachedController(container: HTMLElement, item: WaferMapDisplayItem, testNumber?: number): WaferMapController {
+  function buildDetachedController(
+    container: HTMLElement, item: WaferMapDisplayItem, testNumber?: number,
+    /**
+     * The source grid card's own live `getOptions()` snapshot — passed by
+     * `openWindowForCard` so a card the user had switched to e.g. value mode
+     * individually (different from the gallery's shared default) opens its
+     * detached window in that same mode, rather than always reverting to
+     * `sharedOpts`. Omitted by `openWafer` (findings/boxplot drilldown),
+     * which opens an arbitrary lot wafer that may not have a live grid card
+     * at all — see its own doc comment for why that one intentionally always
+     * uses the gallery's shared mode instead.
+     */
+    liveOptions?: Partial<WaferViewOptions>,
+  ): WaferMapController {
     const baseViewOptions = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
+    const withLive = liveOptions ? { ...baseViewOptions, ...liveOptions } : baseViewOptions;
     const viewOptions = testNumber !== undefined
-      ? { ...baseViewOptions, plotMode: 'value' as const, activeTest: testNumber }
-      : baseViewOptions;
+      ? { ...withLive, plotMode: 'value' as const, activeTest: testNumber }
+      : withLive;
     const ctrl = renderWaferMap(container, item as import('../renderer/buildWaferMap.js').WaferMapResult, {
       viewOptions,
       toolbarControls: 'full',

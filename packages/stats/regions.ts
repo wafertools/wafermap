@@ -1,4 +1,4 @@
-import { classifyDie, getReticleCell, getRingLabel, type Die, type Wafer, getDieKey} from '../core/index.js';
+import { classifyDie, getReticleCell, getRingLabel, hasPosition, type Die, type PositionedDie, type Wafer, getDieKey} from '../core/index.js';
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
 
 export interface StatsRegion {
@@ -34,7 +34,7 @@ export function buildRegionYieldData(
   allWafers: Wafer[],
   ringCount: number,
   passBins: number[],
-  regionBuilder: (dies: Die[], wafer: Wafer, ringCount: number) => StatsRegion[],
+  regionBuilder: (dies: PositionedDie[], wafer: Wafer, ringCount: number) => StatsRegion[],
 ): RegionYieldDatum[] {
   const passSet = new Set(passBins);
   const totals = new Map<string, { label: string; pass: number; total: number }>();
@@ -43,7 +43,15 @@ export function buildRegionYieldData(
   for (let wi = 0; wi < allWafers.length; wi++) {
     const wDies = diesByWafer[wi];
     if (!wDies?.length) continue;
-    const regions = regionBuilder(wDies, allWafers[wi], ringCount);
+    // Ring/quadrant (the only regionBuilders this is ever called with) are
+    // spatial — unpositioned dies never enter a region, but dieByKey below
+    // still looks results up against the full population so a positioned
+    // die's yield tally is unaffected either way.
+    // physX/physY are always set alongside x/y by construction (buildWaferMap
+    // never produces one without the other) — hasPosition only narrows x/y at
+    // the type level, so the cast below just makes that existing invariant
+    // explicit rather than checking it again at runtime.
+    const regions = regionBuilder(wDies.filter(hasPosition) as PositionedDie[], allWafers[wi], ringCount);
     const dieByKey = new Map(wDies.map(d => [dieKey(d), d]));
     for (const region of regions) {
       if (!order.includes(region.key)) order.push(region.key);
@@ -122,7 +130,7 @@ export function parseRegionKey(key: string): ParsedRegionKey {
   return { family: 'unknown' };
 }
 
-export function buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[] {
+export function buildRingRegions(dies: PositionedDie[], wafer: Wafer, ringCount: number): StatsRegion[] {
   const regions = new Map<string, StatsRegion>();
 
   for (const die of dies) {
@@ -141,7 +149,7 @@ export function buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): 
   return [...regions.values()].sort((left, right) => left.key.localeCompare(right.key));
 }
 
-export function buildQuadrantRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[] {
+export function buildQuadrantRegions(dies: PositionedDie[], wafer: Wafer, ringCount: number): StatsRegion[] {
   const regions = new Map<string, StatsRegion>();
 
   for (const die of dies) {
@@ -162,7 +170,7 @@ export function buildQuadrantRegions(dies: Die[], wafer: Wafer, ringCount: numbe
 }
 
 export function buildReticlePositionRegions(
-  dies: Die[],
+  dies: PositionedDie[],
   reticleConfig: ReticleConfig | undefined,
 ): StatsRegion[] {
   if (!reticleConfig) return [];
@@ -228,7 +236,7 @@ export function buildTestSiteRegions(dies: Die[], forceEnable = false): StatsReg
     }));
 }
 
-export function buildSectorRegions(dies: Die[], wafer: Wafer, sectorCount: number): StatsRegion[] {
+export function buildSectorRegions(dies: PositionedDie[], wafer: Wafer, sectorCount: number): StatsRegion[] {
   const safe = [4, 8, 16, 32].includes(sectorCount) ? sectorCount : 16;
   const names = sectorCompassNames(safe);
   const regions = new Map<string, StatsRegion>();

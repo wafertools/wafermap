@@ -1,13 +1,13 @@
 import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
 import { buildView, buildHoverText, findTestDef, resolveTestNumber, getUniqueTestNumbers } from '../renderer/buildView.js';
-import type { Die } from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -19,7 +19,9 @@ import { ICONS } from './icons.js';
 import { hardBinColor, softBinColor, metadataValueColor } from '../renderer/colorMap.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
 import { createMetadataBadge, type MetadataBadgeController } from './metadataBadge.js';
-import { getDieKey } from '../core/dies.js';
+import { getDieKey, hasPosition } from '../core/dies.js';
+import { buildDieListSection } from './dieList.js';
+import { buildMaplessSummary } from './maplessSummary.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -383,6 +385,15 @@ export function renderWaferMap(
   if (options.height != null) {
     container.style.height = typeof options.height === 'number' ? `${options.height}px` : options.height;
   }
+  // True for a wafer with zero positioned dies — no map is ever drawn (see
+  // the coordinate-less overlay below), so the toolbar's spatial tool groups
+  // (zoom/pan/select/download, orientation, overlays, legend style, log
+  // scale, colorbar range) are gated off further down. Declared this early
+  // (result is a plain function parameter, available immediately — no
+  // ordering hazard) so both the overlay block and the toolbar-construction
+  // block below can share one definition.
+  const isMapless = result.dataCoverage.totalDies === 0 && result.dataCoverage.unpositionedDies > 0;
+
   // mapBox is the actual sizing/positioning box for everything the map owns
   // (canvas, toolbar, Insights overlay) — `container` itself is host-owned and
   // may be arbitrarily large, so it can't be capped directly without fighting
@@ -405,6 +416,171 @@ export function renderWaferMap(
   Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block' });
   canvasWrap.appendChild(canvas);
   mapBox.appendChild(canvasWrap);
+
+  // ── Coordinate-less dies: no wafer-shaped visual, ever ──────────────────
+  // A fully coordinate-less wafer gets a compact summary *instead of* the map
+  // (an opaque overlay — the canvas/toolbar/insights machinery underneath
+  // still runs harmlessly on an empty draw list, this just covers it, so
+  // nothing else in this function needs to branch). A mixed wafer keeps its
+  // normal map and gets a small expandable footer for the unpositioned
+  // subset instead. Both default to buildMaplessSummary (a bin breakdown or
+  // mini histogram matching the current plot mode, reusing the map's own
+  // colour scheme) rather than the dense buildDieListSection table — a
+  // "View table" toggle still reaches the table for CSV export / per-die
+  // inspection. See WMAP_ISSUES.md #39.
+  let refreshMaplessPanel: (() => void) | null = null;
+  if (result.dataCoverage.unpositionedDies > 0) {
+    const unpositionedDies = result.dies.filter((d) => !hasPosition(d));
+    let showingTable = false;
+
+    function buildPanelContent(): HTMLElement {
+      if (showingTable) {
+        const table = buildDieListSection(unpositionedDies, result.testDefs, { onSaveText: options.onSaveText });
+        if (table) return table;
+      }
+      // Effective log scale: same resolution buildView.ts uses internally
+      // (explicit toggle, falling back to the test's own default; never on
+      // for a functional/pass-fail test, which has no continuous value axis).
+      const activeTestDef = findTestDef(result.testDefs, viewOpts.activeTest ?? 0);
+      const effectiveLogScale = isParametricTest(activeTestDef)
+        ? (viewOpts.logScale ?? activeTestDef?.logScale ?? false)
+        : false;
+      return buildMaplessSummary(unpositionedDies, result.testDefs, {
+        plotMode: viewOpts.plotMode ?? 'hardBin',
+        activeTest: viewOpts.activeTest,
+        hbinDefs,
+        sbinDefs,
+        colorScheme: viewOpts.colorScheme,
+        logScale: effectiveLogScale,
+        colorbarRangeMode: viewOpts.colorbarRangeMode,
+        // Full population (positioned + unpositioned), not just
+        // unpositionedDies — keeps this histogram's colour range consistent
+        // with whatever the wafer's own visible map is using for the same
+        // test, when there is one (a mixed wafer's footer).
+        valueRangeDies: result.dies,
+      });
+    }
+
+    function buildToggleBtn(onToggle: () => void): HTMLButtonElement {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      Object.assign(btn.style, {
+        fontSize: '10px', padding: '2px 6px', borderRadius: '4px', flexShrink: '0',
+        border: `1px solid ${CLR.menuBorder}`, background: CLR.menuBg, color: CLR.text, cursor: 'pointer',
+      });
+      btn.textContent = showingTable ? 'View summary' : 'View table';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showingTable = !showingTable;
+        btn.textContent = showingTable ? 'View summary' : 'View table';
+        onToggle();
+      });
+      return btn;
+    }
+
+    if (isMapless) {
+      const overlay = document.createElement('div');
+      Object.assign(overlay.style, {
+        position: 'absolute', inset: '0', background: CLR.panelBg,
+        // paddingTop clears the floating toolbar the same way insightsTab.el
+        // does (see its own paddingTop: showToolbar ? '44px' : '0' a bit
+        // below) — both are inset:0 overlays that would otherwise render
+        // under the toolbar's absolutely-positioned top-right corner.
+        padding: '12px', paddingTop: (options.showToolbar ?? true) ? '44px' : '12px',
+        boxSizing: 'border-box', overflow: 'hidden', display: 'flex',
+        flexDirection: 'column', gap: '8px', zIndex: '1',
+      });
+      const noteRow = document.createElement('div');
+      Object.assign(noteRow.style, {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px',
+      });
+      const noteText = document.createElement('span');
+      Object.assign(noteText.style, { fontSize: '11px', color: CLR.label, lineHeight: '1.4' });
+      noteText.textContent = 'No die position data for this wafer.';
+      noteRow.appendChild(noteText);
+      const contentMount = document.createElement('div');
+      // display:flex + flexDirection:column so buildPanelContent()'s own
+      // root (which sets flex:1;minHeight:0 on itself) can actually stretch
+      // to fill this space — without a flex parent here, a block child just
+      // sizes to its own content, leaving the histogram/bin-breakdown far
+      // smaller than the card actually has room for.
+      Object.assign(contentMount.style, { flex: '1', minHeight: '0', overflow: 'auto', display: 'flex', flexDirection: 'column' });
+      noteRow.appendChild(buildToggleBtn(() => contentMount.replaceChildren(buildPanelContent())));
+      overlay.appendChild(noteRow);
+      overlay.appendChild(contentMount);
+      canvasWrap.appendChild(overlay);
+      // Deferred, not called inline here: buildPanelContent() reads viewOpts,
+      // which this block runs before (viewOpts is declared later in this
+      // function). refreshMaplessPanel is invoked once after the initial
+      // render() call below, once viewOpts actually exists.
+      refreshMaplessPanel = () => { if (!showingTable) contentMount.replaceChildren(buildPanelContent()); };
+    } else {
+      const footer = document.createElement('div');
+      Object.assign(footer.style, {
+        // zIndex 3, above the expanded panel's 2 below — the footer (and its
+        // collapse chevron) must stay visible and clickable once expanded,
+        // not buried under the panel it opened.
+        position: 'absolute', left: '0', right: '0', bottom: '0', zIndex: '3',
+        background: CLR.panelBg, borderTop: `1px solid ${CLR.menuBorder}`,
+        fontSize: '11px', color: CLR.text, cursor: 'pointer', padding: '4px 8px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+      });
+      const label = document.createElement('span');
+      label.textContent = `+${unpositionedDies.length} ${unpositionedDies.length === 1 ? 'die' : 'dies'} without position data`;
+      footer.appendChild(label);
+      const chevron = document.createElement('span');
+      chevron.textContent = '▾';
+      Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' });
+      footer.appendChild(chevron);
+      footer.setAttribute('aria-expanded', 'false');
+      footer.setAttribute('aria-label', `${unpositionedDies.length} dies without position data. Click to view.`);
+
+      let expanded: HTMLDivElement | null = null;
+      let contentMount: HTMLDivElement | null = null;
+      wireExpandToggle(footer, (open) => {
+        chevron.textContent = open ? '▴' : '▾';
+        footer.setAttribute('aria-expanded', String(open));
+        if (open) {
+          expanded = document.createElement('div');
+          // bottom: footer's own measured height (not 0) — otherwise this
+          // panel draws directly over the footer strip, hiding the very
+          // chevron/label the user would click to close it again. footer
+          // already has real layout at this point (appended well before
+          // this callback can fire), so getBoundingClientRect() is safe.
+          const footerHeight = footer.getBoundingClientRect().height || 28;
+          Object.assign(expanded.style, {
+            position: 'absolute', left: '0', right: '0', bottom: `${footerHeight}px`, top: '20%', zIndex: '2',
+            background: CLR.panelBg, borderTop: `1px solid ${CLR.menuBorder}`,
+            padding: '8px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '8px',
+          });
+          // wireExpandToggle closes on the next click anywhere in the
+          // document — without this, that includes every click *inside*
+          // this panel (it's a sibling of footer, not a descendant), so
+          // scrolling the table or hovering a histogram bar would instantly
+          // close it. Swallow clicks here; footer's own chevron and the
+          // toggle button below remain the only ways to act on this panel.
+          expanded.addEventListener('click', (e) => e.stopPropagation());
+          const headerRow = document.createElement('div');
+          Object.assign(headerRow.style, { display: 'flex', justifyContent: 'flex-end' });
+          headerRow.appendChild(buildToggleBtn(() => {
+            if (contentMount) contentMount.replaceChildren(buildPanelContent());
+          }));
+          expanded.appendChild(headerRow);
+          contentMount = document.createElement('div');
+          Object.assign(contentMount.style, { flex: '1', minHeight: '0', overflow: 'auto', display: 'flex', flexDirection: 'column' });
+          contentMount.appendChild(buildPanelContent());
+          expanded.appendChild(contentMount);
+          canvasWrap.appendChild(expanded);
+        } else if (expanded) {
+          expanded.remove();
+          expanded = null;
+          contentMount = null;
+        }
+      });
+      canvasWrap.appendChild(footer);
+      refreshMaplessPanel = () => { if (contentMount && !showingTable) contentMount.replaceChildren(buildPanelContent()); };
+    }
+  }
 
   const {
     onHover,
@@ -612,7 +788,9 @@ export function renderWaferMap(
     // modal left that blank too (canvasWrap was never moved there — it has
     // no expand target once Insights owns the screen). Hide it entirely
     // rather than ship a control that produces two blank views.
-    if (mapToolsEl) mapToolsEl.style.display = open ? 'none' : 'flex';
+    // isMapless: this group (download/zoom/pan/select) has nothing to act on
+    // with no map drawn — stays hidden regardless of Insights state.
+    if (mapToolsEl) mapToolsEl.style.display = (open || isMapless) ? 'none' : 'flex';
     if (mapViewControlsEl) mapViewControlsEl.style.display = open ? 'none' : 'flex';
     if (btnExpand) btnExpand.style.display = open ? 'none' : 'flex';
     // The metadata badge is a child of canvasWrap and (like the toolbar used
@@ -661,7 +839,9 @@ export function renderWaferMap(
   // ── View rebuild ──────────────────────────────────────────────────────────
   function rebuildView(): void {
     const so = viewOpts;
-    currentView = buildView(wafer, currentDies, {
+    // The canvas draw list only ever shows positioned dies — an unpositioned
+    // die is never placed on the map, only surfaced via the die-list.
+    currentView = buildView(wafer, currentDies.filter(hasPosition) as PositionedDie[], {
       plotMode:               so.plotMode,
       colorScheme:            so.colorScheme,
       showDieLabels:               so.showDieLabels,
@@ -960,7 +1140,9 @@ export function renderWaferMap(
       // between groups first. It only engages when a SINGLE group is wider than
       // the container (~230px), where splitting the group is still better than
       // spilling across neighbouring content.
-      Object.assign(mapToolsEl.style, { display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'wrap', justifyContent: 'flex-end' });
+      Object.assign(mapToolsEl.style, {
+        display: isMapless ? 'none' : 'flex', alignItems: 'center', gap: '0', flexWrap: 'wrap', justifyContent: 'flex-end',
+      });
       toolbar.appendChild(mapToolsEl);
 
       // Camera first — leftmost
@@ -1039,8 +1221,18 @@ export function renderWaferMap(
         const btnMode = makeBtn('mode', 'Plot mode', () => {
           if (getOpenMenu()) { closeModeMenu(); return; }
 
-          // Only include modes for which data is actually present.
-          const dies     = currentView.dies;
+          // Only include modes for which data is actually present. currentDies
+          // (the full, unfiltered die set), not currentView.dies — the view is
+          // built from currentDies.filter(hasPosition) (see rebuildView), so
+          // for a fully coordinate-less wafer currentView.dies is always [],
+          // which silently emptied this menu entirely (no bin/value entries
+          // ever appeared, even though the dies have hbin/sbin/test data —
+          // exactly the non-spatial data this menu is supposed to offer modes
+          // for). See WMAP_ISSUES.md #39's follow-up entries for the same
+          // "positioned-only source used where the full population was
+          // needed" mistake elsewhere (dataCoverage.totalDies vs
+          // yieldSummary.totalDies).
+          const dies     = currentDies;
           const testDefs = currentView.testDefs;
           // Value mode is available for any per-test data — numeric values or recorded
           // pass/fail verdicts (functional tests). Stacked values need numeric values.
@@ -1155,15 +1347,29 @@ export function renderWaferMap(
           patch => applyOpts(patch),
         );
         if (showPlotModeSelector) mapViewControlsEl!.appendChild(btnMode);
+        // btnPalette stays even when isMapless: it drives viewOpts.colorScheme,
+        // which buildMaplessSummary's bin breakdown reads too (see
+        // refreshMaplessPanel's syncOpts hook) — genuinely functional here,
+        // unlike the spatial-only controls skipped below (nothing to zoom,
+        // pan, select, orient, overlay, or legend-position when there's no
+        // map drawn at all). btnLogScale/btnColorbarRange stay too:
+        // buildMaplessSummary's histogram resolves its own value→colour
+        // range/log-scale the same way the canvas colorbar does (see
+        // resolveValueNormalize, maplessSummary.ts), so both remain
+        // functional controls here, not canvas-only ones — their own
+        // sync functions (syncLogScaleBtnFn/syncColorbarRangeBtnFn) already
+        // gate visibility by plot mode/limits regardless of isMapless.
         mapViewControlsEl!.appendChild(btnPalette);
         mapViewControlsEl!.appendChild(btnLogScale);
         mapViewControlsEl!.appendChild(btnColorbarRange);
-        mapViewControlsEl!.appendChild(makeSep());
-        mapViewControlsEl!.appendChild(btnOverlays);
-        mapViewControlsEl!.appendChild(makeSep());
-        mapViewControlsEl!.appendChild(btnLegendStyle);
-        mapViewControlsEl!.appendChild(makeSep());
-        mapViewControlsEl!.appendChild(btnOrient);
+        if (!isMapless) {
+          mapViewControlsEl!.appendChild(makeSep());
+          mapViewControlsEl!.appendChild(btnOverlays);
+          mapViewControlsEl!.appendChild(makeSep());
+          mapViewControlsEl!.appendChild(btnLegendStyle);
+          mapViewControlsEl!.appendChild(makeSep());
+          mapViewControlsEl!.appendChild(btnOrient);
+        }
 
         // Summary button — toggles the Summary panel. Left unwrapped in
         // sceneControlsEl (not grouped with mapViewControlsEl) so it stays
@@ -1367,6 +1573,15 @@ export function renderWaferMap(
     render();
     const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
     if (partial.colorScheme !== undefined || modeChanged) { renderSummaryPanel(); renderAutoSummaryPanel(); }
+    // logScale/colorbarRangeMode: buildMaplessSummary's histogram resolves
+    // its own colour range the same way the map's colorbar does (see
+    // resolveValueNormalize, maplessSummary.ts) — a change here needs the
+    // same refresh as a colour-scheme or mode change, or the histogram's
+    // bars silently keep whatever colours they had at the last refresh.
+    if (partial.colorScheme !== undefined || modeChanged || partial.activeTest !== undefined ||
+        partial.logScale !== undefined || partial.colorbarRangeMode !== undefined) {
+      refreshMaplessPanel?.();
+    }
   }
 
   // Rebuild, redraw, and fire onViewOptionsChange.
@@ -2102,6 +2317,7 @@ export function renderWaferMap(
   // async ResizeObserver round-trip (which would delay first paint by 1+ frames).
   void canvas.clientWidth;
   render();
+  refreshMaplessPanel?.();
 
   // ── Controller ─────────────────────────────────────────────────────────────
   function resetZoom(): void {

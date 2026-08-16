@@ -13,7 +13,7 @@
 // there) without ever being able to drift apart.
 
 import type { Wafer } from '../core/wafer.js';
-import type { Die } from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData, type StatsRegion } from '../stats/regions.js';
@@ -464,7 +464,13 @@ export function buildYieldSection(
   wrap.appendChild(sectionTitle('Summary'));
 
   const cards = el('div', { display: 'flex', gap: '6px', marginBottom: '8px' });
-  cards.appendChild(statCard(String(dataCoverage.totalDies), 'Total dies'));
+  // yieldSummary.totalDies, not dataCoverage.totalDies: yield is deliberately
+  // non-spatial (isYieldEligibleDie never checks position), so it already
+  // includes coordinate-less dies with bin data — dataCoverage.totalDies is
+  // scoped to positioned dies only (it's the map's fill-coverage denominator)
+  // and would read misleadingly as "0" for a coordinate-less wafer sitting
+  // right next to a non-zero Yield card.
+  cards.appendChild(statCard(String(yieldSummary.totalDies), 'Total dies'));
   if (yieldSummary.partialDies > 0) {
     cards.appendChild(statCard(String(yieldSummary.partialDies), 'Partial'));
   }
@@ -549,7 +555,7 @@ function buildRegionYieldSection(
   allWafers: Wafer[],
   ringCount: number,
   passBins: number[],
-  regionBuilder: (dies: Die[], wafer: Wafer, ringCount: number) => StatsRegion[],
+  regionBuilder: (dies: PositionedDie[], wafer: Wafer, ringCount: number) => StatsRegion[],
   title: string,
 ): HTMLDivElement | null {
   const data = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, regionBuilder);
@@ -702,7 +708,8 @@ function computeDescriptive(vals: number[]): Omit<TestStatRow, 'testNumber'> {
   };
 }
 
-function csvField(value: string): string {
+/** CSV field escaper — exported so `dieList.ts` shares it rather than a second copy. */
+export function csvField(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 

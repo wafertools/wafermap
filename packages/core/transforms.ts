@@ -1,5 +1,5 @@
 import type { Wafer } from './wafer.js';
-import type { Die, DieSpec } from './dies.js';
+import type { Die, DieSpec, PositionedDie } from './dies.js';
 import { getDieKey } from './dies.js';
 
 export interface DataRow {
@@ -215,15 +215,20 @@ export function isInsideWafer(x: number, y: number, wafer: Wafer): boolean {
 export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieSpec): Die[] {
   const result: Die[] = [];
   for (const die of dies) {
-    const centerIn = isInsideWafer(die.physX, die.physY, wafer);
+    // Only ever called on synthetically generated dies (generateDies), which
+    // always carry physX/physY by construction — not part of the
+    // coordinate-less data path (buildWaferMap never clips real prober
+    // results this way).
+    const physX = die.physX!, physY = die.physY!;
+    const centerIn = isInsideWafer(physX, physY, wafer);
     if (!dieConfig) {
       if (centerIn) result.push({ ...die, insideWafer: true, partial: false });
       continue;
     }
     const hw = dieConfig.width / 2, hh = dieConfig.height / 2;
     const corners: [number, number][] = [
-      [die.physX - hw, die.physY - hh], [die.physX + hw, die.physY - hh],
-      [die.physX + hw, die.physY + hh], [die.physX - hw, die.physY + hh],
+      [physX - hw, physY - hh], [physX + hw, physY - hh],
+      [physX + hw, physY + hh], [physX - hw, physY + hh],
     ];
     const cornersIn = corners.filter(([cx, cy]) => isInsideWafer(cx, cy, wafer)).length;
     if (!centerIn && cornersIn === 0) continue;
@@ -236,7 +241,7 @@ export function clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieSpec):
  * Rotate all die display coordinates by wafer.orientation around wafer.center.
  * Call this after clipping and data mapping so that i/j indices remain intact.
  */
-export function applyOrientation(dies: Die[], wafer: Wafer): Die[] {
+export function applyOrientation(dies: PositionedDie[], wafer: Wafer): PositionedDie[] {
   if (wafer.orientation === 0) return dies;
   const m = affineRotation(wafer.orientation, wafer.center.x, wafer.center.y);
   return dies.map((die) => {
@@ -251,8 +256,8 @@ export function applyOrientation(dies: Die[], wafer: Wafer): Die[] {
  * Call this at render time — baseDies already have applyOrientation baked in.
  */
 export function transformDies(
-  dies: Die[], options: TransformOptions, center = { x: 0, y: 0 }
-): Die[] {
+  dies: PositionedDie[], options: TransformOptions, center = { x: 0, y: 0 }
+): PositionedDie[] {
   const { rotation = 0, flipX = false, flipY = false } = options;
   if (rotation === 0 && !flipX && !flipY) return dies;
 
