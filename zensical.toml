@@ -61,6 +61,7 @@ nav = [
   { "For App Users" = [
     { "Application User Guide" = "user-guide.md" },
     { "Glossary"               = "glossary.md"   },
+    { "What's New"             = "https://wafertools.github.io/whats-new/" },
   ]},
 ]
 

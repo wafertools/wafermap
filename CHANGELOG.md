@@ -1,6 +1,9 @@
 # Changelog
 
-All notable changes to `@wafertools/wafermap` are documented here.
+All notable changes to `@wafertools/wafermap` are documented here. For a curated,
+plain-language summary of what's actually changed for users and adopters, see
+[What's New](https://wafertools.github.io/whats-new/) instead — this file is the complete
+technical record, including internal changes.
 
 ## Versioning policy
 
