@@ -1340,12 +1340,38 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
     assert.ok(insightsBtn, 'Insights toolbar button should exist');
     assert.ok(summaryBtn, 'Summary toolbar button should exist alongside Insights');
+    // Stable identity hook — this button's aria-label is toggled by open
+    // state (asserted below), so tooling needs a hook that doesn't change
+    // with it. See tsmap's WMAP_ISSUES.md #36.
+    assert.equal(insightsBtn.dataset.wmapInsightsBtn, '1', 'Insights button carries a stable data-wmap-insights-btn hook');
 
     ctrl.setInsightsOpen(true);
     const subTabLabels = [...root.querySelectorAll('button')].map((b) => b.textContent);
     assert.ok(subTabLabels.includes('Overview'), 'Overview sub-tab should render');
     assert.ok(subTabLabels.includes('Distributions'), 'Distributions sub-tab should render');
     assert.ok(subTabLabels.includes('Correlation'), 'Correlation sub-tab should render');
+
+    const tabButtons = [...root.querySelectorAll('button[role="tab"]')];
+    assert.deepEqual(
+      tabButtons.map((b) => b.dataset.wmapInsightsTab).sort(),
+      ['correlation', 'distributions', 'overview'],
+      'each Insights sub-tab carries data-wmap-insights-tab set to its view key',
+    );
+
+    // Overview's chart cards (cardShell) carry stable card/title hooks —
+    // the only way tooling could locate "Yield by wafer" before this was
+    // matching its heading's raw textContent (WMAP_ISSUES.md #36).
+    const chartCards = [...root.querySelectorAll('[data-wmap-chart-card]')];
+    assert.ok(chartCards.length > 0, 'at least one chart card renders in Overview');
+    // "Hard bin pareto" (not "Yield by wafer") — the yield panel is skipped
+    // for a single-wafer host (renderYieldBinsSection's includeYieldPanel),
+    // but bin pareto renders unconditionally, so it's the reliable title to
+    // assert against for both single-wafer and gallery hosts.
+    const paretoCard = chartCards.find((c) => c.dataset.wmapChartTitle === 'Hard bin pareto');
+    assert.ok(paretoCard, 'the "Hard bin pareto" card is findable by data-wmap-chart-title, not heading text');
+
+    // The responsive card grid wrapping those cards.
+    assert.ok(root.querySelector('[data-wmap-chart-grid]'), 'the Overview section grid carries data-wmap-chart-grid');
 
     // The Summary button stays mounted (so it's still there when Insights closes) but
     // hidden while Insights is open — its panel sits behind the Insights overlay with

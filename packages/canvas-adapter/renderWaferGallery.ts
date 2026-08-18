@@ -1103,6 +1103,12 @@ ${reportStyles()}
       const isOpen = insightsEl?.style.display !== 'none';
       setInsightsOpen(!isOpen);
     });
+    // Stable identity hook — this button's aria-label is TOGGLED ('Insights'
+    // vs 'Back to gallery view' below), so button[aria-label="Insights"]
+    // only matches while closed and can't be used to close it or assert
+    // open state. dataset.active (set by setActive() below) already carries
+    // open/closed; this just makes the button findable regardless of state.
+    btnInsights.dataset.wmapInsightsBtn = '1';
     barEl.appendChild(makeSep());
     barEl.appendChild(btnInsights);
   }

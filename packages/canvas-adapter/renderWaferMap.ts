@@ -1468,6 +1468,11 @@ export function renderWaferMap(
             setInsightsOpen(!insightsOpen);
             setActive(btnInsights!, insightsOpen);
           });
+          // Stable identity hook — see renderWaferGallery.ts's identical
+          // comment: this button's aria-label toggles between 'Insights'
+          // and 'Back to wafer view', so it can't be found by aria-label
+          // alone once open.
+          btnInsights.dataset.wmapInsightsBtn = '1';
           sceneControlsEl!.appendChild(btnInsights);
         }
 

@@ -22,7 +22,32 @@ under `### Breaking`.
 
 ---
 
-## [0.23.0] — 2026-08-16
+## [0.23.1] — 2026-08-18
+
+### Added
+
+- **The Insights tab's chart cards, section grid, sub-tab bar, Group-by select, and toggle button now carry
+  stable `data-wmap-*` hooks**, for tooling (screenshot capture, e2e tests, visual regression, accessibility
+  audits) that needs to drive the tab from outside wmap's own code. Previously these nodes were bare —
+  distinguishable only by exact heading text or button `textContent`, which breaks silently on any copy
+  change. `cardShell()` sets `data-wmap-chart-card`/`data-wmap-chart-title` (the full title, so
+  e.g. "Yield by wafer" and a hypothetical "Yield by wafer (grouped)" stay unambiguous); `makeChartGridWrap()`
+  sets `data-wmap-chart-grid`; `makeLabeledSelect()` gained an `opts.hook` param (`select.dataset.wmapSelect`)
+  since the same factory also builds every per-panel "Group:" restrict dropdown and the histogram wafer
+  picker; `insightsTab.ts`'s sub-tab buttons set `data-wmap-insights-tab` to the view key
+  (`overview`/`distributions`/`correlation`) and the back button sets `data-wmap-insights-back`; the Insights
+  toggle button in both `renderWaferMap` and `renderWaferGallery` sets `data-wmap-insights-btn` — needed
+  because its `aria-label` itself toggles between `'Insights'` and `'Back to wafer/gallery view'`, so
+  `button[aria-label="Insights"]` only ever matched while closed.
+
+### Fixed
+
+- **Grid pitch inference no longer stretches the die aspect ratio when only one axis has real spread.** The
+  circular-wafer constraint used to fill in an unknown aspect ratio whenever nearest-neighbour spacing looked
+  square, even when one axis had only a single distinct position observed. A handful of positioned dies
+  confined to one row (or column) isn't evidence the wafer is wider than it is tall — it just reflects which
+  subset of dies happen to carry positions — so the constraint is now skipped on a degenerate axis (dropping
+  confidence to 0.3), leaving the aspect ratio at the safer 1:1 default instead of guessing.
 
 ### Breaking
 

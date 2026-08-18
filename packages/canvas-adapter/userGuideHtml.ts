@@ -68,7 +68,7 @@ export const USER_GUIDE_HTML = `<div class="wmap-guide">
   .wmap-guide-online-link{display:none!important}
 }
 </style>
-<h1 id="wafer-map-user-guide">Wafer Map — User Guide<span class="wmap-guide-version" title="Built 2026-08-16T17:09:32.912Z">v0.23.0</span></h1>
+<h1 id="wafer-map-user-guide">Wafer Map — User Guide<span class="wmap-guide-version" title="Built 2026-08-18T13:31:30.009Z">v0.23.1</span></h1>
 <p class="wmap-guide-online-link">This is a quick reference. <a href="https://wafertools.github.io/wafermap/user-guide/" target="_blank" rel="noopener">View the full illustrated guide online ↗</a></p>
 <p>This guide describes the display and analysis features of the wafer map viewer.
 It is written for users who may be semiconductor test engineers, device engineers, and yield engineers

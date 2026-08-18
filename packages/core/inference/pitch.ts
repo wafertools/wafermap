@@ -168,14 +168,23 @@ export function resolveGridPitch(
     // When NN finds genuinely different step sizes (e.g. a 2-step coarse grid on
     // one axis), those steps carry real aspect-ratio information and we use them
     // directly — the circular constraint is not applied on top.
+    //
+    // The circular constraint additionally requires both axes to have a real
+    // spread (xRange > 1 && yRange > 1). A degenerate axis (only one distinct
+    // value observed) reflects which subset of dies happen to carry positions,
+    // not the wafer's true geometry — e.g. two positioned dies confined to a
+    // single row is not evidence the wafer is wider than it is tall. Applying
+    // the ratio there stretches the die aspect ratio instead of leaving it
+    // unknown (1:1).
     const nn = computeNearestNeighborPitch(gridPoints);
     const nnRatio = nn !== null ? nn.pitchY / nn.pitchX : 1;
-    const useCircular = nnRatio === 1;
+    const degenerateAxis = xRange <= 1 || yRange <= 1;
+    const useCircular = nnRatio === 1 && !degenerateAxis;
     const aspectRatio = useCircular && yRange > 0 ? xRange / yRange : nnRatio;
     pitchX = 1;
     pitchY = aspectRatio;
     units = 'normalized';
-    confidence = nn !== null ? 0.5 : 0.4;
+    confidence = nn !== null ? (degenerateAxis ? 0.3 : 0.5) : 0.4;
   }
 
   // Containment clamp: a die with test results is always a real, fully-on-wafer

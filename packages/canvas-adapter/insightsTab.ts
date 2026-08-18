@@ -227,6 +227,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     btn.textContent = label;
     const isActive = view === activeView;
     styleTabButton(btn, isActive);
+    btn.dataset.wmapInsightsTab = view;
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     // Roving tabindex (APG Tabs pattern): only the active tab sits in the
@@ -243,6 +244,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     btn.type = 'button';
     btn.textContent = `‹ ${back.label}`;
     styleTabButton(btn, false);
+    btn.dataset.wmapInsightsBack = '1';
     btn.addEventListener('click', back.onBack);
     return btn;
   }
@@ -395,6 +397,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    *  to the full container width. */
   function plainCard(): HTMLDivElement {
     const card = document.createElement('div');
+    // Same structural role as chartShell.ts's cardShell() in the Overview
+    // grid, just without a chart title to attach — mark it so tooling
+    // doesn't have to special-case "a card with no data-wmap-chart-title".
+    card.dataset.wmapChartCard = '1';
     Object.assign(card.style, {
       display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '0',
       background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '6px',
@@ -652,6 +658,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         [{ value: '', label: 'None' }, ...facetTable.map(f => ({ value: f.key, label: `${f.label} (${f.values.length})` }))],
         analysisGroupKey ?? '',
         v => { analysisGroupKey = v || undefined; render(); },
+        { hook: 'group-by' },
       ));
       groupLabelText = facetTable.find(f => f.key === analysisGroupKey)?.label;
     } else {

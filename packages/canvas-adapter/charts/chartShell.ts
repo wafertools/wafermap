@@ -257,6 +257,12 @@ export interface CardShell {
 
 export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardShell {
   const card = document.createElement('div');
+  // Stable test/tooling hooks — this card carries no other id/class, and
+  // its heading is a bare div matched today only by user-visible text (see
+  // tsmap's WMAP_ISSUES.md #36). Follows the existing data-wmap-* convention
+  // (data-wmap-toolbar, data-wmap-finding, …) — not for styling.
+  card.dataset.wmapChartCard = '1';
+  card.dataset.wmapChartTitle = title;
   Object.assign(card.style, {
     display: 'flex', flexDirection: 'column',
     background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '6px',
@@ -692,13 +698,18 @@ export function makeLabeledSelect(
   options: readonly { value: string; label: string }[],
   selected: string,
   onChange: (value: string) => void,
-  opts: { maxWidth?: string } = {},
+  opts: { maxWidth?: string; hook?: string } = {},
 ): HTMLLabelElement {
-  const { maxWidth = '160px' } = opts;
+  const { maxWidth = '160px', hook } = opts;
   const label = document.createElement('label');
   label.textContent = labelText;
   Object.assign(label.style, { color: CLR.label, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
   const select = document.createElement('select');
+  // This same helper builds the Analysis tab's "Group by:" field selector
+  // AND every per-panel "Group: <value> ▾" restrict-to-one-group dropdown
+  // AND the histogram wafer picker, so a bare `select` is ambiguous
+  // page-wide — callers that need a stable hook pass one (e.g. 'group-by').
+  if (hook) select.dataset.wmapSelect = hook;
   Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
   for (const o of options) {
     const opt = document.createElement('option');
@@ -719,6 +730,7 @@ export function makeLabeledSelect(
 
 export function makeChartGridWrap(): HTMLDivElement {
   const wrap = document.createElement('div');
+  wrap.dataset.wmapChartGrid = '1';
   Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '10px', flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
   return wrap;
 }
