@@ -74,7 +74,7 @@ and stats layers.
 
 ## Built with wafermap
 
-- **[tsmap](https://github.com/wafertools/tsmap)** — cross-platform desktop app for loading STDF, ATDF, CSV, and JSON wafer data
+- **[tsmap](https://github.com/wafertools/tsmap)** — desktop and browser app for loading STDF, ATDF, CSV, JSON, and Parquet wafer data
 
 ## Local preview
 

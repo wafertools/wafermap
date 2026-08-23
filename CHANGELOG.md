@@ -49,6 +49,8 @@ under `### Breaking`.
   subset of dies happen to carry positions — so the constraint is now skipped on a degenerate axis (dropping
   confidence to 0.3), leaving the aspect ratio at the safer 1:1 default instead of guessing.
 
+## [0.23.0] — 2026-08-16
+
 ### Breaking
 
 - **`Die.x`/`y`/`physX`/`physY` are now optional**, not `number`. Existing code

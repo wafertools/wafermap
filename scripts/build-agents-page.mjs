@@ -70,7 +70,9 @@ correct and this page has a bug worth reporting.
 - \`AGENTS.md\` in the [repository](https://github.com/wafertools/wafermap/blob/main/AGENTS.md)
   and in the npm package, so \`node_modules/@wafertools/wafermap/AGENTS.md\` is readable
   when you point an agent at the installed package.
-- \`llms.txt\` in the package — a short machine-readable map of the docs and entry points.
+- \`llms.txt\` — a short machine-readable map of the docs and entry points, served at
+  [wafertools.github.io/wafermap/llms.txt](https://wafertools.github.io/wafermap/llms.txt)
+  and shipped inside the npm package.
 - \`AGENTS.md\` at the root of the
   [examples package](wafermap-examples.zip), since opening an agent inside that
   folder to adapt an example is a realistic way to start.
