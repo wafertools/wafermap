@@ -1833,6 +1833,7 @@ function reportButtonRow(...buttons: Array<HTMLButtonElement | null>): HTMLDivEl
  * carries the specific die/wafer counts and the Export CSV button.
  */
 function openDieListModal(
+  anchor: Element,
   dies: Die[],
   testDefs: TestDef[] | undefined,
   sectionTitle: string,
@@ -1842,7 +1843,15 @@ function openDieListModal(
   onSaveText: SaveTextHandler | undefined,
   extraColumn?: { label: string; get: (d: Die) => string | undefined },
 ): void {
-  const handle = openModal({ title: 'Die list', onClose: () => {} });
+  // `anchor` (a live element from this render, e.g. the panel itself) is
+  // required, not optional — without it `openOverlay` builds the modal onto
+  // bare `doc.body`, which sits BEHIND a host's own native <dialog> (shown
+  // via .showModal(), promoted to the browser's top layer) regardless of
+  // z-index. Every other openModal call site in this codebase passes one
+  // (see "Findings Summary" above, and renderWaferGallery.ts's detach
+  // window); this one originally didn't, and reopened exactly that
+  // already-solved bug for any host embedding wmap inside its own modal.
+  const handle = openModal({ title: 'Die list', onClose: () => {}, anchor });
   const section = buildDieListSection(dies, testDefs, {
     ...dieListOptions,
     title: sectionTitle,
@@ -1920,7 +1929,7 @@ export function renderWaferSummaryContent(
   const dieListBtn = ((dieListOptions?.enabled ?? true) && dies.length)
     ? reportButton('View die list', () => {
         openDieListModal(
-          dies, testDefs, `Die list — ${dies.length} dies`,
+          panel, dies, testDefs, `Die list — ${dies.length} dies`,
           wafer.metadata, metadataFields, dieListOptions, onSaveText,
         );
       })
@@ -2061,7 +2070,7 @@ export function renderLotSummaryContent(
     ? reportButton('View die list', () => {
         if (!allDies.length) return;
         openDieListModal(
-          allDies, testDefs,
+          panel, allDies, testDefs,
           `Die list — ${allDies.length} dies across ${items.length} wafer${items.length === 1 ? '' : 's'}`,
           commonMetadata(items.filter((it): it is NonNullable<typeof it> => !!it).map(it => ({ metadata: it.wafer?.metadata }))),
           items.find(it => it?.metadataFields?.length)?.metadataFields,
