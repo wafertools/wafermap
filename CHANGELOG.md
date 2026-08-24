@@ -22,6 +22,25 @@ under `### Breaking`.
 
 ---
 
+## [0.24.1] — 2026-08-24
+
+### Fixed
+
+- **The die-list modal (§5.4.4, new in 0.24.0) opened behind a host's own modal/dialog.**
+  `openDieListModal` called `openModal()` with no `anchor`, so it built onto bare `doc.body` —
+  which sits behind a host's native `<dialog>` (shown via `.showModal()`, promoted to the
+  browser's top layer) regardless of z-index. Every other `openModal` call site in this
+  codebase already passes one; this is now anchored on the Summary panel element.
+- **The "Summary report" / lot report popup could be silently blocked and treated as a popup
+  ad.** `openHtmlReport` used `window.open('', '_blank')` followed by `document.write` — the
+  blank-window-then-write sequence many browsers and ad-blocking extensions specifically
+  fingerprint, since it's how popup ads worked for years. Now builds a `Blob` URL and passes
+  it directly to `window.open`, a real URL, which is treated far more leniently and is
+  unaffected by CSP contexts that block `document.write` outright. The still-possible blocked
+  case (an aggressive blocker, or an environment with no real `window.open` at all, e.g.
+  Tauri's WebView) now logs a `console.warn` naming `setReportOpener` as the fix, instead of
+  failing completely silently as before.
+
 ## [0.24.0] — 2026-08-24
 
 ### Breaking

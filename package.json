@@ -1,7 +1,7 @@
 {
   "name": "@wafertools/wafermap",
-  "version": "0.24.0",
-  "description": "Interactive wafer map visualization and yield analysis for semiconductor test data. Hard bins, soft bins, test values, retests, edge exclusion, reticle overlays, spatial statistics, failure clustering, and lot-level trend analysis \u2014 pure ES modules, no runtime dependencies, no server required.",
+  "version": "0.24.1",
+  "description": "Interactive wafer map visualization and yield analysis for semiconductor test data. Hard bins, soft bins, test values, retests, edge exclusion, reticle overlays, spatial statistics, failure clustering, and lot-level trend analysis — pure ES modules, no runtime dependencies, no server required.",
   "type": "module",
   "license": "MIT",
   "author": {
@@ -81,7 +81,7 @@
     "dev": "rm -rf docs/dist && cp -r dist docs/dist && ./.venv/bin/zensical serve --dev-addr localhost:8001",
     "test": "npm run build && node --test tests/*.test.mjs",
     "build:site": "rm -rf docs/dist && cp -r dist docs/ && ${ZENSICAL:-.venv/bin/zensical} build --clean && cp -r docs/data site/data && cp llms.txt site/llms.txt && rm -rf docs/dist && node scripts/bundle-docs.mjs && node scripts/build-examples-archive.mjs",
-    "preview:site": "npm run build:site && echo \"\\nServing bundled site at http://localhost:8002/examples/ \u2014 Ctrl-C to stop\\n\" && cd site && python3 -m http.server 8002",
+    "preview:site": "npm run build:site && echo \"\\nServing bundled site at http://localhost:8002/examples/ — Ctrl-C to stop\\n\" && cd site && python3 -m http.server 8002",
     "prepack": "npm run build && node scripts/minify-dist.mjs",
     "pack:check": "npm pack --dry-run",
     "prepublishOnly": "npm test",
@@ -89,7 +89,7 @@
     "preversion": "npm run verify",
     "version": "node scripts/check-changelog.mjs",
     "postversion": "echo \"\\nTagged v$npm_package_version. Next:\\n  git push && git push origin v$npm_package_version\\n  npm publish\\n\"",
-    "postpublish": "echo \"\\ndist/ was minified for publish \u2014 run 'npm run build' to restore the readable dev build.\\n\"",
+    "postpublish": "echo \"\\ndist/ was minified for publish — run 'npm run build' to restore the readable dev build.\\n\"",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "screenshots:list": "node scripts/capture-screenshots.mjs --list",
     "build:images": "npm run build && node scripts/capture-screenshots.mjs",
