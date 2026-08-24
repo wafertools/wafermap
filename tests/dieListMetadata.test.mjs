@@ -261,3 +261,32 @@ test('resolveMetadataColumns — keys beyond maxDieKeys are reported in truncate
   assert.equal(columns.length, 2);
   assert.equal(truncatedKeys.length, 1);
 });
+
+// ── Flex sizing: BOTH axes must be constrained ─────────────────────────────
+//
+// Regression guard for a real, shipped bug (0.24.0/0.24.1): the section and
+// its scroll container set minHeight:0 but not minWidth:0. A flex item's
+// default `min-width: auto` refuses to shrink below its content's intrinsic
+// minimum, and every cell here is white-space:nowrap — so a wafer with many
+// long test-name columns stretched the section far past its modal, dragging
+// the scroll container's own vertical scrollbar off the right-hand edge. The
+// table then appeared unscrollable, with only a stray horizontal scrollbar
+// visible and the Export CSV button pushed out of view.
+//
+// jsdom does no layout, so this asserts the CSS constraint is DECLARED rather
+// than measuring the resulting geometry (same approach dom-adapter.test.mjs
+// uses for its own layout-constraint checks).
+
+test('dieList — the section and its scroll container constrain BOTH flex axes', () => {
+  const dies = [die({ testValues: { 1: 0.5 } })];
+  const testDefs = [{ testNumber: 1, name: 'Continuity check for TESTMODE pin' }];
+  const { section } = buildWithCapture(dies, testDefs, {});
+
+  assert.equal(section.style.minHeight, '0px', 'section must set min-height:0');
+  assert.equal(section.style.minWidth, '0px', 'section must set min-width:0');
+
+  const scrollWrap = section.querySelector('table').parentElement;
+  assert.equal(scrollWrap.style.overflow, 'auto');
+  assert.equal(scrollWrap.style.minHeight, '0px', 'scroll container must set min-height:0');
+  assert.equal(scrollWrap.style.minWidth, '0px', 'scroll container must set min-width:0');
+});

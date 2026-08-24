@@ -2374,7 +2374,13 @@ function activateGuideScripts(content: HTMLElement, targetWindow: Window): (() =
 /** In-page fallback — unchanged from before `window.open` support was added. */
 function openGuideInFloatingWindow(title: string, contentHtml: string, api: GuideApi, anchor?: Element): OverlayHandle {
   const { content, restoreApi } = buildGuideContent(document, window, contentHtml, api);
-  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
+  // minWidth:0 alongside minHeight:0 — contentWrap is a ROW-direction flex
+  // container, so a child's default `min-width: auto` refuses to shrink below
+  // its widest unbreakable content and stretches the whole panel past the box
+  // (clipped by its overflow:hidden), dragging the scrollbars out of reach.
+  // That is exactly the die-list bug fixed in 0.24.2; the guide's own content
+  // happens to wrap and fit today, so this is hardening, not a live fix.
+  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0', minWidth: '0' });
   // Assigned below, after activateGuideScripts runs — but onClose only ever
   // fires later, from real user interaction, well after that assignment.
   let destroyDemos: (() => void) | undefined;
@@ -2426,7 +2432,13 @@ function openGuideInPopup(popupWin: Window, title: string, contentHtml: string, 
   const stopThemeSync = syncWmapPopupTheme(document.documentElement, doc.documentElement);
 
   const { content, restoreApi } = buildGuideContent(doc, popupWin, contentHtml, api);
-  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0' });
+  // minWidth:0 alongside minHeight:0 — contentWrap is a ROW-direction flex
+  // container, so a child's default `min-width: auto` refuses to shrink below
+  // its widest unbreakable content and stretches the whole panel past the box
+  // (clipped by its overflow:hidden), dragging the scrollbars out of reach.
+  // That is exactly the die-list bug fixed in 0.24.2; the guide's own content
+  // happens to wrap and fit today, so this is hardening, not a live fix.
+  Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0', minWidth: '0' });
   doc.body.appendChild(content);
   const destroyDemos = activateGuideScripts(content, popupWin);
 

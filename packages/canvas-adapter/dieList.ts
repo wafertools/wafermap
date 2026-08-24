@@ -199,7 +199,17 @@ export function buildDieListSection(
   // in tsmap's CLAUDE.md; WebView2 is strict where WebKitGTK is lenient) so
   // this stretches when its parent is a definite-height flex column, and
   // falls back to natural height otherwise.
-  const outer = el('div', { display: 'flex', flexDirection: 'column', gap: '8px', flex: '1', minHeight: '0' });
+  // minWidth:0 alongside minHeight:0 — BOTH are required. A flex item's default
+  // `min-width: auto` refuses to shrink below its content's intrinsic minimum,
+  // and every cell here is `white-space: nowrap`, so with many/long test-name
+  // columns that minimum is the table's full width. Without this the section
+  // stretches past the modal (clipped by its overflow:hidden), which drags the
+  // scroll container's own vertical scrollbar off the right-hand edge — the
+  // table then looks unscrollable, showing only a stray horizontal scrollbar.
+  const outer = el('div', {
+    display: 'flex', flexDirection: 'column', gap: '8px',
+    flex: '1', minHeight: '0', minWidth: '0',
+  });
 
   // flexShrink:0 on the fixed-height rows around the table, so the table is
   // the only thing that absorbs (or gives up) space when the box resizes.
@@ -260,7 +270,9 @@ export function buildDieListSection(
   const visibleColumns = columns.filter((c) => !c.csvOnly);
 
   const scrollWrap = el('div', {
-    overflow: 'auto', flex: '1', minHeight: '0',
+    // minWidth:0 for the same reason as `outer` above — this is the element
+    // that must actually stay modal-width so its own scrollbars stay reachable.
+    overflow: 'auto', flex: '1', minHeight: '0', minWidth: '0',
     border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
     ...(options.maxHeight ? { maxHeight: options.maxHeight } : {}),
   });

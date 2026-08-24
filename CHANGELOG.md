@@ -22,6 +22,23 @@ under `### Breaking`.
 
 ---
 
+## [0.24.2] — 2026-08-24
+
+### Fixed
+
+- **The die-list modal had no reachable vertical scrollbar when the table was wide.** The
+  section and its scroll container set `min-height: 0` but not `min-width: 0`. A flex item's
+  default `min-width: auto` refuses to shrink below its content's intrinsic minimum, and every
+  cell in this table is `white-space: nowrap` — so a wafer carrying many long test-name columns
+  (e.g. "Continuity check for TESTMODE pin") stretched the whole section far past its modal.
+  The overflow was then clipped by the modal's own `overflow: hidden`, dragging the scroll
+  container's vertical scrollbar off the right-hand edge where it could not be seen or used.
+  The table looked unscrollable, showing only a stray horizontal scrollbar, with the
+  "Export CSV" button and the start of the heading pushed out of view. Both containers now set
+  `min-width: 0` alongside `min-height: 0`, so the section stays modal-width and both
+  scrollbars work. A narrow table was unaffected, which is why this did not show up in the
+  library's own examples.
+
 ## [0.24.1] — 2026-08-24
 
 ### Fixed
