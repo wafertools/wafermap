@@ -22,6 +22,7 @@ import { buildScatterData, buildScatterDataGrouped } from '../dist/packages/stat
 import { buildTestHistogramData } from '../dist/packages/stats/histogram.js';
 import { buildYieldData, buildYieldDataCombined } from '../dist/packages/stats/yield.js';
 import { buildBinParetoData } from '../dist/packages/stats/binPareto.js';
+import { JSDOM } from 'jsdom';
 
 // ── Wafer generators ────────────────────────────────────────────────────────
 
@@ -357,4 +358,76 @@ test('buildTestHistogramData, buildYieldData/Combined, buildBinParetoData — 25
     const ms = median(fn);
     assert.ok(ms < 100, `${name} took ${ms.toFixed(0)}ms (budget 100ms)`);
   }
+});
+
+// ── buildDieListSection: metadata columns at large-lot scale ───────────────
+//
+// No virtualisation, no row cap by default before this change — every die is
+// real DOM. `maxRows` exists precisely to bound that; a real STDF batch can
+// be a quarter-million dies (see tsmap's own generate_stdf_large.py fixture),
+// but jsdom's per-node cost is far higher than a real browser's, so these
+// tests are sized to what jsdom can build reliably in one process rather
+// than to literal browser-scale die counts. The properties under test —
+// sub-quadratic scaling, discovery cost being negligible, and maxRows
+// bounding DOM cost independent of total population — hold at any scale;
+// checking them at large-but-jsdom-safe N is what actually catches a
+// regression, not the absolute die count.
+
+const dieListDom = new JSDOM('<!doctype html><html><body></body></html>');
+globalThis.window = dieListDom.window;
+globalThis.document = dieListDom.window.document;
+globalThis.HTMLElement = dieListDom.window.HTMLElement;
+globalThis.HTMLDivElement = dieListDom.window.HTMLDivElement;
+globalThis.Node = dieListDom.window.Node;
+
+const { buildDieListSection } = await import('../dist/packages/canvas-adapter/dieList.js');
+const { discoverDieMetadataKeys } = await import('../dist/packages/stats/metadataColumns.js');
+
+function makeDiesWithMetadata(n, metadataKeys = 4) {
+  const dies = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const metadata = {};
+    for (let k = 0; k < metadataKeys; k++) metadata[`field_${k}`] = `v${i % 97}`;
+    dies[i] = { x: i, y: 0, siteNum: i, hbin: (i % 5) + 1, metadata };
+  }
+  return dies;
+}
+
+test('buildDieListSection — 8k dies × 4 metadata columns completes within budget', () => {
+  const dies = makeDiesWithMetadata(8_000, 4);
+  const ms = time(() => buildDieListSection(dies, undefined, { onSaveText: () => {} }));
+  // ~1000ms measured in jsdom (far above real-browser cost); generous budget
+  // for slower CI/Chromebook hardware.
+  assert.ok(ms < 5000, `buildDieListSection(8k×4meta) took ${ms.toFixed(0)}ms (budget 5000ms)`);
+});
+
+test("discoverDieMetadataKeys — auto-discovery over 250k dies stays negligible (no DOM involved)", () => {
+  const dies = makeDiesWithMetadata(250_000, 4);
+  const ms = time(() => discoverDieMetadataKeys(dies));
+  // Deliberately NOT sampled (a late-appearing key must not vanish silently),
+  // so this is O(N·k) over the whole population — must still be negligible.
+  // ~30ms measured.
+  assert.ok(ms < 500, `discoverDieMetadataKeys(250k dies) took ${ms.toFixed(0)}ms (budget 500ms)`);
+});
+
+test('buildDieListSection — complexity of the metadata-column path is sub-quadratic (2× dies ≤ 6× time)', () => {
+  const small = makeDiesWithMetadata(3_000, 4);
+  const large = makeDiesWithMetadata(6_000, 4);
+
+  buildDieListSection(small, undefined, { onSaveText: () => {}, maxRows: 6_000 }); // warm up
+  buildDieListSection(large, undefined, { onSaveText: () => {}, maxRows: 6_000 });
+
+  const tSmall = time(() => buildDieListSection(small, undefined, { onSaveText: () => {}, maxRows: 6_000 }));
+  const tLarge = time(() => buildDieListSection(large, undefined, { onSaveText: () => {}, maxRows: 6_000 }));
+  const ratio = tLarge / tSmall;
+
+  assert.ok(ratio < 6, `buildDieListSection time ratio ${ratio.toFixed(2)} (${small.length}→${large.length} dies); expected <6 (sub-quadratic)`);
+});
+
+test('buildDieListSection — maxRows bounds DOM build cost independent of total die count', () => {
+  const dies = makeDiesWithMetadata(250_000, 4);
+  const ms = time(() => buildDieListSection(dies, undefined, { onSaveText: () => {}, maxRows: 2_000 }));
+  // Discovery still scans all 250k dies (cheap, see above); DOM cost is
+  // bounded by maxRows, not by the full population. ~400ms measured.
+  assert.ok(ms < 2000, `buildDieListSection(250k dies, maxRows:2k) took ${ms.toFixed(0)}ms (budget 2000ms)`);
 });

@@ -25,6 +25,7 @@ import { prettyKey } from '../stats/facets.js';
 import { openHtmlReport } from '../stats/renderFindingsReport.js';
 import { escHtml, renderSection, renderSeverityBadge, reportStyles } from '../stats/reportHtml.js';
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
+import type { DieListDisplayOptions } from './dieList.js';
 import { getDieKey, hasPosition } from '../core/dies.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -132,6 +133,15 @@ export interface GalleryOptions {
    * map for a finding to highlight against.
    */
   summaryPanel?:           SummaryPanelOptions;
+  /**
+   * Display preferences for the lot-wide "View die list" link inside the
+   * Summary panel — every die across every wafer, pooled, with a Wafer
+   * column and CSV export. **On by default** whenever `summaryPanel` is
+   * reachable at all, since that panel is the link's only home; pass
+   * `{ enabled: false }` to hide it. See `DieListDisplayOptions` and wmap's
+   * own coordinate-less die-list table, which this reuses.
+   */
+  dieList?:                DieListDisplayOptions;
   /**
    * Bin numbers treated as pass for yield calculation in the summary panel.
    * Defaults to `[1]`. Must match the `passBins` passed to `analyzeWaferLot` / `buildWaferMap`
@@ -669,6 +679,7 @@ ${reportStyles()}
         onWaferClick: (waferIndex) => {
           applyFindingHighlight([waferIndex]);
         },
+        dieListOptions: options.dieList,
       });
       // Prepend tab row if per-wafer findings also exist
       if (hasAnyPerWaferFindings()) {

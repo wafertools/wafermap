@@ -14,7 +14,7 @@
 
 import type { Wafer } from '../core/wafer.js';
 import type { Die, PositionedDie } from '../core/dies.js';
-import { isParametricTest, type BinDef, type TestDef, type YieldSummary } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData, type StatsRegion } from '../stats/regions.js';
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
@@ -23,6 +23,8 @@ import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/re
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
+import { commonMetadata } from '../stats/facets.js';
+import { resolveMetadataColumns, type MetadataColumn } from '../stats/metadataColumns.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { buildWarningsBanner, collectWarnings, type WaferWarning } from './warnings.js';
 export { buildWarningsBanner };
@@ -31,7 +33,10 @@ import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
 import { makeLabeledSelect } from './charts/chartShell.js';
 import { CLR, sevColor, openModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
+import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { medianOfSorted } from '../core/utils.js';
+import { metadataDisplayValue } from '../core/metadata.js';
+import type { WaferMetadata } from '../core/metadata.js';
 
 // ── Panel option type ─────────────────────────────────────────────────────────
 
@@ -299,9 +304,12 @@ function metaRow(key: string, value: string): HTMLDivElement {
  *  metadata badge and `buildMetadataStripRow`/`buildFacetSummaryChips` so
  *  they can't drift on what they consider "no metadata". */
 export function metadataEntries(meta: Record<string, unknown>): Array<[string, string]> {
-  return Object.entries(meta)
-    .filter(([, v]) => v !== null && v !== undefined && v !== '')
-    .map(([k, v]) => [k, String(v)] as [string, string]);
+  const out: Array<[string, string]> = [];
+  for (const [k, v] of Object.entries(meta)) {
+    const str = metadataDisplayValue(v);
+    if (str !== undefined) out.push([k, str]);
+  }
+  return out;
 }
 
 /** Single-line, wrap-when-needed "Label: value1, value2 [+N more]" chips —
@@ -708,6 +716,40 @@ function computeDescriptive(vals: number[]): Omit<TestStatRow, 'testNumber'> {
   };
 }
 
+/**
+ * Identity context stamped onto a per-test CSV export, so a file that has
+ * left the app still says which wafer(s) it describes. Die-level metadata is
+ * deliberately absent from these two exports: a row here aggregates over many
+ * dies, so no single die-level value exists, and printing one would be a
+ * false claim about the data.
+ */
+export interface CsvExportContext {
+  /** Single-wafer export: one constant leading column per field. */
+  waferMetadata?: WaferMetadata;
+  /**
+   * Pooled (lot) export: only fields identical across every wafer are
+   * emitted, via `commonMetadata` — so a mixed-lot pool prints no false
+   * "Lot" column.
+   */
+  perWaferMetadata?: WaferMetadata[];
+  /** Plain-language population size, e.g. "12 wafers pooled". Appended to the
+   *  section title and emitted as a `Population` CSV column. */
+  populationLabel?: string;
+}
+
+/** Resolve `CsvExportContext` into leading identity columns for a per-test
+ *  CSV — wafer-scoped only, `dies: []` so no die column is ever produced.
+ *  `reservedLabels` are the export's own column names (Test, Unit, N, …). */
+function resolveCsvIdentityColumns(csv: CsvExportContext | undefined, reservedLabels: string[]): MetadataColumn[] {
+  if (!csv) return [];
+  const waferMetadata = csv.waferMetadata
+    ?? (csv.perWaferMetadata ? commonMetadata(csv.perWaferMetadata.map(m => ({ metadata: m }))) : undefined);
+  if (!waferMetadata || !Object.keys(waferMetadata).length) return [];
+  return resolveMetadataColumns({
+    waferMetadata, waferPlacement: 'csv', reservedLabels,
+  }).columns;
+}
+
 /** CSV field escaper — exported so `dieList.ts` shares it rather than a second copy. */
 export function csvField(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
@@ -737,6 +779,8 @@ export function buildTestSection(
   },
   /** Optional host hook for the "Export CSV" button — see `saveTextFile` (toolbar.ts). */
   onSaveText?: SaveTextHandler,
+  /** Wafer identity to stamp on the CSV export. See {@link CsvExportContext}. */
+  csv?: CsvExportContext,
 ): HTMLDivElement | null {
   const activeDies = dies.filter(d => !d.partial && !d.edgeExcluded);
   const perTestStatsByNumber = new Map((precomputedTestStats?.perTestStats ?? []).map(s => [s.testNumber, s]));
@@ -827,7 +871,9 @@ export function buildTestSection(
   const outer = el('div');
 
   const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
-  const title = sectionTitle(`Test Values  (${rows.length})`);
+  const title = sectionTitle(
+    csv?.populationLabel ? `Test Values  (${rows.length}) — ${csv.populationLabel}` : `Test Values  (${rows.length})`,
+  );
   title.style.marginBottom = '0';
   headerRow.appendChild(title);
 
@@ -853,10 +899,13 @@ export function buildTestSection(
     // one consistent notation regardless of the test's own unit/magnitude.
     const cols = ['Test', 'Unit', 'N', 'Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev'];
     if (hasAnyLimit) cols.push('LSL', 'USL', 'Spec Yield %', 'Spec Yield N');
-    const lines = [cols.map(csvField).join(',')];
+    const idCols = resolveCsvIdentityColumns(csv, cols);
+    const allCols = [...idCols.map(c => c.label), ...cols];
+    const lines = [allCols.map(csvField).join(',')];
     const f = (n: number) => fmtValue(n, undefined, 'engineering');
     for (const { entry, stats, specYieldPct, specN } of rows) {
       const fields = [
+        ...idCols.map(c => c.constant ?? ''),
         entry.name, entry.unit ?? '', String(stats.count), f(stats.min), f(stats.q1), f(stats.median),
         f(stats.mean), f(stats.q3), f(stats.max), f(stats.stddev),
       ];
@@ -961,6 +1010,8 @@ export function buildFunctionalTestSection(
   precomputed?: NonNullable<StatsSummary['stats']['functionalYield']>,
   /** Optional host hook for the "Export CSV" button — see `saveTextFile` (toolbar.ts). */
   onSaveText?: SaveTextHandler,
+  /** Wafer identity to stamp on the CSV export. See {@link CsvExportContext}. */
+  csv?: CsvExportContext,
 ): HTMLDivElement | null {
   const rows = precomputed ?? computeFunctionalYield(dies, testDefs);
   if (!rows?.length) return null;
@@ -968,7 +1019,9 @@ export function buildFunctionalTestSection(
   const outer = el('div');
 
   const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
-  const title = sectionTitle(`Functional Tests  (${rows.length})`);
+  const title = sectionTitle(
+    csv?.populationLabel ? `Functional Tests  (${rows.length}) — ${csv.populationLabel}` : `Functional Tests  (${rows.length})`,
+  );
   title.style.marginBottom = '0';
   headerRow.appendChild(title);
 
@@ -985,9 +1038,12 @@ export function buildFunctionalTestSection(
     padding:      '2px 7px',
   } as Partial<CSSStyleDeclaration>);
   exportBtn.addEventListener('click', () => {
-    const lines = [['Test', 'N', 'Pass', 'Fail', 'Pass Rate %'].map(csvField).join(',')];
+    const cols = ['Test', 'N', 'Pass', 'Fail', 'Pass Rate %'];
+    const idCols = resolveCsvIdentityColumns(csv, cols);
+    const lines = [[...idCols.map(c => c.label), ...cols].map(csvField).join(',')];
     for (const r of rows) {
       lines.push([
+        ...idCols.map(c => c.constant ?? ''),
         r.label, String(r.totalDies), String(r.passDies), String(r.failDies),
         r.passRatePercent !== null ? r.passRatePercent.toFixed(1) : '',
       ].map(csvField).join(','));
@@ -1059,6 +1115,10 @@ export function buildLotFunctionalSection(
   perWaferSummaries?: StatsSummary[],
   onSaveText?: SaveTextHandler,
 ): HTMLDivElement | null {
+  const csv: CsvExportContext | undefined = perWaferSummaries?.length ? {
+    perWaferMetadata: perWaferSummaries.map(s => s.wafer ?? {}),
+    populationLabel: `${perWaferSummaries.length} wafer${perWaferSummaries.length === 1 ? '' : 's'} pooled`,
+  } : undefined;
   if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.functionalYield !== undefined)) {
     const byTest = new Map<number, { label: string; passDies: number; failDies: number; totalDies: number }>();
     for (const s of perWaferSummaries) {
@@ -1075,9 +1135,9 @@ export function buildLotFunctionalSection(
       ...acc,
       passRatePercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null,
     }));
-    if (pooled.length) return buildFunctionalTestSection(allDies, testDefs, pooled, onSaveText);
+    if (pooled.length) return buildFunctionalTestSection(allDies, testDefs, pooled, onSaveText, csv);
   }
-  return buildFunctionalTestSection(allDies, testDefs, undefined, onSaveText);
+  return buildFunctionalTestSection(allDies, testDefs, undefined, onSaveText, csv);
 }
 
 // ── Findings display vocabulary ──────────────────────────────────────────────
@@ -1590,6 +1650,11 @@ export function buildLotTestSection(
   /** Optional host hook for the "Export CSV" button — see `saveTextFile` (toolbar.ts). */
   onSaveText?: SaveTextHandler,
 ): HTMLDivElement | null {
+  const csv: CsvExportContext | undefined = perWaferSummaries?.length ? {
+    perWaferMetadata: perWaferSummaries.map(s => s.wafer ?? {}),
+    populationLabel: `${perWaferSummaries.length} wafer${perWaferSummaries.length === 1 ? '' : 's'} pooled`,
+  } : undefined;
+
   let pooled: {
     perTestStats?: Array<{ testNumber: number; min: number; max: number; mean: number; count: number }>;
     testSpecYield?: Array<{ testNumber: number; totalDies: number; yieldPercent: number | null }>;
@@ -1635,7 +1700,7 @@ export function buildLotTestSection(
     };
   }
 
-  return buildTestSection(allDies, testDefs, fallbackFormat, pooled, onSaveText);
+  return buildTestSection(allDies, testDefs, fallbackFormat, pooled, onSaveText, csv);
 }
 
 
@@ -1738,12 +1803,55 @@ function reportButton(label: string, onClick: () => void): HTMLButtonElement {
     fontSize:     '10px',
     color:        CLR.iconHover,
     padding:      '2px 7px',
-    marginBottom: '10px',
-    display:      'block',
   }, label);
   btn.type = 'button';
   btn.addEventListener('click', onClick);
   return btn;
+}
+
+/**
+ * Lays one or more `reportButton`s ("Summary report", "View die list") on a
+ * single row, wrapping if the panel is too narrow, rather than each claiming
+ * its own line — these are small, related actions, not a list. Returns
+ * `null` for an empty/all-`null` input so a caller can conditionally append
+ * without an extra `if`.
+ */
+function reportButtonRow(...buttons: Array<HTMLButtonElement | null>): HTMLDivElement | null {
+  const present = buttons.filter((b): b is HTMLButtonElement => !!b);
+  if (!present.length) return null;
+  const row = el('div', { display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' });
+  for (const b of present) row.appendChild(b);
+  return row;
+}
+
+/**
+ * Opens the raw die-data table (`buildDieListSection`) in wmap's own modal —
+ * the summary panel's "View die list" link, single-wafer and lot alike. No
+ * dedicated toolbar button: reached only from an already-open summary panel,
+ * the same way "Summary report" opens the HTML report without one either.
+ * The modal's own chrome title stays generic; the section's own header
+ * carries the specific die/wafer counts and the Export CSV button.
+ */
+function openDieListModal(
+  dies: Die[],
+  testDefs: TestDef[] | undefined,
+  sectionTitle: string,
+  waferMetadata: WaferMetadata | undefined,
+  metadataFields: MetadataFieldDef[] | undefined,
+  dieListOptions: DieListDisplayOptions | undefined,
+  onSaveText: SaveTextHandler | undefined,
+  extraColumn?: { label: string; get: (d: Die) => string | undefined },
+): void {
+  const handle = openModal({ title: 'Die list', onClose: () => {} });
+  const section = buildDieListSection(dies, testDefs, {
+    ...dieListOptions,
+    title: sectionTitle,
+    onSaveText,
+    waferMetadata,
+    metadataFields,
+    extraColumn,
+  });
+  if (section) handle.contentWrap.appendChild(section);
 }
 
 /** Render all wafer-level sections into a panel element. Clears existing content. */
@@ -1774,6 +1882,10 @@ export function renderWaferSummaryContent(
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
     onSaveText?: SaveTextHandler;
+    /** Label/order hints for die metadata columns, e.g. `WaferMapResult.metadataFields`. */
+    metadataFields?: MetadataFieldDef[];
+    /** See `RenderOptions.dieList` — gates the "View die list" link below. */
+    dieListOptions?: DieListDisplayOptions;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1785,7 +1897,7 @@ export function renderWaferSummaryContent(
     colorScheme, fallbackFormat,
     onFindingClick, activeFindingId = null,
     findingsFilter, onFindingsFilterChange,
-    onSaveText,
+    onSaveText, metadataFields, dieListOptions,
   } = params;
 
   panel.appendChild(panelHeader('Wafer Summary'));
@@ -1793,17 +1905,29 @@ export function renderWaferSummaryContent(
   const warnings = params.warnings ?? collectWarnings({ statsSummary });
   if (warnings.length) panel.appendChild(buildWarningsBanner(warnings));
 
-  if (yieldSummary && dataCoverage) {
-    panel.appendChild(reportButton('Summary report', () => {
-      openHtmlReport(renderSummaryReportHtml({
-        wafer, dies, yieldSummary, dataCoverage,
-        hbinDefs, sbinDefs, testDefs,
-        statsSummary,
-        passBins,
-        ringCount,
-      }));
-    }));
-  }
+  const summaryReportBtn = (yieldSummary && dataCoverage)
+    ? reportButton('Summary report', () => {
+        openHtmlReport(renderSummaryReportHtml({
+          wafer, dies, yieldSummary, dataCoverage,
+          hbinDefs, sbinDefs, testDefs,
+          statsSummary,
+          passBins,
+          ringCount,
+        }));
+      })
+    : null;
+
+  const dieListBtn = ((dieListOptions?.enabled ?? true) && dies.length)
+    ? reportButton('View die list', () => {
+        openDieListModal(
+          dies, testDefs, `Die list — ${dies.length} dies`,
+          wafer.metadata, metadataFields, dieListOptions, onSaveText,
+        );
+      })
+    : null;
+
+  const reportRow = reportButtonRow(summaryReportBtn, dieListBtn);
+  if (reportRow) panel.appendChild(reportRow);
 
   const sections: (HTMLDivElement | null)[] = [];
 
@@ -1824,8 +1948,9 @@ export function renderWaferSummaryContent(
   sections.push(buildRingSection(dies, wafer, ringCount, passBins));
   sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
 
-  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText));
-  sections.push(buildFunctionalTestSection(dies, testDefs, statsSummary?.stats.functionalYield, onSaveText));
+  const csvIdentity: CsvExportContext | undefined = wafer.metadata ? { waferMetadata: wafer.metadata } : undefined;
+  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText, csvIdentity));
+  sections.push(buildFunctionalTestSection(dies, testDefs, statsSummary?.stats.functionalYield, onSaveText, csvIdentity));
 
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
     sections.push(buildFindingsSectionWithFilter(
@@ -1853,7 +1978,7 @@ export function renderLotSummaryContent(
   panel: HTMLDivElement,
   params: {
     lotSummary:       LotStatsSummary;
-    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[]; statsSummary?: StatsSummary } | null>;
+    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[]; statsSummary?: StatsSummary; metadataFields?: MetadataFieldDef[] } | null>;
     hbinDefs?:        BinDef[];
     sbinDefs?:        BinDef[];
     testDefs?:        TestDef[];
@@ -1869,6 +1994,8 @@ export function renderLotSummaryContent(
     onSaveText?: SaveTextHandler;
     /** See the wafer panel's `warnings` — collected by the renderer so every surface agrees. */
     warnings?: WaferWarning[];
+    /** See `RenderOptions.dieList` — gates the "View die list" link below. */
+    dieListOptions?: DieListDisplayOptions;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1881,7 +2008,7 @@ export function renderLotSummaryContent(
     onFindingClick, activeFindingId = null,
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
-    onSaveText,
+    onSaveText, dieListOptions,
   } = params;
 
   panel.appendChild(panelHeader(`Lot Summary — ${lotSummary.stats.waferCount} wafer${lotSummary.stats.waferCount === 1 ? '' : 's'}`));
@@ -1892,7 +2019,9 @@ export function renderLotSummaryContent(
   const allWarnings = params.warnings ?? collectWarnings({ lotStatsSummary: lotSummary });
   if (allWarnings.length) panel.appendChild(buildWarningsBanner(allWarnings));
 
-  panel.appendChild(reportButton('Summary report', () => {
+  // Not appended yet — sits in the same row as "View die list" below, once
+  // the dies that button needs have been pooled.
+  const summaryReportBtn = reportButton('Summary report', () => {
     // No `lotSummary` here — grouping, per-group analysis, and rendering
     // all happen inside renderLotSummaryReportHtml now (see its own doc
     // comment). The on-screen panel above still uses the pooled `lotSummary`
@@ -1908,18 +2037,43 @@ export function renderLotSummaryContent(
       passBins,
       ringCount,
     }));
-  }));
+  });
 
   const allWafers: Wafer[] = [];
   const diesByWafer: Die[][] = [];
   const allDies: Die[] = [];
-  for (const item of items) {
+  // Per-die wafer attribution for the lot-wide die list below — the one
+  // thing only this lot-pooled context can supply, since a single die
+  // carries no wafer identity of its own.
+  const waferLabelByDie = new WeakMap<Die, string>();
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     if (!item) { diesByWafer.push([]); continue; }
     if (item.wafer) allWafers.push(item.wafer);
     const wd = item.dies ?? [];
+    const label = item.label ?? `W${i + 1}`;
+    for (const d of wd) waferLabelByDie.set(d, label);
     diesByWafer.push(wd);
     allDies.push(...wd);
   }
+
+  const dieListBtn = (dieListOptions?.enabled ?? true)
+    ? reportButton('View die list', () => {
+        if (!allDies.length) return;
+        openDieListModal(
+          allDies, testDefs,
+          `Die list — ${allDies.length} dies across ${items.length} wafer${items.length === 1 ? '' : 's'}`,
+          commonMetadata(items.filter((it): it is NonNullable<typeof it> => !!it).map(it => ({ metadata: it.wafer?.metadata }))),
+          items.find(it => it?.metadataFields?.length)?.metadataFields,
+          dieListOptions, onSaveText,
+          { label: 'Wafer', get: (d) => waferLabelByDie.get(d) },
+        );
+      })
+    : null;
+
+  const reportRow = reportButtonRow(summaryReportBtn, dieListBtn);
+  if (reportRow) panel.appendChild(reportRow);
+
 
   const hasHbin = allDies.some(d => d.hbin != null);
   const hasSbin = allDies.some(d => d.sbin != null);

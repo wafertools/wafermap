@@ -146,3 +146,26 @@ would render/compute correctly with a non-uniform grid.
 ### Chart-panel mini-toolbars still use their own button chrome, not `makeBtn`
 
 Each Analysis-tab chart card (`cardShell()` in `charts/chartShell.ts`) has its own tiny save/expand button pair. Both now use the main toolbar's actual icons (`ICONS.expand`, `ICONS.download` — the save button previously used a raw `⤓` glyph, fixed), so the icon mismatch is resolved. What's still open: the buttons themselves are hand-built (22px, native `title` attribute) rather than going through `makeBtn` (28px, `ariaLabel`, the shared custom hover-tooltip system) — full primitive unification would need `cardShell()` to also thread through a `tooltip` element the way `createToolbarHelpers` does. Lower priority than a functional gap, purely a visual-consistency cleanup.
+
+## Deferred from metadata-in-CSV-exports (0.24.0)
+
+Two performance mitigations were scoped out of that change as bigger than a single release —
+logged here rather than silently dropped. See `packages/canvas-adapter/dieList.ts` and
+`packages/stats/metadataColumns.ts`.
+
+### Row virtualisation for `buildDieListSection`
+
+The die-list table has no virtualisation — every rendered row is real DOM. `maxRows` (0.24.0)
+bounds this by capping the table at 50,000 rows by default, but that is a blunt instrument: a
+host that genuinely wants to scroll through 200,000 rows currently cannot without raising the
+cap back into multi-second, several-hundred-MB territory. A virtualised table (render only the
+rows intersecting the scroll viewport, plus overscan) would remove the tradeoff entirely.
+
+### Chunked/streaming CSV export
+
+The CSV export builds one `lines: string[]` and `join`s it — at 266k dies × ~20 columns
+(with metadata columns added) that's a ~40-90 MB string, doubled transiently at `join`. Fine
+today; the failure mode as die counts and metadata-column counts both grow is a WebView OOM
+during export, which would fail silently rather than gracefully. Worth moving to a
+`Blob([...chunks])` construction (no single giant string) or a genuinely streamed download
+before either dimension grows much further.

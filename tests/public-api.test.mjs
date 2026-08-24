@@ -389,22 +389,32 @@ test('buildHoverText merges wafer-level metadata under per-die overrides', () =>
 
   // Wafer-level facts appear with no per-die metadata at all — wmap renders
   // whatever keys the host supplies, including waferId.
+  // Labels are Title-Cased (prettyKey), matching the die-list/CSV column
+  // labels and the toolbar entry — the tooltip is no longer the one surface
+  // still speaking in raw internal key names.
   const base = buildHoverText(die, 'hardBin', { waferMeta });
-  assert.ok(base.includes('lot: LOT-001'), 'wafer lot should appear');
-  assert.ok(base.includes('product: WidgetA'), 'wafer product should appear');
-  assert.ok(base.includes('temperature: 25'), 'wafer temperature should appear');
-  assert.ok(base.includes('waferId: W01'), 'waferId is rendered like any other host-supplied key');
+  assert.ok(base.includes('Lot: LOT-001'), 'wafer lot should appear');
+  assert.ok(base.includes('Product: WidgetA'), 'wafer product should appear');
+  assert.ok(base.includes('Temperature: 25'), 'wafer temperature should appear');
+  assert.ok(base.includes('Wafer Id: W01'), 'waferId is rendered like any other host-supplied key');
 
   // A per-die key overrides the wafer value of the same name; other wafer facts remain.
   const dieWithOverride = { ...die, metadata: { testProgram: 'PGM_RETEST', site: 3 } };
   const merged = buildHoverText(dieWithOverride, 'hardBin', { waferMeta });
-  assert.ok(merged.includes('testProgram: PGM_RETEST'), 'die value overrides wafer value');
+  assert.ok(merged.includes('Test Program: PGM_RETEST'), 'die value overrides wafer value');
   assert.ok(!merged.includes('PGM_X'), 'overridden wafer value should not also appear');
-  assert.ok(merged.includes('lot: LOT-001'), 'non-overridden wafer facts still present');
-  assert.ok(merged.includes('site: 3'), 'genuinely per-die annotation appears');
+  assert.ok(merged.includes('Lot: LOT-001'), 'non-overridden wafer facts still present');
+  assert.ok(merged.includes('Site: 3'), 'genuinely per-die annotation appears');
+
+  // A metadataFields label wins over the auto prettyKey label — same
+  // resolution the die-list/CSV columns use.
+  const labelled = buildHoverText(die, 'hardBin', {
+    waferMeta, metadataFields: [{ key: 'lot', label: 'Lot number' }],
+  });
+  assert.ok(labelled.includes('Lot number: LOT-001'), 'declared metadataFields label wins');
 
   // No metadata at all → no metadata lines, no crash.
   const none = buildHoverText(die, 'hardBin');
   assert.ok(none.includes('Die ('));
-  assert.ok(!none.includes('lot:'));
+  assert.ok(!none.includes('Lot:'));
 });

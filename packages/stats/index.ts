@@ -10,6 +10,11 @@ export type { SummaryReportParams, LotSummaryReportParams } from './renderSummar
 export { renderSummaryReportHtml, renderLotSummaryReportHtml } from './renderSummaryReport.js';
 export { buildFacetTable, facetValueOf, FACET_NONE_VALUE, DEFAULT_FACET_CURATION } from './facets.js';
 export type { FacetField, FacetValue, FacetCuration, FacetItem, BuildFacetTableOptions } from './facets.js';
+export { resolveMetadataColumns, discoverDieMetadataKeys } from './metadataColumns.js';
+export type {
+  MetadataColumn, MetadataColumnScope, MetadataColumnSet, MetadataKeySelection,
+  ResolveMetadataColumnsOptions,
+} from './metadataColumns.js';
 export { buildCapabilityData } from './capability.js';
 export type { CapabilityDatum, CapabilityItem } from './capability.js';
 export { buildCorrelationMatrix, filterCorrelationMatrix } from './correlation.js';

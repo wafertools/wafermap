@@ -971,6 +971,9 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // showToolbar/Insights. Zero layout cost (a canvas overlay, not a layout
                                             // element); collapsed to one identifying line, expands in place on click/
                                             // Enter/Space. Renders nothing when the result has no metadata at all.
+  dieList?:                DieListDisplayOptions  // display preferences for the built-in die-list table (the
+                                            // coordinate-less map replacement, and the "+N dies without position" footer)
+                                            // — column selection, maxRows, CSV filename. See §5.4.1.
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
   showExpandButton?:       boolean   // show the toolbar expand button and enable the E-key shortcut (default true);
@@ -1006,9 +1009,10 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                                             // embedded hosts (Tauri, Electron, WebView2) route the image through a native
                                             // dialog. When omitted, the default download behaviour is unchanged.
   onSaveText?:             (text: string, suggestedName: string, mimeType: string) => void | Promise<void>
-                                            // host hook for the Summary/Insights test-values table's "Export CSV" button.
-                                            // Mirrors onSaveImage — when provided, called instead of a browser <a download>
-                                            // (a silent no-op in Tauri/Electron/WebView2). When omitted, the default
+                                            // host hook for every built-in "Export CSV" button — Summary/Insights test-values
+                                            // and functional-tests tables, and the die-list table (§5.4.1). Mirrors
+                                            // onSaveImage — when provided, called instead of a browser <a download> (a
+                                            // silent no-op in Tauri/Electron/WebView2). When omitted, the default
                                             // download behaviour is unchanged.
   fallbackFormat?:         'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
   zIndex?:                 number    // base z-index for wmap's transient overlays (menus, tooltip, expand/help modals).
@@ -1181,6 +1185,102 @@ The Summary panel is a docked panel — metadata, yield, bin breakdown, ring/qua
   defaultView?: 'overview' | 'distributions' | 'correlation'      // sub-tab shown first; default 'overview'
 }
 ```
+
+#### 5.4.4 Die list & CSV export
+
+`buildDieListSection` (`@wafertools/wafermap/render`) is the general "show me the raw dies"
+table — one row per die, with an Export CSV button. It backs three built-in surfaces —
+the coordinate-less map replacement, the "+N dies without position" footer, and the "View die
+list" Summary panel link, below — and is also exported for standalone use.
+
+**"View die list"** is a link inside the always-available Summary panel (§5.4.2/§6.5), not a
+new toolbar button — deliberately, since the toolbar already carries a dozen buttons and this
+reuses an existing entry point the same way "Summary report" opens the HTML report without one
+either. **On by default** whenever a Summary panel is reachable at all — set `enabled: false`
+to hide it:
+
+```ts
+renderWaferMap(container, result, {
+  summaryPanel: {},   // the panel this link lives inside — "View die list" appears automatically
+});
+
+renderWaferMap(container, result, {
+  summaryPanel: {},
+  dieList: { enabled: false },   // …unless you don't want it
+});
+```
+
+On `renderWaferMap` it opens **this wafer's own dies**. On `renderWaferGallery` (§6.5) the
+equivalent `GalleryOptions.dieList` opens **every wafer in the lot, pooled**, with a leading
+`Wafer` column (one per die, resolved from each card's own `label`) and wafer-metadata columns
+computed via `commonMetadata` — a field common to every wafer appears once; a field that
+varies across the lot (a mixed-lot pool) does not appear at all, rather than printing one
+wafer's value as if it applied to the whole export. Both open the same resizable modal wmap's
+toolbar already uses elsewhere (chart drilldown, wafer expand), with `buildDieListSection`
+mounted inside it — same metadata columns, same `maxRows`, same CSV export as every other
+die-list surface, all driven by the one shared `DieListDisplayOptions` object.
+
+```ts
+import { buildDieListSection } from '@wafertools/wafermap/render';
+
+buildDieListSection(dies, testDefs, options?);   // → HTMLDivElement | null
+```
+
+Columns, in order: `[extraColumn?]` → Position, Site, Hard bin, Soft bin → one column per
+test → die metadata → wafer metadata.
+
+**Metadata columns are on by default** (`metadataColumns: 'auto'`) — every key found on any
+die's `DieMetadata`, deterministically ordered (`metadataFields` declaration order first,
+then the rest naturally sorted). Unlike the `'metadata'` plot mode, where `metadataFields`
+gates *which* keys are offered (a legend has a cardinality limit), a table column has none —
+an export silently dropping host data would be worse than a wide one. Pass an explicit
+`string[]` to pin the set and order, or `'none'` to omit die metadata entirely.
+
+**Wafer metadata (`lot`, `waferId`, `product`, …) is CSV-only by default**
+(`waferMetadataColumns: 'csv'`) — constant down every row, so it is noise on screen next to
+the always-visible metadata badge (§5.4), but it is exactly what makes a detached CSV
+self-describing enough to concatenate several exports and still know which wafer each row
+came from. Set `'both'` to also show it in the table, or `'none'` to omit it.
+
+A key present on **both** the wafer and a die produces exactly one column, scope `die`,
+carrying the die's value — the same shadowing rule the hover tooltip (§12.4) applies.
+
+**Column labels** resolve `metadataFields[].label` → `prettyKey(key)` → the raw key, matching
+every other column's human-readable header. A metadata key that collides with a built-in
+column name (e.g. a key literally called `Site`) is never dropped — it becomes
+`"Site (metadata)"`, or falls back further to `"Site (site)"` and then a numbered suffix in
+the (rare) case that also collides.
+
+**`maxRows`** (default `50_000`) caps how many rows are built as real DOM — this table has no
+virtualisation, so an uncapped multi-hundred-thousand-die lot is a genuinely slow, heavy
+build. The CSV export is **never** capped; it always contains every die, and a footer states
+the truncation explicitly (`"Showing the first 50,000 of 266,412 dies. The CSV export
+contains all 266,412."`) whenever it applies. Set `maxRows: 0` to skip the table and offer
+only the CSV export.
+
+```ts
+export interface DieListDisplayOptions {
+  metadataColumns?:      'auto' | 'none' | string[];   // default 'auto'
+  waferMetadataColumns?: 'csv' | 'both' | 'none';        // default 'csv'
+  maxRows?:               number;                        // default 50_000; CSV is never capped
+  maxHeight?:             string;
+  csvFilename?:           string;                        // default 'dies.csv'
+}
+
+export interface DieListOptions extends DieListDisplayOptions {
+  title?:          string;
+  note?:           string;
+  onSaveText?:     SaveTextHandler;
+  extraColumn?:    { label: string; get: (die: Die) => string | undefined };
+  waferMetadata?:  WaferMetadata;       // e.g. WaferMapResult.metadata
+  metadataFields?: MetadataFieldDef[];  // e.g. WaferMapResult.metadataFields
+}
+```
+
+When reached through `renderWaferMap`'s `RenderOptions.dieList`, `waferMetadata` and
+`metadataFields` are always supplied by the library from the current build result — never
+from the host option — so a standalone-caller mistake can't substitute the wrong identity
+data into an export. A direct `buildDieListSection` call supplies both itself.
 
 ### 5.5 `WaferMapController`
 
@@ -1536,6 +1636,11 @@ to be pre-built.
                                             // (see "User guide extension" below) — only relevant when showHelpButton is true
   lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Summary button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state (§5.4.2)
+  dieList?:                DieListDisplayOptions // "View die list" link inside the Summary panel — every die
+                                            // across the whole lot, pooled, with a Wafer column. Not a toolbar
+                                            // button; requires summaryPanel to be reachable. Default ENABLED
+                                            // (shows automatically whenever the Summary panel is); set
+                                            // { enabled: false } to hide it. §5.4.4
   insights?:               InsightsOptions   // adds an Insights toolbar button that swaps the grid for a lot-wide chart
                                             // suite (Overview, Distributions, Correlation, with a "Group by" control)
                                             // — default disabled. See §6.10.
@@ -3511,7 +3616,9 @@ An open index signature for annotations that **genuinely vary die-to-die**. Any 
 
 > **Changed in 0.15.0:** the named wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were **removed** from `DieMetadata`. They are properties of the wafer, not the die — set them once on [`WaferMetadata`](#123-wafermetadata) (`waferConfig.metadata`). Storing them per die replicated identical values across every die for no benefit.
 
-The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. Both render as `key: value` lines, skipping `null`/`undefined`. wmap renders whatever keys the host supplies — it has no opinion on which fields belong in a tooltip, so control over tooltip content lives in the host-provided metadata.
+The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. Both render as `Label: value` lines, skipping `null`/`undefined` — the label is `metadataFields[].label` when declared, else a Title-Cased version of the key (`prettyKey`), matching the die-list/CSV column labels (§5.4.4) rather than the raw key. wmap renders whatever keys the host supplies — it has no opinion on which fields belong in a tooltip, so control over tooltip content lives in the host-provided metadata.
+
+**Every metadata key also reaches the die-list table and its CSV export** (§5.4.4) — the tooltip is not a special surface. Die metadata is on by default, one column per key; wafer metadata is CSV-only by default, so a detached export stays self-describing without cluttering the on-screen table.
 
 ```ts
 // Wafer-level facts — set once:
@@ -3562,12 +3669,18 @@ and, where noted, precomputed statistics that are used in preference to re-walki
 | `ViewportTransform` | `/render` | Pan/zoom state — `{ originX, originY, ppm, snapDist }`. Usable as `renderWaferMap`'s initial viewport. |
 | `InsightsView` | `/render` | `'overview' \| 'distributions' \| 'correlation'`. |
 | `DetachWindowOpener` | `/render` | `(label) => Window \| null` — `setDetachWindowOpener`, for hosts where `window.open` is blocked. |
+| `DieListOptions` | `/render` | `buildDieListSection` options — §5.4.4. |
+| `DieListDisplayOptions` | `/render` | Subset of `DieListOptions` reachable via `RenderOptions.dieList` / `GalleryOptions.dieList` — §5.4.4. |
 | `AnalyzeWaferMapInput` | `/stats` | `WaferMapInput \| WaferMapResult`. |
 | `AnalyzeWaferLotInput` | `/stats` | `Array<WaferMapInput \| WaferMapResult>`. |
 | `HighlightRegionTarget` | `/stats` | `StatsFinding.highlight` variant `kind: 'region'`. |
 | `HighlightBinTarget` | `/stats` | Variant `kind: 'bin'`. |
 | `HighlightWaferTarget` | `/stats` | Variant `kind: 'wafer'`. |
 | `HighlightDieTarget` | `/stats` | Variant `kind: 'dies'`. |
+| `MetadataColumn` | `/stats` | `resolveMetadataColumns` result element — one table/CSV column. |
+| `MetadataColumnScope` | `/stats` | `'die' \| 'wafer'` — where a `MetadataColumn`'s value comes from. |
+| `MetadataKeySelection` | `/stats` | `'auto' \| 'none' \| string[]` — `DieListDisplayOptions.metadataColumns`. |
+| `ResolveMetadataColumnsOptions` | `/stats` | `resolveMetadataColumns` options. |
 | `ParsedRegionKey` | `/stats` | `parseRegionKey` return — `{ family, ring?, quadrant?, sector? }`. |
 | `BinItem` | `/stats` | Input to `buildBinParetoData` / `buildBinClusterData`; may carry precomputed `hardBinCounts`/`softBinCounts`. |
 | `BinType` | `/stats` | `'hbin' \| 'sbin'`. |

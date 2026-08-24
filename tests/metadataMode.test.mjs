@@ -87,12 +87,15 @@ test('buildMapTitle falls back to a Title-Cased key when no label is configured 
   assert.equal(buildMapTitle(view).primary, 'Project');
 });
 
-test('die.metadata still renders in the tooltip regardless of plot mode (unchanged, no new code path)', () => {
+test('die.metadata still renders in the tooltip regardless of plot mode, with a Title-Cased label', () => {
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
   const die = dies.find(d => d.x === 0 && d.y === 0);
   for (const plotMode of ['hardBin', 'value', 'metadata']) {
     const text = buildHoverText(die, plotMode);
-    assert.match(text, /project: our-project/);
+    // Pretty-cased, matching the die-list/CSV column label and the toolbar
+    // entry — a raw key here would be the one surface still speaking in
+    // internal terms, and this is a deliberate label-alignment change.
+    assert.match(text, /Project: our-project/);
   }
 });
 

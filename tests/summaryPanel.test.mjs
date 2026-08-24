@@ -9,11 +9,15 @@ globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.HTMLDivElement = dom.window.HTMLDivElement;
 globalThis.Node = dom.window.Node;
 
-const { buildBinSection, buildTestSection, buildCompactMetadataRows, buildMetadataStripRow, buildMetadataStripBox, metadataEntries } =
+const { buildBinSection, buildTestSection, buildLotTestSection, buildCompactMetadataRows, buildMetadataStripRow, buildMetadataStripBox, metadataEntries, renderWaferSummaryContent, renderLotSummaryContent } =
   await import('../dist/packages/canvas-adapter/summaryPanel.js');
 
 function die(overrides) {
   return { x: 0, y: 0, testValues: {}, ...overrides };
+}
+
+function wafer(overrides) {
+  return { diameter: 300, radius: 150, center: { x: 0, y: 0 }, orientation: 0, ...overrides };
 }
 
 test('buildBinSection — precomputed counts produce the same text as the raw-scan fallback', () => {
@@ -157,4 +161,215 @@ test('buildLotFunctionalSection — pools per-wafer functionalYield counts exact
   const section = buildLotFunctionalSection([], defs, [mkSummary(8, 2), mkSummary(6, 4)]);
   // pooled: 14 pass / 20 total = 70.0% (N=20)
   assert.match(section.textContent, /70\.0% \(N=20\)/);
+});
+
+// ── CsvExportContext: wafer identity on the per-test CSVs ──────────────────
+//
+// Neither exported CSV previously carried any wafer/lot identifier at all —
+// concatenating several wafers' test-values.csv files produced rows with no
+// way to tell which wafer a row came from.
+
+function clickExport(section) {
+  const btn = [...section.querySelectorAll('button')].find(b => b.textContent === 'Export CSV');
+  btn.click();
+}
+
+test('buildTestSection — a supplied waferMetadata is stamped as leading CSV columns, not table columns', () => {
+  const dies = [die({ testValues: { 1050: 1 } }), die({ testValues: { 1050: 3 } })];
+  const testDefs = [{ testNumber: 1050, name: 'Idsat', unit: 'A' }];
+
+  const saved = {};
+  const section = buildTestSection(dies, testDefs, undefined, undefined, (text) => { saved.text = text; }, {
+    waferMetadata: { lot: 'L1', waferId: 'W1' },
+  });
+  clickExport(section);
+
+  const headerLine = saved.text.split('\n')[0];
+  assert.match(headerLine, /^Lot,Wafer/);
+  // The on-screen table must NOT gain a Lot/Wafer column — wafer metadata is CSV-only by default.
+  const domHeaders = [...section.querySelectorAll('thead th')].map(th => th.textContent);
+  assert.ok(!domHeaders.some(h => /lot/i.test(h)));
+});
+
+test('buildLotTestSection — pooled CSV gains the wafer identity that was previously entirely absent', () => {
+  const testDefs = [{ testNumber: 1050, name: 'Idsat', unit: 'A' }];
+  const mkSummary = (waferId, min, max, mean, count) => ({
+    wafer: { lot: 'L1', waferId },
+    stats: { perTestStats: [{ testNumber: 1050, min, max, mean, count }] },
+  });
+  const perWaferSummaries = [mkSummary('W1', 1, 5, 3, 10), mkSummary('W2', 2, 6, 4, 10)];
+  const dies = [die({ testValues: { 1050: 3 } })];
+
+  const saved = {};
+  const section = buildLotTestSection(dies, testDefs, undefined, perWaferSummaries, (text) => { saved.text = text; });
+  clickExport(section);
+
+  const headerLine = saved.text.split('\n')[0];
+  // 'Lot' is common across both wafers and must appear; 'Wafer' (waferId) varies and must NOT.
+  assert.match(headerLine, /^Lot,/);
+  assert.ok(!headerLine.includes('Wafer'), `pooled CSV must not claim a single wafer identity: ${headerLine}`);
+
+  // Population is named on screen — an aggregated population must be identified.
+  assert.match(section.textContent, /2 wafers pooled/);
+});
+
+test('buildLotTestSection — a mixed lot (no common metadata) emits no false identity column at all', () => {
+  const testDefs = [{ testNumber: 1050, name: 'Idsat', unit: 'A' }];
+  const mkSummary = (lot, waferId) => ({
+    wafer: { lot, waferId },
+    stats: { perTestStats: [{ testNumber: 1050, min: 1, max: 5, mean: 3, count: 10 }] },
+  });
+  // Different lots — nothing is common, so no identity column should appear at all.
+  const perWaferSummaries = [mkSummary('L1', 'W1'), mkSummary('L2', 'W2')];
+  const dies = [die({ testValues: { 1050: 3 } })];
+
+  const saved = {};
+  const section = buildLotTestSection(dies, testDefs, undefined, perWaferSummaries, (text) => { saved.text = text; });
+  clickExport(section);
+
+  const headerLine = saved.text.split('\n')[0];
+  assert.ok(headerLine.startsWith('Test,'), `expected no identity prefix on a mixed lot, got: ${headerLine}`);
+});
+
+test('buildTestSection / buildFunctionalTestSection CSVs never contain a die-level metadata key', async () => {
+  const { buildFunctionalTestSection } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+  const dies = [die({ testValues: { 1050: 1 }, metadata: { part_id: 'XJ-1' } })];
+  const testDefs = [{ testNumber: 1050, name: 'Idsat' }];
+
+  const saved1 = {};
+  const s1 = buildTestSection(dies, testDefs, undefined, undefined, (text) => { saved1.text = text; }, {
+    waferMetadata: { lot: 'L1' },
+  });
+  clickExport(s1);
+  assert.ok(!saved1.text.split('\n')[0].toLowerCase().includes('part'));
+
+  const funcDies = [die({ testValues: {}, testPass: { 2001: true }, metadata: { part_id: 'XJ-1' } })];
+  const funcDefs = [{ testNumber: 2001, name: 'scan_chain', testType: 'F' }];
+  const saved2 = {};
+  const s2 = buildFunctionalTestSection(funcDies, funcDefs, undefined, (text) => { saved2.text = text; }, {
+    waferMetadata: { lot: 'L1' },
+  });
+  clickExport(s2);
+  assert.ok(!saved2.text.split('\n')[0].toLowerCase().includes('part'));
+});
+
+// ── "View die list" link: gates the modal that reuses buildDieListSection ──
+//
+// No dedicated toolbar button — reached only from an already-open summary
+// panel, the same way "Summary report" opens the HTML report without one.
+
+function panelDiv() {
+  return document.createElement('div');
+}
+
+function clickLink(panel, text) {
+  const btn = [...panel.querySelectorAll('button')].find(b => b.textContent === text);
+  assert.ok(btn, `expected a "${text}" button in the panel`);
+  btn.click();
+}
+
+test('renderWaferSummaryContent — "View die list" is present by default (no dieListOptions at all)', () => {
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, {
+    wafer: wafer({ metadata: { lot: 'L1' } }),
+    dies: [die({ hbin: 1 })],
+  });
+  assert.ok([...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+});
+
+test('renderWaferSummaryContent — "View die list" is absent when explicitly disabled', () => {
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, {
+    wafer: wafer({ metadata: { lot: 'L1' } }),
+    dies: [die({ hbin: 1 })],
+    dieListOptions: { enabled: false },
+  });
+  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+});
+
+test('renderWaferSummaryContent — "View die list" is absent when there are no dies, even with the default enabled', () => {
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, {
+    wafer: wafer({ metadata: {} }),
+    dies: [],
+  });
+  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+});
+
+test('renderWaferSummaryContent — "View die list" opens a modal with this wafer\'s dies and metadata', () => {
+  const panel = panelDiv();
+  document.body.innerHTML = '';
+  renderWaferSummaryContent(panel, {
+    wafer: wafer({ metadata: { lot: 'L1', waferId: 'W1' } }),
+    dies: [die({ hbin: 1, metadata: { part_id: 'XJ-1' } }), die({ hbin: 2 })],
+    dieListOptions: { enabled: true },
+  });
+  clickLink(panel, 'View die list');
+
+  const modal = document.body.querySelector('.wmap-dielist-table');
+  assert.ok(modal, 'expected a die-list table to have been mounted into the modal');
+  const headers = [...document.querySelectorAll('.wmap-dielist-th')].map(th => th.textContent);
+  assert.ok(headers.some(h => /part/i.test(h)), `expected a part_id column: ${headers}`);
+  const rows = document.querySelectorAll('.wmap-dielist-table tbody tr');
+  assert.equal(rows.length, 2);
+});
+
+test('renderLotSummaryContent — "View die list" pools every wafer\'s dies with a Wafer column', () => {
+  const panel = panelDiv();
+  document.body.innerHTML = '';
+  const lotSummary = { stats: { waferCount: 2 }, perWafer: [] };
+  const items = [
+    { label: 'W1', wafer: wafer({ metadata: { lot: 'L1', waferId: 'W1' } }), dies: [die({ hbin: 1 })] },
+    { label: 'W2', wafer: wafer({ metadata: { lot: 'L1', waferId: 'W2' } }), dies: [die({ hbin: 2 }), die({ hbin: 1 })] },
+  ];
+  renderLotSummaryContent(panel, { lotSummary, items, dieListOptions: { enabled: true } });
+  clickLink(panel, 'View die list');
+
+  const headers = [...document.querySelectorAll('.wmap-dielist-th')].map(th => th.textContent);
+  assert.equal(headers[0], 'Wafer', `expected the Wafer column leading: ${headers}`);
+
+  const rows = [...document.querySelectorAll('.wmap-dielist-table tbody tr')];
+  assert.equal(rows.length, 3, 'all dies across both wafers');
+  const waferCol = rows.map(r => r.querySelector('td').textContent);
+  assert.deepEqual(waferCol.sort(), ['W1', 'W2', 'W2']);
+});
+
+test('renderLotSummaryContent — "View die list" CSV carries only metadata common to every wafer', () => {
+  const panel = panelDiv();
+  document.body.innerHTML = '';
+  const lotSummary = { stats: { waferCount: 2 }, perWafer: [] };
+  const items = [
+    // 'lot' is common to both, 'product' is not — the mixed-lot "no false claim" case.
+    { label: 'W1', wafer: wafer({ metadata: { lot: 'L1', product: 'A' } }), dies: [die({ hbin: 1 })] },
+    { label: 'W2', wafer: wafer({ metadata: { lot: 'L1', product: 'B' } }), dies: [die({ hbin: 2 })] },
+  ];
+  const saved = {};
+  renderLotSummaryContent(panel, {
+    lotSummary, items, dieListOptions: { enabled: true }, onSaveText: (text) => { saved.text = text; },
+  });
+  clickLink(panel, 'View die list');
+
+  const exportBtn = [...document.querySelectorAll('button')].find(b => b.textContent === 'Export CSV');
+  assert.ok(exportBtn, 'expected an Export CSV button inside the die-list modal');
+  exportBtn.click();
+
+  const headerLine = saved.text.split('\n')[0];
+  assert.ok(headerLine.includes('Lot'), `common field should appear: ${headerLine}`);
+  assert.ok(!headerLine.includes('Product'), `varying field must not appear: ${headerLine}`);
+});
+
+test('renderLotSummaryContent — "View die list" is present by default (no dieListOptions at all)', () => {
+  const panel = panelDiv();
+  const lotSummary = { stats: { waferCount: 1 }, perWafer: [] };
+  const items = [{ label: 'W1', wafer: wafer({ metadata: {} }), dies: [die({ hbin: 1 })] }];
+  renderLotSummaryContent(panel, { lotSummary, items });
+  assert.ok([...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+});
+
+test('renderLotSummaryContent — "View die list" is absent when explicitly disabled', () => {
+  const panel = panelDiv();
+  const lotSummary = { stats: { waferCount: 1 }, perWafer: [] };
+  const items = [{ label: 'W1', wafer: wafer({ metadata: {} }), dies: [die({ hbin: 1 })] }];
+  renderLotSummaryContent(panel, { lotSummary, items, dieListOptions: { enabled: false } });
+  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
 });

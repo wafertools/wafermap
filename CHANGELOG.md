@@ -22,6 +22,84 @@ under `### Breaking`.
 
 ---
 
+## [0.24.0] — 2026-08-24
+
+### Breaking
+
+- **`buildDieListSection`/`RenderOptions.dieList` now caps rendered rows at `maxRows` (default
+  `50_000`)**, where the table previously rendered every die unconditionally. This table has
+  no virtualisation, so an uncapped multi-hundred-thousand-die lot was already a genuinely
+  heavy DOM build (~1.3M elements at 266k dies) before this release added metadata columns —
+  without the cap, adding columns would have made that worst case materially worse rather than
+  strictly better. The **CSV export is never capped**; it always contains every die, and a
+  footer states the truncation explicitly whenever it applies (`"Showing the first 50,000 of
+  266,412 dies. The CSV export contains all 266,412."`). A host that needs every row on screen
+  regardless of scale can set `maxRows` to a larger value or `Infinity`.
+
+### Added
+
+- **Metadata now reaches the die-list table and its CSV export**, and the two per-test CSVs
+  (`test-values.csv`, `functional-tests.csv`) gain wafer identity. Previously no export surface
+  in the library emitted `die.metadata` at all — only the hover tooltip and the `'metadata'`
+  plot mode did — and none of the three CSVs emitted wafer metadata either, despite the HTML
+  reports already doing so.
+  - **Die metadata** (`DieMetadata`) is on by default in `buildDieListSection`
+    (`DieListOptions.metadataColumns`, default `'auto'`) — every key found on any die,
+    deterministically ordered (`metadataFields` declaration order first, then natural sort).
+    Unlike `metadataFields` gating the `'metadata'` plot mode (a legend has a cardinality
+    limit), a table column has none, so auto-discovery here does not conflict with that rule —
+    it follows the same intent. Pass an explicit `string[]` to pin the set, or `'none'` to omit.
+  - **Wafer metadata** (`WaferMetadata`) is CSV-only by default
+    (`DieListOptions.waferMetadataColumns`, default `'csv'`) — constant down every row, so it's
+    noise on screen next to the always-visible metadata badge, but it's what makes a detached
+    CSV self-describing enough to concatenate several exports and still know which wafer each
+    row came from. Set `'both'` to also show it in the table, or `'none'` to omit it entirely.
+  - A key present on both a wafer and a die produces exactly **one** column, scope `die`,
+    carrying the die's value — the same shadowing rule the hover tooltip already applied.
+  - Column labels resolve `metadataFields[].label` → `prettyKey(key)` → the raw key, matching
+    every other column's human-readable header. A key colliding with a built-in column name
+    (e.g. a metadata key literally called `Site`) is never dropped — it becomes
+    `"Site (metadata)"`, with further deterministic fallbacks for the rare case that also
+    collides.
+  - `RenderOptions.dieList?: DieListDisplayOptions` reaches the built-in die-list view (the
+    coordinate-less map replacement, and the "+N dies without position" footer), which
+    previously had no host hook at all. The wafer metadata and `metadataFields` it needs are
+    always supplied by the library from the current build result, never from this option, so a
+    host mistake can't substitute the wrong identity data into an export.
+  - `buildTestSection`/`buildFunctionalTestSection`/`buildLotTestSection`/
+    `buildLotFunctionalSection` (internal to the Summary/Insights panels) gained a trailing
+    `CsvExportContext` — the two lot variants self-derive it from the `perWaferSummaries` they
+    already receive, so `renderWaferGallery`'s Insights tab and the lot Summary panel needed no
+    call-site changes. A mixed lot (no metadata field common to every wafer) emits no false
+    identity column at all, rather than guessing.
+- **"View die list" — every die as a table, reachable from the Summary panel**, on both
+  `renderWaferMap` (this wafer's own dies) and `renderWaferGallery` (every wafer in the lot,
+  pooled, with a leading `Wafer` column). Deliberately **not** a new toolbar button — reached
+  as a link inside the already-open Summary panel, the same way "Summary report" opens the
+  HTML report without one either, since the toolbar already carries eleven buttons and this
+  reuses an existing entry point rather than adding a twelfth. **On by default** whenever a
+  Summary panel is reachable at all (`RenderOptions.dieList`/`GalleryOptions.dieList`, set
+  `{ enabled: false }` to hide it); opens wmap's own resizable modal, mounting
+  `buildDieListSection` with the same metadata columns and CSV export the coordinate-less
+  die-list view already has. The lot-pooled CSV's wafer-metadata columns use `commonMetadata`,
+  so a mixed lot emits no false shared identity, same as the pooled per-test CSVs above.
+- **`prettyKey`-labelled hover tooltip metadata.** `buildHoverText` now resolves a metadata
+  key's label the same way the new table/CSV columns do (`metadataFields[].label` →
+  `prettyKey(key)`), instead of printing the raw key. Brings the tooltip in line with every
+  other metadata surface in the library rather than shipping the inconsistency for even one
+  release. `HoverTextOptions` gained `metadataFields?: MetadataFieldDef[]`.
+- New `@wafertools/wafermap/core` exports: `metadataDisplayValue(raw)` / `metadataCategoricalValue(raw)` —
+  the single stringifier for a metadata value (display/export vs. categorical/colour-swatch
+  use), replacing four near-identical inline implementations that had drifted (`buildView.ts`'s
+  tooltip and `'metadata'`-mode read path, `summaryPanel.ts`'s `metadataEntries`, `facets.ts`'s
+  `facetValueOf`). A `String(v)`-on-an-object bug in two of those four collapsed distinct object
+  values into the indistinguishable `"[object Object]"`; all four now emit `JSON.stringify(v)`
+  instead, so genuinely different values facet and export as genuinely different values.
+- New `@wafertools/wafermap/stats` exports: `resolveMetadataColumns(options)` and
+  `discoverDieMetadataKeys(dies, metadataFields?, limit?)` — the column resolver backing the
+  above, public because a host building its own table/export over `die.metadata` shouldn't have
+  to reimplement discovery, ordering, shadowing, and collision resolution from scratch.
+
 ## [0.23.1] — 2026-08-18
 
 ### Added

@@ -5,6 +5,7 @@
 // host-specific raw-field shape. Pure and DOM-free.
 
 import type { WaferMetadata } from '../core/metadata.js';
+import { metadataDisplayValue } from '../core/metadata.js';
 import { compareNatural } from '../core/utils.js';
 
 /** Bucket label for wafers with no value for the active facet field — kept
@@ -82,9 +83,8 @@ export function facetValueOf(
   key: string,
   curation: Record<string, FacetCuration> = DEFAULT_FACET_CURATION,
 ): string | undefined {
-  const raw = metadata?.[key];
-  if (raw === undefined || raw === null || raw === '') return undefined;
-  const str = String(raw);
+  const str = metadataDisplayValue(metadata?.[key]);
+  if (str === undefined) return undefined;
   return curation[key]?.date ? dateOnly(str) : str;
 }
 

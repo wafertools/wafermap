@@ -4,6 +4,7 @@ import { hasPosition } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { getReticleCell } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
+import { metadataCategoricalValue, metadataDisplayValue } from '../core/metadata.js';
 import {
   type Affine, affineRotation, affineMirror, affineCompose,
   affinePoint, affineVector, affineSwapsAxes,
@@ -333,10 +334,7 @@ const NO_DATA_FILL     = '#d6d9dd';
  * on which dies count as having a value.
  */
 function getDieMetadataValue(die: Die, key: string | undefined): string | undefined {
-  const raw = key ? die.metadata?.[key] : undefined;
-  return raw !== undefined && raw !== null &&
-    (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean')
-    ? String(raw) : undefined;
+  return key ? metadataCategoricalValue(die.metadata?.[key]) : undefined;
 }
 
 /** A die's spec classification for `value` mode against the active test's limits. */
@@ -545,6 +543,14 @@ export interface HoverTextOptions {
   activeTest?: number;
   /** Reticle geometry, when configured — appended as a "Reticle (col, row)" line below Die (x, y). */
   reticleConfig?: ReticleConfig;
+  /**
+   * Label/order hints for metadata keys, e.g. `WaferMapResult.metadataFields`.
+   * A key's tooltip line reads `metadataFields[].label` when declared, falling
+   * back to `prettyKey(key)` — the same resolution the die-list/CSV columns
+   * use, so a field never reads as a plain key in one place and a friendly
+   * label in another.
+   */
+  metadataFields?: MetadataFieldDef[];
 }
 
 export function buildHoverText(
@@ -554,7 +560,7 @@ export function buildHoverText(
 ): string {
   const {
     testDefs, hbinDefs, sbinDefs, fallbackFormat,
-    aggrMethod, lotSize, waferMeta, activeTest, reticleConfig,
+    aggrMethod, lotSize, waferMeta, activeTest, reticleConfig, metadataFields,
   } = opts;
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
@@ -671,8 +677,10 @@ export function buildHoverText(
   // host-provided metadata.
   const meta: Record<string, unknown> = { ...(waferMeta ?? {}), ...(die.metadata ?? {}) };
   for (const [key, value] of Object.entries(meta)) {
-    if (value === undefined || value === null) continue;
-    lines.push(`${key}: ${String(value)}`);
+    const text = metadataDisplayValue(value);
+    if (text === undefined) continue;
+    const label = metadataFields?.find(f => f.key === key)?.label ?? prettyKey(key);
+    lines.push(`${label}: ${text}`);
   }
 
   return lines.join('<br>');

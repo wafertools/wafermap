@@ -20,7 +20,7 @@ import { hardBinColor, softBinColor, metadataValueColor } from '../renderer/colo
 import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
 import { createMetadataBadge, type MetadataBadgeController } from './metadataBadge.js';
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
-import { buildDieListSection } from './dieList.js';
+import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -213,6 +213,18 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * Insights has no map for a finding to highlight against.
    */
   summaryPanel?: SummaryPanelOptions;
+  /**
+   * Display preferences for every built-in die-list surface: the
+   * coordinate-less map replacement, the "+N dies without position data"
+   * footer, and the "View die list" link in the Summary panel (§5.4.4) — on
+   * by default whenever `summaryPanel` is set; pass `{ enabled: false }` to
+   * hide just that link, leaving the other two surfaces unaffected. This
+   * option carries preferences only — the wafer metadata and metadata field
+   * definitions the table needs are always taken from the current build
+   * result, never from this option, so a host cannot substitute the wrong
+   * identity data into an export.
+   */
+  dieList?: DieListDisplayOptions;
   /**
    * Custom tooltip renderer. When provided, replaces the built-in tooltip content.
    * Return a string (set as innerHTML), an HTMLElement (appended directly), or null to suppress the tooltip.
@@ -465,7 +477,12 @@ export function renderWaferMap(
 
     function buildPanelContent(): HTMLElement {
       if (showingTable) {
-        const table = buildDieListSection(unpositionedDies, result.testDefs, { onSaveText: options.onSaveText });
+        const table = buildDieListSection(unpositionedDies, result.testDefs, {
+          ...options.dieList,
+          onSaveText:     options.onSaveText,
+          waferMetadata:  wafer.metadata, // live local, not result.metadata which goes stale after setResult()
+          metadataFields, // live local (setResult-reassigned), not result.metadataFields which goes stale
+        });
         if (table) return table;
       }
       // Effective log scale: same resolution buildView.ts uses internally
@@ -955,6 +972,8 @@ export function renderWaferMap(
       findingsFilter,
       onFindingsFilterChange: renderSummaryPanel,
       onSaveText: options.onSaveText,
+      metadataFields,
+      dieListOptions: options.dieList,
       onFindingClick: (finding, _row) => {
         if (summaryActiveFindingId === finding.id) {
           summaryActiveFindingId = null;
@@ -1966,6 +1985,7 @@ export function renderWaferMap(
             // parameter and is never reassigned, so it goes stale after any setResult()
             // call — `wafer` is the local setResult() does keep live.
             waferMeta: wafer.metadata,
+            metadataFields,
             // Active test from the built View (authoritative, like plotMode above):
             // in value mode the tooltip leads with it; ignored in bin modes.
             activeTest: currentView.activeTest,

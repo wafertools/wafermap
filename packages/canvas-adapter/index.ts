@@ -15,7 +15,7 @@ export type { SummaryPanelOptions } from './summaryPanel.js';
 // lot-level combined view (concatenating every wafer's `dies` with its own
 // wafer-id column) rather than reimplementing the same table/CSV logic.
 export { buildDieListSection } from './dieList.js';
-export type { DieListOptions } from './dieList.js';
+export type { DieListOptions, DieListDisplayOptions } from './dieList.js';
 // Warning surfacing — `WarningsOptions` configures the built-in indicator and
 // the `onWarning` stream; `collectWarnings` is exported so a host that turns the
 // UI off can reproduce exactly the set the library would have shown.

@@ -30,7 +30,8 @@ const SNAPSHOTS = {
     'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
     'getReticleCell', 'getRingLabel', 'getUniqueBins', 'hasPosition',
     'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isPositionedDie', 'isYieldEligibleDie', 'listColorSchemes',
-    'mapDataToDies', 'openHtmlReport', 'registerColorScheme', 'setReportOpener',
+    'mapDataToDies', 'metadataCategoricalValue', 'metadataDisplayValue',
+    'openHtmlReport', 'registerColorScheme', 'resolveMetadataColumns', 'discoverDieMetadataKeys', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
     'softBinColor', 'transformDies', 'valueToGreyscale', 'valueToViridis',
   ],
@@ -41,7 +42,8 @@ const SNAPSHOTS = {
     'applyOrientation', 'applyProbeSequence',
     'classifyDie', 'clipDiesToWafer', 'createWafer',
     'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
-    'hasPosition', 'isInsideWafer', 'isPositionedDie', 'isYieldEligibleDie', 'mapDataToDies', 'resolveGridPitch', 'transformDies',
+    'hasPosition', 'isInsideWafer', 'isPositionedDie', 'isYieldEligibleDie', 'mapDataToDies',
+    'metadataCategoricalValue', 'metadataDisplayValue', 'resolveGridPitch', 'transformDies',
   ],
   // findTestDef / generateTextOverlay / getUniqueTestNumbers / resolveTestNumber were
   // removed from the public surface in 0.22.0 — internal view-pipeline helpers with no
@@ -66,7 +68,7 @@ const SNAPSHOTS = {
     'buildYieldData', 'buildYieldDataCombined',
     'classifyPattern', 'computeFunctionalYield', 'DEFAULT_FACET_CURATION',
     'facetValueOf', 'FACET_NONE_VALUE', 'filterCorrelationMatrix',
-    'filterFindings', 'openHtmlReport', 'parseRegionKey', 'sectorCompassNames', 'setReportOpener',
+    'filterFindings', 'openHtmlReport', 'parseRegionKey', 'resolveMetadataColumns', 'discoverDieMetadataKeys', 'sectorCompassNames', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
   ],
   './render': [
