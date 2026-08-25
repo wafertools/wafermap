@@ -4,7 +4,7 @@ import { getColorScheme } from '../renderer/colorSchemes.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, sevColor, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { CLR, sevColor, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -87,6 +87,19 @@ export interface GalleryOptions {
   ) => void;
   /** Legend position for bin modes. Default 'default'. */
   legendPosition?:       'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  /**
+   * Draw a legend on every card as well as the lot-level one. Default false.
+   *
+   * The lot legend already names every bin and is interactive, so per-card
+   * legends are off by default and the cards spend that width on the wafer.
+   * Turn this on when per-card bin highlighting matters more than card size.
+   *
+   * Ignored — cards always keep their own — when the plot mode is `value` with
+   * `colorbarRangeMode: 'data'`, where each card is scaled to its own range and
+   * a shared legend could not describe it. The toolbar shows the toggle
+   * disabled with that reason rather than appearing to do nothing.
+   */
+  perCardLegend?:        boolean;
   /** Padding inside each card canvas in CSS pixels. Default 6. */
   cardPadding?:          number;
   /** Filename stem for the composite gallery PNG. Default 'wafer-gallery'. */
@@ -126,7 +139,7 @@ export interface GalleryOptions {
    * Options for the always-available Summary panel alongside the gallery
    * grid — a "Lot" tab with full lot-level stats (metadata, yield, bin
    * breakdown, ring/quadrant yield, test values, findings) and a combined
-   * Report button, plus a "Wafers" tab listing every wafer that has its own
+   * Report button, plus a "Findings" tab listing every wafer that has its own
    * per-wafer findings (click a row to open that wafer). Independent of
    * `insights` below: this always shows/hides its own toolbar button
    * regardless of whether Insights is open, since Insights has no per-wafer
@@ -313,6 +326,51 @@ export function renderWaferGallery(
   let currentLotStats        = options.lotStatsSummary;
   let currentLegendStyle     = options.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 
+  // Whether each card draws its own legend. Off by default: the lot legend
+  // below the toolbar shows the same bins and is itself interactive — clicking
+  // a row highlights that bin across every card — so a per-card copy costs
+  // roughly a third of each card's width to duplicate a control the user
+  // already has. Turning this on restores per-card legends, whose distinct
+  // value is highlighting a bin on one card independently of the rest.
+  //
+  // See perCardLegendBlockedReason for the case where this cannot apply.
+  let perCardLegend = options.perCardLegend ?? false;
+
+  /**
+   * Why the per-card-legend toggle cannot take effect right now, or null.
+   *
+   * A data-ranged colorbar is normalised to each card's *own* min/max, so the
+   * cards are not on a common scale and no lot-level bar can describe them.
+   * Suppressing them would leave thirteen differently-scaled maps with one
+   * legend that matches none of them — actively misleading rather than merely
+   * terse. A spec-ranged colorbar comes from the test's limits, which are the
+   * same for every card, so it has no such problem.
+   */
+  function perCardLegendBlockedReason(): string | null {
+    const mode = sharedOpts.plotMode ?? 'hardBin';
+    // The lot-level strip (legendEl/rebuildLegend) only ever draws bin
+    // swatches — hardBin/softBin/metadata. Value mode's legend is a colorbar,
+    // which that strip has no equivalent for at all, spec-ranged or not: this
+    // used to check colorbarRangeMode === 'data' specifically (true when each
+    // card is scaled to its own range, so no shared bar could describe them),
+    // but a SPEC-ranged value gallery has an identical range on every card and
+    // was still wrongly let through — suppressing every card's colorbar with
+    // nothing standing in for it, gallery-wide. The real dividing line is
+    // simply whether BIN_LEGEND_MODES has a lot-level row for this mode.
+    if (!BIN_LEGEND_MODES.has(mode)) {
+      return sharedOpts.colorbarRangeMode === 'data'
+        ? 'Each map has its own value range, so it keeps its own colour bar'
+        : 'This lot has no shared colour bar for value mode, so each map keeps its own';
+    }
+    return null;
+  }
+
+  /** Push the effective per-card legend state to every card. */
+  function applyPerCardLegend(): void {
+    const showLegend = perCardLegend || perCardLegendBlockedReason() !== null;
+    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ showLegend });
+  }
+
   let sharedOpts: WaferViewOptions = {
     plotMode:               'hardBin',
     colorScheme:            'default',
@@ -471,7 +529,11 @@ export function renderWaferGallery(
     for (const tab of (['lot', 'wafers'] as const)) {
       const btn = container.ownerDocument.createElement('button');
       btn.type = 'button';
-      btn.textContent = tab === 'lot' ? 'Lot' : 'Wafers';
+      // "Wafers" was a lie by omission: this tab lists only wafers that HAVE
+      // findings, so a 13-wafer lot showed 8 rows — and the two lowest-yielding
+      // wafers, having no findings, were among the five missing. A user
+      // scanning for problem wafers read the absence as "these are fine".
+      btn.textContent = tab === 'lot' ? 'Lot' : 'Findings';
       const active = gallerySummaryTab === tab;
       Object.assign(btn.style, {
         border:       'none',
@@ -514,6 +576,21 @@ export function renderWaferGallery(
       const unusualCount = findings.filter(f => f.severity === 'unusual').length;
       const notableCount = findings.filter(f => f.severity === 'notable').length;
       wafersWithFindings.push({ index: i, item, unusualCount, notableCount, totalCount: findings.length });
+    }
+
+    // State the denominator. The list is a subset by design; saying so is what
+    // stops it reading as the full wafer list.
+    if (originalItems.length > 0) {
+      const heading = container.ownerDocument.createElement('div');
+      const withCount = wafersWithFindings.length;
+      const total = originalItems.filter(Boolean).length;
+      heading.textContent = withCount === 0
+        ? `No findings on any of the ${total} wafers`
+        : `${withCount} of ${total} wafer${total === 1 ? '' : 's'} with findings`;
+      Object.assign(heading.style, {
+        fontSize: '11px', color: CLR.label, marginBottom: '8px',
+      } as Partial<CSSStyleDeclaration>);
+      gallerySummaryPanelEl.appendChild(heading);
     }
 
     // "Report all wafers" button
@@ -615,6 +692,12 @@ ${reportStyles()}
 
         const badge = container.ownerDocument.createElement('span');
         badge.textContent = String(badgeCount);
+        // The bare number said nothing about what it counted. The row is a
+        // button, so its accessible name is what a screen reader announces —
+        // spell the whole thing out there rather than leaving "W08, 8".
+        row.setAttribute('aria-label',
+          `${item.label ?? `W${index + 1}`} — ${badgeCount} finding${badgeCount === 1 ? '' : 's'}`
+          + `${unusualCount ? `, ${unusualCount} unusual` : ''} — view wafer`);
         Object.assign(badge.style, {
           marginLeft:   '6px',
           flexShrink:   '0',
@@ -854,7 +937,7 @@ ${reportStyles()}
       btnMode.ownerDocument.defaultView ?? window,
       metadataModeEntries,
     );
-    overlayRootFor(btnMode).appendChild(menu);
+    menuLayerFor(btnMode).appendChild(menu);
     setOpenMenu(menu);
     markMenuTrigger(btnMode, true);
     wireMenuA11y(menu, btnMode, closeModeMenu);
@@ -870,6 +953,10 @@ ${reportStyles()}
     () => sharedOpts.colorScheme ?? 'default',
     itemsHaveCustomColors,
     v => updateShared({ colorScheme: v }),
+    {
+      get: () => sharedOpts.markFailingDies ?? false,
+      set: (v) => updateShared({ markFailingDies: v }),
+    },
   );
   syncPaletteBtn();
 
@@ -928,6 +1015,11 @@ ${reportStyles()}
     (v) => {
       currentLegendStyle = v;
       for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ legendPosition: currentLegendStyle });
+    },
+    {
+      get: () => perCardLegend,
+      set: (v) => { perCardLegend = v; applyPerCardLegend(); },
+      blockedReason: perCardLegendBlockedReason,
     },
   );
   syncLegendStyleBtn();
@@ -1098,7 +1190,7 @@ ${reportStyles()}
         btnWarnings!.getBoundingClientRect(), currentWarnings,
         btnWarnings!.ownerDocument.defaultView ?? window,
       );
-      overlayRootFor(container).appendChild(menu);
+      menuLayerFor(container).appendChild(menu);
       setOpenMenu(menu);
       wireMenuA11y(menu, btnWarnings!, () => closeOpenMenu(new MouseEvent('click')));
     });
@@ -1152,6 +1244,11 @@ ${reportStyles()}
   // can themselves be long (several distinct-value lists), and mixing them with
   // bin swatches in one wrap made the whole strip read as a single jumbled line.
   const legendEl = container.ownerDocument.createElement('div');
+  // Stable hook for tests/tooling — same convention as barEl's
+  // data-wmap-toolbar, added when this element stopped being container's
+  // direct, position-fixed child (it moved inside stickyHeaderEl below), which
+  // broke every `container.children[1]` lookup that assumed it.
+  legendEl.dataset.wmapGalleryLegend = '1';
   Object.assign(legendEl.style, {
     display:       'flex',
     flexDirection: 'column',
@@ -1382,32 +1479,59 @@ ${reportStyles()}
     return `repeat(${cols}, minmax(0, ${currentMaxCardPx}px))`;
   }
 
+  /**
+   * Write the grid template only when it actually changes. This runs from a
+   * ResizeObserver on `gridEl` itself and rewrites that same element's
+   * `grid-template-columns`, so an unconditional write re-invalidates the
+   * observed element and the browser reports "ResizeObserver loop completed
+   * with undelivered notifications" — changing the column count reflows the
+   * rows, which changes `gridEl`'s height, which notifies again.
+   */
+  function setGridTemplate(value: string): void {
+    if (gridEl.style.gridTemplateColumns !== value) gridEl.style.gridTemplateColumns = value;
+  }
+
   function applyGridTemplate(): void {
     if (currentColumns != null) {
-      gridEl.style.gridTemplateColumns = trackTemplate(currentColumns);
+      setGridTemplate(trackTemplate(currentColumns));
       return;
     }
     const N = Math.max(1, currentItemCount);
     const gap = 12;
     const containerW = gridEl.clientWidth || 0;
 
-    // Start from a square-ish grid (sqrt(N) columns), then adjust to the
-    // container width. Two guards, in priority order:
-    //   1. never let a card fall below the readable floor (currentMinCardPx) —
-    //      reduce columns if it would (more rows: cards get taller and wider);
-    //   2. otherwise, when the container is wide enough that extra columns would
-    //      still be comfortably sized, add columns so the width is used rather
-    //      than inflating a few oversized cards. Capped at N (no empty columns).
+    // Pack in as many columns as the container can hold at a *comfortable* card
+    // size, falling back to the hard readability floor only when it cannot
+    // manage even one column at that size.
+    //
+    // This used to enforce the hard floor first and treat "comfortable" as a
+    // bonus pass that could only ADD columns. That maximised column count
+    // subject to the hard floor, which by construction makes cards as small as
+    // the floor allows — and produced a genuinely confusing result: widening
+    // the window could SHRINK the cards. Measured on a 13-wafer lot, a 900px
+    // window gave a 299px canvas (2 columns) and a 1171px window gave 285px
+    // (3 columns), so 271px of extra width bought a smaller wafer.
+    //
+    // Integer column counts mean card width can never be strictly monotonic in
+    // container width — crossing into another column always costs some size.
+    // What can be guaranteed is the size never drops below `comfortablePx`,
+    // which is the guarantee worth having, and it is a far better floor than
+    // the bare readability minimum.
     const cardWidthAt = (c: number) => (containerW - gap * (c - 1)) / c;
     let cols = Math.max(1, Math.ceil(Math.sqrt(N)));
     if (containerW > 0) {
-      // Down pass — enforce the hard readability floor.
-      while (cols > 1 && cardWidthAt(cols) < currentMinCardPx) cols--;
-      // Up pass — pack more columns while they stay comfortably sized.
       const comfortablePx = Math.min(currentMaxCardPx, currentMinCardPx * COMFORTABLE_CARD_FACTOR);
-      while (cols < N && cardWidthAt(cols + 1) >= comfortablePx) cols++;
+      const largestColsAtLeast = (px: number): number => {
+        let c = 0;
+        while (c < N && cardWidthAt(c + 1) >= px) c++;
+        return c;
+      };
+      // Comfortable if it fits at all; otherwise the most columns that still
+      // clear the hard floor; otherwise a single column, which the card's own
+      // max-size and the container's scrolling handle from there.
+      cols = largestColsAtLeast(comfortablePx) || largestColsAtLeast(currentMinCardPx) || 1;
     }
-    gridEl.style.gridTemplateColumns = trackTemplate(cols);
+    setGridTemplate(trackTemplate(cols));
   }
 
   const gridEl = container.ownerDocument.createElement('div');
@@ -1419,6 +1543,22 @@ ${reportStyles()}
     gap:                     '12px',
     justifyContent:          'start',
     alignContent:            'start',
+    // `isolation: isolate` — NOT decorative, load-bearing. Each card's own
+    // toolbar (renderWaferMap.ts) sets an explicit `zIndex: Z_BASE` on an
+    // element whose positioned ancestors (canvasWrap: position:relative, no
+    // z-index) never establish a stacking context of their own — per the CSS
+    // spec, position:relative WITHOUT an explicit z-index does not isolate
+    // anything, so that Z_BASE value bubbles all the way up past gridEl,
+    // bodyEl and container to compete as a PEER of stickyHeaderEl below, at
+    // whatever the nearest real stacking-context root actually is. Without
+    // this line, no zIndex on stickyHeaderEl can ever be simultaneously
+    // "above a scrolled-under card" and "below that same bar's own popped-out
+    // dropdown menu", because both the card's toolbar AND this bar's menu use
+    // the identical Z_BASE value — there is no number that is both greater
+    // and less than the same number. Isolating the grid contains every
+    // card's Z_BASE locally, so it can no longer leak out and be compared
+    // against anything outside gridEl at all.
+    isolation:               'isolate',
   });
 
   // Build gallery summary panel.
@@ -1464,8 +1604,48 @@ ${reportStyles()}
     if (gallerySummaryPanelEl) bodyEl.appendChild(gallerySummaryPanelEl);
   }
 
-  container.appendChild(barEl);
-  container.appendChild(legendEl);
+  // Toolbar + legend stick to the top of whatever scrolls this gallery. Both
+  // used to scroll away with the grid (position: static, the default) — on
+  // any lot long enough to scroll, scrolling down lost the plot-mode control
+  // and the bin legend at the exact moment there was more map on screen to
+  // make sense of. Wrapped together, rather than each given its own `sticky`,
+  // because the toolbar can wrap onto a second line at narrow widths and its
+  // height isn't fixed — two independently-stickied siblings would need the
+  // second one's `top` computed from the first's live height, which is
+  // exactly the kind of thing that quietly breaks on the next toolbar change.
+  // One wrapper has one height, whatever it is.
+  //
+  // `position: sticky` needs a scrolling ancestor to stick within, which this
+  // component doesn't itself create (WMAP_ISSUES.md — the gallery never sets
+  // overflow on `container`) — it works because tsmap gives `#map-container`
+  // `overflow-y: auto` when showing a gallery, and sticky finds that ancestor
+  // regardless of which element owns the scrollbar.
+  const stickyHeaderEl = container.ownerDocument.createElement('div');
+  Object.assign(stickyHeaderEl.style, {
+    position:   'sticky',
+    top:        '0',
+    // A small EXPLICIT value, deliberately far below Z_BASE — this is not
+    // "not high enough yet", raising it is the wrong move if this header ever
+    // again looks buried. What actually keeps this above a scrolled-under
+    // card is gridEl's `isolation: isolate` above, which contains every
+    // card's own Z_BASE toolbar so it can never be compared against this
+    // element at all. Once contained, ANY explicit z-index here beats gridEl
+    // (unpositioned, stacks as a plain in-flow layer below anything with a
+    // real z-index) — see the CSS stacking-context tiers in gridEl's comment.
+    //
+    // It must stay LOW: this bar's own dropdown menus (Plot mode, Colour
+    // scheme, ...) render via `makeDropdown`/`buildCheckMenuEl`, which append
+    // to `document.body` at `Z_BASE` — the exact tier gridEl now contains.
+    // Using Z_BASE or Z_ABOVE here previously "fixed" cards floating over the
+    // header by instead putting the header ABOVE its own popped-out menus,
+    // obscuring them. That was the wrong fix for the right symptom: it raised
+    // this element's tier instead of containing the one that was leaking.
+    zIndex:     '1',
+    background: CLR.menuBg,
+  } as Partial<CSSStyleDeclaration>);
+  stickyHeaderEl.appendChild(barEl);
+  stickyHeaderEl.appendChild(legendEl);
+  container.appendChild(stickyHeaderEl);
   container.appendChild(bodyEl);
   if (insightsEl) container.appendChild(insightsEl);
 
@@ -1746,6 +1926,7 @@ ${reportStyles()}
 
   function updateShared(partial: Partial<WaferViewOptions>, { fireCallback = true } = {}): void {
     const prevMode = sharedOpts.plotMode;
+    const prevLegendBlocked = perCardLegendBlockedReason() !== null;
     sharedOpts = { ...sharedOpts, ...partial };
     const newMode    = sharedOpts.plotMode!;
     const nowStacked = STACKED_MODES.has(newMode);
@@ -1794,6 +1975,12 @@ ${reportStyles()}
     } else {
       for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
     }
+
+    // Whether the per-card-legend toggle can apply is derived from plot mode
+    // and colorbar range, so a change to either can silently invert the
+    // effective state. Re-push it when the block flips rather than leaving the
+    // cards showing what the previous mode implied.
+    if ((perCardLegendBlockedReason() !== null) !== prevLegendBlocked) applyPerCardLegend();
 
     rebuildLegend();
     syncAggrMethodBtn();
@@ -2004,8 +2191,13 @@ ${reportStyles()}
     // render that the ResizeObserver would otherwise need to correct.
     gridEl.appendChild(card);
 
+    // Grid cards take the current per-card-legend state at mount, so a card
+    // rendered lazily (or after a re-layout) matches the ones already on screen
+    // instead of flashing a legend until the next applyPerCardLegend.
+    const cardShowLegend = perCardLegend || perCardLegendBlockedReason() !== null;
+    const cardBaseOptions = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
     const ctrl = renderWaferMap(canvasWrapper, item, {
-      viewOptions:    item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts,
+      viewOptions:    { ...cardBaseOptions, showLegend: cardShowLegend },
       toolbarControls: 'full',
       showTooltip:     true,
       padding:         cardPadding,
@@ -2209,8 +2401,17 @@ ${reportStyles()}
 
   // Recompute column count when the gallery body width changes (window resize,
   // summary panel open/close, etc.). Only active in auto mode (currentColumns == null).
-  const gridResizeObserver = new ResizeObserver(() => {
-    if (currentColumns == null) applyGridTemplate();
+  // Deferred to the next frame for the same reason chartShell's observeResize
+  // is (see its comment): the callback writes layout back onto the observed
+  // element, which during delivery is what drops notifications.
+  let gridResizeQueued = 0;
+  const gridResizeObserver = new (container.ownerDocument.defaultView ?? window).ResizeObserver(() => {
+    if (gridResizeQueued) return;
+    const win = container.ownerDocument.defaultView ?? window;
+    gridResizeQueued = win.requestAnimationFrame(() => {
+      gridResizeQueued = 0;
+      if (currentColumns == null) applyGridTemplate();
+    });
   });
   gridResizeObserver.observe(gridEl);
 
@@ -2227,13 +2428,26 @@ ${reportStyles()}
    * the card's own controller was destroyed at detach time (its popup window
    * has the only live view of that wafer while detached), so the grid slot
    * needs *something* occupying its layout space until reattach. */
-  function showDetachedPlaceholder(cardIndex: number): void {
+  /**
+   * `inOwnWindow` says which path actually ran. The copy used to be the fixed
+   * string "Detached — open in its own window", which is accurate for a real
+   * popup and wrong for the in-page fallback: with popups blocked the wafer
+   * opens in a floating window inside this same page, and the vacated card
+   * still described an outcome that had not happened. The caller knows which
+   * it got, so it passes that in rather than the card guessing.
+   *
+   * "Detached" also went — it is implementation vocabulary. The user's model
+   * is that the wafer was opened somewhere, not that it was reparented.
+   */
+  function showDetachedPlaceholder(cardIndex: number, inOwnWindow: boolean): void {
     const wrapper = cardContainers[cardIndex];
     if (!wrapper) return;
     wrapper.innerHTML = '';
     Object.assign(wrapper.style, { alignItems: 'center', justifyContent: 'center' });
     const note = container.ownerDocument.createElement('span');
-    note.textContent = 'Detached — open in its own window';
+    note.textContent = inOwnWindow
+      ? 'Opened in its own window'
+      : 'Opened in the wafer viewer';
     Object.assign(note.style, { color: CLR.label, fontSize: '12px', textAlign: 'center', padding: '0 12px' });
     wrapper.appendChild(note);
   }
@@ -2371,7 +2585,7 @@ ${reportStyles()}
     // place (it's the card's layout box) but its content becomes a placeholder.
     cardControllers[cardIndex]?.destroy();
     cardControllers[cardIndex] = null;
-    showDetachedPlaceholder(cardIndex);
+    showDetachedPlaceholder(cardIndex, popupWin !== null);
     updateExpandBtn(cardIndex);
   }
 
@@ -2399,9 +2613,16 @@ ${reportStyles()}
   ): WaferMapController {
     const baseViewOptions = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
     const withLive = liveOptions ? { ...baseViewOptions, ...liveOptions } : baseViewOptions;
-    const viewOptions = testNumber !== undefined
+    const withMode = testNumber !== undefined
       ? { ...withLive, plotMode: 'value' as const, activeTest: testNumber }
       : withLive;
+    // An expanded wafer ALWAYS carries its own legend, whatever the gallery is
+    // doing. It is a window or a modal — the lot legend either does not exist
+    // there or sits behind a backdrop — so there is nothing to inherit the key
+    // from and nothing else offering the bin-highlight control. This overrides
+    // `liveOptions`, which is a snapshot of the source card and would otherwise
+    // carry the gallery's suppressed state straight into the detached view.
+    const viewOptions = { ...withMode, showLegend: true };
     const ctrl = renderWaferMap(container, item, {
       viewOptions,
       toolbarControls: 'full',
@@ -2601,13 +2822,20 @@ ${reportStyles()}
       cardControllers = [];
       getOpenMenu()?.remove();
       gridResizeObserver.disconnect();
+      // Cancel any frame still queued by that observer, or it fires against a
+      // torn-down gallery after destroy().
+      if (gridResizeQueued) {
+        (container.ownerDocument.defaultView ?? window).cancelAnimationFrame(gridResizeQueued);
+        gridResizeQueued = 0;
+      }
       container.ownerDocument.removeEventListener('click', closeOpenMenu, true);
       window.removeEventListener('blur', onWindowBlur);
       disposeOverlayZ();
       // Shared singleton — hide, never destroy (other instances may use it).
       hideTooltip();
-      barEl.remove();
-      legendEl.remove();
+      // Removes stickyHeaderEl too — barEl and legendEl are its only children,
+      // so once both are gone it's an empty node left behind in `container`.
+      stickyHeaderEl.remove();
       bodyEl.remove();
       gallerySummaryPanelEl?.remove();
       insightsTab?.destroy();

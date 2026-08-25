@@ -165,12 +165,19 @@ export const MENU_SEARCH_THRESHOLD = 8;
 // explicit `zIndex`.
 export const DEFAULT_OVERLAY_Z = 6000;
 
-/** `z-index` value string for a base-level overlay (menus, modal backdrop). */
+/** `z-index` value string for a base-level overlay (modal backdrop, a
+ *  component's own persistent chrome — e.g. a per-card toolbar). */
 export const Z_BASE = `var(--wmap-z, ${DEFAULT_OVERLAY_Z})`;
-/** One above base — tooltips, submenus, the modal box above its backdrop. */
+/** One above base — tooltips, the modal box above its backdrop. */
 export const Z_ABOVE = `calc(var(--wmap-z, ${DEFAULT_OVERLAY_Z}) + 1)`;
-/** Two above base — controls that must sit above a maximized modal box. */
-export const Z_ABOVE2 = `calc(var(--wmap-z, ${DEFAULT_OVERLAY_Z}) + 2)`;
+/**
+ * Two above base — the dedicated layer every transient menu/dropdown/
+ * cascade-submenu in this library renders into. See `menuLayerFor` below for
+ * why this is a real DOM layer, not just a number to reference.
+ */
+export const Z_MENU = `calc(var(--wmap-z, ${DEFAULT_OVERLAY_Z}) + 2)`;
+/** Three above base — controls that must sit above a maximized modal box. */
+export const Z_ABOVE2 = `calc(var(--wmap-z, ${DEFAULT_OVERLAY_Z}) + 3)`;
 
 /**
  * Apply a host-supplied `zIndex` to wmap's overlays by writing `--wmap-z` onto
@@ -508,6 +515,67 @@ export function overlayRootFor(anchor: Element): Element {
     el = el.parentElement;
   }
   return anchor.ownerDocument.body;
+}
+
+// ── Shared menu layer ─────────────────────────────────────────────────────────
+//
+// One persistent element per overlay root, reserved for transient
+// menus/dropdowns/cascade-submenus. `menuLayerFor` returns it; every menu this
+// library builds appends into it instead of `overlayRootFor(anchor)` directly.
+//
+// This exists because relying on a shared NUMBER (Z_BASE, Z_ABOVE, ...) for
+// "is this above that" only holds if nothing between the two compared
+// elements breaks the chain — and in this codebase that chain has broken
+// three times in one day: a persistent, sticky element (a gallery's toolbar +
+// legend, pinned while its cards scroll underneath) needs to (a) sit above
+// per-card content that ALSO uses an explicit z-index, while (b) staying
+// below that same toolbar's own popped-out menu, which — before this layer
+// existed — used the exact same z tier as the per-card content in (a). There
+// is no single number that is simultaneously greater than and less than
+// another instance of itself; every fix that reached for "just raise the
+// number" broke one side or the other. See renderWaferGallery.ts's
+// `gridEl`/`stickyHeaderEl` comments for the specific chain that kept
+// reopening this.
+//
+// The structural fix is to stop menus from competing on that shared scale at
+// all. A menu lives in this dedicated layer, at `Z_MENU` — fixed, reserved,
+// and never used for anything else — so no persistent chrome anywhere in the
+// library (present or future) can ever accidentally outrank a menu just by
+// picking a bigger sticky/fixed z-index of its own. The layer sits above
+// `Z_BASE`/`Z_ABOVE` (ordinary chrome, tooltips) and below `Z_ABOVE2`
+// (content that must clear a maximized modal), matching where menus already
+// needed to sit — this doesn't change the ordering, it makes the ordering
+// impossible to accidentally violate from the "chrome" side.
+//
+// Reuses `overlayRootFor`'s own root resolution first — a menu opened from a
+// toolbar living inside a host's own native `<dialog>` (or a wmap modal box)
+// must still nest inside THAT container, or the browser's own top-layer
+// stacking (for `<dialog>`) would put it behind the dialog regardless of any
+// z-index. This layer is then a persistent child of whichever root that is,
+// cached per root so repeated calls reuse the same node rather than stacking
+// up duplicates.
+const menuLayers = new WeakMap<Element, HTMLDivElement>();
+
+export function menuLayerFor(anchor: Element): HTMLElement {
+  const root = overlayRootFor(anchor);
+  const existing = menuLayers.get(root);
+  if (existing && existing.isConnected) return existing;
+  const doc = anchor.ownerDocument;
+  const layer = doc.createElement('div');
+  layer.dataset.wmapMenuLayer = '1';
+  Object.assign(layer.style, {
+    position:      'fixed',
+    inset:         '0',
+    // Reserved exclusively for this layer — see the block comment above.
+    zIndex:        Z_MENU,
+    // The layer itself must never intercept a click over empty space; each
+    // menu appended into it sets its own `pointer-events: auto`, same as
+    // every menu already did when appending straight to `overlayRootFor`.
+    pointerEvents: 'none',
+  } as Partial<CSSStyleDeclaration>);
+  root.appendChild(layer);
+  menuLayers.set(root, layer);
+  return layer;
 }
 
 // ── Tooltip ────────────────────────────────────────────────────────────────────
@@ -881,6 +949,12 @@ export function buildModeMenuEl(
           // Sticky, not a separate non-scrolling wrapper — subMenu is itself
           // the scroll container (overflowY: auto above), so this keeps the
           // box visible while the rows beneath it scroll.
+          //
+          // Contained: only needs to beat its own sibling rows inside
+          // subMenu, which itself renders inside menuLayerFor's shared,
+          // already-elevated layer — nothing outside subMenu competes against
+          // this literal. See UI_STANDARDS.md's "position: sticky or fixed"
+          // entry before reusing this pattern outside a menu.
           Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
           subMenu.appendChild(searchBox);
         }
@@ -1032,7 +1106,23 @@ export function wireExpandToggle(trigger: HTMLElement, onChange: (open: boolean)
 
 export type CheckMenuRow =
   | { section: string }
-  | { label: string; active: boolean; enabled?: boolean; onClick: (e: MouseEvent) => void };
+  | {
+      label: string;
+      active: boolean;
+      /** Default true. Without `disabledHint` a disabled row is omitted entirely. */
+      enabled?: boolean;
+      /**
+       * Reason this row is unavailable. Supplying it keeps the row visible but
+       * greyed, with the reason as its tooltip, instead of dropping it.
+       *
+       * Omitting a row is right when its subject doesn't exist (no reticle data
+       * ⇒ nothing to say about a reticle grid). It's wrong when the option is
+       * real but temporarily inapplicable — the row vanishing then reads as a
+       * missing feature, and the user has no way to learn the condition.
+       */
+      disabledHint?: string;
+      onClick: (e: MouseEvent) => void;
+    };
 
 /**
  * Build a checkbox-style dropdown menu (for overlays/orientation groups).
@@ -1070,19 +1160,25 @@ export function buildCheckMenuEl(
       menu.appendChild(makeMenuSection(row.section));
     } else {
       const enabled = row.enabled !== false;
-      if (!enabled) continue;
+      // A disabled row with no stated reason is omitted; with one it stays
+      // visible and greyed so the reason is discoverable. See CheckMenuRow.
+      if (!enabled && !row.disabledHint) continue;
       const el = doc.createElement('div');
       el.setAttribute('role', 'menuitemcheckbox');
       el.setAttribute('aria-checked', row.active ? 'true' : 'false');
       el.tabIndex = -1;
+      if (!enabled) {
+        el.setAttribute('aria-disabled', 'true');
+        el.title = row.disabledHint!;
+      }
       Object.assign(el.style, {
         display:    'flex',
         alignItems: 'center',
         gap:        '6px',
         padding:    '6px 14px',
         fontSize:   '12px',
-        cursor:     'pointer',
-        color:      row.active ? CLR.iconActive : CLR.text,
+        cursor:     enabled ? 'pointer' : 'default',
+        color:      !enabled ? CLR.label : row.active ? CLR.iconActive : CLR.text,
         fontWeight: row.active ? '700' : '400',
         background: row.active ? CLR.menuActive : 'transparent',
         whiteSpace: 'nowrap',
@@ -1101,11 +1197,15 @@ export function buildCheckMenuEl(
       lbl.textContent = row.label;
       el.appendChild(tick);
       el.appendChild(lbl);
-      el.addEventListener('mouseenter', () => { if (!row.active) el.style.background = CLR.menuHover; });
-      el.addEventListener('mouseleave', () => { el.style.background = row.active ? CLR.menuActive : 'transparent'; });
-      el.addEventListener('focus', () => { if (!row.active) el.style.background = CLR.menuHover; });
-      el.addEventListener('blur',  () => { el.style.background = row.active ? CLR.menuActive : 'transparent'; });
-      el.addEventListener('click', (e) => { e.stopPropagation(); row.onClick(e); });
+      if (enabled) {
+        el.addEventListener('mouseenter', () => { if (!row.active) el.style.background = CLR.menuHover; });
+        el.addEventListener('mouseleave', () => { el.style.background = row.active ? CLR.menuActive : 'transparent'; });
+        el.addEventListener('focus', () => { if (!row.active) el.style.background = CLR.menuHover; });
+        el.addEventListener('blur',  () => { el.style.background = row.active ? CLR.menuActive : 'transparent'; });
+        el.addEventListener('click', (e) => { e.stopPropagation(); row.onClick(e); });
+      } else {
+        el.addEventListener('click', (e) => { e.stopPropagation(); });
+      }
       menu.appendChild(el);
     }
   }
@@ -1120,7 +1220,10 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   // toolbar built inside a gallery card detached into its own popup window.
   const doc = tooltip.ownerDocument;
   let openMenu: HTMLDivElement | null = null;
-  const menuRoot = (anchor: Element): Element => overlayRootFor(anchor);
+  // Every menu built through this helpers object — makeDropdown,
+  // makeCheckMenuBtn — appends into the shared menu layer, not directly into
+  // overlayRootFor's own root. See menuLayerFor's doc comment for why.
+  const menuRoot = (anchor: Element): Element => menuLayerFor(anchor);
 
   function makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement {
     const btn = doc.createElement('button');
@@ -2134,27 +2237,55 @@ export function openReparentedModal(elements: HTMLElement[], opts: ReparentModal
  * hardBin/softBin restriction (which still changes the die colours, just from
  * a smaller scheme set).
  */
+/**
+ * Colour-scheme picker, plus the optional non-colour failure marking.
+ *
+ * `markFail` is supplied by hosts that support it. It sits in this menu rather
+ * than getting a button of its own because it answers the same question the
+ * schemes do — "how is this data encoded" — and keeping it here means one
+ * control rather than a new axis of settings.
+ */
 export function makePaletteBtn(
   helpers: ToolbarHelpers,
   getPlotMode: () => PlotMode,
   getColorScheme: () => string,
   hasCustomColors: () => boolean,
   setColorScheme: (v: string) => void,
+  markFail?: { get: () => boolean; set: (v: boolean) => void },
 ): { btn: HTMLButtonElement; sync: () => void } {
-  const btn = helpers.makeDropdown(
+  const isBinMode = () => getPlotMode() === 'hardBin' || getPlotMode() === 'softBin';
+
+  const btn = helpers.makeCheckMenuBtn(
     'palette', 'Colour scheme',
     () => {
-      const isBinMode = getPlotMode() === 'hardBin' || getPlotMode() === 'softBin';
-      const schemes = isBinMode
+      const schemes = isBinMode()
         ? listColorSchemes().filter(s => s.name === 'default' || s.name === 'accessible')
         : listColorSchemes();
-      return [
-        ...(hasCustomColors() ? [{ value: 'custom', label: 'Custom' }] : []),
-        ...schemes.map(s => ({ value: s.name, label: s.label })),
-      ];
+      const current = getColorScheme();
+      const rows: CheckMenuRow[] = [];
+      if (markFail) rows.push({ section: 'Scheme' });
+      if (hasCustomColors()) {
+        rows.push({ label: 'Custom', active: current === 'custom', onClick: () => setColorScheme('custom') });
+      }
+      for (const s of schemes) {
+        rows.push({ label: s.label, active: current === s.name, onClick: () => setColorScheme(s.name) });
+      }
+      if (markFail) {
+        rows.push({ section: 'Encoding' });
+        rows.push({
+          label: 'Mark failing dies',
+          active: markFail.get(),
+          // Bin modes only: the marking is driven by whether a die's BIN is a
+          // pass bin, which value mode has no answer for — there the spec
+          // markers already play this role.
+          enabled: isBinMode(),
+          disabledHint: isBinMode() ? undefined : 'Available on hard/soft bin maps',
+          onClick: () => markFail.set(!markFail.get()),
+        });
+      }
+      return rows;
     },
-    () => getColorScheme(),
-    v => setColorScheme(v),
+    () => { /* the menu carries the state, not the button */ },
   );
   function sync(): void {
     btn.style.display = getPlotMode() === 'metadata' ? 'none' : '';
@@ -2218,29 +2349,83 @@ export function makeLogScaleBtn(
 
 export type LegendPosition = 'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating';
 
+const LEGEND_POSITIONS: Array<{ value: LegendPosition; label: string }> = [
+  { value: 'default',  label: 'Default (right)' },
+  { value: 'compact',  label: 'Compact (right)' },
+  { value: 'left',     label: 'Left' },
+  { value: 'top',      label: 'Top' },
+  { value: 'bottom',   label: 'Bottom' },
+  { value: 'floating', label: 'Floating' },
+];
+
+/**
+ * Per-map legend control, shared by the single map and the gallery.
+ *
+ * `perMap` is supplied only by the gallery, which is the one context where a
+ * single lot-level legend can stand in for every card's — and where the width
+ * a per-card legend costs is multiplied by the card count. A single map has
+ * nothing to stand in for it, so it never gets the toggle.
+ *
+ * The menu mixes a position group with that toggle rather than being two
+ * controls, because "how does the legend appear" is one question to the user
+ * even though it is two options underneath.
+ */
 export function makeLegendStyleBtn(
   helpers: ToolbarHelpers,
   getOpts: () => { plotMode?: PlotMode; legendPosition?: LegendPosition },
   setLegendPosition: (v: LegendPosition) => void,
+  perMap?: {
+    get: () => boolean;
+    set: (v: boolean) => void;
+    /** Non-empty when the toggle cannot apply right now — shown as the reason. */
+    blockedReason: () => string | null;
+  },
 ): { btn: HTMLButtonElement; sync: () => void } {
-  const btn = helpers.makeDropdown(
+  const btn = helpers.makeCheckMenuBtn(
     'legend', 'Legend style',
-    () => [
-      { value: 'default'  as const, label: 'Default (right)' },
-      { value: 'compact'  as const, label: 'Compact (right)' },
-      { value: 'left'     as const, label: 'Left' },
-      { value: 'top'      as const, label: 'Top' },
-      { value: 'bottom'   as const, label: 'Bottom' },
-      { value: 'floating' as const, label: 'Floating' },
-    ],
-    () => getOpts().legendPosition ?? 'default',
-    v => setLegendPosition(v),
+    () => {
+      const current = getOpts().legendPosition ?? 'default';
+      const rows: CheckMenuRow[] = [];
+      // Position applies to the categorical legend only — in value mode the
+      // legend is a colorbar, which has its own fixed placement.
+      if (isBinLegendMode(getOpts().plotMode)) {
+        if (perMap) rows.push({ section: 'Position' });
+        for (const p of LEGEND_POSITIONS) {
+          rows.push({
+            label: p.label,
+            active: current === p.value,
+            onClick: () => setLegendPosition(p.value),
+          });
+        }
+      }
+      if (perMap) {
+        const blocked = perMap.blockedReason();
+        rows.push({ section: 'Per map' });
+        rows.push({
+          label: 'Legend on each map',
+          // A blocked toggle still reports the state it would have, so the row
+          // doesn't appear to have silently flipped when the block clears.
+          active: blocked ? true : perMap.get(),
+          enabled: !blocked,
+          disabledHint: blocked ?? undefined,
+          onClick: () => perMap.set(!perMap.get()),
+        });
+      }
+      return rows;
+    },
+    () => { /* the button never takes an active state — the menu carries it */ },
   );
   function sync(): void {
-    const m = getOpts().plotMode;
-    btn.style.display = (m === 'hardBin' || m === 'softBin' || m === 'metadata') ? '' : 'none';
+    // Without the gallery's toggle this control is only about legend position,
+    // which is meaningless outside the categorical modes. With it, the menu
+    // still has something to offer in value mode, so it stays available.
+    btn.style.display = (perMap || isBinLegendMode(getOpts().plotMode)) ? '' : 'none';
   }
   return { btn, sync };
+}
+
+function isBinLegendMode(m: PlotMode | undefined): boolean {
+  return m === 'hardBin' || m === 'softBin' || m === 'metadata';
 }
 
 export function makeOverlaysBtn(

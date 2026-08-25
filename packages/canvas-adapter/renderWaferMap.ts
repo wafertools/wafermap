@@ -7,7 +7,7 @@ import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } fr
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { CLR, ROTATIONS, MODE_LABELS, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent,
@@ -43,6 +43,28 @@ export interface WaferPreferences {
   ringCount?:              number;
   /** Legend position for bin modes. Default 'default'. */
   legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  /**
+   * Draw this map's own legend block — the categorical bin legend, the spec/
+   * pass-fail legend, or the value colorbar, whichever the plot mode calls for.
+   * Default true.
+   *
+   * Exists for the gallery, where one lot-level legend can stand in for every
+   * card's, so the cards can spend that width on the wafer instead. It is a
+   * view option rather than a render-time flag because the gallery toggles it
+   * live via `setOptions`.
+   *
+   * Suppressing a legend also suppresses a *control* — legend rows are click
+   * targets that toggle `highlightBin` for this map — so only turn it off where
+   * an equivalent control is still reachable, and never where the map's scale
+   * is its own (a data-ranged colorbar). `renderWaferGallery` owns that rule.
+   */
+  showLegend?:             boolean;
+  /**
+   * Hatch dies whose bin is not a pass bin, giving pass/fail a channel that is
+   * not hue. Default false. Bin modes only — in value mode the spec markers
+   * already serve this role.
+   */
+  markFailingDies?:        boolean;
   /**
    * When true, apply log₁₀ scale to value normalization and the colorbar.
    * Overrides the per-test TestDef.logScale default.
@@ -361,7 +383,7 @@ export interface WaferMapController {
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
   'colorScheme', 'rotation', 'flipX', 'flipY',
   'showDieLabels', 'showPartialDies', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
-  'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode',
+  'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies',
 ]);
 
 export function classifyChanged(keys: (keyof WaferViewOptions)[]): 'preference' | 'state' | 'mixed' {
@@ -895,6 +917,9 @@ export function renderWaferMap(
     currentView = buildView(wafer, currentDies.filter(isPositionedDie), {
       plotMode:               so.plotMode,
       colorScheme:            so.colorScheme,
+      // Sets ViewRect.binFail against the caller's own pass/fail definition,
+      // so the hatch can never disagree with the yield figure beside it.
+      passBins,
       showDieLabels:               so.showDieLabels,
       showPartialDies:        so.showPartialDies,
       showRingBoundaries:     so.showRingBoundaries,
@@ -1308,7 +1333,7 @@ export function renderWaferMap(
             btnMode.ownerDocument.defaultView ?? window,
             metadataEntries,
           );
-          overlayRootFor(btnMode).appendChild(menu);
+          menuLayerFor(btnMode).appendChild(menu);
           setOpenMenu(menu);
           markMenuTrigger(btnMode, true);
           wireMenuA11y(menu, btnMode, closeModeMenu);
@@ -1320,6 +1345,10 @@ export function renderWaferMap(
           () => viewOpts.colorScheme ?? 'default',
           () => hasCustomColors,
           v => applyOpts({ colorScheme: v }),
+          {
+            get: () => viewOpts.markFailingDies ?? false,
+            set: (v) => applyOpts({ markFailingDies: v }),
+          },
         );
         syncPaletteBtnFn = syncPalette;
         syncPaletteBtnFn();
@@ -1465,7 +1494,7 @@ export function renderWaferMap(
             closeOpenMenu(new MouseEvent('click'));
             if (existing) return;
             const menu = buildWarningsMenuEl(btnWarnings!.getBoundingClientRect(), currentWarnings, ownerWindow);
-            overlayRootFor(mapBox).appendChild(menu);
+            menuLayerFor(mapBox).appendChild(menu);
             setOpenMenu(menu);
             wireMenuA11y(menu, btnWarnings!, () => closeOpenMenu(new MouseEvent('click')));
           });
@@ -1621,8 +1650,12 @@ export function renderWaferMap(
         viewOpts = { ...viewOpts, colorScheme: 'default' };
       }
     }
-    // legendPosition only affects canvas layout — skip the scene rebuild.
-    const onlyLegendStyle = Object.keys(partial).every(k => k === 'legendPosition');
+    // These only affect how the canvas is drawn, not what the scene contains, so
+    // the scene rebuild can be skipped. markFailingDies qualifies because
+    // ViewRect.binFail is set on every build regardless of the flag — the flag
+    // only decides whether toCanvas draws the hatch.
+    const onlyLegendStyle = Object.keys(partial).every(
+      k => k === 'legendPosition' || k === 'showLegend' || k === 'markFailingDies');
     if (!onlyLegendStyle) rebuildView();
     syncLegendStyleBtnFn?.();
     syncPaletteBtnFn?.();
@@ -1673,6 +1706,7 @@ export function renderWaferMap(
     const hasBinData = !!(hbinDefs?.length || sbinDefs?.length ||
       currentView.dies.some(d => d.hbin != null || d.sbin != null));
     const legendPos = viewOpts.legendPosition ?? 'default';
+    const showLegend = viewOpts.showLegend ?? true;
     const isRightLegend = legendPos === 'default' || legendPos === 'compact';
     const colorbarReserve = (drawOptions.colorbarWidth ?? 16) + 28;
     const stableRight = hasBinData && isRightLegend
@@ -1688,7 +1722,11 @@ export function renderWaferMap(
     const result = toCanvas(canvas, currentView, {
       ...drawOptions,
       topClearance:    showToolbar ? TOOLBAR_CLEARANCE : 0,
-      minRightReserve: stableRight,
+      minRightReserve: showLegend ? stableRight : 0,
+      // toCanvas calls this showColorbar, but it gates the whole legend block
+      // (colorbar, bin legend, spec legend) — see WaferViewOptions.showLegend.
+      showColorbar:    showLegend && (drawOptions.showColorbar ?? true),
+      markFailingDies: viewOpts.markFailingDies ?? false,
       legendPosition:  legendPos,
       legendOffset,
       diePitchMm,

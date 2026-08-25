@@ -164,12 +164,22 @@ const ITEMS: WaferMapDisplayItem[] = [
 
 /** Returns all direct child divs of the legend element (the bin entries). */
 function getLegendEntries(container: HTMLElement): HTMLElement[] {
-  // legendEl is the second child of container (after barEl)
-  const legendEl = container.children[1] as HTMLElement;
-  return Array.from(legendEl.children) as HTMLElement[];
+  return Array.from(getLegendEl(container).children) as HTMLElement[];
 }
 
 function getLegendEl(container: HTMLElement): HTMLElement {
+  // Queried by its stable data hook, not position — legendEl now lives inside
+  // a sticky header wrapper alongside barEl rather than as container's own
+  // direct second child.
+  return container.querySelector('[data-wmap-gallery-legend]') as HTMLElement;
+}
+
+/**
+ * The grid body — the element that used to be container's third direct child
+ * (barEl, legendEl, bodyEl in order). Both barEl and legendEl moved inside a
+ * sticky wrapper, so bodyEl is now container's SECOND child, not third.
+ */
+function getBodyEl(container: HTMLElement): HTMLElement {
   return container.children[1] as HTMLElement;
 }
 
@@ -338,7 +348,7 @@ describe('renderWaferGallery shared bin legend', () => {
 describe('renderWaferGallery card size cap', () => {
   /** bodyEl → gridEl → card divs (see container.appendChild order in renderWaferGallery). */
   function getCards(container: HTMLElement): HTMLElement[] {
-    const bodyEl = container.children[2] as HTMLElement;
+    const bodyEl = getBodyEl(container);
     const gridEl = bodyEl.children[0] as HTMLElement;
     return Array.from(gridEl.children) as HTMLElement[];
   }
@@ -403,7 +413,7 @@ describe('renderWaferGallery card size cap', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     renderWaferGallery(container, ITEMS, { maxSize: 250 });
-    const gridEl = (container.children[2] as HTMLElement).children[0] as HTMLElement;
+    const gridEl = getBodyEl(container).children[0] as HTMLElement;
     assert.strictEqual(gridEl.style.justifyContent, 'start');
     assert.match(gridEl.style.gridTemplateColumns, /minmax\(0(px)?, 250px\)/);
   });

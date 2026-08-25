@@ -13,8 +13,16 @@
   } }</script>
   <style>
     /* Override the fixed-height viewport fill used by other demos.
-       27 cards need a scrolling page, not a clipped flex container. */
-    html, body { height: auto; overflow-y: auto; }
+       27 cards need a scrolling page, not a clipped flex container.
+       `overflow-y: auto` used to be part of this rule too — dropped because
+       it broke `position: sticky` for every descendant on the page (the
+       gallery's own toolbar/legend, added later, silently stopped sticking
+       — confirmed with a bare unrelated test div, nothing gallery-specific).
+       `.demo-page`'s own base rule (demo.css) is unbounded-height by design,
+       so the page already scrolls without this; removing it changes nothing
+       about scroll reach — verified identical scrollHeight and last-card
+       position with and without it — and fixes the sticky header. */
+    html, body { height: auto; }
     .demo-page { min-height: 100vh; }
     .demo-content { flex: 0 0 auto; overflow: visible; padding: 8px; align-items: flex-start; }
     #gallery-container { width: 100%; }

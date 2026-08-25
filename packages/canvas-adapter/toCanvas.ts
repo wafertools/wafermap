@@ -26,6 +26,15 @@ export interface ToCanvasOptions {
   padding?: number;
   /** Draw a continuous colorbar (value modes) or bin legend (bin modes). Default true. */
   showColorbar?: boolean;
+  /**
+   * Draw a diagonal hatch on dies whose bin is not a pass bin (see
+   * `ViewRect.binFail`). Default false — opt in from the Colour scheme menu.
+   *
+   * Gives pass/fail a second channel that is not hue, so the map keeps working
+   * for a viewer with a colour-vision deficiency and when printed in
+   * greyscale. Composes with any colour scheme; it changes no colours itself.
+   */
+  markFailingDies?: boolean;
   /** Width in CSS pixels of the colorbar strip. Default 16. */
   colorbarWidth?: number;
   /** Canvas background colour. Default '#f5f5f5'. */
@@ -127,9 +136,15 @@ export const BIN_LEGEND_W               = 110; // px total right-side reserve fo
 export const BIN_LEGEND_W_COMPACT       =  64; // px right-side reserve for compact legend
 export const BIN_LEGEND_ADAPT_COMPACT   = 280; // px canvas width — below this, auto-switch to compact
 export const BIN_LEGEND_ADAPT_FLOATING  = 180; // px canvas width — below this, auto-switch to floating
+// px — below either dimension no legend is drawn at all (see legendHasRoom).
+// Sized so a floating box still leaves the wafer the majority of the canvas.
+export const BIN_LEGEND_MIN_CANVAS_W = 150;
+export const BIN_LEGEND_MIN_CANVAS_H = 120;
 const BIN_COUNT_W          = 28;  // px reserved on the right of the legend for the die count
 const BIN_LABEL_GAP        =  5;  // px gap between swatch and label
 const BIN_FLOATING_PADDING =  8;  // px padding around floating legend box
+// px heading row reserved inside the floating plate for the map title.
+const BIN_FLOATING_TITLE_H = 15;
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
@@ -143,6 +158,7 @@ export function toCanvas(
   const {
     padding       = 16,
     showColorbar  = true,
+    markFailingDies = false,
     colorbarWidth = 16,
     // Default the background to the resolved theme (was hardcoded '#f5f5f5');
     // an explicit `background` option still wins.
@@ -162,11 +178,21 @@ export function toCanvas(
     showTitle     = true,
   } = options;
 
+  const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
+  const cssH    = Math.floor(canvas.clientHeight || canvas.height);
+
+  // Below this the legend stops being a legend and becomes an occlusion: at
+  // gallery sizes like 86x50 the floating box covered the whole card, so the
+  // map was pure chrome with no wafer visible at all. Suppressing it is not a
+  // lost control either — the rows would be sub-pixel and unclickable at that
+  // size, and the gallery's own lot legend still offers bin highlighting.
+  const legendHasRoom = cssW >= BIN_LEGEND_MIN_CANVAS_W && cssH >= BIN_LEGEND_MIN_CANVAS_H;
+
   // Any solid pass/fail display (spec-limit judgement or recorded test verdict)
   // replaces the colorbar with a categorical legend.
-  const drawColorbar   = showColorbar && COLORBAR_MODES.has(view.plotMode) && view.passFailDisplay === 'off';
-  const drawBinLegend  = showColorbar && BIN_LEGEND_MODES.has(view.plotMode);
-  const drawSpecLegend = showColorbar && view.plotMode === 'value' && (
+  const drawColorbar   = showColorbar && legendHasRoom && COLORBAR_MODES.has(view.plotMode) && view.passFailDisplay === 'off';
+  const drawBinLegend  = showColorbar && legendHasRoom && BIN_LEGEND_MODES.has(view.plotMode);
+  const drawSpecLegend = showColorbar && legendHasRoom && view.plotMode === 'value' && (
     (view.passFailDisplay === 'spec' && view.specCounts !== undefined) ||
     (view.passFailDisplay === 'test' && view.passFailCounts !== undefined));
   // The bin and pass/fail legends share the same layout/rendering machinery.
@@ -214,8 +240,6 @@ export function toCanvas(
   // THAT window's device pixel ratio (it may be on a different display), not
   // whichever window happened to be in lexical scope when this module loaded.
   const dpr     = (canvas.ownerDocument.defaultView ?? window).devicePixelRatio ?? 1;
-  const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
-  const cssH    = Math.floor(canvas.clientHeight || canvas.height);
 
   // Canvas not yet laid out — bail without touching canvas dimensions so that
   // the ResizeObserver fires when layout is resolved and triggers a real render.
@@ -326,7 +350,11 @@ export function toCanvas(
   const drawTitleFitted = (
     title: string, anchorX: number, y: number,
     align: 'left' | 'right', baseline: 'top' | 'bottom', limitX: number,
-    font: string = MAP_TITLE_FONT, color: string = '#333',
+    // Defaulted to a hardcoded '#333' until now, which meant every map title
+    // — "Hard Bin", the plot-mode heading, the colorbar's — rendered near-black
+    // on every dark theme and read as a smudge rather than text. The one call
+    // site that looked right was the only one passing a colour explicitly.
+    font: string = MAP_TITLE_FONT, color: string = theme.text,
   ): void => {
     if (!title) return;
     ctx.save();
@@ -379,6 +407,57 @@ export function toCanvas(
     // own gradient fill (black or white), with an opposite-colour halo so it reads
     // on any scheme. Sizes are in data units divided by (ppm * dpr) so they hold a
     // constant on-screen size at any zoom.
+    // Failing-die hatch (bin modes, opt-in via `markFailingDies`). A second,
+    // non-colour channel for pass/fail so the map does not depend on hue alone.
+    //
+    // Deliberately marks FAILING dies rather than passing ones: on a healthy
+    // lot the passing dies are the overwhelming majority, so hatching those
+    // would ink the whole wafer and bury the thing the reader is looking for.
+    // Which dies those are comes from `ViewRect.binFail` (set against the
+    // caller's `passBins`) — never from the bin number, since any bin can be a
+    // pass bin or a fail bin, bin 1 included.
+    //
+    // 45° at a die-proportional pitch, drawn in the same contrast colour the
+    // spec markers use so it reads on any colour scheme, and clipped to each
+    // die so it cannot bleed into a neighbour. Survives greyscale printing,
+    // which is the case a palette switch can never fix.
+    if (markFailingDies) {
+      const failing = view.rectangles.filter(r => r.binFail);
+      if (failing.length > 0) {
+        const byGlyph = new Map<string, ViewRect[]>();
+        for (const r of failing) {
+          const g = contrastTextColor(String(r.fill));
+          let group = byGlyph.get(g);
+          if (!group) { group = []; byGlyph.set(g, group); }
+          group.push(r);
+        }
+        ctx.save();
+        ctx.lineCap = 'butt';
+        for (const [glyph, group] of byGlyph) {
+          ctx.strokeStyle = glyph;
+          ctx.globalAlpha = 0.55;
+          ctx.lineWidth = Math.max(0.6 / (ppm * dpr), Math.min(group[0].width, group[0].height) * 0.10);
+          for (const r of group) {
+            const hw = r.width / 2, hh = r.height / 2;
+            const step = Math.max(1.6 / (ppm * dpr), Math.min(r.width, r.height) / 3);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(r.x - hw, r.y - hh, r.width, r.height);
+            ctx.clip();
+            ctx.beginPath();
+            // Lines of slope 1 across the die's bounding box.
+            for (let o = -(hw + hh); o <= hw + hh; o += step) {
+              ctx.moveTo(r.x - hw + o, r.y - hh);
+              ctx.lineTo(r.x - hw + o + r.height, r.y + hh);
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+        ctx.restore();
+      }
+    }
+
     const marked = view.rectangles.filter(r => r.specMark);
     if (marked.length > 0) {
       // Bucket by (shape, glyph colour). contrastTextColor yields only black or
@@ -858,22 +937,36 @@ export function toCanvas(
         BIN_SWATCH_SIZE + BIN_LABEL_GAP + ctx.measureText(e.label).width + BIN_COUNT_W));
       const floatingWidth = Math.ceil(floatingEntryWidth);
       columnWidths = [floatingWidth];
+      // Reserve a heading row inside the plate. The title used to be drawn
+      // ABOVE the box, which put it straight onto the wafer with no backdrop —
+      // "Hard Bin" rendered half-hidden behind dies on every small card. The
+      // plate exists precisely because this legend sits over the map, so the
+      // heading belongs inside it rather than floating unprotected next to it.
+      const floatingTitleH = showTitle ? BIN_FLOATING_TITLE_H : 0;
       const boxW = floatingWidth + BIN_FLOATING_PADDING * 2;
-      const boxH = legendHeight + BIN_FLOATING_PADDING * 2;
+      const boxH = legendHeight + floatingTitleH + BIN_FLOATING_PADDING * 2;
       const offsetX = legendOffset?.x ?? 0;
       const offsetY = legendOffset?.y ?? 0;
       originXLegend = Math.min(Math.max(cssW - padding - boxW + offsetX, padding), cssW - padding - boxW);
       originYLegend = Math.min(Math.max(cssH - padding - boxH + offsetY, padding), cssH - padding - boxH);
       legendBox = { x: originXLegend, y: originYLegend, w: boxW, h: boxH };
+      // The floating legend sits ON the wafer, so it needs an opaque plate to
+      // stay readable. That plate was a hardcoded `rgba(255,255,255,0.92)`,
+      // which put white behind light-coloured text on every dark theme — the
+      // one place in this file where the map stopped following the host's
+      // colours. Theme tokens instead; `globalAlpha` keeps the wafer faintly
+      // visible through it, which the old rgba() was really doing.
       ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = theme.surface;
       ctx.fillRect(originXLegend, originYLegend, boxW, boxH);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = theme.axisLine;
+      ctx.lineWidth = 1;
       ctx.strokeRect(originXLegend, originYLegend, boxW, boxH);
       ctx.restore();
       originXLegend += BIN_FLOATING_PADDING;
-      originYLegend += BIN_FLOATING_PADDING;
+      originYLegend += BIN_FLOATING_PADDING + floatingTitleH;
     } else if (legendIsBottom) {
       originXLegend = padding;
       originYLegend = cssH - padding - legendHeight;
@@ -911,8 +1004,13 @@ export function toCanvas(
         if (secondary) drawTitleFitted(secondary, originXLegend, y + 16, 'left', 'top',
           leftAlignLimit(y + 16), MAP_SUBTITLE_FONT, theme.text);
       } else if (legendIsFloating) {
-        // Floating box → primary above the box, secondary below it.
-        drawTitleFitted(primary, legendBox!.x, legendBox!.y - GAP, 'left', 'bottom', legendBox!.x + legendBox!.w);
+        // Floating box → primary INSIDE the plate's reserved heading row, so it
+        // gets the same backdrop the rows do. Secondary still goes below the
+        // box: it is supplementary, and stacking both inside would make the
+        // plate taller than the map it is sitting on.
+        drawTitleFitted(primary, legendBox!.x + BIN_FLOATING_PADDING,
+          legendBox!.y + BIN_FLOATING_PADDING, 'left', 'top',
+          legendBox!.x + legendBox!.w - BIN_FLOATING_PADDING);
         if (secondary) drawTitleFitted(secondary, legendBox!.x, legendBottom + GAP, 'left', 'top',
           legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT, theme.text);
       } else {

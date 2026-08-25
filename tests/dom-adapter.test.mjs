@@ -688,9 +688,9 @@ test('renderWaferGallery legend strip: a field with one value shows it plainly; 
     const itemA = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', product: 'ACME-9', waferId: 'W01' } } });
     const itemB = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', product: 'ACME-9', waferId: 'W02' } } });
 
-    // legendEl is the second child of container (after the toolbar bar), same
-    // convention as tests/renderWaferGallery.test.ts.
-    const legendEl = () => container.children[1];
+    // Queried by its stable data hook, not position — legendEl is nested
+    // inside a sticky header wrapper now, not a direct positional child.
+    const legendEl = () => container.querySelector('[data-wmap-gallery-legend]');
 
     renderWaferGallery(container, [itemA, itemB], { viewOptions: { plotMode: 'hardBin' } });
     assert.match(legendEl().textContent, /Lot: LOT123/, 'a single common value should show plainly, no list');
@@ -721,7 +721,7 @@ test('renderWaferGallery legend strip: a field with many distinct values truncat
     const items = lots.map(lot => buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot } } }));
 
     renderWaferGallery(container, items, { viewOptions: { plotMode: 'hardBin' } });
-    const legendEl = container.children[1];
+    const legendEl = container.querySelector('[data-wmap-gallery-legend]');
     assert.match(legendEl.textContent, /Lot: LOT-A, LOT-B, LOT-C \+2 more/, 'shows the top values by coverage then a +N more summary');
   } finally {
     cleanup();

@@ -22,6 +22,40 @@ under `### Breaking`.
 
 ---
 
+## [0.25.0] — 2026-08-25
+
+### Added
+
+- `WaferViewOptions.showLegend` (`renderWaferMap`) — hide the legend/colorbar entirely, for a host that provides its own equivalent control. Default `true`, matching prior behaviour.
+- `WaferViewOptions.markFailingDies` / `ToCanvasOptions.markFailingDies` — draws a diagonal hatch on dies whose bin is not a pass bin, giving pass/fail a second channel that isn't hue. Bin modes only; opt in from the Colour scheme menu. Default `false`.
+- `GalleryOptions.perCardLegend` — lets a gallery card grow its own legend again (its distinct value: highlighting a bin on one card independently of the rest, e.g. after changing that card's plot mode). Default `false`; the toolbar shows the toggle disabled with a stated reason where it genuinely cannot apply — a data-ranged value-mode gallery, where each card is normalised to its own min/max and no shared bar could describe them.
+- `ViewOptions.passBins` (`buildView`) / `ViewRect.binFail` — which bins count as passing, consulted only to set the new failing-die marker above, never to colour anything (bin colour always comes from the colour scheme). Default `[1]`. Any bin can be a pass bin or a fail bin, bin 1 included — this must never be derived from the bin number.
+
+### Fixed
+
+- **The gallery's sticky toolbar/legend could scroll out of view**, in two different ways depending on the host's own scroll setup: a page that scrolls at the document level had a stray `overflow-y: auto` on `html`/`body`, and a page with its own bounded scroll container had `overflow-y: auto` (or `overflow: hidden`) on a box that was never actually height-bound — both silently give `position: sticky` a *non-scrolling* containing block, indistinguishable from "not sticking" at all. Fixed across every one of the library's own gallery demo pages (`docs/examples/real-data.html`, `mixedwm38.html`, `statistics.html`, `theming.html`, `showcase.html`) as worked examples of the fix, and documented as its own `UI_STANDARDS.md` incident so the same mistake is recognisable in host code, not just here.
+- **Two sequential z-index regressions in the gallery**: per-card toolbars floating above the gallery's own sticky toolbar when scrolled, then — after a first fix — the sticky legend obscuring its own dropdown menus. Root cause was a bare `zIndex` literal being compared across an accidentally-shared stacking context (`position: relative` without its own `z-index` does not create one, however much it looks like it should). Fixed generically rather than tier-bumped again: the card grid now contains its own stacking context (`isolation: isolate`), and every toolbar/chart dropdown and cascading submenu — map, gallery, and chart cards alike — now renders into one shared, always-elevated layer (`menuLayerFor`) instead of each call site reasoning about z-index relative to whatever chrome happens to be nearby.
+- **A value-mode gallery with spec-ranged limits silently lost its colorbar entirely.** The per-card-legend gating checked `colorbarRangeMode === 'data'` (true when each card is scaled to its own range) but a *spec*-ranged value gallery has an identical range on every card and has no such problem — it was being suppressed anyway, gallery-wide, with nothing standing in for it.
+- **The gallery's "Wafers" tab name implied it listed every wafer**, but it lists only wafers with their own findings — a 13-wafer lot could show 8 rows, and the two lowest-yielding wafers, having no findings, were among those silently missing. A user scanning for problem wafers read the absence as "these are fine." Renamed to "Findings".
+- **The gallery's Lot-tab sidebar duplicated the metadata table already shown in the gallery's own top strip**, verified byte-identical against a live 13-wafer lot — a second copy that cost a third of the sidebar's width for zero new information.
+- **Map and legend titles rendered near-black on every dark theme**, reading as a smudge rather than text — `drawTitleFitted`'s default text colour was a hardcoded `#333` rather than the resolved theme colour; the one call site that looked right was the only one passing a colour explicitly.
+- **The floating legend covered the entire wafer on small gallery cards** (as small as 86×50px) instead of acting as a legend, and its title floated unprotected on top of the map, half-hidden behind dies, instead of inside the legend's own plate. The legend is now suppressed below a 150×120px canvas floor, and its title moved into the plate's own reserved heading row.
+- **The correlation chart's r-value could never actually display**, on any lot: its cell width (`PREF_CELL`, 26px) sat structurally below the minimum width the label needed to render (`R_LABEL_MIN_CELL`, 28px) — dead code that had never once fired. Raised to 44px. Its label contrast also moved from a fixed `|r| > 0.6` heuristic to a real luminance-based contrast function.
+- **The capability chart's axis labels assumed every test had spec limits** (hardcoded `USL`/`LSL`), mislabelling any test analysed with no limits defined. Labels now derive from the actual composition of spec'd/unspec'd tests in the current view — `USL`/`LSL` where any are spec'd, `max`/`min` where none are, and a `normalised (per test)` axis title for a mixed view.
+- **The gallery picked the smallest workable column width even when a comfortable one would fit** — a 1171px canvas card, for example, rendered at 285px instead of 434px. Column sizing now tries the largest comfortable width that still fits at least one column, falling back to the hard floor only when even that doesn't fit.
+- A ResizeObserver feedback loop in the gallery grid and in chart cards, from redundant grid-template/`minHeight` writes on every resize tick even when the value hadn't changed; both now coalesce onto `requestAnimationFrame` and skip the write when nothing changed.
+- The detached-card placeholder always read "Opened in its own window", even when the card had actually opened in the in-app wafer viewer instead of a real popup window.
+
+### Changed
+
+- Themed tooltips (`attachChartTip`) replace native `title` attributes on the histogram and scatter charts' legend swatches, matching the rest of the toolbar's tooltip styling instead of falling back to the browser's own delayed, unstyled tooltip.
+
+### Internal
+
+- `UI_STANDARDS.md` gained a new documented incident ("position: sticky or fixed") covering the sticky/z-index bugs above, and the general lesson: a bare z-index literal only means what it looks like if something between it and whatever it's compared against already established a real stacking context.
+- New Check 3 in `scripts/check-overlay-conventions.mjs` (wired into `npm run check`): flags a `position: sticky`/`fixed` element with a bare-literal `zIndex` and no nearby comment naming what stacking context contains it — the question has to be asked in writing, not skipped under time pressure.
+- **`scripts/check-changelog.mjs` blocked its own release process.** `npm version`'s `preversion` hook (`npm run verify` → `npm run check` → this script) runs *before* npm bumps `package.json` — so on a correctly-prepared release, where the CHANGELOG entry for the upcoming version is deliberately written first, the check saw `package.json` one release behind the heading it was about to release and aborted `npm version` before it did anything. Hit twice in one day. Fixed by trusting `npm_new_version` (set once by the outermost `npm version` and confirmed to survive the `preversion → verify → check` nesting unchanged, unlike `npm_lifecycle_event`, which resets to each nested script's own name) to recognise "the newest heading is the release currently being prepared" as distinct from a genuinely stale or wrong one — which a plain `npm run check`, CI, or a stray manual edit (none of which set that variable) still catch exactly as strictly as before. Verified end to end in an isolated throwaway clone: `npm version minor` ran preversion (full check + all 664 tests), bumped to 0.25.0, passed the post-bump changelog check, and tagged `v0.25.0` correctly.
+
 ## [0.24.3] — 2026-08-25
 
 ### Fixed

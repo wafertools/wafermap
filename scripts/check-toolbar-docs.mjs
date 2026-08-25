@@ -33,7 +33,12 @@ const guide   = read('docs/user-guide.md');
 
 const helperIcon = {};
 for (const m of toolbar.matchAll(
-  /export function (make\w+Btn)\b[\s\S]{0,400}?helpers\.make(?:Btn|Dropdown|CheckMenuBtn)[^(]*\(\s*'([a-zA-Z]+)'/g,
+  // The window has to clear the builder's signature and any doc comment before
+  // its helpers.make* call. 400 was enough until makeLegendStyleBtn grew its
+  // per-map toggle parameter; a builder that outgrows this drops silently out
+  // of helperIcon and its icon then reads as undocumented, so keep the slack
+  // generous rather than tight.
+  /export function (make\w+Btn)\b[\s\S]{0,900}?helpers\.make(?:Btn|Dropdown|CheckMenuBtn)[^(]*\(\s*'([a-zA-Z]+)'/g,
 )) {
   helperIcon[m[1]] = m[2];
 }

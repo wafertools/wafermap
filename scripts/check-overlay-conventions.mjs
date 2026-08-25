@@ -22,6 +22,23 @@
 //      style) already thread a `doc` variable. Keep it that way — this check
 //      has no allowlist to maintain because there is nothing on it.
 //
+//   3. A `position: 'sticky'` or `position: 'fixed'` element that also sets a
+//      bare numeric `zIndex` literal (not one of the named Z_BASE/Z_ABOVE/
+//      Z_MENU/Z_ABOVE2 tiers) must have a comment nearby explaining what
+//      stacking context contains it. This is the bug class behind
+//      renderWaferGallery.ts's sticky header, which shipped THREE wrong fixes
+//      in one day before anyone wrote down why: a bare literal only means
+//      what you think it means if something between it and whatever it's
+//      being compared against already established a stacking-context
+//      boundary — `position: relative` with no z-index of its own does NOT
+//      do that, and it looks like it should. This check cannot verify the
+//      reasoning is *correct* (that's semantic, not syntactic) — only that
+//      the question was actually asked in writing at the point the code was
+//      added, not skipped under time pressure. See UI_STANDARDS.md's
+//      "position: sticky or fixed" entry for the full incident and the
+//      `menuLayerFor` alternative that avoids needing this reasoning at all
+//      for ordinary menus/dropdowns.
+//
 // Run:  node scripts/check-overlay-conventions.mjs
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -111,11 +128,53 @@ for (const file of files) {
   }
 }
 
+// ── Check 3: `position: sticky`/`fixed` + a bare-literal zIndex needs a ────
+// nearby comment explaining what contains it.
+//
+// Deliberately line-based and approximate, matching Check 1/2's own
+// philosophy: this cannot verify the containment reasoning is correct — only
+// a human (or a careful re-read) can — it exists purely to make sure the
+// question was actually asked in writing, not skipped. A named tier
+// (Z_BASE/Z_ABOVE/Z_MENU/Z_ABOVE2) is exempt: using the shared scale IS the
+// answer to the question, no separate comment needed.
+
+const STICKY_OR_FIXED_RE = /position:\s*['"](?:sticky|fixed)['"]/;
+const BARE_ZINDEX_RE = /zIndex:\s*['"]\d+['"]/;
+// Any of these, case-insensitive, within the preceding lines counts as
+// "the question was asked" — deliberately generous keyword list so a real
+// explanatory comment in different words isn't a false positive.
+const JUSTIFICATION_RE = /contain|isolat|menuLayerFor|stacking context|z-index/i;
+const LOOKBACK_LINES = 12;
+
+for (const file of files) {
+  const src = readFileSync(file, 'utf8');
+  const rel = relative(root, file);
+  const lines = src.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    // A style object commonly spans a few lines — check this line and the
+    // next couple for the position/zIndex pairing, in either order.
+    const window = lines.slice(i, i + 3).join('\n');
+    if (!STICKY_OR_FIXED_RE.test(window) || !BARE_ZINDEX_RE.test(window)) continue;
+
+    const lookback = lines.slice(Math.max(0, i - LOOKBACK_LINES), i + 1).join('\n');
+    if (JUSTIFICATION_RE.test(lookback)) continue;
+
+    problems.push(
+      `${rel}:${i + 1}: 'position: sticky'/'fixed' with a bare-literal zIndex and no nearby ` +
+      `comment explaining what stacking context contains it. See UI_STANDARDS.md's ` +
+      `"position: sticky or fixed" entry — this exact shape shipped three wrong fixes in one ` +
+      `day before it was written down. Either add that comment, or route through ` +
+      `menuLayerFor(anchor) instead if this is a menu/dropdown.`,
+    );
+  }
+}
+
 if (problems.length) {
   console.error(`overlay conventions check failed (${problems.length}):\n`);
   for (const p of problems) console.error('  • ' + p);
   console.error('\nSee UI_STANDARDS.md — "Modal/overlay content padding" / "Cross-document');
-  console.error('DOM/style safety" / the anchor convention below them.\n');
+  console.error('DOM/style safety" / "position: sticky or fixed" / the anchor convention.\n');
   process.exit(1);
 }
 

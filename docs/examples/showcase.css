@@ -221,8 +221,14 @@
   flex: 1;
 }
 .maps-gallery {
+  /* No `overflow-y: auto` — `.phase-host`'s flex chain is never height-bound
+     (`.demo-page` is unbounded by design, demo.css), so `flex: 1` here never
+     actually constrains height and this box just grows to fit its content.
+     An `overflow-y: auto` on an unbounded box never triggers a real scroll
+     container; the page scrolls instead, and it silently steals position:
+     sticky's containing block away from the real scrolling ancestor — see
+     statistics.html's copy of this comment for the fuller writeup. */
   flex: 1;
-  overflow-y: auto;
   padding: 12px;
 }
 .truncation-banner {
@@ -382,6 +388,16 @@
 .phase { display: none; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
 .phase.active { display: flex; }
 #phase-upload.active { overflow-y: auto; }
+/* #phase-maps hosts renderWaferGallery, whose card grid has its own sticky
+   toolbar/legend. The base `.phase` rule's `overflow: hidden` establishes a
+   scroll container even though this phase is never height-bound (the whole
+   .phase-host chain is unbounded by design, demo.css) — so it never actually
+   clips anything, but it silently becomes position: sticky's containing
+   block instead of the real one (the page). `overflow: visible` here lets
+   the gallery's sticky header clamp to the page, the same fix as every other
+   gallery demo — see statistics.html's copy of this comment for the full
+   writeup of this bug shape. */
+#phase-maps.active { overflow: visible; }
 
 /* ── Demo scenario selector ───────────────────────────────────────────── */
 .demo-scenario-bar {

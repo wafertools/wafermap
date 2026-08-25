@@ -76,8 +76,32 @@ const cmp = (a, b) => {
 const strict = (v) => cmp(v, STRICT_FROM) >= 0;
 
 // ── 1. Newest heading matches package.json ─────────────────────────────────
+//
+// The intended release order is: write the CHANGELOG entry for the upcoming
+// version, THEN run `npm version <bump>` — which is exactly why this script
+// is also wired into the `version` lifecycle script, to confirm that entry
+// landed. But `npm version` runs `preversion` first (this repo's
+// `preversion` is `npm run verify`, which runs `npm run check`, which ends
+// in this script) — BEFORE it bumps package.json — so on a
+// correctly-prepared release this exact check fails here, with package.json
+// still one release behind the heading that was deliberately written in
+// advance, aborting `npm version` before it does anything. Hit twice in one
+// day (2026-08-25) before this carve-out existed.
+//
+// `npm_lifecycle_event` can't tell `preversion` apart from this: each nested
+// `npm run` (preversion → verify → check) resets it to its OWN script name,
+// so by the time this file runs it always reads 'check', never 'preversion'
+// — confirmed empirically, not assumed. `npm_new_version`/`npm_old_version`,
+// by contrast, are set once by the outermost `npm version` and demonstrably
+// survive that same nesting unchanged, so they're the reliable signal: if
+// `npm_new_version` is set (an `npm version` is genuinely in progress) and
+// the newest heading matches it exactly, that heading is the release being
+// prepared, not a stale or wrong one. Outside an active `npm version` —
+// a plain `npm run check`, CI, or a stray manual edit — this variable is
+// unset and the check stays exactly as strict as before.
+const preparingRelease = process.env.npm_new_version === entries[0].version;
 
-if (entries[0].version !== pkgVersion) {
+if (entries[0].version !== pkgVersion && !preparingRelease) {
   fail(
     `package.json is at ${pkgVersion} but the newest CHANGELOG heading is ` +
       `[${entries[0].version}] (line ${entries[0].line}) — add the entry for ${pkgVersion} ` +

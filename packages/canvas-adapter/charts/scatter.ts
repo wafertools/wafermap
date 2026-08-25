@@ -20,7 +20,7 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, observeResize, makeTooltip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, type SaveImageHandler } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -197,7 +197,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       const swatch = card.ownerDocument.createElement('button');
       swatch.type = 'button';
       swatch.dataset.cat = cat;
-      swatch.title = `${labelOfCategory(cat)} — click to filter`;
+      attachChartTip(swatch, card, tooltip, `${labelOfCategory(cat)} — click to filter`);
       const color = colorOfCategory(cat);
       Object.assign(swatch.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 7px', borderRadius: '10px', border: `1px solid ${CLR.menuBorder}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: CLR.text, whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
       const dot = card.ownerDocument.createElement('span');

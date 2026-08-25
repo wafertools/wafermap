@@ -5,7 +5,7 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { CLR, Z_BASE, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
+import { CLR, Z_BASE, menuLayerFor, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 
@@ -112,9 +112,34 @@ export const VALUE_WIDTH = 100;
 // another's observers. Each panel owns and disconnects its own.
 
 export function observeResize(el: HTMLElement, onResize: () => void): { disconnect: () => void } {
-  const ro = new ResizeObserver(onResize);
+  // Coalesced onto the next frame rather than run during delivery. Panel
+  // redraws write layout (canvas sizing, and `card.style.minHeight` via
+  // growCardToFitContent) back onto the element being observed, which inside
+  // the callback is what produces the browser's "ResizeObserver loop
+  // completed with undelivered notifications" error and drops notifications.
+  // Deferring puts the write in the next frame, where it is an ordinary
+  // layout change; several notifications arriving in one frame collapse into
+  // a single redraw, which is also what a drag-resize actually wants.
+  //
+  // Constructed through the element's OWN window: a chart card can live in a
+  // detached popup whose DOM was built by JS running in the opener's realm,
+  // and an observer from the wrong realm has its delivery tied to the wrong
+  // document's frame lifecycle (same bug class as the note in
+  // renderWaferMap.ts's own observer).
+  const win = el.ownerDocument.defaultView ?? window;
+  let queued = 0;
+  const ro = new win.ResizeObserver(() => {
+    if (queued) return;
+    queued = win.requestAnimationFrame(() => { queued = 0; onResize(); });
+  });
   ro.observe(el);
-  return { disconnect: () => ro.disconnect() };
+  return {
+    disconnect: () => {
+      if (queued) win.cancelAnimationFrame(queued);
+      queued = 0;
+      ro.disconnect();
+    },
+  };
 }
 
 // ── Fill-height canvas (tab takes over the full container) ─────────────────────
@@ -158,7 +183,14 @@ export function observeResize(el: HTMLElement, onResize: () => void): { disconne
  */
 export function growCardToFitContent(card: HTMLElement, body: HTMLElement, contentHeight: number): void {
   const overhead = card.offsetHeight - body.clientHeight;
-  card.style.minHeight = `${overhead + contentHeight}px`;
+  const next = `${overhead + contentHeight}px`;
+  // Every panel observes `card` and calls this from inside that callback, so an
+  // unconditional write re-invalidates the very element being observed and the
+  // browser reports "ResizeObserver loop completed with undelivered
+  // notifications". Writing only on an actual change lets the loop terminate:
+  // the corrective pass this function is designed around still happens, but the
+  // pass after it is a no-op instead of another notification.
+  if (card.style.minHeight !== next) card.style.minHeight = next;
 }
 
 /**
@@ -276,9 +308,14 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   Object.assign(heading.style, { color: CLR.value, fontSize: '13px', fontWeight: '600', flex: '1' } as Partial<CSSStyleDeclaration>);
   headingRow.appendChild(heading);
 
+  // One themed tooltip for this card's own header controls, replacing the
+  // native `title` they used to carry — see attachChartTip and the policy note
+  // in toolbar.ts. Panels still make their own tooltip for hover DATA; this one
+  // only serves the header, so the two never fight over the same element.
+  const headerTip = makeTooltip(card);
+
   const saveBtn = card.ownerDocument.createElement('button');
   saveBtn.type = 'button';
-  saveBtn.title = 'Save as PNG';
   saveBtn.setAttribute('aria-label', 'Save as PNG');
   saveBtn.innerHTML = ICONS.download;
   Object.assign(saveBtn.style, {
@@ -286,6 +323,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
     color: CLR.label, cursor: 'pointer', width: '22px', height: '22px', lineHeight: '1', flexShrink: '0',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   } as Partial<CSSStyleDeclaration>);
+  attachChartTip(saveBtn, card, headerTip, 'Save as PNG');
   saveBtn.addEventListener('click', () => {
     const canvas = card.querySelector<HTMLCanvasElement>('canvas');
     if (canvas) saveCanvasPng(canvas, title, onSaveImage);
@@ -294,7 +332,6 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
 
   const expandBtn = card.ownerDocument.createElement('button');
   expandBtn.type = 'button';
-  expandBtn.title = 'Expand';
   expandBtn.setAttribute('aria-label', 'Expand');
   expandBtn.innerHTML = ICONS.expand;
   Object.assign(expandBtn.style, {
@@ -302,6 +339,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
     color: CLR.label, cursor: 'pointer', width: '22px', height: '22px', lineHeight: '1', flexShrink: '0',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   } as Partial<CSSStyleDeclaration>);
+  attachChartTip(expandBtn, card, headerTip, 'Expand');
   expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title, expandBtn));
   headingRow.appendChild(expandBtn);
   card.appendChild(headingRow);
@@ -549,6 +587,12 @@ function makeSearchableTestCombo(
     const searchBox = makeMenuSearchBox(query => {
       for (const r of rows) r.row.style.display = r.label.includes(query) ? '' : 'none';
     }, 'Filter tests…', btn.ownerDocument);
+    // Contained: this z-index only has to beat its own siblings (the option
+    // rows below, which set none) INSIDE `menu` — `menu` itself is appended
+    // into `menuLayerFor`'s shared, already-elevated layer, so nothing outside
+    // this one dropdown can ever be compared against this literal. See
+    // UI_STANDARDS.md's "position: sticky or fixed" entry before copying this
+    // pattern somewhere that ISN'T already inside a menu.
     Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
     searchBox.addEventListener('keydown', e => {
       if (e.key === 'Escape') { closeMenuAndRefocus(); return; }
@@ -605,7 +649,14 @@ function makeSearchableTestCombo(
     });
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', 'Test');
-    btn.ownerDocument.body.appendChild(menu);
+    // Shared menu layer (toolbar.ts), not straight to body — see
+    // menuLayerFor's own doc comment for the exact bug this avoids: an
+    // Insights card is exactly the "persistent chrome" shape (docked inside
+    // the Analysis tab's layout) that a bare Z_BASE menu here could someday
+    // lose a stacking fight against, the same way the gallery's own sticky
+    // header did to ITS menus. Routing through the shared layer removes the
+    // question rather than requiring this call site to keep re-answering it.
+    menuLayerFor(btn).appendChild(menu);
     markMenuTrigger(btn, true);
   }
 
@@ -748,6 +799,43 @@ export function makeTooltip(card: HTMLElement): HTMLElement {
   } as Partial<CSSStyleDeclaration>);
   card.appendChild(tooltip);
   return tooltip;
+}
+
+/**
+ * Give a chart-card control the library's themed hover tooltip instead of a
+ * native `title`.
+ *
+ * toolbar.ts states the policy for the map toolbar — `ariaLabel` plus the
+ * custom tooltip, deliberately no `title`, because a native tooltip is slow,
+ * unthemeable, invisible on touch and unreachable by keyboard. The chart layer
+ * never adopted it and kept setting `title` directly, so hints that make an
+ * interaction discoverable ("click to filter") were reachable only by hovering
+ * with a mouse and knowing to hover in the first place.
+ *
+ * `ariaLabel` is set only when the element has no text of its own — on a
+ * labelled element it would override the visible name for screen readers,
+ * which is worse than the tooltip it replaces.
+ */
+export function attachChartTip(el: HTMLElement, card: HTMLElement, tooltip: HTMLElement, text: string): void {
+  el.removeAttribute('title');
+  if (!el.textContent?.trim()) el.ariaLabel = text;
+  el.addEventListener('mouseenter', (e) => {
+    tooltip.textContent   = text;
+    tooltip.style.display = 'block';
+    positionChartTooltip(tooltip, card, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
+  });
+  el.addEventListener('mousemove', (e) => {
+    if (tooltip.style.display === 'block') positionChartTooltip(tooltip, card, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
+  });
+  el.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  // Keyboard users get the same hint — the native `title` never gave them one.
+  el.addEventListener('focus', () => {
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+    const r = el.getBoundingClientRect();
+    positionChartTooltip(tooltip, card, r.left + r.width / 2, r.bottom);
+  });
+  el.addEventListener('blur', () => { tooltip.style.display = 'none'; });
 }
 
 /**

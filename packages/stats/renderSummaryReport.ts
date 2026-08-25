@@ -734,10 +734,10 @@ ${reportMain(title, sections, now)}
     return reportMain(`${baseTitle} — ${heading}`, sections, now);
   });
 
-  const banner = `<p style="max-width:1080px;margin:0 auto 8px;padding:8px 12px;background:var(--report-surface,#f7f8fa);border:1px solid var(--report-line,#d8dee6);border-radius:4px;font-size:12px;color:var(--report-muted,#5c6570);">This load spans ${groups.length} groups by identity — shown separately below so stats are never pooled across them.</p>`;
+  const banner = `<p style="max-width:1080px;margin:0 auto 8px;padding:8px 12px;background:var(--report-surface);border:1px solid var(--report-line);border-radius:4px;font-size:12px;color:var(--report-muted);">This load spans ${groups.length} groups by identity — shown separately below so stats are never pooled across them.</p>`;
 
   const sectionsHtml = mains.map((m, i) => {
-    const spacer = i === 0 ? '' : '<hr style="max-width:1080px;margin:32px auto 0;border:none;border-top:3px solid var(--report-line-strong,#c7ced8);">';
+    const spacer = i === 0 ? '' : '<hr style="max-width:1080px;margin:32px auto 0;border:none;border-top:3px solid var(--report-line-strong);">';
     return `${spacer}\n${m}`;
   }).join('\n');
 

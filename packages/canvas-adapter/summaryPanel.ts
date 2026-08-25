@@ -2122,7 +2122,13 @@ export function renderLotSummaryContent(
 
   const sections: (HTMLDivElement | null)[] = [
     buildLotOverviewSection(lotSummary),
-    buildMetadataInfoSection(items.filter((it): it is NonNullable<typeof it> => it !== null).map(it => ({ metadata: it.wafer?.metadata }))),
+    // No buildMetadataInfoSection here, unlike the single-wafer summary panel
+    // (below, line ~1979) which is its OWN sole source for this. On the lot
+    // path the gallery's top strip (renderWaferGallery.ts's legendEl, built
+    // from the identical buildMetadataStripRow/items pair) already renders
+    // this exact facet table above the grid — confirmed byte-identical
+    // against a live 13-wafer lot, not assumed. A second copy here cost a
+    // third of the sidebar's width for zero new information.
     buildPerWaferYieldSection(lotSummary, items, onWaferClick),
     hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard', colorScheme)
             : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft', colorScheme) : null,

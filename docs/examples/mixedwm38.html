@@ -12,7 +12,11 @@
     "wafermap/stats":          "../dist/packages/stats/index.js"
   } }</script>
   <style>
-    html, body { height: auto; overflow-y: auto; }
+    /* `overflow-y: auto` here used to break `position: sticky` for every
+       descendant on the page (the gallery's own toolbar/legend). `.demo-page`
+       is unbounded-height by design (demo.css), so the page scrolls without
+       it — see real-data.html's copy of this comment for the verification. */
+    html, body { height: auto; }
     .demo-page { min-height: 100vh; }
     .demo-content { flex: 0 0 auto; overflow: visible; padding: 8px; align-items: flex-start; }
     #gallery-container { width: 100%; }

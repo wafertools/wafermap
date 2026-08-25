@@ -12,7 +12,14 @@
     "wafermap/stats":  "../dist/packages/stats/index.js"
   } }</script>
   <style>
-    .demo-content { padding: 0; overflow-y: auto; }
+    /* No `overflow-y: auto` here — `.demo-content` is never height-bound
+       (`.demo-page` is unbounded by design, demo.css), so it would never
+       actually scroll: the page would scroll instead, silently stealing
+       position: sticky's containing block away from the real scrolling
+       ancestor. See statistics.html's copy of this comment for the fuller
+       writeup and the "bounded box" alternative that was tried and rejected
+       for pinning too much chrome above the fold. */
+    .demo-content { padding: 0; }
     #gallery-container { width: 100%; }
 
     /* Theme switcher row */

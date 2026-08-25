@@ -155,6 +155,49 @@ remembering it from last time. **Build-enforced** — the same
 `openFloatingWindow(...)` call whose argument list has no `anchor`, so this
 is caught by `npm run check`, not only by review.
 
+**Any new `position: sticky` or `position: fixed` element must append its
+menus through `menuLayerFor(anchor)` (`toolbar.ts`), never build its own
+z-index tier.** This is the bug class behind the other two above, and it shipped
+three times in one day before this was written down: `renderWaferGallery.ts`'s
+sticky gallery header needed to sit above a scrolled-under card's own toolbar
+(`Z_BASE`) while staying *below* that same toolbar's own popped-out dropdown
+(also `Z_BASE`) — no single z-index value can be simultaneously greater than
+and less than another instance of itself, so every fix that "just raised the
+number" solved one side and broke the other:
+
+1. A bare `zIndex: '1'` lost to the per-card toolbar's `Z_BASE` — cards
+   floated over the header.
+2. Raising it to `Z_ABOVE` fixed that, but now beat the header's *own*
+   dropdown menus (also rendering at `Z_BASE` at the time) — menus vanished
+   behind the header that spawned them.
+3. The actual fix needed two parts, not one number: contain the scrolling
+   grid's `Z_BASE` content with `isolation: isolate` (so it can no longer be
+   compared against anything outside the grid at all), *and* stop menus from
+   sharing a tier with arbitrary persistent chrome in the first place —
+   `menuLayerFor` gives every menu/dropdown/cascade-submenu in the library one
+   dedicated layer (`Z_MENU`, between `Z_ABOVE` and `Z_ABOVE2`) that no sticky
+   or fixed element can ever accidentally outrank, because menus no longer
+   compete on the general scale.
+
+The lesson that generalises: **a bare z-index number only means what you
+think it means if you can also show what stacking context contains it** — CSS
+compares a positioned descendant's z-index against *whatever the nearest
+element with position + an explicit (non-`auto`) z-index has already grouped
+it under*, not against "everything else on the page" and not against "its own
+parent's box." `position: relative` with no z-index of its own does **not**
+create that boundary — it looks like it should, and doesn't. Reasoning about
+"is my number big enough" without first identifying that boundary is how all
+three of the above shipped. Before setting a literal z-index (rather than
+`Z_BASE`/`Z_ABOVE`/`Z_MENU`/`Z_ABOVE2`) on anything `sticky` or `fixed`, write
+down in a comment what contains it and why nothing outside that container can
+ever be compared against it — if you can't, the element needs
+`isolation: isolate` (or equivalent) on a real ancestor first, or it needs to
+go through `menuLayerFor` instead. **Build-enforced, partially** —
+`check-overlay-conventions.mjs` fails on a new `position: sticky`/`fixed`
+assignment in `canvas-adapter` with no comment nearby; it cannot verify the
+reasoning is *correct*, only that the question was actually asked at the
+point the code was written, not skipped under time pressure.
+
 ## Checklist for any new custom widget
 
 Before shipping a new menu, dropdown, combobox, tooltip, or popup:

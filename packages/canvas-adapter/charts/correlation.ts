@@ -22,7 +22,7 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { attachChartTip, cardShell, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
 
 const MATRIX_LIMIT_MIN = 5;
 const MATRIX_LIMIT_MAX = 100;
@@ -69,6 +69,27 @@ function parseCssRgb(css: string): [number, number, number] | null {
   return null;
 }
 
+/**
+ * Black or white, whichever reads better ON the given fill.
+ *
+ * The in-cell r values previously picked their colour from |r| alone
+ * (`|r| > 0.6 ? theme.bg : theme.text`). That was tuned against a light
+ * background, where a strong cell is saturated and `theme.bg` is white. Invert
+ * the theme and the same rule puts near-black text on a mid-saturation blue,
+ * because it was reasoning about correlation strength rather than about the
+ * colour actually under the text. Measuring the fill works in both themes and
+ * needs no threshold — the same approach the wafer map already uses for its
+ * out-of-spec markers, which are drawn per die against each die's own fill.
+ *
+ * Rec. 601 luma: cheap, and adequate for a black-or-white decision.
+ */
+function textOn(fill: string): string {
+  const rgb = parseCssRgb(fill);
+  if (!rgb) return '#000';
+  const luma = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+  return luma > 140 ? '#111' : '#fff';
+}
+
 // Interpolate a colour string toward a background RGB by factor t (0=bg, 1=colour).
 function blendTowardBg(colour: string, bg: [number, number, number], t: number): string {
   const fg = parseCssRgb(colour);
@@ -101,7 +122,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   const matrixLimitLabel = card.ownerDocument.createElement('label');
   matrixLimitLabel.textContent = 'Max tests:';
-  matrixLimitLabel.title = 'Cap on how many tests the matrix includes (strongest correlations kept first)';
+
   Object.assign(matrixLimitLabel.style, { color: CLR.label, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
   const matrixLimitInput = card.ownerDocument.createElement('input');
   matrixLimitInput.type = 'number';
@@ -141,6 +162,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   const dpr = window.devicePixelRatio || 1;
   const tooltip = makeTooltip(card);
+  attachChartTip(matrixLimitLabel, card, tooltip, 'Cap on how many tests the matrix includes (strongest correlations kept first)');
 
   let draw: () => void = () => {};
 
@@ -216,7 +238,16 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     const LABEL_H = Math.round(MAX_HEADER_LBL * 6.5 * Math.sin(Math.PI / 4)) + 14;
 
     const MIN_CELL = 14;
-    const PREF_CELL = 26;
+    // Cell size at or above which the r value is printed inside the cell.
+    const R_LABEL_MIN_CELL = 28;
+    // Upper bound on cell growth. This was 26 — one pixel below
+    // R_LABEL_MIN_CELL — so `cs` could never reach the threshold and the
+    // in-cell r values below were unreachable code: the matrix rendered
+    // colour-only at every size, in a card it left mostly empty, while the
+    // caption told the reader how many strong pairs existed without letting
+    // them see which. Kept deliberately above the label threshold, and the two
+    // constants are named so the relationship survives future tuning.
+    const PREF_CELL = 44;
 
     let selectedXi = -1;
     let selectedYi = -1;
@@ -295,19 +326,21 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
             return;
           }
 
+          let cellFill = theme.bgHover;
           if (isDiag) {
             ctx.fillStyle = theme.bgHover;
           } else {
             // Sign carried by hue (blue = positive, vermillion = negative —
             // palette.ts), magnitude by intensity. The old |r| ramp threw the
             // sign away entirely: r = −0.9 and r = +0.9 drew identically.
-            ctx.fillStyle = blendTowardBg(r >= 0 ? CORRELATION_POSITIVE : CORRELATION_NEGATIVE, bgRgb, Math.abs(r));
+            cellFill = blendTowardBg(r >= 0 ? CORRELATION_POSITIVE : CORRELATION_NEGATIVE, bgRgb, Math.abs(r));
+            ctx.fillStyle = cellFill;
           }
           ctx.fillRect(cx + 1, cy + 1, cs - 2, cs - 2);
 
-          if (cs >= 28 && !isDiag) {
+          if (cs >= R_LABEL_MIN_CELL && !isDiag) {
             ctx.font = `${Math.min(10, cs * 0.35)}px system-ui, sans-serif`;
-            ctx.fillStyle = Math.abs(r) > 0.6 ? theme.bg : theme.text;
+            ctx.fillStyle = textOn(cellFill);
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(r.toFixed(2), cx + cs / 2, cy + cs / 2);

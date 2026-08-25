@@ -20,7 +20,7 @@ import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { QUANTITY, categorical } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler } from './chartShell.js';
 // `colorScheme` (HistogramPanelOptions) is deliberately no longer read —
 // quantity/series colours are fixed (palette.ts); the option stays for API
 // compatibility with existing callers.
@@ -328,7 +328,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     series.forEach((s, i) => {
       const item = card.ownerDocument.createElement('button');
       item.type = 'button';
-      item.title = `${s.groupKey} — click to emphasize (dim the rest)`;
+      attachChartTip(item, card, tooltip, `${s.groupKey} — click to emphasize (dim the rest)`);
       Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', padding: '1px 4px', border: 'none', background: 'none', cursor: 'pointer', color: CLR.text, borderRadius: '3px' } as Partial<CSSStyleDeclaration>);
       const sw = card.ownerDocument.createElement('span');
       Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: '2px', background: colorOf(i), flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
