@@ -234,7 +234,7 @@ export function drawAxisUnit(ctx: CanvasRenderingContext2D, unit: string, x: num
 // and renderWaferGallery already use — rather than a third parallel copy.
 
 export function saveCanvasPng(canvas: HTMLCanvasElement, filenameStem: string, onSaveImage?: SaveImageHandler): void {
-  const flat = document.createElement('canvas');
+  const flat = canvas.ownerDocument.createElement('canvas');
   flat.width = canvas.width;
   flat.height = canvas.height;
   const ctx = flat.getContext('2d')!;
@@ -255,8 +255,8 @@ export interface CardShell {
   body: HTMLElement;
 }
 
-export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardShell {
-  const card = document.createElement('div');
+export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDocument: Document = document): CardShell {
+  const card = ownerDocument.createElement('div');
   // Stable test/tooling hooks — this card carries no other id/class, and
   // its heading is a bare div matched today only by user-visible text (see
   // tsmap's WMAP_ISSUES.md #36). Follows the existing data-wmap-* convention
@@ -269,14 +269,14 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardSh
     padding: '12px', minWidth: '0', minHeight: '0', flex: '1 1 0', position: 'relative',
   } as Partial<CSSStyleDeclaration>);
 
-  const headingRow = document.createElement('div');
+  const headingRow = card.ownerDocument.createElement('div');
   Object.assign(headingRow.style, { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
-  const heading = document.createElement('div');
+  const heading = card.ownerDocument.createElement('div');
   heading.textContent = title;
   Object.assign(heading.style, { color: CLR.value, fontSize: '13px', fontWeight: '600', flex: '1' } as Partial<CSSStyleDeclaration>);
   headingRow.appendChild(heading);
 
-  const saveBtn = document.createElement('button');
+  const saveBtn = card.ownerDocument.createElement('button');
   saveBtn.type = 'button';
   saveBtn.title = 'Save as PNG';
   saveBtn.setAttribute('aria-label', 'Save as PNG');
@@ -292,7 +292,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardSh
   });
   headingRow.appendChild(saveBtn);
 
-  const expandBtn = document.createElement('button');
+  const expandBtn = card.ownerDocument.createElement('button');
   expandBtn.type = 'button';
   expandBtn.title = 'Expand';
   expandBtn.setAttribute('aria-label', 'Expand');
@@ -306,11 +306,11 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler): CardSh
   headingRow.appendChild(expandBtn);
   card.appendChild(headingRow);
 
-  const controlsRow = document.createElement('div');
+  const controlsRow = card.ownerDocument.createElement('div');
   Object.assign(controlsRow.style, { display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap', alignItems: 'center' } as Partial<CSSStyleDeclaration>);
   card.appendChild(controlsRow);
 
-  const body = document.createElement('div');
+  const body = card.ownerDocument.createElement('div');
   // No overflow-y by default. `growCardToFitContent`'s whole contract is
   // "card grows to make body exactly big enough for its content" — a
   // panel that trusts that contract should never need to scroll body at
@@ -346,21 +346,22 @@ export function makeSegmented(
   options: Array<[value: string, label: string]>,
   current: string,
   onChange: (value: string) => void,
+  ownerDocument: Document = document,
 ): HTMLElement {
-  const group = document.createElement('div');
+  const group = ownerDocument.createElement('div');
   group.setAttribute('role', 'radiogroup');
   Object.assign(group.style, { display: 'inline-flex', border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', overflow: 'hidden' } as Partial<CSSStyleDeclaration>);
   const name = `seg-${Math.random().toString(36).slice(2, 9)}`;
   const paints: Array<() => void> = [];
 
   options.forEach(([value, text], i) => {
-    const label = document.createElement('label');
+    const label = ownerDocument.createElement('label');
     Object.assign(label.style, {
       display: 'inline-flex', alignItems: 'center', fontSize: '12px', padding: '3px 10px', cursor: 'pointer', userSelect: 'none',
       borderLeft: i > 0 ? `1px solid ${CLR.menuBorder}` : 'none',
     } as Partial<CSSStyleDeclaration>);
 
-    const radio = document.createElement('input');
+    const radio = ownerDocument.createElement('input');
     radio.type = 'radio';
     radio.name = name;
     radio.value = value;
@@ -380,7 +381,7 @@ export function makeSegmented(
       onChange(value);
     });
 
-    label.append(radio, document.createTextNode(text));
+    label.append(radio, ownerDocument.createTextNode(text));
     group.appendChild(label);
   });
 
@@ -392,8 +393,8 @@ export function makeSegmented(
 // per-item rows) rather than restricting via a dropdown — ported from
 // tsmap's charts/chartShell.ts.
 
-export function makeBackButton(onBack: () => void): HTMLButtonElement {
-  const btn = document.createElement('button');
+export function makeBackButton(onBack: () => void, ownerDocument: Document = document): HTMLButtonElement {
+  const btn = ownerDocument.createElement('button');
   btn.type = 'button';
   btn.textContent = '← Back';
   Object.assign(btn.style, {
@@ -410,7 +411,7 @@ export function makeBackButton(onBack: () => void): HTMLButtonElement {
 // factored out once every panel needed one.
 
 export function renderEmptyState(body: HTMLElement, message: string, styleOverrides?: Partial<CSSStyleDeclaration>): void {
-  const empty = document.createElement('div');
+  const empty = body.ownerDocument.createElement('div');
   empty.textContent = message;
   Object.assign(empty.style, { color: CLR.label, fontSize: '12px', padding: '8px 0' } as Partial<CSSStyleDeclaration>);
   if (styleOverrides) Object.assign(empty.style, styleOverrides);
@@ -442,24 +443,24 @@ export function makeTestSelect(
   testOptions: readonly TestSelectItem[],
   selected: number | null,
   onChange: (testNumber: number) => void,
-  opts: { maxWidth?: string; emptyText?: string } = {},
+  opts: { maxWidth?: string; emptyText?: string; ownerDocument?: Document } = {},
 ): HTMLElement & { value: string } {
-  const { maxWidth = '200px', emptyText = 'No parametric tests' } = opts;
+  const { maxWidth = '200px', emptyText = 'No parametric tests', ownerDocument = document } = opts;
 
   if (testOptions.length > MENU_SEARCH_THRESHOLD) {
-    return makeSearchableTestCombo(testOptions, selected, onChange, maxWidth);
+    return makeSearchableTestCombo(testOptions, selected, onChange, maxWidth, ownerDocument);
   }
 
-  const select = document.createElement('select');
+  const select = ownerDocument.createElement('select');
   Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
   if (testOptions.length === 0) {
     select.disabled = true;
-    const opt = document.createElement('option');
+    const opt = ownerDocument.createElement('option');
     opt.textContent = emptyText;
     select.appendChild(opt);
   } else {
     for (const t of testOptions) {
-      const opt = document.createElement('option');
+      const opt = ownerDocument.createElement('option');
       opt.value = String(t.testNumber);
       opt.textContent = t.name || `Test ${t.testNumber}`;
       if (t.testNumber === selected) opt.selected = true;
@@ -485,11 +486,12 @@ function makeSearchableTestCombo(
   selected: number | null,
   onChange: (testNumber: number) => void,
   maxWidth: string,
+  ownerDocument: Document = document,
 ): HTMLElement & { value: string } {
   const labelFor = (tn: number): string => testOptions.find(t => t.testNumber === tn)?.name || `Test ${tn}`;
   let current = selected;
 
-  const btn = document.createElement('button');
+  const btn = ownerDocument.createElement('button');
   btn.type = 'button';
   Object.assign(btn.style, {
     fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text,
@@ -499,9 +501,9 @@ function makeSearchableTestCombo(
   } as Partial<CSSStyleDeclaration>);
   markMenuTrigger(btn, false);
 
-  const labelSpan = document.createElement('span');
+  const labelSpan = btn.ownerDocument.createElement('span');
   Object.assign(labelSpan.style, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
-  const caret = document.createElement('span');
+  const caret = btn.ownerDocument.createElement('span');
   caret.textContent = '▾';
   caret.style.flex = '0 0 auto';
   btn.append(labelSpan, caret);
@@ -528,7 +530,7 @@ function makeSearchableTestCombo(
     const menuMinWidth = Math.max(rect.width, 220);
     const menuMaxHeight = 320;
     const left = Math.min(rect.left, Math.max(4, (win.innerWidth ?? Infinity) - menuMinWidth - 4));
-    menu = document.createElement('div');
+    menu = btn.ownerDocument.createElement('div');
     Object.assign(menu.style, {
       position: 'fixed', top: `${rect.bottom + 4}px`, left: `${left}px`,
       background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
@@ -546,7 +548,7 @@ function makeSearchableTestCombo(
     // events do below.
     const searchBox = makeMenuSearchBox(query => {
       for (const r of rows) r.row.style.display = r.label.includes(query) ? '' : 'none';
-    }, 'Filter tests…');
+    }, 'Filter tests…', btn.ownerDocument);
     Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
     searchBox.addEventListener('keydown', e => {
       if (e.key === 'Escape') { closeMenuAndRefocus(); return; }
@@ -557,7 +559,7 @@ function makeSearchableTestCombo(
     for (const t of testOptions) {
       const label = t.name || `Test ${t.testNumber}`;
       const active = t.testNumber === current;
-      const row = document.createElement('div');
+      const row = btn.ownerDocument.createElement('div');
       row.textContent = label;
       row.setAttribute('role', 'menuitemradio');
       row.setAttribute('aria-checked', active ? 'true' : 'false');
@@ -589,7 +591,7 @@ function makeSearchableTestCombo(
     menu.addEventListener('keydown', e => {
       const list = visibleRows();
       if (list.length === 0) return;
-      const idx = list.indexOf(document.activeElement as HTMLDivElement);
+      const idx = list.indexOf(btn.ownerDocument.activeElement as HTMLDivElement);
       switch (e.key) {
         case 'ArrowDown': e.preventDefault(); list[idx < 0 || idx === list.length - 1 ? 0 : idx + 1].focus(); break;
         case 'ArrowUp':   e.preventDefault(); list[idx <= 0 ? list.length - 1 : idx - 1].focus(); break;
@@ -648,19 +650,19 @@ export function makeWaferSelect(
   items: readonly WaferSelectItem[],
   selectedIndex: number | null,
   onChange: (index: number | null) => void,
-  opts: { maxWidth?: string; allLabel?: string } = {},
+  opts: { maxWidth?: string; allLabel?: string; ownerDocument?: Document } = {},
 ): HTMLSelectElement {
-  const { maxWidth = '160px', allLabel = 'All wafers' } = opts;
+  const { maxWidth = '160px', allLabel = 'All wafers', ownerDocument = document } = opts;
   const ALL = '\0all';
-  const select = document.createElement('select');
+  const select = ownerDocument.createElement('select');
   Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
-  const allOpt = document.createElement('option');
+  const allOpt = ownerDocument.createElement('option');
   allOpt.value = ALL;
   allOpt.textContent = allLabel;
   if (selectedIndex === null) allOpt.selected = true;
   select.appendChild(allOpt);
   items.forEach((it, i) => {
-    const opt = document.createElement('option');
+    const opt = ownerDocument.createElement('option');
     opt.value = String(i);
     opt.textContent = it.label ?? `#${i}`;
     if (selectedIndex === i) opt.selected = true;
@@ -676,15 +678,15 @@ export function makeWaferSelect(
 // that needed one. Callers are responsible for redrawing on change (via
 // `onChange`), matching each panel's own rebuild contract.
 
-export function makeToggle(labelText: string, checked: boolean, onChange: (v: boolean) => void): HTMLLabelElement {
-  const label = document.createElement('label');
+export function makeToggle(labelText: string, checked: boolean, onChange: (v: boolean) => void, ownerDocument: Document = document): HTMLLabelElement {
+  const label = ownerDocument.createElement('label');
   Object.assign(label.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: CLR.label, cursor: 'pointer', userSelect: 'none' } as Partial<CSSStyleDeclaration>);
-  const checkbox = document.createElement('input');
+  const checkbox = ownerDocument.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.checked = checked;
   checkbox.style.cssText = 'margin:0;cursor:pointer;';
   checkbox.addEventListener('change', () => onChange(checkbox.checked));
-  label.append(checkbox, document.createTextNode(labelText));
+  label.append(checkbox, ownerDocument.createTextNode(labelText));
   return label;
 }
 
@@ -698,13 +700,13 @@ export function makeLabeledSelect(
   options: readonly { value: string; label: string }[],
   selected: string,
   onChange: (value: string) => void,
-  opts: { maxWidth?: string; hook?: string } = {},
+  opts: { maxWidth?: string; hook?: string; ownerDocument?: Document } = {},
 ): HTMLLabelElement {
-  const { maxWidth = '160px', hook } = opts;
-  const label = document.createElement('label');
+  const { maxWidth = '160px', hook, ownerDocument = document } = opts;
+  const label = ownerDocument.createElement('label');
   label.textContent = labelText;
   Object.assign(label.style, { color: CLR.label, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
-  const select = document.createElement('select');
+  const select = ownerDocument.createElement('select');
   // This same helper builds the Analysis tab's "Group by:" field selector
   // AND every per-panel "Group: <value> ▾" restrict-to-one-group dropdown
   // AND the histogram wafer picker, so a bare `select` is ambiguous
@@ -712,7 +714,7 @@ export function makeLabeledSelect(
   if (hook) select.dataset.wmapSelect = hook;
   Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
   for (const o of options) {
-    const opt = document.createElement('option');
+    const opt = ownerDocument.createElement('option');
     opt.value = o.value;
     opt.textContent = o.label;
     if (o.value === selected) opt.selected = true;
@@ -728,8 +730,8 @@ export function makeLabeledSelect(
 // distributions, correlation) — same wrapper style built independently in
 // each section.
 
-export function makeChartGridWrap(): HTMLDivElement {
-  const wrap = document.createElement('div');
+export function makeChartGridWrap(ownerDocument: Document = document): HTMLDivElement {
+  const wrap = ownerDocument.createElement('div');
   wrap.dataset.wmapChartGrid = '1';
   Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '10px', flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
   return wrap;
@@ -737,7 +739,7 @@ export function makeChartGridWrap(): HTMLDivElement {
 
 /** Small positioned hover tooltip, matching the pattern each ported panel builds for itself. */
 export function makeTooltip(card: HTMLElement): HTMLElement {
-  const tooltip = document.createElement('div');
+  const tooltip = card.ownerDocument.createElement('div');
   Object.assign(tooltip.style, {
     position: 'absolute', display: 'none', pointerEvents: 'none', zIndex: '50',
     background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',

@@ -605,7 +605,7 @@ results: rows.map(r => ({
 
 **Metadata appears automatically in hover tooltips** — no extra configuration. The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. `null`/`undefined` values are skipped. wmap renders whatever keys you supply, so you control tooltip content through the metadata you set.
 
-**Metadata also reaches the die-list table and its CSV export** ([API §5.4.4](api.md#544-die-list--csv-export)) — not only the tooltip. Die metadata is on by default, one column per key; wafer metadata is CSV-only by default, since it's constant down every row (screen noise) but exactly what makes a detached CSV self-describing enough to concatenate several wafers' exports and still know which wafer each row came from. Column labels use `metadataFields[].label` when declared, else a Title-Cased version of the key, matching the tooltip's own labels.
+**Metadata also reaches the die-list table and its CSV export** ([API §5.4.4](api.md#544-die-list-csv-export)) — not only the tooltip. Die metadata is on by default, one column per key; wafer metadata is CSV-only by default, since it's constant down every row (screen noise) but exactly what makes a detached CSV self-describing enough to concatenate several wafers' exports and still know which wafer each row came from. Column labels use `metadataFields[].label` when declared, else a Title-Cased version of the key, matching the tooltip's own labels.
 
 > **Changed in 0.15.0:** wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were removed from `DieMetadata` — set them on `WaferMetadata` instead. See the migration note in the changelog.
 

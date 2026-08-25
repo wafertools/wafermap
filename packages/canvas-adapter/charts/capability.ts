@@ -46,6 +46,11 @@ export interface CapabilityPanelOptions {
    * used instead. Absent ⇒ today's plain ungrouped behavior.
    */
   groups?: { key: string; items: CapabilityItem[] }[];
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 function fmtIndex(v: number | null): string {
@@ -72,7 +77,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
   // `colorScheme` is deliberately no longer read — boxes use the fixed
   // capable/marginal/poor hues (palette.ts); the option stays for API compatibility.
   const { title = 'Process capability', items, testDefs, onSaveImage, onSelectTest, groups } = options;
-  const { card, body, controlsRow } = cardShell(title, onSaveImage);
+  const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   const hasData = testDefs.some(d => d.testNumber !== undefined);
 
@@ -86,6 +91,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       groups.map(g => ({ value: g.key, label: g.key })),
       activeGroup ?? '',
       v => { activeGroup = v; rebuild(); },
+      { ownerDocument: card.ownerDocument },
     ));
   }
 
@@ -94,7 +100,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     return groups.find(g => g.key === activeGroup)?.items ?? [];
   }
 
-  const hintRow = document.createElement('div');
+  const hintRow = card.ownerDocument.createElement('div');
   Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hintRow, body);
 
@@ -105,12 +111,12 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
   function renderCaption(shownCount: number, unspecCount: number, totalTests: number): void {
     hintRow.innerHTML = '';
-    const line = document.createElement('span');
+    const line = card.ownerDocument.createElement('span');
     Object.assign(line.style, { display: 'inline-flex', alignItems: 'center', gap: '6px', color: CLR.value, fontSize: '12px', fontWeight: '500' } as Partial<CSSStyleDeclaration>);
 
     const excluded = totalTests - shownCount;
     const unspecNote = unspecCount > 0 ? ` · ${unspecCount} without spec limits` : '';
-    const summary = document.createElement('span');
+    const summary = card.ownerDocument.createElement('span');
     summary.textContent = excluded > 0
       ? `${shownCount} of ${totalTests} tests shown${unspecNote} · ${excluded} excluded (no recorded values)`
       : `${shownCount} test${shownCount !== 1 ? 's' : ''} shown${unspecNote}`;
@@ -119,7 +125,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     // Methodology moved behind an ⓘ hover (native title, same convention as
     // the legend swatches) — as always-visible text it was two dense lines
     // squeezed above the chart that most readers only ever need once.
-    const info = document.createElement('span');
+    const info = card.ownerDocument.createElement('span');
     info.textContent = 'ⓘ';
     info.title = 'Spec-limited tests are normalized so LSL=0 and USL=1, sorted worst Ppk first. '
       + 'Tests without both spec limits (muted, dashed) are normalized to their own observed range, sorted most-variable first. '
@@ -138,7 +144,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       return () => {};
     }
 
-    const canvas = document.createElement('canvas');
+    const canvas = card.ownerDocument.createElement('canvas');
     canvas.style.display = 'block';
     canvas.style.cursor = 'default';
     body.appendChild(canvas);

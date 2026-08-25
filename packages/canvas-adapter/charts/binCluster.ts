@@ -25,6 +25,11 @@ export interface BinClusterPanelOptions {
   groups: { key: string; items: BinItem[] }[];
   colorScheme?: string;
   onSaveImage?: SaveImageHandler;
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface BinClusterPanelHandle {
@@ -38,15 +43,16 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
   const { groups, onSaveImage } = options;
   let binType: BinType = 'hbin';
   let titleText = options.title ?? 'Hard bin pareto';
-  const { card, heading, body, controlsRow } = cardShell(titleText, onSaveImage);
+  const { card, heading, body, controlsRow } = cardShell(titleText, onSaveImage, options.ownerDocument);
 
   controlsRow.appendChild(makeSegmented(
     [['hbin', 'Hard bins'], ['sbin', 'Soft bins']],
     binType,
     v => { binType = v as BinType; titleText = `${binType === 'hbin' ? 'Hard' : 'Soft'} bin pareto`; heading.textContent = titleText; rebuildBody(); },
+    card.ownerDocument,
   ));
 
-  const hint = document.createElement('div');
+  const hint = card.ownerDocument.createElement('div');
   hint.textContent = 'One cluster per bin · a sub-bar per group';
   Object.assign(hint.style, { color: CLR.label, fontSize: '11px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
@@ -74,21 +80,21 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
     const clusterHeight = clusterGroups.length * SUBBAR_HEIGHT + (clusterGroups.length - 1) * SUBBAR_GAP;
     const rowPitch = clusterHeight + CLUSTER_GAP;
 
-    const legend = document.createElement('div');
+    const legend = card.ownerDocument.createElement('div');
     Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: '4px' } as Partial<CSSStyleDeclaration>);
     clusterGroups.forEach((g, i) => {
-      const item = document.createElement('span');
+      const item = card.ownerDocument.createElement('span');
       Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: CLR.text } as Partial<CSSStyleDeclaration>);
-      const sw = document.createElement('span');
+      const sw = card.ownerDocument.createElement('span');
       Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: '2px', background: colorOf(i) } as Partial<CSSStyleDeclaration>);
-      const txt = document.createElement('span');
+      const txt = card.ownerDocument.createElement('span');
       txt.textContent = g;
       item.append(sw, txt);
       legend.appendChild(item);
     });
     body.appendChild(legend);
 
-    const scrollArea = document.createElement('div');
+    const scrollArea = card.ownerDocument.createElement('div');
     const visibleHeight = PADDING * 2 + Math.min(bins.length, MAX_VISIBLE_BINS) * rowPitch;
     // overflowX explicit, not left at its 'visible' default — pairing
     // 'visible' with overflowY's non-'visible' value would force it to
@@ -98,7 +104,7 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
     growCardToFitContent(card, body, legend.offsetHeight + visibleHeight);
     body.appendChild(scrollArea);
 
-    const canvas = document.createElement('canvas');
+    const canvas = card.ownerDocument.createElement('canvas');
     canvas.style.display = 'block';
     canvas.style.cursor = 'default';
     scrollArea.appendChild(canvas);

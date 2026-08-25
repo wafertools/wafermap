@@ -33,6 +33,11 @@ export interface RegionYieldDiagramOptions {
   rows: RegionYieldDatum[];
   colorScheme?: string;
   onSaveImage?: SaveImageHandler;
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface RegionYieldDiagramHandle {
@@ -99,7 +104,7 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
   // yield ramp (palette.ts); the option stays for API compatibility.
   const { mode, rows, onSaveImage } = options;
   const title = options.title ?? (mode === 'ring' ? 'Ring yield' : 'Quadrant yield');
-  const { card, body } = cardShell(title, onSaveImage);
+  const { card, body } = cardShell(title, onSaveImage, options.ownerDocument);
 
   const hasData = rows.length > 0;
   if (!hasData) {
@@ -109,7 +114,7 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
 
   Object.assign(body.style, { display: 'flex', justifyContent: 'center', alignItems: 'center' } as Partial<CSSStyleDeclaration>);
 
-  const canvas = document.createElement('canvas');
+  const canvas = card.ownerDocument.createElement('canvas');
   // Pinned to its own intrinsic size, not stretched by `body`'s flex layout
   // (a flex row's default free-space distribution would otherwise grow the
   // canvas to fill the card's full width, turning the circle into an

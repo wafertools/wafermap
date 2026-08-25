@@ -60,6 +60,11 @@ export interface BoxplotPanelOptions {
    *  same test in value mode instead of defaulting to hard-bin mode.
    *  Never called for a pooled group-overview row (that drills instead). */
   onOpen?: (waferIndex: number, testNumber: number) => void;
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface BoxplotPanelHandle {
@@ -73,7 +78,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   // `colorScheme` is deliberately no longer read — box fills are the fixed
   // neutral quantity colour (palette.ts); the option stays for API compatibility.
   const { title = 'Test value distribution', items, testDefs, onSaveImage, groups, groupLabelText = 'group', onOpen } = options;
-  const { card, heading, body, controlsRow } = cardShell(title, onSaveImage);
+  const { card, heading, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   // Unlike capability's fill-the-container canvas, this panel's canvas is an
   // in-flow element sized from its own content (row count) — it wants to be
@@ -131,7 +136,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   // after every drill open/close (never a card rebuild).
   function syncDrillChrome(): void {
     if (drillGroup !== null && !backBtn) {
-      backBtn = makeBackButton(() => { drillGroup = null; syncDrillChrome(); rebuildBody(); });
+      backBtn = makeBackButton(() => { drillGroup = null; syncDrillChrome(); rebuildBody(); }, card.ownerDocument);
       controlsRow.appendChild(backBtn);
     } else if (drillGroup === null && backBtn) {
       backBtn.remove();
@@ -140,13 +145,13 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     heading.textContent = drillGroup !== null ? `${title} — ${groupLabelText}: ${drillGroup}` : title;
   }
 
-  const select = makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuildBody(); }, { maxWidth: '240px', emptyText: 'No parametric tests' });
+  const select = makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuildBody(); }, { maxWidth: '240px', emptyText: 'No parametric tests', ownerDocument: card.ownerDocument });
   controlsRow.appendChild(select);
 
-  controlsRow.appendChild(makeToggle('Log scale', logScale, v => { logScale = v; rebuildBody(); }));
-  controlsRow.appendChild(makeToggle('Axis includes limits', axisIncludesLimits, v => { axisIncludesLimits = v; rebuildBody(); }));
+  controlsRow.appendChild(makeToggle('Log scale', logScale, v => { logScale = v; rebuildBody(); }, card.ownerDocument));
+  controlsRow.appendChild(makeToggle('Axis includes limits', axisIncludesLimits, v => { axisIncludesLimits = v; rebuildBody(); }, card.ownerDocument));
 
-  const hint = document.createElement('div');
+  const hint = card.ownerDocument.createElement('div');
   Object.assign(hint.style, { color: CLR.label, fontSize: '11px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
@@ -184,7 +189,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       return;
     }
 
-    const canvas = document.createElement('canvas');
+    const canvas = card.ownerDocument.createElement('canvas');
     canvas.style.display = 'block';
     canvas.style.cursor = 'default';
     body.appendChild(canvas);

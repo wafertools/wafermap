@@ -56,6 +56,7 @@ export const WMAP_TOKEN_NAMES = [
   'info-bg', 'info-text',
   'selected', 'finding-indicator',
   'canvas-bg',
+  'bar-fill', 'bar-fill-muted',
 ] as const;
 
 export type WmapTokenName = (typeof WMAP_TOKEN_NAMES)[number];
@@ -122,6 +123,11 @@ export const CLR = {
   // its own contrast needs) but was hardcoded identically in both files
   // instead of sharing one themeable token.
   findingIndicator: t('finding-indicator', '#b7551a'),
+  // Summary-panel progress-bar fill (yield/ring/quadrant bars). Was hardcoded
+  // directly on the two `progressRow` call sites in `summaryPanel.ts` instead
+  // of being a themeable token like every other chrome colour.
+  barFill:      t('bar-fill',       '#2a6fc0'),
+  barFillMuted: t('bar-fill-muted', '#94a3b8'),
 };
 
 /**
@@ -436,7 +442,7 @@ function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close:
   menu.addEventListener('keydown', (e: KeyboardEvent) => {
     const list = items();
     if (list.length === 0) return;
-    const current = document.activeElement as HTMLElement | null;
+    const current = menu.ownerDocument.activeElement as HTMLElement | null;
     const idx = current ? list.indexOf(current) : -1;
 
     switch (e.key) {
@@ -744,8 +750,8 @@ export function metadataModeEntry(field: MetadataFieldDef): ModeEntry {
  * stopped from bubbling so typing (including Space/arrow keys) lands in the
  * input rather than triggering the host menu's own keyboard navigation.
  */
-export function makeMenuSearchBox(onFilter: (query: string) => void, placeholder = 'Filter…'): HTMLInputElement {
-  const input = document.createElement('input');
+export function makeMenuSearchBox(onFilter: (query: string) => void, placeholder = 'Filter…', ownerDocument: Document = document): HTMLInputElement {
+  const input = ownerDocument.createElement('input');
   input.type = 'text';
   input.placeholder = placeholder;
   input.setAttribute('aria-label', placeholder);
@@ -1040,7 +1046,8 @@ export function buildCheckMenuEl(
   ownerWindow: Window = window,
 ): HTMLDivElement {
   const { makeMenuRow, makeMenuSection } = helpers;
-  const menu = document.createElement('div');
+  const doc = ownerWindow.document;
+  const menu = doc.createElement('div');
   const minWidth = 168;
   // Prefer left-aligned; flip to right-aligned when button is near the right edge.
   const fitsRight = anchorRect.left + minWidth <= (ownerWindow.innerWidth ?? Infinity);
@@ -1064,7 +1071,7 @@ export function buildCheckMenuEl(
     } else {
       const enabled = row.enabled !== false;
       if (!enabled) continue;
-      const el = document.createElement('div');
+      const el = doc.createElement('div');
       el.setAttribute('role', 'menuitemcheckbox');
       el.setAttribute('aria-checked', row.active ? 'true' : 'false');
       el.tabIndex = -1;
@@ -1081,7 +1088,7 @@ export function buildCheckMenuEl(
         whiteSpace: 'nowrap',
         outline:    'none',
       });
-      const tick = document.createElement('span');
+      const tick = doc.createElement('span');
       Object.assign(tick.style, {
         width:      '12px',
         flexShrink: '0',
@@ -1090,7 +1097,7 @@ export function buildCheckMenuEl(
       });
       tick.textContent = '✓';
       tick.setAttribute('aria-hidden', 'true');
-      const lbl = document.createElement('span');
+      const lbl = doc.createElement('span');
       lbl.textContent = row.label;
       el.appendChild(tick);
       el.appendChild(lbl);
@@ -1106,11 +1113,17 @@ export function buildCheckMenuEl(
 }
 
 export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
+  // Derived once and used for every element this factory builds — `tooltip`
+  // already lives in the correct document (getTooltip(ownerDocument) at the
+  // call site), so every button/menu/row created here follows it rather than
+  // defaulting to the bare global `document`, which would be wrong for a
+  // toolbar built inside a gallery card detached into its own popup window.
+  const doc = tooltip.ownerDocument;
   let openMenu: HTMLDivElement | null = null;
   const menuRoot = (anchor: Element): Element => overlayRootFor(anchor);
 
   function makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement {
-    const btn = document.createElement('button');
+    const btn = doc.createElement('button');
     btn.innerHTML    = ICONS[iconKey];
     btn.type         = 'button';
     btn.ariaLabel    = label;
@@ -1173,7 +1186,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   }
 
   function makeSep(): HTMLDivElement {
-    const sep = document.createElement('div');
+    const sep = doc.createElement('div');
     Object.assign(sep.style, {
       width:      '1px',
       height:     '18px',
@@ -1185,7 +1198,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   }
 
   function makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void): HTMLDivElement {
-    const row = document.createElement('div');
+    const row = doc.createElement('div');
     row.textContent = label;
     // Single-select menu semantics; container role/keyboard nav added when the
     // menu is mounted (applyMenuRoles / wireMenuKeyboard).
@@ -1212,7 +1225,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   }
 
   function makeMenuSection(label: string): HTMLDivElement {
-    const el = document.createElement('div');
+    const el = doc.createElement('div');
     el.textContent = label;
     el.setAttribute('role', 'presentation');
     Object.assign(el.style, {
@@ -1241,7 +1254,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     };
     const btn = makeBtn(iconKey, title, () => {
       if (openMenu) { closeMenu(); return; }
-      const menu = document.createElement('div');
+      const menu = doc.createElement('div');
       const btnRect = btn.getBoundingClientRect();
       const ownerWin = btn.ownerDocument.defaultView ?? window;
       const ddMinWidth = 148;
@@ -1261,7 +1274,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         pointerEvents: 'auto',
       });
       for (const item of getItems()) {
-        const row = document.createElement('div');
+        const row = doc.createElement('div');
         row.textContent = item.label;
         row.dataset.wmapDropdownValue = item.value;
         const isActive = item.value === getCurrent();
@@ -2373,7 +2386,14 @@ function activateGuideScripts(content: HTMLElement, targetWindow: Window): (() =
 
 /** In-page fallback — unchanged from before `window.open` support was added. */
 function openGuideInFloatingWindow(title: string, contentHtml: string, api: GuideApi, anchor?: Element): OverlayHandle {
-  const { content, restoreApi } = buildGuideContent(document, window, contentHtml, api);
+  // Derive from `anchor`, not the bare global — `anchor` (the help button) can
+  // live inside a gallery card detached into its own popup window, and without
+  // this the guide content builds into the OPENER's document while the floating
+  // window itself lands in the popup's DOM (via openFloatingWindow's own
+  // anchor-based root resolution), leaving the popup's window empty.
+  const ownerDocument = anchor?.ownerDocument ?? document;
+  const ownerWindow = ownerDocument.defaultView ?? window;
+  const { content, restoreApi } = buildGuideContent(ownerDocument, ownerWindow, contentHtml, api);
   // minWidth:0 alongside minHeight:0 — contentWrap is a ROW-direction flex
   // container, so a child's default `min-width: auto` refuses to shrink below
   // its widest unbreakable content and stretches the whole panel past the box
@@ -2387,6 +2407,7 @@ function openGuideInFloatingWindow(title: string, contentHtml: string, api: Guid
   const handle = openFloatingWindow({
     title,
     anchor,
+    ownerDocument,
     // Maximising widens the reading measure (720px → 1000px) so the guide uses
     // the extra space without lines growing uncomfortably long. Toggled via a
     // class so the cap lives in the guide stylesheet, not inline here.
@@ -2405,7 +2426,7 @@ function openGuideInFloatingWindow(title: string, contentHtml: string, api: Guid
     },
   });
   handle.contentWrap.appendChild(content);
-  destroyDemos = activateGuideScripts(content, window);
+  destroyDemos = activateGuideScripts(content, ownerWindow);
   return handle;
 }
 
@@ -2491,7 +2512,14 @@ export function openUserGuideWindow(
 
   const title = extension?.title ?? 'Wafer Map — User Guide';
   const contentHtml = (extension?.html ?? '') + html;
-  const popupWin = window.open('', '_blank', 'width=800,height=820');
+  // Open from the anchor's own window, not the bare global — the help button
+  // may live inside a gallery card detached into its own popup window, and
+  // `window.open` called from the wrong window can be flagged by that
+  // window's own popup-blocking heuristics (no user-activation link to a
+  // click that happened in a different window) or open positioned relative
+  // to the wrong screen.
+  const ownerWindow = anchor?.ownerDocument.defaultView ?? window;
+  const popupWin = ownerWindow.open('', '_blank', 'width=800,height=820');
   openGuideHandle = popupWin
     ? openGuideInPopup(popupWin, title, contentHtml, api)
     : openGuideInFloatingWindow(title, contentHtml, api, anchor);

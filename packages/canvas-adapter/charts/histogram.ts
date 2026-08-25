@@ -79,6 +79,11 @@ export interface HistogramPanelOptions {
    * today's plain per-item view with a wafer selector.
    */
   groups?: { key: string; items: HistogramItem[] }[];
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface HistogramPanelHandle {
@@ -90,20 +95,20 @@ export interface HistogramPanelHandle {
 
 export function renderHistogramPanel(options: HistogramPanelOptions): HistogramPanelHandle {
   const { title = 'Test value distribution', items, testDefs, onSaveImage, groups } = options;
-  const { card, body, controlsRow } = cardShell(title, onSaveImage);
+  const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   const testOptions = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
   let activeTest = options.selectedTestNumber ?? testOptions[0]?.testNumber ?? null;
   let activeItem: number | null = null; // index into `items`; null = all
   let axisIncludesLimits = false;
 
-  const testSelect = makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuildBody(); }, { maxWidth: '200px' });
+  const testSelect = makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuildBody(); }, { maxWidth: '200px', ownerDocument: card.ownerDocument });
   controlsRow.appendChild(testSelect);
 
-  const itemSelect = makeWaferSelect(items, activeItem, i => { activeItem = i; rebuildBody(); });
+  const itemSelect = makeWaferSelect(items, activeItem, i => { activeItem = i; rebuildBody(); }, { ownerDocument: card.ownerDocument });
   controlsRow.appendChild(itemSelect);
 
-  controlsRow.appendChild(makeToggle('Axis includes limits', axisIncludesLimits, v => { axisIncludesLimits = v; rebuildBody(); }));
+  controlsRow.appendChild(makeToggle('Axis includes limits', axisIncludesLimits, v => { axisIncludesLimits = v; rebuildBody(); }, card.ownerDocument));
 
   const tooltip = makeTooltip(card);
   let resizeHandle: { disconnect: () => void } | null = null;
@@ -153,12 +158,12 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
     const maxCount = Math.max(...buckets.map(b => b.count), 1);
 
-    const statsLabel = document.createElement('div');
+    const statsLabel = card.ownerDocument.createElement('div');
     Object.assign(statsLabel.style, { fontSize: '12px', color: CLR.label, marginBottom: '2px' } as Partial<CSSStyleDeclaration>);
     statsLabel.textContent = `max ${maxCount} dies/bucket`;
     body.appendChild(statsLabel);
 
-    const canvas = document.createElement('canvas');
+    const canvas = card.ownerDocument.createElement('canvas');
     canvas.style.display = 'block';
     canvas.style.cursor = 'default';
     body.appendChild(canvas);
@@ -313,21 +318,21 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
     const maxCount = Math.max(1, ...series.flatMap(s => s.counts));
 
-    const statsLabel = document.createElement('div');
+    const statsLabel = card.ownerDocument.createElement('div');
     Object.assign(statsLabel.style, { fontSize: '12px', color: CLR.label, marginBottom: '2px' } as Partial<CSSStyleDeclaration>);
     statsLabel.textContent = `${series.length} groups · max ${maxCount} dies/bucket`;
     body.appendChild(statsLabel);
 
-    const legend = document.createElement('div');
+    const legend = card.ownerDocument.createElement('div');
     Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: '4px' } as Partial<CSSStyleDeclaration>);
     series.forEach((s, i) => {
-      const item = document.createElement('button');
+      const item = card.ownerDocument.createElement('button');
       item.type = 'button';
       item.title = `${s.groupKey} — click to emphasize (dim the rest)`;
       Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', padding: '1px 4px', border: 'none', background: 'none', cursor: 'pointer', color: CLR.text, borderRadius: '3px' } as Partial<CSSStyleDeclaration>);
-      const sw = document.createElement('span');
+      const sw = card.ownerDocument.createElement('span');
       Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: '2px', background: colorOf(i), flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
-      const txt = document.createElement('span');
+      const txt = card.ownerDocument.createElement('span');
       txt.textContent = s.groupKey;
       item.append(sw, txt);
       const dim = emphasizedGroup !== null && emphasizedGroup !== s.groupKey;
@@ -341,7 +346,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     });
     body.appendChild(legend);
 
-    const canvas = document.createElement('canvas');
+    const canvas = card.ownerDocument.createElement('canvas');
     canvas.style.display = 'block';
     canvas.style.cursor = 'default';
     body.appendChild(canvas);

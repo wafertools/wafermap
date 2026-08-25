@@ -75,7 +75,7 @@
     "build": "node scripts/build-user-guide.mjs && node scripts/sync-icons.mjs && node scripts/sync-version.mjs && rm -rf dist && tsc -p tsconfig.build.json",
     "build:guide": "node scripts/build-user-guide.mjs",
     "clean": "rm -rf dist",
-    "check": "node scripts/build-user-guide.mjs && node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json && node scripts/check-examples-manifest.mjs && node scripts/build-agents-page.mjs --check && node scripts/check-agents-guide.mjs && node scripts/check-toolbar-docs.mjs && node scripts/check-changelog.mjs && node scripts/help.mjs --check",
+    "check": "node scripts/build-user-guide.mjs && node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json && node scripts/check-examples-manifest.mjs && node scripts/build-agents-page.mjs --check && node scripts/check-agents-guide.mjs && node scripts/check-toolbar-docs.mjs && node scripts/check-overlay-conventions.mjs && node scripts/check-changelog.mjs && node scripts/help.mjs --check",
     "build:examples-index": "node scripts/build-examples-index.mjs",
     "check:drift": "node scripts/check-drift.mjs",
     "dev": "rm -rf docs/dist && cp -r dist docs/dist && ./.venv/bin/zensical serve --dev-addr localhost:8001",

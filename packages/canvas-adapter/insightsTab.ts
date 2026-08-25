@@ -105,6 +105,11 @@ export interface InsightsTabDeps {
    * renderWaferGallery.ts's `rebuildLegend`/`setInsightsOpen`.
    */
   showMetadataStrip?: boolean;
+  /** Document to build this tab's DOM into. Default `document` — pass the
+   *  render's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface InsightsTabHandle {
@@ -127,6 +132,7 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getColorSchemeName, passBins, getRingCount, onSaveImage, onSaveText, openWafer } = deps;
   const showMetadataStrip = deps.showMetadataStrip ?? true;
+  const doc = deps.ownerDocument ?? document;
 
   // Deliberately auto-height, normal block/flex flow — no forced minHeight,
   // no flex-grow, no own overflow-y. `flex:1 1 0; min-height:0` (the usual
@@ -141,7 +147,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // renderWaferMap.ts's position:absolute;inset:0 overlay, which has a real
   // bound from its own container) should apply overflow-y:auto on ITS OWN
   // wrapper instead, not rely on this element doing it internally.
-  const rootEl = document.createElement('div');
+  const rootEl = doc.createElement('div');
   Object.assign(rootEl.style, {
     display: 'none',
     flexDirection: 'column',
@@ -154,9 +160,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // inside the Overview tab's own content and disappearing on
   // Distributions/Correlation. Rebuilt on every `render()` alongside the
   // active sub-tab's content; only mounted when `showMetadataStrip`.
-  const metaStripEl = document.createElement('div');
+  const metaStripEl = doc.createElement('div');
 
-  const tabBar = document.createElement('div');
+  const tabBar = doc.createElement('div');
   Object.assign(tabBar.style, { display: 'flex', gap: '4px', borderBottom: `1px solid ${CLR.menuBorder}`, marginBottom: '2px' } as Partial<CSSStyleDeclaration>);
   tabBar.setAttribute('role', 'tablist');
   // Registered once, not per-`render()` — `tabBar` itself persists across
@@ -168,7 +174,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   tabBar.addEventListener('keydown', e => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const tabs = Array.from(tabBar.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-    const idx = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    const idx = tabs.indexOf(doc.activeElement as HTMLButtonElement);
     if (idx === -1) return;
     e.preventDefault();
     const next = tabs[(idx + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
@@ -179,7 +185,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // Same reasoning as rootEl above — auto-height, no flex-grow/min-height:0
   // "fill and scroll" pattern, since there's no guaranteed bounded ancestor
   // to grow into across every host.
-  const bodyEl = document.createElement('div');
+  const bodyEl = doc.createElement('div');
   Object.assign(bodyEl.style, { display: 'flex', flexDirection: 'column', gap: '10px' } as Partial<CSSStyleDeclaration>);
 
   rootEl.appendChild(metaStripEl);
@@ -222,7 +228,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   }
 
   function makeTabButton(view: InsightsView, label: string): HTMLButtonElement {
-    const btn = document.createElement('button');
+    const btn = doc.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
     const isActive = view === activeView;
@@ -240,7 +246,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
   /** Leading "‹ Map"/"‹ Gallery" tab — exits Insights via `deps.backTab`. */
   function makeBackTabButton(back: { label: string; onBack: () => void }): HTMLButtonElement {
-    const btn = document.createElement('button');
+    const btn = doc.createElement('button');
     btn.type = 'button';
     btn.textContent = `‹ ${back.label}`;
     styleTabButton(btn, false);
@@ -265,7 +271,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
      *  renders stat tiles instead (see renderSingleWaferTiles). */
     includeYieldPanel = true,
   ): { card: HTMLElement; destroy: () => void } {
-    const wrap = makeChartGridWrap();
+    const wrap = makeChartGridWrap(doc);
 
     const scheme = getColorScheme(getColorSchemeName());
     let yieldSortBy: YieldSortBy = 'label';
@@ -332,6 +338,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       onOpen: openWafer ? datum => {
         if (typeof datum.key === 'number') openWaferDetailModal(datum.key, `Wafer ${datum.label}`);
       } : undefined,
+      ownerDocument: doc,
     };
     let yieldPanel: ReturnType<typeof renderBarPanel> | null = null;
     if (includeYieldPanel) {
@@ -353,6 +360,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         })),
         colorScheme: getColorSchemeName(),
         onSaveImage,
+        ownerDocument: doc,
       });
       binCluster.card.style.minHeight = '360px';
       wrap.appendChild(binCluster.card);
@@ -382,6 +390,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // the wafer view — including the accessible scheme when selected.
       // binCode undefined ⇒ bin 0, the codebase-wide no-data grey sentinel.
       barColor: datum => binColorFn(datum.binCode ?? 0),
+      ownerDocument: doc,
     };
     const binPanel = renderBarPanel(binPanelConfig, onSaveImage);
     binPanel.card.style.minHeight = '360px';
@@ -396,7 +405,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    *  the same width as every other card in this suite, instead of stretching
    *  to the full container width. */
   function plainCard(): HTMLDivElement {
-    const card = document.createElement('div');
+    const card = doc.createElement('div');
     // Same structural role as chartShell.ts's cardShell() in the Overview
     // grid, just without a chart title to attach — mark it so tooling
     // doesn't have to special-case "a card with no data-wmap-chart-title".
@@ -461,13 +470,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     const ringRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, buildRingRegions);
     if (ringRows.length) {
-      const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, colorScheme: getColorSchemeName(), onSaveImage });
+      const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, colorScheme: getColorSchemeName(), onSaveImage, ownerDocument: doc });
       elements.push(ring.card);
       destroyFns.push(ring.destroy);
     }
     const quadrantRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, buildQuadrantRegions);
     if (quadrantRows.length) {
-      const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, colorScheme: getColorSchemeName(), onSaveImage });
+      const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, colorScheme: getColorSchemeName(), onSaveImage, ownerDocument: doc });
       elements.push(quadrant.card);
       destroyFns.push(quadrant.destroy);
     }
@@ -505,15 +514,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     Object.assign(card.style, { flexDirection: 'row', flexWrap: 'wrap', gap: '8px' } as Partial<CSSStyleDeclaration>);
 
     function tile(value: string, label: string): HTMLDivElement {
-      const t = document.createElement('div');
+      const t = doc.createElement('div');
       Object.assign(t.style, {
         border: `1px solid ${CLR.menuBorder}`, borderRadius: '6px', padding: '8px 16px',
         textAlign: 'center', minWidth: '110px',
       } as Partial<CSSStyleDeclaration>);
-      const v = document.createElement('div');
+      const v = doc.createElement('div');
       v.textContent = value;
       Object.assign(v.style, { fontSize: '20px', fontWeight: '700', color: CLR.value, lineHeight: '1.2' } as Partial<CSSStyleDeclaration>);
-      const l = document.createElement('div');
+      const l = doc.createElement('div');
       l.textContent = label;
       Object.assign(l.style, { fontSize: '10px', color: CLR.label, marginTop: '2px' } as Partial<CSSStyleDeclaration>);
       t.append(v, l);
@@ -532,7 +541,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     groups: { key: string; items: Item[] }[] | undefined,
     groupLabelText: string | undefined,
   ): { card: HTMLElement; destroy: () => void } {
-    const outer = document.createElement('div');
+    const outer = doc.createElement('div');
     Object.assign(outer.style, { display: 'flex', flexDirection: 'column', gap: '10px' } as Partial<CSSStyleDeclaration>);
 
     const single = items.length === 1 && !groups;
@@ -570,7 +579,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     groups: { key: string; items: Item[] }[] | undefined,
     groupLabelText: string | undefined,
   ): { card: HTMLElement; destroy: () => void } {
-    const wrap = makeChartGridWrap();
+    const wrap = makeChartGridWrap(doc);
 
     // Threads each item's already-computed StatsSummary per-test five-number
     // summaries through (stats/boxplot.ts's `BoxplotItem.testStats`) so
@@ -585,15 +594,18 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       title: 'Test value distribution',
       items: boxplotItems, testDefs, groups: boxplotGroups, groupLabelText, colorScheme: getColorSchemeName(), onSaveImage,
       onOpen: openWafer ? (waferIndex, testNumber) => openWaferDetailModal(waferIndex, `Wafer ${items.find(it => it.waferIndex === waferIndex)?.label ?? waferIndex}`, testNumber) : undefined,
+      ownerDocument: doc,
     });
     const histogram = renderHistogramPanel({
       title: 'Value histogram',
       items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
+      ownerDocument: doc,
     });
     const capability = renderCapabilityPanel({
       title: 'Process capability',
       items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
       onSelectTest: (testNumber) => { boxplot.setTest(testNumber); histogram.setTest(testNumber); },
+      ownerDocument: doc,
     });
     // No manual card.style.minHeight here — capability/histogram grow their
     // own card via ensureCardFits (chartShell.ts) once they have real
@@ -616,16 +628,18 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     testDefs: TestDef[],
     groups: { key: string; items: Item[] }[] | undefined,
   ): { card: HTMLElement; destroy: () => void } {
-    const wrap = makeChartGridWrap();
+    const wrap = makeChartGridWrap(doc);
 
     const scatter = renderScatterPanel({
       title: 'Test scatter',
       items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
+      ownerDocument: doc,
     });
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
       items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
       onSelectPair: (x, y) => scatter.setXY(x, y),
+      ownerDocument: doc,
     });
     // No manual card.style.minHeight here — scatter grows its own card via
     // ensureCardFits (chartShell.ts); correlation sizes compactly to its
@@ -649,7 +663,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     renderMetadataStrip(allItems);
     const facetTable = buildFacetTable(allItems, { facetableOnly: true }).filter(f => f.splittable);
 
-    const controlsRow = document.createElement('div');
+    const controlsRow = doc.createElement('div');
     Object.assign(controlsRow.style, { display: 'flex', gap: '8px', alignItems: 'center' } as Partial<CSSStyleDeclaration>);
     let groupLabelText: string | undefined;
     if (facetTable.length > 0) {
@@ -658,7 +672,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         [{ value: '', label: 'None' }, ...facetTable.map(f => ({ value: f.key, label: `${f.label} (${f.values.length})` }))],
         analysisGroupKey ?? '',
         v => { analysisGroupKey = v || undefined; render(); },
-        { hook: 'group-by' },
+        { hook: 'group-by', ownerDocument: doc },
       ));
       groupLabelText = facetTable.find(f => f.key === analysisGroupKey)?.label;
     } else {

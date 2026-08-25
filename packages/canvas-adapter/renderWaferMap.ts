@@ -445,16 +445,16 @@ export function renderWaferMap(
   // properties needed. `position: relative` is unconditional: toolbar and the
   // Insights overlay are absolutely positioned against their nearest positioned
   // ancestor, which must be mapBox (so they track the capped box), not container.
-  const mapBox = document.createElement('div');
+  const mapBox = ownerDocument.createElement('div');
   Object.assign(mapBox.style, { position: 'relative', width: '100%', height: '100%' });
   if (options.maxSize != null) {
     mapBox.style.maxWidth = `${options.maxSize}px`;
     mapBox.style.maxHeight = `${options.maxSize}px`;
   }
   container.appendChild(mapBox);
-  const canvasWrap = document.createElement('div');
+  const canvasWrap = ownerDocument.createElement('div');
   Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
-  const canvas = document.createElement('canvas');
+  const canvas = ownerDocument.createElement('canvas');
   Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block' });
   canvasWrap.appendChild(canvas);
   mapBox.appendChild(canvasWrap);
@@ -482,6 +482,7 @@ export function renderWaferMap(
           onSaveText:     options.onSaveText,
           waferMetadata:  wafer.metadata, // live local, not result.metadata which goes stale after setResult()
           metadataFields, // live local (setResult-reassigned), not result.metadataFields which goes stale
+          ownerDocument,
         });
         if (table) return table;
       }
@@ -509,7 +510,7 @@ export function renderWaferMap(
     }
 
     function buildToggleBtn(onToggle: () => void): HTMLButtonElement {
-      const btn = document.createElement('button');
+      const btn = ownerDocument.createElement('button');
       btn.type = 'button';
       Object.assign(btn.style, {
         fontSize: '10px', padding: '2px 6px', borderRadius: '4px', flexShrink: '0',
@@ -526,7 +527,7 @@ export function renderWaferMap(
     }
 
     if (isMapless) {
-      const overlay = document.createElement('div');
+      const overlay = ownerDocument.createElement('div');
       Object.assign(overlay.style, {
         position: 'absolute', inset: '0', background: CLR.panelBg,
         // paddingTop clears the floating toolbar the same way insightsTab.el
@@ -537,15 +538,15 @@ export function renderWaferMap(
         boxSizing: 'border-box', overflow: 'hidden', display: 'flex',
         flexDirection: 'column', gap: '8px', zIndex: '1',
       });
-      const noteRow = document.createElement('div');
+      const noteRow = ownerDocument.createElement('div');
       Object.assign(noteRow.style, {
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px',
       });
-      const noteText = document.createElement('span');
+      const noteText = ownerDocument.createElement('span');
       Object.assign(noteText.style, { fontSize: '11px', color: CLR.label, lineHeight: '1.4' });
       noteText.textContent = 'No die position data for this wafer.';
       noteRow.appendChild(noteText);
-      const contentMount = document.createElement('div');
+      const contentMount = ownerDocument.createElement('div');
       // display:flex + flexDirection:column so buildPanelContent()'s own
       // root (which sets flex:1;minHeight:0 on itself) can actually stretch
       // to fill this space — without a flex parent here, a block child just
@@ -562,7 +563,7 @@ export function renderWaferMap(
       // render() call below, once viewOpts actually exists.
       refreshMaplessPanel = () => { if (!showingTable) contentMount.replaceChildren(buildPanelContent()); };
     } else {
-      const footer = document.createElement('div');
+      const footer = ownerDocument.createElement('div');
       Object.assign(footer.style, {
         // zIndex 3, above the expanded panel's 2 below — the footer (and its
         // collapse chevron) must stay visible and clickable once expanded,
@@ -572,10 +573,10 @@ export function renderWaferMap(
         fontSize: '11px', color: CLR.text, cursor: 'pointer', padding: '4px 8px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
       });
-      const label = document.createElement('span');
+      const label = ownerDocument.createElement('span');
       label.textContent = `+${unpositionedDies.length} ${unpositionedDies.length === 1 ? 'die' : 'dies'} without position data`;
       footer.appendChild(label);
-      const chevron = document.createElement('span');
+      const chevron = ownerDocument.createElement('span');
       chevron.textContent = '▾';
       Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' });
       footer.appendChild(chevron);
@@ -588,7 +589,7 @@ export function renderWaferMap(
         chevron.textContent = open ? '▴' : '▾';
         footer.setAttribute('aria-expanded', String(open));
         if (open) {
-          expanded = document.createElement('div');
+          expanded = ownerDocument.createElement('div');
           // bottom: footer's own measured height (not 0) — otherwise this
           // panel draws directly over the footer strip, hiding the very
           // chevron/label the user would click to close it again. footer
@@ -607,13 +608,13 @@ export function renderWaferMap(
           // close it. Swallow clicks here; footer's own chevron and the
           // toggle button below remain the only ways to act on this panel.
           expanded.addEventListener('click', (e) => e.stopPropagation());
-          const headerRow = document.createElement('div');
+          const headerRow = ownerDocument.createElement('div');
           Object.assign(headerRow.style, { display: 'flex', justifyContent: 'flex-end' });
           headerRow.appendChild(buildToggleBtn(() => {
             if (contentMount) contentMount.replaceChildren(buildPanelContent());
           }));
           expanded.appendChild(headerRow);
-          contentMount = document.createElement('div');
+          contentMount = ownerDocument.createElement('div');
           Object.assign(contentMount.style, { flex: '1', minHeight: '0', overflow: 'auto', display: 'flex', flexDirection: 'column' });
           contentMount.appendChild(buildPanelContent());
           expanded.appendChild(contentMount);
@@ -730,7 +731,7 @@ export function renderWaferMap(
   let metadataBadgeHostHidden = false;
   let metadataBadge: MetadataBadgeController | null = null;
   if (showMetadataBadge) {
-    metadataBadge = createMetadataBadge(wafer.metadata, { lotStack: lotStackBadgeContext() });
+    metadataBadge = createMetadataBadge(wafer.metadata, { lotStack: lotStackBadgeContext(), ownerDocument });
     if (!metadataBadge.isEmpty()) canvasWrap.appendChild(metadataBadge.el);
   }
   function lotStackBadgeContext(): { lotSize: number; aggrMethod?: string } | undefined {
@@ -788,6 +789,7 @@ export function renderWaferMap(
       // the wafer view, alongside the toolbar's icon toggle.
       backTab: { label: 'Map', onBack: () => setInsightsOpen(false) },
       // No openWafer — this map already IS the only wafer there is to open.
+      ownerDocument,
     });
     // Positioned sibling of canvasWrap covering the same area. Left with
     // `z-index: auto` (no explicit value), this positioned element still
@@ -1009,7 +1011,7 @@ export function renderWaferMap(
 
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
-    summaryPanelEl = createSummaryPanelEl(placement);
+    summaryPanelEl = createSummaryPanelEl(placement, ownerDocument);
     reserveToolbarClearance(summaryPanelEl, placement);
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
@@ -1022,7 +1024,7 @@ export function renderWaferMap(
     // (showToolbar: false) can still render a persistent panel beside it; the toolbar
     // only owns the toggle button. defaultOpen: true starts the panel visible.
     const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
-    autoSummaryPanelEl = createSummaryPanelEl('right');
+    autoSummaryPanelEl = createSummaryPanelEl('right', ownerDocument);
     reserveToolbarClearance(autoSummaryPanelEl, 'right');
     autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
     const parent = canvasWrap.parentElement;
@@ -1115,7 +1117,7 @@ export function renderWaferMap(
 
   if (showToolbar) {
     {
-      toolbar = document.createElement('div');
+      toolbar = ownerDocument.createElement('div');
       toolbar.dataset.wmapToolbar = 'single';
       Object.assign(toolbar.style, {
         position:      'absolute',
@@ -1186,7 +1188,7 @@ export function renderWaferMap(
 
       // Base map tools (camera/zoom/pan/select) — wrapped so they can be hidden
       // as a group while the Insights tab is open (see mapToolsEl declaration).
-      mapToolsEl = document.createElement('div');
+      mapToolsEl = ownerDocument.createElement('div');
       // flexWrap here is a last resort, not the normal path: the toolbar wraps
       // between groups first. It only engages when a SINGLE group is wider than
       // the container (~230px), where splitting the group is still better than
@@ -1225,7 +1227,7 @@ export function renderWaferMap(
       // Wrapped in sceneControlsEl so setViewControlsVisible() can hide/show the
       // whole group at once (used when reparenting a card into the expand modal).
       if (toolbarControls !== 'view-only') {
-        sceneControlsEl = document.createElement('div');
+        sceneControlsEl = ownerDocument.createElement('div');
         Object.assign(sceneControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'wrap', justifyContent: 'flex-end' });
         toolbar.appendChild(sceneControlsEl);
 
@@ -1234,7 +1236,7 @@ export function renderWaferMap(
         // open, unlike Summary/Expand/Insights/Help below, which stay unwrapped
         // directly in sceneControlsEl (individually hidden/shown as needed —
         // see setInsightsOpen — rather than as part of this group).
-        mapViewControlsEl = document.createElement('div');
+        mapViewControlsEl = ownerDocument.createElement('div');
         Object.assign(mapViewControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0' });
         sceneControlsEl.appendChild(mapViewControlsEl);
         mapViewControlsEl.appendChild(makeSep());
@@ -1462,7 +1464,7 @@ export function renderWaferMap(
             const existing = getOpenMenu();
             closeOpenMenu(new MouseEvent('click'));
             if (existing) return;
-            const menu = buildWarningsMenuEl(btnWarnings!.getBoundingClientRect(), currentWarnings);
+            const menu = buildWarningsMenuEl(btnWarnings!.getBoundingClientRect(), currentWarnings, ownerWindow);
             overlayRootFor(mapBox).appendChild(menu);
             setOpenMenu(menu);
             wireMenuA11y(menu, btnWarnings!, () => closeOpenMenu(new MouseEvent('click')));
@@ -2461,7 +2463,7 @@ export function renderWaferMap(
       } else if (summary && !summaryPanelOpts?.placement) {
         // Late-mount: statsSummary provided after initial render with no placement option.
         const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
-        autoSummaryPanelEl = createSummaryPanelEl('right');
+        autoSummaryPanelEl = createSummaryPanelEl('right', ownerDocument);
         autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
         const parent = canvasWrap.parentElement;
         const next = canvasWrap.nextSibling;

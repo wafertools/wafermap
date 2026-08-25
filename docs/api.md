@@ -1069,6 +1069,7 @@ This is the same mechanism `--wmap-z` uses for stacking. It is theme-agnostic: w
 | `--wmap-info-bg` / `--wmap-info-text` | Info callout | `#dce8f8` / `#334155` |
 | `--wmap-selected` | Finding-drilldown card outline (gallery) | `#e07a20` |
 | `--wmap-finding-indicator` | Summary button text colour when the wafer/lot has notable findings | `#b7551a` |
+| `--wmap-bar-fill` / `--wmap-bar-fill-muted` | Summary-panel progress bars (yield, ring/quadrant) — fill / below-median-muted fill | `#2a6fc0` / `#94a3b8` |
 
 `--wmap-err-*` and `--wmap-warn-*` are visually distinct on purpose — a warning says something is missing or degraded, an error says the map may be positionally **wrong** (geometry advisories), and flattening the two into one colour hides the difference that matters. **Every token that pairs a background with text on it — `warn-*`, `err-*`, `text-strong` against `panel-bg`/`surface` — needs its own AA-contrasting pair when you theme it.** Overriding only the surfaces and leaving these unset does not make them invisible; it makes them fall back to the *light-theme* defaults above, which is how a dark theme silently ends up with near-black text on a near-black panel. §5.4.1's dark/Nord examples below set all of them for exactly this reason.
 
@@ -1274,6 +1275,7 @@ export interface DieListOptions extends DieListDisplayOptions {
   extraColumn?:    { label: string; get: (die: Die) => string | undefined };
   waferMetadata?:  WaferMetadata;       // e.g. WaferMapResult.metadata
   metadataFields?: MetadataFieldDef[];  // e.g. WaferMapResult.metadataFields
+  ownerDocument?:  Document;            // default `document` — see below
 }
 ```
 
@@ -1281,6 +1283,11 @@ When reached through `renderWaferMap`'s `RenderOptions.dieList`, `waferMetadata`
 `metadataFields` are always supplied by the library from the current build result — never
 from the host option — so a standalone-caller mistake can't substitute the wrong identity
 data into an export. A direct `buildDieListSection` call supplies both itself.
+
+**`ownerDocument`** only matters for a host that might mount the table into a document other
+than the bare global — e.g. a popup window it opened itself. It's irrelevant for ordinary
+in-page use, including everywhere the library reaches this internally (the Summary panel's
+"View die list" link, the coordinate-less-wafer map replacement).
 
 ### 5.5 `WaferMapController`
 

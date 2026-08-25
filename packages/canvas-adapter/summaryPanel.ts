@@ -58,12 +58,23 @@ const TITLE_SIZE  = '10px';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// `ownerDocument` defaults to the bare global so every existing call site
+// (hundreds, throughout this file) stays valid unchanged — only the entry
+// points reachable from a gallery card detached into its own popup window
+// (createSummaryPanelEl, below) actually thread a real one through. Content
+// built inside that panel via a bare-`document` `el()` call still renders
+// correctly there (the DOM allows adopting a node created in one document
+// into another document's tree on `appendChild`); what a wrong document
+// would break is anything doc-level — `<style>` injection (this file injects
+// none) or reading `document.activeElement`/listeners (not done via `el()`
+// here) — so this is the low-risk half of the fix, not a full rewrite.
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   styles?: Partial<CSSStyleDeclaration>,
   text?: string,
+  ownerDocument: Document = document,
 ): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
+  const e = ownerDocument.createElement(tag);
   if (styles) Object.assign(e.style, styles);
   if (text !== undefined) e.textContent = text;
   return e;
@@ -171,7 +182,7 @@ function separator(): HTMLDivElement {
 function progressRow(
   label: string,
   value: number,
-  color = '#2a6fc0',
+  color = CLR.barFill,
   fillPct?: number,
   medianLinePct?: number,
   belowMedian?: boolean,
@@ -191,7 +202,7 @@ function progressRow(
   top.appendChild(pct);
 
   const barWidth  = fillPct !== undefined ? fillPct : Math.min(100, Math.max(0, value));
-  const fillColor = belowMedian ? '#94a3b8' : color;
+  const fillColor = belowMedian ? CLR.barFillMuted : color;
   const track = el('div', {
     position:     'relative',
     height:       '9px',
@@ -1709,12 +1720,18 @@ export function buildLotTestSection(
 
 export function createSummaryPanelEl(
   placement: 'right' | 'left' | 'top' | 'bottom',
+  // Pass the render's own ownerDocument — this panel is the auto-mounted
+  // Summary panel, reachable from a wafer detached into its own popup window
+  // (buildDetachedController passes statsSummary through); without this the
+  // panel root builds into the bare global document while everything else
+  // in that render correctly follows the popup's own document.
+  ownerDocument: Document = document,
 ): HTMLDivElement {
   const isVertical = placement === 'top' || placement === 'bottom';
   const panel = el('div', {
     background:  PANEL_BG,
     border:      BORDER,
-    borderRadius:'8px',
+    borderRadius:'6px',
     padding:     '12px',
     overflowY:   isVertical ? 'hidden' : 'auto',
     overflowX:   isVertical ? 'auto'   : 'hidden',
@@ -1723,7 +1740,7 @@ export function createSummaryPanelEl(
     fontFamily:  'system-ui, sans-serif',
     fontSize:    '12px',
     boxShadow:   '0 1px 4px rgba(0,0,0,0.08)',
-  });
+  }, undefined, ownerDocument);
 
   if (!isVertical) {
     // 260px, up from 220 — at 220 the findings narrative wrapped every two
@@ -1851,7 +1868,21 @@ function openDieListModal(
   // (see "Findings Summary" above, and renderWaferGallery.ts's detach
   // window); this one originally didn't, and reopened exactly that
   // already-solved bug for any host embedding wmap inside its own modal.
-  const handle = openModal({ title: 'Die list', onClose: () => {}, anchor });
+  // ownerDocument passed explicitly for the same reason renderWaferMap.ts's
+  // expand modal does: `anchor` may live in a gallery card's own detached
+  // popup window, and without this the modal (and buildDieListSection's
+  // injected styles) build into the bare global `document` — the OPENER's
+  // page — while the modal box itself still visually lands inside the popup
+  // via `openModal`'s own anchor-based root resolution. The table then has
+  // no matching `.wmap-dielist-table` rule in the popup's own <head> and
+  // falls back to the browser's default (larger) table font.
+  const ownerDocument = anchor.ownerDocument;
+  const handle = openModal({ title: 'Die list', onClose: () => {}, anchor, ownerDocument });
+  // openOverlay's contentWrap carries no padding of its own (by design —
+  // other buildDieListSection callers sit inside a parent that already pads,
+  // e.g. renderWaferMap.ts's mapless panel), so this modal is the one place
+  // that must add it, or the heading and table sit flush against the box edge.
+  handle.contentWrap.style.padding = '14px 16px';
   const section = buildDieListSection(dies, testDefs, {
     ...dieListOptions,
     title: sectionTitle,
@@ -1859,6 +1890,7 @@ function openDieListModal(
     waferMetadata,
     metadataFields,
     extraColumn,
+    ownerDocument,
   });
   if (section) handle.contentWrap.appendChild(section);
 }
@@ -1912,7 +1944,7 @@ export function renderWaferSummaryContent(
   panel.appendChild(panelHeader('Wafer Summary'));
 
   const warnings = params.warnings ?? collectWarnings({ statsSummary });
-  if (warnings.length) panel.appendChild(buildWarningsBanner(warnings));
+  if (warnings.length) panel.appendChild(buildWarningsBanner(warnings, panel.ownerDocument));
 
   const summaryReportBtn = (yieldSummary && dataCoverage)
     ? reportButton('Summary report', () => {
@@ -2026,7 +2058,7 @@ export function renderLotSummaryContent(
   // legitimately fires on many wafers of a lot, and listing it once per wafer
   // would bury the one that differs.
   const allWarnings = params.warnings ?? collectWarnings({ lotStatsSummary: lotSummary });
-  if (allWarnings.length) panel.appendChild(buildWarningsBanner(allWarnings));
+  if (allWarnings.length) panel.appendChild(buildWarningsBanner(allWarnings, panel.ownerDocument));
 
   // Not appended yet — sits in the same row as "View die list" below, once
   // the dies that button needs have been pooled.

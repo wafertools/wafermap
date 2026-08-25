@@ -114,22 +114,37 @@ export interface DieListOptions extends DieListDisplayOptions {
   waferMetadata?: WaferMetadata;
   /** Label/order hints for die metadata columns, e.g. `WaferMapResult.metadataFields`. */
   metadataFields?: MetadataFieldDef[];
+  /**
+   * Document to build elements and inject the shared `<style>` block into.
+   * Default `document`. Pass the anchor's `ownerDocument` when the table may
+   * be mounted into a different document than the bare global — e.g. a
+   * gallery card detached into its own popup window — otherwise the table's
+   * cells build in the wrong document and the injected font-size rule never
+   * reaches the document the table actually renders in.
+   */
+  ownerDocument?: Document;
 }
 
 const DEFAULT_MAX_ROWS = 50_000;
 
-let stylesInjected = false;
+// Tracked per-document, not as a single module-level flag: a gallery card
+// detached into its own popup window has its own `document`, and a flag
+// keyed only to "have we ever injected this anywhere" would leave that
+// popup's <head> without the rule — its table then falls back to the
+// browser's default (larger) table font instead of the intended 11px.
+const stylesInjectedInto = new WeakSet<Document>();
 
 /** One scoped `<style>` block for die-list cells, shared by every table
  *  instance, instead of an inline style object per `<td>`/`<th>`. At lot
  *  scale (hundreds of thousands of dies) that is the difference between one
  *  style recalculation and one Object.assign per cell — a real cost when the
  *  table already has no virtualisation. CLR's tokens are `var(--wmap-*, …)`
- *  strings, so they resolve identically in a stylesheet rule as inline. */
-function ensureStylesInjected(): void {
-  if (stylesInjected) return;
-  stylesInjected = true;
-  const style = document.createElement('style');
+ *  strings, so they resolve identically in a stylesheet rule as inline.
+ *  Injected into `doc` specifically — see `stylesInjectedInto`'s comment. */
+function ensureStylesInjected(doc: Document): void {
+  if (stylesInjectedInto.has(doc)) return;
+  stylesInjectedInto.add(doc);
+  const style = doc.createElement('style');
   style.textContent = `
     .wmap-dielist-table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .wmap-dielist-th {
@@ -142,15 +157,16 @@ function ensureStylesInjected(): void {
       border-bottom: 1px solid ${CLR.menuBorder}; white-space: nowrap;
     }
   `;
-  document.head.appendChild(style);
+  doc.head.appendChild(style);
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
+  doc: Document,
   tag: K,
   styles?: Partial<CSSStyleDeclaration>,
   text?: string,
 ): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
+  const e = doc.createElement(tag);
   if (styles) Object.assign(e.style, styles);
   if (text !== undefined) e.textContent = text;
   return e;
@@ -188,7 +204,8 @@ export function buildDieListSection(
   options: DieListOptions = {},
 ): HTMLDivElement | null {
   if (!dies.length) return null;
-  ensureStylesInjected();
+  const doc = options.ownerDocument ?? document;
+  ensureStylesInjected(doc);
 
   const testColumns = resolveTestColumns(dies, testDefs);
   const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
@@ -206,19 +223,19 @@ export function buildDieListSection(
   // stretches past the modal (clipped by its overflow:hidden), which drags the
   // scroll container's own vertical scrollbar off the right-hand edge — the
   // table then looks unscrollable, showing only a stray horizontal scrollbar.
-  const outer = el('div', {
+  const outer = el(doc, 'div', {
     display: 'flex', flexDirection: 'column', gap: '8px',
     flex: '1', minHeight: '0', minWidth: '0',
   });
 
   // flexShrink:0 on the fixed-height rows around the table, so the table is
   // the only thing that absorbs (or gives up) space when the box resizes.
-  const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: '0' });
-  headerRow.appendChild(el('div', {
+  const headerRow = el(doc, 'div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: '0' });
+  headerRow.appendChild(el(doc, 'div', {
     fontSize: '10px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: CLR.label,
   }, options.title ?? `Die list (${dies.length})`));
 
-  const exportBtn = el('button', {
+  const exportBtn = el(doc, 'button', {
     fontSize: '11px', padding: '3px 8px', borderRadius: '4px',
     border: `1px solid ${CLR.menuBorder}`, background: CLR.menuBg, color: CLR.text, cursor: 'pointer',
   }, 'Export CSV');
@@ -227,7 +244,7 @@ export function buildDieListSection(
   outer.appendChild(headerRow);
 
   if (options.note) {
-    outer.appendChild(el('div', { fontSize: '11px', color: CLR.label, lineHeight: '1.4', flexShrink: '0' }, options.note));
+    outer.appendChild(el(doc, 'div', { fontSize: '11px', color: CLR.label, lineHeight: '1.4', flexShrink: '0' }, options.note));
   }
 
   // Built-in labels a metadata key must not silently collide with. Test
@@ -269,21 +286,21 @@ export function buildDieListSection(
   ];
   const visibleColumns = columns.filter((c) => !c.csvOnly);
 
-  const scrollWrap = el('div', {
+  const scrollWrap = el(doc, 'div', {
     // minWidth:0 for the same reason as `outer` above — this is the element
     // that must actually stay modal-width so its own scrollbars stay reachable.
     overflow: 'auto', flex: '1', minHeight: '0', minWidth: '0',
     border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
     ...(options.maxHeight ? { maxHeight: options.maxHeight } : {}),
   });
-  const table = document.createElement('table');
+  const table = doc.createElement('table');
   table.className = 'wmap-dielist-table';
   table.setAttribute('aria-label', options.title ?? `Die list (${dies.length} dies)`);
 
-  const thead = el('thead');
-  const headRow = el('tr');
+  const thead = el(doc, 'thead');
+  const headRow = el(doc, 'tr');
   for (const col of visibleColumns) {
-    const th = document.createElement('th');
+    const th = doc.createElement('th');
     th.className = 'wmap-dielist-th';
     th.scope = 'col';
     th.textContent = col.label;
@@ -292,11 +309,11 @@ export function buildDieListSection(
   thead.appendChild(headRow);
   table.appendChild(thead);
 
-  const tbody = el('tbody');
+  const tbody = el(doc, 'tbody');
   for (const die of visibleDies) {
-    const row = el('tr');
+    const row = el(doc, 'tr');
     for (const col of visibleColumns) {
-      const td = document.createElement('td');
+      const td = doc.createElement('td');
       td.className = 'wmap-dielist-td';
       td.textContent = col.get(die);
       row.appendChild(td);
@@ -323,6 +340,7 @@ export function buildDieListSection(
       parts.push(`${truncatedKeys.length} further metadata field${truncatedKeys.length === 1 ? '' : 's'} not shown.`);
     }
     outer.appendChild(el(
+      doc,
       'div',
       { fontSize: '11px', color: CLR.label, lineHeight: '1.4', flexShrink: '0' },
       parts.join(' '),

@@ -249,13 +249,13 @@ function renderLegendSwatchRow(
   container: HTMLElement,
   opts: { color: string; label: string; isActive: boolean; onClick: () => void },
 ): void {
-  const entry = document.createElement('div');
+  const entry = container.ownerDocument.createElement('div');
   Object.assign(entry.style, {
     display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer',
     userSelect: 'none', padding: '2px 4px', borderRadius: '3px',
   });
 
-  const swatch = document.createElement('span');
+  const swatch = container.ownerDocument.createElement('span');
   Object.assign(swatch.style, {
     display: 'inline-block', width: '13px', height: '13px', flexShrink: '0',
     background: opts.color,
@@ -263,7 +263,7 @@ function renderLegendSwatchRow(
     borderRadius: '2px', boxSizing: 'border-box',
   });
 
-  const lbl = document.createElement('span');
+  const lbl = container.ownerDocument.createElement('span');
   lbl.textContent = opts.label;
   Object.assign(lbl.style, {
     fontWeight: opts.isActive ? '700' : '400',
@@ -460,7 +460,7 @@ export function renderWaferGallery(
 
   // Tab row shown when both lot stats and per-wafer findings are present.
   function buildPanelTabRow(): HTMLDivElement {
-    const row = document.createElement('div');
+    const row = container.ownerDocument.createElement('div');
     Object.assign(row.style, {
       display:       'flex',
       gap:           '4px',
@@ -469,7 +469,7 @@ export function renderWaferGallery(
       paddingBottom: '8px',
     });
     for (const tab of (['lot', 'wafers'] as const)) {
-      const btn = document.createElement('button');
+      const btn = container.ownerDocument.createElement('button');
       btn.type = 'button';
       btn.textContent = tab === 'lot' ? 'Lot' : 'Wafers';
       const active = gallerySummaryTab === tab;
@@ -518,7 +518,7 @@ export function renderWaferGallery(
 
     // "Report all wafers" button
     if (wafersWithFindings.length > 0) {
-      const reportBtn = document.createElement('button');
+      const reportBtn = container.ownerDocument.createElement('button');
       reportBtn.type = 'button';
       reportBtn.textContent = 'Findings report';
       Object.assign(reportBtn.style, {
@@ -572,7 +572,7 @@ ${reportStyles()}
 
     // Wafer rows
     if (wafersWithFindings.length === 0) {
-      const empty = document.createElement('div');
+      const empty = container.ownerDocument.createElement('div');
       Object.assign(empty.style, { color: CLR.icon, fontSize: '11px', padding: '4px 0' });
       empty.textContent = 'No findings on any wafer.';
       gallerySummaryPanelEl.appendChild(empty);
@@ -583,7 +583,7 @@ ${reportStyles()}
         // Badge shows notable+unusual count if any exist, otherwise total findings count
         const badgeCount = (unusualCount + notableCount) || totalCount;
 
-        const row = document.createElement('button');
+        const row = container.ownerDocument.createElement('button');
         row.type = 'button';
         Object.assign(row.style, {
           display:        'flex',
@@ -604,7 +604,7 @@ ${reportStyles()}
         row.addEventListener('mouseover', () => { row.style.background = CLR.bgActive; });
         row.addEventListener('mouseout',  () => { row.style.background = CLR.bgHover; });
 
-        const labelSpan = document.createElement('span');
+        const labelSpan = container.ownerDocument.createElement('span');
         labelSpan.textContent = item.label ?? `W${index + 1}`;
         Object.assign(labelSpan.style, {
           color:         CLR.iconHover,
@@ -613,7 +613,7 @@ ${reportStyles()}
           whiteSpace:    'nowrap',
         });
 
-        const badge = document.createElement('span');
+        const badge = container.ownerDocument.createElement('span');
         badge.textContent = String(badgeCount);
         Object.assign(badge.style, {
           marginLeft:   '6px',
@@ -635,7 +635,7 @@ ${reportStyles()}
     }
 
     // Bottom spacer so last row isn't clipped when scrolled
-    const spacer = document.createElement('div');
+    const spacer = container.ownerDocument.createElement('div');
     spacer.style.height = '12px';
     gallerySummaryPanelEl.appendChild(spacer);
   }
@@ -774,7 +774,7 @@ ${reportStyles()}
 
   // ── Gallery control bar ────────────────────────────────────────────────────
 
-  const barEl = document.createElement('div');
+  const barEl = container.ownerDocument.createElement('div');
   barEl.dataset.wmapToolbar = 'gallery';
   Object.assign(barEl.style, {
     display:       'inline-flex',
@@ -1006,7 +1006,7 @@ ${reportStyles()}
   // is open, since none of them apply to (or, for download, would silently
   // capture the wrong thing from) the chart suite. Summary/Insights/Help
   // below stay unwrapped directly in barEl since those apply to both views.
-  const galleryViewControlsEl = document.createElement('div');
+  const galleryViewControlsEl = container.ownerDocument.createElement('div');
   Object.assign(galleryViewControlsEl.style, { display: 'inline-flex', alignItems: 'center', gap: '0' });
   barEl.appendChild(galleryViewControlsEl);
 
@@ -1094,7 +1094,10 @@ ${reportStyles()}
       const existing = getOpenMenu();
       closeOpenMenu(new MouseEvent('click'));
       if (existing) return;
-      const menu = buildWarningsMenuEl(btnWarnings!.getBoundingClientRect(), currentWarnings);
+      const menu = buildWarningsMenuEl(
+        btnWarnings!.getBoundingClientRect(), currentWarnings,
+        btnWarnings!.ownerDocument.defaultView ?? window,
+      );
       overlayRootFor(container).appendChild(menu);
       setOpenMenu(menu);
       wireMenuA11y(menu, btnWarnings!, () => closeOpenMenu(new MouseEvent('click')));
@@ -1148,7 +1151,7 @@ ${reportStyles()}
   // bin swatches) rather than sharing one wrapped flex row — metadata summaries
   // can themselves be long (several distinct-value lists), and mixing them with
   // bin swatches in one wrap made the whole strip read as a single jumbled line.
-  const legendEl = document.createElement('div');
+  const legendEl = container.ownerDocument.createElement('div');
   Object.assign(legendEl.style, {
     display:       'flex',
     flexDirection: 'column',
@@ -1168,7 +1171,7 @@ ${reportStyles()}
 
   // ── Body row (grid + side drawer) ──────────────────────────────────────────
 
-  const bodyEl = document.createElement('div');
+  const bodyEl = container.ownerDocument.createElement('div');
   Object.assign(bodyEl.style, {
     display:   'flex',
     flexDirection: 'row',
@@ -1208,6 +1211,7 @@ ${reportStyles()}
       showMetadataStrip: false,
       onSaveImage: options.onSaveImage,
       onSaveText: options.onSaveText,
+      ownerDocument: container.ownerDocument,
       // Opens one wafer's full map in a modal, from a chart panel bar/row
       // click (yield's leaf rows, boxplot's leaf rows). Reuses
       // `buildDetachedController` (the same per-item render used for a card
@@ -1406,7 +1410,7 @@ ${reportStyles()}
     gridEl.style.gridTemplateColumns = trackTemplate(cols);
   }
 
-  const gridEl = document.createElement('div');
+  const gridEl = container.ownerDocument.createElement('div');
   Object.assign(gridEl.style, {
     flex:                    '1 1 0',
     minWidth:                '0',
@@ -1427,7 +1431,7 @@ ${reportStyles()}
 
     if (summaryPanelOpts?.placement) {
       const placement = summaryPanelOpts.placement;
-      gallerySummaryPanelEl = createSummaryPanelEl(placement);
+      gallerySummaryPanelEl = createSummaryPanelEl(placement, container.ownerDocument);
       gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
       gallerySummaryPanelEl.style.position  = 'sticky';
       gallerySummaryPanelEl.style.top       = '8px';
@@ -1435,7 +1439,7 @@ ${reportStyles()}
       gallerySummaryPanelEl.style.flexDirection = 'column';
     } else if (currentLotStats || hasAnyPerWaferFindings()) {
       const openOnMount = !!summaryPanelOpts?.defaultOpen;
-      gallerySummaryPanelEl = createSummaryPanelEl('right');
+      gallerySummaryPanelEl = createSummaryPanelEl('right', container.ownerDocument);
       gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
       gallerySummaryPanelEl.style.position  = 'sticky';
       gallerySummaryPanelEl.style.top       = '8px';
@@ -1538,7 +1542,7 @@ ${reportStyles()}
 
     if (!bins.length && !metadataValues.length) return;
 
-    const binsRow = document.createElement('div');
+    const binsRow = container.ownerDocument.createElement('div');
     Object.assign(binsRow.style, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 14px' });
     if (metaRow) Object.assign(binsRow.style, { borderTop: `1px solid ${CLR.separator}`, paddingTop: '6px' });
     legendEl.appendChild(binsRow);
@@ -1892,18 +1896,18 @@ ${reportStyles()}
     if (!titleEl || entries.length === 0) return;
 
     const titleParent = titleEl.parentElement;
-    const titleWrap = document.createElement('div');
+    const titleWrap = container.ownerDocument.createElement('div');
     Object.assign(titleWrap.style, {
       display: 'flex', alignItems: 'center', gap: '4px', flex: '1', minWidth: '0', cursor: 'pointer',
     });
     titleParent?.insertBefore(titleWrap, titleEl);
     titleWrap.appendChild(titleEl);
-    const chevron = document.createElement('span');
+    const chevron = container.ownerDocument.createElement('span');
     Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' });
     chevron.textContent = '▾';
     titleWrap.appendChild(chevron);
 
-    const metaPanel = document.createElement('div');
+    const metaPanel = container.ownerDocument.createElement('div');
     metaPanel.dataset.wmapCardMetaPanel = '1';
     Object.assign(metaPanel.style, {
       position: 'absolute', top: '0', left: '0', right: '0', zIndex: Z_ABOVE,
@@ -1925,7 +1929,7 @@ ${reportStyles()}
   }
 
   function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferMapController; canvasWrapper: HTMLDivElement; expandBtn: HTMLButtonElement } {
-    const card = document.createElement('div');
+    const card = container.ownerDocument.createElement('div');
     card.className = 'wmap-gallery-card';
     Object.assign(card.style, {
       background:    CLR.menuBg,
@@ -1943,7 +1947,7 @@ ${reportStyles()}
       maxHeight:     `${currentMaxCardPx}px`,
     });
 
-    const header = document.createElement('div');
+    const header = container.ownerDocument.createElement('div');
     Object.assign(header.style, {
       display:        'flex',
       alignItems:     'center',
@@ -1957,7 +1961,7 @@ ${reportStyles()}
 
     // Expand button — toggles between "detach into its own window" and, once
     // detached, "reattach to this grid slot" (see updateExpandBtn).
-    const expandBtn = document.createElement('button');
+    const expandBtn = container.ownerDocument.createElement('button');
     expandBtn.dataset.wmapExpandBtn = '1';
     expandBtn.title = 'Open full view';
     expandBtn.innerHTML = ICONS.expand; // unified expand icon (was an inline polyline SVG)
@@ -1979,7 +1983,7 @@ ${reportStyles()}
     card.appendChild(header);
 
     // Container div for renderWaferMap — the function creates the canvas inside it.
-    const canvasWrapper = document.createElement('div');
+    const canvasWrapper = container.ownerDocument.createElement('div');
     Object.assign(canvasWrapper.style, {
       position:      'relative',
       flex:          '1',
@@ -2084,7 +2088,7 @@ ${reportStyles()}
       const entry = newItems[i];
       if (typeof entry === 'function') {
         // Insert a sized placeholder so the grid layout doesn't collapse.
-        const placeholder = document.createElement('div');
+        const placeholder = container.ownerDocument.createElement('div');
         placeholder.className = 'wmap-gallery-card';
         Object.assign(placeholder.style, {
           background:    CLR.menuBg,
@@ -2095,7 +2099,7 @@ ${reportStyles()}
           alignItems:    'center',
           justifyContent:'center',
         });
-        const spinner = document.createElement('span');
+        const spinner = container.ownerDocument.createElement('span');
         spinner.textContent = '…';
         Object.assign(spinner.style, { color: CLR.label, fontSize: '18px' });
         placeholder.appendChild(spinner);
@@ -2153,7 +2157,7 @@ ${reportStyles()}
       // If this item introduced per-wafer findings and no panel exists yet, create it now.
       if (!gallerySummaryPanelEl && !summaryPanelOpts?.placement && item.statsSummary?.findings.length) {
         if (!currentLotStats) gallerySummaryTab = 'wafers';
-        gallerySummaryPanelEl = createSummaryPanelEl('right');
+        gallerySummaryPanelEl = createSummaryPanelEl('right', container.ownerDocument);
         gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
         gallerySummaryPanelEl.style.position  = 'sticky';
         gallerySummaryPanelEl.style.top       = '8px';
@@ -2228,7 +2232,7 @@ ${reportStyles()}
     if (!wrapper) return;
     wrapper.innerHTML = '';
     Object.assign(wrapper.style, { alignItems: 'center', justifyContent: 'center' });
-    const note = document.createElement('span');
+    const note = container.ownerDocument.createElement('span');
     note.textContent = 'Detached — open in its own window';
     Object.assign(note.style, { color: CLR.label, fontSize: '12px', textAlign: 'center', padding: '0 12px' });
     wrapper.appendChild(note);
@@ -2501,7 +2505,7 @@ ${reportStyles()}
     const dpr    = window.devicePixelRatio || 1;
     const headerH = Math.round(26 * dpr);
     const fontSize = Math.round(12 * dpr);
-    const off   = document.createElement('canvas');
+    const off   = container.ownerDocument.createElement('canvas');
     off.width   = cols * cellW + (cols - 1) * gap;
     off.height  = rows * (cellH + headerH) + (rows - 1) * gap;
     const ctx   = off.getContext('2d')!;

@@ -46,6 +46,11 @@ export interface CorrelationPanelOptions {
   groups?: { key: string; items: CorrelationItem[] }[];
   /** Clicking a non-diagonal cell calls this — the Analysis tab wires it to drive the scatter panel's X/Y in place. */
   onSelectPair?: (xTestNumber: number, yTestNumber: number) => void;
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface CorrelationPanelHandle {
@@ -78,7 +83,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   // `colorScheme` is deliberately no longer read — cells use the fixed
   // sign-aware correlation hues (palette.ts); the option stays for API compatibility.
   const { title = 'Test correlation matrix', items, testDefs, onSaveImage, groups, onSelectPair } = options;
-  const { card, body, controlsRow } = cardShell(title, onSaveImage);
+  const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   body.style.overflowX = 'auto';
   // Size to the matrix's own content instead of stretching to the grid
@@ -94,11 +99,11 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   // Simpson's-paradox warning below, since a single wafer can't be "mixed".
   let activeWaferIndex: number | null = null;
 
-  const matrixLimitLabel = document.createElement('label');
+  const matrixLimitLabel = card.ownerDocument.createElement('label');
   matrixLimitLabel.textContent = 'Max tests:';
   matrixLimitLabel.title = 'Cap on how many tests the matrix includes (strongest correlations kept first)';
   Object.assign(matrixLimitLabel.style, { color: CLR.label, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
-  const matrixLimitInput = document.createElement('input');
+  const matrixLimitInput = card.ownerDocument.createElement('input');
   matrixLimitInput.type = 'number';
   matrixLimitInput.min = String(MATRIX_LIMIT_MIN);
   matrixLimitInput.max = String(MATRIX_LIMIT_MAX);
@@ -118,9 +123,10 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       groups.map(g => ({ value: g.key, label: g.key })),
       activeGroup ?? '',
       v => { activeGroup = v; rebuild(); },
+      { ownerDocument: card.ownerDocument },
     ));
   } else if (items.length > 1) {
-    controlsRow.appendChild(makeWaferSelect(items, activeWaferIndex, i => { activeWaferIndex = i; rebuild(); }));
+    controlsRow.appendChild(makeWaferSelect(items, activeWaferIndex, i => { activeWaferIndex = i; rebuild(); }, { ownerDocument: card.ownerDocument }));
   }
 
   function currentItems(): CorrelationItem[] {
@@ -129,7 +135,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     return items;
   }
 
-  const hintRow = document.createElement('div');
+  const hintRow = card.ownerDocument.createElement('div');
   Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hintRow, body);
 
@@ -142,7 +148,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     hintRow.innerHTML = '';
 
     if (mixedFields.length > 0) {
-      const warn = document.createElement('div');
+      const warn = card.ownerDocument.createElement('div');
       warn.textContent = `⚠ Mixed ${mixedFields.join(', ')} within this set — correlations may be misleading (Simpson's paradox). Use Group by, or the Wafer picker, to narrow to a like-for-like set.`;
       Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: '4px', padding: '4px 8px', fontSize: '11px' } as Partial<CSSStyleDeclaration>);
       hintRow.appendChild(warn);
@@ -150,26 +156,26 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
     // One-line key with an inline colour scale — the sign hues were
     // previously unexplained anywhere on the card.
-    const hint = document.createElement('span');
+    const hint = card.ownerDocument.createElement('span');
     Object.assign(hint.style, { display: 'inline-flex', alignItems: 'center', gap: '6px', color: CLR.label, fontSize: '11px', flexWrap: 'wrap' } as Partial<CSSStyleDeclaration>);
-    const hintText = document.createElement('span');
+    const hintText = card.ownerDocument.createElement('span');
     hintText.textContent = 'Pearson r · click a cell to view that pair in scatter ·';
     hint.appendChild(hintText);
-    const scaleWrap = document.createElement('span');
+    const scaleWrap = card.ownerDocument.createElement('span');
     Object.assign(scaleWrap.style, { display: 'inline-flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
-    const lo = document.createElement('span'); lo.textContent = '−1';
-    const bar = document.createElement('span');
+    const lo = card.ownerDocument.createElement('span'); lo.textContent = '−1';
+    const bar = card.ownerDocument.createElement('span');
     Object.assign(bar.style, {
       display: 'inline-block', width: '64px', height: '8px', borderRadius: '2px',
       border: `1px solid ${CLR.menuBorder}`,
       background: `linear-gradient(to right, ${CORRELATION_NEGATIVE}, ${CLR.menuBg}, ${CORRELATION_POSITIVE})`,
     } as Partial<CSSStyleDeclaration>);
-    const hi = document.createElement('span'); hi.textContent = '+1';
+    const hi = card.ownerDocument.createElement('span'); hi.textContent = '+1';
     scaleWrap.append(lo, bar, hi);
     hint.appendChild(scaleWrap);
     hintRow.appendChild(hint);
 
-    const summaryLine = document.createElement('span');
+    const summaryLine = card.ownerDocument.createElement('span');
     Object.assign(summaryLine.style, { color: CLR.value, fontSize: '12px', fontWeight: '500' } as Partial<CSSStyleDeclaration>);
     if (strongPairs === 0 && moderatePairs === 0) {
       summaryLine.textContent = strongestPair
@@ -195,7 +201,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       return () => {};
     }
 
-    const canvas = document.createElement('canvas');
+    const canvas = card.ownerDocument.createElement('canvas');
     canvas.style.display = 'block';
     canvas.style.cursor = 'default';
     body.appendChild(canvas);

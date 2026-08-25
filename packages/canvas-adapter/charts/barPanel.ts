@@ -44,6 +44,11 @@ export interface ChartPanel {
    * instead, via `drill.onOpenGroup` — this is never called for those.
    */
   onOpen?: (datum: ChartDatum) => void;
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface BarPanelHandle {
@@ -55,18 +60,18 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
   const { barColor, valueLabel } = panel;
   let title = panel.title;
   let data = panel.data;
-  const { card, heading, controlsRow, body } = cardShell(title, onSaveImage);
+  const { card, heading, controlsRow, body } = cardShell(title, onSaveImage, panel.ownerDocument);
 
   if (panel.selfControl) {
     const sc = panel.selfControl;
-    controlsRow.appendChild(makeSegmented(sc.options, sc.current, value => onSelfControlChange(value)));
+    controlsRow.appendChild(makeSegmented(sc.options, sc.current, value => onSelfControlChange(value), card.ownerDocument));
   }
 
   const { drill } = panel;
   let drillActive = false;
   let backBtn: HTMLElement | null = null;
 
-  const hint = document.createElement('div');
+  const hint = card.ownerDocument.createElement('div');
   Object.assign(hint.style, { color: CLR.label, fontSize: '11px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
@@ -79,7 +84,7 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
   }
   syncHint();
 
-  const scrollArea = document.createElement('div');
+  const scrollArea = card.ownerDocument.createElement('div');
   const visibleAreaHeight = () => PADDING * 2 + Math.min(data.length, MAX_VISIBLE_ROWS) * (ROW_HEIGHT + ROW_GAP);
   // overflowX explicit, not left at its 'visible' default — pairing
   // 'visible' with overflowY's non-'visible' value would force it to
@@ -88,7 +93,7 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
   Object.assign(scrollArea.style, { overflowX: 'hidden', overflowY: 'auto', minHeight: '0', flex: '1', maxHeight: `${visibleAreaHeight()}px`, scrollbarGutter: 'stable' } as Partial<CSSStyleDeclaration>);
   body.appendChild(scrollArea);
 
-  const canvas = document.createElement('canvas');
+  const canvas = card.ownerDocument.createElement('canvas');
   canvas.style.display = 'block';
   canvas.style.cursor = 'default';
   scrollArea.appendChild(canvas);
@@ -179,7 +184,7 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
     hovered = -1;
     if (!drillActive) {
       drillActive = true;
-      backBtn = makeBackButton(() => onDrillBack());
+      backBtn = makeBackButton(() => onDrillBack(), card.ownerDocument);
       controlsRow.appendChild(backBtn);
     }
     syncHint();

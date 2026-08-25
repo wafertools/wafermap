@@ -113,14 +113,14 @@ function glyphFor(sev: NonNullable<WaferWarning['severity']>): string {
  * The Summary panel banner. One block per severity present, so an "dies may be
  * mis-positioned" error is never visually flattened into an advisory.
  */
-export function buildWarningsBanner(warnings: WaferWarning[]): HTMLDivElement {
-  const wrap = document.createElement('div');
+export function buildWarningsBanner(warnings: WaferWarning[], ownerDocument: Document = document): HTMLDivElement {
+  const wrap = ownerDocument.createElement('div');
   Object.assign(wrap.style, { marginBottom: '10px' });
 
   for (const w of warnings) {
     const sev = severityOf(w);
     const c = colorsFor(sev);
-    const row = document.createElement('div');
+    const row = ownerDocument.createElement('div');
     Object.assign(row.style, {
       background:   c.bg,
       border:       `1px solid ${c.border}`,
@@ -152,7 +152,8 @@ export function buildWarningsMenuEl(
   warnings: WaferWarning[],
   ownerWindow: Window = window,
 ): HTMLDivElement {
-  const menu = document.createElement('div');
+  const doc = ownerWindow.document;
+  const menu = doc.createElement('div');
   const width = 280;
   const fitsRight = anchorRect.left + width <= (ownerWindow.innerWidth ?? Infinity);
   const leftPx = fitsRight ? anchorRect.left : Math.max(4, anchorRect.right - width);
@@ -175,7 +176,7 @@ export function buildWarningsMenuEl(
   menu.setAttribute('role', 'dialog');
   menu.setAttribute('aria-label', 'Data warnings');
 
-  const heading = document.createElement('div');
+  const heading = doc.createElement('div');
   Object.assign(heading.style, {
     padding:       '6px 12px 4px',
     fontSize:      '10px',
@@ -191,7 +192,7 @@ export function buildWarningsMenuEl(
     const sev = severityOf(w);
     const c = colorsFor(sev);
 
-    const row = document.createElement('div');
+    const row = doc.createElement('div');
     Object.assign(row.style, {
       display:       'flex',
       gap:           '8px',
@@ -203,20 +204,20 @@ export function buildWarningsMenuEl(
       alignItems:    'flex-start',
     });
 
-    const icon = document.createElement('span');
+    const icon = doc.createElement('span');
     Object.assign(icon.style, { color: c.text, flexShrink: '0' });
     icon.textContent = glyphFor(sev);
     row.appendChild(icon);
 
-    const body = document.createElement('div');
-    const title = document.createElement('div');
+    const body = doc.createElement('div');
+    const title = doc.createElement('div');
     Object.assign(title.style, { fontWeight: '700', color: c.text, marginBottom: '2px' });
     // The code is the stable identity a host would branch on, so show it rather
     // than inventing a second set of prose titles that could drift from it.
     title.textContent = w.code;
     body.appendChild(title);
 
-    const msg = document.createElement('div');
+    const msg = doc.createElement('div');
     msg.textContent = w.message;
     body.appendChild(msg);
 

@@ -29,6 +29,10 @@ export interface MetadataBadgeOptions {
    *  method instead of a (nonexistent) single waferId, per this project's
    *  requirement that stacked maps always self-identify as such. */
   lotStack?: MetadataBadgeLotStack;
+  /** Document to build the badge into. Default `document` — pass the render's
+   *  own `ownerDocument` when the container might live in a different
+   *  document (e.g. a gallery card detached into its own popup window). */
+  ownerDocument?: Document;
 }
 
 export interface MetadataBadgeController {
@@ -73,8 +77,9 @@ export function createMetadataBadge(
   let meta: WaferMetadata = metadata ?? {};
   let lotStack = opts.lotStack;
   let expanded = false;
+  const doc = opts.ownerDocument ?? document;
 
-  const el = document.createElement('div');
+  const el = doc.createElement('div');
   Object.assign(el.style, {
     position:     'absolute',
     bottom:       '4px',
@@ -92,19 +97,19 @@ export function createMetadataBadge(
     pointerEvents: 'auto',
   } as Partial<CSSStyleDeclaration>);
 
-  const summaryRow = document.createElement('div');
+  const summaryRow = doc.createElement('div');
   Object.assign(summaryRow.style, {
     display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
   } as Partial<CSSStyleDeclaration>);
-  const summaryText = document.createElement('span');
+  const summaryText = doc.createElement('span');
   summaryText.style.overflow = 'hidden';
   summaryText.style.textOverflow = 'ellipsis';
-  const chevron = document.createElement('span');
+  const chevron = doc.createElement('span');
   Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' } as Partial<CSSStyleDeclaration>);
   summaryRow.appendChild(summaryText);
   summaryRow.appendChild(chevron);
 
-  const detailWrap = document.createElement('div');
+  const detailWrap = doc.createElement('div');
   Object.assign(detailWrap.style, { marginTop: '5px', display: 'none' } as Partial<CSSStyleDeclaration>);
 
   el.appendChild(summaryRow);
@@ -122,7 +127,7 @@ export function createMetadataBadge(
     if (!expanded) return;
 
     if (lotStack) {
-      const stackLine = document.createElement('div');
+      const stackLine = doc.createElement('div');
       Object.assign(stackLine.style, { fontWeight: '600', marginBottom: '3px' } as Partial<CSSStyleDeclaration>);
       stackLine.textContent = lotStack.aggrMethod
         ? `${lotStack.lotSize} wafers stacked · ${lotStack.aggrMethod}`

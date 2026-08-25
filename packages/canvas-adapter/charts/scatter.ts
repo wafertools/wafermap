@@ -46,6 +46,11 @@ export interface ScatterPanelOptions {
    * ignored for point data when `groups` is provided.
    */
   groups?: { key: string; items: ScatterPanelItem[] }[];
+  /** Document to build this panel's DOM into. Default `document` — pass the
+   *  host's own `ownerDocument` when the container might live in a
+   *  different document (e.g. a gallery card detached into its own popup
+   *  window). */
+  ownerDocument?: Document;
 }
 
 export interface ScatterPanelHandle {
@@ -57,7 +62,7 @@ export interface ScatterPanelHandle {
 
 export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHandle {
   const { title = 'Test scatter', items, testDefs, colorScheme = 'default', onSaveImage, groups } = options;
-  const { card, body, controlsRow } = cardShell(title, onSaveImage);
+  const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   const testOptions = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
   const byGroup = !!(groups && groups.length > 0);
@@ -76,11 +81,11 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     activeWaferIndex !== null ? (items[activeWaferIndex] ? [items[activeWaferIndex]] : []) : items;
 
   function makeLabeledTestSelect(labelText: string, selected: number | null, onChange: (n: number) => void): { wrap: HTMLElement; select: HTMLElement & { value: string } } {
-    const wrap = document.createElement('label');
+    const wrap = card.ownerDocument.createElement('label');
     Object.assign(wrap.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: CLR.label } as Partial<CSSStyleDeclaration>);
-    const lbl = document.createElement('span');
+    const lbl = card.ownerDocument.createElement('span');
     lbl.textContent = labelText;
-    const select = makeTestSelect(testOptions, selected, onChange, { maxWidth: '180px', emptyText: 'No tests' });
+    const select = makeTestSelect(testOptions, selected, onChange, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: card.ownerDocument });
     wrap.append(lbl, select);
     return { wrap, select };
   }
@@ -89,10 +94,10 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   const { wrap: yWrap, select: ySel } = makeLabeledTestSelect('Y:', activeY, n => { activeY = n; rebuildBody(); });
   controlsRow.append(xWrap, yWrap);
   if (!byGroup && items.length > 1) {
-    controlsRow.appendChild(makeWaferSelect(items, activeWaferIndex, i => { activeWaferIndex = i; rebuildBody(); }));
+    controlsRow.appendChild(makeWaferSelect(items, activeWaferIndex, i => { activeWaferIndex = i; rebuildBody(); }, { ownerDocument: card.ownerDocument }));
   }
 
-  const warn = document.createElement('div');
+  const warn = card.ownerDocument.createElement('div');
   Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: '4px', padding: '4px 8px', fontSize: '11px', marginBottom: '4px', display: 'none' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(warn, body);
 
@@ -110,7 +115,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   }
   syncMixedFieldsWarning();
 
-  const hint = document.createElement('div');
+  const hint = card.ownerDocument.createElement('div');
   hint.textContent = byGroup
     ? 'One point per die · coloured by group · click legend to filter'
     : 'One point per die across all wafers · coloured by hard bin · click legend to filter';
@@ -135,11 +140,11 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   const labelOfCategory = (cat: string): string => byGroup ? cat : cat === '0' ? 'No bin data' : `Bin ${cat}`;
   const activeCats = new Set<string>();
 
-  const legend = document.createElement('div');
+  const legend = card.ownerDocument.createElement('div');
   Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
   body.appendChild(legend);
 
-  const canvas = document.createElement('canvas');
+  const canvas = card.ownerDocument.createElement('canvas');
   canvas.style.display = 'block';
   canvas.style.cursor = 'crosshair';
   body.appendChild(canvas);
@@ -189,15 +194,15 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     legend.innerHTML = '';
     activeCats.clear();
     for (const cat of cats) {
-      const swatch = document.createElement('button');
+      const swatch = card.ownerDocument.createElement('button');
       swatch.type = 'button';
       swatch.dataset.cat = cat;
       swatch.title = `${labelOfCategory(cat)} — click to filter`;
       const color = colorOfCategory(cat);
       Object.assign(swatch.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 7px', borderRadius: '10px', border: `1px solid ${CLR.menuBorder}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: CLR.text, whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
-      const dot = document.createElement('span');
+      const dot = card.ownerDocument.createElement('span');
       Object.assign(dot.style, { display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: color, flexShrink: '0' } as Partial<CSSStyleDeclaration>);
-      swatch.append(dot, document.createTextNode(labelOfCategory(cat)));
+      swatch.append(dot, card.ownerDocument.createTextNode(labelOfCategory(cat)));
       swatch.addEventListener('click', () => {
         if (activeCats.has(cat)) activeCats.delete(cat); else activeCats.add(cat);
         updateLegend();
