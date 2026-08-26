@@ -252,9 +252,22 @@ async function selectToolbarDropdownItem(page, btnAriaLabel, itemLabel) {
       el.tagName === 'DIV' && el.style.position === 'fixed'
     );
     for (const menu of menus) {
+      // Plain dropdown row: the row div's own text is the label. Tried first
+      // since it's still correct for a genuine plain dropdown (e.g. Plot mode).
       const row = [...menu.querySelectorAll('div')]
         .find(d => d.textContent?.trim() === label);
       if (row) { row.click(); return true; }
+      // Check-menu row (buildCheckMenuEl): the row's own text is "✓" + label
+      // (the tick glyph is always in the DOM, only its CSS visibility toggles),
+      // so match the inner label <span> instead and click its row ancestor —
+      // same fallback toggleToolbarCheckItem already uses for Overlays. Needed
+      // once Legend style became a check-menu (perMap toggle, wmap 0.25.0).
+      const span = [...menu.querySelectorAll('span')]
+        .find(s => s.textContent?.trim() === label);
+      if (span) {
+        const spanRow = span.closest('div');
+        if (spanRow) { spanRow.click(); return true; }
+      }
     }
     return false;
   }, itemLabel);
