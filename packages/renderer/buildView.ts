@@ -345,7 +345,14 @@ interface ColorFns {
 
 const PARTIAL_DIE_FILL = '#d3d6db';
 const DIM_FILL = '#e8e9ea';
-const EDGE_EXCLUDED_FILL = '#eceef0';
+// Was '#eceef0' — lighter than NO_DATA_FILL and barely darker than the
+// default canvas background ('#f5f5f5', canvasTheme.ts), so an excluded die
+// read as blank/missing rather than "measured but excluded" against the
+// default light data colour scheme. Deliberately darker than NO_DATA_FILL,
+// not just a shade of it: an edge-excluded die had real data (unlike a
+// no-data die) and should read as present-but-set-aside, not as more of the
+// same "nothing here" grey.
+const EDGE_EXCLUDED_FILL = '#aab0ba';
 const NO_DATA_FILL     = '#d6d9dd';
 
 /**

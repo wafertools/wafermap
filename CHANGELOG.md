@@ -22,6 +22,13 @@ under `### Breaking`.
 
 ---
 
+## [0.26.1] — 2026-08-28
+
+### Fixed
+
+- **The built-in guide window read as broken in a dark host theme — pale, near-illegible text on a plain white page.** `.wmap-guide`'s CSS set `color: var(--wmap-text, #1a1a1a)` but never a matching `background`, so a popup window that copies `--wmap-*` tokens from a dark host (`copyWmapThemeTokens`) got dark-appropriate (pale) text with no dark background to put it on. Added `background: var(--wmap-surface, #fff)` to `.wmap-guide`, so background now follows the same synced tokens the text already did.
+- **`edgeExcluded` dies rendered almost invisibly against the default light data colour scheme.** The fill (`#eceef0`) was lighter than the "no data" fill and barely darker than the canvas's own default background (`#f5f5f5`) — an excluded die read as blank/missing rather than "measured but excluded." Now a visibly darker, distinct grey (`#aab0ba`) — deliberately darker than the no-data fill too, since an excluded die had real data and should read as present-but-set-aside, not as more of the same "nothing here."
+
 ## [0.26.0] — 2026-08-28
 
 ### Breaking

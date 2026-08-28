@@ -146,7 +146,7 @@ bodyHtml = bodyHtml.replace(
 // narrow icon-only cells in overlay/orientation tables.
 const wrappedHtml = `<div class="wmap-guide">
 <style>
-.wmap-guide{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:var(--wmap-text,#1a1a1a);padding:24px 32px;max-width:var(--wmap-guide-reading-width,720px);margin:0 auto;overflow-y:auto;height:100%;box-sizing:border-box}
+.wmap-guide{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:var(--wmap-text,#1a1a1a);background:var(--wmap-surface,#fff);padding:24px 32px;max-width:var(--wmap-guide-reading-width,720px);margin:0 auto;overflow-y:auto;height:100%;box-sizing:border-box}
 .wmap-guide h1{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:1.35em;font-weight:700;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--wmap-border,#e2e5ea);color:var(--wmap-text,#111)}
 .wmap-guide-version{font-size:11px;font-weight:400;color:var(--wmap-text-muted,#888);white-space:nowrap}
 .wmap-guide h2{font-size:1.1em;font-weight:700;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--wmap-border,#e9eaec);color:var(--wmap-text,#1a1a1a)}
