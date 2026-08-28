@@ -334,6 +334,43 @@ test('renderLotSummaryContent — "View die list" pools every wafer\'s dies with
   assert.deepEqual(waferCol.sort(), ['W1', 'W2', 'W2']);
 });
 
+// ── "Summary report": opens in an in-app modal by default (WMAP_ISSUES.md #37) —
+// no setReportOpener/window.open required just to view a report. ─────────────
+
+test('renderWaferSummaryContent — "Summary report" opens an in-app modal with the report as an iframe, not window.open', () => {
+  const panel = panelDiv();
+  document.body.innerHTML = '';
+  renderWaferSummaryContent(panel, {
+    wafer: wafer({ metadata: { lot: 'L1' } }),
+    dies: [die({ hbin: 1 })],
+    yieldSummary: { passDies: 1, failDies: 0, edgeExcludedDies: 0, partialDies: 0, totalDies: 1, yieldPercent: 100, yieldPercentGross: null },
+    dataCoverage: { filledDies: 1, totalDies: 1, edgeExcludedDies: 0, ratio: 1, unpositionedDies: 0 },
+  });
+  clickLink(panel, 'Summary report');
+
+  const modal = document.body.querySelector('.wmap-modal-box');
+  assert.ok(modal, 'expected an in-app modal to have been mounted, not a window.open() call');
+  const iframe = modal.querySelector('iframe');
+  assert.ok(iframe, 'expected the report HTML to be rendered via an iframe');
+  assert.match(iframe.srcdoc, /<!DOCTYPE html>/i);
+  assert.match(iframe.srcdoc, /L1/, 'expected the actual report content in srcdoc, not a placeholder');
+  assert.ok(modal.querySelector('button[aria-label="Print / Save as PDF"]'), 'expected a print header button');
+  assert.ok([...modal.querySelectorAll('button')].some(b => b.textContent.includes('Open as full page')), 'expected the "open as full page" fallback link');
+});
+
+test('renderLotSummaryContent — "Summary report" opens an in-app modal too', () => {
+  const panel = panelDiv();
+  document.body.innerHTML = '';
+  const lotSummary = { stats: { waferCount: 1 }, perWafer: [] };
+  const items = [{ label: 'W1', wafer: wafer({ metadata: { lot: 'L1' } }), dies: [die({ hbin: 1 })] }];
+  renderLotSummaryContent(panel, { lotSummary, items });
+  clickLink(panel, 'Summary report');
+
+  const modal = document.body.querySelector('.wmap-modal-box');
+  assert.ok(modal, 'expected an in-app modal to have been mounted');
+  assert.ok(modal.querySelector('iframe'), 'expected the lot report HTML to be rendered via an iframe');
+});
+
 test('renderLotSummaryContent — "View die list" CSV carries only metadata common to every wafer', () => {
   const panel = panelDiv();
   document.body.innerHTML = '';

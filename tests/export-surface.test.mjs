@@ -83,6 +83,19 @@ const SNAPSHOTS = {
     // host (tsmap's lot-level "Die list…" toolbar button) can build its own
     // combined view. See WMAP_ISSUES.md #39.
     'buildDieListSection',
+    // The toolbar's own icon set — exposed so a host rendering its own chrome
+    // alongside wmap's can match wmap's iconography instead of copy-pasting
+    // SVGs that silently drift on the next redesign. See WMAP_ISSUES.md #16.
+    'ICONS',
+    // In-app modal for report HTML — the Summary panel's "Summary report"
+    // button now opens through this by default, no setReportOpener wiring
+    // required just to view a report. See WMAP_ISSUES.md #37.
+    'openReportModal',
+    // Opens the same guide window WaferMapController/GalleryController's own
+    // openUserGuide() opens, but with no live render required — for a host
+    // whose help entry point must also work before anything is loaded. See
+    // WMAP_ISSUES.md #37.
+    'openWaferMapGuide',
   ],
 };
 

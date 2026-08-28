@@ -146,7 +146,7 @@ bodyHtml = bodyHtml.replace(
 // narrow icon-only cells in overlay/orientation tables.
 const wrappedHtml = `<div class="wmap-guide">
 <style>
-.wmap-guide{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:var(--wmap-text,#1a1a1a);padding:24px 32px;max-width:720px;margin:0 auto;overflow-y:auto;height:100%;box-sizing:border-box}
+.wmap-guide{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:var(--wmap-text,#1a1a1a);padding:24px 32px;max-width:var(--wmap-guide-reading-width,720px);margin:0 auto;overflow-y:auto;height:100%;box-sizing:border-box}
 .wmap-guide h1{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:1.35em;font-weight:700;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--wmap-border,#e2e5ea);color:var(--wmap-text,#111)}
 .wmap-guide-version{font-size:11px;font-weight:400;color:var(--wmap-text-muted,#888);white-space:nowrap}
 .wmap-guide h2{font-size:1.1em;font-weight:700;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--wmap-border,#e9eaec);color:var(--wmap-text,#1a1a1a)}
@@ -174,7 +174,6 @@ const wrappedHtml = `<div class="wmap-guide">
 .wmap-demo[data-wmap-demo="summary-panel"]{height:300px}
 .wmap-demo[data-wmap-demo="box-select"]{height:280px}
 .wmap-demo[data-wmap-demo="analysis"]{height:600px}
-.wmap-guide--max{max-width:1000px}
 @media print{
   /* Print only the guide's own content, never the host page, and never a
      clipped single screenful. The guide window opens one of two ways
@@ -205,8 +204,18 @@ const wrappedHtml = `<div class="wmap-guide">
   /* contentWrap (flex container) and the scroll wrapper inside it both clip/scroll;
      unclip them so the full guide paginates instead of one screenful printing. */
   .wmap-window-box > div:not(:first-child),.wmap-window-box > div:not(:first-child) > div{display:block!important;overflow:visible!important;height:auto!important;flex:none!important;min-height:0!important}
-  .wmap-guide,.wmap-guide--max{max-width:none!important;height:auto!important;overflow:visible!important;padding:0!important}
+  .wmap-guide{max-width:none!important;height:auto!important;overflow:visible!important;padding:0!important}
+  /* Generic counterpart to the direct .wmap-guide override above — widens
+     ANY reading column that opts into the shared --wmap-guide-reading-width
+     convention (see UserGuideExtension's doc comment), not just wmap's own,
+     without this print stylesheet needing to know a host's class names. */
+  .wmap-guide-content{--wmap-guide-reading-width:none!important}
   .wmap-guide-online-link{display:none!important}
+  /* The combined-contents sticky bar (toolbar.ts's buildGuideToc) is a
+     screen-only navigation aid — sticky positioning is meaningless on a
+     paginated printout, and a live "Contents ▾ / Top" bar has no useful
+     printed form, so it's dropped the same way the "view online" link is. */
+  .wmap-guide-toc{display:none!important}
 }
 </style>
 ${bodyHtml}<script>${demosScript}</script></div>`;

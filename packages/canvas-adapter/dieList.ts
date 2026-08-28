@@ -13,7 +13,8 @@
 // skimming quickly, which is the whole reason this exists instead of that.
 
 import type { Die } from '../core/dies.js';
-import { hasPosition } from '../core/dies.js';
+import { hasPosition, isPositionedDie } from '../core/dies.js';
+import { classifyDie, type Wafer } from '../core/index.js';
 import { isParametricTest, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { resolveMetadataColumns, type MetadataKeySelection } from '../stats/metadataColumns.js';
@@ -110,6 +111,22 @@ export interface DieListOptions extends DieListDisplayOptions {
    * an empty cell for that row.
    */
   extraColumn?: { label: string; get: (die: Die) => string | undefined };
+  /**
+   * Per-die wafer lookup for Ring/Quadrant classification. A single-wafer
+   * caller passes a constant `() => wafer`; the lot-pooled combined list
+   * (multiple wafers in one export) passes a per-die lookup, since a die
+   * carries no wafer identity of its own — see `renderLotSummaryContent`'s
+   * `waferByDie`. Omitted or returning `undefined` for a die (unpositioned,
+   * or wafer unknown) leaves that die's Ring/Quadrant cells blank. If no die
+   * in the export resolves a wafer, the columns are omitted entirely rather
+   * than shown empty.
+   */
+  getWafer?: (die: Die) => Wafer | undefined;
+  /** Ring count for classification — must match the value the rest of this
+   *  wafer/lot's analysis used (`analyzeWaferMap`/`analyzeWaferLot`'s
+   *  `ringCount`), so a die's "Ring 2" here always means the same region a
+   *  Ring finding elsewhere names. Default `4`, matching that default. */
+  ringCount?: number;
   /** Wafer-level metadata for this population, e.g. `WaferMapResult.metadata`. */
   waferMetadata?: WaferMetadata;
   /** Label/order hints for die metadata columns, e.g. `WaferMapResult.metadataFields`. */
@@ -172,8 +189,15 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-function positionLabel(die: Die): string {
-  return hasPosition(die) ? `(${die.x}, ${die.y})` : '—';
+// Separate numeric X/Y columns, not a single "(x, y)" cell — a bracketed pair
+// is fine to read on screen but is exactly the kind of value that forces an
+// extra parsing step (or breaks outright) when the CSV is opened in Excel,
+// pandas, or any other tool expecting one number per cell.
+function xLabel(die: Die): string {
+  return hasPosition(die) ? String(die.x) : '';
+}
+function yLabel(die: Die): string {
+  return hasPosition(die) ? String(die.y) : '';
 }
 
 /**
@@ -192,6 +216,29 @@ function resolveTestColumns(dies: Die[], testDefs: TestDef[] | undefined): TestD
     }
   }
   return [...seen.values()].sort((a, b) => a.testNumber - b.testNumber);
+}
+
+/**
+ * Ring/quadrant per die, via `options.getWafer` — `undefined` (not just an
+ * empty Map) when no die resolves a wafer at all, so the caller can omit the
+ * columns entirely rather than render them empty. Only positioned dies are
+ * classified (`classifyDie` requires it); an unpositioned die's cells are
+ * left blank by the column's own `get`, same as every other spatial column.
+ */
+function resolveClassifications(
+  dies: Die[],
+  getWafer: ((die: Die) => Wafer | undefined) | undefined,
+  ringCount: number,
+): Map<Die, { ring: number; quadrant: string }> | undefined {
+  if (!getWafer) return undefined;
+  const byDie = new Map<Die, { ring: number; quadrant: string }>();
+  for (const die of dies) {
+    if (!isPositionedDie(die)) continue;
+    const wafer = getWafer(die);
+    if (!wafer) continue;
+    byDie.set(die, classifyDie(die, wafer, { ringCount }));
+  }
+  return byDie.size > 0 ? byDie : undefined;
 }
 
 /**
@@ -247,11 +294,23 @@ export function buildDieListSection(
     outer.appendChild(el(doc, 'div', { fontSize: '11px', color: CLR.label, lineHeight: '1.4', flexShrink: '0' }, options.note));
   }
 
+  const classifications = resolveClassifications(dies, options.getWafer, options.ringCount ?? 4);
+  // applyEdgeExclusion (buildWaferMap.ts) only ever stamps `edgeExcluded: true`
+  // on the dies it excludes — an included die is left untouched, never set to
+  // `false` — so "no die here is true" is the only signal available and is
+  // treated as "the column has nothing to add" (whether the feature was never
+  // configured, or was configured but nothing on this population tripped it).
+  const hasEdgeExcluded = dies.some(d => d.edgeExcluded === true);
+
   // Built-in labels a metadata key must not silently collide with. Test
   // columns are resolved before this, so their names are already known.
+  // Ring/Quadrant/Edge excluded are reserved unconditionally (not just when
+  // shown this run) so a metadata key with one of these names always gets
+  // disambiguated the same way, instead of column-naming depending on
+  // whether this particular export happens to populate them.
   const reservedLabels = [
     ...(options.extraColumn ? [options.extraColumn.label] : []),
-    'Position', 'Site', 'Hard bin', 'Soft bin',
+    'X', 'Y', 'Ring', 'Quadrant', 'Edge excluded', 'Site', 'Hard bin', 'Soft bin',
     ...testColumns.map(td => td.name),
   ];
 
@@ -269,7 +328,13 @@ export function buildDieListSection(
 
   const columns: DieColumn[] = [
     ...(options.extraColumn ? [{ label: options.extraColumn.label, get: (d: Die) => options.extraColumn!.get(d) ?? '' }] : []),
-    { label: 'Position', get: positionLabel },
+    { label: 'X', get: xLabel },
+    { label: 'Y', get: yLabel },
+    ...(classifications ? [
+      { label: 'Ring', get: (d: Die) => { const c = classifications.get(d); return c ? String(c.ring) : ''; } },
+      { label: 'Quadrant', get: (d: Die) => classifications.get(d)?.quadrant ?? '' },
+    ] : []),
+    ...(hasEdgeExcluded ? [{ label: 'Edge excluded', get: (d: Die) => d.edgeExcluded ? 'Yes' : 'No' }] : []),
     { label: 'Site', get: (d) => d.siteNum !== undefined ? String(d.siteNum) : '' },
     { label: 'Hard bin', get: (d) => d.hbin !== undefined ? String(d.hbin) : '' },
     { label: 'Soft bin', get: (d) => d.sbin !== undefined ? String(d.sbin) : '' },

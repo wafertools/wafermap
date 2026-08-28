@@ -212,8 +212,21 @@ export interface LotStatsSummary {
   level: 'lot';
   hasNotableFindings: boolean;
   findings: StatsFinding[];
-  /** Free-form lot-level identity fields (lot ID, product, etc. — wafer-specific keys excluded). */
+  /**
+   * Free-form lot-level identity fields (lot ID, product, etc. — wafer-specific
+   * keys excluded). Only includes a key when every wafer that has identity data
+   * agrees on its value — see `mixedIdentityFields` for keys that disagree.
+   */
   lot?: Record<string, unknown>;
+  /**
+   * Identity keys (lot, product, testProgram, temperature, etc.) where the
+   * pooled wafers do NOT all agree — e.g. `items` mixed more than one
+   * lot/product/program into one `analyzeWaferLot` call. Omitted from `lot`
+   * rather than silently reporting the first wafer's value. Present only when
+   * at least one such key exists; check this before treating `lot` as
+   * describing the whole batch.
+   */
+  mixedIdentityFields?: string[];
   /** Engine-computed analysis stats for this lot. */
   stats: {
     waferCount: number;

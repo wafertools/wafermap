@@ -168,12 +168,30 @@ export function analyzeWaferLot(
     return left.summary.localeCompare(right.summary, 'en');
   });
 
-  // Lot-level identity: take shared fields from the first wafer that has identity data,
-  // excluding wafer-specific keys so only lot/product/date etc. remain.
-  const firstWafer = perWafer.find(w => w.summary.wafer)?.summary.wafer;
-  const lotIdentity = firstWafer
-    ? Object.fromEntries(Object.entries(firstWafer).filter(([k]) => k !== 'wafer' && k !== 'waferId'))
-    : undefined;
+  // Lot-level identity: only keys every wafer that has identity data agrees on —
+  // excluding wafer-specific keys so only lot/product/date etc. remain. A key
+  // where wafers disagree (e.g. items pooled from more than one lot/program) is
+  // omitted rather than silently taking the first wafer's value, and reported in
+  // mixedIdentityFields so a caller can detect and warn/split instead of a report
+  // silently mislabelling a pooled batch as a single lot.
+  const identityWafers = perWafer.map(w => w.summary.wafer).filter((w): w is NonNullable<typeof w> => !!w);
+  const lotIdentity: Record<string, unknown> = {};
+  const mixedIdentityFields: string[] = [];
+  if (identityWafers.length > 0) {
+    const keys = new Set<string>();
+    for (const w of identityWafers) for (const k of Object.keys(w)) keys.add(k);
+    keys.delete('wafer');
+    keys.delete('waferId');
+    for (const key of keys) {
+      const values = identityWafers.filter(w => key in w).map(w => w[key]);
+      const allAgree = values.every(v => v === values[0]);
+      if (allAgree) {
+        lotIdentity[key] = values[0];
+      } else {
+        mixedIdentityFields.push(key);
+      }
+    }
+  }
 
   const lotYieldSeries = perWafer.map(({ waferIndex, summary }) => ({
     waferIndex,
@@ -193,7 +211,8 @@ export function analyzeWaferLot(
     hasNotableFindings: findings.some((finding) => finding.severity !== 'info')
       || perWafer.some((entry) => entry.summary.hasNotableFindings),
     findings,
-    lot: Object.keys(lotIdentity ?? {}).length > 0 ? lotIdentity : undefined,
+    lot: Object.keys(lotIdentity).length > 0 ? lotIdentity : undefined,
+    ...(mixedIdentityFields.length > 0 ? { mixedIdentityFields } : {}),
     stats: { waferCount: items.length },
     lotYieldSeries,
     perWafer,

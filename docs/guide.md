@@ -1312,6 +1312,12 @@ to fit its cards automatically.  `width: 100%` is the typical choice:
 <div id="gallery" style="width: 100%;"></div>
 ```
 
+The toolbar and legend are `position: sticky`, so they stay visible while the grid
+scrolls. Stickiness needs a scrolling ancestor with a bounded height and
+`overflow-y: auto` (or `scroll`) — the container itself, or any parent. Without one,
+the toolbar and legend just scroll away with the grid as before; nothing breaks,
+they're simply not sticky.
+
 ### Basic gallery
 
 ```ts

@@ -11,14 +11,19 @@ globalThis.Node = dom.window.Node;
 
 const { buildDieListSection } = await import('../dist/packages/canvas-adapter/dieList.js');
 const { resolveMetadataColumns, discoverDieMetadataKeys } = await import('../dist/packages/stats/metadataColumns.js');
+const { csvField } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+
+function wafer(overrides) {
+  return { diameter: 300, radius: 150, center: { x: 0, y: 0 }, orientation: 0, ...overrides };
+}
 
 function die(overrides) {
   return { x: 0, y: 0, ...overrides };
 }
 
-// Minimal RFC4180-ish line splitter — the Position column is always
-// "(x, y)", which csvField correctly quotes because it contains a comma, so
-// a naive text.split(',') breaks on every single row this suite builds.
+// Minimal RFC4180-ish line splitter — metadata values in this suite can
+// contain commas/quotes, which csvField correctly quotes, so a naive
+// text.split(',') would break on those rows.
 function parseCsvLine(line) {
   const fields = [];
   let cur = '';
@@ -128,11 +133,11 @@ test('dieList — a die metadata key literally named "Site" gets its own distinc
   const dies = [die({ siteNum: 1, metadata: { Site: 'north' } })];
   const { section, csv } = buildWithCapture(dies, undefined, {});
   const domHeaders = [...section.querySelectorAll('th')].map(th => th.textContent);
-  // Built-in 'Site' plus the disambiguated metadata column — five distinct headers.
-  assert.deepEqual(domHeaders, ['Position', 'Site', 'Hard bin', 'Soft bin', 'Site (metadata)']);
+  // Built-in 'Site' plus the disambiguated metadata column — six distinct headers.
+  assert.deepEqual(domHeaders, ['X', 'Y', 'Site', 'Hard bin', 'Soft bin', 'Site (metadata)']);
   const domRow = [...section.querySelector('tbody tr').querySelectorAll('td')].map(td => td.textContent);
-  assert.equal(domRow[1], '1');            // built-in Site (siteNum)
-  assert.equal(domRow[4], 'north');        // metadata Site, disambiguated
+  assert.equal(domRow[2], '1');            // built-in Site (siteNum)
+  assert.equal(domRow[5], 'north');        // metadata Site, disambiguated
 });
 
 // ── Shadowing ─────────────────────────────────────────────────────────────
@@ -289,4 +294,113 @@ test('dieList — the section and its scroll container constrain BOTH flex axes'
   assert.equal(scrollWrap.style.overflow, 'auto');
   assert.equal(scrollWrap.style.minHeight, '0px', 'scroll container must set min-height:0');
   assert.equal(scrollWrap.style.minWidth, '0px', 'scroll container must set min-width:0');
+});
+
+// ── X/Y: separate numeric columns, not a bracketed "(x, y)" pair ──────────
+
+test('dieList — Position is split into separate numeric X/Y columns', () => {
+  const dies = [die({ x: 3, y: -5 })];
+  const { section, csv } = buildWithCapture(dies, undefined, {});
+  const headers = [...section.querySelectorAll('th')].map(th => th.textContent);
+  assert.equal(headers[0], 'X');
+  assert.equal(headers[1], 'Y');
+  const row = [...section.querySelector('tbody tr').querySelectorAll('td')].map(td => td.textContent);
+  assert.equal(row[0], '3');
+  assert.equal(row[1], '-5');
+  const csvHeaders = parseCsvLine(csv.split('\n')[0]);
+  assert.deepEqual(csvHeaders.slice(0, 2), ['X', 'Y']);
+});
+
+test('dieList — X/Y are blank, not "(—)", for an unpositioned die', () => {
+  const dies = [{ hbin: 1 }];
+  const { section } = buildWithCapture(dies, undefined, {});
+  const row = [...section.querySelector('tbody tr').querySelectorAll('td')].map(td => td.textContent);
+  assert.equal(row[0], '');
+  assert.equal(row[1], '');
+});
+
+// ── Ring/Quadrant: only present when a wafer can actually be resolved ─────
+
+test('dieList — Ring/Quadrant columns appear when getWafer resolves a wafer, with correct values', () => {
+  const w = wafer();
+  const dies = [
+    { x: 0, y: 0, physX: 50, physY: 50, hbin: 1 },
+    { x: 1, y: 0, physX: -20, physY: 20, hbin: 1 },
+  ];
+  const { section } = buildWithCapture(dies, undefined, { getWafer: () => w, ringCount: 4 });
+  const headers = [...section.querySelectorAll('th')].map(th => th.textContent);
+  assert.ok(headers.includes('Ring'), `expected a Ring column: ${headers}`);
+  assert.ok(headers.includes('Quadrant'), `expected a Quadrant column: ${headers}`);
+  const rows = [...section.querySelectorAll('tbody tr')].map(
+    tr => [...tr.querySelectorAll('td')].map(td => td.textContent),
+  );
+  const quadIdx = headers.indexOf('Quadrant');
+  assert.equal(rows[0][quadIdx], 'NE');
+  assert.equal(rows[1][quadIdx], 'NW');
+});
+
+test('dieList — Ring/Quadrant columns are omitted entirely without getWafer', () => {
+  const dies = [{ x: 0, y: 0, physX: 10, physY: 10, hbin: 1 }];
+  const { section } = buildWithCapture(dies, undefined, {});
+  const headers = [...section.querySelectorAll('th')].map(th => th.textContent);
+  assert.ok(!headers.includes('Ring'));
+  assert.ok(!headers.includes('Quadrant'));
+});
+
+test('dieList — Ring/Quadrant are blank for an unpositioned die even when getWafer is supplied', () => {
+  const w = wafer();
+  const dies = [
+    { x: 0, y: 0, physX: 10, physY: 10, hbin: 1 },
+    { hbin: 2 }, // unpositioned — no x/y at all
+  ];
+  const { section } = buildWithCapture(dies, undefined, { getWafer: () => w });
+  const headers = [...section.querySelectorAll('th')].map(th => th.textContent);
+  const ringIdx = headers.indexOf('Ring');
+  const rows = [...section.querySelectorAll('tbody tr')].map(
+    tr => [...tr.querySelectorAll('td')].map(td => td.textContent),
+  );
+  assert.notEqual(rows[0][ringIdx], '');
+  assert.equal(rows[1][ringIdx], '');
+});
+
+// ── Edge excluded: only present when the feature actually fired ──────────
+
+test('dieList — Edge excluded column appears only when at least one die is flagged', () => {
+  const excludedDies = [{ x: 0, y: 0, edgeExcluded: true, hbin: 2 }, { x: 1, y: 0, hbin: 1 }];
+  const { section: withExcl } = buildWithCapture(excludedDies, undefined, {});
+  const headersWith = [...withExcl.querySelectorAll('th')].map(th => th.textContent);
+  assert.ok(headersWith.includes('Edge excluded'), `expected the column: ${headersWith}`);
+  const rows = [...withExcl.querySelectorAll('tbody tr')].map(
+    tr => [...tr.querySelectorAll('td')].map(td => td.textContent),
+  );
+  const idx = headersWith.indexOf('Edge excluded');
+  assert.equal(rows[0][idx], 'Yes');
+  assert.equal(rows[1][idx], 'No');
+
+  const { section: without } = buildWithCapture([{ x: 0, y: 0, hbin: 1 }], undefined, {});
+  const headersWithout = [...without.querySelectorAll('th')].map(th => th.textContent);
+  assert.ok(!headersWithout.includes('Edge excluded'));
+});
+
+// ── csvField hardening: RFC4180 quoting + formula-injection guard ────────
+
+test('csvField — quotes commas/quotes/newlines/carriage returns, leaves plain text alone', () => {
+  assert.equal(csvField('plain'), 'plain');
+  assert.equal(csvField('a,b'), '"a,b"');
+  assert.equal(csvField('a"b'), '"a""b"');
+  assert.equal(csvField('a\nb'), '"a\nb"');
+  assert.equal(csvField('a\rb'), '"a\rb"');
+});
+
+test('csvField — neutralises a formula-injection lead on non-numeric text', () => {
+  assert.equal(csvField('=SUM(A1:A9)'), "'=SUM(A1:A9)");
+  assert.equal(csvField('+cmd|calc'), "'+cmd|calc");
+  assert.equal(csvField('@import'), "'@import");
+  assert.equal(csvField('-2+3+cmd|calc'), "'-2+3+cmd|calc");
+});
+
+test('csvField — a genuine signed/negative number round-trips unescaped', () => {
+  assert.equal(csvField('-1.23e-3'), '-1.23e-3');
+  assert.equal(csvField('+5'), '+5');
+  assert.equal(csvField('-0'), '-0');
 });

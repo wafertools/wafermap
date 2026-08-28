@@ -477,8 +477,8 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
                                   // toolbar's warning indicator; read here for programmatic use. §4.2.2
                                   // { code: string; message: string;
                                   //   severity?: 'error' | 'warning' | 'info'; confidence?: number }
-                                  // All three geometry codes below are severity 'error': they mean die
-                                  // positions may be wrong, not that a feature is missing.
+                                  // The first three geometry codes below are severity 'error': they mean
+                                  // die positions may be wrong, not that a feature is missing.
                                   // Codes:
                                   //   'partial-coverage'  — data does not span a full wafer; inferred
                                   //     diameter/centre may be wrong. Supply waferConfig.center + .diameter.
@@ -494,6 +494,11 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
                                   //     raised in this case — pitch is a free scaling parameter, so with
                                   //     no supplied pitch there is always one that "fits", and a fit
                                   //     check would otherwise fire on perfectly good full-wafer data.
+                                  //   'edge-exclusion-exceeds-radius' — severity 'warning', not 'error':
+                                  //     waferConfig.edgeExclusion is larger than the resolved wafer radius
+                                  //     (most likely when the diameter was itself inferred from sparse
+                                  //     data). The excluded band is clamped to the whole wafer rather than
+                                  //     silently producing a smaller, wrong ring.
   inference: {
     wafer:    { confidence: number; method: string }   // how diameter was resolved; confidence 0–1.
                                                         // method is 'inferred-partial' when partial data was detected
@@ -523,7 +528,8 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
   passDies:          number          // dies with a bin in passBins
   failDies:          number          // full dies inside wafer with a bin not in passBins
   edgeExcludedDies:  number          // dies within the edge exclusion zone
-  partialDies:       number          // dies straddling the wafer boundary
+  partialDies:       number          // dies straddling the wafer boundary — always 0 for a
+                                     // `results`-based map (§12.1)
   totalDies:         number          // passDies + failDies (edge-excluded not included)
   yieldPercent:      number | null   // (passDies / totalDies) × 100 ∈ [0, 100]; null when no bin data
   yieldPercentGross: number | null   // (passDies / (passDies + failDies + edgeExcludedDies)) × 100 ∈ [0, 100];
@@ -585,6 +591,7 @@ The library's one warning vocabulary. Raised by geometry inference on
 | `geometry-conflict` | `error` | `waferConfig.diameter` and `dieConfig.width`/`height` were both supplied and cannot contain the probed dies. |
 | `inferred-pitch` | `error` | `diameter` supplied without a die pitch, so pitch was derived as `diameter ÷ grid span` — wrong whenever edge dies are absent. |
 | `test-count-capped` | `warning` | More tests found than `analyzeWaferMap` will analyse, so **no test findings were computed at all**. Pass `testNumbers` to scope it. |
+| `edge-exclusion-exceeds-radius` | `warning` | `waferConfig.edgeExclusion` exceeds the resolved wafer radius (most likely with an under-inferred diameter). The excluded band is clamped to the whole wafer instead of silently producing a smaller, wrong ring. |
 
 `severity` is about trust in what is on screen, not about how loud the message is:
 `'error'` means the map may be **positionally wrong**; `'warning'` means something
@@ -900,7 +907,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `flipX` | `boolean` | `false` | |
 | `flipY` | `boolean` | `false` | |
 | `showDieLabels` | `boolean` | `false` | Die index labels |
-| `showPartialDies` | `boolean` | `true` | Render partial (edge) dies in muted grey. Set to `false` to hide them, matching real prober behaviour where edge positions outside the wafer circle are never tested. |
+| `showPartialDies` | `boolean` | `true` | Render partial (edge) dies in muted grey. No-op for a `results`-based map — those never have any (§12.1) — relevant only for a synthesized grid built via `clipDiesToWafer`. |
 | `showRingBoundaries` | `boolean` | `false` | |
 | `showQuadrantBoundaries` | `boolean` | `false` | |
 | `showReticle` | `boolean` | `false` | Reticle field boundary overlay (requires `reticles` on the result) |
@@ -1178,7 +1185,7 @@ Every one of these matters: the six tokens that used to be left unset here — `
 }
 ```
 
-The Summary panel is a docked panel — metadata, yield, bin breakdown, ring/quadrant yield, test values, and detected anomalies (`StatsSummary.findings`, with severity/kind/region filter controls wired to `filterFindings`, §7.x) — plus one combined "Summary report" button that opens the full HTML report (`renderSummaryReportHtml`/`renderLotSummaryReportHtml`, which already includes findings). Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/ring/quadrant/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, `buildRegionYieldData`), so the two surfaces can show overlapping numbers without ever disagreeing.
+The Summary panel is a docked panel — metadata, yield, bin breakdown, ring/quadrant yield, test values, and detected anomalies (`StatsSummary.findings`, with severity/kind/region filter controls wired to `filterFindings`, §7.x) — plus one combined "Summary report" button that opens the full HTML report (`renderSummaryReportHtml`/`renderLotSummaryReportHtml`, which already includes findings) in an in-app modal (`openReportModal`, §10.3) — no host wiring required. Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/ring/quadrant/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, `buildRegionYieldData`), so the two surfaces can show overlapping numbers without ever disagreeing.
 
 #### 5.4.3 `InsightsOptions`
 
@@ -1229,8 +1236,26 @@ import { buildDieListSection } from '@wafertools/wafermap/render';
 buildDieListSection(dies, testDefs, options?);   // → HTMLDivElement | null
 ```
 
-Columns, in order: `[extraColumn?]` → Position, Site, Hard bin, Soft bin → one column per
-test → die metadata → wafer metadata.
+Columns, in order: `[extraColumn?]` → X, Y `[→ Ring, Quadrant]` `[→ Edge excluded]` → Site,
+Hard bin, Soft bin → one column per test → die metadata → wafer metadata.
+
+**X/Y are separate numeric columns**, not a single `"(x, y)"` cell — a bracketed pair reads
+fine on screen but forces an extra parsing step (or breaks outright) when the CSV is opened in
+Excel, pandas, or any other tool expecting one number per cell. Blank for an unpositioned die.
+
+**Ring/Quadrant** appear only when `getWafer` resolves at least one die to a `Wafer` — omitted
+entirely otherwise, not shown empty. Values match `classifyDie` (§7) exactly, using the same
+`ringCount` as the rest of this wafer/lot's analysis, so "Ring 2" here always names the same
+region a Ring finding does. Reached through `renderWaferMap`/`renderWaferGallery`, this is
+wired up automatically — a direct `buildDieListSection` call supplies `getWafer` itself.
+
+**Edge excluded** appears only when at least one die in the export has `edgeExcluded: true` —
+`buildWaferMap`'s edge exclusion (`waferConfig.edgeExclusion`) is opt-in and only ever stamps
+`true` on the dies it excludes, never `false` on the ones it doesn't, so "no die is excluded"
+and "the feature was never configured" are indistinguishable from `Die[]` alone; omitting the
+column in that case is the closest available approximation. When shown, `Yes`/`No` is
+unambiguous for every row, since at least one exclusion is known to have happened somewhere in
+the export.
 
 **Metadata columns are on by default** (`metadataColumns: 'auto'`) — every key found on any
 die's `DieMetadata`, deterministically ordered (`metadataFields` declaration order first,
@@ -1275,6 +1300,8 @@ export interface DieListOptions extends DieListDisplayOptions {
   note?:           string;
   onSaveText?:     SaveTextHandler;
   extraColumn?:    { label: string; get: (die: Die) => string | undefined };
+  getWafer?:       (die: Die) => Wafer | undefined;  // per-die wafer for Ring/Quadrant — see below
+  ringCount?:      number;              // default 4 — must match this wafer/lot's own ringCount
   waferMetadata?:  WaferMetadata;       // e.g. WaferMapResult.metadata
   metadataFields?: MetadataFieldDef[];  // e.g. WaferMapResult.metadataFields
   ownerDocument?:  Document;            // default `document` — see below
@@ -1496,7 +1523,9 @@ differs.
 
 ### 5.11 User guide extension
 
-`showHelpButton: true` (§5.4, §6.2) opens wmap's own built-in end-user guide — but a host application often has its own documentation too, and forcing the user to find two separate help buttons/documents is poor UX. `userGuideExtension` inserts the host's own content **before** wmap's guide content in the same window, so there's one help button and one combined document instead of two:
+`showHelpButton: true` (§5.4, §6.2) opens wmap's own built-in end-user guide — but a host application often has its own documentation too, and forcing the user to find two separate help buttons/documents is poor UX. `userGuideExtension` inserts the host's own content **before** wmap's guide content in the same window, so there's one help button and one combined document instead of two.
+
+A host's own help entry point often needs to work before anything is rendered too (an empty-state "Help" menu, say) — `renderWaferMap`/`renderWaferGallery`'s `userGuideExtension` option only takes effect once one of them has actually been called. For that gap, `openWaferMapGuide` (§10.4) opens the identical combined window directly, no live render required.
 
 ```ts
 import type { UserGuideExtension } from '@wafertools/wafermap/render';
@@ -1523,6 +1552,16 @@ wmap's own guide content keeps its own `<h1>Wafer Map — User Guide</h1>` furth
 
 **No `<script>` tags in `html`.** wmap re-executes exactly one inline script after inserting the combined content — its own live-demo bootstrap, always the last element in wmap's guide HTML — by finding the content container's *first* `<script>` in document order. A `<script>` tag in the host's own HTML would be found first instead, silently breaking wmap's live demos. Keep `html` to static markup (headings, prose, images, links).
 
+**Printing.** When the guide opens as an in-page overlay (any host where `window.open` is blocked or unavailable, e.g. Tauri/Electron/WebView2), its header includes a Print/Save-as-PDF button that calls the host page's own `window.print()` — no host wiring needed. A real separate popup (plain browser hosts, where `window.open` succeeds) needs no such button: it's an actual OS window with nothing else on the page to exclude, so the browser's native Ctrl+P/Cmd+P already prints just the guide.
+
+**Combined "Contents" navigation.** A sticky bar at the top of the guide window lists every `<h2 id="...">` found in the combined document — the host's `extension.html` and wmap's own guide content alike — behind a "Contents" disclosure toggle, plus a "Top" shortcut. This is what makes the combined window read as one guide rather than two stacked documents: without it there is no shared navigation between a host's own sections and wmap's, and no way back to an earlier section once a reader has scrolled past it. Every heading in the combined document also gets a `scroll-margin-top` so a jump target never lands hidden underneath the sticky bar — this applies to a host's own internal cross-references too (any anchor link inside `extension.html`), not just this nav's own links. Give every section-level heading in `html` a real, unique `id` (the pattern in the example above, using `<h2 id="...">` for section headings, is what the nav looks for) and it is picked up automatically — there is nothing else to opt into. Appears once there are at least two `<h2 id>` elements total; wmap's own guide alone already clears that, so every host gets this nav, whether or not it supplies an extension.
+
+The list is deliberately **one flat list, not grouped or split by source** — a host's help button opens what reads as one guide, and a reader has no reason to know or care that it's actually two source documents stitched together. Each side's `<h2>`s are typically numbered from their own source markdown independently (`1.`, `2.`, `3.` …), which would collide head-on partway through this one list, so the nav strips any leading `N.` a heading's own text supplies and lets position in the list carry the order instead. Entries flow in a CSS multi-column box (top-to-bottom within a column, then across), not a row-major grid — the usual reading order for a printed or on-screen table of contents.
+
+**Search.** The same sticky bar also gets a find-in-page text box — but **only** in the in-page overlay case (the same condition Printing above uses), sitting between the Contents toggle and the Top shortcut. A real popup window needs none: it's an actual OS window, so the browser's native Ctrl+F/Cmd+F already searches it — a custom box there would just be redundant chrome. The in-page fallback has no such native search reachable from inside the embedded WebView, which is the gap this fills. Matches are wrapped in plain `<mark>` elements — every browser already renders those as a highlighted span with no CSS needed, so there's no invented highlight colour to keep in sync with a host's theme; the current match additionally gets an outline so it stands out from the rest. Enter/Shift+Enter step through matches, Escape clears the query (or blurs if already empty), and the match count announces via `aria-live` for screen readers.
+
+**Matching wmap's reading measure.** wmap's own guide content is capped at `max-width: var(--wmap-guide-reading-width, 720px)`, widening to `1000px` when the guide window is maximised (the property is set on the shared content wrapper, so it cascades to anything using it). Give the host content's own top-level block the same `max-width: var(--wmap-guide-reading-width, <yourDefault>)` — and matching padding, e.g. `padding: 24px 32px` — to keep the two sections' margins and line lengths visually identical as the window resizes, rather than introducing a visible seam between "the host's part" and "wmap's part."
+
 ---
 
 ## 6 `renderWaferGallery(container, items, options?)` — gallery
@@ -1542,6 +1581,12 @@ card content will be clipped.
 ```html
 <div id="gallery" style="width: 100%;"></div>
 ```
+
+The gallery's toolbar and legend are `position: sticky`, so they stay visible while
+the grid scrolls. Stickiness needs a scrolling ancestor with a bounded height and
+`overflow-y: auto` (or `scroll`) — the container itself, or any parent. Without one,
+the toolbar and legend just scroll away with the grid as before; nothing breaks,
+they're simply not sticky.
 
 ```ts
 import { renderWaferGallery } from '@wafertools/wafermap/render';
@@ -2045,7 +2090,8 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
   sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 | 32 (default 8)
 
   // ── Population ────────────────────────────────────────────────────────────
-  includePartial?:      boolean  // include partial dies (default false)
+  includePartial?:      boolean  // include partial dies (default false) — only ever matters for a
+                                  // synthesized grid; a `results`-based map has none (§12.1)
   includeEdgeExcluded?: boolean  // include edge-excluded dies (default false)
 }
 ```
@@ -2183,7 +2229,13 @@ Either the rate criterion or the size criterion can trigger the severity level; 
   level: 'lot'
   hasNotableFindings: boolean
   findings: StatsFinding[]             // lot-level findings (repeated patterns + inter-wafer outliers); sorted unusual → notable → info
-  lot?: Record<string, unknown>        // shared identity fields from first wafer (lot ID, product, etc. — wafer-specific keys excluded)
+  lot?: Record<string, unknown>        // identity fields EVERY wafer with identity data agrees on (lot ID, product, etc. —
+                                        // wafer-specific keys excluded). A key where wafers disagree (e.g. items pooled
+                                        // from more than one lot/program) is omitted here, not silently taken from the
+                                        // first wafer — see mixedIdentityFields below.
+  mixedIdentityFields?: string[]       // identity keys where the pooled wafers do NOT all agree. Present only when at
+                                        // least one such key exists — check this before treating `lot` as describing
+                                        // the whole batch.
   stats: {
     waferCount: number
   }
@@ -2256,7 +2308,7 @@ Generates a standalone printable HTML **full summary report** — a snapshot of 
 
 `Wafer` → §12.2 · `Die` → §12.1 · `YieldSummary` → §4.2.1 · `BinDef` → §4.1.9 · `TestDef` → §4.1.8 · `StatsSummary` → §7.4
 
-The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided.
+The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided, and opens the result via `openReportModal` (§10.3).
 
 ### 7.8 `renderLotSummaryReportHtml`
 
@@ -2290,7 +2342,7 @@ Generates a standalone printable HTML **full lot summary report** — the lot-le
 
 There is no `lotSummary` parameter — grouping, per-group analysis (`analyzeWaferLot`), and rendering all happen internally from the flat `items` list, so callers never pre-compute a lot summary or pre-partition by lot identity themselves. `items` is partitioned by whichever of `lot`/`product`/`testProgram`/`temperature` actually vary across the wafers' `wafer.metadata` (a `split` difference alone never triggers a split — comparing splits *within* one report is the point of that field, not a reason to separate them into different documents). The common single-lot case produces one report identical to a plain single-lot call; a load that spans more than one lot/product/program/temperature is split into multiple side-by-side sections instead of silently pooling stats across populations that shouldn't be averaged together, with a banner explaining the split.
 
-The lot summary panel's "Summary report" button calls this automatically when `lotStatsSummary` is provided to `renderWaferGallery` (the on-screen panel and the generated report can legitimately show different numbers for a heterogeneous multi-lot load — the panel displays the host's own precomputed `lotStatsSummary` as a single pooled view, while the report always applies the identity-based split described above).
+The lot summary panel's "Summary report" button calls this automatically when `lotStatsSummary` is provided to `renderWaferGallery`, and opens the result via `openReportModal` (§10.3) (the on-screen panel and the generated report can legitimately show different numbers for a heterogeneous multi-lot load — the panel displays the host's own precomputed `lotStatsSummary` as a single pooled view, while the report always applies the identity-based split described above).
 
 ### 7.9 `openHtmlReport` / `setReportOpener`
 
@@ -2301,9 +2353,11 @@ openHtmlReport(html: string): void
 setReportOpener(opener: (html: string) => void): void
 ```
 
-`openHtmlReport` opens a rendered HTML report string (from `renderFindingsReportHtml` or `renderSummaryReportHtml`) in a new browser tab. The summary panel's single "Summary report" button calls it internally (with `renderSummaryReportHtml`, which already embeds a findings section); `renderFindingsReportHtml` remains available for a caller that wants a findings-only document of its own.
+`openHtmlReport` opens a rendered HTML report string (from `renderFindingsReportHtml`, `renderSummaryReportHtml`, or `renderLotSummaryReportHtml`) in a new browser tab.
 
-In embedded hosts where `window.open` is blocked (e.g. Tauri, Electron, WebView2), register a custom opener at startup:
+**The summary panel's "Summary report" button no longer calls this directly** — it opens through `openReportModal` (§10.3) instead, an in-app modal that needs no host wiring at all, in a plain browser tab or an embedded host (Tauri, Electron, WebView2) alike. `openHtmlReport`/`setReportOpener` are still very much alive: `openReportModal`'s own "Open as full page ↗" link and print button route through them, so a host that wants the report as a real separate page (to keep it open outside the modal, or as a platform-specific print fallback) still registers an opener exactly as below — it's just no longer required merely to *view* a report. `renderFindingsReportHtml` remains available for a caller that wants a findings-only document of its own, opened however it likes (`openHtmlReport`, `openReportModal`, or its own presentation).
+
+In embedded hosts where `window.open` is blocked (e.g. Tauri, Electron, WebView2), register a custom opener at startup if you want the "Open as full page" fallback to produce a real OS window/page instead of a console warning:
 
 ```ts
 setReportOpener(html => {
@@ -2312,7 +2366,7 @@ setReportOpener(html => {
 });
 ```
 
-Once set, `openHtmlReport` routes through your opener instead of `window.open`. The summary panel buttons continue to work without any other changes.
+Once set, `openHtmlReport` routes through your opener instead of `window.open`.
 
 ### 7.10 `StatsFinding`
 
@@ -2931,6 +2985,49 @@ Returns `undefined` when no value is present.  Use this in post-build code that 
 
 `isParametricTest` returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric.
 
+### 10.2 `ICONS`
+
+```ts
+import { ICONS } from '@wafertools/wafermap/render';
+
+ICONS: Record<string, string>   // icon key → inline SVG markup (uses currentColor for stroke/fill)
+```
+
+The toolbar's own icon set, keyed by name (`'download'`, `'expand'`, `'close'`, `'help'`, …). A host rendering its own chrome (overlay buttons, custom toolbars) alongside wmap's can import `ICONS` to match wmap's iconography exactly, instead of copy-pasting SVG strings that silently drift on the next icon redesign. Each value is ready to assign to `element.innerHTML`.
+
+Key names are stable once published — removing or renaming a key is a breaking change, same as any other public export; new keys may be added in a patch release. There is no separate "curated public subset" — the whole set is public, since it is just data (no behaviour to keep internal).
+
+### 10.3 `openReportModal`
+
+```ts
+import { openReportModal } from '@wafertools/wafermap/render';
+
+openReportModal(html: string, opts?: { anchor?: Element; ownerDocument?: Document }): OverlayHandle
+```
+
+Opens report HTML (from `renderFindingsReportHtml`, `renderSummaryReportHtml`, or `renderLotSummaryReportHtml`) in an in-app modal. The Summary panel's "Summary report" button (§7.7, §7.8) calls this automatically — **no `setReportOpener` wiring is required just to view a report anymore**, in a plain browser tab or an embedded host (Tauri, Electron, WebView2) alike.
+
+The modal's header includes a Print/Save-as-PDF button (`window.print()`, scoped to just the report — see below), and its content area has an "Open as full page ↗" link that falls back to `openHtmlReport`/`setReportOpener` (§7.9) for a host that wants the report as a real separate page instead — to keep it open outside the modal, or as a fallback if in-app printing misbehaves on a given platform. §7.9's `setReportOpener` registration, if a host has one, is what that link and any other `openHtmlReport` call route through; it is otherwise entirely optional now.
+
+The report HTML is a complete standalone document (own `<style>`, own `<!DOCTYPE html>`) rendered via `<iframe srcdoc>` — its stylesheet is isolated from the host page automatically, and the print button targets `iframe.contentWindow.print()`, so only the report prints, not the host app around it. This works identically in a plain browser tab and inside a Tauri/Electron/WebView2 webview — printing is native `window.print()` either way, so this needs no platform-specific host code.
+
+`opts.anchor`, when given, resolves the modal into the correct document/stacking root the same way every other overlay in this library does (e.g. a summary panel rendered inside a gallery card detached into its own window) — pass the triggering element (a button, the panel container) when in doubt.
+
+### 10.4 `openWaferMapGuide`
+
+```ts
+import { openWaferMapGuide } from '@wafertools/wafermap/render';
+import type { UserGuideExtension } from '@wafertools/wafermap/render';
+
+openWaferMapGuide(extension?: UserGuideExtension, anchor?: Element): void
+```
+
+Opens the built-in guide window with **no live `WaferMapController`/`GalleryController` required** — `WaferMapController.openUserGuide()`/`GalleryController.openUserGuide()` (§5.4, §6.2) are thin wrappers around this exact same call, built from the library's own top-level functions rather than anything derived from a specific render. Use this when a host's help entry point must also work before anything has been rendered yet (an empty-state "Help" menu, for example) — prefer the controller method when one already exists; this exists for the gap it can't cover.
+
+`extension`, when given, behaves identically to `userGuideExtension` (§5.11) — host content is prepended before wmap's own guide content, in the same combined window. Pass the *same* extension object to both this call and every `renderWaferMap`/`renderWaferGallery` call so a host's "one Help entry point" always shows identical content regardless of whether a map is currently rendered.
+
+`anchor`, when given, resolves the guide window into the correct document/owner-window the same way `opts.anchor` does above.
+
 Available subpath exports: `@wafertools/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
 
 > **The Insights tab's canvas chart panels are not a public subpath.** `insights.enabled` (§5.9, §6.10) is the supported way to get charts — the DOM/canvas rendering code behind it is internal to `/render` and not independently importable, so you cannot assemble your own page from wmap's chart panels the way you can compose `/render`'s other pieces. The pure data layer those panels are built on (§7.16) *is* public from `/stats`, if you want to drive your own chart library from the same computations.
@@ -3403,7 +3500,7 @@ import { isYieldEligibleDie } from '@wafertools/wafermap';
 isYieldEligibleDie(die: Die, options?: { includePartial?: boolean; includeEdgeExcluded?: boolean }): boolean
 ```
 
-Whether a die counts toward yield/rollup calculations, per wmap's standard fab-reporting convention: `partial` (boundary-straddling) and `edgeExcluded` dies are skipped by default, even though they may carry real measured values — many fabs exclude them from yield/bin reporting specifically, not from other per-die analysis (a partial/edge-excluded die's test values still belong in distributions, correlations, and scatter plots). Both options default to `false` (excluded).
+Whether a die counts toward yield/rollup calculations, per wmap's standard fab-reporting convention: `partial` (boundary-straddling) and `edgeExcluded` dies are skipped by default, even though they may carry real measured values — many fabs exclude them from yield/bin reporting specifically, not from other per-die analysis (a partial/edge-excluded die's test values still belong in distributions, correlations, and scatter plots). Both options default to `false` (excluded). The two are not equally common in practice: `edgeExcluded` is live for any `results`-based map where the caller opted into `waferConfig.edgeExclusion`, while `partial` is only ever set on a synthesized grid built via `clipDiesToWafer` — a `results`-based map has none, so `includePartial` is a no-op there (§12.1).
 
 This is the single source of truth for the rule — `buildWaferMap`'s yield calculation, `analyzeWaferMap`'s eligible-die filter, and the §7.16 chart-data builders' yield/bin-pareto functions all call it, so they never silently drift apart on which dies count.
 

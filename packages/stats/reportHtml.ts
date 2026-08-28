@@ -39,10 +39,12 @@ ${items}
 
 /**
  * The single source of metadata content for every report and panel surface
- * — built from `buildFacetTable` over the actual item(s), never a
- * first-wafer-wins shortcut (e.g. `LotStatsSummary.lot`) or a per-file
- * known-key list, both of which can silently drop a field that varies
- * across the population and can drift from what the live Summary panel
+ * — built from `buildFacetTable` over the actual item(s), never
+ * `LotStatsSummary.lot` (which itself now omits — rather than silently
+ * picking a winner for — any field the population disagrees on; see its own
+ * `mixedIdentityFields`) or a per-file known-key list, both of which can
+ * silently drop a field that varies across the population and can drift
+ * from what the live Summary panel
  * shows (`buildMetadataInfoSection` in canvas-adapter/summaryPanel.ts,
  * which calls the same `buildFacetTable`). A population of one wafer is
  * just a facet table where every field has exactly one value, so the

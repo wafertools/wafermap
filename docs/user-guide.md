@@ -83,6 +83,34 @@ wafer count.
 Clicking a bin swatch in the legend filters the display to that bin
 (see [Highlight bin](#3-toolbar-controls)).
 
+### 1.5 Wafers and dies with no position data
+
+Not every die necessarily has a reported grid position — some data sources supply bin or test
+results with no X/Y coordinates at all, for some or every die on a wafer.
+
+**A fully positionless wafer** never renders as a map or gallery card — showing dies at
+fabricated positions would risk being misread as real spatial layout. Instead the card shows a
+compact summary matching the active plot mode: a **bin breakdown** (coloured the same as a
+positioned card's own bin legend) for hard/soft-bin modes, or a **histogram** for value mode —
+coloured through the same colour scheme, log-scale, and spec/data-range settings the map itself
+uses, so switching those in the toolbar updates the chart the same way it would a real map. A
+**View die list** toggle switches to the full per-die table (position/site, hard bin, soft bin,
+every test value) with its own CSV export; **View chart** switches back.
+
+**A mixed wafer** — some dies positioned, some not — renders its normal map for the positioned
+dies, plus an expandable **"+N dies without position data"** footer beneath the card. Expanding
+it (click the footer or its chevron) shows the same chart/die-list toggle, scoped to just the
+unpositioned subset.
+
+The toolbar's spatial-only controls (zoom, pan, box select, save image, orientation, overlays,
+legend position) are hidden on a fully positionless card, since there's no map for them to act
+on. Plot mode and colour scheme stay available — both still drive what the summary shows.
+
+Findings that depend on physical layout — edge ring, quadrants, sectors, reticle position,
+cluster and pattern detection — only ever consider positioned dies, so a positionless wafer
+contributes none of these. Everything else — yield, bin counts, per-test statistics, and the
+Insights tab's histograms/correlation/scatter — still includes every die, positioned or not.
+
 ---
 
 ## 2. Plot modes
@@ -492,6 +520,16 @@ box drives the box plot and histogram onto that test.*
 positive, orange = negative; intensity = strength) and a die-level scatter
 plot coloured by hard bin. Clicking a matrix cell drives the scatter plot
 onto that pair.*
+
+### Exporting a chart
+
+Every chart panel has a **camera** button that saves the current view as a PNG at the displayed
+resolution. To get a clean full-resolution render, use the panel's expand (corner-arrows)
+button first to open it in the fullscreen modal, then click the camera button.
+
+Each exported PNG includes a header strip above the chart with the panel title, source
+filename, wafer and die counts, the active test name (where applicable), and the time of
+export. The live card is unchanged — the header appears only in the saved file.
 
 ---
 

@@ -448,12 +448,16 @@ export interface WaferWarning {
    * - `'test-count-capped'` — raised by `analyzeWaferMap`: more tests were found in
    *   the die data than the analysis cap allows, so test-value analysis was skipped
    *   entirely and NO test findings were produced. Pass `testNumbers` to scope it.
+   * - `'edge-exclusion-exceeds-radius'` — `waferConfig.edgeExclusion` is larger than
+   *   the resolved wafer radius (most likely when the diameter was itself inferred
+   *   from sparse/partial data). The excluded band is clamped to the whole wafer
+   *   rather than silently producing a smaller, wrong ring.
    *
    * The union is intentionally open to string so future advisory codes can be
    * added without a breaking change; switch with a `default` branch.
    */
   code: 'partial-coverage' | 'geometry-conflict' | 'inferred-pitch'
-      | 'test-count-capped' | (string & {});
+      | 'test-count-capped' | 'edge-exclusion-exceeds-radius' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -989,7 +993,11 @@ function buildReticles(
 // ── Edge exclusion ────────────────────────────────────────────────────────────
 
 function applyEdgeExclusion(dies: PositionedDie[], wafer: Wafer, exclusionMm: number): PositionedDie[] {
-  const innerRadiusSq = (wafer.radius - exclusionMm) ** 2;
+  // An exclusion exceeding the resolved radius (e.g. an under-inferred diameter)
+  // must degrade to "every die is excluded" — without the clamp, squaring the
+  // negative radius silently produces a smaller, wrong excluded band instead.
+  const innerRadius = Math.max(0, wafer.radius - exclusionMm);
+  const innerRadiusSq = innerRadius ** 2;
   return dies.map(die => {
     const dx = die.physX - wafer.center.x;
     const dy = die.physY - wafer.center.y;
@@ -1525,8 +1533,16 @@ export function buildWaferMap(
     dies = transformDies(dies, { flipX, flipY }, wafer.center);
   }
 
+  const extraWarnings: WaferWarning[] = [];
   if (norm.waferOpts?.edgeExclusion && norm.waferOpts.edgeExclusion > 0) {
     dies = applyEdgeExclusion(dies, wafer, norm.waferOpts.edgeExclusion);
+    if (norm.waferOpts.edgeExclusion > wafer.radius) {
+      extraWarnings.push({
+        code: 'edge-exclusion-exceeds-radius',
+        message: `edgeExclusion (${norm.waferOpts.edgeExclusion}mm) exceeds the resolved wafer radius (${wafer.radius}mm) — the entire wafer is excluded.`,
+        severity: 'warning',
+      });
+    }
   }
 
   const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY, offsetX, offsetY, colMidX, colMidY, wafer.orientation, flipX, flipY);
@@ -1555,7 +1571,7 @@ export function buildWaferMap(
 
   return {
     wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units, inference,
-    warnings: buildWarnings(inference),
+    warnings: [...buildWarnings(inference), ...extraWarnings],
     plotMode: view.plotMode,
     metadata: view.metadata,
     isLotStack: norm.lotStackOpts !== undefined,

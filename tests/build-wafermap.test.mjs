@@ -169,6 +169,40 @@ test('buildWaferMap marks edge-excluded dies and falls back to hardBin mode when
   assert.equal(result.dataCoverage.filledDies, results.length);
 });
 
+test('buildWaferMap clamps an edgeExclusion exceeding the wafer radius instead of producing a smaller wrong band, and warns', () => {
+  // diameter=60mm (radius=30), grid comfortably inside it (max dist ~14.1mm),
+  // edgeExclusion=50 (> radius). Unclamped, (radius - exclusion) = -20 gets
+  // squared back positive, giving a wrong 20mm keep-zone radius — so a die
+  // 10mm from center (well inside that wrong 20mm zone) would be incorrectly
+  // kept. Clamped, the keep zone is 0mm, so that same die must be excluded.
+  const results = [];
+  for (let x = -1; x <= 1; x++) {
+    for (let y = -1; y <= 1; y++) {
+      results.push({ x, y, hbin: 1 });
+    }
+  }
+  const result = buildWaferMap({
+    results,
+    waferConfig: { diameter: 60, edgeExclusion: 50 },
+    dieConfig: { width: 10, height: 10 },
+  });
+
+  assert.ok(!result.warnings.some((w) => w.code === 'geometry-conflict'), 'grid fits comfortably — no geometry-conflict warning expected');
+  const dieAt10mm = result.dies.find((die) => die.x === 1 && die.y === 0);
+  assert.equal(dieAt10mm.edgeExcluded, true);
+});
+
+test('buildWaferMap surfaces a structured warning when edgeExclusion exceeds the resolved wafer radius', () => {
+  const results = [{ x: 0, y: 0, hbin: 1 }];
+  const result = buildWaferMap({
+    results,
+    waferConfig: { diameter: 60, edgeExclusion: 50 },
+    dieConfig: { width: 10, height: 10 },
+  });
+
+  assert.ok(result.warnings.some((w) => w.code === 'edge-exclusion-exceeds-radius'));
+});
+
 test('buildWaferMap handles empty inputs gracefully', () => {
   const empty = buildWaferMap([]);
   assert.equal(empty.dies.length, 0);

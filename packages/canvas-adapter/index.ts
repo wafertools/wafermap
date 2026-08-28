@@ -35,3 +35,23 @@ export type { DetachWindowOpener } from './toolbar.js';
 // wmap's built-in end-user guide window, so there's one help button instead
 // of two.
 export type { UserGuideExtension } from './toolbar.js';
+
+// Opens the same guide window WaferMapController/GalleryController's own
+// openUserGuide() opens, but with no live render required — for a host whose
+// help entry point must also work in an empty state (nothing loaded yet).
+export { openWaferMapGuide } from './toolbar.js';
+
+// The toolbar's own icon set — a host rendering its own chrome (buttons,
+// overlays) alongside wmap's can import ICONS to match wmap's iconography
+// instead of copy-pasting SVGs that silently drift on the next redesign.
+export { ICONS } from './icons.js';
+
+// The Summary panel's "Summary report" button opens report HTML through this
+// by default now — no setReportOpener wiring required just to view a report.
+// Exported so a host wanting the same in-app modal for its own report-shaped
+// content (or a custom "View report" entry point outside the panel) doesn't
+// have to rebuild it. See packages/stats/renderFindingsReport.ts's
+// setReportOpener/openHtmlReport for the "open as a real separate page"
+// fallback this modal's own header button and toolbar link both route through.
+export { openReportModal } from './toolbar.js';
+export type { OverlayHandle } from './toolbar.js';

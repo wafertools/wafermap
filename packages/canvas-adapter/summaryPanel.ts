@@ -18,7 +18,6 @@ import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type Me
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData, type StatsRegion } from '../stats/regions.js';
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
-import { openHtmlReport } from '../stats/renderFindingsReport.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
@@ -32,7 +31,7 @@ import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../rendere
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
 import { makeLabeledSelect } from './charts/chartShell.js';
-import { CLR, sevColor, openModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
+import { CLR, sevColor, openModal, openReportModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { medianOfSorted } from '../core/utils.js';
 import { metadataDisplayValue } from '../core/metadata.js';
@@ -761,9 +760,18 @@ function resolveCsvIdentityColumns(csv: CsvExportContext | undefined, reservedLa
   }).columns;
 }
 
+// A value starting with =, +, -, or @ is read as a formula by Excel/Sheets/
+// LibreOffice on open — a known injection vector when the source is die/wafer
+// metadata this library didn't originate (host data pipelines, MES/LIMS
+// fields, operator free text). Only applied to values that don't parse as a
+// number: a leading '-'/'+' on an actual number (offsets, leakage, deltas —
+// routine in test data) must round-trip unchanged.
+const FORMULA_LEAD = /^[=+\-@]/;
+
 /** CSV field escaper — exported so `dieList.ts` shares it rather than a second copy. */
 export function csvField(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const v = (FORMULA_LEAD.test(value) && Number.isNaN(Number(value))) ? `'${value}` : value;
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
 export function buildTestSection(
@@ -1859,6 +1867,11 @@ function openDieListModal(
   dieListOptions: DieListDisplayOptions | undefined,
   onSaveText: SaveTextHandler | undefined,
   extraColumn?: { label: string; get: (d: Die) => string | undefined },
+  /** Per-die wafer for Ring/Quadrant classification — a constant lookup for a
+   *  single-wafer die list, or a per-die WeakMap read for the lot-pooled one
+   *  (a die carries no wafer identity of its own; see `renderLotSummaryContent`). */
+  getWafer?: (die: Die) => Wafer | undefined,
+  ringCount?: number,
 ): void {
   // `anchor` (a live element from this render, e.g. the panel itself) is
   // required, not optional — without it `openOverlay` builds the modal onto
@@ -1890,6 +1903,8 @@ function openDieListModal(
     waferMetadata,
     metadataFields,
     extraColumn,
+    getWafer,
+    ringCount,
     ownerDocument,
   });
   if (section) handle.contentWrap.appendChild(section);
@@ -1948,13 +1963,13 @@ export function renderWaferSummaryContent(
 
   const summaryReportBtn = (yieldSummary && dataCoverage)
     ? reportButton('Summary report', () => {
-        openHtmlReport(renderSummaryReportHtml({
+        openReportModal(renderSummaryReportHtml({
           wafer, dies, yieldSummary, dataCoverage,
           hbinDefs, sbinDefs, testDefs,
           statsSummary,
           passBins,
           ringCount,
-        }));
+        }), { anchor: panel });
       })
     : null;
 
@@ -1963,6 +1978,7 @@ export function renderWaferSummaryContent(
         openDieListModal(
           panel, dies, testDefs, `Die list — ${dies.length} dies`,
           wafer.metadata, metadataFields, dieListOptions, onSaveText,
+          undefined, () => wafer, ringCount,
         );
       })
     : null;
@@ -2067,7 +2083,7 @@ export function renderLotSummaryContent(
     // all happen inside renderLotSummaryReportHtml now (see its own doc
     // comment). The on-screen panel above still uses the pooled `lotSummary`
     // param for its own display, which is a separate, unaffected concern.
-    openHtmlReport(renderLotSummaryReportHtml({
+    openReportModal(renderLotSummaryReportHtml({
       items: items.map((item, i) => ({
         label:        item?.label ?? `W${i + 1}`,
         wafer:        item?.wafer,
@@ -2077,7 +2093,7 @@ export function renderLotSummaryContent(
       hbinDefs, sbinDefs, testDefs,
       passBins,
       ringCount,
-    }));
+    }), { anchor: panel });
   });
 
   const allWafers: Wafer[] = [];
@@ -2085,15 +2101,20 @@ export function renderLotSummaryContent(
   const allDies: Die[] = [];
   // Per-die wafer attribution for the lot-wide die list below — the one
   // thing only this lot-pooled context can supply, since a single die
-  // carries no wafer identity of its own.
+  // carries no wafer identity of its own. waferByDie feeds Ring/Quadrant
+  // classification the same way waferLabelByDie feeds the "Wafer" column.
   const waferLabelByDie = new WeakMap<Die, string>();
+  const waferByDie = new WeakMap<Die, Wafer>();
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (!item) { diesByWafer.push([]); continue; }
     if (item.wafer) allWafers.push(item.wafer);
     const wd = item.dies ?? [];
     const label = item.label ?? `W${i + 1}`;
-    for (const d of wd) waferLabelByDie.set(d, label);
+    for (const d of wd) {
+      waferLabelByDie.set(d, label);
+      if (item.wafer) waferByDie.set(d, item.wafer);
+    }
     diesByWafer.push(wd);
     allDies.push(...wd);
   }
@@ -2108,6 +2129,7 @@ export function renderLotSummaryContent(
           items.find(it => it?.metadataFields?.length)?.metadataFields,
           dieListOptions, onSaveText,
           { label: 'Wafer', get: (d) => waferLabelByDie.get(d) },
+          (d) => waferByDie.get(d), ringCount,
         );
       })
     : null;

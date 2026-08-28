@@ -302,6 +302,39 @@ test('analyzeWaferLot handles empty lot', () => {
   assert.equal(lot.perWafer.length, 0);
 });
 
+test('analyzeWaferLot lot identity: agreeing fields are kept, disagreeing fields are omitted and reported', () => {
+  const { dies } = makeBaseDies();
+  const passDies = dies.map((die) => ({ ...die, hbin: 1 }));
+
+  const lot = analyzeWaferLot([
+    { dies: passDies, waferConfig: { diameter: 60, metadata: { lot: 'LOT-A', product: 'X1', waferId: 'W01' } }, passBins: [1] },
+    { dies: passDies, waferConfig: { diameter: 60, metadata: { lot: 'LOT-A', product: 'X1', waferId: 'W02' } }, passBins: [1] },
+    { dies: passDies, waferConfig: { diameter: 60, metadata: { lot: 'LOT-B', product: 'X1', waferId: 'W03' } }, passBins: [1] },
+  ]);
+
+  // 'lot' disagrees across wafers (A, A, B) — omitted from the identity, not
+  // silently taken from the first wafer.
+  assert.equal(lot.lot.lot, undefined);
+  // 'product' agrees across all three wafers — kept.
+  assert.equal(lot.lot.product, 'X1');
+  // 'waferId' is always excluded from lot identity, agreeing or not.
+  assert.equal(lot.lot.waferId, undefined);
+  assert.deepEqual(lot.mixedIdentityFields, ['lot']);
+});
+
+test('analyzeWaferLot lot identity: fully agreeing wafers report no mixedIdentityFields', () => {
+  const { dies } = makeBaseDies();
+  const passDies = dies.map((die) => ({ ...die, hbin: 1 }));
+
+  const lot = analyzeWaferLot([
+    { dies: passDies, waferConfig: { diameter: 60, metadata: { lot: 'LOT-A', product: 'X1' } }, passBins: [1] },
+    { dies: passDies, waferConfig: { diameter: 60, metadata: { lot: 'LOT-A', product: 'X1' } }, passBins: [1] },
+  ]);
+
+  assert.deepEqual(lot.lot, { lot: 'LOT-A', product: 'X1' });
+  assert.equal(lot.mixedIdentityFields, undefined);
+});
+
 test('analyzeWaferMap populates perTestStats with quartiles', () => {
   const { dies } = makeBaseDies();
   const enriched = dies.map((die, i) => ({

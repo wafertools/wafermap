@@ -22,6 +22,31 @@ under `### Breaking`.
 
 ---
 
+## [0.26.0] — 2026-08-28
+
+### Breaking
+
+- **The die-list table/CSV's single `Position` column (`"(x, y)"`) is now two separate `X`/`Y` columns.** A bracketed pair reads fine on screen but forces an extra parsing step (or breaks outright) when the CSV is opened in Excel, pandas, or any other tool expecting one number per cell. Any code reading the die-list CSV/table by column name or position needs to read `X`/`Y` instead of `Position`.
+
+### Added
+
+- **`Ring`/`Quadrant` die-list columns**, via new `DieListOptions.getWafer`/`ringCount`. Wired up automatically through `renderWaferMap`/`renderWaferGallery` — a direct `buildDieListSection` call supplies `getWafer` itself. Appear only when `getWafer` resolves at least one die to a `Wafer` (omitted entirely, not shown empty, otherwise), and use the same `classifyDie`/`ringCount` the rest of that wafer/lot's analysis uses, so "Ring 2" here always names the same region a Ring finding does.
+- **`Edge excluded` die-list column**, shown only when at least one die in the export has `edgeExcluded: true` (an included die is never stamped `false`, so "no die is excluded" and "the feature was never configured" are indistinguishable from `Die[]` alone — omitting the column in that case is the closest available approximation).
+- **`openReportModal`** (`/render`) — opens report HTML (from `renderFindingsReportHtml`/`renderSummaryReportHtml`/`renderLotSummaryReportHtml`) in an in-app modal, with a Print/Save-as-PDF header button and an "Open as full page ↗" fallback to `openHtmlReport`/`setReportOpener`. The Summary panel's "Summary report" button now calls this automatically — **no `setReportOpener` wiring is required just to view a report anymore**, in a plain browser tab or an embedded host (Tauri, Electron, WebView2) alike.
+- **`openWaferMapGuide`** (`/render`) — opens the built-in guide window with no live `WaferMapController`/`GalleryController` required, for a host whose help entry point must also work before anything has rendered (an empty-state "Help" menu). `WaferMapController.openUserGuide()`/`GalleryController.openUserGuide()` are now thin wrappers around this same call.
+- **`ICONS`** (`/render`) — the toolbar's own icon set, now public so a host rendering its own chrome alongside wmap's can match its iconography instead of copy-pasting SVGs that drift on the next redesign.
+- **Combined "Contents" navigation and Print/Save-as-PDF in the guide window.** A sticky bar lists every `<h2 id>` across the host's `extension.html` and wmap's own guide content as one flat, unnumbered list (see `UserGuideExtension`'s doc for why it's deliberately not split by source), flowing top-to-bottom in columns. A Print/Save-as-PDF header button covers the in-page overlay case (`window.open` blocked/unavailable); a real popup needs none, since native Ctrl+P already scopes to just that window.
+- **Find-in-page search in the guide window** — but only for the in-page overlay case, next to the Contents toggle. A real popup window gets no search box: it's an actual OS window, so native Ctrl+F/Cmd+F already searches it, and a custom box there would just be redundant chrome. Matches highlight via plain `<mark>` elements (no invented highlight colour), Enter/Shift+Enter step through them, Escape clears.
+- **`LotStatsSummary.mixedIdentityFields`** — identity keys (lot, product, testProgram, temperature, etc.) where the pooled wafers passed to `analyzeWaferLot` do *not* all agree, e.g. items pooled from more than one lot/program. `lot` now only includes a key when every wafer with identity data agrees on its value; a disagreeing key is omitted from `lot` and named here instead of silently taking the first wafer's value.
+- **`WaferWarning` code `'edge-exclusion-exceeds-radius'`** (severity `'warning'`) — raised when `waferConfig.edgeExclusion` exceeds the resolved wafer radius (most likely with an under-inferred diameter); see the Fixed entry below for the behaviour this replaces.
+- The gallery's toolbar and legend are now `position: sticky` in every one of the library's own demo pages, given a proper scrolling ancestor.
+
+### Fixed
+
+- **CSV export was vulnerable to formula injection from untrusted die/wafer metadata.** A cell value beginning with `=`, `+`, `-`, or `@` is read as a formula by Excel/Sheets/LibreOffice on open — a real risk when the source is a host's own MES/LIMS metadata or operator free text, not data this library originated. `csvField` (shared by every CSV export, including the die list) now prefixes such a value with `'` before quoting — but only when it doesn't parse as a plain number, so a genuine negative/signed test value (offsets, leakage, deltas — routine in test data) round-trips unchanged.
+- **An edge-exclusion width exceeding the resolved wafer radius silently produced a smaller, wrong excluded band** instead of excluding the whole wafer — squaring the resulting negative "inner radius" flipped its sign back positive, so the comparison it fed just picked the wrong dies. Now clamped to 0 and reported via the new `'edge-exclusion-exceeds-radius'` warning.
+- **`analyzeWaferLot`'s lot identity (`LotStatsSummary.lot`) was silently derived from the first wafer only**, not verified shared — pooling wafers from two different lots/products into one call could report the first one's identity as if it applied to the whole batch. See `mixedIdentityFields` above.
+
 ## [0.25.0] — 2026-08-25
 
 ### Added

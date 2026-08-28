@@ -14,10 +14,11 @@ import { buildFindingsNarrative } from './findingsNarrative.js';
 import { plainBinTerms } from '../renderer/fmt.js';
 
 /** Metadata rows use `buildMetadataRows` (`buildFacetTable` over every
- *  item's own metadata) — never `LotStatsSummary.lot`'s first-wafer-wins
- *  field, which silently drops any field that varies across the lot and can
- *  drift from what the live Summary panel/`renderSummaryReportHtml` show
- *  for the same data. See `reportHtml.ts`'s doc comment. */
+ *  item's own metadata) — never `LotStatsSummary.lot` directly, which
+ *  itself now omits (rather than silently picking a winner for) any field
+ *  the lot disagrees on, and either way is a coarser view that can drift
+ *  from what the live Summary panel/`renderSummaryReportHtml` show for the
+ *  same data. See `reportHtml.ts`'s doc comment. */
 function summaryMetaBlock(summary: StatsSummary | LotStatsSummary, generatedAt: string): string {
   if (summary.level === 'lot') {
     const lot = summary as LotStatsSummary;

@@ -1483,6 +1483,36 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
   }
 });
 
+test('renderWaferGallery: "Findings report" opens an in-app modal, not window.open (WMAP_ISSUES.md #37)', () => {
+  const { window, root, cleanup } = setupDom();
+  // No real popup available (Tauri/Electron/WebView2 shape) — the fix under
+  // test is exactly that this no longer matters for viewing the report.
+  window.open = () => null;
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const { wafer, statsSummary } = buildWaferWithFinding();
+    const item = { wafer: wafer.wafer, dies: wafer.dies, hbinDefs: wafer.hbinDefs, statsSummary, label: 'W01' };
+
+    const ctrl = renderWaferGallery(container, [item], {});
+
+    const reportBtn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Findings report');
+    assert.ok(reportBtn, 'expected a "Findings report" button (item carries a finding)');
+    click(window, reportBtn);
+
+    const modal = window.document.querySelector('.wmap-modal-box');
+    assert.ok(modal, 'expected an in-app modal to have been mounted, not a window.open() call');
+    const iframe = modal.querySelector('iframe');
+    assert.ok(iframe, 'expected the findings report HTML to be rendered via an iframe');
+    assert.match(iframe.srcdoc, /Findings report/);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
 test('pass/fail display toolbar: menu entries appear per data validity; log button hides for F test', () => {
   const { window, root, cleanup } = setupDom();
   try {
