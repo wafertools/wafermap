@@ -11,7 +11,7 @@
 
 import { buildBinClusterData, type BinItem, type BinType } from '../../stats/binPareto.js';
 import { categorical } from './palette.js';
-import { CLR } from '../toolbar.js';
+import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeSegmented, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
 
 const CLUSTER_LABEL_WIDTH = 90;
@@ -54,7 +54,7 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
 
   const hint = card.ownerDocument.createElement('div');
   hint.textContent = 'One cluster per bin · a sub-bar per group';
-  Object.assign(hint.style, { color: CLR.label, fontSize: '11px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
   const tooltip = makeTooltip(card);
@@ -81,12 +81,12 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
     const rowPitch = clusterHeight + CLUSTER_GAP;
 
     const legend = card.ownerDocument.createElement('div');
-    Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: '4px' } as Partial<CSSStyleDeclaration>);
+    Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: `${SPACE.xs} ${SPACE.xl}`, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
     clusterGroups.forEach((g, i) => {
       const item = card.ownerDocument.createElement('span');
-      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: CLR.text } as Partial<CSSStyleDeclaration>);
+      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: FONT.body, color: CLR.text } as Partial<CSSStyleDeclaration>);
       const sw = card.ownerDocument.createElement('span');
-      Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: '2px', background: colorOf(i) } as Partial<CSSStyleDeclaration>);
+      Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: RADIUS.control, background: colorOf(i) } as Partial<CSSStyleDeclaration>);
       const txt = card.ownerDocument.createElement('span');
       txt.textContent = g;
       item.append(sw, txt);
@@ -144,13 +144,24 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
       const ctx = canvas.getContext('2d')!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.textBaseline = 'middle';
 
       const { barX, barMaxWidth } = plotMetrics();
 
       bins.forEach((bin, bi) => {
         const clusterTop = PADDING + bi * rowPitch;
+
+        // Hover highlight FIRST — it spans the full row width, so painting it
+        // inside the per-group loop (after the label) covered the bin name with
+        // the highlight whenever the hovered sub-bar overlapped the vertically
+        // centred label. Same fix as charts/testPassRate.ts, which inherited this
+        // ordering from here.
+        if (hovered && hovered.bin === bi) {
+          const hy = clusterTop + hovered.group * (SUBBAR_HEIGHT + SUBBAR_GAP);
+          ctx.fillStyle = theme.bgHover;
+          ctx.fillRect(0, hy - 1, width, SUBBAR_HEIGHT + 2);
+        }
 
         ctx.fillStyle = theme.text;
         ctx.textAlign = 'right';
@@ -159,12 +170,6 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
         clusterGroups.forEach((_g, gi) => {
           const y = clusterTop + gi * (SUBBAR_HEIGHT + SUBBAR_GAP);
           const count = bin.counts[gi];
-          const isHover = hovered && hovered.bin === bi && hovered.group === gi;
-
-          if (isHover) {
-            ctx.fillStyle = theme.bgHover;
-            ctx.fillRect(0, y - 1, width, SUBBAR_HEIGHT + 2);
-          }
           ctx.fillStyle = theme.track;
           ctx.fillRect(barX, y, barMaxWidth, SUBBAR_HEIGHT);
           const w = Math.max(count > 0 ? 1 : 0, (count / maxCount) * barMaxWidth);

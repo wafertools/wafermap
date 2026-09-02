@@ -15,10 +15,10 @@
 import type { Die } from '../core/dies.js';
 import { hasPosition, isPositionedDie } from '../core/dies.js';
 import { classifyDie, type Wafer } from '../core/index.js';
-import { isParametricTest, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
+import { isParametricTest, getTestPassStatus, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { resolveMetadataColumns, type MetadataKeySelection } from '../stats/metadataColumns.js';
-import { CLR, saveTextFile, type SaveTextHandler } from './toolbar.js';
+import { LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, saveTextFile, type SaveTextHandler } from './toolbar.js';
 import { csvField } from './summaryPanel.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
 
@@ -163,7 +163,7 @@ function ensureStylesInjected(doc: Document): void {
   stylesInjectedInto.add(doc);
   const style = doc.createElement('style');
   style.textContent = `
-    .wmap-dielist-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .wmap-dielist-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
     .wmap-dielist-th {
       text-align: left; padding: 4px 8px; position: sticky; top: 0;
       background: ${CLR.panelBg}; color: ${CLR.label}; font-weight: 600;
@@ -206,8 +206,20 @@ function yLabel(die: Die): string {
  * `summaryPanel.ts`'s test-value table uses), otherwise every test number
  * discovered across the given dies' `testValues`.
  */
+/**
+ * Test columns for the die list — parametric AND functional.
+ *
+ * Functional tests used to be filtered out here, copying the rule that keeps them
+ * out of parametric *statistics* (a mean of a pass/fail outcome is meaningless).
+ * That rule does not apply to a raw per-die dump: this table is where you go to
+ * answer "why did die (3,1) fail?", and the tester's functional verdict is often
+ * the answer. The column builder below already knew how to render a verdict — it
+ * simply never received a functional test to render.
+ */
 function resolveTestColumns(dies: Die[], testDefs: TestDef[] | undefined): TestDef[] {
-  if (testDefs?.length) return testDefs.filter(isParametricTest);
+  if (testDefs?.length) {
+    return testDefs.filter(d => d.testNumber !== undefined);
+  }
   const seen = new Map<number, TestDef>();
   for (const die of dies) {
     for (const key of Object.keys(die.testValues ?? {})) {
@@ -271,7 +283,7 @@ export function buildDieListSection(
   // scroll container's own vertical scrollbar off the right-hand edge — the
   // table then looks unscrollable, showing only a stray horizontal scrollbar.
   const outer = el(doc, 'div', {
-    display: 'flex', flexDirection: 'column', gap: '8px',
+    display: 'flex', flexDirection: 'column', gap: SPACE.md,
     flex: '1', minHeight: '0', minWidth: '0',
   });
 
@@ -279,19 +291,20 @@ export function buildDieListSection(
   // the only thing that absorbs (or gives up) space when the box resizes.
   const headerRow = el(doc, 'div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: '0' });
   headerRow.appendChild(el(doc, 'div', {
-    fontSize: '10px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: CLR.label,
+    fontSize: FONT.meta, fontWeight: '700', letterSpacing: TRACKING, textTransform: 'uppercase', color: CLR.label,
   }, options.title ?? `Die list (${dies.length})`));
 
   const exportBtn = el(doc, 'button', {
-    fontSize: '11px', padding: '3px 8px', borderRadius: '4px',
-    border: `1px solid ${CLR.menuBorder}`, background: CLR.menuBg, color: CLR.text, cursor: 'pointer',
+    fontSize: FONT.body, padding: '3px 8px', borderRadius: RADIUS.control,
+    ...controlStyle('outlined'), background: CLR.menuBg,
   }, 'Export CSV');
   exportBtn.type = 'button';
+  wireControlHover(exportBtn);
   headerRow.appendChild(exportBtn);
   outer.appendChild(headerRow);
 
   if (options.note) {
-    outer.appendChild(el(doc, 'div', { fontSize: '11px', color: CLR.label, lineHeight: '1.4', flexShrink: '0' }, options.note));
+    outer.appendChild(el(doc, 'div', { fontSize: FONT.body, color: CLR.label, lineHeight: LEADING.base, flexShrink: '0' }, options.note));
   }
 
   const classifications = resolveClassifications(dies, options.getWafer, options.ringCount ?? 4);
@@ -311,7 +324,7 @@ export function buildDieListSection(
   const reservedLabels = [
     ...(options.extraColumn ? [options.extraColumn.label] : []),
     'X', 'Y', 'Ring', 'Quadrant', 'Edge excluded', 'Site', 'Hard bin', 'Soft bin',
-    ...testColumns.map(td => td.name),
+    ...testColumns.map(td => (td.unit ? `${td.name} (${td.unit})` : td.name)),
   ];
 
   const { columns: metaColumns, truncatedKeys } = resolveMetadataColumns({
@@ -324,7 +337,14 @@ export function buildDieListSection(
     reservedLabels,
   });
 
-  type DieColumn = { label: string; get: (die: Die) => string; csvOnly?: boolean };
+  type DieColumn = {
+    label: string;
+    get: (die: Die) => string;
+    /** CSV rendering when it must differ from the on-screen cell — see the test
+     *  columns, where the screen shows `300 mV` and the file a bare `300`. */
+    csvGet?: (die: Die) => string;
+    csvOnly?: boolean;
+  };
 
   const columns: DieColumn[] = [
     ...(options.extraColumn ? [{ label: options.extraColumn.label, get: (d: Die) => options.extraColumn!.get(d) ?? '' }] : []),
@@ -338,15 +358,42 @@ export function buildDieListSection(
     { label: 'Site', get: (d) => d.siteNum !== undefined ? String(d.siteNum) : '' },
     { label: 'Hard bin', get: (d) => d.hbin !== undefined ? String(d.hbin) : '' },
     { label: 'Soft bin', get: (d) => d.sbin !== undefined ? String(d.sbin) : '' },
-    ...testColumns.map((td) => ({
-      label: td.name,
-      get: (d: Die) => {
-        const v = d.testValues?.[td.testNumber];
-        if (v !== undefined) return fmtValue(v, td.unit);
-        const p = d.testPass?.[td.testNumber];
-        return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
-      },
-    })),
+    ...testColumns.map((td) => {
+      const functional = !isParametricTest(td);
+      return {
+        // Unit in the HEADER, not repeated in every cell of the CSV. The
+        // on-screen cell keeps its SI-formatted value (`300 mV`), which reads
+        // well; the CSV emits the bare stored number, because a column of
+        // "300 mV" strings is text to a spreadsheet and cannot be summed,
+        // plotted or filtered — and per-value SI scaling can even put "300 mV"
+        // and "1.2 V" in the same column.
+        label: td.unit ? `${td.name} (${td.unit})` : td.name,
+        get: (d: Die) => {
+          // A functional test has no measured value; its verdict is the result.
+          // getTestPassStatus is the only sanctioned read path — it owns the
+          // legacy 0/1-in-testValues form, which a raw `testPass` lookup would
+          // have printed as a bare "1".
+          if (functional) {
+            const p = getTestPassStatus(d, td.testNumber, td);
+            return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
+          }
+          const v = d.testValues?.[td.testNumber];
+          if (v !== undefined) return fmtValue(v, td.unit);
+          const p = getTestPassStatus(d, td.testNumber, td);
+          return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
+        },
+        csvGet: (d: Die) => {
+          if (functional) {
+            const p = getTestPassStatus(d, td.testNumber, td);
+            return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
+          }
+          const v = d.testValues?.[td.testNumber];
+          if (v !== undefined) return fmtValue(v, undefined, 'engineering');
+          const p = getTestPassStatus(d, td.testNumber, td);
+          return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
+        },
+      };
+    }),
     ...metaColumns.map((c) => ({ label: c.label, get: c.get, csvOnly: c.csvOnly })),
   ];
   const visibleColumns = columns.filter((c) => !c.csvOnly);
@@ -355,7 +402,7 @@ export function buildDieListSection(
     // minWidth:0 for the same reason as `outer` above — this is the element
     // that must actually stay modal-width so its own scrollbars stay reachable.
     overflow: 'auto', flex: '1', minHeight: '0', minWidth: '0',
-    border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
+    border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control,
     ...(options.maxHeight ? { maxHeight: options.maxHeight } : {}),
   });
   const table = doc.createElement('table');
@@ -407,7 +454,7 @@ export function buildDieListSection(
     outer.appendChild(el(
       doc,
       'div',
-      { fontSize: '11px', color: CLR.label, lineHeight: '1.4', flexShrink: '0' },
+      { fontSize: FONT.body, color: CLR.label, lineHeight: LEADING.base, flexShrink: '0' },
       parts.join(' '),
     ));
   }
@@ -415,7 +462,7 @@ export function buildDieListSection(
   exportBtn.addEventListener('click', () => {
     const lines = [columns.map((c) => csvField(c.label)).join(',')];
     for (const die of dies) {
-      lines.push(columns.map((c) => csvField(c.get(die))).join(','));
+      lines.push(columns.map((c) => csvField((c.csvGet ?? c.get)(die))).join(','));
     }
     saveTextFile(lines.join('\n'), options.csvFilename ?? 'dies.csv', 'text/csv', options.onSaveText);
   });

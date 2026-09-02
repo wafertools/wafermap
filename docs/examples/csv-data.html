@@ -138,8 +138,10 @@
         probeStation: 'ESC-4',      // custom field — shown in summary panel header
       };
 
-      // buildWaferMap infers die pitch from the grid when dieConfig is omitted.
-      // Supplying waferConfig.diameter is enough for units: 'mm'.
+      // Supply the die pitch, not just the diameter. With only a diameter the
+      // library must infer the pitch as diameter ÷ grid span — an assumption it
+      // flags as an `inferred-pitch` advisory, because it is wrong whenever edge
+      // dies are missing from the data. This device is a 10 × 10 mm die.
       // CSV data uses prober step positions (all x,y ≥ 0) — declare LL origin explicitly.
       const result = buildWaferMap({
         results,
@@ -148,7 +150,7 @@
           notch:    { type: 'bottom' },
           metadata: waferMeta,
         },
-        dieConfig: { coordinateOrigin: { type: 'LL' } },
+        dieConfig: { width: 10, height: 10, coordinateOrigin: { type: 'LL' } },
         testDefs: [
           { testNumber: 1010, name: 'TestA' },
           { testNumber: 1020, name: 'TestB' },

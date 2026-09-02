@@ -288,6 +288,23 @@ function click(window, target) {
   target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 }
 
+/**
+ * Wait for the Insights tab's DOM to appear after `setInsightsOpen(true)`.
+ *
+ * The chart suite is fetched with a dynamic `import()` so it stays out of the
+ * initial /render chunk (see tests/bundle-size.test.mjs), which means opening
+ * Insights resolves a promise before any of it exists. The toolbar chrome still
+ * updates synchronously; only the tab body waits.
+ */
+async function waitForInsights(root, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ([...root.querySelectorAll('button[role="tab"]')].length > 0) return true;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  return false;
+}
+
 test('renderWaferMap mounts toolbar controls and supports option/controller updates', () => {
   const { window, root, cleanup } = setupDom();
   try {
@@ -406,7 +423,9 @@ test('renderWaferMap Expand modal reparents the toolbar and canvas via openRepar
       );
       assert.equal(container.contains(canvas), false, `canvas should have left container while expanded on open #${cycle}`);
 
-      const closeBtn = dialog.querySelector('button[aria-label="Close"]');
+      // "Close (Esc)": the keyboard shortcut moved from the native `title` into
+      // the accessible name, so a screen-reader user is told it exists too.
+      const closeBtn = dialog.querySelector('button[aria-label^="Close"]');
       assert.ok(closeBtn, `modal should expose a Close button on open #${cycle}`);
       click(window, closeBtn);
 
@@ -506,7 +525,7 @@ test('renderWaferMap onSaveText hook intercepts the Summary panel\'s CSV export'
         onSaveText: (text, name, mimeType) => { saved.push({ text, name, mimeType }); },
       });
 
-      const exportBtn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Export CSV');
+      const exportBtn = [...root.querySelectorAll('button')].find((b) => /CSV$/.test(b.textContent));
       assert.ok(exportBtn, 'Export CSV button should exist in the Test Values section');
       click(window, exportBtn);
 
@@ -1057,7 +1076,11 @@ test('renderWaferGallery reattaches a detached card via its own toggle button', 
     click(window, expandBtn);
     assert.equal(container.querySelectorAll('canvas').length, 2);
     const rebuiltBtn = container.querySelector('[data-wmap-expand-btn]');
-    assert.equal(rebuiltBtn.title, 'Open full view');
+    // aria-label, not `title`: this button now uses the shared themed tooltip
+    // (which live-reads aria-label) like every other icon button, rather than the
+    // browser's native one.
+    assert.equal(rebuiltBtn.getAttribute('aria-label'), 'Open full view');
+    assert.equal(rebuiltBtn.title, '', 'no native title tooltip competing with the themed one');
 
     ctrl.destroy();
   } finally {
@@ -1142,13 +1165,97 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
     ctrl.setOptions({ plotMode: 'value', activeTest: 0 });
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, items.length);
 
-    // Verify the shared options don't contain stacked-specific properties
+    // Verify the shared options don't contain stacked-specific properties.
+    // valueRange is NOT cleared to undefined here: plain 'value' mode now carries
+    // its own lot-wide range (every card compared on one shared scale — see
+    // TODO.md "Gallery value-mode colour range..."), computed fresh from the
+    // dies across all three items for test 0 (values 0.9, 0.7, 0.8).
     const opts = ctrl.getOptions();
-    assert.equal(opts.valueRange, undefined);
+    assert.deepEqual(opts.valueRange, { test: 0, range: [0.7, 0.9] });
     assert.equal(opts.lotSize, undefined);
     assert.equal(opts.aggregationMethod, undefined);
     assert.equal(opts.plotMode, 'value');
     assert.equal(opts.activeTest, 0);
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery value mode without limits shares a lot-wide range across cards', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    // No limitLow/limitHigh on the test — this used to leave each card to
+    // auto-scale to only its own dies (see TODO.md "Gallery value-mode colour
+    // range..."). Each item below has a different min/max so a per-card bug
+    // would show up as opts.valueRange staying undefined or narrower than the
+    // true lot-wide extent.
+    const makeItem = (label, values) => ({
+      ...buildWaferMap({
+        results: values.map((v, i) => ({ x: i, y: 0, testValues: { 0: v } })),
+        waferConfig: { diameter: 40 },
+        dieConfig: { width: 10, height: 10 },
+        testDefs: [{ testNumber: 0, name: 'Test', unit: 'V' }],
+      }),
+      label,
+    });
+
+    const items = [
+      makeItem('A', [1.0, 2.0]),
+      makeItem('B', [3.0, 4.0]),
+      makeItem('C', [-1.0, 0.5]),
+    ];
+
+    const ctrl = renderWaferGallery(container, items, {
+      viewOptions: { plotMode: 'value', activeTest: 0 },
+    });
+
+    // Lot-wide min/max across all three items, not any single card's own range.
+    assert.deepEqual(ctrl.getOptions().valueRange, { test: 0, range: [-1.0, 4.0] });
+
+    // Adding an item with a wider extent must widen the shared range.
+    ctrl.setItems([...items, makeItem('D', [10.0, 10.0])]);
+    assert.deepEqual(ctrl.getOptions().valueRange, { test: 0, range: [-1.0, 10.0] });
+
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery value mode with limits keeps spec range (no lot-wide data override)', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+
+    const makeItem = (label, values) => ({
+      ...buildWaferMap({
+        results: values.map((v, i) => ({ x: i, y: 0, testValues: { 0: v } })),
+        waferConfig: { diameter: 40 },
+        dieConfig: { width: 10, height: 10 },
+        testDefs: [{ testNumber: 0, name: 'Test', unit: 'V', limitLow: 0, limitHigh: 5 }],
+      }),
+      label,
+    });
+
+    const items = [makeItem('A', [1.0, 2.0]), makeItem('B', [3.0, 4.0])];
+
+    // Default colorbarRangeMode is 'spec' when limits exist — buildView already
+    // shares the range via the (identical, per-card) test limits, so the gallery
+    // should not also compute/override a lot-wide data range here.
+    const ctrl = renderWaferGallery(container, items, {
+      viewOptions: { plotMode: 'value', activeTest: 0 },
+    });
+    assert.equal(ctrl.getOptions().valueRange, undefined);
+
+    // Switching to 'data' mode explicitly is where the lot-wide override kicks in.
+    ctrl.setOptions({ colorbarRangeMode: 'data' });
+    assert.deepEqual(ctrl.getOptions().valueRange, { test: 0, range: [1.0, 4.0] });
 
     ctrl.destroy();
   } finally {
@@ -1320,7 +1427,7 @@ test('renderWaferMap: summaryPanel option renders a docked Summary panel with se
   }
 });
 
-test('renderWaferMap: insights option renders a full-takeover tab with Overview/Distributions/Correlation sub-tabs, and hides the Summary button while open', () => {
+test('renderWaferMap: insights option renders a full-takeover tab with Overview/Distributions/Correlation sub-tabs, and hides the Summary button while open', async () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -1346,6 +1453,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.equal(insightsBtn.dataset.wmapInsightsBtn, '1', 'Insights button carries a stable data-wmap-insights-btn hook');
 
     ctrl.setInsightsOpen(true);
+    assert.ok(await waitForInsights(root), 'Insights tab should render once its chunk resolves');
     const subTabLabels = [...root.querySelectorAll('button')].map((b) => b.textContent);
     assert.ok(subTabLabels.includes('Overview'), 'Overview sub-tab should render');
     assert.ok(subTabLabels.includes('Distributions'), 'Distributions sub-tab should render');
@@ -1418,9 +1526,9 @@ test('renderWaferMap: metadata badge is mounted by default, absent when disabled
     const container2 = window.document.createElement('div');
     Object.assign(container2.style, { position: 'relative', width: '900px', height: '600px' });
     root.appendChild(container2);
-    const ctrl2 = renderWaferMap(container2, wafer, { showMetadataBadge: false });
+    const ctrl2 = renderWaferMap(container2, wafer, { showIdentityHeader: false });
     const badgeEl2 = [...container2.querySelectorAll('div')].find((d) => /LOT123/.test(d.textContent) && /W01/.test(d.textContent));
-    assert.equal(badgeEl2, undefined, 'showMetadataBadge:false should render no badge');
+    assert.equal(badgeEl2, undefined, 'showIdentityHeader:false should render no badge');
     ctrl2.destroy();
   } finally {
     cleanup();
@@ -1444,7 +1552,7 @@ test('renderWaferMap: metadata badge does not render when the wafer has no metad
   }
 });
 
-test('renderWaferGallery: Insights hides the Summary button and flips its own icon/label to signal the way back', () => {
+test('renderWaferGallery: Insights hides the Summary button and flips its own icon/label to signal the way back', async () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -1464,6 +1572,7 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
     assert.ok(insightsBtn, 'Insights toolbar button should exist');
 
     click(window, insightsBtn);
+    assert.ok(await waitForInsights(root), 'Insights tab should render once its chunk resolves');
     const subTabLabels = [...root.querySelectorAll('button')].map((b) => b.textContent);
     assert.ok(subTabLabels.includes('Overview'), 'Overview sub-tab should render in the gallery Insights tab too');
 
@@ -1483,7 +1592,7 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
   }
 });
 
-test('renderWaferGallery: "Findings report" opens an in-app modal, not window.open (WMAP_ISSUES.md #37)', () => {
+test('renderWaferGallery: the summary report opens an in-app modal, not window.open (WMAP_ISSUES.md #37)', () => {
   const { window, root, cleanup } = setupDom();
   // No real popup available (Tauri/Electron/WebView2 shape) — the fix under
   // test is exactly that this no longer matters for viewing the report.
@@ -1497,15 +1606,22 @@ test('renderWaferGallery: "Findings report" opens an in-app modal, not window.op
 
     const ctrl = renderWaferGallery(container, [item], {});
 
-    const reportBtn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Findings report');
-    assert.ok(reportBtn, 'expected a "Findings report" button (item carries a finding)');
+    // One report, not two: the separate "Findings report" button is gone — the
+    // summary report now carries a "Findings by Wafer" section, so a second button
+    // would have offered a subset of the same document. It was also asymmetric,
+    // being the ONLY report on this no-lot-stats path while the lot path had both.
+    assert.ok(![...root.querySelectorAll('button')].some((b) => b.textContent === 'Findings report'),
+      'the separate findings report button is gone');
+    const reportBtn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Summary report');
+    assert.ok(reportBtn, 'expected a "Summary report" button on the no-lot-stats path too');
     click(window, reportBtn);
 
     const modal = window.document.querySelector('.wmap-modal-box');
     assert.ok(modal, 'expected an in-app modal to have been mounted, not a window.open() call');
     const iframe = modal.querySelector('iframe');
-    assert.ok(iframe, 'expected the findings report HTML to be rendered via an iframe');
-    assert.match(iframe.srcdoc, /Findings report/);
+    assert.ok(iframe, 'expected the report HTML to be rendered via an iframe');
+    // And the per-wafer findings the old button existed for are in it.
+    assert.match(iframe.srcdoc, /Findings by Wafer/);
 
     ctrl.destroy();
   } finally {
@@ -1702,7 +1818,12 @@ test('renderWaferGallery: clicking a metadata legend swatch toggles highlightMet
       viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project' },
     });
 
-    const swatchRow = [...container.querySelectorAll('div')].find((el) => el.textContent === 'our-project');
+    // Matched on the row's LABEL, not its whole text: a legend row now also
+    // carries the category's die count and share (renderLegendSwatchRow), so an
+    // exact whole-row match would break every time the row gains a figure —
+    // which is exactly what it did.
+    const swatchRow = [...container.querySelectorAll('[role="button"]')]
+      .find((el) => [...el.children].some((ch) => ch.textContent === 'our-project'));
     assert.ok(swatchRow, 'a clickable row exists for the our-project value');
 
     click(window, swatchRow);
@@ -1853,6 +1974,92 @@ test('renderWaferMap warnings display:false suppresses the indicator but still c
     // turning the UI off must not turn the information off.
     assert.equal(seen.length, 1, 'onWarning fires once on mount');
     assert.ok(seen[0].some(w => w.code === 'partial-coverage'));
+  } finally {
+    cleanup();
+  }
+});
+
+// ── Gallery summary panel: one panel, no tabs ────────────────────────────────
+//
+// The panel used to open on a Lot/Findings tab pair in which BOTH tabs carried
+// findings — lot-level ones in "Lot", and none at all in "Findings", which
+// actually listed wafers — while the two per-wafer lists (Wafer Yield in the Lot
+// tab, the wafer index in the Findings tab) looked identical and did different
+// things on click. The per-wafer index is now badges on the Wafer Yield rows.
+
+test('gallery summary panel has no Lot/Findings tab row', async () => {
+  const { analyzeWaferLot } = await import('../dist/packages/stats/index.js');
+  const { root: container, cleanup } = setupDom();
+  try {
+    const mk = (bins) => buildWaferMap({
+      results: bins.map((hbin, i) => ({ x: i % 5, y: Math.floor(i / 5), hbin })),
+      waferConfig: { diameter: 60 },
+      dieConfig: { width: 10, height: 10 },
+      passBins: [1],
+    });
+    const items = [
+      { ...mk([1, 1, 1, 1, 2, 1, 1, 1, 2, 2]), label: 'W01' },
+      { ...mk([1, 2, 2, 2, 2, 2, 2, 2, 2, 2]), label: 'W02' },
+    ];
+    const lotStatsSummary = analyzeWaferLot(items);
+    renderWaferGallery(container, items, { lotStatsSummary, summaryPanel: { defaultOpen: true } });
+
+    const buttonText = [...container.querySelectorAll('button')].map(b => b.textContent);
+    assert.ok(!buttonText.includes('Lot'), `no "Lot" tab button: ${buttonText}`);
+    // "Findings (n)" section headers and a "Findings report" button are fine; a
+    // bare "Findings" tab button is what must be gone.
+    assert.ok(!buttonText.includes('Findings'), `no bare "Findings" tab button: ${buttonText}`);
+    // And the lot content is present without having to pick a tab.
+    const panelText = container.textContent;
+    assert.match(panelText, /Lot Summary/);
+    assert.match(panelText, /Wafer Yield/);
+  } finally {
+    cleanup();
+  }
+});
+
+// ── Gallery bin legend states which bin space it is keyed on ────────────────
+//
+// Hard and soft bins are independent number spaces, so a bare "Bin 3" swatch is
+// ambiguous. This matters most in the gallery: a card draws its own legend with a
+// "Hard Bin"/"Soft Bin" title from buildMapTitle, but that legend is suppressed
+// below BIN_LEGEND_MIN_CANVAS_W/H — at gallery card sizes the shared strip is
+// frequently the only legend on screen.
+
+test('gallery bin legend names the bin space, and follows the plot mode', () => {
+  const { root: container, cleanup } = setupDom();
+  try {
+    const mk = () => buildWaferMap({
+      results: [
+        { x: 0, y: 0, hbin: 1, sbin: 1 },
+        { x: 1, y: 0, hbin: 2, sbin: 5 },
+        { x: 0, y: 1, hbin: 3, sbin: 7 },
+      ],
+      waferConfig: { diameter: 60 },
+      dieConfig: { width: 10, height: 10 },
+      passBins: [1],
+      hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail A' }, { bin: 3, name: 'Fail B' }],
+      sbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 5, name: 'Vt low' }, { bin: 7, name: 'Leak' }],
+    });
+    const items = [{ ...mk(), label: 'W01' }, { ...mk(), label: 'W02' }];
+
+    const legendText = (mode) => {
+      container.innerHTML = '';
+      renderWaferGallery(container, items, { viewOptions: { plotMode: mode } });
+      return (container.querySelector('[data-wmap-gallery-legend]')?.textContent ?? '')
+        .replace(/\s+/g, ' ').trim();
+    };
+
+    const hard = legendText('hardBin');
+    assert.match(hard, /^Hard Bin/, `hard-bin legend must say so: ${hard}`);
+    assert.match(hard, /Fail A/, 'and list the hard bin names');
+
+    const soft = legendText('softBin');
+    assert.match(soft, /^Soft Bin/, `soft-bin legend must say so: ${soft}`);
+    // Soft bin 5 is "Vt low"; hard bin 5 does not exist. Proves the caption and
+    // the swatches are reading the same bin space.
+    assert.match(soft, /Vt low/);
+    assert.doesNotMatch(soft, /Fail A/);
   } finally {
     cleanup();
   }

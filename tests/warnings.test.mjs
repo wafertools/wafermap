@@ -30,6 +30,18 @@ function halfWaferResults() {
   return out;
 }
 
+/** A full symmetric wafer: geometry infers cleanly, so only the pitch advisory fires. */
+function fullWaferResults() {
+  const out = [];
+  for (let x = -14; x <= 14; x++) {
+    for (let y = -14; y <= 14; y++) {
+      if (Math.hypot(x, y) > 14) continue;
+      out.push(wafer(x, y));
+    }
+  }
+  return out;
+}
+
 test('severityOf applies the documented default', () => {
   assert.equal(severityOf({ code: 'x', message: 'm' }), 'warning');
   assert.equal(severityOf({ code: 'x', message: 'm', severity: 'error' }), 'error');
@@ -50,11 +62,25 @@ test('geometry advisories are collected — they were previously shown by no UI 
   assert.ok(collected.every(w => w.code && w.message), 'every warning needs a code and a message');
 });
 
-test('geometry advisories are errors — a mis-positioned die is a wrong map, not a notice', () => {
+test('mis-positioning advisories are errors — a mis-positioned die is a wrong map, not a notice', () => {
   const result = buildWaferMap({ results: halfWaferResults(), passBins: [1] });
+  assert.ok(result.warnings.length > 0, 'expected a geometry advisory for half-wafer data');
   for (const w of result.warnings) {
     assert.equal(severityOf(w), 'error', `${w.code} should be an error`);
   }
+});
+
+test('inferred-pitch is a warning, not an error — it reports an assumption, not a wrong map', () => {
+  // Diameter without a pitch is a documented, supported input: the pitch is then
+  // derived as diameter / grid span, which is exact for a grid reaching the wafer
+  // edge. Raising that in red left hosts that legitimately know only the diameter
+  // showing a permanent error with no field to clear it.
+  const result = buildWaferMap({
+    results: fullWaferResults(), passBins: [1], waferConfig: { diameter: 300 },
+  });
+  const pitch = result.warnings.filter(w => w.code === 'inferred-pitch');
+  assert.equal(pitch.length, 1, 'expected the inferred-pitch advisory');
+  assert.equal(severityOf(pitch[0]), 'warning');
 });
 
 test('errors sort ahead of warnings', () => {

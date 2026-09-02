@@ -83,7 +83,7 @@ graph LR
         c6["canvasTheme"]
         c7["insightsTab<br/>(internal)"]
         c8["charts/*<br/>(internal, not a public subpath)"]
-        c9["metadataBadge<br/>(internal)"]
+        c9["identityHeader<br/>(internal)"]
     end
 
     subgraph Stats[stats]
@@ -91,7 +91,7 @@ graph LR
         s2["analyzeWaferLot"]
         s3["regions"]
         s4["clusterDetection"]
-        s5["chart data builders<br/>capability, boxplot, histogram,<br/>correlation, scatter, yield, binPareto"]
+        s5["chart data builders<br/>capability, boxplot, histogram, trend,<br/>correlation, scatter, yield, binPareto,<br/>testPassRate"]
     end
 
     subgraph Worker[worker]
@@ -135,7 +135,7 @@ The codebase is organized as a stack. `core` is the pure foundation, `renderer` 
 
 `insightsTab` and `charts/*` are internal to `canvas-adapter` — reachable only through `insights.enabled` (§5.9/§6.10 in the [API Reference](api.md)), not an independently importable subpath. The chart panels are pure DOM/canvas rendering; the actual per-chart computations (`capability`, `boxplot`, `histogram`, `correlation`, `scatter`, `yield`, `binPareto` under `stats/`) are public and importable from `/stats` on their own, if you want to drive a different chart library from the same numbers.
 
-`metadataBadge` is also internal to `canvas-adapter` — the always-visible wafer/lot metadata overlay `renderWaferMap` mounts bottom-left on the canvas (`RenderOptions.showMetadataBadge`, default `true`). It exists so basic wafer/lot identity (lot, wafer ID, product, test program, temperature) is never hidden behind a toolbar/Insights toggle, without costing map layout space — it's a canvas overlay, not a layout element. `renderWaferGallery` doesn't mount this badge at all (grid cards, detached popups, and the floating-window fallback all pass `showMetadataBadge: false`): it instead (a) folds a lot-wide distinct-values summary, built on `buildFacetTable` (`stats/facets.ts`), into its existing bin-legend strip, and (b) gives every per-wafer view (grid card header, popup window, floating window) its own expandable identity header for that wafer's full metadata, sharing one `buildIdentityHeaderRow` builder and the `wireExpandToggle` interaction helper (`toolbar.ts`) so all three read identically.
+`identityHeader` is also internal to `canvas-adapter` — `createIdentityHeader` builds the "label + click-to-expand full metadata" row `renderWaferMap` mounts above the canvas (`RenderOptions.showIdentityHeader`, default `true`), a real layout row rather than a corner overlay, so it can't be missed or collide with anything the canvas draws. It also owns the map's "expand to full view" affordance (`RenderOptions.showExpandButton`/`onExpand`) — one trigger for that action, not a separate toolbar button. It exists so basic wafer/lot identity (lot, wafer ID, product, test program, temperature) is never hidden behind a toolbar/Insights toggle. `renderWaferGallery` doesn't call this module (grid cards, detached popups, and the floating-window fallback all pass `showIdentityHeader: false` to their internal `renderWaferMap`): it instead (a) folds a lot-wide distinct-values summary, built on `buildFacetTable` (`stats/facets.ts`), into its existing bin-legend strip, and (b) gives every per-wafer view (grid card header, popup window, floating window) its own expandable identity header for that wafer's full metadata via its own `buildIdentityHeaderRow` builder, sharing only the low-level `wireExpandToggle` interaction helper (`toolbar.ts`) with `identityHeader` — a known remaining duplication (two composition sites for the same feature) flagged for a future consolidation pass, not yet unified.
 
 ## 3. Data construction pipeline
 

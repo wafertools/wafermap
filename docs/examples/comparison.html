@@ -11,36 +11,32 @@
     "wafermap/stats":  "../dist/packages/stats/index.js"
   }}</script>
 
+  <link rel="stylesheet" href="demo.css">
+
   <!-- Plotly full bundle required for scattergl (WebGL) -->
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      font-size: 14px;
-      background: #f8fafc;
-      color: #1e293b;
-      padding: 0 0 60px;
-    }
+    /* Base (reset, font stack, ground colour) comes from demo.css — this page
+       used to restate it with its own 'Inter' stack, the only demo that did. */
+    body { padding: 0 0 60px; }
 
     /* ── Header ──────────────────────────────────────────── */
     header {
-      background: #fff;
-      border-bottom: 1px solid #e2e8f0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
       padding: 18px 32px;
       display: flex;
       align-items: baseline;
       gap: 16px;
     }
     header h1 {
-      font-size: 18px;
+      font-size: 20px;
       font-weight: 700;
-      color: #0f172a;
+      color: var(--text);
     }
-    header h1 span { color: #94a3b8; font-weight: 400; margin: 0 4px; }
-    header p { font-size: 14px; color: #64748b; }
+    header h1 span { color: var(--muted); font-weight: 400; margin: 0 4px; }
+    header p { font-size: 15px; color: var(--muted); }
 
     /* ── Controls ────────────────────────────────────────── */
     .controls {
@@ -49,36 +45,36 @@
       align-items: center;
       gap: 16px;
       flex-wrap: wrap;
-      background: #fff;
-      border-bottom: 1px solid #e2e8f0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
     }
     .scenario-tabs { display: flex; gap: 4px; }
     .tab {
       padding: 6px 14px;
       font-size: 13px;
       font-weight: 500;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      background: #f8fafc;
-      color: #64748b;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-container);
+      background: var(--bg);
+      color: var(--muted);
       cursor: pointer;
     }
-    .tab.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .tab.active { background: var(--text); color: var(--surface); border-color: var(--text); }
 
     #run-btn {
       padding: 7px 18px;
       font-size: 13px;
       font-weight: 600;
       background: #0d9488;
-      color: #fff;
+      color: var(--surface);
       border: none;
-      border-radius: 6px;
+      border-radius: var(--radius-container);
       cursor: pointer;
     }
     #run-btn:hover { background: #0f766e; }
-    #run-btn:disabled { background: #94a3b8; cursor: default; }
+    #run-btn:disabled { background: var(--muted); cursor: default; }
 
-    .run-note { font-size: 13px; color: #64748b; }
+    .run-note { font-size: 13px; color: var(--muted); }
     .run-count { font-size: 13px; color: #0d9488; font-weight: 600; }
 
     /* ── Comparison grid ─────────────────────────────────── */
@@ -92,37 +88,37 @@
     }
 
     .panel {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-container);
       overflow: hidden;
     }
 
     .panel-header {
       padding: 12px 16px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .lib-name { font-size: 14px; font-weight: 700; color: #0f172a; }
+    .lib-name { font-size: 15px; font-weight: 700; color: var(--text); }
     .lib-size {
       font-size: 12px;
-      color: #64748b;
+      color: var(--muted);
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      background: #f1f5f9;
+      background: var(--bg);
       padding: 2px 8px;
-      border-radius: 4px;
+      border-radius: var(--radius-control);
     }
 
     .render-area {
       width: 100%;
       aspect-ratio: 1;
-      background: #f8fafc;
+      background: var(--bg);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #94a3b8;
+      color: var(--muted);
       font-size: 13px;
       position: relative;
     }
@@ -131,8 +127,8 @@
     /* ── Timing card ─────────────────────────────────────── */
     .timing-card {
       padding: 12px 16px;
-      border-top: 1px solid #e2e8f0;
-      background: #f8fafc;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
     }
     .timing-row {
       display: flex;
@@ -140,40 +136,40 @@
       align-items: center;
       padding: 3px 0;
       font-size: 13px;
-      color: #64748b;
+      color: var(--muted);
     }
-    .timing-row .label { color: #64748b; }
+    .timing-row .label { color: var(--muted); }
     .timing-row .val {
       font-family: 'JetBrains Mono', monospace;
       font-size: 13px;
-      color: #0f172a;
+      color: var(--text);
       font-weight: 600;
     }
     .timing-row.total {
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid var(--border);
       margin-top: 4px;
       padding-top: 6px;
     }
-    .timing-row.total .label { color: #0f172a; font-weight: 700; }
-    .timing-row.total .val { color: #0d9488; font-size: 14px; }
-    .timing-row .val.pending { color: #94a3b8; font-weight: 400; }
+    .timing-row.total .label { color: var(--text); font-weight: 700; }
+    .timing-row.total .val { color: #0d9488; font-size: 15px; }
+    .timing-row .val.pending { color: var(--muted); font-weight: 400; }
 
     .panel-footer {
       padding: 10px 16px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid var(--border);
       font-size: 13px;
       line-height: 1.5;
-      color: #64748b;
+      color: var(--muted);
     }
     .panel-footer code {
       font-family: monospace;
-      background: #f1f5f9;
+      background: var(--bg);
       padding: 1px 5px;
-      border-radius: 3px;
+      border-radius: var(--radius-control);
       color: #475569;
     }
     .panel-footer .note {
-      color: #64748b;
+      color: var(--muted);
     }
     .panel-footer .warning {
       color: #b45309;
@@ -187,7 +183,7 @@
       padding: 10px 16px;
       background: #fffbeb;
       border: 1px solid #fde68a;
-      border-radius: 6px;
+      border-radius: var(--radius-container);
       font-size: 12px;
       color: #78350f;
       display: none;
@@ -199,14 +195,14 @@
       padding: 32px 32px 0;
     }
     .feature-section h2 {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
-      color: #0f172a;
+      color: var(--text);
       margin-bottom: 4px;
     }
     .feature-section p {
       font-size: 13px;
-      color: #64748b;
+      color: var(--muted);
       margin-bottom: 16px;
     }
 
@@ -219,21 +215,21 @@
     .feature-table th {
       text-align: left;
       padding: 8px 12px;
-      background: #f1f5f9;
-      border: 1px solid #e2e8f0;
+      background: var(--bg);
+      border: 1px solid var(--border);
       font-weight: 600;
-      color: #0f172a;
+      color: var(--text);
     }
     .feature-table th:first-child { width: 40%; }
     .feature-table td {
       padding: 7px 12px;
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--border);
       vertical-align: top;
     }
-    .feature-table tr:nth-child(even) td { background: #f8fafc; }
+    .feature-table tr:nth-child(even) td { background: var(--bg); }
 
     .feature-table .group td {
-      background: #e2e8f0;
+      background: var(--border);
       font-weight: 600;
       font-size: 12px;
       text-transform: uppercase;
@@ -243,8 +239,8 @@
 
     .yes  { color: #15803d; font-weight: 600; }
     .part { color: #b45309; font-weight: 600; }
-    .no   { color: #94a3b8; }
-    .note { font-size: 12px; color: #64748b; display: block; margin-top: 2px; }
+    .no   { color: var(--muted); }
+    .note { font-size: 12px; color: var(--muted); display: block; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -269,7 +265,7 @@
   <div class="panel">
     <div class="panel-header">
       <span class="lib-name">@wafertools/wafermap</span>
-      <span class="lib-size">~85 KB gzip (full stack)</span>
+      <span class="lib-size">~104 KB gzip (core), +25 KB Insights, +34 KB guide — both lazy</span>
     </div>
     <div class="render-area" id="wmap-area">
       <div id="wmap-container" style="width:100%;height:100%;"></div>
@@ -298,7 +294,7 @@
   <div class="panel">
     <div class="panel-header">
       <span class="lib-name">Plotly.js</span>
-      <span class="lib-size">~1.1 MB gzip (full bundle)</span>
+      <span class="lib-size">~1.3 MB gzip (full bundle)</span>
     </div>
     <div class="render-area" id="plotly-area">
       <div id="plotly-container" style="width:100%;height:100%;"></div>
@@ -452,8 +448,8 @@
       <tr class="group"><td colspan="3">Integration</td></tr>
       <tr>
         <td>Library size (gzip)</td>
-        <td class="yes">~85 KB (full stack)</td>
-        <td class="part">~1.1 MB (full bundle)<span class="note">~300 KB with plotly-basic (no WebGL)</span></td>
+        <td class="yes">~104 KB (core)<span class="note">+~25 KB lazy-loaded on first Insights open, +~34 KB if the in-app guide is opened — neither is downloaded otherwise</span></td>
+        <td class="part">~1.3 MB (full bundle)<span class="note">~350 KB with plotly-basic (no WebGL, so no scattergl)</span></td>
       </tr>
       <tr>
         <td>Zero runtime dependencies</td>
@@ -540,16 +536,22 @@
     el.innerHTML = '';
 
     // Real wafer geometry — a 300 mm wafer with a bottom notch, drawn to scale.
-    // Die pitch is inferred from the grid extent (the two scenarios have very
-    // different die counts), so we supply only the diameter and notch.
+    // Both the diameter AND the die pitch are supplied: with a diameter alone the
+    // library has to infer the pitch as diameter ÷ grid span and raises an
+    // `inferred-pitch` advisory, since that guess breaks whenever edge dies are
+    // absent. The two scenarios are different devices, so each names its own die
+    // size — both work out to a full 300 mm wafer.
     // Plotly has no concept of any of this; it just plots x/y as a scatter.
     const waferConfig = { diameter: 300, notch: { type: 'bottom' } };
+    // values: 29 × 29 die grid → 9.5 mm square die. bins (WM-811K): denser grid → 5 mm square die.
+    const dieConfig = isValues ? { width: 9.5, height: 9.5 } : { width: 5, height: 5 };
 
     const buildOpts = isValues
       ? {
           results,
           passBins: [1],
           waferConfig,
+          dieConfig,
           testDefs: [
             // Spec limits on testA enable out-of-spec (▽/△ marker) flagging and
             // LSL/USL markers on the colorbar — neither exists in Plotly.
@@ -562,6 +564,7 @@
           results,
           passBins: [1],
           waferConfig,
+          dieConfig,
           // WM-811K bin scheme: 1 = pass, 2 = fail.
           hbinDefs: [
             { bin: 1, name: 'Pass', color: '#22c55e' },

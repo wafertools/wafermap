@@ -42,7 +42,7 @@ free if the Summary panel already ran first.
 | *(none — just `buildWaferMap` + `renderWaferMap`)* | The interactive map itself | Always |
 | `analyzeWaferMap()` — no extra flags | Yield %, bin breakdown, ring/quadrant yield, basic findings | Summary panel, Insights → Overview |
 | `analyzeWaferMap({ computePerTestStats: true })` | Per-test five-number summaries (min/Q1/median/Q3/max) | Insights → Distributions (box plot) |
-| `analyzeWaferMap({ enableTestValueAnalysis: true })` | Automatic spatial statistical findings — flags regions where a test's values differ significantly (Welch's t-test per region) | Findings sidebar, Summary panel's findings list |
+| `analyzeWaferMap({ enableTestValueAnalysis: true })` | Automatic spatial statistical findings — flags regions where a test's values differ significantly (Welch's t-test per region) | Summary panel's findings list |
 | `insights: { enabled: true }` (Insights tab) | Process capability, distributions, correlation charts | Insights tab (opt-in toolbar button) |
 | `analyzeWaferLot(..., { perWaferSummaries })` | Lot-level findings + reuses per-wafer stats you already computed | Gallery's lot Summary panel |
 

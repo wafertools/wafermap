@@ -4,7 +4,7 @@ import { getColorScheme } from '../renderer/colorSchemes.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { CLR, sevColor, ROTATIONS, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, overlayRootFor, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -13,17 +13,19 @@ import type { WaferViewOptions, WaferMapController } from './renderWaferMap.js';
 import { classifyChanged } from './renderWaferMap.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
-import { buildWaferMap, dieHasTestData, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, getTestPassStatus, isParametricTest, getDieTestValue } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { compareNatural } from '../core/utils.js';
 import type { SummaryPanelOptions } from './summaryPanel.js';
 import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent } from './summaryPanel.js';
+import { renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { prettyKey } from '../stats/facets.js';
-import { escHtml, renderSection, renderSeverityBadge, reportStyles } from '../stats/reportHtml.js';
-import { createInsightsTab, type InsightsOptions } from './insightsTab.js';
+// TYPE-ONLY — see renderWaferMap.ts's identical import for why. The chart
+// suite is fetched on first open, not shipped in the initial /render chunk.
+import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
 import type { DieListDisplayOptions } from './dieList.js';
 import { getDieKey, hasPosition } from '../core/dies.js';
 
@@ -257,34 +259,177 @@ function deduplicateDefs(defs: BinDef[]): BinDef[] {
  * (hardBin/softBin) and metadata legend branches in `rebuildLegend()` so the two can never
  * drift apart in markup/styling.
  */
+/**
+ * A single stacked proportional bar — the population split at a glance.
+ *
+ * Chosen over one bar per bin because this legend is a horizontal strip: per-bin
+ * bars would cost a row each and turn a two-line strip into a small chart, which
+ * is the Insights bin pareto's job. One bar adds a single row and answers the
+ * only question the strip is missing — "how is the population divided" — while
+ * leaving the swatch order alone.
+ *
+ * Segments are ordered by descending count, so the bar reads as a pareto even
+ * though the swatches above stay in bin order. Every segment gets a themed
+ * tooltip; a segment too thin to see still carries its own, so a rare bin is
+ * findable rather than merely present.
+ */
+/** Segments drawn individually before the tail is rolled into "Other". Past a
+ *  dozen the bar stops being readable — every extra segment is a sliver — and
+ *  the rolled-up tail says more than a row of invisible slices. Every bin still
+ *  appears with its own count in the swatch rows above, so nothing is hidden. */
+const SHARE_BAR_MAX_SEGMENTS = 12;
+
+function buildShareBar(
+  doc: Document,
+  allSegments: Array<{ color: string; count: number; label: string }>,
+  total: number,
+): HTMLElement {
+  // Caller sorts descending, so the tail is genuinely the smallest.
+  let segments = allSegments;
+  if (allSegments.length > SHARE_BAR_MAX_SEGMENTS) {
+    const head = allSegments.slice(0, SHARE_BAR_MAX_SEGMENTS - 1);
+    const tail = allSegments.slice(SHARE_BAR_MAX_SEGMENTS - 1);
+    const tailCount = tail.reduce((sum, sg) => sum + sg.count, 0);
+    segments = [...head, {
+      // Neutral, so it can't be mistaken for a bin colour on the map.
+      color: CLR.label,
+      count: tailCount,
+      label: `Other (${tail.length} bins)`,
+    }];
+  }
+  const bar = doc.createElement('div');
+  Object.assign(bar.style, {
+    display: 'flex', width: '100%', height: '8px', borderRadius: RADIUS.control,
+    overflow: 'hidden', border: `1px solid ${CLR.menuBorder}`, boxSizing: 'border-box',
+    marginTop: SPACE.xs, flexShrink: '0' } as Partial<CSSStyleDeclaration>);
+  bar.setAttribute('role', 'img');
+  bar.setAttribute('aria-label',
+    `Population split: ${segments.map(sg => `${sg.label} ${fmtLegendPercent((sg.count / total) * 100)}`).join(', ')}`);
+
+  for (const seg of segments) {
+    const pct = (seg.count / total) * 100;
+    const cell = doc.createElement('div');
+    Object.assign(cell.style, {
+      // Proportional grow, NOT `flex: 0 0 <pct>%`. With a fixed percentage
+      // basis the min-width below is additive on top of a basis already summing
+      // to 100%, so a long tail of tiny segments overflows the bar and
+      // `overflow: hidden` silently clips the rarest bins — the exact ones
+      // worth seeing. Growing from a zero basis lets flexbox honour every
+      // min-width and take the difference out of the largest segment instead.
+      flex: `${pct} 1 0`,
+      // A floor so a sub-pixel share stays visible and hoverable: a bin holding
+      // three dies out of 200k is what someone scans a yield strip to find.
+      minWidth: pct > 0 ? '2px' : '0',
+      background: seg.color } as Partial<CSSStyleDeclaration>);
+    wireTooltip(cell, `${seg.label} · ${seg.count.toLocaleString()} dies · ${fmtLegendPercent(pct)}`);
+    bar.appendChild(cell);
+  }
+  return bar;
+}
+
+/**
+ * Percentage for a legend row. Two decimals below 0.01% would be noise, but a
+ * bin holding a handful of dies out of 100k must not read as "0.0%" — a rare
+ * failure mode is exactly what someone scans this strip for — so anything
+ * non-zero that would round to zero is shown as "<0.1%".
+ */
+function fmtLegendPercent(pct: number): string {
+  if (pct > 0 && pct < 0.1) return '<0.1%';
+  return `${pct.toFixed(1)}%`;
+}
+
+/**
+ * Tally dies per legend category across the visible cards.
+ *
+ * The population rule is NOT a local choice: `partial` and `edgeExcluded` dies
+ * are painted as no-data/excluded grey rather than their bin colour
+ * (buildView.ts's `EDGE_EXCLUDED_FILL`), so counting them would make this strip
+ * disagree both with what is on the map and with the Summary panel, which
+ * scopes bin counts to `isYieldEligibleDie`. It is the same rule buildView
+ * already applies to its own per-card legend tallies, stated in one place there
+ * and matched here.
+ *
+ * Deliberately recomputed from the visible items rather than read from
+ * `lotStatsSummary`: the gallery can be showing a filtered subset of the
+ * analysed lot, and a pooled precomputed total would then describe a
+ * population that isn't on screen.
+ */
+function countLegendPopulation<K>(
+  items: readonly WaferMapDisplayItem[],
+  keyOf: (die: Die) => K | undefined,
+): { counts: Map<K, number>; total: number } {
+  const counts = new Map<K, number>();
+  let total = 0;
+  for (const item of items) {
+    for (const die of item.dies) {
+      if (die.partial || die.edgeExcluded) continue;
+      const k = keyOf(die);
+      if (k === undefined) continue;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+      total++;
+    }
+  }
+  return { counts, total };
+}
+
 function renderLegendSwatchRow(
   container: HTMLElement,
-  opts: { color: string; label: string; isActive: boolean; onClick: () => void },
+  opts: {
+    color: string; label: string; isActive: boolean; onClick: () => void;
+    /** Dies in this category, over the same population the map paints — see
+     *  `countLegendPopulation`. Omitted only when there is genuinely nothing to
+     *  count. */
+    count?: number;
+    /** Share of the legend population, 0–100. Shown beside the count. */
+    percent?: number;
+  },
 ): void {
   const entry = container.ownerDocument.createElement('div');
   Object.assign(entry.style, {
     display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer',
-    userSelect: 'none', padding: '2px 4px', borderRadius: '3px',
-  });
+    userSelect: 'none', padding: `${SPACE.xxs} ${SPACE.xs}`, borderRadius: RADIUS.control });
 
   const swatch = container.ownerDocument.createElement('span');
   Object.assign(swatch.style, {
     display: 'inline-block', width: '13px', height: '13px', flexShrink: '0',
     background: opts.color,
     border: opts.isActive ? `2px solid ${CLR.iconActive}` : `1px solid ${CLR.menuBorder}`,
-    borderRadius: '2px', boxSizing: 'border-box',
-  });
+    borderRadius: RADIUS.control, boxSizing: 'border-box' });
 
   const lbl = container.ownerDocument.createElement('span');
   lbl.textContent = opts.label;
   Object.assign(lbl.style, {
     fontWeight: opts.isActive ? '700' : '400',
     color:      opts.isActive ? CLR.iconActive : CLR.text,
-    whiteSpace: 'nowrap',
-  });
+    whiteSpace: 'nowrap' });
 
   entry.appendChild(swatch);
   entry.appendChild(lbl);
+
+  // Count and share. A per-card canvas legend already prints a count
+  // (toCanvas.ts's LegendSwatch); this strip printed neither, so a gallery
+  // shown without a Summary panel and without Insights — both optional, and
+  // the panel only auto-mounts when the host supplies lotStatsSummary or a
+  // wafer has findings — had NO surface anywhere stating the population split.
+  // The share is this strip's own addition: a card legend identifies colours on
+  // one wafer, where a percentage means little, while the lot strip's job is
+  // precisely "how is the population divided".
+  if (opts.count !== undefined) {
+    const countEl = container.ownerDocument.createElement('span');
+    countEl.textContent = opts.count.toLocaleString();
+    Object.assign(countEl.style, {
+      color: opts.isActive ? CLR.iconActive : CLR.text,
+      fontWeight: opts.isActive ? '700' : '400',
+      whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
+    entry.appendChild(countEl);
+
+    if (opts.percent !== undefined) {
+      const pctEl = container.ownerDocument.createElement('span');
+      pctEl.textContent = fmtLegendPercent(opts.percent);
+      Object.assign(pctEl.style, { color: CLR.label, whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
+      entry.appendChild(pctEl);
+    }
+  }
 
   entry.setAttribute('role', 'button');
   entry.setAttribute('aria-pressed', opts.isActive ? 'true' : 'false');
@@ -380,8 +525,7 @@ export function renderWaferGallery(
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
-    ...options.viewOptions,
-  };
+    ...options.viewOptions };
 
   let cardControllers: (WaferMapController | null)[] = [];
   let cardContainers: HTMLDivElement[] = [];      // canvasWrapper per card
@@ -444,7 +588,6 @@ export function renderWaferGallery(
   let gallerySummaryPanelEl: HTMLDivElement | null = null;
   // 'lot' = lot-level findings (requires currentLotStats)
   // 'wafers' = per-wafer findings index (requires items with statsSummary)
-  let gallerySummaryTab: 'lot' | 'wafers' = 'lot';
   let lotFindingsFilter: FindingsFilter = {};
 
   // ── Per-wafer summary helpers ─────────────────────────────────────────────
@@ -470,7 +613,7 @@ export function renderWaferGallery(
   // card's renderWaferMap uses, so only one tooltip is ever visible at a time.
   const tooltip = getTooltip();
   const tbHelpers = createToolbarHelpers(tooltip);
-  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, makeCheckMenuBtn, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
+  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
   // container.ownerDocument, not the bare global — matches renderWaferMap.ts's
   // own fix for the same gap (see its comment): a host could in principle
   // mount the gallery into a container that belongs to a different document.
@@ -515,145 +658,117 @@ export function renderWaferGallery(
 
   // ── Gallery summary panel ──────────────────────────────────────────────────
 
-  // Tab row shown when both lot stats and per-wafer findings are present.
-  function buildPanelTabRow(): HTMLDivElement {
-    const row = container.ownerDocument.createElement('div');
-    Object.assign(row.style, {
-      display:       'flex',
-      gap:           '4px',
-      marginBottom:  '10px',
-      borderBottom:  `1px solid ${CLR.menuBorder}`,
-      paddingBottom: '8px',
-    });
-    for (const tab of (['lot', 'wafers'] as const)) {
-      const btn = container.ownerDocument.createElement('button');
-      btn.type = 'button';
-      // "Wafers" was a lie by omission: this tab lists only wafers that HAVE
-      // findings, so a 13-wafer lot showed 8 rows — and the two lowest-yielding
-      // wafers, having no findings, were among the five missing. A user
-      // scanning for problem wafers read the absence as "these are fine".
-      btn.textContent = tab === 'lot' ? 'Lot' : 'Findings';
-      const active = gallerySummaryTab === tab;
-      Object.assign(btn.style, {
-        border:       'none',
-        borderRadius: '4px',
-        padding:      '2px 8px',
-        fontSize:     '11px',
-        cursor:       'pointer',
-        fontWeight:   active ? '600' : '400',
-        background:   active ? CLR.bgActive : 'transparent',
-        color:        active ? CLR.iconHover : CLR.icon,
-      });
-      btn.addEventListener('click', () => {
-        gallerySummaryTab = tab;
-        clearFindingHighlight();
-        clearDieZoneHighlight();
-        renderGallerySummaryPanel();
-      });
-      row.appendChild(btn);
-    }
-    return row;
-  }
-
-  // Per-wafer findings index — list of wafers with findings; clicking opens the modal.
-  function renderPerWaferIndex(): void {
-    if (!gallerySummaryPanelEl) return;
-    gallerySummaryPanelEl.innerHTML = '';
-
-    // Tab row only when lot findings also exist
-    if (currentLotStats) {
-      gallerySummaryPanelEl.appendChild(buildPanelTabRow());
-    }
-
-    // Collect wafers that have findings — from item.statsSummary or lotStats.perWafer
-    const wafersWithFindings: Array<{ index: number; item: WaferMapDisplayItem; unusualCount: number; notableCount: number; totalCount: number }> = [];
+  // Per-wafer findings index — the panel's ENTIRE content in the one case the
+  // lot panel cannot cover: no `lotStatsSummary`, so there is no `perWafer`
+  // series for the Wafer Yield section to list and no lot stats to show. When lot
+  // stats DO exist this is not rendered at all; the findings counts appear as
+  // badges on the Wafer Yield rows instead (see `buildPerWaferYieldSection`),
+  // which is one list rather than two and includes the wafers that have no
+  // findings — the ones this subset list structurally cannot show.
+  /** Wafers that have at least one per-wafer finding, with their severity tallies. */
+  function wafersWithFindings(): Array<{ index: number; item: WaferMapDisplayItem; unusualCount: number; notableCount: number; totalCount: number }> {
+    const out: Array<{ index: number; item: WaferMapDisplayItem; unusualCount: number; notableCount: number; totalCount: number }> = [];
     for (let i = 0; i < originalItems.length; i++) {
       const item = originalItems[i];
       if (!item) continue;
       const findings = perWaferSummary(i)?.findings ?? [];
       if (!findings.length) continue;
-      const unusualCount = findings.filter(f => f.severity === 'unusual').length;
-      const notableCount = findings.filter(f => f.severity === 'notable').length;
-      wafersWithFindings.push({ index: i, item, unusualCount, notableCount, totalCount: findings.length });
+      out.push({
+        index: i,
+        item,
+        unusualCount: findings.filter(f => f.severity === 'unusual').length,
+        notableCount: findings.filter(f => f.severity === 'notable').length,
+        totalCount:   findings.length });
     }
+    return out;
+  }
+
+  /** Open a wafer by index — the Wafer Yield rows only know the index, while
+   *  `openWindowForCard` wants the item too. */
+  function openWindowForCardIndex(cardIndex: number): void {
+    const item = currentItems[cardIndex] ?? originalItems[cardIndex];
+    if (item) openWindowForCard(cardIndex, item);
+  }
+
+  /** Per-wafer findings tally for one wafer, for the Wafer Yield rows' badges. */
+  function findingsTallyFor(index: number): { total: number; unusual: number; notable: number } | undefined {
+    const findings = perWaferSummary(index)?.findings ?? [];
+    if (!findings.length) return undefined;
+    return {
+      total:   findings.length,
+      unusual: findings.filter(f => f.severity === 'unusual').length,
+      notable: findings.filter(f => f.severity === 'notable').length };
+  }
+
+  /** The full lot summary report — stats, split comparison, lot findings AND a
+   *  per-wafer findings section. Reached from the no-lot-stats fallback list
+   *  below; the lot panel builds its own via `renderLotSummaryContent`. */
+  function openLotSummaryReport(): void {
+    const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
+    const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
+    openReportModal(renderLotSummaryReportHtml({
+      items: originalItems.map((item, i) => ({
+        label:        item?.label ?? `W${i + 1}`,
+        wafer:        item?.wafer,
+        dies:         item?.dies,
+        statsSummary: item?.statsSummary })),
+      hbinDefs: lotHbinDefs.length ? lotHbinDefs : undefined,
+      sbinDefs: lotSbinDefs.length ? lotSbinDefs : undefined,
+      testDefs: originalItems.find(it => it?.testDefs?.length)?.testDefs,
+      passBins,
+      ringCount: sharedOpts.ringCount }), { anchor: container });
+  }
+
+  function renderPerWaferIndexFallback(): void {
+    if (!gallerySummaryPanelEl) return;
+    gallerySummaryPanelEl.innerHTML = '';
+
+    const wafers = wafersWithFindings();
 
     // State the denominator. The list is a subset by design; saying so is what
     // stops it reading as the full wafer list.
     if (originalItems.length > 0) {
       const heading = container.ownerDocument.createElement('div');
-      const withCount = wafersWithFindings.length;
+      const withCount = wafers.length;
       const total = originalItems.filter(Boolean).length;
       heading.textContent = withCount === 0
         ? `No findings on any of the ${total} wafers`
         : `${withCount} of ${total} wafer${total === 1 ? '' : 's'} with findings`;
       Object.assign(heading.style, {
-        fontSize: '11px', color: CLR.label, marginBottom: '8px',
-      } as Partial<CSSStyleDeclaration>);
+        fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.md } as Partial<CSSStyleDeclaration>);
       gallerySummaryPanelEl.appendChild(heading);
     }
 
-    // "Report all wafers" button
-    if (wafersWithFindings.length > 0) {
+    if (wafers.length > 0) {
       const reportBtn = container.ownerDocument.createElement('button');
       reportBtn.type = 'button';
-      reportBtn.textContent = 'Findings report';
+      // The same report the lot panel offers, not a findings-only variant. This
+      // path runs when the host passed no `lotStatsSummary`, and it used to be the
+      // one place a "Findings report" existed at all — so the panel offered a
+      // different export depending on whether lot stats happened to be supplied.
+      // `renderLotSummaryReportHtml` computes `analyzeWaferLot` itself, so it needs
+      // no precomputed lot stats; the work stays lazy, on click, which is why a
+      // host that deliberately skipped lot analysis is not charged for it here.
+      reportBtn.textContent = 'Summary report';
       Object.assign(reportBtn.style, {
-        border:       `1px solid ${CLR.menuBorder}`,
-        borderRadius: '4px',
-        padding:      '3px 8px',
-        marginBottom: '10px',
-        fontSize:     '10px',
-        color:        CLR.iconHover,
-        background:   'none',
-        cursor:       'pointer',
+        ...controlStyle('outlined'),
+        marginBottom: SPACE.lg,
         display:      'block',
         width:        '100%',
-        textAlign:    'left',
-      });
-      reportBtn.addEventListener('click', () => {
-        const title = `Findings report — ${wafersWithFindings.length} wafer${wafersWithFindings.length > 1 ? 's' : ''}`;
-        const generatedAt = new Date().toLocaleString();
-        const sections = wafersWithFindings
-          .map(({ item, index }) => {
-            const summary = perWaferSummary(index)!;
-            const label = item.label ?? `W${index + 1}`;
-            const rows = summary.findings.map(f =>
-              `<li>${renderSeverityBadge(f.severity)} ${escHtml(f.summary)}</li>`,
-            ).join('');
-            return renderSection(escHtml(label), `<ul style="margin:0;padding-left:18px;list-style:none">${rows}</ul>`);
-          }).join('\n');
-        const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>${escHtml(title)}</title>
-<style>
-${reportStyles()}
-</style>
-</head>
-<body>
-<main class="report">
-  <header class="report-header">
-    <h1>${escHtml(title)}</h1>
-    <p class="report-subtitle">Generated ${escHtml(generatedAt)}</p>
-  </header>
-  ${sections}
-</main>
-</body>
-</html>`;
-        openReportModal(html, { anchor: container });
-      });
+        textAlign:    'left' });
+      wireControlHover(reportBtn);
+      reportBtn.addEventListener('click', openLotSummaryReport);
       gallerySummaryPanelEl.appendChild(reportBtn);
     }
 
     // Wafer rows
-    if (wafersWithFindings.length === 0) {
+    if (wafers.length === 0) {
       const empty = container.ownerDocument.createElement('div');
-      Object.assign(empty.style, { color: CLR.icon, fontSize: '11px', padding: '4px 0' });
+      Object.assign(empty.style, { color: CLR.icon, fontSize: FONT.body, padding: '4px 0' });
       empty.textContent = 'No findings on any wafer.';
       gallerySummaryPanelEl.appendChild(empty);
     } else {
-      for (const { index, item, unusualCount, notableCount, totalCount } of wafersWithFindings) {
+      for (const { index, item, unusualCount, notableCount, totalCount } of wafers) {
         const topSeverity: 'unusual' | 'notable' | 'info' =
           unusualCount ? 'unusual' : notableCount ? 'notable' : 'info';
         // Badge shows notable+unusual count if any exist, otherwise total findings count
@@ -667,16 +782,15 @@ ${reportStyles()}
           justifyContent: 'space-between',
           width:          '100%',
           padding:        '5px 8px',
-          marginBottom:   '4px',
+          marginBottom: SPACE.xs,
           border:         'none',
           borderLeft:     `3px solid ${sevColor(topSeverity)}`,
-          borderRadius:   '3px',
+          borderRadius:   RADIUS.control,
           background:     CLR.bgHover,
           cursor:         'pointer',
-          fontSize:       '11px',
+          fontSize:       FONT.body,
           textAlign:      'left',
-          boxSizing:      'border-box',
-        });
+          boxSizing:      'border-box' });
         row.addEventListener('mouseover', () => { row.style.background = CLR.bgActive; });
         row.addEventListener('mouseout',  () => { row.style.background = CLR.bgHover; });
 
@@ -686,8 +800,7 @@ ${reportStyles()}
           color:         CLR.iconHover,
           overflow:      'hidden',
           textOverflow:  'ellipsis',
-          whiteSpace:    'nowrap',
-        });
+          whiteSpace:    'nowrap' });
 
         const badge = container.ownerDocument.createElement('span');
         badge.textContent = String(badgeCount);
@@ -698,15 +811,14 @@ ${reportStyles()}
           `${item.label ?? `W${index + 1}`} — ${badgeCount} finding${badgeCount === 1 ? '' : 's'}`
           + `${unusualCount ? `, ${unusualCount} unusual` : ''} — view wafer`);
         Object.assign(badge.style, {
-          marginLeft:   '6px',
+          marginLeft: SPACE.sm,
           flexShrink:   '0',
           background:   sevColor(topSeverity),
           color:        '#fff',
-          borderRadius: '8px',
+          borderRadius: RADIUS.container,
           padding:      '1px 5px',
-          fontSize:     '10px',
-          fontWeight:   '600',
-        });
+          fontSize:     FONT.body,
+          fontWeight:   '600' });
 
         row.appendChild(labelSpan);
         row.appendChild(badge);
@@ -725,7 +837,12 @@ ${reportStyles()}
   function renderGallerySummaryPanel(): void {
     if (!gallerySummaryPanelEl) return;
 
-    if (gallerySummaryTab === 'lot' && currentLotStats) {
+    // One panel, no tabs. The old Lot/Findings tab pair put a findings list in
+    // BOTH tabs (lot-level in "Lot", none at all in "Findings" — which listed
+    // wafers) and gave two identical-looking per-wafer lists two different click
+    // actions. The per-wafer list now lives inside the lot panel as badges on the
+    // Wafer Yield rows.
+    if (currentLotStats) {
       // Lot-level view — full stats (metadata/yield/bin/ring/quadrant/test
       // values) plus findings and a combined Report button. Bin/ring/
       // quadrant/test numbers here and in the Insights tab's Overview
@@ -744,6 +861,9 @@ ${reportStyles()}
         passBins,
         ringCount:      sharedOpts.ringCount,
         colorScheme:    sharedOpts.colorScheme,
+        // See renderWaferMap's equivalent — the lot bin breakdown follows the
+        // gallery's active plot mode.
+        plotMode:       sharedOpts.plotMode ?? 'hardBin',
         fallbackFormat: currentFallbackFormat,
         activeFindingId: activeLotFindingId,
         warnings: (options.warnings?.display ?? true) ? currentWarnings : [],
@@ -758,17 +878,14 @@ ${reportStyles()}
           }
           renderGallerySummaryPanel();
         },
-        onWaferClick: (waferIndex) => {
-          applyFindingHighlight([waferIndex]);
-        },
-        dieListOptions: options.dieList,
-      });
-      // Prepend tab row if per-wafer findings also exist
-      if (hasAnyPerWaferFindings()) {
-        gallerySummaryPanelEl.insertBefore(buildPanelTabRow(), gallerySummaryPanelEl.firstChild);
-      }
+        // Opens the wafer, which is what the row's own accessible name has always
+        // claimed. It previously only highlighted the card in the grid — a weak
+        // payoff for a click, and a promise the label did not keep.
+        onWaferClick: openWindowForCardIndex,
+        findingsFor: findingsTallyFor,
+        dieListOptions: options.dieList });
     } else {
-      renderPerWaferIndex();
+      renderPerWaferIndexFallback();
     }
   }
 
@@ -865,14 +982,13 @@ ${reportStyles()}
     gap:           '0',
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
-    borderRadius:  '6px',
+    borderRadius:  RADIUS.container,
     padding:       '3px 4px',
-    marginBottom:  '10px',
-    boxShadow:     '0 1px 4px rgba(0,0,0,0.10)',
+    marginBottom: SPACE.lg,
+    boxShadow:     SHADOW.panel,
     flexWrap:      'wrap',
     minWidth:      '0',
-    overflowX:     'auto',
-  });
+    overflowX:     'auto' });
 
   const closeModeMenu = (): void => {
     const m = getOpenMenu();
@@ -954,8 +1070,7 @@ ${reportStyles()}
     v => updateShared({ colorScheme: v }),
     {
       get: () => sharedOpts.markFailingDies ?? false,
-      set: (v) => updateShared({ markFailingDies: v }),
-    },
+      set: (v) => updateShared({ markFailingDies: v }) },
   );
   syncPaletteBtn();
 
@@ -985,6 +1100,67 @@ ${reportStyles()}
     return originalItems.some(it => it?.dies?.some(d => getTestPassStatus(d, testNumber, td) !== undefined));
   }
 
+  /**
+   * Lot-wide min/max for the active test's 'data' colour range in plain `value`
+   * mode — every card must be compared on one shared scale, not each auto-scaled
+   * to only its own dies (see TODO.md, "Gallery value-mode colour range...").
+   *
+   * Returns undefined when a spec-anchored range applies instead: the active
+   * test's limits are identical for every card already, so buildView's own
+   * per-card spec-range handling is already consistent lot-wide and needs no
+   * override here. Also undefined for a functional test (no scalar to range).
+   */
+  function sharedDataValueRange(testNumber: number, td: import('../renderer/buildWaferMap.js').TestDef | undefined): [number, number] | undefined {
+    if (!td || !isParametricTest(td)) return undefined;
+    const hasLimits = td.limitLow !== undefined || td.limitHigh !== undefined;
+    const effectiveSpecDisplay = requestedPassFailDisplay(sharedOpts) === 'spec' && hasLimits;
+    const colorbarRangeMode = effectiveSpecDisplay ? 'spec' : (sharedOpts.colorbarRangeMode ?? 'spec');
+    if (colorbarRangeMode === 'spec' && hasLimits) return undefined;
+    let lo = Infinity, hi = -Infinity;
+    for (const item of originalItems) {
+      if (!item) continue;
+      for (const die of item.dies) {
+        const v = getDieTestValue(die, testNumber);
+        if (v !== undefined) {
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+      }
+    }
+    if (!isFinite(lo)) return undefined;
+    return lo === hi ? [lo, lo + 1] : [lo, hi];
+  }
+
+  /**
+   * Recomputes the shared value-mode range and pushes it to every live card.
+   * Called whenever the active test, colour-range mode, pass/fail display, or
+   * the underlying item data (new/resolved items) changes. A no-op outside
+   * plain `value` mode — stacked modes own `sharedOpts.valueRange` themselves
+   * via `stackedSharedOpts`, and bin/metadata modes don't read it at all.
+   */
+  function syncSharedValueRange(): void {
+    if ((sharedOpts.plotMode ?? 'hardBin') !== 'value') return;
+    const { testNumber, td } = activeTestDefShared();
+    const range = sharedDataValueRange(testNumber, td);
+    const next: WaferViewOptions['valueRange'] = range ? { test: testNumber, range } : undefined;
+    sharedOpts = { ...sharedOpts, valueRange: next };
+    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ valueRange: next });
+  }
+
+  // Coalesced variant for the incremental-load path. Each resolving factory used
+  // to call `syncSharedValueRange` directly, and that rescans every die of every
+  // wafer AND re-renders every card — so a gallery loading n wafers did O(n²)
+  // work, all of it discarded except the last pass. Factories typically resolve
+  // in bursts within a frame, so one sync per frame gives the same result.
+  let sharedRangeSyncPending = false;
+  function scheduleSharedValueRangeSync(): void {
+    if (sharedRangeSyncPending) return;
+    sharedRangeSyncPending = true;
+    const raf = container.ownerDocument.defaultView?.requestAnimationFrame
+      ?? ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number);
+    raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); });
+  }
+
   const btnOverlays = makeOverlaysBtn(
     tbHelpers,
     (): CheckMenuRow[] => [
@@ -998,8 +1174,7 @@ ${reportStyles()}
           functionalActive: activeTestIsFunctional(),
           hasLimits: activeTestHasLimits() && !activeTestIsFunctional(),
           hasRecorded: activeTestHasRecordedStatus() && !activeTestIsFunctional(),
-          display: requestedPassFailDisplay(sharedOpts),
-        },
+          display: requestedPassFailDisplay(sharedOpts) },
         d => updateShared({ passFailDisplay: d }),
       ),
     ],
@@ -1018,8 +1193,7 @@ ${reportStyles()}
     {
       get: () => perCardLegend,
       set: (v) => { perCardLegend = v; applyPerCardLegend(); },
-      blockedReason: perCardLegendBlockedReason,
-    },
+      blockedReason: perCardLegendBlockedReason },
   );
   syncLegendStyleBtn();
 
@@ -1152,8 +1326,7 @@ ${reportStyles()}
       lotStatsSummary: currentLotStats,
       // Per-item geometry advisories live on the items themselves — each card is
       // a built WaferMapResult, so `warnings` is already on it.
-      result: { warnings: originalItems.flatMap(it => it?.warnings ?? []) },
-    });
+      result: { warnings: originalItems.flatMap(it => it?.warnings ?? []) } });
     const changed = next.length !== currentWarnings.length
       || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
     currentWarnings = next;
@@ -1205,8 +1378,11 @@ ${reportStyles()}
   let btnInsights: HTMLButtonElement | null = null;
   if (insightsEnabled) {
     btnInsights = makeBtn('analysis', 'Insights', () => {
-      const isOpen = insightsEl?.style.display !== 'none';
-      setInsightsOpen(!isOpen);
+      // `insightsOpen`, NOT insightsEl's display: the element does not exist
+      // until the suite has been loaded once, and `null?.style.display !==
+      // 'none'` evaluates to true — so reading the DOM here would report a
+      // never-opened tab as already open and the first click would do nothing.
+      setInsightsOpen(!insightsOpen);
     });
     // Stable identity hook — this button's aria-label is TOGGLED ('Insights'
     // vs 'Back to gallery view' below), so button[aria-label="Insights"]
@@ -1251,19 +1427,18 @@ ${reportStyles()}
   Object.assign(legendEl.style, {
     display:       'flex',
     flexDirection: 'column',
-    gap:           '6px',
+    gap: SPACE.sm,
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
-    borderRadius:  '6px',
-    padding:       '6px 10px',
-    marginBottom:  '10px',
-    boxShadow:     '0 1px 4px rgba(0,0,0,0.10)',
-    fontSize:      '12px',
-    lineHeight:    '1',
+    borderRadius:  RADIUS.container,
+    padding: `${SPACE.sm} ${SPACE.lg}`,
+    marginBottom: SPACE.lg,
+    boxShadow:     SHADOW.panel,
+    fontSize:      FONT.body,
+    lineHeight:    LEADING.none,
     boxSizing:     'border-box',
     width:         '100%',
-    minWidth:      '0',
-  });
+    minWidth:      '0' });
 
   // ── Body row (grid + side drawer) ──────────────────────────────────────────
 
@@ -1271,9 +1446,8 @@ ${reportStyles()}
   Object.assign(bodyEl.style, {
     display:   'flex',
     flexDirection: 'row',
-    gap:       '12px',
-    alignItems: 'flex-start',
-  });
+    gap: SPACE.xl,
+    alignItems: 'flex-start' });
 
   // ── Insights tab (opt-in) ────────────────────────────────────────────────────
   // Takes over the full body when active — swaps out the grid/summary panel
@@ -1286,10 +1460,18 @@ ${reportStyles()}
   // Built only when `insightsEnabled` — mirrors `renderWaferMap.ts`'s own
   // gating, so a gallery with the feature off (the default) doesn't pay for
   // the chart suite's DOM/closures or keep a hidden host in the container.
-  let insightsTab: ReturnType<typeof createInsightsTab> | null = null;
+  let insightsTab: InsightsTabHandle | null = null;
   let insightsEl: HTMLElement | null = null;
-  if (insightsEnabled) {
-    insightsTab = createInsightsTab({
+  /** In flight or resolved — so a double-click can't build two tabs. */
+  let insightsLoad: Promise<InsightsTabHandle | null> | null = null;
+
+  /** Load the chart suite and build the tab, once. Resolves to null when
+   *  Insights is not enabled, so callers need no separate guard. */
+  function ensureInsightsTab(): Promise<InsightsTabHandle | null> {
+    if (!insightsEnabled) return Promise.resolve(null);
+    if (insightsTab) return Promise.resolve(insightsTab);
+    insightsLoad ??= import('./insightsTab.js').then(({ createInsightsTab }) => {
+      insightsTab = createInsightsTab({
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
       getColorSchemeName: () => sharedOpts.colorScheme ?? 'default',
@@ -1299,6 +1481,7 @@ ${reportStyles()}
       // Leading "‹ Gallery" tab in the Insights tab bar — a visible way back
       // to the card grid, alongside the toolbar's icon toggle.
       backTab: { label: 'Gallery', onBack: () => setInsightsOpen(false) },
+      onOpenGuide: () => openGuideWindow(),
       // The gallery's own legend strip (rebuildLegend/legendEl) already shows
       // this metadata, via the same `buildMetadataStripRow` this tab's own
       // strip would use, and stays mounted above the grid/Insights body in
@@ -1327,9 +1510,14 @@ ${reportStyles()}
         const handle = openModal({ title, onClose: () => ctrl?.destroy(), anchor: container });
         augmentOverlayTitleWithMetadata(handle, title, item.wafer.metadata ?? undefined);
         ctrl = buildDetachedController(handle.contentWrap, item, testNumber);
-      },
+      } });
+      insightsEl = insightsTab.el;
+      // Hidden on arrival; setInsightsOpen reveals it once the load resolves.
+      insightsEl.style.display = 'none';
+      container.appendChild(insightsEl);
+      return insightsTab;
     });
-    insightsEl = insightsTab.el;
+    return insightsLoad;
   }
 
   // Whether the Insights tab is currently showing — read by `rebuildLegend()`
@@ -1340,11 +1528,20 @@ ${reportStyles()}
   let insightsOpen = false;
 
   function setInsightsOpen(open: boolean): void {
-    if (!insightsTab || !insightsEl) return;
+    if (!insightsEnabled) return;
     insightsOpen = open;
-    insightsEl.style.display = open ? 'flex' : 'none';
+    // Chrome first, synchronously, so the view responds to the click while the
+    // chart suite is still being fetched; only revealing the tab has to wait.
+    if (insightsEl) insightsEl.style.display = open ? 'flex' : 'none';
     bodyEl.style.display = open ? 'none' : 'flex';
     galleryViewControlsEl.style.display = open ? 'none' : 'inline-flex';
+    // Hide the whole toolbar band while Insights is showing. With the gallery
+    // controls and the lot-summary button already hidden, it held exactly two
+    // things: a back-to-gallery toggle — which the Insights tab row's own
+    // "‹ Gallery" tab already provides — and Help, which now renders in that
+    // same row. A full-height band above every chart for one duplicate button
+    // is a row of vertical space bought for nothing.
+    barEl.style.display = open ? 'none' : 'flex';
     if (btnInsights) {
       setActive(btnInsights, open);
       // The icon itself signals the toggle: a bar-chart glyph means "open
@@ -1356,7 +1553,14 @@ ${reportStyles()}
     }
     refreshLotSummaryButton();
     rebuildLegend();
-    if (open) insightsTab.render();
+    if (!open) return;
+    void ensureInsightsTab().then(tab => {
+      // Re-read rather than captured: the user can toggle back to the grid
+      // while the chunk is downloading.
+      if (!tab || !insightsOpen) return;
+      tab.el.style.display = 'flex';
+      tab.render();
+    });
   }
 
   // ── Grid container ─────────────────────────────────────────────────────────
@@ -1539,7 +1743,7 @@ ${reportStyles()}
     minWidth:                '0',
     display:                 'grid',
     gridTemplateColumns:     trackTemplate(1),
-    gap:                     '12px',
+    gap: SPACE.xl,
     justifyContent:          'start',
     alignContent:            'start',
     // `isolation: isolate` — NOT decorative, load-bearing. Each card's own
@@ -1557,17 +1761,13 @@ ${reportStyles()}
     // and less than the same number. Isolating the grid contains every
     // card's Z_BASE locally, so it can no longer leak out and be compared
     // against anything outside gridEl at all.
-    isolation:               'isolate',
-  });
+    isolation:               'isolate' });
 
   // Build gallery summary panel.
   // Explicit placement: always visible persistent panel.
   // Auto-mount (lotStatsSummary or per-wafer findings, no placement): toggled via toolbar button.
   // defaultOpen: true starts the auto-mounted panel visible.
   {
-    // Set initial tab: 'lot' if lot stats present (preserves existing behaviour), else 'wafers'.
-    gallerySummaryTab = currentLotStats ? 'lot' : 'wafers';
-
     if (summaryPanelOpts?.placement) {
       const placement = summaryPanelOpts.placement;
       gallerySummaryPanelEl = createSummaryPanelEl(placement, container.ownerDocument);
@@ -1640,13 +1840,11 @@ ${reportStyles()}
     // obscuring them. That was the wrong fix for the right symptom: it raised
     // this element's tier instead of containing the one that was leaking.
     zIndex:     '1',
-    background: CLR.menuBg,
-  } as Partial<CSSStyleDeclaration>);
+    background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
   stickyHeaderEl.appendChild(barEl);
   stickyHeaderEl.appendChild(legendEl);
   container.appendChild(stickyHeaderEl);
   container.appendChild(bodyEl);
-  if (insightsEl) container.appendChild(insightsEl);
 
   // ── Bin legend ─────────────────────────────────────────────────────────────
 
@@ -1678,35 +1876,31 @@ ${reportStyles()}
     const isMetadataMode = mode === 'metadata';
     const activeMetadataKey = sharedOpts.activeMetadataKey;
 
-    // Collect unique bins — use hbin or sbin depending on active mode.
-    const binSet = new Set<number>();
-    if (hasBinLegendMode && !isMetadataMode) {
-      for (const item of resolvedItems) {
-        for (const die of item.dies) {
-          if (die.partial) continue;
-          const b = mode === 'softBin' ? die.sbin : die.hbin;
-          if (b != null) binSet.add(b);
-        }
-      }
-    }
-    const bins = hasBinLegendMode && !isMetadataMode ? [...binSet].sort((a, b) => a - b) : [];
+    // Collect bins AND their die counts — one pass, since the strip now states
+    // the population split rather than only naming colours.
+    const binTally = hasBinLegendMode && !isMetadataMode
+      ? countLegendPopulation(resolvedItems, die => (mode === 'softBin' ? die.sbin : die.hbin) ?? undefined)
+      : { counts: new Map<number, number>(), total: 0 };
+    // Ascending bin number, NOT pareto order. This strip is a colour key and a
+    // click-to-filter control as well as a summary: pareto ordering would move
+    // a swatch under the pointer whenever the data changed, and it would also
+    // disagree with the per-card canvas legends, which sort by number
+    // (toCanvas.ts). The stacked share bar below carries the pareto information
+    // instead, without reordering anything.
+    const bins = [...binTally.counts.keys()].sort((a, b) => a - b);
 
     // 'metadata' mode's own values — string-keyed, collected across every visible
     // card the same way bin counts are, sorted alphabetically (same determinism
     // as buildView.ts's color assignment).
-    const metadataValueSet = new Set<string>();
-    if (hasBinLegendMode && isMetadataMode && activeMetadataKey) {
-      for (const item of resolvedItems) {
-        for (const die of item.dies) {
-          if (die.partial) continue;
+    const metaTally = hasBinLegendMode && isMetadataMode && activeMetadataKey
+      ? countLegendPopulation(resolvedItems, die => {
           const raw = die.metadata?.[activeMetadataKey];
-          if (raw !== undefined && raw !== null &&
-              (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean')) {
-            metadataValueSet.add(String(raw));
-          }
-        }
-      }
-    }
+          return (raw !== undefined && raw !== null &&
+                  (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean'))
+            ? String(raw) : undefined;
+        })
+      : { counts: new Map<string, number>(), total: 0 };
+    const metadataValueSet = new Set<string>(metaTally.counts.keys());
     // Natural order — must match buildView's colour-assignment order, or this
     // lot-level strip would list values in a different order to the per-card legends.
     const metadataValues = hasBinLegendMode && isMetadataMode ? [...metadataValueSet].sort(compareNatural) : [];
@@ -1722,27 +1916,90 @@ ${reportStyles()}
     if (!bins.length && !metadataValues.length) return;
 
     const binsRow = container.ownerDocument.createElement('div');
-    Object.assign(binsRow.style, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 14px' });
+    Object.assign(binsRow.style, {
+      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 14px',
+      // A lot can carry dozens of bins, and each entry is now wider than a bare
+      // swatch+label was — so an unbounded wrapped strip would push the cards
+      // off screen on exactly the lots where the legend matters most. Bounded
+      // to roughly three rows and scrolled past that; the share bar sits below
+      // and stays visible, so the population split never scrolls away.
+      maxHeight: '86px', overflowY: 'auto', overflowX: 'hidden' } as Partial<CSSStyleDeclaration>);
     if (metaRow) Object.assign(binsRow.style, { borderTop: `1px solid ${CLR.separator}`, paddingTop: '6px' });
     legendEl.appendChild(binsRow);
 
     const scheme    = getColorScheme(sharedOpts.colorScheme);
     const activeBin = sharedOpts.highlightBin;
+    const activeMetadataFieldDef = currentItems.flatMap(it => it?.metadataFields ?? []).find(f => f.key === activeMetadataKey);
+
+    // What this row of swatches is keyed on. Hard and soft bins are INDEPENDENT
+    // number spaces — "Bin 3" means two different things depending on the mode —
+    // so an unlabelled row of bin swatches is genuinely ambiguous, which is the
+    // same defect the panel's "Hard Bin Breakdown" title exists to avoid.
+    //
+    // It matters most here of anywhere: a card draws its own legend with a
+    // "Hard Bin"/"Soft Bin" title from `buildMapTitle`, but that legend is
+    // suppressed below BIN_LEGEND_MIN_CANVAS_W/H (toCanvas.ts) — at gallery card
+    // sizes this shared strip is frequently the ONLY legend on screen.
+    //
+    // Metadata mode names the field, resolved exactly as `buildMapTitle` resolves
+    // it for a card title (field label, else prettyKey of the key), so the strip
+    // and any card title that IS drawn cannot disagree.
+    const legendCaption = isMetadataMode
+      ? (activeMetadataFieldDef?.label ?? (activeMetadataKey ? prettyKey(activeMetadataKey) : 'Metadata'))
+      : MODE_LABELS[mode];
+    const captionEl = container.ownerDocument.createElement('span');
+    captionEl.textContent = legendCaption;
+    Object.assign(captionEl.style, {
+      fontSize:      FONT.body,
+      fontWeight:    '700',
+      letterSpacing: TRACKING,
+      textTransform: 'uppercase',
+      color:         CLR.label,
+      flexShrink:    '0' } as Partial<CSSStyleDeclaration>);
+    binsRow.appendChild(captionEl);
+
+    // Yield, in bin modes only. Deliberately not shown for metadata mode: a
+    // metadata field has no pass/fail notion, and a yield figure printed beside
+    // one would be describing a different question from the swatches under it.
+    //
+    // It needs no separate computation and cannot disagree with the Summary
+    // panel: the legend population is already exactly the yield-eligible one
+    // (partial and edge-excluded dies excluded, above), and `passBins` is the
+    // same array the panel and `analyzeWaferLot` are given. Yield is therefore
+    // the pass bins' share of the same denominator the swatches divide up.
+    if (!isMetadataMode && binTally.total > 0) {
+      const passCount = passBins.reduce((sum, b) => sum + (binTally.counts.get(b) ?? 0), 0);
+      const yieldPct  = (passCount / binTally.total) * 100;
+      const yieldEl = container.ownerDocument.createElement('span');
+      yieldEl.textContent = `Yield ${fmtLegendPercent(yieldPct)}`;
+      Object.assign(yieldEl.style, {
+        fontSize: FONT.body, fontWeight: '700', color: CLR.value,
+        whiteSpace: 'nowrap', flexShrink: '0' } as Partial<CSSStyleDeclaration>);
+      // The denominator, stated rather than implied — the whole point of the
+      // numbers on this strip is that the population is named, not guessed at.
+      const ofEl = container.ownerDocument.createElement('span');
+      ofEl.textContent = `${passCount.toLocaleString()} / ${binTally.total.toLocaleString()} dies`;
+      Object.assign(ofEl.style, {
+        fontSize: FONT.body, color: CLR.label, whiteSpace: 'nowrap', flexShrink: '0' } as Partial<CSSStyleDeclaration>);
+      binsRow.appendChild(yieldEl);
+      binsRow.appendChild(ofEl);
+    }
 
     if (isMetadataMode) {
       const activeMetadataValue = sharedOpts.highlightMetadataValue;
-      const activeMetadataFieldDef = currentItems.flatMap(it => it?.metadataFields ?? []).find(f => f.key === activeMetadataKey);
       metadataValues.forEach((value, index) => {
         const isActive = activeMetadataValue === value;
         const valueDef = activeMetadataFieldDef?.values?.find(v => v.value === value);
         const color = valueDef?.color ?? metadataValueColor(index);
+        const count = metaTally.counts.get(value) ?? 0;
         renderLegendSwatchRow(binsRow, {
           color, isActive, label: valueDef?.label ?? value,
+          count,
+          percent: metaTally.total > 0 ? (count / metaTally.total) * 100 : undefined,
           onClick: () => {
             const next = sharedOpts.highlightMetadataValue === value ? undefined : value;
             updateShared({ highlightMetadataValue: next });
-          },
-        });
+          } });
       });
       return;
     }
@@ -1760,17 +2017,43 @@ ${reportStyles()}
     }
     const binDefMap = activeDefs.length > 0 ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
+    const binColorFor = (bin: number): string => {
+      const binDef = binDefMap?.get(bin);
+      return (sharedOpts.colorScheme === 'custom' ? binDef?.color : undefined) ?? scheme.forBin(bin);
+    };
+
     for (const bin of bins) {
       const isActive = activeBin === bin;
       const binDef   = binDefMap?.get(bin);
-      const color = (sharedOpts.colorScheme === 'custom' ? binDef?.color : undefined) ?? scheme.forBin(bin);
+      const count    = binTally.counts.get(bin) ?? 0;
       renderLegendSwatchRow(binsRow, {
-        color, isActive, label: binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`,
+        color: binColorFor(bin), isActive,
+        label: binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`,
+        count,
+        percent: binTally.total > 0 ? (count / binTally.total) * 100 : undefined,
         onClick: () => {
           const next = sharedOpts.highlightBin === bin ? undefined : bin;
           updateShared({ highlightBin: next });
-        },
-      });
+        } });
+    }
+
+    // One stacked proportional bar, segments in DESCENDING count — the pareto
+    // reading, without reordering the swatches above it. A strip of per-bin
+    // bars would need a row each and would not fit a horizontal legend; one bar
+    // shows the same split in a single row, and reads at a glance in a way a
+    // column of percentages does not.
+    if (binTally.total > 0 && bins.length > 1) {
+      legendEl.appendChild(buildShareBar(
+        container.ownerDocument,
+        [...binTally.counts.entries()]
+          .sort(([, a], [, b]) => b - a)
+          .map(([bin, count]) => ({
+            color: binColorFor(bin),
+            count,
+            label: binDefMap?.get(bin)?.name ? `${bin} · ${binDefMap.get(bin)!.name}` : `Bin ${bin}`,
+          })),
+        binTally.total,
+      ));
     }
   }
 
@@ -1803,8 +2086,7 @@ ${reportStyles()}
     ): import('../stats/types.js').StatsSummary {
       return {
         ...summary,
-        stats: { ...summary.stats, isLotStack: true, aggregationMethod, lotSize },
-      };
+        stats: { ...summary.stats, isLotStack: true, aggregationMethod, lotSize } };
     }
 
     if (mode === 'stackedValues') {
@@ -1841,8 +2123,7 @@ ${reportStyles()}
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, testDefs: [cardTestDef] }, { testNumbers: [0] }),
             method,
-          ),
-        };
+          ) };
       });
     }
 
@@ -1869,8 +2150,7 @@ ${reportStyles()}
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs: itemHbinDefs }),
             'countBin',
-          ),
-        };
+          ) };
       });
     }
 
@@ -1897,8 +2177,7 @@ ${reportStyles()}
           statsSummary: asLotStackSummary(
             analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs: itemSbinDefs }),
             'countBin',
-          ),
-        };
+          ) };
       });
     }
 
@@ -1989,6 +2268,11 @@ ${reportStyles()}
     if (partial.colorScheme !== undefined || modeChanged) renderGallerySummaryPanel();
     syncLogScaleBtn();
     syncColorbarRangeBtn();
+    // Recompute after everything above has settled sharedOpts (entering/leaving
+    // a stacked mode sets/clears its own valueRange) — refreshes the lot-wide
+    // 'value'-mode range for whatever just changed (active test, colour-range
+    // mode, pass/fail display, or a plotMode switch into 'value').
+    syncSharedValueRange();
     if (fireCallback) {
       const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
       options.onViewOptionsChange?.(sharedOpts, changed, classifyChanged(changed));
@@ -2015,22 +2299,24 @@ ${reportStyles()}
     metadata: import('../core/metadata.js').WaferMetadata | undefined,
   ): { wrap: HTMLDivElement; metaPanel: HTMLDivElement | null } {
     const wrap = doc.createElement('div');
-    Object.assign(wrap.style, { display: 'flex', alignItems: 'center', gap: '4px', flex: '1', minWidth: '0' });
+    Object.assign(wrap.style, { display: 'flex', alignItems: 'center', gap: SPACE.xs, flex: '1', minWidth: '0' });
     const labelEl = doc.createElement('span');
     labelEl.textContent = label;
     Object.assign(labelEl.style, {
-      fontWeight: '700', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-    });
+      fontWeight: '700', fontSize: FONT.sub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
     wrap.appendChild(labelEl);
 
     const entries = metadataEntries(metadata ?? {});
     let metaPanel: HTMLDivElement | null = null;
     if (entries.length > 0) {
       const chevron = doc.createElement('span');
-      Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' });
+      Object.assign(chevron.style, { fontSize: FONT.body, lineHeight: LEADING.none, color: CLR.label, flexShrink: '0' });
       chevron.textContent = '▾';
       wrap.appendChild(chevron);
-      Object.assign(wrap.style, { cursor: 'pointer' });
+      Object.assign(wrap.style, { cursor: 'pointer', borderRadius: RADIUS.control });
+      // A clickable header that never reacts reads as a static caption.
+      wrap.addEventListener('mouseenter', () => { wrap.style.background = CLR.bgHover; });
+      wrap.addEventListener('mouseleave', () => { wrap.style.background = 'none'; });
 
       metaPanel = doc.createElement('div');
       metaPanel.dataset.wmapCardMetaPanel = '1';
@@ -2040,11 +2326,10 @@ ${reportStyles()}
         zIndex:       Z_ABOVE,
         background:   CLR.menuBg,
         borderBottom: `1px solid ${CLR.menuBorder}`,
-        boxShadow:    '0 2px 6px rgba(0,0,0,0.15)',
-        padding:      '8px 10px',
-        fontSize:     '11px',
-        display:      'none',
-      } as Partial<CSSStyleDeclaration>);
+        boxShadow:    SHADOW.menu,
+        padding: `${SPACE.md} ${SPACE.lg}`,
+        fontSize:     FONT.body,
+        display:      'none' } as Partial<CSSStyleDeclaration>);
       const rows = buildCompactMetadataRows(metadata ?? {});
       if (rows) metaPanel.appendChild(rows);
 
@@ -2084,12 +2369,11 @@ ${reportStyles()}
     const titleParent = titleEl.parentElement;
     const titleWrap = container.ownerDocument.createElement('div');
     Object.assign(titleWrap.style, {
-      display: 'flex', alignItems: 'center', gap: '4px', flex: '1', minWidth: '0', cursor: 'pointer',
-    });
+      display: 'flex', alignItems: 'center', gap: SPACE.xs, flex: '1', minWidth: '0', cursor: 'pointer' });
     titleParent?.insertBefore(titleWrap, titleEl);
     titleWrap.appendChild(titleEl);
     const chevron = container.ownerDocument.createElement('span');
-    Object.assign(chevron.style, { fontSize: '12px', lineHeight: '1', color: CLR.label, flexShrink: '0' });
+    Object.assign(chevron.style, { fontSize: FONT.body, lineHeight: LEADING.none, color: CLR.label, flexShrink: '0' });
     chevron.textContent = '▾';
     titleWrap.appendChild(chevron);
 
@@ -2098,8 +2382,7 @@ ${reportStyles()}
     Object.assign(metaPanel.style, {
       position: 'absolute', top: '0', left: '0', right: '0', zIndex: Z_ABOVE,
       background: CLR.menuBg, borderBottom: `1px solid ${CLR.menuBorder}`,
-      boxShadow: '0 2px 6px rgba(0,0,0,0.15)', padding: '8px 10px', fontSize: '11px', display: 'none',
-    } as Partial<CSSStyleDeclaration>);
+      boxShadow: SHADOW.menu, padding: `${SPACE.md} ${SPACE.lg}`, fontSize: FONT.body, display: 'none' } as Partial<CSSStyleDeclaration>);
     const rows = buildCompactMetadataRows(metadata ?? {});
     if (rows) metaPanel.appendChild(rows);
     handle.contentWrap.style.position = 'relative';
@@ -2120,7 +2403,7 @@ ${reportStyles()}
     Object.assign(card.style, {
       background:    CLR.menuBg,
       border:        `1px solid ${CLR.menuBorder}`,
-      borderRadius:  '10px',
+      borderRadius:  RADIUS.container,
       overflow:      'hidden',
       display:       'flex',
       flexDirection: 'column',
@@ -2130,18 +2413,16 @@ ${reportStyles()}
       // clamps the card there and falls back to start (top-left) alignment
       // for the leftover cell space — no justify-items/-self override needed.
       maxWidth:      `${currentMaxCardPx}px`,
-      maxHeight:     `${currentMaxCardPx}px`,
-    });
+      maxHeight:     `${currentMaxCardPx}px` });
 
     const header = container.ownerDocument.createElement('div');
     Object.assign(header.style, {
       display:        'flex',
       alignItems:     'center',
-      padding:        '8px 10px 6px',
+      padding: `${SPACE.md} ${SPACE.lg} ${SPACE.sm}`,
       borderBottom:   `1px solid ${CLR.menuBorder}`,
       flexShrink:     '0',
-      gap:            '6px',
-    });
+      gap: SPACE.sm });
     const { wrap: identityWrap, metaPanel } = buildIdentityHeaderRow(document, item.label ?? '', item.wafer.metadata ?? undefined);
     header.appendChild(identityWrap);
 
@@ -2149,22 +2430,24 @@ ${reportStyles()}
     // detached, "reattach to this grid slot" (see updateExpandBtn).
     const expandBtn = container.ownerDocument.createElement('button');
     expandBtn.dataset.wmapExpandBtn = '1';
-    expandBtn.title = 'Open full view';
+    expandBtn.setAttribute('aria-label', 'Open full view');
+    // Tooltip reads `aria-label` live, so updateExpandBtn's expand ⇄ reattach
+    // relabel below is picked up without re-wiring.
+    wireTooltip(expandBtn);
     expandBtn.innerHTML = ICONS.expand; // unified expand icon (was an inline polyline SVG)
     Object.assign(expandBtn.style, {
       display:         'flex',
       alignItems:      'center',
       justifyContent:  'center',
       border:          `1px solid ${CLR.menuBorder}`,
-      borderRadius:    '4px',
+      borderRadius:    RADIUS.control,
       background:      CLR.panelBg,
       color:           CLR.label,
-      padding:         '2px',
+      padding: SPACE.xxs,
       cursor:          'pointer',
       flexShrink:      '0',
       width:           '22px',
-      height:          '22px',
-    });
+      height:          '22px' });
     header.appendChild(expandBtn);
     card.appendChild(header);
 
@@ -2176,8 +2459,7 @@ ${reportStyles()}
       minHeight:     '0',
       overflow:      'hidden',
       display:       'flex',
-      flexDirection: 'column',
-    });
+      flexDirection: 'column' });
     card.appendChild(canvasWrapper);
     // metaPanel overlays the top of the canvas area (not the header, which
     // stays fixed-height) — an absolute overlay rather than in-flow growth,
@@ -2213,8 +2495,7 @@ ${reportStyles()}
       // the per-map badge would be pure duplication here (worse: on a small
       // card it visually competes with the toolbar for the same corner-ish
       // space). Only the standalone renderWaferMap use case needs the badge.
-      showMetadataBadge: false,
-    });
+      showIdentityHeader: false });
     // In-gallery: hide scene controls (gallery bar owns them) and summary button.
     ctrl.setViewControlsVisible(false);
     ctrl.setSummaryVisible(false);
@@ -2234,12 +2515,10 @@ ${reportStyles()}
     const win = [...detachedWindows.values()].find(w => w.cardIndex === cardIndex);
     if (win) {
       btn.innerHTML = ICONS.minimize;
-      btn.title = 'Reattach to gallery';
       btn.setAttribute('aria-label', 'Reattach to gallery');
       btn.onclick = () => reattachOrDiscard(win.id);
     } else {
       btn.innerHTML = ICONS.expand;
-      btn.title = 'Open full view';
       btn.setAttribute('aria-label', 'Open full view');
       btn.onclick = () => openWindowForCard(cardIndex, currentItems[cardIndex]);
     }
@@ -2284,12 +2563,11 @@ ${reportStyles()}
         Object.assign(placeholder.style, {
           background:    CLR.menuBg,
           border:        `1px solid ${CLR.menuBorder}`,
-          borderRadius:  '10px',
+          borderRadius:  RADIUS.container,
           aspectRatio:   '1',
           display:       'flex',
           alignItems:    'center',
-          justifyContent:'center',
-        });
+          justifyContent:'center' });
         const spinner = container.ownerDocument.createElement('span');
         spinner.textContent = '…';
         Object.assign(spinner.style, { color: CLR.label, fontSize: '18px' });
@@ -2318,6 +2596,9 @@ ${reportStyles()}
 
     // All sync items are now in currentItems — legend can be built from them.
     rebuildLegend();
+    // Refresh the lot-wide 'value'-mode range now that the item set has changed
+    // (buildCards may have just replaced originalItems' dies entirely).
+    syncSharedValueRange();
 
     // Resolve factories one per task to keep the main thread responsive.
     // Capture the generation at the time buildCards was called — if buildCards runs
@@ -2345,9 +2626,12 @@ ${reportStyles()}
       pendingFactoryCount--;
       placeholder.replaceWith(card);
       rebuildLegend();
+      // This factory's dies just joined originalItems — refresh the lot-wide
+      // 'value'-mode range so cards already on screen widen to include it too.
+      // Coalesced: a burst of factories resolving together does one pass.
+      scheduleSharedValueRangeSync();
       // If this item introduced per-wafer findings and no panel exists yet, create it now.
       if (!gallerySummaryPanelEl && !summaryPanelOpts?.placement && item.statsSummary?.findings.length) {
-        if (!currentLotStats) gallerySummaryTab = 'wafers';
         gallerySummaryPanelEl = createSummaryPanelEl('right', container.ownerDocument);
         gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
         gallerySummaryPanelEl.style.position  = 'sticky';
@@ -2447,11 +2731,19 @@ ${reportStyles()}
     note.textContent = inOwnWindow
       ? 'Opened in its own window'
       : 'Opened in the wafer viewer';
-    Object.assign(note.style, { color: CLR.label, fontSize: '12px', textAlign: 'center', padding: '0 12px' });
+    Object.assign(note.style, { color: CLR.label, fontSize: FONT.body, textAlign: 'center', padding: '0 12px' });
     wrapper.appendChild(note);
   }
 
   function openWindowForCard(cardIndex: number, item: WaferMapDisplayItem): void {
+    // This intentionally looks different from renderWaferMap's own "Expand"
+    // (a modal with wmap's own drawn chrome) — a real popup's OS/browser
+    // title bar can't be suppressed or restyled, only sized. See
+    // `openDetachWindow`'s own doc comment (toolbar.ts) for the full
+    // rationale and the possible future change (forcing the
+    // `openFloatingWindow` fallback branch everywhere) that was deliberately
+    // not taken, and why.
+    //
     // Guard re-entrancy — other callers (e.g. the findings-index row) could
     // race a double-open on the same card.
     for (const w of detachedWindows.values()) if (w.cardIndex === cardIndex) return;
@@ -2482,8 +2774,7 @@ ${reportStyles()}
       // explicitly rather than silently falling back to the browser default.
       Object.assign(doc.body.style, {
         margin: '0', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-        fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
-      });
+        fontFamily: FONT.family });
       // The popup's documentElement has none of the host page's --wmap-* theme
       // values (it's an unrelated document) — copy them across, and keep them
       // synced with later host theme changes (see syncWmapPopupTheme's own doc
@@ -2505,9 +2796,8 @@ ${reportStyles()}
       banner.dataset.wmapWindowBanner = '1';
       banner.textContent = label;
       Object.assign(banner.style, {
-        display: 'none', padding: '6px 12px', fontSize: '12px', fontWeight: '700',
-        background: CLR.warnBg, color: CLR.warnText, borderBottom: `1px solid ${CLR.warnBorder}`, flexShrink: '0',
-      });
+        display: 'none', padding: `${SPACE.sm} ${SPACE.xl}`, fontSize: FONT.body, fontWeight: '700',
+        background: CLR.warnBg, color: CLR.warnText, borderBottom: `1px solid ${CLR.warnBorder}`, flexShrink: '0' });
       doc.body.appendChild(banner);
 
       const popupBody = doc.createElement('div');
@@ -2525,16 +2815,14 @@ ${reportStyles()}
       const { wrap: identityWrap, metaPanel } = buildIdentityHeaderRow(doc, label, item.wafer.metadata ?? undefined);
       const headerRow = doc.createElement('div');
       Object.assign(headerRow.style, {
-        display: 'flex', alignItems: 'center', padding: '8px 10px 6px',
-        borderBottom: `1px solid ${CLR.menuBorder}`, flexShrink: '0', gap: '6px',
-      });
+        display: 'flex', alignItems: 'center', padding: `${SPACE.md} ${SPACE.lg} ${SPACE.sm}`,
+        borderBottom: `1px solid ${CLR.menuBorder}`, flexShrink: '0', gap: SPACE.sm });
       headerRow.appendChild(identityWrap);
       popupBody.appendChild(headerRow);
 
       const mapContainer = doc.createElement('div');
       Object.assign(mapContainer.style, {
-        position: 'relative', flex: '1', minHeight: '0', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-      });
+        position: 'relative', flex: '1', minHeight: '0', overflow: 'hidden', display: 'flex', flexDirection: 'column' });
       if (metaPanel) mapContainer.appendChild(metaPanel);
       popupBody.appendChild(mapContainer);
 
@@ -2550,8 +2838,7 @@ ${reportStyles()}
           doc.title = text;
           banner.textContent = text;
           banner.style.display = 'block';
-        },
-      });
+        } });
     } else {
       // Fallback: window.open() is unavailable (blocked popup, or an embedded
       // host like Tauri where it silently returns null) and no host opener is
@@ -2563,8 +2850,7 @@ ${reportStyles()}
       const handle = openFloatingWindow({
         title: label,
         onClose: () => handlePopupClosed(id),
-        anchor: container,
-      });
+        anchor: container });
       handle.contentWrap.style.flexDirection = 'column';
       augmentOverlayTitleWithMetadata(handle, label, item.wafer.metadata ?? undefined);
       const ctrl = buildDetachedController(handle.contentWrap, item, undefined, liveOptions);
@@ -2574,9 +2860,12 @@ ${reportStyles()}
         close: () => handle.close(),
         setTitle: (text) => {
           const titleEl = handle.box.querySelector<HTMLElement>('[data-wmap-window-title]');
+          // Native `title` deliberately, and one of the few places it belongs:
+          // this heading is `text-overflow: ellipsis`, and the browser showing the
+          // full untruncated string on hover is precisely the wanted behaviour —
+          // not a themed hint. Mirrors openOverlay's own `titleEl.title`.
           if (titleEl) { titleEl.textContent = text; titleEl.title = text; }
-        },
-      });
+        } });
     }
 
     // Destroy the grid slot's own controller — the detached window is now the
@@ -2646,8 +2935,7 @@ ${reportStyles()}
       // fallback, see openWindowForCard) now build their own persistent
       // expandable identity header before calling this function — the
       // standalone corner badge would just duplicate it.
-      showMetadataBadge: false,
-    });
+      showIdentityHeader: false });
     ctrl.setViewControlsVisible(true);
     ctrl.setSummaryVisible(true);
     ctrl.setExpandVisible(false);
@@ -2838,6 +3126,5 @@ ${reportStyles()}
       bodyEl.remove();
       gallerySummaryPanelEl?.remove();
       insightsTab?.destroy();
-    },
-  };
+    } };
 }

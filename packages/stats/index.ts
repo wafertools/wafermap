@@ -17,10 +17,14 @@ export type {
 } from './metadataColumns.js';
 export { buildCapabilityData } from './capability.js';
 export type { CapabilityDatum, CapabilityItem } from './capability.js';
-export { buildCorrelationMatrix, filterCorrelationMatrix } from './correlation.js';
+export { buildCorrelationMatrix, filterCorrelationMatrix, pearsonFromSums, pearsonOfPairs } from './correlation.js';
 export type { CorrelationTestInfo, CorrelationCell, CorrelationMatrix, CorrelationSummary } from './correlation.js';
 export { buildTestBoxplotData } from './boxplot.js';
 export type { BoxplotDatum, BoxplotItem } from './boxplot.js';
+export { buildTestTrendData, trendCentre } from './trend.js';
+export type { TrendDatum, TrendItem } from './trend.js';
+export { buildTestPassRateData, hasJudgeableTests } from './testPassRate.js';
+export type { TestPassKind, TestPassRateData, TestPassRateItem, TestPassRateRow, TestPassRateValue } from './testPassRate.js';
 export { buildTestHistogramData, buildTestHistogramSeries } from './histogram.js';
 export type { HistogramBucket, HistogramItem, HistogramSeries, HistogramSeriesData } from './histogram.js';
 export { buildScatterData, buildScatterDataGrouped } from './scatter.js';

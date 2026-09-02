@@ -5,6 +5,16 @@
     "moduleResolution": "NodeNext",
     "rootDir": ".",
     "strict": true,
+    // Dead code is not merely untidy here: 38 unused imports and locals had
+    // accumulated, and that noise is exactly what hid two real defects — a
+    // `drawOffAxisLimits` imported into the histogram panel and never called (so
+    // one of three distribution charts silently lacked the off-axis limit markers
+    // the other two had), and a whole `yieldSection` builder left unreferenced
+    // when a slimmer summary replaced it, so the wafer report lost its pass/fail
+    // die counts. An unused-symbol list is only a useful signal while it is
+    // empty. `noUnusedParameters` is deliberately NOT enabled — deliberately
+    // ignored callback arguments are legitimate and would drown this out again.
+    "noUnusedLocals": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

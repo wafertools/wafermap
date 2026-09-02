@@ -26,7 +26,21 @@ import { DEFAULT_FACET_CURATION } from './facets.js';
 export type MetadataColumnScope = 'die' | 'wafer';
 
 /** How metadata keys are chosen. `'auto'` = every key present in the data. */
-export type MetadataKeySelection = 'auto' | 'none' | string[];
+/**
+ * `'auto'` — every displayable key.
+ * `'identity'` — only the curated keys that identify a population (lot, wafer,
+ *   product, program, split, operator, date…), i.e. `DEFAULT_FACET_CURATION`.
+ * `'none'` — no columns.
+ * `string[]` — exactly these keys, when present.
+ *
+ * `'identity'` exists because `'auto'` is the wrong default for a per-test
+ * export: a host that maps an STDF header into wafer metadata carries WCR
+ * geometry (`Center X`, `Die Ht`, `Wf Flat`, `Wafr Siz`, `Pos X`…) alongside the
+ * identity fields, and `'auto'` stamped all fifteen of them as constant leading
+ * columns on every row — pushing the actual statistics off the right of the
+ * screen while answering none of "which wafer is this?".
+ */
+export type MetadataKeySelection = 'auto' | 'identity' | 'none' | string[];
 
 export interface MetadataColumn {
   /** The metadata key this column reads. */
@@ -118,6 +132,7 @@ function orderWaferKeys(metadata: WaferMetadata): string[] {
 const selectKeys = (selection: MetadataKeySelection | undefined, available: string[]): string[] => {
   if (selection === 'none') return [];
   if (Array.isArray(selection)) return selection.filter(k => available.includes(k));
+  if (selection === 'identity') return available.filter(k => k in DEFAULT_FACET_CURATION);
   return available; // 'auto' or omitted
 };
 
@@ -125,9 +140,11 @@ const selectKeys = (selection: MetadataKeySelection | undefined, available: stri
  * Build the metadata column set for a population.
  *
  * A key present on both a die and its wafer yields exactly ONE column, scope
- * `'die'`, carrying the die value — the same shadowing rule the hover tooltip
- * applies with `{ ...waferMeta, ...die.metadata }`. Two columns for one key
- * could otherwise disagree in the same row.
+ * `'die'`, carrying the die value. Two columns for one key could otherwise
+ * disagree in the same row. (This used to cite the hover tooltip as applying the
+ * same `{ ...waferMeta, ...die.metadata }` shadowing; the tooltip no longer shows
+ * wafer metadata at all — that identity moved to the identity header — so the
+ * rule now stands on its own reasoning rather than a parallel that has gone.)
  */
 export function resolveMetadataColumns(o: ResolveMetadataColumnsOptions): MetadataColumnSet {
   const waferMetadata = o.waferMetadata ?? {};

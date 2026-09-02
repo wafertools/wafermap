@@ -93,6 +93,69 @@ test('specLimit — only limitLow defined: low end is limitLow, high end is data
   assert.equal(scene.valueRange[1], 4.0);
 });
 
+// ── allIntegerValues: explicit valueRange must still be derived from the data ──
+// (an explicit range used to skip the auto-scan entirely and default to false,
+// which made the colorbar AND die labels show decimal "n.0" ticks even when
+// every underlying value — e.g. stacked-bin occurrence counts — is a whole
+// number. See TODO.md.)
+
+test('value mode — explicit array valueRange still derives allIntegerValues=true from integer data', () => {
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V' }];
+  const { wafer, dies } = buildWaferMap({
+    results: [makeResult(0, 0, 1), makeResult(1, 0, 2)],
+    waferConfig, dieConfig, testDefs,
+  });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1010, valueRange: [0, 5],
+  });
+  assert.equal(scene.allIntegerValues, true);
+});
+
+test('value mode — explicit array valueRange with fractional data keeps allIntegerValues=false', () => {
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V' }];
+  const { wafer, dies } = buildWaferMap({
+    results: [makeResult(0, 0, 1.5), makeResult(1, 0, 2.25)],
+    waferConfig, dieConfig, testDefs,
+  });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1010, valueRange: [0, 5],
+  });
+  assert.equal(scene.allIntegerValues, false);
+});
+
+test('value mode — { test, range } valueRange still derives allIntegerValues=true from integer data', () => {
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V' }];
+  const { wafer, dies } = buildWaferMap({
+    results: [makeResult(0, 0, 4), makeResult(1, 0, 6)],
+    waferConfig, dieConfig, testDefs,
+  });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'value', testDefs, activeTest: 1010, valueRange: { test: 1010, range: [0, 10] },
+  });
+  assert.equal(scene.allIntegerValues, true);
+});
+
+test('stackedBins — colorbar range and die labels are integers, not "n.0" (bin occurrence counts)', () => {
+  // Mirrors what renderWaferGallery's aggregateBinCounts produces: the aggregated
+  // scalar sits at testValues[0], and the gallery passes an explicit [0, lotSize]
+  // valueRange (stackedSharedOpts) — always whole numbers.
+  const { wafer, dies } = buildWaferMap({
+    results: [
+      { x: 0, y: 0, testValues: { 0: 2 } },
+      { x: 1, y: 0, testValues: { 0: 3 } },
+    ],
+    waferConfig, dieConfig,
+  });
+  const scene = buildView(wafer, dies, {
+    plotMode: 'stackedBins', valueRange: [0, 3], showDieLabels: true,
+  });
+  assert.equal(scene.allIntegerValues, true);
+  assert.ok(scene.texts.length > 0, 'expected die-label text to be generated');
+  for (const t of scene.texts) {
+    assert.ok(!t.text.includes('.'), `expected an integer die label, got "${t.text}"`);
+  }
+});
+
 // ── passFailDisplay: 'spec' view option ──────────────────────────────────────
 
 test("passFailDisplay 'spec' — rectangles are colored by pass/fail category", () => {

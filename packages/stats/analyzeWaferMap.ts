@@ -1,4 +1,4 @@
-import type { Die, PositionedDie } from '../core/dies.js';
+import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie, getDieKey, isPositionedDie } from '../core/dies.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
@@ -9,13 +9,11 @@ import type {
   StatsSeverity,
   StatsSummary,
   StatsComparisonFamily,
-  HighlightTarget,
-} from './types.js';
+  HighlightTarget } from './types.js';
 import {
   buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, buildTestSiteRegions,
   sectorCompassNames, areQuadrantsAdjacent, parseRegionKey,
-  type StatsRegion,
-} from './regions.js';
+  type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
 import { classifyPattern } from './patternClassification.js';
 import { normalCdf } from './math.js';
@@ -153,8 +151,7 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
     hardBinsConsidered: [...hardBinSet].sort((left, right) => left - right),
     softBinsConsidered: [...softBinSet].sort((left, right) => left - right),
     ...(hardBinCounts.size ? { hardBinCounts: Object.fromEntries(hardBinCounts) } : {}),
-    ...(softBinCounts.size ? { softBinCounts: Object.fromEntries(softBinCounts) } : {}),
-  };
+    ...(softBinCounts.size ? { softBinCounts: Object.fromEntries(softBinCounts) } : {}) };
 }
 
 function computeTestSpecYield(
@@ -189,8 +186,7 @@ function computeTestSpecYield(
       failLowDies,
       failHighDies,
       totalDies,
-      yieldPercent: totalDies > 0 ? (passDies / totalDies) * 100 : null,
-    });
+      yieldPercent: totalDies > 0 ? (passDies / totalDies) * 100 : null });
   }
   return result.length ? result : undefined;
 }
@@ -227,8 +223,7 @@ export function computeFunctionalYield(
       passDies,
       failDies,
       totalDies,
-      passRatePercent: totalDies > 0 ? (passDies / totalDies) * 100 : null,
-    });
+      passRatePercent: totalDies > 0 ? (passDies / totalDies) * 100 : null });
   }
   return result.length ? result : undefined;
 }
@@ -262,8 +257,7 @@ function computePerTestStats(
       stddev,
       median: quantile(sorted, 0.5),
       q1:     quantile(sorted, 0.25),
-      q3:     quantile(sorted, 0.75),
-    });
+      q3:     quantile(sorted, 0.75) });
   }
   return result.length ? result : undefined;
 }
@@ -446,8 +440,7 @@ function finalizeProportionFindings(findings: RawFinding[], options: ResolvedOpt
         finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
         finding.effect.absoluteDelta ?? 0,
         finding.effect.relativeDelta,
-      ),
-    }));
+      ) }));
 }
 
 function buildYieldFindings(
@@ -505,33 +498,27 @@ function buildYieldFindings(
       severity: 'info',
       variable: {
         kind: 'yield',
-        label: 'Yield',
-      },
+        label: 'Yield' },
       comparison: {
         family: region.family,
         left: region.label,
-        right: comparisonRight(region.family),
-      },
+        right: comparisonRight(region.family) },
       effect: {
         direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
         absoluteDelta: delta,
         relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
-        effectSize: delta,
-      },
+        effectSize: delta },
       stats: {
         method: 'two-proportion-z',
         pValue,
         sampleSizeLeft: leftSize,
-        sampleSizeRight: rightSize,
-      },
+        sampleSizeRight: rightSize },
       summary: summarizeYieldFinding(region.label, delta, region.family),
       highlight: {
         kind: 'region',
         regionFamily: region.family,
         regionKeys: [region.key],
-        dieKeys: [...region.dieKeys],
-      },
-    });
+        dieKeys: [...region.dieKeys] } });
   }
 
   return finalizeProportionFindings(findings, options);
@@ -597,33 +584,27 @@ function buildBinFindings(
         variable: {
           kind: variableKind,
           bin,
-          label: binLabel,
-        },
+          label: binLabel },
         comparison: {
           family: region.family,
           left: region.label,
-          right: comparisonRight(region.family),
-        },
+          right: comparisonRight(region.family) },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
           absoluteDelta: delta,
           relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
-          effectSize: delta,
-        },
+          effectSize: delta },
         stats: {
           method: 'two-proportion-z',
           pValue,
           sampleSizeLeft: leftSize,
-          sampleSizeRight: rightSize,
-        },
+          sampleSizeRight: rightSize },
         summary: summarizeBinFinding(region.label, binLabel, delta, region.family),
         highlight: {
           kind: 'bin',
           bin,
           regionKeys: [region.key],
-          dieKeys: [...region.dieKeys],
-        },
-      });
+          dieKeys: [...region.dieKeys] } });
     }
   }
 
@@ -700,33 +681,27 @@ function buildFunctionalPassFindings(
         variable: {
           kind: 'functionalTest',
           index: testNumber,
-          label: `${fDefs[i].name} pass rate`,
-        },
+          label: `${fDefs[i].name} pass rate` },
         comparison: {
           family: region.family,
           left: region.label,
-          right: comparisonRight(region.family),
-        },
+          right: comparisonRight(region.family) },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
           absoluteDelta: delta,
           relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
-          effectSize: delta,
-        },
+          effectSize: delta },
         stats: {
           method: 'two-proportion-z',
           pValue,
           sampleSizeLeft: leftSize,
-          sampleSizeRight: rightSize,
-        },
+          sampleSizeRight: rightSize },
         summary: summarizeFunctionalFinding(region.label, fDefs[i].name, delta, region.family),
         highlight: {
           kind: 'region',
           regionFamily: region.family,
           regionKeys: [region.key],
-          dieKeys: [...region.dieKeys],
-        },
-      });
+          dieKeys: [...region.dieKeys] } });
     }
   }
 
@@ -766,8 +741,7 @@ function welchFromStats(
   return {
     pValue: clamp01(2 * (1 - normalCdf(Math.abs(z)))),
     effectSize,
-    delta,
-  };
+    delta };
 }
 
 /**
@@ -829,8 +803,7 @@ function discoverTestNumbers(
     console.warn(`[wafermap] analyzeWaferMap: ${message}`);
     return {
       testNumbers: [],
-      warning: { code: 'test-count-capped', message, severity: 'warning' },
-    };
+      warning: { code: 'test-count-capped', message, severity: 'warning' } };
   }
   return { testNumbers: parametricOnly([...testNumberSet].sort((a, b) => a - b)) };
 }
@@ -939,33 +912,27 @@ function buildTestValueFindings(
           kind: 'test',
           index: testNumber,
           label,
-          unit,
-        },
+          unit },
         comparison: {
           family: region.family,
           left: region.label,
-          right: comparisonRight(region.family),
-        },
+          right: comparisonRight(region.family) },
         effect: {
           direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
           absoluteDelta: delta,
           relativeDelta,
-          effectSize,
-        },
+          effectSize },
         stats: {
           method: 'welch-z-approx',
           pValue,
           sampleSizeLeft: leftN,
-          sampleSizeRight: rightN,
-        },
+          sampleSizeRight: rightN },
         summary: summarizeTestFinding(region.label, label, delta, relativeDelta, region.family, unit),
         highlight: {
           kind: 'region',
           regionFamily: region.family,
           regionKeys: [region.key],
-          dieKeys: [...region.dieKeys],
-        },
-      });
+          dieKeys: [...region.dieKeys] } });
     }
   }
 
@@ -984,9 +951,7 @@ function buildTestValueFindings(
         severity: severityForScore(
           finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
           finding.effect.effectSize ?? 0,
-        ),
-      })),
-  };
+        ) })) };
 }
 
 function buildSpecLimitFindings(
@@ -1054,33 +1019,27 @@ function buildSpecLimitFindings(
             kind: 'test',
             index: tn,
             label: td.name,
-            unit: td.unit,
-          },
+            unit: td.unit },
           comparison: {
             family: region.family,
             left: region.label,
-            right: comparisonRight(region.family),
-          },
+            right: comparisonRight(region.family) },
           effect: {
             direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
             absoluteDelta: delta,
             relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
-            effectSize: delta,
-          },
+            effectSize: delta },
           stats: {
             method: 'two-proportion-z',
             pValue,
             sampleSizeLeft: leftValid.length,
-            sampleSizeRight: rightValid.length,
-          },
+            sampleSizeRight: rightValid.length },
           summary: `${region.label} spec-fail rate for ${td.name} is ${(Math.abs(delta) * 100).toFixed(1)} pp ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`,
           highlight: {
             kind: 'region',
             regionFamily: region.family,
             regionKeys: [region.key],
-            dieKeys: [...region.dieKeys],
-          },
-        });
+            dieKeys: [...region.dieKeys] } });
       }
 
       adjustPValues(findings);
@@ -1098,8 +1057,7 @@ function buildSpecLimitFindings(
             severity: severityForScore(
               f.stats.adjustedPValue ?? f.stats.pValue ?? 1,
               f.effect.effectSize ?? 0,
-            ),
-          })),
+            ) })),
       );
     }
   }
@@ -1302,8 +1260,7 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta,
-      effectSize,
-    };
+      effectSize };
     stats = { method: 'welch-z-approx', pValue, sampleSizeLeft: leftValues.length, sampleSizeRight: rightValues.length };
     severity = severityForScore(pValue, effectSize);
     summary = summarizeTestFinding(label, template.variable.label, delta, relativeDelta, family, template.variable.unit);
@@ -1326,8 +1283,7 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
-      effectSize: delta,
-    };
+      effectSize: delta };
     stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
     severity = severityForFinding(pValue, delta, effect.relativeDelta);
     summary = summarizeYieldFinding(label, delta, family);
@@ -1346,8 +1302,7 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
-      effectSize: delta,
-    };
+      effectSize: delta };
     stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftDies.length, sampleSizeRight: rightDies.length };
     severity = severityForFinding(pValue, delta, effect.relativeDelta);
     const defs = kind === 'softBin' ? ctx.sbinDefs : ctx.hbinDefs;
@@ -1376,8 +1331,7 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     stats,
     summary,
     highlight,
-    relatedIds: run.map(f => f.id),
-  };
+    relatedIds: run.map(f => f.id) };
 }
 
 /**
@@ -1524,7 +1478,18 @@ function collapseRedundantFindings(
         // Built from the findings' own labels in the internal `HBin N`/`SBin N`
         // vocabulary so `plainBinTerms` expands them to "hard bin"/"soft bin"
         // on every display surface, exactly as it does for unmerged findings.
-        const both = `${hardF.variable.label} and ${softF.variable.label} (same dies)`;
+        //
+        // When the two bins share a number AND a name — overwhelmingly the common
+        // case, since a hard/soft twin is only merged when they cover the same dies
+        // — the bin term is factored out instead of printed twice. The old form
+        // rendered as "hard bin 3 (Fail (multi)) and soft bin 3 (Fail (multi))
+        // (same dies)": three nested parentheses restating one fact, in a sentence
+        // whose job is to make a statistical claim legible.
+        const hardTail = hardF.variable.label.replace(/^HBin\s+/, '');
+        const softTail = softF.variable.label.replace(/^SBin\s+/, '');
+        const both = hardTail === softTail
+          ? `HBin and SBin ${hardTail} (same dies)`
+          : `${hardF.variable.label} and ${softF.variable.label} (same dies)`;
         // Replace the bin term inside the sentence rather than anchoring at the
         // start: the summary reads "<region> has <binLabel> occurrence …", so
         // the bin term is mid-string.
@@ -1659,8 +1624,7 @@ export function analyzeWaferMap(
     if (!isLotStack || hasHbinData || failPredicate !== undefined) {
       findings.push(...buildClusterFindings(positionedEligibleDies, result.wafer, {
         ...resolved,
-        isFailingDie: failPredicate,
-      }));
+        isFailingDie: failPredicate }));
     }
   }
   // Collapse runs of adjacent same-signal ring/quadrant/sector findings into one
@@ -1675,16 +1639,14 @@ export function analyzeWaferMap(
     sectorCount: resolved.sectorCount,
     hbinDefs: result.hbinDefs,
     sbinDefs: result.sbinDefs,
-    testDefs: result.testDefs,
-  });
+    testDefs: result.testDefs });
   findings.length = 0;
   findings.push(...mergedFindings);
 
   if (resolved.enablePatternClassification && hasHbinData) {
     const patternResult = classifyPattern(positionedEligibleDies, result.wafer, {
       passBins:  resolved.passBins,
-      ringCount: resolved.ringCount,
-    });
+      ringCount: resolved.ringCount });
     if (patternResult !== null && patternResult.pattern !== 'random' && patternResult.pattern !== 'none') {
       const LABEL_MAP: Record<string, string> = {
         'center':     'Center cluster',
@@ -1692,8 +1654,7 @@ export function analyzeWaferMap(
         'edge-ring':  'Edge-ring',
         'edge-local': 'Edge-local',
         'scratch':    'Scratch',
-        'near-full':  'Near-full',
-      };
+        'near-full':  'Near-full' };
       const label = LABEL_MAP[patternResult.pattern] ?? patternResult.pattern;
       const severity: StatsSeverity =
         patternResult.confidence === 'high'   ? 'unusual' :
@@ -1721,8 +1682,7 @@ export function analyzeWaferMap(
         'center':     ['ring', 'cluster'],
         'donut':      ['ring'],
         'scratch':    ['cluster', 'sector', 'quadrant'],
-        'near-full':  ['ring'],
-      };
+        'near-full':  ['ring'] };
       const relatedFamilies = new Set<StatsComparisonFamily>(
         RELATED_FAMILIES[patternResult.pattern] ?? [],
       );
@@ -1771,12 +1731,10 @@ export function analyzeWaferMap(
         stats: {
           method: 'geometry',
           sampleSizeLeft:  failingDies.length,
-          sampleSizeRight: eligibleDies.length,
-        },
+          sampleSizeRight: eligibleDies.length },
         summary: `Spatial pattern: ${label.toLowerCase()} (${patternResult.confidence} confidence) — ${detail}${patternResult.note ? ` [${patternResult.note}]` : ''}`,
         highlight: { kind: 'dies', dieKeys: failingDies.map(d => getDieKey(d)) },
-        relatedIds: relatedIds.length > 0 ? relatedIds : undefined,
-      });
+        relatedIds: relatedIds.length > 0 ? relatedIds : undefined });
     }
   }
 
@@ -1822,6 +1780,5 @@ export function analyzeWaferMap(
     hasNotableFindings: findings.some((finding) => finding.severity === 'notable' || finding.severity === 'unusual'),
     findings,
     wafer: result.wafer.metadata ?? undefined,
-    stats,
-  };
+    stats };
 }

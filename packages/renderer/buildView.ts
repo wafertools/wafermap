@@ -567,7 +567,6 @@ export interface HoverTextOptions {
   aggrMethod?: string;
   /** Number of wafers in the stack, used to annotate a count with its share of the lot. */
   lotSize?: number;
-  waferMeta?: WaferMetadata | null;
   /** Active test number (value mode only) — leads the tooltip and gets an out-of-spec note. */
   activeTest?: number;
   /** Reticle geometry, when configured — appended as a "Reticle (col, row)" line below Die (x, y). */
@@ -589,7 +588,7 @@ export function buildHoverText(
 ): string {
   const {
     testDefs, hbinDefs, sbinDefs, fallbackFormat,
-    aggrMethod, lotSize, waferMeta, activeTest, reticleConfig, metadataFields,
+    aggrMethod, lotSize, activeTest, reticleConfig, metadataFields,
   } = opts;
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
@@ -699,12 +698,11 @@ export function buildHoverText(
   if (die.partial) lines.push('<i>partial die</i>');
   if (die.probeIndex !== undefined) lines.push(`Probe: #${die.probeIndex}`);
 
-  // Metadata: wafer-level facts (lot, wafer id, product, program, …) are the
-  // base; any per-die key overrides the wafer value of the same name. wmap is
-  // unopinionated about which fields belong in a tooltip — it renders whatever
-  // keys the host supplies, so control over tooltip content lives in the
-  // host-provided metadata.
-  const meta: Record<string, unknown> = { ...(waferMeta ?? {}), ...(die.metadata ?? {}) };
+  // Wafer-level facts (lot, wafer id, product, program, …) are shown once,
+  // always-visible or one click away, in the badge/card header — repeating
+  // them per die would just duplicate that. Only genuinely per-die metadata
+  // belongs in the hover.
+  const meta: Record<string, unknown> = { ...(die.metadata ?? {}) };
   for (const [key, value] of Object.entries(meta)) {
     const text = metadataDisplayValue(value);
     if (text === undefined) continue;
@@ -823,13 +821,19 @@ export function generateTextOverlay(
     /** Active `die.metadata` key + its resolved value→color map, `'metadata'` mode only. */
     activeMetadataKey?: string;
     metadataColorMap?: Map<string, string> | null;
+    /** Mirrors `View.allIntegerValues` — see the colorbar's own `tickFmt` override in toCanvas.ts. */
+    allIntegerValues?: boolean;
   },
 ): ViewText[] {
-  const { plotMode, colorFns, normalize, activeTest, valueRange, testDefs, fallbackFormat, passFailDisplay = 'off', activeMetadataKey, metadataColorMap } = options;
+  const { plotMode, colorFns, normalize, activeTest, valueRange, testDefs, fallbackFormat, passFailDisplay = 'off', activeMetadataKey, metadataColorMap, allIntegerValues } = options;
 
   // Build a tick formatter matched to the colorbar scale so die labels are consistent.
   const testDef = findTestDef(testDefs, activeTest);
-  const { tickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
+  const { tickFmt: baseTickFmt } = fmtColorbarAxis(valueRange[1], testDef?.name, testDef?.unit, fallbackFormat);
+  // Same override the colorbar itself applies (toCanvas.ts) — otherwise a whole-number
+  // value range (stacked bin counts, or any other integer-valued mode) still shows "n.0"
+  // die labels even once the colorbar's own ticks were fixed to show bare integers.
+  const tickFmt = allIntegerValues ? (v: number) => String(Math.round(v)) : baseTickFmt;
   const { testNumber: tn } = resolveTestNumber(activeTest, testDefs);
 
   return dies.flatMap((die, i) => {
@@ -1369,13 +1373,29 @@ export function buildView(
 
   // Compute value range for normalization.
   // For stackedValues/stackedBins the aggregated scalar sits at testNumber=0.
+  const isStacked = plotMode === 'stackedValues' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
   let vMin: number;
   let vMax: number;
   let allIntegerValues = false;
   if (explicitRange) {
     [vMin, vMax] = explicitRange;
+    // An explicit range (stacked-bin counts, or the gallery's shared lot-wide
+    // value range) skips the auto-scan below, but the underlying die values
+    // still determine whether ticks should render as bare integers — without
+    // this, every explicit-range colorbar (stacked bin counts included, which
+    // are always whole numbers) fell back to decimal formatting and showed
+    // "n.0" ticks regardless of the actual data.
+    let allIntegers = true;
+    let sawValue = false;
+    for (const die of dies) {
+      const v = isStacked ? getDieTestValue(die, 0) : getDieTestValue(die, activeTestNumber);
+      if (v !== undefined) {
+        sawValue = true;
+        if (!Number.isInteger(v)) { allIntegers = false; break; }
+      }
+    }
+    allIntegerValues = sawValue && allIntegers;
   } else {
-    const isStacked = plotMode === 'stackedValues' || plotMode === 'stackedBins' || plotMode === 'stackedSoftBins';
     const useSpecRange =
       !isStacked &&
       plotMode === 'value' &&
@@ -1551,7 +1571,7 @@ export function buildView(
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {
     plotMode, colorFns, normalize, activeTest,
     valueRange: [vMin, vMax], testDefs, fallbackFormat, passFailDisplay,
-    activeMetadataKey, metadataColorMap,
+    activeMetadataKey, metadataColorMap, allIntegerValues,
   }) : [];
   const overlays = buildBoundaryOverlay(wafer, tf.physicalToScreen);
 

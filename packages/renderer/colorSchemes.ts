@@ -1,4 +1,4 @@
-import { BIN_PALETTE, HARD_BIN_GREY, VIRIDIS, lerpKp, valueToGreyscale, hardBinColor, wangHash } from './colorMap.js';
+import { HARD_BIN_GREY, VIRIDIS, lerpKp, valueToGreyscale, hardBinColor, wangHash } from './colorMap.js';
 
 // ── Public interface ──────────────────────────────────────────────────────────
 
@@ -87,8 +87,7 @@ const THERMAL_KP: readonly [number, number, number][] = [
 registerColorScheme('default', {
   label: 'Default',
   forBin: hardBinColor,
-  forValue: (t) => lerpKp(THERMAL_KP, t),
-});
+  forValue: (t) => lerpKp(THERMAL_KP, t) });
 
 /**
  * VIRIDIS — purple-to-yellow perceptually uniform gradient for both bins and values.
@@ -98,8 +97,7 @@ registerColorScheme('default', {
 registerColorScheme('viridis', {
   label: 'Viridis',
   forBin:  (bin) => lerpKp(VIRIDIS, Math.min(bin, 16) / 16),
-  forValue: (t) => lerpKp(VIRIDIS, 1 - t),
-});
+  forValue: (t) => lerpKp(VIRIDIS, 1 - t) });
 
 /**
  * GREYSCALE — grey categorical bins, grey continuous gradient.
@@ -108,8 +106,7 @@ registerColorScheme('viridis', {
 registerColorScheme('greyscale', {
   label: 'Greyscale',
   forBin: binHash(HARD_BIN_GREY, 0x9e3779b9),
-  forValue: (t) => valueToGreyscale(1 - t),
-});
+  forValue: (t) => valueToGreyscale(1 - t) });
 
 /**
  * ACCESSIBLE — 63-entry colourblind-safe categorical palette + Cividis gradient.
@@ -200,8 +197,7 @@ const CIVIDIS: readonly [number, number, number][] = [
 registerColorScheme('accessible', {
   label: 'Accessible (CVD-safe / Cividis)',
   forBin:  binHash(ACCESSIBLE_PALETTE, 0x9e3779b9),
-  forValue: (t) => lerpKp(CIVIDIS, 1 - t),
-});
+  forValue: (t) => lerpKp(CIVIDIS, 1 - t) });
 
 /**
  * PLASMA — vibrant purple-to-yellow palette.
@@ -237,8 +233,7 @@ const PLASMA_KP: readonly [number, number, number][] = [
 registerColorScheme('plasma', {
   label: 'Plasma',
   forBin: binHash(PLASMA_BINS, 0x9e3779b9),
-  forValue: (t) => lerpKp(PLASMA_KP, 1 - t),
-});
+  forValue: (t) => lerpKp(PLASMA_KP, 1 - t) });
 
 /**
  * INFERNO — dark background, fire-coloured gradient.
@@ -274,8 +269,7 @@ const INFERNO_KP: readonly [number, number, number][] = [
 registerColorScheme('inferno', {
   label: 'Inferno',
   forBin: binHash(INFERNO_BINS, 0x9e3779b9),
-  forValue: (t) => lerpKp(INFERNO_KP, 1 - t),
-});
+  forValue: (t) => lerpKp(INFERNO_KP, 1 - t) });
 
 /**
  * TRAFFIC — green → yellow → red.
@@ -310,8 +304,7 @@ const TRAFFIC_KP: readonly [number, number, number][] = [
 registerColorScheme('traffic', {
   label: 'Traffic (Green–Yellow–Red)',
   forBin: binHash(TRAFFIC_BINS, 0x9e3779b9),
-  forValue: (t) => lerpKp(TRAFFIC_KP, t),
-});
+  forValue: (t) => lerpKp(TRAFFIC_KP, t) });
 
 /**
  * THERMAL — blue → cyan → yellow → red.
@@ -339,8 +332,7 @@ const THERMAL_BINS: readonly string[] = [
 registerColorScheme('thermal', {
   label: 'Thermal (Blue–Cyan–Yellow–Red)',
   forBin: binHash(THERMAL_BINS, 0x9e3779b9),
-  forValue: (t) => lerpKp(THERMAL_KP, t),
-});
+  forValue: (t) => lerpKp(THERMAL_KP, t) });
 
 /**
  * JET keypoints — the classic MATLAB rainbow ramp: dark navy → blue → cyan →
@@ -361,5 +353,4 @@ const JET_KP: readonly [number, number, number][] = [
 registerColorScheme('jet', {
   label: 'Jet (MATLAB rainbow)',
   forBin:  (bin) => lerpKp(JET_KP, Math.min(bin, 16) / 16),
-  forValue: (t) => lerpKp(JET_KP, t),
-});
+  forValue: (t) => lerpKp(JET_KP, t) });

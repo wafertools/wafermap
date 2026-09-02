@@ -24,6 +24,46 @@ export interface CorrelationCell {
   xIndex: number;
   yIndex: number;
   r: number | null; // null = insufficient data
+  /**
+   * Dies contributing to this pair — i.e. those carrying a finite value for BOTH
+   * tests, which is not the same as the population size when tests have different
+   * coverage. An `r` without its `n` is not interpretable: |r| = 0.8 over 6 dies
+   * and over 6,000 are very different claims, and the panel's "strong pair" count
+   * thresholds on |r| alone.
+   */
+  n: number;
+}
+
+/**
+ * Pearson r from running sums. The single implementation of the formula —
+ * `buildCorrelationMatrix`'s per-pair accumulators and `pearsonOfPairs` (used by
+ * the scatter panel to report r for the pair it is displaying) both go through
+ * here, so the matrix cell and the scatter card can never disagree about the
+ * same pair. Returns null below 3 points or with zero variance in either axis.
+ */
+export function pearsonFromSums(
+  c: number, sumX: number, sumY: number, sumXX: number, sumYY: number, sumXY: number,
+): number | null {
+  if (c < 3) return null;
+  const mx = sumX / c, my = sumY / c;
+  const covXY = sumXY / c - mx * my;
+  const varX  = sumXX / c - mx * mx;
+  const varY  = sumYY / c - my * my;
+  const denom = Math.sqrt(varX * varY);
+  return denom === 0 ? null : Math.max(-1, Math.min(1, covXY / denom));
+}
+
+/** Pearson r and n for an explicit list of XY pairs — the scatter panel's own
+ *  displayed points, after any legend filtering. Shares `pearsonFromSums` with
+ *  the matrix. */
+export function pearsonOfPairs(pairs: ArrayLike<{ x: number; y: number }>): { r: number | null; n: number } {
+  let c = 0, sumX = 0, sumY = 0, sumXX = 0, sumYY = 0, sumXY = 0;
+  for (let i = 0; i < pairs.length; i++) {
+    const { x, y } = pairs[i];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    c++; sumX += x; sumY += y; sumXX += x * x; sumYY += y * y; sumXY += x * y;
+  }
+  return { r: pearsonFromSums(c, sumX, sumY, sumXX, sumYY, sumXY), n: c };
 }
 
 export interface CorrelationMatrix {
@@ -56,6 +96,11 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
   // Flat typed arrays: 6 accumulators per upper-triangle pair, indexed by pairIndex(xi,yi).
   // pairIndex(xi, yi) for xi < yi: xi*n - xi*(xi+1)/2 + (yi - xi - 1)
   const cnt   = new Float64Array(pairs);
+  // Per-TEST count, for the diagonal. The diagonal is a test against itself, not
+  // a pair, so it has no entry in the pair arrays — `pairIndex(xi, xi)` violates
+  // that function's own `xi < yi` precondition and returns either -1 (xi = 0) or
+  // the index of an unrelated pair, e.g. pairIndex(1,1) === pairIndex(0,4).
+  const selfCnt = new Float64Array(n);
   const sumX  = new Float64Array(pairs);
   const sumY  = new Float64Array(pairs);
   const sumXX = new Float64Array(pairs);
@@ -78,6 +123,7 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
     }
     for (let xi = 0; xi < n; xi++) {
       if (!valid[xi]) continue;
+      selfCnt[xi]++;
       const x = vals[xi];
       for (let yi = xi + 1; yi < n; yi++) {
         if (!valid[yi]) continue;
@@ -93,24 +139,19 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
     }
   }
 
-  function pearsonFromAccumulators(pi: number): number | null {
-    const c = cnt[pi];
-    if (c < 3) return null;
-    const mx = sumX[pi] / c, my = sumY[pi] / c;
-    const covXY = sumXY[pi] / c - mx * my;
-    const varX  = sumXX[pi] / c - mx * mx;
-    const varY  = sumYY[pi] / c - my * my;
-    const denom = Math.sqrt(varX * varY);
-    return denom === 0 ? null : Math.max(-1, Math.min(1, covXY / denom));
-  }
+  const pearsonFromAccumulators = (pi: number): number | null =>
+    pearsonFromSums(cnt[pi], sumX[pi], sumY[pi], sumXX[pi], sumYY[pi], sumXY[pi]);
 
   const cells: CorrelationCell[] = [];
   for (let yi = 0; yi < n; yi++) {
     for (let xi = 0; xi < n; xi++) {
-      if (xi === yi) { cells.push({ xIndex: xi, yIndex: yi, r: 1 }); continue; }
+      if (xi === yi) {
+        cells.push({ xIndex: xi, yIndex: yi, r: 1, n: selfCnt[xi] });
+        continue;
+      }
       const lo = Math.min(xi, yi), hi = Math.max(xi, yi);
-      const r = pearsonFromAccumulators(pairIndex(lo, hi));
-      cells.push({ xIndex: xi, yIndex: yi, r });
+      const pi = pairIndex(lo, hi);
+      cells.push({ xIndex: xi, yIndex: yi, r: pearsonFromAccumulators(pi), n: cnt[pi] });
     }
   }
   return { tests, cells };
@@ -205,7 +246,7 @@ export function filterCorrelationMatrix(
   const trimmedCells = matrix.cells
     .filter(c => displayTestNums.has(matrix.tests[c.xIndex].testNumber) &&
                  displayTestNums.has(matrix.tests[c.yIndex].testNumber))
-    .map(c => ({ xIndex: newIndexOf.get(c.xIndex)!, yIndex: newIndexOf.get(c.yIndex)!, r: c.r }));
+    .map(c => ({ xIndex: newIndexOf.get(c.xIndex)!, yIndex: newIndexOf.get(c.yIndex)!, r: c.r, n: c.n }));
 
   // Count pair strengths across displayed tests only, so the summary is coherent with what's shown
   let hiddenWeakPairs = 0;

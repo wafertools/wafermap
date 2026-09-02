@@ -4,30 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Quick Start — wafermap</title>
+  <link rel="stylesheet" href="demo.css">
   <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body {
-      margin: 0; height: 100%;
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #f1f5f9;
-      color: #0f172a;
-    }
+    /* Base (reset, font stack, ground, tokens, and the --wmap-* handoff to the
+       embedded map) comes from demo.css. Only this page's own header bar and
+       map sizing below — the palette is the shared one, not a second copy. */
+    html, body { height: 100%; }
     header {
-      background: #0f172a;
-      color: #fff;
-      padding: 10px 20px;
+      background: var(--text);
+      color: var(--surface);
+      padding: var(--space-lg) var(--space-xxl);
       font-size: 13px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: var(--space-xl);
     }
     header .logo { font-weight: 700; font-size: 15px; }
-    header .logo em { color: #60a5fa; font-style: normal; }
-    header .sep { width: 1px; height: 16px; background: #334155; }
-    header .title { color: #94a3b8; }
+    header .logo em { color: var(--accent); font-style: normal; }
+    header .sep { width: 1px; height: 16px; background: var(--text-2); }
+    header .title { color: var(--muted); }
     header a {
       margin-left: auto;
-      color: #60a5fa;
+      color: var(--accent);
       font-size: 12px;
       text-decoration: none;
     }
@@ -35,16 +33,16 @@
     #map {
       width: min(600px, 96vw);
       height: min(600px, 96vw);
-      margin: 24px auto;
+      margin: var(--space-xxxl) auto;
       display: block;
     }
     .note {
       text-align: center;
       font-size: 12px;
-      color: #64748b;
-      margin-bottom: 24px;
+      color: var(--muted);
+      margin-bottom: var(--space-xxxl);
     }
-    .note a { color: #3b82f6; }
+    .note a { color: var(--accent); }
   </style>
 </head>
 <body>

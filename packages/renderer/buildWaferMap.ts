@@ -1,9 +1,9 @@
-import type { Die, DieSpec, PositionedDie } from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
-import type { Wafer, WaferSpec } from '../core/wafer.js';
-import type { Reticle, ReticleSpec } from '../core/reticle.js';
+import type { Wafer } from '../core/wafer.js';
+import type { Reticle } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
-import { generateDies, isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
+import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
 import { applyOrientation, transformDies } from '../core/transforms.js';
 import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
@@ -604,8 +604,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       sbinDefs:         undefined,
       metadataFields:   undefined,
       retestPolicy:     'last',
-      edgeDieYieldMode: 'exclude',
-    };
+      edgeDieYieldMode: 'exclude' };
   }
   return {
     results:          input.results   ?? [],
@@ -620,8 +619,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     sbinDefs:         input.sbinDefs,
     metadataFields:   input.metadataFields,
     retestPolicy:     input.retestPolicy ?? 'last',
-    edgeDieYieldMode: input.edgeDieYieldMode ?? 'exclude',
-  };
+    edgeDieYieldMode: input.edgeDieYieldMode ?? 'exclude' };
 }
 
 // ── Grid origin & axis helpers ────────────────────────────────────────────────
@@ -652,8 +650,7 @@ function resolveGridOriginOffset(
     }
     return {
       offsetX: Math.round((xMax + xMin) / 2),
-      offsetY: Math.round((yMax + yMin) / 2),
-    };
+      offsetY: Math.round((yMax + yMin) / 2) };
   }
   return { offsetX: ga.offsetX, offsetY: ga.offsetY };
 }
@@ -686,8 +683,7 @@ function resolveCenterAnchor(
     return {
       colMidX: (Math.round(waferCenter.x) - offsetX) * pitchX,
       colMidY: (Math.round(waferCenter.y) - offsetY) * pitchY,
-      anchored: true,
-    };
+      anchored: true };
   }
   if (gridPoints.length === 0) {
     return { colMidX: 0, colMidY: 0, anchored: false };
@@ -702,8 +698,7 @@ function resolveCenterAnchor(
   return {
     colMidX: ((cMin + cMax) / 2) * pitchX,
     colMidY: ((rMin + rMax) / 2) * pitchY,
-    anchored: false,
-  };
+    anchored: false };
 }
 
 /**
@@ -822,8 +817,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
 
     return [...mergedMap.values()].map(({ template, testValues }) => ({
       ...template,
-      testValues: Object.keys(testValues).length > 0 ? testValues : undefined,
-    })) as DieResult[];
+      testValues: Object.keys(testValues).length > 0 ? testValues : undefined })) as DieResult[];
   }
 
   // 2. Bin occurrence aggregations: countBin, percent.
@@ -882,8 +876,7 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
     totalDies,
     edgeExcludedDies,
     unpositionedDies: dies.length - positioned.length,
-    ratio: totalDies > 0 ? filledDies / totalDies : 0,
-  };
+    ratio: totalDies > 0 ? filledDies / totalDies : 0 };
 }
 
 function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclude' | 'denominator-only' = 'exclude'): YieldSummary {
@@ -922,8 +915,7 @@ function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclud
     partialDies,
     totalDies,
     yieldPercent,
-    yieldPercentGross,
-  };
+    yieldPercentGross };
 }
 
 // ── Reticle builder ───────────────────────────────────────────────────────────
@@ -965,8 +957,7 @@ function buildReticles(
     diePitchX,
     diePitchY,
     anchorDie:  { x: anchorDie.x - offsetX, y: anchorDie.y - offsetY },
-    gridOrigin: { x: -colMidX, y: -colMidY },
-  });
+    gridOrigin: { x: -colMidX, y: -colMidY } });
   // Only keep reticles that contain at least one die — fields that merely
   // overlap the wafer circle boundary but hold no dies should not be drawn.
   // `dies` here are already baked (applyOrientation → transformDies), while
@@ -1199,14 +1190,25 @@ function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
  * into the structured shape.
  */
 function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
-  return (inference.warnings ?? []).map(message => ({
-    code: codeForAdvisory(message),
-    message,
-    // Every geometry advisory means die positions may be wrong — a wrong-looking
-    // map, not a missing feature — so all three are errors rather than notices.
-    severity: 'error' as const,
-    confidence: inference.wafer.confidence,
-  }));
+  return (inference.warnings ?? []).map(message => {
+    const code = codeForAdvisory(message);
+    return {
+      code,
+      message,
+      // 'partial-coverage' and 'geometry-conflict' mean die positions may actually
+      // be wrong — a wrong-looking map, not a missing feature — so they are errors.
+      //
+      // 'inferred-pitch' is deliberately a rung lower. Supplying a diameter without
+      // a die pitch is a documented, supported input (see the inference table in
+      // docs/api.md): the pitch is then derived as diameter / grid span, which is
+      // exactly right for a map whose grid reaches the wafer edge and only skewed
+      // when edge dies are absent. It reports an assumption made on the caller's
+      // behalf, not a detected contradiction, and flagging that in red left hosts
+      // that legitimately know only the diameter — tsmap's diameter setting, for
+      // one — showing a permanent error they had no field to clear.
+      severity: (code === 'inferred-pitch' ? 'warning' : 'error') as WaferWarning['severity'],
+      confidence: inference.wafer.confidence };
+  });
 }
 
 /**
@@ -1271,8 +1273,7 @@ export function buildWaferMap(
   const inference: WaferMapResult['inference'] = {
     wafer:    { confidence: 1.0, method: 'provided' },
     diePitch: { confidence: 1.0, units: 'mm' as 'mm' | 'normalized' },
-    grid:     { confidence: 1.0 },
-  };
+    grid:     { confidence: 1.0 } };
 
   // ── Explicit dies path ─────────────────────────────────────────────────────
 
@@ -1300,8 +1301,7 @@ export function buildWaferMap(
       diameter,
       notch:       norm.waferOpts?.notch,
       orientation: norm.waferOpts?.orientation ?? 0,
-      metadata:    norm.waferOpts?.metadata,
-    });
+      metadata:    norm.waferOpts?.metadata });
 
     // Pre-built dies carry the caller's own physX/physY, but waferConfig.orientation
     // is still honored — applyOrientation rotates them to match, the same as the
@@ -1321,8 +1321,7 @@ export function buildWaferMap(
       showReticle,
       plotMode:   autoPlotMode(results, viewOpts),
       testDefs:   norm.testDefs,
-      isLotStack: false,
-    }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
+      isLotStack: false }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
     const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
       attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt),
@@ -1341,8 +1340,7 @@ export function buildWaferMap(
       hbinDefs: norm.hbinDefs,
       sbinDefs: norm.sbinDefs,
       testDefs: norm.testDefs,
-      metadataFields: norm.metadataFields,
-    };
+      metadataFields: norm.metadataFields };
   }
 
   // ── Grid-position path ─────────────────────────────────────────────────────
@@ -1383,8 +1381,7 @@ export function buildWaferMap(
   // the data about the true centre — not the data midpoint.
   const physPoints = gridPoints.map(p => ({
     x: (Math.round(p.x) - offsetX) * pitchX - colMidX,
-    y: (Math.round(p.y) - offsetY) * pitchY - colMidY,
-  }));
+    y: (Math.round(p.y) - offsetY) * pitchY - colMidY }));
 
   /**
    * Distance from the wafer centre to the furthest corner of the furthest die.
@@ -1483,10 +1480,7 @@ export function buildWaferMap(
     diameter:    waferDiameter,
     notch:       norm.waferOpts?.notch,
     orientation: norm.waferOpts?.orientation ?? 0,
-    metadata:    norm.waferOpts?.metadata,
-  });
-
-  const dieConfigGeom = { width: pitchX, height: pitchY };
+    metadata:    norm.waferOpts?.metadata });
 
   // Build dies directly from data positions — never generate positions without data.
   //
@@ -1511,8 +1505,7 @@ export function buildWaferMap(
       physY: row * pitchY - colMidY,
       width: pitchX, height: pitchY,
       insideWafer: true,
-      partial: false,
-    };
+      partial: false };
     return attachData(base, pt);
   });
 
@@ -1523,8 +1516,7 @@ export function buildWaferMap(
       ...die,
       x:  die.x + offsetX,
       y:  die.y + offsetY,
-      id: `${die.x + offsetX}_${die.y + offsetY}`,
-    }));
+      id: `${die.x + offsetX}_${die.y + offsetY}` }));
   }
 
   dies = applyOrientation(dies, wafer);
@@ -1540,8 +1532,7 @@ export function buildWaferMap(
       extraWarnings.push({
         code: 'edge-exclusion-exceeds-radius',
         message: `edgeExclusion (${norm.waferOpts.edgeExclusion}mm) exceeds the resolved wafer radius (${wafer.radius}mm) — the entire wafer is excluded.`,
-        severity: 'warning',
-      });
+        severity: 'warning' });
     }
   }
 
@@ -1557,8 +1548,7 @@ export function buildWaferMap(
     dataAxisFlip: { x: flipX, y: flipY },
     isLotStack:   norm.lotStackOpts !== undefined,
     aggregationMethod: norm.lotStackOpts?.method,
-    lotSize:      norm.lotStackOpts?.results.length,
-  }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
+    lotSize:      norm.lotStackOpts?.results.length }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
   // Unpositioned dies never went through grid/geometry inference above (no
   // coordinates to infer from) — folded in only now, so `view`/`reticles`
@@ -1583,6 +1573,5 @@ export function buildWaferMap(
     testDefs: norm.testDefs,
     metadataFields: norm.metadataFields,
     aggrMethod: view.aggrMethod,
-    lotSize: view.lotSize,
-  };
+    lotSize: view.lotSize };
 }

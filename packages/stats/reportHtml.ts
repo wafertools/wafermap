@@ -193,6 +193,26 @@ export function reportStyles(): string {
     font-size: 12px;
   }
 
+  /* Sub-headings and notes inside a section — used by the split comparison,
+     which nests one block per facet under a single section heading. */
+  .report-subheading {
+    margin: 14px 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--report-text);
+  }
+  h4.report-subheading {
+    margin: 10px 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--report-muted);
+  }
+  .report-note {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--report-muted);
+  }
+
   section.report-section {
     margin-top: 18px;
     break-inside: avoid;
@@ -307,7 +327,12 @@ export function reportStyles(): string {
     padding-top: 3px;
     padding-bottom: 5px;
     color: var(--report-muted);
-    font-size: 10px;
+    /* 11px, not 10px. This document prints (see @page below), where 10px is
+       about 7.5pt — too small to read on paper. The report keeps its own
+       document scale (20 title / 18 stat / 13 / 12 body / 11 label) rather than
+       the app's denser tiers; this is a print-legibility floor, not an
+       alignment to those. */
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -351,7 +376,7 @@ export function reportStyles(): string {
     padding: 1px 6px;
     border: 1px solid transparent;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 11px;   /* print floor — see the table-header note above */
     font-weight: 600;
     line-height: 1.35;
     letter-spacing: 0.04em;

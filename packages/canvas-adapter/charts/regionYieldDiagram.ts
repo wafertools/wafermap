@@ -19,6 +19,7 @@
 import type { RegionYieldDatum } from '../../stats/regions.js';
 import { parseRegionKey } from '../../stats/regions.js';
 import { yieldFill } from './palette.js';
+import { fontPx } from '../toolbar.js';
 import {
   cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent,
   renderEmptyState, type SaveImageHandler, type ChartCanvasColors,
@@ -75,7 +76,7 @@ function drawLabelChip(
   ctx: CanvasRenderingContext2D, x: number, y: number,
   line1: string, line2: string, theme: ChartCanvasColors,
 ): void {
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
   const w1 = ctx.measureText(line1).width;
   ctx.font = '700 11px system-ui, sans-serif';
   const w2 = ctx.measureText(line2).width;
@@ -92,7 +93,7 @@ function drawLabelChip(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = theme.textMuted;
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
   ctx.fillText(line1, x, y - 7);
   ctx.fillStyle = theme.text;
   ctx.font = '700 11px system-ui, sans-serif';

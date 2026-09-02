@@ -52,14 +52,17 @@ export function logWmapVersionOnce(): void {
 export const WMAP_TOKEN_NAMES = [
   'z',
   'icon', 'icon-hover', 'icon-active', 'bg-hover', 'bg-active', 'separator',
-  'surface', 'border', 'menu-hover', 'menu-active',
+  'surface', 'border', 'control-border', 'menu-hover', 'menu-active',
+  'font-family',
+  // Sizing levers, used as raw var() references rather than through t():
+  'font-size', 'density',
   'panel-bg', 'text-muted', 'text', 'text-strong',
   'warn-bg', 'warn-border', 'warn-text',
   'err-bg', 'err-border', 'err-text',
   'info-bg', 'info-text',
   'selected', 'finding-indicator',
   'canvas-bg',
-  'bar-fill', 'bar-fill-muted',
+  'bar-fill',
 ] as const;
 
 export type WmapTokenName = (typeof WMAP_TOKEN_NAMES)[number];
@@ -69,6 +72,235 @@ export type WmapTokenName = (typeof WMAP_TOKEN_NAMES)[number];
 // `WmapTokenName` so a typo'd or renamed token fails to compile instead of
 // silently reading a CSS variable nothing ever sets.
 const t = (name: WmapTokenName, fallback: string) => `var(--wmap-${name}, ${fallback})`;
+
+/**
+ * One lever for type size. A host sets `--wmap-font-size` (default 12px) and
+ * every tier moves with it, so an embedded map can follow the host's own type
+ * scale instead of pinning wmap's.
+ *
+ * Deliberately ONE token with derived tiers rather than a token per tier: a
+ * host cannot produce an incoherent scale (headings smaller than body, meta
+ * larger than headings), and there is one thing to document. The deltas encode
+ * the tiers in UI_STANDARDS.md — meta -1, body 0, sub-heading +1, heading +3,
+ * stat +8.
+ *
+ * Canvas text cannot read a CSS variable, so `fontPx` resolves the same token
+ * to a number at draw time — keep the two in step.
+ */
+const FONT_BASE = 'var(--wmap-font-size, 12px)';
+
+/**
+ * Corner radius, as three roles rather than eight ad-hoc values.
+ *
+ * The library had 2, 3, 4, 5, 6, 8, 10 and 12px in use with no rule for which
+ * belonged where; most were within a pixel or two of each other, so the
+ * variation read as sloppiness rather than intent. The shape of the data showed
+ * the intended system already existed — 4px on controls, 6px on cards, a full
+ * pill on chips — it had simply never been written down, so outliers
+ * accumulated.
+ */
+/**
+ * The spacing scale. Every padding, gap and margin should be one of these.
+ *
+ * Derived from what the library already did rather than imposed: the values in
+ * use clustered hard at 2, 4, 6, 8, 10, 12, 16 and 24px, with a thin tail of
+ * one-off 3, 5, 7, 9, 11, 14, 15, 20, 23 and 32px values. The clusters are the
+ * scale; the tail is drift.
+ *
+ * Off-scale values are not all mistakes — an indent that lines up with a
+ * 7px status dot plus its gap is an optical alignment, not a rhythm value.
+ * Snap deliberately, per site, and leave a comment where a value is optical.
+ */
+/**
+ * Density — the second lever a host needs, alongside `--wmap-font-size`.
+ *
+ * `--wmap-density` scales every step of the spacing scale: 1 is the default,
+ * 0.85 tightens for a narrow docked column, 1.15 loosens for a roomy host.
+ * Type is deliberately NOT affected — density is about the space between
+ * things, and shrinking type to fit a column is what produced the segmented
+ * toggle that rendered smaller than the buttons beside it.
+ *
+ * A host that sets nothing sees exactly the previous values.
+ */
+const DENSITY = 'var(--wmap-density, 1)';
+const step = (px: number): string => `calc(${px}px * ${DENSITY})`;
+
+/**
+ * The shapes an interactive element comes in. Nineteen sites set
+ * `cursor: pointer` with their own padding, border, radius and hover handling;
+ * they were not nineteen different controls, but four shapes restated by hand.
+ * That restatement is the mechanism behind most of the drift this file's other
+ * scales exist to stop.
+ *
+ * These return STYLE, not elements — call sites keep their own markup and event
+ * wiring, and merely stop deciding what a button looks like. Spread first, then
+ * add layout:
+ *
+ *   Object.assign(btn.style, { ...controlStyle('outlined'), marginLeft: 'auto' });
+ */
+export type ControlKind =
+  /** Bordered, transparent ground — the default button (Summary report, Export CSV). */
+  | 'outlined'
+  /** No border or ground — icon buttons and inline text actions. */
+  | 'bare'
+  /** Bordered, tinted when on — segmented options and filter toggles. */
+  | 'toggle';
+
+/**
+ * Give a control the library's hover feedback. `controlStyle` returns static
+ * style and cannot attach listeners, so this is the second half of the pair —
+ * call it wherever you spread `controlStyle`.
+ *
+ * Without it a bordered control is indistinguishable from a bordered label: it
+ * has the shape of a button and does nothing when the pointer is over it.
+ * wmap's toolbar icon buttons wired this from the start; its outlined TEXT
+ * buttons (Summary report, View die list, the CSV exports, Back) wired nothing
+ * at all, so the two halves of the same library disagreed about whether a
+ * button reacts. tsmap's `.tb-btn` has always had it.
+ */
+export function wireControlHover(el: HTMLElement, kind: ControlKind = 'outlined'): void {
+  // Restore what the CALL SITE set, not what this function assumes it set.
+  //
+  // An earlier version rebuilt the resting look from `kind` — `CLR.text`,
+  // `CLR.icon`, `background: 'none'`. Any call site that had customised those
+  // (cardShell's icon buttons use `CLR.label`, the back button `CLR.menuBg`,
+  // the report link its own colour) was permanently repainted the first time
+  // the pointer crossed it: hover set the shared colours, and "restore" put
+  // back the shared colours too, so the element never returned to its own.
+  //
+  // Captured lazily on first hover rather than at wire time, because a call
+  // site may still be assigning styles when it wires this up.
+  let resting: { background: string; color: string } | null = null;
+
+  const restore = () => {
+    if (!resting) return;
+    el.style.background = resting.background;
+    el.style.color      = resting.color;
+  };
+  el.addEventListener('mouseenter', () => {
+    if (el.dataset.on === 'true' || (el as HTMLButtonElement).disabled) return;
+    if (!resting) resting = { background: el.style.background, color: el.style.color };
+    el.style.background = CLR.bgHover;
+    el.style.color      = CLR.iconHover;
+  });
+  el.addEventListener('mouseleave', restore);
+  // A control that is hidden or reparented under the pointer never fires
+  // mouseleave — the same trap the chart tooltip hit.
+  el.addEventListener('blur', restore);
+}
+
+export function controlStyle(kind: ControlKind, on = false): Partial<CSSStyleDeclaration> {
+  const base: Partial<CSSStyleDeclaration> = {
+    fontSize: FONT.body,
+    cursor: 'pointer',
+    borderRadius: RADIUS.control,
+    // Deliberately absent: `outline`. The browser ring is the focus indicator
+    // (UI_STANDARDS.md) and a control must not suppress it.
+  };
+  if (kind === 'bare') {
+    return { ...base, border: 'none', background: 'none', padding: '0', color: CLR.icon };
+  }
+  return {
+    ...base,
+    border: `1px solid ${CLR.controlBorder}`,
+    background: kind === 'toggle' && on ? CLR.menuActive : 'none',
+    color: kind === 'toggle' && on ? CLR.iconActive : CLR.text,
+    padding: `${SPACE.xxs} ${SPACE.lg}`,
+  };
+}
+
+export const SPACE = {
+  xxs: step(2),
+  xs:  step(4),
+  sm:  step(6),
+  md:  step(8),
+  lg:  step(10),
+  xl:  step(12),
+  xxl: step(16),
+  xxxl:step(24),
+};
+
+/**
+ * Elevation. Fourteen distinct box-shadow literals existed across the two repos
+ * with no rule for which belonged where, so every new component invented one.
+ * Three tiers is what the values actually clustered into.
+ */
+export const SHADOW = {
+  /** Resting surface — a panel or card sitting on the page. */
+  panel: '0 1px 4px rgba(0,0,0,0.10)',
+  /** Transient overlay — menu, dropdown, popover, tooltip. */
+  menu:  '0 4px 12px rgba(0,0,0,0.15)',
+  /** Modal — the only thing above everything else. */
+  modal: '0 20px 60px rgba(0,0,0,0.40)',
+};
+
+/**
+ * Motion. One duration and one easing: a UI this dense has no reason to vary
+ * them, and ten different `transition` literals is not expressiveness, it is
+ * ten authors guessing. Respect `prefers-reduced-motion` at the call site.
+ */
+export const MOTION = {
+  /** State changes — hover, active, disclosure. */
+  fast: '0.12s ease',
+  /** Movement the eye should follow — a chevron rotating, a panel sliding. */
+  base: '0.2s ease',
+};
+
+/** Line height. Tight for single-line chrome, base for prose. */
+export const LEADING = {
+  none: '1',
+  tight: '1.2',
+  base: '1.45',
+};
+
+/** Opacity. `muted` de-emphasises; `disabled` is the one WCAG-relevant value. */
+export const ALPHA = {
+  muted: '0.85',
+  disabled: '0.4',
+};
+
+/** Uppercase micro-label tracking — one value, not four. */
+export const TRACKING = '0.05em';
+
+export const RADIUS = {
+  /** Buttons, inputs, menu rows, segmented toggles, swatches. */
+  control: '4px',
+  /** Cards, panels, menus, modals — anything that contains other components. */
+  container: '6px',
+  /** Badges, count pills, status chips — fully rounded, size-independent. */
+  pill: '999px',
+};
+
+export const FONT = {
+  /**
+   * The typeface. wmap is embedded in a host and should read as part of it, so
+   * this INHERITS by default rather than imposing a stack — a host that sets
+   * nothing still gets the fallback below.
+   *
+   * There were three different hardcoded stacks across five sites
+   * (`system-ui, sans-serif` in the summary panel and toolbar,
+   * `system-ui, -apple-system, "Segoe UI", sans-serif` in the gallery), none
+   * matching tsmap's own `-apple-system`-first body stack. On Linux those
+   * resolve to different faces, so the summary panel's value table and the
+   * Insights value table — the same data, side by side — rendered in different
+   * typefaces.
+   */
+  family: 'var(--wmap-font-family, inherit)',
+  meta:    `calc(${FONT_BASE} - 1px)`,
+  body:    FONT_BASE,
+  sub:     `calc(${FONT_BASE} + 1px)`,
+  heading: `calc(${FONT_BASE} + 3px)`,
+  stat:    `calc(${FONT_BASE} + 8px)`,
+};
+
+/** The resolved numeric size for canvas `ctx.font`, in px. `delta` matches FONT's tiers. */
+export function fontPx(delta = 0, el?: Element | null): number {
+  const doc = el?.ownerDocument ?? (typeof document !== 'undefined' ? document : null);
+  if (!doc) return 12 + delta;
+  const raw = getComputedStyle(el ?? doc.documentElement).getPropertyValue('--wmap-font-size').trim();
+  const base = raw ? parseFloat(raw) : NaN;
+  return (Number.isFinite(base) ? base : 12) + delta;
+}
 
 export const CLR = {
   // Toolbar icons + hover/active affordances.
@@ -84,6 +316,12 @@ export const CLR = {
   // Menus / dropdowns.
   menuBg:      t('surface',      '#fff'),
   menuBorder:  t('border',       'rgba(0,0,0,0.12)'),
+  // A CONTROL edge, not a divider. `menuBorder` is a hairline meant to separate
+  // surfaces; used as a button's border it made every outlined control read as a
+  // label with a faint box round it — the border was ~2.5x lighter than the one
+  // tsmap uses for the same job (#aaa). Themeable separately so a host can tune
+  // control weight without moving every divider in the library.
+  controlBorder: t('control-border', 'rgba(0,0,0,0.30)'),
   menuHover:   t('menu-hover',   '#f0f4fc'),
   menuActive:  t('menu-active',  '#dce8f8'),
   // Summary-panel surfaces + text.
@@ -126,11 +364,16 @@ export const CLR = {
   // its own contrast needs) but was hardcoded identically in both files
   // instead of sharing one themeable token.
   findingIndicator: t('finding-indicator', '#b7551a'),
-  // Summary-panel progress-bar fill (yield/ring/quadrant bars). Was hardcoded
+  // Summary-panel progress-bar fill (yield/region/bin bars). Was hardcoded
   // directly on the two `progressRow` call sites in `summaryPanel.ts` instead
   // of being a themeable token like every other chrome colour.
+  //
+  // The companion `bar-fill-muted` token is gone: it existed solely to grey the
+  // fill of below-median wafer-yield bars, an unlabelled colour-only encoding
+  // that has been replaced by a visible median marker plus outliers named in the
+  // row text (see `progressRow`). Nothing painted it any more, and a themeable
+  // token a host can set to no effect is worse than an absent one.
   barFill:      t('bar-fill',       '#2a6fc0'),
-  barFillMuted: t('bar-fill-muted', '#94a3b8'),
 };
 
 /**
@@ -294,7 +537,29 @@ export function setDetachWindowOpener(opener: DetachWindowOpener | null): void {
  * window is treated as titleless regardless of `document.title`). Navigating
  * to a real URL would fix it but means either re-running the host page's own
  * script inside the popup (real risk of double side effects) or requiring a
- * dedicated blank same-origin asset — not worth it for a cosmetic issue. */
+ * dedicated blank same-origin asset — not worth it for a cosmetic issue.
+ *
+ * Why this looks different from renderWaferMap's own "Expand" (a modal with
+ * wmap's own JS-drawn title bar, see `openOverlay` below): a real
+ * `window.open()` popup always carries genuine OS/browser chrome (title bar,
+ * and — deliberately, for anti-phishing reasons — an address-bar-ish
+ * element), and no window-features flag suppresses that in modern browsers;
+ * the feature string above (`width=560,height=600`) is sized-only for
+ * exactly this reason. This is a real inconsistency (raised 2026-08-29):
+ * `openWindowForCard`'s own fallback path (`window.open` returning null,
+ * e.g. Tauri's WebView) already routes through `openFloatingWindow` —
+ * wmap's own chrome, pixel-identical to the modal — so the mismatch is
+ * scoped to the real-popup case specifically.
+ *
+ * Possible future change: make `openWindowForCard` always take the
+ * `openFloatingWindow` branch (never call this function), for visual
+ * consistency with the standalone map's modal everywhere. Deliberately not
+ * done: the whole reason gallery cards detach into real windows rather than
+ * modals is so several can be open at once for side-by-side comparison,
+ * including dragged out to a second monitor — `openFloatingWindow`'s content
+ * is confined inside the host page/tab, so forcing it would trade away that
+ * capability for cosmetic consistency. Revisit only if that comparison
+ * workflow turns out not to matter in practice. */
 export function openDetachWindow(label: string): Window | null {
   if (detachWindowOpener) return detachWindowOpener(label);
   return window.open('', '_blank', 'width=560,height=600');
@@ -416,26 +681,6 @@ export function nextFrame(fn: () => void, ownerWindow: Window = window): void {
   const raf = ownerWindow.requestAnimationFrame;
   if (typeof raf === 'function') raf.call(ownerWindow, fn);
   else setTimeout(fn, 0);
-}
-
-/**
- * Tag a menu container and its rows with ARIA roles and make rows keyboard
- * focusable. `roleForRow` returns the per-row role; rows are skipped (left as
- * presentational section headers) when it returns `null`.
- */
-function applyMenuRoles(
-  menu: HTMLElement,
-  label: string,
-  roleForRow: (row: HTMLElement) => 'menuitemradio' | 'menuitemcheckbox' | 'menuitem' | null,
-): void {
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', label);
-  for (const child of Array.from(menu.children) as HTMLElement[]) {
-    const role = roleForRow(child);
-    if (!role) continue;
-    child.setAttribute('role', role);
-    child.tabIndex = -1;
-  }
 }
 
 /**
@@ -621,9 +866,9 @@ export function getTooltip(doc: Document = document): HTMLDivElement {
       color:        '#f0f0f2',
       border:       '1px solid rgba(255,255,255,0.10)',
       padding:      '7px 11px',
-      borderRadius: '5px',
-      fontSize:     '13px',
-      lineHeight:   '1.55',
+      borderRadius: RADIUS.control,
+      fontSize:     FONT.sub,
+      lineHeight:   LEADING.base,
       maxWidth:     '280px',
       // Hard height cap so the tooltip can never grow into a full-viewport block —
       // a safety net (the hover content is now compact, and pointerEvents:none means
@@ -634,8 +879,8 @@ export function getTooltip(doc: Document = document): HTMLDivElement {
       whiteSpace:   'pre-wrap',
       zIndex:       Z_ABOVE,
       display:      'none',
-      fontFamily:   'system-ui, sans-serif',
-      boxShadow:    '0 3px 10px rgba(0,0,0,0.45)',
+      fontFamily:   FONT.family,
+      boxShadow:    SHADOW.menu,
     });
     sharedTooltips.set(doc, el);
   }
@@ -680,6 +925,21 @@ export function reparentTooltip(parent?: HTMLElement): void {
  * map), and the `parentElement !==` guard means the DOM is only actually
  * touched when the root has changed, not on every mousemove.
  */
+/**
+ * Place the tooltip near the cursor without covering the thing it describes.
+ *
+ * `anchor` used to be consulted only for `overlayRootFor` — placement was
+ * computed from the cursor point alone, and since `y` starts ABOVE the cursor
+ * (`clientY - 8`) the box then extended down over whatever was being pointed at.
+ * On the map canvas that is harmless and in fact necessary: the anchor is the
+ * whole canvas, so "don't overlap the anchor" would push the tooltip off the map
+ * entirely. On a small anchor — a bar, a badge, a row, an icon button — there IS
+ * somewhere else to go, and covering it while describing it is a real defect.
+ *
+ * So the anchor's box is avoided only when the anchor is small enough for that to
+ * be feasible: flip to just below it, else just above it. A large anchor keeps
+ * exactly the previous cursor-following behaviour.
+ */
 export function positionTooltip(tooltip: HTMLDivElement, anchor: Element, clientX: number, clientY: number): void {
   const root = overlayRootFor(anchor);
   if (tooltip.parentElement !== root) root.appendChild(tooltip);
@@ -689,13 +949,92 @@ export function positionTooltip(tooltip: HTMLDivElement, anchor: Element, client
   const tw     = tooltip.offsetWidth;
   const th     = tooltip.offsetHeight;
   const margin = 8;
+  const vw     = ownerWindow.innerWidth;
+  const vh     = ownerWindow.innerHeight;
+
   let x = clientX + 14;
   let y = clientY - 8;
-  if (x + tw + margin > ownerWindow.innerWidth)  x = clientX - tw - 6;
-  if (y + th + margin > ownerWindow.innerHeight) y = ownerWindow.innerHeight - th - margin;
+  if (x + tw + margin > vw) x = clientX - tw - 6;
+
+  const r = anchor.getBoundingClientRect();
+  // 40% of the viewport: below this an anchor is a discrete control or datum with
+  // room beside it; above it (the map canvas, a full-height panel) there is no
+  // "beside", and displacing the tooltip that far would be worse than overlapping.
+  const canAvoid = r.height > 0 && r.height <= vh * 0.4;
+  if (canAvoid) {
+    const overlapsAnchor = y < r.bottom && y + th > r.top && x < r.right && x + tw > r.left;
+    if (overlapsAnchor) {
+      const below = r.bottom + margin;
+      const above = r.top - th - margin;
+      // Prefer below (reading order, and the cursor is usually travelling down);
+      // fall back to above; if neither fits, leave the cursor-relative position
+      // and let the viewport clamps below deal with it.
+      if (below + th + margin <= vh)  y = below;
+      else if (above >= margin)       y = above;
+    }
+  }
+
+  if (y + th + margin > vh) y = vh - th - margin;
   if (y < margin) y = margin;
   tooltip.style.left = `${x}px`;
   tooltip.style.top  = `${y}px`;
+}
+
+/**
+ * Wire the shared themed tooltip onto a plain DOM element.
+ *
+ * Hoisted out of `maplessSummary.ts`, which had the only copy — and whose comment
+ * already recorded why this exists: a native `title` is a different, browser-native
+ * tooltip, slow to appear (OS hover delay) and in an unthemed system font/colour,
+ * while every hover surface built through `createToolbarHelpers` uses this instant
+ * dark one. `summaryPanel.ts` and the hand-built expand buttons in
+ * `renderWaferMap`/`renderWaferGallery` were still on `title`.
+ *
+ * `text` may be a string, a getter (for a hint that changes with the control's own
+ * state, e.g. the findings severity chips' show/hide), or omitted to live-read the
+ * element's `aria-label` at hover time — the same thing `makeBtn` does, so a
+ * control whose label changes with its state (expand ⇄ reattach) stays correct
+ * without re-wiring.
+ *
+ * `asDataPoint` is for an element that is NOT already a control: it makes the
+ * element a tab stop, announces it as a single datum (`role="img"`), and sets
+ * `aria-label`, so the tooltip's content reaches the keyboard and a screen reader
+ * (WCAG 1.4.13 — content shown on hover must be reachable and dismissable without
+ * a pointer). Never pass it for a `<button>`: that would add a nested focus stop
+ * and overwrite the control's own accessible name.
+ */
+export function wireTooltip(
+  target: HTMLElement,
+  text?: string | (() => string),
+  opts: { asDataPoint?: boolean } = {},
+): void {
+  const resolve = () =>
+    (typeof text === 'function' ? text() : text) ?? target.getAttribute('aria-label') ?? '';
+  if (opts.asDataPoint) {
+    target.tabIndex = 0;
+    target.setAttribute('role', 'img');
+    if (typeof text === 'string') target.setAttribute('aria-label', text);
+  }
+  const show = (e?: MouseEvent) => {
+    const body = resolve();
+    if (!body) return;
+    const tooltip = getTooltip(target.ownerDocument);
+    tooltip.textContent = body;
+    tooltip.style.display = 'block';
+    if (e) {
+      positionTooltip(tooltip, target, e.clientX, e.clientY);
+    } else {
+      // Keyboard focus carries no pointer coordinates — anchor to the element's
+      // own box instead of a cursor position that doesn't exist.
+      const r = target.getBoundingClientRect();
+      positionTooltip(tooltip, target, r.left + r.width / 2, r.top);
+    }
+  };
+  const hide = () => hideTooltip(target.ownerDocument);
+  target.addEventListener('mousemove', show);
+  target.addEventListener('mouseleave', hide);
+  target.addEventListener('focus', () => show());
+  target.addEventListener('blur', hide);
 }
 
 // ── Toolbar factory ────────────────────────────────────────────────────────────
@@ -830,13 +1169,18 @@ export function makeMenuSearchBox(onFilter: (query: string) => void, placeholder
     display:      'block',
     width:        'calc(100% - 20px)',
     margin:       '2px 10px 6px',
-    padding:      '4px 8px',
-    fontSize:     '12px',
+    padding: `${SPACE.xs} ${SPACE.md}`,
+    fontSize:     FONT.body,
     boxSizing:    'border-box',
     background:   CLR.menuBg,
     color:        CLR.text,
     border:       `1px solid ${CLR.menuBorder}`,
-    borderRadius: '4px',
+    borderRadius: RADIUS.control,
+    // Deliberate, and one of only two places the ring may be suppressed: this
+    // input sits inside a menu whose border-radius/overflow CLIPS an outline,
+    // so the ring cannot render here at all. The border-colour swap below is
+    // the compensating indicator. See UI_STANDARDS.md — suppressing the ring is
+    // permitted only where it cannot render, and only with a replacement.
     outline:      'none',
   } as Partial<CSSStyleDeclaration>);
   input.addEventListener('click', e => e.stopPropagation());
@@ -881,8 +1225,8 @@ export function buildModeMenuEl(
     left:          `${modeLeft}px`,
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
-    borderRadius:  '4px',
-    boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+    borderRadius:  RADIUS.control,
+    boxShadow:     SHADOW.menu,
     zIndex:        Z_BASE,
     minWidth:      `${modeMinWidth}px`,
     padding:       '4px 0',
@@ -934,8 +1278,8 @@ export function buildModeMenuEl(
           left:          `${subLeft}px`,
           background:    CLR.menuBg,
           border:        `1px solid ${CLR.menuBorder}`,
-          borderRadius:  '4px',
-          boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+          borderRadius:  RADIUS.control,
+          boxShadow:     SHADOW.menu,
           zIndex:        Z_ABOVE,
           minWidth:      `${subMinWidth}px`,
           maxHeight:     `${subMaxHeight}px`,
@@ -1059,8 +1403,9 @@ export interface ExpandToggleHandle {
 /**
  * Shared "click/Enter/Space toggles an expand/collapse state, Escape or an
  * outside click closes it" wiring — the small interaction pattern behind both
- * the metadata badge's own expand (metadataBadge.ts) and the gallery card
- * header's metadata reveal (renderWaferGallery.ts). `trigger` gets
+ * the shared identity header's metadata reveal (identityHeader.ts, used by
+ * renderWaferMap.ts) and the gallery card header's own reveal
+ * (renderWaferGallery.ts). `trigger` gets
  * `role="button"`/`tabindex` and the event listeners; `onChange(open)` is
  * called whenever the state actually changes (never redundantly) — the
  * caller owns all the resulting DOM (aria-expanded text, panel visibility,
@@ -1135,10 +1480,10 @@ export type CheckMenuRow =
 export function buildCheckMenuEl(
   anchorRect: DOMRect,
   rows: CheckMenuRow[],
-  helpers: Pick<ToolbarHelpers, 'makeMenuRow' | 'makeMenuSection'>,
+  helpers: Pick<ToolbarHelpers, 'makeMenuSection'>,
   ownerWindow: Window = window,
 ): HTMLDivElement {
-  const { makeMenuRow, makeMenuSection } = helpers;
+  const { makeMenuSection } = helpers;
   const doc = ownerWindow.document;
   const menu = doc.createElement('div');
   const minWidth = 168;
@@ -1151,8 +1496,8 @@ export function buildCheckMenuEl(
     left:          `${leftPx}px`,
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
-    borderRadius:  '4px',
-    boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+    borderRadius:  RADIUS.control,
+    boxShadow:     SHADOW.menu,
     zIndex:        Z_BASE,
     minWidth:      `${minWidth}px`,
     padding:       '4px 0',
@@ -1172,20 +1517,24 @@ export function buildCheckMenuEl(
       el.tabIndex = -1;
       if (!enabled) {
         el.setAttribute('aria-disabled', 'true');
-        el.title = row.disabledHint!;
+        // This hint is the entire reason the row is still on screen rather than
+        // omitted (see the comment above), so it must not sit behind the OS
+        // tooltip's hover delay. Explicit text rather than aria-label: the row's
+        // accessible name is its own option text, which the hint explains but
+        // must not replace.
+        wireTooltip(el, row.disabledHint!);
       }
       Object.assign(el.style, {
         display:    'flex',
         alignItems: 'center',
-        gap:        '6px',
+        gap: SPACE.sm,
         padding:    '6px 14px',
-        fontSize:   '12px',
+        fontSize:   FONT.body,
         cursor:     enabled ? 'pointer' : 'default',
         color:      !enabled ? CLR.label : row.active ? CLR.iconActive : CLR.text,
         fontWeight: row.active ? '700' : '400',
         background: row.active ? CLR.menuActive : 'transparent',
         whiteSpace: 'nowrap',
-        outline:    'none',
       });
       const tick = doc.createElement('span');
       Object.assign(tick.style, {
@@ -1241,12 +1590,12 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       height:         '28px',
       padding:        '0',
       border:         'none',
-      borderRadius:   '3px',
+      borderRadius:   RADIUS.control,
       background:     'transparent',
       color:          CLR.icon,
       cursor:         'pointer',
       pointerEvents:  'auto',
-      transition:     'background 0.12s, color 0.12s',
+      transition:     `background ${MOTION.fast}, color ${MOTION.fast}`,
       flexShrink:     '0',
     });
     btn.addEventListener('mouseenter', (e) => {
@@ -1313,13 +1662,12 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     row.tabIndex = -1;
     Object.assign(row.style, {
       padding:    `6px 14px 6px ${indent ? '26px' : '14px'}`,
-      fontSize:   '12px',
+      fontSize:   FONT.body,
       cursor:     'pointer',
       color:      active ? CLR.iconActive : CLR.text,
       fontWeight: active ? '700' : '400',
       background: active ? CLR.menuActive : 'transparent',
       whiteSpace: 'nowrap',
-      outline:    'none',
     });
     row.addEventListener('mouseenter', () => { if (!active) row.style.background = CLR.menuHover; });
     row.addEventListener('mouseleave', () => { row.style.background = active ? CLR.menuActive : 'transparent'; });
@@ -1336,9 +1684,9 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     el.setAttribute('role', 'presentation');
     Object.assign(el.style, {
       padding:       '5px 14px 2px',
-      fontSize:      '10px',
+      fontSize:      FONT.body,
       fontWeight:    '600',
-      letterSpacing: '0.05em',
+      letterSpacing: TRACKING,
       color:         CLR.label,
       textTransform: 'uppercase',
       pointerEvents: 'none',
@@ -1372,8 +1720,8 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         left:          `${ddLeft}px`,
         background:    CLR.menuBg,
         border:        `1px solid ${CLR.menuBorder}`,
-        borderRadius:  '4px',
-        boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+        borderRadius:  RADIUS.control,
+        boxShadow:     SHADOW.menu,
         zIndex:        Z_BASE,
         minWidth:      `${ddMinWidth}px`,
         padding:       '4px 0',
@@ -1389,13 +1737,12 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
         row.tabIndex = -1;
         Object.assign(row.style, {
           padding:    '6px 14px',
-          fontSize:   '12px',
+          fontSize:   FONT.body,
           cursor:     'pointer',
           color:      isActive ? CLR.iconActive : CLR.text,
           fontWeight: isActive ? '700' : '400',
           background: isActive ? CLR.menuActive : 'transparent',
           whiteSpace: 'nowrap',
-          outline:    'none',
         });
         const highlightOn  = (): void => { if (item.value !== getCurrent()) row.style.background = CLR.menuHover; };
         const highlightOff = (): void => { row.style.background = item.value === getCurrent() ? CLR.menuActive : 'transparent'; };
@@ -1449,7 +1796,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
             },
           };
         }),
-        { makeMenuRow, makeMenuSection },
+        { makeMenuSection },
         btn.ownerDocument.defaultView ?? window,
       );
     }
@@ -1668,13 +2015,13 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     // (window mode overrides this to `fixed` below; modal mode keeps `relative`).
     position:      'relative',
     background:    CLR.menuBg,
-    borderRadius:  '12px',
+    borderRadius:  RADIUS.container,
     overflow:      'hidden',
     display:       'flex',
     flexDirection: 'column',
     width:         'min(90vw, 700px)',
     height:        'min(90vh, 700px)',
-    boxShadow:     '0 20px 60px rgba(0,0,0,0.4)',
+    boxShadow:     SHADOW.modal,
     // No native CSS `resize` — its drag grip is a browser/engine-drawn
     // affordance with a small, precise hit-region that isn't reliable
     // everywhere (confirmed broken under WebKitGTK-via-VNC on Linux; visible
@@ -1701,7 +2048,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   Object.assign(header.style, {
     display:      'flex',
     alignItems:   'center',
-    gap:          '6px',
+    gap: SPACE.sm,
     padding:      '10px 14px',
     borderBottom: `1px solid ${CLR.menuBorder}`,
     flexShrink:   '0',
@@ -1711,11 +2058,11 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   // and card chrome read as one system.
   const btnStyle: Partial<CSSStyleDeclaration> = {
     border:         `1px solid ${CLR.menuBorder}`,
-    borderRadius:   '4px',
+    borderRadius:   RADIUS.control,
     background:     CLR.panelBg,
     cursor:         'pointer',
     color:          CLR.label,
-    lineHeight:     '1',
+    lineHeight:     LEADING.none,
     padding:        '0',
     display:        'flex',
     alignItems:     'center',
@@ -1754,8 +2101,11 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     minimizeBtn = doc.createElement('button');
     minimizeBtn.type = 'button';
     minimizeBtn.innerHTML = ICONS.windowMinimize;
-    minimizeBtn.title = 'Minimize';
     minimizeBtn.setAttribute('aria-label', 'Minimize');
+    // Themed tooltip reading aria-label, like every other icon button. The
+    // setMinimized/setMaximized handlers below relabel in place, and the tooltip
+    // re-reads at hover time, so no re-wiring is needed on state change.
+    wireTooltip(minimizeBtn);
     Object.assign(minimizeBtn.style, btnStyle);
     minimizeBtn.addEventListener('click', () => setMinimized(!minimized));
     header.appendChild(minimizeBtn);
@@ -1766,8 +2116,8 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     printBtn = doc.createElement('button');
     printBtn.type = 'button';
     printBtn.innerHTML = ICONS.print;
-    printBtn.title = 'Print / Save as PDF';
     printBtn.setAttribute('aria-label', 'Print / Save as PDF');
+    wireTooltip(printBtn);
     Object.assign(printBtn.style, btnStyle);
     // win, not doc.defaultView again — same window the overlay itself was
     // resolved against (doc.ownerDocument's view), correct even when this
@@ -1782,16 +2132,20 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   const maximizeBtn = doc.createElement('button');
   maximizeBtn.type = 'button';
   maximizeBtn.innerHTML = ICONS.maximize;
-  maximizeBtn.title = 'Maximize (F)';
-  maximizeBtn.setAttribute('aria-label', 'Maximize');
+  // Keyboard shortcut belongs IN the accessible name, not only in a hover hint —
+  // the same convention `makeBtn` uses (its tooltip is the ariaLabel verbatim).
+  // These two buttons had the shortcut in `title` and a shorter `aria-label`, so
+  // a screen-reader user was never told the shortcut existed.
+  maximizeBtn.setAttribute('aria-label', 'Maximize (F)');
+  wireTooltip(maximizeBtn);
   Object.assign(maximizeBtn.style, btnStyle);
   maximizeBtn.addEventListener('click', () => setMaximized(!maximized));
 
   const closeBtn = doc.createElement('button');
   closeBtn.type = 'button';
   closeBtn.innerHTML = ICONS.close;
-  closeBtn.title = 'Close (Esc)';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', 'Close (Esc)');
+  wireTooltip(closeBtn);
   Object.assign(closeBtn.style, btnStyle);
   closeBtn.addEventListener('click', close);
 
@@ -1811,8 +2165,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   function setMaximized(next: boolean): void {
     maximized = next;
     maximizeBtn.innerHTML = maximized ? ICONS.minimize : ICONS.maximize;
-    maximizeBtn.title = maximized ? 'Restore (F)' : 'Maximize (F)';
-    maximizeBtn.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
+    maximizeBtn.setAttribute('aria-label', maximized ? 'Restore (F)' : 'Maximize (F)');
     resizeGrip.style.display = maximized ? 'none' : 'block';
     if (maximized) {
       box.style.borderRadius = '0';
@@ -1851,7 +2204,6 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   function setMinimized(next: boolean): void {
     minimized = next;
     minimizeBtn!.innerHTML = minimized ? ICONS.windowRestore : ICONS.windowMinimize;
-    minimizeBtn!.title = minimized ? 'Restore' : 'Minimize';
     minimizeBtn!.setAttribute('aria-label', minimized ? 'Restore' : 'Minimize');
     resizeGrip.style.display = minimized ? 'none' : 'block';
     if (minimized) {
@@ -2630,7 +2982,7 @@ function buildGuideSearch(doc: Document, content: HTMLElement): HTMLElement {
   const countLabel = doc.createElement('span');
   countLabel.setAttribute('role', 'status');
   countLabel.setAttribute('aria-live', 'polite');
-  countLabel.style.cssText = `font-size:11px;color:${CLR.label};min-width:44px;text-align:center;flex-shrink:0;white-space:nowrap;`;
+  countLabel.style.cssText = `font-size:12px;color:${CLR.label};min-width:44px;text-align:center;flex-shrink:0;white-space:nowrap;`;
 
   function navButton(glyph: string, ariaLabel: string): HTMLButtonElement {
     const btn = doc.createElement('button');
@@ -2638,7 +2990,7 @@ function buildGuideSearch(doc: Document, content: HTMLElement): HTMLElement {
     btn.textContent = glyph;
     btn.setAttribute('aria-label', ariaLabel);
     btn.disabled = true;
-    btn.style.cssText = `border:none;background:none;cursor:pointer;padding:3px 5px;border-radius:3px;font-size:10px;color:${CLR.label};flex-shrink:0;opacity:0.4;`;
+    btn.style.cssText = `border:none;background:none;cursor:pointer;padding:3px 5px;border-radius:3px;font-size:12px;color:${CLR.label};flex-shrink:0;opacity:0.4;`;
     btn.addEventListener('mouseenter', () => { if (!btn.disabled) btn.style.background = CLR.bgHover; });
     btn.addEventListener('mouseleave', () => { btn.style.background = 'none'; });
     return btn;
@@ -2760,7 +3112,7 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
 
   const chevron = doc.createElement('span');
   chevron.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
-  chevron.style.cssText = 'display:inline-flex;transition:transform 0.15s ease;flex-shrink:0;';
+  chevron.style.cssText = `display:inline-flex;transition:transform ${MOTION.base};flex-shrink:0;`;
 
   const toggleBtn = doc.createElement('button');
   toggleBtn.type = 'button';
@@ -2793,16 +3145,28 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
   panel.hidden = true;
   panel.style.cssText = 'padding:2px 14px 14px;max-height:min(60vh,440px);overflow-y:auto;';
 
-  // A host's own guide and wmap's own each number their h2s from 1 in their
-  // own source markdown — correct when either is read as its own standalone
-  // document, but combined into one window the reader has no reason to know
-  // there even *are* two source documents (a host's help button is one
-  // button, opening what reads as one guide — see UserGuideExtension's
-  // doc). Carrying both numbering runs straight into this single list would
-  // read as a broken, duplicated "1., 2., 3. … 1., 2., 3." outline, so the
-  // TOC strips any leading "N. " a heading's own text supplies and lets
-  // position in this one list carry the order instead — it's still one flat
-  // list, just unnumbered.
+  // A host's own guide and wmap's own each number their h2/h3/h4 headings
+  // from 1 in their own source markdown — correct when either is read as its
+  // own standalone document, but combined into one window the reader has no
+  // reason to know there even *are* two source documents (a host's help
+  // button is one button, opening what reads as one guide — see
+  // UserGuideExtension's doc). Carrying both numbering runs straight into
+  // this single document reads as broken and duplicated — not just in this
+  // TOC list, but in the actual body headings too ("1. …", "2. …" … then
+  // "1. …", "2. …" again once the second guide's content starts). So this
+  // strips any leading "N." / "N.M" prefix a heading's own text supplies —
+  // from the real heading in the body, not just its TOC copy — and lets
+  // position/nesting in the one combined document carry the order instead.
+  // Only the heading's first text node is touched, so any inline markup
+  // inside it (a link, code span, etc.) is left alone.
+  const NUMBER_PREFIX = /^\s*\d+(?:\.\d+)*\.\s+/;
+  for (const h of content.querySelectorAll<HTMLElement>('h2[id],h3[id],h4[id]')) {
+    const first = h.firstChild;
+    if (first?.nodeType === Node.TEXT_NODE) {
+      first.textContent = (first.textContent ?? '').replace(NUMBER_PREFIX, '');
+    }
+  }
+
   const list = doc.createElement('ul');
   list.setAttribute('role', 'list');
   // Multi-column, not a row-major grid: browsers fill a CSS multi-column box
@@ -2815,7 +3179,9 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
     li.style.cssText = 'break-inside:avoid;';
     const a = doc.createElement('a');
     a.href = `#${h.id}`;
-    a.textContent = (h.textContent ?? '').replace(/^\d+\.\s+/, '');
+    // No number stripping needed here any more — the heading itself was
+    // already stripped above, so its text is clean.
+    a.textContent = h.textContent ?? '';
     a.style.cssText = `display:block;padding:4px 6px;margin:0 -6px;border-radius:3px;font-size:12.5px;color:${CLR.iconActive};text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
     a.addEventListener('mouseenter', () => { a.style.background = CLR.bgHover; });
     a.addEventListener('mouseleave', () => { a.style.background = 'none'; });
@@ -2973,7 +3339,7 @@ function openGuideInPopup(popupWin: Window, title: string, contentHtml: string, 
   Object.assign(doc.documentElement.style, { height: '100%' });
   Object.assign(doc.body.style, {
     margin: '0', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-    fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+    fontFamily: FONT.family,
   });
   // Not tied to any one render container (the guide can be opened from a
   // single map, a gallery, or programmatically via a controller's own
@@ -3121,10 +3487,11 @@ export function openReportModal(html: string, opts?: { anchor?: Element; ownerDo
   });
   const openFullPageBtn = doc.createElement('button');
   openFullPageBtn.type = 'button';
+  wireControlHover(openFullPageBtn, 'bare');
   openFullPageBtn.textContent = 'Open as full page ↗';
   Object.assign(openFullPageBtn.style, {
     border: 'none', background: 'none', color: CLR.iconActive, cursor: 'pointer',
-    fontSize: '12px', textDecoration: 'underline', padding: '0',
+    fontSize: FONT.body, textDecoration: 'underline', padding: '0',
   });
   openFullPageBtn.addEventListener('click', () => openHtmlReport(html));
   toolbarStrip.appendChild(openFullPageBtn);

@@ -103,3 +103,27 @@ export function modeOf(values: number[]): number | null {
   }
   return result;
 }
+// ── CSV ──────────────────────────────────────────────────────────────────────
+
+// A value starting with =, +, -, or @ is read as a formula by Excel/Sheets/
+// LibreOffice on open — a known injection vector when the source is die/wafer
+// metadata this library didn't originate (host data pipelines, MES/LIMS
+// fields, operator free text). Only applied to values that don't parse as a
+// number: a leading '-'/'+' on an actual number (offsets, leakage, deltas —
+// routine in test data) must round-trip unchanged.
+const FORMULA_LEAD = /^[=+\-@]/;
+
+/**
+ * CSV field escaper — quoting plus the formula-injection guard above.
+ *
+ * Lives here rather than in `canvas-adapter/summaryPanel.ts`, its original home:
+ * it is a pure string function with no DOM, and it now has consumers in the
+ * summary panel, the die list AND the correlation chart. Importing summaryPanel
+ * from a chart to reach it would have inverted the dependency (summaryPanel
+ * already imports charts/chartShell), so the third consumer made the wrong home
+ * obvious. Every CSV this library writes must go through it.
+ */
+export function csvField(value: string): string {
+  const v = (FORMULA_LEAD.test(value) && Number.isNaN(Number(value))) ? `'${value}` : value;
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}

@@ -248,6 +248,11 @@ test('invariant: "dies do not fit" is only claimed when the pitch was actually s
   );
   assert.deepEqual(inferredPitch.warnings.map(w => w.code), ['inferred-pitch'],
     'should instead flag the unverifiable pitch assumption');
+  // A supported input path making an assumption on the caller's behalf, not a
+  // detected contradiction — so it must not sit at the same severity as
+  // 'partial-coverage'/'geometry-conflict', which mean dies really are misplaced.
+  assert.equal(inferredPitch.warnings[0].severity, 'warning',
+    'an assumption advisory must not be raised as an error');
   assert.match(inferredPitch.warnings[0].message, /dieConfig\.width/, 'must point at the actual fix');
 
   // Correct data + correct pitch + correct diameter → silent.

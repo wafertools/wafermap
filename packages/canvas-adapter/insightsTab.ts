@@ -28,16 +28,19 @@ import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from 
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
+import { LEADING, ALPHA, SPACE, FONT, CLR, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
+import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
 import { renderBoxplotPanel } from './charts/boxplot.js';
+import { renderTrendPanel } from './charts/trend.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
 import { renderScatterPanel } from './charts/scatter.js';
 import { renderBarPanel, type ChartPanel } from './charts/barPanel.js';
 import { renderBinClusterPanel } from './charts/binCluster.js';
+import { renderTestPassRatePanel } from './charts/testPassRate.js';
 import { QUANTITY } from './charts/palette.js';
-import { makeChartGridWrap, makeLabeledSelect } from './charts/chartShell.js';
+import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, type AxisPrefs } from './charts/chartShell.js';
 import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../stats/yield.js';
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
 import { buildLotTestSection, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
@@ -91,13 +94,18 @@ export interface InsightsTabDeps {
    * toggle alone, whose "way back" is discoverable only via tooltip.
    */
   backTab?: { label: string; onBack: () => void };
+  /** Opens the user guide. Rendered as an icon at the end of the tab row —
+   *  while Insights is showing, the map toolbar is hidden (it held only a
+   *  back-to-gallery button, which the back tab already provides, and this
+   *  help button), so this is where Help lives in this view. */
+  onOpenGuide?: () => void;
   /**
    * Show this tab's own identity strip (lot/wafer/product/etc.), mounted
    * above the Overview/Distributions/Correlation tab bar so it stays in the
    * same place across every sub-tab. Default true — needed by
-   * `renderWaferMap.ts`, whose single-wafer `metadataBadge` overlay sits
-   * under this tab's opaque inset:0 root and is fully covered while Insights
-   * is open, so this strip is its only identity display there.
+   * `renderWaferMap.ts`, whose single-wafer identity header is explicitly
+   * hidden while Insights is open (see `setInsightsOpen`, to avoid showing
+   * the same metadata twice), so this strip is its only identity display there.
    * `renderWaferGallery.ts` sets this false: its own legend strip (built from
    * the same wafer/lot metadata, via the same `buildMetadataStripRow`) stays
    * mounted above the grid/Insights body in both views, so this strip would
@@ -151,7 +159,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   Object.assign(rootEl.style, {
     display: 'none',
     flexDirection: 'column',
-    gap: '10px',
+    gap: SPACE.lg,
     width: '100%',
   } as Partial<CSSStyleDeclaration>);
 
@@ -160,10 +168,17 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // inside the Overview tab's own content and disappearing on
   // Distributions/Correlation. Rebuilt on every `render()` alongside the
   // active sub-tab's content; only mounted when `showMetadataStrip`.
+  // Every band in this view (metadata strip, tab bar, controls row) lines up on
+  // one left inset. It used to come only from the tab buttons' own padding, so
+  // the tabs looked inset and the strip and Group-by row did not — they were
+  // flush against the edge with no gutter at all.
+  const BAND_INSET = SPACE.lg;
+
   const metaStripEl = doc.createElement('div');
+  Object.assign(metaStripEl.style, { paddingLeft: BAND_INSET } as Partial<CSSStyleDeclaration>);
 
   const tabBar = doc.createElement('div');
-  Object.assign(tabBar.style, { display: 'flex', gap: '4px', borderBottom: `1px solid ${CLR.menuBorder}`, marginBottom: '2px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(tabBar.style, { display: 'flex', gap: SPACE.xs, alignItems: 'center', borderBottom: `1px solid ${CLR.menuBorder}`, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
   tabBar.setAttribute('role', 'tablist');
   // Registered once, not per-`render()` — `tabBar` itself persists across
   // sub-tab switches (only its children are torn down and rebuilt), so this
@@ -186,7 +201,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // "fill and scroll" pattern, since there's no guaranteed bounded ancestor
   // to grow into across every host.
   const bodyEl = doc.createElement('div');
-  Object.assign(bodyEl.style, { display: 'flex', flexDirection: 'column', gap: '10px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(bodyEl.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg } as Partial<CSSStyleDeclaration>);
 
   rootEl.appendChild(metaStripEl);
   rootEl.appendChild(tabBar);
@@ -220,8 +235,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       borderBottom: isActive ? `2px solid ${CLR.iconActive}` : '2px solid transparent',
       color:        isActive ? CLR.iconActive : CLR.label,
       fontWeight:   isActive ? '700' : '500',
-      fontSize:     '12px',
-      padding:      '6px 10px 8px',
+      fontSize:     FONT.body,
+      padding: `${SPACE.sm} ${SPACE.lg} ${SPACE.md}`,
       cursor:       'pointer',
       marginBottom: '-1px',
     } as Partial<CSSStyleDeclaration>);
@@ -322,6 +337,18 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // normalization could paint a *better* wafer redder than a worse one.
       barColor: () => QUANTITY,
       valueLabel: datum => `${datum.percent.toFixed(1)}%`,
+      // Median of whatever rows are currently drawn — including after a drill
+      // into one group, where the overall lot median would be the wrong
+      // reference. Median rather than mean: one catastrophic wafer drags a mean
+      // below every other bar, which makes the reference itself misleading.
+      reference: rows => {
+        if (rows.length < 3) return null;
+        const sorted = rows.map(d => d.percent).sort((a, b) => a - b);
+        const mid = sorted.length % 2
+          ? sorted[(sorted.length - 1) / 2]
+          : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+        return { value: mid, label: `median ${mid.toFixed(1)}%` };
+      },
       drill: yieldGroups ? {
         onOpenGroup: datum => {
           const detailItems = yieldGroups.find(g => g.key === datum.label)?.items ?? [];
@@ -410,10 +437,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // grid, just without a chart title to attach — mark it so tooling
     // doesn't have to special-case "a card with no data-wmap-chart-title".
     card.dataset.wmapChartCard = '1';
+    // Frame values come from ONE place. This used to restate cardShell's
+    // border/background/radius/padding by hand, and the two drifted the moment
+    // cardShell gained a header rule — the tables below the charts stopped
+    // looking like the cards above them. `cardFrameStyle` is that shared block.
     Object.assign(card.style, {
-      display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '0',
-      background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '6px',
-      padding: '12px',
+      ...cardFrameStyle(),
+      display: 'flex', flexDirection: 'column', gap: SPACE.lg, minWidth: '0',
     } as Partial<CSSStyleDeclaration>);
     return card;
   }
@@ -443,7 +473,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    *  colour scheme's value ramp and labelled with its own yield % directly
    *  in the region, plus per-test min/mean/max/spec-yield. The same numbers
    *  the docked Summary panel shows as compact bar-list rows
-   *  (`buildRingSection`/`buildQuadrantSection` in summaryPanel.ts) — both
+   *  (`buildRegionYieldPanelSection` in summaryPanel.ts, one section with a
+   *  Ring/Quadrant selector) — both
    *  read `buildRegionYieldData` (stats/regions.ts) directly, so this chart
    *  view and the panel's compact rows can never disagree. Ring and
    *  quadrant diagrams get their own card in the shared grid (matching the
@@ -453,9 +484,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   function renderOverviewDetailsCards(
     items: Item[],
     testDefs: TestDef[],
-    /** UNFILTERED defs — the functional-tests card needs the `testType: 'F'` entries
-     *  that `render()` strips from `testDefs` for every parametric panel. */
+    /** UNFILTERED defs — the functional-tests card and the pass-rate chart need the
+     *  `testType: 'F'` entries that `render()` strips from `testDefs` for every
+     *  parametric panel. */
     allTestDefs: TestDef[],
+    /** Active grouping, when any — the pass-rate chart is the one card here that
+     *  splits by group (a per-test pass rate per split is exactly what a split
+     *  experiment is run to compare). Ring/quadrant and the test tables stay
+     *  pooled, as before. */
+    groupsForPassRate?: { key: string; items: Item[] }[],
   ): { elements: HTMLElement[]; testValuesCard: HTMLElement | null; functionalCard: HTMLElement | null; destroy: () => void } {
     if (!items.length) return { elements: [], testValuesCard: null, functionalCard: null, destroy: () => {} };
     const allWafers = items.map(it => it.wafer);
@@ -467,6 +504,31 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     const elements: HTMLElement[] = [];
     const destroyFns: Array<() => void> = [];
+
+    // Per-test pass rate, split by group when grouping is active. The suite could
+    // previously answer "which BIN is failing" (bin pareto) and "which group
+    // yields worse" (yield chart), but not "which TEST is failing, and does it
+    // fail more in one split than another" — the question a split experiment is
+    // usually run to answer. Covers parametric (spec-limit judgement) and
+    // functional (recorded verdict) tests behind one selector; see
+    // stats/testPassRate.ts for why they share a builder.
+    const passRateGroups = groupsForPassRate ?? [{ key: '', items }];
+    const passRate = renderTestPassRatePanel({
+      groups: passRateGroups.map(g => ({
+        key: g.key,
+        items: g.items.map(it => ({
+          dies: it.dies,
+          testSpecYield: it.statsSummary?.stats.testSpecYield,
+          functionalYield: it.statsSummary?.stats.functionalYield,
+        })),
+      })),
+      testDefs: allTestDefs,
+      onSaveImage,
+      ownerDocument: doc,
+    });
+    passRate.card.style.minHeight = '300px';
+    elements.push(passRate.card);
+    destroyFns.push(passRate.destroy);
 
     const ringRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, buildRingRegions);
     if (ringRows.length) {
@@ -488,7 +550,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // grid item.
     let testValuesCard: HTMLElement | null = null;
     if (testDefs.length) {
-      const testValues = buildLotTestSection(allDies, testDefs, undefined, perWaferSummaries, onSaveText);
+      // Full column set and a Ppk column: this card is a full-width sibling of
+      // the grid, not the 260px docked panel, so it carries the descriptive
+      // statistics the panel's compact variant leaves to the report/CSV.
+      const testValues = buildLotTestSection(
+        allDies, testDefs, undefined, perWaferSummaries, onSaveText,
+        diesByWafer.map(d => ({ dies: d })), undefined, 'full',
+      );
       if (testValues) { const c = plainCard(); c.appendChild(testValues); testValuesCard = c; }
     }
     // Functional tests get their own pass-rate card — they are excluded from the
@@ -502,36 +570,117 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return { elements, testValuesCard, functionalCard, destroy: () => { for (const d of destroyFns) d(); } };
   }
 
-  /** Single-wafer replacement for the "Yield by wafer" bar chart — a one-bar
-   *  chart with sort controls that can never reorder anything communicates
-   *  nothing a stat tile doesn't. Yield comes from the same `buildYieldData`
-   *  path the bar chart used, so the number is identical either way. */
-  function renderSingleWaferTiles(item: Item): HTMLElement {
+  /**
+   * The Overview's headline tiles.
+   *
+   * For a single wafer these replace the "Yield by wafer" bar chart — a one-bar
+   * chart with sort controls that can never reorder anything communicates nothing
+   * a stat tile doesn't.
+   *
+   * For a lot they are additive, and were missing entirely: a lot's Overview
+   * opened straight into the yield chart, stating no wafer count, no die count and
+   * no exclusions — the population every chart below it is computed over went
+   * unnamed. That is the same gap the docked lot Summary panel had, and the same
+   * rule in CLAUDE.md applies: an aggregated population must be identified.
+   *
+   * Yield comes from the same `buildYieldData` path the bar chart uses, so the
+   * number is identical either way; the lot figure is labelled as an unweighted
+   * mean of per-wafer yields, matching the Summary panel's own wording, because it
+   * is NOT the die-weighted lot yield and the two differ on an uneven lot.
+   */
+  function renderOverviewTiles(items: Item[]): HTMLElement {
     const passBinsLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
-    const yieldPct = buildYieldData([{ ...item, key: item.waferIndex }], passBins)[0]?.percent;
+    const single = items.length === 1;
+    const item = items[0];
 
     const card = plainCard();
-    Object.assign(card.style, { flexDirection: 'row', flexWrap: 'wrap', gap: '8px' } as Partial<CSSStyleDeclaration>);
+    Object.assign(card.style, { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.md } as Partial<CSSStyleDeclaration>);
 
-    function tile(value: string, label: string): HTMLDivElement {
+    /** The rule belongs BETWEEN items — the last one has nothing to separate it
+     *  from, and a trailing divider reads as an unfinished row. */
+    const dropTrailingDivider = (row: HTMLElement): HTMLElement => {
+      const last = row.lastElementChild as HTMLElement | null;
+      if (last) Object.assign(last.style, { borderRight: 'none', paddingRight: '0', marginRight: '0' });
+      return row;
+    };
+
+    // A stat READOUT, not a card. These were three bordered boxes with 20px
+    // figures, taking a full band with most of the row empty, to carry three
+    // facts. The numbers still need emphasis — they name the population every
+    // chart below is computed over — but the box chrome around each one was
+    // paying for itself in vertical space and giving nothing back. Value and
+    // label sit on one baseline; a rule between them does the separating a
+    // border used to.
+    function tile(value: string, label: string, sublabel?: string): HTMLDivElement {
       const t = doc.createElement('div');
       Object.assign(t.style, {
-        border: `1px solid ${CLR.menuBorder}`, borderRadius: '6px', padding: '8px 16px',
-        textAlign: 'center', minWidth: '110px',
+        display: 'flex', alignItems: 'baseline', gap: SPACE.sm,
+        paddingRight: SPACE.xxl, marginRight: SPACE.md,
+        borderRight: `1px solid ${CLR.menuBorder}`,
       } as Partial<CSSStyleDeclaration>);
       const v = doc.createElement('div');
       v.textContent = value;
-      Object.assign(v.style, { fontSize: '20px', fontWeight: '700', color: CLR.value, lineHeight: '1.2' } as Partial<CSSStyleDeclaration>);
+      Object.assign(v.style, { fontSize: FONT.heading, fontWeight: '700', color: CLR.value, lineHeight: LEADING.tight } as Partial<CSSStyleDeclaration>);
       const l = doc.createElement('div');
       l.textContent = label;
-      Object.assign(l.style, { fontSize: '10px', color: CLR.label, marginTop: '2px' } as Partial<CSSStyleDeclaration>);
+      Object.assign(l.style, { fontSize: FONT.body, color: CLR.label } as Partial<CSSStyleDeclaration>);
       t.append(v, l);
+      if (sublabel) {
+        const sub = doc.createElement('div');
+        sub.textContent = sublabel;
+        Object.assign(sub.style, { fontSize: FONT.meta, color: CLR.label, opacity: ALPHA.muted } as Partial<CSSStyleDeclaration>);
+        t.appendChild(sub);
+      }
       return t;
     }
 
-    if (yieldPct !== undefined) card.appendChild(tile(`${yieldPct.toFixed(1)}%`, `Yield · pass: ${passBinsLabel}`));
-    card.appendChild(tile(String(item.dies.length), 'Total dies'));
-    return card;
+    if (single) {
+      const yieldPct = buildYieldData([{ ...item, key: item.waferIndex }], passBins)[0]?.percent;
+      if (yieldPct !== undefined) card.appendChild(tile(`${yieldPct.toFixed(1)}%`, `Yield · pass: ${passBinsLabel}`));
+      card.appendChild(tile(String(item.dies.length), 'Total dies'));
+      return dropTrailingDivider(card) as HTMLDivElement;
+    }
+
+    card.appendChild(tile(String(items.length), 'Wafers'));
+
+    const perWafer = buildYieldData(items.map(it => ({ ...it, key: it.waferIndex })), passBins)
+      .map(d => d.percent)
+      .filter(p => Number.isFinite(p));
+    if (perWafer.length) {
+      const mean = perWafer.reduce((a, b) => a + b, 0) / perWafer.length;
+      // Two different yield statistics: this weights every WAFER equally, the
+      // die-weighted one weights every DIE equally. They agree only when die
+      // counts are even across the lot — and when they diverge, that gap is a
+      // finding, not a footnote. `buildYieldDataCombined` computes the weighted
+      // figure with the correct `yieldEligibleDieCount` weighting, so partial
+      // and edge-excluded dies cannot skew it.
+      //
+      // Shown only when it actually differs. The old sublabel read "unweighted,
+      // per wafer" always — a qualifier with nothing on screen to contrast
+      // against, which on an even lot is just noise.
+      const combined = buildYieldDataCombined(
+        [{ key: 'all', items: items.map(it => ({ ...it, key: it.waferIndex })) }], passBins,
+      )[0]?.percent;
+      const differs = combined !== undefined && combined.toFixed(1) !== mean.toFixed(1);
+      card.appendChild(tile(
+        `${mean.toFixed(1)}%`,
+        `Mean per-wafer yield · pass: ${passBinsLabel}`,
+        differs ? `${combined.toFixed(1)}% by dies` : undefined,
+      ));
+    }
+
+    // Analysed/excluded from the per-wafer StatsSummary where every wafer has
+    // one; otherwise the raw die total, which is all this tab can honestly claim.
+    const summaries = items.map(it => it.statsSummary);
+    if (summaries.every((s): s is StatsSummary => s !== undefined)) {
+      const analysed = summaries.reduce((a, s) => a + s.stats.analyzedDies, 0);
+      const excluded = summaries.reduce((a, s) => a + s.stats.excludedDies, 0);
+      card.appendChild(tile(analysed.toLocaleString(), 'Dies analysed',
+        excluded ? `${excluded.toLocaleString()} excluded` : undefined));
+    } else {
+      card.appendChild(tile(items.reduce((a, it) => a + it.dies.length, 0).toLocaleString(), 'Total dies'));
+    }
+    return dropTrailingDivider(card) as HTMLDivElement;
   }
 
   function renderOverviewSection(
@@ -542,10 +691,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     groupLabelText: string | undefined,
   ): { card: HTMLElement; destroy: () => void } {
     const outer = doc.createElement('div');
-    Object.assign(outer.style, { display: 'flex', flexDirection: 'column', gap: '10px' } as Partial<CSSStyleDeclaration>);
+    Object.assign(outer.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg } as Partial<CSSStyleDeclaration>);
 
     const single = items.length === 1 && !groups;
-    if (single) outer.appendChild(renderSingleWaferTiles(items[0]));
+    // Tiles for both cases now — a lot's Overview previously named no population
+    // at all. Still suppressed when grouping is active: the tiles describe the
+    // whole population while every chart below is split by group, and a headline
+    // that silently disagrees with the charts under it is worse than none.
+    if (items.length && !groups) outer.appendChild(renderOverviewTiles(items));
 
     const yieldBins = renderYieldBinsSection(items, groups, groupLabelText, !single);
     outer.appendChild(yieldBins.card);
@@ -557,7 +710,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // active — regional/test stats aren't a per-group chart like yield/bins,
     // and pooling them across groups is still a meaningful, single "how does
     // this wafer/lot look overall" summary.
-    const details = renderOverviewDetailsCards(items, testDefs, allTestDefs);
+    const details = renderOverviewDetailsCards(items, testDefs, allTestDefs, groups);
     for (const c of details.elements) yieldBins.card.appendChild(c);
     if (details.testValuesCard) outer.appendChild(details.testValuesCard);
     if (details.functionalCard) outer.appendChild(details.functionalCard);
@@ -581,6 +734,24 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   ): { card: HTMLElement; destroy: () => void } {
     const wrap = makeChartGridWrap(doc);
 
+    // The axis toggles are shared across the three distribution panels, the same
+    // way the selected test already is. They were per-panel, so setting "axis
+    // includes limits" for one test meant setting it three times.
+    //
+    // `includeLimits: undefined` is not "off" — it means each panel derives the
+    // default from its own data (shouldIncludeLimitsByDefault). It only becomes a
+    // boolean once the user actually picks, and then it sticks across tests.
+    let axisPrefs: AxisPrefs = { includeLimits: undefined, clipOutliers: false };
+    const broadcastAxisPrefs = (prefs: AxisPrefs) => {
+      axisPrefs = prefs;
+      // Skip the originator: it has already applied the change and rebuilt, and
+      // re-entering its own rebuild would discard the interaction in progress.
+      for (const p of [boxplot, histogram, trend]) if (p !== originator) p?.setAxisPrefs(prefs);
+    };
+    let originator: { setAxisPrefs: (p: AxisPrefs) => void } | null = null;
+    const axisHandler = (self: () => { setAxisPrefs: (p: AxisPrefs) => void } | null) =>
+      (prefs: AxisPrefs) => { originator = self(); broadcastAxisPrefs(prefs); originator = null; };
+
     // Threads each item's already-computed StatsSummary per-test five-number
     // summaries through (stats/boxplot.ts's `BoxplotItem.testStats`) so
     // buildTestBoxplotData can skip re-scanning `dies` when available — for
@@ -592,19 +763,46 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const boxplotGroups = groups?.map(g => ({ key: g.key, items: g.items.map(withTestStats) }));
     const boxplot = renderBoxplotPanel({
       title: 'Test value distribution',
+      axisPrefs, onAxisPrefsChange: axisHandler(() => boxplot),
       items: boxplotItems, testDefs, groups: boxplotGroups, groupLabelText, colorScheme: getColorSchemeName(), onSaveImage,
       onOpen: openWafer ? (waferIndex, testNumber) => openWaferDetailModal(waferIndex, `Wafer ${items.find(it => it.waferIndex === waferIndex)?.label ?? waferIndex}`, testNumber) : undefined,
       ownerDocument: doc,
     });
     const histogram = renderHistogramPanel({
       title: 'Value histogram',
+      axisPrefs, onAxisPrefsChange: axisHandler(() => histogram),
       items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
       ownerDocument: doc,
     });
+    // Wafer-to-wafer trend joins the cross-panel test link below, so picking a
+    // test in capability drives boxplot, histogram AND this — all four then answer
+    // the same question about the same test, rather than each starting from
+    // testDefs[0].
+    //
+    // Deliberately NOT group-aware like its siblings: this chart's x axis is the
+    // population's own slot order, and restricting or splitting by group would
+    // break the sequence that is the entire signal. It always shows every wafer.
+    const trend = renderTrendPanel({
+      title: 'Wafer-to-wafer trend',
+      axisPrefs, onAxisPrefsChange: axisHandler(() => trend),
+      items: items.map(it => ({
+        label: it.label,
+        key: it.waferIndex,
+        dies: it.dies,
+        testStats: it.statsSummary?.stats.perTestStats,
+      })),
+      testDefs,
+      onSaveImage,
+      onOpen: openWafer
+        ? (key, testNumber) => openWaferDetailModal(key, `Wafer ${items.find(it => it.waferIndex === key)?.label ?? key}`, testNumber)
+        : undefined,
+      ownerDocument: doc,
+    });
+
     const capability = renderCapabilityPanel({
       title: 'Process capability',
       items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
-      onSelectTest: (testNumber) => { boxplot.setTest(testNumber); histogram.setTest(testNumber); },
+      onSelectTest: (testNumber) => { boxplot.setTest(testNumber); histogram.setTest(testNumber); trend.setTest(testNumber); },
       ownerDocument: doc,
     });
     // No manual card.style.minHeight here — capability/histogram grow their
@@ -613,9 +811,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // than a guessed constant. Capability's empty state (no test data at
     // all) never calls that, so it stays sized to its compact message
     // instead of forcing a large dead box next to functional siblings.
-    wrap.append(capability.card, boxplot.card, histogram.card);
+    wrap.append(capability.card, boxplot.card, histogram.card, trend.card);
 
-    return { card: wrap, destroy: () => { capability.destroy(); boxplot.destroy(); histogram.destroy(); } };
+    return { card: wrap, destroy: () => { capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); } };
   }
 
   /** Correlation matrix + scatter together, wired so clicking a matrix cell
@@ -637,7 +835,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     });
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
-      items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
+      items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage, onSaveText,
       onSelectPair: (x, y) => scatter.setXY(x, y),
       ownerDocument: doc,
     });
@@ -664,7 +862,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const facetTable = buildFacetTable(allItems, { facetableOnly: true }).filter(f => f.splittable);
 
     const controlsRow = doc.createElement('div');
-    Object.assign(controlsRow.style, { display: 'flex', gap: '8px', alignItems: 'center' } as Partial<CSSStyleDeclaration>);
+    // Rides on the tab bar's row, right-aligned: it is the only control here and
+    // the row is mostly empty, so giving it a band of its own cost a full row of
+    // vertical space above every chart for one dropdown.
+    Object.assign(controlsRow.style, {
+      display: 'flex', gap: SPACE.md, alignItems: 'center',
+      marginLeft: SPACE.xxl, paddingBottom: SPACE.xs,
+    } as Partial<CSSStyleDeclaration>);
     let groupLabelText: string | undefined;
     if (facetTable.length > 0) {
       controlsRow.appendChild(makeLabeledSelect(
@@ -678,7 +882,25 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     } else {
       analysisGroupKey = undefined;
     }
-    bodyEl.appendChild(controlsRow);
+    let helpBtn: HTMLButtonElement | null = null;
+    if (deps.onOpenGuide) {
+      const help = doc.createElement('button');
+      help.type = 'button';
+      help.innerHTML = ICONS.help;
+      help.setAttribute('aria-label', 'User guide');
+      Object.assign(help.style, {
+        ...controlStyle('bare'),
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: '24px', height: '24px', flexShrink: '0',
+      } as Partial<CSSStyleDeclaration>);
+      wireControlHover(help, 'bare');
+      wireTooltip(help, 'User guide');
+      help.addEventListener('click', () => deps.onOpenGuide!());
+      Object.assign(help.style, { marginLeft: 'auto', marginRight: BAND_INSET } as Partial<CSSStyleDeclaration>);
+      helpBtn = help;
+    }
+    tabBar.appendChild(controlsRow);   // same row as the tabs, not a band below
+    if (helpBtn) tabBar.appendChild(helpBtn);   // far right — a rare action, not scope
 
     // Functional (pass/fail) tests are excluded from every parametric Insights
     // panel — boxplot/histogram/capability/correlation/scatter and the

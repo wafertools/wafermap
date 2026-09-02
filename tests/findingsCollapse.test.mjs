@@ -83,7 +83,11 @@ test('hard/soft twins over identical dies collapse into one visible finding', ()
       'the merged label must state WHY the two were merged');
 
     const prose = plainBinTerms(f.summary);
-    assert.match(prose, /hard bin \d+ and soft bin \d+/,
+    // Two accepted shapes. When the two bins share a number and a name the term
+    // is factored ("hard bin and soft bin 3 (Fail)"), because repeating the
+    // identical "(name)" twice produced three nested parentheses in one sentence;
+    // when the names differ both labels are printed in full.
+    assert.match(prose, /(hard bin and soft bin \d+)|(hard bin \d+.* and soft bin \d+)/,
       `rendered prose must name both bins, got: ${prose}`);
     assert.match(prose, /same dies/,
       'rendered prose must keep the "(same dies)" qualifier — without it, ' +

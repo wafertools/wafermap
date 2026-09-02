@@ -6,7 +6,7 @@
 
 import type { WaferMetadata } from '../core/metadata.js';
 import { metadataDisplayValue } from '../core/metadata.js';
-import { compareNatural } from '../core/utils.js';
+import { compareNatural, prettyKey } from '../core/utils.js';
 
 /** Bucket label for wafers with no value for the active facet field — kept
  *  visible (not dropped) so grouped output stays honest about what it's missing. */
@@ -162,7 +162,12 @@ export function buildFacetTable(items: FacetItem[], options: BuildFacetTableOpti
       b.waferCount - a.waferCount ||
       compareNatural(a.value, b.value));
 
-    table.push({ key, label: known?.label ?? key, values, splittable: values.length > 1 });
+    // prettyKey, not the raw key: an uncurated host field (`processSplit`,
+    // `implantDose`) otherwise surfaced its camelCase identifier verbatim in the
+    // Insights "Group by" dropdown and in the report's split comparison. Curated
+    // labels still win — this only affects fields wmap does not know about, which
+    // is most of a real host's metadata.
+    table.push({ key, label: known?.label ?? prettyKey(key), values, splittable: values.length > 1 });
   }
 
   return table;

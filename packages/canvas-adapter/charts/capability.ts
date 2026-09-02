@@ -15,7 +15,7 @@
 import { buildCapabilityData, type CapabilityDatum, type CapabilityItem } from '../../stats/capability.js';
 import { capabilityColor } from './palette.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { CLR } from '../toolbar.js';
+import { LEADING, SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
 import { fmt } from '../../renderer/fmt.js';
 
@@ -110,7 +110,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
   }
 
   const hintRow = card.ownerDocument.createElement('div');
-  Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hintRow, body);
 
   const dpr = window.devicePixelRatio || 1;
@@ -121,7 +121,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
   function renderCaption(shownCount: number, unspecCount: number, totalTests: number): void {
     hintRow.innerHTML = '';
     const line = card.ownerDocument.createElement('span');
-    Object.assign(line.style, { display: 'inline-flex', alignItems: 'center', gap: '6px', color: CLR.value, fontSize: '12px', fontWeight: '500' } as Partial<CSSStyleDeclaration>);
+    Object.assign(line.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm, color: CLR.value, fontSize: FONT.body, fontWeight: '500' } as Partial<CSSStyleDeclaration>);
 
     const excluded = totalTests - shownCount;
     const unspecNote = unspecCount > 0 ? ` · ${unspecCount} without spec limits` : '';
@@ -153,7 +153,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       : 'Normalised to spec limits (LSL = 0, USL = 1), worst Ppk first. '
         + 'Tests without both limits are normalised to their own observed range and drawn muted/dashed.';
     Object.assign(method.style, {
-      color: CLR.label, fontSize: '11px', lineHeight: '1.45', marginTop: '3px', maxWidth: '78ch',
+      color: CLR.label, fontSize: FONT.body, lineHeight: LEADING.base, marginTop: '3px', maxWidth: '78ch',
     } as Partial<CSSStyleDeclaration>);
     hintRow.appendChild(method);
 
@@ -172,7 +172,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     const row = doc.createElement('div');
     Object.assign(row.style, {
       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 14px',
-      marginTop: '7px', fontSize: '11px', color: CLR.label,
+      marginTop: '7px', fontSize: FONT.body, color: CLR.label,
     } as Partial<CSSStyleDeclaration>);
 
     const entries: Array<{ color: string; label: string; dashed?: boolean }> = allUnspec ? [] : [
@@ -187,7 +187,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px' } as Partial<CSSStyleDeclaration>);
       const sw = doc.createElement('span');
       Object.assign(sw.style, {
-        width: '11px', height: '11px', flexShrink: '0', borderRadius: '2px',
+        width: '11px', height: '11px', flexShrink: '0', borderRadius: RADIUS.control,
         background: e.dashed ? 'transparent' : e.color,
         border: `1px ${e.dashed ? 'dashed' : 'solid'} ${e.color}`,
         opacity: e.dashed ? '1' : '0.75',
@@ -260,7 +260,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         : noneSpecd ? 'normalised to range'
         : 'normalised (per test)';
 
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       for (const [v, label] of [[1, hiLabel], [0, loLabel]] as const) {
@@ -392,7 +392,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         // — leaving it hoverable-only meant the reader could see that one box
         // was worse than another but never by how much, or against what
         // threshold. An unspec'd column has no Ppk to show and says so.
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = d.hasSpec ? color : theme.textMuted;
@@ -404,7 +404,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         ctx.rotate(-Math.PI / 4);
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
         ctx.fillStyle = theme.textMuted;
         ctx.fillText(lbl, 0, 0);
         ctx.restore();

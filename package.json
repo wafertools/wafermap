@@ -75,11 +75,11 @@
     "build": "node scripts/build-user-guide.mjs && node scripts/sync-icons.mjs && node scripts/sync-version.mjs && rm -rf dist && tsc -p tsconfig.build.json",
     "build:guide": "node scripts/build-user-guide.mjs",
     "clean": "rm -rf dist",
-    "check": "node scripts/build-user-guide.mjs && node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json && node scripts/check-examples-manifest.mjs && node scripts/build-agents-page.mjs --check && node scripts/check-agents-guide.mjs && node scripts/check-toolbar-docs.mjs && node scripts/check-overlay-conventions.mjs && node scripts/check-changelog.mjs && node scripts/help.mjs --check",
+    "check": "node scripts/build-user-guide.mjs && node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json && node scripts/check-examples-manifest.mjs && node scripts/build-agents-page.mjs --check && node scripts/check-agents-guide.mjs && node scripts/check-toolbar-docs.mjs && node scripts/check-overlay-conventions.mjs && node scripts/check-changelog.mjs && node scripts/help.mjs --check && node scripts/check-style-scales.mjs packages/canvas-adapter",
     "build:examples-index": "node scripts/build-examples-index.mjs",
     "check:drift": "node scripts/check-drift.mjs",
     "dev": "rm -rf docs/dist && cp -r dist docs/dist && ./.venv/bin/zensical serve --dev-addr localhost:8001",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && node scripts/check-bundle-size.mjs && node --test tests/*.test.mjs",
     "build:site": "rm -rf docs/dist && cp -r dist docs/ && ${ZENSICAL:-.venv/bin/zensical} build --clean && cp -r docs/data site/data && cp llms.txt site/llms.txt && rm -rf docs/dist && node scripts/bundle-docs.mjs && node scripts/build-examples-archive.mjs",
     "preview:site": "npm run build:site && echo \"\\nServing bundled site at http://localhost:8002/examples/ — Ctrl-C to stop\\n\" && cd site && python3 -m http.server 8002",
     "prepack": "npm run build && node scripts/minify-dist.mjs",
@@ -93,7 +93,8 @@
     "screenshots": "node scripts/capture-screenshots.mjs",
     "screenshots:list": "node scripts/capture-screenshots.mjs --list",
     "build:images": "npm run build && node scripts/capture-screenshots.mjs",
-    "build:agents-page": "node scripts/build-agents-page.mjs"
+    "build:agents-page": "node scripts/build-agents-page.mjs",
+    "check:styles": "node scripts/check-style-scales.mjs packages/canvas-adapter"
   },
   "keywords": [
     "wafer-map",

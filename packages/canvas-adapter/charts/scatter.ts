@@ -16,10 +16,10 @@
 import { getColorScheme } from '../../renderer/colorSchemes.js';
 import { categorical } from './palette.js';
 import { buildScatterData, buildScatterDataGrouped, type ScatterItem, type ScatterPoint } from '../../stats/scatter.js';
+import { pearsonOfPairs } from '../../stats/correlation.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
-import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { CLR } from '../toolbar.js';
+import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, type SaveImageHandler } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
@@ -82,7 +82,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
 
   function makeLabeledTestSelect(labelText: string, selected: number | null, onChange: (n: number) => void): { wrap: HTMLElement; select: HTMLElement & { value: string } } {
     const wrap = card.ownerDocument.createElement('label');
-    Object.assign(wrap.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: CLR.label } as Partial<CSSStyleDeclaration>);
+    Object.assign(wrap.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, fontSize: FONT.body, color: CLR.label } as Partial<CSSStyleDeclaration>);
     const lbl = card.ownerDocument.createElement('span');
     lbl.textContent = labelText;
     const select = makeTestSelect(testOptions, selected, onChange, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: card.ownerDocument });
@@ -98,7 +98,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   }
 
   const warn = card.ownerDocument.createElement('div');
-  Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: '4px', padding: '4px 8px', fontSize: '11px', marginBottom: '4px', display: 'none' } as Partial<CSSStyleDeclaration>);
+  Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, padding: `${SPACE.xs} ${SPACE.md}`, fontSize: FONT.body, marginBottom: SPACE.xs, display: 'none' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(warn, body);
 
   // Recomputed on every rebuild (not just at construction) — narrowing the
@@ -116,11 +116,32 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   syncMixedFieldsWarning();
 
   const hint = card.ownerDocument.createElement('div');
-  hint.textContent = byGroup
-    ? 'One point per die · coloured by group · click legend to filter'
-    : 'One point per die across all wafers · coloured by hard bin · click legend to filter';
-  Object.assign(hint.style, { color: CLR.label, fontSize: '11px', marginBottom: '4px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
+
+  /**
+   * Strength of the displayed relationship, stated rather than left to the eye.
+   * The correlation matrix quantifies every pair and clicking a cell drives this
+   * panel — at which point r and n vanished, and a scatter with no coefficient
+   * invites reading a trend into noise. Shares `pearsonFromSums` with the matrix,
+   * so the two cards cannot disagree about the same pair.
+   *
+   * Computed over the points actually plotted, so filtering the legend down to
+   * one group updates it — an r for a subset is a different, and usually more
+   * useful, number than the pooled one (see the Simpson's-paradox warning above).
+   */
+  function syncHint(): void {
+    const base = byGroup
+      ? 'One point per die · coloured by group · click legend to filter'
+      : 'One point per die across all wafers · coloured by hard bin · click legend to filter';
+    // Same visibility rule the draw loop uses (an empty activeCats means "no
+    // filter", not "nothing shown").
+    const visible = activeCats.size === 0 ? points : points.filter(p => activeCats.has(categoryOf(p)));
+    const { r, n } = pearsonOfPairs(visible);
+    hint.textContent = r === null
+      ? `${base} · n = ${n.toLocaleString()}`
+      : `${base} · r = ${r.toFixed(3)} · n = ${n.toLocaleString()}`;
+  }
 
   const scheme = getColorScheme(colorScheme);
   const { forBin } = scheme;
@@ -141,7 +162,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   const activeCats = new Set<string>();
 
   const legend = card.ownerDocument.createElement('div');
-  Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: SPACE.xs, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   body.appendChild(legend);
 
   const canvas = card.ownerDocument.createElement('canvas');
@@ -199,13 +220,16 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       swatch.dataset.cat = cat;
       attachChartTip(swatch, card, tooltip, `${labelOfCategory(cat)} — click to filter`);
       const color = colorOfCategory(cat);
-      Object.assign(swatch.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 7px', borderRadius: '10px', border: `1px solid ${CLR.menuBorder}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: CLR.text, whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
+      Object.assign(swatch.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, padding: '2px 7px', borderRadius: RADIUS.pill, border: `1px solid ${CLR.menuBorder}`, background: 'none', cursor: 'pointer', fontSize: FONT.body, color: CLR.text, whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
+    swatch.addEventListener('mouseenter', () => { swatch.style.filter = 'brightness(0.94)'; });
+    swatch.addEventListener('mouseleave', () => { swatch.style.filter = 'none'; });
       const dot = card.ownerDocument.createElement('span');
       Object.assign(dot.style, { display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: color, flexShrink: '0' } as Partial<CSSStyleDeclaration>);
       swatch.append(dot, card.ownerDocument.createTextNode(labelOfCategory(cat)));
       swatch.addEventListener('click', () => {
         if (activeCats.has(cat)) activeCats.delete(cat); else activeCats.add(cat);
         updateLegend();
+        syncHint();
         draw();
       });
       legend.appendChild(swatch);
@@ -228,7 +252,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     ctx.clearRect(0, 0, w, h);
 
     if (points.length === 0) {
-      ctx.font = '12px system-ui, sans-serif';
+      ctx.font = `${fontPx()}px system-ui, sans-serif`;
       ctx.fillStyle = theme.textMuted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -241,7 +265,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     // with a lone "(A)" in the corner become "861 · 1020 · …" with "(µA)".
     const xAxisFmt = makeAxisFormat(Math.max(Math.abs(xLo), Math.abs(xHi)), activeX !== null ? testMeta(activeX).unit : undefined);
     const yAxisFmt = makeAxisFormat(Math.max(Math.abs(yLo), Math.abs(yHi)), activeY !== null ? testMeta(activeY).unit : undefined);
-    ctx.font = '10px system-ui, sans-serif';
+    ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 0.5;
     ctx.fillStyle = theme.textMuted;
@@ -263,7 +287,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     if (xAxisFmt.unitLabel) drawAxisUnit(ctx, xAxisFmt.unitLabel, SCATTER_LEFT + plotW / 2, SCATTER_TOP + plotH + 24, theme.textMuted);
     if (yAxisFmt.unitLabel) {
       ctx.save();
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.fillStyle = theme.textMuted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -294,7 +318,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       ctx.fillStyle = theme.textMuted;
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 3]);
-      ctx.font = '9px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.textBaseline = 'top';
 
       for (const [lim, label] of [[xMeta.limitLow, 'LSL'], [xMeta.limitHigh, 'USL']] as const) {
@@ -337,6 +361,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     if (testOptions.length < 2 || activeX === null || activeY === null) {
       points = [];
       rebuildLegend([]);
+      syncHint();
       draw();
       return;
     }
@@ -349,6 +374,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       cats = Array.from(new Set(points.map(p => p.hbin ?? 0))).sort((a, b) => a - b).map(String);
     }
     rebuildLegend(cats);
+    syncHint();
 
     if (points.length > 0) {
       const xs = points.map(p => p.x), ys = points.map(p => p.y);

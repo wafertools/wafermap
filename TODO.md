@@ -169,3 +169,244 @@ today; the failure mode as die counts and metadata-column counts both grow is a 
 during export, which would fail silently rather than gracefully. Worth moving to a
 `Blob([...chunks])` construction (no single giant string) or a genuinely streamed download
 before either dimension grows much further.
+
+## Gallery value-mode colour range is per-card when the active test has no limits
+
+**Confirmed:** when the active test *has* limits, `colorbarRangeMode: 'spec'` gives every
+card the same `[limitLow, limitHigh]` range (shared, comparable), and the "Colorbar range"
+toggle lets the user opt into `'data'` instead — which the gallery already documents as
+scaling each card to its own min/max (`perCardLegendBlockedReason` in
+`packages/canvas-adapter/renderWaferGallery.ts`, "Each map has its own value range, so it
+keeps its own colour bar").
+
+But when the active test has **no** limits at all, `activeTestHasLimits()` is false, so the
+"Colorbar range" toggle button is hidden entirely — there's no way to reach spec mode because
+there's no spec. `buildView`'s `useSpecRange` check (`packages/renderer/buildView.ts` ~1379)
+then falls through to the `else` branch, which computes `vMin`/`vMax` from `lo`/`hi` over only
+the `dies` passed to *that* `buildView` call. Since `renderWaferGallery`'s `buildCard`
+(`renderWaferGallery.ts` ~2198) calls `renderWaferMap` once per item with that item's own
+`dies` and no explicit `valueRange` override, each card ends up auto-scaled to its own data
+extent — silently, with no toggle and no "each map keeps its own range" messaging surfaced
+to the user for this case (that message only fires when `colorbarRangeMode === 'data'`, which
+isn't the state here even though the *effect* is identical).
+
+**Net effect:** a value-mode gallery for a limit-less test cannot currently show wafers on a
+common colour scale — exactly the comparison a lot gallery exists for.
+
+**Decided (2026-08-28):** `'data'` mode should default to a lot-wide range — computed once in
+`renderWaferGallery` over the *union* of all cards' dies for the active test (it already loops
+`resolvedItems` for stacked-mode aggregation, see `allDies` ~1787) and passed down as an
+explicit `valueRange: { test, range }` per card, overriding the per-card auto-scale. This
+applies whenever the gallery is showing **the same test across multiple wafers** — i.e. plain
+`value` mode, with or without limits. It does **not** apply to `stackedValues`: there, each
+card is a *different test/parameter* (different units, different meaning), so per-card scaling
+is correct and must stay — sharing a range across cards there would be as wrong as sharing an
+axis between a temperature chart and a voltage chart. `stackedBins`/`stackedSoftBins` already
+share a lot-wide range correctly (`stackedSharedOpts`, `valueRange: [0, lotSize]`) — no change
+needed there.
+
+This also fixes the no-limits case above for free: once `'data'` mode is lot-wide by
+construction, there's no separate "no limits" branch to fall through — `'data'` is always
+lot-wide for single-test value mode, `'spec'` remains the limits-based shared range, and both
+are shared/comparable regardless of which one is active. The "Colorbar range" toggle itself
+stays gated on `activeTestHasLimits()` as before — with no limits there is no second range to
+toggle *to*, so there is nothing to offer a choice between; `'data'` mode is simply the only
+(and now lot-wide) option in that case.
+
+**Implemented (2026-08-28):** `packages/canvas-adapter/renderWaferGallery.ts` gained
+`sharedDataValueRange()` (computes the lot-wide min/max for the active test, deferring to
+`undefined` — i.e. per-card spec ranging — whenever a spec-anchored range applies) and
+`syncSharedValueRange()` (writes the result into `sharedOpts.valueRange` as `{ test, range }`
+and pushes it to every live card controller). `syncSharedValueRange()` is called: at the end of
+`updateShared()` (covers active-test/colour-mode/pass-fail-display/mode-switch changes), at the
+end of `buildCards()`'s sync-item pass (covers `setItems()` and initial mount), and after each
+factory resolves in `resolveNext()` (so already-rendered cards widen their range as more lazy
+items arrive, rather than staying anchored to whatever was visible first). Left untouched:
+`stackedValues` (per-card auto-scale, each card is a different test), `stackedBins`/
+`stackedSoftBins` (already shared via `stackedSharedOpts`'s `[0, lotSize]`), and log scale —
+`buildView`'s `logScaleValid = wantsLogScale && vMin > 0 && vMax > 0` now naturally agrees
+across every card once `vMin`/`vMax` are the same shared values, so no separate log-scale fix
+was needed.
+
+## Unify `identityHeader.ts` with `renderWaferGallery`'s `buildIdentityHeaderRow`
+
+**Confirmed duplication, not yet unified.** `renderWaferGallery.ts` does not call
+`identityHeader.ts`'s `createIdentityHeader` — grid cards, popup windows, and the floating-window
+fallback each get their own expandable identity header via a separate `buildIdentityHeaderRow`
+builder (`renderWaferGallery.ts` ~2064, called at ~2197 and ~2591), sharing only the low-level
+`wireExpandToggle` interaction helper (`toolbar.ts`) with `identityHeader.ts`. `docs/architecture.md`
+already documents this as "a known remaining duplication ... flagged for a future consolidation
+pass" — this entry is the tracked pointer to that flag so it doesn't silently stay unaddressed.
+
+**Why it hasn't been done:** it's a real refactor, not a small fix — `renderWaferGallery`'s
+version also folds in a lot-wide distinct-values summary (`buildFacetTable`, `stats/facets.ts`)
+into its bin-legend strip, which `identityHeader.ts` has no equivalent of. Unifying the two means
+either extending `identityHeader.ts` to cover that case or keeping the gallery's summary logic
+external and only sharing the label/expand-panel shell.
+
+**Open questions:**
+
+1. Does `identityHeader.ts` grow an option for the gallery's per-card facet summary, or does the
+   gallery keep composing that separately around a shared shell?
+2. Three call sites in `renderWaferGallery.ts` (grid card, popup, floating window) need
+   migrating — do they all take the same options, or does one need something the others don't?
+
+## Gallery metadata-mode colours can mismatch the shared legend (same root cause, no limits involved)
+
+**Confirmed, and NOT gated behind any edge case — can happen today.** `metadata` plot mode has
+the identical per-card-vs-lot-wide split as the value-range bug above, just for colour index
+instead of numeric range:
+
+- Each card's own `buildView` call (`packages/renderer/buildView.ts` ~1496-1513) collects the
+  *distinct metadata values on that card's own dies only*, natural-sorts them, and assigns
+  colour by index into the ordered palette (`metadataValueColor(index)`).
+- The gallery's shared legend strip (`renderWaferGallery.ts` ~1697-1712) instead collects
+  distinct values across **every card's dies** (`metadataValueSet`, built by looping
+  `resolvedItems`), natural-sorts *that*, and assigns colour by index the same way.
+
+These two index assignments only agree when every card happens to contain the exact same set
+of distinct values. If one wafer is missing a value the others have (e.g. a defect category
+that wafer never exhibited), that card's local ordering shifts and its dies get painted with a
+colour that doesn't match what the shared legend says it means. The code has a comment at
+`renderWaferGallery.ts` ~1710 acknowledging the two must stay in sync ("must match buildView's
+colour-assignment order, or this lot-level strip would list values in a different order to the
+per-card legends") but nothing enforces it — it only holds by coincidence when the data is
+uniform enough.
+
+**Possible fix:** same shape as the value-range fix — compute the metadata colour map lot-wide
+once in `renderWaferGallery` (it already builds `metadataValueSet` there) and pass it down to
+each card's `buildView` instead of letting each card derive its own from a partial view of the
+data. Note this is already bypassed correctly when a metadata field has explicit per-value
+colours (`activeMetadataFieldDef.values[].color`) — only the auto-assigned ordinal-palette path
+is affected.
+
+---
+
+## Enforce `UI_STANDARDS.md` with a lint suite, not prose
+
+**Why this is here.** During the 2026-09-01 UI pass, most of the contract's new
+rules were written down and then *asserted* to be met rather than checked. The
+one check that did exist (`tsmap/scripts/check-button-styles.mjs`) was silently
+broken — its regex `\.style\.cssText\s*=\s*[^;]+;` stopped at the first
+semicolon, which is **inside the CSS string** (`margin-top:4px;…`), so it only
+ever inspected the first declaration and reported everything clean. Meanwhile the
+user kept finding buttons that looked like labels. A contract nothing enforces is
+documentation; treating it as verification is how the drift kept recurring.
+
+**Proposal.** One check per rule, in both repos, wired into `npm run verify`,
+each failing with `file:line` and the rule it breaks.
+
+| Rule | Mechanically checkable |
+| --- | --- |
+| Type tiers (11 / 12 / 13 / 15 / 20) | yes — flag off-tier `font-size` |
+| Radius roles, no literals | yes — flag `border-radius: Npx` |
+| Spacing scale | yes — flag off-scale padding/gap/margin |
+| Focus ring never suppressed | yes — flag `outline: none` without a documented reason nearby |
+| Every interactive element reacts to hover | yes — `cursor: pointer` with no hover/`wireControlHover`/class |
+| One tooltip look | yes — flag a second tooltip style block |
+| Buttons use a shared class | done — `check-button-styles.mjs` (rewritten with a quote-aware scanner) |
+| No icon-role colour on text (`CLR.icon*`) | partly — flag `color: CLR.icon*` outside icon elements |
+
+**Add a "one value, many places" enumeration.** The rules above check that a
+value is *on scale*. They do not ask the different question that keeps finding
+real bugs: **how many distinct values of this kind exist across both repos, and
+should there be that many?** Every defect in the 2026-09-01 pass was this shape:
+
+| Property | Distinct values found | Should be |
+| --- | --- | --- |
+| font-family | 3 in wmap + 1 in the host, none matching | 1 (inherited) |
+| button appearance | 4 independent definitions of "secondary" | 1 |
+| tooltip style | 2 (dark toolbar, light chart card) | 1 |
+| card frame | 2 (`cardShell`, `plainCard`) | 1 |
+| border radius | 8 in wmap, 5 in tsmap | 3 roles |
+| hover state | wired on icon buttons, absent on text buttons | all controls |
+
+Not yet enumerated, and worth adding for the same reason: `z-index`,
+`box-shadow`, `transition`, `line-height`, `letter-spacing`.
+
+**Why this needs its own check rather than review.** None of these are findable
+by reading one file — each declaration is reasonable in isolation, and the defect
+exists only in the comparison. They are also invisible to a *diff* review when
+the offending lines are pre-existing and untouched, which is how the font-family
+split survived two code reviews and a full design audit on the same day. A count
+query finds them in one line; nothing else reliably does.
+
+**The acceptance test for each check: it must find the defects already known.**
+Run it against the pre-fix state (or a fixture reproducing it) and confirm it
+fails. A check that passes on a known bug is worse than no check, because it
+converts an unknown problem into a false assurance — which is exactly what
+happened here.
+
+**Not checkable, stays prose:** whether a given grey is a *label* or an *icon*,
+whether a distinction is semantic or arbitrary, and anything needing a look at
+the rendered result. Those need a human or a screenshot pass, and the contract
+should say so rather than implying full coverage.
+
+---
+
+## Decide whether the summary report is a screen or a print artefact
+
+The exported HTML report (`packages/stats/reportHtml.ts`) carries `@media print`
+and `@page { margin: 10mm 8mm 12mm }`, so it is *built* to print — but its type
+is sized in screen px (20 title / 18 stat / 13 / 12 body / 11 label). Screen px
+and print pt are not the same problem: 12px body is about 9pt on paper, under
+the ~12pt floor for printed reading matter.
+
+Two known-good answers, and which is right depends on how these are actually
+used:
+
+- **Read on screen, printed rarely** — leave it. The current scale is
+  internally consistent and was ahead of the app (it had `tabular-nums` before
+  the live UI did).
+- **Printed and passed around** — add a `@media print` block that scales the
+  document up rather than spot-fixing individual rules, so the on-screen and
+  on-paper versions are each sized for their own medium.
+
+Deliberately NOT done: forcing the app's tiers (11 / 12 / 13 / 15 / 20) onto it.
+Those exist for dense chrome in a 300px panel; a document read at arm's length
+is a different artefact and should keep its own scale.
+
+Already fixed (2026-09-01): the two 10px rules — table column headers and the
+status badge — went to 11px. At print, 10px is roughly 7.5pt, which is below any
+sensible floor regardless of how this question is answered.
+
+---
+
+## Solarized Light's accent is too light to be text
+
+`--accent: #268bd2` on Solarized Light's own light grounds measures about **3.0:1**
+as text (and 2.54:1 on the selected tint) — under WCAG AA's 4.5:1 for normal-size
+text. It is used as text on `.tb-btn:hover`, `.tb-btn--primary`, links and menu
+selections, so this is a theme-level defect rather than any one component's.
+
+Not caused by the 2026-09-01 UI work — that pass measured it and improved it
+(2.54 → 3.00 by moving hover grounds to neutral), but cannot fix it: the value
+itself is the problem.
+
+The fix is to darken the accent for this theme only, the same way
+`--wmap-icon-active` was set to `#1a65ca` rather than `#1a66cc` for exactly this
+reason (smallest darkening that clears AA against the surface it sits on). Check
+the other Solarized variant at the same time.
+
+---
+
+## Histogram resolves `includeLimits` two different ways
+
+`charts/histogram.ts` has two render paths and they disagree on what an *unset*
+`axisPrefs.includeLimits` means:
+
+- **Faceted (Group by active):** `axisIncludesLimits ? limitLow : undefined` —
+  unset behaves as **off**.
+- **Non-faceted:** `axisIncludesLimits ?? shouldIncludeLimitsByDefault(dataMin,
+  dataMax, limitLow, limitHigh)` — unset derives a default **from the data**.
+
+So the same test, with no explicit preference, can include spec limits in the
+axis ungrouped and exclude them grouped — and the axis range changes under the
+reader without the toggle moving.
+
+Fixed on 2026-09-01: the faceted branch no longer returns before
+`syncAxisToggles`, so the toggles are at least visible and show the state that
+branch is actually in. The underlying divergence is untouched — resolving it
+means computing the faceted series' own data range and feeding it through
+`shouldIncludeLimitsByDefault`, so both paths derive the same default.
+

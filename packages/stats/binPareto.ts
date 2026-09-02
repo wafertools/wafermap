@@ -123,3 +123,30 @@ export function buildBinClusterData(groups: { key: string; items: BinItem[] }[],
 
   return { groups: groupOrder, bins: clusterBins };
 }
+
+/**
+ * Display order for a bin breakdown: pass bins first (in bin order), then failing
+ * bins by descending count, ties broken by bin number.
+ *
+ * The single source of this ordering. It previously existed as three separate
+ * ascending-bin-number sorts — the Summary panel's bin section and the summary
+ * report's two bin tables (per-wafer and lot) — none of which agreed with this
+ * module's own `buildBinParetoData`, which has always been count-descending. The
+ * effect was that the same wafer's bins came out in one order in the Insights bin
+ * chart and a different one in the panel and the report.
+ *
+ * Pass bins are pinned to the top rather than competing on count: they are the
+ * reference the failures are read against, not themselves a failure mode.
+ */
+export function sortBinsForDisplay(
+  entries: Iterable<[bin: number, count: number]>,
+  passBins: number[] = [1],
+): Array<[bin: number, count: number]> {
+  const passSet = new Set(passBins);
+  return [...entries].sort((a, b) => {
+    const aPass = passSet.has(a[0]), bPass = passSet.has(b[0]);
+    if (aPass !== bPass) return aPass ? -1 : 1;
+    if (aPass && bPass) return a[0] - b[0];
+    return b[1] - a[1] || a[0] - b[0];
+  });
+}

@@ -4,6 +4,13 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* These pages are a HOST embedding wmap, so they keep their own palette — that
+   is the point of the demos. What they must not do is contradict the library's
+   own contract (UI_STANDARDS.md): radius roles, the spacing scale and the type
+   tiers are shared, and the page hands its palette DOWN to the embedded maps
+   through --wmap-* so the chrome inside a map matches the page around it.
+   Previously demo.css set none of those, so every demo showed wmap in its
+   default light chrome on a page styled a different blue. */
 :root {
   --bg:        #f1f5f9;
   --surface:   #ffffff;
@@ -13,8 +20,36 @@
   --text:      #0f172a;
   --text-2:    #334155;
   --muted:     #64748b;
-  --radius:    10px;
   --shadow:    0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
+
+  /* Radius roles — control 4, container 6, pill full. `--radius` was a single
+     10px value used for both buttons and cards. */
+  --radius-control:   4px;
+  --radius-container: 6px;
+  --radius-pill:      999px;
+  /* Back-compat for rules that still say var(--radius): it is a container. */
+  --radius: var(--radius-container);
+
+  /* Spacing scale. */
+  --space-xxs: 2px;  --space-xs:  4px;  --space-sm:  6px;  --space-md:  8px;
+  --space-lg: 10px;  --space-xl: 12px;  --space-xxl:16px;  --space-xxxl:24px;
+
+  /* Hand the page's palette to every embedded map, so wmap's chrome matches
+     the page instead of rendering its own default light theme inside it. */
+  --wmap-canvas-bg:   var(--bg);
+  --wmap-surface:     var(--surface);
+  --wmap-panel-bg:    var(--surface);
+  --wmap-border:      var(--border);
+  --wmap-text:        var(--text-2);
+  --wmap-text-strong: var(--text);
+  --wmap-text-muted:  var(--muted);
+  --wmap-icon:        var(--muted);
+  --wmap-icon-hover:  var(--text);
+  --wmap-icon-active: var(--accent);
+  --wmap-bg-hover:    var(--border);
+  --wmap-bg-active:   var(--accent-lo);
+  --wmap-menu-hover:  var(--border);
+  --wmap-menu-active: var(--accent-lo);
 }
 
 html, body {
@@ -66,7 +101,7 @@ html, body {
 .demo-title {
   grid-column: 1;
   grid-row: 2;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #f8fafc;
   letter-spacing: -.02em;
@@ -91,7 +126,7 @@ html, body {
   justify-content: center;
   height: 30px;
   padding: 0 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-container);
   border: 1px solid #334155;
   background: #1e293b;
   color: #cbd5e1;
@@ -135,7 +170,7 @@ html, body {
 }
 
 .demo-intro strong { color: var(--text); font-weight: 600; }
-.demo-intro code   { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; }
+.demo-intro code   { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-control); padding: 1px 5px; }
 
 /* ── Controls bar ────────────────────────────────────────────────────────── */
 
@@ -172,7 +207,7 @@ html, body {
 select {
   padding: 5px 28px 5px 9px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-container);
   background-color: var(--bg);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -191,7 +226,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
 .toggle-btn {
   padding: 5px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-container);
   background: var(--bg);
   font: inherit;
   font-size: 12px;
@@ -255,7 +290,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
   font-size: 11px;
   font-weight: 600;
   padding: 3px 11px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   pointer-events: none;
   letter-spacing: .02em;
   backdrop-filter: blur(4px);
@@ -268,7 +303,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
   padding: 7px 12px;
   border-top: 1px solid var(--border);
   background: var(--bg);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   line-height: 1.4;
 }
@@ -302,7 +337,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
 .section { display: flex; flex-direction: column; gap: 8px; }
 
 .section-heading {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -321,21 +356,21 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
 
 .stat {
   background: var(--bg);
-  border-radius: 8px;
+  border-radius: var(--radius-container);
   padding: 8px 6px 7px;
   text-align: center;
 }
 .stat.full { grid-column: 1 / -1; }
 
 .stat-val {
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--accent);
   line-height: 1;
 }
 
 .stat-lbl {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   margin-top: 3px;
 }
@@ -361,12 +396,12 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
 .bin-swatch {
   width: 11px;
   height: 11px;
-  border-radius: 3px;
+  border-radius: var(--radius-control);
   flex-shrink: 0;
 }
 
 .bin-name { flex: 1; color: var(--text-2); }
-.bin-count { color: var(--muted); font-size: 11px; }
+.bin-count { color: var(--muted); font-size: 12px; }
 
 /* ── Progress bar row ────────────────────────────────────────────────────── */
 
@@ -374,18 +409,18 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .pct-row .pname { flex: 1; color: var(--text-2); white-space: nowrap; }
-.pct-bar  { flex: 1; height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
-.pct-fill { height: 100%; border-radius: 2px; transition: width .3s; background: var(--accent); }
+.pct-bar  { flex: 1; height: 4px; background: #e5e7eb; border-radius: var(--radius-control); overflow: hidden; }
+.pct-fill { height: 100%; border-radius: var(--radius-control); transition: width .3s; background: var(--accent); }
 .pct-val  { color: var(--muted); width: 36px; text-align: right; }
 
 /* ── Info / hover box ────────────────────────────────────────────────────── */
 
 .info-box {
   background: var(--bg);
-  border-radius: 7px;
+  border-radius: var(--radius-container);
   padding: 9px 10px;
   font-size: 12px;
   color: var(--text-2);
@@ -398,10 +433,10 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
 
 .badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   letter-spacing: .03em;
 }
 .badge-blue   { background: #dbeafe; color: #1d4ed8; }
@@ -447,7 +482,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
     row-gap: 3px;
   }
   .demo-nav { padding-left: 12px; gap: 4px; }
-  .demo-nav-btn { height: 26px; padding: 0 9px; font-size: 11px; }
+  .demo-nav-btn { height: 26px; padding: 0 9px; font-size: 12px; }
 
   .demo-intro { padding: 10px 14px; }
 

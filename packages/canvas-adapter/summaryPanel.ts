@@ -13,10 +13,10 @@
 // there) without ever being able to drift apart.
 
 import type { Wafer } from '../core/wafer.js';
-import type { Die, PositionedDie } from '../core/dies.js';
+import type { Die } from '../core/dies.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
-import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData, type StatsRegion } from '../stats/regions.js';
+import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from '../stats/regions.js';
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
@@ -28,12 +28,18 @@ import { getColorScheme } from '../renderer/colorSchemes.js';
 import { buildWarningsBanner, collectWarnings, type WaferWarning } from './warnings.js';
 export { buildWarningsBanner };
 import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
+import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
-import { makeLabeledSelect } from './charts/chartShell.js';
-import { CLR, sevColor, openModal, openReportModal, saveTextFile, type SaveTextHandler } from './toolbar.js';
+import { buildCapabilityData, type CapabilityItem } from '../stats/capability.js';
+import { sortBinsForDisplay } from '../stats/binPareto.js';
+import { makeLabeledSelect, makeSegmented } from './charts/chartShell.js';
+import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, openReportModal, saveTextFile, wireTooltip, type SaveTextHandler } from './toolbar.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
-import { medianOfSorted } from '../core/utils.js';
+// Re-exported from its original home so existing importers keep working; the
+// implementation now lives in core/utils.ts (see its comment).
+export { csvField } from '../core/utils.js';
+import { medianOfSorted, csvField } from '../core/utils.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import type { WaferMetadata } from '../core/metadata.js';
 
@@ -83,28 +89,108 @@ function sectionTitle(label: string): HTMLDivElement {
   const d = el('div', {
     fontSize:      TITLE_SIZE,
     fontWeight:    '700',
-    letterSpacing: '0.06em',
+    letterSpacing: TRACKING,
     textTransform: 'uppercase',
     color:         LABEL_COLOR,
-    marginBottom:  '6px',
+    marginBottom: SPACE.sm,
   }, label);
   return d;
 }
 
-/** Collapsible section wrapper. Returns the outer container and the content div. */
+/**
+ * Per-panel UI state that must survive a re-render. Both `renderWaferSummaryContent`
+ * and `renderLotSummaryContent` start with `panel.innerHTML = ''`, so anything held
+ * only in the DOM (which section is collapsed, which bin type the bin section is
+ * showing) is destroyed on every stats/plot-mode update. Keyed on the panel element
+ * so a detached window's panel keeps its own state, and weakly so a torn-down panel
+ * doesn't leak.
+ */
+interface PanelUiState {
+  /** Section keys the user has explicitly collapsed. */
+  collapsed: Set<string>;
+  /** Bin-section override. `undefined` = follow the map's plot mode. */
+  binMode?: 'hard' | 'soft';
+  regionMode: 'ring' | 'quadrant';
+  waferSort: 'slot' | 'yield';
+}
+
+const PANEL_UI = new WeakMap<HTMLElement, PanelUiState>();
+
+/**
+ * Sections that start collapsed.
+ *
+ * Every section used to open expanded, which put seven of them in a 300px
+ * column and pushed the ones people actually act on — findings, and the bin
+ * breakdown that explains the colours on screen — below the fold behind two
+ * dense tables. Collapsing the three reference sections lifts the rest without
+ * REORDERING anything, which matters: the alternative considered was ordering
+ * sections by plot mode, and having sections move between renders is
+ * disorienting in a way a shorter panel is not.
+ *
+ * The three chosen are the ones read deliberately rather than scanned: regional
+ * yield answers a question you have to already be asking, and the two test
+ * tables are reference data that also exist in the CSV export, the summary
+ * report and the Insights panels. What stays open is the population headline,
+ * findings, per-wafer yield (a lot's own headline) and the bin breakdown.
+ *
+ * This is screen space, not work: content is still built and hidden with
+ * `display: none`, so a collapsed section costs the same to render. Deferring
+ * the build too would be a separate change — not every section goes through
+ * `opts.render`, so there is no single place to hang it.
+ */
+const DEFAULT_COLLAPSED_SECTIONS = ['regionYield', 'testValues', 'functionalTests'] as const;
+
+function panelUiState(panel: HTMLElement | undefined): PanelUiState {
+  // No panel element means no persistence — the caller gets a throwaway state,
+  // so seed it the same way or a detached render would disagree with a docked
+  // one about what starts open.
+  if (!panel) return { collapsed: new Set(DEFAULT_COLLAPSED_SECTIONS), regionMode: 'ring', waferSort: 'slot' };
+  let s = PANEL_UI.get(panel);
+  if (!s) {
+    // Seeded once per panel element. Because the set records what is COLLAPSED,
+    // seeding it is all "default collapsed" needs — and a user who opens one of
+    // these removes it from the set, so their choice sticks across re-renders
+    // exactly like a user-collapsed section already did, in both directions.
+    s = { collapsed: new Set(DEFAULT_COLLAPSED_SECTIONS), regionMode: 'ring', waferSort: 'slot' };
+    PANEL_UI.set(panel, s);
+  }
+  return s;
+}
+
+/** Collapsible section wrapper. Returns the outer container and the content div.
+ *
+ *  `opts.control` is a header-right slot for a section-scoped selector (the bin
+ *  section's hard/soft, region's ring/quadrant, wafer yield's sort order). It is
+ *  handed a `rerender` callback that rebuilds just this section's content, so a
+ *  selector never needs a whole-panel re-render — which matters because the panel
+ *  render functions are driven by the host's data, not by panel-local UI state.
+ *
+ *  `opts.stateKey` + `opts.panel` persist the collapsed flag across the
+ *  `innerHTML = ''` that begins every re-render. */
 function collapsibleSection(
   label: string,
   defaultOpen = true,
   badge?: string,
+  opts?: {
+    stateKey?: string;
+    panel?: HTMLElement;
+    control?: (rerender: () => void) => HTMLElement | null;
+    /** Fills the content div. Required when `control` is used, so the control can rebuild it. */
+    render?: (content: HTMLElement) => void;
+  },
 ): { outer: HTMLDivElement; content: HTMLDivElement } {
   const outer = el('div');
+  const ui = panelUiState(opts?.panel);
+  if (opts?.stateKey && opts.panel) {
+    defaultOpen = !ui.collapsed.has(opts.stateKey);
+  }
 
   const toggle = document.createElement('button');
   toggle.type = 'button';
   Object.assign(toggle.style, {
     display:        'flex',
     alignItems:     'center',
-    gap:            '4px',
+    gap: SPACE.xs,
     width:          '100%',
     background:     'none',
     border:         'none',
@@ -114,19 +200,19 @@ function collapsibleSection(
   });
 
   const arrow = el('span', {
-    fontSize:    '9px',
+    fontSize:    FONT.meta,   // ornament exemption (UI_STANDARDS.md type scale)
     color:       LABEL_COLOR,
-    transition:  'transform 0.15s',
+    transition:  `transform ${MOTION.base}`,
     transform:   defaultOpen ? 'rotate(90deg)' : 'rotate(0deg)',
     display:     'inline-block',
-    lineHeight:  '1',
+    lineHeight:  LEADING.none,
     marginRight: '1px',
   }, '▶');
 
   const titleEl = el('span', {
     fontSize:      TITLE_SIZE,
     fontWeight:    '700',
-    letterSpacing: '0.06em',
+    letterSpacing: TRACKING,
     textTransform: 'uppercase',
     color:         LABEL_COLOR,
     flex:          '1',
@@ -138,11 +224,11 @@ function collapsibleSection(
 
   if (badge) {
     const badgeEl = el('span', {
-      fontSize:     '9px',
+      fontSize:     FONT.meta,   // ornament exemption (UI_STANDARDS.md type scale)
       fontWeight:   '700',
       background:   CLR.warnBg,
       color:        CLR.warnText,
-      borderRadius: '10px',
+      borderRadius: RADIUS.pill,
       padding:      '1px 5px',
     }, badge);
     toggle.appendChild(badgeEl);
@@ -157,10 +243,39 @@ function collapsibleSection(
     content.style.display = open ? 'block' : 'none';
     arrow.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (opts?.stateKey && opts.panel) {
+      if (open) ui.collapsed.delete(opts.stateKey);
+      else ui.collapsed.add(opts.stateKey);
+    }
   });
 
-  outer.appendChild(toggle);
+  // The control cannot live inside `toggle` — it is a <button>, and neither a
+  // nested button nor a radio input is operable (or valid) inside one. Header
+  // becomes a flex row: the toggle button takes the space, the control sits
+  // beside it and swallows its own clicks so picking an option doesn't also
+  // collapse the section.
+  if (opts?.control) {
+    const header = el('div', { display: 'flex', alignItems: 'center', gap: SPACE.sm });
+    toggle.style.width = 'auto';
+    toggle.style.flex  = '1';
+    header.appendChild(toggle);
+    const rerender = () => {
+      content.innerHTML = '';
+      opts.render?.(content);
+    };
+    const controlEl = opts.control(rerender);
+    if (controlEl) {
+      controlEl.style.marginBottom = '6px';
+      controlEl.addEventListener('click', e => e.stopPropagation());
+      header.appendChild(controlEl);
+    }
+    outer.appendChild(header);
+  } else {
+    outer.appendChild(toggle);
+  }
+
   outer.appendChild(content);
+  opts?.render?.(content);
   return { outer, content };
 }
 
@@ -177,55 +292,71 @@ function separator(): HTMLDivElement {
  *  `fillPct` overrides bar width independently of the displayed value — use for
  *  range-normalised bars where the fill encodes relative spread, not absolute yield.
  *  `medianLinePct` draws a vertical rule at that fill % position (lot median marker).
- *  `belowMedian` renders the fill in a muted colour. */
+ *
+ *  Deliberately has NO colour-coded "below median" variant. It used to mute the
+ *  fill for any wafer under the lot median, which (a) was a colour-only encoding
+ *  with nothing on screen explaining it — WCAG 1.4.1, and the panel's own rule
+ *  that every displayed element must be unambiguous — and (b) split a tight lot
+ *  into two colours at an arbitrary midpoint, implying a difference that isn't
+ *  there. Outliers are called out in the row's own label text instead (see
+ *  `buildPerWaferYieldSection`), which survives greyscale, and the median is
+ *  shown as a marker that is actually visible against the fill. */
 function progressRow(
   label: string,
   value: number,
   color = CLR.barFill,
   fillPct?: number,
   medianLinePct?: number,
-  belowMedian?: boolean,
 ): HTMLDivElement {
   const row = el('div', { marginBottom: '5px' });
 
   const top = el('div', {
     display:        'flex',
     justifyContent: 'space-between',
-    fontSize:       '11px',
+    fontSize:       FONT.body,
     color:          VALUE_COLOR,
-    marginBottom:   '2px',
+    marginBottom: SPACE.xxs,
   });
-  const lbl = el('span', {}, label);
+  // Muted label against a strong figure: at 12px, giving both the full value
+  // colour made every row read as emphasised, so a column of bars became a wall
+  // of bold. The number is the thing being compared; the label just names it.
+  const lbl = el('span', { color: LABEL_COLOR }, label);
   const pct = el('span', { fontWeight: '600' }, `${value.toFixed(1)}%`);
   top.appendChild(lbl);
   top.appendChild(pct);
 
   const barWidth  = fillPct !== undefined ? fillPct : Math.min(100, Math.max(0, value));
-  const fillColor = belowMedian ? CLR.barFillMuted : color;
+  const fillColor = color;
   const track = el('div', {
     position:     'relative',
     height:       '9px',
     background:   CLR.bgActive,
-    borderRadius: '4px',
+    borderRadius: RADIUS.control,
     overflow:     'hidden',
   });
   const fill = el('div', {
     height:       '100%',
     width:        `${barWidth}%`,
     background:   fillColor,
-    borderRadius: '4px',
-    transition:   'width 0.3s ease',
+    borderRadius: RADIUS.control,
+    transition:   `width ${MOTION.base}`,
   });
   track.appendChild(fill);
   if (medianLinePct !== undefined) {
+    // 2px of `CLR.value` at 0.8, not 1px of `CLR.infoText` at 0.5: the marker
+    // sits ON the fill for every above-median row, and a faint mid-tone hairline
+    // on saturated `barFill` was invisible in practice — the muted "below median"
+    // fill was the only thing left hinting the median existed, and it said so
+    // without a key. This reads against both the fill and the empty track.
     const line = el('div', {
       position:   'absolute',
       top:        '0',
       bottom:     '0',
       left:       `${medianLinePct}%`,
-      width:      '1px',
-      background: CLR.infoText,
-      opacity:    '0.5',
+      width:      '2px',
+      marginLeft: '-1px',
+      background: CLR.value,
+      opacity:    '0.8',
     });
     track.appendChild(line);
   }
@@ -238,31 +369,48 @@ function progressRow(
  *  its own smaller line under the label, so qualifying context ("pass:
  *  bin 1") wraps as a deliberate second line instead of breaking a
  *  parenthetical mid-word at narrow panel widths. */
+/** Row of `statCard`s. Drops the divider after the last one — a rule belongs
+ *  between items, and a trailing one reads as an unfinished row. Call
+ *  `finish()` once every card has been appended. */
+function statCardRow(): HTMLDivElement & { finish(): void } {
+  const row = el('div', { display: 'flex', gap: SPACE.sm, marginBottom: SPACE.md }) as HTMLDivElement & { finish(): void };
+  row.finish = () => {
+    const last = row.lastElementChild as HTMLElement | null;
+    if (last) Object.assign(last.style, { borderRight: 'none', paddingRight: '0' });
+  };
+  return row;
+}
+
 function statCard(value: string, label: string, sublabel?: string): HTMLDivElement {
+  // A readout, not a boxed card — matching the Insights population line. These
+  // were bordered boxes on a surface that already has its own border and
+  // background, so each one drew a second frame inside a frame and paid for it
+  // in vertical space, in the narrowest column in the app. The rule between
+  // them does the separating; `statCardRow` removes the trailing one.
   const card = el('div', {
-    background:   CLR.menuBg,
-    border:       BORDER,
-    borderRadius: '6px',
-    padding:      '8px 10px',
-    textAlign:    'center',
-    flex:         '1',
+    padding: `${SPACE.xxs} ${SPACE.md} ${SPACE.xxs} 0`,
+    borderRight: BORDER,
+    textAlign:   'center',
+    flex:        '1',
   });
   const v = el('div', {
-    fontSize:   '20px',
+    // Heading tier, matching the Insights population line. The same readout
+    // rendered at two sizes in two places is the drift this work exists to stop.
+    fontSize:   FONT.heading,
     fontWeight: '700',
     color:      VALUE_COLOR,
-    lineHeight: '1.2',
+    lineHeight: LEADING.tight,
   }, value);
   const lbl = el('div', {
-    fontSize:   '10px',
+    fontSize:   FONT.body,
     color:      LABEL_COLOR,
-    marginTop:  '2px',
+    marginTop: SPACE.xxs,
   }, label);
   card.appendChild(v);
   card.appendChild(lbl);
   if (sublabel) {
     card.appendChild(el('div', {
-      fontSize: '9px',
+      fontSize: FONT.body,
       color:    LABEL_COLOR,
       opacity:  '0.85',
     }, sublabel));
@@ -275,8 +423,8 @@ function kvRow(key: string, value: string): HTMLDivElement {
   const row = el('div', {
     display:        'flex',
     justifyContent: 'space-between',
-    fontSize:       '11px',
-    gap:            '8px',
+    fontSize:       FONT.body,
+    gap: SPACE.md,
     marginBottom:   '3px',
   });
   const k = el('span', { color: LABEL_COLOR, flexShrink: '0' }, key);
@@ -297,8 +445,8 @@ function kvRow(key: string, value: string): HTMLDivElement {
 function metaRow(key: string, value: string): HTMLDivElement {
   const row = el('div', {
     display:      'flex',
-    fontSize:     '11px',
-    gap:          '6px',
+    fontSize:     FONT.body,
+    gap: SPACE.sm,
     marginBottom: '3px',
   });
   const k = el('span', { color: LABEL_COLOR, flexShrink: '0' }, `${key}:`);
@@ -335,6 +483,24 @@ export function metadataEntries(meta: Record<string, unknown>): Array<[string, s
  *  metadata surface in this library uses ("Test Program"), and this strip
  *  must read as the same field as those surfaces, not a differently-named one.
  *  Returns `null` for an empty table. */
+/**
+ * Fields worth reading at a glance, in the order an engineer scans them:
+ * which lot, which device, which program, which split arm. Everything else a
+ * load carries — tester provenance (node, tester type, job rev) and the raw
+ * WCR geometry fields (wafer size, die dimensions, units, flat, centre and
+ * axis directions) — is reference material, not identity, and pushed behind
+ * the disclosure. A strip that lists all sixteen is not a summary.
+ *
+ * Matching is on the normalised key, so `testProgram`/`test_program`/`TEST
+ * PROGRAM` all resolve to the same field.
+ */
+const STRIP_PRIMARY_FIELDS = ['lot', 'product', 'testprogram', 'split'];
+
+const stripFieldRank = (key: string): number => {
+  const i = STRIP_PRIMARY_FIELDS.indexOf(key.toLowerCase().replace(/[^a-z]/g, ''));
+  return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+};
+
 export function buildFacetSummaryChips(
   table: Array<{ key: string; values: Array<{ value: string }> }>,
   maxValuesPerField = 3,
@@ -342,9 +508,15 @@ export function buildFacetSummaryChips(
   if (!table.length) return null;
 
   const row = el('div', {
-    display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 10px', fontSize: '11px',
+    display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: `${SPACE.xs} ${SPACE.lg}`, fontSize: FONT.body,
   });
-  for (const field of table) {
+  // Primary fields first, in the order above; everything else keeps its
+  // existing relative order behind them.
+  const ordered = [...table].sort((a, b) => stripFieldRank(a.key) - stripFieldRank(b.key));
+  const primary = ordered.filter(f => stripFieldRank(f.key) !== Number.MAX_SAFE_INTEGER);
+  const secondary = ordered.filter(f => stripFieldRank(f.key) === Number.MAX_SAFE_INTEGER);
+
+  const makeChip = (field: { key: string; values: Array<{ value: string }> }) => {
     const chip = el('span', { whiteSpace: 'nowrap' });
     const label = el('span', { color: LABEL_COLOR }, `${prettyKey(field.key)}: `);
     chip.appendChild(label);
@@ -353,7 +525,32 @@ export function buildFacetSummaryChips(
     let text = shown.map(v => v.value).join(', ');
     if (remaining > 0) text += ` +${remaining} more`;
     chip.appendChild(document.createTextNode(text));
-    row.appendChild(chip);
+    return chip;
+  };
+
+  for (const field of primary) row.appendChild(makeChip(field));
+
+  if (secondary.length) {
+    // The rest stay in the DOM, hidden — so the strip stays one line by default
+    // and nothing is lost. A disclosure, not a truncation.
+    const rest = el('span', { display: 'none', flexWrap: 'wrap', alignItems: 'baseline', gap: `${SPACE.xs} ${SPACE.lg}` });
+    for (const field of secondary) rest.appendChild(makeChip(field));
+
+    const toggle = el('button', {
+      background: 'none', border: 'none', padding: '0', cursor: 'pointer',
+      color: CLR.iconActive, fontSize: FONT.body, whiteSpace: 'nowrap',
+    }) as HTMLButtonElement;
+    toggle.type = 'button';
+    wireControlHover(toggle, 'bare');
+    const sync = (open: boolean) => {
+      rest.style.display = open ? 'contents' : 'none';
+      toggle.textContent = open ? 'less' : `+${secondary.length} more`;
+      toggle.setAttribute('aria-expanded', String(open));
+    };
+    sync(false);
+    toggle.addEventListener('click', () => sync(toggle.getAttribute('aria-expanded') !== 'true'));
+    row.appendChild(rest);
+    row.appendChild(toggle);
   }
   return row;
 }
@@ -401,14 +598,14 @@ export function buildMetadataStripRow(
 const STRIP_BOX_STYLE: Partial<CSSStyleDeclaration> = {
   display:       'flex',
   flexDirection: 'column',
-  gap:           '6px',
+  gap: SPACE.sm,
   background:    CLR.menuBg,
   border:        `1px solid ${CLR.menuBorder}`,
-  borderRadius:  '6px',
-  padding:       '6px 10px',
-  boxShadow:     '0 1px 4px rgba(0,0,0,0.10)',
-  fontSize:      '12px',
-  lineHeight:    '1',
+  borderRadius:  RADIUS.container,
+  padding: `${SPACE.sm} ${SPACE.lg}`,
+  boxShadow:     SHADOW.panel,
+  fontSize:      FONT.body,
+  lineHeight:    LEADING.none,
   boxSizing:     'border-box',
   width:         '100%',
   minWidth:      '0',
@@ -481,7 +678,7 @@ export function buildYieldSection(
   const wrap = el('div');
   wrap.appendChild(sectionTitle('Summary'));
 
-  const cards = el('div', { display: 'flex', gap: '6px', marginBottom: '8px' });
+  const cards = statCardRow();
   // yieldSummary.totalDies, not dataCoverage.totalDies: yield is deliberately
   // non-spatial (isYieldEligibleDie never checks position), so it already
   // includes coordinate-less dies with bin data — dataCoverage.totalDies is
@@ -496,6 +693,7 @@ export function buildYieldSection(
     const binLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
     cards.appendChild(statCard(`${yieldSummary.yieldPercent.toFixed(1)}%`, 'Yield', `pass: ${binLabel}`));
   }
+  cards.finish();
   wrap.appendChild(cards);
 
   if (yieldSummary.edgeExcludedDies > 0) {
@@ -516,6 +714,8 @@ export function buildBinSection(
    * of re-walking `dies` when supplied.
    */
   precomputedCounts?: Record<number, number>,
+  /** Pass bins, pinned to the top of the pareto ordering. See `binRows`. */
+  passBins?: number[],
 ): HTMLDivElement | null {
   const binCounts = new Map<number, number>();
   if (precomputedCounts) {
@@ -529,21 +729,134 @@ export function buildBinSection(
   }
   if (!binCounts.size) return null;
 
-  const total = [...binCounts.values()].reduce((a, b) => a + b, 0);
-  const defMap = binDefs ? new Map(binDefs.map(d => [d.bin, d])) : null;
-  const sorted = [...binCounts.entries()].sort((a, b) => a[0] - b[0]);
-
   const wrap = el('div');
-  wrap.appendChild(sectionTitle(mode === 'hard' ? 'Hard Bin Breakdown' : 'Soft Bin Breakdown'));
-  for (const [bin, count] of sorted) {
+  wrap.appendChild(sectionTitle(binSectionTitle(mode, [...binCounts.values()].reduce((a, b) => a + b, 0))));
+  for (const row of binRows(binCounts, binDefs, colorScheme, passBins)) wrap.appendChild(row);
+  return wrap;
+}
+
+/** Section title carrying the population, so the percentages below are never a
+ *  bare number an engineer has to guess the denominator for — these are % of
+ *  *dies*, distinct from the lot panel's "Mean wafer yield" (an unweighted mean
+ *  of per-wafer yields). The two legitimately differ on a lot with uneven die
+ *  counts, and previously both rendered as an unqualified percentage. */
+function binSectionTitle(mode: 'hard' | 'soft', total: number): string {
+  return `${mode === 'hard' ? 'Hard' : 'Soft'} Bin Breakdown — % of dies (N=${total})`;
+}
+
+/** Bin bars in the shared display order — see `sortBinsForDisplay` (stats/binPareto.ts),
+ *  which the summary report's two bin tables use too. */
+function binRows(
+  binCounts: Map<number, number>,
+  binDefs: BinDef[] | undefined,
+  colorScheme: string | undefined,
+  passBins: number[] = [1],
+): HTMLDivElement[] {
+  const total  = [...binCounts.values()].reduce((a, b) => a + b, 0);
+  const defMap = binDefs ? new Map(binDefs.map(d => [d.bin, d])) : null;
+  const sorted = sortBinsForDisplay(binCounts.entries(), passBins);
+
+  const scheme = getColorScheme(colorScheme);
+  return sorted.map(([bin, count]) => {
     const def   = defMap?.get(bin);
     const label = def?.name ? `Bin ${bin} · ${def.name}` : `Bin ${bin}`;
     const pct   = (count / total) * 100;
-    const scheme = getColorScheme(colorScheme);
-    const color  = (colorScheme === 'custom' ? def?.color : undefined) ?? scheme.forBin(bin);
-    wrap.appendChild(progressRow(`${label}  (${count})`, pct, color));
-  }
-  return wrap;
+    const color = (colorScheme === 'custom' ? def?.color : undefined) ?? scheme.forBin(bin);
+    return progressRow(`${label}  (${count})`, pct, color);
+  });
+}
+
+/**
+ * The panels' bin section: identical bars to `buildBinSection`, wrapped in a
+ * collapsible shell with a Hard/Soft selector.
+ *
+ * Which bin type it opens on is derived from the map's own plot mode, not from
+ * which bin data happens to exist. The old rule (`hasHbin ? 'hard' : 'soft'`) meant
+ * a soft-bin map always sat beside a hard-bin breakdown whenever both bin types
+ * were present — the panel silently describing a different population from the one
+ * on screen. `maplessSummary.ts` already derived this correctly from `plotMode`;
+ * this makes all three call sites agree.
+ *
+ * The selector only appears when both bin types actually have data — a one-option
+ * toggle is noise.
+ */
+export function buildBinBreakdownSection(params: {
+  dies: Die[];
+  hbinDefs?: BinDef[];
+  sbinDefs?: BinDef[];
+  colorScheme?: string;
+  hardCounts?: Record<number, number>;
+  softCounts?: Record<number, number>;
+  /** The map's active plot mode. `hardBin`/`softBin` pick the matching bin type. */
+  plotMode?: PlotMode;
+  passBins?: number[];
+  panel?: HTMLElement;
+}): HTMLDivElement | null {
+  const { dies, hbinDefs, sbinDefs, colorScheme, hardCounts, softCounts, plotMode, passBins = [1], panel } = params;
+
+  const countsFor = (mode: 'hard' | 'soft'): Map<number, number> => {
+    const pre = mode === 'hard' ? hardCounts : softCounts;
+    const m = new Map<number, number>();
+    if (pre) {
+      for (const [binStr, count] of Object.entries(pre)) m.set(Number(binStr), count);
+      return m;
+    }
+    for (const d of dies) {
+      if (d.partial || d.edgeExcluded) continue;
+      const b = mode === 'hard' ? d.hbin : d.sbin;
+      if (b != null) m.set(b, (m.get(b) ?? 0) + 1);
+    }
+    return m;
+  };
+
+  const hardMap = countsFor('hard');
+  const softMap = countsFor('soft');
+  const hasHard = hardMap.size > 0;
+  const hasSoft = softMap.size > 0;
+  if (!hasHard && !hasSoft) return null;
+
+  const ui = panelUiState(panel);
+  // Precedence: an explicit user override, then the plot mode, then whichever
+  // bin type has data at all.
+  const fromPlotMode = plotMode === 'softBin' || plotMode === 'stackedSoftBins' ? 'soft'
+                     : plotMode === 'hardBin' || plotMode === 'stackedBins'     ? 'hard'
+                     : undefined;
+  let mode: 'hard' | 'soft' = ui.binMode ?? fromPlotMode ?? (hasHard ? 'hard' : 'soft');
+  if (mode === 'hard' && !hasHard) mode = 'soft';
+  if (mode === 'soft' && !hasSoft) mode = 'hard';
+
+  const counts  = mode === 'hard' ? hardMap : softMap;
+  const binDefs = mode === 'hard' ? hbinDefs : sbinDefs;
+  const total   = [...counts.values()].reduce((a, b) => a + b, 0);
+
+  const { outer } = collapsibleSection(
+    binSectionTitle(mode, total),
+    true,
+    undefined,
+    {
+      stateKey: 'bins',
+      panel,
+      render: content => {
+        for (const row of binRows(counts, binDefs, colorScheme, passBins)) content.appendChild(row);
+      },
+      control: (hasHard && hasSoft && panel)
+        ? () => makeSegmented(
+            [['hard', 'Hard'], ['soft', 'Soft']],
+            mode,
+            v => {
+              ui.binMode = v as 'hard' | 'soft';
+              // Rebuilds the whole section, not just its content: the title
+              // carries the bin type and its own N, both of which change here.
+              const replacement = buildBinBreakdownSection(params);
+              if (replacement) outer.replaceWith(replacement);
+            },
+            panel.ownerDocument,
+            true,
+          )
+        : undefined,
+    },
+  );
+  return outer;
 }
 
 /** Aggregate bin counts across all wafers in the lot — no lot-pooled
@@ -560,69 +873,74 @@ export function buildLotBinSection(
 }
 
 /**
- * Ring/quadrant yield section — single source of truth for the pass/total
- * tally is `buildRegionYieldData` (`stats/regions.ts`), the same function
- * the Insights Overview tab's region-yield diagram consumes. Rendered here
- * as compact progress rows on an absolute 0–100% scale (not rescaled to the
- * rows' local min/max — a real spread reads as tight, not exaggerated).
- * Works uniformly for a single wafer (`diesByWafer: [dies]`,
- * `allWafers: [wafer]`) or a whole lot.
+ * Region yield as ONE section with a Ring/Quadrant selector, replacing the two
+ * always-on stacked sections (`Ring Yield` + `Quadrant Yield`) this used to render.
+ *
+ * Ring is the default and quadrant is opt-in because they are not equally
+ * informative. Ring yield tracks the edge roll-off that dominates real wafer maps
+ * (85% core → 70% edge is routine, and is what the edge-local findings are about).
+ * Quadrant yield averages over half the wafer twice and lands within a point or two
+ * of the wafer mean on almost every lot — and in the case where a quadrant really
+ * is asymmetric, the findings engine already reports it with a significance test
+ * behind it, which four bare bars do not have. Between them they were consuming
+ * eight rows of a 260px column to say one thing.
+ *
+ * Works uniformly for a single wafer (`diesByWafer: [dies]`, `allWafers: [wafer]`)
+ * or a whole lot.
  */
-function buildRegionYieldSection(
-  diesByWafer: Die[][],
-  allWafers: Wafer[],
-  ringCount: number,
-  passBins: number[],
-  regionBuilder: (dies: PositionedDie[], wafer: Wafer, ringCount: number) => StatsRegion[],
-  title: string,
-): HTMLDivElement | null {
-  const data = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, regionBuilder);
-  if (!data.length) return null;
+export function buildRegionYieldPanelSection(params: {
+  diesByWafer: Die[][];
+  allWafers: Wafer[];
+  ringCount: number;
+  passBins: number[];
+  panel?: HTMLElement;
+}): HTMLDivElement | null {
+  const { diesByWafer, allWafers, ringCount, passBins, panel } = params;
+  const ui = panelUiState(panel);
 
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle(title));
-  for (const { label, n, yieldPercent } of data) {
-    wrap.appendChild(progressRow(`${label} (N=${n})`, yieldPercent));
-  }
-  return wrap;
-}
+  const build = (family: 'ring' | 'quadrant') => buildRegionYieldData(
+    diesByWafer, allWafers, ringCount, passBins,
+    family === 'ring' ? buildRingRegions : buildQuadrantRegions,
+  );
 
-export function buildRingSection(
-  dies: Die[],
-  wafer: Wafer,
-  ringCount: number,
-  passBins: number[],
-): HTMLDivElement | null {
-  return buildRegionYieldSection([dies], [wafer], ringCount, passBins, buildRingRegions, 'Ring Yield');
-}
+  // Nothing to show at all if neither family resolves (no positioned dies).
+  if (!build('ring').length && !build('quadrant').length) return null;
 
-export function buildQuadrantSection(
-  dies: Die[],
-  wafer: Wafer,
-  ringCount: number,
-  passBins: number[],
-): HTMLDivElement | null {
-  return buildRegionYieldSection([dies], [wafer], ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
-}
-
-/** Aggregate ring yield across all wafers in the lot. */
-export function buildLotRingSection(
-  diesByWafer: Die[][],
-  allWafers: Wafer[],
-  ringCount: number,
-  passBins: number[],
-): HTMLDivElement | null {
-  return buildRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildRingRegions, 'Ring Yield');
-}
-
-/** Aggregate quadrant yield across all wafers in the lot. */
-export function buildLotQuadrantSection(
-  diesByWafer: Die[][],
-  allWafers: Wafer[],
-  ringCount: number,
-  passBins: number[],
-): HTMLDivElement | null {
-  return buildRegionYieldSection(diesByWafer, allWafers, ringCount, passBins, buildQuadrantRegions, 'Quadrant Yield');
+  const family = ui.regionMode;
+  const { outer } = collapsibleSection(
+    family === 'ring' ? 'Ring Yield' : 'Quadrant Yield',
+    true,
+    undefined,
+    {
+      stateKey: 'regionYield',
+      panel,
+      render: content => {
+        const data = build(family);
+        if (!data.length) {
+          content.appendChild(el('div', { fontSize: FONT.body, color: LABEL_COLOR }, 'No positioned dies for this breakdown.'));
+          return;
+        }
+        for (const { label, n, yieldPercent } of data) {
+          content.appendChild(progressRow(`${label} (N=${n})`, yieldPercent));
+        }
+      },
+      control: panel
+        ? () => makeSegmented(
+            [['ring', 'Ring'], ['quadrant', 'Quadrant']],
+            family,
+            v => {
+              ui.regionMode = v as 'ring' | 'quadrant';
+              // Whole-section rebuild: the title names the family.
+              const replacement = buildRegionYieldPanelSection(params);
+              if (replacement) outer.replaceWith(replacement);
+            },
+            panel.ownerDocument,
+            true,
+          )
+        : undefined,
+    },
+  );
+  return outer;
 }
 
 /** Lot overview — wafer count and mean (unweighted arithmetic mean of each
@@ -630,11 +948,15 @@ export function buildLotQuadrantSection(
  *  correctly labelling aggregation methods) wafer yield. Metadata is a
  *  separate section (`buildMetadataInfoSection`) built from the lot's own
  *  items, not from `lotSummary.lot` — see that function's doc comment. */
-export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivElement {
+export function buildLotOverviewSection(
+  lotSummary: LotStatsSummary,
+  /** Per-wafer summaries, for the analysed/excluded die tally below. */
+  perWaferSummaries: StatsSummary[] = [],
+): HTMLDivElement {
   const wrap = el('div');
   wrap.appendChild(sectionTitle('Lot Summary'));
 
-  const cards = el('div', { display: 'flex', gap: '6px', marginBottom: '8px' });
+  const cards = statCardRow();
   cards.appendChild(statCard(String(lotSummary.stats.waferCount), 'Wafers'));
 
   const waferYields = lotSummary.perWafer
@@ -643,20 +965,74 @@ export function buildLotOverviewSection(lotSummary: LotStatsSummary): HTMLDivEle
 
   if (waferYields.length) {
     const mean = waferYields.reduce((a, b) => a + b, 0) / waferYields.length;
-    cards.appendChild(statCard(`${mean.toFixed(1)}%`, 'Mean wafer yield'));
+    // Two different yield statistics live in this panel: this one weights every
+    // WAFER equally; the bin breakdown below weights every DIE equally and says
+    // so in its own title ("% of dies (N=…)"). They agree only when die counts
+    // are even across the lot.
+    //
+    // The label carries the distinction rather than a sublabel: "unweighted,
+    // per wafer" was a qualifier with nothing beside it to contrast against, so
+    // on a normal lot it read as noise. "Mean per-wafer yield" says the same
+    // thing in the name itself, and the die-weighted figure is already on
+    // screen further down.
+    //
+    // NOT computed here: a die-weighted figure would need `yieldEligibleDieCount`
+    // as its weight (see buildYieldDataCombined) — weighting by raw totalDies
+    // lets a wafer's excluded dies skew it. This function only receives
+    // StatsSummary, not dies, so it cannot do that correctly. The Insights
+    // population line, which does have the dies, shows it there.
+    cards.appendChild(statCard(`${mean.toFixed(1)}%`, 'Mean per-wafer yield'));
   }
+  cards.finish();
   wrap.appendChild(cards);
+
+  // The lot panel's population, which it previously never stated at all — it
+  // showed a wafer count and a percentage over an unnamed set of dies. The rule
+  // in CLAUDE.md is that an aggregated or filtered population must be identified.
+  if (perWaferSummaries.length) {
+    const analysed = perWaferSummaries.reduce((a, s) => a + s.stats.analyzedDies, 0);
+    const excluded = perWaferSummaries.reduce((a, s) => a + s.stats.excludedDies, 0);
+    if (analysed || excluded) {
+      wrap.appendChild(kvRow(
+        'Dies analysed',
+        excluded ? `${analysed.toLocaleString()} (${excluded.toLocaleString()} excluded)` : analysed.toLocaleString(),
+      ));
+    }
+  }
 
   return wrap;
 }
 
-/** Per-wafer yield bars, absolute 0–100% scale, with a median marker line and
- *  below-median wafers muted — lets an engineer spot outlier wafers within
- *  the lot at a glance. */
+/** Per-wafer yield bars, absolute 0–100% scale, with a visible median marker and
+ *  low outliers named in the row label — lets an engineer spot outlier wafers
+ *  within the lot at a glance.
+ *
+ *  "Outlier" is the Tukey rule (below `Q1 − 1.5 × IQR`), not "below the median".
+ *  The median splits every lot in half by construction, so half the bars always
+ *  got flagged — including on a lot where every wafer is within a point of every
+ *  other. The Tukey fence flags nothing on a tight lot, which is the correct
+ *  answer, and it is stated in text rather than encoded only in a colour.
+ *
+ *  Slot order is the default and must stay so: wafer-number order is what makes a
+ *  slot-correlated pattern (a bad cassette position, a chuck issue) visible at all,
+ *  and sorting by yield destroys it. Yield order is opt-in via the header control. */
 export function buildPerWaferYieldSection(
   lotSummary: LotStatsSummary,
   items: Array<{ label?: string } | null>,
   onWaferClick?: (waferIndex: number) => void,
+  /** Panel element owning the sort/collapse state. Omit for a stateless render (reports). */
+  panel?: HTMLElement,
+  /**
+   * Per-wafer findings tally, badged onto each row.
+   *
+   * This is what let the gallery's separate "Findings" tab go away. That tab was
+   * a second per-wafer list — a SUBSET (only wafers that have findings), with the
+   * same row idiom as this one but a different click action, and no findings text
+   * on it at all. Folding the count in here gives one list instead of two, and
+   * shows the case the subset list structurally could not: a low-yielding wafer
+   * with no findings, sitting next to the flagged ones.
+   */
+  findingsFor?: (waferIndex: number) => { total: number; unusual: number; notable: number } | undefined,
 ): HTMLDivElement | null {
   const waferData = lotSummary.perWafer
     .map(pw => ({
@@ -673,12 +1049,89 @@ export function buildPerWaferYieldSection(
   const maxY = Math.max(...waferData.map(w => w.yieldPct));
   const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
 
-  const med = medianOfSorted([...waferData.map(w => w.yieldPct)].sort((a, b) => a - b));
+  const sortedYields = [...waferData.map(w => w.yieldPct)].sort((a, b) => a - b);
+  const med = medianOfSorted(sortedYields);
+  // Tukey lower fence. Only meaningful with enough wafers to have quartiles at
+  // all — on 3 wafers Q1/Q3 are barely distinguishable from min/max and the
+  // fence degenerates into flagging the lowest wafer of every lot.
+  const q1  = quantile(sortedYields, 0.25);
+  const q3  = quantile(sortedYields, 0.75);
+  const lowFence = waferData.length >= 5 ? q1 - 1.5 * (q3 - q1) : -Infinity;
 
-  const wrap = el('div');
-  wrap.appendChild(sectionTitle('Wafer Yield' + rangeNote));
-  for (const { waferIndex, label, yieldPct } of waferData) {
-    const row = progressRow(label, yieldPct, undefined, undefined, med, yieldPct < med);
+  const ui = panelUiState(panel);
+
+  const renderRows = (content: HTMLElement) => {
+    const rows = ui.waferSort === 'yield'
+      ? [...waferData].sort((a, b) => a.yieldPct - b.yieldPct)
+      : waferData;
+    for (const { waferIndex, label, yieldPct } of rows) {
+      const isOutlier = yieldPct < lowFence;
+      // Stated in the label, not only in a colour — this is the whole reason the
+      // muted-fill encoding was removed.
+      const rowLabel = isOutlier ? `${label} · low outlier` : label;
+      const row = progressRow(rowLabel, yieldPct, undefined, undefined, med);
+      const f = findingsFor?.(waferIndex);
+      if (f?.total) appendFindingsBadge(row, f);
+      wireWaferRow(row, waferIndex, label, yieldPct, f);
+      content.appendChild(row);
+    }
+  };
+
+  const medNote = ` · median ${med.toFixed(1)}%`;
+  const { outer } = collapsibleSection(
+    'Wafer Yield' + rangeNote + medNote,
+    true,
+    undefined,
+    {
+      stateKey: 'waferYield',
+      panel,
+      render: renderRows,
+      control: panel
+        ? rerender => makeSegmented(
+            [['slot', 'Slot'], ['yield', 'Yield']],
+            ui.waferSort,
+            v => { ui.waferSort = v as 'slot' | 'yield'; rerender(); },
+            panel.ownerDocument,
+            true,
+          )
+        : undefined,
+    },
+  );
+  return outer;
+
+  /** Severity-coloured count, appended to the row's label line. The bare number
+   *  the old per-wafer index used said nothing about what it counted, so the text
+   *  spells it out and the colour is decoration on top, never the only signal. */
+  function appendFindingsBadge(row: HTMLDivElement, f: { total: number; unusual: number; notable: number }) {
+    const top: StatsSeverity = f.unusual ? 'unusual' : f.notable ? 'notable' : 'info';
+    const badge = el('span', {
+      marginLeft: SPACE.sm,
+      flexShrink:   '0',
+      background:   sevColor(top),
+      color:        '#fff',
+      borderRadius: RADIUS.container,
+      padding:      '0 5px',
+      fontSize:     FONT.body,
+      fontWeight:   '600',
+    }, `${f.total}`);
+    // aria-hidden: the row's own accessible name already spells this count out,
+    // so announcing the bare number again would just be noise. The tooltip is the
+    // sighted-hover equivalent of that same text.
+    badge.setAttribute('aria-hidden', 'true');
+    wireTooltip(badge, `${f.total} finding${f.total === 1 ? '' : 's'}`
+      + (f.unusual ? `, ${f.unusual} unusual` : '')
+      + (f.notable ? `, ${f.notable} notable` : ''));
+    // Appended INSIDE the label span, not as a sibling of it: progressRow's label
+    // line is `justify-content: space-between` with exactly two children (label,
+    // percent), so a third sibling floats to the centre of the row instead of
+    // sitting with the label it belongs to.
+    row.firstElementChild?.firstElementChild?.appendChild(badge);
+  }
+
+  function wireWaferRow(
+    row: HTMLDivElement, waferIndex: number, label: string, yieldPct: number,
+    f?: { total: number; unusual: number; notable: number },
+  ) {
     if (onWaferClick) {
       row.style.cursor = 'pointer';
       row.style.borderRadius = '4px';
@@ -686,7 +1139,13 @@ export function buildPerWaferYieldSection(
       row.style.marginLeft = '-3px';
       row.style.marginRight = '-3px';
       row.setAttribute('role', 'button');
-      row.setAttribute('aria-label', `${label}, ${yieldPct.toFixed(1)}% yield — view wafer`);
+      // Must describe what the click ACTUALLY does. In the gallery this used to
+      // say "view wafer" while the handler only highlighted the card in the grid
+      // — the row now opens the wafer, so the two finally agree.
+      row.setAttribute('aria-label',
+        `${label}, ${yieldPct.toFixed(1)}% yield`
+        + (f?.total ? `, ${f.total} finding${f.total === 1 ? '' : 's'}${f.unusual ? `, ${f.unusual} unusual` : ''}` : '')
+        + ' — open wafer');
       row.tabIndex = 0;
       row.addEventListener('mouseenter', () => { row.style.background = CLR.bgHover; });
       row.addEventListener('mouseleave', () => { row.style.background = ''; });
@@ -697,9 +1156,7 @@ export function buildPerWaferYieldSection(
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onWaferClick(waferIndex); }
       });
     }
-    wrap.appendChild(row);
   }
-  return wrap;
 }
 
 /** Full descriptive-stats row used by the Test Values table. */
@@ -756,22 +1213,31 @@ function resolveCsvIdentityColumns(csv: CsvExportContext | undefined, reservedLa
     ?? (csv.perWaferMetadata ? commonMetadata(csv.perWaferMetadata.map(m => ({ metadata: m }))) : undefined);
   if (!waferMetadata || !Object.keys(waferMetadata).length) return [];
   return resolveMetadataColumns({
-    waferMetadata, waferPlacement: 'csv', reservedLabels,
+    // 'identity', not the default 'auto'. These are IDENTITY columns — the point
+    // is that a file which has left the app still says which wafer(s) it
+    // describes. A host mapping an STDF header into wafer metadata also carries
+    // WCR geometry (Center X/Y, Die Ht/Wid, Pos X/Y, Wafr Siz, Wf Flat, Wf Units,
+    // Job Rev), and 'auto' stamped every one of them as a constant leading column
+    // on every row — fifteen columns before the first statistic, none of which
+    // identified anything. The die list keeps 'auto': it is a raw-dies dump where
+    // the full context is the point.
+    waferMetadata, waferKeys: 'identity', waferPlacement: 'csv', reservedLabels,
   }).columns;
 }
 
-// A value starting with =, +, -, or @ is read as a formula by Excel/Sheets/
-// LibreOffice on open — a known injection vector when the source is die/wafer
-// metadata this library didn't originate (host data pipelines, MES/LIMS
-// fields, operator free text). Only applied to values that don't parse as a
-// number: a leading '-'/'+' on an actual number (offsets, leakage, deltas —
-// routine in test data) must round-trip unchanged.
-const FORMULA_LEAD = /^[=+\-@]/;
-
-/** CSV field escaper — exported so `dieList.ts` shares it rather than a second copy. */
-export function csvField(value: string): string {
-  const v = (FORMULA_LEAD.test(value) && Number.isNaN(Number(value))) ? `'${value}` : value;
-  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+/** Population column value, when the export describes a pooled set. Documented on
+ *  `CsvExportContext.populationLabel` from the start but never actually emitted —
+ *  so a pooled file (every test showing one big N) carried nothing saying it was
+ *  pooled rather than one wafer's. */
+function csvPopulationColumn(csv: CsvExportContext | undefined): MetadataColumn[] {
+  if (!csv?.populationLabel) return [];
+  return [{
+    key: 'population', label: 'Population', scope: 'wafer',
+    constant: csv.populationLabel,
+    // These exports have no die rows — every value is the column's constant.
+    get: () => csv.populationLabel!,
+    csvOnly: true,
+  }];
 }
 
 export function buildTestSection(
@@ -800,6 +1266,26 @@ export function buildTestSection(
   onSaveText?: SaveTextHandler,
   /** Wafer identity to stamp on the CSV export. See {@link CsvExportContext}. */
   csv?: CsvExportContext,
+  /**
+   * Population for the Ppk column — one item per wafer (see `stats/capability.ts`).
+   * Passing `[{ dies }]` for a single wafer is correct. Omit to drop the column.
+   */
+  capabilityItems?: CapabilityItem[],
+  /** Panel element owning the collapsed state. Omit for a stateless render. */
+  panel?: HTMLElement,
+  /**
+   * On-screen column set.
+   *
+   * `'compact'` (Test / N / Mean / Ppk / Spec yield) exists for the docked Summary
+   * panel's 260px column, where the full set meant four visible columns and a
+   * horizontal scrollbar nested inside a vertical one. `'full'` adds the
+   * descriptive statistics back and is the DEFAULT, because every other consumer
+   * — the Insights Overview card above all — has the width to show them, and
+   * silently trimming a full-width table to a narrow surface's budget loses real
+   * information for no benefit. The CSV export always carries every column
+   * regardless.
+   */
+  columns: 'compact' | 'full' = 'full',
 ): HTMLDivElement | null {
   const activeDies = dies.filter(d => !d.partial && !d.edgeExcluded);
   const perTestStatsByNumber = new Map((precomputedTestStats?.perTestStats ?? []).map(s => [s.testNumber, s]));
@@ -887,27 +1373,56 @@ export function buildTestSection(
   }
   if (!rows.length) return null;
 
+  // Ppk per test, from the same `buildCapabilityData` the Insights capability
+  // panel and the summary report use — not a local mean/σ division, so the three
+  // surfaces cannot disagree.
+  //
+  // Ppk, not Cpk, and deliberately. Cp/Cpk use the pooled WITHIN-wafer stddev;
+  // on the single-wafer panel there is exactly one subgroup, so `stdWithin` and
+  // `stdOverall` are the same sample variance and `cpk === ppk` identically —
+  // labelling that column "Cpk" would name a short-term index that the data does
+  // not contain. On the lot panel the two genuinely differ, and Ppk is the honest
+  // one: Cpk excludes wafer-to-wafer shift, which at wafer test is often the
+  // dominant variance component, so it flatters exactly the failure mode most
+  // worth seeing. It also matches `buildCapabilityData`'s own worst-Ppk-first
+  // ordering, which the Insights capability panel renders. The Cpk/Ppk pair is a
+  // real drift diagnostic, but it needs two columns and lives in the summary
+  // report (`renderSummaryReport.ts`'s capability section prints all four).
+  //
+  // Needs BOTH limits (`hasSpec`); single-sided tests get no index and render '—'.
+  const ppkByTest = new Map<number, number | null>();
+  if (capabilityItems?.length && testDefs?.length) {
+    for (const d of buildCapabilityData(capabilityItems, testDefs)) {
+      if (d.hasSpec) ppkByTest.set(d.testNumber, d.ppk);
+    }
+  }
+  const hasPpk = ppkByTest.size > 0;
+
+  // N in the section title when every test shares it, which is the common case
+  // (all tests run on all dies) — a whole column repeating "2873" 6 times inside a
+  // 260px panel. Kept as a column only when counts actually differ, which is
+  // itself the interesting case and was previously invisible among identical values.
+  const counts = new Set(rows.map(r => r.stats.count));
+  const uniformN = counts.size === 1 ? rows[0].stats.count : null;
+
   const outer = el('div');
 
-  const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
-  const title = sectionTitle(
-    csv?.populationLabel ? `Test Values  (${rows.length}) — ${csv.populationLabel}` : `Test Values  (${rows.length})`,
-  );
+  const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SPACE.sm });
+  const nNote = uniformN !== null ? ` · N=${uniformN.toLocaleString()}` : '';
+  const titleText = csv?.populationLabel
+    ? `Test Values  (${rows.length}) — ${csv.populationLabel}${nNote}`
+    : `Test Values  (${rows.length})${nNote}`;
+  const title = sectionTitle(titleText);
   title.style.marginBottom = '0';
   headerRow.appendChild(title);
 
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
-  exportBtn.textContent = 'Export CSV';
+  exportBtn.textContent = 'Test values CSV';
   Object.assign(exportBtn.style, {
-    background:   'none',
-    border:       BORDER,
-    borderRadius: '4px',
-    cursor:       'pointer',
-    fontSize:     '10px',
-    color:        CLR.iconHover,
-    padding:      '2px 7px',
+    ...controlStyle('outlined'),
   } as Partial<CSSStyleDeclaration>);
+  wireControlHover(exportBtn);
   exportBtn.addEventListener('click', () => {
     // wmap's own unitless "engineering" notation (fmt's fallbackFormat:
     // 'engineering' — fixed decimal in [0.1, 9999], otherwise E±N in
@@ -917,8 +1432,17 @@ export function buildTestSection(
     // column) rather than baked into each value, so every value column uses
     // one consistent notation regardless of the test's own unit/magnitude.
     const cols = ['Test', 'Unit', 'N', 'Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev'];
-    if (hasAnyLimit) cols.push('LSL', 'USL', 'Spec Yield %', 'Spec Yield N');
-    const idCols = resolveCsvIdentityColumns(csv, cols);
+    if (hasPpk) cols.push('Ppk');
+    // `Spec Yield N` only when it can actually differ from the row's own `N` —
+    // otherwise it repeated the same number in two adjacent columns on every row.
+    // It CAN differ: a die with a value but no verdict counts toward N and not
+    // toward the spec population, so the column is kept whenever that happens.
+    const specNDiffers = rows.some(r => r.specYieldPct !== null && r.specN !== r.stats.count);
+    if (hasAnyLimit) {
+      cols.push('LSL', 'USL', 'Spec Yield %');
+      if (specNDiffers) cols.push('Spec Yield N');
+    }
+    const idCols = [...resolveCsvIdentityColumns(csv, cols), ...csvPopulationColumn(csv)];
     const allCols = [...idCols.map(c => c.label), ...cols];
     const lines = [allCols.map(csvField).join(',')];
     const f = (n: number) => fmtValue(n, undefined, 'engineering');
@@ -928,13 +1452,19 @@ export function buildTestSection(
         entry.name, entry.unit ?? '', String(stats.count), f(stats.min), f(stats.q1), f(stats.median),
         f(stats.mean), f(stats.q3), f(stats.max), f(stats.stddev),
       ];
+      if (hasPpk) {
+        const ppk = ppkByTest.get(entry.testNumber);
+        fields.push(ppk === undefined || ppk === null ? '' : ppk.toFixed(3));
+      }
       if (hasAnyLimit) {
         fields.push(
           entry.limitLow !== undefined ? f(entry.limitLow) : '',
           entry.limitHigh !== undefined ? f(entry.limitHigh) : '',
           specYieldPct !== null ? specYieldPct.toFixed(1) : '',
-          (entry.limitLow !== undefined || entry.limitHigh !== undefined) ? String(specN) : '',
         );
+        if (specNDiffers) {
+          fields.push((entry.limitLow !== undefined || entry.limitHigh !== undefined) ? String(specN) : '');
+        }
       }
       lines.push(fields.map(csvField).join(','));
     }
@@ -946,18 +1476,34 @@ export function buildTestSection(
   const table = el('table', {
     width:         '100%',
     borderCollapse: 'collapse',
-    fontSize:      '11px',
+    fontSize:      FONT.body,
   });
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  const headers = ['Test', 'N', 'Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev'];
-  if (hasAnyLimit) headers.push('LSL', 'USL', 'Spec yield');
+  // Deliberately NOT the CSV's twelve columns. Twelve columns in a 260px panel
+  // meant four were visible and the rest sat behind a horizontal scrollbar nested
+  // inside a vertical one — unreadable, and duplicated in three places that do
+  // have the width (the summary report, the CSV export, and the Insights
+  // boxplot/capability panels). What survives is what drives a decision: the
+  // centre of the distribution, how capable the process is against its spec, and
+  // what fraction of dies made it. The full table is one click away in the report.
+  const headers = ['Test'];
+  if (uniformN === null) headers.push('N');
+  if (columns === 'full') headers.push('Min', 'Q1', 'Median');
+  headers.push('Mean');
+  if (columns === 'full') headers.push('Q3', 'Max', 'StdDev');
+  if (hasPpk) headers.push('Ppk');
+  if (columns === 'full' && hasAnyLimit) headers.push('LSL', 'USL');
+  if (hasAnyLimit) headers.push('Spec yield');
   for (const h of headers) {
     const th = el('th', {
       textAlign:    h === 'Test' ? 'left' : 'right',
-      fontWeight:   '700',
-      fontSize:     '10px',
-      letterSpacing: '0.03em',
+      // Meta tier: an uppercase, letter-spaced micro-label is 11px/600 by the
+      // type scale, not 12px/700. At body size and 700 it out-shouted the data
+      // underneath it — the header is a signpost, the numbers are the content.
+      fontWeight:   '600',
+      fontSize:     FONT.meta,
+      letterSpacing: TRACKING,
       textTransform: 'uppercase',
       color:        LABEL_COLOR,
       padding:      '3px 8px 5px',
@@ -978,27 +1524,36 @@ export function buildTestSection(
     const cell = (text: string, align: 'left' | 'right' = 'right') => {
       const td = el('td', {
         textAlign:   align,
-        padding:     '4px 8px',
+        padding: `${SPACE.xs} ${SPACE.md}`,
         borderBottom: `1px solid ${CLR.menuBorder}`,
-        color:       VALUE_COLOR,
+        // CLR.text, not VALUE_COLOR. `value` is the deliberately darker emphasis
+        // shade for headings and big stat figures; applying it to every cell of
+        // a table makes the whole table read as emphasised, which is the same as
+        // none of it being emphasised.
+        color:       CLR.text,
         whiteSpace:  'nowrap',
       }, text);
       row.appendChild(td);
     };
     cell(entry.name, 'left');
-    cell(`${stats.count}`);
-    cell(f(stats.min));
-    cell(f(stats.q1));
-    cell(f(stats.median));
+    if (uniformN === null) cell(`${stats.count}`);
+    if (columns === 'full') { cell(f(stats.min)); cell(f(stats.q1)); cell(f(stats.median)); }
     cell(f(stats.mean));
-    cell(f(stats.q3));
-    cell(f(stats.max));
-    cell(f(stats.stddev));
-
-    if (hasAnyLimit) {
-      cell(entry.limitLow !== undefined ? f(entry.limitLow) : '—');
+    if (columns === 'full') { cell(f(stats.q3)); cell(f(stats.max)); cell(f(stats.stddev)); }
+    if (hasPpk) {
+      const ppk = ppkByTest.get(entry.testNumber);
+      cell(ppk === undefined || ppk === null ? '—' : ppk.toFixed(2));
+    }
+    if (columns === 'full' && hasAnyLimit) {
+      cell(entry.limitLow  !== undefined ? f(entry.limitLow)  : '—');
       cell(entry.limitHigh !== undefined ? f(entry.limitHigh) : '—');
-      cell(specYieldPct !== null ? `${specYieldPct.toFixed(1)}% (N=${specN})` : '—');
+    }
+    if (hasAnyLimit) {
+      // The per-test spec N is dropped from the cell when it equals the section's
+      // own N — same reasoning as the N column above.
+      cell(specYieldPct !== null
+        ? (uniformN !== null && specN === uniformN ? `${specYieldPct.toFixed(1)}%` : `${specYieldPct.toFixed(1)}% (N=${specN})`)
+        : '—');
     }
 
     tbody.appendChild(row);
@@ -1007,8 +1562,24 @@ export function buildTestSection(
 
   const scroll = el('div', { overflowX: 'auto' });
   scroll.appendChild(table);
-  outer.appendChild(scroll);
-  return outer;
+
+  // Collapsible only when a panel owns the state; the report and any other
+  // stateless consumer keep the flat title + table they had.
+  if (!panel) {
+    outer.appendChild(scroll);
+    return outer;
+  }
+  // Reuse the section shell rather than the local header row: the title becomes
+  // the shell's label (so collapsing hides the table, not the title) and Export
+  // CSV becomes its header control.
+  headerRow.remove();
+  const { outer: shell } = collapsibleSection(titleText, true, undefined, {
+    stateKey: 'testValues',
+    panel,
+    render: content => content.appendChild(scroll),
+    control: () => exportBtn,
+  });
+  return shell;
 }
 
 /**
@@ -1031,34 +1602,42 @@ export function buildFunctionalTestSection(
   onSaveText?: SaveTextHandler,
   /** Wafer identity to stamp on the CSV export. See {@link CsvExportContext}. */
   csv?: CsvExportContext,
+  /** Panel element owning the collapsed state. Omit for a stateless render. */
+  panel?: HTMLElement,
 ): HTMLDivElement | null {
   const rows = precomputed ?? computeFunctionalYield(dies, testDefs);
   if (!rows?.length) return null;
 
+  // Same N treatment as the parametric table: hoisted to the title when every
+  // functional test shares it. The pass-rate cell also used to re-print it as
+  // "(N=2873)" beside an N column already showing 2873 — the same number three
+  // times across one row. Computed before the title because the title carries it,
+  // on the stateless path too: dropping the column without hoisting the value
+  // would lose the population outright.
+  const fnCounts = new Set(rows.map(r => r.totalDies));
+  const fnUniformN = fnCounts.size === 1 ? rows[0].totalDies : null;
+  const fnNote = fnUniformN !== null ? ` · N=${fnUniformN.toLocaleString()}` : '';
+
   const outer = el('div');
 
-  const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
-  const title = sectionTitle(
-    csv?.populationLabel ? `Functional Tests  (${rows.length}) — ${csv.populationLabel}` : `Functional Tests  (${rows.length})`,
-  );
+  const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SPACE.sm });
+  const titleText = csv?.populationLabel
+    ? `Functional Tests  (${rows.length}) — ${csv.populationLabel}${fnNote}`
+    : `Functional Tests  (${rows.length})${fnNote}`;
+  const title = sectionTitle(titleText);
   title.style.marginBottom = '0';
   headerRow.appendChild(title);
 
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
-  exportBtn.textContent = 'Export CSV';
+  exportBtn.textContent = 'Functional CSV';
   Object.assign(exportBtn.style, {
-    background:   'none',
-    border:       BORDER,
-    borderRadius: '4px',
-    cursor:       'pointer',
-    fontSize:     '10px',
-    color:        CLR.iconHover,
-    padding:      '2px 7px',
+    ...controlStyle('outlined'),
   } as Partial<CSSStyleDeclaration>);
+  wireControlHover(exportBtn);
   exportBtn.addEventListener('click', () => {
     const cols = ['Test', 'N', 'Pass', 'Fail', 'Pass Rate %'];
-    const idCols = resolveCsvIdentityColumns(csv, cols);
+    const idCols = [...resolveCsvIdentityColumns(csv, cols), ...csvPopulationColumn(csv)];
     const lines = [[...idCols.map(c => c.label), ...cols].map(csvField).join(',')];
     for (const r of rows) {
       lines.push([
@@ -1075,16 +1654,17 @@ export function buildFunctionalTestSection(
   const table = el('table', {
     width:          '100%',
     borderCollapse: 'collapse',
-    fontSize:       '11px',
+    fontSize:       FONT.body,
   });
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  for (const h of ['Test', 'N', 'Pass', 'Fail', 'Pass rate']) {
+  const fnHeaders = fnUniformN === null ? ['Test', 'N', 'Pass', 'Fail', 'Pass rate'] : ['Test', 'Pass', 'Fail', 'Pass rate'];
+  for (const h of fnHeaders) {
     headRow.appendChild(el('th', {
       textAlign:     h === 'Test' ? 'left' : 'right',
       fontWeight:    '700',
-      fontSize:      '10px',
-      letterSpacing: '0.03em',
+      fontSize:      FONT.body,
+      letterSpacing: TRACKING,
       textTransform: 'uppercase',
       color:         LABEL_COLOR,
       padding:       '3px 8px 5px',
@@ -1101,25 +1681,34 @@ export function buildFunctionalTestSection(
     const cell = (text: string, align: 'left' | 'right' = 'right') => {
       row.appendChild(el('td', {
         textAlign:    align,
-        padding:      '4px 8px',
+        padding: `${SPACE.xs} ${SPACE.md}`,
         borderBottom: `1px solid ${CLR.menuBorder}`,
         color:        VALUE_COLOR,
         whiteSpace:   'nowrap',
       }, text));
     };
     cell(r.label, 'left');
-    cell(String(r.totalDies));
+    if (fnUniformN === null) cell(String(r.totalDies));
     cell(String(r.passDies));
     cell(String(r.failDies));
-    cell(r.passRatePercent !== null ? `${r.passRatePercent.toFixed(1)}% (N=${r.totalDies})` : '—');
+    cell(r.passRatePercent !== null ? `${r.passRatePercent.toFixed(1)}%` : '—');
     tbody.appendChild(row);
   }
   table.appendChild(tbody);
 
   const scroll = el('div', { overflowX: 'auto' });
   scroll.appendChild(table);
-  outer.appendChild(scroll);
-  return outer;
+
+  if (!panel) {
+    outer.appendChild(scroll);
+    return outer;
+  }
+  headerRow.remove();
+  const { outer: shell } = collapsibleSection(
+    titleText, true, undefined,
+    { stateKey: 'functionalTests', panel, render: content => content.appendChild(scroll), control: () => exportBtn },
+  );
+  return shell;
 }
 
 /**
@@ -1133,6 +1722,8 @@ export function buildLotFunctionalSection(
   testDefs: TestDef[] | undefined,
   perWaferSummaries?: StatsSummary[],
   onSaveText?: SaveTextHandler,
+  /** Panel element owning the collapsed state. Omit for a stateless render. */
+  panel?: HTMLElement,
 ): HTMLDivElement | null {
   const csv: CsvExportContext | undefined = perWaferSummaries?.length ? {
     perWaferMetadata: perWaferSummaries.map(s => s.wafer ?? {}),
@@ -1154,9 +1745,9 @@ export function buildLotFunctionalSection(
       ...acc,
       passRatePercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null,
     }));
-    if (pooled.length) return buildFunctionalTestSection(allDies, testDefs, pooled, onSaveText, csv);
+    if (pooled.length) return buildFunctionalTestSection(allDies, testDefs, pooled, onSaveText, csv, panel);
   }
-  return buildFunctionalTestSection(allDies, testDefs, undefined, onSaveText, csv);
+  return buildFunctionalTestSection(allDies, testDefs, undefined, onSaveText, csv, panel);
 }
 
 // ── Findings display vocabulary ──────────────────────────────────────────────
@@ -1199,6 +1790,16 @@ export function buildFindingsSection(
    * Default false (collapsible-section behavior, used when this is one
    * section among several, e.g. inside the Insights Overview tab's legacy
    * embedding).
+   *
+   * NOTE — the `false` path has no in-repo caller today, and it is the only
+   * collapsible section in this panel that does NOT persist its collapsed
+   * state: `collapsibleSection` needs both a `stateKey` and the owning `panel`
+   * to do that, and this function is not given a `panel`. Every section that
+   * actually renders (bins, regionYield, waferYield, testValues,
+   * functionalTests, findings) does persist, so the panel is consistent as
+   * shipped. If you revive this path — or call it from outside the library —
+   * thread a `panel` through and give it a `stateKey`, or it will be the one
+   * section that forgets whether the reader collapsed it.
    */
   standalone = false,
 ): HTMLDivElement | null {
@@ -1274,7 +1875,7 @@ export function buildFindingsSection(
     row.type = 'button';
     row.dataset.wmapFinding = finding.id;
     row.textContent = findingRowText(finding, groupLeft);
-    row.title = finding.summary;
+    wireTooltip(row, finding.summary);
     // isActive already drives the row's highlighted background/font-weight
     // visually; aria-current carries the same "this is the one currently
     // shown on the map" state to a screen reader, which colour/weight alone
@@ -1285,15 +1886,15 @@ export function buildFindingsSection(
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(finding.severity)}`,
       background:   isActive ? CLR.bgActive : CLR.menuBg,
-      borderRadius: '6px',
+      borderRadius: RADIUS.container,
       padding:      isChild ? '6px 10px' : '8px 10px',
       textAlign:    'left',
       fontSize:     isChild ? '10px' : '11px',
       fontWeight:   isActive ? '600' : '400',
-      color:        CLR.iconHover,
+      color:        CLR.text,
       cursor:       'pointer',
       width:        '100%',
-      marginBottom: '4px',
+      marginBottom: SPACE.xs,
     });
     row.addEventListener('click', () => onFindingClick(finding, row));
     return row;
@@ -1304,19 +1905,19 @@ export function buildFindingsSection(
   if (narrativeText) {
     const narrativeBlock = el('div', {
       background:    CLR.bgActive,
-      borderRadius:  '6px',
-      padding:       '8px 10px',
-      marginBottom:  '8px',
+      borderRadius:  RADIUS.container,
+      padding: `${SPACE.md} ${SPACE.lg}`,
+      marginBottom: SPACE.md,
       display:       'flex',
-      gap:           '8px',
+      gap: SPACE.md,
       alignItems:    'flex-start',
     });
 
     const narrativeText2 = el('span', {
       flex:       '1',
-      fontSize:   '12px',
-      lineHeight: '1.5',
-      color:      CLR.iconHover,
+      fontSize:   FONT.body,
+      lineHeight: LEADING.base,
+      color:      CLR.text,
     }, narrativeText);
     narrativeBlock.appendChild(narrativeText2);
 
@@ -1324,11 +1925,11 @@ export function buildFindingsSection(
       flexShrink: '0',
       border:     'none',
       background: 'none',
-      fontSize:   '10px',
+      fontSize:   FONT.body,
       color:      CLR.icon,
       cursor:     'pointer',
       padding:    '0',
-      lineHeight: '1.5',
+      lineHeight: LEADING.base,
       whiteSpace: 'nowrap',
     }, 'Detail ▸');
     (detailBtn as HTMLButtonElement).type = 'button';
@@ -1338,8 +1939,8 @@ export function buildFindingsSection(
       // Narrative paragraph
       const narPara = el('p', {
         fontSize:     '16px',
-        lineHeight:   '1.6',
-        color:        CLR.iconHover,
+        lineHeight:   LEADING.base,
+        color:        CLR.text,
         padding:      '20px 24px 16px',
         margin:       '0',
         borderBottom: `1px solid ${CLR.menuBorder}`,
@@ -1350,15 +1951,15 @@ export function buildFindingsSection(
       // Scrollable findings list — pattern parents first, then standalone groups
       const listWrap = el('div', {
         overflowY: 'auto',
-        padding:   '16px 24px',
+        padding: `${SPACE.xxl} ${SPACE.xxxl}`,
         flex:      '1',
       });
 
       const modalGroupHeader = (severity: StatsFinding['severity'], text: string) => {
         const h = el('div', {
           display: 'flex', alignItems: 'center', gap: '7px',
-          fontSize: '13px', fontWeight: '600', color: VALUE_COLOR,
-          marginTop: '10px', marginBottom: '4px',
+          fontSize: FONT.sub, fontWeight: '600', color: VALUE_COLOR,
+          marginTop: SPACE.lg, marginBottom: SPACE.xs,
         });
         h.appendChild(sevDot(severity));
         h.appendChild(el('span', {}, text));
@@ -1368,18 +1969,18 @@ export function buildFindingsSection(
       for (const pf of patternFindings) {
         listWrap.appendChild(modalGroupHeader(pf.severity, pf.comparison.left));
         listWrap.appendChild(el('div', {
-          fontSize:    '13px',
-          color:       CLR.iconHover,
+          fontSize:    FONT.body,
+          color:       CLR.text,
           padding:     '3px 0 3px 15px',
-          marginBottom: '2px',
+          marginBottom: SPACE.xxs,
         }, plainBinTerms(pf.summary)));
         const children = findings.filter(f => pf.relatedIds?.includes(f.id));
         for (const cf of children) {
           listWrap.appendChild(el('div', {
-            fontSize:    '12px',
-            color:       CLR.icon,
+            fontSize:    FONT.body,
+            color:       LABEL_COLOR,
             padding:     '2px 0 2px 23px',
-            marginBottom: '2px',
+            marginBottom: SPACE.xxs,
           }, plainBinTerms(cf.summary)));
         }
       }
@@ -1389,10 +1990,10 @@ export function buildFindingsSection(
         listWrap.appendChild(modalGroupHeader(group.worst, groupLabel(fam, left)));
         for (const f of group.findings) {
           listWrap.appendChild(el('div', {
-            fontSize:    '13px',
-            color:       CLR.iconHover,
+            fontSize:    FONT.body,
+            color:       CLR.text,
             padding:     '3px 0 3px 15px',
-            marginBottom: '2px',
+            marginBottom: SPACE.xxs,
           }, findingRowText(f, left)));
         }
       }
@@ -1425,17 +2026,17 @@ export function buildFindingsSection(
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(pf.severity)}`,
       background:   isActive ? CLR.bgActive : CLR.menuBg,
-      borderRadius: '6px',
+      borderRadius: RADIUS.container,
       padding:      '8px 32px 8px 10px', // right padding for chevron
       textAlign:    'left',
-      fontSize:     '11px',
+      fontSize:     FONT.body,
       fontWeight:   isActive ? '600' : '500',
-      color:        CLR.iconHover,
+      color:        CLR.text,
       cursor:       'pointer',
       width:        '100%',
     });
     parentRow.textContent = plainBinTerms(pf.summary);
-    parentRow.title = pf.summary;
+    wireTooltip(parentRow, pf.summary);
     // See makeFindingRow's identical comment — isActive already drives the
     // visual highlight, this exposes the same state to a screen reader.
     parentRow.setAttribute('aria-current', isActive ? 'true' : 'false');
@@ -1447,7 +2048,7 @@ export function buildFindingsSection(
       const childWrap = el('div', {
         display:     'none',
         paddingLeft: '12px',
-        marginBottom: '4px',
+        marginBottom: SPACE.xs,
       });
       for (const cf of children) {
         childWrap.appendChild(makeFindingRow(cf, true));
@@ -1463,16 +2064,18 @@ export function buildFindingsSection(
         transform:  'translateY(-50%)',
         border:     'none',
         background: 'none',
-        fontSize:   '10px',
+        fontSize:   FONT.body,
         color:      CLR.icon,
         cursor:     'pointer',
-        padding:    '2px 4px',
-        lineHeight: '1',
+        padding: `${SPACE.xxs} ${SPACE.xs}`,
+        lineHeight: LEADING.none,
       }, '▸') as HTMLButtonElement;
       chevron.type = 'button';
-      chevron.title = 'Show supporting findings';
-      // The glyph alone (▸/▾) carries no name a screen reader will read, and
-      // `title` is a hover-only hint a keyboard/AT user never sees —
+      // No text argument — the tooltip live-reads `aria-label`, which the click
+      // handler below already keeps in step with the expanded state.
+      wireTooltip(chevron);
+      // The glyph alone (▸/▾) carries no name a screen reader will read, and the
+      // tooltip is a hover-only hint a keyboard/AT user never sees —
       // aria-label is the one that actually reaches them, and aria-expanded
       // exposes the open/closed state `childWrap`'s visibility otherwise only
       // conveys visually.
@@ -1484,7 +2087,6 @@ export function buildFindingsSection(
         childWrap.style.display = expanded ? 'block' : 'none';
         chevron.textContent = expanded ? '▾' : '▸';
         const label = expanded ? 'Hide supporting findings' : 'Show supporting findings';
-        chevron.title = label;
         chevron.setAttribute('aria-label', label);
         chevron.setAttribute('aria-expanded', String(expanded));
       });
@@ -1503,8 +2105,8 @@ export function buildFindingsSection(
     // Sentence-case neutral header; severity carried by the dot alone (the
     // rows below keep their thin left border as their own single encoding).
     const header = el('div', {
-      display: 'flex', alignItems: 'center', gap: '6px',
-      fontSize: '11px', fontWeight: '600', color: VALUE_COLOR,
+      display: 'flex', alignItems: 'center', gap: SPACE.sm,
+      fontSize: FONT.body, fontWeight: '600', color: VALUE_COLOR,
       margin: '2px 0 4px',
     });
     header.appendChild(sevDot(group.worst));
@@ -1558,8 +2160,8 @@ const FINDINGS_SEVERITY_LABEL: Record<StatsSeverity, string> = { unusual: 'Unusu
  *  visibly on and shows how many findings it covers has no such ambiguity. */
 function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFilter, onChange: () => void): HTMLDivElement {
   const row = el('div', {
-    display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',
-    marginBottom: '10px', paddingBottom: '10px', borderBottom: `1px solid ${CLR.separator}`,
+    display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.lg,
+    marginBottom: SPACE.lg, paddingBottom: '10px', borderBottom: `1px solid ${CLR.separator}`,
   });
 
   const counts: Record<StatsSeverity, number> = { unusual: 0, notable: 0, info: 0 };
@@ -1572,7 +2174,7 @@ function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFil
       : Array.isArray(filter.severity) ? filter.severity : [filter.severity],
   );
 
-  const severityWrap = el('div', { display: 'flex', gap: '4px', flexWrap: 'wrap' });
+  const severityWrap = el('div', { display: 'flex', gap: SPACE.xs, flexWrap: 'wrap' });
   for (const s of present) {
     const chip = document.createElement('button');
     chip.type = 'button';
@@ -1581,15 +2183,16 @@ function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFil
       chip.setAttribute('aria-pressed', on ? 'true' : 'false');
       Object.assign(chip.style, {
         display: 'inline-flex', alignItems: 'center', gap: '5px',
-        border: `1px solid ${CLR.menuBorder}`, borderRadius: '10px',
+        border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.pill,
         background: on ? CLR.bgActive : 'none',
         opacity: on ? '1' : '0.5',
-        color: CLR.text, fontSize: '11px', padding: '2px 8px', cursor: 'pointer',
+        color: CLR.text, fontSize: FONT.body, padding: `${SPACE.xxs} ${SPACE.md}`, cursor: 'pointer',
       } as Partial<CSSStyleDeclaration>);
     };
     chip.appendChild(sevDot(s));
     chip.appendChild(el('span', {}, `${FINDINGS_SEVERITY_LABEL[s]} ${counts[s]}`));
-    chip.title = enabled.has(s) ? 'Click to hide these findings' : 'Click to show these findings';
+    // Getter, not a fixed string: the hint flips as the chip is toggled.
+    wireTooltip(chip, () => enabled.has(s) ? 'Click to hide these findings' : 'Click to show these findings');
     paint();
     chip.addEventListener('click', () => {
       if (enabled.has(s)) enabled.delete(s); else enabled.add(s);
@@ -1600,18 +2203,31 @@ function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFil
   }
   row.appendChild(severityWrap);
 
-  row.appendChild(makeLabeledSelect('Kind:', FINDINGS_KIND_OPTIONS, (filter.kind as string) ?? '', (v) => {
-    filter.kind = v ? (v as StatsVariableKind) : undefined;
-    onChange();
-  }, { maxWidth: '130px' }));
+  // The Kind/Region dropdowns cost two full rows of a 260px column. Below the
+  // threshold the whole findings list is shorter than the controls for filtering
+  // it, and the severity chips above already subset it — so they only appear once
+  // there are enough findings to be worth narrowing. They stay mounted whenever a
+  // filter is actually active, so a user who filtered down to two findings can
+  // still see and clear the filter that got them there.
+  const filterActive = filter.kind !== undefined || filter.family !== undefined;
+  if (allFindings.length >= FINDINGS_FILTER_THRESHOLD || filterActive) {
+    row.appendChild(makeLabeledSelect('Kind:', FINDINGS_KIND_OPTIONS, (filter.kind as string) ?? '', (v) => {
+      filter.kind = v ? (v as StatsVariableKind) : undefined;
+      onChange();
+    }, { maxWidth: '130px' }));
 
-  row.appendChild(makeLabeledSelect('Region:', FINDINGS_FAMILY_OPTIONS, (filter.family as string) ?? '', (v) => {
-    filter.family = v ? (v as StatsComparisonFamily) : undefined;
-    onChange();
-  }, { maxWidth: '150px' }));
+    row.appendChild(makeLabeledSelect('Region:', FINDINGS_FAMILY_OPTIONS, (filter.family as string) ?? '', (v) => {
+      filter.family = v ? (v as StatsComparisonFamily) : undefined;
+      onChange();
+    }, { maxWidth: '150px' }));
+  }
 
   return row;
 }
+
+/** Findings count at or above which the Kind/Region dropdowns are worth their
+ *  vertical space in the panel. */
+const FINDINGS_FILTER_THRESHOLD = 8;
 
 /**
  * Findings section with severity/kind/region filter controls — the
@@ -1625,6 +2241,8 @@ export function buildFindingsSectionWithFilter(
   activeFindingId: string | null,
   filter: FindingsFilter,
   onFilterChange: () => void,
+  /** Panel element owning the collapsed state. Omit for a stateless render. */
+  panel?: HTMLElement,
 ): HTMLDivElement | null {
   if (!source.findings.length) return null;
 
@@ -1633,13 +2251,16 @@ export function buildFindingsSectionWithFilter(
     ? source.findings.filter(f => f.severity !== 'info').length.toString()
     : undefined;
 
-  const { outer, content } = collapsibleSection(`Findings (${source.findings.length})`, hasNotable, badge);
+  const { outer, content } = collapsibleSection(
+    `Findings (${source.findings.length})`, hasNotable, badge,
+    { stateKey: 'findings', panel },
+  );
   content.appendChild(buildFindingsFilterRow(source.findings, filter, onFilterChange));
 
   const filtered = filterFindings(source, filter);
   if (!filtered.length) {
     content.appendChild(el('div', {
-      color: LABEL_COLOR, fontSize: '11px', textAlign: 'center', padding: '16px 8px',
+      color: LABEL_COLOR, fontSize: FONT.body, textAlign: 'center', padding: `${SPACE.xxl} ${SPACE.md}`,
     }, 'No findings match the current filter.'));
     return outer;
   }
@@ -1668,6 +2289,15 @@ export function buildLotTestSection(
   perWaferSummaries?: StatsSummary[],
   /** Optional host hook for the "Export CSV" button — see `saveTextFile` (toolbar.ts). */
   onSaveText?: SaveTextHandler,
+  /**
+   * One item per wafer for the Ppk column — the lot is the population Ppk is
+   * meant to describe, so every wafer must be passed, not the pooled die array.
+   */
+  capabilityItems?: CapabilityItem[],
+  /** Panel element owning the collapsed state. Omit for a stateless render. */
+  panel?: HTMLElement,
+  /** See `buildTestSection`'s `columns`. Defaults to the full set. */
+  columns: 'compact' | 'full' = 'full',
 ): HTMLDivElement | null {
   const csv: CsvExportContext | undefined = perWaferSummaries?.length ? {
     perWaferMetadata: perWaferSummaries.map(s => s.wafer ?? {}),
@@ -1719,7 +2349,7 @@ export function buildLotTestSection(
     };
   }
 
-  return buildTestSection(allDies, testDefs, fallbackFormat, pooled, onSaveText, csv);
+  return buildTestSection(allDies, testDefs, fallbackFormat, pooled, onSaveText, csv, capabilityItems, panel, columns);
 }
 
 
@@ -1738,22 +2368,35 @@ export function createSummaryPanelEl(
   const isVertical = placement === 'top' || placement === 'bottom';
   const panel = el('div', {
     background:  PANEL_BG,
+    // Set the inherited text colour explicitly. Without it the panel's own
+    // unstyled text took whatever the HOST page happened to set — which looked
+    // right embedded in tsmap and fell back to browser-default black
+    // standalone, so `CLR.text` never actually reached six of the panel's text
+    // elements. Also collapses two apparent text styles into one real role.
+    color:       CLR.text,
+    // Digits share one advance width, so figures line up down a column instead
+    // of jittering — this panel is read by scanning columns of percentages and
+    // counts. system-ui supports it; the exported HTML report already set it
+    // (reportHtml.ts) while the live UI did not, so the two disagreed.
+    fontVariantNumeric: 'tabular-nums',
     border:      BORDER,
-    borderRadius:'6px',
-    padding:     '12px',
+    borderRadius:RADIUS.container,
+    padding: SPACE.xl,
     overflowY:   isVertical ? 'hidden' : 'auto',
     overflowX:   isVertical ? 'auto'   : 'hidden',
     flexShrink:  '0',
     boxSizing:   'border-box',
-    fontFamily:  'system-ui, sans-serif',
-    fontSize:    '12px',
-    boxShadow:   '0 1px 4px rgba(0,0,0,0.08)',
+    fontFamily:  FONT.family,
+    fontSize:    FONT.body,
+    boxShadow:   SHADOW.panel,
   }, undefined, ownerDocument);
 
   if (!isVertical) {
-    // 260px, up from 220 — at 220 the findings narrative wrapped every two
-    // or three words and stat-tile labels broke mid-parenthetical.
-    panel.style.width    = '260px';
+    // 300px, up from 260 (and 220 before that) — at 260 the findings narrative
+    // wrapped every two or three words and stat-tile labels broke
+    // mid-parenthetical; the 12px control/body tier (UI_STANDARDS.md type
+    // scale) then pushed the per-test table's last column past the edge.
+    panel.style.width    = '300px';
     // Bound the panel by its container (the flex row), not the viewport. A
     // viewport-relative cap (e.g. 100vh) overflows a container shorter than the
     // viewport, stretching the row and clipping the wafer. With the wrapper
@@ -1778,7 +2421,7 @@ export function wrapWithSummaryPanel(
   const wrapper = el('div', {
     display:       'flex',
     flexDirection: isVertical ? 'column' : 'row',
-    gap:           '8px',
+    gap: SPACE.md,
     width:         '100%',
     // Fill the container's height so the whole subtree is bounded by it. The
     // container (a plain block in the common embedding) gives no height to a
@@ -1812,24 +2455,21 @@ export function wrapWithSummaryPanel(
 
 function panelHeader(text: string): HTMLDivElement {
   return el('div', {
-    fontSize:      '13px',
-    fontWeight:    '700',
+    fontSize:      FONT.heading,
+    fontWeight:    '600',
     color:         VALUE_COLOR,
-    marginBottom:  '10px',
+    marginBottom: SPACE.lg,
   }, text);
 }
 
 function reportButton(label: string, onClick: () => void): HTMLButtonElement {
-  const btn = el('button', {
-    background:   'none',
-    border:       BORDER,
-    borderRadius: '4px',
-    cursor:       'pointer',
-    fontSize:     '10px',
-    color:        CLR.iconHover,
-    padding:      '2px 7px',
-  }, label);
+  // "Summary report" / "View die list". These restated the outlined-button
+  // shape by hand and wired no hover, so they read as labels — the shape's
+  // own definition (controlStyle) plus wireControlHover is the whole point of
+  // having it.
+  const btn = el('button', controlStyle('outlined') as Record<string, string>, label);
   btn.type = 'button';
+  wireControlHover(btn);
   btn.addEventListener('click', onClick);
   return btn;
 }
@@ -1844,7 +2484,7 @@ function reportButton(label: string, onClick: () => void): HTMLButtonElement {
 function reportButtonRow(...buttons: Array<HTMLButtonElement | null>): HTMLDivElement | null {
   const present = buttons.filter((b): b is HTMLButtonElement => !!b);
   if (!present.length) return null;
-  const row = el('div', { display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' });
+  const row = el('div', { display: 'flex', flexWrap: 'wrap', gap: SPACE.sm, marginBottom: SPACE.lg });
   for (const b of present) row.appendChild(b);
   return row;
 }
@@ -1932,6 +2572,13 @@ export function renderWaferSummaryContent(
     passBins?:    number[];
     ringCount?:   number;
     colorScheme?: string;
+    /**
+     * The map's active plot mode. Selects which bin type the bin breakdown opens
+     * on, so the panel describes the population actually on screen — see
+     * `buildBinBreakdownSection`. Omitting it falls back to whichever bin type
+     * has data, which is the old (wrong-for-soft-bin-maps) behaviour.
+     */
+    plotMode?:    PlotMode;
     fallbackFormat?: 'si' | 'engineering';
     onFindingClick?: (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
@@ -1942,6 +2589,19 @@ export function renderWaferSummaryContent(
     metadataFields?: MetadataFieldDef[];
     /** See `RenderOptions.dieList` — gates the "View die list" link below. */
     dieListOptions?: DieListDisplayOptions;
+    /**
+     * Suppress the "Wafer Info" metadata section because the caller already
+     * renders this metadata elsewhere — `renderWaferMap` passes true whenever its
+     * identity header is mounted (`showIdentityHeader`, the default), since that
+     * header's expandable panel is built from the very same
+     * `metadataEntries`/`buildCompactMetadataRows` helpers.
+     *
+     * This mirrors a decision the lot panel already makes for itself: it omits
+     * the section unconditionally because the gallery's top strip covers it (see
+     * `renderLotSummaryContent`). Two copies of the same fields in a 260px column,
+     * authoritative in neither place, is the thing being avoided in both cases.
+     */
+    metadataShownElsewhere?: boolean;
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -1950,10 +2610,10 @@ export function renderWaferSummaryContent(
     wafer, dies, yieldSummary, dataCoverage,
     hbinDefs, sbinDefs, testDefs,
     statsSummary, passBins = [1], ringCount = 4,
-    colorScheme, fallbackFormat,
+    colorScheme, plotMode, fallbackFormat,
     onFindingClick, activeFindingId = null,
     findingsFilter, onFindingsFilterChange,
-    onSaveText, metadataFields, dieListOptions,
+    onSaveText, metadataFields, dieListOptions, metadataShownElsewhere,
   } = params;
 
   panel.appendChild(panelHeader('Wafer Summary'));
@@ -1992,28 +2652,36 @@ export function renderWaferSummaryContent(
   const stacked = lotStackStats?.lotSize !== undefined
     ? { lotSize: lotStackStats.lotSize, aggrMethod: fmtAggregationMethod(lotStackStats.aggregationMethod) }
     : undefined;
-  sections.push(buildMetadataInfoSection([{ metadata: wafer.metadata ?? undefined }], stacked));
+  if (!metadataShownElsewhere) {
+    sections.push(buildMetadataInfoSection([{ metadata: wafer.metadata ?? undefined }], stacked));
+  }
 
   if (yieldSummary && dataCoverage) sections.push(buildYieldSection(yieldSummary, dataCoverage, passBins));
 
-  // Use hard bin mode as the primary bin display; fall back to soft if only soft present
-  const hasHbin = dies.some(d => d.hbin != null);
-  const hasSbin = dies.some(d => d.sbin != null);
-  if (hasHbin) sections.push(buildBinSection(dies, hbinDefs, 'hard', colorScheme, statsSummary?.stats.hardBinCounts));
-  else if (hasSbin) sections.push(buildBinSection(dies, sbinDefs, 'soft', colorScheme, statsSummary?.stats.softBinCounts));
-
-  sections.push(buildRingSection(dies, wafer, ringCount, passBins));
-  sections.push(buildQuadrantSection(dies, wafer, ringCount, passBins));
-
-  const csvIdentity: CsvExportContext | undefined = wafer.metadata ? { waferMetadata: wafer.metadata } : undefined;
-  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText, csvIdentity));
-  sections.push(buildFunctionalTestSection(dies, testDefs, statsSummary?.stats.functionalYield, onSaveText, csvIdentity));
-
+  // Findings sit directly under the headline stats, not at the bottom of the
+  // panel. They are the only actionable section, the only one with a badge
+  // count, and they used to be reachable only after scrolling past two full
+  // test tables — the panel's most important content behind its densest.
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
     sections.push(buildFindingsSectionWithFilter(
-      statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange,
+      statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel,
     ));
   }
+
+  sections.push(buildBinBreakdownSection({
+    dies, hbinDefs, sbinDefs, colorScheme,
+    hardCounts: statsSummary?.stats.hardBinCounts,
+    softCounts: statsSummary?.stats.softBinCounts,
+    plotMode, passBins, panel,
+  }));
+
+  sections.push(buildRegionYieldPanelSection({
+    diesByWafer: [dies], allWafers: [wafer], ringCount, passBins, panel,
+  }));
+
+  const csvIdentity: CsvExportContext | undefined = wafer.metadata ? { waferMetadata: wafer.metadata } : undefined;
+  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText, csvIdentity, [{ dies }], panel, 'compact'));
+  sections.push(buildFunctionalTestSection(dies, testDefs, statsSummary?.stats.functionalYield, onSaveText, csvIdentity, panel));
 
   let first = true;
   for (const s of sections) {
@@ -2042,6 +2710,8 @@ export function renderLotSummaryContent(
     passBins?:        number[];
     ringCount?:       number;
     colorScheme?:     string;
+    /** The gallery's active plot mode — see the wafer panel's `plotMode`. */
+    plotMode?:        PlotMode;
     fallbackFormat?:  'si' | 'engineering';
     onFindingClick?:  (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
@@ -2053,6 +2723,10 @@ export function renderLotSummaryContent(
     warnings?: WaferWarning[];
     /** See `RenderOptions.dieList` — gates the "View die list" link below. */
     dieListOptions?: DieListDisplayOptions;
+    /** Per-wafer findings tally badged onto the Wafer Yield rows — see
+     *  `buildPerWaferYieldSection`. */
+    findingsFor?: (waferIndex: number) => { total: number; unusual: number; notable: number } | undefined;
+
   },
 ): void {
   const savedScroll = panel.scrollTop;
@@ -2061,11 +2735,11 @@ export function renderLotSummaryContent(
     lotSummary, items,
     hbinDefs, sbinDefs, testDefs,
     passBins = [1], ringCount = 4,
-    colorScheme, fallbackFormat,
+    colorScheme, plotMode, fallbackFormat,
     onFindingClick, activeFindingId = null,
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
-    onSaveText, dieListOptions,
+    onSaveText, dieListOptions, findingsFor,
   } = params;
 
   panel.appendChild(panelHeader(`Lot Summary — ${lotSummary.stats.waferCount} wafer${lotSummary.stats.waferCount === 1 ? '' : 's'}`));
@@ -2134,16 +2808,19 @@ export function renderLotSummaryContent(
       })
     : null;
 
+  // No separate "Findings report" button: the summary report now carries both the
+  // lot-level findings and a per-wafer "Findings by Wafer" section, so a second
+  // button would offer a subset of the same document. It was also asymmetric —
+  // present only when some wafer had findings, and on the no-lot-stats fallback
+  // path it was the ONLY report available.
   const reportRow = reportButtonRow(summaryReportBtn, dieListBtn);
   if (reportRow) panel.appendChild(reportRow);
 
 
-  const hasHbin = allDies.some(d => d.hbin != null);
-  const hasSbin = allDies.some(d => d.sbin != null);
   const perWaferSummaries = items.map(i => i?.statsSummary).filter((s): s is StatsSummary => !!s);
 
   const sections: (HTMLDivElement | null)[] = [
-    buildLotOverviewSection(lotSummary),
+    buildLotOverviewSection(lotSummary, perWaferSummaries),
     // No buildMetadataInfoSection here, unlike the single-wafer summary panel
     // (below, line ~1979) which is its OWN sole source for this. On the lot
     // path the gallery's top strip (renderWaferGallery.ts's legendEl, built
@@ -2151,20 +2828,25 @@ export function renderLotSummaryContent(
     // this exact facet table above the grid — confirmed byte-identical
     // against a live 13-wafer lot, not assumed. A second copy here cost a
     // third of the sidebar's width for zero new information.
-    buildPerWaferYieldSection(lotSummary, items, onWaferClick),
-    hasHbin ? buildLotBinSection(allDies, hbinDefs, 'hard', colorScheme)
-            : hasSbin ? buildLotBinSection(allDies, sbinDefs, 'soft', colorScheme) : null,
-    buildLotRingSection(diesByWafer, allWafers, ringCount, passBins),
-    buildLotQuadrantSection(diesByWafer, allWafers, ringCount, passBins),
-    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText) : null,
-    testDefs?.length ? buildLotFunctionalSection(allDies, testDefs, perWaferSummaries, onSaveText) : null,
   ];
 
+  // Same reasoning as the wafer panel: findings directly under the headline
+  // stats, ahead of the bin/region/test detail.
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {
     sections.push(buildFindingsSectionWithFilter(
-      lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange,
+      lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel,
     ));
   }
+
+  sections.push(
+    buildPerWaferYieldSection(lotSummary, items, onWaferClick, panel, findingsFor),
+    buildBinBreakdownSection({
+      dies: allDies, hbinDefs, sbinDefs, colorScheme, plotMode, passBins, panel,
+    }),
+    buildRegionYieldPanelSection({ diesByWafer, allWafers, ringCount, passBins, panel }),
+    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText, diesByWafer.map(d => ({ dies: d })), panel, 'compact') : null,
+    testDefs?.length ? buildLotFunctionalSection(allDies, testDefs, perWaferSummaries, onSaveText, panel) : null,
+  );
 
   let first = true;
   for (const s of sections) {

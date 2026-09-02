@@ -26,7 +26,11 @@ test('buildBinSection — precomputed counts produce the same text as the raw-sc
     die({ hbin: 1, partial: true }), // excluded from both paths
   ];
   const fallback = buildBinSection(dies, undefined, 'hard');
-  const precomputed = buildBinSection(dies, undefined, 'hard', { 1: 2, 2: 1 });
+  // 5th positional arg, not the 4th — the 4th is `colorScheme`. This previously
+  // passed the counts object into the colorScheme slot, so BOTH sides fell through
+  // to the raw-die scan and the assertion compared the fallback with itself: the
+  // precomputed path this test exists to cover was never actually exercised.
+  const precomputed = buildBinSection(dies, undefined, 'hard', undefined, { 1: 2, 2: 1 });
   assert.equal(fallback.textContent, precomputed.textContent);
 });
 
@@ -135,10 +139,13 @@ test('buildFunctionalTestSection — pass-rate rows from recorded verdicts and l
   assert.match(section.textContent, /Functional Tests/);
   assert.match(section.textContent, /scan_chain/);
   assert.match(section.textContent, /bist/);
-  // scan_chain: 3 verdicts, 2 pass → 66.7% (N=3)
-  assert.match(section.textContent, /66\.7% \(N=3\)/);
-  // bist (legacy 0/1): 2 verdicts, 1 pass → 50.0% (N=2)
-  assert.match(section.textContent, /50\.0% \(N=2\)/);
+  // scan_chain: 3 verdicts, 2 pass → 66.7%; bist (legacy 0/1): 2 of 2 → 50.0%.
+  // The counts differ between the two tests here, so N stays as its own column
+  // rather than being hoisted to the title, and the pass-rate cell carries the
+  // percentage alone — it no longer repeats the N that the column already shows.
+  assert.match(section.textContent, /scan_chain32166\.7%/);
+  assert.match(section.textContent, /bist21150\.0%/);
+  assert.match(section.textContent, /TestNPassFailPass rate/);
   // parametric test never appears
   assert.doesNotMatch(section.textContent, /Idsat/);
 });
@@ -149,7 +156,12 @@ test('buildFunctionalTestSection — null without functional defs; precomputed r
 
   const precomputed = [{ testNumber: 2001, label: 'scan_chain', passDies: 90, failDies: 10, totalDies: 100, passRatePercent: 90 }];
   const section = buildFunctionalTestSection([], [{ testNumber: 2001, name: 'scan_chain', testType: 'F' }], precomputed);
-  assert.match(section.textContent, /90\.0% \(N=100\)/);
+  assert.match(section.textContent, /90\.0%/);
+  // One test, so every row shares N: the column is dropped and the population
+  // moves into the section title. It must still be stated somewhere — dropping
+  // a uniform column must never drop the number itself.
+  assert.match(section.textContent, /N=100/);
+  assert.doesNotMatch(section.textContent, /TestNPassFail/);
 });
 
 test('buildLotFunctionalSection — pools per-wafer functionalYield counts exactly', async () => {
@@ -159,8 +171,10 @@ test('buildLotFunctionalSection — pools per-wafer functionalYield counts exact
     stats: { functionalYield: [{ testNumber: 2001, label: 'scan_chain', passDies, failDies, totalDies: passDies + failDies, passRatePercent: (passDies / (passDies + failDies)) * 100 }] },
   });
   const section = buildLotFunctionalSection([], defs, [mkSummary(8, 2), mkSummary(6, 4)]);
-  // pooled: 14 pass / 20 total = 70.0% (N=20)
-  assert.match(section.textContent, /70\.0% \(N=20\)/);
+  // pooled: 14 pass / 20 total = 70.0%, with N=20 hoisted into the title
+  assert.match(section.textContent, /70\.0%/);
+  assert.match(section.textContent, /N=20/);
+  assert.match(section.textContent, /scan_chain1467/);
 });
 
 // ── CsvExportContext: wafer identity on the per-test CSVs ──────────────────
@@ -170,7 +184,7 @@ test('buildLotFunctionalSection — pools per-wafer functionalYield counts exact
 // way to tell which wafer a row came from.
 
 function clickExport(section) {
-  const btn = [...section.querySelectorAll('button')].find(b => b.textContent === 'Export CSV');
+  const btn = [...section.querySelectorAll('button')].find(b => /CSV$/.test(b.textContent));
   btn.click();
 }
 
@@ -228,7 +242,15 @@ test('buildLotTestSection — a mixed lot (no common metadata) emits no false id
   clickExport(section);
 
   const headerLine = saved.text.split('\n')[0];
-  assert.ok(headerLine.startsWith('Test,'), `expected no identity prefix on a mixed lot, got: ${headerLine}`);
+  // No METADATA identity columns — nothing is common across these wafers, and a
+  // "Lot" column would be a false claim.
+  assert.ok(!/\bLot\b/.test(headerLine), `no false Lot column: ${headerLine}`);
+  assert.ok(!/\bWafer\b/.test(headerLine), `no false Wafer column: ${headerLine}`);
+  // Population IS emitted, and must be: a mixed pool has no shared identity but
+  // it is still a pool, and a file whose N is the sum of several wafers has to say
+  // so or it reads as one wafer's data.
+  assert.ok(headerLine.startsWith('Population,Test,'), `expected a Population column: ${headerLine}`);
+  assert.ok(saved.text.split('\n')[1].startsWith('2 wafers pooled,'));
 });
 
 test('buildTestSection / buildFunctionalTestSection CSVs never contain a die-level metadata key', async () => {
@@ -386,7 +408,7 @@ test('renderLotSummaryContent — "View die list" CSV carries only metadata comm
   });
   clickLink(panel, 'View die list');
 
-  const exportBtn = [...document.querySelectorAll('button')].find(b => b.textContent === 'Export CSV');
+  const exportBtn = [...document.querySelectorAll('button')].find(b => /CSV$/.test(b.textContent));
   assert.ok(exportBtn, 'expected an Export CSV button inside the die-list modal');
   exportBtn.click();
 
@@ -409,4 +431,71 @@ test('renderLotSummaryContent — "View die list" is absent when explicitly disa
   const items = [{ label: 'W1', wafer: wafer({ metadata: {} }), dies: [die({ hbin: 1 })] }];
   renderLotSummaryContent(panel, { lotSummary, items, dieListOptions: { enabled: false } });
   assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+});
+
+// ── CSV identity columns are IDENTITY, not the whole metadata blob ──────────
+//
+// A host that maps an STDF header into wafer metadata carries WCR geometry
+// (Center X/Y, Die Ht/Wid, Pos X/Y, Wafr Siz, Wf Flat, Wf Units, Job Rev)
+// alongside the identity fields. The export used `waferKeys: 'auto'`, so all
+// fifteen became constant leading columns on every row — pushing the statistics
+// off the right of the screen while answering none of "which wafer is this?".
+
+const STDF_SHAPED_METADATA = {
+  lot: 'PVT-LOT-05', waferId: 'W03', product: 'CHIP-PVT', testProgram: 'corner_test',
+  centerX: 0, centerY: 0, dieHt: 16.9, dieWid: 16.9, jobRev: '1.0', nodeName: 'node-01',
+  posX: 'R', posY: 'U', testerType: 'UltraTester-9000', wafrSiz: 300, wfFlat: 'D', wfUnits: 3,
+};
+
+test('per-test CSV carries the identity fields and drops the geometry blob', () => {
+  const testDefs = [{ testNumber: 1050, name: 'vth', unit: 'mV', limitLow: 260, limitHigh: 380 }];
+  const dies = Array.from({ length: 12 }, (_, i) => die({ hbin: 1, testValues: { 1050: 300 + i } }));
+  const saved = {};
+  const section = buildTestSection(
+    dies, testDefs, undefined, undefined, (text) => { saved.text = text; },
+    { waferMetadata: STDF_SHAPED_METADATA },
+  );
+  clickExport(section);
+  const header = saved.text.split('\n')[0];
+
+  for (const identity of ['Lot', 'Product', 'Test Program', 'Wafer Id']) {
+    assert.ok(header.includes(identity), `${identity} identifies the population: ${header}`);
+  }
+  for (const noise of ['Center X', 'Die Ht', 'Pos X', 'Wafr Siz', 'Wf Flat', 'Wf Units', 'Job Rev', 'Tester Type']) {
+    assert.ok(!header.includes(noise), `${noise} is setup/geometry, not identity: ${header}`);
+  }
+  // And the statistics still start near the front rather than behind 15 columns.
+  assert.ok(header.indexOf('Test,') < 40, `statistics must not be pushed right: ${header}`);
+});
+
+test('a pooled per-test CSV says it is pooled', () => {
+  const testDefs = [{ testNumber: 1050, name: 'vth' }];
+  const mkSummary = () => ({
+    wafer: { lot: 'L1' },
+    stats: { perTestStats: [{ testNumber: 1050, min: 1, max: 5, mean: 3, count: 10 }] },
+  });
+  const saved = {};
+  const section = buildLotTestSection(
+    [die({ testValues: { 1050: 3 } })], testDefs, undefined,
+    [mkSummary(), mkSummary(), mkSummary()],
+    (text) => { saved.text = text; },
+  );
+  clickExport(section);
+  const [header, first] = saved.text.split('\n');
+  // `populationLabel` was documented as emitting this column from the start and
+  // never did — so a file whose N is the sum of several wafers read as one
+  // wafer's data.
+  assert.ok(header.includes('Population'), header);
+  assert.ok(first.includes('3 wafers pooled'), first);
+});
+
+test('Spec Yield N is emitted only when it can differ from the row N', () => {
+  const testDefs = [{ testNumber: 1050, name: 'vth', limitLow: 0, limitHigh: 1000 }];
+  const saved = {};
+  // Every die has a value, so the spec population and N are the same number —
+  // the column would repeat it in two adjacent cells on every row.
+  const same = Array.from({ length: 10 }, (_, i) => die({ hbin: 1, testValues: { 1050: 300 + i } }));
+  const section = buildTestSection(same, testDefs, undefined, undefined, (t) => { saved.text = t; });
+  clickExport(section);
+  assert.ok(!saved.text.split('\n')[0].includes('Spec Yield N'), saved.text.split('\n')[0]);
 });

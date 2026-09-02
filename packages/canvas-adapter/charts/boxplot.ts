@@ -18,12 +18,12 @@
 // Analysis tab). Tracked in tsmap's WMAP_ISSUES.md as explicit follow-ups,
 // not silently dropped.
 
-import { buildTestBoxplotData, type BoxplotDatum, type BoxplotItem } from '../../stats/boxplot.js';
+import { buildTestBoxplotData, type BoxplotItem } from '../../stats/boxplot.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { CLR } from '../toolbar.js';
+import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeTestSelect, makeToggle, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeTestSelect, makeToggle, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler } from './chartShell.js';
 
 const BOX_ROW_HEIGHT = 24;
 const BOX_ROW_GAP = 5;
@@ -51,6 +51,10 @@ export interface BoxplotPanelOptions {
    * plain ungrouped per-item rows, no drill.
    */
   groups?: { key: string; items: BoxplotPanelItem[] }[];
+  /** Initial axis toggles, shared with the sibling distribution panels. */
+  axisPrefs?: AxisPrefs;
+  /** Fired when the user changes an axis toggle here, so siblings can follow. */
+  onAxisPrefsChange?: (prefs: AxisPrefs) => void;
   /** Human label of the active facet (e.g. "Split"), used in the overview
    *  hint text ("click a <label>'s box to see it by wafer"). */
   groupLabelText?: string;
@@ -71,6 +75,8 @@ export interface BoxplotPanelHandle {
   card: HTMLElement;
   /** Cross-panel link (e.g. from the capability panel): switch to `testNumber` in place. */
   setTest: (testNumber: number) => void;
+  /** Adopt the shared axis toggles (see `AxisPrefs`). */
+  setAxisPrefs: (prefs: AxisPrefs) => void;
   destroy: () => void;
 }
 
@@ -108,7 +114,12 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   const testOptions = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
   let activeTest = options.selectedTestNumber ?? testOptions[0]?.testNumber ?? null;
   let logScale = false;
-  let axisIncludesLimits = false;
+  // `undefined` = derive from the data on each rebuild (see
+  // shouldIncludeLimitsByDefault); a boolean means the user has chosen, and their
+  // choice sticks across test changes.
+  let axisIncludesLimits: boolean | undefined = options.axisPrefs?.includeLimits;
+  let clipOutliers = options.axisPrefs?.clipOutliers ?? false;
+  let lastClippedCount = 0;
   let drillGroup: string | null = null;
   let backBtn: HTMLElement | null = null;
 
@@ -149,10 +160,31 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   controlsRow.appendChild(select);
 
   controlsRow.appendChild(makeToggle('Log scale', logScale, v => { logScale = v; rebuildBody(); }, card.ownerDocument));
-  controlsRow.appendChild(makeToggle('Axis includes limits', axisIncludesLimits, v => { axisIncludesLimits = v; rebuildBody(); }, card.ownerDocument));
+  // Rebuilt on every rebuildBody so the "Axis includes limits" checkbox reflects
+  // the RESOLVED state — with the default derived from the data, an unchecked box
+  // beside an axis that plainly does include the limits would be a lie.
+  const axisTogglesRow = card.ownerDocument.createElement('span');
+  Object.assign(axisTogglesRow.style, { display: 'inline-flex', gap: SPACE.lg, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
+  controlsRow.appendChild(axisTogglesRow);
+
+  function syncAxisToggles(resolvedIncludeLimits: boolean, hasLimits: boolean): void {
+    axisTogglesRow.innerHTML = '';
+    if (hasLimits) {
+      axisTogglesRow.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
+        axisIncludesLimits = v;
+        options.onAxisPrefsChange?.({ includeLimits: v, clipOutliers });
+        rebuildBody();
+      }, card.ownerDocument));
+    }
+    axisTogglesRow.appendChild(makeToggle('Clip outliers', clipOutliers, v => {
+      clipOutliers = v;
+      options.onAxisPrefsChange?.({ includeLimits: axisIncludesLimits, clipOutliers: v });
+      rebuildBody();
+    }, card.ownerDocument));
+  }
 
   const hint = card.ownerDocument.createElement('div');
-  Object.assign(hint.style, { color: CLR.label, fontSize: '11px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
   function syncHint(): void {
@@ -161,7 +193,11 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     if (isGroupOverview) parts.push(`click a ${groupLabelText}'s box to see it by wafer`);
     else if (onOpen) parts.push('click a box to open that wafer');
     const prefix = parts.length ? `${parts[0][0].toUpperCase()}${parts[0].slice(1)} · ` : '';
-    hint.textContent = `${prefix}box = Q1–Q3, line = median, whiskers = min/max`;
+    hint.textContent = `${prefix}box = Q1–Q3, line = median, whiskers = min/max · value shown is the median`
+      // Clipping moves the AXIS only; every box's statistics are computed over the
+      // full population. Saying how many points sit outside the view is what keeps
+      // that honest.
+      + (lastClippedCount ? ` · axis clipped, ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside` : '');
   }
   syncHint();
   syncDrillChrome();
@@ -221,8 +257,22 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     const finite = data.filter(d => d.count > 0);
     const dataMin = Math.min(...finite.map(d => d.min));
     const dataMax = Math.max(...finite.map(d => d.max));
-    const globalMin = axisIncludesLimits && limitLow !== undefined ? Math.min(dataMin, limitLow) : dataMin;
-    const globalMax = axisIncludesLimits && limitHigh !== undefined ? Math.max(dataMax, limitHigh) : dataMax;
+    const resolvedIncludeLimits = axisIncludesLimits
+      ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
+    syncAxisToggles(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
+
+    // Clipping uses each box's own min/max as the value population — the raw dies
+    // are not held here. It clips the AXIS only; every box's statistics are
+    // untouched, and no reported number changes.
+    const range = resolveAxisRange({
+      dataMin, dataMax, limitLow, limitHigh,
+      includeLimits: resolvedIncludeLimits,
+      clipOutliers,
+      values: finite.flatMap(d => [d.min, d.q1, d.median, d.q3, d.max]) });
+    lastClippedCount = range.clippedCount;
+    syncHint();
+    const globalMin = range.lo;
+    const globalMax = range.hi;
     const span = globalMax - globalMin || 1;
     const useLog = logScale && globalMin > 0;
     const logMin = useLog ? Math.log10(globalMin) : 0;
@@ -264,7 +314,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       const ctx = canvas.getContext('2d')!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.textBaseline = 'middle';
 
       const { plotX, plotMaxWidth } = plotRect();
@@ -327,14 +377,26 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
 
         ctx.fillStyle = theme.textMuted;
         ctx.textAlign = 'left';
-        ctx.fillText(`med ${fmtUnit(datum.median, unit, 'engineering')}`, plotX + plotMaxWidth + 10, midY);
+        // Value only. The word "med" repeated on every row was thirteen copies
+        // of a column heading printed as data — it said the same thing on each
+        // line and still never said it clearly. The column is labelled once, in
+        // the card's caption ("line = median").
+        ctx.fillText(fmtUnit(datum.median, unit, 'engineering'), plotX + plotMaxWidth + 10, midY);
       });
 
       const axisY = PADDING + data.length * (BOX_ROW_HEIGHT + BOX_ROW_GAP);
 
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+      // A limit outside the plotted range gets an edge marker instead of a line
+      // drawn off-canvas — otherwise "limits are off-screen" and "this test has no
+      // limits" render identically, which is the one thing the reader must not
+      // confuse.
+      drawOffAxisLimits(ctx, range.offAxis,
+        { left: plotX, right: plotX + plotMaxWidth, top: 0, bottom: axisY },
+        'horizontal', theme.warnBorder, v => fmtUnit(v, unit, 'engineering'));
+      const offAxisValues = new Set(range.offAxis.map(o => o.value));
       for (const [limit, limLabel] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
-        if (limit === undefined) continue;
+        if (limit === undefined || offAxisValues.has(limit)) continue;
         const x = xFor(limit, plotX, plotMaxWidth);
         ctx.strokeStyle = theme.warnBorder;
         ctx.setLineDash([3, 3]);
@@ -348,7 +410,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         ctx.textBaseline = 'bottom';
         ctx.fillText(limLabel, x, axisY - 1);
       }
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       ctx.strokeStyle = theme.border;
       ctx.lineWidth = 1;
@@ -368,11 +430,11 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       }
       if (axis.unitLabel) {
         ctx.textAlign = 'left';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
         // +22 clears the last tick label, which is centred on the axis end
         // and extends past it.
         ctx.fillText(`(${axis.unitLabel})`, plotX + plotMaxWidth + 22, axisY + 6);
-        ctx.font = '11px system-ui, sans-serif';
+        ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       }
       ctx.textBaseline = 'middle';
     }
@@ -438,5 +500,12 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     rebuildBody();
   }
 
-  return { card, setTest, destroy: () => resizeHandle?.disconnect() };
+  /** Adopt a sibling panel's axis toggles without re-firing the change back. */
+  function setAxisPrefs(prefs: AxisPrefs): void {
+    axisIncludesLimits = prefs.includeLimits;
+    clipOutliers = prefs.clipOutliers;
+    rebuildBody();
+  }
+
+  return { card, setTest, setAxisPrefs, destroy: () => resizeHandle?.disconnect() };
 }

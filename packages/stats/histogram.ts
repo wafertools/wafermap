@@ -50,10 +50,10 @@ export interface HistogramSeriesData {
  * equal-width buckets. If `limitLow`/`limitHigh` are given, the axis range
  * is expanded to include them so limit lines always draw.
  */
-export function buildTestHistogramData(
-  items: HistogramItem[], testNumber: number, bucketCount = 16,
-  limitLow?: number, limitHigh?: number,
-): HistogramBucket[] {
+/** Every finite recorded value for one test across `items`. Exported because a
+ *  panel that wants to derive a robust fence needs the raw population, and
+ *  re-walking dies in the chart layer would be a second copy of this loop. */
+export function collectTestValues(items: HistogramItem[], testNumber: number): number[] {
   const values: number[] = [];
   for (const item of items) {
     for (const die of item.dies ?? []) {
@@ -61,6 +61,26 @@ export function buildTestHistogramData(
       if (v !== undefined && Number.isFinite(v)) values.push(v);
     }
   }
+  return values;
+}
+
+export function buildTestHistogramData(
+  items: HistogramItem[], testNumber: number, bucketCount = 16,
+  limitLow?: number, limitHigh?: number,
+  /**
+   * Bound the bucket range and DROP values outside it. Unlike `limitLow`/
+   * `limitHigh`, which only ever widen the range, this narrows it — for the
+   * panel's "Clip outliers" axis control, where one wild reading otherwise
+   * compresses every real bucket into the first column.
+   *
+   * Affects this chart only. No statistic anywhere is computed from a clipped
+   * population: an out-of-spec die is a distribution outlier by construction, so
+   * excluding it from yield or capability would delete real failures.
+   */
+  clip?: { lo: number; hi: number },
+): HistogramBucket[] {
+  let values = collectTestValues(items, testNumber);
+  if (clip) values = values.filter(v => v >= clip.lo && v <= clip.hi);
   if (values.length === 0) return [];
 
   let dataMin = values[0], dataMax = values[0];

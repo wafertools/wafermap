@@ -455,17 +455,20 @@ export const CAPTURES = [
       });
       await page.waitForTimeout(600);
 
-      // Click "Summary report" and capture the popup
-      const popupPromise = page.context().waitForEvent('page');
+      // The report opens IN-PAGE, in a modal with an <iframe srcdoc>, since
+      // 0.26.0's `openReportModal` replaced the old `window.open` popup. This
+      // step waited for a `page` event that no longer fires, so both report
+      // captures had been failing silently ever since — nothing fails the build
+      // on a capture error, so the images just went stale.
       await page.evaluate(() => {
         const btn = [...document.querySelectorAll('button')]
           .find(b => b.textContent?.trim() === 'Summary report');
         if (btn) btn.click();
       });
-      const popup = await popupPromise;
-      await popup.waitForLoadState('domcontentloaded');
-      await popup.waitForTimeout(400);
-      await popup.screenshot({ path: outFile, fullPage: false });
+      const frame = page.locator('.wmap-modal-box iframe');
+      await frame.waitFor({ state: 'visible', timeout: 15000 });
+      await page.waitForTimeout(600);
+      await page.locator('.wmap-modal-box').screenshot({ path: outFile });
     },
   },
 
@@ -489,9 +492,12 @@ export const CAPTURES = [
 
       // Find the visible summary panel (the lot-level one is open by default).
       // It's the panel whose display is not 'none' and which is not inside a card.
-      const popupPromise = page.context().waitForEvent('page');
+      // In-page modal, not a popup — see the note on the wafer-summary capture.
       await page.evaluate(() => {
-        // The lot summary panel is not inside a .wmap-gallery-card
+        // The LOT panel's button, not a card's: the lot summary panel is the one
+        // NOT inside a .wmap-gallery-card. Without this scope the first match is
+        // a wafer card's own button, and the capture silently shows a Wafer
+        // Summary under the lot-report filename.
         const btn = [...document.querySelectorAll('button')]
           .find(b =>
             b.textContent?.trim() === 'Summary report' &&
@@ -499,10 +505,10 @@ export const CAPTURES = [
           );
         if (btn) btn.click();
       });
-      const popup = await popupPromise;
-      await popup.waitForLoadState('domcontentloaded');
-      await popup.waitForTimeout(400);
-      await popup.screenshot({ path: outFile, fullPage: false });
+      const frame = page.locator('.wmap-modal-box iframe');
+      await frame.waitFor({ state: 'visible', timeout: 15000 });
+      await page.waitForTimeout(600);
+      await page.locator('.wmap-modal-box').screenshot({ path: outFile });
     },
   },
 

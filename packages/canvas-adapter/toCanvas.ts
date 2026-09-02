@@ -1,4 +1,5 @@
 import type { View, ViewRect } from '../renderer/buildView.js';
+import { fontPx } from './toolbar.js';
 import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
@@ -123,17 +124,20 @@ export interface ToCanvasResult {
 
 const COLORBAR_MODES   = new Set(['value', 'stackedValues', 'stackedBins', 'stackedSoftBins']);
 const BIN_LEGEND_MODES = new Set(['hardBin', 'softBin', 'metadata']);
-const COLORBAR_LABEL_FONT = '10px system-ui, sans-serif';
-const MAP_TITLE_FONT      = '600 12px system-ui, sans-serif';  // primary identifier, above scale
-const MAP_SUBTITLE_FONT   = '11px system-ui, sans-serif';      // secondary context, below scale
-const SCALE_NOTE_FONT     = '600 11px system-ui, sans-serif';  // log/linear scale note, below scale
+// Resolved per draw, not module-level constants: they follow the host's
+// `--wmap-font-size` (see FONT/fontPx in toolbar.ts). Canvas text cannot read
+// a CSS variable, so each is a function called at paint time.
+const COLORBAR_LABEL_FONT = () => `${fontPx()}px system-ui, sans-serif`;
+const MAP_TITLE_FONT      = () => `600 ${fontPx()}px system-ui, sans-serif`;   // primary identifier, above scale
+const MAP_SUBTITLE_FONT   = () => `${fontPx()}px system-ui, sans-serif`;       // secondary context, below scale
+const SCALE_NOTE_FONT     = () => `600 ${fontPx()}px system-ui, sans-serif`;   // log/linear scale note, below scale
 const COLORBAR_STEPS = 128;
-const AXIS_TICK_FONT  = '10px system-ui, sans-serif';
+const AXIS_TICK_FONT  = () => `${fontPx(-1)}px system-ui, sans-serif`;
 const AXIS_TICK_LEN   = 4;  // px
-const BIN_ROW_H       = 17; // px per legend row
+const BIN_ROW_H       = 20; // px per legend row (grown with COLORBAR_LABEL_FONT)
 const BIN_SWATCH_SIZE = 11; // px
-export const BIN_LEGEND_W               = 110; // px total right-side reserve for bin legend
-export const BIN_LEGEND_W_COMPACT       =  64; // px right-side reserve for compact legend
+export const BIN_LEGEND_W               = 124; // px total right-side reserve for bin legend
+export const BIN_LEGEND_W_COMPACT       =  72; // px right-side reserve for compact legend
 export const BIN_LEGEND_ADAPT_COMPACT   = 280; // px canvas width — below this, auto-switch to compact
 export const BIN_LEGEND_ADAPT_FLOATING  = 180; // px canvas width — below this, auto-switch to floating
 // px — below either dimension no legend is drawn at all (see legendHasRoom).
@@ -354,7 +358,7 @@ export function toCanvas(
     // — "Hard Bin", the plot-mode heading, the colorbar's — rendered near-black
     // on every dark theme and read as a smudge rather than text. The one call
     // site that looked right was the only one passing a colour explicitly.
-    font: string = MAP_TITLE_FONT, color: string = theme.text,
+    font: string = MAP_TITLE_FONT(), color: string = theme.text,
   ): void => {
     if (!title) return;
     ctx.save();
@@ -659,7 +663,7 @@ export function toCanvas(
 
     // Ticks + labels.
     ctx.fillStyle   = theme.text;
-    ctx.font        = COLORBAR_LABEL_FONT;
+    ctx.font        = COLORBAR_LABEL_FONT();
     ctx.textAlign   = 'left';
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth   = 0.5;
@@ -753,7 +757,7 @@ export function toCanvas(
 
       if (limitMarkers.length > 0) {
         ctx.save();
-        ctx.font         = COLORBAR_LABEL_FONT;
+        ctx.font         = COLORBAR_LABEL_FONT();
         ctx.textAlign    = 'right';
         ctx.textBaseline = 'middle';
 
@@ -812,7 +816,7 @@ export function toCanvas(
       if (scaleNote) {
         ctx.save();
         ctx.fillStyle    = theme.text;
-        ctx.font         = SCALE_NOTE_FONT;
+        ctx.font         = SCALE_NOTE_FONT();
         ctx.textAlign    = 'right';
         ctx.textBaseline = 'top';
         ctx.fillText(scaleNote, cssW - padding, belowCursor);
@@ -825,7 +829,7 @@ export function toCanvas(
     // lower-right area below the colorbar.
     if (showTitle && titleSecondary) {
       drawTitleFitted(titleSecondary, cssW - padding, belowCursor, 'right', 'top',
-        belowLimitAt(belowCursor), MAP_SUBTITLE_FONT, theme.text);
+        belowLimitAt(belowCursor), MAP_SUBTITLE_FONT(), theme.text);
     }
   }
 
@@ -895,7 +899,6 @@ export function toCanvas(
     let legendCols = 1;
     let legendHeight = legendRows * BIN_ROW_H;
     let columnWidths: number[] = [];
-    let rowsPerCol = legendRows;
     let overflow = 0;
 
     const isHorizontal = legendIsBottom || legendIsTop;
@@ -914,7 +917,6 @@ export function toCanvas(
         if (total <= availableWidth || cols === 1) {
           legendCols = cols;
           columnWidths = widths;
-          rowsPerCol = rows;
           legendRows = rows;
           legendHeight = rows * BIN_ROW_H;
           break;
@@ -1002,7 +1004,7 @@ export function toCanvas(
         drawTitleFitted(primary, originXLegend, y, 'left', 'top',
           waferCx - Math.max(waferHalfChordAt(y), waferHalfChordAt(y + 12)) - 8);
         if (secondary) drawTitleFitted(secondary, originXLegend, y + 16, 'left', 'top',
-          leftAlignLimit(y + 16), MAP_SUBTITLE_FONT, theme.text);
+          leftAlignLimit(y + 16), MAP_SUBTITLE_FONT(), theme.text);
       } else if (legendIsFloating) {
         // Floating box → primary INSIDE the plate's reserved heading row, so it
         // gets the same backdrop the rows do. Secondary still goes below the
@@ -1012,7 +1014,7 @@ export function toCanvas(
           legendBox!.y + BIN_FLOATING_PADDING, 'left', 'top',
           legendBox!.x + legendBox!.w - BIN_FLOATING_PADDING);
         if (secondary) drawTitleFitted(secondary, legendBox!.x, legendBottom + GAP, 'left', 'top',
-          legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT, theme.text);
+          legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT(), theme.text);
       } else {
         // right / default / compact / left / bottom → primary just above the legend's first row,
         // left-aligned to the swatch column, clamped below the toolbar clearance. Secondary below.
@@ -1020,13 +1022,13 @@ export function toCanvas(
         drawTitleFitted(primary, originXLegend, yAbove, 'left', 'bottom', sideLimit(yAbove));
         if (secondary) {
           const yBelow = legendBottom + GAP;
-          drawTitleFitted(secondary, originXLegend, yBelow, 'left', 'top', sideLimit(yBelow), MAP_SUBTITLE_FONT, theme.text);
+          drawTitleFitted(secondary, originXLegend, yBelow, 'left', 'top', sideLimit(yBelow), MAP_SUBTITLE_FONT(), theme.text);
         }
       }
     }
 
     ctx.save();
-    ctx.font = COLORBAR_LABEL_FONT;
+    ctx.font = COLORBAR_LABEL_FONT();
     const columnGap = isHorizontal ? 8 : 0;
 
     const truncate = (text: string, maxW: number): string => {
@@ -1062,12 +1064,12 @@ export function toCanvas(
           ctx.lineWidth = isActive ? 2 : 0.75;
           ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
           ctx.fillStyle = isActive ? theme.accent : theme.text;
-          ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT}` : COLORBAR_LABEL_FONT;
+          ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT()}` : COLORBAR_LABEL_FONT();
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
           ctx.fillText(truncate(entry.label, labelMaxW), labelX, midY);
           ctx.fillStyle = theme.textMuted;
-          ctx.font = COLORBAR_LABEL_FONT;
+          ctx.font = COLORBAR_LABEL_FONT();
           ctx.textAlign = 'right';
           ctx.fillText(String(entry.count), x + columnWidths[col] - 2, midY);
           binLegendRows.push({
@@ -1103,13 +1105,13 @@ export function toCanvas(
         ctx.lineWidth = isActive ? 2 : 0.75;
         ctx.strokeRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
         ctx.fillStyle = isActive ? theme.accent : theme.text;
-        ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT}` : COLORBAR_LABEL_FONT;
+        ctx.font = isActive ? `bold ${COLORBAR_LABEL_FONT()}` : COLORBAR_LABEL_FONT();
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(truncate(displayLabel, maxLabelW), labelX, midY);
         if (showCount || legendIsFloating) {
           ctx.fillStyle = theme.textMuted;
-          ctx.font = COLORBAR_LABEL_FONT;
+          ctx.font = COLORBAR_LABEL_FONT();
           ctx.textAlign = 'right';
           ctx.fillText(String(entry.count), countX, midY);
         }
@@ -1125,7 +1127,7 @@ export function toCanvas(
       }
       if (overflow > 0) {
         ctx.fillStyle = theme.textMuted;
-        ctx.font = COLORBAR_LABEL_FONT;
+        ctx.font = COLORBAR_LABEL_FONT();
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(`+ ${overflow} more`, originXLegend + BIN_SWATCH_SIZE + BIN_LABEL_GAP, rowY + BIN_ROW_H / 2);
@@ -1224,7 +1226,7 @@ function drawAxisTicks(
   theme: CanvasTheme,
 ): void {
   ctx.save();
-  ctx.font        = AXIS_TICK_FONT;
+  ctx.font        = AXIS_TICK_FONT();
   ctx.fillStyle   = theme.text;
   ctx.strokeStyle = theme.axisLine;
   ctx.lineWidth   = 0.5;

@@ -21,7 +21,7 @@ import { resolveTestNumber, findTestDef } from '../renderer/buildView.js';
 import { buildBinSection } from './summaryPanel.js';
 import { buildTestHistogramData, type HistogramBucket } from '../stats/histogram.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { CLR, getTooltip, positionTooltip, hideTooltip } from './toolbar.js';
+import { TRACKING, SPACE, RADIUS, FONT, CLR, wireTooltip } from './toolbar.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
 
 export interface MaplessSummaryOptions {
@@ -58,48 +58,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (styles) Object.assign(e.style, styles);
   if (text !== undefined) e.textContent = text;
   return e;
-}
-
-/**
- * Wires the same shared, themed tooltip the map's own die hover uses
- * (getTooltip/positionTooltip/hideTooltip, toolbar.ts) onto a plain DOM
- * element — native `title` attributes were used here originally, which is a
- * different, browser-native tooltip: slow to appear (OS hover delay) and an
- * unthemed system font/colour, unlike this instant, small, dark tooltip
- * every other hover surface in the app already uses.
- *
- * Unlike the map canvas (where per-die hover data has no DOM equivalent to
- * fall back to), these bars are real elements — so the bucket range/count
- * this tooltip carries is real information with no other visible copy. Also
- * wires focus/blur alongside mouse events (WCAG 1.4.13 — content shown on
- * hover must also be reachable and dismissable via keyboard) and sets
- * `aria-label` so the same text reaches a screen reader without requiring
- * either hover or focus. `tabIndex=0`/`role="img"` make the bar a stop on
- * the page's own tab order and announce it as a single data point, not an
- * unlabelled generic `div`.
- */
-function wireHoverTooltip(target: HTMLElement, text: string): void {
-  target.tabIndex = 0;
-  target.setAttribute('role', 'img');
-  target.setAttribute('aria-label', text);
-  const show = (e?: MouseEvent) => {
-    const tooltip = getTooltip(target.ownerDocument);
-    tooltip.textContent = text;
-    tooltip.style.display = 'block';
-    if (e) {
-      positionTooltip(tooltip, target, e.clientX, e.clientY);
-    } else {
-      // Keyboard focus carries no pointer coordinates — anchor the tooltip to
-      // the bar's own box instead of a cursor position that doesn't exist.
-      const r = target.getBoundingClientRect();
-      positionTooltip(tooltip, target, r.left + r.width / 2, r.top);
-    }
-  };
-  const hide = () => hideTooltip(target.ownerDocument);
-  target.addEventListener('mousemove', show);
-  target.addEventListener('mouseleave', hide);
-  target.addEventListener('focus', () => show());
-  target.addEventListener('blur', hide);
 }
 
 /**
@@ -152,9 +110,9 @@ function buildMiniHistogram(
   // sizing to its own fixed-height content and leaving the rest of a large
   // card empty. barsRow (below) gets the same treatment so it's the chart
   // area that grows, not the fixed-height title/axis/label rows around it.
-  const wrap = el('div', { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '0', flex: '1', minHeight: '0' });
+  const wrap = el('div', { display: 'flex', flexDirection: 'column', gap: SPACE.xxs, minWidth: '0', flex: '1', minHeight: '0' });
   wrap.appendChild(el('div', {
-    fontSize: '10px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: CLR.label,
+    fontSize: FONT.meta, fontWeight: '700', letterSpacing: TRACKING, textTransform: 'uppercase', color: CLR.label,
   }, testDef?.name ? `${testDef.name} distribution` : 'Value distribution'));
 
   const spanLow = buckets[0]!.rangeLow;
@@ -173,7 +131,7 @@ function buildMiniHistogram(
   const normalize = resolveValueNormalize(rangeDies, testNumber, testDef, colorbarRangeMode, logScale);
   const maxCount = Math.max(1, ...buckets.map(b => b.count));
   const barsRow = el('div', {
-    position: 'relative', display: 'flex', alignItems: 'flex-end', gap: '2px',
+    position: 'relative', display: 'flex', alignItems: 'flex-end', gap: SPACE.xxs,
     flex: '1', minHeight: '48px',
   });
   for (const b of buckets) {
@@ -192,7 +150,7 @@ function buildMiniHistogram(
     // No styling purpose — a stable selector for tests, since this element
     // carries no native title attribute any more (see wireHoverTooltip).
     bar.dataset.wmapBar = '1';
-    wireHoverTooltip(bar, `${fmtValue(b.rangeLow, testDef?.unit)} – ${fmtValue(b.rangeHigh, testDef?.unit)}: ${b.count}`);
+    wireTooltip(bar, `${fmtValue(b.rangeLow, testDef?.unit)} – ${fmtValue(b.rangeHigh, testDef?.unit)}: ${b.count}`, { asDataPoint: true });
     barsRow.appendChild(bar);
   }
 
@@ -235,14 +193,14 @@ function buildMiniHistogram(
       const clampedPct = Math.min(96, Math.max(4, pct));
       labelsRow.appendChild(el('span', {
         position: 'absolute', left: `${clampedPct}%`, top: '0', transform: 'translateX(-50%)', whiteSpace: 'nowrap',
-        fontSize: '9px', fontWeight: '600', color: CLR.text, background: CLR.panelBg,
-        border: `1px solid ${CLR.value}`, borderRadius: '2px', padding: '0 3px', lineHeight: '12px',
+        fontSize: FONT.body, fontWeight: '600', color: CLR.text, background: CLR.panelBg,
+        border: `1px solid ${CLR.value}`, borderRadius: RADIUS.control, padding: '0 3px', lineHeight: '12px',
       }, text));
     }
     wrap.appendChild(labelsRow);
   }
 
-  const axisRow = el('div', { display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: CLR.label });
+  const axisRow = el('div', { display: 'flex', justifyContent: 'space-between', fontSize: FONT.body, color: CLR.label });
   axisRow.appendChild(el('span', {}, fmtValue(buckets[0]!.rangeLow, testDef?.unit)));
   axisRow.appendChild(el('span', {}, fmtValue(buckets[buckets.length - 1]!.rangeHigh, testDef?.unit)));
   wrap.appendChild(axisRow);
@@ -281,6 +239,6 @@ export function buildMaplessSummary(
   }
 
   return el('div', {
-    padding: '12px', fontSize: '11px', color: CLR.label, textAlign: 'center',
+    padding: SPACE.xl, fontSize: FONT.body, color: CLR.label, textAlign: 'center',
   }, 'No summary available for this view.');
 }

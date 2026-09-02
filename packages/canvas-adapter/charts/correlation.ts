@@ -17,11 +17,12 @@
 // internally — same end-user behavior, one fewer indirection.
 
 import { buildCorrelationMatrix, filterCorrelationMatrix, type CorrelationMatrix, type CorrelationTestInfo } from '../../stats/correlation.js';
+import { csvField } from '../../core/utils.js';
 import { CORRELATION_POSITIVE, CORRELATION_NEGATIVE } from './palette.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { CLR } from '../toolbar.js';
+import { wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, saveTextFile, type SaveTextHandler } from '../toolbar.js';
 import { attachChartTip, cardShell, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
 
 const MATRIX_LIMIT_MIN = 5;
@@ -31,6 +32,9 @@ const MATRIX_LIMIT_DEFAULT = 20;
 type CorrelationItem = FacetItem & { dies?: Die[]; label?: string };
 
 export interface CorrelationPanelOptions {
+  /** Host hook for the Export CSV button — see `saveTextFile` (toolbar.ts).
+   *  Omit and no button is offered. */
+  onSaveText?: SaveTextHandler;
   title?: string;
   items: CorrelationItem[];
   testDefs: TestDef[];
@@ -123,13 +127,13 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   const matrixLimitLabel = card.ownerDocument.createElement('label');
   matrixLimitLabel.textContent = 'Max tests:';
 
-  Object.assign(matrixLimitLabel.style, { color: CLR.label, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(matrixLimitLabel.style, { color: CLR.label, fontSize: FONT.body, display: 'flex', alignItems: 'center', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
   const matrixLimitInput = card.ownerDocument.createElement('input');
   matrixLimitInput.type = 'number';
   matrixLimitInput.min = String(MATRIX_LIMIT_MIN);
   matrixLimitInput.max = String(MATRIX_LIMIT_MAX);
   matrixLimitInput.value = String(limit);
-  Object.assign(matrixLimitInput.style, { width: '52px', fontSize: '12px', padding: '2px 4px', background: CLR.menuBg, color: CLR.value, border: `1px solid ${CLR.menuBorder}`, borderRadius: '3px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(matrixLimitInput.style, { width: '52px', fontSize: FONT.body, padding: `${SPACE.xxs} ${SPACE.xs}`, background: CLR.menuBg, color: CLR.value, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control } as Partial<CSSStyleDeclaration>);
   matrixLimitInput.addEventListener('change', () => {
     const v = Math.max(MATRIX_LIMIT_MIN, Math.min(MATRIX_LIMIT_MAX, parseInt(matrixLimitInput.value, 10) || MATRIX_LIMIT_DEFAULT));
     matrixLimitInput.value = String(v);
@@ -156,8 +160,50 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     return items;
   }
 
+  // Export CSV — the one Insights panel that gets one.
+  //
+  // Not every panel should: boxplot and trend would re-export per-wafer
+  // mean/σ/quartiles, which the Overview's test-values CSV already carries, and a
+  // second button for the same numbers is chrome without information. The
+  // correlation matrix is the exception — it is computed here, it is matrix-shaped
+  // (awkward to lift out of rendered HTML), and it is deliberately absent from the
+  // summary report, whose length a 250-test matrix would wreck.
+  if (options.onSaveText) {
+    const exportBtn = card.ownerDocument.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.textContent = 'Correlation CSV';
+    Object.assign(exportBtn.style, {
+      ...controlStyle('outlined'), color: CLR.text,
+    } as Partial<CSSStyleDeclaration>);
+  wireControlHover(exportBtn);
+    exportBtn.addEventListener('click', () => {
+      // Long form (one row per pair), not the square grid: a grid needs the reader
+      // to reconstruct which half is which and repeats every value twice, while
+      // one row per pair sorts and filters in a spreadsheet directly. `n` rides
+      // along per row because it varies by pair when tests have different coverage,
+      // and an r without its n is not interpretable.
+      const m = lastMatrix;
+      if (!m) return;
+      const lines = ['Test X,Test X number,Test Y,Test Y number,r,n'];
+      for (let yi = 0; yi < m.tests.length; yi++) {
+        for (let xi = yi + 1; xi < m.tests.length; xi++) {
+          const cell = m.cells.find(c => c.xIndex === xi && c.yIndex === yi);
+          if (!cell) continue;
+          lines.push([
+            csvField(m.tests[xi].label), String(m.tests[xi].testNumber),
+            csvField(m.tests[yi].label), String(m.tests[yi].testNumber),
+            cell.r === null ? '' : cell.r.toFixed(6),
+            String(cell.n),
+          ].join(','));
+        }
+      }
+      saveTextFile(lines.join('\n'), 'test-correlation.csv', 'text/csv', options.onSaveText);
+    });
+    controlsRow.appendChild(exportBtn);
+  }
+
   const hintRow = card.ownerDocument.createElement('div');
-  Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hintRow, body);
 
   const dpr = window.devicePixelRatio || 1;
@@ -166,29 +212,35 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   let draw: () => void = () => {};
 
-  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[]): void {
+  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[], pairN: number | null): void {
     hintRow.innerHTML = '';
 
     if (mixedFields.length > 0) {
       const warn = card.ownerDocument.createElement('div');
       warn.textContent = `⚠ Mixed ${mixedFields.join(', ')} within this set — correlations may be misleading (Simpson's paradox). Use Group by, or the Wafer picker, to narrow to a like-for-like set.`;
-      Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: '4px', padding: '4px 8px', fontSize: '11px' } as Partial<CSSStyleDeclaration>);
+      Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, padding: `${SPACE.xs} ${SPACE.md}`, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
       hintRow.appendChild(warn);
     }
 
     // One-line key with an inline colour scale — the sign hues were
     // previously unexplained anywhere on the card.
     const hint = card.ownerDocument.createElement('span');
-    Object.assign(hint.style, { display: 'inline-flex', alignItems: 'center', gap: '6px', color: CLR.label, fontSize: '11px', flexWrap: 'wrap' } as Partial<CSSStyleDeclaration>);
+    Object.assign(hint.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm, color: CLR.label, fontSize: FONT.body, flexWrap: 'wrap' } as Partial<CSSStyleDeclaration>);
     const hintText = card.ownerDocument.createElement('span');
-    hintText.textContent = 'Pearson r · click a cell to view that pair in scatter ·';
+    // Population stated up front: the summary line below counts "strong pairs"
+    // by |r| alone, and |r| ≥ 0.7 over 6 dies is not the same claim as over 6,000.
+    // `n` is the median across displayed pairs because tests can have different
+    // coverage — a single number would otherwise silently be one pair's.
+    hintText.textContent = pairN !== null
+      ? `Pearson r · n ≈ ${pairN.toLocaleString()} dies per pair · click a cell to view that pair in scatter ·`
+      : 'Pearson r · click a cell to view that pair in scatter ·';
     hint.appendChild(hintText);
     const scaleWrap = card.ownerDocument.createElement('span');
-    Object.assign(scaleWrap.style, { display: 'inline-flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
+    Object.assign(scaleWrap.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
     const lo = card.ownerDocument.createElement('span'); lo.textContent = '−1';
     const bar = card.ownerDocument.createElement('span');
     Object.assign(bar.style, {
-      display: 'inline-block', width: '64px', height: '8px', borderRadius: '2px',
+      display: 'inline-block', width: '64px', height: '8px', borderRadius: RADIUS.control,
       border: `1px solid ${CLR.menuBorder}`,
       background: `linear-gradient(to right, ${CORRELATION_NEGATIVE}, ${CLR.menuBg}, ${CORRELATION_POSITIVE})`,
     } as Partial<CSSStyleDeclaration>);
@@ -198,7 +250,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     hintRow.appendChild(hint);
 
     const summaryLine = card.ownerDocument.createElement('span');
-    Object.assign(summaryLine.style, { color: CLR.value, fontSize: '12px', fontWeight: '500' } as Partial<CSSStyleDeclaration>);
+    Object.assign(summaryLine.style, { color: CLR.value, fontSize: FONT.body, fontWeight: '500' } as Partial<CSSStyleDeclaration>);
     if (strongPairs === 0 && moderatePairs === 0) {
       summaryLine.textContent = strongestPair
         ? `No significant correlations found — strongest pair: ${strongestPair.xLabel} ↔ ${strongestPair.yLabel} (r = ${strongestPair.r.toFixed(2)})`
@@ -284,7 +336,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, totalW, totalH);
 
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.fillStyle = theme.text;
       matrix.tests.forEach((t, xi) => {
         const lbl = shortLabel(t);
@@ -305,7 +357,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
         const cy = LABEL_H + yi * cs;
         const midY = cy + cs / 2;
 
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = yi === selectedYi ? theme.text : theme.textMuted;
@@ -388,7 +440,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       if (isDiag) {
         tooltip.innerHTML = `<strong>${xLabel}</strong>`;
       } else if (cell?.r !== null && cell?.r !== undefined) {
-        tooltip.innerHTML = `<strong>${shortLabel(matrix.tests[yi])}</strong> (#${matrix.tests[yi].testNumber}) vs <strong>${shortLabel(matrix.tests[xi])}</strong> (#${matrix.tests[xi].testNumber})<br>r = ${cell.r.toFixed(4)}${onSelectPair ? '<br><em>click to view in scatter</em>' : ''}`;
+        tooltip.innerHTML = `<strong>${shortLabel(matrix.tests[yi])}</strong> (#${matrix.tests[yi].testNumber}) vs <strong>${shortLabel(matrix.tests[xi])}</strong> (#${matrix.tests[xi].testNumber})<br>r = ${cell.r.toFixed(4)} · n = ${cell.n.toLocaleString()}${onSelectPair ? '<br><em>click to view in scatter</em>' : ''}`;
       } else {
         tooltip.innerHTML = `${yLabel} vs ${xLabel}<br><em>insufficient data</em>`;
       }
@@ -411,13 +463,24 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     return drawMatrix;
   }
 
+  // Held for the CSV export, which must emit exactly what is on screen — the
+  // TRIMMED matrix (see filterCorrelationMatrix), not the full one, so the file
+  // and the card can never disagree about which tests were included.
+  let lastMatrix: CorrelationMatrix | null = null;
+
   function rebuild(): void {
     const scopedItems = currentItems();
     const dies = scopedItems.flatMap(it => it.dies ?? []);
     const fullMatrix = buildCorrelationMatrix(dies, testDefs);
     const { matrix, strongPairs, moderatePairs, hiddenWeakPairs, strongestPair } = filterCorrelationMatrix(fullMatrix, { minTests: 6, maxTests: limit });
     const mixedFields = buildFacetTable(scopedItems, { facetableOnly: true }).filter(f => f.splittable).map(f => f.label);
-    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields);
+    // Median of the off-diagonal pair counts, not the die total: tests can have
+    // different coverage, so no single n describes every cell. Median is the
+    // honest one-number summary and the per-cell tooltip carries the exact value.
+    const offDiag = matrix.cells.filter(c => c.xIndex !== c.yIndex).map(c => c.n).sort((a, b) => a - b);
+    const pairN = offDiag.length ? offDiag[Math.floor(offDiag.length / 2)] : null;
+    lastMatrix = matrix;
+    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields, pairN);
     draw = buildMatrixView(matrix);
     draw();
   }

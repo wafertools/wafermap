@@ -383,37 +383,35 @@ test('inference functions handle edge cases', () => {
   assert.equal(singlePitch.confidence, 0.4);
 });
 
-test('buildHoverText merges wafer-level metadata under per-die overrides', () => {
+test('buildHoverText shows only per-die metadata — wafer-level facts belong to the identity header/badge, not the hover', () => {
   const die = { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 1, height: 1, hbin: 1 };
+  // A wafer-level facts object is no longer accepted at all — wmap's own
+  // identity header (renderWaferMap) / card header (renderWaferGallery)
+  // is the one place lot/waferId/product/etc. are shown, so repeating them
+  // on every die's hover would just be duplication. Only genuinely per-die
+  // `die.metadata` belongs here.
   const waferMeta = { lot: 'LOT-001', product: 'WidgetA', testProgram: 'PGM_X', waferId: 'W01', temperature: 25 };
 
-  // Wafer-level facts appear with no per-die metadata at all — wmap renders
-  // whatever keys the host supplies, including waferId.
-  // Labels are Title-Cased (prettyKey), matching the die-list/CSV column
-  // labels and the toolbar entry — the tooltip is no longer the one surface
-  // still speaking in raw internal key names.
   const base = buildHoverText(die, 'hardBin', { waferMeta });
-  assert.ok(base.includes('Lot: LOT-001'), 'wafer lot should appear');
-  assert.ok(base.includes('Product: WidgetA'), 'wafer product should appear');
-  assert.ok(base.includes('Temperature: 25'), 'wafer temperature should appear');
-  assert.ok(base.includes('Wafer Id: W01'), 'waferId is rendered like any other host-supplied key');
+  assert.ok(!base.includes('Lot:'), 'wafer-level facts must not leak into the hover');
+  assert.ok(!base.includes('Product:'), 'wafer-level facts must not leak into the hover');
 
-  // A per-die key overrides the wafer value of the same name; other wafer facts remain.
-  const dieWithOverride = { ...die, metadata: { testProgram: 'PGM_RETEST', site: 3 } };
-  const merged = buildHoverText(dieWithOverride, 'hardBin', { waferMeta });
-  assert.ok(merged.includes('Test Program: PGM_RETEST'), 'die value overrides wafer value');
-  assert.ok(!merged.includes('PGM_X'), 'overridden wafer value should not also appear');
-  assert.ok(merged.includes('Lot: LOT-001'), 'non-overridden wafer facts still present');
-  assert.ok(merged.includes('Site: 3'), 'genuinely per-die annotation appears');
+  // A genuinely per-die annotation (die.metadata) still appears, Title-Cased
+  // (prettyKey) — same resolution the die-list/CSV columns use.
+  const dieWithMetadata = { ...die, metadata: { testProgram: 'PGM_RETEST', site: 3 } };
+  const withDieMeta = buildHoverText(dieWithMetadata, 'hardBin', { waferMeta });
+  assert.ok(withDieMeta.includes('Test Program: PGM_RETEST'), 'per-die metadata appears');
+  assert.ok(withDieMeta.includes('Site: 3'), 'genuinely per-die annotation appears');
+  assert.ok(!withDieMeta.includes('Lot:'), 'wafer-level facts still absent alongside per-die metadata');
 
   // A metadataFields label wins over the auto prettyKey label — same
   // resolution the die-list/CSV columns use.
-  const labelled = buildHoverText(die, 'hardBin', {
-    waferMeta, metadataFields: [{ key: 'lot', label: 'Lot number' }],
+  const labelled = buildHoverText(dieWithMetadata, 'hardBin', {
+    metadataFields: [{ key: 'site', label: 'Site number' }],
   });
-  assert.ok(labelled.includes('Lot number: LOT-001'), 'declared metadataFields label wins');
+  assert.ok(labelled.includes('Site number: 3'), 'declared metadataFields label wins');
 
-  // No metadata at all → no metadata lines, no crash.
+  // No per-die metadata at all → no metadata lines, no crash.
   const none = buildHoverText(die, 'hardBin');
   assert.ok(none.includes('Die ('));
   assert.ok(!none.includes('Lot:'));

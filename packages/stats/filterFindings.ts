@@ -44,3 +44,23 @@ export function filterFindings(
 
   return findings;
 }
+
+
+/**
+ * Drop findings another finding has claimed as an exact restatement of itself —
+ * a soft-bin twin covering the same dies, or the single pass bin's row against
+ * the yield row that says the same thing.
+ *
+ * The claimer's own label names what it absorbed ("hard bin and soft bin 3 (same
+ * dies)"), so listing both prints one fact twice: once merged, once not. The full
+ * uncollapsed list stays on `summary.findings` for any host that wants it.
+ *
+ * Extracted because this rule existed in three places and one of them was wrong:
+ * the Summary panel and the findings report both applied it, while the summary
+ * report printed every finding — so a wafer with 8 merged twins listed 16 rows,
+ * each duplicate contradicting the merge the label had just described.
+ */
+export function visibleFindings<T extends { id: string; absorbedIds?: string[] }>(findings: T[]): T[] {
+  const claimed = new Set(findings.flatMap(f => f.absorbedIds ?? []));
+  return findings.filter(f => !claimed.has(f.id));
+}

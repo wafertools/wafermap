@@ -171,7 +171,10 @@
 
       const results = waferSpecs.map((spec, i) =>
         buildWaferMap({
-          results:     makeResults(spec),
+          // waferIndex pairs the data with the processSplit that makeWaferConfig
+          // stamps on the same index — without it the lot would be labelled with a
+          // split its measurements do not reflect.
+          results:     makeResults({ ...spec, waferIndex: i }),
           waferConfig: makeWaferConfig(i),
           dieConfig:   DIE_CONFIG,
           hbinDefs:    HBIN_DEFS,
@@ -215,9 +218,14 @@
         makeResults({ seed, quadrant: true }),
       );
 
+      // This card stacks the WHOLE lot, so it must not carry any one wafer's
+      // identity: `makeWaferConfig(0)` would stamp waferId W01 and that wafer's
+      // own processSplit onto an aggregate spanning six wafers and both split
+      // arms. Lot-level fields (lot, product) are kept; per-wafer ones dropped.
+      const { waferId: _w, processSplit: _s, ...stackedMeta } = WAFER_CONFIG.metadata;
       const result = buildWaferMap({
         lotStack:    { results: waferResults, method },
-        waferConfig: makeWaferConfig(0),
+        waferConfig: { ...WAFER_CONFIG, metadata: stackedMeta },
         dieConfig:   DIE_CONFIG,
         testDefs:    TEST_DEFS,
       });

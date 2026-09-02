@@ -80,7 +80,10 @@ test('buildFacetTable — uncurated keys always pass through regardless of facet
   const table = buildFacetTable([item({ frameId: 'FR-9' }, 1)]);
   const frame = table.find(f => f.key === 'frameId');
   assert.ok(frame);
-  assert.equal(frame.label, 'frameId'); // uncurated — falls back to the raw key
+  // Uncurated keys fall back to prettyKey, not the raw identifier: a host field
+  // like `frameId`/`processSplit` otherwise showed its camelCase name verbatim in
+  // the Insights "Group by" dropdown and the report's split comparison.
+  assert.equal(frame.label, 'Frame Id');
 });
 
 test('buildFacetTable — custom curation extends (not replaces) the built-in defaults', () => {

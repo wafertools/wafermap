@@ -1,9 +1,5 @@
 import type { StatsFinding, StatsComparisonFamily, StatsSeverity } from './types.js';
 
-const FAMILY_PRIORITY: StatsComparisonFamily[] = [
-  'spatial-pattern', 'ring', 'sector', 'quadrant', 'cluster', 'edge-arc', 'reticle-position',
-];
-
 const SEVERITY_RANK: Record<StatsSeverity, number> = { unusual: 0, notable: 1, info: 2 };
 
 // Compass bearing → angle in degrees (CCW from East), for gradient-direction maths.

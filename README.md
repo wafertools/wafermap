@@ -28,7 +28,7 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 - Geometry inference — pass full physical dimensions or raw prober step positions; die pitch, wafer diameter, and coordinate origin are resolved automatically
 - `renderWaferMap` — interactive canvas map with toolbar, zoom/pan, tooltips, die selection, and summary panel
 - `renderWaferGallery` — lot-level card grid with shared controls and click-to-expand
-- Insights tab (`insights: { enabled: true }`) — an in-toolbar chart suite (yield, bin pareto, capability, boxplot, histogram, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
+- Insights tab (`insights: { enabled: true }`) — an in-toolbar chart suite (yield, per-test pass rate, bin pareto, capability, boxplot, histogram, wafer-to-wafer trend, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
 - `analyzeWaferMap` / `analyzeWaferLot` — spatial analysis across rings, quadrants, sectors, and reticle positions; failure cluster detection; lot trend series
 - Pure ES modules, no server, no runtime dependencies — works in React, Svelte, Vue, plain HTML, or a Web Worker
 

@@ -24,6 +24,38 @@ export function rng(i, j, seed = 1) {
   return ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
 }
 
+// ── Process split ────────────────────────────────────────────────────────────
+
+/**
+ * The two process splits a demo lot is built from. Wafers alternate between them,
+ * which is what gives the Insights tab a real "Group by" axis: `waferId` is
+ * unique per wafer and the facet table deliberately excludes it, so without a
+ * field like this no generated demo has anything to group on at all.
+ *
+ * "POR" is process-of-record; the split arm runs a higher implant dose, which
+ * shifts Vth up — see `SPLIT_VTH_BIAS`. That makes the split arm fail the Vth
+ * upper limit more often, so a grouped pass-rate chart shows a real difference
+ * rather than two identical bars.
+ */
+export const PROCESS_SPLITS = ['POR', 'Hi-dose'];
+
+/** Which split a wafer belongs to. Wafers alternate, so even a 2-wafer demo has both. */
+export function splitForWafer(index) {
+  return PROCESS_SPLITS[index % PROCESS_SPLITS.length];
+}
+
+/**
+ * Vth offset (volts) applied by each split arm. The higher implant dose pushes Vth
+ * up against the 0.57 V upper limit.
+ *
+ * Calibrated, not guessed: at +50 mV the split arm still passes the exported spec
+ * on ~98% of dies but passes the tester's tighter guard band on only ~81%. That
+ * gap is the demo — a split that looks acceptable against the datasheet limits and
+ * marginal against the criterion the tester actually applied. POR sits well inside
+ * both, so the difference reads as a property of the split rather than of the lot.
+ */
+export const SPLIT_VTH_BIAS = { 'POR': 0, 'Hi-dose': 0.050 };
+
 // ── Data generator ────────────────────────────────────────────────────────────
 
 /**
@@ -45,7 +77,12 @@ export function rng(i, j, seed = 1) {
  * @param {number}  [opts.siteFail=0]            Site number (1-based) to inject a yield loss on (~20 pp drop).
  *                                               Ignored when siteCount=0.
  * @param {boolean} [opts.includePartId=false]   When true, adds partId (1-based probe step counter, row order).
- * @returns {Array<{x,y,hbin,sbin,testValues,siteNum?,partId?}>}
+ * @param {number}  [opts.waferIndex]             When given, applies that wafer's process-split Vth bias
+ *                                                (see `splitForWafer`/`SPLIT_VTH_BIAS`). Pair it with
+ *                                                `makeWaferConfig(waferIndex)`, which stamps the matching
+ *                                                `processSplit` metadata — the two must agree or the chart
+ *                                                will group wafers by a label their data does not reflect.
+ * @returns {Array<{x,y,hbin,sbin,testValues,testPass,siteNum?,partId?}>}
  */
 export function makeResults({
   seed            = 1,
@@ -58,7 +95,9 @@ export function makeResults({
   siteCount       = 0,
   siteFail        = 0,
   includePartId   = false,
+  waferIndex,
 } = {}) {
+  const vthBias = waferIndex === undefined ? 0 : (SPLIT_VTH_BIAS[splitForWafer(waferIndex)] ?? 0);
   // Physical die pitch and wafer radius in mm.
   // Grid sweeps enough index steps to cover the full wafer in each direction.
   const pitchX = 8, pitchY = 12, waferRadius = 150;
@@ -154,7 +193,7 @@ export function makeResults({
       //   high toward the NE (→ USL fails), low toward the SW (→ LSL fails). The
       //   tilt is a single across-wafer gradient, so out-of-spec dies form soft,
       //   irregular corner patches rather than a blob or a hard quadrant block.
-      const vth = 0.490 + t * 0.02 + 0.095 * tilt + (n3 - 0.5) * 0.028;
+      const vth = 0.490 + t * 0.02 + 0.095 * tilt + (n3 - 0.5) * 0.028 + vthBias;
 
       //   Ioff: off-state leakage grows exponentially toward edge
       const ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
@@ -189,10 +228,30 @@ export function makeResults({
         partId = partIdCounter++;
       }
 
+      // Tester-recorded verdicts for the PARAMETRIC tests, separate from their
+      // measured values. In STDF these are the PTR's own TEST_FLG pass/fail bits,
+      // which exist whether or not LO_LIMIT/HI_LIMIT were exported — so "did it
+      // fail the limits" and "did the tester fail it" are two different questions
+      // over the same test, and the Insights pass-rate chart offers both.
+      //
+      // Modelled the way they actually diverge in production: the tester applies a
+      // GUARD BAND tighter than the limits in the datasheet, to protect against
+      // measurement uncertainty. A die measuring just inside the exported limits
+      // is therefore failed by the tester. Those dies are exactly the population
+      // the chart's "N dies judged differently" note exists to surface — without
+      // them the feature has nothing to show.
+      const vthGuardLow  = TEST_DEFS_VTH_LIMITS.low  + VTH_GUARD_BAND;
+      const vthGuardHigh = TEST_DEFS_VTH_LIMITS.high - VTH_GUARD_BAND;
+      const vthTesterPass = vth >= vthGuardLow && vth <= vthGuardHigh;
+      // Idsat's tester verdict agrees with its limit exactly — one test that
+      // diverges and one that does not, so the note reads as a real signal about
+      // Vth rather than a blanket property of the dataset.
+      const idsatTesterPass = idsat >= IDSAT_LSL;
+
       const die = {
         x: i, y: j, hbin, sbin,
         testValues: { 1050: idsat, 1060: vth, 1070: ioff },
-        testPass:   { 1080: continuityPass },
+        testPass:   { 1050: idsatTesterPass, 1060: vthTesterPass, 1080: continuityPass },
       };
       if (siteNum !== undefined) die.siteNum = siteNum;
       if (partId  !== undefined) die.partId  = partId;
@@ -204,6 +263,23 @@ export function makeResults({
 }
 
 // ── Shared definitions ────────────────────────────────────────────────────────
+
+/** Vth spec window, named so the generator's guard-band maths and `TEST_DEFS`
+ *  below cannot drift apart. */
+const TEST_DEFS_VTH_LIMITS = { low: 0.44, high: 0.57 };
+
+/** How much tighter the tester's own Vth criterion is than the exported spec
+ *  (volts, each side). This is the entire source of the spec-vs-tester
+ *  disagreement in the demo data — set it to 0 and the two modes agree exactly. */
+const VTH_GUARD_BAND = 0.008;
+
+/** Idsat lower spec limit (A). Drive current falls toward the wafer edge, so this
+ *  fails an outer band — giving the spec pass-rate chart a second ranked row
+ *  instead of the single Vth row it had when Vth was the only limited test. */
+const IDSAT_LSL = 0.95e-3;
+
+/** Ioff upper spec limit (A). Leakage grows exponentially toward the edge. */
+const IOFF_USL = 6e-11;
 
 /**
  * Hard bin names and brand colours.
@@ -230,13 +306,22 @@ export const SBIN_DEFS = [
 /**
  * Three continuous parametric tests: saturation current, threshold voltage, leakage.
  * testNumber is a stable per-test identity (e.g. STDF TEST_NUM or equivalent).
- * Vth has spec limits — a smooth NE→SW process tilt runs high toward the NE (USL
- * fails) and low toward the SW (LSL fails), so the wafer shows both out-of-spec sides.
+ *
+ * All three carry spec limits: with limits on Vth alone the Insights pass-rate
+ * chart could only ever draw one row, which shows the mechanism but not the
+ * pareto it is meant to be. With `quadrant: true` a smooth NE→SW process tilt
+ * additionally runs Vth high toward the NE (USL fails) and low toward the SW
+ * (LSL fails), so that wafer shows both out-of-spec sides.
+ *
+ * Every die also carries a tester-recorded verdict for Idsat and Vth (see
+ * `makeResults`), so the chart's "Tester flag" mode has data too — and Vth's
+ * guard band makes the two parametric modes disagree, which is the case the
+ * disagreement note exists for.
  */
 export const TEST_DEFS = [
-  { testNumber: 1050, name: 'Idsat', unit: 'A' },
-  { testNumber: 1060, name: 'Vth',   unit: 'V',  limitLow: 0.44, limitHigh: 0.57 },
-  { testNumber: 1070, name: 'Ioff',  unit: 'A' },
+  { testNumber: 1050, name: 'Idsat', unit: 'A', limitLow: IDSAT_LSL },
+  { testNumber: 1060, name: 'Vth',   unit: 'V', limitLow: TEST_DEFS_VTH_LIMITS.low, limitHigh: TEST_DEFS_VTH_LIMITS.high },
+  { testNumber: 1070, name: 'Ioff',  unit: 'A', limitHigh: IOFF_USL },
 ];
 
 /**
@@ -266,7 +351,16 @@ export const WAFER_CONFIG = {
  */
 export function makeWaferConfig(index) {
   const n = String(index + 1).padStart(2, '0');
-  return { ...WAFER_CONFIG, metadata: { ...WAFER_CONFIG.metadata, waferId: `W${n}` } };
+  return {
+    ...WAFER_CONFIG,
+    metadata: {
+      ...WAFER_CONFIG.metadata,
+      waferId: `W${n}`,
+      // The lot's groupable axis. Pair with `makeResults({ waferIndex: index })`
+      // so the wafer's data actually reflects the split it is labelled with.
+      processSplit: splitForWafer(index),
+    },
+  };
 }
 
 /** 8 mm × 12 mm die pitch — realistic rectangular die for a leading-edge logic device. */

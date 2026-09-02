@@ -589,7 +589,7 @@ The library's one warning vocabulary. Raised by geometry inference on
 | --- | --- | --- |
 | `partial-coverage` | `error` | Data does not span a full wafer; inferred diameter/centre may be wrong and dies may be mis-positioned. Supply `waferConfig.center` + `.diameter`. |
 | `geometry-conflict` | `error` | `waferConfig.diameter` and `dieConfig.width`/`height` were both supplied and cannot contain the probed dies. |
-| `inferred-pitch` | `error` | `diameter` supplied without a die pitch, so pitch was derived as `diameter ÷ grid span` — wrong whenever edge dies are absent. |
+| `inferred-pitch` | `warning` | `diameter` supplied without a die pitch, so pitch was derived as `diameter ÷ grid span` — exact when the die grid reaches the wafer edge, skewed when edge dies are absent. An assumption made on your behalf, not a detected contradiction: supply `dieConfig.width`/`height` to remove it. |
 | `test-count-capped` | `warning` | More tests found than `analyzeWaferMap` will analyse, so **no test findings were computed at all**. Pass `testNumbers` to scope it. |
 | `edge-exclusion-exceeds-radius` | `warning` | `waferConfig.edgeExclusion` exceeds the resolved wafer radius (most likely with an under-inferred diameter). The excluded band is clamped to the whole wafer instead of silently producing a smaller, wrong ring. |
 
@@ -973,19 +973,23 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                           // 'state' when all are WaferDisplayState, 'mixed' when both
   showTooltip?:            boolean   // default true
   showToolbar?:            boolean   // default true
-  showMetadataBadge?:      boolean   // default true — small always-visible metadata overlay (lot, wafer ID, product,
-                                            // test program, temperature, etc.) bottom-left on the canvas, independent of
-                                            // showToolbar/Insights. Zero layout cost (a canvas overlay, not a layout
-                                            // element); collapsed to one identifying line, expands in place on click/
-                                            // Enter/Space. Renders nothing when the result has no metadata at all.
+  showIdentityHeader?:      boolean   // default true — an always-visible identity header row (lot, wafer ID, product,
+                                            // test program, temperature, etc.) above the canvas, independent of
+                                            // showToolbar/Insights. A real layout row, not an overlay, so it can never
+                                            // collide with anything the canvas draws; collapsed to one identifying line,
+                                            // expands in place (over the top of the canvas) on click/Enter/Space. Also
+                                            // hosts the "expand to full view" button (see showExpandButton/onExpand) —
+                                            // the toolbar no longer carries a separate one. Renders nothing when the
+                                            // result has no metadata/lot-stack context AND showExpandButton is off.
   dieList?:                DieListDisplayOptions  // display preferences for the built-in die-list table (the
                                             // coordinate-less map replacement, and the "+N dies without position" footer)
                                             // — column selection, maxRows, CSV filename. See §5.4.1.
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
-  showExpandButton?:       boolean   // show the toolbar expand button and enable the E-key shortcut (default true);
-                                            // set false when the host already renders the map inside its own expanded/modal
-                                            // context, where wmap's built-in expand modal would be redundant
+  showExpandButton?:       boolean   // show the expand button on the metadata header and enable the E-key shortcut
+                                            // (default true; requires showIdentityHeader — that header is the button's
+                                            // only home). Set false when the host already renders the map inside its
+                                            // own expanded/modal context, where wmap's built-in expand modal would be redundant
   legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
                                             // initial bin legend position (default 'default'); user can change via toolbar
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
@@ -1056,14 +1060,72 @@ wmap's **chrome** — the toolbar, summary panel, menus, the die tooltip, and th
 
 This is the same mechanism `--wmap-z` uses for stacking. It is theme-agnostic: wmap defines the tokens and their defaults, the host supplies the values. (The **data** palette — the bin/value colours of the dies — is separate and controlled by `colorScheme`, not these tokens; it does not follow the chrome accent.)
 
+##### Type size (`--wmap-font-size`)
+
+wmap's chrome is sized from **one** token. Set `--wmap-font-size` and every tier
+moves with it, so an embedded map follows the host's own type scale instead of
+pinning wmap's:
+
+```css
+:root { --wmap-font-size: 14px; }   /* default 12px */
+```
+
+The tiers are derived, not individually settable — deliberately, so a host
+cannot produce an incoherent scale (headings smaller than body, meta larger than
+headings):
+
+| Tier | Size | Used for |
+| --- | --- | --- |
+| meta | base − 1px | uppercase micro-labels, badges, disclosure arrows |
+| body | base | prose, table cells, hints, and every interactive control |
+| sub-heading | base + 1px | group headers inside a scrolling list |
+| heading | base + 3px | card and panel titles |
+| stat | base + 8px | the large summary figures |
+
+**Canvas text follows too**, but resolves the token at paint time from the
+**document root** — canvas cannot read a CSS variable. Set `--wmap-font-size` on
+`:root` (as with the colour tokens) rather than scoping it to a container, or
+chart and axis labels will keep the default while the DOM chrome moves.
+
+##### Density (`--wmap-density`)
+
+The companion lever to `--wmap-font-size`. It scales every step of the spacing
+scale, so an embedded map can tighten into a narrow column or breathe in a roomy
+host:
+
+```css
+:root { --wmap-density: 0.85; }   /* default 1 */
+```
+
+Type is deliberately **not** affected. Density is the space between things;
+shrinking type to fit a column is what produced a segmented toggle that rendered
+smaller than the buttons beside it. Corner radius is likewise unaffected — it is
+three fixed roles (control 4px, container 6px, pill full).
+
+##### Typeface (`--wmap-font-family`)
+
+The third sizing lever. It defaults to `inherit`, so an embedded map picks up the
+host's own typeface without being told; set it only when the map should differ
+from its container:
+
+```css
+:root { --wmap-font-family: "IBM Plex Sans", system-ui, sans-serif; }  /* default: inherit */
+```
+
+Like `--wmap-font-size`, canvas text cannot read the variable, so it reaches DOM
+chrome only — set a stack the canvas defaults sit comfortably beside rather than
+a display face.
+
 **Token reference** (default in parentheses):
 
 | Token | Themes | Default |
 | --- | --- | --- |
+| `--wmap-font-family` | DOM-chrome typeface (canvas text is unaffected) | `inherit` |
 | `--wmap-canvas-bg` | Wafer canvas background | `#f5f5f5` (falls back to `--wmap-surface`) |
 | `--wmap-surface` | Menus, panels, toolbar surfaces, gallery cards | `#fff` |
 | `--wmap-panel-bg` | Summary-panel base | `#fafbfc` |
 | `--wmap-border` | Borders, dividers, axis tick lines | `rgba(0,0,0,0.12)` |
+| `--wmap-control-border` | Button, toggle and input edges — deliberately stronger than `--wmap-border`, which is a hairline divider | `rgba(0,0,0,0.30)` |
 | `--wmap-text` | Primary text (chrome + canvas axis/legend) | `#333` |
 | `--wmap-text-muted` | Secondary/muted text | `#66788a` |
 | `--wmap-text-strong` | Emphasis text — Summary-panel headings, big stat numbers, metadata badge values | `#1f2f43` |
@@ -1078,7 +1140,7 @@ This is the same mechanism `--wmap-z` uses for stacking. It is theme-agnostic: w
 | `--wmap-info-bg` / `--wmap-info-text` | Info callout | `#dce8f8` / `#334155` |
 | `--wmap-selected` | Finding-drilldown card outline (gallery) | `#e07a20` |
 | `--wmap-finding-indicator` | Summary button text colour when the wafer/lot has notable findings | `#b7551a` |
-| `--wmap-bar-fill` / `--wmap-bar-fill-muted` | Summary-panel progress bars (yield, ring/quadrant) — fill / below-median-muted fill | `#2a6fc0` / `#94a3b8` |
+| `--wmap-bar-fill` | Summary-panel progress bars (wafer yield, region yield, bin breakdown) — fill | `#2a6fc0` |
 
 `--wmap-err-*` and `--wmap-warn-*` are visually distinct on purpose — a warning says something is missing or degraded, an error says the map may be positionally **wrong** (geometry advisories), and flattening the two into one colour hides the difference that matters. **Every token that pairs a background with text on it — `warn-*`, `err-*`, `text-strong` against `panel-bg`/`surface` — needs its own AA-contrasting pair when you theme it.** Overriding only the surfaces and leaving these unset does not make them invisible; it makes them fall back to the *light-theme* defaults above, which is how a dark theme silently ends up with near-black text on a near-black panel. §5.4.1's dark/Nord examples below set all of them for exactly this reason.
 
@@ -1185,7 +1247,25 @@ Every one of these matters: the six tokens that used to be left unset here — `
 }
 ```
 
-The Summary panel is a docked panel — metadata, yield, bin breakdown, ring/quadrant yield, test values, and detected anomalies (`StatsSummary.findings`, with severity/kind/region filter controls wired to `filterFindings`, §7.x) — plus one combined "Summary report" button that opens the full HTML report (`renderSummaryReportHtml`/`renderLotSummaryReportHtml`, which already includes findings) in an in-app modal (`openReportModal`, §10.3) — no host wiring required. Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/ring/quadrant/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, `buildRegionYieldData`), so the two surfaces can show overlapping numbers without ever disagreeing.
+The Summary panel is a docked panel — metadata, yield, detected anomalies (`StatsSummary.findings`, with severity chips wired to `filterFindings`, §7.x; the Kind/Region dropdowns appear once there are at least 8 findings), bin breakdown, region yield, test values, and functional tests — plus one combined "Summary report" button that opens the full HTML report (`renderSummaryReportHtml`/`renderLotSummaryReportHtml`, which already includes findings) in an in-app modal (`openReportModal`, §10.3) — no host wiring required. Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/region/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, `buildRegionYieldData`, `buildCapabilityData`), so the two surfaces can show overlapping numbers without ever disagreeing.
+
+Findings render directly beneath the headline stats, above the bin/region/test detail. Every section collapses from its header, and the collapsed set is remembered per panel element across re-renders.
+
+The gallery's panel has **no tabs**. It previously opened on a Lot/Findings pair in which both tabs carried findings — lot-level ones under "Lot", and none at all under "Findings", which actually listed wafers — and in which two identical-looking per-wafer lists did different things on click. There is now one list: the **Wafer Yield** section, with each row badged by its own findings count and opening that wafer when clicked. Every wafer appears in it, including those with no findings, which the old subset list structurally could not show. A `Findings report` button beside the other report buttons covers every wafer's findings in one document.
+
+On the single-wafer panel the metadata section is suppressed when the caller already renders that metadata — `renderWaferMap` does so whenever its identity header is mounted (`showIdentityHeader`, default `true`), since the header's expandable panel is built from the same helpers. Set `showIdentityHeader: false` and the panel's own "Wafer Info" section returns.
+
+Three sections carry a header selector, and each derives its default rather than starting neutral:
+
+| Section | Selector | Default |
+| --- | --- | --- |
+| Bin breakdown | Hard / Soft | The map's **plot mode** (`hardBin`/`stackedBins` → hard, `softBin`/`stackedSoftBins` → soft), falling back to whichever bin type has data. Shown only when both types have data. |
+| Region yield | Ring / Quadrant | Ring. Quadrant yield averages over half the wafer and is near-flat on most lots; a real asymmetry is reported as a finding with a significance test behind it. |
+| Wafer yield (lot) | Slot / Yield | Slot order, which is what makes a slot-correlated pattern visible. |
+
+Bin bars are ordered pass-bins-first, then failing bins by descending count — matching `buildBinParetoData`'s count-descending ordering in the Insights bin chart — and are labelled "% of dies (N=…)" to distinguish them from the lot card's "Mean wafer yield", which is an *unweighted* mean of per-wafer yields. The two are different statistics over different denominators and agree only when die counts are even across the lot.
+
+The on-screen test table carries Test / Mean / **Ppk** / Spec yield only; the full descriptive statistics (min, quartiles, median, max, σ, both limits) stay in the CSV export and the summary report. Ppk rather than Cpk because Cp/Cpk use the pooled *within-wafer* stddev — on a single-wafer panel there is exactly one subgroup, so `cpk === ppk` identically and the "Cpk" label would name an index the data does not contain; across a lot, Cpk excludes the wafer-to-wafer shift that Ppk includes. The Cpk/Ppk pair is a drift diagnostic and lives in the summary report, which prints all four indices. A test's `N` is hoisted into the section title when every test shares it.
 
 #### 5.4.3 `InsightsOptions`
 
@@ -1349,7 +1429,7 @@ Choose the right update method:
   setViewControlsVisible(visible: boolean): void   // show/hide mode, orientation, summary, and expand buttons as a group
   setExpandVisible(visible: boolean): void          // show/hide the expand toolbar button independently
   setHelpButtonVisible(visible: boolean): void      // show/hide the help toolbar button independently
-  setMetadataBadgeVisible(visible: boolean): void   // show/hide the metadata badge without affecting its content
+  setIdentityHeaderVisible(visible: boolean): void   // show/hide the identity header without affecting its content
   openUserGuide(): void   // opens the end-user guide window directly — the same action the help toolbar button
                                   // performs, but callable regardless of showHelpButton/setHelpButtonVisible, so a host
                                   // that hides wmap's own help button (e.g. folding it into its own combined help menu)
@@ -1386,10 +1466,11 @@ Choose the right update method:
 | Flip V | Mirror vertically |
 | Summary | Toggle the Summary panel — only shown when `statsSummary` is provided |
 | Insights | Toggle the Insights tab — swaps the map for this wafer's chart suite. Only shown when `insights.enabled: true`. See §5.9. |
-| Expand (⛶) | Open the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6), inside an already-open modal or window, and **while the Insights tab is open** (there is no single map view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button for enlarging just that chart). |
 | User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
-**While the Insights tab is open**, every control above except Insights and User guide is hidden — Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, Summary, and Expand all apply only to the map view, which the chart suite has replaced; Summary's panel specifically would have nothing to highlight against with the map hidden behind Insights. They reappear as soon as Insights is closed.
+**Expand is not in this toolbar strip** — it lives on the metadata header row above the canvas (`showIdentityHeader`; see `showExpandButton` above), not among these buttons. Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6), inside an already-open modal or window, and **while the Insights tab is open** (there is no single map view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button for enlarging just that chart). Since it requires `showIdentityHeader`, a host that turns that header off loses the Expand affordance entirely rather than finding it relocated.
+
+**While the Insights tab is open**, every control above except Insights and User guide is hidden — Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, and Summary all apply only to the map view, which the chart suite has replaced; Summary's panel specifically would have nothing to highlight against with the map hidden behind Insights. Expand is likewise hidden while Insights is open, for the same reason. They reappear as soon as Insights is closed.
 
 ### 5.7 Interactions
 
@@ -1451,13 +1532,36 @@ Passing `insights: { enabled: true }` adds an **Insights** toolbar button. Click
 
 Insights has three sub-tabs:
 
-- **Overview** — a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)"), a hard/soft bin pareto, and a details card with ring/quadrant regional yield and per-test min/mean/max/spec-yield.
-- **Distributions** — process capability (Cp/Cpk/Pp/Ppk, normalized per test — see §7.16's `buildCapabilityData` for how tests without full spec limits are handled), a test-value boxplot, and a value histogram.
-- **Correlation** — a Pearson-r correlation matrix and a die-level X/Y scatter. Clicking a capability box drives the boxplot/histogram's selected test in place; clicking a correlation matrix cell drives the scatter panel's X/Y in place.
+- **Overview** — a **per-test pass rate** chart (worst test first, clustered by group when "Group by" is active), headline tiles naming the population (wafer count, dies analysed and excluded, and for a lot the mean wafer yield, labelled *unweighted, per wafer* to distinguish it from the die-weighted figure), a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)", with a dashed median reference line), a hard/soft bin pareto, and a details card with ring/quadrant regional yield and the full per-test statistics table. The pass-rate chart has three modes (`buildTestPassRateData`, `@wafertools/wafermap/stats`), because a parametric test carries **two independent** pass/fail notions and a functional test only one:
+
+| Mode | Judged by |
+| --- | --- |
+| `spec` | The value against `limitLow`/`limitHigh`. |
+| `testFlag` | The tester's own recorded verdict in `die.testPass` — STDF's PTR `TEST_FLG` pass/fail bits, which exist whether or not `LO_LIMIT`/`HI_LIMIT` do. |
+| `functional` | The recorded verdict for a `testType: 'F'` test, which has no measured value and therefore only ever has this one. |
+
+The two parametric modes can legitimately disagree — guard bands, dynamic or per-site limits, criteria the exported limits do not describe, or a limits/data mismatch. They are therefore kept as separate views rather than collapsed into one "parametric pass rate", and `TestPassRateData.disagreementDies` counts the dies the two sources judge differently (`null`, distinct from `0`, when only one source is present). The chart surfaces that count rather than resolving it, since only the reader can tell an expected guard band from a real mismatch.
+
+Only the modes the data supports are offered; `hasJudgeableTests(testDefs, kind, dies)` takes the dies for `'testFlag'`, since every parametric test *could* carry a verdict and a definition-only check would offer a mode that renders empty. Bars are *rates* on a fixed 0–100% axis rather than counts, so splits with different wafer counts compare fairly. A parametric test with neither limits nor a recorded verdict is genuinely unjudgeable and is omitted rather than reported as 100%.
+- **Distributions** — process capability (Cp/Cpk/Pp/Ppk, normalized per test — see §7.16's `buildCapabilityData` for how tests without full spec limits are handled), a test-value boxplot, a value histogram, and a **wafer-to-wafer trend** (per-wafer mean with ±1σ whiskers, the die-weighted lot mean as a dashed centre line, and spec limits). The trend is always in slot order and has no sort control: a drift or a bad cassette position is only visible in the physical sequence, so sorting it would remove the only signal it carries.
+- **Correlation** — a Pearson-r correlation matrix (stating the median pairwise `n`, with the exact per-pair `n` in each cell's tooltip) and a die-level X/Y scatter that reports `r` and `n` for the pair it is showing, recomputed when the legend filters the points. Clicking a capability box drives the boxplot, histogram and trend onto that same test in place; clicking a correlation matrix cell drives the scatter panel's X/Y in place.
 
 For a single wafer there is no "Group by" control (grouping needs more than one wafer to be meaningful — see §6.10) and no click-to-open-wafer action (the map you're looking at already *is* the only wafer there is to open). Everything else — the wafer picker on histogram/correlation/scatter, the capability↔boxplot/histogram cross-link, the correlation↔scatter cross-link — behaves the same as the gallery version.
 
-`insights.enabled` only changes what the toolbar exposes; it needs no other options. `insights.defaultView` picks which sub-tab shows first (default `'overview'`). Panels that read parametric test data (capability, boxplot, histogram, correlation, scatter) need `testDefs` passed to `buildWaferMap` to have anything to plot — yield and bin pareto only need `die.hbin`/`die.sbin`.
+`insights.enabled` only changes what the toolbar exposes; it needs no other options.
+
+**The chart suite is loaded on demand.** It is a separate chunk (~25 KB gzipped), fetched
+the first time Insights is opened and never downloaded by a page that only renders maps —
+the same treatment the in-app user guide gets. Two consequences worth knowing:
+
+- `WaferMapController.setInsightsOpen(true)` returns before the tab's DOM exists. The
+  toolbar responds immediately, but code that asserts on the chart DOM straight after the
+  call must wait for it to appear — polling for `button[role="tab"]` is the cheapest
+  reliable signal. Closing is synchronous, and toggling back to the map while the chunk is
+  still in flight is honoured rather than overridden.
+- A host that bundles wmap itself needs a bundler that supports dynamic `import()`
+  code-splitting (Vite, Rollup, webpack, esbuild with `splitting: true` — all of them by
+  default). One that inlines dynamic imports still works; it simply loses the saving. `insights.defaultView` picks which sub-tab shows first (default `'overview'`). Panels that read parametric test data (capability, boxplot, histogram, trend, correlation, scatter, and the pass-rate chart's `spec`/`testFlag` modes) need `testDefs` passed to `buildWaferMap` to have anything to plot — yield and bin pareto only need `die.hbin`/`die.sbin`.
 
 ```ts
 const result = buildWaferMap({ results, waferConfig, dieConfig, testDefs, passBins: [1] });
@@ -1688,7 +1792,7 @@ to be pre-built.
                                             // it's blocked (some embedded WebViews)
   userGuideExtension?:     UserGuideExtension  // insert a host app's own documentation into the guide window
                                             // (see "User guide extension" below) — only relevant when showHelpButton is true
-  lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Summary button to the toolbar with Lot and Wafers tabs; per-wafer findings are drawn from the lot analysis automatically
+  lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Summary button to the toolbar; per-wafer findings are drawn from the lot analysis automatically and badged onto the Wafer Yield rows
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state (§5.4.2)
   dieList?:                DieListDisplayOptions // "View die list" link inside the Summary panel — every die
                                             // across the whole lot, pooled, with a Wafer column. Not a toolbar
@@ -2571,6 +2675,31 @@ interface FindingsFilter {
 }
 ```
 
+#### `visibleFindings(findings)`
+
+```ts
+visibleFindings<T extends { id: string; absorbedIds?: string[] }>(findings: T[]): T[]
+```
+
+Drops findings that another finding has claimed as an exact restatement of itself — a
+soft-bin twin covering the same dies, or the single pass bin's row against the yield row
+that says the same thing. The claimer's own label already names what it absorbed ("hard bin
+and soft bin 3 (same dies)"), so listing both prints one fact twice, once merged and once
+not.
+
+Apply it to anything that *renders* a findings list. `StatsSummary.findings` deliberately
+keeps the full uncollapsed set, so a host that wants every row can still have it; this is
+the filter the built-in surfaces put in front of it.
+
+```ts
+import { visibleFindings } from '@wafertools/wafermap/stats';
+
+for (const f of visibleFindings(summary.findings)) { /* … */ }
+```
+
+Composes with `filterFindings` in either order — the two are independent, one dropping
+absorbed restatements and the other narrowing by severity/kind/family/level.
+
 ### 7.15 `classifyPattern(dies, wafer, options?)`
 
 ```ts
@@ -2654,8 +2783,10 @@ import {
   buildBinParetoData, buildBinClusterData,
   buildCapabilityData,
   buildTestBoxplotData,
+  buildTestTrendData, trendCentre,
+  buildTestPassRateData, hasJudgeableTests,
   buildTestHistogramData, buildTestHistogramSeries,
-  buildCorrelationMatrix, filterCorrelationMatrix,
+  buildCorrelationMatrix, filterCorrelationMatrix, pearsonFromSums, pearsonOfPairs,
   buildScatterData, buildScatterDataGrouped,
   buildFacetTable, facetValueOf, DEFAULT_FACET_CURATION, FACET_NONE_VALUE,
 } from '@wafertools/wafermap/stats';
@@ -2670,10 +2801,16 @@ import {
 | `buildCapabilityData(items, testDefs)` | `CapabilityDatum[]` | Cp/Cpk (pooled within-item stddev — each item is treated as the short-term subgroup) and Pp/Ppk (overall stddev), for every parametric test with at least one recorded value. Tests with both `limitLow` and `limitHigh` get `hasSpec: true`, full capability indices, and `min`/`q1`/`median`/`q3`/`max` normalized `(v - lsl) / (usl - lsl)`. Tests missing one or both limits still appear (`hasSpec: false`, `lsl`/`usl`/`cp`/`cpk`/`pp`/`ppk` all absent/null) normalized onto their own observed `[min, max]` instead — a lot with sparse spec coverage no longer renders empty. Sorted spec'd-first (worst-Ppk-first within that tier), then unspec'd (most-variable-first). |
 | `computeFunctionalYield(dies, testDefs)` | `StatsSummary['stats']['functionalYield']` | Per-test pass rate for every functional (`testType: 'F'`) test — pass/fail/verdict counts and `passRatePercent`. Verdicts read via `getTestPassStatus` (recorded `testPass` first, then the legacy 0/1 fallback); partial/edge-excluded dies excluded; dies with no verdict are never counted as fails. The same computation `analyzeWaferMap` uses for `stats.functionalYield` and the "Functional Tests" tables. |
 | `buildTestBoxplotData(items, testNumber)` | `BoxplotDatum[]` | One five-number summary (`min`/`q1`/`median`/`q3`/`max`/`count`) per item, for one test. Excludes partial/edge-excluded dies. An item carrying `testStats` with an entry for the requested test (e.g. from `StatsSummary.stats.perTestStats`) uses it directly instead of re-scanning `dies`. |
+| `buildTestTrendData(items, testNumber)` | `TrendDatum[]` | One point per item — `mean`, sample `stddev` (ddof=1), `count` — for one test, **in the order given and never sorted**. Slot order is the entire signal: a drift or a bad cassette position only reads on the population's own sequence, so sorting by value would destroy what the chart exists to show. Items with no values for the test are kept in place with `count: 0` and `mean: NaN` rather than dropped, so a gap in the sequence stays visible. Like `buildTestBoxplotData`, an item carrying `testStats` for the requested test (e.g. `StatsSummary.stats.perTestStats`) is used directly instead of re-scanning `dies`. `TrendDatum.key` carries the caller's own identity through for click-to-open. |
+| `trendCentre(data)` | `number \| null` | The population mean across every `TrendDatum` that has data, **n-weighted** — the mean of the pooled dies, not a mean of per-wafer means, so it does not let a short wafer count as much as a full one. `null` when nothing has data. This is the trend chart's dashed centre line. |
+| `buildTestPassRateData(groups, testDefs, kind)` | `TestPassRateData` | Per-test pass rate, one row per test (worst first) with a value per group. `kind` (`TestPassKind`) selects **which** pass/fail notion is measured, and the three are not interchangeable: `'spec'` judges a parametric value against its `limitLow`/`limitHigh`; `'testFlag'` reads the tester's own recorded verdict (`die.testPass` — STDF's PTR `TEST_FLG`, which exists whether or not limits do); `'functional'` covers pass/fail-only (`testType: 'F'`) tests. The two parametric modes can legitimately disagree (guard bands, dynamic or per-site limits, a limits/data mismatch), so `TestPassRateData.disagreementDies` **counts** the dies judged differently rather than resolving them — `null`, distinct from `0`, when only one source exists. Rates only, on a fixed 0–100% axis: groups routinely differ in wafer count, and a count axis would show the larger group failing more while failing at the same rate. A parametric test with neither limits nor a recorded verdict is unjudgeable and is omitted rather than reported as 100%; a group that never ran a test yields no value rather than a 0% one. |
+| `hasJudgeableTests(groups, testDefs, kind)` | `boolean` | Whether `kind` would produce anything — use it to offer only the modes the data supports. For `'testFlag'` it takes the **dies**, not just the definitions: every parametric test *could* carry a verdict, so a definition-only check would offer a mode that renders empty. |
 | `buildTestHistogramData(items, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramBucket[]` | Bucketed value counts across `items`, pooled. |
 | `buildTestHistogramSeries(groups, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramSeriesData` | Shared bucket ranges with one count series per group — `{ ranges, series: [{ groupKey, counts }] }`. |
 | `buildCorrelationMatrix(dies, testDefs)` | `CorrelationMatrix` | Pearson r for every parametric test pair. |
 | `filterCorrelationMatrix(matrix, options)` | `{ matrix, strongPairs, moderatePairs, hiddenWeakPairs, strongestPair }` | Caps matrix size (`options.maxTests`) and requires a minimum test count (`options.minTests`), keeping the pairs with the largest correlation magnitude. |
+| `pearsonFromSums(n, sumX, sumY, sumXX, sumYY, sumXY)` | `number \| null` | Pearson r from running sums — the single implementation of the formula. `buildCorrelationMatrix`'s per-pair accumulators and `pearsonOfPairs` both go through it, so a matrix cell and the scatter card can never disagree about the same pair. `null` below 3 points, or with zero variance in either axis. |
+| `pearsonOfPairs(pairs)` | `{ r, n }` | The same r plus its `n` for an explicit `{ x, y }` list — the scatter panel's own displayed points, recomputed after any legend filtering, so filtering to one group reports that group's coefficient. Non-finite pairs are skipped, which is why `n` is returned rather than assumed to be `pairs.length`. |
 | `buildScatterData(items, xTest, yTest)` | `ScatterPoint[]` | One point per die with valid values for both tests. |
 | `buildScatterDataGrouped(groups, xTest, yTest)` | `ScatterPoint[]` | Same, with each point tagged `group: string` — every group's points are returned together (this function never restricts to one group). |
 | `buildFacetTable(items, options?)` | `FacetField[]` | The distinct-values table over `wafer.metadata` — "what can I group/compare/split by?" One entry per metadata key present on at least one item, curated via `DEFAULT_FACET_CURATION` (`lot`, `product`, `testProgram`, `temperature`, `split`, `operator`, `testDate`; `waferId` is curated `facet: false` — present but not offered, since it's unique per item by definition). `options.facetableOnly` (default `true`) restricts to curated-`facet:true`-or-uncurated keys; pass `false` to include `waferId` too. |
@@ -3400,7 +3537,6 @@ buildHoverText(
     fallbackFormat?: 'si' | 'engineering'
     aggrMethod?:     string                 // lot-stack aggregation method name
     lotSize?:        number                 // wafers in the stack — annotates a count with its lot share
-    waferMeta?:      WaferMetadata | null   // wafer-level metadata; per-die keys override
     activeTest?:     number                 // active test number (value mode) — leads the tooltip
     reticleConfig?:  ReticleConfig          // when set, adds "Reticle (column, row)" below "Die (x, y)"
   },
@@ -3792,12 +3928,20 @@ and, where noted, precomputed statistics that are used in preference to re-walki
 | `BinType` | `/stats` | `'hbin' \| 'sbin'`. |
 | `BoxplotItem` | `/stats` | Input to `buildTestBoxplotData`; may carry precomputed `testStats`. |
 | `CapabilityItem` | `/stats` | Input to `buildCapabilityData` — one item is the short-term subgroup for Cp/Cpk. |
+| `BoxplotDatum` | `/stats` | `buildTestBoxplotData` row — the five-number summary plus `count`. |
+| `TrendItem` | `/stats` | Input to `buildTestTrendData`; like `BoxplotItem`, may carry precomputed `testStats`. |
+| `TrendDatum` | `/stats` | One trend point — `{ label, mean, stddev, count, key? }`. `mean` is `NaN` when `count` is `0`. |
+| `TestPassRateItem` | `/stats` | Input to `buildTestPassRateData` — one item within a group. |
+| `TestPassRateData` | `/stats` | `buildTestPassRateData` return — `{ groups, rows, disagreementDies }`. `disagreementDies` is `null`, not `0`, when only one pass/fail source exists. |
+| `TestPassRateRow` | `/stats` | One test's row across the groups. |
+| `TestPassRateValue` | `/stats` | One group's cell in a row — absent where that group never ran the test. |
+| `TestPassKind` | `/stats` | `'spec' \| 'testFlag' \| 'functional'` — which pass/fail notion `buildTestPassRateData` measures. |
 | `HistogramItem` | `/stats` | Input to `buildTestHistogramData`. |
 | `HistogramSeries` | `/stats` | One group's counts in `HistogramSeriesData`, aligned to the shared `ranges`. |
 | `ScatterItem` | `/stats` | Input to `buildScatterData` / `buildScatterDataGrouped`. |
 | `RegionYieldDatum` | `/stats` | `buildRegionYieldData` row — `key` parses with `parseRegionKey`. |
 | `YieldSortBy` | `/stats` | `'yield' \| 'label'`. |
-| `CorrelationCell` | `/stats` | One matrix cell — `{ xIndex, yIndex, r }` (`r` is `null` when undefined). |
+| `CorrelationCell` | `/stats` | One matrix cell — `{ xIndex, yIndex, r, n }` (`r` is `null` on insufficient data). `n` is the dies carrying a finite value for **both** tests, which is not the population size when the two tests have different coverage — an `r` without its own `n` is not interpretable. |
 | `CorrelationTestInfo` | `/stats` | A matrix axis entry — `{ testNumber, label, unit? }`. |
 | `CorrelationSummary` | `/stats` | `filterCorrelationMatrix` return. |
 | `FacetItem` | `/stats` | Input to `buildFacetTable` — `{ metadata?, dieCount? }`. |

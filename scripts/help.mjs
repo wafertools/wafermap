@@ -47,6 +47,7 @@ const GROUPS = [
     title: 'Occasional',
     items: [
       ['npm run check:drift', 'Compare agent/tooling config against the config repo'],
+      ['npm run check:styles', 'Style-scale budgets alone, without the rest of check'],
     ],
   },
 ];

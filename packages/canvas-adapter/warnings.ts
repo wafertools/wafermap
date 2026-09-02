@@ -16,7 +16,7 @@
 // what is wrong with a given map.
 import type { WaferWarning, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsSummary, LotStatsSummary } from '../stats/types.js';
-import { CLR, Z_BASE } from './toolbar.js';
+import { SHADOW, TRACKING, SPACE, RADIUS, FONT, CLR, Z_BASE } from './toolbar.js';
 
 export type { WaferWarning };
 
@@ -115,7 +115,7 @@ function glyphFor(sev: NonNullable<WaferWarning['severity']>): string {
  */
 export function buildWarningsBanner(warnings: WaferWarning[], ownerDocument: Document = document): HTMLDivElement {
   const wrap = ownerDocument.createElement('div');
-  Object.assign(wrap.style, { marginBottom: '10px' });
+  Object.assign(wrap.style, { marginBottom: SPACE.lg });
 
   for (const w of warnings) {
     const sev = severityOf(w);
@@ -124,10 +124,10 @@ export function buildWarningsBanner(warnings: WaferWarning[], ownerDocument: Doc
     Object.assign(row.style, {
       background:   c.bg,
       border:       `1px solid ${c.border}`,
-      borderRadius: '4px',
+      borderRadius: RADIUS.control,
       padding:      '7px 9px',
-      marginBottom: '6px',
-      fontSize:     '10px',
+      marginBottom: SPACE.sm,
+      fontSize:     FONT.body,
       color:        c.text,
       lineHeight:   '1.5',
     });
@@ -164,8 +164,8 @@ export function buildWarningsMenuEl(
     left:          `${leftPx}px`,
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
-    borderRadius:  '4px',
-    boxShadow:     '0 4px 12px rgba(0,0,0,0.15)',
+    borderRadius:  RADIUS.control,
+    boxShadow:     SHADOW.menu,
     zIndex:        Z_BASE,
     width:         `${width}px`,
     maxHeight:     '320px',
@@ -178,10 +178,10 @@ export function buildWarningsMenuEl(
 
   const heading = doc.createElement('div');
   Object.assign(heading.style, {
-    padding:       '6px 12px 4px',
-    fontSize:      '10px',
+    padding: `${SPACE.sm} ${SPACE.xl} ${SPACE.xs}`,
+    fontSize:      FONT.body,
     fontWeight:    '700',
-    letterSpacing: '0.06em',
+    letterSpacing: TRACKING,
     textTransform: 'uppercase',
     color:         CLR.label,
   });
@@ -195,9 +195,9 @@ export function buildWarningsMenuEl(
     const row = doc.createElement('div');
     Object.assign(row.style, {
       display:       'flex',
-      gap:           '8px',
-      padding:       '8px 12px',
-      fontSize:      '11px',
+      gap: SPACE.md,
+      padding: `${SPACE.md} ${SPACE.xl}`,
+      fontSize:      FONT.body,
       lineHeight:    '1.5',
       color:         CLR.text,
       borderTop:     `1px solid ${CLR.menuBorder}`,
@@ -211,7 +211,7 @@ export function buildWarningsMenuEl(
 
     const body = doc.createElement('div');
     const title = doc.createElement('div');
-    Object.assign(title.style, { fontWeight: '700', color: c.text, marginBottom: '2px' });
+    Object.assign(title.style, { fontWeight: '700', color: c.text, marginBottom: SPACE.xxs });
     // The code is the stable identity a host would branch on, so show it rather
     // than inventing a second set of prose titles that could drift from it.
     title.textContent = w.code;

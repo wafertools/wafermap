@@ -178,7 +178,7 @@
 
     const waferResults = waferSpecs.map((opts, i) =>
       buildWaferMap({
-        results:     makeResults(opts),
+        results:     makeResults({ ...opts, waferIndex: i }),
         waferConfig: makeWaferConfig(i),
         dieConfig:   DIE_CONFIG,
         hbinDefs:    HBIN_DEFS,

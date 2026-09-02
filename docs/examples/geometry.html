@@ -15,7 +15,7 @@
     /* Layout uses the shared .canvas-grid-4 / -3 / -2 helpers from demo.css —
        no bespoke grid here. Only demo-specific chrome below. */
     .demo-content { flex-direction: column; overflow-y: auto; }
-    .card-caption { font-size: 11px; }
+    .card-caption { font-size: 12px; }
 
     .stage-heading {
       font-size: 12px;
@@ -28,7 +28,10 @@
     .stage-heading:not(:first-child) { margin-top: 18px; }
     .stage-heading small {
       display: block;
-      font-size: 11px;
+      /* Body tier: this is the explanatory line under a section heading, not a
+         micro-label. It sets `letter-spacing: 0` precisely because it is NOT
+         the uppercase meta style above it. */
+      font-size: 12px;
       font-weight: 400;
       text-transform: none;
       letter-spacing: 0;
@@ -37,8 +40,8 @@
     }
 
     /* Inference-status readouts surfaced from result.inference.warnings */
-    .warn-note, .ok-note {
-      font-size: 11px;
+    .warn-note, .ok-note, .err-note {
+      font-size: 12px;
       line-height: 1.45;
       margin-top: 6px;
       padding: 7px 9px;
@@ -50,6 +53,10 @@
     .warn-note strong { color: #92400e; }
     .ok-note   { border-color: #22c55e; background: #f0fdf4; color: #14532d; }
     .ok-note strong { color: #166534; }
+    /* Matches the library's own error advisory, so a page reporting one looks
+       like the library reporting one. */
+    .err-note  { border-color: #dc8a8a; background: #fef2f2; color: #7a1c1c; }
+    .err-note strong { color: #7a1c1c; }
   </style>
 </head>
 <body class="demo-page">
@@ -114,6 +121,9 @@
         <div class="card-caption">
           <strong>waferConfig: { diameter: 300 }</strong> — die pitch estimated from
           diameter ÷ grid extent. Notch visible. <code>units: 'mm'</code>
+          The <em>inferred-pitch</em> advisory on this card is deliberate: the estimate
+          assumes the grid reaches the wafer edge, so supply
+          <code>dieConfig.width</code>/<code>height</code> (card D) in real use.
         </div>
       </div>
 
@@ -374,6 +384,12 @@
         warnings: {
           display: false,
           onWarning(warnings) {
+            // Style the box by what was actually reported. It was pinned to
+            // .ok-note, so an [error] advisory rendered inside a green
+            // "all clear" panel — the page contradicting its own content.
+            const worst = warnings.some(w => (w.severity ?? 'warning') === 'error') ? 'err'
+                        : warnings.length ? 'warn' : 'ok';
+            log.className = worst === 'err' ? 'err-note' : worst === 'warn' ? 'warn-note' : 'ok-note';
             log.innerHTML = warnings.length
               ? warnings.map(w =>
                   `<strong>[${w.severity ?? 'warning'}] ${w.code}</strong><br>${w.message}`).join('<br><br>')

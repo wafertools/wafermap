@@ -186,7 +186,11 @@ Omit any field you don't know — the library infers what it can:
 // Die size known, diameter unknown → diameter inferred from grid extent
 buildWaferMap({ results, dieConfig: { width: 10, height: 10 } });
 
-// Diameter known, die size unknown → die size estimated from diameter ÷ grid extent
+// Diameter known, die size unknown → die size estimated from diameter ÷ grid extent.
+// This one raises an `inferred-pitch` advisory in `result.warnings`: the estimate
+// assumes the die grid reaches the wafer edge, which is wrong whenever edge dies
+// are missing. Prefer supplying `dieConfig.width`/`height` — the pitch, not the
+// diameter, is what fixes die placement.
 buildWaferMap({ results, waferConfig: { diameter: 300 } });
 
 // Nothing known → proportionally correct layout in normalised units
@@ -1274,10 +1278,11 @@ ctrl.setStatsSummary(newSummary);
 
 ### Summary panel in a gallery
 
-For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Summary" button appears in the control bar giving access to:
+For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Summary" button appears in the control bar opening one panel — no tabs — with:
 
-- **Lot tab** — cross-wafer patterns and yield outliers
-- **Wafers tab** — per-wafer findings index; clicking any row detaches that wafer's card into its own window with its summary panel
+- lot-level findings: cross-wafer patterns and yield outliers
+- a **Wafer Yield** section listing every wafer, each row badged with its own findings count; clicking a row detaches that wafer's card into its own window with its summary panel
+- a **Findings report** button covering every wafer's findings in one printable document
 
 See [§13 Lot-level statistical findings](#13-lot-level-statistical-findings) for the full example.
 
@@ -1291,7 +1296,7 @@ const items = waferResults.map((r, i) => ({
 }));
 
 renderWaferGallery(container, items);
-// → Wafers tab of the Summary panel appears in toolbar
+// → Summary panel button appears in the toolbar, listing the wafers with findings
 // → Each card's own window shows its own per-wafer summary
 ```
 
@@ -1593,7 +1598,7 @@ All `openHtmlReport` calls — including the summary panel buttons — then rout
 
 ## 14. The Insights tab
 
-`renderWaferMap` and `renderWaferGallery` both support an opt-in **Insights** tab — a chart suite covering process capability, value distributions, and test correlation, computed from the same dies already on screen. Enable it with one option; there's no per-chart wiring and no host-computed grouping to set up.
+`renderWaferMap` and `renderWaferGallery` both support an opt-in **Insights** tab — a chart suite covering per-test pass rates, process capability, value distributions, wafer-to-wafer drift, and test correlation, computed from the same dies already on screen. Enable it with one option; there's no per-chart wiring and no host-computed grouping to set up.
 
 ```ts
 renderWaferMap(container, result, { insights: { enabled: true } });
@@ -1603,11 +1608,17 @@ renderWaferMap(container, result, { insights: { enabled: true } });
 renderWaferGallery(container, items, { insights: { enabled: true } });
 ```
 
-Either way, an **Insights** button appears in the toolbar. Clicking it swaps the map (or gallery grid) for the chart suite; clicking it again — the toolbar stays visible and usable throughout — returns to the map. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want capability, box plots, histograms, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
+Either way, an **Insights** button appears in the toolbar. Clicking it swaps the map (or gallery grid) for the chart suite; clicking it again — the toolbar stays visible and usable throughout — returns to the map. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want the pass-rate chart, capability, box plots, histograms, the trend chart, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
 
 The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button instead, for enlarging just that chart.
 
-The tab lays out three sections: **Yield & bins** (a yield bar labelled with the actual pass bins in use, plus a hard/soft bin pareto), **Distributions** (process capability, a test-value box plot, and a value histogram), and **Correlation** (a Pearson-r matrix and a die-level X/Y scatter). Clicking a capability box drives the box plot and histogram's selected test in place; clicking a correlation-matrix cell drives the scatter panel's X/Y in place — the same live cross-linking the toolbar's own mode/colour controls give you elsewhere.
+The tab lays out three sub-tabs:
+
+- **Overview** — headline tiles naming the population (wafers, dies analysed and excluded, and for a lot the mean wafer yield), a **per-test pass rate** chart (worst test first, one sub-bar per group when grouping is active), a yield bar labelled with the actual pass bins in use and marked with a dashed median reference, and a hard/soft bin pareto.
+- **Distributions** — process capability, a test-value box plot, a value histogram, and a **wafer-to-wafer trend** (one point per wafer at its mean, ±1σ whiskers, the die-weighted lot mean as a centre line, and spec limits where the test has them). The trend is always in slot order and has no sort control by design — drift only reads in the population's own sequence.
+- **Correlation** — a Pearson-r matrix (each cell carrying its own `n`) and a die-level X/Y scatter that prints `r` and `n` for the pair it is showing.
+
+Clicking a capability box drives the box plot, histogram and trend's selected test in place; clicking a correlation-matrix cell drives the scatter panel's X/Y in place — the same live cross-linking the toolbar's own mode/colour controls give you elsewhere.
 
 ### Grouping (gallery only)
 
@@ -1630,7 +1641,7 @@ Histogram, correlation, and scatter each draw one shared chart rather than one p
 
 ### Opening a wafer from a chart
 
-Clicking a leaf row in the yield bar or the box plot opens that wafer in a modal. A box-plot click is context-aware: it opens the wafer already in **test-value mode on the test you were looking at**, not the toolbar's default plot mode — so drilling from "Idsat" in the box plot lands you on the Idsat colour map, not a hard-bin view you'd have to switch away from.
+Clicking a leaf row in the yield bar or the box plot — or a point on the trend chart — opens that wafer in a modal. A box-plot click is context-aware: it opens the wafer already in **test-value mode on the test you were looking at**, not the toolbar's default plot mode — so drilling from "Idsat" in the box plot lands you on the Idsat colour map, not a hard-bin view you'd have to switch away from.
 
 **→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
 

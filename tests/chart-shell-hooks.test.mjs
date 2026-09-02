@@ -56,7 +56,11 @@ test('makeChartGridWrap: wrapper carries data-wmap-chart-grid', () => {
   });
 });
 
-test('makeLabeledSelect: opts.hook sets data-wmap-select on the nested <select>', () => {
+// The picker is a themed trigger button + popup listbox (makeListSelect), not
+// a native <select> — see CHANGELOG 0.27.0. The hook therefore lives on the
+// trigger, which is both the element a host clicks to open the list and the
+// only part of the control present in the DOM while it's closed.
+test('makeLabeledSelect: opts.hook sets data-wmap-select on the trigger button', () => {
   withDocument(() => {
     const label = makeLabeledSelect(
       'Group by:',
@@ -65,20 +69,23 @@ test('makeLabeledSelect: opts.hook sets data-wmap-select on the nested <select>'
       () => {},
       { hook: 'group-by' },
     );
-    const select = label.querySelector('select');
-    assert.ok(select, 'makeLabeledSelect returns a <label> wrapping a <select>');
-    assert.equal(select.dataset.wmapSelect, 'group-by');
+    const trigger = label.querySelector('button');
+    assert.ok(trigger, 'makeLabeledSelect returns a <label> wrapping a trigger button');
+    assert.equal(trigger.dataset.wmapSelect, 'group-by');
+    // No native <select> anywhere: a host automating this must click the
+    // trigger, not assign `.value` and dispatch `change`.
+    assert.equal(label.querySelector('select'), null);
   });
 });
 
-test('makeLabeledSelect: without opts.hook, the select carries no data-wmap-select (no accidental default)', () => {
+test('makeLabeledSelect: without opts.hook, the trigger carries no data-wmap-select (no accidental default)', () => {
   withDocument(() => {
     // This same factory also builds per-panel "Group: <value> ▾" restrict
     // dropdowns and the histogram wafer picker — those call sites don't
     // pass a hook, and shouldn't silently start carrying one just because
     // the Group-by call site does.
     const label = makeLabeledSelect('Group:', [{ value: 'a', label: 'A' }], 'a', () => {});
-    const select = label.querySelector('select');
-    assert.equal(select.dataset.wmapSelect, undefined);
+    const trigger = label.querySelector('button');
+    assert.equal(trigger.dataset.wmapSelect, undefined);
   });
 });

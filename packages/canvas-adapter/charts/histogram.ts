@@ -15,12 +15,12 @@
 // `title` attribute instead of porting tsmap's `attachTooltip` chrome
 // helper (that's tsmap app chrome, not chart-panel logic).
 
-import { buildTestHistogramData, buildTestHistogramSeries, type HistogramBucket, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
+import { buildTestHistogramData, collectTestValues, buildTestHistogramSeries, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { CLR } from '../toolbar.js';
+import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { QUANTITY, categorical } from './palette.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs } from './chartShell.js';
 // `colorScheme` (HistogramPanelOptions) is deliberately no longer read —
 // quantity/series colours are fixed (palette.ts); the option stays for API
 // compatibility with existing callers.
@@ -43,7 +43,7 @@ function drawCountAxis(
   const plotH = plotBottom - plotTop;
 
   ctx.save();
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let v = 0; v <= maxCount + 1e-9; v += niceStep) {
@@ -65,6 +65,10 @@ function drawCountAxis(
 }
 
 export interface HistogramPanelOptions {
+  /** Initial axis toggles, shared with the sibling distribution panels. */
+  axisPrefs?: AxisPrefs;
+  /** Fired when the user changes an axis toggle here, so siblings can follow. */
+  onAxisPrefsChange?: (prefs: AxisPrefs) => void;
   title?: string;
   items: HistogramItem[];
   testDefs: TestDef[];
@@ -90,6 +94,8 @@ export interface HistogramPanelHandle {
   card: HTMLElement;
   /** Cross-panel link (e.g. from the capability panel): switch to `testNumber` in place. */
   setTest: (testNumber: number) => void;
+  /** Adopt the shared axis toggles (see `AxisPrefs`). */
+  setAxisPrefs: (prefs: AxisPrefs) => void;
   destroy: () => void;
 }
 
@@ -100,7 +106,10 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   const testOptions = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
   let activeTest = options.selectedTestNumber ?? testOptions[0]?.testNumber ?? null;
   let activeItem: number | null = null; // index into `items`; null = all
-  let axisIncludesLimits = false;
+  // undefined = derive from the data each rebuild (shouldIncludeLimitsByDefault).
+  let axisIncludesLimits: boolean | undefined = options.axisPrefs?.includeLimits;
+  let clipOutliers = options.axisPrefs?.clipOutliers ?? false;
+  let lastClippedCount = 0;
 
   const testSelect = makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuildBody(); }, { maxWidth: '200px', ownerDocument: card.ownerDocument });
   controlsRow.appendChild(testSelect);
@@ -108,7 +117,28 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   const itemSelect = makeWaferSelect(items, activeItem, i => { activeItem = i; rebuildBody(); }, { ownerDocument: card.ownerDocument });
   controlsRow.appendChild(itemSelect);
 
-  controlsRow.appendChild(makeToggle('Axis includes limits', axisIncludesLimits, v => { axisIncludesLimits = v; rebuildBody(); }, card.ownerDocument));
+  const axisTogglesRow = card.ownerDocument.createElement('span');
+  Object.assign(axisTogglesRow.style, { display: 'inline-flex', gap: SPACE.lg, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
+  controlsRow.appendChild(axisTogglesRow);
+
+  // Rebuilt each draw so the checkbox shows the RESOLVED state — with a
+  // data-derived default, an unchecked box beside an axis that plainly does
+  // include the limits would be a lie.
+  function syncAxisToggles(resolvedIncludeLimits: boolean, hasLimits: boolean): void {
+    axisTogglesRow.innerHTML = '';
+    if (hasLimits) {
+      axisTogglesRow.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
+        axisIncludesLimits = v;
+        options.onAxisPrefsChange?.({ includeLimits: v, clipOutliers });
+        rebuildBody();
+      }, card.ownerDocument));
+    }
+    axisTogglesRow.appendChild(makeToggle('Clip outliers', clipOutliers, v => {
+      clipOutliers = v;
+      options.onAxisPrefsChange?.({ includeLimits: axisIncludesLimits, clipOutliers: v });
+      rebuildBody();
+    }, card.ownerDocument));
+  }
 
   const tooltip = makeTooltip(card);
   let resizeHandle: { disconnect: () => void } | null = null;
@@ -139,6 +169,19 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       : null;
     itemSelect.style.display = faceted ? 'none' : '';
     if (faceted) {
+      // The axis toggles apply to the faceted view too — it honours
+      // `axisIncludesLimits` (above, when building the series) and `clipOutliers`.
+      // This branch returned before syncAxisToggles, so with "Group by" active
+      // the card lost BOTH checkboxes: the reader could not see the current
+      // setting, could not change it, and the derived include-limits default
+      // silently applied with nothing on screen saying so.
+      const { limitLow: fLow, limitHigh: fHigh } = testMeta(activeTest);
+      // `?? false` because that is what THIS branch actually did when building
+      // the series above (`axisIncludesLimits ? limitLow : undefined`) — it
+      // treats an unset preference as "off", where the non-faceted path below
+      // derives a default from the data range. The toggle must show the state in
+      // force, not a different branch's. That divergence is logged in TODO.md.
+      syncAxisToggles(axisIncludesLimits ?? false, fLow !== undefined || fHigh !== undefined);
       if (faceted.series.length === 0) {
         renderEmptyState(body, 'No parametric test data available for a histogram.');
         return;
@@ -149,7 +192,23 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
     const scopedItems = activeItem !== null ? [items[activeItem]] : items;
     const { unit, limitLow, limitHigh } = testMeta(activeTest);
-    const buckets = buildTestHistogramData(scopedItems, activeTest, 16, axisIncludesLimits ? limitLow : undefined, axisIncludesLimits ? limitHigh : undefined);
+    const allValues = collectTestValues(scopedItems, activeTest);
+    const dataMin = allValues.length ? Math.min(...allValues) : NaN;
+    const dataMax = allValues.length ? Math.max(...allValues) : NaN;
+    const resolvedIncludeLimits = axisIncludesLimits
+      ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
+    syncAxisToggles(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
+
+    const fence = clipOutliers ? robustFence(allValues) : null;
+    const clip = fence ? { lo: Math.max(dataMin, fence.lo), hi: Math.min(dataMax, fence.hi) } : undefined;
+    lastClippedCount = clip ? allValues.filter(v => v < clip.lo || v > clip.hi).length : 0;
+
+    const buckets = buildTestHistogramData(
+      scopedItems, activeTest, 16,
+      resolvedIncludeLimits ? limitLow : undefined,
+      resolvedIncludeLimits ? limitHigh : undefined,
+      clip,
+    );
 
     if (buckets.length === 0) {
       renderEmptyState(body, 'No parametric test data available for a histogram.');
@@ -159,8 +218,11 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const maxCount = Math.max(...buckets.map(b => b.count), 1);
 
     const statsLabel = card.ownerDocument.createElement('div');
-    Object.assign(statsLabel.style, { fontSize: '12px', color: CLR.label, marginBottom: '2px' } as Partial<CSSStyleDeclaration>);
-    statsLabel.textContent = `max ${maxCount} dies/bucket`;
+    Object.assign(statsLabel.style, { fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
+    // The clipped count is stated, never silent: these values exist and are still
+    // in every statistic — only this chart's range excludes them.
+    statsLabel.textContent = `max ${maxCount} dies/bucket`
+      + (lastClippedCount ? ` · ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside clipped range` : '');
     body.appendChild(statsLabel);
 
     const canvas = card.ownerDocument.createElement('canvas');
@@ -204,7 +266,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       const ctx = canvas.getContext('2d')!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       const theme = resolveChartCanvasColors(card);
       const { plotX, plotMaxWidth, plotMaxHeight, plotTop } = plotRect(height);
@@ -236,9 +298,19 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       });
 
       const xForVal = (v: number) => plotX + ((v - bucketMin) / bucketSpan) * plotMaxWidth;
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+      // A limit outside the bucket range gets an edge marker rather than a line
+      // drawn off the plot — without it, "limits are off-screen" and "this test
+      // has no limits" render identically. The bucket range IS this chart's axis,
+      // so it is what the limits are tested against.
+      const { offAxis } = resolveAxisRange({
+        dataMin: bucketMin, dataMax: bucketMax, limitLow, limitHigh, includeLimits: false });
+      drawOffAxisLimits(ctx, offAxis,
+        { left: plotX, right: plotX + plotMaxWidth, top: plotTop, bottom: plotBottom },
+        'horizontal', theme.warnBorder, axis.tick);
+      const offAxisValues = new Set(offAxis.map(o => o.value));
       for (const [limit, label] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
-        if (limit === undefined) continue;
+        if (limit === undefined || offAxisValues.has(limit)) continue;
         const x = xForVal(limit);
         ctx.strokeStyle = theme.warnBorder;
         ctx.setLineDash([3, 3]);
@@ -252,7 +324,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         ctx.textBaseline = 'bottom';
         ctx.fillText(label, x, plotTop - 2);
       }
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       ctx.strokeStyle = theme.border;
       ctx.lineWidth = 1;
@@ -277,7 +349,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       }
       if (axis.unitLabel) {
         ctx.save();
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
         ctx.fillStyle = theme.textMuted;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'top';
@@ -319,19 +391,21 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const maxCount = Math.max(1, ...series.flatMap(s => s.counts));
 
     const statsLabel = card.ownerDocument.createElement('div');
-    Object.assign(statsLabel.style, { fontSize: '12px', color: CLR.label, marginBottom: '2px' } as Partial<CSSStyleDeclaration>);
+    Object.assign(statsLabel.style, { fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
     statsLabel.textContent = `${series.length} groups · max ${maxCount} dies/bucket`;
     body.appendChild(statsLabel);
 
     const legend = card.ownerDocument.createElement('div');
-    Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: '4px' } as Partial<CSSStyleDeclaration>);
+    Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: `${SPACE.xs} ${SPACE.xl}`, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
     series.forEach((s, i) => {
       const item = card.ownerDocument.createElement('button');
       item.type = 'button';
       attachChartTip(item, card, tooltip, `${s.groupKey} — click to emphasize (dim the rest)`);
-      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', padding: '1px 4px', border: 'none', background: 'none', cursor: 'pointer', color: CLR.text, borderRadius: '3px' } as Partial<CSSStyleDeclaration>);
+      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: FONT.body, padding: '1px 4px', border: 'none', background: 'none', cursor: 'pointer', color: CLR.text, borderRadius: RADIUS.control } as Partial<CSSStyleDeclaration>);
+    item.addEventListener('mouseenter', () => { item.style.filter = 'brightness(0.94)'; });
+    item.addEventListener('mouseleave', () => { item.style.filter = 'none'; });
       const sw = card.ownerDocument.createElement('span');
-      Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: '2px', background: colorOf(i), flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
+      Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: RADIUS.control, background: colorOf(i), flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
       const txt = card.ownerDocument.createElement('span');
       txt.textContent = s.groupKey;
       item.append(sw, txt);
@@ -376,7 +450,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       const ctx = canvas.getContext('2d')!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       const theme = resolveChartCanvasColors(card);
       const plotX = PADDING + 36;
@@ -433,7 +507,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       ctx.globalAlpha = 1;
 
       const xForVal = (v: number) => plotX + ((v - bucketMin) / bucketSpan) * plotMaxWidth;
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       for (const [limit, label] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
         if (limit === undefined) continue;
         const x = xForVal(limit);
@@ -449,7 +523,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         ctx.textBaseline = 'bottom';
         ctx.fillText(label, x, plotTop - 2);
       }
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       ctx.strokeStyle = theme.border;
       ctx.lineWidth = 1;
@@ -473,7 +547,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       }
       if (axis.unitLabel) {
         ctx.save();
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
         ctx.fillStyle = theme.textMuted;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'top';
@@ -520,5 +594,12 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     rebuildBody();
   }
 
-  return { card, setTest, destroy: () => resizeHandle?.disconnect() };
+  /** Adopt a sibling panel's axis toggles without re-firing the change back. */
+  function setAxisPrefs(prefs: AxisPrefs): void {
+    axisIncludesLimits = prefs.includeLimits;
+    clipOutliers = prefs.clipOutliers;
+    rebuildBody();
+  }
+
+  return { card, setTest, setAxisPrefs, destroy: () => resizeHandle?.disconnect() };
 }

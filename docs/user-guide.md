@@ -193,9 +193,8 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)).                                                                                                                                                                                                              |
 | <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it.                                                                                                                |
-| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Hidden while the Insights tab is open — each chart inside Insights has its own expand button instead. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
-| <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Findings sidebar (see [Section 6](#6-findings-sidebar)).                                                                                                                                                                                                                           |
+| <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                                                                                           |
 | <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                                                                                                      |
 
@@ -261,7 +260,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | Bin modes only. Sets where the bin legend sits relative to each card. |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with spec limits only. Toggles all cards between the spec-limit range and the data range. Leave it on spec limits when comparing wafers — the data range rescales per view. |
-| <img src="images/icons/findings.svg" width="20" height="20"> | Findings      | Opens or closes the lot-level Findings sidebar.                                                                                                                                     |
+| <img src="images/icons/findings.svg" width="20" height="20"> | Findings      | Opens or closes the lot-level Summary panel.                                                                                                                                     |
 | <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a lot-wide chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |
 | <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the lot. Collected across every wafer and de-duplicated, so a problem affecting the whole lot is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
@@ -362,36 +361,62 @@ supporting detail.
 
 ---
 
-## 6. Findings sidebar
+## 6. Summary panel
 
-The Findings sidebar shows detected anomalies for the current wafer or lot,
-always docked next to the map so a clicked finding can highlight the affected
-dies right there. Open it from the toolbar. Severity, kind, and region filter
-controls at the top of the sidebar narrow the list down.
+The Summary panel docks next to the map and gives you the wafer or lot at a
+glance, with findings sitting directly under the headline numbers so a clicked
+finding can highlight the affected dies right there. Open it from the toolbar.
 
 <div data-wmap-demo="summary-panel" class="wmap-demo"></div>
 
-*The Findings sidebar open alongside a single wafer. Click any finding to
-highlight the affected dies; use the filter controls to narrow by severity,
-kind, or region.*
+*The Summary panel open alongside a single wafer. Click any finding to
+highlight the affected dies.*
 
-Yield, bin breakdown, ring/quadrant regional yield, and per-test statistics —
-previously shown in this same panel — now live in the
-[Insights tab](#8-insights-tab)'s Overview sub-tab instead, since that content
-doesn't need the map on screen the way a finding's highlight does.
+Sections, top to bottom:
+
+- **Summary / Lot Summary** — die and wafer counts, yield, and the population
+  the rest of the panel is computed over. On a lot, "Mean wafer yield" is an
+  *unweighted* mean of each wafer's own yield; it is deliberately not the same
+  statistic as the bin breakdown's pass-bin share, which weights every die
+  equally. The two agree only when die counts are even across the lot.
+- **Findings** — detected anomalies, most severe first. Severity chips narrow
+  the list; Kind and Region dropdowns appear once there are enough findings to
+  be worth narrowing.
+- **Bin breakdown** — bars as a share of dies, pass bins first and then failing
+  bins by descending count, so the dominant failure mode is at the top. It
+  follows the map's plot mode: a soft-bin map gets a soft-bin breakdown. When a
+  wafer carries both bin types, a **Hard / Soft** selector in the section header
+  overrides that.
+- **Region yield** — ring yield by default, with a **Ring / Quadrant** selector.
+  Ring is the default because edge roll-off is the pattern that dominates real
+  wafer maps; a genuinely asymmetric quadrant is reported as a finding above,
+  with a significance test behind it.
+- **Wafer yield** (lot only) — one bar per wafer with the lot median marked.
+  Wafers are in slot order by default, since that is what makes a
+  slot-correlated pattern visible; a **Slot / Yield** selector re-sorts. Wafers
+  far below the rest of the lot are labelled "low outlier".
+- **Test values** — per test: mean, **Ppk**, and spec yield. Ppk (not Cpk)
+  because it measures against the *overall* spread, including wafer-to-wafer
+  variation, which is what the dies actually ship against. The full descriptive
+  statistics — min, quartiles, median, max, σ, both spec limits, and all four
+  capability indices — are in the summary report and the CSV export.
+- **Functional tests** — pass/fail counts and pass rate per functional test.
+
+Every section header can be collapsed, and stays collapsed as the panel
+re-renders.
 
 A **Summary report** button (when present) opens a printable full-detail
-report in a new window or tab, still covering everything findings-adjacent —
-yield, bin breakdown, ring and quadrant statistics, per-test statistics, and
-the findings list — and can be saved as a PDF from your browser's print
-dialog.
+report — yield, bin breakdown, ring and quadrant statistics, the full per-test
+table with Cp/Cpk/Pp/Ppk, and the findings list — and can be saved as a PDF
+from your browser's print dialog.
 
 ![Wafer summary report](images/report-wafer-summary.png)
 
 ### Why some findings name two bins
 
-A finding may read **"hard bin 3 and soft bin 3 (same dies)"**. That is one
+A finding may read **"hard bin and soft bin 3 (Fail) (same dies)"**. That is one
 group of dies counted in two bin spaces, not two separate groups added together.
+(When the two bins carry different names, both are spelled out in full.)
 Hard and soft bins are independent numbering systems, so this wording appears
 only when the two happen to cover exactly the same dies — reporting it twice
 would look like two independent problems.
@@ -404,9 +429,11 @@ are the same sentence.
 Nothing is discarded — an application reading the findings programmatically
 still receives every one of them.
 
-For **lot-level views** (gallery), the sidebar shows lot-level findings by
-default, with a **Wafers** tab listing every wafer that has its own per-wafer
-findings — click a row to open that wafer.
+For **lot-level views** (gallery), the panel shows lot-level findings, and the
+**Wafer Yield** section badges each wafer with its own findings count — click a
+row to open that wafer. There is no separate wafers tab: every wafer appears in
+that one list, including the ones with no findings, which is what lets you see a
+low-yielding wafer that nothing flagged.
 
 ![Lot summary report](images/report-lot-summary.png)
 
@@ -472,16 +499,32 @@ against once the map is replaced.
 
 Insights is organized into three sub-tabs:
 
-- **Overview** — a yield bar (labelled with the pass bins actually in use), a
-  hard/soft bin pareto, and ring/quadrant regional yield and per-test
-  min/mean/max/spec-yield statistics.
+- **Overview** — a **test pass rate** chart showing which test fails most (and,
+  with "Group by" active, whether it fails more in one split than another). It
+  offers up to three ways of judging, whichever the data supports: **Spec
+  limits** (the value against its limits), **Tester flag** (the pass/fail the
+  tester itself recorded, which a parametric test carries whether or not limits
+  were exported), and **Functional** for pass/fail-only tests. The two
+  parametric views can disagree — guard bands and dynamic limits routinely cause
+  it — so the card reports how many dies the two judged differently rather than
+  picking one for you. Alongside it, headline tiles stating the population (wafers, dies analysed,
+  and for a lot the mean wafer yield — an *unweighted* mean of each wafer's own
+  yield, not the die-weighted figure), a yield bar labelled with the pass bins
+  actually in use and marked with the median, a hard/soft bin pareto, and
+  ring/quadrant regional yield plus the full per-test statistics table.
 - **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
   lower and upper spec limit; tests missing a spec still appear, normalized
-  onto their own range and sorted by variability), a test-value box plot, and
-  a value histogram. Clicking a capability box drives the box plot and
-  histogram onto that same test automatically.
+  onto their own range and sorted by variability), a test-value box plot, a
+  value histogram, and a **wafer-to-wafer trend** — one point per wafer at its
+  mean, ±1σ whiskers, the lot mean dashed across, and spec limits where the
+  test has them. The trend is always in slot order, deliberately: drift across
+  a cassette only reads in the physical sequence, so there is no sort control
+  to destroy it. Clicking a capability box drives the box plot, histogram and
+  trend onto that same test automatically.
 - **Correlation** — a test-to-test correlation matrix and a die-level scatter
-  plot. Clicking a matrix cell drives the scatter plot onto that pair.
+  plot, both stating the sample size the coefficients are computed over.
+  Clicking a matrix cell drives the scatter plot onto that pair, where `r` and
+  `n` for that pair are printed and update as you filter the legend.
 
 In a gallery with more than one wafer, a **Group by** control appears whenever
 wafer metadata (lot, product, test program, temperature, split, or a custom

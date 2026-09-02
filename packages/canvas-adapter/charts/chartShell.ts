@@ -5,7 +5,7 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { CLR, Z_BASE, menuLayerFor, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
+import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 
@@ -28,6 +28,12 @@ export type { SaveImageHandler };
  * (found via exactly that — every card kept its expand icon once expanded).
  */
 export function openChartExpandModal(card: HTMLElement, title: string, triggerBtn?: HTMLButtonElement): void {
+  // The card is about to be reparented into the modal. Any hover tip currently
+  // showing would travel with it and never be dismissed — the control it
+  // belongs to is hidden while expanded, so no mouseleave can fire.
+  for (const tip of card.querySelectorAll<HTMLElement>('div[style*="position: absolute"]')) {
+    if (tip.style.display === 'block' && tip.style.pointerEvents === 'none') tip.style.display = 'none';
+  }
   const savedStyle = card.getAttribute('style') ?? '';
   Object.assign(card.style, { flex: '1', minHeight: '0', border: 'none', borderRadius: '0' } as Partial<CSSStyleDeclaration>);
 
@@ -253,7 +259,7 @@ export function makeAxisFormat(vRef: number, unit: string | undefined): { tick: 
 /** Draw a small "(unit)" label at (x, y), restoring the context's text state afterward. */
 export function drawAxisUnit(ctx: CanvasRenderingContext2D, unit: string, x: number, y: number, color: string): void {
   const prev = { textAlign: ctx.textAlign, textBaseline: ctx.textBaseline, fillStyle: ctx.fillStyle, font: ctx.font };
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = color;
@@ -287,6 +293,23 @@ export interface CardShell {
   body: HTMLElement;
 }
 
+/**
+ * The card frame — background, border, radius, padding, numeral alignment.
+ * Shared so a card is a card wherever it is built: `cardShell` (chart panels)
+ * and `insightsTab`'s `plainCard` (the test-value and functional tables) both
+ * take it from here. They previously restated these values independently and
+ * drifted apart.
+ */
+export function cardFrameStyle(): Partial<CSSStyleDeclaration> {
+  return {
+    background: CLR.menuBg,
+    border: `1px solid ${CLR.menuBorder}`,
+    borderRadius: RADIUS.container,
+    padding: SPACE.xl,
+    fontVariantNumeric: 'tabular-nums',
+  };
+}
+
 export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDocument: Document = document): CardShell {
   const card = ownerDocument.createElement('div');
   // Stable test/tooling hooks — this card carries no other id/class, and
@@ -297,15 +320,16 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   card.dataset.wmapChartTitle = title;
   Object.assign(card.style, {
     display: 'flex', flexDirection: 'column',
-    background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '6px',
-    padding: '12px', minWidth: '0', minHeight: '0', flex: '1 1 0', position: 'relative',
+    ...cardFrameStyle(),
+    minWidth: '0', minHeight: '0', flex: '1 1 0', position: 'relative',
   } as Partial<CSSStyleDeclaration>);
 
   const headingRow = card.ownerDocument.createElement('div');
-  Object.assign(headingRow.style, { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' } as Partial<CSSStyleDeclaration>);
+  Object.assign(headingRow.style, { display: 'flex', alignItems: 'center', gap: SPACE.sm,
+    paddingBottom: '6px', marginBottom: SPACE.md, borderBottom: `1px solid ${CLR.menuBorder}` } as Partial<CSSStyleDeclaration>);
   const heading = card.ownerDocument.createElement('div');
   heading.textContent = title;
-  Object.assign(heading.style, { color: CLR.value, fontSize: '13px', fontWeight: '600', flex: '1' } as Partial<CSSStyleDeclaration>);
+  Object.assign(heading.style, { color: CLR.value, fontSize: FONT.heading, fontWeight: '600', flex: '1' } as Partial<CSSStyleDeclaration>);
   headingRow.appendChild(heading);
 
   // One themed tooltip for this card's own header controls, replacing the
@@ -319,10 +343,11 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   saveBtn.setAttribute('aria-label', 'Save as PNG');
   saveBtn.innerHTML = ICONS.download;
   Object.assign(saveBtn.style, {
-    border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', background: 'none',
-    color: CLR.label, cursor: 'pointer', width: '22px', height: '22px', lineHeight: '1', flexShrink: '0',
+    ...controlStyle('outlined'),
+    color: CLR.label, padding: '0', width: '22px', height: '22px', lineHeight: LEADING.none, flexShrink: '0',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   } as Partial<CSSStyleDeclaration>);
+  wireControlHover(saveBtn);
   attachChartTip(saveBtn, card, headerTip, 'Save as PNG');
   saveBtn.addEventListener('click', () => {
     const canvas = card.querySelector<HTMLCanvasElement>('canvas');
@@ -335,17 +360,20 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   expandBtn.setAttribute('aria-label', 'Expand');
   expandBtn.innerHTML = ICONS.expand;
   Object.assign(expandBtn.style, {
-    border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', background: 'none',
-    color: CLR.label, cursor: 'pointer', width: '22px', height: '22px', lineHeight: '1', flexShrink: '0',
+    ...controlStyle('outlined'),
+    color: CLR.label, padding: '0', width: '22px', height: '22px', lineHeight: LEADING.none, flexShrink: '0',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   } as Partial<CSSStyleDeclaration>);
+  wireControlHover(expandBtn);
   attachChartTip(expandBtn, card, headerTip, 'Expand');
   expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title, expandBtn));
   headingRow.appendChild(expandBtn);
   card.appendChild(headingRow);
 
   const controlsRow = card.ownerDocument.createElement('div');
-  Object.assign(controlsRow.style, { display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap', alignItems: 'center' } as Partial<CSSStyleDeclaration>);
+  Object.assign(controlsRow.style, {
+    display: 'flex', gap: SPACE.sm, marginBottom: SPACE.md, flexWrap: 'wrap', alignItems: 'center',
+  } as Partial<CSSStyleDeclaration>);
   card.appendChild(controlsRow);
 
   const body = card.ownerDocument.createElement('div');
@@ -385,17 +413,23 @@ export function makeSegmented(
   current: string,
   onChange: (value: string) => void,
   ownerDocument: Document = document,
+  /** Smaller type/padding for the summary panel's 260px column, where the
+   *  chart-card sizing overflows a section header. Charts keep the default. */
+  compact = false,
 ): HTMLElement {
   const group = ownerDocument.createElement('div');
   group.setAttribute('role', 'radiogroup');
-  Object.assign(group.style, { display: 'inline-flex', border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', overflow: 'hidden' } as Partial<CSSStyleDeclaration>);
+  Object.assign(group.style, { display: 'inline-flex', border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control, overflow: 'hidden' } as Partial<CSSStyleDeclaration>);
   const name = `seg-${Math.random().toString(36).slice(2, 9)}`;
   const paints: Array<() => void> = [];
 
   options.forEach(([value, text], i) => {
     const label = ownerDocument.createElement('label');
     Object.assign(label.style, {
-      display: 'inline-flex', alignItems: 'center', fontSize: '12px', padding: '3px 10px', cursor: 'pointer', userSelect: 'none',
+      display: 'inline-flex', alignItems: 'center',
+      fontSize: FONT.body,
+      padding:  compact ? '1px 6px' : '3px 10px',
+      cursor: 'pointer', userSelect: 'none',
       borderLeft: i > 0 ? `1px solid ${CLR.menuBorder}` : 'none',
     } as Partial<CSSStyleDeclaration>);
 
@@ -436,9 +470,9 @@ export function makeBackButton(onBack: () => void, ownerDocument: Document = doc
   btn.type = 'button';
   btn.textContent = '← Back';
   Object.assign(btn.style, {
-    fontSize: '12px', padding: '3px 10px', border: `1px solid ${CLR.menuBorder}`,
-    borderRadius: '4px', background: CLR.menuBg, color: CLR.label, cursor: 'pointer',
+    ...controlStyle('outlined'), background: CLR.menuBg, color: CLR.label,
   } as Partial<CSSStyleDeclaration>);
+  wireControlHover(btn);
   btn.addEventListener('click', onBack);
   return btn;
 }
@@ -451,9 +485,238 @@ export function makeBackButton(onBack: () => void, ownerDocument: Document = doc
 export function renderEmptyState(body: HTMLElement, message: string, styleOverrides?: Partial<CSSStyleDeclaration>): void {
   const empty = body.ownerDocument.createElement('div');
   empty.textContent = message;
-  Object.assign(empty.style, { color: CLR.label, fontSize: '12px', padding: '8px 0' } as Partial<CSSStyleDeclaration>);
+  Object.assign(empty.style, { color: CLR.label, fontSize: FONT.body, padding: '8px 0' } as Partial<CSSStyleDeclaration>);
   if (styleOverrides) Object.assign(empty.style, styleOverrides);
   body.appendChild(empty);
+}
+
+// ── Themed option list ───────────────────────────────────────────────────────
+// One picker behind every "choose a value" control in the Insights tab (test,
+// wafer, Group by, findings filters).
+//
+// A native `<select>` is deliberately NOT used. WebKitGTK — the Linux Tauri
+// WebView a host like tsmap runs in — paints the closed box with native GTK
+// chrome regardless of `CLR.*`, and the OPEN option list is OS-drawn in EVERY
+// engine, so no CSS reaches it anywhere. `appearance: none` used to be applied
+// here to win back the closed box, but it could never touch the popup, which
+// left these pickers as the one part of an embedded map that couldn't follow
+// its host's theme (tsmap has sixteen).
+//
+// Behaviour and styling follow "Option lists and menus: one visual contract"
+// in UI_STANDARDS.md, the copy shared with tsmap: `listbox`/`option` roles
+// (these are values, not commands), rows on roving `tabIndex = -1` so the
+// BROWSER draws the focus ring, and exactly three visual states — selected
+// (persistent `CLR.menuActive` tint), hover (transient `CLR.menuHover`), and
+// focus (the ring; never hand-drawn here). A host page's own `:focus-visible`
+// rule therefore styles these rows too, which is how an embedded map ends up
+// matching the host's own controls for free.
+
+export interface ListSelectOption { value: string; label: string }
+
+/**
+ * A themed single-select picker: a trigger button plus an on-demand popup
+ * listbox. Past `MENU_SEARCH_THRESHOLD` options a filter box is added (sharing
+ * `makeMenuSearchBox` with toolbar.ts's plot-mode cascade, so every long list
+ * in the library filters the same way).
+ *
+ * Exposes a settable `.value` matching `<select>.value` semantics — assigning
+ * it moves the selection WITHOUT firing `onChange`, which callers rely on to
+ * sync from an external click-through (the correlation matrix picking a cell)
+ * without re-entering their own change handler.
+ */
+export function makeListSelect(
+  options: readonly ListSelectOption[],
+  selected: string,
+  onChange: (value: string) => void,
+  opts: {
+    maxWidth?: string;
+    ownerDocument?: Document;
+    ariaLabel?: string;
+    emptyText?: string;
+    searchPlaceholder?: string;
+    hook?: string;
+  } = {},
+): HTMLElement & { value: string } {
+  const {
+    maxWidth = '200px', ownerDocument = document, ariaLabel,
+    emptyText, searchPlaceholder = 'Filter…', hook,
+  } = opts;
+
+  let current = selected;
+  const labelFor = (v: string): string => options.find(o => o.value === v)?.label ?? '';
+
+  const btn = ownerDocument.createElement('button');
+  btn.type = 'button';
+  // Stable hook for hosts driving this in automation. It stays on the trigger
+  // (it used to sit on the `<select>` itself) so `[data-wmap-select="…"]`
+  // keeps resolving to the one element you click to open the list.
+  if (hook) btn.dataset.wmapSelect = hook;
+  if (ariaLabel) btn.setAttribute('aria-label', ariaLabel);
+  Object.assign(btn.style, {
+    fontSize: FONT.body, padding: `${SPACE.xxs} ${SPACE.sm}`, background: CLR.menuBg, color: CLR.text,
+    border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control, maxWidth, textAlign: 'left',
+    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: SPACE.sm,
+    justifyContent: 'space-between',
+  } as Partial<CSSStyleDeclaration>);
+  wireControlHover(btn);
+  markMenuTrigger(btn, false);
+
+  const labelSpan = ownerDocument.createElement('span');
+  Object.assign(labelSpan.style, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
+  const caret = ownerDocument.createElement('span');
+  caret.textContent = '▾';
+  caret.style.flex = '0 0 auto';
+  btn.append(labelSpan, caret);
+
+  const syncLabel = (): void => {
+    labelSpan.textContent = options.length === 0 ? (emptyText ?? '(none)') : (labelFor(current) || emptyText || '(none)');
+  };
+  syncLabel();
+
+  // An empty list is inert rather than opening an empty popup — same end state
+  // as the `<select>.disabled` + single placeholder option this replaced.
+  if (options.length === 0) {
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'default';
+    return Object.defineProperty(btn, 'value', {
+      get: () => current,
+      set: (v: string) => { current = v; syncLabel(); },
+    }) as HTMLButtonElement & { value: string };
+  }
+
+  let menu: HTMLDivElement | null = null;
+  const closeMenu = (): void => {
+    if (!menu) return;
+    menu.remove();
+    menu = null;
+    markMenuTrigger(btn, false);
+  };
+  // Escape and picking an option both mean "I'm done, give focus back"; a
+  // generic outside click does not (whatever was clicked should keep focus),
+  // so the outside-click path below deliberately doesn't refocus.
+  const closeMenuAndRefocus = (): void => { closeMenu(); btn.focus(); };
+
+  function openMenu(): void {
+    const rect = btn.getBoundingClientRect();
+    const win = ownerDocument.defaultView ?? window;
+    const menuMinWidth = Math.max(rect.width, 220);
+    const left = Math.min(rect.left, Math.max(4, (win.innerWidth ?? Infinity) - menuMinWidth - 4));
+    menu = ownerDocument.createElement('div');
+    menu.setAttribute('role', 'listbox');
+    menu.setAttribute('aria-label', ariaLabel ?? 'Options');
+    Object.assign(menu.style, {
+      position: 'fixed', top: `${rect.bottom + 4}px`, left: `${left}px`,
+      background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control,
+      boxShadow: SHADOW.menu, zIndex: Z_BASE, minWidth: `${menuMinWidth}px`,
+      maxHeight: '320px', overflowY: 'auto', padding: '4px 0', pointerEvents: 'auto',
+    } as Partial<CSSStyleDeclaration>);
+
+    const rows: { row: HTMLDivElement; label: string }[] = [];
+    const visibleRows = (): HTMLDivElement[] => rows.filter(r => r.row.style.display !== 'none').map(r => r.row);
+
+    if (options.length > MENU_SEARCH_THRESHOLD) {
+      // `makeMenuSearchBox` stops all keydown propagation on the input itself
+      // (so typing doesn't reach a host menu's key handling), which is why
+      // arrow-key row navigation is wired explicitly below rather than relying
+      // on bubbling into the delegated listener that mouse/focus events use.
+      const searchBox = makeMenuSearchBox(query => {
+        for (const r of rows) r.row.style.display = r.label.includes(query) ? '' : 'none';
+      }, searchPlaceholder, ownerDocument);
+      // Contained: this z-index only has to beat its own siblings (the option
+      // rows, which set none) INSIDE `menu`, and `menu` itself lives in
+      // `menuLayerFor`'s shared elevated layer, so nothing outside this one
+      // dropdown is ever compared against this literal. See UI_STANDARDS.md's
+      // "position: sticky or fixed" entry before copying this elsewhere.
+      Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
+      searchBox.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { closeMenuAndRefocus(); return; }
+        if (e.key === 'ArrowDown') { e.preventDefault(); visibleRows()[0]?.focus(); }
+      });
+      menu.appendChild(searchBox);
+    }
+
+    for (const o of options) {
+      const isSelected = o.value === current;
+      const row = ownerDocument.createElement('div');
+      row.textContent = o.label;
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+      row.tabIndex = -1;   // roving tabindex — the ring comes from the browser
+      Object.assign(row.style, {
+        padding: '6px 14px', fontSize: FONT.body, cursor: 'pointer',
+        color: isSelected ? CLR.iconActive : CLR.text, fontWeight: isSelected ? '700' : '400',
+        background: isSelected ? CLR.menuActive : 'transparent', whiteSpace: 'nowrap',
+      } as Partial<CSSStyleDeclaration>);
+      // Hover only — NOT focus. Focus is the browser's ring; repainting the
+      // background on focus too would make the two states indistinguishable
+      // and re-invent the hand-drawn indicator the shared contract removes.
+      // (`outline: none` used to be set here, which suppressed the ring
+      // outright and forced exactly that.)
+      row.addEventListener('mouseenter', () => { if (!isSelected) row.style.background = CLR.menuHover; });
+      row.addEventListener('mouseleave', () => { if (!isSelected) row.style.background = 'transparent'; });
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        current = o.value;
+        syncLabel();
+        closeMenuAndRefocus();
+        onChange(o.value);
+      });
+      menu.appendChild(row);
+      rows.push({ row, label: o.label.toLowerCase() });
+    }
+
+    // Row-to-row keyboard nav — deliberately not `wireMenuA11y`, which
+    // auto-focuses its first item on mount and would steal focus straight back
+    // off the search box's own autofocus.
+    menu.addEventListener('keydown', e => {
+      const list = visibleRows();
+      if (list.length === 0) return;
+      const idx = list.indexOf(ownerDocument.activeElement as HTMLDivElement);
+      switch (e.key) {
+        case 'ArrowDown': e.preventDefault(); list[idx < 0 || idx === list.length - 1 ? 0 : idx + 1].focus(); break;
+        case 'ArrowUp':   e.preventDefault(); list[idx <= 0 ? list.length - 1 : idx - 1].focus(); break;
+        case 'Home':      e.preventDefault(); list[0].focus(); break;
+        case 'End':       e.preventDefault(); list[list.length - 1].focus(); break;
+        case 'Enter':
+        case ' ':         if (idx >= 0) { e.preventDefault(); list[idx].click(); } break;
+        case 'Escape':
+        case 'Tab':       e.preventDefault(); closeMenuAndRefocus(); break;
+      }
+    });
+
+    // Shared menu layer (toolbar.ts), not straight to body — see menuLayerFor's
+    // own doc comment: an Insights card is exactly the "persistent chrome"
+    // shape that a bare Z_BASE menu could someday lose a stacking fight
+    // against, the way the gallery's sticky header did to its own menus.
+    menuLayerFor(btn).appendChild(menu);
+    markMenuTrigger(btn, true);
+    // Start keyboard navigation on the current selection, as a native select does.
+    if (options.length <= MENU_SEARCH_THRESHOLD) {
+      const selIdx = options.findIndex(o => o.value === current);
+      visibleRows()[selIdx >= 0 ? selIdx : 0]?.focus();
+    }
+  }
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (menu) { closeMenu(); return; }
+    openMenu();
+  });
+  // Registered once (not per-open) and harmless while closed (menu is null).
+  // Self-unregisters the first time it fires after `btn` has left the document
+  // (panel destroyed/rebuilt), rather than holding a live reference to a dead
+  // widget for the lifetime of the whole document.
+  const onDocClick = (e: MouseEvent): void => {
+    if (!btn.isConnected) { ownerDocument.removeEventListener('click', onDocClick); return; }
+    if (menu && !menu.contains(e.target as Node) && !btn.contains(e.target as Node)) closeMenu();
+  };
+  ownerDocument.addEventListener('click', onDocClick);
+
+  return Object.defineProperty(btn, 'value', {
+    get: () => current,
+    set: (v: string) => { current = v; syncLabel(); },
+  }) as HTMLButtonElement & { value: string };
 }
 
 // ── Test picker ──────────────────────────────────────────────────────────────
@@ -485,203 +748,12 @@ export function makeTestSelect(
 ): HTMLElement & { value: string } {
   const { maxWidth = '200px', emptyText = 'No parametric tests', ownerDocument = document } = opts;
 
-  if (testOptions.length > MENU_SEARCH_THRESHOLD) {
-    return makeSearchableTestCombo(testOptions, selected, onChange, maxWidth, ownerDocument);
-  }
-
-  const select = ownerDocument.createElement('select');
-  Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
-  if (testOptions.length === 0) {
-    select.disabled = true;
-    const opt = ownerDocument.createElement('option');
-    opt.textContent = emptyText;
-    select.appendChild(opt);
-  } else {
-    for (const t of testOptions) {
-      const opt = ownerDocument.createElement('option');
-      opt.value = String(t.testNumber);
-      opt.textContent = t.name || `Test ${t.testNumber}`;
-      if (t.testNumber === selected) opt.selected = true;
-      select.appendChild(opt);
-    }
-    select.addEventListener('change', () => onChange(Number(select.value)));
-  }
-  return select;
-}
-
-/**
- * The long-list combobox behind `makeTestSelect` above `MENU_SEARCH_THRESHOLD`
- * tests. A button showing the current test opens a filterable popup list
- * (same visual language as toolbar.ts's menus); setting `.value` (a
- * plain-string testNumber, matching `<select>.value`) jumps the selection
- * without calling `onChange` — a real `<select>`'s `.value` setter doesn't
- * fire a `change` event either, and callers rely on that to sync from an
- * external click-through (e.g. the correlation matrix picking a cell) without
- * re-triggering their own onChange loop.
- */
-function makeSearchableTestCombo(
-  testOptions: readonly TestSelectItem[],
-  selected: number | null,
-  onChange: (testNumber: number) => void,
-  maxWidth: string,
-  ownerDocument: Document = document,
-): HTMLElement & { value: string } {
-  const labelFor = (tn: number): string => testOptions.find(t => t.testNumber === tn)?.name || `Test ${tn}`;
-  let current = selected;
-
-  const btn = ownerDocument.createElement('button');
-  btn.type = 'button';
-  Object.assign(btn.style, {
-    fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text,
-    border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth, textAlign: 'left',
-    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px',
-    justifyContent: 'space-between',
-  } as Partial<CSSStyleDeclaration>);
-  markMenuTrigger(btn, false);
-
-  const labelSpan = btn.ownerDocument.createElement('span');
-  Object.assign(labelSpan.style, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
-  const caret = btn.ownerDocument.createElement('span');
-  caret.textContent = '▾';
-  caret.style.flex = '0 0 auto';
-  btn.append(labelSpan, caret);
-
-  const syncLabel = (): void => { labelSpan.textContent = current !== null ? labelFor(current) : '(none)'; };
-  syncLabel();
-
-  let menu: HTMLDivElement | null = null;
-  const closeMenu = (): void => {
-    if (!menu) return;
-    menu.remove();
-    menu = null;
-    markMenuTrigger(btn, false);
-  };
-  // Same pick-closes-and-returns-focus contract as toolbar.ts's own menus —
-  // Escape/selecting an option are both "I'm done, give focus back to the
-  // trigger"; a generic outside click is not (whatever the user clicked
-  // should keep focus), so that path (below) deliberately doesn't call this.
-  const closeMenuAndRefocus = (): void => { closeMenu(); btn.focus(); };
-
-  function openMenu(): void {
-    const rect = btn.getBoundingClientRect();
-    const win = btn.ownerDocument.defaultView ?? window;
-    const menuMinWidth = Math.max(rect.width, 220);
-    const menuMaxHeight = 320;
-    const left = Math.min(rect.left, Math.max(4, (win.innerWidth ?? Infinity) - menuMinWidth - 4));
-    menu = btn.ownerDocument.createElement('div');
-    Object.assign(menu.style, {
-      position: 'fixed', top: `${rect.bottom + 4}px`, left: `${left}px`,
-      background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: Z_BASE, minWidth: `${menuMinWidth}px`,
-      maxHeight: `${menuMaxHeight}px`, overflowY: 'auto', padding: '4px 0', pointerEvents: 'auto',
-    } as Partial<CSSStyleDeclaration>);
-
-    const rows: { row: HTMLDivElement; label: string }[] = [];
-    const visibleRows = (): HTMLDivElement[] => rows.filter(r => r.row.style.display !== 'none').map(r => r.row);
-
-    // `makeMenuSearchBox` stops all keydown propagation on the input itself
-    // (so typing doesn't trigger a host menu's own key handling) — which
-    // means arrow-key row navigation has to be wired here explicitly rather
-    // than relying on bubbling into a delegated listener the way mouse/focus
-    // events do below.
-    const searchBox = makeMenuSearchBox(query => {
-      for (const r of rows) r.row.style.display = r.label.includes(query) ? '' : 'none';
-    }, 'Filter tests…', btn.ownerDocument);
-    // Contained: this z-index only has to beat its own siblings (the option
-    // rows below, which set none) INSIDE `menu` — `menu` itself is appended
-    // into `menuLayerFor`'s shared, already-elevated layer, so nothing outside
-    // this one dropdown can ever be compared against this literal. See
-    // UI_STANDARDS.md's "position: sticky or fixed" entry before copying this
-    // pattern somewhere that ISN'T already inside a menu.
-    Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
-    searchBox.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { closeMenuAndRefocus(); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); visibleRows()[0]?.focus(); }
-    });
-    menu.appendChild(searchBox);
-
-    for (const t of testOptions) {
-      const label = t.name || `Test ${t.testNumber}`;
-      const active = t.testNumber === current;
-      const row = btn.ownerDocument.createElement('div');
-      row.textContent = label;
-      row.setAttribute('role', 'menuitemradio');
-      row.setAttribute('aria-checked', active ? 'true' : 'false');
-      row.tabIndex = -1;
-      Object.assign(row.style, {
-        padding: '6px 14px', fontSize: '12px', cursor: 'pointer',
-        color: active ? CLR.iconActive : CLR.text, fontWeight: active ? '700' : '400',
-        background: active ? CLR.menuActive : 'transparent', whiteSpace: 'nowrap', outline: 'none',
-      } as Partial<CSSStyleDeclaration>);
-      const highlightOn  = (): void => { if (!active) row.style.background = CLR.menuHover; };
-      const highlightOff = (): void => { row.style.background = active ? CLR.menuActive : 'transparent'; };
-      row.addEventListener('mouseenter', highlightOn);
-      row.addEventListener('mouseleave', highlightOff);
-      row.addEventListener('focus', highlightOn);
-      row.addEventListener('blur',  highlightOff);
-      row.addEventListener('click', e => {
-        e.stopPropagation();
-        current = t.testNumber;
-        syncLabel();
-        closeMenuAndRefocus();
-        onChange(t.testNumber);
-      });
-      menu.appendChild(row);
-      rows.push({ row, label: label.toLowerCase() });
-    }
-    // Row-to-row keyboard nav — deliberately not `wireMenuA11y`: that helper
-    // auto-focuses its first item on mount, which here would steal focus
-    // right back off the search box's own autofocus.
-    menu.addEventListener('keydown', e => {
-      const list = visibleRows();
-      if (list.length === 0) return;
-      const idx = list.indexOf(btn.ownerDocument.activeElement as HTMLDivElement);
-      switch (e.key) {
-        case 'ArrowDown': e.preventDefault(); list[idx < 0 || idx === list.length - 1 ? 0 : idx + 1].focus(); break;
-        case 'ArrowUp':   e.preventDefault(); list[idx <= 0 ? list.length - 1 : idx - 1].focus(); break;
-        case 'Home':      e.preventDefault(); list[0].focus(); break;
-        case 'End':       e.preventDefault(); list[list.length - 1].focus(); break;
-        case 'Enter':
-        case ' ':         if (idx >= 0) { e.preventDefault(); list[idx].click(); } break;
-        case 'Escape':
-        case 'Tab':       e.preventDefault(); closeMenuAndRefocus(); break;
-      }
-    });
-    menu.setAttribute('role', 'menu');
-    menu.setAttribute('aria-label', 'Test');
-    // Shared menu layer (toolbar.ts), not straight to body — see
-    // menuLayerFor's own doc comment for the exact bug this avoids: an
-    // Insights card is exactly the "persistent chrome" shape (docked inside
-    // the Analysis tab's layout) that a bare Z_BASE menu here could someday
-    // lose a stacking fight against, the same way the gallery's own sticky
-    // header did to ITS menus. Routing through the shared layer removes the
-    // question rather than requiring this call site to keep re-answering it.
-    menuLayerFor(btn).appendChild(menu);
-    markMenuTrigger(btn, true);
-  }
-
-  btn.addEventListener('click', e => {
-    e.stopPropagation();
-    if (menu) { closeMenu(); return; }
-    openMenu();
-  });
-  // Registered once (not per-open) and harmless while closed (menu is null) —
-  // same outside-click-closes shape as toolbar.ts's own menus, just self-
-  // contained since a standalone chart card isn't wired into toolbar.ts's
-  // shared openMenu/closeOpenMenu registry. Self-unregisters the first time
-  // it fires after `btn` has been removed from the document (panel
-  // destroyed/rebuilt) rather than holding a live reference to a dead widget
-  // for the lifetime of the whole document.
-  const onDocClick = (e: MouseEvent): void => {
-    if (!btn.isConnected) { btn.ownerDocument.removeEventListener('click', onDocClick); return; }
-    if (menu && !menu.contains(e.target as Node) && !btn.contains(e.target as Node)) closeMenu();
-  };
-  btn.ownerDocument.addEventListener('click', onDocClick);
-
-  return Object.defineProperty(btn, 'value', {
-    get: () => (current !== null ? String(current) : ''),
-    set: (v: string) => { current = v === '' ? null : Number(v); syncLabel(); },
-  }) as HTMLButtonElement & { value: string };
+  return makeListSelect(
+    testOptions.map(t => ({ value: String(t.testNumber), label: t.name || `Test ${t.testNumber}` })),
+    selected !== null ? String(selected) : '',
+    v => onChange(Number(v)),
+    { maxWidth, ownerDocument, ariaLabel: 'Test', emptyText, searchPlaceholder: 'Filter tests…' },
+  );
 }
 
 // ── Wafer picker ─────────────────────────────────────────────────────────────
@@ -702,25 +774,15 @@ export function makeWaferSelect(
   selectedIndex: number | null,
   onChange: (index: number | null) => void,
   opts: { maxWidth?: string; allLabel?: string; ownerDocument?: Document } = {},
-): HTMLSelectElement {
+): HTMLElement & { value: string } {
   const { maxWidth = '160px', allLabel = 'All wafers', ownerDocument = document } = opts;
   const ALL = '\0all';
-  const select = ownerDocument.createElement('select');
-  Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
-  const allOpt = ownerDocument.createElement('option');
-  allOpt.value = ALL;
-  allOpt.textContent = allLabel;
-  if (selectedIndex === null) allOpt.selected = true;
-  select.appendChild(allOpt);
-  items.forEach((it, i) => {
-    const opt = ownerDocument.createElement('option');
-    opt.value = String(i);
-    opt.textContent = it.label ?? `#${i}`;
-    if (selectedIndex === i) opt.selected = true;
-    select.appendChild(opt);
-  });
-  select.addEventListener('change', () => onChange(select.value === ALL ? null : Number(select.value)));
-  return select;
+  return makeListSelect(
+    [{ value: ALL, label: allLabel }, ...items.map((it, i) => ({ value: String(i), label: it.label ?? `#${i}` }))],
+    selectedIndex === null ? ALL : String(selectedIndex),
+    v => onChange(v === ALL ? null : Number(v)),
+    { maxWidth, ownerDocument, ariaLabel: allLabel, searchPlaceholder: 'Filter wafers…' },
+  );
 }
 
 // ── Toggle checkbox ──────────────────────────────────────────────────────────
@@ -731,7 +793,7 @@ export function makeWaferSelect(
 
 export function makeToggle(labelText: string, checked: boolean, onChange: (v: boolean) => void, ownerDocument: Document = document): HTMLLabelElement {
   const label = ownerDocument.createElement('label');
-  Object.assign(label.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: CLR.label, cursor: 'pointer', userSelect: 'none' } as Partial<CSSStyleDeclaration>);
+  Object.assign(label.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, fontSize: FONT.body, color: CLR.label, cursor: 'pointer', userSelect: 'none' } as Partial<CSSStyleDeclaration>);
   const checkbox = ownerDocument.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.checked = checked;
@@ -756,22 +818,14 @@ export function makeLabeledSelect(
   const { maxWidth = '160px', hook, ownerDocument = document } = opts;
   const label = ownerDocument.createElement('label');
   label.textContent = labelText;
-  Object.assign(label.style, { color: CLR.label, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' } as Partial<CSSStyleDeclaration>);
-  const select = ownerDocument.createElement('select');
+  Object.assign(label.style, { color: CLR.label, fontSize: FONT.body, display: 'flex', alignItems: 'center', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
   // This same helper builds the Analysis tab's "Group by:" field selector
   // AND every per-panel "Group: <value> ▾" restrict-to-one-group dropdown
-  // AND the histogram wafer picker, so a bare `select` is ambiguous
-  // page-wide — callers that need a stable hook pass one (e.g. 'group-by').
-  if (hook) select.dataset.wmapSelect = hook;
-  Object.assign(select.style, { fontSize: '12px', padding: '2px 6px', background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px', maxWidth } as Partial<CSSStyleDeclaration>);
-  for (const o of options) {
-    const opt = ownerDocument.createElement('option');
-    opt.value = o.value;
-    opt.textContent = o.label;
-    if (o.value === selected) opt.selected = true;
-    select.appendChild(opt);
-  }
-  select.addEventListener('change', () => onChange(select.value));
+  // AND the histogram wafer picker, so a bare trigger is ambiguous page-wide —
+  // callers that need a stable hook pass one (e.g. 'group-by').
+  const select = makeListSelect(options, selected, onChange, {
+    maxWidth, ownerDocument, hook, ariaLabel: labelText.replace(/:\s*$/, ''),
+  });
   label.appendChild(select);
   return label;
 }
@@ -784,7 +838,7 @@ export function makeLabeledSelect(
 export function makeChartGridWrap(ownerDocument: Document = document): HTMLDivElement {
   const wrap = ownerDocument.createElement('div');
   wrap.dataset.wmapChartGrid = '1';
-  Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '10px', flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
+  Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: SPACE.lg, flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
   return wrap;
 }
 
@@ -793,9 +847,17 @@ export function makeTooltip(card: HTMLElement): HTMLElement {
   const tooltip = card.ownerDocument.createElement('div');
   Object.assign(tooltip.style, {
     position: 'absolute', display: 'none', pointerEvents: 'none', zIndex: '50',
-    background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: '4px',
-    padding: '4px 8px', fontSize: '11px', fontFamily: 'system-ui, sans-serif',
-    color: CLR.text, whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+    // Deliberately the same values as toolbar.ts's `getTooltip`, NOT the CLR
+    // surface tokens: a hover tip is a floating label over arbitrary content,
+    // and it reads as one at any theme only if it stays dark. The library used
+    // to have two tooltip looks — this light one on chart-card controls and the
+    // dark one on the toolbar — so the same gesture produced a different tip
+    // depending on which control you were over. tsmap's own `tooltip.ts`
+    // already mirrors the dark one; this makes all three agree.
+    background: 'rgba(30, 32, 40, 0.93)', color: '#f0f0f2',
+    border: '1px solid rgba(255,255,255,0.10)', borderRadius: RADIUS.control,
+    padding: '7px 11px', fontSize: FONT.sub, fontFamily: FONT.family,
+    maxWidth: '280px', whiteSpace: 'nowrap', boxShadow: SHADOW.menu,
   } as Partial<CSSStyleDeclaration>);
   card.appendChild(tooltip);
   return tooltip;
@@ -828,6 +890,10 @@ export function attachChartTip(el: HTMLElement, card: HTMLElement, tooltip: HTML
     if (tooltip.style.display === 'block') positionChartTooltip(tooltip, card, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
   });
   el.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  // A control that hides itself (the expand button, which is display:none'd
+  // while its card is in the modal) never fires mouseleave, so without this the
+  // tip stays on screen with nothing under it.
+  el.addEventListener('click', () => { tooltip.style.display = 'none'; });
   // Keyboard users get the same hint — the native `title` never gave them one.
   el.addEventListener('focus', () => {
     tooltip.textContent = text;
@@ -861,4 +927,181 @@ export function positionChartTooltip(tooltip: HTMLElement, card: HTMLElement, cl
   y = Math.max(margin, y);
   tooltip.style.left = `${x}px`;
   tooltip.style.top  = `${y}px`;
+}
+
+/**
+ * The two axis toggles, shared across the distribution panels.
+ *
+ * They were per-panel state, so the same preference had to be set three times
+ * (histogram, boxplot, trend) for one test. The panels now exchange this through
+ * `insightsTab`, the same way they already share the selected test.
+ *
+ * `includeLimits: undefined` means "derive from the data" — see
+ * `shouldIncludeLimitsByDefault`. A boolean is an explicit user choice and sticks.
+ */
+export interface AxisPrefs {
+  includeLimits?: boolean;
+  clipOutliers: boolean;
+}
+
+// ── Value-axis range ────────────────────────────────────────────────────────
+//
+// Shared by the distribution panels (histogram, boxplot, trend) so their axis
+// behaviour — whether spec limits are in view, and whether a wild reading is
+// allowed to flatten the plot — is decided in one place rather than three.
+
+/** Robust outlier fence over a value list: Tukey's `Q1 − k·IQR … Q3 + k·IQR`.
+ *
+ *  Deliberately NOT mean ± 3σ. σ is computed FROM the data including the
+ *  outlier, so a single reading of 1e30 inflates σ far enough that the fence no
+ *  longer excludes it — the classic masking failure, and it fails hardest exactly
+ *  when the outlier is worst. Quartiles are unmoved by the extreme tail.
+ *
+ *  Returns null when there are too few values for quartiles to mean anything. */
+export function robustFence(values: number[], k = 1.5): { lo: number; hi: number } | null {
+  const finite = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b);
+  if (finite.length < 8) return null;
+  const q = (p: number) => {
+    const idx = (finite.length - 1) * p;
+    const lo = Math.floor(idx), hi = Math.ceil(idx);
+    return lo === hi ? finite[lo] : finite[lo] + (finite[hi] - finite[lo]) * (idx - lo);
+  };
+  const q1 = q(0.25), q3 = q(0.75), iqr = q3 - q1;
+  if (iqr === 0) return null;
+  return { lo: q1 - k * iqr, hi: q3 + k * iqr };
+}
+
+/**
+ * Whether a panel should include the spec limits in its axis BY DEFAULT.
+ *
+ * Neither fixed answer is right. Always-off hides how close a distribution runs
+ * to its limit, which is the main thing a spec'd test is read for. Always-on
+ * squashes the data into a sliver whenever the limits are generous — and generous
+ * limits are what a capable process looks like (Ppk 2.0 means the data occupies
+ * about a third of the window), so the "good" case would render worst.
+ *
+ * So it is derived from the data, as this library derives other defaults: include
+ * the limits when doing so leaves the data at least `minDataShare` of the axis.
+ */
+export function shouldIncludeLimitsByDefault(
+  dataMin: number, dataMax: number,
+  limitLow: number | undefined, limitHigh: number | undefined,
+  minDataShare = 1 / 3,
+): boolean {
+  if (limitLow === undefined && limitHigh === undefined) return false;
+  if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return false;
+  const lo = Math.min(dataMin, limitLow ?? dataMin);
+  const hi = Math.max(dataMax, limitHigh ?? dataMax);
+  const withSpan = hi - lo;
+  if (withSpan <= 0) return true;
+  const dataSpan = dataMax - dataMin;
+  // Zero-variance data occupies no share of any axis; including the limits is
+  // then strictly better than an axis with nothing on it.
+  if (dataSpan === 0) return true;
+  return dataSpan / withSpan >= minDataShare;
+}
+
+export interface AxisRange {
+  lo: number;
+  hi: number;
+  /** Limits that fall OUTSIDE [lo, hi] and so cannot be drawn in place — the
+   *  caller should mark them at the axis edge instead. Without this a limit that
+   *  is merely off-screen is indistinguishable from a test having no limit. */
+  offAxis: Array<{ value: number; label: 'LSL' | 'USL'; side: 'lo' | 'hi' }>;
+  /** Values excluded by the robust fence, when clipping is on. */
+  clippedCount: number;
+}
+
+/**
+ * Resolve a value axis from the data, the limits, and the two user toggles.
+ *
+ * `clipOutliers` clips the AXIS only. No caller may use it to drop values from a
+ * statistic: an out-of-spec die is a distribution outlier by construction, so
+ * excluding it would delete real spec failures from yield, and capability exists
+ * precisely to describe the tails. The count is returned so the panel can say how
+ * many points sit outside the view.
+ */
+export function resolveAxisRange(opts: {
+  dataMin: number;
+  dataMax: number;
+  limitLow?: number;
+  limitHigh?: number;
+  includeLimits: boolean;
+  clipOutliers?: boolean;
+  /** Raw values, needed only when `clipOutliers` is set. */
+  values?: number[];
+}): AxisRange {
+  const { dataMin, dataMax, limitLow, limitHigh, includeLimits, clipOutliers, values } = opts;
+
+  let lo = dataMin;
+  let hi = dataMax;
+  let clippedCount = 0;
+
+  if (clipOutliers && values?.length) {
+    const fence = robustFence(values);
+    if (fence) {
+      const flo = Math.max(lo, fence.lo);
+      const fhi = Math.min(hi, fence.hi);
+      if (fhi > flo) {
+        clippedCount = values.filter(v => Number.isFinite(v) && (v < flo || v > fhi)).length;
+        lo = flo;
+        hi = fhi;
+      }
+    }
+  }
+
+  if (includeLimits) {
+    if (limitLow  !== undefined) lo = Math.min(lo, limitLow);
+    if (limitHigh !== undefined) hi = Math.max(hi, limitHigh);
+  }
+  if (lo === hi) { lo -= 1; hi += 1; }
+
+  const offAxis: AxisRange['offAxis'] = [];
+  if (limitLow  !== undefined && limitLow  < lo) offAxis.push({ value: limitLow,  label: 'LSL', side: 'lo' });
+  if (limitLow  !== undefined && limitLow  > hi) offAxis.push({ value: limitLow,  label: 'LSL', side: 'hi' });
+  if (limitHigh !== undefined && limitHigh > hi) offAxis.push({ value: limitHigh, label: 'USL', side: 'hi' });
+  if (limitHigh !== undefined && limitHigh < lo) offAxis.push({ value: limitHigh, label: 'USL', side: 'lo' });
+
+  return { lo, hi, offAxis, clippedCount };
+}
+
+
+/**
+ * Draw an edge marker for each limit that falls outside the plotted range.
+ *
+ * Without this a limit that is merely off-screen renders as nothing at all, so a
+ * test whose limits sit beyond the axis is indistinguishable from a test with no
+ * limits — the reader cannot tell "comfortably inside spec" from "unspecced".
+ *
+ * `axis` is the plot rectangle in CSS px; `orient` says which way the value axis
+ * runs, so the same helper serves the horizontal-value panels (histogram,
+ * boxplot) and the vertical-value one (trend).
+ */
+export function drawOffAxisLimits(
+  ctx: CanvasRenderingContext2D,
+  offAxis: AxisRange['offAxis'],
+  axis: { left: number; right: number; top: number; bottom: number },
+  orient: 'horizontal' | 'vertical',
+  color: string,
+  format: (v: number) => string,
+): void {
+  if (!offAxis.length) return;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+  for (const { value, label, side } of offAxis) {
+    // The arrow points OUT of the plot, toward where the limit actually lies.
+    const arrow = orient === 'horizontal' ? (side === 'lo' ? '←' : '→') : (side === 'lo' ? '↓' : '↑');
+    const text = side === 'lo' ? `${arrow} ${label} ${format(value)}` : `${label} ${format(value)} ${arrow}`;
+    if (orient === 'horizontal') {
+      ctx.textBaseline = 'top';
+      ctx.textAlign = side === 'lo' ? 'left' : 'right';
+      ctx.fillText(text, side === 'lo' ? axis.left + 2 : axis.right - 2, axis.top + 2);
+    } else {
+      ctx.textBaseline = side === 'lo' ? 'bottom' : 'top';
+      ctx.textAlign = 'left';
+      ctx.fillText(text, axis.left + 4, side === 'lo' ? axis.bottom - 2 : axis.top + 2);
+    }
+  }
+  ctx.restore();
 }
