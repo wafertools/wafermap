@@ -45,7 +45,7 @@ number repeated in six places is a number that will be wrong in five of them.
 | `@wafertools/wafermap` — the data and stats layer, no DOM | **~46 KB** | Always, if you import it |
 | `@wafertools/wafermap/render` — the interactive renderer | **~108 KB** | Always, if you render |
 | Insights chart suite | +~25 KB | On first open, only if `insights: { enabled: true }` |
-| In-app user guide | +~34 KB | On first open of the guide |
+| In-app user guide | +~35 KB | On first open of the guide |
 
 Two things worth reading off that table:
 
