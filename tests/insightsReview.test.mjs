@@ -404,3 +404,115 @@ test('every CSV button names what it exports', async () => {
   }
   tab.destroy();
 });
+
+// ── Single-wafer leaf clicks: focusTest (WMAP_ISSUES #51) ────────────────────
+//
+// `renderWaferMap` passes no `openWafer` — opening the only wafer on screen in
+// a modal is two maps of one wafer. That left the boxplot's leaf row inert,
+// throwing away the OTHER half of the click: the selected test. `focusTest` is
+// that half, and these pin which host gets which.
+
+function mountInsightsWith(items, lot, deps) {
+  const host = dom.window.document.getElementById('host');
+  host.innerHTML = '';
+  const tab = createInsightsTab({
+    getItems: () => items,
+    getLotStats: () => lot,
+    getColorSchemeName: () => 'default',
+    passBins: [1],
+    defaultView: 'distributions',
+    ...deps,
+  });
+  host.appendChild(tab.el);
+  tab.render();
+  return tab;
+}
+
+const boxplotCard = (tab) => tab.el.querySelector('[data-wmap-chart-title="Test value distribution"]');
+
+/** Click the first leaf row of the boxplot canvas. JSDOM has no layout, so the
+ *  canvas is given a rect and the y is placed inside row 0's band
+ *  (PADDING 12, row height 24, gap 5 — see boxplot.ts). */
+function clickFirstBoxplotRow(tab) {
+  const canvas = boxplotCard(tab).querySelector('canvas');
+  canvas.getBoundingClientRect = () => ({ top: 0, left: 0, right: 600, bottom: 300, width: 600, height: 300, x: 0, y: 0 });
+  canvas.dispatchEvent(new dom.window.MouseEvent('click', { clientX: 300, clientY: 20, bubbles: true }));
+  return canvas;
+}
+
+test('single-wafer boxplot leaf click focuses the test on the host map', () => {
+  const { items, lot } = lotItems(1);
+  const focused = [];
+  const tab = mountInsightsWith(items, lot, { focusTest: (n) => focused.push(n) });
+  clickFirstBoxplotRow(tab);
+  assert.deepEqual(focused, [1050], 'the boxplot passes its own selected test, not testDefs[0] by luck');
+  tab.destroy();
+});
+
+test('single-wafer boxplot says what its click does, in its own words', () => {
+  const { items, lot } = lotItems(1);
+  const tab = mountInsightsWith(items, lot, { focusTest: () => {} });
+  const hint = boxplotCard(tab).textContent.replace(/\s+/g, ' ');
+  assert.match(hint, /click a box to show this test on the map/i);
+  assert.doesNotMatch(hint, /open that wafer/i, 'there is no other wafer to open');
+  tab.destroy();
+});
+
+test('no leaf action at all means no click affordance is claimed', () => {
+  const { items, lot } = lotItems(1);
+  const tab = mountInsightsWith(items, lot, {});
+  const hint = boxplotCard(tab).textContent.replace(/\s+/g, ' ');
+  assert.doesNotMatch(hint, /click a box to/i);
+  tab.destroy();
+});
+
+test('openWafer wins over focusTest — a gallery opens the wafer, already on that test', () => {
+  const { items, lot } = lotItems(4);
+  const opened = [];
+  const focused = [];
+  const tab = mountInsightsWith(items, lot, {
+    openWafer: (i, label, testNumber) => opened.push([i, testNumber]),
+    focusTest: (n) => focused.push(n),
+  });
+  clickFirstBoxplotRow(tab);
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0][1], 1050, 'the wafer opens in value mode on the boxplot test');
+  assert.deepEqual(focused, [], 'focusTest is not a second, parallel wiring');
+  tab.destroy();
+});
+
+test('focusTest is ignored with more than one wafer — the clicked row is not the map', () => {
+  const { items, lot } = lotItems(3);
+  const focused = [];
+  const tab = mountInsightsWith(items, lot, { focusTest: (n) => focused.push(n) });
+  clickFirstBoxplotRow(tab);
+  assert.deepEqual(focused, [], 'showing "this test" on a single map would show the wrong wafer');
+  assert.doesNotMatch(boxplotCard(tab).textContent, /click a box to/i);
+  tab.destroy();
+});
+
+// ── State that must survive render() (the Insights close/reopen round trip) ──
+//
+// A host closing Insights only hides it; reopening calls render(), which
+// rebuilds every panel. Anything held inside a section is therefore silently
+// reset by a gesture the user reads as "go back and look again".
+
+function clipOutliersToggle(tab) {
+  const label = [...boxplotCard(tab).querySelectorAll('label')]
+    .find(l => l.textContent.includes('Clip outliers'));
+  return label.querySelector('input[type="checkbox"]');
+}
+
+test('shared axis toggles survive a re-render, as the selected test already does', () => {
+  const { items, lot } = lotItems(3);
+  const tab = mountInsightsWith(items, lot, {});
+  const box = clipOutliersToggle(tab);
+  assert.equal(box.checked, false);
+  box.checked = true;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+
+  tab.render();
+  assert.equal(clipOutliersToggle(tab).checked, true,
+    'reopening Insights used to hand back the default, discarding the choice');
+  tab.destroy();
+});

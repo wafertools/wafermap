@@ -48,9 +48,10 @@ type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'en
  * stop them passing the removed options, and honouring an out-of-range value
  * there reintroduces exactly the silent-wrong-answer this release removed.
  *
- * `ringCount`'s ceiling is not fixed: it is derived per wafer from the die grid,
- * because "too many rings" means "rings thinner than a die", which depends on
- * the wafer. See `clampRingCount`.
+ * `ringCount` deliberately has NO upper bound — see the note on its entry below
+ * for the measurements behind that. (An earlier draft of this comment described
+ * a per-wafer ceiling derived from the die grid and pointed at a `clampRingCount`
+ * function; neither the ceiling nor the function was ever written.)
  */
 const OPTION_BOUNDS = {
   // A p-value threshold is a probability, and 0 admits nothing.
@@ -78,7 +79,19 @@ const VALID_SECTOR_COUNTS = [4, 8, 16, 32] as const;
 function resolveOptions(
   options: AnalyzeWaferMapOptions,
 ): { resolved: ResolvedOptions; warnings: WaferWarning[] } {
-  const merged = { ...DEFAULT_OPTIONS, ...options } as ResolvedOptions;
+  // Explicit `undefined` is ABSENCE, not a value. `{ ...defaults, ...options }`
+  // makes `{ ringCount: undefined }` overwrite the default with `undefined`,
+  // which then fails the finite-number test below and reports a correction — so
+  // the most ordinary way a host forwards an optional (`{ ringCount: opts.rings }`,
+  // where `opts.rings` is simply unset) raised an `analysis-option-corrected`
+  // advisory, and that advisory is not quiet: it reaches the toolbar's warning
+  // indicator and the Summary panel's banner. Dropping undefined keys first
+  // makes "not passed" and "passed as undefined" mean the same thing, which is
+  // what every caller already assumes.
+  const supplied = Object.fromEntries(
+    Object.entries(options).filter(([, v]) => v !== undefined),
+  ) as AnalyzeWaferMapOptions;
+  const merged = { ...DEFAULT_OPTIONS, ...supplied } as ResolvedOptions;
   const warnings: WaferWarning[] = [];
   const corrections: string[] = [];
 

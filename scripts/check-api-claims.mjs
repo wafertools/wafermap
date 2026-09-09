@@ -24,6 +24,7 @@ import { dirname, resolve } from 'path';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WRITE = process.argv.includes('--write');
 const problems = [];
+let exportsChecked = 0;
 const written = [];
 const skipped = new Set();
 
@@ -172,6 +173,52 @@ if (ts === null) {
   }
 }
 
+// ── Every public export is at least NAMED in the reference ───────────────────
+//
+// A counted claim going stale is one failure mode; a whole export never reaching
+// the docs at all is the other, and it is quieter. `STANDARD_WAFER_DIAMETERS_MM`
+// shipped in 0.27.0 as the documented escape hatch for the new
+// `non-standard-diameter` advisory and appeared nowhere in api.md — so the way
+// out of an advisory the same release introduced was undiscoverable outside the
+// source. Three more (`discoverDieMetadataKeys`, `metadataCategoricalValue`,
+// `metadataDisplayValue`, all 0.24.0) had been missing for longer.
+//
+// The bar is deliberately LOW — the name appearing somewhere in api.md — because
+// this is a net for things that were forgotten entirely, not a review of how well
+// each one is explained. A name that only appears in a code block still counts:
+// it is reachable by search, which is the actual failure being prevented.
+//
+// The export list comes from `tests/export-surface.test.mjs`'s snapshot, which is
+// already the deliberate, hand-maintained record of what is public — so adding an
+// export forces a decision there, and this makes the same edit force a mention in
+// the reference.
+{
+  const snapshot = readFileSync(resolve(root, 'tests/export-surface.test.mjs'), 'utf8');
+  const apiText = existsSync(resolve(root, API)) ? readFileSync(resolve(root, API), 'utf8') : '';
+  const names = new Set();
+  // Only the quoted names inside the SNAPSHOTS object, not the whole file.
+  const snapStart = snapshot.indexOf('const SNAPSHOTS');
+  const snapEnd = snapshot.indexOf('\n};', snapStart);
+  // Both anchors are asserted, and so is the yield. A missing `const SNAPSHOTS`
+  // gives `indexOf` -1, and `slice(-1, …)` is an empty string, not an error — so
+  // renaming the constant would have left this scanning zero names and reporting
+  // success forever, which is the exact failure mode this whole block exists to
+  // prevent for the docs.
+  if (snapStart === -1 || snapEnd === -1) {
+    problems.push('tests/export-surface.test.mjs: could not find the `const SNAPSHOTS = {…}` object — the undocumented-export check read nothing.');
+  } else {
+    for (const m of snapshot.slice(snapStart, snapEnd).matchAll(/'([A-Za-z_][A-Za-z0-9_]*)'/g)) names.add(m[1]);
+  }
+  if (snapStart !== -1 && names.size < 50) {
+    problems.push(`tests/export-surface.test.mjs: only ${names.size} export names parsed out of the snapshot — that is far too few, so the undocumented-export check is not really checking.`);
+  }
+  const undocumented = [...names].filter(n => !apiText.includes(n)).sort();
+  if (undocumented.length) {
+    problems.push(`${API}: ${undocumented.length} public export(s) never mentioned: ${undocumented.join(', ')}.`);
+  }
+  exportsChecked = names.size;
+}
+
 if (WRITE) {
   console.log(written.length
     ? `api claims regenerated:\n${written.map(w => `  ${w}`).join('\n')}\n\nStage these with the release commit.`
@@ -183,9 +230,11 @@ if (problems.length) {
   console.error(`\napi claims check failed (${problems.length}):\n`);
   for (const p of problems) console.error(`  • ${p}`);
   console.error('\nThese counts are the docs\' answer to "how much of this must I learn?".');
-  console.error('Run `node scripts/check-api-claims.mjs --write` to regenerate them.\n');
+  console.error('Run `node scripts/check-api-claims.mjs --write` to regenerate them.');
+  console.error('An undocumented export is not regenerable — give it a section, or a mention.\n');
   process.exit(1);
 }
 console.log(`api claims OK — RenderOptions ${renderFields} fields, GalleryOptions ${galleryFields} fields`
   + (ts ? `, tsmap uses ${ts.imported} exports and ${ts.options} options` : '')
+  + `, ${exportsChecked} public exports all mentioned`
   + (skipped.size ? `  (skipped, not present: ${[...skipped].join(', ')})` : ''));

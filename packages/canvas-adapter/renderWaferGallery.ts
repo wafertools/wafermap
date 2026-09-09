@@ -1,5 +1,6 @@
 import type { PlotMode } from '../renderer/buildView.js';
-import { getUniqueTestNumbers, resolveTestNumber, findTestDef } from '../renderer/buildView.js';
+import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
+import { metadataCategoricalValue } from '../core/metadata.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
@@ -1309,6 +1310,40 @@ export function renderWaferGallery(
   }
 
   /**
+   * The lot-wide metadata value order for the active metadata key, or undefined
+   * outside `metadata` mode. Every card colours from this ONE list, so a wafer
+   * that happens not to carry one of the values still paints the others in the
+   * colours the shared legend names — see `ViewOptions.metadataValueOrder`.
+   */
+  function sharedMetadataValueOrder(): WaferViewOptions['metadataValueOrder'] {
+    if ((sharedOpts.plotMode ?? 'hardBin') !== 'metadata') return undefined;
+    const key = sharedOpts.activeMetadataKey;
+    if (!key) return undefined;
+    const distinct = new Set<string>();
+    for (const item of originalItems) {
+      if (!item) continue;
+      for (const value of collectMetadataValues(item.dies, key)) distinct.add(value);
+    }
+    // Re-sorted after the union: each item's list is ordered within itself, but
+    // concatenating ordered lists does not give an ordered list.
+    return { key, values: [...distinct].sort(compareNatural) };
+  }
+
+  /** Recomputes that order and pushes it to every live card. Paired with
+   *  `syncSharedValueRange` — same trigger points, same shape, including its
+   *  early return: outside `metadata` mode there is nothing to push, and
+   *  pushing `undefined` anyway costs a full `rebuildView()` + re-render on
+   *  every card, on every toolbar change and every resolved item. The one case
+   *  that must still write is LEAVING metadata mode, where the stale order has
+   *  to be cleared — hence "already undefined", not "not in metadata mode". */
+  function syncSharedMetadataOrder(): void {
+    const next = sharedMetadataValueOrder();
+    if (next === undefined && sharedOpts.metadataValueOrder === undefined) return;
+    sharedOpts = { ...sharedOpts, metadataValueOrder: next };
+    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ metadataValueOrder: next });
+  }
+
+  /**
    * Recomputes the shared value-mode range and pushes it to every live card.
    * Called whenever the active test, colour-range mode, pass/fail display, or
    * the underlying item data (new/resolved items) changes. A no-op outside
@@ -1335,7 +1370,7 @@ export function renderWaferGallery(
     sharedRangeSyncPending = true;
     const raf = container.ownerDocument.defaultView?.requestAnimationFrame
       ?? ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number);
-    raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); });
+    raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); syncSharedMetadataOrder(); });
   }
 
   const btnOverlays = makeOverlaysBtn(
@@ -2203,18 +2238,24 @@ export function renderWaferGallery(
     // 'metadata' mode's own values — string-keyed, collected across every visible
     // card the same way bin counts are, sorted alphabetically (same determinism
     // as buildView.ts's color assignment).
+    // `metadataCategoricalValue`, not `String(raw)` — the same derivation the
+    // maps themselves use (buildView's `collectMetadataValues`). The two used to
+    // differ: this strip stringified raw values while the cards formatted them,
+    // so a numeric metadata field could be counted under one label here and
+    // coloured under another there.
     const metaTally = hasBinLegendMode && isMetadataMode && activeMetadataKey
-      ? countLegendPopulation(resolvedItems, die => {
-          const raw = die.metadata?.[activeMetadataKey];
-          return (raw !== undefined && raw !== null &&
-                  (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean'))
-            ? String(raw) : undefined;
-        })
+      ? countLegendPopulation(resolvedItems, die => metadataCategoricalValue(die.metadata?.[activeMetadataKey]))
       : { counts: new Map<string, number>(), total: 0 };
-    const metadataValueSet = new Set<string>(metaTally.counts.keys());
-    // Natural order — must match buildView's colour-assignment order, or this
-    // lot-level strip would list values in a different order to the per-card legends.
-    const metadataValues = hasBinLegendMode && isMetadataMode ? [...metadataValueSet].sort(compareNatural) : [];
+    // The SAME ordered list the cards colour from, not a second natural sort of
+    // this strip's own tally. A comment used to ask the two orderings to stay in
+    // step and nothing made them — they agreed only while every wafer happened
+    // to carry every value. Values seen only by an unresolved card can't appear
+    // in the tally, so anything the order lists but this strip has no count for
+    // is dropped rather than shown as an empty swatch.
+    const sharedOrder = isMetadataMode ? sharedMetadataValueOrder()?.values : undefined;
+    const metadataValues = hasBinLegendMode && isMetadataMode
+      ? (sharedOrder ?? [...metaTally.counts.keys()].sort(compareNatural)).filter(v => metaTally.counts.has(v))
+      : [];
 
     // Identity goes in the chrome row's pill, beside the toolbar — not into
     // legendEl. The two are now independent: a lot with metadata but no bin
@@ -2591,6 +2632,7 @@ export function renderWaferGallery(
     // 'value'-mode range for whatever just changed (active test, colour-range
     // mode, pass/fail display, or a plotMode switch into 'value').
     syncSharedValueRange();
+    syncSharedMetadataOrder();
     if (fireCallback) {
       const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
       options.onViewOptionsChange?.(sharedOpts, changed, classifyChanged(changed));
@@ -2929,6 +2971,7 @@ export function renderWaferGallery(
     // Refresh the lot-wide 'value'-mode range now that the item set has changed
     // (buildCards may have just replaced originalItems' dies entirely).
     syncSharedValueRange();
+    syncSharedMetadataOrder();
 
     // Resolve factories one per task to keep the main thread responsive.
     // Capture the generation at the time buildCards was called — if buildCards runs

@@ -29,6 +29,32 @@ export function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { t
   return { testNumber: activeTest };
 }
 
+/**
+ * The distinct metadata values a `metadata`-mode view will colour, in the exact
+ * order colour indices are assigned to them.
+ *
+ * The one implementation of that ordering, because two existed and they only
+ * agreed by luck: `buildView` derived it per view while `renderWaferGallery`'s
+ * lot-wide legend strip derived its own from `String(raw)` over every card —
+ * a different value derivation (`metadataCategoricalValue` formats numbers and
+ * rejects objects) as well as a different population. A comment asked the two to
+ * stay in step; nothing made them.
+ *
+ * Natural order, so D0, D1, D2, D10 reads correctly instead of the
+ * lexicographic D0, D1, D10, D2. Partial and edge-excluded dies are skipped:
+ * they never reach the metadata fill branch, so letting them rank values here
+ * would shift colours for values no visible die shows.
+ */
+export function collectMetadataValues(dies: readonly Die[], key: string): string[] {
+  const distinct = new Set<string>();
+  for (const die of dies) {
+    if (die.partial || die.edgeExcluded) continue;
+    const value = getDieMetadataValue(die, key);
+    if (value !== undefined) distinct.add(value);
+  }
+  return [...distinct].sort(compareNatural);
+}
+
 /** Find a TestDef by its testNumber. Returns undefined when testDefs is absent or no match. */
 export function findTestDef(testDefs: TestDef[] | undefined, testNumber: number): TestDef | undefined {
   return testDefs?.find(t => t.testNumber === testNumber);
@@ -281,6 +307,24 @@ export interface ViewOptions {
    * When omitted entirely, the range is auto-computed from the die values present.
    */
   valueRange?: [number, number] | { test: number; range: [number, number] };
+  /**
+   * The full, ordered list of metadata values to assign colours from, for
+   * `metadata` plot mode — the exact counterpart of `valueRange`'s `{ test,
+   * range }` form, and applied only when `key` matches `activeMetadataKey`.
+   *
+   * Without it, each view assigns colours by index into the values present on
+   * ITS OWN dies. That is right for a standalone map and wrong for a gallery:
+   * a wafer that never exhibited one defect category has a shorter list, so
+   * every later value shifts up a colour and the card disagrees with the
+   * lot-wide legend beside it about what that colour means. A host showing
+   * several wafers together passes the lot-wide order here so every card
+   * indexes into the same list.
+   *
+   * Values present on these dies but absent from the list are appended (in
+   * natural order) rather than dropped, so a short or stale list can only cost
+   * the shared ordering, never leave real dies uncoloured.
+   */
+  metadataValueOrder?: { key: string; values: string[] };
   /**
    * Controls the default colorbar range when the active testDef has spec limits.
    * `'spec'` (default when limits present): colorbar spans [limitLow, limitHigh].
@@ -1289,6 +1333,7 @@ export function buildView(
     highlightMetadataValue,
     interactiveTransform,
     valueRange: valueRangeOpt,
+    metadataValueOrder,
     testDefs,
     activeTest = 0,
     activeMetadataKey,
@@ -1551,16 +1596,15 @@ export function buildView(
     // (it returns early with PARTIAL_DIE_FILL/EDGE_EXCLUDED_FILL), so letting it into the
     // natural-order ranking here would assign colours based on values no visible die
     // actually shows, shifting every later value's colour for no reason a user could see.
-    const distinct = new Set<string>();
-    for (const die of dies) {
-      if (die.partial || die.edgeExcluded) continue;
-      const value = getDieMetadataValue(die, activeMetadataKey);
-      if (value !== undefined) distinct.add(value);
-    }
-    // Natural order, so D0, D1, D2, D10 reads correctly in the legend instead of
-    // the lexicographic D0, D1, D10, D2. This ordering also fixes colour assignment
-    // (index → palette entry), so legend order and die colours stay in step.
-    const sorted = [...distinct].sort(compareNatural);
+    const local = collectMetadataValues(dies, activeMetadataKey);
+    // A host that is showing several wafers side by side supplies the lot-wide
+    // order, so every card indexes into one list (see `metadataValueOrder`).
+    // Anything this card has that the list doesn't is appended rather than
+    // dropped — a stale list must not leave real dies uncoloured.
+    const shared = metadataValueOrder?.key === activeMetadataKey ? metadataValueOrder.values : undefined;
+    const sorted = shared
+      ? [...shared, ...local.filter(v => !shared.includes(v))]
+      : local;
     metadataColorMap = new Map(sorted.map((value, index) => [
       value,
       activeMetadataFieldDef?.values?.find(v => v.value === value)?.color ?? metadataValueColor(index),

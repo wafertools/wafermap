@@ -683,7 +683,19 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     lotStackOpts:     input.lotStack,
     passBins:         input.passBins ?? [1],
     standardDiameters: input.standardDiameters,
-    testDefs:         input.testDefs,
+    // An empty array from a HOST means "I described no tests", which is the same
+    // statement as not passing the field — so it is normalised to `undefined`
+    // here, at the one boundary a host's input crosses.
+    //
+    // Downstream, `[]` is a DIFFERENT and load-bearing statement:
+    // `renderWaferGallery`'s `lotTestDefs()` returns it to mean "reconciled the
+    // population and kept nothing", which `buildDataModeEntries` and
+    // `resolveTestColumns` must not override by discovering bare test numbers
+    // back from the dies. That path never comes through here. Without this
+    // normalisation the two meanings collided on the one input a host actually
+    // writes: `buildWaferMap({ results, testDefs: [] })` silently lost every
+    // value plot mode and every die-list test column.
+    testDefs:         input.testDefs?.length ? input.testDefs : undefined,
     hbinDefs:         input.hbinDefs,
     sbinDefs:         input.sbinDefs,
     metadataFields:   input.metadataFields,
@@ -1252,11 +1264,12 @@ function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
  *
  * Only genuinely questionable inference is flagged. Normalized-unit geometry
  * (raw prober steps with no physical dimensions) is the library's primary
- * supported input and is inferred confidently — it is NOT a warning. The one
- * advisory today is `'partial-coverage'`: data that does not span a full
- * symmetric wafer, where the inferred diameter/centre may be wrong. That
- * detection lives at the inference site; here we just promote its message(s)
- * into the structured shape.
+ * supported input and is inferred confidently — it is NOT a warning. The
+ * advisories are `'partial-coverage'` (data not spanning a full symmetric wafer,
+ * so the inferred diameter/centre may be wrong), `'geometry-conflict'`,
+ * `'non-standard-diameter'` and `'diameter-exceeds-die-extent'`. Detection lives
+ * at the inference site; here we just promote its message(s) into the structured
+ * shape and recover each one's code (see `codeForAdvisory`).
  */
 function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
   return (inference.warnings ?? []).map(message => {
@@ -1267,14 +1280,15 @@ function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
       // 'partial-coverage' and 'geometry-conflict' mean die positions may actually
       // be wrong — a wrong-looking map, not a missing feature — so they are errors.
       //
-      // 'inferred-pitch' is deliberately a rung lower. Supplying a diameter without
-      // a die pitch is a documented, supported input (see the inference table in
-      // docs/api.md): the pitch is then derived as diameter / grid span, which is
-      // exactly right for a map whose grid reaches the wafer edge and only skewed
-      // when edge dies are absent. It reports an assumption made on the caller's
-      // behalf, not a detected contradiction, and flagging that in red left hosts
-      // that legitimately know only the diameter — tsmap's diameter setting, for
-      // one — showing a permanent error they had no field to clear.
+      // 'non-standard-diameter' and 'diameter-exceeds-die-extent' are deliberately
+      // a rung lower. Both report something questionable about a size the caller
+      // either supplied or left to be inferred, not a detected contradiction in
+      // the data, and a host that legitimately runs a non-standard substrate has
+      // no field to "fix" — so red would be permanent and unearnable. (The
+      // removed 'inferred-pitch' sat here for the same reason, and is why this
+      // tier exists: supplying a diameter without a pitch is a documented,
+      // supported input, and flagging it in red left tsmap's own diameter setting
+      // showing an error nobody could clear.)
       severity: (code === 'non-standard-diameter' || code === 'diameter-exceeds-die-extent'
         ? 'warning' : 'error') as WaferWarning['severity'],
       confidence: inference.wafer.confidence };
@@ -1285,10 +1299,12 @@ function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
  * Map an advisory message to its stable machine-readable code.
  *
  * `inference.warnings` is the (deprecated) string channel and is the one place
- * both advisories are recorded, so the code is recovered here rather than being
- * assumed. Hosts branch on `code`, so stamping every message `'partial-coverage'`
- * — as this did before `'geometry-conflict'` existed — silently misclassifies it.
- * Keep this in step with the push sites in `buildWaferMap`.
+ * every geometry advisory is recorded, so the code is recovered here rather than
+ * being assumed. Hosts branch on `code`, so stamping every message
+ * `'partial-coverage'` — as this did before `'geometry-conflict'` existed —
+ * silently misclassifies it. Keep this in step with the push sites in
+ * `buildWaferMap`, and with `warnings.ts`'s `SHORT_LABEL` (a test checks that
+ * one against the declared code union).
  */
 function codeForAdvisory(message: string): WaferWarning['code'] {
   if (message.includes(GEOMETRY_CONFLICT_MARKER)) return 'geometry-conflict';

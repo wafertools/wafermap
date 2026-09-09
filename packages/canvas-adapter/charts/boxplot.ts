@@ -13,10 +13,11 @@
 // in place into that group's per-item rows with a Back button. See `groups`
 // below.
 //
-// Still trimmed from tsmap's version for this port: no trend-line toggle, no
-// click-to-open-wafer (no equivalent wafer-detail action wired up yet in the
-// Analysis tab). Tracked in tsmap's WMAP_ISSUES.md as explicit follow-ups,
-// not silently dropped.
+// Still trimmed from tsmap's version for this port: no trend-line toggle.
+// Click-to-open-wafer IS wired up now (`onOpen`, from the Insights tab), and
+// what a click does depends on the host — a gallery opens that wafer already on
+// this test, a single-wafer host shows the test on the map it already has (see
+// `openActionLabel`, and `InsightsTabDeps.focusTest`).
 
 import { buildTestBoxplotData, type BoxplotItem } from '../../stats/boxplot.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
@@ -70,6 +71,14 @@ export interface BoxplotPanelOptions {
    *  same test in value mode instead of defaulting to hard-bin mode.
    *  Never called for a pooled group-overview row (that drills instead). */
   onOpen?: (waferIndex: number, testNumber: number) => void;
+  /** What `onOpen` will actually do, in the user's words — substituted into
+   *  both click affordances ("click a box to …" / "click to …"). Default
+   *  wording describes opening that wafer, which is what a gallery host does;
+   *  a single-wafer host, where there is no other wafer to open and the click
+   *  instead shows the selected test on the map it already has, passes its own
+   *  (see `InsightsTabDeps.focusTest`). One string rather than two because the
+   *  two affordances describe one action — if they can disagree, they will. */
+  openActionLabel?: string;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -90,6 +99,11 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   // `colorScheme` is deliberately no longer read — box fills are the fixed
   // neutral quantity colour (palette.ts); the option stays for API compatibility.
   const { title = 'Test value distribution', items, testDefs, onSaveImage, groups, groupLabelText = 'group', onOpen } = options;
+  // Two defaults, one override: the stock wording differs by position ("a box"
+  // is any box, the hovered one is "this wafer"), while a host-supplied label
+  // names one action and reads correctly in both slots.
+  const openHintLabel    = options.openActionLabel ?? 'open that wafer';
+  const openTooltipLabel = options.openActionLabel ?? 'open this wafer';
   const { card, heading, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   // Unlike capability's fill-the-container canvas, this panel's canvas is an
@@ -210,7 +224,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     const isGroupOverview = !!groups && groups.length > 0 && drillGroup === null;
     const parts: string[] = [];
     if (isGroupOverview) parts.push(`click a ${groupLabelText}'s box to see it by wafer`);
-    else if (onOpen) parts.push('click a box to open that wafer');
+    else if (onOpen) parts.push(`click a box to ${openHintLabel}`);
     const prefix = parts.length ? `${parts[0][0].toUpperCase()}${parts[0].slice(1)} · ` : '';
     hint.textContent = `${prefix}box = Q1–Q3, line = median, whiskers = min/max · value shown is the median`
       // Clipping moves the AXIS only; every box's statistics are computed over the
@@ -528,7 +542,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         const d = data[row];
         const clickHint = isGroupOverview
           ? `<br><em>click to see this ${groupLabelText} by wafer</em>`
-          : (leafClickable(row) ? '<br><em>click to open this wafer</em>' : '');
+          : (leafClickable(row) ? `<br><em>click to ${openTooltipLabel}</em>` : '');
         tooltip.innerHTML = `<strong>${d.label}</strong> (${d.count} dies)<br>max ${fmt(d.max)}<br>q3 ${fmt(d.q3)}<br>median ${fmt(d.median)}<br>q1 ${fmt(d.q1)}<br>min ${fmt(d.min)}${clickHint}`;
         tooltip.style.display = 'block';
         positionChartTooltip(tooltip, card, e.clientX, e.clientY);

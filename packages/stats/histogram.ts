@@ -64,6 +64,29 @@ export function collectTestValues(items: HistogramItem[], testNumber: number): n
   return values;
 }
 
+/**
+ * Min/max of one test's values across `items`, without building an array of
+ * them. Both are `NaN` when nothing was measured.
+ *
+ * A loop rather than `Math.min(...values)`: the spread passes every value as a
+ * separate ARGUMENT, and a lot of 25 wafers × ~10k dies overflows the argument
+ * limit and throws `RangeError: Maximum call stack size exceeded` — which in the
+ * chart layer surfaces as the whole Insights rebuild dying, not as a bad number.
+ */
+export function testValueExtent(items: HistogramItem[], testNumber: number): { min: number; max: number } {
+  let min = Infinity, max = -Infinity;
+  for (const item of items) {
+    for (const die of item.dies ?? []) {
+      const v = die.testValues?.[testNumber];
+      if (v !== undefined && Number.isFinite(v)) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+  }
+  return min === Infinity ? { min: NaN, max: NaN } : { min, max };
+}
+
 export function buildTestHistogramData(
   items: HistogramItem[], testNumber: number, bucketCount = 16,
   limitLow?: number, limitHigh?: number,
@@ -116,6 +139,17 @@ export function buildTestHistogramData(
 export function buildTestHistogramSeries(
   groups: { key: string; items: HistogramItem[] }[], testNumber: number,
   bucketCount = 16, limitLow?: number, limitHigh?: number,
+  /**
+   * Bound the bucket range and DROP values outside it — the faceted twin of
+   * `buildTestHistogramData`'s own `clip`, with the same contract: it narrows
+   * where the limits only widen, it is this chart's axis control and nothing
+   * else, and no statistic anywhere is computed from a clipped population.
+   *
+   * It exists because the panel's "Clip outliers" checkbox was rendered in the
+   * grouped view too and did nothing there — the series builder had no way to
+   * take a clip range, so the control silently applied to one branch only.
+   */
+  clip?: { lo: number; hi: number },
 ): HistogramSeriesData {
   const byGroup = new Map<string, number[]>();
   let dataMin = Infinity, dataMax = -Infinity;
@@ -125,6 +159,7 @@ export function buildTestHistogramSeries(
       for (const die of item.dies ?? []) {
         const v = die.testValues?.[testNumber];
         if (v !== undefined && Number.isFinite(v)) {
+          if (clip && (v < clip.lo || v > clip.hi)) continue;
           vals.push(v);
           if (v < dataMin) dataMin = v;
           if (v > dataMax) dataMax = v;

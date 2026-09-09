@@ -129,16 +129,26 @@ function glyphFor(sev: NonNullable<WaferWarning['severity']>): string {
  * are prose and may be reworded — the same rule hosts are told to follow when
  * branching on these.
  */
-const SHORT_LABEL: Record<string, string> = {
-  'inferred-pitch':                'Die pitch inferred',
+export const SHORT_LABEL: Record<string, string> = {
   'partial-coverage':              'Partial wafer coverage',
   'geometry-conflict':             'Geometry conflict',
+  'non-standard-diameter':         'Non-standard wafer diameter',
+  'diameter-exceeds-die-extent':   'Diameter exceeds die extent',
   'edge-exclusion-exceeds-radius': 'Edge exclusion exceeds radius',
   'test-count-capped':             'Test analysis skipped',
+  'test-def-collision':            'Test definitions disagree',
+  'analysis-option-corrected':     'Analysis option corrected',
 };
 
 /** Falls back to the message's first sentence when a code has no short form —
- *  a new advisory then still collapses sensibly instead of rendering headless. */
+ *  a new advisory then still collapses sensibly instead of rendering headless.
+ *
+ *  That fallback is a safety net, not the plan: this table went stale in 0.27.0
+ *  (it still keyed the removed `inferred-pitch` and had nothing for the codes
+ *  that replaced it), so every geometry advisory the release actually raised
+ *  collapsed to a 57-character truncation of its own prose. Add the code here
+ *  when adding an advisory — `tests/warnings.test.mjs` checks the two lists
+ *  against each other. */
 function shortLabelFor(w: WaferWarning): string {
   const known = w.code ? SHORT_LABEL[w.code] : undefined;
   if (known) return known;

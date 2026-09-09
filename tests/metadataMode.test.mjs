@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/packages/renderer/buildWaferMap.js';
-import { buildView, buildMapTitle, buildHoverText } from '../dist/packages/renderer/buildView.js';
+import { buildView, buildMapTitle, buildHoverText, collectMetadataValues } from '../dist/packages/renderer/buildView.js';
 import { metadataValueColor } from '../dist/packages/renderer/colorMap.js';
 
 const waferConfig = { diameter: 40 };
@@ -224,4 +224,83 @@ test('natural ordering is locale-independent, so colours are reproducible across
   assert.equal(order.length, 4);
   assert.deepEqual(order.map(v => v.toLowerCase()), ['a1', 'a2', 'b2', 'b10'],
     'numbers must order by value within each alpha prefix');
+});
+
+// ── Lot-wide colour order (TODO.md "Gallery metadata-mode colours can mismatch
+//    the shared legend") ─────────────────────────────────────────────────────
+//
+// Each view used to assign colours by index into the values on ITS OWN dies, so
+// a wafer that never exhibited one category shifted every later value up a
+// colour and disagreed with the lot legend about what that colour meant.
+
+const CATS = ['D0', 'D1', 'D2'];
+
+function waferWithCategories(cats) {
+  const res = cats.map((c, i) => ({ x: i % 2, y: Math.floor(i / 2), hbin: 1, metadata: { defect: c } }));
+  return { wafer: buildWaferMap({ results: res, waferConfig, dieConfig }), cats };
+}
+
+function fillOfCategory(view, dies, cat) {
+  const die = dies.find(d => d.metadata?.defect === cat && !d.partial);
+  return view.rectangles.find(r => Math.abs(r.x - die.physX) < 1e-9 && Math.abs(r.y - die.physY) < 1e-9)?.fill;
+}
+
+test('metadataValueOrder colours a partial wafer from the lot-wide list', () => {
+  const full = waferWithCategories(CATS);
+  // This wafer never exhibited D1 — with per-view ordering its D2 takes index 1,
+  // the colour the legend has already given to D1.
+  const partial = waferWithCategories(['D0', 'D2']);
+
+  const local = buildView(partial.wafer.wafer, partial.wafer.dies, { plotMode: 'metadata', activeMetadataKey: 'defect' });
+  assert.equal(fillOfCategory(local, partial.wafer.dies, 'D2'), metadataValueColor(1),
+    'the bug: D2 painted in D1\'s colour when derived from this wafer alone');
+
+  const shared = buildView(partial.wafer.wafer, partial.wafer.dies, {
+    plotMode: 'metadata', activeMetadataKey: 'defect',
+    metadataValueOrder: { key: 'defect', values: CATS },
+  });
+  assert.equal(fillOfCategory(shared, partial.wafer.dies, 'D0'), metadataValueColor(0));
+  assert.equal(fillOfCategory(shared, partial.wafer.dies, 'D2'), metadataValueColor(2),
+    'with the lot-wide order, D2 keeps the colour the legend names');
+  // And the wafer that does have every value is unaffected either way.
+  const fullView = buildView(full.wafer.wafer, full.wafer.dies, {
+    plotMode: 'metadata', activeMetadataKey: 'defect',
+    metadataValueOrder: { key: 'defect', values: CATS },
+  });
+  assert.equal(fillOfCategory(fullView, full.wafer.dies, 'D2'), metadataValueColor(2));
+});
+
+test('metadataValueOrder is ignored for a different key, like valueRange for a different test', () => {
+  const w = waferWithCategories(['D0', 'D2']);
+  const view = buildView(w.wafer.wafer, w.wafer.dies, {
+    plotMode: 'metadata', activeMetadataKey: 'defect',
+    metadataValueOrder: { key: 'lot', values: ['whatever'] },
+  });
+  assert.equal(fillOfCategory(view, w.wafer.dies, 'D2'), metadataValueColor(1),
+    'an order computed for another field must not colour this one');
+});
+
+test('a value missing from the supplied order is appended, never left uncoloured', () => {
+  const w = waferWithCategories(['D0', 'D9']);
+  const view = buildView(w.wafer.wafer, w.wafer.dies, {
+    plotMode: 'metadata', activeMetadataKey: 'defect',
+    metadataValueOrder: { key: 'defect', values: ['D0', 'D1'] },
+  });
+  // D9 is unknown to the list, so it lands after it — coloured, and never
+  // stealing a colour the list has already spoken for.
+  assert.equal(fillOfCategory(view, w.wafer.dies, 'D0'), metadataValueColor(0));
+  assert.equal(fillOfCategory(view, w.wafer.dies, 'D9'), metadataValueColor(2));
+});
+
+test('collectMetadataValues natural-sorts and skips dies that never get a metadata fill', () => {
+  const res = [
+    { x: 0, y: 0, hbin: 1, metadata: { defect: 'D10' } },
+    { x: 1, y: 0, hbin: 1, metadata: { defect: 'D2' } },
+    { x: 0, y: 1, hbin: 1, metadata: { defect: 'D1' } },
+  ];
+  const built = buildWaferMap({ results: res, waferConfig, dieConfig });
+  assert.deepEqual(collectMetadataValues(built.dies.filter(d => !d.partial), 'defect'), ['D1', 'D2', 'D10']);
+  // Partial/edge-excluded dies render as their own fill and must not rank values.
+  const withPartial = built.dies.map(d => ({ ...d, partial: d.metadata?.defect === 'D1' }));
+  assert.deepEqual(collectMetadataValues(withPartial, 'defect'), ['D2', 'D10']);
 });

@@ -15,7 +15,7 @@
 // `title` attribute instead of porting tsmap's `attachTooltip` chrome
 // helper (that's tsmap app chrome, not chart-panel logic).
 
-import { buildTestHistogramData, collectTestValues, buildTestHistogramSeries, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
+import { buildTestHistogramData, collectTestValues, buildTestHistogramSeries, testValueExtent, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
@@ -185,24 +185,55 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
     // Faceted (grouped) view: overlaid series + legend. The item selector is
     // meaningless here (groups pool all their items), so hide it.
-    const faceted = groups && groups.length > 0
-      ? buildTestHistogramSeries(groups, activeTest, 16, axisIncludesLimits ? testMeta(activeTest).limitLow : undefined, axisIncludesLimits ? testMeta(activeTest).limitHigh : undefined)
+    //
+    // An UNSET preference is resolved the same way in both branches — from the
+    // data, via shouldIncludeLimitsByDefault, over whatever population the
+    // branch is about to draw. It used to mean "off" here and "derive from the
+    // data" below, so the same test with no explicit preference could include
+    // the limits in the axis ungrouped and exclude them grouped: the axis range
+    // moved under the reader while the toggle stayed where it was.
+    const isFaceted = !!groups && groups.length > 0;
+    let facetedIncludeLimits = false;
+    let facetedClip: { lo: number; hi: number } | undefined;
+    if (isFaceted) {
+      const { limitLow: fLow, limitHigh: fHigh } = testMeta(activeTest);
+      const pooled = groups.flatMap(g => g.items);
+      const { min: fMin, max: fMax } = testValueExtent(pooled, activeTest);
+      facetedIncludeLimits = axisIncludesLimits ?? shouldIncludeLimitsByDefault(fMin, fMax, fLow, fHigh);
+      // "Clip outliers" applies here too. It was rendered in this branch and did
+      // nothing — the series builder took no clip range — so the checkbox lied
+      // in exactly the view where a single wild reading does the most damage,
+      // compressing every group's real buckets into one column at once. Same
+      // fence, same pooled population the buckets span.
+      if (clipOutliers) {
+        const values = collectTestValues(pooled, activeTest);
+        const fence = robustFence(values);
+        if (fence) {
+          facetedClip = { lo: Math.max(fMin, fence.lo), hi: Math.min(fMax, fence.hi) };
+          lastClippedCount = values.reduce((n, v) => n + (v < facetedClip!.lo || v > facetedClip!.hi ? 1 : 0), 0);
+        }
+      }
+      if (!facetedClip) lastClippedCount = 0;
+    }
+    const faceted = isFaceted
+      ? buildTestHistogramSeries(groups, activeTest, 16,
+          facetedIncludeLimits ? testMeta(activeTest).limitLow : undefined,
+          facetedIncludeLimits ? testMeta(activeTest).limitHigh : undefined,
+          facetedClip)
       : null;
     itemSelect.style.display = faceted ? 'none' : '';
     if (faceted) {
-      // The axis toggles apply to the faceted view too — it honours
-      // `axisIncludesLimits` (above, when building the series) and `clipOutliers`.
-      // This branch returned before syncAxisToggles, so with "Group by" active
-      // the card lost BOTH checkboxes: the reader could not see the current
-      // setting, could not change it, and the derived include-limits default
-      // silently applied with nothing on screen saying so.
+      // The axis toggles apply to the faceted view too, and now genuinely do:
+      // `axisIncludesLimits` and `clipOutliers` are both honoured above, when
+      // building the series. This branch returned before syncAxisToggles, so
+      // with "Group by" active the card lost BOTH checkboxes: the reader could
+      // not see the current setting, could not change it, and the derived
+      // include-limits default silently applied with nothing saying so.
       const { limitLow: fLow, limitHigh: fHigh } = testMeta(activeTest);
-      // `?? false` because that is what THIS branch actually did when building
-      // the series above (`axisIncludesLimits ? limitLow : undefined`) — it
-      // treats an unset preference as "off", where the non-faceted path below
-      // derives a default from the data range. The toggle must show the state in
-      // force, not a different branch's. That divergence is logged in TODO.md.
-      axisCtl.sync(axisIncludesLimits ?? false, fLow !== undefined || fHigh !== undefined);
+      // The state actually in force, which is now the same rule the non-faceted
+      // branch uses (see `facetedIncludeLimits` above) rather than this branch's
+      // old "unset means off".
+      axisCtl.sync(facetedIncludeLimits, fLow !== undefined || fHigh !== undefined);
       if (faceted.series.length === 0) {
         renderEmptyState(body, 'No parametric test data available for a histogram.');
         return;
@@ -214,8 +245,10 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const scopedItems = activeItem !== null ? [items[activeItem]] : items;
     const { unit, limitLow, limitHigh } = testMeta(activeTest);
     const allValues = collectTestValues(scopedItems, activeTest);
-    const dataMin = allValues.length ? Math.min(...allValues) : NaN;
-    const dataMax = allValues.length ? Math.max(...allValues) : NaN;
+    // Not `Math.min(...allValues)`: the spread passes every die value as its own
+    // argument and overflows on a real lot (25 × ~10k dies), taking the whole
+    // Insights rebuild with it. See `testValueExtent`.
+    const { min: dataMin, max: dataMax } = testValueExtent(scopedItems, activeTest);
     const resolvedIncludeLimits = axisIncludesLimits
       ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
     axisCtl.sync(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
@@ -236,6 +269,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       return;
     }
 
+    // Bounded spread: one entry per bucket (16), not per die.
     const maxCount = Math.max(...buckets.map(b => b.count), 1);
 
     const statsLabel = card.ownerDocument.createElement('div');
@@ -406,6 +440,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       emphasizedGroup = null;
     }
 
+    // Bounded spread: groups × buckets, not per die.
     const maxCount = Math.max(1, ...series.flatMap(s => s.counts));
 
     const statsLabel = card.ownerDocument.createElement('div');

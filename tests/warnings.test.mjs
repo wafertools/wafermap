@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { collectWarnings, severityOf } from '../dist/packages/canvas-adapter/warnings.js';
 import { buildWaferMap, STANDARD_WAFER_DIAMETERS_MM } from '../dist/index.js';
 import { analyzeWaferMap } from '../dist/packages/stats/index.js';
@@ -335,4 +336,33 @@ test('it cannot fire when the diameter or the pitch was inferred', () => {
   // a wrong diameter is harmless on that path.
   const inferredPitch = buildWaferMap({ results, passBins: [1], waferConfig: { diameter: 3000 } });
   assert.ok(!codesOf(inferredPitch).includes('diameter-exceeds-die-extent'));
+});
+
+// ── Every advisory code has a short label ───────────────────────────────────
+// The collapsed warnings banner keys its heading off `code` and falls back to
+// truncating the message. That fallback is a safety net, and in 0.27.0 it became
+// the norm without anyone noticing: the table still keyed the REMOVED
+// `inferred-pitch` and had no entry for `non-standard-diameter` or
+// `diameter-exceeds-die-extent`, the two codes that replaced it — so every
+// geometry advisory the release actually raised rendered as a 57-character
+// truncation of its own prose.
+
+test('SHORT_LABEL covers every code the library declares, and no code it does not', async () => {
+  const { SHORT_LABEL } = await import('../dist/packages/canvas-adapter/warnings.js');
+  const src = readFileSync(new URL('../packages/renderer/buildWaferMap.ts', import.meta.url), 'utf8');
+  // The `code:` union on WaferWarning — the one declared list of codes.
+  const start = src.indexOf("  code: 'partial-coverage'");
+  const declared = new Set(
+    [...src.slice(start, src.indexOf(';', start)).matchAll(/'([a-z-]+)'/g)].map(m => m[1]),
+  );
+  assert.ok(declared.size >= 7, `parsed the code union (${declared.size} codes)`);
+
+  const labelled = new Set(Object.keys(SHORT_LABEL));
+  const missing = [...declared].filter(c => !labelled.has(c));
+  assert.deepEqual(missing, [], 'every declared code needs a short label');
+
+  // And nothing labelled that no longer exists — the stale `inferred-pitch`
+  // entry is what made the gap invisible for a whole release.
+  const stale = [...labelled].filter(c => !declared.has(c) && c !== 'test-def-collision');
+  assert.deepEqual(stale, [], 'a label for a code nothing emits is a sign the list drifted');
 });

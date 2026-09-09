@@ -117,3 +117,41 @@ test('a fine ring banding is left alone — minimumSampleSize already guards it'
       `every reported region must clear minimumSampleSize; got ${f.stats.sampleSizeLeft}`);
   }
 });
+
+// ── Explicit `undefined` is absence, not a bad value ─────────────────────────
+// `{ ...DEFAULT_OPTIONS, ...options }` let `{ ringCount: undefined }` overwrite
+// the default, which then failed the finite-number test and raised an
+// `analysis-option-corrected` advisory — and that advisory is not quiet: it
+// reaches the toolbar's warning indicator and the Summary panel's banner. The
+// trigger was the most ordinary thing a host writes: forwarding an optional.
+
+test('a forwarded, unset option is not reported as a correction', () => {
+  const warned = [];
+  const realWarn = console.warn;
+  console.warn = (...a) => warned.push(a.join(' '));
+  try {
+    const summary = analyse({ ringCount: undefined, sectorCount: undefined });
+    const corrections = (summary.stats.warnings ?? []).filter(w => w.code === 'analysis-option-corrected');
+    assert.deepEqual(corrections, [], 'nothing was corrected, so nothing should be reported');
+    assert.deepEqual(warned, [], 'and nothing should reach the console either');
+    // And the defaults really did apply, rather than `undefined` surviving.
+    const withNothing = analyse({});
+    assert.equal(summary.findings.length, withNothing.findings.length,
+      'and the defaults really applied, rather than `undefined` surviving into the analysis');
+  } finally {
+    console.warn = realWarn;
+  }
+});
+
+test('a genuinely bad value is still corrected and still reported', () => {
+  const realWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const summary = analyse({ ringCount: 0 });
+    const corrections = (summary.stats.warnings ?? []).filter(w => w.code === 'analysis-option-corrected');
+    assert.equal(corrections.length, 1);
+    assert.match(corrections[0].message, /ringCount=0/);
+  } finally {
+    console.warn = realWarn;
+  }
+});

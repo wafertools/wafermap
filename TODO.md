@@ -7,6 +7,14 @@ is done, check it off (`[x]`) and add a one-line implementation note or commit
 reference rather than deleting the entry — the history of *why* something was
 done the way it was is the useful part.
 
+`[~]` marks an item **partly** done, where the heading must say which half shipped
+and the body must say what is still open. It exists because the alternative was
+worse in both directions: an unmarked heading over a body whose fix had already
+landed reads as open work (that happened — "Gallery value-mode colour range" sat
+unmarked for twelve days after being implemented, and was re-reported as an open
+bug from this list), while `[x]` on a partial fix buries the remainder. An
+**unmarked** heading therefore means nothing here has been done.
+
 ---
 
 ## [x] Summary-panel geometry warnings cannot be dismissed or collapsed
@@ -57,7 +65,7 @@ advisory about dies that may be mis-positioned is a wrong map with nothing on
 screen saying so. Collapsing keeps it permanently visible and permanently one
 click from its reasoning, which is the part that was actually missing.
 
-## Summary panel content clips silently in 'top'/'bottom' placement
+## [~] Summary panel content clips silently in 'top'/'bottom' placement — clipping fixed, `placement` review still open
 
 **Found while:** verifying `SummaryPanelOptions.placement` actually works for
 all four values (right/left/top/bottom), prompted by a question about whether
@@ -97,6 +105,11 @@ regardless of the clipping bug, e.g. multi-column stat tiles, per-test tables,
 and the findings list were all designed for a narrow-tall panel, not a
 wide-short one.
 
+**Clipping fixed 2026-09-09** (`summaryPanel.ts`): `overflowY` is now `'auto'` for every
+placement, so a 'top'/'bottom' panel scrolls its 180px band instead of cutting the last row
+mid-line. That is the silent-loss half only — the review below is untouched, and the three
+options remain live.
+
 **Live options once that review is done:**
 1. Fix the clipping and keep all four values as designed.
 2. Redesign `top`/`bottom`'s internal layout for a wide-short shape (more than
@@ -121,6 +134,11 @@ wide-short one.
 static file server, headless Chromium, the setup-step vocabulary, `--only` /
 `--list` filtering — pointed at different apps. Only the *definitions*
 (`capture-definitions.mjs`) are legitimately per-project.
+
+**Unmarked deliberately: none of the extraction has happened.** `../tsmap` has since
+extracted its OWN half into `scripts/lib/` (server, browser, steps), shared between its
+screenshot captures and its scenario runner — that is a tsmap-internal refactor and it
+makes this entry easier, not done. The `FORKED —` headers below are a note, not a fix.
 
 **Why it hasn't been done:** it needs a home. Neither repo should depend on the
 other for a build script, so it would mean a third published (or vendored)
@@ -248,7 +266,7 @@ would render/compute correctly with a non-uniform grid.
 
 ## Issues and idea since the port of charts from tsmap to wmap
 
-### Chart-panel mini-toolbars still use their own button chrome, not `makeBtn`
+### [~] Chart-panel mini-toolbars still use their own button chrome, not `makeBtn` — icons unified, the button primitive is not
 
 Each Analysis-tab chart card (`cardShell()` in `charts/chartShell.ts`) has its own tiny save/expand button pair. Both now use the main toolbar's actual icons (`ICONS.expand`, `ICONS.download` — the save button previously used a raw `⤓` glyph, fixed), so the icon mismatch is resolved. What's still open: the buttons themselves are hand-built (22px, native `title` attribute) rather than going through `makeBtn` (28px, `ariaLabel`, the shared custom hover-tooltip system) — full primitive unification would need `cardShell()` to also thread through a `tooltip` element the way `createToolbarHelpers` does. Lower priority than a functional gap, purely a visual-consistency cleanup.
 
@@ -275,7 +293,7 @@ during export, which would fail silently rather than gracefully. Worth moving to
 `Blob([...chunks])` construction (no single giant string) or a genuinely streamed download
 before either dimension grows much further.
 
-## Gallery value-mode colour range is per-card when the active test has no limits
+## [x] Gallery value-mode colour range is per-card when the active test has no limits
 
 **Confirmed:** when the active test *has* limits, `colorbarRangeMode: 'spec'` gives every
 card the same `[limitLow, limitHigh]` range (shared, comparable), and the "Colorbar range"
@@ -356,7 +374,7 @@ external and only sharing the label/expand-panel shell.
 2. Three call sites in `renderWaferGallery.ts` (grid card, popup, floating window) need
    migrating — do they all take the same options, or does one need something the others don't?
 
-## Gallery metadata-mode colours can mismatch the shared legend (same root cause, no limits involved)
+## [x] Gallery metadata-mode colours can mismatch the shared legend (same root cause, no limits involved)
 
 **Confirmed, and NOT gated behind any edge case — can happen today.** `metadata` plot mode has
 the identical per-card-vs-lot-wide split as the value-range bug above, just for colour index
@@ -378,7 +396,23 @@ colour-assignment order, or this lot-level strip would list values in a differen
 per-card legends") but nothing enforces it — it only holds by coincidence when the data is
 uniform enough.
 
-**Possible fix:** same shape as the value-range fix — compute the metadata colour map lot-wide
+**Fixed 2026-09-09**, as suggested: `buildView` gained `ViewOptions.metadataValueOrder`
+(`{ key, values }`, applied only when `key` matches `activeMetadataKey` — the exact guard
+`valueRange`'s `{ test, range }` form uses), forwarded by `renderWaferMap` via
+`WaferViewOptions`. `renderWaferGallery` computes the union across every item once
+(`sharedMetadataValueOrder`) and pushes it to every live card (`syncSharedMetadataOrder`),
+paired with `syncSharedValueRange` at the same three trigger points. Values a card has but the
+list doesn't are appended rather than dropped, so a stale list can only cost the shared
+ordering, never leave real dies uncoloured.
+
+The ordering itself is now ONE implementation, `collectMetadataValues` (buildView.ts, internal
+— not re-exported from `packages/renderer/index.ts`), used by the maps and by the gallery's
+legend strip. The strip also stopped deriving values with `String(raw)` where the maps use
+`metadataCategoricalValue`: a second divergence in the same place, which formatted numeric
+metadata differently in the key than on the dies. 8 new tests (`tests/metadataMode.test.mjs`,
+new `tests/galleryMetadataOrder.test.mjs`).
+
+**Original suggested fix (kept for the record):** same shape as the value-range fix — compute the metadata colour map lot-wide
 once in `renderWaferGallery` (it already builds `metadataValueSet` there) and pass it down to
 each card's `buildView` instead of letting each card derive its own from a partial view of the
 data. Note this is already bypassed correctly when a metadata field has explicit per-value
@@ -387,7 +421,26 @@ is affected.
 
 ---
 
-## Enforce `UI_STANDARDS.md` with a lint suite, not prose
+## Untested-by-construction checkers — audit them, don't assume
+
+**Audited 2026-09-09, by planting a defect against each.** The lesson recorded below —
+"the focus rule could not fire at all on first writing… the acceptance test is not
+optional" — was written in the same session that shipped three more checkers
+(`check-api-claims`, `check-clones`, `check-overlay-conventions`) with no acceptance
+run recorded for any of them. All three do fire: a wrong field count, a ~283-token
+block copied between two stats files, and an `openModal(` without `anchor` plus a bare
+`document.head.appendChild` were each caught with the right file, line and reason.
+tsmap's newer `check-theme-contrast.mjs` was verified the same way.
+
+So this is not an open defect — but the *evidence* was ad-hoc and lives only in a
+transcript. **The real gap is that a checker's acceptance run is not repeatable.** Each
+of these could be a test that plants its defect in a temp copy and asserts a non-zero
+exit, the way `tests/` already covers library behaviour. Worth doing next time one of
+them is touched, rather than as a sweep.
+
+---
+
+## [~] Enforce `UI_STANDARDS.md` with a lint suite, not prose — three rules shipped, two open, plus a decision
 
 **Why this is here.** During the 2026-09-01 UI pass, most of the contract's new
 rules were written down and then *asserted* to be met rather than checked. The
@@ -478,7 +531,7 @@ should say so rather than implying full coverage.
 
 ---
 
-## Decide whether the summary report is a screen or a print artefact
+## [~] Decide whether the summary report is a screen or a print artefact — the 10px rules fixed, the decision itself is open
 
 The exported HTML report (`packages/stats/reportHtml.ts`) carries `@media print`
 and `@page { margin: 10mm 8mm 12mm }`, so it is *built* to print — but its type
@@ -506,7 +559,7 @@ sensible floor regardless of how this question is answered.
 
 ---
 
-## Solarized Light's accent is too light to be text
+## [x] Solarized Light's accent is too light to be text — and it was four themes (five blocks), not one
 
 `--accent: #268bd2` on Solarized Light's own light grounds measures about **3.0:1**
 as text (and 2.54:1 on the selected tint) — under WCAG AA's 4.5:1 for normal-size
@@ -517,14 +570,25 @@ Not caused by the 2026-09-01 UI work — that pass measured it and improved it
 (2.54 → 3.00 by moving hover grounds to neutral), but cannot fix it: the value
 itself is the problem.
 
-The fix is to darken the accent for this theme only, the same way
+**Fixed 2026-09-09, in tsmap** (`index.html` — these are tsmap's tokens; this entry lived here
+because the measurement was taken during wmap's UI pass). Sweeping all sixteen theme variants
+for `--accent` as text against every ground it is painted on found **five failing blocks** across four themes, not one:
+Solarized Light 3.00:1, Solarized Dark 3.09:1 (under AA against every one of its own grounds —
+the "check the other Solarized variant" note below was right), Light 4.24:1, Auto's light half
+4.24:1 (a separate block inside a media query, which a `[data-theme]` sweep misses), and
+Catppuccin Latte 4.42:1. Each was moved the smallest distance that clears 4.5:1 on all of its
+own grounds: `#1d6ba2`, `#65addf`, `#1865b4`, `#1865b4`, `#8437e8`. tsmap's
+`scripts/check-theme-contrast.mjs` (new, wired into `check:docs`) now fails the build on a
+regression or a new theme that hasn't been measured.
+
+**Original prescription (followed):** darken the accent for this theme only, the same way
 `--wmap-icon-active` was set to `#1a65ca` rather than `#1a66cc` for exactly this
 reason (smallest darkening that clears AA against the surface it sits on). Check
 the other Solarized variant at the same time.
 
 ---
 
-## Histogram resolves `includeLimits` two different ways
+## [x] Histogram resolves `includeLimits` two different ways
 
 `charts/histogram.ts` has two render paths and they disagree on what an *unset*
 `axisPrefs.includeLimits` means:
@@ -538,9 +602,46 @@ So the same test, with no explicit preference, can include spec limits in the
 axis ungrouped and exclude them grouped — and the axis range changes under the
 reader without the toggle moving.
 
-Fixed on 2026-09-01: the faceted branch no longer returns before
+**Fixed 2026-09-09:** the faceted branch now resolves an unset preference through
+`shouldIncludeLimitsByDefault` too, over its own population (`collectTestValues` across every
+group), and syncs the toggles to that same resolved value. Both branches therefore answer the
+question the same way, so grouping no longer moves the axis under the reader. New
+`tests/histogramAxisPrefs.test.mjs` mounts the panel both ways and asserts they agree (it fails
+against the previous build).
+
+Earlier, partial fix on 2026-09-01: the faceted branch no longer returns before
 `syncAxisToggles`, so the toggles are at least visible and show the state that
 branch is actually in. The underlying divergence is untouched — resolving it
 means computing the faceted series' own data range and feeding it through
 `shouldIncludeLimitsByDefault`, so both paths derive the same default.
 
+
+---
+
+## Two new modules from 0.27.0 have no test of their own
+
+Found while auditing that release (2026-09-09). Neither is a defect — both are
+covered indirectly — but both were extracted precisely because a *drift* between
+two copies was the danger, and an indirect test cannot catch the extraction
+regressing.
+
+- **`packages/stats/connectedComponents.ts`** — 8-connected component labelling,
+  extracted from inline copies in `clusterDetection.ts` and
+  `patternClassification.ts`. Its own header says why it matters: the two callers
+  answer the same question and reach the user as different things (a cluster
+  finding on the map, a pattern classification for the lot), so a disagreement
+  surfaces as a wafer that reports a cluster in one place and no pattern in the
+  other. Exercised today only through both callers' tests, which pass a component
+  set through several more layers of logic — so a labelling bug reaches those
+  assertions diluted, or not at all. Wants direct cases: a diagonal-only chain
+  (8-connected, so it IS one component), two groups touching at a corner,
+  a single die, an empty set, and a large contiguous region (it is iterative
+  specifically so that does not blow the stack — nothing checks that today).
+- **`packages/canvas-adapter/charts/groupedBarPlot.ts`** — 254 lines, the shared
+  body of the bin-cluster and test-pass-rate charts, which were "the same chart
+  twice". No test names it; it is reached only when a grouped Insights view is
+  rendered. Both charts' *data* builders are tested; the shared plot is not.
+
+Neither blocks anything. Do them when next touching either file — the point of
+writing them down is that "extracted, therefore safer" is only true while
+something checks the extraction.

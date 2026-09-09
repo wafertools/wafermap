@@ -2081,7 +2081,9 @@ export function buildFindingsSection(
       // aria-label is the one that actually reaches them, and aria-expanded
       // exposes the open/closed state `childWrap`'s visibility otherwise only
       // conveys visually.
-      wireControlHover(chevron, 'bare');
+      // (No second `wireControlHover` here — it was called twice, and the second
+      // call snapshotted the FIRST one's hover colours as the resting state, so
+      // the chevron stayed painted as hovered from the first hover onwards.)
       chevron.setAttribute('aria-label', 'Show supporting findings');
       chevron.setAttribute('aria-expanded', 'false');
       chevron.addEventListener('click', (e) => {
@@ -2478,7 +2480,20 @@ export function createSummaryPanelEl(
     border:      BORDER,
     borderRadius:RADIUS.container,
     padding: SPACE.xl,
-    overflowY:   isVertical ? 'hidden' : 'auto',
+    // Both axes scroll for a 'top'/'bottom' panel. `overflowY: hidden` there
+    // silently CLIPPED: those placements take a fixed 180px band (below), which
+    // most wafers' content exceeds — Summary plus one collapsed section already
+    // approaches it — so the last visible row was cut mid-line with nothing
+    // saying more existed. Scrolling is the same answer 'right'/'left' already
+    // use via `maxHeight: 100%`.
+    //
+    // This fixes the silent loss only. Whether this content should be shown in
+    // a wide-short band AT ALL is a separate, open question (the stat tiles,
+    // per-test tables and findings list were designed for a narrow-tall panel);
+    // see TODO.md "Summary panel content clips silently in 'top'/'bottom'
+    // placement", which holds the full `placement` review, up to and including
+    // dropping those two values.
+    overflowY:   'auto',
     overflowX:   isVertical ? 'auto'   : 'hidden',
     flexShrink:  '0',
     boxSizing:   'border-box',

@@ -97,6 +97,23 @@ export interface InsightsTabDeps {
    * same test instead of hard-bin mode.
    */
   openWafer?: (waferIndex: number, label: string, testNumber?: number) => void;
+  /**
+   * Shows `testNumber` on the host's own map, in test-value mode, and leaves
+   * Insights — the single-wafer counterpart to `openWafer`.
+   *
+   * A single-wafer host (`renderWaferMap`) rightly passes no `openWafer`: the
+   * only wafer there is to open is the one already on screen, and opening it
+   * again in a modal would be two maps of one wafer. But a boxplot leaf click
+   * carries a second, independent payload — the selected test — and *that*
+   * half is as useful with one wafer as with twenty; without this the click was
+   * simply inert, and the only route from "this test looks wrong" to seeing it
+   * on the map was to leave Insights and find the test again in the toolbar's
+   * plot-mode picker.
+   *
+   * Ignored when `openWafer` is set (a gallery opens the wafer, which already
+   * lands on this test), and only consulted for a leaf row of the sole item.
+   */
+  focusTest?: (testNumber: number) => void;
   /** Default sub-tab shown on first render. Default 'overview'. */
   defaultView?: InsightsView;
   /**
@@ -163,7 +180,7 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
 ];
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
-  const { getItems, getLotStats, getColorSchemeName, passBins, getRingCount, onSaveImage, onSaveText, openWafer } = deps;
+  const { getItems, getLotStats, getColorSchemeName, passBins, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
   const showMetadataStrip = deps.showMetadataStrip ?? true;
   const contentInset = deps.contentInset ?? EDGE_GUTTER;
   const doc = deps.ownerDocument ?? document;
@@ -303,6 +320,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // section-local state would be discarded on every such change.
   let activeSectionTest: number | null = null;
   let activeSectionGroup: string | null = null;
+  // The shared axis toggles, here for the same reason: `render()` rebuilds every
+  // panel, so section-local state is discarded by a scope change — and, less
+  // obviously, by the host merely closing and reopening Insights, which silently
+  // reverted the user's "clip outliers"/"axis includes limits" choices.
+  //
+  // `includeLimits: undefined` is not "off" — it means each panel derives the
+  // default from its own data (shouldIncludeLimitsByDefault). It only becomes a
+  // boolean once the user actually picks, and then it sticks across tests.
+  let axisPrefs: AxisPrefs = { includeLimits: undefined, clipOutliers: false };
 
   /**
    * Narrow every view to one group, or back to all of them.
@@ -322,6 +348,27 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
   function openWaferDetailModal(waferIndex: number, title: string, testNumber?: number): void {
     openWafer?.(waferIndex, title, testNumber);
+  }
+
+  /**
+   * What a leaf-row click carrying a test resolves to, for the host at hand —
+   * one branch, so a panel never has to know which kind of host it is in.
+   * `openWafer` wins where it exists (the gallery: open that wafer, already on
+   * this test). `focusTest` is the single-wafer fallback, and only when the row
+   * IS the sole item — with more than one wafer on screen, "show this test on
+   * the map" would silently show it for a different wafer than the one clicked.
+   * `null` means no leaf action, which is what the panels key their click
+   * affordances off.
+   */
+  function testLeafAction(items: Item[]): { open: (waferIndex: number, testNumber: number) => void; label?: string } | null {
+    if (openWafer) {
+      return { open: (waferIndex, testNumber) => openWaferDetailModal(
+        waferIndex, `Wafer ${items.find(it => it.waferIndex === waferIndex)?.label ?? waferIndex}`, testNumber) };
+    }
+    if (focusTest && items.length === 1) {
+      return { open: (_waferIndex, testNumber) => focusTest(testNumber), label: 'show this test on the map' };
+    }
+    return null;
   }
 
   function facetItems(): Item[] {
@@ -862,15 +909,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     groupLabelText: string | undefined,
   ): { card: HTMLElement; destroy: () => void } {
     const wrap = makeChartGridWrap(doc);
+    const leafAction = testLeafAction(items);
 
     // The axis toggles are shared across the three distribution panels, the same
-    // way the selected test already is. They were per-panel, so setting "axis
-    // includes limits" for one test meant setting it three times.
-    //
-    // `includeLimits: undefined` is not "off" — it means each panel derives the
-    // default from its own data (shouldIncludeLimitsByDefault). It only becomes a
-    // boolean once the user actually picks, and then it sticks across tests.
-    let axisPrefs: AxisPrefs = { includeLimits: undefined, clipOutliers: false };
+    // way the selected test already is (they were per-panel, so setting "axis
+    // includes limits" for one test meant setting it three times) — and they
+    // live at tab level, so they also survive a rebuild. See `axisPrefs` there.
 
     // The section's current group scope, `null` for all groups. Held here for
     // the same reason the selected test and the axis toggles are, and it is the
@@ -920,7 +964,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       selectedTestNumber: activeSectionTest ?? undefined,
       items: boxplotItems, testDefs, groups: boxplotGroups, groupLabelText, colorScheme: getColorSchemeName(), onSaveImage,
       onGroupChange: (key) => selectGroupEverywhere(key),
-      onOpen: openWafer ? (waferIndex, testNumber) => openWaferDetailModal(waferIndex, `Wafer ${items.find(it => it.waferIndex === waferIndex)?.label ?? waferIndex}`, testNumber) : undefined,
+      onOpen: leafAction?.open,
+      openActionLabel: leafAction?.label,
       ownerDocument: doc,
     });
     const histogram = renderHistogramPanel({
@@ -954,6 +999,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       })),
       testDefs,
       onSaveImage,
+      // Not routed through `testLeafAction`: this panel renders an empty state
+      // below two wafers, so the single-wafer `focusTest` branch could never
+      // fire here anyway — wiring it would be dead code claiming otherwise.
       onOpen: openWafer
         ? (key, testNumber) => openWaferDetailModal(key, `Wafer ${items.find(it => it.waferIndex === key)?.label ?? key}`, testNumber)
         : undefined,

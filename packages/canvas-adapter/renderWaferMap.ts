@@ -130,6 +130,15 @@ export interface WaferDisplayState {
    */
   valueRange?:   [number, number] | { test: number; range: [number, number] };
   /**
+   * The full, ordered list of metadata values to assign colours from in
+   * `metadata` plot mode — applied only when `key` matches `activeMetadataKey`.
+   * Set by a host rendering several wafers together (`renderWaferGallery` does
+   * it for you) so every map indexes into ONE list; without it each map derives
+   * the order from its own dies, and a wafer missing a value the others have
+   * paints every later value in the next map's colour. See `ViewOptions`.
+   */
+  metadataValueOrder?: { key: string; values: string[] };
+  /**
    * Aggregation method for `stackedValues` mode.
    * Drives both the per-die aggregation and the hover tooltip label.
    * Accepted values: `'mean'` | `'median'` | `'stddev'` | `'min'` | `'max'` | `'count'`.
@@ -609,6 +618,26 @@ export function renderWaferMap(
     flexShrink: '0', minWidth: '0' } as Partial<CSSStyleDeclaration>);
   outerFrame.appendChild(chromeRowEl);
   outerFrame.appendChild(mapBox);
+
+  /**
+   * Hide the chrome row outright when it holds nothing visible.
+   *
+   * The row is built unconditionally and filled later — identity on the left,
+   * toolbar on the right — and its comment says it "collapses to nothing when it
+   * holds neither". It didn't: with `showToolbar: false` and no identity to show
+   * it still painted `chromeInset` of padding on three sides plus
+   * `paddingBottom: SPACE.lg` in the canvas background, i.e. a ~34px band of
+   * empty colour above every such map. The expand-modal path already tested
+   * `childElementCount > 0` before reparenting the row; the page path never did.
+   *
+   * Hidden CHILDREN count as absent too, since `setIdentityVisible(false)` and
+   * the Insights view both hide the identity in place rather than removing it.
+   */
+  function syncChromeRowVisibility(): void {
+    const hasVisibleChild = [...chromeRowEl.children]
+      .some(child => (child as HTMLElement).style.display !== 'none');
+    chromeRowEl.style.display = hasVisibleChild ? 'flex' : 'none';
+  }
   const canvasWrap = ownerDocument.createElement('div');
   Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
   const canvas = ownerDocument.createElement('canvas');
@@ -910,6 +939,7 @@ export function renderWaferMap(
       // First in the row — the toolbar is appended after it and pins itself
       // right, so order here is header then toolbar.
       chromeRowEl.insertBefore(headerBar, chromeRowEl.firstChild);
+      syncChromeRowVisibility();
     }
   }
   // Identity only — a line of text above the map, not a card header. It carries
@@ -960,6 +990,7 @@ export function renderWaferMap(
       // Before the toolbar, not appended — a remount after `setResult` would
       // otherwise land the identity to the RIGHT of the toolbar.
       chromeRowEl.insertBefore(headerBar, chromeRowEl.firstChild);
+      syncChromeRowVisibility();
     }
   }
 
@@ -1031,7 +1062,20 @@ export function renderWaferMap(
       // so a host that had deliberately switched Help off got one anyway the
       // moment Insights opened — the option silently reversed itself.
       onOpenGuide: (showHelpButton && !showToolbar) ? () => openGuideWindow() : undefined,
-      // No openWafer — this map already IS the only wafer there is to open.
+      // No openWafer — this map already IS the only wafer there is to open, so
+      // a click-to-open would put a second map of the same wafer in a modal.
+      // But a boxplot leaf click carries the selected TEST as well, and that
+      // half is worth just as much here: show it on the map that is already
+      // behind the tab, and leave Insights. Without this the click was inert
+      // (correctly hiding its own affordances, so it read as a broken feature
+      // to anyone arriving from a gallery, where the same box is clickable).
+      // The round trip keeps its context: the tab is hidden, never destroyed,
+      // and its sub-tab/group/test selection live above the rebuild, so the
+      // Insights button lands back on this same boxplot for this same test.
+      focusTest: (testNumber) => {
+        applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
+        setInsightsOpen(false);
+      },
       ownerDocument });
     // Positioned sibling of canvasWrap covering the same area. Left with
     // `z-index: auto` (no explicit value), this positioned element still
@@ -1077,13 +1121,75 @@ export function renderWaferMap(
     return insightsLoad;
   }
 
+  /** Scroll offset of the Insights view as the user last left it — see setInsightsOpen. */
+  let insightsScrollTop = 0;
+  /** Gestures that mean the reader is scrolling this view themselves. */
+  const USER_SCROLL_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+
+  /**
+   * Put the Insights view back where the user left it after a rebuild.
+   *
+   * Not a single assignment. The cards size themselves from their own measured
+   * content (growCardToFitContent, driven by a ResizeObserver) over the frames
+   * FOLLOWING the rebuild, so the container is shorter than its final height at
+   * first and the browser clamps the restore to what fits at that instant —
+   * measured at 212px of a requested 300px — and the layout pass can then reset
+   * it to 0 again. So it re-applies over a short window.
+   *
+   * The retries stop the moment the user touches the view, and that is detected
+   * from their INPUT (wheel, touch, pointer, keys), not from the scroll position
+   * moving. Position is not evidence of intent here: the browser's own clamping
+   * and the post-rebuild reset both move it, which is why an earlier version that
+   * read any change as "the user has taken over" gave up on its own first clamped
+   * write and never restored anything. Reading only a position PAST the target as
+   * a takeover then fixed that and broke the opposite case — scrolling UP inside
+   * the window was snapped back three or four times.
+   */
+  function restoreInsightsScroll(el: HTMLElement, target: number): void {
+    if (target <= 0) return;
+    let userTookOver = false;
+    const timers: number[] = [];
+    const stop = () => {
+      userTookOver = true;
+      for (const t of timers) ownerWindow.clearTimeout(t);
+      timers.length = 0;
+      for (const ev of USER_SCROLL_EVENTS) el.removeEventListener(ev, stop);
+    };
+    const attempt = (): boolean => {
+      if (userTookOver || !insightsOpen) return true;
+      el.scrollTop = target;
+      return el.scrollTop >= target;
+    };
+    if (attempt()) return;
+    // Passive: these only observe, and a non-passive wheel listener on a scroll
+    // container is a scroll-performance footgun.
+    for (const ev of USER_SCROLL_EVENTS) el.addEventListener(ev, stop, { passive: true, once: true });
+    for (const delay of [0, 50, 150, 300, 600]) {
+      timers.push(ownerWindow.setTimeout(() => { attempt(); }, delay) as unknown as number);
+    }
+    // Whatever happens, stop listening once the window is over.
+    timers.push(ownerWindow.setTimeout(() => {
+      for (const ev of USER_SCROLL_EVENTS) el.removeEventListener(ev, stop);
+    }, 700) as unknown as number);
+  }
+
   function setInsightsOpen(open: boolean): void {
     if (!insightsEnabled) return;
+    const wasOpen = insightsOpen;
     insightsOpen = open;
     // Chrome first, and synchronously: every toggle below acts on toolbar
     // elements that already exist, so the view responds to the click even
     // while the chart suite is still being fetched. Only revealing the tab
     // itself has to wait.
+    // Remember where the user was before hiding: reopening runs `tab.render()`,
+    // which empties the body, and an emptied scroll container resets to 0 — so
+    // every close/reopen silently threw them back to the top of the chart page.
+    //
+    // Only on a real open → closed TRANSITION. `setInsightsOpen(false)` is public
+    // and idempotent, so a host calling it while already closed would otherwise
+    // read `scrollTop` off a `display: none` element — 0 — and wipe the position
+    // it is meant to be preserving.
+    if (insightsTab && !open && wasOpen) insightsScrollTop = insightsTab.el.scrollTop;
     if (insightsTab) insightsTab.el.style.display = open ? 'flex' : 'none';
     // Map-specific toolbar controls (zoom/pan/select, mode/palette/overlays/etc.)
     // have no effect on the chart suite — hide them as a group while it's open.
@@ -1129,6 +1235,7 @@ export function renderWaferMap(
     // the same arrangement renderWaferGallery already uses, for the same
     // reason: the frame owns identity, so the tab must not repeat it.
     if (headerBar) headerBar.style.display = identityHeaderHostHidden ? 'none' : '';
+    syncChromeRowVisibility();
     // metaPanel is a separate sibling in canvasWrap with its own explicit
     // Z_ABOVE z-index (see its mount comment above) — it paints above
     // insightsTab.el (auto z-index) regardless of DOM order, so an expanded
@@ -1152,6 +1259,9 @@ export function renderWaferMap(
       if (!tab || !insightsOpen) return;
       tab.el.style.display = 'flex';
       tab.render();
+      // After render(), not before: the content it just rebuilt is what gives
+      // the container a scrollable height to restore into.
+      restoreInsightsScroll(tab.el, insightsScrollTop);
     });
   }
 
@@ -1220,6 +1330,7 @@ export function renderWaferMap(
       activeMetadataKey:       so.activeMetadataKey,
       testDefs,
       valueRange:             so.valueRange,
+      metadataValueOrder:     so.metadataValueOrder,
       logScale:               so.logScale,
       isLotStack:             resultIsLotStack,
       aggregationMethod:      resultAggrMethod ?? so.aggregationMethod,
@@ -1833,6 +1944,7 @@ export function renderWaferMap(
       // share width with a docked summary panel (wrapWithSummaryPanel wraps
       // it in a flex row), and the Insights overlay covers the *full*
       chromeRowEl.appendChild(toolbar);
+      syncChromeRowVisibility();
 
       // No hover show/hide. The bar used to sit at 0.35 opacity and fade in
       // when the pointer entered the canvas, with a 600ms linger so a click on
@@ -2790,6 +2902,12 @@ export function renderWaferMap(
     ));
   }
 
+  // Once, after every optional piece of chrome has had its chance to mount:
+  // with neither a toolbar nor an identity, none of the call sites above ever
+  // runs, and the row would keep its default `flex` — which is exactly the
+  // empty-band case this is here to prevent.
+  syncChromeRowVisibility();
+
   return {
     setDies(newDies: Die[]): void {
       currentDies = newDies;
@@ -2898,6 +3016,7 @@ export function renderWaferMap(
       // Insights view too (the chart suite no longer renders its own copy), so
       // this reflects the host's wish and nothing else.
       if (headerBar) headerBar.style.display = visible ? '' : 'none';
+      syncChromeRowVisibility();
     },
 
     openUserGuide: openGuideWindow,

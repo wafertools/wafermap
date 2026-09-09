@@ -22,6 +22,127 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- `docs/api.md` now documents `standardDiameters` (§4.1.12) and the metadata helpers
+  `metadataDisplayValue` / `metadataCategoricalValue` / `discoverDieMetadataKeys` (§10.1). All
+  four were public exports that the reference never mentioned — `STANDARD_WAFER_DIAMETERS_MM`
+  since 0.27.0, where it shipped as the documented escape hatch for the new
+  `non-standard-diameter` advisory and was therefore undiscoverable outside the source; the
+  other three since 0.24.0.
+- `scripts/check-api-claims.mjs` now also fails when a public export (per
+  `tests/export-surface.test.mjs`'s snapshot, the deliberate record of what is public) is never
+  mentioned in `docs/api.md`. The bar is low on purpose — the name appearing anywhere, even in a
+  code block, is enough — because this catches exports forgotten entirely, which is the failure
+  that actually happened, not how well each one is explained.
+- `tests/insightsScopeReconciliation.test.mjs` pins scope-aware test-definition reconciliation in
+  **all three** Insights views. The behaviour was already correct; nothing tested it, and the
+  whole-load version shipped once before.
+- **A boxplot leaf click now does something in a single-wafer render.** `renderWaferMap`'s
+  Insights tab passes no `openWafer` — the only wafer there is to open is the one already on
+  screen — which left the "Test value distribution" row inert, silently throwing away the other
+  half of the click: the selected test. New `InsightsTabDeps.focusTest`, wired by
+  `renderWaferMap`, switches the map behind the tab into test-value mode on the clicked test
+  and closes Insights. The gallery is unchanged: where `openWafer` exists it wins, since
+  opening the wafer already lands it on that test.
+  - `BoxplotPanelOptions.openActionLabel` (optional) supplies the wording for both click
+    affordances, so the chart says what it will actually do — "click a box to show this test on
+    the map" instead of "…to open that wafer". One string, not two, because the hint and the
+    tooltip describe one action.
+  - `focusTest` is consulted only for a leaf row of the sole item: with more than one wafer on
+    screen, "show this test on the map" would show it for a different wafer than the one
+    clicked. The trend panel is deliberately not wired to it — it renders an empty state below
+    two wafers, so that branch could never fire.
+  - Reported against tsmap, where a single-wafer load has exactly this gap; logged there as
+    WMAP_ISSUES.md #51.
+
+### Fixed
+
+- **`analyzeWaferMap` reported a "correction" for an option that was never set.**
+  `{ ...DEFAULT_OPTIONS, ...options }` let an explicit `undefined` overwrite the default, which
+  then failed the finite-number test — so the most ordinary thing a host writes (forwarding an
+  optional: `{ ringCount: opts.rings }` with `rings` unset) raised an `analysis-option-corrected`
+  advisory, and that one is not quiet: it reaches the toolbar's warning indicator and the Summary
+  panel's banner. Undefined keys are now dropped before merging, so "not passed" and "passed as
+  undefined" mean the same thing. Genuinely bad values are still corrected and still reported.
+- **`buildWaferMap({ testDefs: [] })` silently lost every value plot mode** — and every test
+  column in the die list. An empty array is load-bearing downstream (`renderWaferGallery`'s
+  reconciled "kept nothing", which no fallback may override by discovering bare test numbers back
+  from the dies), but from a HOST it just means "I described none", which is the same statement
+  as omitting the field. It is now normalised to `undefined` at that one input boundary; the
+  gallery's own signal is unaffected.
+- **The findings expand chevron stayed painted as hovered** after the first hover:
+  `wireControlHover` was called on it twice, and the second call snapshotted the first's hover
+  colours as the resting state.
+- **Geometry advisories rendered as truncated prose in the collapsed warnings banner.**
+  `SHORT_LABEL` still keyed the removed `inferred-pitch` and had no entry for
+  `non-standard-diameter` or `diameter-exceeds-die-extent` — the codes that replaced it — so
+  every advisory 0.27.0 actually raises fell through to a 57-character truncation of its own
+  message. Entries added for all current codes, and a test now checks the table against the
+  declared code union so it cannot drift again.
+- **The chrome row painted an empty band** above a map rendered with `showToolbar: false` and no
+  identity: it is built unconditionally and its own comment claimed it "collapses to nothing when
+  it holds neither", but nothing implemented that. It now hides when it holds nothing visible —
+  hidden children included, since `setIdentityVisible(false)` hides in place.
+- **Gallery metadata-mode colours could disagree with the legend beside them.** Each card
+  assigned colours by index into the values on its OWN dies, while the shared legend strip
+  ranked the union across every card — so a wafer that never exhibited one category shifted
+  every later category up a colour and painted it in the colour the legend gave to another.
+  New `ViewOptions.metadataValueOrder` (`{ key, values }`, applied only when `key` matches
+  `activeMetadataKey`, mirroring `valueRange`'s `{ test, range }` guard) is forwarded by
+  `renderWaferMap` and set automatically by `renderWaferGallery`, so every card colours from one
+  lot-wide list. Values a card has but the list doesn't are appended, never dropped.
+  - The ordering is now one implementation (`collectMetadataValues`) shared by the maps and the
+    legend, and the legend stopped deriving its values with `String(raw)` where the maps use
+    `metadataCategoricalValue` — a second divergence in the same place, visible on numeric
+    metadata.
+  - A standalone `renderWaferMap` is unchanged: with no order supplied it still derives one from
+    its own dies, which is correct for one wafer.
+- **The histogram resolved an unset "axis includes limits" preference two different ways.**
+  Grouped (faceted) treated it as off; ungrouped derived it from the data. The same test with no
+  preference therefore included the spec limits in the axis in one view and not the other — the
+  range moved under the reader while the toggle stayed put. Both branches now derive it from
+  their own population via `shouldIncludeLimitsByDefault`.
+- **The histogram's "Clip outliers" toggle did nothing in the grouped view.** It was rendered
+  there but `buildTestHistogramSeries` had no way to take a clip range, so the control applied to
+  the ungrouped branch only — in exactly the view where one wild reading does the most damage,
+  compressing every group's buckets at once. The builder now takes the same optional `clip` its
+  ungrouped twin has, with the same contract (narrows where limits widen; no statistic anywhere
+  is computed from a clipped population).
+- **A grouped histogram could kill the Insights rebuild on a real lot.** The faceted axis range
+  used `Math.min(...values)`, which passes every die value as a separate argument; ~250k values
+  (25 wafers × 10k dies) throws `RangeError: Maximum call stack size exceeded`. Replaced with
+  `testValueExtent`, a loop that also avoids materialising the pooled array. The ungrouped branch
+  had the same spread and is fixed too.
+- **`summaryPanel: { placement: 'top' | 'bottom' }` clipped its own content silently.** Those
+  placements take a fixed 180px band with `overflowY: hidden`, which most wafers' content
+  exceeds, so the last visible row was cut mid-line with nothing indicating more existed. All
+  placements now scroll, the way `'right'`/`'left'` already did. (Whether this content suits a
+  wide-short band at all is a separate open question — see TODO.md.)
+- **Closing and reopening Insights no longer discards the shared axis toggles.** `axisPrefs`
+  ("axis includes limits" / "clip outliers") lived inside `renderDistributionsSection`, which
+  `render()` rebuilds — so a scope change, or simply toggling Insights off and on, silently
+  reverted the user's choice to the default. It now sits at tab level beside the selected test
+  and group scope, which were already lifted for the same reason. Affects the gallery too.
+- **The gallery no longer re-renders every card on every toolbar change.**
+  `syncSharedMetadataOrder` pushed `metadataValueOrder: undefined` to each card even outside
+  `metadata` mode, and each push costs a full view rebuild. It now returns early when there is
+  nothing to change, matching `syncSharedValueRange`.
+- **`renderWaferMap`'s Insights view no longer jumps back to the top on reopen.** The tab's
+  scroll offset is remembered on close and re-applied over a short window after the rebuild —
+  one assignment is not enough, because the cards grow to their measured content over the
+  following frames, so the first write is clamped to a container that is still short (212px of
+  a requested 300px, measured) and the layout pass can then reset it to 0. A position past the
+  target stops the retries: that is the user scrolling, and they own it from then on.
+  (Gallery-side, the host page owns the scroller, so there is nothing for the library to
+  restore.)
+- Corrected `charts/boxplot.ts`'s header comment, which still said click-to-open-wafer was
+  unimplemented long after it shipped.
+
+---
+
 ## [0.27.0] — 2026-09-09
 
 ### Breaking

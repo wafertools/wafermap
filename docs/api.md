@@ -494,6 +494,37 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
 - **Click-to-highlight in the legend**, exactly like `hardBin`/`softBin`: clicking a legend swatch dims every die except that value (`highlightMetadataValue`, the string-keyed analogue of `highlightBin`); clicking the same swatch again clears it.
 - Reuses wafer geometry, tooltip, selection, zoom, and PNG export unchanged — none of those are plot-mode-aware. The one thing genuinely new is the colour fill, the legend, and the toolbar entry.
 
+#### 4.1.12 `standardDiameters`
+
+```ts
+standardDiameters?: number[]   // default STANDARD_WAFER_DIAMETERS_MM ([100, 125, 150, 200, 300])
+```
+
+The wafer diameters (mm) treated as standard when sanity-checking an **inferred**
+diameter. A diameter you supply is never second-guessed; this is consulted only
+when the library had to size the wafer from the die extent, and it is what decides
+whether the `non-standard-diameter` advisory (§4.2.2) fires.
+
+It **replaces** the default rather than adding to it, so spread it to extend:
+
+```ts
+import { buildWaferMap, STANDARD_WAFER_DIAMETERS_MM } from '@wafertools/wafermap';
+
+// a line that also runs 3-inch
+buildWaferMap({ results, standardDiameters: [...STANDARD_WAFER_DIAMETERS_MM, 76.2] });
+
+// genuinely non-standard substrate — panels, reclaim, odd R&D shapes
+buildWaferMap({ results, standardDiameters: [] });
+```
+
+`[]` disables the check entirely, and is the intended opt-out for a substrate that
+is not on the ladder — better than suppressing every geometry advisory to silence
+one that does not apply to your line.
+
+`STANDARD_WAFER_DIAMETERS_MM` is exported from the root entry point as a
+`readonly number[]`, so host code can read, extend or compare against the SEMI M1
+ladder without restating it.
+
 ### 4.2 Return value
 
 ```ts
@@ -631,7 +662,7 @@ The library's one warning vocabulary. Raised by geometry inference on
 | --- | --- | --- |
 | `partial-coverage` | `error` | Data does not span a full wafer; inferred diameter/centre may be wrong and dies may be mis-positioned. Supply `waferConfig.center` + `.diameter`. |
 | `geometry-conflict` | `error` | `waferConfig.diameter` and `dieConfig.width`/`height` were both supplied and cannot contain the probed dies. |
-| `non-standard-diameter` | `warning` | A die pitch was supplied without a `diameter`, so the wafer was sized from the die extent — and the result is off the standard wafer-size ladder (SEMI M1: 100/150/200/300 mm and the smaller legacy sizes). Silicon only comes in those sizes, so e.g. 210 mm is evidence the probed grid did not reach the wafer edge and the wafer is really larger. Dies are then placed against a wafer that is too small, which moves them between rings and changes ring/edge findings. Supply `waferConfig.diameter`. There is **no** matching advisory for an inferred *pitch*: that is derived to fit the supplied diameter, so it is self-consistent by construction and there is nothing to check it against. |
+| `non-standard-diameter` | `warning` | A die pitch was supplied without a `diameter`, so the wafer was sized from the die extent — and the result is off the standard wafer-size ladder (SEMI M1: 100/150/200/300 mm and the smaller legacy sizes). Silicon only comes in those sizes, so e.g. 210 mm is evidence the probed grid did not reach the wafer edge and the wafer is really larger. Dies are then placed against a wafer that is too small, which moves them between rings and changes ring/edge findings. Supply `waferConfig.diameter` — or, if your line genuinely runs a size that is not on the ladder, extend or empty the ladder itself with `standardDiameters` (§4.1.12) rather than muting every geometry advisory. There is **no** matching advisory for an inferred *pitch*: that is derived to fit the supplied diameter, so it is self-consistent by construction and there is nothing to check it against. |
 | `diameter-exceeds-die-extent` | `warning` | A **supplied** `waferConfig.diameter` that the probed dies fill less than 75% of the radius. The mirror of `geometry-conflict`, which asks whether the dies *fit*; this asks whether they *fill*. An over-large wafer is not harmless — ring bands are equal-radius, so it crushes dies into the inner rings and empties the outer ones (at a 10× diameter every die lands in ring 1), and ring/quadrant/edge findings then describe the assumed wafer rather than the probed area. A genuinely partial map looks identical, so the message names both causes. Not raised when `waferConfig.center` is supplied (that is the documented way to position partial data deliberately) or below 20 dies (too few for the extent to be evidence, and too few for ring analysis to report anything). |
 | `test-count-capped` | `warning` | More tests found than `analyzeWaferMap` will analyse, so **no test findings were computed at all**. Pass `testNumbers` to scope it. |
 | `edge-exclusion-exceeds-radius` | `warning` | `waferConfig.edgeExclusion` exceeds the resolved wafer radius (most likely with an under-inferred diameter). The excluded band is clamped to the whole wafer instead of silently producing a smaller, wrong ring. |
@@ -3246,6 +3277,44 @@ Returns `undefined` when no value is present.  Use this in post-build code that 
 `dieHasTestData` is true when a die carries any per-test data — a test value or a recorded pass/fail verdict.
 
 `isParametricTest` returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric.
+
+**Metadata helpers** — the same three functions the library uses internally to turn a raw
+`die.metadata` / `wafer.metadata` value into something displayable, exported so a host formats
+metadata the way the maps, tooltips, legends and CSV exports already do rather than reinventing
+the rules:
+
+```ts
+import { metadataDisplayValue, metadataCategoricalValue } from '@wafertools/wafermap';
+import { discoverDieMetadataKeys } from '@wafertools/wafermap/stats';
+```
+
+```ts
+metadataDisplayValue(raw: unknown): string | undefined
+metadataCategoricalValue(raw: unknown): string | undefined
+discoverDieMetadataKeys(
+  dies: Die[],
+  metadataFields?: MetadataFieldDef[],
+  limit?: number,                        // default 64
+): { keys: string[]; truncated: string[] }
+```
+
+`metadataDisplayValue` renders one value for display: strings, numbers and booleans stringify,
+a `Date` becomes an ISO string, anything else is JSON — and an unserialisable value (a circular
+structure, a `BigInt`) returns an honest marker rather than throwing out of a tooltip or an
+export. Empty string, `null` and `undefined` all return `undefined`, meaning "no value", which
+is not the same as `"undefined"`.
+
+`metadataCategoricalValue` is the same thing narrowed to values that can act as a *category* —
+it rejects objects and arrays, which cannot meaningfully colour a die or head a column. This is
+the derivation `'metadata'` plot mode and the gallery's metadata legend both use, so a host
+that groups or tallies by a metadata key gets the same buckets the map paints.
+
+`discoverDieMetadataKeys` (from `/stats`) returns the die-metadata keys actually present across
+a set of dies — what `metadataColumns: 'auto'` (§5.4.4) resolves to. Keys you declared in
+`metadataFields` come first, in the order you declared them, and the rest follow in natural
+order, so a host's own curation survives into the column layout. Anything past `limit` (default
+64) is returned separately as `truncated` rather than dropped silently, so a caller can say what
+it left out. `MetadataFieldDef` → §4.1.11
 
 ### 10.2 `ICONS`
 
