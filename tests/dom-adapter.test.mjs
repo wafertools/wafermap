@@ -707,9 +707,11 @@ test('renderWaferGallery legend strip: a field with one value shows it plainly; 
     const itemA = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', product: 'ACME-9', waferId: 'W01' } } });
     const itemB = buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot: 'LOT123', product: 'ACME-9', waferId: 'W02' } } });
 
-    // Queried by its stable data hook, not position — legendEl is nested
-    // inside a sticky header wrapper now, not a direct positional child.
-    const legendEl = () => container.querySelector('[data-wmap-gallery-legend]');
+    // Lot identity lives in the chrome row's metadata pill, beside the toolbar
+    // — not in the bin-legend strip below it. Queried by its stable data hook,
+    // not position: both sit inside a sticky header wrapper, not as direct
+    // positional children of `container`.
+    const legendEl = () => container.querySelector('[data-wmap-gallery-meta]');
 
     renderWaferGallery(container, [itemA, itemB], { viewOptions: { plotMode: 'hardBin' } });
     assert.match(legendEl().textContent, /Lot: LOT123/, 'a single common value should show plainly, no list');
@@ -740,8 +742,8 @@ test('renderWaferGallery legend strip: a field with many distinct values truncat
     const items = lots.map(lot => buildWaferMap({ ...dieOpts, waferConfig: { diameter: 40, metadata: { lot } } }));
 
     renderWaferGallery(container, items, { viewOptions: { plotMode: 'hardBin' } });
-    const legendEl = container.querySelector('[data-wmap-gallery-legend]');
-    assert.match(legendEl.textContent, /Lot: LOT-A, LOT-B, LOT-C \+2 more/, 'shows the top values by coverage then a +N more summary');
+    const metaEl = container.querySelector('[data-wmap-gallery-meta]');
+    assert.match(metaEl.textContent, /Lot: LOT-A, LOT-B, LOT-C \+2 more/, 'shows the top values by coverage then a +N more summary');
   } finally {
     cleanup();
   }
@@ -1526,9 +1528,9 @@ test('renderWaferMap: metadata badge is mounted by default, absent when disabled
     const container2 = window.document.createElement('div');
     Object.assign(container2.style, { position: 'relative', width: '900px', height: '600px' });
     root.appendChild(container2);
-    const ctrl2 = renderWaferMap(container2, wafer, { showIdentityHeader: false });
+    const ctrl2 = renderWaferMap(container2, wafer, { showIdentity: false });
     const badgeEl2 = [...container2.querySelectorAll('div')].find((d) => /LOT123/.test(d.textContent) && /W01/.test(d.textContent));
-    assert.equal(badgeEl2, undefined, 'showIdentityHeader:false should render no badge');
+    assert.equal(badgeEl2, undefined, 'showIdentity:false should render no badge');
     ctrl2.destroy();
   } finally {
     cleanup();

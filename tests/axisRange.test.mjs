@@ -2,7 +2,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { robustFence, shouldIncludeLimitsByDefault, resolveAxisRange }
+import { robustFence, shouldIncludeLimitsByDefault, resolveAxisRange , limitLabelSide }
   from '../dist/packages/canvas-adapter/charts/chartShell.js';
 
 test('the fence sits next to the data, not next to the outlier', () => {
@@ -90,4 +90,32 @@ test('clipping never widens past the data, and limits still win when included', 
   assert.equal(r.lo, 0);
   assert.equal(r.hi, 100);
   assert.equal(r.clippedCount, 0);
+});
+
+// ── limitLabelSide ───────────────────────────────────────────────────────────
+//
+// Which side of its own dashed rule a spec-limit label sits on. Reported by a
+// user as reading wrong: the label was placed INWARD (LSL right of its line,
+// USL left) purely so it could not fall off the plot, and that put each label
+// in the in-spec region — reading as a label for the data rather than for the
+// boundary it marks. Semantics now win, and the edge case is handled by a flip
+// rather than by giving up the meaning.
+test('limitLabelSide — LSL sits left of its line, USL right, when there is room', () => {
+  // Limits mid-plot: both have space on their meaningful side.
+  assert.equal(limitLabelSide(500, 24, 100, 900, true), -1, 'LSL → left');
+  assert.equal(limitLabelSide(500, 24, 100, 900, false), 1, 'USL → right');
+});
+
+test('limitLabelSide — flips only when the label would not fit on its own side', () => {
+  // LSL 10px from the left edge cannot take a 24px label to its left.
+  assert.equal(limitLabelSide(110, 24, 100, 900, true), 1, 'LSL flips inward at the edge');
+  // USL 10px from the right edge, likewise.
+  assert.equal(limitLabelSide(890, 24, 100, 900, false), -1, 'USL flips inward at the edge');
+});
+
+test('limitLabelSide — a label that exactly fits is not flipped', () => {
+  // x - pad - textWidth === plotLeft is a fit, not an overflow: an off-by-one
+  // here would flip labels that had room, which is the defect being fixed.
+  assert.equal(limitLabelSide(127, 24, 100, 900, true), -1);
+  assert.equal(limitLabelSide(873, 24, 100, 900, false), 1);
 });

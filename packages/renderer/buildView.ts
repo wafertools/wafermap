@@ -108,14 +108,46 @@ export interface ViewOverlay {
   fill?: string;
 }
 
+/**
+ * A renderer-agnostic description of one drawn wafer map: everything `toCanvas`
+ * needs, in physical (mm) coordinates, with no canvas or DOM dependency.
+ *
+ * This is the contract between `buildView` and a renderer — see the `pipeline`
+ * example for the low-level path. Hosts using `buildWaferMap` + `renderWaferMap`
+ * never need it: that pipeline builds and re-builds the view internally, and the
+ * copy hung on `WaferMapResult.view` is marked `@internal` precisely because
+ * reading it there means reaching past the API that owns it.
+ *
+ * Treat the geometry arrays as read-only. `dies` and `hoverPoints` are
+ * **index-parallel** — `hoverPoints[i]` is the transformed centre of `dies[i]` —
+ * and code that resolves a die from a screen position depends on that staying
+ * true.
+ */
 export interface View {
+  /** Die rectangles to fill, in draw order, already carrying their resolved colour. */
   rectangles: ViewRect[];
+  /**
+   * Transformed centre of each die, index-parallel with {@link dies}. Separate
+   * from `rectangles` because a die always has a centre for hit-testing and
+   * viewport fitting even when it is not drawn (a partial die with
+   * `showPartialDies: false`).
+   */
   hoverPoints: ViewHoverPoint[];
+  /** Text to draw — die labels and any axis/indicator strings the view generated. */
   texts: ViewText[];
+  /** Non-die geometry: wafer outline, notch, ring/quadrant boundaries, reticle grid, XY indicator. */
   overlays: ViewOverlay[];
+  /** The plot mode this view was built for. Colours in `rectangles` follow it. */
   plotMode: PlotMode;
+  /** Name of the colour scheme used, as registered with `registerColorScheme`. */
   colorScheme: string;
+  /** Wafer-level metadata carried through from the wafer, or `null`. */
   metadata: WaferMetadata | null;
+  /**
+   * The positioned dies this view was built from, index-parallel with
+   * {@link hoverPoints}. Original grid coordinates are preserved on each die —
+   * never derive display coordinates from these.
+   */
   dies: Die[];
   /** Actual [min, max] of the value data used for color normalization. */
   valueRange: [number, number];

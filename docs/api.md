@@ -12,6 +12,34 @@ throughout; shared types live in §12.
 
 ---
 
+> ### How much of this do I need?
+>
+> **Almost none of it.** This is a reference, not a reading list — it documents
+> every option so that the rare one you eventually need is written down, not so
+> that you learn them.
+>
+> A working map is two calls:
+>
+> ```ts
+> const result = buildWaferMap({ results, waferConfig, dieConfig });
+> renderWaferMap(document.getElementById('map'), result);
+> ```
+>
+> That renders with a full interactive toolbar — plot modes, colour schemes,
+> zoom, export — with **no options passed at all**. Add `analyzeWaferMap` when
+> you want the findings and summary panel, and `renderWaferGallery` in place of
+> `renderWaferMap` for a lot. That is four functions, and it is the whole story
+> for most integrations.
+>
+> For scale: **tsmap**, a complete cross-platform desktop application built on
+> this library, imports **10** of its ~100 exports. `RenderOptions` has 31
+> fields; a typical integration sets a handful. Everything else here is depth
+> that stays out of your way until you go looking for it.
+>
+> New to the library? Start with the [Quick Start](quickstart.md) (a 5-minute
+> tutorial), then the [Guide](guide.md) for a feature walkthrough. Come back
+> here when you need a specific option.
+
 ## 1 Coordinate system
 
 **`x` and `y` throughout this API are die grid positions (prober step coordinates) — integers such as −7, 0, 5.  They are NOT millimetre values.  They must be JavaScript `number` type — CSV parsers return strings; always cast with `Number()` or `+` before passing to `buildWaferMap`.**
@@ -74,17 +102,29 @@ graph TD
     bwm --> wk
 ```
 
+**Everyday — the four functions almost every integration uses:**
+
 | Section | Description |
 |---|---|
-| [4 `buildWaferMap`](#4-buildwafermapinput) | Data layer — primary entry point |
-| [5 `renderWaferMap`](#5-renderwafermapcontainer-result-options) | Interactive canvas map with toolbar |
-| [6 `renderWaferGallery`](#6-renderwafergallerycontainer-items-options-gallery) | Multi-map card grid |
-| [7 Statistics / Findings](#7-statistics-findings-engine) | `analyzeWaferMap`, `analyzeWaferLot` |
-| [8 Web Worker](#8-web-worker) | Off-main-thread rendering |
-| [9 Low-level canvas API](#9-low-level-canvas-api) | `toCanvas` |
-| [10 Package surface](#10-package-surface) | Subpath exports |
-| [11 Advanced Pipeline](#11-advanced-manual-pipeline) | `buildView`, low-level API |
-| [12 Important types](#12-important-types) | Key interfaces |
+| [4 `buildWaferMap`](#4-buildwafermapinput) | Data layer — primary entry point. Turns rows into a wafer map |
+| [5 `renderWaferMap`](#5-renderwafermapcontainer-result-options) | Interactive canvas map with toolbar. Works with no options |
+| [6 `renderWaferGallery`](#6-renderwafergallerycontainer-items-options-gallery) | The same, for a whole lot: a grid of cards |
+| [7 Statistics / Findings](#7-statistics-findings-engine) | `analyzeWaferMap`, `analyzeWaferLot` — findings and the summary panel |
+
+**Occasional — reach for these when you hit the specific need:**
+
+| Section | Description |
+|---|---|
+| [8 Web Worker](#8-web-worker) | Off-main-thread building, for very large lots |
+| [10 Package surface](#10-package-surface) | Which subpath exports what, and why the renderers aren't on the root |
+| [12 Important types](#12-important-types) | `Die`, `Wafer`, `TestDef` and friends |
+
+**Rarely needed — escape hatches. Skip unless something above can't do it:**
+
+| Section | Description |
+|---|---|
+| [9 Low-level canvas API](#9-low-level-canvas-api) | `toCanvas` — draw to a canvas you own, no toolbar |
+| [11 Advanced Pipeline](#11-advanced-manual-pipeline) | `buildView` and the manual pipeline, for a custom renderer |
 | [13 Limitations](#13-current-limitations) | Known constraints |
 
 ---
@@ -487,11 +527,13 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
                                   //     probed dies. A die with results is a real prober position and is
                                   //     always fully on the wafer, so the two supplied values contradict
                                   //     each other; check them against the real device.
-                                  //   'inferred-pitch' — waferConfig.diameter was supplied without a die
-                                  //     pitch, so pitch was derived as diameter ÷ grid span (assumes the
-                                  //     data spans the full wafer — wrong whenever edge dies are absent).
-                                  //     Supply dieConfig.width/height. NOTE: 'geometry-conflict' is never
-                                  //     raised in this case — pitch is a free scaling parameter, so with
+                                  //   'non-standard-diameter' — pitch supplied without a diameter, and the
+                                  //     wafer sized from the die extent landed off the standard ladder
+                                  //     (100/150/200/300 mm) — evidence the probed grid did not reach the
+                                  //     edge. Supply waferConfig.diameter. NOTE: an inferred PITCH raises
+                                  //     nothing: it is derived to fit the diameter, so it is always
+                                  //     self-consistent. And 'geometry-conflict' is never raised for an
+                                  //     inferred pitch — pitch is a free scaling parameter, so with
                                   //     no supplied pitch there is always one that "fits", and a fit
                                   //     check would otherwise fire on perfectly good full-wafer data.
                                   //   'edge-exclusion-exceeds-radius' — severity 'warning', not 'error':
@@ -589,7 +631,8 @@ The library's one warning vocabulary. Raised by geometry inference on
 | --- | --- | --- |
 | `partial-coverage` | `error` | Data does not span a full wafer; inferred diameter/centre may be wrong and dies may be mis-positioned. Supply `waferConfig.center` + `.diameter`. |
 | `geometry-conflict` | `error` | `waferConfig.diameter` and `dieConfig.width`/`height` were both supplied and cannot contain the probed dies. |
-| `inferred-pitch` | `warning` | `diameter` supplied without a die pitch, so pitch was derived as `diameter ÷ grid span` — exact when the die grid reaches the wafer edge, skewed when edge dies are absent. An assumption made on your behalf, not a detected contradiction: supply `dieConfig.width`/`height` to remove it. |
+| `non-standard-diameter` | `warning` | A die pitch was supplied without a `diameter`, so the wafer was sized from the die extent — and the result is off the standard wafer-size ladder (SEMI M1: 100/150/200/300 mm and the smaller legacy sizes). Silicon only comes in those sizes, so e.g. 210 mm is evidence the probed grid did not reach the wafer edge and the wafer is really larger. Dies are then placed against a wafer that is too small, which moves them between rings and changes ring/edge findings. Supply `waferConfig.diameter`. There is **no** matching advisory for an inferred *pitch*: that is derived to fit the supplied diameter, so it is self-consistent by construction and there is nothing to check it against. |
+| `diameter-exceeds-die-extent` | `warning` | A **supplied** `waferConfig.diameter` that the probed dies fill less than 75% of the radius. The mirror of `geometry-conflict`, which asks whether the dies *fit*; this asks whether they *fill*. An over-large wafer is not harmless — ring bands are equal-radius, so it crushes dies into the inner rings and empties the outer ones (at a 10× diameter every die lands in ring 1), and ring/quadrant/edge findings then describe the assumed wafer rather than the probed area. A genuinely partial map looks identical, so the message names both causes. Not raised when `waferConfig.center` is supplied (that is the documented way to position partial data deliberately) or below 20 dies (too few for the extent to be evidence, and too few for ring analysis to report anything). |
 | `test-count-capped` | `warning` | More tests found than `analyzeWaferMap` will analyse, so **no test findings were computed at all**. Pass `testNumbers` to scope it. |
 | `edge-exclusion-exceeds-radius` | `warning` | `waferConfig.edgeExclusion` exceeds the resolved wafer radius (most likely with an under-inferred diameter). The excluded band is clamped to the whole wafer instead of silently producing a smaller, wrong ring. |
 
@@ -803,6 +846,21 @@ hover — wafermap-specific controls always in the same place.
 renderWaferMap(container: HTMLElement, result: RenderableWaferMap, options?: RenderOptions): WaferMapController
 ```
 
+> **`options` is optional, and mostly stays that way.** `RenderOptions` has 31
+> top-level fields and this section documents all of them, but the call above
+> works with none: you get the toolbar, plot modes, colour schemes, zoom and pan,
+> tooltips, die selection and PNG export by default.
+>
+> For calibration, **tsmap** — a full desktop application on this library — passes
+> **6**: `viewOptions` (initial plot mode and colour scheme), `summaryPanel`,
+> `insights`, `downloadFilename`, `userGuideExtension` and `showHelpButton`. Those
+> six, plus `onSaveImage`/`onSaveText` if you want exports routed through your own
+> save dialog, cover the overwhelming majority of integrations.
+>
+> Everything else in this section exists for a specific need — a host that draws
+> its own chrome, an embedded map that must follow a host theme, a wafer with no
+> position data. Search for the problem you have; don't read forward.
+
 `RenderableWaferMap` is `{ wafer, dies }` plus every other `WaferMapResult` field
 as optional. A `WaferMapResult` satisfies it, so the usual `buildWaferMap` →
 `renderWaferMap` path is unchanged; the wider type exists because
@@ -973,23 +1031,30 @@ All `ToCanvasOptions` fields are accepted (`padding`, `background`, `showAxes`, 
                           // 'state' when all are WaferDisplayState, 'mixed' when both
   showTooltip?:            boolean   // default true
   showToolbar?:            boolean   // default true
-  showIdentityHeader?:      boolean   // default true — an always-visible identity header row (lot, wafer ID, product,
-                                            // test program, temperature, etc.) above the canvas, independent of
-                                            // showToolbar/Insights. A real layout row, not an overlay, so it can never
-                                            // collide with anything the canvas draws; collapsed to one identifying line,
-                                            // expands in place (over the top of the canvas) on click/Enter/Space. Also
-                                            // hosts the "expand to full view" button (see showExpandButton/onExpand) —
-                                            // the toolbar no longer carries a separate one. Renders nothing when the
-                                            // result has no metadata/lot-stack context AND showExpandButton is off.
+  showIdentity?:      boolean   // default true — the wafer's identity (lot, wafer ID, product, test
+                                            // program, temperature, etc.) in the chrome row above the canvas, beside
+                                            // the toolbar. Independent of showToolbar/Insights, and a CONTENT switch
+                                            // only: the chrome row exists whenever there is a toolbar, so turning this
+                                            // off costs the identity text and nothing else. Short metadata renders
+                                            // inline when it fits; otherwise it collapses to one identifying line that
+                                            // expands over the canvas on click/Enter/Space. Renders nothing when the
+                                            // result has no metadata/lot-stack context.
+  chromeInset?:            string    // inset for the chrome row (identity + toolbar) and a docked Summary panel from
+                                            // the edge of the map area. Default EDGE_GUTTER (12px), right for a
+                                            // standalone map where the map area IS the region. Pass MAP_CHROME_INSET
+                                            // (4px) when embedding the map in a surface that already provides its own
+                                            // inset — renderWaferGallery passes it for cards, where a second full
+                                            // gutter would stack two.
   dieList?:                DieListDisplayOptions  // display preferences for the built-in die-list table (the
                                             // coordinate-less map replacement, and the "+N dies without position" footer)
                                             // — column selection, maxRows, CSV filename. See §5.4.1.
   toolbarControls?:        'full' | 'view-only'   // 'view-only' shows only zoom/reset/select/download
   showPlotModeSelector?:   boolean   // show the mode button in the toolbar (default true); set false when the host app manages mode switching
-  showExpandButton?:       boolean   // show the expand button on the metadata header and enable the E-key shortcut
-                                            // (default true; requires showIdentityHeader — that header is the button's
-                                            // only home). Set false when the host already renders the map inside its
-                                            // own expanded/modal context, where wmap's built-in expand modal would be redundant
+  showExpandButton?:       boolean   // show the expand button in the toolbar and enable the E-key shortcut
+                                            // (default true). Independent of showIdentity — expand is a view control,
+                                            // not part of the wafer's identity. Set false when the host already renders
+                                            // the map inside its own expanded/modal context, where wmap's built-in
+                                            // expand modal would be redundant
   legendPosition?:         'default' | 'compact' | 'left' | 'top' | 'bottom' | 'floating'
                                             // initial bin legend position (default 'default'); user can change via toolbar
                                             // 'default' auto-adapts: compact below 280 px canvas width, floating below 180 px
@@ -1253,7 +1318,7 @@ Findings render directly beneath the headline stats, above the bin/region/test d
 
 The gallery's panel has **no tabs**. It previously opened on a Lot/Findings pair in which both tabs carried findings — lot-level ones under "Lot", and none at all under "Findings", which actually listed wafers — and in which two identical-looking per-wafer lists did different things on click. There is now one list: the **Wafer Yield** section, with each row badged by its own findings count and opening that wafer when clicked. Every wafer appears in it, including those with no findings, which the old subset list structurally could not show. A `Findings report` button beside the other report buttons covers every wafer's findings in one document.
 
-On the single-wafer panel the metadata section is suppressed when the caller already renders that metadata — `renderWaferMap` does so whenever its identity header is mounted (`showIdentityHeader`, default `true`), since the header's expandable panel is built from the same helpers. Set `showIdentityHeader: false` and the panel's own "Wafer Info" section returns.
+On the single-wafer panel the metadata section is suppressed when the caller already renders that metadata — `renderWaferMap` does so whenever its identity header is mounted (`showIdentity`, default `true`), since the header's expandable panel is built from the same helpers. Set `showIdentity: false` and the panel's own "Wafer Info" section returns.
 
 Three sections carry a header selector, and each derives its default rather than starting neutral:
 
@@ -1273,8 +1338,16 @@ The on-screen test table carries Test / Mean / **Ppk** / Spec yield only; the fu
 {
   enabled?:     boolean                                          // show the Insights toolbar button; default false
   defaultView?: 'overview' | 'distributions' | 'correlation'      // sub-tab shown first; default 'overview'
+  defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
 }
 ```
+
+`defaultOpen` is for an analysis-first surface, where the charts are the point and
+the map is the secondary view — symmetric with `summaryPanel.defaultOpen`. Note
+that the chart suite is a lazily-imported chunk, so opening it on mount also pulls
+that chunk on load rather than on first click; leave it off for a map-first page.
+See the [Insights example](examples/insights.html), which uses it because the
+charts are its whole subject.
 
 #### 5.4.4 Die list & CSV export
 
@@ -1429,7 +1502,7 @@ Choose the right update method:
   setViewControlsVisible(visible: boolean): void   // show/hide mode, orientation, summary, and expand buttons as a group
   setExpandVisible(visible: boolean): void          // show/hide the expand toolbar button independently
   setHelpButtonVisible(visible: boolean): void      // show/hide the help toolbar button independently
-  setIdentityHeaderVisible(visible: boolean): void   // show/hide the identity header without affecting its content
+  setIdentityVisible(visible: boolean): void   // show/hide the identity header without affecting its content
   openUserGuide(): void   // opens the end-user guide window directly — the same action the help toolbar button
                                   // performs, but callable regardless of showHelpButton/setHelpButtonVisible, so a host
                                   // that hides wmap's own help button (e.g. folding it into its own combined help menu)
@@ -1468,7 +1541,7 @@ Choose the right update method:
 | Insights | Toggle the Insights tab — swaps the map for this wafer's chart suite. Only shown when `insights.enabled: true`. See §5.9. |
 | User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
-**Expand is not in this toolbar strip** — it lives on the metadata header row above the canvas (`showIdentityHeader`; see `showExpandButton` above), not among these buttons. Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. Only shown in standalone use — hidden automatically inside gallery cards (which have their own non-modal expand, see §6), inside an already-open modal or window, and **while the Insights tab is open** (there is no single map view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button for enlarging just that chart). Since it requires `showIdentityHeader`, a host that turns that header off loses the Expand affordance entirely rather than finding it relocated.
+**Expand** opens the map in an enlarged modal overlay; the map box is reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. It works in the **Insights** view too, where it expands the whole chart suite into a wide modal — those charts interact, and reading them side by side is the case the modal exists for; individual chart panels keep their own expand button for enlarging just one. Hidden inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window.
 
 **While the Insights tab is open**, every control above except Insights and User guide is hidden — Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, and Summary all apply only to the map view, which the chart suite has replaced; Summary's panel specifically would have nothing to highlight against with the map hidden behind Insights. Expand is likewise hidden while Insights is open, for the same reason. They reappear as soon as Insights is closed.
 
@@ -1677,6 +1750,12 @@ colour, rotate, or flip in the gallery bar applies to every card instantly.
 ```ts
 renderWaferGallery(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
 ```
+
+> **As with `renderWaferMap`, `options` is optional.** `GalleryOptions` has 22
+> top-level fields; tsmap passes the same six it passes to `renderWaferMap`. The
+> two option types deliberately overlap, so what you learned there mostly carries
+> over — this section documents the gallery-only additions (`columns`, `maxSize`,
+> `lotStatsSummary`, per-card legends) and the shared fields' gallery behaviour.
 
 The container needs a **width** but not a fixed height — the grid grows to fit its
 cards. `width: 100%` is the typical choice; do not set `overflow: hidden` on it or
@@ -2180,17 +2259,12 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
 
   // ── Test-value scope ──────────────────────────────────────────────────────
   testNumbers?:   number[]  // restrict test-value analysis to these test numbers;
-                            // when omitted: all tests up to 100 — beyond that analysis is skipped
+                            // when omitted: all tests up to 250 — beyond that analysis is skipped
                             // and a 'test-count-capped' WaferWarning appears in
                             // summary.stats.warnings[] (§4.2.2) and in the map's
                             // warning indicator
 
-  // ── Statistical thresholds (rarely need changing) ─────────────────────────
-  significanceLevel?:       number  // adjusted p-value threshold (default 0.05)
-  minimumEffectSize?:       number  // minimum absolute |delta| for proportion findings (default 0.15)
-  minimumRelativeEffect?:   number  // minimum relative |delta / background| (default 1.0);
-                                    // catches signals on low-failure-rate wafers where absolute delta
-                                    // is small but represents a large relative deviation
+  // ── Angular analysis ──────────────────────────────────────────────────────
   sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 | 32 (default 8)
 
   // ── Population ────────────────────────────────────────────────────────────
@@ -2200,30 +2274,81 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options. Most analyses
 }
 ```
 
-### 7.3.1 Statistical rules & thresholds
+> **Removed in 0.27.0 — `significanceLevel`, `minimumEffectSize`, `minimumRelativeEffect`.**
+> These set what counts as a finding, so a wrong value did not make the output
+> *look* different — it made it wrong, and silently. A negative `significanceLevel`
+> returned zero findings across the board, which reads as "nothing wrong with this
+> wafer": the worst failure an analysis tool has. They are internal constants now,
+> like `minimumSampleSize` always was. Their values, and the gates they drive, are
+> documented in §7.3.2 — that is what callers actually needed. Passing them from
+> untyped JavaScript no longer takes effect; the value is validated, ignored, and
+> reported via a `WaferWarning`.
 
-A finding is emitted only when it clears two independent gates: it must be statistically significant (p-value ≤ 0.05 after multiple-comparison correction) **and** large enough to matter in practice (either an absolute 15 pp delta, or a 50% elevation above the background failure rate). Severity is then assigned based on how extreme the finding is. You can usually ignore this section — it explains why a particular pattern did or didn't produce a finding.
+**Every numeric option here is validated.** A value outside the range that can
+produce a meaningful analysis is corrected to the nearest usable one and reported
+as an `'analysis-option-corrected'` `WaferWarning` in `summary.stats.warnings[]`
+(§4.2.2) — visible in the renderers' warning indicator. `ringCount` must be a
+whole number ≥ 1; `sectorCount` must be 4, 8, 16 or 32. There is deliberately no
+upper bound on `ringCount`: a fine banding is still gated by the minimum region
+size, so its findings carry real populations rather than artefacts.
+
+### 7.3.1 Choosing what to analyse — cost, and who decides
+
+Most of the detection toggles are cheap and on by default; you can ignore them.
+Two are worth a decision:
+
+| Option | Cost | Decide it |
+|---|---|---|
+| `computePerTestStats` | cheap — a quartile scan | Once, for your whole app. On if you show distribution or box-plot charts. |
+| `enableTestValueAnalysis` | **~1–2µs per (wafer × die × test)** | **Per lot, not once.** Milliseconds on one wafer; seconds on a lot. |
+
+`enableTestValueAnalysis` is off by default because it is the only option whose
+cost changes kind with lot size — see [Performance](performance.md#the-number-that-matters-is-the-lot-not-the-wafer)
+for measured figures. Being off by default is *not* a recommendation to leave it
+off: it produces the regional test-value findings, and an integrator who never
+enables it ships a Findings list that silently omits a whole category.
+
+Estimate before you decide:
+
+```ts
+const estimateMs = waferCount * diesPerWafer * testCount * 1.5 / 1000;
+```
+
+Below roughly a second, just run it — the user will not notice it against the
+parse and render that just happened, and asking is pure friction. Above that,
+run the analysis without it and pass a [`FindingsNotice`](#54-renderoptions) so
+the Findings panel states what is missing and what computing it would cost. That
+way the absence is visible where the findings are, rather than depending on the
+user discovering a control elsewhere.
+
+> **Do not** leave `enableTestValueAnalysis` on unconditionally for a lot
+> viewer. A 25-wafer lot with a few hundred tests takes tens of seconds, with no
+> progress indication, and reads as a hang.
+
+### 7.3.2 Statistical rules & thresholds
+
+A finding is emitted only when it clears two independent gates: it must be statistically significant (p-value ≤ 0.05 after multiple-comparison correction) **and** large enough to matter in practice (either an absolute 20 pp delta, or a doubling of the background failure rate). Severity is then assigned based on how extreme the finding is. You can usually ignore this section — it explains why a particular pattern did or didn't produce a finding.
 
 **Default thresholds:**
 
 | Option | Default | Applies to |
 |--------|---------|------------|
 | `significanceLevel` | `0.05` | adjusted p-value threshold after per-family BH correction |
-| `minimumEffectSize` | `0.15` | absolute proportion delta for yield/bin findings |
+| `minimumEffectSize` | `0.20` | absolute proportion delta for yield/bin findings |
 | `minimumRelativeEffect` | `1.0` | relative effect `\|delta / background\|` for yield/bin/cluster findings |
 | minimum region size | auto | auto-scaled to ~1% of wafer die count (min 5); not user-configurable |
 
 **Effect size gate for proportion findings (yield, hard bin, soft bin, cluster, edge-arc):**
 
 A finding is kept when it passes the significance test AND satisfies at least one of:
-- absolute `|delta| ≥ minimumEffectSize` (0.15 by default), **or**
+- absolute `|delta| ≥ minimumEffectSize` (0.20 by default), **or**
 - relative `|delta / background| ≥ minimumRelativeEffect` (1.0 by default)
 
-The relative criterion catches meaningful signals on low-failure-rate wafers where the absolute delta is small but still represents a large deviation from background. For example, with a 3% background failure rate a 2 percentage-point increase is a 67% relative elevation — statistically and practically significant even though 0.02 < 0.15.
+The relative criterion catches meaningful signals on low-failure-rate wafers where the absolute delta is small but still represents a large deviation from background. For example, with a 3% background failure rate a 4 percentage-point increase is a 133% relative elevation — it clears `minimumRelativeEffect` even though 0.04 is well under the 0.20 absolute gate. Note the converse: a 2 percentage-point increase on the same background is only a 67% elevation, which clears *neither* gate and produces no finding.
 
 **Effect size gate for test-value findings:**
 
-Test-value findings use Cohen's d (pooled standard deviation), not a proportion delta. Only `minimumEffectSize` applies (`|effectSize| ≥ 0.15`); `minimumRelativeEffect` is not used for these findings.
+Test-value findings use Cohen's d (pooled standard deviation), not a proportion delta. Only `minimumEffectSize` applies (`|effectSize| ≥ 0.20`); `minimumRelativeEffect` is not used for these findings.
 
 **Tests implemented:**
 
@@ -2239,8 +2364,8 @@ For proportion findings, severity uses whichever criterion — absolute or relat
 
 | Severity | p-value | Absolute delta | Relative delta |
 |----------|---------|----------------|----------------|
-| `unusual` | ≤ 0.01 | ≥ 0.25 | ≥ 2.0× background |
-| `notable` | ≤ 0.05 | ≥ 0.15 | ≥ 1.0× background |
+| `unusual` | ≤ 0.01 | ≥ 0.30 | ≥ 2.5× background |
+| `notable` | ≤ 0.05 | ≥ 0.20 | ≥ 1.5× background |
 | `info` | any other passing finding | | |
 
 For test-value findings (Cohen's d): `unusual` when d ≥ 0.5 at p ≤ 0.01; `notable` when d ≥ 0.15 at p ≤ 0.05.
@@ -2786,9 +2911,10 @@ import {
   buildTestTrendData, trendCentre,
   buildTestPassRateData, hasJudgeableTests,
   buildTestHistogramData, buildTestHistogramSeries,
-  buildCorrelationMatrix, filterCorrelationMatrix, pearsonFromSums, pearsonOfPairs,
+  buildCorrelationMatrix, filterCorrelationMatrix,
   buildScatterData, buildScatterDataGrouped,
   buildFacetTable, facetValueOf, DEFAULT_FACET_CURATION, FACET_NONE_VALUE,
+  mergeTestDefs,
 } from '@wafertools/wafermap/stats';
 ```
 
@@ -2809,12 +2935,11 @@ import {
 | `buildTestHistogramSeries(groups, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramSeriesData` | Shared bucket ranges with one count series per group — `{ ranges, series: [{ groupKey, counts }] }`. |
 | `buildCorrelationMatrix(dies, testDefs)` | `CorrelationMatrix` | Pearson r for every parametric test pair. |
 | `filterCorrelationMatrix(matrix, options)` | `{ matrix, strongPairs, moderatePairs, hiddenWeakPairs, strongestPair }` | Caps matrix size (`options.maxTests`) and requires a minimum test count (`options.minTests`), keeping the pairs with the largest correlation magnitude. |
-| `pearsonFromSums(n, sumX, sumY, sumXX, sumYY, sumXY)` | `number \| null` | Pearson r from running sums — the single implementation of the formula. `buildCorrelationMatrix`'s per-pair accumulators and `pearsonOfPairs` both go through it, so a matrix cell and the scatter card can never disagree about the same pair. `null` below 3 points, or with zero variance in either axis. |
-| `pearsonOfPairs(pairs)` | `{ r, n }` | The same r plus its `n` for an explicit `{ x, y }` list — the scatter panel's own displayed points, recomputed after any legend filtering, so filtering to one group reports that group's coefficient. Non-finite pairs are skipped, which is why `n` is returned rather than assumed to be `pairs.length`. |
 | `buildScatterData(items, xTest, yTest)` | `ScatterPoint[]` | One point per die with valid values for both tests. |
 | `buildScatterDataGrouped(groups, xTest, yTest)` | `ScatterPoint[]` | Same, with each point tagged `group: string` — every group's points are returned together (this function never restricts to one group). |
 | `buildFacetTable(items, options?)` | `FacetField[]` | The distinct-values table over `wafer.metadata` — "what can I group/compare/split by?" One entry per metadata key present on at least one item, curated via `DEFAULT_FACET_CURATION` (`lot`, `product`, `testProgram`, `temperature`, `split`, `operator`, `testDate`; `waferId` is curated `facet: false` — present but not offered, since it's unique per item by definition). `options.facetableOnly` (default `true`) restricts to curated-`facet:true`-or-uncurated keys; pass `false` to include `waferId` too. |
 | `facetValueOf(metadata, key, curation?)` | `string \| undefined` | The faceting value of one metadata key for one item — date-curated fields (`testDate`) truncate to date-only. |
+| `mergeTestDefs(items)` | `{ defs, conflicts, warnings }` | The ONE test list for a population of wafers. `TestDef.testNumber` identifies a test *within a test program*, so taking any single wafer's `testDefs` as the namespace for a multi-program load pools unrelated measurements under one number and normalises them against the wrong limits. This unions every test number across `items` and reconciles the defs describing each. **An absent field is "not stated", never a disagreement** — mixing a file that states limits with one that does not merges silently, the stated value winning. Only two *stated and different* values conflict, in two tiers. **Hard** (distinct names, distinct units, or `testType` `'P'` vs `'F'`): different measurements sharing a number, so the test is withheld from `defs` entirely — `warnings` carries code `test-def-collision`, severity `error`. **Soft** (same name and unit, both limits stated but different): the same measurement under different specs, so the test stays and its values still pool, but the merged def drops **both** limits — no Cp/Cpk/Pp/Ppk, no spec yield, no limit lines — with code `test-limit-conflict`, severity `warning`. Limits compare on a relative tolerance, not `===`, so a float32 STDF limit and a float64 CSV one cannot manufacture a conflict; names compare trimmed and case-insensitively. Hand `warnings` straight to `collectWarnings` (§10.x) to surface both through the toolbar indicator and Summary banner. `renderWaferGallery` and the Insights tab call this internally — hosts need it only when building their own cross-wafer surface. |
 
 `FACET_NONE_VALUE` (`'(none)'`) is the residual bucket: `buildFacetTable` emits it as a
 `FacetValue.value` for items whose metadata has no value for that field, so the counts

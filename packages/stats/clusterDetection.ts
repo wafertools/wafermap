@@ -2,6 +2,7 @@ import type { Die, PositionedDie, Wafer } from '../core/index.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { normalCdf } from './math.js';
 import { getDieKey } from '../core/dies.js';
+import { findConnectedComponents } from './connectedComponents.js';
 
 // 16-point compass for edge-arc bearing labels.
 const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW', 'SW', 'SSW', 'S', 'SSE', 'SE', 'ESE'];
@@ -82,9 +83,6 @@ export function buildClusterFindings(
 
   // Grid index for O(1) neighbour lookups by integer grid coordinate.
   // Adjacency uses the die's integer x,y grid position (8-connected: |dx|<=1, |dy|<=1).
-  const failingByKey = new Map<string, PositionedDie>();
-  for (const d of failing) failingByKey.set(getDieKey(d), d);
-
   const allByKey = new Map<string, PositionedDie>();
   for (const d of dies) allByKey.set(getDieKey(d), d);
 
@@ -92,36 +90,9 @@ export function buildClusterFindings(
   const neighStepsX = Math.ceil(neighbourRadius / pitchX);
   const neighStepsY = Math.ceil(neighbourRadius / pitchY);
 
-  // Flood-fill connected components of failing dies using 8-connected grid adjacency.
-  const visited = new Set<string>();
-  const components: PositionedDie[][] = [];
-
-  for (const seed of failing) {
-    const seedKey = getDieKey(seed);
-    if (visited.has(seedKey)) continue;
-
-    const component: PositionedDie[] = [];
-    const queue: PositionedDie[] = [seed];
-    visited.add(seedKey);
-
-    while (queue.length > 0) {
-      const current = queue.pop()!;
-      component.push(current);
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const ck = `${current.x + dx},${current.y + dy}`;
-          if (visited.has(ck)) continue;
-          const candidate = failingByKey.get(ck);
-          if (!candidate) continue;
-          visited.add(ck);
-          queue.push(candidate);
-        }
-      }
-    }
-
-    components.push(component);
-  }
+  // Shared with `patternClassification.ts` — both ask "which failing dies form
+  // a contiguous group", and two answers to one question can drift apart.
+  const components = findConnectedComponents(failing);
 
   const findings: StatsFinding[] = [];
   const cx = wafer.center.x;

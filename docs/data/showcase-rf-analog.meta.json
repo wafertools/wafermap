@@ -1,0 +1,60 @@
+{
+  "waferConfig": {
+    "diameter": 200,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 2.2,
+    "height": 1.8
+  },
+  "passBins": [
+    1
+  ],
+  "sbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 41,
+      "name": "Gain Low"
+    },
+    {
+      "bin": 42,
+      "name": "NF High"
+    },
+    {
+      "bin": 43,
+      "name": "IP3 Low"
+    }
+  ],
+  "testDefs": [
+    {
+      "testNumber": 5,
+      "name": "GAIN_DB",
+      "unit": "dB",
+      "limitLow": 14
+    },
+    {
+      "testNumber": 6,
+      "name": "NF_DB",
+      "unit": "dB",
+      "limitHigh": 5
+    },
+    {
+      "testNumber": 7,
+      "name": "IP3_DBM",
+      "unit": "dBm",
+      "limitLow": 12
+    },
+    {
+      "testNumber": 8,
+      "name": "IDQ_MA",
+      "unit": "mA",
+      "limitLow": 34,
+      "limitHigh": 47
+    }
+  ]
+}

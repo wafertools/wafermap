@@ -60,6 +60,12 @@ export interface ToCanvasOptions {
   viewport?: ViewportTransform;
   /** Currently highlighted bin (or metadata value) — drawn with an active indicator in the bin legend. */
   activeBin?: number | string;
+  /** Bin legend row under the pointer — drawn with a background fill, which is
+   *  deliberately a different channel from `activeBin`'s accent border and bold
+   *  label so "selected" and "pointed at" never look the same. The legend is
+   *  canvas-drawn, so this is the only way it can answer the pointer at all;
+   *  a DOM `:hover` cannot reach it. */
+  hoverBin?: number | string;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -127,17 +133,29 @@ const BIN_LEGEND_MODES = new Set(['hardBin', 'softBin', 'metadata']);
 // Resolved per draw, not module-level constants: they follow the host's
 // `--wmap-font-size` (see FONT/fontPx in toolbar.ts). Canvas text cannot read
 // a CSS variable, so each is a function called at paint time.
-const COLORBAR_LABEL_FONT = () => `${fontPx()}px system-ui, sans-serif`;
+// Map-canvas type scale. Three tiers, expressed as offsets from
+// `--wmap-font-size` so a host can still move the whole scale, but with the
+// relative sizes fixed: title (base) > subtitle / scale note (-1) > colorbar
+// labels / axis ticks (-2). These were briefly collapsed onto a single
+// `fontPx()` — see CHANGELOG — which left the title and its subtitle separated
+// only by weight and pushed the colorbar labels 2px past the band sized for
+// them. Sizes here are plot-coupled: they annotate dense data rather than
+// chrome, which is why they sit below the 11px DOM floor.
+const COLORBAR_LABEL_FONT = () => `${fontPx(-2)}px system-ui, sans-serif`;
+const COLORBAR_TICK_LEN     = 3;  // px tick mark to the right of the bar
+const COLORBAR_LABEL_PAD    = 2;  // px between the tick and its label
+const COLORBAR_EDGE_MARGIN  = 6;  // px kept clear between the label and the canvas edge
+const COLORBAR_LABEL_GAP_MIN = 20;  // px — the historic fixed gap, now a floor
 const MAP_TITLE_FONT      = () => `600 ${fontPx()}px system-ui, sans-serif`;   // primary identifier, above scale
-const MAP_SUBTITLE_FONT   = () => `${fontPx()}px system-ui, sans-serif`;       // secondary context, below scale
-const SCALE_NOTE_FONT     = () => `600 ${fontPx()}px system-ui, sans-serif`;   // log/linear scale note, below scale
+const MAP_SUBTITLE_FONT   = () => `${fontPx(-1)}px system-ui, sans-serif`;       // secondary context, below scale
+const SCALE_NOTE_FONT     = () => `600 ${fontPx(-1)}px system-ui, sans-serif`;   // log/linear scale note, below scale
 const COLORBAR_STEPS = 128;
-const AXIS_TICK_FONT  = () => `${fontPx(-1)}px system-ui, sans-serif`;
+const AXIS_TICK_FONT  = () => `${fontPx(-2)}px system-ui, sans-serif`;
 const AXIS_TICK_LEN   = 4;  // px
-const BIN_ROW_H       = 20; // px per legend row (grown with COLORBAR_LABEL_FONT)
+const BIN_ROW_H       = 17; // px per legend row (sized against COLORBAR_LABEL_FONT)
 const BIN_SWATCH_SIZE = 11; // px
-export const BIN_LEGEND_W               = 124; // px total right-side reserve for bin legend
-export const BIN_LEGEND_W_COMPACT       =  72; // px right-side reserve for compact legend
+export const BIN_LEGEND_W               = 110; // px total right-side reserve for bin legend
+export const BIN_LEGEND_W_COMPACT       =  64; // px right-side reserve for compact legend
 export const BIN_LEGEND_ADAPT_COMPACT   = 280; // px canvas width — below this, auto-switch to compact
 export const BIN_LEGEND_ADAPT_FLOATING  = 180; // px canvas width — below this, auto-switch to floating
 // px — below either dimension no legend is drawn at all (see legendHasRoom).
@@ -173,6 +191,7 @@ export function toCanvas(
     diePitchMm,
     viewport: viewportOverride,
     activeBin,
+    hoverBin,
     fallbackFormat,
     topClearance  = 0,
     minRightReserve,
@@ -271,7 +290,54 @@ export function toCanvas(
   const legendRowCount = legendEntryCount > maxLegendRows ? maxLegendRows - 1 : legendEntryCount;
   const bottomLegendReserve = drawLegend && legendIsBottom ? legendRowCount * BIN_ROW_H : 0;
   const topLegendReserve    = drawLegend && legendIsTop    ? legendRowCount * BIN_ROW_H : 0;
-  const rightReserve    = drawColorbar ? colorbarWidth + 28 : drawLegend && legendIsRight ? legendWidth : 0;
+  // ── Colorbar label band ────────────────────────────────────────────────────
+  // The band to the right of the bar has to be sized from the text that will
+  // actually be drawn in it. It used to be a pair of constants (`labelGap = 20`
+  // and `colorbarWidth + 28`) tuned when COLORBAR_LABEL_FONT was a hardcoded
+  // 10px; once the font became themeable via fontPx() the labels grew but the
+  // band did not, and the last glyph was shaved off at the canvas edge.
+  //
+  // The tick set itself can't be used here — it depends on the bar height,
+  // which depends on this reserve. The endpoints bound the width instead:
+  // intermediate ticks are "nice" numbers between them, so the only case they
+  // can exceed both is a range spanning zero, where an intermediate tick may
+  // carry a minus sign the endpoints' widest value does not. Measuring the
+  // negated larger magnitude covers that.
+  const cbIsCountMode = view.plotMode === 'stackedBins' || view.plotMode === 'stackedSoftBins';
+  const cbTestDef = findTestDef(view.testDefs, view.activeTest!);
+  const cbName = cbIsCountMode
+    ? 'Count'
+    : (cbTestDef?.name ?? (view.activeTest != null ? `Test ${view.activeTest}` : undefined));
+  const cbUnit = cbIsCountMode ? undefined : cbTestDef?.unit;
+  const [cbVMin, cbVMax] = view.valueRange;
+  const { tickFmt: cbBaseFmt } = fmtColorbarAxis(cbVMax, cbName, cbUnit, fallbackFormat);
+  const cbTickFmt = view.allIntegerValues ? (v: number) => String(Math.round(v)) : cbBaseFmt;
+
+  let colorbarLabelW = 0;
+  if (drawColorbar) {
+    // Same context object the draw uses; `canvas.width` is assigned below and
+    // resets its state, so only the measurement is kept, never the font.
+    const measureCtx = canvas.getContext('2d')!;
+    measureCtx.font = COLORBAR_LABEL_FONT();
+    const candidates = [cbTickFmt(cbVMin), cbTickFmt(cbVMax)];
+    if (cbVMin < 0) candidates.push(cbTickFmt(-Math.max(Math.abs(cbVMin), Math.abs(cbVMax))));
+    for (const label of candidates) {
+      colorbarLabelW = Math.max(colorbarLabelW, measureCtx.measureText(label).width);
+    }
+  }
+  // Keep the label's right edge COLORBAR_EDGE_MARGIN clear of the canvas edge:
+  //   labelX + labelW <= cssW - margin, with labelX = cssW - padding - labelGap
+  //                                              + colorbarWidth's tick + gap
+  // solves to labelGap >= labelW + tickLen + labelPad + margin - padding.
+  // The `Math.max` floor keeps the previous layout byte-for-byte at the label
+  // widths that already fitted, so nothing shifts for existing narrow labels.
+  const colorbarLabelGap = Math.max(
+    COLORBAR_LABEL_GAP_MIN,
+    Math.ceil(colorbarLabelW) + COLORBAR_TICK_LEN + COLORBAR_LABEL_PAD + COLORBAR_EDGE_MARGIN - padding);
+  // The wafer must clear the bar as well as the labels. The extra 8px is the
+  // slack the old `colorbarWidth + 28` carried over `labelGap = 20`; keeping it
+  // means a default-width colorbar reserves exactly what it always did.
+  const rightReserve    = drawColorbar ? colorbarWidth + colorbarLabelGap + 8 : drawLegend && legendIsRight ? legendWidth : 0;
   const leftLegendReserve   = drawLegend && legendIsLeft   ? legendWidth : 0;
   const axisReserve     = showAxes ? 32 : 0;
   const axisLeftReserve = showAxes ? 36 : 0;
@@ -612,13 +678,13 @@ export function toCanvas(
   // ── Draw colorbar ──────────────────────────────────────────────────────────
   if (drawColorbar) {
     const scheme    = getColorScheme(view.colorScheme);
-    const labelGap  = 20;
+    const labelGap  = colorbarLabelGap;
     // Bar occupies ~75% of the usable height below the top clearance, centred in that area.
     const cbUsableH = drawH - topClearance;
     const cbH       = Math.round(cbUsableH * 0.75);
     const cbY       = padding + topClearance + Math.round((cbUsableH - cbH) / 2);
     const cbX       = cssW - padding - colorbarWidth - labelGap;
-    const [vMin, vMax] = view.valueRange;
+    const vMin = cbVMin, vMax = cbVMax;
     const vRange    = vMax - vMin;
 
     // Primary title just ABOVE the bar, right-aligned and truncated so it never overlaps the wafer.
@@ -668,7 +734,7 @@ export function toCanvas(
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth   = 0.5;
 
-    const tickLen       = 3;
+    const tickLen       = COLORBAR_TICK_LEN;
     const minPixels     = 36;  // minimum px between tick centres
     const endpointGuard = 14;
 
@@ -699,14 +765,10 @@ export function toCanvas(
           return ts;
         })();
 
-    const testDef = findTestDef(view.testDefs, view.activeTest!);
-    const isCountMode = view.plotMode === 'stackedBins' || view.plotMode === 'stackedSoftBins';
-    const cbName  = isCountMode ? 'Count' : (testDef?.name ?? (view.activeTest != null ? `Test ${view.activeTest}` : undefined));
-    const cbUnit  = isCountMode ? undefined : testDef?.unit;
-    const { tickFmt: baseFmt } = fmtColorbarAxis(
-      vMax, cbName, cbUnit, fallbackFormat,
-    );
-    const tickFmt = view.allIntegerValues ? (v: number) => String(Math.round(v)) : baseFmt;
+    // Derived above, where the label band was measured — same values.
+    const testDef = cbTestDef;
+    const isCountMode = cbIsCountMode;
+    const tickFmt = cbTickFmt;
 
     // Draw intermediate ticks.
     ctx.textBaseline = 'middle';
@@ -716,7 +778,7 @@ export function toCanvas(
       ctx.moveTo(cbX + colorbarWidth, sy);
       ctx.lineTo(cbX + colorbarWidth + tickLen, sy);
       ctx.stroke();
-      ctx.fillText(tickFmt(v), cbX + colorbarWidth + tickLen + 2, sy);
+      ctx.fillText(tickFmt(v), cbX + colorbarWidth + tickLen + COLORBAR_LABEL_PAD, sy);
     }
 
     // Always draw exact min/max at the bar edges.
@@ -725,14 +787,14 @@ export function toCanvas(
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY);
     ctx.stroke();
     ctx.textBaseline = 'top';
-    ctx.fillText(tickFmt(vMax), cbX + colorbarWidth + tickLen + 2, cbY);
+    ctx.fillText(tickFmt(vMax), cbX + colorbarWidth + tickLen + COLORBAR_LABEL_PAD, cbY);
 
     ctx.beginPath();
     ctx.moveTo(cbX + colorbarWidth, cbY + cbH);
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY + cbH);
     ctx.stroke();
     ctx.textBaseline = 'bottom';
-    ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + 2, cbY + cbH);
+    ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + COLORBAR_LABEL_PAD, cbY + cbH);
 
     // Spec limit markers — left-side labels + dual-stroke line (white halo + dark rule).
     // In spec mode: limits sit at the bar endpoints, so draw left-side labels there.
@@ -1053,11 +1115,18 @@ export function toCanvas(
           const entry = legendEntries[idx++];
           if (!entry) break;
           const isActive = entry.key === activeBin;
+          // Not both at once: an active row already reads as picked out, and
+          // adding the hover fill on top would just make it noisier.
+          const isHover = !isActive && entry.key === hoverBin;
           const swatchX = x;
           const labelX = x + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
           const midY = originYLegend + row * BIN_ROW_H + BIN_ROW_H / 2;
           const swatchY = originYLegend + row * BIN_ROW_H + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
           const labelMaxW = columnWidths[col] - BIN_SWATCH_SIZE - BIN_LABEL_GAP - BIN_COUNT_W;
+          if (isHover) {
+            ctx.fillStyle = theme.hoverRow;
+            ctx.fillRect(x, originYLegend + row * BIN_ROW_H, columnWidths[col], BIN_ROW_H);
+          }
           ctx.fillStyle = entry.color;
           ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
           ctx.strokeStyle = isActive ? theme.accent : 'rgba(0,0,0,0.25)';
@@ -1093,12 +1162,22 @@ export function toCanvas(
       let rowY = originYLegend;
       for (const entry of visibleEntries) {
         const isActive = entry.key === activeBin;
+        // Same hover treatment as the grid legend above. Both blocks push into
+        // `binLegendRows`, so both are hit-testable and both must answer the
+        // pointer — the first version only handled the grid one, and this
+        // (floating/compact) variant is what most single maps actually render,
+        // so the feature looked completely dead when tested.
+        const isHover = !isActive && entry.key === hoverBin;
         const swatchX = originXLegend;
         const labelX = originXLegend + BIN_SWATCH_SIZE + BIN_LABEL_GAP;
         const midY = rowY + BIN_ROW_H / 2;
         const swatchY = rowY + Math.round((BIN_ROW_H - BIN_SWATCH_SIZE) / 2);
         // Floating always shows full labels (entry.label is already full when not compact).
         const displayLabel = entry.label;
+        if (isHover) {
+          ctx.fillStyle = theme.hoverRow;
+          ctx.fillRect(originXLegend - 3, rowY, colW + 3, BIN_ROW_H);
+        }
         ctx.fillStyle = entry.color;
         ctx.fillRect(swatchX, swatchY, BIN_SWATCH_SIZE, BIN_SWATCH_SIZE);
         ctx.strokeStyle = isActive ? theme.accent : 'rgba(0,0,0,0.25)';

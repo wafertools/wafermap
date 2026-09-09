@@ -14,7 +14,13 @@ import { writeFileSync } from 'node:fs';
 
 const DIAMETER_MM = 300, DIE_MM = 10;
 const R = DIAMETER_MM / DIE_MM / 2;          // 15 dies
-const EDGE = 0.5;                             // keep whole dies inside the edge
+// Half the die DIAGONAL, not half its width. The clip below tests a die's
+// CENTRE against the wafer radius, but the part of a die that leaves the wafer
+// first is its outer CORNER — √2/2 of a die away from the centre at 45°, not
+// 0.5. With 0.5 here, eight dies had a corner outside the 300 mm edge (worst:
+// grid (-12,-8), corner at 151.2 mm against a 150 mm radius) and wmap correctly
+// raised `geometry-conflict` on the demo's own shipped fixture.
+const EDGE = Math.SQRT1_2;                    // keep whole dies inside the edge
 const WAFERS = ['W01', 'W02', 'W03'];
 const DATE = { W01: '2026-04-22', W02: '2026-04-22', W03: '2026-04-23' };
 
@@ -46,5 +52,44 @@ for (const wafer of WAFERS) {
   }
 }
 writeFileSync('docs/data/dummy-fulldata.csv', rows.map(r => r.join(',')).join('\n') + '\n');
+
+// Geometry + definitions sidecar. The CSV carries step indices only, so without
+// this a demo loading it built a dimensionless map — an inferred "29.83 across"
+// wafer with 1×1 dies — even though this file is generated from an exact
+// 300 mm / 10 mm grid. See writeMeta in gen-showcase-csvs.mjs for the full note.
+//
+// Limits are set against the distributions above (testA ~N(1.05, 0.10),
+// testB ~N(0.49, 0.02), testC ~N(55, 12)) at roughly ±2.5σ, so a small,
+// realistic fraction of dies falls out of spec on each test rather than none or
+// half — which is what makes spec-limit colouring and the pass-rate pareto worth
+// looking at.
+writeFileSync('docs/data/dummy-fulldata.meta.json', JSON.stringify({
+  waferConfig: {
+    diameter: 300,
+    notch: { type: 'bottom' },
+    metadata: { lot: 'LOT123', product: 'DEMO-LOGIC' },
+  },
+  dieConfig: { width: 10, height: 10 },
+  passBins: [1],
+  hbinDefs: [
+    { bin: 1, name: 'Pass' },
+    { bin: 2, name: 'Edge Ring' },
+    { bin: 3, name: 'Vth Shift' },
+    { bin: 4, name: 'Leakage' },
+  ],
+  sbinDefs: [
+    { bin: 10, name: 'Pass' },
+    { bin: 20, name: 'Edge Ring' },
+    { bin: 40, name: 'Vth - Hi' },
+    { bin: 45, name: 'Leakage - Gate' },
+  ],
+  // testNumber mirrors the CSV column index, which is how a positional loader
+  // keys testValues.
+  testDefs: [
+    { testNumber: 9,  name: 'testA', unit: 'A', limitLow: 0.80, limitHigh: 1.30 },
+    { testNumber: 10, name: 'testB', unit: 'V', limitLow: 0.44, limitHigh: 0.54 },
+    { testNumber: 11, name: 'testC', unit: 'Hz', limitLow: 25, limitHigh: 85 },
+  ],
+}, null, 2) + '\n');
 const dies = rows.length - 1;
 console.log(`wrote docs/data/dummy-fulldata.csv — ${dies} dies across ${WAFERS.length} wafers (${dies / WAFERS.length}/wafer)`);

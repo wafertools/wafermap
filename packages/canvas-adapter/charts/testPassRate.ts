@@ -24,17 +24,13 @@ import {
 import type { TestPassRateItem } from '../../stats/testPassRate.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { categorical, QUANTITY } from './palette.js';
-import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
+import { SPACE, FONT, CLR } from '../toolbar.js';
 import {
-  cardShell, observeResize, makeTooltip, positionChartTooltip, makeSegmented,
-  renderEmptyState, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH,
-  type SaveImageHandler,
+  cardShell, makeTooltip, makeSegmented, renderEmptyState, type SaveImageHandler,
 } from './chartShell.js';
+import { renderGroupedBarPlot, type GroupedBarPlotHandle } from './groupedBarPlot.js';
 
 const CLUSTER_LABEL_WIDTH = 100;
-const CLUSTER_GAP = 8;
-const SUBBAR_GAP = 1;
-const SUBBAR_HEIGHT = 14;
 const MAX_VISIBLE_TESTS = 8;
 
 export interface TestPassRatePanelOptions {
@@ -99,11 +95,11 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
   card.insertBefore(hint, body);
 
   const tooltip = makeTooltip(card);
-  let resizeHandle: { disconnect: () => void } | null = null;
+  let plot: GroupedBarPlotHandle | null = null;
 
   function rebuildBody(): void {
-    resizeHandle?.disconnect();
-    resizeHandle = null;
+    plot?.destroy();
+    plot = null;
     body.innerHTML = '';
 
     if (available.length === 0) {
@@ -140,9 +136,6 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
     }
 
     const rows = data.rows;
-    const seriesCount = data.groups.length;
-    const clusterHeight = seriesCount * SUBBAR_HEIGHT + (seriesCount - 1) * SUBBAR_GAP;
-    const rowPitch = clusterHeight + CLUSTER_GAP;
     // QUANTITY, not CLR.barFill: `CLR.*` values are `var(--wmap-…, fallback)`
     // strings for CSS, and canvas cannot resolve a CSS custom property — the
     // fillStyle assignment is silently ignored and the bar keeps whatever colour
@@ -150,158 +143,44 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
     // palette.ts (plain hex) or resolveChartCanvasColors (resolved at draw time).
     const colorOf = (i: number) => grouped ? categorical(i) : QUANTITY;
 
-    if (grouped) {
-      const legend = doc.createElement('div');
-      Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: `${SPACE.xs} ${SPACE.xl}`, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
-      data.groups.forEach((g, i) => {
-        const item = doc.createElement('span');
-        Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: FONT.body, color: CLR.text } as Partial<CSSStyleDeclaration>);
-        const sw = doc.createElement('span');
-        Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: RADIUS.control, background: colorOf(i) } as Partial<CSSStyleDeclaration>);
-        const txt = doc.createElement('span');
-        txt.textContent = g;
-        item.append(sw, txt);
-        legend.appendChild(item);
-      });
-      body.appendChild(legend);
-    }
-
-    const scrollArea = doc.createElement('div');
-    const visibleHeight = PADDING * 2 + Math.min(rows.length, MAX_VISIBLE_TESTS) * rowPitch;
-    // overflowX explicit — see binCluster.ts/cardShell for why 'visible' would
-    // silently compute to 'auto' here and add a horizontal axis.
-    Object.assign(scrollArea.style, { overflowX: 'hidden', overflowY: 'auto', minHeight: '0', flex: '1', maxHeight: `${visibleHeight}px`, scrollbarGutter: 'stable' } as Partial<CSSStyleDeclaration>);
-    body.appendChild(scrollArea);
-    growCardToFitContent(card, body, visibleHeight + (grouped ? 22 : 0));
-
-    const canvas = doc.createElement('canvas');
-    canvas.style.display = 'block';
-    canvas.style.cursor = 'default';
-    scrollArea.appendChild(canvas);
-
-    const win = doc.defaultView ?? window;
-    const dpr = win.devicePixelRatio || 1;
-    let hovered: { row: number; group: number } | null = null;
-
-    function plotMetrics() {
-      const barX = PADDING + CLUSTER_LABEL_WIDTH;
-      const barMaxWidth = Math.max(10, canvas.clientWidth - barX - VALUE_WIDTH - PADDING);
-      return { barX, barMaxWidth };
-    }
-
-    function subBarAt(offsetX: number, offsetY: number): { row: number; group: number } | null {
-      const row = Math.floor((offsetY - PADDING) / rowPitch);
-      if (row < 0 || row >= rows.length) return null;
-      const within = (offsetY - PADDING) - row * rowPitch;
-      const group = Math.floor(within / (SUBBAR_HEIGHT + SUBBAR_GAP));
-      if (group < 0 || group >= seriesCount) return null;
-      const { barX, barMaxWidth } = plotMetrics();
-      if (offsetX < barX || offsetX > barX + barMaxWidth) return null;
-      return { row, group };
-    }
-
-    function draw(): void {
-      const theme = resolveChartCanvasColors(card);
-      const width = scrollArea.clientWidth;
-      const height = PADDING * 2 + rows.length * rowPitch;
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-      ctx.textBaseline = 'middle';
-
-      const { barX, barMaxWidth } = plotMetrics();
-
-      rows.forEach((row, ri) => {
-        const clusterTop = PADDING + ri * rowPitch;
-
-        // Hover highlight FIRST, before the label and bars. It spans the full row
-        // width (x = 0 … width), so painting it inside the per-group loop — after
-        // the label had already been drawn — covered the test name with the
-        // highlight. Least visible when grouped (the label is centred across a
-        // multi-row cluster, so only some rows overlap it) and total when
-        // ungrouped, where the single sub-bar's highlight always covers it.
-        if (hovered && hovered.row === ri) {
-          const hy = clusterTop + hovered.group * (SUBBAR_HEIGHT + SUBBAR_GAP);
-          ctx.fillStyle = theme.bgHover;
-          ctx.fillRect(0, hy - 1, width, SUBBAR_HEIGHT + 2);
+    plot = renderGroupedBarPlot(card, body, tooltip, {
+      // A fixed 0-100% axis, never normalised to the best row: a 99% and a 98%
+      // test must not both draw a full-width bar.
+      rows: rows.map(row => ({
+        label: row.label,
+        bars: row.byGroup.map(v => ({
+          fraction: v.passRatePercent === null ? null : v.passRatePercent / 100,
+        })),
+        trailing: row.overall.passRatePercent === null
+          ? '—' : `${row.overall.passRatePercent.toFixed(1)}%`,
+      })),
+      groups: data.groups,
+      labelWidth: CLUSTER_LABEL_WIDTH,
+      maxVisibleRows: MAX_VISIBLE_TESTS,
+      showLegend: grouped,
+      maxLabelChars: 14,
+      emptyBarText: 'no data',
+      colorOf,
+      tooltipHtml: (ri, gi) => {
+        const row = rows[ri];
+        const value = row.byGroup[gi];
+        const who = grouped ? ` · ${data.groups[gi]}` : '';
+        if (value.passRatePercent === null) {
+          return `<strong>${row.label}</strong>${who}<br>no dies with a verdict`;
         }
-
-        ctx.fillStyle = theme.text;
-        ctx.textAlign = 'right';
-        const label = row.label.length > 14 ? `${row.label.slice(0, 13)}…` : row.label;
-        ctx.fillText(label, PADDING + CLUSTER_LABEL_WIDTH - 8, clusterTop + clusterHeight / 2);
-
-        row.byGroup.forEach((value, gi) => {
-          const y = clusterTop + gi * (SUBBAR_HEIGHT + SUBBAR_GAP);
-          ctx.fillStyle = theme.track;
-          ctx.fillRect(barX, y, barMaxWidth, SUBBAR_HEIGHT);
-          // A fixed 0–100% axis, never normalised to the best row: a 99% and a
-          // 98% test must not both draw a full-width bar.
-          if (value.passRatePercent === null) {
-            // Nothing measured for this group — leave the track empty and say so
-            // in the label, rather than drawing a zero-width bar that reads as 0%.
-            ctx.fillStyle = theme.textMuted;
-            ctx.textAlign = 'left';
-            ctx.fillText('no data', barX + 4, y + SUBBAR_HEIGHT / 2);
-            return;
-          }
-          const w = Math.max(value.passRatePercent > 0 ? 1 : 0, (value.passRatePercent / 100) * barMaxWidth);
-          ctx.fillStyle = colorOf(gi);
-          ctx.fillRect(barX, y, w, SUBBAR_HEIGHT);
-        });
-
-        ctx.fillStyle = theme.text;
-        ctx.textAlign = 'right';
-        const overall = row.overall.passRatePercent;
-        ctx.fillText(overall === null ? '—' : `${overall.toFixed(1)}%`,
-          barX + barMaxWidth + VALUE_WIDTH, clusterTop + clusterHeight / 2);
-      });
-    }
-
-    canvas.addEventListener('mousemove', e => {
-      const rect = canvas.getBoundingClientRect();
-      const hit = subBarAt(e.clientX - rect.left, e.clientY - rect.top);
-      const changed = (hit?.row !== hovered?.row) || (hit?.group !== hovered?.group);
-      hovered = hit;
-      if (changed) draw();
-      if (!hit) { tooltip.style.display = 'none'; return; }
-
-      const row = rows[hit.row];
-      const value = row.byGroup[hit.group];
-      const who = grouped ? ` · ${data.groups[hit.group]}` : '';
-      if (value.passRatePercent === null) {
-        tooltip.innerHTML = `<strong>${row.label}</strong>${who}<br>no dies with a verdict`;
-      } else {
         // Fail direction is parametric-only and belongs on the specific test's
         // own row: "failing high" and "failing low" are different process stories.
-        const dir = (kind === 'spec' && !grouped
-          && (row.failLowDies || row.failHighDies))
+        const dir = (kind === 'spec' && !grouped && (row.failLowDies || row.failHighDies))
           ? `<br>${row.failLowDies ?? 0} below LSL · ${row.failHighDies ?? 0} above USL`
           : '';
-        tooltip.innerHTML = `<strong>${row.label}</strong>${who}<br>`
+        return `<strong>${row.label}</strong>${who}<br>`
           + `${value.passRatePercent.toFixed(1)}% pass<br>`
           + `${value.passDies.toLocaleString()} pass · ${value.failDies.toLocaleString()} fail · n = ${value.totalDies.toLocaleString()}`
           + dir;
-      }
-      tooltip.style.display = 'block';
-      positionChartTooltip(tooltip, card, e.clientX, e.clientY);
+      },
     });
-    canvas.addEventListener('mouseleave', () => {
-      if (hovered) { hovered = null; draw(); }
-      tooltip.style.display = 'none';
-    });
-
-    resizeHandle = observeResize(card, () => draw());
-    draw();
   }
 
   rebuildBody();
-  return { card, destroy: () => { resizeHandle?.disconnect(); tooltip.remove(); card.remove(); } };
+  return { card, destroy: () => { plot?.destroy(); tooltip.remove(); card.remove(); } };
 }

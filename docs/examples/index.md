@@ -8,6 +8,10 @@ Live interactive demos. Each opens a standalone page rendered in the browser.
 
 Some pages cover several related topics; those links point at the relevant section of the page.
 
+## Start here
+
+- [Showcase — the whole library on one page](showcase.html) — four real lot scenarios with the summary panel, statistical findings and the Insights charts, over data you can swap for your own — start here if you are deciding whether wafermap fits your problem
+
 ## Getting started
 
 - [Your first wafer map](first-map.html) — minimal two-call example, no CSV · [Guide §2](../guide.md#2-your-first-wafer-map)
@@ -30,6 +34,7 @@ Some pages cover several related topics; those links point at the relevant secti
 
 ## Analysis and layout
 
+- [Insights chart suite](insights.html) — the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add · [Guide §14](../guide.md#14-the-insights-tab)
 - [Statistical findings](statistics.html#findings) — ring, quadrant, cluster, edge-arc analysis on a single wafer · [Guide §10](../guide.md#10-adding-statistical-findings)
 - [Summary panel](statistics.html#summary-panel) — persistent metadata and stats sidebar docked beside the map · [Guide §11](../guide.md#11-summary-panel)
 - [Lot gallery](statistics.html#lot-gallery) — card grid of multiple wafers with shared controls and stacked modes · [Guide §12](../guide.md#12-building-a-lot-gallery)
@@ -46,7 +51,5 @@ Some pages cover several related topics; those links point at the relevant secti
 - [wafermap vs Plotly.js](comparison.html) — side-by-side render timings and feature comparison · [Performance](../performance.md)
 
 ---
-
-[**Showcase**](showcase.html) — all features in one page, good for a quick overview once you know the basics
 
 [**Quick Start — live**](quickstart-live.html) — the minimal inline-generated example linked from the Quick Start page

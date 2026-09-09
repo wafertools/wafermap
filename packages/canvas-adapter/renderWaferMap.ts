@@ -7,8 +7,8 @@ import { buildWaferMap, getTestPassStatus, isParametricTest } from '../renderer/
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { SHADOW, MOTION, LEADING, wireControlHover, SPACE, RADIUS, FONT, CLR, Z_BASE, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, nextFrame, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
-import type { SummaryPanelOptions } from './summaryPanel.js';
+import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
@@ -152,7 +152,42 @@ export interface WaferDisplayState {
  */
 export type WaferViewOptions = WaferPreferences & WaferDisplayState;
 
-export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinDefs' | 'sbinDefs'> {
+/**
+ * The drawing parameters `renderWaferMap` forwards to the canvas. Declared
+ * explicitly rather than inherited from `ToCanvasOptions`, which is what this
+ * interface used to do.
+ *
+ * That inheritance leaked 16 low-level fields onto the top-level render API, and
+ * five of them were **accepted and silently ignored** — `renderWaferMap` computes
+ * or overrides them on every draw (`topClearance` is hardcoded to 0,
+ * `minRightReserve` is derived from the legend, and `markFailingDies`/`activeBin`/
+ * `hoverBin` are read from `viewOptions` and internal hover state instead). An
+ * option that is typed, documented and ignored costs a caller a debugging session
+ * to discover the API lied, so they are gone rather than merely undocumented.
+ *
+ * Listing the fields also stops future `ToCanvasOptions` additions arriving here
+ * by accident: `toCanvas` is the low-level surface and is free to grow, and a
+ * caller who genuinely needs that level of control should call it directly.
+ *
+ * These stay at the top level of `RenderOptions` rather than moving under a
+ * nested `draw` key. Grouping would read better, but it would break every caller
+ * of the ten options that DO work in exchange for tidiness alone, and the defect
+ * here was the five that don't.
+ */
+type ForwardedDrawOptions = Pick<ToCanvasOptions,
+  | 'padding'
+  | 'background'
+  | 'showColorbar'
+  | 'colorbarWidth'
+  | 'showAxes'
+  | 'showTitle'
+  | 'legendPosition'
+  | 'legendOffset'
+  | 'diePitchMm'
+  | 'fallbackFormat'
+  | 'metadataFields'>;
+
+export interface RenderOptions extends ForwardedDrawOptions {
   /** Initial scene display options. All are overridable via the toolbar. */
   viewOptions?: WaferViewOptions;
   /** Called when the user hovers over a die. Null when leaving a die. */
@@ -183,15 +218,26 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    * of `showToolbar` and the Insights tab — this exists so basic wafer/lot
    * identity is never hidden behind a mode or toggle. A real layout row, not
    * an overlay, so it can never collide with anything the canvas draws
-   * (colorbar, legend, toolbar) regardless of `legendPosition`. **This is
-   * also the expand-to-full-view button's only home** (see
-   * `showExpandButton`) — turning this off removes Expand too, not just the
-   * identity text; there is no toolbar fallback. Collapsed by default to a
-   * single identifying line; click/Enter/Space expands a panel over the top
-   * of the canvas to the full field set. Renders nothing when the result has
-   * no metadata/lot-stack context and `showExpandButton` is off.
+   * (colorbar, legend, toolbar) regardless of `legendPosition`. Carries identity
+   * and nothing else — Expand lives in the toolbar with the other view
+   * controls, so turning this off costs only the identity text. Collapsed by
+   * default to a single identifying line; click/Enter/Space expands a panel
+   * over the top of the canvas to the full field set. Renders nothing when the
+   * result has no metadata/lot-stack context.
    */
-  showIdentityHeader?: boolean;
+  showIdentity?: boolean;
+  /**
+   * Inset for this map's own chrome row (identity + toolbar) and for a Summary
+   * panel docked inside the map area, from the edge of the map area.
+   *
+   * Defaults to `EDGE_GUTTER` — correct for a standalone map, where the map
+   * area IS the region and its chrome is a bounded surface against that edge.
+   * Pass the smaller `MAP_CHROME_INSET` when the map is embedded in a surface
+   * that already provides its own inset (this is what `renderWaferGallery`
+   * passes for its cards); a second full gutter inside one stacks two, which
+   * reads as a toolbar standing well off the side of the card.
+   */
+  chromeInset?: string;
   /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
   /**
@@ -244,6 +290,14 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
    */
   summaryPanel?: SummaryPanelOptions;
   /**
+   * A row at the top of the Findings section stating that a category of finding
+   * is not present, and optionally offering to compute it — see
+   * {@link FindingsNotice}. wmap never raises this itself: only the host knows
+   * what analysis it chose to skip and what running it would cost. Replaceable
+   * afterwards via the controller's `setFindingsNotice`.
+   */
+  findingsNotice?: FindingsNotice;
+  /**
    * Display preferences for every built-in die-list surface: the
    * coordinate-less map replacement, the "+N dies without position data"
    * footer, and the "View die list" link in the Summary panel (§5.4.4) — on
@@ -275,13 +329,11 @@ export interface RenderOptions extends Omit<ToCanvasOptions, 'viewport' | 'hbinD
   /** Override the expand action for both the expand button and the E key. Used by the gallery to route through its own modal logic. */
   onExpand?: () => void;
   /**
-   * Show the expand button on the identity header and enable the E-key
-   * shortcut. Default true. The header (`showIdentityHeader`) is this
-   * button's only home — one trigger for the action, not a second copy in
-   * the toolbar — so it has no effect when `showIdentityHeader` is false.
-   * Set false when the host already renders the map inside its own
-   * expanded/modal context, where wmap's built-in expand modal would be
-   * redundant.
+   * Show the expand button in the toolbar and enable the E-key shortcut.
+   * Default true. Independent of `showIdentity` — expand is a view control,
+   * not part of the wafer's identity. Set false when the host already renders
+   * the map inside its own expanded/modal context, where wmap's built-in
+   * expand modal would be redundant.
    */
   showExpandButton?: boolean;
   /**
@@ -348,6 +400,12 @@ export interface WaferMapController {
   /** Return current scene options snapshot. */
   getOptions(): WaferViewOptions;
   /** Programmatically set the selected dies (renders highlight overlay). */
+  /**
+   * Replace the Findings-section notice (see `FindingsNotice`). Pass `undefined`
+   * to clear it — which is what a host does once it has run the analysis the
+   * notice was offering.
+   */
+  setFindingsNotice(notice: FindingsNotice | undefined): void;
   setSelection(dies: Die[]): void;
   /** Clear the current selection. */
   clearSelection(): void;
@@ -366,7 +424,7 @@ export interface WaferMapController {
   /** Show or hide the help toolbar button. */
   setHelpButtonVisible(visible: boolean): void;
   /** Show or hide the identity header without affecting its content. */
-  setIdentityHeaderVisible(visible: boolean): void;
+  setIdentityVisible(visible: boolean): void;
   /**
    * Opens the built-in end-user guide window — the same action the help
    * toolbar button performs, but callable directly. Works regardless of
@@ -424,6 +482,7 @@ export function classifyChanged(keys: (keyof WaferViewOptions)[]): 'preference' 
  */
 export type RenderableWaferMap =
   Pick<WaferMapResult, 'wafer' | 'dies'> & Partial<Omit<WaferMapResult, 'wafer' | 'dies'>>;
+
 
 export function renderWaferMap(
   container: HTMLElement,
@@ -495,6 +554,60 @@ export function renderWaferMap(
     mapBox.style.maxWidth = `${options.maxSize}px`;
     mapBox.style.maxHeight = `${options.maxSize}px`;
   }
+  // Resolved here rather than in the options destructuring further down: the
+  // chrome row is built immediately below, before that runs.
+  const chromeInset = options.chromeInset ?? EDGE_GUTTER;
+
+  // ── Chrome row ─────────────────────────────────────────────────────────────
+  // One row above the map holding the identity (left, flexible) and the toolbar
+  // (right, fixed) — the same arrangement renderWaferGallery uses, so the two
+  // views frame the same Insights suite identically instead of each inventing
+  // its own header.
+  //
+  // The toolbar used to float over the canvas (`position: absolute`, top-right).
+  // That cost no layout row, but every full-bleed overlay then had to reserve a
+  // 38px band so it would not render underneath — the Insights suite, the
+  // mapless empty state, and a top- or right-docked summary panel each carried
+  // their own copy of that reservation. A real row removes all three: nothing
+  // overlaps, so nothing has to reserve. The map loses no usable area either,
+  // since the identity row already existed above it; the toolbar simply joins
+  // it rather than adding a row of its own.
+  //
+  // `alignItems: stretch` so the identity and the toolbar share one height
+  // (see renderWaferGallery's chrome row for the same reasoning); the row
+  // collapses to nothing when it holds neither.
+  const chromeRowEl = ownerDocument.createElement('div');
+  Object.assign(chromeRowEl.style, {
+    display: 'flex', alignItems: 'stretch', gap: SPACE.sm,
+    // The map area's background, not the host surface's. Inside a gallery card
+    // this row sits directly above the canvas, and inheriting the card's white
+    // left a pale band across the top of every card where the canvas below it
+    // paints a light slate. Matching the canvas makes the row read as part of
+    // the map area rather than as a strip of card showing through.
+    background: CLR.canvasBg,
+    // Breathing room between the chrome and whatever the map area puts at its
+    // own top — most visibly a right-docked summary panel, which otherwise
+    // began flush against the toolbar and read as joined to it. Same property
+    // and value as renderWaferGallery's chrome row: this gap was a 6px padding
+    // here against a 10px margin there, two mechanisms and two values for one
+    // job.
+    //
+    // PADDING, not margin. This row paints the map area's background, and a
+    // margin falls OUTSIDE that paint — inside a gallery card it showed 10px of
+    // the card's white between the slate chrome row and the slate canvas, which
+    // is the pale band this background was introduced to remove.
+    paddingBottom: SPACE.lg,
+    // Inset from the map region's edge on three sides, and the same value is
+    // handed to the Insights view for its tab bar and content, so identity and
+    // tab labels start on one column instead of stepping on every switch.
+    // The TOP matters as much as the sides: a host that gives the map area no
+    // padding of its own (tsmap's `#map-container`) had this row butting
+    // straight against its own toolbar, two bordered surfaces touching.
+    // The CANVAS stays full-bleed deliberately: map area is the priority and a
+    // wafer is round, so its corners waste the inset anyway.
+    paddingTop: chromeInset, paddingLeft: chromeInset, paddingRight: chromeInset,
+    flexShrink: '0', minWidth: '0' } as Partial<CSSStyleDeclaration>);
+  outerFrame.appendChild(chromeRowEl);
   outerFrame.appendChild(mapBox);
   const canvasWrap = ownerDocument.createElement('div');
   Object.assign(canvasWrap.style, { position: 'relative', width: '100%', height: '100%' });
@@ -572,11 +685,10 @@ export function renderWaferMap(
       const overlay = ownerDocument.createElement('div');
       Object.assign(overlay.style, {
         position: 'absolute', inset: '0', background: CLR.panelBg,
-        // paddingTop clears the floating toolbar the same way insightsTab.el
-        // does (see its own paddingTop: showToolbar ? '44px' : '0' a bit
-        // below) — both are inset:0 overlays that would otherwise render
-        // under the toolbar's absolutely-positioned top-right corner.
-        padding: SPACE.xl, paddingTop: (options.showToolbar ?? true) ? '44px' : '12px',
+        // Even padding all round: with the toolbar now in a row above mapBox
+        // rather than floating over its top-right corner, this overlay has
+        // nothing to clear.
+        padding: SPACE.xl,
         boxSizing: 'border-box', overflow: 'hidden', display: 'flex',
         flexDirection: 'column', gap: SPACE.md, zIndex: '1' });
       const noteRow = ownerDocument.createElement('div');
@@ -612,6 +724,8 @@ export function renderWaferMap(
         background: CLR.panelBg, borderTop: `1px solid ${CLR.menuBorder}`,
         fontSize: FONT.body, color: CLR.text, cursor: 'pointer', padding: `${SPACE.xs} ${SPACE.md}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SPACE.md });
+      // The whole footer is the click target, so it has to look like one.
+      wireControlHover(footer, 'bare');
       const label = ownerDocument.createElement('span');
       label.textContent = `+${unpositionedDies.length} ${unpositionedDies.length === 1 ? 'die' : 'dies'} without position data`;
       footer.appendChild(label);
@@ -675,7 +789,7 @@ export function renderWaferMap(
     onViewOptionsChange,
     showTooltip          = true,
     showToolbar          = true,
-    showIdentityHeader   = true,
+    showIdentity   = true,
     toolbarControls      = 'full',
     showPlotModeSelector = true,
     minZoom              = 0.4,
@@ -764,19 +878,24 @@ export function renderWaferMap(
   // already shows this wafer's metadata in its own strip, so showing it twice
   // would be redundant.
   // Tracks whether the *host* has asked for it hidden via
-  // setIdentityHeaderVisible(false), independent of Insights toggling it —
+  // setIdentityVisible(false), independent of Insights toggling it —
   // so closing Insights doesn't un-hide a header the host explicitly hid.
+  // Mirrors the conditions the Insights toggle button is actually built under
+  // (see the toolbar block): a real toolbar, not restricted to `view-only`,
+  // with Insights enabled. When true the toolbar owns the way out of Insights.
+  const toolbarHasInsightsToggle = showToolbar && toolbarControls !== 'view-only' && insightsEnabled;
+
   let identityHeaderHostHidden = false;
   let metadataBadge: IdentityHeaderController | null = null;
   let headerBar: HTMLDivElement | null = null;
-  // The header bar is also the expand button's only home now (see
-  // buildHeaderBar) — so it must still mount even for a wafer with no
-  // metadata/lot-stack context (metadataBadge.isEmpty()) whenever
-  // showExpandButton is on, or that button would silently have nowhere to
-  // live. `let`, declared here rather than down with the toolbar's other
-  // button refs, because buildHeaderBar (called immediately below) assigns it.
+  // Assigned by the toolbar build below, not here. Expand used to live in
+  // headerBar, which forced that bar to mount for a wafer with no metadata at
+  // all just to give the button a home. Expand is a VIEW control ("give this
+  // more room"), not an identity one, so it belongs with the other view
+  // controls; headerBar is now free to mount only when there is metadata to
+  // show, which is the one job it was added for.
   let btnExpand: HTMLButtonElement | null = null;
-  if (showIdentityHeader) {
+  if (showIdentity) {
     metadataBadge = createIdentityHeader(
       collapsedLabel(wafer.metadata ?? {}, lotStackBadgeContext()) ?? '',
       wafer.metadata,
@@ -786,40 +905,39 @@ export function renderWaferMap(
     // stays fixed height) — same contract renderWaferGallery's card headers
     // use, and canvasWrap is already `position: relative`.
     canvasWrap.appendChild(metadataBadge.metaPanel);
-    if (!metadataBadge.isEmpty() || showExpandButton) {
+    if (!metadataBadge.isEmpty()) {
       headerBar = buildHeaderBar(metadataBadge.wrap);
-      outerFrame.insertBefore(headerBar, mapBox);
+      // First in the row — the toolbar is appended after it and pins itself
+      // right, so order here is header then toolbar.
+      chromeRowEl.insertBefore(headerBar, chromeRowEl.firstChild);
     }
   }
-  // The header's own "expand to full view" affordance replaces the toolbar's
-  // separate Expand button below (see showExpandButton) — one trigger for
-  // the action, not two, mirroring how a gallery card's own header button
-  // already covers this for its (headerless) internal toolbar.
+  // Identity only — a line of text above the map, not a card header. It carries
+  // no controls and draws no bottom rule: a single map is not a gallery card,
+  // and the borrowed card chrome was what made it read as one. The gallery's
+  // card header has a rule because it separates a header from a card body
+  // inside a bordered tile; there is no tile here to divide.
   function buildHeaderBar(identityWrap: HTMLDivElement): HTMLDivElement {
     const bar = ownerDocument.createElement('div');
     Object.assign(bar.style, {
-      display: 'flex', alignItems: 'center', padding: `${SPACE.md} ${SPACE.lg} ${SPACE.sm}`,
-      borderBottom: `1px solid ${CLR.menuBorder}`, flexShrink: '0', gap: SPACE.sm } as Partial<CSSStyleDeclaration>);
-    Object.assign(identityWrap.style, { flex: '1' });
+      // Symmetric vertical padding. It was 8px top against 6px bottom, a
+      // leftover from when this was a standalone header row rather than one
+      // half of a row shared with the toolbar — the asymmetry pushed the
+      // identity off the toolbar's midline beside it.
+      display: 'flex', alignItems: 'center', padding: `${SPACE.sm} ${SPACE.lg}`,
+      // Yields width to the toolbar beside it. This carried `flexShrink: '0'`
+      // from when it was a full-width row in a COLUMN, where that meant "keep
+      // your height"; as a row item it meant "never give up width", and the two
+      // together overran their row — in a 700px expand modal a 261px identity
+      // and a 472px toolbar came to 733px, so the toolbar overflowed 39px past
+      // the modal's edge and was clipped, losing the Help button off-screen and
+      // shifting every control beside it. The identity is the half that should
+      // give: it already truncates (ellipsis, and the inline fields collapse to
+      // the chevron), whereas a clipped toolbar silently loses controls.
+      flex: '1 1 auto', minWidth: '0', overflow: 'hidden',
+      gap: SPACE.sm } as Partial<CSSStyleDeclaration>);
+    Object.assign(identityWrap.style, { flex: '1', minWidth: '0' });
     bar.appendChild(identityWrap);
-    if (showExpandButton) {
-      btnExpand = ownerDocument.createElement('button');
-      btnExpand.type = 'button';
-      btnExpand.setAttribute('aria-label', 'Expand (E)');
-      // The shared themed tooltip every toolbar button uses, not a native
-      // `title` — this button sits beside those and must not hover differently.
-      wireTooltip(btnExpand);
-      btnExpand.innerHTML = ICONS.expand;
-      Object.assign(btnExpand.style, {
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0',
-        border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control, background: CLR.panelBg,
-        color: CLR.text, cursor: 'pointer', width: '22px', height: '22px', padding: '0' } as Partial<CSSStyleDeclaration>);
-      btnExpand.addEventListener('click', (e) => {
-        e.stopPropagation();
-        (onExpand ?? openExpandModal)();
-      });
-      bar.appendChild(btnExpand);
-    }
     return bar;
   }
   function lotStackBadgeContext(): { lotSize: number; aggrMethod?: string } | undefined {
@@ -829,17 +947,19 @@ export function renderWaferMap(
     if (!metadataBadge) return;
     metadataBadge.update(collapsedLabel(wafer.metadata ?? {}, lotStackBadgeContext()) ?? '', wafer.metadata, lotStackBadgeContext());
     const inDom = headerBar?.isConnected ?? false;
-    const shouldMount = !metadataBadge.isEmpty() || showExpandButton;
+    const shouldMount = !metadataBadge.isEmpty();
     if (!shouldMount && inDom) { headerBar!.remove(); headerBar = null; }
     else if (shouldMount && !inDom) {
       headerBar = buildHeaderBar(metadataBadge.wrap);
       // Re-apply the visibility state this bar is under. A `setResult` that
       // introduces metadata remounts the bar, and without this it came back
       // VISIBLE — popping open over a host that had hidden it via
-      // `setIdentityHeaderVisible(false)`, or over an open Insights view where
+      // `setIdentityVisible(false)`, or over an open Insights view where
       // it has no business appearing.
-      headerBar.style.display = (insightsOpen || identityHeaderHostHidden) ? 'none' : '';
-      outerFrame.insertBefore(headerBar, mapBox);
+      headerBar.style.display = identityHeaderHostHidden ? 'none' : '';
+      // Before the toolbar, not appended — a remount after `setResult` would
+      // otherwise land the identity to the RIGHT of the toolbar.
+      chromeRowEl.insertBefore(headerBar, chromeRowEl.firstChild);
     }
   }
 
@@ -889,10 +1009,28 @@ export function renderWaferMap(
       onSaveImage: options.onSaveImage,
       onSaveText: options.onSaveText,
       defaultView: insightsOpts?.defaultView,
-      // Leading "‹ Map" tab in the Insights tab bar — a visible way back to
-      // the wafer view, alongside the toolbar's icon toggle.
-      backTab: { label: 'Map', onBack: () => setInsightsOpen(false) },
-      onOpenGuide: () => openGuideWindow(),
+      // Both of these are FALLBACKS, passed only when the toolbar cannot carry
+      // them. The toolbar now stays visible while Insights is open, so its own
+      // toggle and Help are permanently reachable in a fixed corner; passing
+      // these unconditionally put a second way back and a second Help in the
+      // tab row, which is the duplication that hiding the toolbar was meant to
+      // avoid in the first place. A host with no toolbar (or a `view-only` one)
+      // has no other way out of Insights, so it still gets the back tab.
+      // The frame's own identity header stays visible in Insights, so the tab
+      // rendering its own strip would show this wafer's metadata twice, one
+      // above the other. Same contract renderWaferGallery uses.
+      showMetadataStrip: false,
+      // Same inset the chrome row above uses, so the tab bar and the identity
+      // start on one column. The gallery passes its own (larger) region gutter.
+      contentInset: chromeInset,
+      backTab: toolbarHasInsightsToggle
+        ? undefined
+        : { label: 'Map', onBack: () => setInsightsOpen(false) },
+      // Only when Help is WANTED but the toolbar cannot show it. The condition
+      // was inverted: with `showHelpButton: false` it passed the guide through,
+      // so a host that had deliberately switched Help off got one anyway the
+      // moment Insights opened — the option silently reversed itself.
+      onOpenGuide: (showHelpButton && !showToolbar) ? () => openGuideWindow() : undefined,
       // No openWafer — this map already IS the only wafer there is to open.
       ownerDocument });
     // Positioned sibling of canvasWrap covering the same area. Left with
@@ -916,14 +1054,20 @@ export function renderWaferMap(
     // content at an arbitrary floor height instead of letting the page grow
     // to show it.
     Object.assign(insightsTab.el.style, {
-      position: 'absolute', inset: '0', background: CLR.panelBg, overflowY: 'auto',
-      // Reserve room above the tab's own content (its metadata strip sits at
-      // the very top) so the floating toolbar — an absolutely-positioned
-      // sibling anchored to the same `mapBox` corner — never renders on
-      // top of it. Only needed when there's a toolbar to clear; the gallery's
-      // equivalent toolbar is a real in-flow header instead, so it needs no
-      // such reservation.
-      paddingTop: showToolbar ? '44px' : '0' } as Partial<CSSStyleDeclaration>);
+      // The MAP AREA's background, not the panel surface. It has to be opaque —
+      // this covers the canvas — but `panelBg` resolves white in the default
+      // theme against the canvas's light slate, so opening Insights changed the
+      // page's whole background colour. `canvasBg` is the same value the canvas
+      // itself paints, so the two views now sit on one ground and only their
+      // content changes. It also matches renderWaferGallery, whose Insights
+      // root is transparent over the same background.
+      position: 'absolute', inset: '0', background: CLR.canvasBg, overflowY: 'auto',
+      // No top reservation. This used to hold a 38px band so the floating
+      // toolbar — an absolutely-positioned sibling on the same mapBox corner —
+      // would not render over the tab's own content. The toolbar is now a row
+      // above mapBox and overlaps nothing, exactly as the gallery's has always
+      // been, so it needs the same reservation the gallery needed: none.
+      paddingTop: '0' } as Partial<CSSStyleDeclaration>);
       // Hidden on arrival: the tab is only ever built because someone is
       // opening it, and setInsightsOpen reveals it once the load resolves.
       insightsTab.el.style.display = 'none';
@@ -945,32 +1089,46 @@ export function renderWaferMap(
     // have no effect on the chart suite — hide them as a group while it's open.
     // Summary is hidden too (refreshSummaryButton checks insightsOpen) since
     // its panel sits behind the Insights overlay with no visible effect.
-    // Insights/Help live in sceneControlsEl (unwrapped, not part of this
-    // group). The whole toolbar is now hidden while Insights is open — the back
-    // tab replaces Insights-as-toggle and the tab row carries Help — so
-    // "reachable the whole time" is satisfied by that row, not by this band.
-    // Expand does NOT —
-    // reparenting insightsTab.el into the modal left the original container
-    // blank behind it, and switching back to the wafer view *inside* the
-    // modal left that blank too (canvasWrap was never moved there — it has
-    // no expand target once Insights owns the screen). Hide it entirely
-    // rather than ship a control that produces two blank views.
+    // Expand/Insights/Help live in sceneControlsEl (unwrapped, not part of this
+    // group) and all three stay reachable while Insights is open — the band
+    // itself stays, in space the Insights view was already reserving for it.
     // isMapless: this group (download/zoom/pan/select) has nothing to act on
     // with no map drawn — stays hidden regardless of Insights state.
     if (mapToolsEl) mapToolsEl.style.display = (open || isMapless) ? 'none' : 'flex';
     if (mapViewControlsEl) mapViewControlsEl.style.display = open ? 'none' : 'flex';
-    if (btnExpand) btnExpand.style.display = open ? 'none' : 'flex';
-    // With every group above hidden, the band held only the Insights toggle —
-    // which the Insights tab row's own "‹ Map" back tab already provides — and
-    // Help, which now renders in that row. Hide the band rather than keep a
-    // full-height row above every chart for one duplicate button.
-    if (toolbar) toolbar.style.display = open ? 'none' : 'flex';
-    // insightsTab.el covers mapBox, not outerFrame's header row, so the
-    // header would otherwise stay visible above it — hidden anyway since the
-    // Insights tab already shows this wafer's metadata in its own strip, and
-    // showing both would be redundant. Never un-hides a header the host
-    // explicitly hid via setIdentityHeaderVisible(false).
-    if (headerBar) headerBar.style.display = (open || identityHeaderHostHidden) ? 'none' : '';
+    // Expand stays available in Insights. It is a view-level control — "give
+    // this more room" — and the chart suite is the view that most wants it,
+    // since the charts on a page interact and reading them side by side in a
+    // small frame is the case the modal exists for. It was hidden here only
+    // because the old reparent target could not carry the Insights view; that
+    // is fixed in openExpandModal (it moves mapBox, which owns both views).
+    // …but not while the expand modal is already open. Toggling views inside it
+    // ran this and put Expand back, offering to expand a view that is already
+    // expanded — and, because it reappeared only in one of the two views, it
+    // shifted the Insights toggle beside it along the bar on every switch.
+    if (btnExpand) btnExpand.style.display = modalHandle ? 'none' : 'flex';
+    // The toolbar STAYS. It lives in the chrome row above the map, which does
+    // not belong to either view, so leaving it up costs no height at all and
+    // fixes the real complaint: the way back out of Insights stopped moving
+    // between the
+    // toolbar's right edge and a tab at the left of the chart suite.
+    if (toolbar) toolbar.style.display = 'flex';
+    // The header STAYS while Insights is open, and it is load-bearing that it
+    // does. It is an in-flow sibling ABOVE mapBox, and the toolbar is absolutely
+    // positioned INSIDE mapBox — so hiding the header let mapBox rise by the
+    // header's height and carried the toolbar up with it, out of the map and
+    // into the reserved band at the top of the Insights view. The toggle
+    // therefore jumped a row on every switch and landed in an otherwise empty
+    // full-width strip, which is exactly the "the control moves" complaint that
+    // keeping the toolbar visible was meant to fix.
+    //
+    // Keeping it also fixes the second half of that complaint: this wafer's
+    // identity now sits in one place in both views instead of moving from a
+    // header row to the chart suite's own strip. That strip is switched off for
+    // this host (`showMetadataStrip: false`) so the two never both render —
+    // the same arrangement renderWaferGallery already uses, for the same
+    // reason: the frame owns identity, so the tab must not repeat it.
+    if (headerBar) headerBar.style.display = identityHeaderHostHidden ? 'none' : '';
     // metaPanel is a separate sibling in canvasWrap with its own explicit
     // Z_ABOVE z-index (see its mount comment above) — it paints above
     // insightsTab.el (auto z-index) regardless of DOM order, so an expanded
@@ -997,11 +1155,26 @@ export function renderWaferMap(
     });
   }
 
+  // Analysis-first mount: see InsightsOptions.defaultOpen. Deferred to a
+  // microtask so the rest of this render finishes first — setInsightsOpen
+  // touches chrome that is still being constructed above.
+  if (insightsEnabled && insightsOpts?.defaultOpen) queueMicrotask(() => setInsightsOpen(true));
+
   let currentView:   View;
   let dieKeyIndex:    Map<string, number>;
   let fittedViewport: ViewportTransform | null = null;
   let viewport:       ViewportTransform | null = null;
   let binLegendRows:  BinLegendRow[] = [];
+
+  /** Bin legend row currently under the pointer — canvas-drawn, so hover is a
+   *  redraw rather than a CSS state. `undefined` when the pointer is off the
+   *  legend. */
+  let hoveredLegendBin: number | string | undefined;
+  function setHoveredLegendBin(bin: number | string | undefined): void {
+    if (hoveredLegendBin === bin) return;
+    hoveredLegendBin = bin;
+    render();
+  }
   let legendBoxRect:  { x: number; y: number; w: number; h: number } | null = null;
   let legendOffset = drawOptions.legendOffset ?? { x: 0, y: 0 };
   let draggingLegend = false;
@@ -1068,6 +1241,11 @@ export function renderWaferMap(
   let summaryPanelEl: HTMLDivElement | null = null;
   let summaryPanelWrapper: HTMLDivElement | null = null;
   let summaryActiveFindingId: string | null = null;
+  // Host-supplied row at the top of the Findings section. Set at render time
+  // via `options.findingsNotice` and replaceable through the controller, since
+  // what it says (and whether it is needed) changes once the host runs the
+  // analysis it is offering.
+  let currentFindingsNotice: FindingsNotice | undefined = options.findingsNotice;
   let findingsFilter: FindingsFilter = {};
   // Auto-mounted panel: created when statsSummary is provided but no explicit summaryPanel option.
   let autoSummaryPanelEl: HTMLDivElement | null = null;
@@ -1112,10 +1290,11 @@ export function renderWaferMap(
       // panel is built from the same helpers), so the panel must not print it a
       // second time. When the host suppresses that header the panel is the only
       // place the metadata appears, and the section comes back.
-      metadataShownElsewhere: showIdentityHeader,
+      metadataShownElsewhere: showIdentity,
       fallbackFormat: currentFallbackFormat,
       activeFindingId: summaryActiveFindingId,
       findingsFilter,
+      findingsNotice: currentFindingsNotice,
       onFindingsFilterChange: renderSummaryPanel,
       onSaveText: options.onSaveText,
       metadataFields,
@@ -1141,21 +1320,12 @@ export function renderWaferMap(
     if (autoSummaryPanelEl) renderSummaryPanelInto(autoSummaryPanelEl);
   }
 
-  // The floating toolbar is an absolutely-positioned overlay anchored to the
-  // container's top-right corner — a panel laid out under that corner
-  // ('right' beside the map, or 'top' spanning the full width) would have its
-  // header rendered underneath it. Reserve the same top clearance the
-  // Insights overlay does (toolbar bottom ~36px + breathing room = 44px).
-  function reserveToolbarClearance(panel: HTMLDivElement, placement: 'right' | 'left' | 'top' | 'bottom'): void {
-    if (showToolbar && (placement === 'right' || placement === 'top')) {
-      panel.style.paddingTop = '44px';
-    }
-  }
+
 
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
-    summaryPanelEl = createSummaryPanelEl(placement, ownerDocument);
-    reserveToolbarClearance(summaryPanelEl, placement);
+    summaryPanelEl = createSummaryPanelEl(placement, chromeInset, ownerDocument);
+
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
     summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
@@ -1167,8 +1337,8 @@ export function renderWaferMap(
     // (showToolbar: false) can still render a persistent panel beside it; the toolbar
     // only owns the toggle button. defaultOpen: true starts the panel visible.
     const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
-    autoSummaryPanelEl = createSummaryPanelEl('right', ownerDocument);
-    reserveToolbarClearance(autoSummaryPanelEl, 'right');
+    autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument);
+
     autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
@@ -1221,11 +1391,7 @@ export function renderWaferMap(
       ? `${label} — the map may be positionally wrong`
       : label;
   }
-  // Top clearance reserved on the canvas for the toolbar overlay.
-  // toolbar sits at top:4px, is ~32px tall → bottom at ~36px; excess over canvas padding = 24px.
-  const TOOLBAR_CLEARANCE = 24;
 
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Set when toolbar is created — used by destroy() regardless of showToolbar.
   let tbCloseOpenMenu: ((e: MouseEvent) => void) | null = null;
@@ -1262,18 +1428,17 @@ export function renderWaferMap(
       toolbar = ownerDocument.createElement('div');
       toolbar.dataset.wmapToolbar = 'single';
       Object.assign(toolbar.style, {
-        position:      'absolute',
-        top:           '4px',
-        right:         '4px',
+        // In flow, in the chrome row — not floating over the canvas. Pinned to
+        // the row's trailing edge by `marginLeft: auto`, which holds even when
+        // the identity beside it is absent (`showIdentity: false`) and there is
+        // no flexible sibling to push it there.
+        marginLeft:    'auto',
+        // Never gives way: every control must stay hittable at any width, while
+        // the identity text beside it degrades gracefully.
+        flexShrink:    '0',
         display:       'flex',
         flexDirection: 'row',
         alignItems:    'center',
-        // The toolbar is pinned by its RIGHT edge, so without a width bound its
-        // overflow grows leftward — straight out of the container and across
-        // whatever sits beside it (a neighbouring gallery card, the next map in
-        // a grid). It has always been wider than a ~400px container; every
-        // button added narrows the window further.
-        //
         // Wrapping rather than scrolling or hiding: every control stays visible
         // and reachable, no scrollbar appears inside a 28px-tall bar, and
         // nothing has to decide which buttons are "less important" — a call this
@@ -1287,17 +1452,24 @@ export function renderWaferMap(
         // the trailing group stays on top and Expand keeps its corner.
         //
         // Rows stay right-aligned (flex-end) to match the toolbar's own
-        // right-pinned edge; the slack falls on the left of the lower row.
+        // trailing edge; the slack falls on the left of the lower row.
         flexWrap:       'wrap-reverse',
         justifyContent: 'flex-end',
-        maxWidth:       'calc(100% - 8px)',
+        // Still bounded, now against the chrome row rather than the map box.
+        // `flexShrink: 0` means this takes its max-content width and would run
+        // straight out of a narrow container — it has always been wider than a
+        // ~300px one — so the cap is what turns overflow into the wrap above.
+        // It is the identity beside it that yields the space.
+        maxWidth:       '100%',
         background:    CLR.menuBg,
         border:        `1px solid ${CLR.menuBorder}`,
         borderRadius:  RADIUS.control,
         boxShadow:     SHADOW.panel,
-        zIndex:        Z_BASE,
-        opacity:       '0.35',
-        transition:    `opacity ${MOTION.base}`,
+        // Full strength, always. It used to sit at 0.35 and fade in on hover —
+        // right for something painted ON the wafer, where a permanently solid
+        // bar would compete with the data underneath it. In its own row it
+        // covers nothing, so ghosting it only made the controls hard to read
+        // and hid, until hover, that they were there at all.
         pointerEvents: 'auto' });
 
       // ── Toolbar helpers ──────────────────────────────────────────────────
@@ -1478,21 +1650,14 @@ export function renderWaferMap(
               (activeTestDef?.limitLow !== undefined || activeTestDef?.limitHigh !== undefined);
             const hasRecorded   = isValueMode && !functionalActive &&
               currentView.dies.some(d => getTestPassStatus(d, resolvedTest, activeTestDef) !== undefined);
-            return [
-              { label: 'Ring boundaries', active: !!viewOpts.showRingBoundaries,     onClick: () => applyOpts({ showRingBoundaries:   !viewOpts.showRingBoundaries   }) },
-              { label: 'Quadrant lines',  active: !!viewOpts.showQuadrantBoundaries, onClick: () => applyOpts({ showQuadrantBoundaries: !viewOpts.showQuadrantBoundaries }) },
-              { label: 'Die labels',      active: !!viewOpts.showDieLabels,          onClick: () => applyOpts({ showDieLabels:          !viewOpts.showDieLabels          }) },
-              { label: 'Reticle grid',    active: !!viewOpts.showReticle,            enabled: hasReticleNow, onClick: () => applyOpts({ showReticle: !viewOpts.showReticle }) },
-              { label: 'XY indicator',    active: !!viewOpts.showXYIndicator,        onClick: () => applyOpts({ showXYIndicator:        !viewOpts.showXYIndicator        }) },
-              ...passFailMenuRows(
-                { functionalActive, hasLimits, hasRecorded, display: requestedPassFailDisplay(viewOpts) },
-                d => applyOpts({ passFailDisplay: d }),
-              ),
-            ];
+            return overlayMenuRows(
+              viewOpts,
+              hasReticleNow,
+              { functionalActive, hasLimits, hasRecorded },
+              patch => applyOpts(patch),
+            );
           },
-          () => !!(viewOpts.showRingBoundaries || viewOpts.showQuadrantBoundaries ||
-                   viewOpts.showDieLabels || viewOpts.showReticle || viewOpts.showXYIndicator ||
-                   requestedPassFailDisplay(viewOpts) !== 'off'),
+          () => anyOverlayActive(viewOpts),
         );
         const { btn: btnLegendStyle, sync: syncLegendStyle } = makeLegendStyleBtn(
           tbHelpers,
@@ -1618,8 +1783,11 @@ export function renderWaferMap(
           syncWarningButton();
         }
 
-        // Expand now lives on the metadata header (see buildHeaderBar above),
-        // not the toolbar — one trigger for the action, not two.
+        // Order from here to the end of the bar: Insights, Expand, Help.
+        // Insights sits beside Summary because the two are the same kind of
+        // thing — both swap what the panel area is showing for another way of
+        // reading this wafer — while Expand and Help act on the frame itself
+        // rather than on the data, so they hold the outer edge.
 
         // Insights tab — toggles between the canvas and wmap's own chart suite.
         // Gated on the OPTION, not on `insightsTab` — the tab no longer exists
@@ -1639,6 +1807,16 @@ export function renderWaferMap(
           sceneControlsEl!.appendChild(btnInsights);
         }
 
+        // Expand — a view control, so it sits with the other persistent ones
+        // rather than in the metadata header it was briefly moved to. It was
+        // only ever put there because the header existed and could be made to
+        // resemble a gallery card; nothing about the action needed it.
+        if (showExpandButton) {
+          sceneControlsEl!.appendChild(makeSep());
+          btnExpand = makeBtn('expand', 'Expand (E)', onExpand ?? openExpandModal);
+          sceneControlsEl!.appendChild(btnExpand);
+        }
+
         // Help button — opens the end-user guide in a non-modal window (opt-in).
         // The button's click handler and the controller's own `openUserGuide()`
         // (below) both call this same function — a host can trigger the guide
@@ -1654,35 +1832,17 @@ export function renderWaferMap(
       // Anchored to `mapBox`, not `canvasWrap` — canvasWrap shrinks to
       // share width with a docked summary panel (wrapWithSummaryPanel wraps
       // it in a flex row), and the Insights overlay covers the *full*
-      // mapBox, not just canvasWrap's own (possibly narrower/offset) box.
-      // A toolbar parented to canvasWrap would float at canvasWrap's edge —
-      // the wrong spot once the panel takes up real width, and often
-      // overlapping the Insights tab's own top-of-content metadata strip.
-      // `mapBox` is always position:relative (set at its creation) and always
-      // spans the true, stable render area (the whole map, capped by
-      // `maxSize` if set) regardless of what's docked or which view (map vs.
-      // Insights) is currently showing.
-      mapBox.appendChild(toolbar);
+      chromeRowEl.appendChild(toolbar);
 
-      // ── Hover show/hide (with linger so clicks register) ─────────────────
-      function showBar(): void {
-        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-        if (toolbar) {
-          toolbar.style.opacity = '1';
-        }
-      }
-      function hideBar(): void {
-        hideTimer = setTimeout(() => {
-          if (toolbar) {
-            toolbar.style.opacity = '0.35';
-          }
-        }, 600);
-      }
-
-      canvas.addEventListener('mouseenter', showBar);
-      canvas.addEventListener('mouseleave', hideBar);
-      toolbar.addEventListener('mouseenter', showBar);
-      toolbar.addEventListener('mouseleave', hideBar);
+      // No hover show/hide. The bar used to sit at 0.35 opacity and fade in
+      // when the pointer entered the canvas, with a 600ms linger so a click on
+      // a fading bar still registered — all of which existed because the bar
+      // was painted ON the wafer, where a permanently solid strip competes with
+      // the data under it. In its own row it covers nothing, so the ghosting
+      // bought nothing and cost plenty: controls that were hard to read, and a
+      // toolbar whose existence was not apparent until the pointer happened to
+      // cross the map. Deleted rather than pinned at opacity 1, so there is no
+      // dormant timer or listener left to explain.
     }
   }
 
@@ -1692,17 +1852,36 @@ export function renderWaferMap(
   function openExpandModal(): void {
     if (modalHandle) { modalHandle.close(); modalHandle = null; }
 
-    // Only reachable while Insights is closed — the button and the 'E'
-    // shortcut are both hidden/disabled while insightsOpen (see
-    // setInsightsOpen's own comment: reparenting insightsTab.el here used to
-    // leave both the original view and the modal's own "back to wafer view"
-    // blank). What to reparent: the summary-panel wrapper if one exists
-    // (canvas + panel side-by-side), else just canvasWrap.
-    const reparentRoot: HTMLElement = summaryPanelWrapper ?? autoSummaryPanelWrapper ?? canvasWrap;
+    // Reparent `mapBox` — the whole view box, whichever view is showing.
+    //
+    // This used to reparent the canvas (or the canvas+panel wrapper) and the
+    // toolbar as two separate roots, which is why Expand had to be hidden the
+    // moment Insights opened: `insightsTab.el` is a sibling of canvasWrap
+    // inside mapBox, so moving canvasWrap out took the map but left the chart
+    // suite behind, and moving the suite instead left the modal blank as soon
+    // as you switched back to the wafer view inside it. Neither half owned the
+    // view. mapBox does: it already contains canvasWrap, the summary-panel
+    // wrapper, the toolbar AND insightsTab.el, so moving it moves whatever is
+    // currently showing and both views keep working inside the modal.
+    //
+    // It also removes the special-casing the old shape needed. mapBox is
+    // already `position: relative`, so the toolbar's `position: absolute`
+    // corner resolves against it exactly as it does outside the modal — no
+    // `contentWrap.style.position` fix-up, and no pairing of two roots for the
+    // shared helper's stale-reference guard to reason about.
+    const reparentRoot: HTMLElement = mapBox;
 
     reparentRoot.style.flex      = '1';
     reparentRoot.style.minWidth  = '0';
     reparentRoot.style.minHeight = '0';
+    // `maxSize` caps the map in the page; the modal is the deliberate escape
+    // from that cap, and the cap lives on the very element now being moved (it
+    // used to be left behind on mapBox, which is why expanding always opened
+    // full size). Lifted here and restored on close.
+    const cappedMaxWidth  = reparentRoot.style.maxWidth;
+    const cappedMaxHeight = reparentRoot.style.maxHeight;
+    reparentRoot.style.maxWidth  = 'none';
+    reparentRoot.style.maxHeight = 'none';
 
     // toolbar lives in `mapBox` (a sibling of reparentRoot), not inside
     // reparentRoot itself, so openReparentedModal must move it in too —
@@ -1716,40 +1895,78 @@ export function renderWaferMap(
     // toolbar.ts for why that matters (this pairing is exactly the case that
     // used to throw NotFoundError on close).
     //
-    // The metadata header is NOT reparented into the modal — headerBar lives
-    // in outerFrame, a sibling of mapBox, and toolbar's `position: absolute;
-    // top:4px; right:4px` is meant to resolve against the *map's own* box,
-    // not a box that also contains the header (which would put the header
-    // and the toolbar's top-right corner in the same space — the bug a
-    // gallery card avoids by using the modal's own separate title bar
-    // instead of cramming a second header into contentWrap alongside its
-    // toolbar). Passing `title` here does the same thing: the identity label
-    // renders in the modal's own title chrome, not contentWrap, so it can
-    // never collide with the reparented toolbar. headerBar itself stays
-    // behind, visible above the now-empty mapBox (its own expand button
-    // hides below, same as the toolbar's used to).
+    // The metadata header IS reparented, above mapBox. It used to be left
+    // behind, on the grounds that the toolbar's absolute top-right corner
+    // would collide with a header sharing its positioning context — but that
+    // reasoning belonged to the old shape, where the toolbar was reparented as
+    // its own root and resolved against `contentWrap`. It now travels inside
+    // mapBox and resolves against mapBox, so a header sibling above it shares
+    // no positioning context with it and cannot collide.
+    //
+    // Leaving it behind was in fact a bug, not just a missed nicety:
+    // `metaPanel` is mounted inside canvasWrap, so it travelled into the modal
+    // while its toggle stayed on the page under the backdrop. The control and
+    // the panel it opens ended up in different places, which is why expanded
+    // metadata was reachable in the map and Insights views but not in the
+    // modal. Moving both keeps them together.
     //
     // ownerDocument is passed explicitly so the modal builds into the SAME
     // document as reparentRoot (e.g. a gallery card detached into its own
     // popup window) rather than silently building in whatever document
     // happened to be the bare global — that would move reparentRoot out of
     // the popup and pop the modal up on the wrong page.
-    const handle = openReparentedModal(toolbar ? [reparentRoot, toolbar] : [reparentRoot], {
+    // The chrome row first, so it lands above mapBox in contentWrap exactly as
+    // on the page — and as ONE root, since it now carries the identity and the
+    // toolbar together. No `title`: the reparented row already states this
+    // wafer's identity, and the modal's own title chrome would print the same
+    // string a second line above it. The accessible name is set from the same
+    // label below, so dropping the visible title costs nothing there.
+    const identityLabel = collapsedLabel(wafer.metadata ?? {}, lotStackBadgeContext());
+    const roots = chromeRowEl.childElementCount > 0
+      ? [chromeRowEl, reparentRoot]
+      : [reparentRoot];
+    const handle = openReparentedModal(roots, {
       ownerDocument,
-      title: collapsedLabel(wafer.metadata ?? {}, lotStackBadgeContext()),
+      // A wafer is circular, so the default 700px square is the right shape for
+      // the map. The Insights suite is not: it lays out ~1330px wide in a normal
+      // page, so opening it in that square made Expand produce a view SMALLER
+      // than the one it expanded from — the charts reflowing into a narrower
+      // column, which is the opposite of what the control promises. Sized wide
+      // here instead, which is also the point of expanding the suite at all:
+      // these charts interact, and reading them side by side is the case a
+      // small frame cannot serve.
+      boxSize: insightsOpen
+        ? { width: 'min(96vw, 1600px)', height: 'min(92vh, 1000px)' }
+        : undefined,
       onClosed: () => {
         modalHandle = null;
+        reparentRoot.style.maxWidth  = cappedMaxWidth;
+        reparentRoot.style.maxHeight = cappedMaxHeight;
+        // Unconditional: Expand is valid in both views now that the modal can
+        // carry the Insights suite, so restoring it must not depend on which
+        // view happens to be showing when the modal closes.
         if (btnExpand) btnExpand.style.display = 'flex';
-        canvas.focus({ preventScroll: true });
+        // Only the canvas can take focus, and only when it is the visible
+        // view — focusing it under an open Insights suite would scroll the
+        // charts back to a map nobody is looking at.
+        if (!insightsOpen) canvas.focus({ preventScroll: true });
         // Fit will recompute via ResizeObserver firing on reparent.
       } });
     if (!handle) return; // re-entrancy guard — shouldn't trip, modalHandle.close() above already cleared it
 
-    // contentWrap has no `position` of its own (flex child, static); give it
-    // one so toolbar's `position: absolute; top:4px; right:4px` resolves
-    // against the modal's content area, the same top-right corner it
-    // occupies outside the modal.
-    if (toolbar) handle.contentWrap.style.position = 'relative';
+    // Names the dialog for assistive tech. Set here rather than via `title`
+    // (which would also RENDER it) — `handle.box` is part of the returned
+    // handle for exactly this kind of adjustment.
+    handle.box.setAttribute('aria-label', identityLabel ?? 'Expanded wafer map');
+
+    // contentWrap is a flex ROW by default, which is invisible while it holds a
+    // single child and wrong the moment it holds two: the header has
+    // `flexShrink: 0`, so as a row item it took its natural WIDTH and stretched
+    // to full height — a 134px full-height column of identity text down the
+    // left of the map, instead of a row above it. Column direction restores the
+    // page's own stacking, header above map, with mapBox's `flex: 1` taking the
+    // rest of the height.
+    if (roots.length > 1) handle.contentWrap.style.flexDirection = 'column';
 
     modalHandle = handle;
     if (btnExpand) btnExpand.style.display = 'none';
@@ -1763,11 +1980,11 @@ export function renderWaferMap(
   function syncOpts(partial: Partial<WaferViewOptions>): void {
     const prevMode = viewOpts.plotMode;
     viewOpts = { ...viewOpts, ...partial };
-    // Changing plot mode changes the colorbar/legend width, which shifts the
-    // auto-fit viewport's originX. Invalidate fittedViewport so it is
-    // recomputed for the new mode before drawSelectionOverlay reads it.
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
-      fittedViewport = null;
+      // No fittedViewport invalidation here: a plot-mode change shifts the
+      // auto-fit originX (colorbar vs bin-legend width), but so do half a dozen
+      // other options, and render() now re-reads the fit on every fitted draw.
+      // Nulling it here would also strand it null while zoomed.
       // Switching into a bin mode: reset to default if scheme is not bin-compatible.
       const newMode = viewOpts.plotMode;
       const isBinMode = newMode === 'hardBin' || newMode === 'softBin';
@@ -1847,7 +2064,10 @@ export function renderWaferMap(
 
     const result = toCanvas(canvas, currentView, {
       ...drawOptions,
-      topClearance:    showToolbar ? TOOLBAR_CLEARANCE : 0,
+      // No toolbar clearance: the toolbar no longer overlays the canvas, so the
+      // wafer can use the full height. This reserved 24px at the top of every
+      // map that showed a toolbar.
+      topClearance:    0,
       minRightReserve: showLegend ? stableRight : 0,
       // toCanvas calls this showColorbar, but it gates the whole legend block
       // (colorbar, bin legend, spec legend) — see WaferViewOptions.showLegend.
@@ -1860,6 +2080,7 @@ export function renderWaferMap(
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
       viewport: vp,
       activeBin: viewOpts.plotMode === 'metadata' ? viewOpts.highlightMetadataValue : viewOpts.highlightBin,
+      hoverBin: hoveredLegendBin,
       hbinDefs,
       sbinDefs,
       metadataFields });
@@ -1867,7 +2088,19 @@ export function renderWaferMap(
     binLegendRows = result.binLegendRows;
     legendBoxRect = result.legendBox ?? null;
 
-    if (!fittedViewport) fittedViewport = result.viewport;
+    // Track the auto-fit viewport on EVERY fitted draw, not just the first.
+    // `fittedViewport` is the geometry drawSelectionOverlay, hit-testing and
+    // hover all read back (`currentViewport()`), while the drawn map uses the
+    // viewport toCanvas just computed. Those two must never diverge. The fit
+    // origin/ppm depend on the colorbar/bin-legend reserve, legend position,
+    // axis gutter and legend row count — none of which resize the canvas, so
+    // the ResizeObserver cannot be relied on to invalidate this. Caching the
+    // first fit forever meant any such change left the selection highlight and
+    // the click target drawn tens of px away from the dies they belong to.
+    // Only assign on a fitted draw: when `viewport` is set the map is zoomed
+    // and `result.viewport` is that zoom, not a fit — writing it here would
+    // clobber the zoom clamp's baseline (clampedPpm).
+    if (viewport === null) fittedViewport = result.viewport;
 
     if (selectedKeys.size > 0) drawSelectionOverlay();
     if (isBoxSelecting) drawBoxOverlay();
@@ -2102,6 +2335,10 @@ export function renderWaferMap(
     const legendRow = binLegendRows.find(row =>
       cssPx >= row.x && cssPx < row.x + row.w && cssPy >= row.y && cssPy < row.y + row.h,
     );
+    // Redraw only when the hovered ROW changes, never per mousemove: the whole
+    // canvas is repainted, which on a large wafer is far too much work to do
+    // for every pointer sample across a legend row.
+    setHoveredLegendBin(legendRow ? legendRow.bin : undefined);
     if (legendRow) {
       canvas.style.cursor = 'pointer';
       if (tooltip) {
@@ -2331,6 +2568,10 @@ export function renderWaferMap(
   }
 
   function onPointerLeave(): void {
+    // Otherwise a legend row stays lit after the pointer has left the canvas —
+    // the mousemove handler is the only other thing that clears it, and it
+    // stops firing at the boundary.
+    setHoveredLegendBin(undefined);
     if (tooltip) hideTooltip(ownerDocument);
     onHover?.(null, new MouseEvent('mouseleave'));
     canvas.style.cursor = interactMode === 'pan' ? 'grab' : 'crosshair';
@@ -2457,7 +2698,7 @@ export function renderWaferMap(
       onSelect?.([]);
       render();
     }
-    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only' && showExpandButton && !insightsOpen) {
+    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only' && showExpandButton) {
       e.stopPropagation();
       (onExpand ?? openExpandModal)();
     }
@@ -2604,6 +2845,12 @@ export function renderWaferMap(
       render();
     },
 
+    setFindingsNotice(notice: FindingsNotice | undefined): void {
+      currentFindingsNotice = notice;
+      if (summaryPanelEl) renderSummaryPanel();
+      else if (autoSummaryPanelEl) renderAutoSummaryPanel();
+    },
+
     setStatsSummary(summary: StatsSummary | undefined): void {
       currentStatsSummary = summary;
       // Analysis raises its own advisories (e.g. the test-count cap), so a
@@ -2618,7 +2865,7 @@ export function renderWaferMap(
       } else if (summary && !summaryPanelOpts?.placement) {
         // Late-mount: statsSummary provided after initial render with no placement option.
         const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
-        autoSummaryPanelEl = createSummaryPanelEl('right', ownerDocument);
+        autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument);
         autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
         const parent = canvasWrap.parentElement;
         const next = canvasWrap.nextSibling;
@@ -2645,9 +2892,12 @@ export function renderWaferMap(
       if (btnHelp) btnHelp.style.display = visible ? 'flex' : 'none';
     },
 
-    setIdentityHeaderVisible(visible: boolean): void {
+    setIdentityVisible(visible: boolean): void {
       identityHeaderHostHidden = !visible;
-      if (headerBar) headerBar.style.display = (visible && !insightsOpen) ? '' : 'none';
+      // Not gated on `insightsOpen` any more: the identity stays visible in the
+      // Insights view too (the chart suite no longer renders its own copy), so
+      // this reflects the host's wish and nothing else.
+      if (headerBar) headerBar.style.display = visible ? '' : 'none';
     },
 
     openUserGuide: openGuideWindow,
@@ -2715,7 +2965,6 @@ export function renderWaferMap(
 
     destroy(): void {
       modalHandle?.close();
-      if (hideTimer) clearTimeout(hideTimer);
       tbGetOpenMenu?.()?.remove();
       if (tbCloseOpenMenu) ownerDocument.removeEventListener('click', tbCloseOpenMenu, true);
 

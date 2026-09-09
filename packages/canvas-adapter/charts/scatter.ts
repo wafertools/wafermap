@@ -20,7 +20,7 @@ import { pearsonOfPairs } from '../../stats/correlation.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -162,7 +162,13 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   const activeCats = new Set<string>();
 
   const legend = card.ownerDocument.createElement('div');
-  Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: SPACE.xs, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
+  // Air above and below, not just between. The row previously had 4px of hint
+  // margin above it and 6px below, so a band of interactive chips sat wedged
+  // between the sentence it belongs to and the plot it controls.
+  Object.assign(legend.style, {
+    display: 'flex', flexWrap: 'wrap', gap: SPACE.sm,
+    marginTop: SPACE.md, marginBottom: SPACE.xl,
+  } as Partial<CSSStyleDeclaration>);
   body.appendChild(legend);
 
   const canvas = card.ownerDocument.createElement('canvas');
@@ -170,7 +176,6 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   canvas.style.cursor = 'crosshair';
   body.appendChild(canvas);
 
-  const dpr = window.devicePixelRatio || 1;
   const tooltip = makeTooltip(card);
 
   let points: ScatterPoint[] = [];
@@ -193,39 +198,32 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     return { w, h, plotW: Math.max(10, w - SCATTER_LEFT - SCATTER_RIGHT), plotH: Math.max(10, h - SCATTER_TOP - SCATTER_BOTTOM) };
   }
 
+  /** Chip handles by category, so `updateLegend` can drive their shared state
+   *  rather than re-implementing the styling it already owns. */
+  const chips = new Map<string, SeriesLegendItem>();
+
   function updateLegend(): void {
-    for (const btn of legend.querySelectorAll<HTMLElement>('[data-cat]')) {
-      const cat = btn.dataset.cat!;
-      const active = activeCats.size === 0 || activeCats.has(cat);
-      btn.style.opacity = active ? '1' : '0.35';
-      // box-shadow, not `outline` — this is the "actively filtering on this
-      // category" indicator, a static state unrelated to keyboard focus.
-      // Using `outline` for it clobbered the browser's real focus ring
-      // (forced to 'none' on every non-active swatch, so a keyboard-focused
-      // inactive swatch showed no focus indicator at all).
+    for (const [cat, chip] of chips) {
+      // `selected` is "filtering on this one"; `dimmed` is "something else is
+      // selected". With nothing selected every chip is neither — the plot shows
+      // everything, so no chip should claim to be narrowing it.
       const filtering = activeCats.has(cat);
-      btn.style.boxShadow = filtering ? `0 0 0 2px ${CLR.text}` : 'none';
-      // Same "actively filtering" state, exposed to a screen reader — the
-      // box-shadow ring alone doesn't reach one.
-      btn.setAttribute('aria-pressed', filtering ? 'true' : 'false');
+      chip.setState({ selected: filtering, dimmed: activeCats.size > 0 && !filtering });
     }
   }
 
   function rebuildLegend(cats: string[]): void {
     legend.innerHTML = '';
+    chips.clear();
     activeCats.clear();
     for (const cat of cats) {
-      const swatch = card.ownerDocument.createElement('button');
-      swatch.type = 'button';
+      // The shared chip — identical to the histogram's group legend, which is
+      // the same control with a different verb (filter vs emphasize).
+      const chip = makeSeriesLegendItem(labelOfCategory(cat), colorOfCategory(cat), card.ownerDocument);
+      const swatch = chip.el;
       swatch.dataset.cat = cat;
+      chips.set(cat, chip);
       attachChartTip(swatch, card, tooltip, `${labelOfCategory(cat)} — click to filter`);
-      const color = colorOfCategory(cat);
-      Object.assign(swatch.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, padding: '2px 7px', borderRadius: RADIUS.pill, border: `1px solid ${CLR.menuBorder}`, background: 'none', cursor: 'pointer', fontSize: FONT.body, color: CLR.text, whiteSpace: 'nowrap' } as Partial<CSSStyleDeclaration>);
-    swatch.addEventListener('mouseenter', () => { swatch.style.filter = 'brightness(0.94)'; });
-    swatch.addEventListener('mouseleave', () => { swatch.style.filter = 'none'; });
-      const dot = card.ownerDocument.createElement('span');
-      Object.assign(dot.style, { display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: color, flexShrink: '0' } as Partial<CSSStyleDeclaration>);
-      swatch.append(dot, card.ownerDocument.createTextNode(labelOfCategory(cat)));
       swatch.addEventListener('click', () => {
         if (activeCats.has(cat)) activeCats.delete(cat); else activeCats.add(cat);
         updateLegend();
@@ -238,18 +236,13 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   }
 
   function draw(): void {
-    applyCanvasFlow(canvas, legend.offsetHeight);
+    applyCanvasFlow(canvas, legend);
     const theme = resolveChartCanvasColors(card);
     const xSpan = xHi - xLo, ySpan = yHi - yLo;
     const { w, h, plotW, plotH } = dims();
-    canvas.width = Math.max(1, Math.floor(w * dpr));
-    canvas.height = Math.max(1, Math.floor(h * dpr));
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
-
-    const ctx = canvas.getContext('2d')!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+    const prep = prepareCanvas(canvas, card, w, h);
+    if (!prep) return;
+    const { ctx } = prep;
 
     if (points.length === 0) {
       ctx.font = `${fontPx()}px system-ui, sans-serif`;

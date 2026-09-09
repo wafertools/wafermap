@@ -187,10 +187,15 @@ Omit any field you don't know — the library infers what it can:
 buildWaferMap({ results, dieConfig: { width: 10, height: 10 } });
 
 // Diameter known, die size unknown → die size estimated from diameter ÷ grid extent.
-// This one raises an `inferred-pitch` advisory in `result.warnings`: the estimate
-// assumes the die grid reaches the wafer edge, which is wrong whenever edge dies
-// are missing. Prefer supplying `dieConfig.width`/`height` — the pitch, not the
-// diameter, is what fixes die placement.
+// Raises no advisory: the pitch is derived to fit the diameter you gave, so it is
+// self-consistent by construction and there is nothing to check it against. It is
+// still an assumption — it takes the grid as reaching the wafer edge — so prefer
+// supplying `dieConfig.width`/`height` when you know them.
+//
+// The reverse case IS checkable, and does warn: supply a pitch without a diameter
+// and the wafer is sized from the die extent, so a result off the standard ladder
+// (100/150/200/300 mm) means the grid did not reach the edge — see
+// `non-standard-diameter` in the warnings table.
 buildWaferMap({ results, waferConfig: { diameter: 300 } });
 
 // Nothing known → proportionally correct layout in normalised units
@@ -1014,22 +1019,24 @@ Clicking the finding again clears the highlight.
 
 The findings list is ranked and filtered by statistical strength and effect size:
 
-- **p-value correction:** adjusted p-values are used (default `significanceLevel` = 0.05), corrected per-family using a Benjamini–Hochberg FDR procedure.
+These thresholds are **internal constants, not options** — see [§7.3 of the API reference](api.md#73-analyzewafermapoptions) for why. They are documented here so you can tell why a pattern did or did not produce a finding.
+
+- **p-value correction:** adjusted p-values are used (threshold 0.05), corrected per-family using a Benjamini–Hochberg FDR procedure.
 - **Effect size gate for yield/bin/cluster findings:** a finding passes if it satisfies at least one of:
-  - absolute `|delta| ≥ minimumEffectSize` (default 0.15, i.e. a 15 percentage-point difference), **or**
-  - relative `|delta / background| ≥ minimumRelativeEffect` (default 0.5, i.e. 50% above or below the wafer-wide background rate)
+  - absolute `|delta| ≥ 0.20`, i.e. a 20 percentage-point difference, **or**
+  - relative `|delta / background| ≥ 1.0`, i.e. at least a doubling of the wafer-wide background rate
 
-  The relative criterion matters on low-failure-rate wafers. With a 2% background rate, a 2 percentage-point elevation is only 0.02 in absolute terms (below the 0.15 threshold) but represents a 100% relative deviation — clearly significant. Without the relative criterion that finding would be silently dropped.
+  The relative criterion matters on low-failure-rate wafers. With a 2% background rate, a 4 percentage-point elevation is only 0.04 in absolute terms — well below the 0.20 gate — but is a 200% relative deviation, and is kept. Without the relative criterion that finding would be silently dropped. (A 2-point elevation on the same background is a 100% deviation and only just clears it; a 1-point elevation clears neither gate and produces nothing.)
 
-- **Effect size for test-value findings:** Cohen's d (pooled SD). Only `minimumEffectSize` applies; relative effect is not used for continuous measurements.
+- **Effect size for test-value findings:** Cohen's d (pooled SD). Only the absolute gate applies; relative effect is not used for continuous measurements.
 - **Minimum sample size** per region is auto-scaled to roughly 1% of wafer die count (minimum 5). Regions smaller than this are not tested.
 
 **Severity** is derived from the adjusted p-value and the strongest satisfied effect criterion:
 
 | Severity | p-value | Absolute delta | or Relative delta |
 |----------|---------|----------------|-------------------|
-| `unusual` | ≤ 0.01 | ≥ 0.25 | ≥ 2.0× background |
-| `notable` | ≤ 0.05 | ≥ 0.15 | ≥ 1.0× background |
+| `unusual` | ≤ 0.01 | ≥ 0.30 | ≥ 2.5× background |
+| `notable` | ≤ 0.05 | ≥ 0.20 | ≥ 1.5× background |
 | `info` | any other passing finding | | |
 
 **Cluster and edge-arc findings** have an additional size criterion applied after the rate-based gate above.  A large contiguous cluster is intrinsically striking even when the background failure rate is elevated (e.g. a 500-die donut ring that forms its own high background).  The size thresholds are:
@@ -1049,10 +1056,10 @@ Use the `summary`, `effect`, and `stats` fields on each `StatsFinding` to displa
 const summary = analyzeWaferMap(result, {
   ringCount:                 4,      // must match the renderer's ringCount
   passBins:                  [1],
-  significanceLevel:         0.05,   // adjusted p-value threshold
-  minimumEffectSize:         0.15,   // min absolute |delta| for proportion findings
-  minimumRelativeEffect:     0.5,    // min relative |delta / background| for proportion findings
-                                     // a finding passes if it satisfies either this OR minimumEffectSize
+  // significanceLevel / minimumEffectSize / minimumRelativeEffect were REMOVED in
+  // 0.27.0 — they are internal constants now. They set what counts as a finding,
+  // so a wrong value made the output wrong rather than merely different, and did
+  // so silently. See "Interpreting findings and severity" above for the values.
   enableYieldAnalysis:       true,
   enableHardBinAnalysis:     true,
   enableSoftBinAnalysis:     true,
@@ -1608,7 +1615,7 @@ renderWaferMap(container, result, { insights: { enabled: true } });
 renderWaferGallery(container, items, { insights: { enabled: true } });
 ```
 
-Either way, an **Insights** button appears in the toolbar. Clicking it swaps the map (or gallery grid) for the chart suite; clicking it again — the toolbar stays visible and usable throughout — returns to the map. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want the pass-rate chart, capability, box plots, histograms, the trend chart, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
+Either way, an **Insights** button appears in the toolbar. Clicking it swaps the map (or gallery grid) for the chart suite; clicking it again — the toolbar stays visible and usable throughout — returns to the map. Pass `defaultOpen: true` to land on the charts instead of the map, for a surface where the analysis is the point rather than an option — the [Insights example](examples/insights.html) does exactly that. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want the pass-rate chart, capability, box plots, histograms, the trend chart, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
 
 The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button instead, for enlarging just that chart.
 

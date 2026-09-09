@@ -1,0 +1,44 @@
+{
+  "waferConfig": {
+    "diameter": 200,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 2,
+    "height": 1.5
+  },
+  "passBins": [
+    1
+  ],
+  "hbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 2,
+      "name": "Parametric Fail"
+    },
+    {
+      "bin": 5,
+      "name": "Edge Ring"
+    }
+  ],
+  "testDefs": [
+    {
+      "testNumber": 6,
+      "name": "TST_A",
+      "unit": "V",
+      "limitLow": 1,
+      "limitHigh": 1.4
+    },
+    {
+      "testNumber": 7,
+      "name": "TST_B",
+      "unit": "mA",
+      "limitHigh": 1.02
+    }
+  ]
+}

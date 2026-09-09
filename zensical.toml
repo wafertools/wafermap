@@ -31,6 +31,7 @@ nav = [
   ]},
   { "Examples" = [
     { "Overview" = "examples/index.md" },
+    { "Showcase"                       = "examples/showcase.html"      },
     { "Getting started" = [
       { "Your first wafer map"           = "examples/first-map.html"      },
       { "Loading CSV data"               = "examples/csv-data.html"       },
@@ -47,6 +48,7 @@ nav = [
       { "Web Worker"                     = "examples/worker.html"          },
     ]},
     { "Analysis and layout" = [
+      { "Insights chart suite"           = "examples/insights.html"        },
       { "Statistics and findings"        = "examples/statistics.html"      },
       { "Reticle overlays"               = "examples/reticle.html"         },
       { "Multi-site parallel testing"    = "examples/test-sites.html"      },

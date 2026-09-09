@@ -263,3 +263,44 @@ export function hasJudgeableTests(
   return (dies ?? []).some(die =>
     matching.some(d => getTestPassStatus(die, d.testNumber!, d) !== undefined));
 }
+
+/**
+ * Pool per-wafer functional-test results into one lot-level set.
+ *
+ * Counts sum and the rate is recomputed from the sums — never an average of
+ * per-wafer rates, which would weight a 20-die wafer the same as a 2,000-die
+ * one.
+ *
+ * Returns `undefined` unless EVERY wafer reported functional results: a pooled
+ * pass rate computed over some of the lot, presented as the lot's, is the kind
+ * of quietly-wrong figure this library exists not to produce.
+ *
+ * Extracted because it was computed twice, identically — once for the Summary
+ * panel and once for the exported report. Two implementations of one figure can
+ * drift, and the two places they surface are precisely the two a reader would
+ * compare.
+ */
+export function poolFunctionalYield(
+  perWaferSummaries: readonly StatsSummary[] | undefined,
+): NonNullable<StatsSummary['stats']['functionalYield']> | undefined {
+  if (!perWaferSummaries?.length) return undefined;
+  if (!perWaferSummaries.every(s => s.stats.functionalYield !== undefined)) return undefined;
+
+  const byTest = new Map<number, { label: string; passDies: number; failDies: number; totalDies: number }>();
+  for (const s of perWaferSummaries) {
+    for (const t of s.stats.functionalYield ?? []) {
+      const acc = byTest.get(t.testNumber) ?? { label: t.label, passDies: 0, failDies: 0, totalDies: 0 };
+      acc.passDies += t.passDies;
+      acc.failDies += t.failDies;
+      acc.totalDies += t.totalDies;
+      byTest.set(t.testNumber, acc);
+    }
+  }
+
+  const pooled = [...byTest.entries()].map(([testNumber, acc]) => ({
+    testNumber,
+    ...acc,
+    passRatePercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null,
+  }));
+  return pooled.length ? pooled : undefined;
+}

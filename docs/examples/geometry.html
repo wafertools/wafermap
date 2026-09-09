@@ -121,9 +121,11 @@
         <div class="card-caption">
           <strong>waferConfig: { diameter: 300 }</strong> — die pitch estimated from
           diameter ÷ grid extent. Notch visible. <code>units: 'mm'</code>
-          The <em>inferred-pitch</em> advisory on this card is deliberate: the estimate
-          assumes the grid reaches the wafer edge, so supply
+          No advisory: the pitch is derived to fit the diameter you gave, so it is
+          self-consistent by construction and nothing can check it. It is still an
+          assumption — that the grid reaches the wafer edge — so supply
           <code>dieConfig.width</code>/<code>height</code> (card D) in real use.
+          The reverse case <em>is</em> checkable and does warn — see card E.
         </div>
       </div>
 

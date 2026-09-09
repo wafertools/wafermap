@@ -56,7 +56,7 @@ const GROUPS = [
 // Adding a name here is a deliberate "no, you don't type this".
 const INTERNAL = [
   'build', 'build:guide', 'build:examples-index', 'build:agents-page', 'build:site',
-  'check', 'clean', 'pack:check', 'screenshots', 'screenshots:list', 'test',
+  'check', 'check:api', 'clean', 'pack:check', 'screenshots', 'screenshots:list', 'test',
 ];
 
 // npm runs these itself, around other commands.

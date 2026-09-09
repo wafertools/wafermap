@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Insights — the built-in chart suite — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    /* Page-level scroll, same reasoning as statistics.html: the chart suite is
+       tall and a bounded box would pin the intro above the fold. */
+    .demo-content { padding: 0; }
+    #stage { width: 100%; padding: 14px; box-sizing: border-box; }
+
+    .chart-index {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+      margin: 4px 14px 18px;
+    }
+    .chart-index section {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      background: var(--surface, #fff);
+    }
+    .chart-index h3 {
+      margin: 0 0 4px;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .chart-index p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
+    .chart-index ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+    .chart-index li strong { font-weight: 600; }
+    .chart-index .look { color: var(--muted); }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Insights — the built-in chart suite</span>
+    <span class="demo-desc" id="banner"></span>
+  </header>
+
+  <div class="demo-intro">
+    Everything below is drawn by the library from the same data the map already has.
+    There is no charting call to make and no second library to add: pass
+    <code>insights: { enabled: true }</code> and the toolbar gains an
+    <strong>Insights</strong> tab holding thirteen panels across three views. This page
+    opens on that tab — <code>defaultOpen: true</code> — because the charts are the
+    subject here rather than the map.
+    <br><br>
+    The lot is eight wafers split across two process corners (<strong>POR</strong> and
+    <strong>Hi-dose</strong>, a ~50&nbsp;mV Vth offset), with three parametric tests
+    that carry real spec limits, a functional continuity test, and a radial process
+    gradient. That is deliberate: each chart below needs something true in the data or
+    it is only a picture of noise. Use <strong>Group by → processSplit</strong> in the
+    Insights toolbar to separate the two corners.
+  </div>
+
+  <div class="chart-index">
+    <section>
+      <h3>Overview &mdash; 7 panels</h3>
+      <p>Where the yield went, and which wafers differ.</p>
+      <ul>
+        <li><strong>Yield by wafer</strong> — every wafer in the lot, sortable by yield or by ID.
+          <span class="look">The pass bins are named in the title, not assumed.</span></li>
+        <li><strong>Hard bin pareto</strong> — failing bins ranked by count, with a soft-bin toggle.
+          <span class="look">Names come from <code>hbinDefs</code>, not bin numbers.</span></li>
+        <li><strong>Parametric pass rate · spec limits</strong> — pass rate per test against its limits.
+          <span class="look">Ranks which test is costing you most.</span></li>
+        <li><strong>Ring yield</strong> &amp; <strong>Quadrant yield</strong> — yield per region on a wafer-shaped diagram, labelled in place.
+          <span class="look">Look for the edge ring falling away from the core.</span></li>
+        <li><strong>Test Values</strong> and <strong>Functional Tests</strong> tables — the numbers behind the charts, with their N stated.</li>
+      </ul>
+    </section>
+    <section>
+      <h3>Distributions &mdash; 4 panels</h3>
+      <p>The shape of each measurement, not just its map colour.</p>
+      <ul>
+        <li><strong>Value histogram</strong> — one test's distribution with its limits marked.
+          <span class="look">Vth is bimodal: that is the two splits.</span></li>
+        <li><strong>Test value distribution</strong> — box plots per test or per wafer.
+          <span class="look">Compare spread across the lot.</span></li>
+        <li><strong>Process capability</strong> — Cp/Cpk against the spec limits.
+          <span class="look">Needs limits; this is why <code>testDefs</code> carry them.</span></li>
+        <li><strong>Wafer-to-wafer trend</strong> — a metric across the lot in order.
+          <span class="look">The two splits separate here.</span></li>
+      </ul>
+    </section>
+    <section>
+      <h3>Correlation &mdash; 2 panels</h3>
+      <p>Which measurements move together — the question a wafer map cannot answer.</p>
+      <ul>
+        <li><strong>Test correlation matrix</strong> — pairwise r across every test.
+          <span class="look">Idsat and Vth are coupled by the same process gradient.</span></li>
+        <li><strong>Test scatter</strong> — any two tests against each other, with limits.
+          <span class="look">Pick the pair the matrix flagged.</span></li>
+      </ul>
+    </section>
+  </div>
+
+  <div class="demo-content">
+    <div id="stage"><div id="gallery"></div></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap } from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferLot } from 'wafermap/stats';
+    import {
+      makeResults, makeWaferConfig, DIE_CONFIG,
+      TEST_DEFS, FUNCTIONAL_TEST_DEF, HBIN_DEFS, SBIN_DEFS,
+    } from './data.js';
+
+    const WAFER_COUNT = 8;
+    const PASS_BINS   = [1];
+
+    // Functional test included: the pass-rate panel ranks parametric tests and
+    // functional ones side by side, and leaving it out would hide half of what
+    // that chart does.
+    const testDefs = [...TEST_DEFS, FUNCTIONAL_TEST_DEF];
+
+    // `waferIndex` gives each wafer its process split, so the lot has a real
+    // wafer-to-wafer signal for the trend chart and a real grouping axis for
+    // "Group by". `quadrant: true` adds the NE→SW gradient that couples Idsat
+    // and Vth — without it the correlation matrix is a grid of near-zeros.
+    const items = [];
+    for (let i = 0; i < WAFER_COUNT; i++) {
+      const result = buildWaferMap({
+        results:     makeResults({ seed: 11 + i, waferIndex: i, quadrant: true, edgeFail: true }),
+        waferConfig: makeWaferConfig(i),
+        dieConfig:   DIE_CONFIG,
+        passBins:    PASS_BINS,
+        testDefs,
+        hbinDefs:    HBIN_DEFS,
+        sbinDefs:    SBIN_DEFS,
+      });
+      items.push({ ...result, label: result.metadata?.waferId ?? `W0${i + 1}` });
+    }
+
+    // analyzeWaferLot needs the per-test statistics the Distributions and
+    // Correlation views read; computePerTestStats is the cheap quartile scan,
+    // without the expensive regional Welch pass (see performance.md).
+    const lotStatsSummary = analyzeWaferLot(items, {
+      ringCount: 4,
+      passBins:  PASS_BINS,
+      testDefs,
+      computePerTestStats: true,
+    });
+
+    renderWaferGallery(document.getElementById('gallery'), items, {
+      lotStatsSummary,
+      // defaultOpen lands the reader on the charts. Without it the Insights tab
+      // is a toolbar button, which is right for a map-first page and wrong for
+      // this one.
+      insights:       { enabled: true, defaultOpen: true, defaultView: 'overview' },
+      summaryPanel:   { placement: 'right' },
+      viewOptions:    { plotMode: 'value', activeTest: TEST_DEFS[1].testNumber },
+      showHelpButton: true,
+    });
+
+    const notable = lotStatsSummary.findings.filter(f => f.severity !== 'info').length;
+    document.getElementById('banner').textContent =
+      `${WAFER_COUNT} wafers · ${items.reduce((n, i) => n + i.dies.length, 0).toLocaleString()} dies · `
+      + `${testDefs.length} tests · ${lotStatsSummary.findings.length} lot findings (${notable} notable) · `
+      + `insights { enabled: true, defaultOpen: true }`;
+  </script>
+
+</body>
+</html>

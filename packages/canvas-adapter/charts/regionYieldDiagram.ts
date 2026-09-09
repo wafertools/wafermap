@@ -20,10 +20,7 @@ import type { RegionYieldDatum } from '../../stats/regions.js';
 import { parseRegionKey } from '../../stats/regions.js';
 import { yieldFill } from './palette.js';
 import { fontPx } from '../toolbar.js';
-import {
-  cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent,
-  renderEmptyState, type SaveImageHandler, type ChartCanvasColors,
-} from './chartShell.js';
+import { cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent, renderEmptyState, type SaveImageHandler, type ChartCanvasColors, prepareCanvas } from './chartShell.js';
 
 export type RegionYieldMode = 'ring' | 'quadrant';
 
@@ -124,20 +121,14 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
   Object.assign(canvas.style, { display: 'block', flex: 'none' } as Partial<CSSStyleDeclaration>);
   body.appendChild(canvas);
 
-  const dpr = window.devicePixelRatio || 1;
 
   function draw(): void {
     const size = Math.max(MIN_SIZE, Math.min(body.clientWidth || DIAGRAM_SIZE, DIAGRAM_SIZE));
     growCardToFitContent(card, body, size);
 
-    canvas.width  = Math.max(1, Math.floor(size * dpr));
-    canvas.height = Math.max(1, Math.floor(size * dpr));
-    canvas.style.width  = `${size}px`;
-    canvas.style.height = `${size}px`;
-
-    const ctx = canvas.getContext('2d')!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, size, size);
+    const prep = prepareCanvas(canvas, card, size, size);
+    if (!prep) return;
+    const { ctx } = prep;
 
     const theme = resolveChartCanvasColors(card);
     // Fixed-domain sequential ramp (palette.ts) — NOT the map's value scheme,

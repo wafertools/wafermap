@@ -9,6 +9,111 @@ done the way it was is the useful part.
 
 ---
 
+## [x] Summary-panel geometry warnings cannot be dismissed or collapsed
+
+**Problem:** a geometry advisory (e.g. the inferred-die-pitch warning) renders
+at the top of the Wafer Summary panel as a permanent block with no dismiss and
+no collapse. On a wafer where the pitch was inferred it can run to ~10 lines,
+pushing "Summary report" / "View die list" and the SUMMARY section below the
+fold — so the panel's actual content starts off-screen on first open, every
+time, for the whole session.
+
+**Why it matters more than it looks:** the advisory is per-RESULT and
+unchanging, so once read it carries no new information, but it costs the same
+vertical space on every open of every wafer in a lot with inferred geometry —
+which is the common case for the data this library exists to plot. It is also
+the one panel element a user cannot act on: findings collapse, sections
+collapse, the panel itself closes; this does not.
+
+**Where it originates:** `packages/canvas-adapter/summaryPanel.ts` renders
+`result.warnings` / `stats.warnings` as a plain block. There is already a
+collapse mechanism in the same file (the findings and bin-breakdown sections
+use `wireExpandToggle`), so this is reusing an existing pattern, not inventing
+one.
+
+**Suggested fix:** collapse to a single summary line by default — a warning
+icon plus "Geometry inferred" with a chevron — expanding to the full text on
+click, matching how findings already behave. Dismissal is a separate question:
+per-session dismissal needs somewhere to remember it, and the panel is rebuilt
+on every `setResult`, so "collapsed by default with the detail one click away"
+is likely enough without any persistence at all.
+
+**Related:** the `inferred-pitch` advisory was downgraded from error to warning
+in 0.27.0 (it used to leave a permanent red banner in tsmap with nothing to
+dismiss it). This is the same complaint one level down: the severity is now
+right, the space it takes is not.
+
+**Done (0.27.0):** collapsed by default in `warnings.ts`'s `buildWarningsBanner`
+— a one-line summary (severity glyph + short label + chevron) that expands to
+the full prose on click. The short labels are keyed on `code`, not derived from
+the message, matching the rule hosts are given for branching on these; an
+unknown code falls back to the message's first sentence so a new advisory still
+collapses sensibly. The header is a real `<button>`, so keyboard operation and
+the accessible name come from the element rather than hand-rolled key handling.
+Measured on `examples/geometry.html`: 110px → 32px, 78px back on a 346px panel.
+
+**Not** dismissable, deliberately: the condition is still true, and a dismissed
+advisory about dies that may be mis-positioned is a wrong map with nothing on
+screen saying so. Collapsing keeps it permanently visible and permanently one
+click from its reasoning, which is the part that was actually missing.
+
+## Summary panel content clips silently in 'top'/'bottom' placement
+
+**Found while:** verifying `SummaryPanelOptions.placement` actually works for
+all four values (right/left/top/bottom), prompted by a question about whether
+today's toolbar/chrome-row work assumed 'right' only. It didn't — all four
+positions are structurally correct (canvas and panel swap sides/stack
+correctly, toolbar stays aligned, insets are right) — but 'top' and 'bottom'
+have a separate, pre-existing problem: `createSummaryPanelEl` fixes the panel
+to `height: 180px` with `overflowY: 'hidden'` for vertical placements (`right`/
+`left` get `maxHeight: 100%` with `overflowY: 'auto'` instead). On any wafer
+whose panel content exceeds 180px — which is most of them, since Summary alone
+plus one collapsed section already approaches that — the excess is silently
+clipped rather than scrolled. Visually the last visible row's text is cut off
+mid-line with no indication more content exists below.
+
+**Confirmed pre-existing**, not a regression from today's chrome-row work —
+`git log -S` traces the 180px literal back to the commit that introduced
+`testValues`/summary panel/toolbar tooltip fixes, well before this session.
+Today's identity-strip font bump (`FONT.body` → `FONT.sub`) makes the content
+taller and so pushes more panels over that ceiling, but the clipping mechanism
+itself already existed.
+
+**Suggested fix:** either give vertical placements `overflowY: 'auto'` too (an
+internal scrollbar inside a 180px band, same pattern the horizontal placements
+already use via `maxHeight: 100%`), or size the fixed height from actual
+content up to some cap. The horizontal placements' approach — bound by the
+container height, scroll internally — is probably the simpler fix to mirror.
+
+**Before fixing: do a full review of `placement`, not just the clipping bug.**
+Only `right` has had any real design attention — it's the only value used in
+this library's own demos and docs, and (per Paul) tsmap's whole layout has been
+built assuming it. `left`/`top`/`bottom` were verified structurally correct
+(canvas/panel swap sides, toolbar stays aligned, insets are right) but that was
+a quick live-render check, not a review of whether the content ITSELF reads
+well in those positions — a 300px-wide panel squeezed to a 180px-tall band at
+the top or bottom of a wide map may be the wrong shape for this content
+regardless of the clipping bug, e.g. multi-column stat tiles, per-test tables,
+and the findings list were all designed for a narrow-tall panel, not a
+wide-short one.
+
+**Live options once that review is done:**
+1. Fix the clipping and keep all four values as designed.
+2. Redesign `top`/`bottom`'s internal layout for a wide-short shape (more than
+   an overflow fix — likely a different arrangement of sections).
+3. **Remove `top`/`bottom` from `SummaryPanelOptions.placement` entirely**,
+   narrowing it to `'right' | 'left'`, if a wide-short panel turns out not to
+   be a shape worth supporting. This is a breaking change (removes accepted
+   values) and would need a minor bump + CHANGELOG `### Breaking` entry per
+   this repo's versioning policy — but doing it now, before any real host
+   depends on `top`/`bottom`, is far cheaper than doing it after one does.
+   Check `../tsmap` and any other known consumer for actual `placement: 'top'`
+   / `'bottom'` usage before deciding — CLAUDE.md's own rule for "fixed
+   everywhere" applies in reverse here: don't remove something a caller
+   already relies on without a deprecation path.
+
+---
+
 ## Extract the shared screenshot harness
 
 **Idea:** `scripts/capture-screenshots.mjs` here (706 lines) and
@@ -296,16 +401,45 @@ documentation; treating it as verification is how the drift kept recurring.
 **Proposal.** One check per rule, in both repos, wired into `npm run verify`,
 each failing with `file:line` and the rule it breaks.
 
-| Rule | Mechanically checkable |
-| --- | --- |
-| Type tiers (11 / 12 / 13 / 15 / 20) | yes — flag off-tier `font-size` |
-| Radius roles, no literals | yes — flag `border-radius: Npx` |
-| Spacing scale | yes — flag off-scale padding/gap/margin |
-| Focus ring never suppressed | yes — flag `outline: none` without a documented reason nearby |
-| Every interactive element reacts to hover | yes — `cursor: pointer` with no hover/`wireControlHover`/class |
-| One tooltip look | yes — flag a second tooltip style block |
-| Buttons use a shared class | done — `check-button-styles.mjs` (rewritten with a quote-aware scanner) |
-| No icon-role colour on text (`CLR.icon*`) | partly — flag `color: CLR.icon*` outside icon elements |
+| Rule | Mechanically checkable | Status |
+| --- | --- | --- |
+| Type tiers (11 / 12 / 13 / 15 / 20) | yes — flag off-tier `font-size` | **partly** — a floor is enforced (11px wmap / 12px tsmap), not the tiers |
+| Radius roles, no literals | yes — flag `border-radius: Npx` | **done** — budget on literals (wmap 2, tsmap 1); `4px`→`RADIUS.control` and `50%`→`RADIUS.pill` were tokenised instead of admitted, both visually identical |
+| Spacing scale | yes — flag off-scale padding/gap/margin | **done** — budget on distinct off-scale literals, ratcheted (wmap 4, tsmap 6) |
+| Focus ring never suppressed | yes — flag `outline: none` without a documented reason nearby | **done** — requires a focus-specific reason in an adjacent comment |
+| Every interactive element reacts to hover | yes — `cursor: pointer` with no hover/`wireControlHover`/class | **done as a ratchet** — wmap 18, tsmap 10 existing sites budgeted, not fixed; see below |
+| One tooltip look | yes — flag a second tooltip style block | open |
+| Buttons use a shared class | done — `check-button-styles.mjs` (rewritten with a quote-aware scanner) | done |
+| No icon-role colour on text (`CLR.icon*`) | partly — flag `color: CLR.icon*` outside icon elements | open |
+
+**Done so far (2026-09-02).** All of it inside the existing
+`check-style-scales.mjs` rather than a script per rule — one checker per repo,
+many rules, to avoid the sprawl this repo already has enough of. Added: a
+quote-aware comment stripper (a comment in `chartShell.ts` *quotes*
+`outline: none` while explaining its removal, and an unguarded scanner reads the
+explanation as the offence); the spacing budget; the focus-ring rule.
+
+Two lessons, both from the acceptance test rather than from reasoning:
+
+1. The focus rule **could not fire at all** on first writing — its justification
+   window included the offending line, which necessarily contains the word
+   "outline", so every violation excused itself. It reported clean on a planted
+   defect.
+2. Before that, accepting a bare `UI_STANDARDS` mention as justification meant
+   any nearby citation of the standard — for an unrelated reason — silently
+   exempted a suppression.
+
+Both are the exact failure this entry was written about, reproduced while
+writing the fix for it. The acceptance test is not optional.
+
+**The hover rule found 18 real sites in wmap and 10 in tsmap** — genuinely
+clickable elements with no hover response at all, including the Summary panel's
+collapsible section headers and the Insights tab buttons. Verified by hand, not
+assumed: the section toggle has `cursor: pointer` and no `:hover`,
+no `wireControlHover`, no `mouseenter` anywhere in its construction. These are
+budgeted, not fixed — giving them hover states is a visible UI change and its
+own decision. **That decision is still open**, and is the obvious next step on
+this entry.
 
 **Add a "one value, many places" enumeration.** The rules above check that a
 value is *on scale*. They do not ask the different question that keeps finding

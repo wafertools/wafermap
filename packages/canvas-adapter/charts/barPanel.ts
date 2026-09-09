@@ -3,7 +3,7 @@
 
 import type { ChartDatum } from '../../stats/yield.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
-import { cardShell, formatValue, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeSegmented, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler } from './chartShell.js';
+import { cardShell, formatValue, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeSegmented, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler, prepareCanvas } from './chartShell.js';
 
 const ROW_HEIGHT = 24;
 const ROW_GAP = 5;
@@ -127,7 +127,6 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
   const tooltip = makeTooltip(card);
 
   let hovered = -1;
-  const dpr = window.devicePixelRatio || 1;
   let maxValue = Math.max(1, ...data.map(d => d.value));
 
   const valueTextOf = (datum: ChartDatum) =>
@@ -150,14 +149,9 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
     // narrowing its content box.
     const width = scrollArea.clientWidth;
     const height = PADDING * 2 + refBandH() + data.length * (ROW_HEIGHT + ROW_GAP);
-    canvas.width = Math.max(1, Math.floor(width * dpr));
-    canvas.height = Math.max(1, Math.floor(height * dpr));
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    const ctx = canvas.getContext('2d')!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    const prep = prepareCanvas(canvas, card, width, height);
+    if (!prep) return;
+    const { ctx } = prep;
     ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
 

@@ -8,7 +8,8 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
   } }</script>
   <style>
     .demo-panel { width: 240px; }
@@ -100,6 +101,7 @@
   <script type="module">
     import { buildWaferMap }  from 'wafermap';
     import { renderWaferMap } from 'wafermap/render';
+    import { analyzeWaferMap } from 'wafermap/stats';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, TEST_DEFS } from './data.js';
 
     const result = buildWaferMap({
@@ -187,6 +189,10 @@
 
     const ctrl = renderWaferMap(document.getElementById('map'), result, {
       viewOptions: { plotMode: 'hardBin' },
+      // Findings are themselves an interaction surface: clicking one highlights
+      // the dies it covers, using the same selection the box-select below drives.
+      statsSummary: analyzeWaferMap(result, { ringCount: 4 }),
+      summaryPanel: { placement: 'right' },
       showHelpButton: true,
       onHover,
       onClick,

@@ -144,7 +144,7 @@ because they mean the picture may be wrong, not merely incomplete.
 
 ```ts
 for (const w of result.warnings) console.warn(w.code, w.message);
-// 'partial-coverage' | 'geometry-conflict' | 'inferred-pitch'
+// 'partial-coverage' | 'geometry-conflict' | 'non-standard-diameter'
 ```
 
 **Fix:** supply what is being guessed — `dieConfig.width`/`height` always, plus

@@ -5,7 +5,7 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
+import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 
@@ -69,6 +69,21 @@ export interface ChartCanvasColors {
   /** Subtle bar/row "track" background (full-extent backdrop behind a value bar) — deliberately much softer than `border`, which reads as a visible grey line/fill, not a backdrop. */
   track: string;
   warnBorder: string;
+  /** Selection accent — the "this one is chosen" colour, distinct from
+   *  `bgHover`, which is "the pointer is over this one". */
+  accent: string;
+  /**
+   * Spec-limit reference lines and their labels.
+   *
+   * Deliberately NOT `warnBorder`, which is what these used. That token is the
+   * border of a warning banner — designed to sit quietly on a warning
+   * background, so every dark theme sets it to a near-black amber (`#3a2a00`,
+   * `#4a3f2a`, …). Drawn instead as a line across a chart surface it was barely
+   * visible in every theme, light included. `warn-text` is the token in the
+   * same family that must be READABLE against a panel, which is exactly what a
+   * limit line and its label need.
+   */
+  limitLine: string;
 }
 
 const CHART_COLOR_FALLBACKS: Record<keyof ChartCanvasColors, string> = {
@@ -79,6 +94,9 @@ const CHART_COLOR_FALLBACKS: Record<keyof ChartCanvasColors, string> = {
   bgHover: '#edf0f8',
   track: '#fafbfc',
   warnBorder: '#f0c040',
+  accent: '#1a66cc',
+  // A darker amber than `warnBorder`: this one is read, not merely sensed.
+  limitLine: '#b45309',
 };
 
 const CHART_COLOR_TOKEN: Record<keyof ChartCanvasColors, string> = {
@@ -89,6 +107,8 @@ const CHART_COLOR_TOKEN: Record<keyof ChartCanvasColors, string> = {
   bgHover: 'bg-hover',
   track: 'panel-bg',
   warnBorder: 'warn-border',
+  accent: 'icon-active',
+  limitLine: 'warn-text',
 };
 
 /** Resolve `--wmap-*` custom properties to concrete color strings for canvas
@@ -208,9 +228,19 @@ export function growCardToFitContent(card: HTMLElement, body: HTMLElement, conte
  * actually deliver that floor.
  */
 export function chartFillHeight(card: HTMLElement, body: HTMLElement, canvas: HTMLCanvasElement, minHeight: number): number {
+  // Outer height, margins included. `offsetHeight` alone under-measures every
+  // sibling that has a margin, so the canvas was handed more room than actually
+  // remained and overlapped whatever sat above it. This is the third place the
+  // same omission appeared — `applyCanvasFlow`'s callers and the histogram's
+  // own `siblingH` were the other two — which is why it is fixed here, at the
+  // helper every chart shares, rather than a third time at a call site.
+  const view = card.ownerDocument.defaultView ?? window;
   let siblingHeight = 0;
   for (const child of Array.from(body.children)) {
-    if (child !== canvas) siblingHeight += (child as HTMLElement).offsetHeight;
+    if (child === canvas) continue;
+    const el = child as HTMLElement;
+    const cs = view.getComputedStyle(el);
+    siblingHeight += el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
   }
   growCardToFitContent(card, body, siblingHeight + minHeight);
   // Re-read after the resize above so a card that just changed size reports
@@ -218,7 +248,86 @@ export function chartFillHeight(card: HTMLElement, body: HTMLElement, canvas: HT
   return Math.max(minHeight, body.clientHeight - siblingHeight);
 }
 
-export function applyCanvasFlow(canvas: HTMLCanvasElement, topOffset = 0): void {
+/**
+ * Position a chart canvas to fill its card below whatever sits above it.
+ *
+ * Pass the ELEMENT above, not a number. Callers passed `el.offsetHeight`, which
+ * excludes margins — so the canvas began at that element's content edge and any
+ * margin on it became overlap. The scatter legend's chips were drawn over by the
+ * plot for exactly this reason, and the overlap grew the moment the legend was
+ * given the breathing room it needed. A number is still accepted for a caller
+ * that genuinely has only a measurement, but an element is always safer: it
+ * cannot omit the part that made this wrong.
+ */
+/**
+ * Device pixel ratio of the window `el` actually lives in.
+ *
+ * Not `window.devicePixelRatio`. A chart card can be reparented into a detached
+ * popup (see `renderWaferGallery`'s detach), and that popup can sit on a
+ * different display with a different ratio — reading the opener's global there
+ * sizes the backing store for the wrong screen, which shows up as a blurry or
+ * mis-scaled plot only on a multi-monitor setup. Eight of the ten charts read
+ * the global; `trend` and `testPassRate` had already worked this out
+ * separately, which is the usual sign the knowledge wants to live in one place.
+ */
+export function chartDpr(el: HTMLElement): number {
+  return (el.ownerDocument.defaultView ?? window).devicePixelRatio || 1;
+}
+
+export interface PreparedCanvas {
+  ctx: CanvasRenderingContext2D;
+  theme: ChartCanvasColors;
+}
+
+/**
+ * Size a chart canvas for the display and hand back a cleared, scaled context
+ * plus the resolved theme.
+ *
+ * Every chart opened its draw with the same eight lines — backing store at
+ * `cssW * dpr`, CSS size in px, `getContext`, `setTransform(dpr, …)`,
+ * `clearRect`, the default font and baseline, then `resolveChartCanvasColors` —
+ * and each one was a place to get the DPR from the wrong window (eight of ten
+ * did), to forget `setTransform` after resizing, or to clear in device pixels
+ * instead of CSS ones. None of that is per-chart knowledge.
+ *
+ * Returns `null` when the 2D context is unavailable, so a caller's `if (!prep)
+ * return;` replaces the `getContext` null check it already had.
+ *
+ * The font and baseline are the common default, not a policy: a chart that
+ * wants something else assigns over them, as several do per text run anyway.
+ */
+export function prepareCanvas(
+  canvas: HTMLCanvasElement,
+  card: HTMLElement,
+  cssWidth: number,
+  cssHeight: number,
+): PreparedCanvas | null {
+  const dpr = chartDpr(canvas);
+  canvas.width = Math.max(1, Math.floor(cssWidth * dpr));
+  canvas.height = Math.max(1, Math.floor(cssHeight * dpr));
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  // After the transform, every coordinate below is CSS pixels — which is why
+  // `clearRect` uses the CSS size, not the backing-store size.
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+  ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+  ctx.textBaseline = 'middle';
+
+  return { ctx, theme: resolveChartCanvasColors(card) };
+}
+
+export function applyCanvasFlow(canvas: HTMLCanvasElement, above: HTMLElement | number = 0): void {
+  let topOffset: number;
+  if (typeof above === 'number') {
+    topOffset = above;
+  } else {
+    const cs = (above.ownerDocument.defaultView ?? window).getComputedStyle(above);
+    topOffset = above.offsetTop + above.offsetHeight + (parseFloat(cs.marginBottom) || 0);
+  }
   canvas.style.position = 'absolute';
   canvas.style.left = '0';
   canvas.style.right = '0';
@@ -300,6 +409,102 @@ export interface CardShell {
  * take it from here. They previously restated these values independently and
  * drifted apart.
  */
+/** Size of the colour chip that stands for a data series. */
+const CHART_SWATCH_SIZE = '10px';
+
+/**
+ * THE colour chip that stands for a data series, everywhere in the chart suite.
+ *
+ * Returned as a CSS string so an `innerHTML` row and a real element can both
+ * use it without a second copy.
+ *
+ * There were three: a 9px rounded square written as an HTML string (histogram
+ * tooltip), a 9px circle written as a style object (scatter legend), and an
+ * 11px bordered square with a dashed variant (process capability). Each was
+ * reasonable alone; together they meant the same idea looked different in every
+ * chart a reader moved between.
+ *
+ * One shape, deliberately — an earlier version made shape a parameter so a bar
+ * chart could keep a block and a scatter a dot, on the theory that a chip
+ * should mirror its mark. That is a defensible idea and it is not what these
+ * are for: they are a colour key, read across charts, and the sameness is worth
+ * more than the echo. A pill also matches `sevDot` in the Summary panel, so the
+ * app has one idiom rather than one per surface.
+ *
+ * `outline` is the single real variant: capability needs "no spec limits, no
+ * Ppk" to read as absent rather than as another colour, which a hollow dashed
+ * chip does and a filled one cannot.
+ */
+export function chartSwatchCss(color: string, variant: 'solid' | 'outline' = 'solid'): string {
+  return [
+    'display:inline-block',
+    `width:${CHART_SWATCH_SIZE}`,
+    `height:${CHART_SWATCH_SIZE}`,
+    `border-radius:${RADIUS.pill}`,
+    `background:${variant === 'outline' ? 'transparent' : color}`,
+    `border:1px ${variant === 'outline' ? 'dashed' : 'solid'} ${color}`,
+    'box-sizing:border-box',
+    'flex-shrink:0',
+  ].join(';');
+}
+
+/** Opacity of a series-legend chip that is NOT in the current selection. */
+const LEGEND_DIM_OPACITY = '0.35';
+
+export interface SeriesLegendItem {
+  el: HTMLButtonElement;
+  /** `selected` = this series is picked; `dimmed` = a selection exists elsewhere. */
+  setState(state: { selected: boolean; dimmed: boolean }): void;
+}
+
+/**
+ * THE clickable chip in a chart's series legend.
+ *
+ * There were two, built independently: the scatter's category filter and the
+ * histogram's group emphasis. Same control, same job — click a colour to narrow
+ * what the plot shows — and they differed in every particular: pill versus no
+ * border, a shared swatch versus a 10px square, `wireControlHover` versus a
+ * `filter: brightness(0.94)` that is invisible on a dark theme, and 0.35 versus
+ * 0.45 dimming.
+ *
+ * They also each hit the same trap. Both marked "selected" with a BACKGROUND,
+ * which `wireControlHover` owns: it snapshots a resting background on first
+ * hover and restores it on leave, so hovering a chip before clicking wiped the
+ * selection's look, and hovering a selected one left the look behind after it
+ * was deselected — chips displaying a state they were not in. Selection lives
+ * on `borderColor` and `fontWeight` here for that reason: neither is a channel
+ * hover touches, and weight means the cue is not colour alone.
+ */
+export function makeSeriesLegendItem(
+  label: string,
+  color: string,
+  ownerDocument: Document = document,
+): SeriesLegendItem {
+  const el = ownerDocument.createElement('button');
+  el.type = 'button';
+  Object.assign(el.style, {
+    display: 'inline-flex', alignItems: 'center', gap: SPACE.xs,
+    padding: `${SPACE.xs} ${SPACE.md}`, borderRadius: RADIUS.pill,
+    border: `1px solid ${CLR.menuBorder}`, background: 'none', cursor: 'pointer',
+    fontSize: FONT.body, color: CLR.text, whiteSpace: 'nowrap',
+  } as Partial<CSSStyleDeclaration>);
+  wireControlHover(el, 'bare');
+
+  const dot = ownerDocument.createElement('span');
+  dot.style.cssText = chartSwatchCss(color);
+  el.append(dot, ownerDocument.createTextNode(label));
+
+  return {
+    el,
+    setState({ selected, dimmed }) {
+      el.style.borderColor = selected ? CLR.iconActive : CLR.menuBorder;
+      el.style.fontWeight = selected ? '600' : '400';
+      el.style.opacity = dimmed ? LEGEND_DIM_OPACITY : '1';
+      el.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    },
+  };
+}
+
 export function cardFrameStyle(): Partial<CSSStyleDeclaration> {
   return {
     background: CLR.menuBg,
@@ -433,6 +638,7 @@ export function makeSegmented(
       borderLeft: i > 0 ? `1px solid ${CLR.menuBorder}` : 'none',
     } as Partial<CSSStyleDeclaration>);
 
+    wireControlHover(label, 'bare');
     const radio = ownerDocument.createElement('input');
     radio.type = 'radio';
     radio.name = name;
@@ -443,6 +649,10 @@ export function makeSegmented(
     const paint = () => {
       label.style.background = radio.checked ? CLR.bgActive : CLR.menuBg;
       label.style.color = radio.checked ? CLR.iconActive : CLR.text;
+      // The selected segment opts out of hover (see `wireControlHover`'s
+      // data-on guard) — it is already painted as selected, and the shared
+      // hover colour would erase the distinction under the pointer.
+      label.dataset.on = radio.checked ? 'true' : 'false';
     };
     paints.push(paint);
     paint();
@@ -644,7 +854,7 @@ export function makeListSelect(
       row.setAttribute('aria-selected', isSelected ? 'true' : 'false');
       row.tabIndex = -1;   // roving tabindex — the ring comes from the browser
       Object.assign(row.style, {
-        padding: '6px 14px', fontSize: FONT.body, cursor: 'pointer',
+        padding: `${SPACE.sm} ${SPACE.xl}`, fontSize: FONT.body, cursor: 'pointer',
         color: isSelected ? CLR.iconActive : CLR.text, fontWeight: isSelected ? '700' : '400',
         background: isSelected ? CLR.menuActive : 'transparent', whiteSpace: 'nowrap',
       } as Partial<CSSStyleDeclaration>);
@@ -666,24 +876,11 @@ export function makeListSelect(
       rows.push({ row, label: o.label.toLowerCase() });
     }
 
-    // Row-to-row keyboard nav — deliberately not `wireMenuA11y`, which
-    // auto-focuses its first item on mount and would steal focus straight back
-    // off the search box's own autofocus.
-    menu.addEventListener('keydown', e => {
-      const list = visibleRows();
-      if (list.length === 0) return;
-      const idx = list.indexOf(ownerDocument.activeElement as HTMLDivElement);
-      switch (e.key) {
-        case 'ArrowDown': e.preventDefault(); list[idx < 0 || idx === list.length - 1 ? 0 : idx + 1].focus(); break;
-        case 'ArrowUp':   e.preventDefault(); list[idx <= 0 ? list.length - 1 : idx - 1].focus(); break;
-        case 'Home':      e.preventDefault(); list[0].focus(); break;
-        case 'End':       e.preventDefault(); list[list.length - 1].focus(); break;
-        case 'Enter':
-        case ' ':         if (idx >= 0) { e.preventDefault(); list[idx].click(); } break;
-        case 'Escape':
-        case 'Tab':       e.preventDefault(); closeMenuAndRefocus(); break;
-      }
-    });
+    // The shared roving-focus handler, NOT `wireMenuA11y`: that one also
+    // focuses the first row on mount, which would steal focus straight back off
+    // the search box's own autofocus. `wireListNavigation` is the key handling
+    // without that — which is the only thing these two ever disagreed about.
+    wireListNavigation(menu, visibleRows, closeMenuAndRefocus);
 
     // Shared menu layer (toolbar.ts), not straight to body — see menuLayerFor's
     // own doc comment: an Insights card is exactly the "persistent chrome"
@@ -756,6 +953,205 @@ export function makeTestSelect(
   );
 }
 
+/** The two axis toggles plus the state behind them. */
+export interface LinkedAxisPrefs {
+  /** Current prefs — read these where the panel used its own locals. */
+  get(): { includeLimits: boolean | undefined; clipOutliers: boolean };
+  /**
+   * Rebuild the toggles for the state the panel has just RESOLVED.
+   *
+   * Called from the redraw, because `includeLimits` is a tri-state: undefined
+   * means "decide from the data" (`shouldIncludeLimitsByDefault`), and the
+   * resolved answer is only known once the data range is. `hasLimits` decides
+   * whether the limits toggle is offered at all.
+   */
+  sync(resolvedIncludeLimits: boolean, hasLimits: boolean): void;
+  /**
+   * Adopt prefs chosen elsewhere. Returns false — changing nothing — when they
+   * already match. Deliberately does NOT fire `onUserChange`, the same
+   * asymmetry `makeLinkedTestSelect` relies on to keep a broadcast from
+   * bouncing back.
+   */
+  set(prefs: AxisPrefs): boolean;
+}
+
+/**
+ * The linked axis toggles shared by the boxplot, histogram and trend panels.
+ *
+ * The third copy of one behaviour, and the second to be extracted: these three
+ * each held their own `axisIncludesLimits`/`clipOutliers` pair, their own
+ * `syncAxisToggles` building the same two `makeToggle`s into a row, their own
+ * `onAxisPrefsChange` call in each handler, and a `setAxisPrefs` that was
+ * byte-identical across all three.
+ *
+ * It worked, unlike the test selector it sits beside — but only because these
+ * panels happen to rebuild their toggle row on every redraw, so an externally
+ * set value is re-rendered as a side effect. The test select was built once and
+ * never re-synced, and that is the whole difference between the two. Neither
+ * arrangement was a decision; both were where the code happened to land.
+ */
+export function makeLinkedAxisPrefs(
+  row: HTMLElement,
+  initial: AxisPrefs | undefined,
+  onUserChange: (prefs: AxisPrefs) => void,
+  ownerDocument: Document = document,
+): LinkedAxisPrefs {
+  let includeLimits: boolean | undefined = initial?.includeLimits;
+  let clipOutliers = initial?.clipOutliers ?? false;
+
+  const fire = () => onUserChange({ includeLimits, clipOutliers });
+
+  return {
+    get: () => ({ includeLimits, clipOutliers }),
+    sync(resolvedIncludeLimits, hasLimits) {
+      row.innerHTML = '';
+      if (hasLimits) {
+        row.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
+          includeLimits = v;
+          fire();
+        }, ownerDocument));
+      }
+      row.appendChild(makeToggle('Clip outliers', clipOutliers, v => {
+        clipOutliers = v;
+        fire();
+      }, ownerDocument));
+    },
+    set(prefs) {
+      if (prefs.includeLimits === includeLimits && prefs.clipOutliers === clipOutliers) return false;
+      includeLimits = prefs.includeLimits;
+      clipOutliers = prefs.clipOutliers;
+      return true;
+    },
+  };
+}
+
+/** A test selector plus the "which test is active" state behind it. */
+export interface LinkedTestSelect {
+  /** The control, to append into a panel's `controlsRow`. */
+  el: HTMLElement;
+  /** Currently selected test, or null when there are none to choose. */
+  get(): number | null;
+  /**
+   * Adopt a test chosen ELSEWHERE, syncing the control to match.
+   *
+   * Returns false — changing nothing — for an unknown test or one already
+   * active. Deliberately does NOT fire `onUserChange`: that asymmetry is what
+   * makes a set of panels safe to link to each other, because a broadcast can
+   * never bounce back and start a loop.
+   */
+  set(testNumber: number): boolean;
+}
+
+/**
+ * The linked test selector shared by the boxplot, histogram and trend panels.
+ *
+ * These each had their own copy of "an active test, a `makeTestSelect` bound to
+ * it, and a `setTest` for a sibling panel to call" — and the copies had drifted
+ * apart in exactly the way copies do. Boxplot and histogram guarded against an
+ * unknown or unchanged test and assigned `select.value` to keep the control in
+ * step; trend did neither, and could not, because it appended its select
+ * without keeping a reference. So driving trend from another chart moved its
+ * data and left its selector reading the previous test — a control stating
+ * something the panel was not showing.
+ *
+ * Notifying is part of the same behaviour and was missing everywhere: only the
+ * capability chart ever told anyone, so picking a test in any of these three
+ * silently desynchronised the other two.
+ */
+export function makeLinkedTestSelect(
+  testOptions: readonly TestSelectItem[],
+  initial: number | null,
+  onUserChange: (testNumber: number) => void,
+  opts: { maxWidth?: string; emptyText?: string; ownerDocument?: Document } = {},
+): LinkedTestSelect {
+  let active = initial;
+  const el = makeTestSelect(testOptions, active, n => {
+    if (n === active) return;
+    active = n;
+    onUserChange(n);
+  }, opts);
+
+  return {
+    el,
+    get: () => active,
+    set(testNumber) {
+      if (active === testNumber) return false;
+      if (!testOptions.some(t => t.testNumber === testNumber)) return false;
+      active = testNumber;
+      (el as HTMLElement & { value: string }).value = String(testNumber);
+      return true;
+    },
+  };
+}
+
+// ── Linked group picker ──────────────────────────────────────────────────────
+// "Group: [All groups ▾]" — the Distributions section's shared scope control,
+// the exact counterpart of `makeLinkedTestSelect` above and deliberately built
+// the same way: every panel carries its own copy of the control, `set` never
+// fires `onUserChange`, so a broadcast cannot bounce back on itself.
+//
+// It exists because the three group-aware panels each owned a DIFFERENT group
+// interaction with a DIFFERENT default, and nothing tied them together:
+// capability silently restricted to `groups[0]`, the boxplot started on a pooled
+// overview of every group, and the histogram overlaid them all. Grouped, those
+// three cards showed three different populations side by side from the first
+// render, and the cross-panel test link broadcast the test WITHOUT the group —
+// so clicking a test in capability gave the boxplot the right test against the
+// wrong lot, with nothing on screen saying so.
+//
+// `null` is "all groups", and it is the default. The old
+// restrict-to-the-first-group default was worse than the desync it was half of:
+// a capability chart showing one lot of six, captioned as though it were the
+// lot, is wrong on its own and not merely inconsistent with its neighbours.
+
+export const ALL_GROUPS = '\0all';
+
+export interface LinkedGroupSelect {
+  el: HTMLElement;
+  get: () => string | null;
+  /** Adopt a group broadcast from the section. Returns whether it changed. */
+  set: (key: string | null) => boolean;
+}
+
+export function makeLinkedGroupSelect(
+  groupKeys: readonly string[],
+  labelText: string,
+  initial: string | null,
+  onUserChange: (key: string | null) => void,
+  opts: { maxWidth?: string; ownerDocument?: Document } = {},
+): LinkedGroupSelect {
+  let active = initial;
+  const toValue = (k: string | null) => k ?? ALL_GROUPS;
+  const fromValue = (v: string) => (v === ALL_GROUPS ? null : v);
+  const label = makeLabeledSelect(
+    labelText,
+    [{ value: ALL_GROUPS, label: 'All groups' }, ...groupKeys.map(k => ({ value: k, label: k }))],
+    toValue(active),
+    v => {
+      const key = fromValue(v);
+      if (key === active) return;
+      active = key;
+      onUserChange(key);
+    },
+    { ...opts, hook: 'group-scope' },
+  );
+  // `makeListSelect` puts the hook on its own trigger element (`data-wmap-select`),
+  // which is also the element carrying the `value` accessor.
+  const select = label.querySelector('[data-wmap-select="group-scope"]') as (HTMLElement & { value: string }) | null;
+
+  return {
+    el: label,
+    get: () => active,
+    set(key) {
+      if (active === key) return false;
+      if (key !== null && !groupKeys.includes(key)) return false;
+      active = key;
+      if (select) select.value = toValue(key);
+      return true;
+    },
+  };
+}
+
 // ── Wafer picker ─────────────────────────────────────────────────────────────
 // "Wafer: [All wafers ▾]" — the ungrouped-scope selector for any panel that
 // draws one pooled visual (histogram, correlation matrix, scatter) and so
@@ -794,6 +1190,7 @@ export function makeWaferSelect(
 export function makeToggle(labelText: string, checked: boolean, onChange: (v: boolean) => void, ownerDocument: Document = document): HTMLLabelElement {
   const label = ownerDocument.createElement('label');
   Object.assign(label.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, fontSize: FONT.body, color: CLR.label, cursor: 'pointer', userSelect: 'none' } as Partial<CSSStyleDeclaration>);
+  wireControlHover(label, 'bare');
   const checkbox = ownerDocument.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.checked = checked;
@@ -856,7 +1253,7 @@ export function makeTooltip(card: HTMLElement): HTMLElement {
     // already mirrors the dark one; this makes all three agree.
     background: 'rgba(30, 32, 40, 0.93)', color: '#f0f0f2',
     border: '1px solid rgba(255,255,255,0.10)', borderRadius: RADIUS.control,
-    padding: '7px 11px', fontSize: FONT.sub, fontFamily: FONT.family,
+    padding: `${SPACE.sm} ${SPACE.xl}`, fontSize: FONT.sub, fontFamily: FONT.family,
     maxWidth: '280px', whiteSpace: 'nowrap', boxShadow: SHADOW.menu,
   } as Partial<CSSStyleDeclaration>);
   card.appendChild(tooltip);
@@ -1077,6 +1474,35 @@ export function resolveAxisRange(opts: {
  * runs, so the same helper serves the horizontal-value panels (histogram,
  * boxplot) and the vertical-value one (trend).
  */
+/**
+ * Which side of its own rule a spec-limit label should sit on.
+ *
+ * Semantics first: LSL bounds the LOW out-of-spec region so its label belongs
+ * to the left of the line, USL to the right. A label on the far side sits in
+ * the in-spec region and reads as belonging to the data rather than to the
+ * boundary — which is how it looked when this was placed inward to keep it off
+ * the plot edge, a layout worry overriding what the mark means.
+ *
+ * The edge worry is real though, so it is handled rather than designed around:
+ * the semantically correct side wins unless the label would not fit there, and
+ * only then does it flip. Returns -1 to draw right-aligned left of the line,
+ * +1 to draw left-aligned right of it.
+ */
+export function limitLabelSide(
+  x: number,
+  textWidth: number,
+  plotLeft: number,
+  plotRight: number,
+  isLowLimit: boolean,
+  pad = 3,
+): -1 | 1 {
+  const preferred: -1 | 1 = isLowLimit ? -1 : 1;
+  const fits = preferred < 0
+    ? x - pad - textWidth >= plotLeft
+    : x + pad + textWidth <= plotRight;
+  return fits ? preferred : (-preferred as -1 | 1);
+}
+
 export function drawOffAxisLimits(
   ctx: CanvasRenderingContext2D,
   offAxis: AxisRange['offAxis'],

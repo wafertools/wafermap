@@ -193,6 +193,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)).                                                                                                                                                                                                              |
 | <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it.                                                                                                                |
+| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
 | <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                                                                                           |
 | <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
@@ -521,6 +522,23 @@ Insights is organized into three sub-tabs:
   a cassette only reads in the physical sequence, so there is no sort control
   to destroy it. Clicking a capability box drives the box plot, histogram and
   trend onto that same test automatically.
+
+  The box plot, histogram and trend share one row of axis controls, kept in
+  sync across all three so switching between them never re-reads the same
+  data on a different scale: **Axis includes limits** widens the axis to cover
+  LSL/USL even where the data sits well clear of them (on by default only when
+  doing so still leaves the data at least a third of the axis — otherwise a
+  generous spec window would squash a perfectly capable distribution into a
+  sliver), and **Clip outliers** narrows the axis to a robust range (the
+  Tukey fence, 1.5× IQR beyond Q1/Q3) so a handful of extreme values don't
+  stretch the axis until the rest of the distribution reads as a flat line.
+  Clipping affects the AXIS only — every reported statistic (mean, σ, Cpk,
+  the box's own five-number summary) is computed from every value; nothing is
+  excluded from the numbers, and the panel states how many points sit outside
+  the visible range when some do. The box plot additionally has its own
+  **Log scale** toggle, independent of the shared pair above (available once
+  every plotted value is positive) — the histogram and trend charts do not
+  offer one.
 - **Correlation** — a test-to-test correlation matrix and a die-level scatter
   plot, both stating the sample size the coefficients are computed over.
   Clicking a matrix cell drives the scatter plot onto that pair, where `r` and

@@ -24,6 +24,10 @@ renderWaferMap(document.getElementById('map'), result);
 
 ## Which docs are for you?
 
+**Just want to open a wafer map file?** You may not need to build anything. **[tsmap](https://github.com/wafertools/tsmap)** is a finished, free, MIT-licensed application built on this library — it opens STDF, ATDF, CSV, JSON and Parquet (plus `.gz` and `.zip`), runs on Linux, macOS and Windows, and also runs [in your browser](https://wafertools.github.io/tsmap/app/) with no install and no upload: files are parsed locally and never leave your machine.
+
+It gives you everything on this page's screenshots — plot modes, the findings panel, the Insights chart suite, lot galleries, splits, reports — without writing any code. Build on the library instead when you need wafer maps *inside your own application*, a data source tsmap doesn't read, or behaviour it doesn't offer. Otherwise start with tsmap; you can always integrate later, and its [user guide](user-guide.md) is the same one shipped in-app.
+
 **Building an application with wafermap?** You're a developer integrating the library into a test-data app. Follow this path:
 
 1. [Quick Start](quickstart.md) — a working map in 5 minutes
@@ -31,7 +35,7 @@ renderWaferMap(document.getElementById('map'), result);
 3. [SvelteKit](sveltekit.md) · [React](react.md) · [Vue 3](vue.md) — wiring it into your framework
 4. [API Reference](api.md) — every type, option, and return value
 
-**Using an application built on wafermap?** You're a test, device, or yield engineer reading wafer maps in an app someone built with this library. You need exactly one page:
+**Using an application built on wafermap?** You're a test, device, or yield engineer reading wafer maps in an app someone built with this library — [tsmap](https://github.com/wafertools/tsmap), or one of your own team's. You need exactly one page:
 
 - [Application User Guide](user-guide.md) — reading the map, plot modes, toolbar, findings, Insights tab
 - [Glossary](glossary.md) — if a term on screen is unfamiliar
@@ -71,6 +75,14 @@ renderWaferMap(document.getElementById('map'), result);
 **Analysis.** `analyzeWaferMap` runs spatial analysis across rings, quadrants, sectors, and reticle positions, and detects contiguous failure clusters and edge arcs. `analyzeWaferLot` adds lot-level trend series and cross-wafer patterns. Results wire directly into the summary panel.
 
 **Integration.** Pure ES modules, no server, no runtime dependencies. Works in React, Svelte, Vue, plain HTML, or a Web Worker.
+
+## Who wrote this, and why
+
+Written by **Paul Robins**, after nearly four decades in semiconductor test — most of it building test data analysis tools: wafer map and chart viewers, and the platforms they were built on.
+
+That work leaned on free software throughout — zlib, Tcl/Tk, SQLite, GCC — and it was a good deal. wafermap is some of it going back the other way, prompted by finding out that engineers doing this job today still have no decent free option for wafer map analysis.
+
+[MIT licensed](https://github.com/wafertools/wafermap/blob/main/LICENSE): free to use, modify and redistribute, including in commercial and closed-source products. The only condition is that the copyright notice travels with it.
 
 ## Community
 

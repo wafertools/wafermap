@@ -110,6 +110,42 @@ list wrap do this). There is no default: skip this and the content sits flush
 against the box edge, invisible until someone screenshots it. See the die-list
 modal fix (CHANGELOG, "View die list" padding) for the shape of this bug.
 
+**Edge gutters — any bordered surface against a container edge.** The rule
+above is about modal content; this is its general form, and it was written
+after six separate surfaces were found sitting flush in the main view. A card,
+panel, toolbar or bar that carries a border and a corner radius must not touch
+the edge of the region it lives in: you see three of its borders and the screen
+edge standing in for the fourth, which reads as clipped rather than deliberate,
+and a radius pressed against the edge looks flattened. Use `EDGE_GUTTER`
+(`toolbar.ts`, 12px) — never a locally chosen number.
+
+- **It belongs to the container, not the surface.** Grids already space their
+  children with `gap`; a margin on the card would add to that between
+  neighbours while leaving a single gap at the outside, making the middle worse
+  to fix the edge. Pad the container instead. The exception is a surface with no
+  container of its own to pad — a docked panel, an absolutely-positioned
+  toolbar — which carries the gutter on the edge it docks against.
+- **Two gutters must never stack.** A container gutter plus a sibling `gap`
+  plus a panel margin is how a 12px gutter becomes a 24px trench. Pick one
+  owner per edge; where a grid's padding can serve as both the window gutter on
+  its free side and the separation from a docked panel on the other, let it,
+  and drop the row's `gap`.
+- **Full-bleed is a deliberate exception, not an oversight.** The wafer map
+  canvas keeps its edges — map area is the priority and a margin only shrinks
+  it. So does a sticky header's background, which is what hides content
+  scrolling underneath: pad the sticky *wrapper* so its children inset while
+  its background still spans.
+- **A rule drawn as an element's own `borderBottom` spans exactly as wide as
+  that element.** Inset it with `margin`, not `padding` — padding moves the
+  content in and leaves the line running to both edges, which is the defect,
+  not the fix.
+- **Equal spacing everywhere cannot express hierarchy.** Once every gap is the
+  gutter value, nothing says which things belong together and controls stop
+  reading as attached to the content they act on. Group deliberately: keep
+  related bands tight (a header strip and its tab bar) and make the break to
+  the content several times larger. The contrast carries the grouping — no
+  single value can.
+
 **Cross-document DOM/style safety** — any content that might render inside a
 gallery card detached into its own popup window (see `renderWaferGallery.ts`'s
 detach feature) must build its elements with that popup's own `Document`, not
@@ -353,7 +389,12 @@ part that must agree with the rest of the UI.
   chart over a filtered subset that does not say so, is a correctness problem
   rather than a styling one.
 - **Canvas text follows `--wmap-font-size`** via `fontPx`, resolved at paint
-  time. Axis ticks may sit one step below body; nothing else may.
+  time — the host moves the whole scale, the relative sizes stay fixed. The map
+  canvas keeps three tiers: the title at body, its subtitle and the scale note
+  one step below, and the colorbar tick labels and axis ticks two steps below.
+  Do not collapse these onto one size. It was tried, and the title ended up
+  separated from its own subtitle only by weight, while the colorbar labels
+  outgrew the band reserved for them and were clipped at the canvas edge.
 
 ### Colour roles: name the meaning, not the shade
 
@@ -409,8 +450,13 @@ disappear into its host — it carries no visual identity of its own, and anythi
 a host might reasonably want to match should be a token, not a literal. It has 36
 colour tokens and, until this was added, none for type.
 
-**Nothing in the DOM goes below 11px.** Canvas chart labels sit at 11px too;
-only genuinely plot-coupled text may go smaller, and only with a reason.
+**Nothing in the DOM goes below 11px.** Chart chrome on canvas holds that line
+too. The exception is plot-coupled annotation — text that labels the data rather
+than the interface — where the map canvas's colorbar ticks and axis ticks sit at
+`fontPx(-2)` (10px at the default base). These are read against a dense grid at a
+glance, not read as prose, and enlarging them costs wafer area directly: the bin
+legend's reserve is sized from this text, so every extra pixel of type takes
+width off the map.
 
 **One body size across both apps, not one per app.** tsmap's dialogs sat at 13px
 while wmap's panels sat at 12px — a difference invisible in either app alone and
@@ -621,6 +667,49 @@ Before shipping a new `openModal`/`openFloatingWindow` call site, additionally:
 - [ ] `contentWrap` has an explicit gutter — either `contentWrap.style.padding`
       set directly, or every child the content appends pads itself. Confirm
       by actually opening it and looking at the edges, not by reading the code.
+- [ ] Any bordered/radiused surface this adds is inset from its container edge
+      by `EDGE_GUTTER`, on the top edge as well as the sides, and no two
+      gutters stack into a double gap. Check it with a screenshot at more than
+      one width — this class of defect measures fine and only looks wrong.
+
+## What is enforced, and what is only written here
+
+`check-style-scales.mjs` (both repos, wired into `npm run check` / `check:docs`)
+is the only thing that *verifies* any of this. It enforces:
+
+| Rule | How |
+| --- | --- |
+| Type floor | no `font-size` below the repo's floor (11px wmap, 12px tsmap) |
+| One value, many places | distinct-literal budgets for `box-shadow`, `transition`, `line-height`, `letter-spacing`, `font-family` |
+| Spacing scale | a budget on distinct OFF-scale spacing literals — a ratchet, lowered as they are resolved, never raised |
+| Focus ring | `outline: none` must carry a stated reason about the focus indicator in an adjacent comment |
+| Radius roles | a budget on `border-radius` literals — if the value IS a role, use `RADIUS.*` |
+| Hover on every interactive | a budget on `cursor: pointer` sites with no hover affordance nearby |
+| Buttons use a shared class | `check-button-styles.mjs` (tsmap) |
+
+Everything else on this page is prose, and prose is not verification. Three
+things follow from that, each learned the hard way:
+
+- **Each repo's budget is its own current count, never the other's.** wmap
+  carries 18 pointer-without-hover sites and tsmap 10; giving both the larger
+  number would quietly license nine new ones in tsmap.
+- **A budget is a ceiling on distinct values, not a target.** Raising one to
+  admit a new value defeats the point; add the value to a scale, or argue for a
+  new role out loud.
+- **A named constant is invisible to the spacing check, a literal is not.**
+  That asymmetry is deliberate: naming an off-scale value once, with its
+  derivation, is exactly what `TOOLBAR_BAND_CSS` and `EDGE_GUTTER` are, and what
+  a bare `44px` repeated at four call sites was not.
+- **A check must be proven against a defect it should catch.** Both new rules
+  above passed a planted violation on first writing — the focus rule could not
+  fire at all, because its justification window included the offending line,
+  which necessarily contains the word "outline". A check that reports clean on a
+  known bug is worse than no check: it converts an unknown problem into a false
+  assurance.
+
+Not checkable, and staying prose: whether a grey is a label or an icon, whether
+a distinction is semantic or arbitrary, whether a gutter *looks* right, and
+anything needing the rendered result. Those need a person or a screenshot pass.
 
 ## Auditing
 

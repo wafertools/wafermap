@@ -97,6 +97,38 @@ function csv(headers, rows) {
   return lines.join('\n') + '\n';
 }
 
+/**
+ * Write the geometry and definitions sidecar that goes with a dataset.
+ *
+ * A flat die CSV has nowhere to record how big the wafer is or how big a die is,
+ * so every demo that loaded one of these was building a *dimensionless* map:
+ * `buildWaferMap` inferred a diameter from the step extent alone, which produced
+ * a wafer "29.83 across" with 1×1 dies and `diePitch.units: 'normalized'`. The
+ * relative positions were right, so the map looked fine — but the stated
+ * diameter was fiction, every mm-denominated feature (edge exclusion, die pitch,
+ * physical ring widths) was meaningless, and the inference confidence sat at
+ * 0.4/0.5 on data we generated from exact physical dimensions in the first place.
+ *
+ * The numbers were always here in the generator. This just records them next to
+ * the data so a demo can pass them back, and carries the definitions a CSV also
+ * cannot hold: spec limits, units, functional-test types and bin names.
+ */
+function writeMeta(name, meta) {
+  writeFileSync(join(OUT, `${name}.meta.json`), JSON.stringify(meta, null, 2) + '\n');
+}
+
+/** Wafer + die geometry from the physical dimensions a dataset was generated at. */
+function geometry({ radiusMm, pitchMmX, pitchMmY, edgeExcludeMm, notch = 'bottom' }) {
+  return {
+    waferConfig: {
+      diameter: radiusMm * 2,
+      notch: { type: notch },
+      ...(edgeExcludeMm ? { edgeExclusion: edgeExcludeMm } : {}),
+    },
+    dieConfig: { width: pitchMmX, height: pitchMmY },
+  };
+}
+
 // ── File 1: Qualification sparse map ───────────────────────────────────────
 // 200 mm wafer, large die (3.5 × 5.2 mm) → ~980 die sites, 30% tested (~294/wafer).
 // hbin only, two device types, 3 wafers.
@@ -123,6 +155,14 @@ function csv(headers, rows) {
     }
   }
 
+  writeMeta('showcase-sparse-qual', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY, edgeExcludeMm: 5 }),
+    passBins: [1],
+    hbinDefs: [
+      { bin: 1, name: 'Pass' },
+      { bin: 4, name: 'Edge Chip' },
+    ],
+  });
   writeFileSync(join(OUT, 'showcase-sparse-qual.csv'),
     csv(['LOT_ID','WAFER_ID','XSTEP','YSTEP','HARD_BIN','DEVICE_TYPE','OPERATOR','TEST_DATE'], rows));
   console.log(`showcase-sparse-qual.csv   — ${rows.length} rows · ${allDies.length} sites · 3 wafers · ~30% populated`);
@@ -151,6 +191,25 @@ function csv(headers, rows) {
     });
   }
 
+  writeMeta('showcase-highdensity', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1],
+    hbinDefs: [
+      { bin: 1, name: 'Pass' },
+      { bin: 2, name: 'Parametric Fail' },
+      { bin: 5, name: 'Edge Ring' },
+    ],
+    // TST_A/TST_B are the CSV's own column names; a loader keys testValues by
+    // column index, so testNumber mirrors that position.
+    // Limits are set from the generated distributions (see the note in
+     // gen-dummy-fulldata.mjs): near the 1st/99th percentile, so a small
+     // realistic fraction fails. A limit nothing violates demonstrates nothing,
+     // and one everything violates is no better.
+    testDefs: [
+      { testNumber: 6, name: 'TST_A', unit: 'V',  limitLow: 1.00, limitHigh: 1.40 },
+      { testNumber: 7, name: 'TST_B', unit: 'mA', limitHigh: 1.02 },
+    ],
+  });
   writeFileSync(join(OUT, 'showcase-highdensity.csv'),
     csv(['LOT','WFR','X','Y','HBIN','SBIN','TST_A','TST_B'], rows));
   console.log(`showcase-highdensity.csv   — ${rows.length} rows · 1 wafer · ${pX}×${pY} mm die`);
@@ -185,12 +244,45 @@ function csv(headers, rows) {
         IDD_UA:  gaussValue(pass ? 12.5 : 45.0, pass ? 1.8 : 8.0, rng).toFixed(2),
         VTH_V:   spatialGradient(die.x, die.y, pass ? 0.480 : 0.620, 0.002, rng, 0.015).toFixed(4),
         BW_MHZ:  gaussValue(pass ? 480 : 310, pass ? 18 : 40, rng).toFixed(1),
+        // A functional (pass/fail-only) test — no measured value, just a verdict,
+        // which is what `testType: 'F'` means. Written as P/F rather than 1/0 so
+        // the column cannot be mistaken for a parametric reading. Continuity
+        // fails on a subset of the parametric failures plus a little of its own,
+        // so functional yield and parametric yield genuinely differ.
+        CONTINUITY: (pass ? rng() > 0.004 : rng() > 0.35) ? 'P' : 'F',
+        // The tester's own recorded verdict for VTH_V, which is what
+        // `passFailDisplay: 'test'` renders. Deliberately guard-banded tighter
+        // than the spec limit, so the tester flag and the spec judgement
+        // disagree on a few dies — the case that mode exists to expose.
+        VTH_FLAG:   (Math.abs(+spatialGradient(die.x, die.y, pass ? 0.480 : 0.620, 0.002, rng, 0.0) - 0.48) < 0.14) ? 'P' : 'F',
       });
     }
   }
 
+  writeMeta('showcase-wide-die', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1],
+    hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 3, name: 'Vth Shift' }],
+    sbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 31, name: 'Vth Low' }, { bin: 32, name: 'Vth High' }],
+    // Values are stored in the unit each column is named for (µA, V, MHz), so
+    // the limits are in that same scale — not SI base units.
+    testDefs: [
+      { testNumber: 6, name: 'IDD_UA', unit: 'µA',  limitHigh: 55 },
+      { testNumber: 7, name: 'VTH_V',  unit: 'V',   limitLow: 0.38, limitHigh: 0.65 },
+      { testNumber: 8, name: 'BW_MHZ', unit: 'MHz', limitLow: 250 },
+      // Functional: a verdict, never a value. Kept in `testDefs` so a loader can
+      // see it is type F and route it to `testPass` rather than `testValues`.
+      { testNumber: 9, name: 'CONTINUITY', testType: 'F' },
+    ],
+    /**
+     * Columns holding a recorded pass/fail verdict rather than a measurement,
+     * keyed by the test they belong to. A loader puts these in `die.testPass`,
+     * which is what drives `passFailDisplay: 'test'` and `stats.functionalYield`.
+     */
+    verdictColumns: { 9: 'CONTINUITY', 7: 'VTH_FLAG' },
+  });
   writeFileSync(join(OUT, 'showcase-wide-die.csv'),
-    csv(['lot_id','wafer_id','die_x','die_y','hard_bin','soft_bin','IDD_UA','VTH_V','BW_MHZ'], rows));
+    csv(['lot_id','wafer_id','die_x','die_y','hard_bin','soft_bin','IDD_UA','VTH_V','BW_MHZ','CONTINUITY','VTH_FLAG'], rows));
   console.log(`showcase-wide-die.csv      — ${rows.length} rows · ${dies.length} die/wafer · 2 wafers · ${pX}×${pY} mm die`);
 }
 
@@ -220,6 +312,15 @@ function csv(headers, rows) {
     }
   }
 
+  writeMeta('showcase-power-device', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1],
+    hbinDefs: [
+      { bin: 1, name: 'Pass' },
+      { bin: 2, name: 'BVdss Fail' },
+      { bin: 6, name: 'Gate Short' },
+    ],
+  });
   writeFileSync(join(OUT, 'showcase-power-device.csv'),
     csv(['lot_num','wafer_num','step_x','step_y','bin','tester','node_nam','tst_temp'], rows));
   console.log(`showcase-power-device.csv  — ${rows.length} rows · ${dies.length} die/wafer · 5 wafers · NE quadrant fail`);
@@ -256,6 +357,24 @@ function csv(headers, rows) {
     }
   }
 
+  writeMeta('showcase-rf-analog', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1],
+    sbinDefs: [
+      { bin: 1,  name: 'Pass' },
+      { bin: 41, name: 'Gain Low' },
+      { bin: 42, name: 'NF High' },
+      { bin: 43, name: 'IP3 Low' },
+    ],
+    // A four-test RF trim sheet: every test limit-bounded, so spec-limit
+    // colouring and the pass-rate pareto both have something real to show.
+    testDefs: [
+      { testNumber: 5, name: 'GAIN_DB', unit: 'dB',  limitLow: 14.0 },
+      { testNumber: 6, name: 'NF_DB',   unit: 'dB',  limitHigh: 5.0 },
+      { testNumber: 7, name: 'IP3_DBM', unit: 'dBm', limitLow: 12.0 },
+      { testNumber: 8, name: 'IDQ_MA',  unit: 'mA',  limitLow: 34.0, limitHigh: 47.0 },
+    ],
+  });
   writeFileSync(join(OUT, 'showcase-rf-analog.csv'),
     csv(['LOT_ID','WAFER_ID','X_LOC','Y_LOC','SBIN','GAIN_DB','NF_DB','IP3_DBM','IDQ_MA','TEMP','TESTDATE'], rows));
   console.log(`showcase-rf-analog.csv     — ${rows.length} rows · ${dies.length} die/wafer · 2 wafers × 2 temps`);
@@ -286,6 +405,16 @@ function csv(headers, rows) {
     }
   }
 
+  writeMeta('showcase-memory-ring', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1],
+    hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Retention' }],
+    sbinDefs: [
+      { bin: 1,  name: 'Pass' },
+      { bin: 21, name: 'Retention - Row' },
+      { bin: 22, name: 'Retention - Column' },
+    ],
+  });
   writeFileSync(join(OUT, 'showcase-memory-ring.csv'),
     csv(['LID','WID','COL','ROW','H_BIN','S_BIN'], rows));
   console.log(`showcase-memory-ring.csv   — ${rows.length} rows · ${dies.length} die/wafer · 6 wafers · ring failure`);
@@ -321,6 +450,11 @@ function csv(headers, rows) {
     }
   }
 
+  writeMeta('showcase-parser-stress', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1],
+    hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Fail' }],
+  });
   writeFileSync(join(OUT, 'showcase-parser-stress.csv'), lines.join('\r\n') + '\r\n');
   console.log(`showcase-parser-stress.csv — ${lines.length - 4} rows · ${dies.length} die/wafer · 2 wafers · CRLF+quotes`);
 }

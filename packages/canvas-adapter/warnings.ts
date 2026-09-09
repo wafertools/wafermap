@@ -113,6 +113,39 @@ function glyphFor(sev: NonNullable<WaferWarning['severity']>): string {
  * The Summary panel banner. One block per severity present, so an "dies may be
  * mis-positioned" error is never visually flattened into an advisory.
  */
+/**
+ * One-line summaries, by `code`.
+ *
+ * These advisories explain a geometry decision and its consequences, so the
+ * prose is necessarily long — the `inferred-pitch` message runs to about ten
+ * lines in a 300px panel. Rendered in full and undismissable, it pushed the
+ * panel's actual content (the yield figures, the findings) below the fold on
+ * every open of every wafer in a lot with inferred geometry, which is the
+ * common case for the data this library exists to plot. Worse, it is
+ * per-result and unchanging: once read it carries no new information, but it
+ * cost the same space every time.
+ *
+ * Keyed on `code` rather than derived from the message, because the messages
+ * are prose and may be reworded — the same rule hosts are told to follow when
+ * branching on these.
+ */
+const SHORT_LABEL: Record<string, string> = {
+  'inferred-pitch':                'Die pitch inferred',
+  'partial-coverage':              'Partial wafer coverage',
+  'geometry-conflict':             'Geometry conflict',
+  'edge-exclusion-exceeds-radius': 'Edge exclusion exceeds radius',
+  'test-count-capped':             'Test analysis skipped',
+};
+
+/** Falls back to the message's first sentence when a code has no short form —
+ *  a new advisory then still collapses sensibly instead of rendering headless. */
+function shortLabelFor(w: WaferWarning): string {
+  const known = w.code ? SHORT_LABEL[w.code] : undefined;
+  if (known) return known;
+  const firstSentence = w.message.split(/(?<=\.)\s/)[0] ?? w.message;
+  return firstSentence.length > 60 ? `${firstSentence.slice(0, 57)}…` : firstSentence;
+}
+
 export function buildWarningsBanner(warnings: WaferWarning[], ownerDocument: Document = document): HTMLDivElement {
   const wrap = ownerDocument.createElement('div');
   Object.assign(wrap.style, { marginBottom: SPACE.lg });
@@ -125,7 +158,6 @@ export function buildWarningsBanner(warnings: WaferWarning[], ownerDocument: Doc
       background:   c.bg,
       border:       `1px solid ${c.border}`,
       borderRadius: RADIUS.control,
-      padding:      '7px 9px',
       marginBottom: SPACE.sm,
       fontSize:     FONT.body,
       color:        c.text,
@@ -134,7 +166,54 @@ export function buildWarningsBanner(warnings: WaferWarning[], ownerDocument: Doc
     // role="alert" would interrupt a screen reader mid-sentence on every
     // re-render; these are persistent conditions, not interruptions.
     row.setAttribute('role', 'status');
-    row.textContent = `${glyphFor(sev)} ${w.message}`;
+
+    // A real <button>, so Enter/Space, focus order and the accessible name come
+    // from the element rather than from hand-rolled key handling.
+    const head = ownerDocument.createElement('button');
+    head.type = 'button';
+    Object.assign(head.style, {
+      display: 'flex', alignItems: 'center', gap: SPACE.sm, width: '100%',
+      background: 'none', border: 'none', font: 'inherit', color: 'inherit',
+      textAlign: 'left', padding: `${SPACE.sm} ${SPACE.lg}`, cursor: 'pointer',
+    } as Partial<CSSStyleDeclaration>);
+
+    const label = ownerDocument.createElement('span');
+    Object.assign(label.style, { flex: '1', minWidth: '0' } as Partial<CSSStyleDeclaration>);
+    label.textContent = `${glyphFor(sev)} ${shortLabelFor(w)}`;
+
+    const chevron = ownerDocument.createElement('span');
+    Object.assign(chevron.style, { flexShrink: '0' } as Partial<CSSStyleDeclaration>);
+
+    head.append(label, chevron);
+
+    const detail = ownerDocument.createElement('div');
+    Object.assign(detail.style, {
+      padding: `0 ${SPACE.lg} ${SPACE.sm}`,
+    } as Partial<CSSStyleDeclaration>);
+    detail.textContent = w.message;
+
+    let open = false;
+    const sync = (): void => {
+      chevron.textContent = open ? '▴' : '▾';
+      detail.style.display = open ? 'block' : 'none';
+      head.setAttribute('aria-expanded', String(open));
+      head.setAttribute('aria-label',
+        `${shortLabelFor(w)}. ${open ? 'Click to collapse.' : 'Click to expand for detail.'}`);
+    };
+    // Collapsed on arrival. NOT dismissable: the condition is still true, and a
+    // dismissed advisory about dies that may be mis-positioned is a wrong map
+    // with nothing on screen saying so. Collapsing keeps it permanently visible
+    // and permanently one click from its reasoning, which is the part that was
+    // actually missing.
+    sync();
+    head.addEventListener('click', () => { open = !open; sync(); });
+    // Hover affordance on an element that already promises interactivity with
+    // `cursor: pointer` — the row's own severity colours are the resting state,
+    // so this only deepens the chevron rather than repainting the row.
+    head.addEventListener('mouseenter', () => { chevron.style.opacity = '0.65'; });
+    head.addEventListener('mouseleave', () => { chevron.style.opacity = '1'; });
+
+    row.append(head, detail);
     wrap.appendChild(row);
   }
 

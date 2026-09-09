@@ -170,7 +170,7 @@ function ensureStylesInjected(doc: Document): void {
       border-bottom: 1px solid ${CLR.menuBorder}; white-space: nowrap;
     }
     .wmap-dielist-td {
-      padding: 3px 8px; color: ${CLR.text};
+      padding: 4px 8px; color: ${CLR.text};
       border-bottom: 1px solid ${CLR.menuBorder}; white-space: nowrap;
     }
   `;
@@ -217,7 +217,13 @@ function yLabel(die: Die): string {
  * simply never received a functional test to render.
  */
 function resolveTestColumns(dies: Die[], testDefs: TestDef[] | undefined): TestDef[] {
-  if (testDefs?.length) {
+  // `undefined` means nobody described any tests, and discovering bare numbers
+  // from the dies is the right fallback. An empty ARRAY means the caller
+  // reconciled a multi-file population and kept nothing — the files disagree
+  // about every test number — and discovering them back would list a column per
+  // withheld test, filled with values from different measurements stacked in
+  // one column. Same distinction `buildDataModeEntries` makes.
+  if (testDefs !== undefined) {
     return testDefs.filter(d => d.testNumber !== undefined);
   }
   const seen = new Map<number, TestDef>();

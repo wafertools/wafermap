@@ -118,3 +118,39 @@ test('no doc or script still links to a consolidated page', () => {
   // grep exits 1 when there are no matches, which is the passing case.
   assert.equal(p.stdout.trim(), '', `stale links to consolidated demos:\n${p.stdout}`);
 });
+
+// Every `guide` link points at a heading in docs/guide.md (or another doc). A
+// wrong anchor is invisible: the link resolves, the page loads, and the reader
+// lands at the top instead of the section — so it survives review and ships.
+// The insights entry shipped with `#14-insights-tab` against a real heading of
+// `## 14. The Insights tab`, whose slug is `#14-the-insights-tab`.
+test('every guide cross-link resolves to a real heading', () => {
+  /** GitHub/zensical heading slug: lowercase, punctuation dropped, spaces to dashes. */
+  const slug = (heading) => heading
+    .trim().toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-');
+
+  const headingCache = new Map();
+  const headingsOf = (docPath) => {
+    if (!headingCache.has(docPath)) {
+      const text = readFileSync(docPath, 'utf8');
+      const set = new Set();
+      for (const m of text.matchAll(/^#{1,6}\s+(.+?)\s*$/gm)) set.add(slug(m[1]));
+      headingCache.set(docPath, set);
+    }
+    return headingCache.get(docPath);
+  };
+
+  for (const d of manifest.demos) {
+    if (!d.guide?.href) continue;
+    const [rel, anchor] = d.guide.href.split('#');
+    const docPath = resolve(EX_DIR, rel);
+    assert.ok(existsSync(docPath), `${d.id}: guide link targets a missing file — ${d.guide.href}`);
+    if (!anchor) continue;
+    const headings = headingsOf(docPath);
+    assert.ok(headings.has(anchor),
+      `${d.id}: guide anchor "#${anchor}" is not a heading in ${rel}. `
+      + `Closest: ${[...headings].filter(h => h.startsWith(anchor.split('-')[0])).join(', ') || '(none)'}`);
+  }
+});

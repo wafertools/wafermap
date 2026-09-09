@@ -21,12 +21,17 @@
 // Run:  node scripts/check-bundle-size.mjs   (requires a fresh `npm run build`)
 import esbuild from 'esbuild';
 import { gzipSync } from 'zlib';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = resolve(root, 'dist');
+
+// `--write` regenerates every quoted figure instead of asserting on it — used by
+// the `version` script so a release can never ship a stale badge.
+const WRITE = process.argv.includes('--write');
+const written = [];
 
 const result = await esbuild.build({
   stdin: {
@@ -51,6 +56,16 @@ const result = await esbuild.build({
 // (opt-in, off by default, fetched on first open — see `ensureInsightsTab`).
 // Both are split out for real here (`splitting: true`), so this is attribution,
 // not estimation.
+// The DOM-free root entry, quoted separately from the renderer because they are
+// different products to a consumer: a Node build-and-analyse pipeline pays this
+// and never loads the renderer. Bundled on its own (no splitting — nothing here
+// is lazy) rather than derived from the chunks above.
+const rootResult = await esbuild.build({
+  entryPoints: [resolve(distDir, 'index.js')],
+  bundle: true, format: 'esm', minify: true, write: false, logLevel: 'silent',
+});
+const rootKB = Math.round(gzipSync(Buffer.from(rootResult.outputFiles[0].contents)).length / 1024);
+
 let coreGzip = 0;
 let guideGzip = 0;
 let insightsGzip = 0;
@@ -90,6 +105,61 @@ if (!tableMatch) {
   checkDrift('table cell', Number(tableMatch[1]));
 }
 
+/**
+ * Every figure in the docs, checked against what was just measured.
+ *
+ * docs/performance.md's "Download size" table is the CANONICAL statement — it is
+ * the one place all four numbers appear, and everything else in the docs links
+ * to it rather than restating them. That rule exists because the previous
+ * arrangement (figures scattered across the README, api.md, the comparison demo
+ * and the org site) produced two different numbers both labelled "core": the
+ * README's ~40 kB meant the root entry, the demo's ~104 KB meant the renderer.
+ * Consolidating is what makes this check cheap enough to be exhaustive.
+ */
+function checkQuotedFigures() {
+  const check = (file, re, expectedKB, what) => {
+    const path = resolve(root, file);
+    const text = readFileSync(path, 'utf8');
+    const m = text.match(re);
+    if (!m) {
+      problems.push(`${file}: could not find ${what} — has the wording changed? ` +
+                    `This check pins it so the docs cannot drift from the build.`);
+      return;
+    }
+    const quoted = Number(m[1]);
+    // `--write` REGENERATES instead of asserting. A figure nobody has to
+    // remember to update beats a figure a script nags about, so a release
+    // regenerates (the `version` script) and everything else checks.
+    if (WRITE) {
+      if (quoted !== expectedKB) {
+        writeFileSync(path, text.replace(m[0], m[0].replace(String(quoted), String(expectedKB))));
+        written.push(`${file}: ${what} ~${quoted} -> ~${expectedKB} KB`);
+      }
+      return;
+    }
+    // Tolerance is 1 KB or 3%, whichever is larger — NOT the 10% used for the
+    // comparison demo's prose. 10% is too loose here and provably so: the README
+    // badge sat at ~40 kB against a real 44 KB, a 9% error that a 10% tolerance
+    // waves through. The allowance exists only to absorb KB rounding, so it
+    // should be about a kilobyte, not about a tenth of the bundle.
+    const slack = Math.max(1, expectedKB * 0.03);
+    if (Math.abs(quoted - expectedKB) > slack) {
+      problems.push(`${file}: says ~${quoted} KB for ${what}, measured ~${expectedKB} KB.`);
+    }
+  };
+
+  // The canonical table (docs/performance.md § Download size).
+  check('docs/performance.md', /\*\*~(\d+) KB\*\*\s*\| Always, if you import it/, rootKB, 'the data-layer');
+  check('docs/performance.md', /\*\*~(\d+) KB\*\*\s*\| Always, if you render/, coreKB, 'the renderer');
+  check('docs/performance.md', /\+~(\d+) KB\s*\| On first open, only if/, insightsKB, 'the Insights chunk');
+  check('docs/performance.md', /\+~(\d+) KB\s*\| On first open of the guide/, Math.round(guideGzip / 1024), 'the guide chunk');
+
+  // The README badge and its prose line — the only figures outside the table,
+  // kept because a badge is what a reader actually scans on npm and GitHub.
+  check('README.md', /data%20layer%20min%2Bgz-~(\d+)%20kB/, rootKB, "the badge's data layer");
+  check('README.md', /data-and-stats layer is ~(\d+) kB/, rootKB, "the prose data layer");
+}
+
 function checkDrift(label, quotedKB) {
   const driftPct = Math.abs(quotedKB - coreKB) / coreKB;
   if (driftPct > 0.1) {
@@ -99,6 +169,15 @@ function checkDrift(label, quotedKB) {
       `${Math.round(driftPct * 100)}% off. Update docs/examples/comparison.html.`
     );
   }
+}
+
+checkQuotedFigures();
+
+if (WRITE) {
+  console.log(written.length
+    ? `bundle figures regenerated:\n${written.map(w => `  ${w}`).join('\n')}\n\nStage these with the release commit.`
+    : 'bundle figures already current — nothing to regenerate');
+  process.exit(problems.length ? 1 : 0);
 }
 
 if (problems.length) {

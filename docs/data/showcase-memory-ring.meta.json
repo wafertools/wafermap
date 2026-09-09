@@ -1,0 +1,39 @@
+{
+  "waferConfig": {
+    "diameter": 200,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 3,
+    "height": 2
+  },
+  "passBins": [
+    1
+  ],
+  "hbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 2,
+      "name": "Retention"
+    }
+  ],
+  "sbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 21,
+      "name": "Retention - Row"
+    },
+    {
+      "bin": 22,
+      "name": "Retention - Column"
+    }
+  ]
+}

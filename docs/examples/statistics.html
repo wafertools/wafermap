@@ -83,8 +83,8 @@
     <!-- Contextual: exactly one control group is visible per scope. -->
     <div class="ctrl-group" data-for="single">
       <span class="ctrl-label">Summary panel</span>
-      <button class="toggle-btn active" data-panel="overlay">Overlay</button>
-      <button class="toggle-btn"        data-panel="right">Docked right</button>
+      <button class="toggle-btn active" data-open="true">Open</button>
+      <button class="toggle-btn"        data-open="false">Closed</button>
     </div>
 
     <div class="ctrl-group" data-for="gallery">
@@ -251,7 +251,7 @@
 
     // Current selection. `scope` is the primary dimension; the rest are only
     // meaningful for the scope that owns them.
-    const state = { scope: 'single', panel: 'overlay', open: true, method: 'mean' };
+    const state = { scope: 'single', open: true, method: 'mean' };
 
     function render() {
       stage.replaceChildren();
@@ -266,24 +266,22 @@
       if (state.scope === 'single') {
         const { result, summary } = singleWafer();
 
-        // statsSummary is what turns on the findings panel. placement 'right'
-        // docks it permanently beside the map; omitting placement leaves it an
-        // overlay opened from the toolbar's notebook icon.
+        // statsSummary is what turns on the Summary panel and its findings.
+        // `defaultOpen` decides whether it is already showing on load or waits
+        // for the toolbar's notebook button; `placement` (default 'right')
+        // decides which side it docks to.
         renderWaferMap(host, result, {
           viewOptions:  { plotMode: 'hardBin', ringCount: RING_COUNT },
           statsSummary: summary,
-          summaryPanel: state.panel === 'right'
-            ? { placement: 'right' }
-            : { defaultOpen: true },
+          summaryPanel: { defaultOpen: state.open },
           // dieList (the Summary panel's "View die list" link) is on by
           // default — nothing to set here.
           insights:       { enabled: true },
           showHelpButton: true,
         });
 
-        bannerEl.textContent = state.panel === 'right'
-          ? "analyzeWaferMap → renderWaferMap · summaryPanel { placement: 'right' } · insights { enabled: true }"
-          : 'analyzeWaferMap → renderWaferMap · summaryPanel { defaultOpen: true } · insights { enabled: true }';
+        bannerEl.textContent =
+          `analyzeWaferMap → renderWaferMap · summaryPanel { defaultOpen: ${state.open} } · insights { enabled: true }`;
 
       } else if (state.scope === 'gallery') {
         const { items, lotSummary } = lot();
@@ -340,7 +338,6 @@
         }
       };
       mark('[data-scope]',  b => b.dataset.scope  === state.scope);
-      mark('[data-panel]',  b => b.dataset.panel  === state.panel);
       mark('[data-open]',   b => (b.dataset.open === 'true') === state.open);
       mark('[data-method]', b => b.dataset.method === state.method);
     }
@@ -350,7 +347,6 @@
       if (!btn) return;
       const d = btn.dataset;
       if (d.scope)       state.scope  = d.scope;
-      else if (d.panel)  state.panel  = d.panel;
       else if (d.open)   state.open   = d.open === 'true';
       else if (d.method) state.method = d.method;
       else return;
@@ -365,9 +361,9 @@
     // that made it distinctive, so a Guide link lands on the state it describes
     // rather than on whatever the default happens to be.
     const SCENES = {
-      '#findings':      { scope: 'single',  panel: 'overlay' },
-      '#single':        { scope: 'single',  panel: 'right'   },
-      '#summary-panel': { scope: 'single',  panel: 'right'   },
+      '#findings':      { scope: 'single',  open: true     },
+      '#single':        { scope: 'single',  open: false    },
+      '#summary-panel': { scope: 'single',  open: true     },
       '#lot-gallery':   { scope: 'gallery', open: false      },
       '#lot-findings':  { scope: 'gallery', open: true       },
       '#lot-stack':     { scope: 'stack',   method: 'mean'   },

@@ -14,16 +14,43 @@ import { dirname, join } from 'path';
 const __dir = dirname(fileURLToPath(import.meta.url));
 
 // ── Wafer geometry ─────────────────────────────────────────────────────────
-// 150 mm wafer, ~10 mm die pitch → grid from -8 to +8 each axis
-const WAFER_RADIUS = 8.4; // in die units
-const EDGE_BAND   = 1.4;  // dies within this distance from edge get edge treatment
+// A real 200 mm wafer at a 5 mm die pitch: radius 100 mm / 5 mm = 20 die units,
+// giving ~1,250 dies per wafer.
+//
+// This used to be a 17×17 grid clipped to radius 8.4 — 221 dies. Two problems.
+// It was far coarser than any real wafer map (each die was 0.45% of the wafer,
+// so every yield figure moved in half-percent steps), and the dimensions were
+// never recorded anywhere, so `buildWaferMap` had nothing to work from and
+// inferred a dimensionless wafer "17.7 across" with 1×1 dies and
+// `diePitch.units: 'normalized'`. The header comment claimed 150 mm at 10 mm
+// pitch, which is exactly the information that was missing from the output.
+//
+// The numbers below are now also written to a `.meta.json` sidecar beside each
+// CSV, which showcase.html loads — see writeMeta.
+const WAFER_DIAMETER_MM = 200;
+const DIE_PITCH_MM      = 5;
+const WAFER_RADIUS      = (WAFER_DIAMETER_MM / 2) / DIE_PITCH_MM;  // 20 die units
+const EDGE_BAND         = 3.0;  // dies within this distance from edge get edge treatment
+
+// Half the die DIAGONAL, in die units. The clip below tests a die's CENTRE
+// against the radius, but the part of a die that leaves the wafer first is its
+// far corner — so clipping on the centre alone lets whole rows of dies overhang
+// the boundary. That is not a cosmetic detail: a probed die is by definition a
+// real prober position and therefore fully on the wafer, so an overhanging die
+// is a contradiction, and `buildWaferMap` correctly reports it as
+// `geometry-conflict` once the geometry is declared. It did so on all four
+// scenarios until this was fixed — invisible beforehand only because the
+// geometry was not declared at all and nothing could check it.
+const HALF_DIAGONAL = Math.hypot(0.5, 0.5);
 
 function waferDies() {
   const dies = [];
-  for (let x = -9; x <= 9; x++) {
-    for (let y = -9; y <= 9; y++) {
+  const lim = Math.ceil(WAFER_RADIUS);
+  const clip = WAFER_RADIUS - HALF_DIAGONAL;
+  for (let x = -lim; x <= lim; x++) {
+    for (let y = -lim; y <= lim; y++) {
       const r = Math.sqrt(x * x + y * y);
-      if (r <= WAFER_RADIUS) dies.push({ x, y, r });
+      if (r <= clip) dies.push({ x, y, r });
     }
   }
   return dies;
@@ -232,10 +259,54 @@ const scenarios = {
   'high-yield': buildHighYield(),
 };
 
+/**
+ * Geometry and definitions that a flat die CSV cannot carry, written beside each
+ * scenario as `<name>.meta.json` and loaded by showcase.html.
+ *
+ * Without it every scenario rendered a dimensionless wafer: correct relative
+ * die positions, but a fictional diameter, 1×1 dies, and no way to show spec
+ * limits or named bins because the CSV has nowhere to put them.
+ *
+ * Limits are set against the distributions these builders actually produce, near
+ * the tails, so a small realistic fraction of dies falls out of spec. A limit
+ * nothing violates demonstrates nothing; one everything violates is no better.
+ */
+const META = {
+  waferConfig: { diameter: WAFER_DIAMETER_MM, notch: { type: 'bottom' } },
+  dieConfig:   { width: DIE_PITCH_MM, height: DIE_PITCH_MM },
+  passBins: [1],
+  hbinDefs: [
+    { bin: 1, name: 'Pass' },
+    { bin: 2, name: 'Leakage' },
+    { bin: 3, name: 'Edge Ring' },
+    { bin: 4, name: 'Cluster Defect' },
+    { bin: 5, name: 'Vth Shift' },
+  ],
+  sbinDefs: [
+    { bin: 1,  name: 'Pass' },
+    { bin: 21, name: 'Leakage - Gate' },
+    { bin: 31, name: 'Edge - Chipping' },
+    { bin: 32, name: 'Edge - Film' },
+    { bin: 41, name: 'Cluster - Particle' },
+    { bin: 51, name: 'Vth - Hi' },
+  ],
+  // Test numbers match showcase.html's DEMO_MAPPING.
+  // Set from the pooled distributions these builders produce (leakage p97 4.95,
+  // voltage p3 1.70 / p97 1.87, frequency p3 2025), so roughly 2–4% of dies fall
+  // out of spec on each test — visible on the map without swamping it, and
+  // enough for the pass-rate pareto to rank the three tests differently.
+  testDefs: [
+    { testNumber: 1001, name: 'Leakage',   unit: 'µA',  limitHigh: 5.0 },
+    { testNumber: 1002, name: 'Voltage',   unit: 'V',   limitLow: 1.70, limitHigh: 1.88 },
+    { testNumber: 1003, name: 'Frequency', unit: 'MHz', limitLow: 2025 },
+  ],
+};
+
 for (const [name, rows] of Object.entries(scenarios)) {
   const csv = toCsv(rows);
   const path = join(__dir, `${name}.csv`);
   writeFileSync(path, csv);
+  writeFileSync(join(__dir, `${name}.meta.json`), JSON.stringify(META, null, 2) + '\n');
   const kb = (Buffer.byteLength(csv) / 1024).toFixed(1);
-  console.log(`${name}.csv — ${rows.length.toLocaleString()} rows, ${kb} KB`);
+  console.log(`${name}.csv — ${rows.length.toLocaleString()} rows, ${kb} KB  (+ ${name}.meta.json)`);
 }

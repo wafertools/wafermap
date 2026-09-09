@@ -246,14 +246,13 @@ test('invariant: "dies do not fit" is only claimed when the pitch was actually s
     inferredPitch.warnings.filter(w => w.code === 'geometry-conflict').length, 0,
     'must not claim a fit failure when the pitch was invented',
   );
-  assert.deepEqual(inferredPitch.warnings.map(w => w.code), ['inferred-pitch'],
-    'should instead flag the unverifiable pitch assumption');
-  // A supported input path making an assumption on the caller's behalf, not a
-  // detected contradiction — so it must not sit at the same severity as
-  // 'partial-coverage'/'geometry-conflict', which mean dies really are misplaced.
-  assert.equal(inferredPitch.warnings[0].severity, 'warning',
-    'an assumption advisory must not be raised as an error');
-  assert.match(inferredPitch.warnings[0].message, /dieConfig\.width/, 'must point at the actual fix');
+  // …and reports nothing else either. An inferred pitch is derived to fit the
+  // supplied diameter, so it is self-consistent by construction with nothing to
+  // check it against; the advisory that used to fire here also fired on every
+  // correct inference. The checkable half of that risk — pitch supplied,
+  // diameter inferred — is covered by 'non-standard-diameter' instead.
+  assert.deepEqual(inferredPitch.warnings.map(w => w.code), [],
+    'a supported input path making an unverifiable assumption reports nothing');
 
   // Correct data + correct pitch + correct diameter → silent.
   const correct = buildWaferMap({

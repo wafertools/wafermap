@@ -17,10 +17,10 @@
 
 import { buildTestHistogramData, collectTestValues, buildTestHistogramSeries, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
+import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { QUANTITY, categorical } from './palette.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeTestSelect, makeWaferSelect, makeToggle, renderEmptyState, chartFillHeight, applyCanvasFlow, resolveChartCanvasColors, makeAxisFormat, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
 // `colorScheme` (HistogramPanelOptions) is deliberately no longer read —
 // quantity/series colours are fixed (palette.ts); the option stays for API
 // compatibility with existing callers.
@@ -69,6 +69,8 @@ export interface HistogramPanelOptions {
   axisPrefs?: AxisPrefs;
   /** Fired when the user changes an axis toggle here, so siblings can follow. */
   onAxisPrefsChange?: (prefs: AxisPrefs) => void;
+  /** Fired when the USER picks a test here, so siblings can follow. */
+  onTestChange?: (testNumber: number) => void;
   title?: string;
   items: HistogramItem[];
   testDefs: TestDef[];
@@ -83,6 +85,9 @@ export interface HistogramPanelOptions {
    * today's plain per-item view with a wafer selector.
    */
   groups?: { key: string; items: HistogramItem[] }[];
+  /** Fired when the user narrows to one group by clicking it in the legend.
+   *  The Insights tab owns the scope; this panel only reports the gesture. */
+  onGroupChange?: (key: string | null) => void;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -107,38 +112,43 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   let activeTest = options.selectedTestNumber ?? testOptions[0]?.testNumber ?? null;
   let activeItem: number | null = null; // index into `items`; null = all
   // undefined = derive from the data each rebuild (shouldIncludeLimitsByDefault).
-  let axisIncludesLimits: boolean | undefined = options.axisPrefs?.includeLimits;
-  let clipOutliers = options.axisPrefs?.clipOutliers ?? false;
   let lastClippedCount = 0;
 
-  const testSelect = makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuildBody(); }, { maxWidth: '200px', ownerDocument: card.ownerDocument });
+  const testSel = makeLinkedTestSelect(testOptions, activeTest, n => {
+    activeTest = n;
+    rebuildBody();
+    options.onTestChange?.(n);
+  }, { maxWidth: '200px', ownerDocument: card.ownerDocument });
+  const testSelect = testSel.el;
   controlsRow.appendChild(testSelect);
 
   const itemSelect = makeWaferSelect(items, activeItem, i => { activeItem = i; rebuildBody(); }, { ownerDocument: card.ownerDocument });
   controlsRow.appendChild(itemSelect);
 
+  /** Apply a group scope locally. Never broadcasts — callers representing a
+   *  USER action fire `onGroupChange` themselves. */
+  function setEmphasis(key: string | null): boolean {
+    if (emphasizedGroup === key) return false;
+    if (key !== null && !(groups ?? []).some(g => g.key === key)) return false;
+    emphasizedGroup = key;
+    rebuildBody();
+    return true;
+  }
+
+
   const axisTogglesRow = card.ownerDocument.createElement('span');
   Object.assign(axisTogglesRow.style, { display: 'inline-flex', gap: SPACE.lg, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
   controlsRow.appendChild(axisTogglesRow);
+  // The toggles, their state, and the notify — one shared control instead of
+  // a copy in each of the three panels that offers them.
+  const axisCtl = makeLinkedAxisPrefs(axisTogglesRow, options.axisPrefs, prefs => {
+    options.onAxisPrefsChange?.(prefs);
+    rebuildBody();
+  }, card.ownerDocument);
 
   // Rebuilt each draw so the checkbox shows the RESOLVED state — with a
   // data-derived default, an unchecked box beside an axis that plainly does
   // include the limits would be a lie.
-  function syncAxisToggles(resolvedIncludeLimits: boolean, hasLimits: boolean): void {
-    axisTogglesRow.innerHTML = '';
-    if (hasLimits) {
-      axisTogglesRow.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
-        axisIncludesLimits = v;
-        options.onAxisPrefsChange?.({ includeLimits: v, clipOutliers });
-        rebuildBody();
-      }, card.ownerDocument));
-    }
-    axisTogglesRow.appendChild(makeToggle('Clip outliers', clipOutliers, v => {
-      clipOutliers = v;
-      options.onAxisPrefsChange?.({ includeLimits: axisIncludesLimits, clipOutliers: v });
-      rebuildBody();
-    }, card.ownerDocument));
-  }
 
   const tooltip = makeTooltip(card);
   let resizeHandle: { disconnect: () => void } | null = null;
@@ -146,6 +156,15 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   // Z-order / emphasis state for the faceted legend (group key clicked →
   // brought to front and fully opaque, others dimmed). Persists across
   // redraws; reset implicitly on a full card rebuild.
+  // The section's shared group scope, mirrored here.
+  //
+  // Emphasis rather than a filter, unlike its two neighbours, and deliberately:
+  // an overlaid comparison of every group IS this panel's job, and narrowing to
+  // one leaves a single curve that the boxplot already shows better. The
+  // desync this control exists to fix was never that the three panels drew
+  // different things — it is that they drew different POPULATIONS with nothing
+  // saying so. Emphasising the selected group keeps the comparison while making
+  // the shared selection unambiguous on this card too.
   let emphasizedGroup: string | null = null;
 
   function testMeta(testNumber: number): { unit?: string; limitLow?: number; limitHigh?: number } {
@@ -154,6 +173,8 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   }
 
   function rebuildBody(): void {
+    // Read once per rebuild from the shared control, which owns this state.
+    const { includeLimits: axisIncludesLimits, clipOutliers } = axisCtl.get();
     resizeHandle?.disconnect();
     resizeHandle = null;
     body.innerHTML = '';
@@ -181,7 +202,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       // treats an unset preference as "off", where the non-faceted path below
       // derives a default from the data range. The toggle must show the state in
       // force, not a different branch's. That divergence is logged in TODO.md.
-      syncAxisToggles(axisIncludesLimits ?? false, fLow !== undefined || fHigh !== undefined);
+      axisCtl.sync(axisIncludesLimits ?? false, fLow !== undefined || fHigh !== undefined);
       if (faceted.series.length === 0) {
         renderEmptyState(body, 'No parametric test data available for a histogram.');
         return;
@@ -197,7 +218,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const dataMax = allValues.length ? Math.max(...allValues) : NaN;
     const resolvedIncludeLimits = axisIncludesLimits
       ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
-    syncAxisToggles(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
+    axisCtl.sync(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
 
     const fence = clipOutliers ? robustFence(allValues) : null;
     const clip = fence ? { lo: Math.max(dataMin, fence.lo), hi: Math.min(dataMax, fence.hi) } : undefined;
@@ -231,7 +252,6 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     body.appendChild(canvas);
 
     let hovered = -1;
-    const dpr = window.devicePixelRatio || 1;
     const bucketMin = buckets[0].rangeLow;
     const bucketMax = buckets[buckets.length - 1].rangeHigh;
     const bucketSpan = bucketMax - bucketMin || 1;
@@ -252,23 +272,15 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     }
 
     function draw() {
-      applyCanvasFlow(canvas, statsLabel.offsetHeight);
+      applyCanvasFlow(canvas, statsLabel);
       // body's own width, not card's — canvas fills body via applyCanvasFlow,
       // so measuring from it directly stays correct even when body has its
       // own vertical scrollbar narrowing it.
       const width = body.clientWidth;
       const height = chartFillHeight(card, body, canvas, HIST_HEIGHT);
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      const ctx = canvas.getContext('2d')!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-
-      const theme = resolveChartCanvasColors(card);
+      const prep = prepareCanvas(canvas, card, width, height);
+      if (!prep) return;
+      const { ctx, theme } = prep;
       const { plotX, plotMaxWidth, plotMaxHeight, plotTop } = plotRect(height);
       const plotBottom = plotTop + plotMaxHeight;
       const barWidth = plotMaxWidth / buckets.length;
@@ -307,19 +319,19 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         dataMin: bucketMin, dataMax: bucketMax, limitLow, limitHigh, includeLimits: false });
       drawOffAxisLimits(ctx, offAxis,
         { left: plotX, right: plotX + plotMaxWidth, top: plotTop, bottom: plotBottom },
-        'horizontal', theme.warnBorder, axis.tick);
+        'horizontal', theme.limitLine, axis.tick);
       const offAxisValues = new Set(offAxis.map(o => o.value));
       for (const [limit, label] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
         if (limit === undefined || offAxisValues.has(limit)) continue;
         const x = xForVal(limit);
-        ctx.strokeStyle = theme.warnBorder;
+        ctx.strokeStyle = theme.limitLine;
         ctx.setLineDash([3, 3]);
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, plotTop); ctx.lineTo(x, plotBottom);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = theme.warnBorder;
+        ctx.fillStyle = theme.limitLine;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillText(label, x, plotTop - 2);
@@ -386,7 +398,13 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     // is nothing to keep in sync with the map's registered scheme.
     const colorOf = categorical;
 
-    if (emphasizedGroup && !series.some(s => s.groupKey === emphasizedGroup)) emphasizedGroup = null;
+    // A group can vanish from `series` when the active test has no values in it.
+    // Clear the local emphasis AND the control, so the card never claims a
+    // scope it isn't drawing. Deliberately not broadcast: the section's scope is
+    // still valid for the panels that can honour it.
+    if (emphasizedGroup && !series.some(s => s.groupKey === emphasizedGroup)) {
+      emphasizedGroup = null;
+    }
 
     const maxCount = Math.max(1, ...series.flatMap(s => s.counts));
 
@@ -396,26 +414,27 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     body.appendChild(statsLabel);
 
     const legend = card.ownerDocument.createElement('div');
-    Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: `${SPACE.xs} ${SPACE.xl}`, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
+    // Same row metrics as the scatter's legend — the chips are now one
+    // component, so the row around them should not differ either.
+    Object.assign(legend.style, {
+      display: 'flex', flexWrap: 'wrap', gap: SPACE.sm,
+      marginTop: SPACE.md, marginBottom: SPACE.xl,
+    } as Partial<CSSStyleDeclaration>);
     series.forEach((s, i) => {
-      const item = card.ownerDocument.createElement('button');
-      item.type = 'button';
+      // The shared chip — this legend and the scatter's were the same control
+      // built twice. See `makeSeriesLegendItem`.
+      const chip = makeSeriesLegendItem(s.groupKey, colorOf(i), card.ownerDocument);
+      const item = chip.el;
       attachChartTip(item, card, tooltip, `${s.groupKey} — click to emphasize (dim the rest)`);
-      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: FONT.body, padding: '1px 4px', border: 'none', background: 'none', cursor: 'pointer', color: CLR.text, borderRadius: RADIUS.control } as Partial<CSSStyleDeclaration>);
-    item.addEventListener('mouseenter', () => { item.style.filter = 'brightness(0.94)'; });
-    item.addEventListener('mouseleave', () => { item.style.filter = 'none'; });
-      const sw = card.ownerDocument.createElement('span');
-      Object.assign(sw.style, { width: '10px', height: '10px', borderRadius: RADIUS.control, background: colorOf(i), flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
-      const txt = card.ownerDocument.createElement('span');
-      txt.textContent = s.groupKey;
-      item.append(sw, txt);
-      const dim = emphasizedGroup !== null && emphasizedGroup !== s.groupKey;
-      item.style.opacity = dim ? '0.45' : '1';
-      if (emphasizedGroup === s.groupKey) item.style.background = CLR.bgHover;
-      // Which group is emphasized was only conveyed by opacity/background —
-      // aria-pressed exposes the same on/off state to a screen reader.
-      item.setAttribute('aria-pressed', emphasizedGroup === s.groupKey ? 'true' : 'false');
-      item.addEventListener('click', () => { emphasizedGroup = emphasizedGroup === s.groupKey ? null : s.groupKey; rebuildBody(); });
+      chip.setState({
+        selected: emphasizedGroup === s.groupKey,
+        dimmed: emphasizedGroup !== null && emphasizedGroup !== s.groupKey,
+      });
+      item.addEventListener('click', () => {
+        const key = emphasizedGroup === s.groupKey ? null : s.groupKey;
+        setEmphasis(key);
+        options.onGroupChange?.(key);
+      });
       legend.appendChild(item);
     });
     body.appendChild(legend);
@@ -425,12 +444,18 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     canvas.style.cursor = 'default';
     body.appendChild(canvas);
 
-    const dpr = window.devicePixelRatio || 1;
     const bucketMin = ranges[0].rangeLow;
     const bucketMax = ranges[ranges.length - 1].rangeHigh;
     const bucketSpan = bucketMax - bucketMin || 1;
     const axis = makeAxisFormat(Math.max(Math.abs(bucketMin), Math.abs(bucketMax)), unit);
-    const siblingH = () => statsLabel.offsetHeight + legend.offsetHeight;
+    // Outer height, margins included: `offsetHeight` alone put the canvas over
+    // the legend's bottom margin — the same overlap `applyCanvasFlow` was fixed
+    // for on the scatter.
+    const outerH = (el: HTMLElement) => {
+      const cs = (el.ownerDocument.defaultView ?? window).getComputedStyle(el);
+      return el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+    };
+    const siblingH = () => outerH(statsLabel) + outerH(legend);
 
     let hoveredBucket = -1;
     let facetGeom = { plotX: PADDING + 36, plotMaxWidth: 10, barWidth: 10 };
@@ -442,17 +467,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       // own vertical scrollbar narrowing it.
       const width = body.clientWidth;
       const height = chartFillHeight(card, body, canvas, HIST_HEIGHT);
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      const ctx = canvas.getContext('2d')!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-
-      const theme = resolveChartCanvasColors(card);
+      const prep = prepareCanvas(canvas, card, width, height);
+      if (!prep) return;
+      const { ctx, theme } = prep;
       const plotX = PADDING + 36;
       const plotMaxWidth = Math.max(10, width - plotX - PADDING);
       const plotTop = HIST_TOP_MARGIN;
@@ -511,14 +528,14 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       for (const [limit, label] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
         if (limit === undefined) continue;
         const x = xForVal(limit);
-        ctx.strokeStyle = theme.warnBorder;
+        ctx.strokeStyle = theme.limitLine;
         ctx.setLineDash([3, 3]);
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, plotTop); ctx.lineTo(x, plotBottom);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = theme.warnBorder;
+        ctx.fillStyle = theme.limitLine;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillText(label, x, plotTop - 2);
@@ -570,7 +587,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       if (b >= 0) {
         const r = ranges[b];
         const rows = series.map((s, i) =>
-          `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${colorOf(i)};margin-right:5px;"></span>${s.groupKey}: ${s.counts[b]}`
+          `<span style="${chartSwatchCss(colorOf(i))};margin-right:4px"></span>${s.groupKey}: ${s.counts[b]}`
         ).join('<br>');
         tooltip.innerHTML = `<strong>${fmt(r.rangeLow, unit, 'engineering')} – ${fmt(r.rangeHigh, unit, 'engineering')}</strong><br>${rows}`;
         tooltip.style.display = 'block';
@@ -588,16 +605,16 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   rebuildBody();
 
   function setTest(testNumber: number): void {
-    if (!testOptions.some(t => t.testNumber === testNumber) || testNumber === activeTest) return;
+    // The guard and the control sync both live in `makeLinkedTestSelect` now.
+    if (!testSel.set(testNumber)) return;
     activeTest = testNumber;
-    testSelect.value = String(testNumber);
     rebuildBody();
   }
 
   /** Adopt a sibling panel's axis toggles without re-firing the change back. */
   function setAxisPrefs(prefs: AxisPrefs): void {
-    axisIncludesLimits = prefs.includeLimits;
-    clipOutliers = prefs.clipOutliers;
+    // Guard and state both live in the control now.
+    if (!axisCtl.set(prefs)) return;
     rebuildBody();
   }
 

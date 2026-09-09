@@ -4,7 +4,7 @@ import { getColorScheme } from '../renderer/colorSchemes.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, passFailMenuRows, requestedPassFailDisplay, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import type { Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
@@ -18,11 +18,14 @@ import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { compareNatural } from '../core/utils.js';
-import type { SummaryPanelOptions } from './summaryPanel.js';
+import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent } from './summaryPanel.js';
 import { renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { prettyKey } from '../stats/facets.js';
+import type { TestDef } from '../renderer/buildWaferMap.js';
+import { mergeTestDefs } from '../stats/mergeTestDefs.js';
+import type { MergedTestDefs } from '../stats/mergeTestDefs.js';
 // TYPE-ONLY — see renderWaferMap.ts's identical import for why. The chart
 // suite is fetched on first open, not shipped in the initial /render chunk.
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
@@ -148,6 +151,14 @@ export interface GalleryOptions {
    */
   summaryPanel?:           SummaryPanelOptions;
   /**
+   * A row at the top of the Findings section stating that a category of finding
+   * is not present, and optionally offering to compute it — see
+   * {@link FindingsNotice}. wmap never raises this itself: only the host knows
+   * what analysis it chose to skip and what running it would cost. Replaceable
+   * afterwards via the controller's `setFindingsNotice`.
+   */
+  findingsNotice?: FindingsNotice;
+  /**
    * Display preferences for the lot-wide "View die list" link inside the
    * Summary panel — every die across every wafer, pooled, with a Wafer
    * column and CSV export. **On by default** whenever `summaryPanel` is
@@ -228,6 +239,11 @@ export interface GalleryController {
   setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the lot-level stats summary used by the built-in Summary panel. */
   setLotStatsSummary(summary: LotStatsSummary | undefined): void;
+  /**
+   * Replace the lot Findings-section notice (see `FindingsNotice`). Pass
+   * `undefined` to clear it once the offered analysis has been run.
+   */
+  setFindingsNotice(notice: FindingsNotice | undefined): void;
   /**
    * Set the number of columns in the gallery grid. Pass `undefined` to restore
    * the auto-computed layout based on die pitch.
@@ -538,6 +554,43 @@ export function renderWaferGallery(
   // items instead of an empty array that hasn't been filled in yet.
   let originalItems: (WaferMapDisplayItem | null)[] =
     items.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
+
+  /**
+   * The population's ONE test namespace — see `stats/mergeTestDefs.ts`.
+   *
+   * Every site below used to write `originalItems.find(it => it?.testDefs?.length)`,
+   * i.e. borrow one arbitrary wafer's list and apply its names, units and limits
+   * to every other wafer's values. `TestDef.testNumber` identifies a test within
+   * a test program, so across a multi-program load that pooled unrelated
+   * measurements under one number and normalised them against the wrong limits.
+   *
+   * Deliberately recomputed on each call rather than cached: `originalItems` is
+   * filled in lazily by card factories, so any cache key cheap enough to be worth
+   * keeping would be stale exactly when a late-arriving wafer introduces the
+   * collision. The merge is a linear pass over defs the caller already holds.
+   */
+  function mergedTestDefs(): MergedTestDefs {
+    return mergeTestDefs(originalItems);
+  }
+
+  /**
+   * The reconciled lot-wide test list, or `undefined` when NO item supplied any
+   * test definitions at all.
+   *
+   * The distinction matters and used to be lost. Returning `undefined` for an
+   * empty list conflated "nobody described any tests" with "every test was
+   * withheld because the files disagree" — and the two consumers that fall back
+   * to discovering raw test numbers from the dies (`buildDataModeEntries` and
+   * the stacked-value builder) then did exactly that in the second case,
+   * reintroducing every withheld number as "Test 1001" and pooling one lot's
+   * nanoamps with another's millivolts under it. The withholding was undone by
+   * its own success. An empty array now means "reconciled to nothing", which no
+   * fallback may override.
+   */
+  function lotTestDefs(): TestDef[] | undefined {
+    if (!originalItems.some(it => it?.testDefs?.length)) return undefined;
+    return mergedTestDefs().defs;
+  }
   let buildGeneration = 0;  // incremented on each buildCards call; stale factory callbacks check this
   // Tracked separately from `cardControllers` containing nulls, since a detached
   // card's controller is ALSO null (its live view is in a popup window instead)
@@ -622,6 +675,9 @@ export function renderWaferGallery(
   // not fire mouseleave, which would leave a toolbar tooltip lingering visible.
   const onWindowBlur = () => hideTooltip();
   window.addEventListener('blur', onWindowBlur);
+
+  // Host-supplied row at the top of the lot Findings section — see FindingsNotice.
+  let currentFindingsNotice: FindingsNotice | undefined = options.findingsNotice;
 
   function applyFindingHighlight(indices: number[]): void {
     findingHighlightIndices = new Set(indices);
@@ -714,7 +770,7 @@ export function renderWaferGallery(
         statsSummary: item?.statsSummary })),
       hbinDefs: lotHbinDefs.length ? lotHbinDefs : undefined,
       sbinDefs: lotSbinDefs.length ? lotSbinDefs : undefined,
-      testDefs: originalItems.find(it => it?.testDefs?.length)?.testDefs,
+      testDefs: lotTestDefs(),
       passBins,
       ringCount: sharedOpts.ringCount }), { anchor: container });
   }
@@ -857,7 +913,7 @@ export function renderWaferGallery(
         items:      originalItems,
         hbinDefs:   lotHbinDefs.length ? lotHbinDefs : undefined,
         sbinDefs:   lotSbinDefs.length ? lotSbinDefs : undefined,
-        testDefs:   originalItems.find(it => it?.testDefs?.length)?.testDefs,
+        testDefs:   lotTestDefs(),
         passBins,
         ringCount:      sharedOpts.ringCount,
         colorScheme:    sharedOpts.colorScheme,
@@ -868,6 +924,7 @@ export function renderWaferGallery(
         activeFindingId: activeLotFindingId,
         warnings: (options.warnings?.display ?? true) ? currentWarnings : [],
         findingsFilter: lotFindingsFilter,
+        findingsNotice: currentFindingsNotice,
         onFindingsFilterChange: renderGallerySummaryPanel,
         onSaveText: options.onSaveText,
         onFindingClick: (finding, row) => {
@@ -889,6 +946,13 @@ export function renderWaferGallery(
     }
   }
 
+  /** The cards a finding is about, or `null` when it does not name any (in
+   *  which case there is no honest subset to scope a withheld test to). */
+  function findingWaferIndices(finding: StatsFinding): number[] | null {
+    const h = finding.highlight as { kind?: string; waferIndices?: number[] };
+    return h?.kind === 'wafer' && h.waferIndices?.length ? h.waferIndices : null;
+  }
+
   function findingFingerprint(f: StatsFinding): string {
     return [
       f.variable.kind,
@@ -900,10 +964,28 @@ export function renderWaferGallery(
     ].join('|');
   }
 
+  /** Cards a finding put into value mode on a WITHHELD test, so it can be
+   *  taken back off it. See `applyLotFindingHighlight`. */
+  let findingScopedCards: number[] = [];
+
+  /** Return any finding-scoped cards to whatever the gallery as a whole is
+   *  showing. Reads `sharedOpts` rather than a saved snapshot: the shared mode
+   *  is what every other card is on, so this can never leave one card behind. */
+  function restoreFindingScopedCards(): void {
+    if (findingScopedCards.length === 0) return;
+    for (const i of findingScopedCards) {
+      cardControllers[i]?.setOptions({
+        plotMode: sharedOpts.plotMode, activeTest: sharedOpts.activeTest,
+      });
+    }
+    findingScopedCards = [];
+  }
+
   function clearLotFindingHighlight(): void {
     activeLotFindingId = null;
     clearFindingHighlight();
     clearDieZoneHighlight();
+    restoreFindingScopedCards();
     updateShared({ highlightBin: undefined }, { fireCallback: false });
   }
 
@@ -921,9 +1003,52 @@ export function renderWaferGallery(
     // Switch to the mode that makes this finding's data visible.
     // Don't set highlightBin — the die zone selection overlay already shows the affected
     // dies, and highlightBin dims everything else making the map look empty.
+    restoreFindingScopedCards();
     const { kind, index } = finding.variable;
     if (kind === 'test') {
-      updateShared({ plotMode: 'value', activeTest: index ?? 0, highlightBin: undefined }, { fireCallback: false });
+      const testNumber = index ?? 0;
+      // A finding comes from PER-WAFER analysis, which reads that wafer's own
+      // testDefs — so its test number is meaningful for the wafers it names and
+      // not necessarily for any other. Switching the whole gallery to it was an
+      // unguarded write of `activeTest` that bypassed every reconciliation the
+      // merged list performs: click a `leakage` finding raised on one lot's
+      // wafers and every card plots its own `testValues[1001]`, which in a lot
+      // that calls 1001 `vth_n_mV` is a different physical quantity in
+      // different units, laid out as though it were one comparison.
+      //
+      // So: switch the whole gallery only when the population actually agrees
+      // about this test (it survived `mergeTestDefs`). Otherwise switch only the
+      // wafers the finding is about — they come from files that do agree, so the
+      // test is unambiguous for them — and leave everything else alone.
+      // `lotTestDefs()` (not `mergedTestDefs()`) so "nobody supplied any test
+      // definitions" reads as agreement, not disagreement: with nothing to
+      // reconcile there is nothing to contradict, and treating that as a
+      // collision would silently downgrade every finding click to per-card
+      // scoping for the many hosts that pass no `testDefs` at all.
+      const reconciled = lotTestDefs();
+      const agreed = reconciled === undefined || reconciled.some(d => d.testNumber === testNumber);
+      if (agreed) {
+        updateShared({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined }, { fireCallback: false });
+      } else {
+        updateShared({ highlightBin: undefined }, { fireCallback: false });
+        // A withheld test with no wafer list has no honest target at all, so
+        // the plot mode is left exactly as it was rather than defaulting to the
+        // lot-wide switch — that default is the whole bug.
+        //
+        // Nor is there one in a stacked mode: the cards are then aggregates over
+        // the whole lot, not wafers, so a finding's `waferIndices` do not index
+        // them and poking `cardControllers[i]` would put a STACK into value mode
+        // on the very test the lot cannot agree about — aggregating one lot's
+        // nanoamps with another's millivolts per die position.
+        const stacked = STACKED_MODES.has(sharedOpts.plotMode ?? 'hardBin');
+        const scopeTo = stacked ? null : findingWaferIndices(finding);
+        if (scopeTo) {
+          for (const i of scopeTo) {
+            cardControllers[i]?.setOptions({ plotMode: 'value', activeTest: testNumber });
+          }
+          findingScopedCards = [...scopeTo];
+        }
+      }
     } else if (kind === 'softBin') {
       updateShared({ plotMode: 'softBin', highlightBin: undefined }, { fireCallback: false });
     } else {
@@ -976,15 +1101,43 @@ export function renderWaferGallery(
   const barEl = container.ownerDocument.createElement('div');
   barEl.dataset.wmapToolbar = 'gallery';
   Object.assign(barEl.style, {
+    // Last item in `chromeRowEl`, after the identity pill — which, being
+    // `flex: 1`, pushes this to the trailing edge. That placement is what stops
+    // the Insights toggle moving: the bar is shrink-to-fit, so when the
+    // grid-specific controls hide on entering Insights it collapses from ~330px
+    // to ~80px, and while it was left-anchored that dragged every button at its
+    // right end ~250px leftward. Anchored to the trailing edge it shrinks away
+    // from that edge instead of toward it, and the controls that survive into
+    // Insights do not move at all.
+    //
+    // `flexShrink: 0` gives the toolbar priority over the identity text when
+    // the row runs short: every control here must stay hittable at any width,
+    // while the identity degrades gracefully via its own "+N more".
+    //
+    // It also aligns the two views' chrome, which is the point: the Insights
+    // suite is the same content in both, differing only in how many wafers fed
+    // it, so its surrounding frame should not be arranged differently depending
+    // on which view opened it.
+    flexShrink:    '0',
+    // Holds the trailing edge even when the identity pill is hidden — a lot
+    // with no metadata at all renders no pill, and without this the toolbar
+    // would fall back to the left of the row and sit in a different place than
+    // in every other gallery. With the pill present this is a no-op, since a
+    // `flex: 1` sibling already absorbs the free space.
+    marginLeft:    'auto',
     display:       'inline-flex',
     flexDirection: 'row',
     alignItems:    'center',
     gap:           '0',
     background:    CLR.menuBg,
     border:        `1px solid ${CLR.menuBorder}`,
-    borderRadius:  RADIUS.container,
-    padding:       '3px 4px',
-    marginBottom: SPACE.lg,
+    // `RADIUS.control` and no padding — the same toolbar renderWaferMap and each
+    // gallery card already render. This one was a container-radius, 36px-tall
+    // variant of a 30px control-radius bar, so the identical cluster of icon
+    // buttons had two sizes and two corner depths depending on which renderer
+    // mounted it.
+    borderRadius:  RADIUS.control,
+    padding:       '0',
     boxShadow:     SHADOW.panel,
     flexWrap:      'wrap',
     minWidth:      '0',
@@ -1001,12 +1154,36 @@ export function renderWaferGallery(
     // Use originalItems (per-wafer source) — currentItems may be aggregated cards
     // in stacked modes, which don't accurately reflect the full data availability.
     const dies      = originalItems.flatMap(it => it?.dies ?? []);
-    const testDefs  = originalItems.find(it => it?.testDefs?.length)?.testDefs;
+    const testDefs  = lotTestDefs();
     // Value mode is available for any per-test data — numeric values or recorded
     // pass/fail verdicts (functional tests). Stacked values need numeric values.
     // Gallery aggregates across its own items, so stacked modes are always offered.
-    const { testEntries, binEntries, stackedEntries } =
+    const { testEntries: rawTestEntries, binEntries, stackedEntries } =
       buildDataModeEntries(dies, testDefs, { includeStacked: true });
+
+    // Say how many wafers actually carry each test.
+    //
+    // A gallery's active test is lot-wide, but a test is not: across a mixed
+    // load a test number can exist in one lot and nowhere else, and picking it
+    // then renders every other card empty with no explanation. That is honest —
+    // empty means no data — but it reads as a broken grid, and it is at its
+    // most confusing exactly when reconciliation has withheld the numbers the
+    // lots SHARE, leaving the menu offering the ones unique to a single lot.
+    // Naming the coverage turns "why is everything blank" into a fact stated
+    // before the click rather than a puzzle after it.
+    const waferCount = originalItems.filter(Boolean).length;
+    const coverageOf = (testNumber: number | undefined): number => {
+      if (testNumber === undefined) return waferCount;
+      let n = 0;
+      for (const it of originalItems) {
+        if (it?.dies?.some(d => getTestPassStatus(d, testNumber) !== undefined || d.testValues?.[testNumber] !== undefined)) n++;
+      }
+      return n;
+    };
+    const testEntries: ModeEntry[] = waferCount < 2 ? rawTestEntries : rawTestEntries.map(e => {
+      const covered = coverageOf(e.activeTest);
+      return covered === waferCount ? e : { ...e, label: `${e.label} — ${covered} of ${waferCount} wafers` };
+    });
 
     const currentMode    = sharedOpts.plotMode ?? 'hardBin';
     const currentTestIdx = sharedOpts.activeTest ?? 0;
@@ -1080,7 +1257,7 @@ export function renderWaferGallery(
   // pass/fail display entries, the "Colorbar range" button, and the log-scale button,
   // mirroring single-map.
   function activeTestDefShared(): { testNumber: number; td: import('../renderer/buildWaferMap.js').TestDef | undefined } {
-    const testDefs = originalItems.find(it => it?.testDefs?.length)?.testDefs;
+    const testDefs = lotTestDefs();
     const { testNumber } = resolveTestNumber(sharedOpts.activeTest ?? 0, testDefs);
     return { testNumber, td: findTestDef(testDefs, testNumber) };
   }
@@ -1163,24 +1340,17 @@ export function renderWaferGallery(
 
   const btnOverlays = makeOverlaysBtn(
     tbHelpers,
-    (): CheckMenuRow[] => [
-      { label: 'Ring boundaries', active: !!sharedOpts.showRingBoundaries,     onClick: () => updateShared({ showRingBoundaries:   !sharedOpts.showRingBoundaries   }) },
-      { label: 'Quadrant lines',  active: !!sharedOpts.showQuadrantBoundaries, onClick: () => updateShared({ showQuadrantBoundaries: !sharedOpts.showQuadrantBoundaries }) },
-      { label: 'Die labels',      active: !!sharedOpts.showDieLabels,          onClick: () => updateShared({ showDieLabels:          !sharedOpts.showDieLabels          }) },
-      { label: 'Reticle grid',    active: !!sharedOpts.showReticle,            enabled: hasReticleInItems, onClick: () => updateShared({ showReticle: !sharedOpts.showReticle }) },
-      { label: 'XY indicator',    active: !!sharedOpts.showXYIndicator,        onClick: () => updateShared({ showXYIndicator:        !sharedOpts.showXYIndicator        }) },
-      ...passFailMenuRows(
-        {
-          functionalActive: activeTestIsFunctional(),
-          hasLimits: activeTestHasLimits() && !activeTestIsFunctional(),
-          hasRecorded: activeTestHasRecordedStatus() && !activeTestIsFunctional(),
-          display: requestedPassFailDisplay(sharedOpts) },
-        d => updateShared({ passFailDisplay: d }),
-      ),
-    ],
-    () => !!(sharedOpts.showRingBoundaries || sharedOpts.showQuadrantBoundaries ||
-             sharedOpts.showDieLabels || sharedOpts.showReticle || sharedOpts.showXYIndicator ||
-             requestedPassFailDisplay(sharedOpts) !== 'off'),
+    (): CheckMenuRow[] => overlayMenuRows(
+      sharedOpts,
+      hasReticleInItems,
+      {
+        functionalActive: activeTestIsFunctional(),
+        hasLimits: activeTestHasLimits() && !activeTestIsFunctional(),
+        hasRecorded: activeTestHasRecordedStatus() && !activeTestIsFunctional(),
+      },
+      patch => updateShared(patch),
+    ),
+    () => anyOverlayActive(sharedOpts),
   );
 
   const { btn: btnLegendStyle, sync: syncLegendStyleBtn } = makeLegendStyleBtn(
@@ -1326,7 +1496,14 @@ export function renderWaferGallery(
       lotStatsSummary: currentLotStats,
       // Per-item geometry advisories live on the items themselves — each card is
       // a built WaferMapResult, so `warnings` is already on it.
-      result: { warnings: originalItems.flatMap(it => it?.warnings ?? []) } });
+      // Test-def collisions are a property of the POPULATION, not of any one
+      // wafer, so they have no per-item `warnings` array to live on — they join
+      // here, and collectWarnings de-duplicates and severity-orders them with
+      // the geometry advisories exactly as it does everything else.
+      result: { warnings: [
+        ...originalItems.flatMap(it => it?.warnings ?? []),
+        ...mergedTestDefs().warnings,
+      ] } });
     const changed = next.length !== currentWarnings.length
       || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
     currentWarnings = next;
@@ -1418,6 +1595,76 @@ export function renderWaferGallery(
   // bin swatches) rather than sharing one wrapped flex row — metadata summaries
   // can themselves be long (several distinct-value lists), and mixing them with
   // bin swatches in one wrap made the whole strip read as a single jumbled line.
+  // The metadata pill — lot identity, on the same row as the toolbar.
+  //
+  // It used to be the first line inside `legendEl`, on its own row below the
+  // toolbar. That row was 14px of content in a ~46px strip while the toolbar
+  // beside it stood 36px tall with the whole left half of its row empty, so the
+  // two together spent two rows saying what fits in one. Measured on the docs
+  // gallery the identity content is ~297px and the toolbar ~330px: they share a
+  // 700px viewport comfortably, and the pill carries the strip's existing
+  // "+N more" collapsing, so it shrinks to whatever width is left rather than
+  // forcing the row to wrap.
+  const metaPillEl = container.ownerDocument.createElement('div');
+  metaPillEl.dataset.wmapGalleryMeta = '1';
+  Object.assign(metaPillEl.style, {
+    // flex:1 with minWidth:0 — takes the space the toolbar does not need, and
+    // is the element that gives way when the row runs short. minWidth:0 is what
+    // lets it shrink below its content at all (a flex item's automatic minimum
+    // size is its content, which would otherwise push the toolbar off-row).
+    flex:          '1',
+    minWidth:      '0',
+    overflow:      'hidden',
+    display:       'flex',
+    alignItems:    'center',
+    // Borderless — identity is text on the page, not a control surface. This
+    // also matches renderWaferMap's identity header, which has never had a
+    // border, so the two views state the same thing the same way instead of
+    // one of them wrapping it in a box. The toolbar beside it keeps its border
+    // because it IS a control surface.
+    //
+    // Horizontal padding is kept (not zeroed to the gutter) so the text lines
+    // up with the bordered bin strip directly below, whose own content is inset
+    // by its border plus the same padding — a 1px difference, where aligning to
+    // the gutter instead would leave a visible 13px step between two lines of
+    // header text.
+    padding: `${SPACE.sm} ${SPACE.lg}`,
+    // `sub`, not `body` — one tier up, and the size the chips actually render
+    // at since `buildMetadataStripRow` sets no size of its own and inherits
+    // from here. This is the view's primary identity (which lot, which product,
+    // which split), read at a glance, and it was a tier BELOW the wafer labels
+    // on the cards beneath it. It now matches renderWaferMap's identity label,
+    // so the same fact is the same size in both views.
+    fontSize:      FONT.sub,
+    lineHeight:    LEADING.none,
+    boxSizing:     'border-box' } as Partial<CSSStyleDeclaration>);
+
+  // One row: identity pill (flexible) then toolbar (fixed). The toolbar has
+  // priority — it never shrinks, because every control in it must stay hittable
+  // at any width, whereas the identity text degrades gracefully to "+N more".
+  const chromeRowEl = container.ownerDocument.createElement('div');
+  Object.assign(chromeRowEl.style, {
+    // The map area's own background, the same rule renderWaferMap's chrome row
+    // uses. Left transparent this inherited the host page, which is identical
+    // here (both slate) but diverges on a host whose page is white — the two
+    // views would then sit on different grounds for no reason anyone could see
+    // in this repo's own demos.
+    background: CLR.canvasBg,
+    display: 'flex',
+    // `stretch`, not `center`: two bordered surfaces sitting side by side on one
+    // row read as mismatched unless their boxes are the same height, and with
+    // `center` the pill took its content height (27px) against the toolbar's
+    // 36px. Stretch makes the pill adopt the row's height — derived from the
+    // toolbar rather than hardcoded, so it still matches if the toolbar's own
+    // padding or icon size ever changes, or if it wraps to a second line. The
+    // pill centres its own text inside that taller box (`alignItems: center` on
+    // the pill itself), so the identity still sits on the toolbar's midline.
+    alignItems: 'stretch',
+    gap: SPACE.lg,
+    // Padding, not margin — see renderWaferMap's chrome row: the row paints a
+    // background, and a margin would fall outside it.
+    paddingBottom: SPACE.lg, minWidth: '0' } as Partial<CSSStyleDeclaration>);
+
   const legendEl = container.ownerDocument.createElement('div');
   // Stable hook for tests/tooling — same convention as barEl's
   // data-wmap-toolbar, added when this element stopped being container's
@@ -1446,7 +1693,14 @@ export function renderWaferGallery(
   Object.assign(bodyEl.style, {
     display:   'flex',
     flexDirection: 'row',
-    gap: SPACE.xl,
+    // NO `gap` — deliberately. `gridEl` below carries `EDGE_GUTTER` on BOTH of
+    // its horizontal sides, and the summary panel docks directly against one of
+    // them, so a gap here would ADD to that padding and open a 24px trench
+    // between the cards and the panel while every other edge in the view used
+    // 12. Letting the grid's own padding do both jobs — gutter against the
+    // window on its free side, separation from the panel on the docked side —
+    // is what makes those two cases the same number without a rule that has to
+    // know which side the panel is on, or whether it is open at all.
     alignItems: 'flex-start' });
 
   // ── Insights tab (opt-in) ────────────────────────────────────────────────────
@@ -1478,10 +1732,18 @@ export function renderWaferGallery(
       passBins,
       getRingCount: () => sharedOpts.ringCount ?? 4,
       defaultView: options.insights?.defaultView,
-      // Leading "‹ Gallery" tab in the Insights tab bar — a visible way back
-      // to the card grid, alongside the toolbar's icon toggle.
-      backTab: { label: 'Gallery', onBack: () => setInsightsOpen(false) },
-      onOpenGuide: () => openGuideWindow(),
+      // No back tab. The bar now stays visible in Insights and carries the
+      // toggle, and unlike renderWaferMap's toolbar this one is unconditional —
+      // there is no option to suppress it, and `btnInsights` exists whenever
+      // `insightsEnabled` is true, which is the only way this tab is ever
+      // reachable. So a "‹ Gallery" tab could only ever be a second control
+      // doing what the bar's toggle already does, two inches to the left.
+      // Never. The bar stays visible in Insights and carries Help whenever the
+      // host asked for it, so the tab row has nothing to fall back for. The
+      // condition here was inverted — it passed the guide through precisely
+      // when `showHelpButton` was FALSE, so a host that had switched Help off
+      // (tsmap does) got an unwanted Help button the moment Insights opened.
+      onOpenGuide: undefined,
       // The gallery's own legend strip (rebuildLegend/legendEl) already shows
       // this metadata, via the same `buildMetadataStripRow` this tab's own
       // strip would use, and stays mounted above the grid/Insights body in
@@ -1535,13 +1797,28 @@ export function renderWaferGallery(
     if (insightsEl) insightsEl.style.display = open ? 'flex' : 'none';
     bodyEl.style.display = open ? 'none' : 'flex';
     galleryViewControlsEl.style.display = open ? 'none' : 'inline-flex';
-    // Hide the whole toolbar band while Insights is showing. With the gallery
-    // controls and the lot-summary button already hidden, it held exactly two
-    // things: a back-to-gallery toggle — which the Insights tab row's own
-    // "‹ Gallery" tab already provides — and Help, which now renders in that
-    // same row. A full-height band above every chart for one duplicate button
-    // is a row of vertical space bought for nothing.
-    barEl.style.display = open ? 'none' : 'flex';
+    // The bar STAYS while Insights is showing, holding the Insights toggle and
+    // Help once the grid-specific controls above have gone.
+    //
+    // Hiding it did reclaim real space here — unlike `renderWaferMap`, whose
+    // Insights view reserves the toolbar's band whether or not a toolbar is in
+    // it, so hiding there saved nothing at all. Measured on the docs gallery,
+    // hiding this bar lifts the content by 58px. That is a genuine cost, and it
+    // buys back a worse problem: with the bar gone the toggle did not merely
+    // move, it CHANGED — from an icon button on the right of the bar into a
+    // "‹ Gallery" text tab at the far left of the chart suite. The one control
+    // a lost user reaches for swapped shape, position and side at the moment
+    // they needed it, and the identity strip jumped 58px up at the same time,
+    // so nothing on screen stayed still to anchor the change.
+    //
+    // 46px of a scrolling chart page is a smaller price than that, and it is
+    // the same 46px the grid view already pays, so neither view is the odd one.
+    //
+    // 'inline-flex', matching how barEl was created — not 'flex'. The bar is a
+    // shrink-to-fit pill; restoring it as a block-level flex container stretched
+    // it to the full gallery width, so closing Insights left a full-width
+    // bordered box where a compact toolbar had been.
+    barEl.style.display = 'inline-flex';
     if (btnInsights) {
       setActive(btnInsights, open);
       // The icon itself signals the toggle: a bar-chart glyph means "open
@@ -1562,6 +1839,11 @@ export function renderWaferGallery(
       tab.render();
     });
   }
+
+  // Analysis-first mount: see InsightsOptions.defaultOpen. Deferred to a
+  // microtask so the rest of this render finishes first — setInsightsOpen
+  // touches chrome that is still being constructed above.
+  if (insightsEnabled && options.insights?.defaultOpen) queueMicrotask(() => setInsightsOpen(true));
 
   // ── Grid container ─────────────────────────────────────────────────────────
 
@@ -1744,6 +2026,13 @@ export function renderWaferGallery(
     display:                 'grid',
     gridTemplateColumns:     trackTemplate(1),
     gap: SPACE.xl,
+    // Cards were flush against the window edge on both sides — `gap` spaces
+    // them from EACH OTHER but says nothing about the container edge. Padding
+    // here rather than a margin on the cards: a margin would add to `gap`
+    // between neighbours (gap + two margins) while giving only one margin at
+    // the outside, making the middle worse to fix the edge. `stickyHeaderEl`
+    // is a sibling and stays full-bleed, so the bar still spans the width.
+    paddingLeft: EDGE_GUTTER, paddingRight: EDGE_GUTTER,
     justifyContent:          'start',
     alignContent:            'start',
     // `isolation: isolate` — NOT decorative, load-bearing. Each card's own
@@ -1770,7 +2059,7 @@ export function renderWaferGallery(
   {
     if (summaryPanelOpts?.placement) {
       const placement = summaryPanelOpts.placement;
-      gallerySummaryPanelEl = createSummaryPanelEl(placement, container.ownerDocument);
+      gallerySummaryPanelEl = createSummaryPanelEl(placement, EDGE_GUTTER, container.ownerDocument);
       gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
       gallerySummaryPanelEl.style.position  = 'sticky';
       gallerySummaryPanelEl.style.top       = '8px';
@@ -1778,7 +2067,7 @@ export function renderWaferGallery(
       gallerySummaryPanelEl.style.flexDirection = 'column';
     } else if (currentLotStats || hasAnyPerWaferFindings()) {
       const openOnMount = !!summaryPanelOpts?.defaultOpen;
-      gallerySummaryPanelEl = createSummaryPanelEl('right', container.ownerDocument);
+      gallerySummaryPanelEl = createSummaryPanelEl('right', EDGE_GUTTER, container.ownerDocument);
       gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
       gallerySummaryPanelEl.style.position  = 'sticky';
       gallerySummaryPanelEl.style.top       = '8px';
@@ -1823,6 +2112,26 @@ export function renderWaferGallery(
   Object.assign(stickyHeaderEl.style, {
     position:   'sticky',
     top:        '0',
+    // Column flex: the chrome row (identity pill + toolbar) above the bin
+    // legend, both stretched to the full width.
+    display:       'flex',
+    flexDirection: 'column',
+    // Gutter goes on this wrapper, not on `barEl`/`legendEl` themselves: both
+    // are bordered, radiused surfaces (same card language as the wafer cards
+    // below) and both were flush against the window while the cards under them
+    // were inset by EDGE_GUTTER — the mismatch was plainly visible as soon as
+    // the cards moved in. Padding the wrapper insets both in one place AND
+    // keeps its own background full-bleed, which is what actually hides
+    // content scrolling underneath a sticky bar.
+    paddingLeft:  EDGE_GUTTER,
+    paddingRight: EDGE_GUTTER,
+    // Top gutter too: this bar is the first thing in the view, so in a host
+    // that gives the map area no padding of its own (tsmap's `#map-container`)
+    // it butted straight against the host's own toolbar with nothing between
+    // two bordered surfaces. Sticky sits at `top: 0`, so this padding is also
+    // what keeps a 12px band of this element's own background above the bar
+    // once content scrolls under it, rather than cards touching it directly.
+    paddingTop:   EDGE_GUTTER,
     // A small EXPLICIT value, deliberately far below Z_BASE — this is not
     // "not high enough yet", raising it is the wrong move if this header ever
     // again looks buried. What actually keeps this above a scrolled-under
@@ -1841,7 +2150,9 @@ export function renderWaferGallery(
     // this element's tier instead of containing the one that was leaking.
     zIndex:     '1',
     background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
-  stickyHeaderEl.appendChild(barEl);
+  chromeRowEl.appendChild(metaPillEl);
+  chromeRowEl.appendChild(barEl);
+  stickyHeaderEl.appendChild(chromeRowEl);
   stickyHeaderEl.appendChild(legendEl);
   container.appendChild(stickyHeaderEl);
   container.appendChild(bodyEl);
@@ -1905,26 +2216,29 @@ export function renderWaferGallery(
     // lot-level strip would list values in a different order to the per-card legends.
     const metadataValues = hasBinLegendMode && isMetadataMode ? [...metadataValueSet].sort(compareNatural) : [];
 
-    if (!metaRow && !bins.length && !metadataValues.length) {
+    // Identity goes in the chrome row's pill, beside the toolbar — not into
+    // legendEl. The two are now independent: a lot with metadata but no bin
+    // legend (Insights open) shows the pill and no strip at all, which is where
+    // the row of vertical space is saved.
+    metaPillEl.innerHTML = '';
+    if (metaRow) metaPillEl.appendChild(metaRow);
+    metaPillEl.style.display = metaRow ? 'flex' : 'none';
+
+    if (!bins.length && !metadataValues.length) {
       legendEl.style.display = 'none';
       return;
     }
     legendEl.style.display = 'flex';
 
-    if (metaRow) legendEl.appendChild(metaRow);
-
-    if (!bins.length && !metadataValues.length) return;
-
     const binsRow = container.ownerDocument.createElement('div');
     Object.assign(binsRow.style, {
-      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 14px',
+      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: `${SPACE.sm} ${SPACE.xl}`,
       // A lot can carry dozens of bins, and each entry is now wider than a bare
       // swatch+label was — so an unbounded wrapped strip would push the cards
       // off screen on exactly the lots where the legend matters most. Bounded
       // to roughly three rows and scrolled past that; the share bar sits below
       // and stays visible, so the population split never scrolls away.
       maxHeight: '86px', overflowY: 'auto', overflowX: 'hidden' } as Partial<CSSStyleDeclaration>);
-    if (metaRow) Object.assign(binsRow.style, { borderTop: `1px solid ${CLR.separator}`, paddingTop: '6px' });
     legendEl.appendChild(binsRow);
 
     const scheme    = getColorScheme(sharedOpts.colorScheme);
@@ -2094,8 +2408,12 @@ export function renderWaferGallery(
       // Functional tests are excluded: mean/median/σ of a pass/fail outcome is
       // meaningless. (A dedicated stacked functional representation — per-position
       // fail count across the lot, countBin-style — is a deferred enhancement.)
-      const itemDefs = resolvedItems.find(it => it.testDefs?.length)?.testDefs;
+      const itemDefs = lotTestDefs();
       let defs = itemDefs?.filter(isParametricTest);
+      // `undefined` (nobody supplied defs) may fall through to discovery below;
+      // an empty ARRAY means reconciliation withheld everything, and stacking
+      // discovered numbers would pool the very measurements it withheld.
+      if (itemDefs !== undefined && defs?.length === 0) return [];
 
       // If no testDefs on items at all, discover unique test numbers from the actual
       // data (untyped keys default to parametric). Never falls back when defs exist
@@ -2370,6 +2688,7 @@ export function renderWaferGallery(
     const titleWrap = container.ownerDocument.createElement('div');
     Object.assign(titleWrap.style, {
       display: 'flex', alignItems: 'center', gap: SPACE.xs, flex: '1', minWidth: '0', cursor: 'pointer' });
+    wireControlHover(titleWrap, 'bare');
     titleParent?.insertBefore(titleWrap, titleEl);
     titleWrap.appendChild(titleEl);
     const chevron = container.ownerDocument.createElement('span');
@@ -2404,6 +2723,11 @@ export function renderWaferGallery(
       background:    CLR.menuBg,
       border:        `1px solid ${CLR.menuBorder}`,
       borderRadius:  RADIUS.container,
+      // Cards were the ONLY bounded surface in either view without elevation —
+      // the toolbar, the bin legend, the Insights tab band and the summary
+      // panel all carry it, so a grid of flat cards read as a different class
+      // of object from the bands directly above them.
+      boxShadow:     SHADOW.panel,
       overflow:      'hidden',
       display:       'flex',
       flexDirection: 'column',
@@ -2448,6 +2772,7 @@ export function renderWaferGallery(
       flexShrink:      '0',
       width:           '22px',
       height:          '22px' });
+    wireControlHover(expandBtn);
     header.appendChild(expandBtn);
     card.appendChild(header);
 
@@ -2495,7 +2820,12 @@ export function renderWaferGallery(
       // the per-map badge would be pure duplication here (worse: on a small
       // card it visually competes with the toolbar for the same corner-ish
       // space). Only the standalone renderWaferMap use case needs the badge.
-      showIdentityHeader: false });
+      showIdentity: false,
+      // The CARD already supplies the outer inset, so this map's chrome takes
+      // the small one — a second full gutter inside the card stacks two, which
+      // is a toolbar standing well off the card's side. The detached-window
+      // path below deliberately keeps the default: there the map IS the region.
+      chromeInset: MAP_CHROME_INSET });
     // In-gallery: hide scene controls (gallery bar owns them) and summary button.
     ctrl.setViewControlsVisible(false);
     ctrl.setSummaryVisible(false);
@@ -2632,7 +2962,7 @@ export function renderWaferGallery(
       scheduleSharedValueRangeSync();
       // If this item introduced per-wafer findings and no panel exists yet, create it now.
       if (!gallerySummaryPanelEl && !summaryPanelOpts?.placement && item.statsSummary?.findings.length) {
-        gallerySummaryPanelEl = createSummaryPanelEl('right', container.ownerDocument);
+        gallerySummaryPanelEl = createSummaryPanelEl('right', EDGE_GUTTER, container.ownerDocument);
         gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
         gallerySummaryPanelEl.style.position  = 'sticky';
         gallerySummaryPanelEl.style.top       = '8px';
@@ -2935,7 +3265,7 @@ export function renderWaferGallery(
       // fallback, see openWindowForCard) now build their own persistent
       // expandable identity header before calling this function — the
       // standalone corner badge would just duplicate it.
-      showIdentityHeader: false });
+      showIdentity: false });
     ctrl.setViewControlsVisible(true);
     ctrl.setSummaryVisible(true);
     ctrl.setExpandVisible(false);
@@ -3010,7 +3340,10 @@ export function renderWaferGallery(
     const cellW  = canvases[0].width;
     const cellH  = canvases[0].height;
     const gap    = 8;
-    const dpr    = window.devicePixelRatio || 1;
+    // The CONTAINER's view, not the opener's: this composite export runs for a
+    // gallery that may be living in a detached popup on another display, and
+    // the opener's ratio would size the sheet for the wrong screen.
+    const dpr    = (container.ownerDocument.defaultView ?? window).devicePixelRatio || 1;
     const headerH = Math.round(26 * dpr);
     const fontSize = Math.round(12 * dpr);
     const off   = container.ownerDocument.createElement('canvas');
@@ -3078,6 +3411,11 @@ export function renderWaferGallery(
       for (const ctrl of cardControllers) if (ctrl) ctrl.setFallbackFormat(format);
     },
 
+    setFindingsNotice(notice: FindingsNotice | undefined): void {
+      currentFindingsNotice = notice;
+      renderGallerySummaryPanel();
+    },
+
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {
       currentLotStats = summary;
       // Lot analysis raises its own advisories (the test-count cap among them),
@@ -3120,8 +3458,9 @@ export function renderWaferGallery(
       disposeOverlayZ();
       // Shared singleton — hide, never destroy (other instances may use it).
       hideTooltip();
-      // Removes stickyHeaderEl too — barEl and legendEl are its only children,
-      // so once both are gone it's an empty node left behind in `container`.
+      // Removes stickyHeaderEl and everything under it — the chrome row (identity
+      // pill + toolbar) and the bin legend — so no empty node is left behind in
+      // `container`.
       stickyHeaderEl.remove();
       bodyEl.remove();
       gallerySummaryPanelEl?.remove();

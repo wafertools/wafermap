@@ -35,6 +35,43 @@ free if the Summary panel already ran first.
 
 ---
 
+## Download size
+
+The one place these figures are stated. Everything else in the docs links here, because a
+number repeated in six places is a number that will be wrong in five of them.
+
+| Entry point | gzipped | When it is downloaded |
+| --- | --- | --- |
+| `@wafertools/wafermap` — the data and stats layer, no DOM | **~46 KB** | Always, if you import it |
+| `@wafertools/wafermap/render` — the interactive renderer | **~108 KB** | Always, if you render |
+| Insights chart suite | +~25 KB | On first open, only if `insights: { enabled: true }` |
+| In-app user guide | +~34 KB | On first open of the guide |
+
+Two things worth reading off that table:
+
+- **The data layer runs without a DOM**, so a Node pipeline that builds and analyses wafer
+  maps without drawing them pays ~46 KB, not the renderer's ~108 KB.
+- **The two largest optional pieces are lazy.** A page that renders maps but never opens
+  Insights or the guide never downloads those 59 KB. They are separate chunks, fetched on
+  first use — any bundler with dynamic `import()` splitting (Vite, Rollup, webpack, esbuild
+  with `splitting: true`) does this by default.
+
+There are no runtime dependencies, so these figures are the whole cost — there is no
+transitive tree underneath them.
+
+**These figures are generated, not typed.** `npm version` runs
+`scripts/check-bundle-size.mjs --write`, which bundles the built `dist/` with esbuild and
+real code-splitting, gzips each chunk, and rewrites the numbers above — and the README's
+badge and prose line, the only other place any of them appear. Don't hand-edit them; a
+release will overwrite the edit.
+
+Between releases the same script runs as a *check* (`npm run check`, `npm test`) and fails
+if any quoted figure has drifted, so a change that moves the bundle is caught at the commit
+that causes it rather than at the next release. `WMAP_CHUNKS=1 node
+scripts/check-bundle-size.mjs` prints the per-chunk breakdown.
+
+---
+
 ## What each option actually buys you
 
 | Option | What you get | Where it shows up |
@@ -78,6 +115,85 @@ both die count and test count, and on the largest, densest wafer with 15
 tests it reaches ~130ms. Still fast for a one-off computation — just not
 something you'd want re-running on every frame of an animation, and worth
 knowing it grows with how many tests you hand it (more on that below).
+
+---
+
+## The number that matters is the lot, not the wafer
+
+The table above is **per wafer**, and that is not the unit anyone decides at. A
+host runs analysis over a whole lot, so the figure a user waits for is that cost
+multiplied by the wafer count — and `enableTestValueAnalysis` is the one column
+where the multiplication takes you somewhere different in kind, not just in
+degree. "130ms, still fast" becomes several seconds without anything about the
+option changing.
+
+Measured over whole lots, on synthetic wafers with a real edge effect so the
+findings pass is doing genuine work:
+
+| Lot | analysis without | with `enableTestValueAnalysis` | added |
+|---|---|---|---|
+| 5 wafers × 10.7k dies × 30 tests | 299ms | 2.2s | **+1.9s** |
+| 5 × 10.7k × 100 tests | 392ms | 7.0s | **+6.7s** |
+| 25 × 10.7k × 30 tests | 1.4s | 11.1s | **+9.7s** |
+| 25 × 10.7k × 500 tests | — | did not finish inside two minutes | — |
+
+Both tables describe the same linear scan, so one coefficient spans them:
+roughly **1–2µs per (wafer × die × test)** — 1.76µs from the large-wafer row
+above, 1.2µs from the lot runs, the spread being machine and data. That is
+enough to predict "instant or not" before you run it, which is the only
+question you actually need answered:
+
+```ts
+const estimateMs = waferCount * diesPerWafer * testCount * 1.5 / 1000;
+```
+
+Calibrate the coefficient on your own target hardware if you are going to
+branch on it, and round it up rather than down — the cost of over-estimating is
+one unnecessary prompt, and the cost of under-estimating is an unexplained
+freeze.
+
+---
+
+## Deciding for the user, and when not to
+
+`enableTestValueAnalysis` used to leave integrators with two bad options: leave
+it off — safe, but the findings are then invisible and most users never learn
+they exist — or turn it on for everybody and make large lots feel broken. Both
+were common, and both were wrong for someone.
+
+Since 0.27.0 there is a third: **run it when it is cheap, and offer it when it
+is not.** `FindingsNotice` (§5.4 of the API reference) draws a row at the top of
+the Summary panel's Findings section, so the offer appears where the reader is
+already looking rather than in a menu they have no reason to open:
+
+```ts
+const estimateMs = waferCount * diesPerWafer * testCount * 1.5 / 1000;
+const runIt = estimateMs <= 1000;          // your budget, your call
+
+const summary = analyzeWaferMap(result, { enableTestValueAnalysis: runIt });
+
+renderWaferMap(container, result, {
+  statsSummary: summary,
+  findingsNotice: runIt ? undefined : {
+    message: 'Test-value findings are not included.',
+    detail:  `Regional analysis of ${testCount} tests across ${waferCount} wafers — about ${Math.round(estimateMs / 1000)}s.`,
+    actionLabel: 'Analyse',
+    onAction: () => rerunWith({ enableTestValueAnalysis: true }),
+  },
+});
+```
+
+Two things make this work, and both are easy to get wrong:
+
+- **State the price in `detail`.** An unpriced "Analyse" button on a lot where
+  the answer takes half a minute is worse than no button — the user clicks it
+  once, waits, and never trusts it again.
+- **Let the user's choice stick.** Once they have decided either way, stop
+  applying the budget on their behalf; a control that silently re-decides on the
+  next load is not a control.
+
+wmap never raises the notice itself. Only the host knows what it chose not to
+compute and what recomputing would cost.
 
 ---
 
@@ -157,7 +273,7 @@ optimization worth taking, not a fix for a real bottleneck.
 | A simple embedded viewer, no stats UI | Nothing extra — just `buildWaferMap` + `renderWaferMap` | No reason to compute analysis nobody sees |
 | A viewer with yield/bin summary | `analyzeWaferMap()`, no extra flags | Fast, powers the whole Summary panel |
 | …plus distribution/box-plot charts | `+ computePerTestStats: true` | Still fast; unlocks Insights → Distributions |
-| A QA/engineering tool that should flag anomalies automatically | `+ enableTestValueAnalysis: true` | The only option that finds spatial patterns for you automatically — the one worth being deliberate about on very large lots (see below) |
+| A QA/engineering tool that should flag anomalies automatically | `+ enableTestValueAnalysis: true` when the estimate is small, else a `findingsNotice` offering it | The only option that finds spatial patterns for you automatically. Cheap per wafer, seconds per lot — so decide per lot rather than once for the whole app (see "The number that matters is the lot") |
 | A lot gallery (many wafers) | Always pass `perWaferSummaries` to `analyzeWaferLot` | Free reuse of work you already did |
 | Very large lots using `enableTestValueAnalysis` on every wafer | Run analysis in a [Web Worker](guide.md#17-processing-large-datasets-with-a-web-worker) via `createWafermapWorker` | Keeps the main thread free while the heavier pass runs, even though each individual call is fast |
 | A dashboard rendering many wafers/lots at once | Compute `statsSummary` for every card, then open Insights on demand | Box plot and bin pareto ride along nearly free once Summary panel stats exist |

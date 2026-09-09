@@ -4,6 +4,12 @@
 
 `@wafertools/wafermap` renders interactive wafer maps from semiconductor die test data — colour-coded by bin or parametric value, with a built-in toolbar, tooltips, and zoom.
 
+> **Not sure you need to integrate?** [tsmap](https://github.com/wafertools/tsmap) is a
+> finished, free application built on this library — desktop and
+> [browser](https://wafertools.github.io/tsmap/app/), opening STDF, ATDF, CSV, JSON and
+> Parquet with no code. If your goal is to *look at* wafer data rather than put wafer
+> maps inside your own app, start there.
+
 ## Install
 
 ```bash

@@ -138,11 +138,21 @@
         probeStation: 'ESC-4',      // custom field — shown in summary panel header
       };
 
-      // Supply the die pitch, not just the diameter. With only a diameter the
-      // library must infer the pitch as diameter ÷ grid span — an assumption it
-      // flags as an `inferred-pitch` advisory, because it is wrong whenever edge
-      // dies are missing from the data. This device is a 10 × 10 mm die.
-      // CSV data uses prober step positions (all x,y ≥ 0) — declare LL origin explicitly.
+      // The REAL die pitch, not just the diameter. This fixture is generated
+      // (scripts/gen-dummy-fulldata.mjs) from these same numbers — a 300 mm
+      // wafer at a 10 mm pitch — so the declaration and the data agree by
+      // construction rather than by luck.
+      //
+      // Supplying it matters: with a diameter alone wmap must infer the pitch as
+      // diameter ÷ grid span, per axis. That inference is honest but it stretches
+      // whatever shape the data has to fill the circle, which once hid the fact
+      // that this fixture was a 25 × 17 RECTANGLE — it looked round only because
+      // the inference made it so. Declaring the pitch is what exposed that, and
+      // the data was regenerated as a real circular wafer.
+      //
+      // Coordinates are die-centre-relative (x, y ∈ −14..14), so no origin
+      // translation is needed; `LL` is declared for illustration and is a no-op
+      // on centre-origin data like this.
       const result = buildWaferMap({
         results,
         waferConfig: {

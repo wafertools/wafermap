@@ -33,6 +33,7 @@ import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { quantile } from '../stats/math.js';
 import { buildCapabilityData, type CapabilityItem } from '../stats/capability.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
+import { poolFunctionalYield } from '../stats/testPassRate.js';
 import { makeLabeledSelect, makeSegmented } from './charts/chartShell.js';
 import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, openReportModal, saveTextFile, wireTooltip, type SaveTextHandler } from './toolbar.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
@@ -218,6 +219,10 @@ function collapsibleSection(
     flex:          '1',
   }, label);
 
+  // A section header is clickable, so it must react to being pointed at —
+  // it had `cursor: pointer` and no hover of any kind. 'bare' keeps its
+  // transparent resting background and only lifts it on hover.
+  wireControlHover(toggle, 'bare');
   toggle.setAttribute('aria-expanded', defaultOpen ? 'true' : 'false');
   toggle.appendChild(arrow);
   toggle.appendChild(titleEl);
@@ -508,7 +513,13 @@ export function buildFacetSummaryChips(
   if (!table.length) return null;
 
   const row = el('div', {
-    display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: `${SPACE.xs} ${SPACE.lg}`, fontSize: FONT.body,
+    // No `fontSize`: it INHERITS from whatever mounts the strip, so the host
+    // decides the tier. It used to pin `FONT.body` here, two levels below the
+    // caller, which silently overrode the size the mounting surface had set —
+    // raising the gallery's identity strip appeared to do nothing at all until
+    // this was found. There is one caller (`buildMetadataStripRow`), so the
+    // size has no business being decided here.
+    display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: `${SPACE.xs} ${SPACE.lg}`,
   });
   // Primary fields first, in the order above; everything else keeps its
   // existing relative order behind them.
@@ -1729,24 +1740,11 @@ export function buildLotFunctionalSection(
     perWaferMetadata: perWaferSummaries.map(s => s.wafer ?? {}),
     populationLabel: `${perWaferSummaries.length} wafer${perWaferSummaries.length === 1 ? '' : 's'} pooled`,
   } : undefined;
-  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.functionalYield !== undefined)) {
-    const byTest = new Map<number, { label: string; passDies: number; failDies: number; totalDies: number }>();
-    for (const s of perWaferSummaries) {
-      for (const t of s.stats.functionalYield ?? []) {
-        const acc = byTest.get(t.testNumber) ?? { label: t.label, passDies: 0, failDies: 0, totalDies: 0 };
-        acc.passDies += t.passDies;
-        acc.failDies += t.failDies;
-        acc.totalDies += t.totalDies;
-        byTest.set(t.testNumber, acc);
-      }
-    }
-    const pooled = [...byTest.entries()].map(([testNumber, acc]) => ({
-      testNumber,
-      ...acc,
-      passRatePercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null,
-    }));
-    if (pooled.length) return buildFunctionalTestSection(allDies, testDefs, pooled, onSaveText, csv, panel);
+  const pooled = poolFunctionalYield(perWaferSummaries);
+  if (pooled) {
+    return buildFunctionalTestSection(allDies, testDefs, pooled, onSaveText, csv, panel);
   }
+
   return buildFunctionalTestSection(allDies, testDefs, undefined, onSaveText, csv, panel);
 }
 
@@ -1758,7 +1756,7 @@ export function buildLotFunctionalSection(
 const severityRank: Record<StatsFinding['severity'], number> = { unusual: 0, notable: 1, info: 2 };
 function sevDot(s: StatsFinding['severity']): HTMLSpanElement {
   return el('span', {
-    display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
+    display: 'inline-block', width: '7px', height: '7px', borderRadius: RADIUS.pill,
     background: sevColor(s), flexShrink: '0',
   });
 }
@@ -1896,6 +1894,7 @@ export function buildFindingsSection(
       width:        '100%',
       marginBottom: SPACE.xs,
     });
+    wireControlHover(row, 'bare');
     row.addEventListener('click', () => onFindingClick(finding, row));
     return row;
   }
@@ -1933,6 +1932,7 @@ export function buildFindingsSection(
       whiteSpace: 'nowrap',
     }, 'Detail ▸');
     (detailBtn as HTMLButtonElement).type = 'button';
+    wireControlHover(detailBtn, 'bare');
     detailBtn.addEventListener('click', () => {
       const handle = openModal({ title: 'Findings Summary', onClose: () => {}, anchor: detailBtn });
 
@@ -1941,7 +1941,7 @@ export function buildFindingsSection(
         fontSize:     '16px',
         lineHeight:   LEADING.base,
         color:        CLR.text,
-        padding:      '20px 24px 16px',
+        padding:      `${SPACE.xxl} ${SPACE.xxxl} ${SPACE.xxl}`,
         margin:       '0',
         borderBottom: `1px solid ${CLR.menuBorder}`,
         flexShrink:   '0',
@@ -1971,7 +1971,7 @@ export function buildFindingsSection(
         listWrap.appendChild(el('div', {
           fontSize:    FONT.body,
           color:       CLR.text,
-          padding:     '3px 0 3px 15px',
+          padding:     '4px 0 4px 15px',   // optical: 15px indents the text under the finding's severity dot
           marginBottom: SPACE.xxs,
         }, plainBinTerms(pf.summary)));
         const children = findings.filter(f => pf.relatedIds?.includes(f.id));
@@ -1979,7 +1979,7 @@ export function buildFindingsSection(
           listWrap.appendChild(el('div', {
             fontSize:    FONT.body,
             color:       LABEL_COLOR,
-            padding:     '2px 0 2px 23px',
+            padding:     '2px 0 2px 23px',   // optical: aligns a child finding under its parent's label, not the dot
             marginBottom: SPACE.xxs,
           }, plainBinTerms(cf.summary)));
         }
@@ -1992,7 +1992,7 @@ export function buildFindingsSection(
           listWrap.appendChild(el('div', {
             fontSize:    FONT.body,
             color:       CLR.text,
-            padding:     '3px 0 3px 15px',
+            padding:     '4px 0 4px 15px',   // optical: 15px indents under the severity dot, as above
             marginBottom: SPACE.xxs,
           }, findingRowText(f, left)));
         }
@@ -2027,7 +2027,7 @@ export function buildFindingsSection(
       borderLeft:   `3px solid ${sevColor(pf.severity)}`,
       background:   isActive ? CLR.bgActive : CLR.menuBg,
       borderRadius: RADIUS.container,
-      padding:      '8px 32px 8px 10px', // right padding for chevron
+      padding:      '8px 32px 8px 10px', // optical: 32px right clears the absolutely-positioned chevron
       textAlign:    'left',
       fontSize:     FONT.body,
       fontWeight:   isActive ? '600' : '500',
@@ -2040,6 +2040,7 @@ export function buildFindingsSection(
     // See makeFindingRow's identical comment — isActive already drives the
     // visual highlight, this exposes the same state to a screen reader.
     parentRow.setAttribute('aria-current', isActive ? 'true' : 'false');
+    wireControlHover(parentRow, 'bare');
     parentRow.addEventListener('click', () => onFindingClick(pf, parentRow));
     parentWrap.appendChild(parentRow);
 
@@ -2070,6 +2071,7 @@ export function buildFindingsSection(
         padding: `${SPACE.xxs} ${SPACE.xs}`,
         lineHeight: LEADING.none,
       }, '▸') as HTMLButtonElement;
+      wireControlHover(chevron, 'bare');
       chevron.type = 'button';
       // No text argument — the tooltip live-reads `aria-label`, which the click
       // handler below already keeps in step with the expanded state.
@@ -2079,6 +2081,7 @@ export function buildFindingsSection(
       // aria-label is the one that actually reaches them, and aria-expanded
       // exposes the open/closed state `childWrap`'s visibility otherwise only
       // conveys visually.
+      wireControlHover(chevron, 'bare');
       chevron.setAttribute('aria-label', 'Show supporting findings');
       chevron.setAttribute('aria-expanded', 'false');
       chevron.addEventListener('click', (e) => {
@@ -2188,12 +2191,21 @@ function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFil
         opacity: on ? '1' : '0.5',
         color: CLR.text, fontSize: FONT.body, padding: `${SPACE.xxs} ${SPACE.md}`, cursor: 'pointer',
       } as Partial<CSSStyleDeclaration>);
+      // `wireControlHover` skips an element with data-on="true", which is how an
+      // active chip keeps its own background instead of being flattened to the
+      // shared hover colour — on and off would otherwise look identical under
+      // the pointer. Set here, in paint(), so it tracks every toggle.
+      chip.dataset.on = on ? 'true' : 'false';
     };
     chip.appendChild(sevDot(s));
     chip.appendChild(el('span', {}, `${FINDINGS_SEVERITY_LABEL[s]} ${counts[s]}`));
     // Getter, not a fixed string: the hint flips as the chip is toggled.
     wireTooltip(chip, () => enabled.has(s) ? 'Click to hide these findings' : 'Click to show these findings');
     paint();
+    // 'bare' + the `data-on` guard `wireControlHover` already honours: a chip
+    // that is ON keeps its active background instead of being repainted by
+    // hover, which would make on and off indistinguishable under the pointer.
+    wireControlHover(chip, 'bare');
     chip.addEventListener('click', () => {
       if (enabled.has(s)) enabled.delete(s); else enabled.add(s);
       filter.severity = enabled.size === present.length ? undefined : [...enabled];
@@ -2235,6 +2247,62 @@ const FINDINGS_FILTER_THRESHOLD = 8;
  * true)` in its own collapsible "Findings" header + filter row). Returns
  * `null` when the source has no findings at all (nothing to filter).
  */
+/**
+ * A host-supplied row at the top of the Findings section, for stating that a
+ * category of finding is NOT present and offering to compute it.
+ *
+ * This exists because the absence of a finding category is invisible: a reader
+ * looking at a Findings list has no way to tell that a whole class of analysis
+ * was skipped. Advertising the *control* elsewhere (a menu item) does not fix
+ * that — the reader has no reason to go looking. The notice belongs where the
+ * gap is.
+ *
+ * wmap does not decide when to show this. The host knows what it did and did
+ * not compute, and what recomputing would cost; it passes a notice or it does
+ * not. Keep `detail` honest about that cost — an unpriced "Analyse" button on a
+ * lot where the answer takes half a minute is worse than no button.
+ */
+export interface FindingsNotice {
+  /** What is missing, stated plainly. Not a question, not an exhortation. */
+  message: string;
+  /** Supporting detail — normally the size of the job and its expected cost. */
+  detail?: string;
+  /** Action label. Omit (with `onAction`) for a message-only notice. */
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
+/**
+ * Builds the notice row. Deliberately quiet: this is an offer, not a warning —
+ * `buildWarningsBanner` owns the loud treatment, and a notice competing with it
+ * for alarm would misrepresent "some analysis is optional" as "something is
+ * wrong".
+ */
+function buildFindingsNoticeRow(notice: FindingsNotice, ownerDocument: Document): HTMLDivElement {
+  const row = el('div', {
+    display: 'flex', flexDirection: 'column', gap: SPACE.xs,
+    padding: SPACE.md, marginBottom: SPACE.md,
+    background: CLR.bgHover, borderRadius: RADIUS.control,
+  }, undefined, ownerDocument);
+  row.appendChild(el('div', {
+    fontSize: FONT.body, color: CLR.value }, notice.message, ownerDocument));
+  if (notice.detail) {
+    row.appendChild(el('div', {
+      fontSize: FONT.meta, color: LABEL_COLOR }, notice.detail, ownerDocument));
+  }
+  if (notice.actionLabel && notice.onAction) {
+    const btn = el('button', controlStyle('outlined') as Record<string, string>,
+      notice.actionLabel, ownerDocument);
+    btn.type = 'button';
+    btn.style.alignSelf = 'flex-start';
+    btn.style.marginTop = SPACE.xs;
+    wireControlHover(btn);
+    btn.addEventListener('click', notice.onAction);
+    row.appendChild(btn);
+  }
+  return row;
+}
+
 export function buildFindingsSectionWithFilter(
   source: StatsSummary | LotStatsSummary,
   onFindingClick: (finding: StatsFinding, row: HTMLButtonElement) => void,
@@ -2243,18 +2311,26 @@ export function buildFindingsSectionWithFilter(
   onFilterChange: () => void,
   /** Panel element owning the collapsed state. Omit for a stateless render. */
   panel?: HTMLElement,
+  /** See {@link FindingsNotice}. Rendered above the filter row. */
+  notice?: FindingsNotice,
 ): HTMLDivElement | null {
-  if (!source.findings.length) return null;
+  // A notice is itself a reason to render the section: the case it exists for
+  // is a lot whose only findings would have come from the analysis that was
+  // skipped, where returning null here would hide the very offer to run it.
+  if (!source.findings.length && !notice) return null;
 
   const hasNotable = source.findings.some(f => f.severity === 'unusual' || f.severity === 'notable');
   const badge = hasNotable
     ? source.findings.filter(f => f.severity !== 'info').length.toString()
     : undefined;
 
+  const ownerDocument = panel?.ownerDocument ?? document;
   const { outer, content } = collapsibleSection(
-    `Findings (${source.findings.length})`, hasNotable, badge,
+    `Findings (${source.findings.length})`, hasNotable || !!notice, badge,
     { stateKey: 'findings', panel },
   );
+  if (notice) content.appendChild(buildFindingsNoticeRow(notice, ownerDocument));
+  if (!source.findings.length) return outer;
   content.appendChild(buildFindingsFilterRow(source.findings, filter, onFilterChange));
 
   const filtered = filterFindings(source, filter);
@@ -2358,6 +2434,26 @@ export function buildLotTestSection(
 
 export function createSummaryPanelEl(
   placement: 'right' | 'left' | 'top' | 'bottom',
+  /**
+   * Inset from the edge this panel docks against — stated by the caller,
+   * because only the caller knows what that edge IS.
+   *
+   * `renderWaferMap` docks it inside `mapBox` and passes `EDGE_GUTTER`, the
+   * same inset its chrome row uses, so the panel lines up with the toolbar
+   * above it. It used to pass a smaller inset so the panel would align with a
+   * toolbar FLOATING in the map's own corner; that toolbar now sits in a row
+   * above the map, and the small inset aligned with nothing.
+   * `renderWaferGallery` docks it at the edge of the gallery region itself,
+   * where it is a bounded surface against the window and takes `EDGE_GUTTER`
+   * like every other card there.
+   *
+   * Internal (not exported from the package), so this is a positional
+   * parameter rather than an options bag. It has NO default on purpose: a
+   * default is a guess about context, and guessing wrong is what put a 4px
+   * gutter on the gallery's panel where 12 belonged, and 12px inside a map card
+   * where 4 belonged.
+   */
+  edgeInset: string,
   // Pass the render's own ownerDocument — this panel is the auto-mounted
   // Summary panel, reachable from a wafer detached into its own popup window
   // (buildDetachedController passes statsSummary through); without this the
@@ -2387,9 +2483,35 @@ export function createSummaryPanelEl(
     flexShrink:  '0',
     boxSizing:   'border-box',
     fontFamily:  FONT.family,
-    fontSize:    FONT.body,
+    // `sub`, matching the chrome, tab labels and card titles around it. At
+    // `body` this panel was the smallest text on screen while holding the
+    // densest content — yield figures, findings prose and per-test tables —
+    // and it became the sole outlier once the identity strip was raised.
+    // Descendants that set their own size (the die-list table, the muted
+    // labels) are unaffected; this is the panel's inherited baseline.
+    fontSize:    FONT.sub,
     boxShadow:   SHADOW.panel,
   }, undefined, ownerDocument);
+
+  // Inset from the map area's edge, stated by the caller. This panel is
+  // styled as a CARD —
+  // border on all four sides, `RADIUS.container`, its own shadow — not as
+  // docked IDE-style chrome, which would carry a single divider border and be
+  // correct flush to the edge. Pressed against the window its rounded corners
+  // read as clipped and the shadow has nowhere to fall. Applied only to the
+  // edge it docks AGAINST; the opposite side is bounded by the map, not the
+  // window, and spacing there is the layout's business.
+  //
+  // 'top' is deliberately absent. It used to rely on `reserveToolbarClearance`
+  // in renderWaferMap giving that placement its own `paddingTop`, because the
+  // toolbar floated over whatever was at the top of the map area. The toolbar
+  // is no longer a floating overlay — it lives in the chrome row above the map
+  // area, which already provides its own gap (`chromeInset`) before the map
+  // area starts. A 'top'-docked panel sits right at the top of that already-
+  // separated space, so it needs no margin of its own.
+  if (placement === 'right')  panel.style.marginRight  = edgeInset;
+  if (placement === 'left')   panel.style.marginLeft   = edgeInset;
+  if (placement === 'bottom') panel.style.marginBottom = edgeInset;
 
   if (!isVertical) {
     // 300px, up from 260 (and 220 before that) — at 260 the findings narrative
@@ -2584,6 +2706,8 @@ export function renderWaferSummaryContent(
     activeFindingId?: string | null;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
+    /** See {@link FindingsNotice} — a host row at the top of the Findings section. */
+    findingsNotice?: FindingsNotice;
     onSaveText?: SaveTextHandler;
     /** Label/order hints for die metadata columns, e.g. `WaferMapResult.metadataFields`. */
     metadataFields?: MetadataFieldDef[];
@@ -2592,7 +2716,7 @@ export function renderWaferSummaryContent(
     /**
      * Suppress the "Wafer Info" metadata section because the caller already
      * renders this metadata elsewhere — `renderWaferMap` passes true whenever its
-     * identity header is mounted (`showIdentityHeader`, the default), since that
+     * identity header is mounted (`showIdentity`, the default), since that
      * header's expandable panel is built from the very same
      * `metadataEntries`/`buildCompactMetadataRows` helpers.
      *
@@ -2613,6 +2737,7 @@ export function renderWaferSummaryContent(
     colorScheme, plotMode, fallbackFormat,
     onFindingClick, activeFindingId = null,
     findingsFilter, onFindingsFilterChange,
+    findingsNotice,
     onSaveText, metadataFields, dieListOptions, metadataShownElsewhere,
   } = params;
 
@@ -2664,7 +2789,7 @@ export function renderWaferSummaryContent(
   // test tables — the panel's most important content behind its densest.
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
     sections.push(buildFindingsSectionWithFilter(
-      statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel,
+      statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice,
     ));
   }
 
@@ -2718,6 +2843,8 @@ export function renderLotSummaryContent(
     onWaferClick?:    (waferIndex: number) => void;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
+    /** See {@link FindingsNotice} — a host row at the top of the Findings section. */
+    findingsNotice?: FindingsNotice;
     onSaveText?: SaveTextHandler;
     /** See the wafer panel's `warnings` — collected by the renderer so every surface agrees. */
     warnings?: WaferWarning[];
@@ -2739,6 +2866,7 @@ export function renderLotSummaryContent(
     onFindingClick, activeFindingId = null,
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
+    findingsNotice,
     onSaveText, dieListOptions, findingsFor,
   } = params;
 
@@ -2834,7 +2962,7 @@ export function renderLotSummaryContent(
   // stats, ahead of the bin/region/test detail.
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {
     sections.push(buildFindingsSectionWithFilter(
-      lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel,
+      lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice,
     ));
   }
 

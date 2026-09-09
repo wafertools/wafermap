@@ -23,7 +23,7 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, saveTextFile, type SaveTextHandler } from '../toolbar.js';
-import { attachChartTip, cardShell, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { attachChartTip, cardShell, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
 
 const MATRIX_LIMIT_MIN = 5;
 const MATRIX_LIMIT_MAX = 100;
@@ -41,13 +41,11 @@ export interface CorrelationPanelOptions {
   colorScheme?: string;
   onSaveImage?: SaveImageHandler;
   /**
-   * When the Analysis tab's "Group by" is active, this panel gets its own
-   * "Group: <value> ▾" restrict-to-one-group dropdown (matching capability's
-   * pattern exactly) — the matrix is always computed for exactly one group's
-   * dies, never pooled across groups. `items` above is ignored when `groups`
-   * is provided. Absent ⇒ today's plain ungrouped behavior.
+   * Grouping is NOT this panel's concern — the Insights tab owns one "Show:"
+   * scope for every view and hands each panel the population it names. This
+   * previously took a `groups` list and silently restricted to `groups[0]`,
+   * with no way back to the pooled matrix.
    */
-  groups?: { key: string; items: CorrelationItem[] }[];
   /** Clicking a non-diagonal cell calls this — the Analysis tab wires it to drive the scatter panel's X/Y in place. */
   onSelectPair?: (xTestNumber: number, yTestNumber: number) => void;
   /** Document to build this panel's DOM into. Default `document` — pass the
@@ -107,7 +105,7 @@ function blendTowardBg(colour: string, bg: [number, number, number], t: number):
 export function renderCorrelationPanel(options: CorrelationPanelOptions): CorrelationPanelHandle {
   // `colorScheme` is deliberately no longer read — cells use the fixed
   // sign-aware correlation hues (palette.ts); the option stays for API compatibility.
-  const { title = 'Test correlation matrix', items, testDefs, onSaveImage, groups, onSelectPair } = options;
+  const { title = 'Test correlation matrix', items, testDefs, onSaveImage, onSelectPair } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   body.style.overflowX = 'auto';
@@ -117,9 +115,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   card.style.alignSelf = 'start';
 
   let limit = MATRIX_LIMIT_DEFAULT;
-  let activeGroup: string | undefined = groups && groups.length > 0 ? groups[0].key : undefined;
-  // Only meaningful when ungrouped — mutually exclusive with `activeGroup`,
-  // same as histogram's per-item selector. Defaults to pooling every wafer
+  // Defaults to pooling every wafer
   // (matching today's behavior); narrowing to one wafer also resolves the
   // Simpson's-paradox warning below, since a single wafer can't be "mixed".
   let activeWaferIndex: number | null = null;
@@ -142,20 +138,17 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   matrixLimitLabel.appendChild(matrixLimitInput);
   controlsRow.appendChild(matrixLimitLabel);
 
-  if (groups && groups.length > 0) {
-    controlsRow.appendChild(makeLabeledSelect(
-      'Group:',
-      groups.map(g => ({ value: g.key, label: g.key })),
-      activeGroup ?? '',
-      v => { activeGroup = v; rebuild(); },
-      { ownerDocument: card.ownerDocument },
-    ));
-  } else if (items.length > 1) {
+  // No group control of its own. This panel used to carry a
+  // restrict-to-one-group dropdown defaulting to `groups[0]` — so grouping a
+  // six-lot load silently reduced the matrix to one lot, with no "all groups"
+  // option to return to and nothing on the card saying which lot it was. The
+  // Insights tab now owns one "Show:" scope for every view, and a narrowed
+  // population arrives here with `groups` already undefined.
+  if (items.length > 1) {
     controlsRow.appendChild(makeWaferSelect(items, activeWaferIndex, i => { activeWaferIndex = i; rebuild(); }, { ownerDocument: card.ownerDocument }));
   }
 
   function currentItems(): CorrelationItem[] {
-    if (groups && groups.length > 0) return groups.find(g => g.key === activeGroup)?.items ?? [];
     if (activeWaferIndex !== null) return items[activeWaferIndex] ? [items[activeWaferIndex]] : [];
     return items;
   }
@@ -206,7 +199,6 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hintRow, body);
 
-  const dpr = window.devicePixelRatio || 1;
   const tooltip = makeTooltip(card);
   attachChartTip(matrixLimitLabel, card, tooltip, 'Cap on how many tests the matrix includes (strongest correlations kept first)');
 
@@ -327,14 +319,9 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       const totalH = LABEL_H + cs * n + 4;
       const totalW = LABEL_W + plotW;
 
-      canvas.width = Math.max(1, Math.floor(totalW * dpr));
-      canvas.height = Math.max(1, Math.floor(totalH * dpr));
-      canvas.style.width = `${totalW}px`;
-      canvas.style.height = `${totalH}px`;
-
-      const ctx = canvas.getContext('2d')!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, totalW, totalH);
+      const prep = prepareCanvas(canvas, card, totalW, totalH);
+      if (!prep) return;
+      const { ctx } = prep;
 
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.fillStyle = theme.text;
@@ -421,8 +408,8 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       const rect = canvas.getBoundingClientRect();
       const availW = body.clientWidth;
       const cs = cellSize(availW);
-      const ox = (e.clientX - rect.left) * (canvas.width / dpr / rect.width);
-      const oy = (e.clientY - rect.top) * (canvas.height / dpr / rect.height);
+      const ox = (e.clientX - rect.left) * (canvas.width / chartDpr(canvas) / rect.width);
+      const oy = (e.clientY - rect.top) * (canvas.height / chartDpr(canvas) / rect.height);
       const xi = Math.floor((ox - LABEL_W) / cs);
       const yi = Math.floor((oy - LABEL_H) / cs);
       return (xi >= 0 && xi < n && yi >= 0 && yi < n) ? { xi, yi } : null;

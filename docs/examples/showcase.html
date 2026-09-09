@@ -346,9 +346,18 @@
         const lot = mapping.lot ? (rows[0]?.[mapping.lot] ?? undefined) : undefined;
         waferMapResults.push(await worker.run({
           results,
-          waferConfig: { metadata: { wafer: wid, ...(lot ? { lot } : {}) } },
-          dieConfig: { coordinateOrigin },
-          ...(testDefs ? { testDefs } : {}),
+          waferConfig: {
+            ...(activeDemoMeta?.waferConfig ?? {}),
+            metadata: { wafer: wid, ...(lot ? { lot } : {}) },
+          },
+          dieConfig: { ...(activeDemoMeta?.dieConfig ?? {}), coordinateOrigin },
+          // Sidecar definitions win over the ones derived from column headers:
+          // they carry units, spec limits and functional-test types, which the
+          // headers cannot express.
+          ...(activeDemoMeta?.testDefs ? { testDefs: activeDemoMeta.testDefs }
+              : testDefs ? { testDefs } : {}),
+          ...(activeDemoMeta?.hbinDefs ? { hbinDefs: activeDemoMeta.hbinDefs } : {}),
+          ...(activeDemoMeta?.sbinDefs ? { sbinDefs: activeDemoMeta.sbinDefs } : {}),
           passBins,
         }));
         validWaferIds.push(wid);
@@ -415,6 +424,11 @@
         },
         ...(lotSummary ? { lotStatsSummary: lotSummary } : {}),
         ...(lotSummary ? { summaryPanel: { defaultOpen: activeDemoKey != null } } : {}),
+        // The index calls this page "all features in one page", and the Insights
+        // tab is the largest of them — box plots, histograms, correlation,
+        // capability, per-test pass rates over the whole lot. It was the one
+        // feature the page did not show.
+        insights: { enabled: true },
         showHelpButton: true,
       });
       setGalleryCtrl(ctrl);
@@ -431,6 +445,18 @@
     // ── Demo scenario loading ──────────────────────────────────────────────
     let activeDemoKey = null;
     let activeDemoPlotMode = null;
+    /**
+     * Geometry and definitions for the active demo scenario, from its
+     * `.meta.json` sidecar. Null for a user-uploaded file, where the wafer size
+     * and die pitch genuinely are unknown and inference is the right answer.
+     *
+     * For the demos they are known exactly — the generator produces the data
+     * from real physical dimensions — so passing them back is the difference
+     * between a 200 mm wafer with 5 mm dies and an inferred dimensionless one.
+     * The sidecar also carries bin names and spec limits, which a flat die CSV
+     * has nowhere to put.
+     */
+    let activeDemoMeta = null;
 
     async function loadDemo(key) {
       const scenario = DEMO_SCENARIOS[key];
@@ -451,6 +477,11 @@
       // Load and render
       const resp = await fetch(scenario.file);
       const text = await resp.text();
+      // Sidecar is optional: a missing or malformed one degrades to inference
+      // rather than breaking the scenario.
+      activeDemoMeta = await fetch(scenario.file.replace(/\.csv$/, '.meta.json'))
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null);
       setDemoMapping({ ...DEMO_MAPPING });
       document.getElementById('pass-bin-input').value = scenario.passBins.join(',');
       loadDemoCsv(text, scenario.file.split('/').pop());
@@ -465,6 +496,7 @@
           // Deactivate demo pills, show upload section
           activeDemoKey = null;
           activeDemoPlotMode = null;
+          activeDemoMeta = null;
           clearDemoMapping();
           for (const p of document.querySelectorAll('.scenario-pill')) {
             p.classList.toggle('active', p.dataset.demo === 'own');
@@ -481,8 +513,17 @@
     // ── Feature tour ───────────────────────────────────────────────────────
     const TOUR_STORAGE_KEY = 'showcaseTourSeen';
 
+    // localStorage, not sessionStorage: a tour you have already dismissed
+    // reappearing in every new tab is the thing that makes it tedious. Wrapped
+    // because a browser with site data blocked throws on access, and a demo page
+    // must not die for want of a preference.
+    const tourSeen = {
+      get()  { try { return !!localStorage.getItem(TOUR_STORAGE_KEY); } catch { return false; } },
+      set()  { try { localStorage.setItem(TOUR_STORAGE_KEY, '1'); } catch { /* not fatal */ } },
+    };
+
     function maybeShowTour() {
-      if (sessionStorage.getItem(TOUR_STORAGE_KEY)) return;
+      if (tourSeen.get()) return;
       // Defer slightly so the gallery has fully painted
       requestAnimationFrame(() => requestAnimationFrame(showTour));
     }
@@ -527,11 +568,20 @@
       }
       window.addEventListener('resize', onResize);
 
+      function onKeyDown(e) {
+        if (e.key === 'Escape') { e.preventDefault(); dismiss(); }
+      }
+      // Escape closes it, as it does every other dismissible overlay. Without
+      // this the only ways out were the Skip button and a click on the backdrop,
+      // neither of which is where a keyboard user looks first.
+      document.addEventListener('keydown', onKeyDown);
+
       function dismiss() {
-        sessionStorage.setItem(TOUR_STORAGE_KEY, '1');
+        tourSeen.set();
         overlay.style.display = 'none';
         tourCont.style.display = 'none';
         window.removeEventListener('resize', onResize);
+        document.removeEventListener('keydown', onKeyDown);
       }
 
       function renderStep() {
@@ -579,7 +629,7 @@
 
         const skipBtn = document.createElement('button');
         skipBtn.className = 'tour-skip';
-        skipBtn.textContent = 'Skip';
+        skipBtn.textContent = 'Skip (Esc)';
         skipBtn.addEventListener('click', dismiss);
 
         const nextBtn = document.createElement('button');

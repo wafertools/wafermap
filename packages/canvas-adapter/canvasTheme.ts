@@ -29,6 +29,10 @@ export interface CanvasTheme {
   axisLine: string;
   /** Active-selection highlight (legend row, active bin). */
   accent: string;
+  /** Row background under the pointer. Distinct from `accent`, which marks the
+   *  SELECTED row — hover and selected must stay tellable apart (UI_STANDARDS).
+   */
+  hoverRow: string;
 }
 
 /** Light defaults — the values these colours had before theming. Used as the
@@ -40,6 +44,7 @@ const LIGHT: CanvasTheme = {
   textMuted:  '#999',
   axisLine:   '#bbb',
   accent:     '#1a66cc',
+  hoverRow:   '#edf0f8',
 };
 
 /**
@@ -70,5 +75,6 @@ export function resolveCanvasTheme(el: HTMLElement | null): CanvasTheme {
     textMuted:  read('text-muted', LIGHT.textMuted),
     axisLine:   read('border',     LIGHT.axisLine),
     accent:     read('icon-active', LIGHT.accent),
+    hoverRow:   read('bg-hover',    LIGHT.hoverRow),
   };
 }

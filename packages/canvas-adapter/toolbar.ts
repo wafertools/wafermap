@@ -262,6 +262,54 @@ export const ALPHA = {
 /** Uppercase micro-label tracking — one value, not four. */
 export const TRACKING = '0.05em';
 
+/**
+ * Horizontal gutter between a scrolling surface's cards and the edge of the
+ * window (or host container) they scroll inside.
+ *
+ * A card is a bounded surface: flush to the viewport you see three borders and
+ * the screen edge standing in for the fourth, which reads as clipped rather
+ * than as a design choice. This is the gap that stops that.
+ *
+ * Why 12 (`SPACE.xl`): three different insets were in use when this was added —
+ * the Insights bands at 10, the gallery bar at 4, and tsmap's own `#toolbar` at
+ * 12 — so there was no incumbent value to inherit. 12 is on the `SPACE` scale,
+ * sits at the tight end of the 12-24px page-margin range the major design
+ * systems use (Material/HIG 16, Bootstrap 12), which is the right end for a
+ * dense analysis tool, and is the only candidate with an anchor outside this
+ * library: it matches the host toolbar directly above the map, so cards line up
+ * with the toolbar's own content rather than missing it by a couple of pixels.
+ *
+ * Deliberately NOT applied to the wafer map canvas, which stays full-bleed —
+ * map area is the priority and a margin would only shrink it. Same exception
+ * UI_STANDARDS.md already names for content that wants to fill its box.
+ */
+export const EDGE_GUTTER = SPACE.xl;
+
+/**
+ * Inset for a wafer map's OWN chrome — its chrome row (identity + toolbar) and
+ * a Summary panel docked inside the map area — from the edge of that map area.
+ *
+ * Deliberately small, and deliberately NOT `EDGE_GUTTER`. That one is the gap
+ * between a bounded surface and the edge of the REGION it lives in. A map
+ * embedded in a gallery card is already inside such a region: the card supplies
+ * the outer inset, and a second 12px within it stacks two gutters — the thing
+ * UI_STANDARDS.md's gutter rule forbids. It reads exactly like what it is, a
+ * toolbar standing 12px off the side of a card.
+ *
+ * A STANDALONE map is the other case: there the map area IS the region, so its
+ * chrome takes `EDGE_GUTTER` like any other bounded surface against an edge.
+ * `RenderOptions.chromeInset` is how the caller says which it is —
+ * `renderWaferGallery` passes this value for its cards, everything else takes
+ * the `EDGE_GUTTER` default.
+ *
+ * This constant was deleted once, when the toolbar moved out of the map box and
+ * the Summary panel was briefly its only user. That was wrong: the chrome row
+ * inherited the same context problem the moment it started carrying the
+ * toolbar, and giving every map `EDGE_GUTTER` put the two-gutter bug straight
+ * back into gallery cards.
+ */
+export const MAP_CHROME_INSET = SPACE.xs;
+
 export const RADIUS = {
   /** Buttons, inputs, menu rows, segmented toggles, swatches. */
   control: '4px',
@@ -293,7 +341,13 @@ export const FONT = {
   stat:    `calc(${FONT_BASE} + 8px)`,
 };
 
-/** The resolved numeric size for canvas `ctx.font`, in px. `delta` matches FONT's tiers. */
+/**
+ * The resolved numeric size for canvas `ctx.font`, in px. `delta` matches FONT's
+ * tiers for 0 and above (`body`, `sub`, `heading`, `stat`) and `-1` for `meta`.
+ * `-2` has no DOM tier by design: it is the map canvas's plot-coupled floor
+ * (colorbar tick labels, axis ticks — see toCanvas.ts), which annotates dense
+ * data rather than chrome and so sits below the 11px DOM minimum.
+ */
 export function fontPx(delta = 0, el?: Element | null): number {
   const doc = el?.ownerDocument ?? (typeof document !== 'undefined' ? document : null);
   if (!doc) return 12 + delta;
@@ -324,6 +378,12 @@ export const CLR = {
   controlBorder: t('control-border', 'rgba(0,0,0,0.30)'),
   menuHover:   t('menu-hover',   '#f0f4fc'),
   menuActive:  t('menu-active',  '#dce8f8'),
+  // The map area's own background — the same chain `resolveChartCanvasColors`
+  // reads for the canvas fill (`canvas-bg`, then `surface`), so DOM chrome laid
+  // over or beside the map can match what the canvas paints instead of
+  // inheriting whatever surface it happens to sit on. Used by the chrome row,
+  // which otherwise showed as a pale band above a differently-shaded canvas.
+  canvasBg:    `var(--wmap-canvas-bg, ${t('surface', '#f5f5f5')})`,
   // Summary-panel surfaces + text.
   panelBg:     t('panel-bg',     '#fafbfc'),
   // #647687 (not #66788a) — the smallest darkening that clears WCAG AA
@@ -691,13 +751,29 @@ export function nextFrame(fn: () => void, ownerWindow: Window = window): void {
  * Focus moves to the first item on open. Returns nothing; the listener lives on
  * the menu element and dies with it.
  */
-function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close: () => void): void {
-  const items = (): HTMLElement[] => Array.from(menu.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR));
-
-  menu.addEventListener('keydown', (e: KeyboardEvent) => {
+/**
+ * Roving keyboard focus over a live list of options — Arrow/Home/End to move,
+ * Enter/Space to activate, Escape/Tab to dismiss.
+ *
+ * Deliberately does NOT move focus itself: that is the one thing the two
+ * callers genuinely disagree about. A toolbar menu wants its first item focused
+ * on open; the searchable list in `chartShell.ts` must leave focus on its
+ * search box, and had its own copy of this whole switch for that single
+ * difference — thirty duplicated lines guarding one line of divergence.
+ *
+ * `items()` is called per keystroke, not captured: the searchable list filters
+ * its rows as you type, and a snapshot would navigate rows that are no longer
+ * shown.
+ */
+export function wireListNavigation(
+  container: HTMLElement,
+  items: () => HTMLElement[],
+  dismiss: () => void,
+): void {
+  container.addEventListener('keydown', (e: KeyboardEvent) => {
     const list = items();
     if (list.length === 0) return;
-    const current = menu.ownerDocument.activeElement as HTMLElement | null;
+    const current = container.ownerDocument.activeElement as HTMLElement | null;
     const idx = current ? list.indexOf(current) : -1;
 
     switch (e.key) {
@@ -724,12 +800,17 @@ function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close:
       case 'Escape':
       case 'Tab':
         e.preventDefault();
-        close();
-        trigger?.focus();
+        dismiss();
         break;
     }
   });
+}
 
+function wireMenuKeyboard(menu: HTMLElement, trigger: HTMLElement | null, close: () => void): void {
+  const items = (): HTMLElement[] => Array.from(menu.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR));
+  wireListNavigation(menu, items, () => { close(); trigger?.focus(); });
+
+  // The part a searchable list must NOT do — see `wireListNavigation`.
   // Move focus into the menu so arrow keys work immediately on open.
   const first = items()[0];
   if (first) nextFrame(() => first.focus());
@@ -1100,8 +1181,14 @@ export function buildDataModeEntries(
   const hasHbin = dies.some(d => d.hbin != null);
   const hasSbin = dies.some(d => d.sbin != null);
 
+  // `testDefs === undefined` means nobody described any tests, and discovering
+  // bare numbers from the dies is the right fallback. An empty ARRAY is a
+  // different statement — the caller reconciled and kept nothing (the files
+  // disagree about every test number) — and falling back there would offer
+  // exactly the tests that were withheld, under bare "Test N" labels, pooling
+  // measurements the reconciliation had just ruled incomparable.
   const testEntries: ModeEntry[] = hasTestData
-    ? (testDefs?.length
+    ? (testDefs !== undefined
         ? testDefs.map(t => ({
             plotMode: 'value' as PlotMode,
             activeTest: t.testNumber,
@@ -1865,6 +1952,17 @@ export interface OverlayOptions {
   title?: string;
   mode: OverlayMode;
   /**
+   * Override the box's natural (non-maximized) size. Defaults to a 700px
+   * square, which suits a circular wafer map — the content this overlay was
+   * built for — but is actively wrong for wide content: the Insights suite
+   * lays out ~1330px wide in a normal page, so a 700px square modal makes
+   * "expand" produce something SMALLER than the view it expanded from.
+   *
+   * Also the restore target for maximize and minimize, so an overridden size
+   * survives both round trips.
+   */
+  boxSize?: { width: string; height: string };
+  /**
    * Called when the maximized state changes — use to reparent tooltips etc. Uses
    * a CSS maximize (the box grows to fill its backdrop/the viewport), not the
    * real Fullscreen API, for macOS WKWebView compatibility.
@@ -2010,6 +2108,13 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   if (isModal) box.setAttribute('aria-modal', 'true');
   box.setAttribute('aria-label', opts.title ?? 'Expanded wafer map');
   box.tabIndex = -1;
+  // The natural size, in ONE place. It used to be written as a
+  // `min(90vw, 700px)` literal three times — the base style here, the
+  // un-maximize restore, and the un-minimize fallback — so a box opened at any
+  // other size silently snapped back to 700px square the first time it was
+  // maximized or minimized and restored.
+  const naturalWidth  = opts.boxSize?.width  ?? 'min(90vw, 700px)';
+  const naturalHeight = opts.boxSize?.height ?? 'min(90vh, 700px)';
   Object.assign(box.style, {
     // Baseline positioning context for the resize grip's `position: absolute`
     // (window mode overrides this to `fixed` below; modal mode keeps `relative`).
@@ -2019,8 +2124,8 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     overflow:      'hidden',
     display:       'flex',
     flexDirection: 'column',
-    width:         'min(90vw, 700px)',
-    height:        'min(90vh, 700px)',
+    width:         naturalWidth,
+    height:        naturalHeight,
     boxShadow:     SHADOW.modal,
     // No native CSS `resize` — its drag grip is a browser/engine-drawn
     // affordance with a small, precise hit-region that isn't reliable
@@ -2107,6 +2212,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     // re-reads at hover time, so no re-wiring is needed on state change.
     wireTooltip(minimizeBtn);
     Object.assign(minimizeBtn.style, btnStyle);
+    wireControlHover(minimizeBtn);
     minimizeBtn.addEventListener('click', () => setMinimized(!minimized));
     header.appendChild(minimizeBtn);
   }
@@ -2119,6 +2225,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     printBtn.setAttribute('aria-label', 'Print / Save as PDF');
     wireTooltip(printBtn);
     Object.assign(printBtn.style, btnStyle);
+    wireControlHover(printBtn);
     // win, not doc.defaultView again — same window the overlay itself was
     // resolved against (doc.ownerDocument's view), correct even when this
     // overlay lives in a detached popup rather than the host page.
@@ -2139,6 +2246,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   maximizeBtn.setAttribute('aria-label', 'Maximize (F)');
   wireTooltip(maximizeBtn);
   Object.assign(maximizeBtn.style, btnStyle);
+  wireControlHover(maximizeBtn);
   maximizeBtn.addEventListener('click', () => setMaximized(!maximized));
 
   const closeBtn = doc.createElement('button');
@@ -2147,6 +2255,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   closeBtn.setAttribute('aria-label', 'Close (Esc)');
   wireTooltip(closeBtn);
   Object.assign(closeBtn.style, btnStyle);
+  wireControlHover(closeBtn);
   closeBtn.addEventListener('click', close);
 
   header.appendChild(maximizeBtn);
@@ -2179,8 +2288,8 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
       }
     } else {
       box.style.borderRadius = '12px';
-      box.style.width = 'min(90vw, 700px)';
-      box.style.height = 'min(90vh, 700px)';
+      box.style.width = naturalWidth;
+      box.style.height = naturalHeight;
       if (!isModal) {
         box.style.top = preMaximizeTop;
         box.style.left = preMaximizeLeft;
@@ -2226,9 +2335,9 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
       contentWrap.style.display = 'none';
     } else {
       box.style.minHeight = '240px';
-      box.style.height = preMinimizeHeight || 'min(90vh, 700px)';
+      box.style.height = preMinimizeHeight || naturalHeight;
       box.style.minWidth = '320px';
-      box.style.width = preMinimizeWidth || 'min(90vw, 700px)';
+      box.style.width = preMinimizeWidth || naturalWidth;
       maximizeBtn.disabled = false;
       maximizeBtn.style.opacity = '1';
       maximizeBtn.style.cursor = 'pointer';
@@ -2565,6 +2674,8 @@ const reparentedByModal = new WeakSet<HTMLElement>();
 export interface ReparentModalOptions {
   ownerDocument?: Document;
   title?: string;
+  /** Natural box size — see `OverlayOptions.boxSize`. */
+  boxSize?: { width: string; height: string };
   /** Called after the modal has closed and every element has been restored to its original position (or appended back, if its original spot is no longer available — see the stale-reference note above). Runs once, even if nothing was actually moved (the re-entrancy guard tripped). */
   onClosed?: () => void;
 }
@@ -2585,6 +2696,7 @@ export function openReparentedModal(elements: HTMLElement[], opts: ReparentModal
   const handle = openModal({
     ownerDocument: opts.ownerDocument,
     title: opts.title,
+    boxSize: opts.boxSize,
     // elements[0]'s CURRENT position (before the reparent loop below moves it)
     // — resolves the modal's own root from wherever the caller's live content
     // actually sits right now, e.g. inside a host's own <dialog>.
@@ -2697,6 +2809,64 @@ export function requestedPassFailDisplay(
  * test returns no entries at all — its value mode IS test pass/fail, there is
  * no alternative display to choose.
  */
+/** The overlay flags an overlays menu offers, however the host stores them. */
+export interface OverlayFlags {
+  showRingBoundaries?: boolean;
+  showQuadrantBoundaries?: boolean;
+  showDieLabels?: boolean;
+  showReticle?: boolean;
+  showXYIndicator?: boolean;
+  passFailDisplay?: 'off' | 'spec' | 'test';
+}
+
+/**
+ * The Overlays menu's rows — the five geometry toggles plus whatever
+ * `passFailMenuRows` offers for the active test.
+ *
+ * Built identically by `renderWaferMap` and `renderWaferGallery`, which is the
+ * problem it solves: the two lists were the same five labels in the same order
+ * with the same option keys, differing only in where the flags live
+ * (`viewOpts` vs `sharedOpts`) and how a change is applied (`applyOpts` vs
+ * `updateShared`). Adding a sixth overlay meant remembering both, and the map
+ * and the gallery quietly offering different menus is the failure that follows
+ * from forgetting.
+ *
+ * `reticleEnabled` stays a caller input: a single map knows whether ITS wafer
+ * has a reticle, and the gallery whether ANY item does — genuinely different
+ * questions with the same answer type.
+ */
+export function overlayMenuRows(
+  flags: OverlayFlags,
+  reticleEnabled: boolean,
+  passFail: { functionalActive: boolean; hasLimits: boolean; hasRecorded: boolean },
+  apply: (patch: OverlayFlags) => void,
+): CheckMenuRow[] {
+  return [
+    { label: 'Ring boundaries', active: !!flags.showRingBoundaries,
+      onClick: () => apply({ showRingBoundaries: !flags.showRingBoundaries }) },
+    { label: 'Quadrant lines', active: !!flags.showQuadrantBoundaries,
+      onClick: () => apply({ showQuadrantBoundaries: !flags.showQuadrantBoundaries }) },
+    { label: 'Die labels', active: !!flags.showDieLabels,
+      onClick: () => apply({ showDieLabels: !flags.showDieLabels }) },
+    { label: 'Reticle grid', active: !!flags.showReticle, enabled: reticleEnabled,
+      onClick: () => apply({ showReticle: !flags.showReticle }) },
+    { label: 'XY indicator', active: !!flags.showXYIndicator,
+      onClick: () => apply({ showXYIndicator: !flags.showXYIndicator }) },
+    ...passFailMenuRows(
+      { ...passFail, display: requestedPassFailDisplay(flags) },
+      d => apply({ passFailDisplay: d }),
+    ),
+  ];
+}
+
+/** Whether any overlay is on — the Overlays button's "active" state. Shared for
+ *  the same reason as the rows: it enumerates the same five flags. */
+export function anyOverlayActive(flags: OverlayFlags): boolean {
+  return !!(flags.showRingBoundaries || flags.showQuadrantBoundaries || flags.showDieLabels
+    || flags.showReticle || flags.showXYIndicator
+    || requestedPassFailDisplay(flags) !== 'off');
+}
+
 export function passFailMenuRows(
   state: { functionalActive: boolean; hasLimits: boolean; hasRecorded: boolean; display: 'off' | 'spec' | 'test' },
   setDisplay: (d: 'off' | 'spec' | 'test') => void,
@@ -2972,7 +3142,7 @@ function buildGuideSearch(doc: Document, content: HTMLElement): HTMLElement {
   input.type = 'text';
   input.placeholder = 'Search guide…';
   input.setAttribute('aria-label', 'Search guide');
-  input.style.cssText = `flex:1;min-width:0;padding:4px 8px;font-size:12px;background:${CLR.menuBg};color:${CLR.text};border:1px solid ${CLR.menuBorder};border-radius:4px;outline:none;`;
+  input.style.cssText = `flex:1;min-width:0;padding:4px 8px;font-size:12px;background:${CLR.menuBg};color:${CLR.text};border:1px solid ${CLR.menuBorder};border-radius:${RADIUS.control};outline:none;`;
   // Native outline suppressed above and replaced with a border-colour swap —
   // the same convention makeMenuSearchBox uses, kept here for one consistent
   // "this text input is focused" look across the library.
@@ -2990,7 +3160,7 @@ function buildGuideSearch(doc: Document, content: HTMLElement): HTMLElement {
     btn.textContent = glyph;
     btn.setAttribute('aria-label', ariaLabel);
     btn.disabled = true;
-    btn.style.cssText = `border:none;background:none;cursor:pointer;padding:3px 5px;border-radius:3px;font-size:12px;color:${CLR.label};flex-shrink:0;opacity:0.4;`;
+    btn.style.cssText = `border:none;background:none;cursor:pointer;padding:4px 6px;border-radius:${RADIUS.control};font-size:12px;color:${CLR.label};flex-shrink:0;opacity:0.4;`;
     btn.addEventListener('mouseenter', () => { if (!btn.disabled) btn.style.background = CLR.bgHover; });
     btn.addEventListener('mouseleave', () => { btn.style.background = 'none'; });
     return btn;
@@ -3108,7 +3278,7 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
   wrap.style.cssText = `position:sticky;top:0;z-index:2;background:${CLR.menuBg};border-bottom:1px solid ${CLR.menuBorder};font-family:system-ui,-apple-system,"Segoe UI",sans-serif;`;
 
   const bar = doc.createElement('div');
-  bar.style.cssText = `display:flex;align-items:center;gap:4px;height:${GUIDE_TOC_BAR_HEIGHT}px;padding:0 14px;box-sizing:border-box;`;
+  bar.style.cssText = `display:flex;align-items:center;gap:4px;height:${GUIDE_TOC_BAR_HEIGHT}px;padding:0 12px;box-sizing:border-box;`;
 
   const chevron = doc.createElement('span');
   chevron.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
@@ -3119,7 +3289,7 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
   const panelId = 'wmap-guide-toc-panel';
   toggleBtn.setAttribute('aria-expanded', 'false');
   toggleBtn.setAttribute('aria-controls', panelId);
-  toggleBtn.style.cssText = `display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer;padding:6px 8px;margin:0 -8px 0 -8px;border-radius:4px;font-size:13px;font-weight:600;color:${CLR.text};`;
+  toggleBtn.style.cssText = `display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer;padding:6px 8px;margin:0 -8px 0 -8px;border-radius:${RADIUS.control};font-size:13px;font-weight:600;color:${CLR.text};`;
   const label = doc.createElement('span');
   label.textContent = `Contents (${headings.length})`;
   toggleBtn.append(chevron, label);
@@ -3129,7 +3299,7 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
   const topBtn = doc.createElement('button');
   topBtn.type = 'button';
   topBtn.textContent = '↑ Top';
-  topBtn.style.cssText = `margin-left:auto;border:none;background:none;cursor:pointer;padding:6px 8px;border-radius:4px;font-size:12px;color:${CLR.label};`;
+  topBtn.style.cssText = `margin-left:auto;border:none;background:none;cursor:pointer;padding:6px 8px;border-radius:${RADIUS.control};font-size:12px;color:${CLR.label};`;
   topBtn.addEventListener('mouseenter', () => { topBtn.style.background = CLR.bgHover; });
   topBtn.addEventListener('mouseleave', () => { topBtn.style.background = 'none'; });
   topBtn.addEventListener('click', () => {
@@ -3143,7 +3313,7 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
   const panel = doc.createElement('div');
   panel.id = panelId;
   panel.hidden = true;
-  panel.style.cssText = 'padding:2px 14px 14px;max-height:min(60vh,440px);overflow-y:auto;';
+  panel.style.cssText = 'padding:2px 12px 12px;max-height:min(60vh,440px);overflow-y:auto;';
 
   // A host's own guide and wmap's own each number their h2/h3/h4 headings
   // from 1 in their own source markdown — correct when either is read as its
@@ -3173,7 +3343,7 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
   // top-to-bottom within each column before starting the next one, so
   // adjacent entries read top-down like an ordinary printed TOC — a
   // left-to-right grid reads adjacent entries as unrelated instead.
-  list.style.cssText = 'list-style:none;margin:0;padding:0;columns:200px;column-gap:20px;';
+  list.style.cssText = 'list-style:none;margin:0;padding:0;columns:200px;column-gap:24px;';
   for (const h of headings) {
     const li = doc.createElement('li');
     li.style.cssText = 'break-inside:avoid;';
@@ -3182,7 +3352,7 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
     // No number stripping needed here any more — the heading itself was
     // already stripped above, so its text is clean.
     a.textContent = h.textContent ?? '';
-    a.style.cssText = `display:block;padding:4px 6px;margin:0 -6px;border-radius:3px;font-size:12.5px;color:${CLR.iconActive};text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
+    a.style.cssText = `display:block;padding:4px 6px;margin:0 -6px;border-radius:${RADIUS.control};font-size:12.5px;color:${CLR.iconActive};text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
     a.addEventListener('mouseenter', () => { a.style.background = CLR.bgHover; });
     a.addEventListener('mouseleave', () => { a.style.background = 'none'; });
     a.addEventListener('click', (e) => {

@@ -326,6 +326,31 @@
 </div>
 
 <div class="feature-section">
+  <h2>What the timings don't show</h2>
+  <p>
+    Both libraries above draw a wafer in single-digit milliseconds, and if drawing were the
+    whole job the choice would come down to taste. It isn't. The panel below is the same
+    wafer, the same data — with one extra call, <code>analyzeWaferMap</code>.
+  </p>
+  <p>
+    wafermap has now compared every ring, quadrant, sector and reticle position against the
+    rest of the wafer, corrected for multiple comparisons, and kept only the differences that
+    are both statistically significant and large enough to act on. Click a finding to
+    highlight the dies it covers. Open the <strong>Insights</strong> tab for the
+    distributions, correlations and per-test pass rates behind it.
+  </p>
+  <p class="note">
+    Plotly can render this scatter. It has no concept of a ring, a reticle field, a bin, a
+    spec limit or a yield — so none of what follows is something you would configure
+    differently. It is something you would write yourself.
+  </p>
+  <div class="render-area" style="height:520px;margin:16px 0 8px">
+    <div id="analysis-container" style="width:100%;height:100%;"></div>
+  </div>
+  <p class="note" id="analysis-caption">Building analysis…</p>
+</div>
+
+<div class="feature-section">
   <h2>Feature comparison</h2>
   <p>What each library handles natively vs what requires manual implementation.</p>
   <table class="feature-table">
@@ -478,6 +503,7 @@
 <script type="module">
   import { buildWaferMap }  from 'wafermap';
   import { renderWaferMap } from 'wafermap/render';
+  import { analyzeWaferMap } from 'wafermap/stats';
 
   // ── State ──────────────────────────────────────────────────────────────────
   let scenario = 'bins';
@@ -536,22 +562,29 @@
     el.innerHTML = '';
 
     // Real wafer geometry — a 300 mm wafer with a bottom notch, drawn to scale.
-    // Both the diameter AND the die pitch are supplied: with a diameter alone the
-    // library has to infer the pitch as diameter ÷ grid span and raises an
-    // `inferred-pitch` advisory, since that guess breaks whenever edge dies are
-    // absent. The two scenarios are different devices, so each names its own die
-    // size — both work out to a full 300 mm wafer.
     // Plotly has no concept of any of this; it just plots x/y as a scatter.
+    //
+    // DIAMETER ONLY, deliberately — no `dieConfig`. Neither of these public
+    // datasets ships a die size, so anything written here would be a guess, and
+    // a guess is worse than the inference: the library derives the pitch per
+    // AXIS and shrinks it until every probed die fits inside the wafer, which a
+    // hand-typed square pitch cannot do. Hardcoding one here previously squashed
+    // the WM-811K map to a 1.10 aspect (its grid is 58 × 53, not square) and, on
+    // the CSV demo, pushed dies outside the wafer for a `geometry-conflict`
+    // error — both silently, since supplying a pitch suppresses the advisory
+    // that would have said so.
+    //
+    // This raises no advisory as of 0.27.0: the pitch is derived to fit the
+    // supplied diameter, so it is self-consistent and there is nothing to check
+    // it against. Deriving the pitch from a diameter is a documented, supported
+    // input. See geometry.html card C.
     const waferConfig = { diameter: 300, notch: { type: 'bottom' } };
-    // values: 29 × 29 die grid → 9.5 mm square die. bins (WM-811K): denser grid → 5 mm square die.
-    const dieConfig = isValues ? { width: 9.5, height: 9.5 } : { width: 5, height: 5 };
 
     const buildOpts = isValues
       ? {
           results,
           passBins: [1],
           waferConfig,
-          dieConfig,
           testDefs: [
             // Spec limits on testA enable out-of-spec (▽/△ marker) flagging and
             // LSL/USL markers on the colorbar — neither exists in Plotly.
@@ -564,7 +597,6 @@
           results,
           passBins: [1],
           waferConfig,
-          dieConfig,
           // WM-811K bin scheme: 1 = pass, 2 = fail.
           hbinDefs: [
             { bin: 1, name: 'Pass', color: '#22c55e' },
@@ -797,6 +829,55 @@
   });
 
   document.getElementById('run-btn').addEventListener('click', run);
+
+  // ── The analysis panel below the benchmark ─────────────────────────────────
+  // Deliberately NOT part of the timed comparison. The benchmark measures build
+  // and render against Plotly doing the same job; folding an analysis pass into
+  // that side would be measuring two different jobs and calling it a race.
+  // This renders once, after, on the same data.
+  (async () => {
+    const caption = document.getElementById('analysis-caption');
+    try {
+      const results = await loadBins();
+      const result  = buildWaferMap({
+        results,
+        passBins: [1],
+        // Diameter only, matching the benchmark panel above — see the note on
+        // `waferConfig` there. A hardcoded 10×10 pitch was wrong here: WM-811K's
+        // grid is 58×53, so forcing a square pitch squashes the aspect, and at
+        // 10 mm the dies span far more than a 300 mm wafer, which pushes them
+        // outside the boundary and raises `geometry-conflict`.
+        waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+        // WM-811K bin scheme, matching the benchmark panel above: 1 pass, 2 fail.
+        hbinDefs: [
+          { bin: 1, name: 'Pass', color: '#22c55e' },
+          { bin: 2, name: 'Fail', color: '#ef4444' },
+        ],
+      });
+      const t0 = performance.now();
+      const summary = analyzeWaferMap(result, { ringCount: 4 });
+      const analysisMs = performance.now() - t0;
+
+      renderWaferMap(document.getElementById('analysis-container'), result, {
+        statsSummary: summary,
+        summaryPanel: { placement: 'right', defaultOpen: true },
+        insights:     { enabled: true },
+        viewOptions:  { plotMode: 'hardBin', showRingBoundaries: true },
+        showHelpButton: true,
+      });
+
+      const notable = summary.findings.filter(f => f.severity !== 'info').length;
+      // State the measured cost and let the reader compare it with the render
+      // timings above, which are on this same page. Do not characterise it —
+      // the ratio depends on wafer size and the machine.
+      caption.textContent =
+        `${summary.findings.length} findings (${notable} notable or unusual) from `
+        + `${result.dies.length.toLocaleString()} dies. The analysis pass took `
+        + `${analysisMs.toFixed(1)} ms — compare that with the build and render timings above.`;
+    } catch (err) {
+      caption.textContent = `Could not build the analysis panel: ${err.message}`;
+    }
+  })();
 </script>
 </body>
 </html>

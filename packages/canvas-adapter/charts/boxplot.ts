@@ -23,7 +23,7 @@ import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeTestSelect, makeToggle, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
 
 const BOX_ROW_HEIGHT = 24;
 const BOX_ROW_GAP = 5;
@@ -55,9 +55,15 @@ export interface BoxplotPanelOptions {
   axisPrefs?: AxisPrefs;
   /** Fired when the user changes an axis toggle here, so siblings can follow. */
   onAxisPrefsChange?: (prefs: AxisPrefs) => void;
+  /** Fired when the USER picks a test here, so siblings can follow. */
+  onTestChange?: (testNumber: number) => void;
   /** Human label of the active facet (e.g. "Split"), used in the overview
    *  hint text ("click a <label>'s box to see it by wafer"). */
   groupLabelText?: string;
+  /** Fired when the user narrows to one group here — by clicking a group's box
+   *  to drill in, or Back to leave. The Insights tab owns the scope; this panel
+   *  only reports the gesture. */
+  onGroupChange?: (key: string | null) => void;
   /** Clicking a leaf row (a real per-item row — ungrouped, or drilled into
    *  a group) calls this with that item's `waferIndex` and the boxplot's
    *  currently selected `testNumber`, so the opened wafer can land on the
@@ -117,9 +123,13 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   // `undefined` = derive from the data on each rebuild (see
   // shouldIncludeLimitsByDefault); a boolean means the user has chosen, and their
   // choice sticks across test changes.
-  let axisIncludesLimits: boolean | undefined = options.axisPrefs?.includeLimits;
-  let clipOutliers = options.axisPrefs?.clipOutliers ?? false;
   let lastClippedCount = 0;
+  // The section's shared group scope, mirrored here (see `makeLinkedGroupSelect`).
+  // `null` is the pooled one-row-per-group overview this panel has always
+  // opened on; a key is that group drilled to its own wafers — the state the
+  // click-to-drill affordance already produced. The only change is that the
+  // state is now shared: it used to be private, so drilling here told capability
+  // and the histogram nothing and they carried on showing other populations.
   let drillGroup: string | null = null;
   let backBtn: HTMLElement | null = null;
 
@@ -147,7 +157,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   // after every drill open/close (never a card rebuild).
   function syncDrillChrome(): void {
     if (drillGroup !== null && !backBtn) {
-      backBtn = makeBackButton(() => { drillGroup = null; syncDrillChrome(); rebuildBody(); }, card.ownerDocument);
+      backBtn = makeBackButton(() => { setDrill(null); options.onGroupChange?.(null); }, card.ownerDocument);
       controlsRow.appendChild(backBtn);
     } else if (drillGroup === null && backBtn) {
       backBtn.remove();
@@ -156,7 +166,25 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     heading.textContent = drillGroup !== null ? `${title} — ${groupLabelText}: ${drillGroup}` : title;
   }
 
-  const select = makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuildBody(); }, { maxWidth: '240px', emptyText: 'No parametric tests', ownerDocument: card.ownerDocument });
+  /** Apply a group scope locally — chrome, select and body. Never broadcasts;
+   *  callers that represent a USER action fire `onGroupChange` themselves. */
+  function setDrill(key: string | null): boolean {
+    if (drillGroup === key) return false;
+    if (key !== null && !(groups ?? []).some(g => g.key === key)) return false;
+    drillGroup = key;
+    syncDrillChrome();
+    syncHint();
+    rebuildBody();
+    return true;
+  }
+
+
+  const testSel = makeLinkedTestSelect(testOptions, activeTest, n => {
+    activeTest = n;
+    rebuildBody();
+    options.onTestChange?.(n);
+  }, { maxWidth: '240px', emptyText: 'No parametric tests', ownerDocument: card.ownerDocument });
+  const select = testSel.el;
   controlsRow.appendChild(select);
 
   controlsRow.appendChild(makeToggle('Log scale', logScale, v => { logScale = v; rebuildBody(); }, card.ownerDocument));
@@ -166,22 +194,13 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   const axisTogglesRow = card.ownerDocument.createElement('span');
   Object.assign(axisTogglesRow.style, { display: 'inline-flex', gap: SPACE.lg, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
   controlsRow.appendChild(axisTogglesRow);
+  // The toggles, their state, and the notify — one shared control instead of
+  // a copy in each of the three panels that offers them.
+  const axisCtl = makeLinkedAxisPrefs(axisTogglesRow, options.axisPrefs, prefs => {
+    options.onAxisPrefsChange?.(prefs);
+    rebuildBody();
+  }, card.ownerDocument);
 
-  function syncAxisToggles(resolvedIncludeLimits: boolean, hasLimits: boolean): void {
-    axisTogglesRow.innerHTML = '';
-    if (hasLimits) {
-      axisTogglesRow.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
-        axisIncludesLimits = v;
-        options.onAxisPrefsChange?.({ includeLimits: v, clipOutliers });
-        rebuildBody();
-      }, card.ownerDocument));
-    }
-    axisTogglesRow.appendChild(makeToggle('Clip outliers', clipOutliers, v => {
-      clipOutliers = v;
-      options.onAxisPrefsChange?.({ includeLimits: axisIncludesLimits, clipOutliers: v });
-      rebuildBody();
-    }, card.ownerDocument));
-  }
 
   const hint = card.ownerDocument.createElement('div');
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
@@ -206,6 +225,8 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   let resizeHandle: { disconnect: () => void } | null = null;
 
   function rebuildBody(): void {
+    // Read once per rebuild from the shared control, which owns this state.
+    const { includeLimits: axisIncludesLimits, clipOutliers } = axisCtl.get();
     syncHint();
     body.innerHTML = '';
     if (testOptions.length === 0 || activeTest === null) {
@@ -252,14 +273,13 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     // every redraw (e.g. every checkbox toggle in this panel's controls).
 
     let hovered = -1;
-    const dpr = window.devicePixelRatio || 1;
 
     const finite = data.filter(d => d.count > 0);
     const dataMin = Math.min(...finite.map(d => d.min));
     const dataMax = Math.max(...finite.map(d => d.max));
     const resolvedIncludeLimits = axisIncludesLimits
       ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
-    syncAxisToggles(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
+    axisCtl.sync(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
 
     // Clipping uses each box's own min/max as the value population — the raw dies
     // are not held here. It clips the AXIS only; every box's statistics are
@@ -306,14 +326,9 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       // > BOX_MAX_VISIBLE_ROWS) narrowing its content box.
       const width = body.clientWidth;
       const height = PADDING * 2 + data.length * (BOX_ROW_HEIGHT + BOX_ROW_GAP) + AXIS_HEIGHT;
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      const ctx = canvas.getContext('2d')!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
+      const prep = prepareCanvas(canvas, card, width, height);
+      if (!prep) return;
+      const { ctx } = prep;
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.textBaseline = 'middle';
 
@@ -340,11 +355,31 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
           return;
         }
 
-        const xMin = xFor(datum.min, plotX, plotMaxWidth);
-        const xQ1 = xFor(datum.q1, plotX, plotMaxWidth);
-        const xMedian = xFor(datum.median, plotX, plotMaxWidth);
-        const xQ3 = xFor(datum.q3, plotX, plotMaxWidth);
-        const xMax = xFor(datum.max, plotX, plotMaxWidth);
+        // Clamped to the plot rect, and the clamp is TRACKED, not just applied.
+        // `clipOutliers` shrinks the AXIS to a robust fence over every box's
+        // min/q1/median/q3/max (see resolveAxisRange's own doc comment) — it
+        // narrows the view, it does not touch the statistics. A box whose own
+        // min/max sits outside that narrowed axis previously drew its whisker
+        // past the plot edge and over the row label / axis ticks on the low
+        // side, because `xFor` has no bound of its own — it only maps a value
+        // to a position, and a position outside [plotX, plotRight] is exactly
+        // what "clipped" produces for the box that got clipped.
+        //
+        // Q1/Q3/median are clamped defensively too: the fence is computed over
+        // every box's five statistics pooled together, so one box that sits far
+        // from the rest of the population can have its whole span — not just its
+        // extremes — fall outside a fence built from the pooled set.
+        const plotRight = plotX + plotMaxWidth;
+        const clamp = (x: number) => Math.min(plotRight, Math.max(plotX, x));
+        const rawXMin = xFor(datum.min, plotX, plotMaxWidth);
+        const rawXMax = xFor(datum.max, plotX, plotMaxWidth);
+        const xMin = clamp(rawXMin);
+        const xQ1 = clamp(xFor(datum.q1, plotX, plotMaxWidth));
+        const xMedian = clamp(xFor(datum.median, plotX, plotMaxWidth));
+        const xQ3 = clamp(xFor(datum.q3, plotX, plotMaxWidth));
+        const xMax = clamp(rawXMax);
+        const minClipped = rawXMin < xMin;
+        const maxClipped = rawXMax > xMax;
         const boxTop = y + 3;
         const boxBottom = y + BOX_ROW_HEIGHT - 3;
 
@@ -353,8 +388,27 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         ctx.beginPath();
         ctx.moveTo(xMin, midY); ctx.lineTo(xQ1, midY);
         ctx.moveTo(xQ3, midY); ctx.lineTo(xMax, midY);
-        ctx.moveTo(xMin, boxTop); ctx.lineTo(xMin, boxBottom);
-        ctx.moveTo(xMax, boxTop); ctx.lineTo(xMax, boxBottom);
+        // A whisker CAP — the flat tick — asserts "this is the exact value".
+        // Drawn only on the end that was NOT clamped; a clamped end draws an
+        // outward chevron instead (open V, same stroke as the whisker line),
+        // so it reads as "truncated here, continues past this point" rather
+        // than claiming a precision the plotted position does not have. This
+        // is the same "state it, don't hide it" rule `drawOffAxisLimits` uses
+        // for a limit that falls outside the axis, in the same visual family
+        // as an arrow: a mark that points outward instead of a flat boundary.
+        const chevronR = 3;
+        if (minClipped) {
+          ctx.moveTo(xMin + chevronR, midY - chevronR); ctx.lineTo(xMin, midY);
+          ctx.lineTo(xMin + chevronR, midY + chevronR);
+        } else {
+          ctx.moveTo(xMin, boxTop); ctx.lineTo(xMin, boxBottom);
+        }
+        if (maxClipped) {
+          ctx.moveTo(xMax - chevronR, midY - chevronR); ctx.lineTo(xMax, midY);
+          ctx.lineTo(xMax - chevronR, midY + chevronR);
+        } else {
+          ctx.moveTo(xMax, boxTop); ctx.lineTo(xMax, boxBottom);
+        }
         ctx.stroke();
 
         // One neutral box fill for every row — the box's position along the
@@ -393,22 +447,38 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       // confuse.
       drawOffAxisLimits(ctx, range.offAxis,
         { left: plotX, right: plotX + plotMaxWidth, top: 0, bottom: axisY },
-        'horizontal', theme.warnBorder, v => fmtUnit(v, unit, 'engineering'));
+        'horizontal', theme.limitLine, v => fmtUnit(v, unit, 'engineering'));
       const offAxisValues = new Set(range.offAxis.map(o => o.value));
       for (const [limit, limLabel] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
         if (limit === undefined || offAxisValues.has(limit)) continue;
         const x = xFor(limit, plotX, plotMaxWidth);
-        ctx.strokeStyle = theme.warnBorder;
+        ctx.strokeStyle = theme.limitLine;
         ctx.setLineDash([3, 3]);
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, 0); ctx.lineTo(x, axisY);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = theme.warnBorder;
-        ctx.textAlign = 'center';
+        ctx.fillStyle = theme.limitLine;
+        // BESIDE the line, not centred on it. This rule runs the full plot
+        // height (0 → axisY) with the label inside that span, so a centred
+        // label had the dashed line struck through its glyphs — an `S` with a
+        // vertical stroke through it reads as `$`, which is how this was
+        // spotted. The histogram's label needs no such offset: it sits above
+        // `plotTop`, clear of where its own line begins.
+        //
+        // OUTWARD — LSL to the left of its line, USL to the right — because
+        // that is the side each limit means. LSL bounds the low out-of-spec
+        // region and USL the high one, so a label placed on the far side sits
+        // in the in-spec region and reads as belonging to the data rather than
+        // to the boundary. An earlier version offset inward purely to keep the
+        // text off the plot edge; that is a layout worry overriding what the
+        // mark says, which is the wrong way round.
+        const dir = limitLabelSide(
+          x, ctx.measureText(limLabel).width, plotX, plotX + plotMaxWidth, limLabel === 'LSL');
+        ctx.textAlign = dir < 0 ? 'right' : 'left';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(limLabel, x, axisY - 1);
+        ctx.fillText(limLabel, x + dir * 3, axisY - 1);
       }
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
@@ -472,10 +542,9 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       const row = rowAt(e.clientY - rect.top);
       if (row === -1 || data[row].count === 0) return;
       if (isGroupOverview) {
-        drillGroup = data[row].label;
-        syncDrillChrome();
-        syncHint();
-        rebuildBody();
+        const key = data[row].label;
+        setDrill(key);
+        options.onGroupChange?.(key);
         return;
       }
       const waferIndex = rowItems[row]?.waferIndex;
@@ -494,16 +563,16 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   rebuildBody();
 
   function setTest(testNumber: number): void {
-    if (!testOptions.some(t => t.testNumber === testNumber) || testNumber === activeTest) return;
+    // The guard and the control sync both live in `makeLinkedTestSelect` now.
+    if (!testSel.set(testNumber)) return;
     activeTest = testNumber;
-    select.value = String(testNumber);
     rebuildBody();
   }
 
   /** Adopt a sibling panel's axis toggles without re-firing the change back. */
   function setAxisPrefs(prefs: AxisPrefs): void {
-    axisIncludesLimits = prefs.includeLimits;
-    clipOutliers = prefs.clipOutliers;
+    // Guard and state both live in the control now.
+    if (!axisCtl.set(prefs)) return;
     rebuildBody();
   }
 

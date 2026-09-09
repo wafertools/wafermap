@@ -1,0 +1,29 @@
+{
+  "waferConfig": {
+    "diameter": 150,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 5,
+    "height": 5
+  },
+  "passBins": [
+    1
+  ],
+  "hbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 2,
+      "name": "BVdss Fail"
+    },
+    {
+      "bin": 6,
+      "name": "Gate Short"
+    }
+  ]
+}

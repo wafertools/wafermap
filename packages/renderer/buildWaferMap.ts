@@ -312,6 +312,21 @@ export interface WaferMapInputBase {
    */
   passBins?: number[];
   /**
+   * Wafer diameters (mm) treated as standard when sanity-checking an *inferred*
+   * diameter — see {@link STANDARD_WAFER_DIAMETERS_MM} for the default
+   * (100/125/150/200/300) and the measurements behind it.
+   *
+   * **Replaces** the default rather than adding to it, so spread it to extend:
+   * `standardDiameters: [...STANDARD_WAFER_DIAMETERS_MM, 76.2]` for a line that
+   * also runs 3-inch. Pass `[]` to disable the check entirely, for genuinely
+   * non-standard substrates (panels, reclaim, odd R&D shapes) — that is the
+   * intended opt-out, rather than suppressing every geometry advisory.
+   *
+   * Only consulted when the diameter was inferred; a diameter you supply is
+   * never second-guessed.
+   */
+  standardDiameters?: number[];
+  /**
    * How to handle multiple `DieResult` entries for the same die position (retests).
    *
    * - `'last'`  (default) — keep the most recent result. Matches pre-existing behaviour
@@ -441,13 +456,34 @@ export interface WaferWarning {
    *   you asserted — it reports this so you can correct one of them. Only raised
    *   when the pitch was supplied: pitch is a free scaling parameter, so with an
    *   inferred pitch "the dies don't fit" is not a statement about your data.
-   * - `'inferred-pitch'` — `waferConfig.diameter` was supplied without a die pitch,
-   *   so the pitch was derived as `diameter ÷ grid span`, assuming the grid spans
-   *   the full wafer. That assumption fails whenever edge dies are absent, which
-   *   silently scales every die position. Supply `dieConfig.width`/`height`.
+   * - `'non-standard-diameter'` — the wafer diameter was INFERRED from the die
+   *   extent (a pitch was supplied, a diameter was not) and came out off the
+   *   standard wafer-size ladder (SEMI M1: 100/150/200/300 mm and the smaller
+   *   legacy sizes). Silicon only comes in those sizes, so a result like 210 mm
+   *   is evidence the inference went wrong — almost always because the outer
+   *   dies were never probed, so the die extent understates the wafer. Every die
+   *   is then placed against a wafer that is too small, which moves dies between
+   *   rings and changes ring and edge findings. Supply `waferConfig.diameter`.
+   *
+   *   There is deliberately no matching advisory for an inferred *pitch*: that
+   *   is derived to fit the supplied diameter, so it is always self-consistent
+   *   and there is nothing to check it against.
+   * - `'diameter-exceeds-die-extent'` — a SUPPLIED `waferConfig.diameter` that the
+   *   probed dies fill less than 75% of. The mirror of `geometry-conflict`, which
+   *   asks whether the dies *fit*; this asks whether they *fill*. An over-large
+   *   wafer is not harmless: ring bands are equal-radius, so it crushes dies into
+   *   the inner rings and empties the outer ones — at a 10× diameter every die
+   *   lands in ring 1 — and ring/quadrant/edge findings then describe the assumed
+   *   wafer, not the probed area. A genuinely partial map looks identical and is
+   *   equally worth reporting, so the message names both causes.
    * - `'test-count-capped'` — raised by `analyzeWaferMap`: more tests were found in
    *   the die data than the analysis cap allows, so test-value analysis was skipped
    *   entirely and NO test findings were produced. Pass `testNumbers` to scope it.
+   * - `'analysis-option-corrected'` — raised by `analyzeWaferMap`: a numeric option
+   *   was outside the range that can produce a meaningful analysis and was clamped.
+   *   The message names each correction. Only reachable from untyped callers now
+   *   that the statistical thresholds are internal, but a wrong `ringCount` or
+   *   `sectorCount` still gets here from TypeScript.
    * - `'edge-exclusion-exceeds-radius'` — `waferConfig.edgeExclusion` is larger than
    *   the resolved wafer radius (most likely when the diameter was itself inferred
    *   from sparse/partial data). The excluded band is clamped to the whole wafer
@@ -456,8 +492,9 @@ export interface WaferWarning {
    * The union is intentionally open to string so future advisory codes can be
    * added without a breaking change; switch with a `default` branch.
    */
-  code: 'partial-coverage' | 'geometry-conflict' | 'inferred-pitch'
-      | 'test-count-capped' | 'edge-exclusion-exceeds-radius' | (string & {});
+  code: 'partial-coverage' | 'geometry-conflict' | 'non-standard-diameter'
+      | 'diameter-exceeds-die-extent' | 'test-count-capped'
+      | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -476,7 +513,14 @@ export interface WaferWarning {
 }
 
 export interface WaferMapResult {
+  /** Resolved wafer geometry — diameter, radius, centre, notch, orientation. */
   wafer: Wafer;
+  /**
+   * Every die, carrying its original grid coordinates (`x`/`y`), physical
+   * position, bin/test data and eligibility flags. Dies with no reported
+   * position are included here — guard with `hasPosition` before using
+   * coordinates.
+   */
   dies: Die[];
   /**
    * The initial plot mode selected by `buildWaferMap` — `'value'` when test values are
@@ -491,6 +535,17 @@ export interface WaferMapResult {
    * @internal Renderer-agnostic draw list consumed by `renderWaferMap` and `toCanvas`.
    * Not part of the public API — access the named fields on `WaferMapResult` instead.
    */
+  /**
+   * @internal The initial draw list. Kept on the result because `analyzeWaferMap`
+   * discriminates its input on `'view' in input`, and because `renderWaferMap`
+   * reads `dataAxisFlip` from it — not because a host should.
+   *
+   * Read the promoted top-level fields instead (`plotMode`, `metadata`,
+   * `isLotStack`, `hbinDefs`, `sbinDefs`, `testDefs`): this one is rebuilt on
+   * every option change, so anything you cache from it goes stale immediately.
+   * Hosts driving the low-level pipeline should call `buildView` themselves,
+   * which is the supported way to hold a {@link View}.
+   */
   view: View;
   /** Reticle configuration used to generate the overlay and reticle-local groupings. */
   reticleConfig?: ReticleConfig;
@@ -502,9 +557,20 @@ export interface WaferMapResult {
    *                      proportionally correct but not in physical mm.
    */
   units: 'mm' | 'normalized';
+  /**
+   * How much of the geometry had to be guessed, and how confident each guess is.
+   * `confidence` runs 0–1, where 1 means the value was supplied rather than
+   * inferred. Worth surfacing when a map looks wrong: a low `wafer` or `diePitch`
+   * confidence usually means sparse or partial data, and is the first thing to
+   * check before suspecting the data itself. See `warnings` for the advisories
+   * these confidences drive.
+   */
   inference: {
+    /** Wafer diameter/centre. `method` names how it was derived, e.g. `'inferred-from-xy'`. */
     wafer:    { confidence: number; method: string };
+    /** Die pitch. `units` is `'mm'` when a real physical scale was established, `'normalized'` when not. */
     diePitch: { confidence: number; units: 'mm' | 'normalized' };
+    /** The die grid's origin and step. */
     grid:     { confidence: number };
     /**
      * @deprecated Use the promoted top-level `WaferMapResult.warnings` instead —
@@ -577,6 +643,7 @@ interface Normalized {
   reticleOpts:  ReticleConfig  | undefined;
   lotStackOpts: LotStackConfig | undefined;
   passBins:     number[];
+  standardDiameters: number[] | undefined;
   testDefs:     TestDef[] | undefined;
   hbinDefs:     BinDef[]  | undefined;
   sbinDefs:     BinDef[]  | undefined;
@@ -599,6 +666,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       reticleOpts:      undefined,
       lotStackOpts:     undefined,
       passBins:         [1],
+      standardDiameters: undefined,
       testDefs:         undefined,
       hbinDefs:         undefined,
       sbinDefs:         undefined,
@@ -614,6 +682,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     reticleOpts:      input.reticleConfig,
     lotStackOpts:     input.lotStack,
     passBins:         input.passBins ?? [1],
+    standardDiameters: input.standardDiameters,
     testDefs:         input.testDefs,
     hbinDefs:         input.hbinDefs,
     sbinDefs:         input.sbinDefs,
@@ -1206,7 +1275,8 @@ function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
       // behalf, not a detected contradiction, and flagging that in red left hosts
       // that legitimately know only the diameter — tsmap's diameter setting, for
       // one — showing a permanent error they had no field to clear.
-      severity: (code === 'inferred-pitch' ? 'warning' : 'error') as WaferWarning['severity'],
+      severity: (code === 'non-standard-diameter' || code === 'diameter-exceeds-die-extent'
+        ? 'warning' : 'error') as WaferWarning['severity'],
       confidence: inference.wafer.confidence };
   });
 }
@@ -1222,14 +1292,113 @@ function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
  */
 function codeForAdvisory(message: string): WaferWarning['code'] {
   if (message.includes(GEOMETRY_CONFLICT_MARKER)) return 'geometry-conflict';
-  if (message.includes(INFERRED_PITCH_MARKER))    return 'inferred-pitch';
+  if (message.includes(NONSTANDARD_DIAMETER_MARKER)) return 'non-standard-diameter';
+  if (message.includes(UNDERFILLED_WAFER_MARKER))    return 'diameter-exceeds-die-extent';
   return 'partial-coverage';
 }
 
 /** Distinctive phrase identifying the geometry-conflict advisory in the string channel. */
 const GEOMETRY_CONFLICT_MARKER = 'do not fit inside the supplied';
 /** Distinctive phrase identifying the inferred-pitch advisory in the string channel. */
-const INFERRED_PITCH_MARKER = 'The die pitch was inferred as';
+const NONSTANDARD_DIAMETER_MARKER = 'Inferred wafer diameter';
+const UNDERFILLED_WAFER_MARKER = 'The probed dies reach only';
+
+/**
+ * Minimum share of the asserted wafer radius the probed dies must reach before
+ * the geometry is taken at face value.
+ *
+ * `geometry-conflict` asks whether the dies FIT the wafer. Nothing asked whether
+ * they FILL it — so a diameter that is too large sailed through silently, and an
+ * over-large wafer is not harmless: ring bands are equal-radius, so it crushes
+ * every die into the inner rings. Measured on a 300 mm / 10 mm fixture whose
+ * dies reach 141 mm, with the pitch also supplied:
+ *
+ * | asserted Ø | dies reach | rings 1/2/3/4 |
+ * |---|---|---|
+ * | 300 (correct) | 94% | 45/132/224/220 |
+ * | 400 | 71% | 69/236/316/0  ← first empty ring |
+ * | 600 | 47% | 177/444/0/0 |
+ * | 3000 (a plausible typo for 300) | 9% | 621/0/0/0  ← every die in ring 1 |
+ *
+ * At 3000 mm every die lands in ring 1 and three of four rings are empty, with
+ * no advisory at all before this check.
+ *
+ * 0.75 is calibrated against real maps rather than guessed. Every dataset in
+ * this repo's own docs sits at 96-100% fill (the lowest is a CRLF/quoting stress
+ * file at 96%), a full wafer with edge exclusion reaches ~94%, and a
+ * reticle-complete map ~83% — all comfortably clear. The first ring empties at
+ * ~71%, so 0.75 catches that case rather than sitting just below it.
+ */
+const MIN_WAFER_FILL_RATIO = 0.75;
+
+/**
+ * Fewest dies for the fill ratio to mean anything.
+ *
+ * The check reasons from the die extent back to the wafer size, and an extent
+ * measured from a handful of points is not a measurement — two dies near the
+ * centre of a large wafer are equally consistent with a correct diameter and a
+ * wrong one. Tied to what the advisory is protecting: ring analysis needs
+ * `ringCount` (4 by default) × `minimumSampleSize` (5) = 20 dies before it can
+ * report anything at all, so below that there is no ring finding to distort.
+ */
+const MIN_DIES_FOR_FILL_CHECK = 20;
+
+/**
+ * Nominal wafer diameters in mm, used to sanity-check an *inferred* diameter.
+ * Override per build with {@link WaferMapInputBase.standardDiameters}.
+ *
+ * This is what makes an inferred diameter checkable at all. When a die pitch is
+ * supplied but no diameter, the wafer is sized from the die extent — right only
+ * if the probed grid reaches the wafer edge, and silently wrong whenever the
+ * outer dies were never probed. Silicon comes in standard sizes, so landing off
+ * the ladder is evidence the assumption failed. (The library already leans on
+ * SEMI M1 for notch chord lengths — see `standardNotchLength` in core/wafer.ts.)
+ *
+ * **The size of this list is a real trade-off, measured, not guessed.** Every
+ * entry is one more value a wrong inference can hide behind; every omission
+ * wrongly accuses someone actually running that size. Across 63 fixtures
+ * (76.2–300 mm, square and rectangular die, 50–94% coverage):
+ *
+ * | table | caught | missed | false alarms |
+ * |---|---|---|---|
+ * | 100/150/200/300 | 31 | 8 | 3 |
+ * | **100/125/150/200/300 (this default)** | 31 | 8 | 3 |
+ * | + 76.2 | 28 | 11 | 0 |
+ * | + 25.4/50.8/450 | 26 | 13 | 0 |
+ *
+ * A miss is silent, which is what every one of these cases did before this check
+ * existed — so it costs nothing against the status quo. A false alarm is a new
+ * harm: it tells someone whose diameter is correct that it is suspect, with no
+ * way to clear it. Hosts running 3-inch or other legacy sizes should add them
+ * via `standardDiameters` rather than live with that.
+ *
+ * 25.4/50.8 (1"/2") and 450 mm are excluded: none are in current production
+ * flows, and including 50.8 demonstrably created a miss — a 76.2 mm wafer
+ * mis-inferring to 50 mm went undetected.
+ */
+export const STANDARD_WAFER_DIAMETERS_MM: readonly number[] = [100, 125, 150, 200, 300];
+
+/** Within 2% of a nominal size — loose enough for rounding, tight enough to separate 150 from 170. */
+const STANDARD_DIAMETER_TOLERANCE = 0.02;
+
+function nearestStandardDiameter(mm: number, table: readonly number[]): number {
+  return table.reduce((best, s) => Math.abs(s - mm) < Math.abs(best - mm) ? s : best);
+}
+
+function isStandardDiameter(mm: number, table: readonly number[]): boolean {
+  // An empty table disables the check — the documented way for a host with
+  // genuinely non-standard substrates to opt out without suppressing every
+  // other geometry advisory too.
+  if (!table.length) return true;
+  const nearest = nearestStandardDiameter(mm, table);
+  return Math.abs(nearest - mm) / nearest <= STANDARD_DIAMETER_TOLERANCE;
+}
+
+/** Resolve the caller's table, ignoring entries that cannot be a diameter. */
+function resolveStandardDiameters(supplied: number[] | undefined): readonly number[] {
+  if (supplied === undefined) return STANDARD_WAFER_DIAMETERS_MM;
+  return supplied.filter(d => Number.isFinite(d) && d > 0);
+}
 
 export function buildWaferMap(
   input: DieResult[] | WaferMapInput,
@@ -1403,6 +1572,18 @@ export function buildWaferMap(
         const wi = inferWaferFromXY(physPoints, { minRadius: requiredRadius });
         waferDiameter = wi.diameter;
         inference.wafer = { confidence: wi.confidence, method: wi.method };
+        // Only checkable when the scale is real mm — see STANDARD_WAFER_DIAMETERS_MM.
+        const stdTable = resolveStandardDiameters(norm.standardDiameters);
+        if (!isStandardDiameter(waferDiameter, stdTable)) {
+          const nearest = nearestStandardDiameter(waferDiameter, stdTable);
+          (inference.warnings ??= []).push(
+            `${NONSTANDARD_DIAMETER_MARKER} ${waferDiameter.toFixed(1)} mm is not a standard wafer size ` +
+            `(nearest is ${nearest} mm). The diameter was derived from the die extent, which assumes the probed ` +
+            `grid reaches the wafer edge — a non-standard result usually means it does not, because the outer ` +
+            `dies were never probed. Every die is then placed against a wafer that is too small, which moves dies ` +
+            `between rings and changes ring and edge findings. Supply waferConfig.diameter.`,
+          );
+        }
       } else {
         // pitchX/pitchY are normalized (no physical info). inferWaferFromXY would
         // receive coordinates in normalized units and produce a meaningless diameter.
@@ -1431,6 +1612,42 @@ export function buildWaferMap(
     (inference.warnings ??= []).push(
       'Wafer geometry was inferred from die positions alone. The data does not span a full symmetric wafer, so the inferred diameter and centre may be wrong and dies may be mis-positioned relative to the true wafer boundary. Supply waferConfig.diameter and waferConfig.center (the prober coordinate of the wafer centre) to position partial data correctly.',
     );
+  }
+
+  // Does the data FILL the asserted wafer? The mirror of the fit check below.
+  //
+  // Only meaningful when the diameter was supplied: an inferred one is sized TO
+  // the die extent, so the ratio is ~1 by construction and this can never fire.
+  // A supplied diameter with an inferred pitch cannot fire either — the pitch
+  // scales to fit, which is why a wrong diameter is harmless in that case.
+  //
+  // A genuinely partial map is indistinguishable from an over-large diameter
+  // here, and `isLikelyPartialCoverage` above will not separate them either: it
+  // keys on an off-centre centroid, and a centred small disc is (per its own
+  // note) geometrically identical to a tiny full wafer. That is fine — in BOTH
+  // cases the ring bands are being drawn against mostly-empty wafer, and the
+  // reader needs to know. The message names both possibilities rather than
+  // guessing between them.
+  //
+  // Skipped when the caller anchored the centre (`waferConfig.center`). That is
+  // the documented way to position deliberately partial data — it is the remedy
+  // `partial-coverage` itself recommends — so a caller who supplied it has
+  // already told us the map covers part of the wafer. Reporting low fill back to
+  // them would be flagging the fix.
+  if (norm.waferOpts?.diameter !== undefined
+      && norm.waferOpts.center === undefined
+      && requiredRadius > 0
+      && gridPoints.length >= MIN_DIES_FOR_FILL_CHECK) {
+    const fill = requiredRadius / (waferDiameter / 2);
+    if (fill < MIN_WAFER_FILL_RATIO) {
+      (inference.warnings ??= []).push(
+        `${UNDERFILLED_WAFER_MARKER} ${(fill * 100).toFixed(0)}% of the ${waferDiameter} mm wafer's radius. ` +
+        `Either the diameter is larger than the real one, or this is a partial map covering only part of the ` +
+        `wafer. Ring bands are equal-radius, so the outer rings are mostly or entirely empty and ring, quadrant ` +
+        `and edge findings describe the assumed wafer rather than the probed area. Check waferConfig.diameter, ` +
+        `or drop it and let the diameter be inferred from the die extent.`,
+      );
+    }
   }
 
   // Geometry advisories for caller-supplied `waferConfig.diameter`.
@@ -1467,12 +1684,19 @@ export function buildWaferMap(
       // edge dies are absent from the data (a reticle-complete map, or partial
       // dies filtered out upstream) — only worth flagging that as an
       // unverifiable assumption made on the caller's behalf.
-      (inference.warnings ??= []).push(
-        `${INFERRED_PITCH_MARKER} ${pitchX.toFixed(3)} × ${pitchY.toFixed(3)} mm by assuming the die grid fits within the ` +
-        `${waferDiameter} mm wafer. The assumed aspect ratio may not match the true die shape whenever edge dies are ` +
-        `absent from the data (a reticle-complete map, or partial dies filtered out upstream). Supply dieConfig.width and ` +
-        `dieConfig.height — the die pitch, not the diameter, is what fixes placement.`,
-      );
+      // No advisory here, deliberately. An inferred die pitch is not evidence of
+      // anything: the pitch is derived as diameter ÷ grid span, which places the
+      // outermost die at ~95% of the radius by construction, so the result always
+      // looks self-consistent and there is nothing to check it against. Warning
+      // unconditionally meant firing on every correct inference too — at full
+      // coverage the derived pitch is within ~1% — which is noise, and noise in
+      // the one channel that also carries real geometry errors.
+      //
+      // The checkable half of the same risk is covered instead by the
+      // non-standard-diameter advisory above: when the caller supplies a pitch
+      // and the DIAMETER is inferred, the standard wafer-size ladder gives a real
+      // signal. When the diameter is supplied and the pitch inferred, it does not,
+      // and the honest answer is to say nothing rather than say it every time.
     }
   }
 

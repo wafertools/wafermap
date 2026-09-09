@@ -13,22 +13,23 @@
 // is unique-per-item by definition), so the control just doesn't render —
 // no special-casing needed here for single- vs multi-wafer hosts.
 //
-// Known follow-up (not done in this pass): Distributions' three panels
-// (capability/boxplot/histogram) each still own a different grouping
-// interaction — capability's own restrict-to-one-group dropdown, boxplot's
-// pooled-overview-with-drill, histogram's overlay-with-legend. Unifying
-// these under one shared drill control is a distinct, separable
-// improvement from the Insights tab's own internal design, not part of
-// this file's relationship to the Summary panel.
+// Distributions' group scope is shared across capability, boxplot and
+// histogram (`activeSectionGroup`/`selectGroupEverywhere`), the same way the
+// selected test and the axis toggles already were. Each panel still RENDERS
+// the scope in the way that suits it — capability narrows to it, the boxplot
+// drills into it, the histogram emphasises it against the others — but the
+// three can no longer be describing different populations at once, which they
+// were by default, from the first render, whenever "Group by" was set.
 
 import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { LotStatsSummary, StatsSummary } from '../stats/types.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from '../stats/facets.js';
+import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
 import { getColorScheme } from '../renderer/colorSchemes.js';
-import { LEADING, ALPHA, SPACE, FONT, CLR, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
+import { LEADING, ALPHA, SPACE, EDGE_GUTTER, FONT, CLR, RADIUS, SHADOW, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
 import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
 import { renderBoxplotPanel } from './charts/boxplot.js';
@@ -40,7 +41,7 @@ import { renderBarPanel, type ChartPanel } from './charts/barPanel.js';
 import { renderBinClusterPanel } from './charts/binCluster.js';
 import { renderTestPassRatePanel } from './charts/testPassRate.js';
 import { QUANTITY } from './charts/palette.js';
-import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, type AxisPrefs } from './charts/chartShell.js';
+import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, type AxisPrefs } from './charts/chartShell.js';
 import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../stats/yield.js';
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
 import { buildLotTestSection, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
@@ -61,6 +62,17 @@ export interface InsightsOptions {
   enabled?: boolean;
   /** Which sub-tab is shown first. Default 'overview'. */
   defaultView?: InsightsView;
+  /**
+   * Open the Insights view on mount instead of starting on the map/grid.
+   * Default false — the tab is offered, the map is what you see first.
+   *
+   * Set this for an analysis-first surface, where the charts are the point and
+   * the map is the secondary view. Symmetric with `summaryPanel.defaultOpen`.
+   * The chart suite is a lazily-imported chunk, so opening it on mount also
+   * pulls that chunk on load rather than on first click — worth knowing if the
+   * page is otherwise weight-sensitive.
+   */
+  defaultOpen?: boolean;
 }
 
 export interface InsightsTabDeps {
@@ -113,6 +125,14 @@ export interface InsightsTabDeps {
    * renderWaferGallery.ts's `rebuildLegend`/`setInsightsOpen`.
    */
   showMetadataStrip?: boolean;
+  /**
+   * Inset for this tab's own bands and content from the edge of the region it
+   * fills. Defaults to `EDGE_GUTTER`, which is right when the tab fills a
+   * top-level region (the gallery). `renderWaferMap` passes its own chrome
+   * inset instead, so the tab bar lines up with the identity row above it
+   * rather than sitting a gutter further in.
+   */
+  contentInset?: string;
   /** Document to build this tab's DOM into. Default `document` — pass the
    *  render's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -129,7 +149,12 @@ export interface InsightsTabHandle {
   destroy: () => void;
 }
 
-type Item = FacetItem & { dies: Die[]; label: string; waferIndex: number; wafer: Wafer; statsSummary?: StatsSummary };
+type Item = FacetItem & {
+  dies: Die[]; label: string; waferIndex: number; wafer: Wafer; statsSummary?: StatsSummary;
+  /** This wafer's OWN test defs, carried through so a scoped population can be
+   *  reconciled (`mergeTestDefs`) over just the wafers in scope. */
+  testDefs?: TestDef[];
+};
 
 const VIEWS: Array<{ key: InsightsView; label: string }> = [
   { key: 'overview',      label: 'Overview' },
@@ -140,6 +165,7 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getColorSchemeName, passBins, getRingCount, onSaveImage, onSaveText, openWafer } = deps;
   const showMetadataStrip = deps.showMetadataStrip ?? true;
+  const contentInset = deps.contentInset ?? EDGE_GUTTER;
   const doc = deps.ownerDocument ?? document;
 
   // Deliberately auto-height, normal block/flex flow — no forced minHeight,
@@ -159,8 +185,23 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   Object.assign(rootEl.style, {
     display: 'none',
     flexDirection: 'column',
-    gap: SPACE.lg,
+    // NO uniform `gap`. It was `SPACE.lg` for every child, which spaced the
+    // identity strip, the tab bar and the content identically and so said
+    // nothing about which of them belong together — the view read as three
+    // unrelated bands, and the tabs in particular stopped looking attached to
+    // the content they switch. The strip and the tabs are one header block and
+    // are now tight to each other (`SPACE.xs`); the gap from that block down to
+    // the content is four times larger. The CONTRAST is what carries the
+    // grouping — equal spacing everywhere cannot express hierarchy at any value.
     width: '100%',
+    // No top gutter. It existed because the identity strip was the first thing
+    // in this view and butted against whatever the host put above it. Neither
+    // half of that still holds: this tab renders no identity strip for either
+    // host now (both show it in their own chrome row), and that row provides
+    // the separation itself. Left in place it pushed the tab row 12px below the
+    // line the gallery's legend strip occupies, so switching to Insights
+    // visibly dropped the row rather than swapping one band for another.
+    paddingTop: '0',
   } as Partial<CSSStyleDeclaration>);
 
   // Identity strip (lot/wafer/product/etc.) — mounted above the tab bar so
@@ -172,13 +213,43 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // one left inset. It used to come only from the tab buttons' own padding, so
   // the tabs looked inset and the strip and Group-by row did not — they were
   // flush against the edge with no gutter at all.
-  const BAND_INSET = SPACE.lg;
+  //
+  // It is `EDGE_GUTTER` so the bands share one edge with the CARDS in `bodyEl`
+  // below, which take the same value. They were 10 and 0 respectively: the
+  // identity strip sat 10px in while every chart card was flush against the
+  // window, so the Lot line was visibly indented relative to the cards under
+  // it. One constant for both is what stops that recurring.
+  const BAND_INSET = EDGE_GUTTER;
 
   const metaStripEl = doc.createElement('div');
+  // No marginBottom here — `renderMetadataStrip` owns it, because it depends on
+  // whether the strip actually has content. See there.
   Object.assign(metaStripEl.style, { paddingLeft: BAND_INSET } as Partial<CSSStyleDeclaration>);
 
   const tabBar = doc.createElement('div');
-  Object.assign(tabBar.style, { display: 'flex', gap: SPACE.xs, alignItems: 'center', borderBottom: `1px solid ${CLR.menuBorder}`, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
+  // `margin`, not `padding`, on the horizontal axis: the rule is this element's
+  // own `borderBottom`, so it spans exactly as wide as the element does. Padding
+  // would inset the tabs while the rule still ran the full width — which was the
+  // reported defect: content sat inside the gutter and the line ran straight
+  // past it to both edges. Margin shortens the rule itself, landing its ends on
+  // the same column as the card borders above and below.
+  //
+  // The tab LABELS then sit at gutter + the buttons' own EDGE_GUTTER padding,
+  // which is the same place a card's text sits (gutter + card padding) — so the
+  // view reads as two consistent columns: structural edges (card borders, this
+  // rule, the panel) on the outer one, text on the inner one.
+  Object.assign(tabBar.style, { display: 'flex', gap: SPACE.xs, alignItems: 'center',
+    background: CLR.menuBg,
+    border: `1px solid ${CLR.menuBorder}`,
+    borderRadius: RADIUS.container,
+    boxShadow: SHADOW.panel,
+    padding: `0 ${SPACE.lg}`,
+    // The gap below this band is owned here, and matches the gallery legend
+    // strip's own `marginBottom` — the two occupy the same line in their
+    // respective views, so the space between band and content must be the same
+    // or switching views visibly reflows the content by the difference (it was
+    // 18px here against the legend's 10px).
+    marginBottom: SPACE.lg, marginLeft: contentInset, marginRight: contentInset } as Partial<CSSStyleDeclaration>);
   tabBar.setAttribute('role', 'tablist');
   // Registered once, not per-`render()` — `tabBar` itself persists across
   // sub-tab switches (only its children are torn down and rebuilt), so this
@@ -201,7 +272,22 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // "fill and scroll" pattern, since there's no guaranteed bounded ancestor
   // to grow into across every host.
   const bodyEl = doc.createElement('div');
-  Object.assign(bodyEl.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg } as Partial<CSSStyleDeclaration>);
+  // The gutter belongs HERE, not on the Overview grid inside it: `bodyEl` holds
+  // whichever sub-tab is active, so one padding covers Overview, Distributions
+  // and Correlation alike. It also must not go on `rootEl`/the host's scroller,
+  // because `tabBar`'s `borderBottom` is a full-width divider — padding an
+  // ancestor would pull that rule in from both edges, which looks worse than
+  // the flush cards it set out to fix. Bands full-bleed, band CONTENT and cards
+  // inset: the standard way to keep a divider edge-to-edge.
+  Object.assign(bodyEl.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg,
+    // No top margin: the gap below the tab bar is the tab bar's own
+    // `marginBottom`, in one place, matching the gallery legend strip. This
+    // used to add 16px on top of that, which is how the Insights content ended
+    // up 8px further from its band than the grid's cards are from theirs. The
+    // "tab bar belongs to the content below it" grouping that margin was for is
+    // now carried by the band being a bounded surface rather than by spacing.
+    marginTop: '0',
+    paddingLeft: contentInset, paddingRight: contentInset } as Partial<CSSStyleDeclaration>);
 
   rootEl.appendChild(metaStripEl);
   rootEl.appendChild(tabBar);
@@ -209,6 +295,29 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
   let activeView: InsightsView = deps.defaultView ?? 'overview';
   let analysisGroupKey: string | undefined;
+
+  // Distributions' shared selected test and group scope live HERE, not inside
+  // `renderDistributionsSection`, because changing the scope now rebuilds the
+  // section: the reconciled test list is a function of the scope (see
+  // `scopedTestDefs` in `render`), so a scope change has to re-derive it, and
+  // section-local state would be discarded on every such change.
+  let activeSectionTest: number | null = null;
+  let activeSectionGroup: string | null = null;
+
+  /**
+   * Narrow every view to one group, or back to all of them.
+   *
+   * Re-renders rather than broadcasting: the reconciled test list is a function
+   * of the scope (see `scopeItems` in `render`), so narrowing can bring back
+   * tests the whole-population merge had to withhold, and no in-place update can
+   * express that. The selected test and scope live at tab level precisely so
+   * they survive the rebuild.
+   */
+  const selectGroupEverywhere = (key: string | null): void => {
+    if (activeSectionGroup === key) return;
+    activeSectionGroup = key;
+    render();
+  };
   let panelHandles: Array<{ destroy: () => void }> = [];
 
   function openWaferDetailModal(waferIndex: number, title: string, testNumber?: number): void {
@@ -223,7 +332,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       .map((it, waferIndex): Item | null => it == null ? null : {
         metadata: it.wafer.metadata ?? undefined, dies: it.dies, wafer: it.wafer,
         label: it.label ?? String(it.wafer.metadata?.waferId ?? ''), waferIndex,
-        statsSummary: it.statsSummary,
+        statsSummary: it.statsSummary, testDefs: it.testDefs,
       })
       .filter((it): it is Item => it != null);
   }
@@ -236,7 +345,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       color:        isActive ? CLR.iconActive : CLR.label,
       fontWeight:   isActive ? '700' : '500',
       fontSize:     FONT.body,
-      padding: `${SPACE.sm} ${SPACE.lg} ${SPACE.md}`,
+      // Horizontal padding is EDGE_GUTTER, not a free choice: the FIRST tab's
+      // left padding is what insets its label, so any other value puts the tab
+      // row on a different edge from the strip above and the cards below.
+      padding: `${SPACE.sm} ${EDGE_GUTTER} ${SPACE.md}`,
       cursor:       'pointer',
       marginBottom: '-1px',
     } as Partial<CSSStyleDeclaration>);
@@ -248,6 +360,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     btn.textContent = label;
     const isActive = view === activeView;
     styleTabButton(btn, isActive);
+    // Hover wired HERE, once per element, not in `styleTabButton` — that runs on
+    // every render, which would stack a fresh pair of listeners each time.
+    // `data-on` marks the active tab so hover leaves it alone: it already
+    // carries the selected colour and underline, and repainting it with the
+    // shared hover colour would make active and merely-pointed-at look alike.
+    btn.dataset.on = isActive ? 'true' : 'false';
+    wireControlHover(btn, 'bare');
     btn.dataset.wmapInsightsTab = view;
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
@@ -457,6 +576,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    *  `bodyEl`, so it never disappears when switching sub-tabs. */
   function renderMetadataStrip(items: Item[]): void {
     metaStripEl.innerHTML = '';
+    // The margin is what holds the strip tight to the tab bar as one header
+    // block — but only when there IS a strip. This element is appended
+    // unconditionally and stays empty for the gallery host (which passes
+    // `showMetadataStrip: false` and renders its own strip), where a margin on
+    // a zero-height div is just unaccounted space above the tabs. Set per
+    // render rather than at construction, since `showMetadataStrip` is not the
+    // only way this comes back empty — `buildMetadataStripBox` also returns
+    // nothing when there is no metadata to show.
+    metaStripEl.style.marginBottom = '0';
     if (!showMetadataStrip) return;
     // `facetableOnly: false` keeps `waferId` in the strip — safe here because
     // this tab only ever renders `showMetadataStrip: true` for
@@ -465,7 +593,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // than one entry and there's no risk of a distinct-wafer-ID list
     // cluttering the strip the way it would for a multi-wafer population.
     const box = buildMetadataStripBox(items.map(it => ({ metadata: it.metadata })), undefined, { facetableOnly: false });
-    if (box) { box.style.marginBottom = '0'; metaStripEl.appendChild(box); }
+    if (box) {
+      box.style.marginBottom = '0';
+      metaStripEl.appendChild(box);
+      metaStripEl.style.marginBottom = SPACE.xs;
+    }
   }
 
   /** Ring/quadrant regional yield, as a wafer-shaped diagram (see
@@ -718,14 +850,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return { card: outer, destroy: () => { yieldBins.destroy(); details.destroy(); } };
   }
 
-  /** Capability + boxplot + histogram together, wired so clicking a
-   *  capability box drives both the boxplot's and histogram's selected test
-   *  in place. Each panel still owns its own group-consuming UI (capability:
-   *  a "Group:" restrict-to-one-group dropdown; boxplot: pooled-per-group
-   *  overview rows with in-place drill-down; histogram: an overlaid
-   *  multi-series view with a click-to-emphasize legend) — unifying these
-   *  into one shared control is tracked as a follow-up, not done here (see
-   *  this file's header comment). */
+  /** Capability + boxplot + histogram + trend together, sharing ONE selected
+   *  test, ONE set of axis toggles, and — since the group desync fix — ONE
+   *  group scope. Each panel still renders the scope in the way that suits it
+   *  (capability narrows, boxplot drills, histogram emphasises), but they can
+   *  no longer be describing different populations at the same time. */
   function renderDistributionsSection(
     items: Item[],
     testDefs: TestDef[],
@@ -742,6 +871,23 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // default from its own data (shouldIncludeLimitsByDefault). It only becomes a
     // boolean once the user actually picks, and then it sticks across tests.
     let axisPrefs: AxisPrefs = { includeLimits: undefined, clipOutliers: false };
+
+    // The section's current group scope, `null` for all groups. Held here for
+    // the same reason the selected test and the axis toggles are, and it is the
+    // fix for a real correctness bug rather than a tidy-up.
+    //
+    // The three group-aware panels each owned a private group state with a
+    // DIFFERENT default: capability silently restricted to `groups[0]`, the
+    // boxplot opened on a pooled overview of every group, and the histogram
+    // overlaid them all. Grouping a six-lot load therefore produced three cards
+    // showing three different populations, side by side, from the first render
+    // — and because `selectTestEverywhere` broadcast the test while nothing
+    // broadcast the group, clicking a test in capability handed the boxplot the
+    // right test against the wrong lot, with nothing on screen saying so.
+    //
+    // Trend is deliberately excluded, as it already is from `groups` entirely:
+    // its x axis is the population's own slot order, and restricting it would
+    // remove the drift signal that is the whole point of the chart.
     const broadcastAxisPrefs = (prefs: AxisPrefs) => {
       axisPrefs = prefs;
       // Skip the originator: it has already applied the change and rebuilt, and
@@ -764,14 +910,27 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const boxplot = renderBoxplotPanel({
       title: 'Test value distribution',
       axisPrefs, onAxisPrefsChange: axisHandler(() => boxplot),
+      onTestChange: (n) => selectTestEverywhere(n),
+      // Every panel gets the section's remembered test, not just capability.
+      // `activeSectionTest` lives at tab level so it survives a scope change —
+      // which meant that after one, capability marked the remembered test while
+      // these three silently reset to `testDefs[0]`: four panels disagreeing
+      // about which test they were showing, the very fault the shared selection
+      // exists to prevent.
+      selectedTestNumber: activeSectionTest ?? undefined,
       items: boxplotItems, testDefs, groups: boxplotGroups, groupLabelText, colorScheme: getColorSchemeName(), onSaveImage,
+      onGroupChange: (key) => selectGroupEverywhere(key),
       onOpen: openWafer ? (waferIndex, testNumber) => openWaferDetailModal(waferIndex, `Wafer ${items.find(it => it.waferIndex === waferIndex)?.label ?? waferIndex}`, testNumber) : undefined,
       ownerDocument: doc,
     });
     const histogram = renderHistogramPanel({
       title: 'Value histogram',
       axisPrefs, onAxisPrefsChange: axisHandler(() => histogram),
-      items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
+      onTestChange: (n) => selectTestEverywhere(n),
+      selectedTestNumber: activeSectionTest ?? undefined,
+      items, testDefs, groups,
+      onGroupChange: (key) => selectGroupEverywhere(key),
+      colorScheme: getColorSchemeName(), onSaveImage,
       ownerDocument: doc,
     });
     // Wafer-to-wafer trend joins the cross-panel test link below, so picking a
@@ -785,6 +944,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const trend = renderTrendPanel({
       title: 'Wafer-to-wafer trend',
       axisPrefs, onAxisPrefsChange: axisHandler(() => trend),
+      onTestChange: (n) => selectTestEverywhere(n),
+      selectedTestNumber: activeSectionTest ?? undefined,
       items: items.map(it => ({
         label: it.label,
         key: it.waferIndex,
@@ -799,10 +960,32 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       ownerDocument: doc,
     });
 
+
+
+    // One test across the section: pick it anywhere and the others follow.
+    //
+    // Previously only the capability chart broadcast — clicking a column drove
+    // the other three — while choosing a test in the boxplot, histogram or
+    // trend told nobody, so the four panels silently disagreed about what they
+    // were showing. `setTest` never fires the panels' own `onTestChange`
+    // (see `makeLinkedTestSelect`), so this cannot bounce back on itself, and
+    // each panel's own guard makes a redundant call free.
+    const selectTestEverywhere = (testNumber: number): void => {
+      activeSectionTest = testNumber;
+      boxplot.setTest(testNumber);
+      histogram.setTest(testNumber);
+      trend.setTest(testNumber);
+      // Capability included: it is the fourth chart on this page, and it used
+      // to broadcast a selection while never showing one — the only panel here
+      // that could not say which test its siblings were displaying.
+      capability.setTest(testNumber);
+    };
+
     const capability = renderCapabilityPanel({
       title: 'Process capability',
-      items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
-      onSelectTest: (testNumber) => { boxplot.setTest(testNumber); histogram.setTest(testNumber); trend.setTest(testNumber); },
+      items, testDefs, colorScheme: getColorSchemeName(), onSaveImage,
+      selectedTestNumber: activeSectionTest ?? undefined,
+      onSelectTest: (testNumber) => selectTestEverywhere(testNumber),
       ownerDocument: doc,
     });
     // No manual card.style.minHeight here — capability/histogram grow their
@@ -835,7 +1018,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     });
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
-      items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage, onSaveText,
+      items, testDefs, colorScheme: getColorSchemeName(), onSaveImage, onSaveText,
       onSelectPair: (x, y) => scatter.setXY(x, y),
       ownerDocument: doc,
     });
@@ -875,13 +1058,52 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         'Group by:',
         [{ value: '', label: 'None' }, ...facetTable.map(f => ({ value: f.key, label: `${f.label} (${f.values.length})` }))],
         analysisGroupKey ?? '',
-        v => { analysisGroupKey = v || undefined; render(); },
+        v => { analysisGroupKey = v || undefined; activeSectionGroup = null; render(); },
         { hook: 'group-by', ownerDocument: doc },
       ));
       groupLabelText = facetTable.find(f => f.key === analysisGroupKey)?.label;
     } else {
       analysisGroupKey = undefined;
     }
+
+    let groups: { key: string; items: Item[] }[] | undefined;
+    if (analysisGroupKey) {
+      const byKey = new Map<string, Item[]>();
+      const order: string[] = [];
+      for (const it of allItems) {
+        const key = facetValueOf(it.metadata, analysisGroupKey) ?? FACET_NONE_VALUE;
+        if (!byKey.has(key)) { byKey.set(key, []); order.push(key); }
+        byKey.get(key)!.push(it);
+      }
+      groups = order.map(key => ({ key, items: byKey.get(key)! }));
+    }
+    // A scope that no longer exists (the "Group by" field changed under it)
+    // cannot narrow anything.
+    if (activeSectionGroup !== null && !groups?.some(g => g.key === activeSectionGroup)) {
+      activeSectionGroup = null;
+    }
+
+    // ONE scope control for the whole tab, beside "Group by" — not one per
+    // panel.
+    //
+    // The panels used to own this individually and disagree about it: capability
+    // and the correlation matrix each silently restricted to `groups[0]`, the
+    // boxplot pooled every group, the histogram and scatter overlaid them. Three
+    // views, five private group states, no default in common. Giving each panel
+    // its own copy of a shared control was the first fix, and it was still four
+    // copies of one idea. This is the single-dimension version: "Group by" says
+    // what the axis is, "Show" says how much of it you are looking at, and every
+    // panel in every view just receives the population that names.
+    if (groups && groups.length > 0) {
+      controlsRow.appendChild(makeLinkedGroupSelect(
+        groups.map(g => g.key),
+        'Show:',
+        activeSectionGroup,
+        key => selectGroupEverywhere(key),
+        { ownerDocument: doc },
+      ).el);
+    }
+
     let helpBtn: HTMLButtonElement | null = null;
     if (deps.onOpenGuide) {
       const help = doc.createElement('button');
@@ -896,7 +1118,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       wireControlHover(help, 'bare');
       wireTooltip(help, 'User guide');
       help.addEventListener('click', () => deps.onOpenGuide!());
-      Object.assign(help.style, { marginLeft: 'auto', marginRight: BAND_INSET } as Partial<CSSStyleDeclaration>);
+      // `marginLeft: auto` only — NO marginRight. This used to carry
+      // `BAND_INSET` itself, back when `tabBar` was flush to the container and
+      // the button was the only thing holding the right-hand gutter. `tabBar`
+      // now takes the gutter as its own margin, so repeating it here put this
+      // button 24px from the edge while every card and the tab rule sat at 12.
+      Object.assign(help.style, { marginLeft: 'auto' } as Partial<CSSStyleDeclaration>);
       helpBtn = help;
     }
     tabBar.appendChild(controlsRow);   // same row as the tabs, not a band below
@@ -908,24 +1135,84 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // meaningless for a binary outcome. They get their own pass-rate card in
     // the Overview view instead (renderOverviewDetailsCards receives the
     // unfiltered defs) and remain visible on the wafer map itself.
-    const allTestDefs = getItems().find(it => it?.testDefs?.length)?.testDefs ?? [];
-    const testDefs = allTestDefs.filter(isParametricTest);
-    let groups: { key: string; items: Item[] }[] | undefined;
-    if (analysisGroupKey) {
-      const byKey = new Map<string, Item[]>();
-      const order: string[] = [];
-      for (const it of allItems) {
-        const key = facetValueOf(it.metadata, analysisGroupKey) ?? FACET_NONE_VALUE;
-        if (!byKey.has(key)) { byKey.set(key, []); order.push(key); }
-        byKey.get(key)!.push(it);
-      }
-      groups = order.map(key => ({ key, items: byKey.get(key)! }));
+    // ONE test namespace for the population — see `stats/mergeTestDefs.ts`.
+    // This used to be `getItems().find(it => it?.testDefs?.length)?.testDefs`:
+    // one arbitrary wafer's list, applied to every wafer's values. Test numbers
+    // identify a test within a test program, so a multi-program load pooled
+    // unrelated measurements under one number and normalised them against
+    // whichever limits happened to arrive first. `mergeTestDefs` unions the
+    // numbers (tests present only in the later wafers used to be invisible here)
+    // and withholds any number that describes different measurements in
+    // different wafers. The gallery reports the collisions through its own
+    // warning indicator, so nothing to surface from this side.
+    // SCOPE-AWARE RECONCILIATION.
+    //
+    // Withholding a colliding test number is right, but only over the
+    // population actually being compared. Applied to the whole load it punishes
+    // agreement: given six lots where four use test 1001 identically and two
+    // disagree, reconciling over all six withholds 1001 from everyone — so the
+    // four perfectly comparable lots lose their shared tests, and the only tests
+    // left are those unique to a single lot, which is the one thing that cannot
+    // be compared with anything. That is what shipped first, and it made
+    // Insights emptier the more data you loaded.
+    //
+    // Narrowing the scope to one group removes the collision entirely: within a
+    // lot a test number does identify one test, so every test returns with its
+    // own file's name, unit and limits. "All groups" still withholds, because
+    // pooling one lot's `vth_n_mV` with another's `leakage` under one number
+    // genuinely is meaningless.
+    //
+    // Every view, not just Distributions — the scope is a property of the tab.
+    //
+    // Narrowing collapses grouping entirely: `scopeGroups` is `undefined` under
+    // a scope because there is only one group left, and a panel's
+    // compare-the-groups machinery (pooled overview rows, clustered bars,
+    // overlaid series, a restrict-to-one dropdown) has nothing to compare. Each
+    // panel simply renders its ordinary ungrouped view over that group's wafers,
+    // which is what "show me this lot" should mean and removes a whole tier of
+    // conditional behaviour rather than adding one.
+    const scoped_ = activeSectionGroup !== null
+      ? groups?.find(g => g.key === activeSectionGroup)
+      : undefined;
+    const scopeItems = scoped_?.items ?? allItems;
+    const scopeGroups = scoped_ ? undefined : groups;
+    const scoped = mergeTestDefs(scopeItems);
+    const scopedAllDefs = scoped.defs;
+    const scopedTestDefs = scopedAllDefs.filter(isParametricTest);
+    // A test the previous scope was showing may not exist in this one.
+    if (activeSectionTest !== null && !scopedTestDefs.some(d => d.testNumber === activeSectionTest)) {
+      activeSectionTest = null;
     }
 
     const section =
-      activeView === 'overview'      ? renderOverviewSection(allItems, testDefs, allTestDefs, groups, groupLabelText) :
-      activeView === 'distributions' ? renderDistributionsSection(allItems, testDefs, groups, groupLabelText) :
-      renderCorrelationSection(allItems, testDefs, groups);
+      activeView === 'overview'      ? renderOverviewSection(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
+      activeView === 'distributions' ? renderDistributionsSection(scopeItems, scopedTestDefs, scopeGroups, groupLabelText) :
+      renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups);
+    // Say why the test list is short, and how to get the rest back — above
+    // whichever view is active, because all three reconcile over the scope and
+    // any of them can be withholding. Without it the reader sees a handful of
+    // tests, no explanation, and a Findings panel beside it happily reporting on
+    // tests that are missing here.
+    const withheld = scoped.conflicts.filter(c => c.excluded);
+    if (withheld.length > 0) {
+      const note = doc.createElement('div');
+      Object.assign(note.style, {
+        color: CLR.label, fontSize: FONT.body, padding: `0 ${contentInset} ${SPACE.sm}`,
+      } as Partial<CSSStyleDeclaration>);
+      const numbers = withheld.slice(0, 6).map(c => c.testNumber).join(', ');
+      const more = withheld.length > 6 ? `, and ${withheld.length - 6} more` : '';
+      const them = withheld.length === 1 ? 'it' : 'them';
+      note.textContent =
+        `${withheld.length} test ${withheld.length === 1 ? 'number is' : 'numbers are'} hidden `
+        + `(${numbers}${more}) — the wafers in view describe ${them} differently, so their values `
+        + 'cannot be pooled. '
+        + (groups && groups.length > 0
+            ? `Pick one ${groupLabelText ?? 'group'} under "Show:" to analyse ${them}.`
+            : 'Load one test program at a time to analyse them.');
+      note.dataset.wmapWithheldTests = String(withheld.length);
+      bodyEl.appendChild(note);
+    }
+
     panelHandles.push(section);
     bodyEl.appendChild(section.card);
   }

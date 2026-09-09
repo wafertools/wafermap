@@ -31,8 +31,12 @@
     }
     header a:hover { text-decoration: underline; }
     #map {
-      width: min(600px, 96vw);
-      height: min(600px, 96vw);
+      /* Wide enough to dock the summary panel beside the map rather than
+         squeezing it. The panel is a fixed 300px when side-docked, so a 600px
+         box left the map 280px — half the width for the wafer this page exists
+         to show. 1000px keeps the map the dominant element at ~660px. */
+      width: min(1000px, 96vw);
+      height: min(620px, 90vh);
       margin: var(--space-xxxl) auto;
       display: block;
     }
@@ -63,6 +67,7 @@
   <script type="module">
     import { buildWaferMap }  from '../dist/index.js';
     import { renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
+    import { analyzeWaferMap } from '../dist/packages/stats/index.js';
 
     // x, y are integer die grid positions output by the prober — NOT millimetres.
     // hbin is the hard bin: the pass/fail category assigned by the test equipment.
@@ -86,10 +91,34 @@
 
     // buildWaferMap processes die data into a wafer model. Pure function — no DOM access.
     // passBins tells the library which bin numbers count as passing yield.
-    const result = buildWaferMap({ results, passBins: [1] });
+    //
+    // waferConfig/dieConfig state the physical geometry. They are optional —
+    // wmap infers a wafer from the die positions alone — but inference can only
+    // produce a *dimensionless* map: correct relative positions, with a made-up
+    // diameter and 1×1 dies. Supply them whenever you know them, which for real
+    // test data you almost always do. Everything denominated in millimetres
+    // (edge exclusion, die pitch, the stated wafer size) depends on it.
+    const result = buildWaferMap({
+      results,
+      passBins: [1],
+      waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+      dieConfig:   { width: 10, height: 10 },
+      hbinDefs: [{ bin: 1, name: 'Pass' }, { bin: 2, name: 'Edge Ring' }],
+    });
+
+    // One more call turns the map into an analysis. analyzeWaferMap looks for
+    // ring, quadrant, sector and cluster patterns in the yield and bin data and
+    // returns them as findings; the summary panel renders them beside the map,
+    // and clicking one highlights the dies it covers. On this wafer it should
+    // find the edge ring the data above was built with.
+    const summary = analyzeWaferMap(result, { ringCount: 4 });
 
     // renderWaferMap mounts an interactive canvas into the container div.
-    renderWaferMap(document.getElementById('map'), result, { showHelpButton: true });
+    renderWaferMap(document.getElementById('map'), result, {
+      statsSummary: summary,
+      summaryPanel: { placement: 'right', defaultOpen: true },
+      showHelpButton: true,
+    });
   </script>
 </body>
 </html>

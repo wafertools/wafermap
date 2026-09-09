@@ -9,7 +9,8 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
   } }</script>
 </head>
 
@@ -44,6 +45,7 @@
 
   <script type="module">
     import { buildWaferMap } from 'wafermap';
+    import { analyzeWaferMap } from 'wafermap/stats';
     import { renderWaferMap } from 'wafermap/render';
 
     // A real MPW reticle holds several products in fixed positions — often
@@ -70,11 +72,27 @@
       return RETICLE_PATTERN[ry][rx];
     }
 
+    // Declared once and used for BOTH the clip above and the config below, so
+    // the data and the geometry it is rendered with cannot disagree.
+    const WAFER_MM = 90, DIE_MM = 8;
+
     const results = [];
-    for (let x = -4; x <= 5; x++) {
-      for (let y = -4; y <= 5; y++) {
-        const dist = Math.hypot(x + 0.5, y + 0.5);
-        if (dist > 5.4) continue; // clip to a roughly circular wafer
+    for (let x = -5; x <= 5; x++) {
+      for (let y = -5; y <= 5; y++) {
+        // Keep only dies that fit ENTIRELY inside the wafer, expressed in the
+        // same terms wmap checks: a die at grid (x, y) is centred at x × pitch,
+        // and the part that leaves the wafer first is its outer CORNER — half a
+        // die further out in BOTH axes, not half a die along one.
+        //
+        // The previous clip (`hypot(x + 0.5, y + 0.5) > 5.4`) got this wrong
+        // twice: it measured from a half-die-offset centre wmap does not use,
+        // and it compared centre distance rather than corner distance. Seven of
+        // the 76 dies then had a corner past the 45 mm edge — worst was grid
+        // (-4,-4) at 50.9 mm — and wmap correctly raised `geometry-conflict` on
+        // the demo's own data.
+        const halfDie = DIE_MM / 2;
+        const corner = Math.hypot(Math.abs(x * DIE_MM) + halfDie, Math.abs(y * DIE_MM) + halfDie);
+        if (corner > WAFER_MM / 2) continue;
 
         const project = productAt(x, y);
         const die = { x, y, metadata: { project } };
@@ -90,8 +108,8 @@
 
     const result = buildWaferMap({
       results,
-      waferConfig:   { diameter: 90 },
-      dieConfig:     { width: 8, height: 8 },
+      waferConfig:   { diameter: WAFER_MM },
+      dieConfig:     { width: DIE_MM, height: DIE_MM },
       reticleConfig: { width: RETICLE_W, height: RETICLE_H, anchorDie: ANCHOR_DIE },
       metadataFields: [
         { key: 'project', label: 'Project', values: [
@@ -105,6 +123,10 @@
 
     renderWaferMap(document.getElementById('map'), result, {
       viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project', showReticle: true },
+      // Metadata colouring coexists with the bin/test data, so the panel still
+      // reports real yield and findings while the map is coloured by project.
+      statsSummary: analyzeWaferMap(result, { ringCount: 4 }),
+      summaryPanel: { placement: 'right' },
       showHelpButton: true,
     });
   </script>

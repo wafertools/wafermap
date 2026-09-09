@@ -600,3 +600,80 @@ test('a default-collapsed section can be opened, and the choice survives a re-re
     'a user-opened section must stay open across a re-render',
   );
 });
+
+// ── Findings notice ──────────────────────────────────────────────────────────
+// A host row at the top of the Findings section, for stating that a category of
+// finding is absent and offering to compute it. The case that motivates it: the
+// regional test-value pass is expensive, so a host may skip it — and a reader
+// looking at the Findings list has no way to tell that it did. See FindingsNotice.
+
+/** Minimal params for renderWaferSummaryContent's findings path. */
+function waferParams(statsSummary, findingsNotice) {
+  return {
+    wafer: wafer(), dies: dualBinDies(), statsSummary,
+    onFindingClick: () => {},
+    activeFindingId: null,
+    findingsFilter: {},
+    onFindingsFilterChange: () => {},
+    findingsNotice,
+  };
+}
+const noFindings = { findings: [], stats: {} };
+const findingsSectionOf = (panel) =>
+  [...panel.querySelectorAll('*')].find(e => /^Findings \(/.test(e.textContent ?? ''));
+
+test('the findings notice renders its message, detail and action', () => {
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, waferParams(noFindings, {
+    message: 'Test-value findings are not included.',
+    detail: 'Regional analysis of 30 tests across 25 wafers — about 10s.',
+    actionLabel: 'Analyse',
+    onAction: () => {},
+  }));
+  const text = panel.textContent ?? '';
+  assert.match(text, /Test-value findings are not included\./);
+  assert.match(text, /30 tests across 25 wafers — about 10s/);
+  const btn = [...panel.querySelectorAll('button')].find(b => b.textContent === 'Analyse');
+  assert.ok(btn, 'expected an "Analyse" action button');
+});
+
+test('the notice renders even when the lot has no findings at all', () => {
+  // The load-bearing case: on a lot whose only findings WOULD have come from the
+  // skipped analysis, the section is otherwise empty and used to return null —
+  // hiding the very offer to run it, exactly when it matters most.
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, waferParams(noFindings, {
+    message: 'Test-value findings are not included.', actionLabel: 'Analyse', onAction: () => {},
+  }));
+  assert.ok(findingsSectionOf(panel), 'expected a Findings section built around the notice alone');
+  assert.match(panel.textContent ?? '', /Test-value findings are not included\./);
+});
+
+test('no notice and no findings still renders no findings section', () => {
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, waferParams(noFindings, undefined));
+  assert.equal(findingsSectionOf(panel), undefined,
+    'an empty findings list with nothing to offer must not produce an empty section');
+});
+
+test('the notice action fires exactly once per click', () => {
+  const panel = panelDiv();
+  let calls = 0;
+  renderWaferSummaryContent(panel, waferParams(noFindings, {
+    message: 'Test-value findings are not included.',
+    actionLabel: 'Analyse',
+    onAction: () => { calls++; },
+  }));
+  const btn = [...panel.querySelectorAll('button')].find(b => b.textContent === 'Analyse');
+  btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(calls, 1);
+});
+
+test('a message-only notice renders no button', () => {
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, waferParams(noFindings, {
+    message: 'Test-value findings are not included.',
+  }));
+  assert.match(panel.textContent ?? '', /Test-value findings are not included\./);
+  assert.equal([...panel.querySelectorAll('button')].some(b => b.textContent === 'Analyse'), false);
+});

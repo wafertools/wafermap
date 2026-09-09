@@ -75,7 +75,7 @@
     "build": "node scripts/build-user-guide.mjs && node scripts/sync-icons.mjs && node scripts/sync-version.mjs && rm -rf dist && tsc -p tsconfig.build.json",
     "build:guide": "node scripts/build-user-guide.mjs",
     "clean": "rm -rf dist",
-    "check": "node scripts/build-user-guide.mjs && node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json && node scripts/check-examples-manifest.mjs && node scripts/build-agents-page.mjs --check && node scripts/check-agents-guide.mjs && node scripts/check-toolbar-docs.mjs && node scripts/check-overlay-conventions.mjs && node scripts/check-changelog.mjs && node scripts/help.mjs --check && node scripts/check-style-scales.mjs packages/canvas-adapter",
+    "check": "node scripts/build-user-guide.mjs && node scripts/sync-version.mjs && tsc --noEmit -p tsconfig.json && node scripts/check-examples-manifest.mjs && node scripts/build-agents-page.mjs --check && node scripts/check-agents-guide.mjs && node scripts/check-toolbar-docs.mjs && node scripts/check-overlay-conventions.mjs && node scripts/check-changelog.mjs && node scripts/help.mjs --check && node scripts/check-api-claims.mjs && node scripts/check-style-scales.mjs packages/canvas-adapter && node scripts/check-clones.mjs packages",
     "build:examples-index": "node scripts/build-examples-index.mjs",
     "check:drift": "node scripts/check-drift.mjs",
     "dev": "rm -rf docs/dist && cp -r dist docs/dist && ./.venv/bin/zensical serve --dev-addr localhost:8001",
@@ -87,14 +87,15 @@
     "prepublishOnly": "npm test",
     "verify": "npm run check && npm test",
     "preversion": "npm run verify",
-    "version": "node scripts/check-changelog.mjs",
+    "version": "node scripts/check-changelog.mjs && node scripts/check-bundle-size.mjs --write && node scripts/check-api-claims.mjs --write && git add README.md docs/performance.md docs/api.md",
     "postversion": "echo \"\\nTagged v$npm_package_version. Next:\\n  git push && git push origin v$npm_package_version\\n  npm publish\\n\"",
     "postpublish": "echo \"\\ndist/ was minified for publish — run 'npm run build' to restore the readable dev build.\\n\"",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "screenshots:list": "node scripts/capture-screenshots.mjs --list",
     "build:images": "npm run build && node scripts/capture-screenshots.mjs",
     "build:agents-page": "node scripts/build-agents-page.mjs",
-    "check:styles": "node scripts/check-style-scales.mjs packages/canvas-adapter"
+    "check:styles": "node scripts/check-style-scales.mjs packages/canvas-adapter",
+    "check:api": "node scripts/check-api-claims.mjs"
   },
   "keywords": [
     "wafer-map",

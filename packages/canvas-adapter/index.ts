@@ -7,7 +7,7 @@ export type { RenderOptions, WaferMapController, WaferViewOptions, WaferPreferen
 export { renderWaferGallery } from './renderWaferGallery.js';
 export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';
 
-export type { SummaryPanelOptions } from './summaryPanel.js';
+export type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 
 // The general-purpose die-list table + CSV export — used internally for a
 // fully coordinate-less wafer's map replacement and a mixed wafer's "+N

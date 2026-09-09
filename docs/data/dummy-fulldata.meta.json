@@ -1,0 +1,78 @@
+{
+  "waferConfig": {
+    "diameter": 300,
+    "notch": {
+      "type": "bottom"
+    },
+    "metadata": {
+      "lot": "LOT123",
+      "product": "DEMO-LOGIC"
+    }
+  },
+  "dieConfig": {
+    "width": 10,
+    "height": 10
+  },
+  "passBins": [
+    1
+  ],
+  "hbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 2,
+      "name": "Edge Ring"
+    },
+    {
+      "bin": 3,
+      "name": "Vth Shift"
+    },
+    {
+      "bin": 4,
+      "name": "Leakage"
+    }
+  ],
+  "sbinDefs": [
+    {
+      "bin": 10,
+      "name": "Pass"
+    },
+    {
+      "bin": 20,
+      "name": "Edge Ring"
+    },
+    {
+      "bin": 40,
+      "name": "Vth - Hi"
+    },
+    {
+      "bin": 45,
+      "name": "Leakage - Gate"
+    }
+  ],
+  "testDefs": [
+    {
+      "testNumber": 9,
+      "name": "testA",
+      "unit": "A",
+      "limitLow": 0.8,
+      "limitHigh": 1.3
+    },
+    {
+      "testNumber": 10,
+      "name": "testB",
+      "unit": "V",
+      "limitLow": 0.44,
+      "limitHigh": 0.54
+    },
+    {
+      "testNumber": 11,
+      "name": "testC",
+      "unit": "Hz",
+      "limitLow": 25,
+      "limitHigh": 85
+    }
+  ]
+}

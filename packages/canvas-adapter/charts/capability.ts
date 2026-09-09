@@ -15,8 +15,8 @@
 import { buildCapabilityData, type CapabilityDatum, type CapabilityItem } from '../../stats/capability.js';
 import { capabilityColor } from './palette.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { LEADING, SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
-import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, makeLabeledSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler } from './chartShell.js';
+import { LEADING, SPACE, fontPx, FONT, CLR } from '../toolbar.js';
+import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
 import { fmt } from '../../renderer/fmt.js';
 
 const CAP_MIN_COL = 30;
@@ -44,17 +44,18 @@ export interface CapabilityPanelOptions {
   testDefs: TestDef[];
   colorScheme?: string;
   onSaveImage?: SaveImageHandler;
+  /** Test to mark as the section's current one, if any. */
+  selectedTestNumber?: number;
   /** Clicking a test's box calls this — the Analysis tab wires it to drive the boxplot panel's selected test in place, mirroring tsmap's original capability→boxplot link. */
   onSelectTest?: (testNumber: number) => void;
   /**
-   * When the Analysis tab's "Group by" is active, this panel gets its own
-   * "Group: <value> ▾" restrict-to-one-group dropdown (matching tsmap's
-   * `charts/capability.ts` exactly — capability shows exactly one group's
-   * data at a time, never all groups at once or pooled). `items` above is
-   * ignored when `groups` is provided; the active group's own item list is
-   * used instead. Absent ⇒ today's plain ungrouped behavior.
+   * Grouping is NOT this panel's concern. The Insights tab owns one "Show:"
+   * scope for every view and hands each panel the population it names, so a
+   * narrowed population arrives here as plain `items`. This panel previously
+   * took a `groups` list and silently restricted itself to `groups[0]` with no
+   * way back to the pooled view — a chart captioned as the lot while drawing
+   * one sixth of it.
    */
-  groups?: { key: string; items: CapabilityItem[] }[];
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -79,41 +80,34 @@ export interface CapabilityPanelHandle {
    */
   hasData: boolean;
   /** Disconnect this panel's own ResizeObserver. Call when removing the card from the DOM. */
+  /** Mark the test the section is showing. Redraws only when it changes. */
+  setTest: (testNumber: number) => void;
   destroy: () => void;
 }
 
 export function renderCapabilityPanel(options: CapabilityPanelOptions): CapabilityPanelHandle {
   // `colorScheme` is deliberately no longer read — boxes use the fixed
   // capable/marginal/poor hues (palette.ts); the option stays for API compatibility.
-  const { title = 'Process capability', items, testDefs, onSaveImage, onSelectTest, groups } = options;
-  const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
+  const { title = 'Process capability', items, testDefs, onSaveImage, onSelectTest } = options;
+  /** Test the surrounding section is showing, marked in the plot. */
+  let selectedTest: number | null = options.selectedTestNumber ?? null;
+  const { card, body } = cardShell(title, onSaveImage, options.ownerDocument);
 
   const hasData = testDefs.some(d => d.testNumber !== undefined);
 
   body.style.overflowX = 'auto';
 
-  let activeGroup: string | undefined = groups && groups.length > 0 ? groups[0].key : undefined;
-
-  if (groups && groups.length > 0) {
-    controlsRow.appendChild(makeLabeledSelect(
-      'Group:',
-      groups.map(g => ({ value: g.key, label: g.key })),
-      activeGroup ?? '',
-      v => { activeGroup = v; rebuild(); },
-      { ownerDocument: card.ownerDocument },
-    ));
-  }
-
+  // No group control of its own: the Insights tab owns ONE "Show:" scope for
+  // every view (see `insightsTab.ts`), and a scoped population arrives here with
+  // `groups` already undefined. `items` is always the population to draw.
   function currentItems(): CapabilityItem[] {
-    if (!groups || groups.length === 0) return items;
-    return groups.find(g => g.key === activeGroup)?.items ?? [];
+    return items;
   }
 
   const hintRow = card.ownerDocument.createElement('div');
   Object.assign(hintRow.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hintRow, body);
 
-  const dpr = window.devicePixelRatio || 1;
   const tooltip = makeTooltip(card);
 
   let draw: () => void = () => {};
@@ -153,7 +147,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       : 'Normalised to spec limits (LSL = 0, USL = 1), worst Ppk first. '
         + 'Tests without both limits are normalised to their own observed range and drawn muted/dashed.';
     Object.assign(method.style, {
-      color: CLR.label, fontSize: FONT.body, lineHeight: LEADING.base, marginTop: '3px', maxWidth: '78ch',
+      color: CLR.label, fontSize: FONT.body, lineHeight: LEADING.base, marginTop: SPACE.xs, maxWidth: '78ch',
     } as Partial<CSSStyleDeclaration>);
     hintRow.appendChild(method);
 
@@ -171,8 +165,8 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
   function buildCapabilityLegend(doc: Document, includeUnspec: boolean, allUnspec = false): HTMLElement {
     const row = doc.createElement('div');
     Object.assign(row.style, {
-      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 14px',
-      marginTop: '7px', fontSize: FONT.body, color: CLR.label,
+      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: `${SPACE.xs} ${SPACE.xl}`,
+      marginTop: SPACE.xl, marginBottom: SPACE.xs, fontSize: FONT.body, color: CLR.label,
     } as Partial<CSSStyleDeclaration>);
 
     const entries: Array<{ color: string; label: string; dashed?: boolean }> = allUnspec ? [] : [
@@ -184,14 +178,14 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
     for (const e of entries) {
       const item = doc.createElement('span');
-      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: '5px' } as Partial<CSSStyleDeclaration>);
+      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm } as Partial<CSSStyleDeclaration>);
       const sw = doc.createElement('span');
-      Object.assign(sw.style, {
-        width: '11px', height: '11px', flexShrink: '0', borderRadius: RADIUS.control,
-        background: e.dashed ? 'transparent' : e.color,
-        border: `1px ${e.dashed ? 'dashed' : 'solid'} ${e.color}`,
-        opacity: e.dashed ? '1' : '0.75',
-      } as Partial<CSSStyleDeclaration>);
+      // The shared chip — this was an 11px bordered square of its own, so the
+      // same colour key looked different here from the histogram and scatter.
+      // No opacity override: the solid chips were drawn at 0.75 here and at
+      // full strength in every other chart, which is one more way the same key
+      // differed per surface.
+      sw.style.cssText = chartSwatchCss(e.color, e.dashed ? 'outline' : 'solid');
       const txt = doc.createElement('span');
       txt.textContent = e.label;
       item.append(sw, txt);
@@ -266,7 +260,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       for (const [v, label] of [[1, hiLabel], [0, loLabel]] as const) {
         const y = yFor(v, plotTop, plotH);
         if (y < plotTop - 1 || y > plotTop + plotH + 1) continue;
-        ctx.strokeStyle = theme.warnBorder;
+        ctx.strokeStyle = theme.limitLine;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(CAP_AXIS_W - 5, y);
@@ -305,14 +299,9 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       const plotBottom = Math.max(plotTop + 60, totalH - CAP_LABEL_H);
       const plotH = plotBottom - plotTop;
 
-      canvas.width = Math.max(1, Math.floor(totalW * dpr));
-      canvas.height = Math.max(1, Math.floor(totalH * dpr));
-      canvas.style.width = `${totalW}px`;
-      canvas.style.height = `${totalH}px`;
-
-      const ctx = canvas.getContext('2d')!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, totalW, totalH);
+      const prep = prepareCanvas(canvas, card, totalW, totalH);
+      if (!prep) return;
+      const { ctx } = prep;
 
       // Resolved to concrete color strings, not raw `var(...)` — canvas
       // fillStyle/strokeStyle can't parse CSS custom-property syntax at all
@@ -331,6 +320,17 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
           ctx.fillRect(x, plotTop, cs, plotBottom - plotTop);
         }
 
+        // The test the whole section is showing, marked with an accent RULE
+        // rather than a fill — hover already owns the fill, and "pointed at"
+        // and "chosen" have to stay tellable apart when they land on the same
+        // column. This panel used to broadcast a selection and never show one,
+        // so it was the only chart on the page that could not say which test
+        // its siblings were displaying.
+        if (rows[i].testNumber === selectedTest) {
+          ctx.fillStyle = theme.accent;
+          ctx.fillRect(x, plotBottom - 2, cs, 2);
+        }
+
         // LSL/USL reference ticks only make sense for this column's own
         // normalization — a spec'd test's 0/1 are its real limits, but an
         // unspec'd test's 0/1 are just its own min/max, so drawing a
@@ -339,7 +339,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         if (d.hasSpec) {
           const yLsl = yFor(0, plotTop, plotH);
           const yUsl = yFor(1, plotTop, plotH);
-          ctx.strokeStyle = theme.warnBorder;
+          ctx.strokeStyle = theme.limitLine;
           ctx.setLineDash([3, 3]);
           ctx.lineWidth = 1;
           ctx.beginPath();
@@ -421,7 +421,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       const rect = canvas.getBoundingClientRect();
       const availW = body.clientWidth;
       const cs = colSize(availW - CAP_AXIS_W);
-      const ox = (e.clientX - rect.left) * (canvas.width / dpr / rect.width) - CAP_AXIS_W;
+      const ox = (e.clientX - rect.left) * (canvas.width / chartDpr(canvas) / rect.width) - CAP_AXIS_W;
       const col = Math.floor(ox / cs);
       return col >= 0 && col < n ? col : -1;
     }
@@ -470,5 +470,14 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
   const resizeHandle = observeResize(card, () => draw());
   rebuild();
-  return { card, hasData, destroy: () => resizeHandle.disconnect() };
+  return {
+    card, hasData,
+    setTest: (testNumber: number) => {
+      if (selectedTest === testNumber) return;
+      selectedTest = testNumber;
+      // `drawChart` is reassigned per rebuild; call through the live binding.
+      draw();
+    },
+    destroy: () => resizeHandle.disconnect(),
+  };
 }

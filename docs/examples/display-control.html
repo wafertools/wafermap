@@ -9,7 +9,8 @@
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
     "wafermap":                "../dist/index.js",
-    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
   } }</script>
   <style>
     /* Wider panel for the external controls */
@@ -231,6 +232,7 @@
 
   <script type="module">
     import { buildWaferMap, registerColorScheme } from 'wafermap';
+    import { analyzeWaferMap } from 'wafermap/stats';
     import { renderWaferMap } from 'wafermap/render';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS } from './data.js';
 
@@ -318,6 +320,11 @@
         plotMode: 'hardBin',
         testDefs: view.testDefs,
       },
+      // The panel follows the toolbar: switching plot mode re-opens the bin
+      // breakdown on the matching bin type, which is the behaviour this page is
+      // about.
+      statsSummary: analyzeWaferMap(result, { ringCount: 4 }),
+      summaryPanel: { placement: 'right' },
       showHelpButton: true,
       onViewOptionsChange(opts) {
         // Mirror every toolbar change into the external controls

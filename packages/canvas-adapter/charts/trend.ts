@@ -17,12 +17,7 @@ import { isParametricTest, type TestDef } from '../../renderer/buildWaferMap.js'
 import { fmt } from '../../renderer/fmt.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { QUANTITY } from './palette.js';
-import {
-  cardShell, observeResize, makeTooltip, positionChartTooltip, makeTestSelect, makeToggle,
-  renderEmptyState, growCardToFitContent, chartFillHeight, resolveChartCanvasColors, PADDING,
-  resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits,
-  type AxisPrefs, type SaveImageHandler,
-} from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
 
 const PLOT_H = 220;
 const AXIS_W = 56;
@@ -41,6 +36,9 @@ export interface TrendPanelOptions {
   axisPrefs?: AxisPrefs;
   /** Fired when the user changes an axis toggle here, so siblings can follow. */
   onAxisPrefsChange?: (prefs: AxisPrefs) => void;
+  /** Fired when the USER picks a test here, so siblings can follow. Not fired
+   *  by `setTest`, which is how a broadcast avoids bouncing back. */
+  onTestChange?: (testNumber: number) => void;
   ownerDocument?: Document;
 }
 
@@ -64,31 +62,24 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
   const testOptions = testDefs.filter((d): d is TestDef & { testNumber: number } =>
     d.testNumber !== undefined && isParametricTest(d));
   let activeTest = options.selectedTestNumber ?? testOptions[0]?.testNumber ?? null;
-  let axisIncludesLimits: boolean | undefined = options.axisPrefs?.includeLimits;
-  let clipOutliers = options.axisPrefs?.clipOutliers ?? false;
   let lastClippedCount = 0;
 
-  controlsRow.appendChild(makeTestSelect(testOptions, activeTest, n => { activeTest = n; rebuild(); },
-    { maxWidth: '240px', emptyText: 'No parametric tests', ownerDocument: card.ownerDocument }));
+  const testSel = makeLinkedTestSelect(testOptions, activeTest, n => {
+    activeTest = n;
+    rebuild();
+    options.onTestChange?.(n);
+  }, { maxWidth: '240px', emptyText: 'No parametric tests', ownerDocument: card.ownerDocument });
+  controlsRow.appendChild(testSel.el);
   const axisTogglesRow = card.ownerDocument.createElement('span');
   Object.assign(axisTogglesRow.style, { display: 'inline-flex', gap: SPACE.lg, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
   controlsRow.appendChild(axisTogglesRow);
+  // The toggles, their state, and the notify — one shared control instead of
+  // a copy in each of the three panels that offers them.
+  const axisCtl = makeLinkedAxisPrefs(axisTogglesRow, options.axisPrefs, prefs => {
+    options.onAxisPrefsChange?.(prefs);
+    rebuild();
+  }, card.ownerDocument);
 
-  function syncAxisToggles(resolvedIncludeLimits: boolean, hasLimits: boolean): void {
-    axisTogglesRow.innerHTML = '';
-    if (hasLimits) {
-      axisTogglesRow.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
-        axisIncludesLimits = v;
-        options.onAxisPrefsChange?.({ includeLimits: v, clipOutliers });
-        rebuild();
-      }, card.ownerDocument));
-    }
-    axisTogglesRow.appendChild(makeToggle('Clip outliers', clipOutliers, v => {
-      clipOutliers = v;
-      options.onAxisPrefsChange?.({ includeLimits: axisIncludesLimits, clipOutliers: v });
-      rebuild();
-    }, card.ownerDocument));
-  }
 
   const hint = card.ownerDocument.createElement('div');
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
@@ -103,6 +94,8 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
   }
 
   function rebuild(): void {
+    // Read once per rebuild from the shared control, which owns this state.
+    const { includeLimits: axisIncludesLimits, clipOutliers } = axisCtl.get();
     body.innerHTML = '';
     resizeHandle?.disconnect();
     resizeHandle = null;
@@ -155,19 +148,9 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       // 220px plot no matter how much room it was given, so expanding it added
       // whitespace rather than resolution — exactly what an expand is for.
       const height = Math.max(PLOT_H, chartFillHeight(card, body, canvas, PLOT_H));
-      const win = card.ownerDocument.defaultView ?? window;
-      const dpr = win.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-      const theme = resolveChartCanvasColors(card);
+      const prep = prepareCanvas(canvas, card, width, height);
+      if (!prep) return;
+      const { ctx, theme } = prep;
 
       // Range covers every mean ± its own σ, so a whisker is never clipped by the
       // range itself.
@@ -183,7 +166,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
 
       const resolvedIncludeLimits = axisIncludesLimits
         ?? shouldIncludeLimitsByDefault(dataLo, dataHi, def?.limitLow, def?.limitHigh);
-      syncAxisToggles(resolvedIncludeLimits, def?.limitLow !== undefined || def?.limitHigh !== undefined);
+      axisCtl.sync(resolvedIncludeLimits, def?.limitLow !== undefined || def?.limitHigh !== undefined);
 
       const range = resolveAxisRange({
         dataMin: dataLo, dataMax: dataHi,
@@ -243,18 +226,18 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       // silently absent — otherwise "off-screen" reads as "this test has no limits".
       drawOffAxisLimits(ctx, range.offAxis,
         { left: plotLeft, right: plotRight, top: plotTop, bottom: plotBottom },
-        'vertical', theme.warnBorder, v => fmt(v, def?.unit));
+        'vertical', theme.limitLine, v => fmt(v, def?.unit));
 
       // Spec limits first, so data draws over them.
       for (const [limit, label] of [[def?.limitLow, 'LSL'], [def?.limitHigh, 'USL']] as const) {
         if (limit === undefined || limit < lo || limit > hi) continue;
         const y = yOf(limit);
         ctx.save();
-        // theme.warnBorder, not CLR.errText — `CLR.*` are `var(--wmap-…)` strings
+        // theme.limitLine, not CLR.errText — `CLR.*` are `var(--wmap-…)` strings
         // for CSS and canvas cannot resolve a custom property, so the assignment
         // is silently ignored and the line keeps the previous colour. This is also
         // the colour histogram and boxplot already draw their LSL/USL lines in.
-        ctx.strokeStyle = theme.warnBorder;
+        ctx.strokeStyle = theme.limitLine;
         ctx.globalAlpha = 0.7;
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
@@ -263,7 +246,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
         ctx.stroke();
         ctx.restore();
         ctx.save();
-        ctx.fillStyle = theme.warnBorder;
+        ctx.fillStyle = theme.limitLine;
         ctx.textAlign = 'left';
         ctx.fillText(label, plotLeft + 3, y - 6);
         ctx.restore();
@@ -371,10 +354,16 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
   return {
     card,
     destroy: () => { resizeHandle?.disconnect(); tooltip.remove(); card.remove(); },
-    setTest: (testNumber: number) => { activeTest = testNumber; rebuild(); },
+    // Through the shared selector, so the CONTROL follows too. This used to
+    // assign `activeTest` and rebuild, leaving the selector showing the test
+    // the panel had stopped displaying.
+    setTest: (testNumber: number) => {
+      if (!testSel.set(testNumber)) return;
+      activeTest = testNumber;
+      rebuild();
+    },
     setAxisPrefs: (prefs: AxisPrefs) => {
-      axisIncludesLimits = prefs.includeLimits;
-      clipOutliers = prefs.clipOutliers;
+      if (!axisCtl.set(prefs)) return;
       rebuild();
     },
   };

@@ -10,7 +10,7 @@ import { sortBinsForDisplay } from './binPareto.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE } from './facets.js';
 import { visibleFindings } from './filterFindings.js';
 import { buildYieldDataCombined } from './yield.js';
-import { buildTestPassRateData, hasJudgeableTests } from './testPassRate.js';
+import { buildTestPassRateData, hasJudgeableTests , poolFunctionalYield } from './testPassRate.js';
 import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
 import { getDieKey, isPositionedDie } from '../core/dies.js';
@@ -600,24 +600,8 @@ function lotTestTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: S
  * (counts pool losslessly); otherwise recomputes from the pooled dies.
  */
 function lotFunctionalTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: StatsSummary[]): string {
-  let pooled: NonNullable<StatsSummary['stats']['functionalYield']> | undefined;
-  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.functionalYield !== undefined)) {
-    const byTest = new Map<number, { label: string; passDies: number; failDies: number; totalDies: number }>();
-    for (const s of perWaferSummaries) {
-      for (const t of s.stats.functionalYield ?? []) {
-        const acc = byTest.get(t.testNumber) ?? { label: t.label, passDies: 0, failDies: 0, totalDies: 0 };
-        acc.passDies += t.passDies;
-        acc.failDies += t.failDies;
-        acc.totalDies += t.totalDies;
-        byTest.set(t.testNumber, acc);
-      }
-    }
-    pooled = [...byTest.entries()].map(([testNumber, acc]) => ({
-      testNumber,
-      ...acc,
-      passRatePercent: acc.totalDies > 0 ? (acc.passDies / acc.totalDies) * 100 : null }));
-  }
-  return functionalSection(allDies, testDefs, pooled?.length ? pooled : undefined);
+  const pooled = poolFunctionalYield(perWaferSummaries);
+  return functionalSection(allDies, testDefs, pooled);
 }
 
 // Identity fields that must never be silently pooled across a lot report —

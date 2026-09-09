@@ -1,0 +1,69 @@
+{
+  "waferConfig": {
+    "diameter": 200,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 8,
+    "height": 1.2
+  },
+  "passBins": [
+    1
+  ],
+  "hbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 3,
+      "name": "Vth Shift"
+    }
+  ],
+  "sbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 31,
+      "name": "Vth Low"
+    },
+    {
+      "bin": 32,
+      "name": "Vth High"
+    }
+  ],
+  "testDefs": [
+    {
+      "testNumber": 6,
+      "name": "IDD_UA",
+      "unit": "µA",
+      "limitHigh": 55
+    },
+    {
+      "testNumber": 7,
+      "name": "VTH_V",
+      "unit": "V",
+      "limitLow": 0.38,
+      "limitHigh": 0.65
+    },
+    {
+      "testNumber": 8,
+      "name": "BW_MHZ",
+      "unit": "MHz",
+      "limitLow": 250
+    },
+    {
+      "testNumber": 9,
+      "name": "CONTINUITY",
+      "testType": "F"
+    }
+  ],
+  "verdictColumns": {
+    "7": "VTH_FLAG",
+    "9": "CONTINUITY"
+  }
+}

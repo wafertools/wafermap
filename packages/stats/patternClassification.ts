@@ -1,5 +1,5 @@
 import type { PositionedDie, Wafer } from '../core/index.js';
-import { getDieKey } from '../core/dies.js';
+import { findConnectedComponents } from './connectedComponents.js';
 import { clamp01 } from '../core/utils.js';
 
 export type PatternLabel =
@@ -128,46 +128,6 @@ export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
   minimumFailingDies:      5,
 };
 
-// ── Connected-component labelling (8-connected) ───────────────────────────────
-
-function findConnectedComponents(failing: PositionedDie[]): PositionedDie[][] {
-  if (failing.length === 0) return [];
-
-  const byKey = new Map<string, PositionedDie>();
-  for (const d of failing) byKey.set(getDieKey(d), d);
-
-  const visited = new Set<string>();
-  const components: PositionedDie[][] = [];
-
-  for (const d of failing) {
-    const k = getDieKey(d);
-    if (visited.has(k)) continue;
-
-    // BFS
-    const component: PositionedDie[] = [];
-    const queue: PositionedDie[] = [d];
-    visited.add(k);
-
-    while (queue.length > 0) {
-      const cur = queue.pop()!;
-      component.push(cur);
-      // 8-connected neighbours
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          if (dx === 0 && dy === 0) continue;
-          const nk = `${cur.x + dx},${cur.y + dy}`;
-          if (!visited.has(nk) && byKey.has(nk)) {
-            visited.add(nk);
-            queue.push(byKey.get(nk)!);
-          }
-        }
-      }
-    }
-    components.push(component);
-  }
-
-  return components;
-}
 
 // ── Feature computation ────────────────────────────────────────────────────────
 

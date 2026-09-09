@@ -1,0 +1,84 @@
+{
+  "waferConfig": {
+    "diameter": 200,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 5,
+    "height": 5
+  },
+  "passBins": [
+    1
+  ],
+  "hbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 2,
+      "name": "Leakage"
+    },
+    {
+      "bin": 3,
+      "name": "Edge Ring"
+    },
+    {
+      "bin": 4,
+      "name": "Cluster Defect"
+    },
+    {
+      "bin": 5,
+      "name": "Vth Shift"
+    }
+  ],
+  "sbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 21,
+      "name": "Leakage - Gate"
+    },
+    {
+      "bin": 31,
+      "name": "Edge - Chipping"
+    },
+    {
+      "bin": 32,
+      "name": "Edge - Film"
+    },
+    {
+      "bin": 41,
+      "name": "Cluster - Particle"
+    },
+    {
+      "bin": 51,
+      "name": "Vth - Hi"
+    }
+  ],
+  "testDefs": [
+    {
+      "testNumber": 1001,
+      "name": "Leakage",
+      "unit": "µA",
+      "limitHigh": 5
+    },
+    {
+      "testNumber": 1002,
+      "name": "Voltage",
+      "unit": "V",
+      "limitLow": 1.7,
+      "limitHigh": 1.88
+    },
+    {
+      "testNumber": 1003,
+      "name": "Frequency",
+      "unit": "MHz",
+      "limitLow": 2025
+    }
+  ]
+}

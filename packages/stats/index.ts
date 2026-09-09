@@ -15,9 +15,11 @@ export type {
   MetadataColumn, MetadataColumnScope, MetadataColumnSet, MetadataKeySelection,
   ResolveMetadataColumnsOptions,
 } from './metadataColumns.js';
+export { mergeTestDefs } from './mergeTestDefs.js';
+export type { MergedTestDefs, TestDefConflict, TestDefConflictKind } from './mergeTestDefs.js';
 export { buildCapabilityData } from './capability.js';
 export type { CapabilityDatum, CapabilityItem } from './capability.js';
-export { buildCorrelationMatrix, filterCorrelationMatrix, pearsonFromSums, pearsonOfPairs } from './correlation.js';
+export { buildCorrelationMatrix, filterCorrelationMatrix } from './correlation.js';
 export type { CorrelationTestInfo, CorrelationCell, CorrelationMatrix, CorrelationSummary } from './correlation.js';
 export { buildTestBoxplotData } from './boxplot.js';
 export type { BoxplotDatum, BoxplotItem } from './boxplot.js';

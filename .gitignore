@@ -24,3 +24,4 @@ docs/examples/presentation.html
 # instead of ~/.npmrc — a publish credential one `git add .` away from being
 # pushed. Auth belongs in ~/.npmrc; this makes the accident unstageable.
 .npmrc
+API_REVIEW.md

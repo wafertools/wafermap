@@ -56,36 +56,107 @@ export type HighlightTarget =
   | HighlightWaferTarget
   | HighlightDieTarget;
 
+/**
+ * One statistically significant, practically meaningful difference the analysis
+ * found — the unit a host renders in its own findings UI.
+ *
+ * A finding is only emitted when it clears BOTH a significance gate and an
+ * effect-size gate; see docs/api.md §7.3.2 for the exact thresholds and why a
+ * given pattern did or did not produce one. Everything here is already resolved
+ * for display: `summary` is a written sentence, `variable.label` and
+ * `comparison.left`/`right` are prose, and the numbers under `effect`/`stats`
+ * are the evidence behind them.
+ */
 export interface StatsFinding {
+  /**
+   * Stable identity for this finding within its summary, e.g. `"ring:4:hbin:2"`
+   * or `"cluster:-6,11"`. Use it as a list key and to correlate a click back to
+   * the finding; do not parse it — the composition is not part of the contract.
+   * `relatedIds`/`absorbedIds` reference other findings by this value.
+   */
   id: string;
+  /** Whether this describes one wafer or a whole lot. */
   level: StatsLevel;
+  /**
+   * How much this should draw the eye: `'unusual'` (strongest), `'notable'`, or
+   * `'info'`. Derived from p-value AND effect size together, so it ranks
+   * findings against each other — it is not a second threshold, and an `'info'`
+   * finding has already passed both gates.
+   */
   severity: StatsSeverity;
+  /** What was measured. */
   variable: {
+    /** Which quantity: yield, a hard/soft bin rate, a test value, a functional pass rate. */
     kind: StatsVariableKind;
+    /** For `kind: 'test'`, the test number — matches `TestDef.testNumber` and the `testValues` key. */
     index?: number;
+    /** For bin kinds, the bin number this finding is about. */
     bin?: number;
+    /** Display name, already resolved through any supplied bin/test definitions. */
     label: string;
+    /** Unit of `effect.absoluteDelta`, when the variable has one. */
     unit?: string;
   };
+  /** Which two populations were compared. */
   comparison: {
+    /** The region scheme this finding came from — ring, quadrant, sector, cluster, and so on. */
     family: StatsComparisonFamily;
+    /** The subject population, as prose: `"Ring 4 (edge)"`, `"Rings 3–4"`. */
     left: string;
+    /** What it was measured against, as prose: `"the rest of the map"`. */
     right: string;
   };
+  /** How big the difference is. Which fields are populated depends on `variable.kind`. */
   effect: {
+    /** Which way `left` differs from `right`. */
     direction: 'higher' | 'lower' | 'different';
+    /**
+     * Difference in the measured quantity. For proportions (yield, bin rates)
+     * this is a FRACTION, not a percentage: 0.20 is 20 percentage points.
+     */
     absoluteDelta?: number;
+    /**
+     * `absoluteDelta` as a multiple of the background rate — a RATIO, not a
+     * percentage. **1.0 means a doubling**, not "1%" and not "100% of
+     * background left unchanged". Set for proportion findings only. This is the
+     * field most often misread; the gate it feeds is documented in §7.3.2.
+     */
     relativeDelta?: number;
+    /**
+     * Standardised effect size. For test-value findings this is Cohen's d
+     * (pooled SD); for proportion findings it mirrors `absoluteDelta`.
+     */
     effectSize?: number;
   };
+  /** The test behind the finding, for callers who want to show or audit it. */
   stats: {
+    /** Which test was applied, e.g. `"welch"`, `"two-proportion-z"`. */
     method: string;
+    /** Raw p-value, before multiple-comparison correction. */
     pValue?: number;
+    /**
+     * p-value after per-family Benjamini–Hochberg correction. **This is the one
+     * the significance gate uses**, and the one to show — the raw `pValue` will
+     * look more significant than the finding actually is.
+     */
     adjustedPValue?: number;
+    /** Dies in the subject population (`comparison.left`). */
     sampleSizeLeft: number;
+    /** Dies it was compared against (`comparison.right`). */
     sampleSizeRight: number;
   };
+  /**
+   * The finding as a written sentence, ready to display — e.g. "Mean test_000 is
+   * 4.5% higher than the rest of the map". Prefer this over composing your own
+   * from the fields above: it already handles units, direction, merged regions
+   * and the singular/plural cases.
+   */
   summary: string;
+  /**
+   * What to highlight on the map when the reader selects this finding. Always
+   * carries `dieKeys` in `getDieKey` format (`"x,y"`) — match on those rather
+   * than re-deriving positions from the region label.
+   */
   highlight: HighlightTarget;
   /**
    * IDs of other findings that describe the same signal at a finer level of
@@ -109,8 +180,20 @@ export interface StatsFinding {
 }
 
 export interface StatsSummary {
+  /** Discriminant — always `'wafer'`. Narrow on this to tell a wafer summary from a {@link LotStatsSummary}. */
   level: 'wafer';
+  /**
+   * True when at least one finding is `'unusual'` or `'notable'` — i.e. something
+   * worth a reader's attention, as opposed to `'info'` findings which passed the
+   * gates but rank low. Use it to decide whether to draw attention to the panel;
+   * an empty `findings` array is not the same as nothing to report.
+   */
   hasNotableFindings: boolean;
+  /**
+   * Every finding, most significant first. May include entries hidden from
+   * reading surfaces via another finding's `absorbedIds` — filter with
+   * `filterFindings` if you want what the built-in panel shows.
+   */
   findings: StatsFinding[];
   /** Free-form identity fields from waferConfig.metadata (lot, wafer ID, test date, etc.). */
   wafer?: Record<string, unknown>;
@@ -209,8 +292,20 @@ export interface StatsSummary {
 }
 
 export interface LotStatsSummary {
+  /** Discriminant — always `'lot'`. Narrow on this to tell a lot summary from a {@link StatsSummary}. */
   level: 'lot';
+  /**
+   * True when at least one finding is `'unusual'` or `'notable'` — i.e. something
+   * worth a reader's attention, as opposed to `'info'` findings which passed the
+   * gates but rank low. Use it to decide whether to draw attention to the panel;
+   * an empty `findings` array is not the same as nothing to report.
+   */
   hasNotableFindings: boolean;
+  /**
+   * Every finding, most significant first. May include entries hidden from
+   * reading surfaces via another finding's `absorbedIds` — filter with
+   * `filterFindings` if you want what the built-in panel shows.
+   */
   findings: StatsFinding[];
   /**
    * Free-form lot-level identity fields (lot ID, product, etc. — wafer-specific
@@ -233,6 +328,12 @@ export interface LotStatsSummary {
   };
   /** Per-wafer yield as a flat series, ordered by waferIndex. `yieldPercent` is in [0, 100]; null when a wafer had no bin data. */
   lotYieldSeries: Array<{ waferIndex: number; yieldPercent: number | null }>;
+  /**
+   * Each wafer's own analysis, in input order. `waferIndex` is the position in
+   * the array passed to `analyzeWaferLot`, so it indexes the caller's own list.
+   * These are full summaries — a lot finding and its per-wafer counterparts can
+   * both be present and describe the same signal at different levels.
+   */
   perWafer: Array<{
     waferIndex: number;
     summary: StatsSummary;
@@ -268,14 +369,24 @@ export interface AnalyzeWaferMapOptions {
    */
   ringCount?: number;
   passBins?: number[];
-  significanceLevel?: number;
-  minimumEffectSize?: number;
   /**
-   * Minimum relative effect size (|delta / background|) for proportion findings.
-   * Catches meaningful signals on low-failure-rate wafers where the absolute delta
-   * is small but the relative deviation is large. Default 1.0 (100% of background).
+   * REMOVED in 0.27.0 — `significanceLevel`, `minimumEffectSize` and
+   * `minimumRelativeEffect` are now internal constants, not options.
+   *
+   * They decide what counts as a finding, so a wrong value does not make the
+   * output *look* different, it makes it wrong — and silently. A negative
+   * `significanceLevel` returned zero findings across the board, which reads as
+   * "nothing wrong with this wafer": the worst failure an analysis tool has.
+   * `minimumSampleSize` was already internal for exactly this reason, and
+   * `adaptOptions()` declines to adapt `significanceLevel` even internally
+   * because it perturbs the multiple-comparison correction unpredictably. The
+   * library was being more careful with itself than with its callers.
+   *
+   * The gates are documented in docs/api.md §7.3.2, so a reader can still learn
+   * *why* a pattern did or did not produce a finding — which is what callers
+   * actually wanted. Values passed by untyped (plain-JS) callers are now
+   * validated and clamped rather than honoured; see `resolveOptions`.
    */
-  minimumRelativeEffect?: number;
   includePartial?: boolean;
   includeEdgeExcluded?: boolean;
   enableYieldAnalysis?: boolean;

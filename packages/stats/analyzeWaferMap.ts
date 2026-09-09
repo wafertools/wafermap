@@ -33,10 +33,90 @@ interface RawFinding extends StatsFinding {
 type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'enableTestSiteAnalysis'>> & {
   testNumbers?: number[];
   enableTestSiteAnalysis?: boolean;
-  // Internal — not exposed in AnalyzeWaferMapOptions.
+  // Internal — not exposed in AnalyzeWaferMapOptions. These decide what counts as
+  // a finding; see the note in types.ts for why they are not callable options.
+  significanceLevel: number;
+  minimumEffectSize: number;
+  minimumRelativeEffect: number;
   minimumSampleSize: number;
   minimumClusterSize: number;
 };
+
+/**
+ * Bounds for the numeric options callers can still set, plus the internal
+ * thresholds — the latter only because a plain-JS caller has no type checking to
+ * stop them passing the removed options, and honouring an out-of-range value
+ * there reintroduces exactly the silent-wrong-answer this release removed.
+ *
+ * `ringCount`'s ceiling is not fixed: it is derived per wafer from the die grid,
+ * because "too many rings" means "rings thinner than a die", which depends on
+ * the wafer. See `clampRingCount`.
+ */
+const OPTION_BOUNDS = {
+  // A p-value threshold is a probability, and 0 admits nothing.
+  significanceLevel:     { min: 1e-6, max: 1 },
+  minimumEffectSize:     { min: 0, max: 1 },
+  minimumRelativeEffect: { min: 0, max: Number.MAX_SAFE_INTEGER },
+  // No upper bound on ringCount, deliberately. A fine banding looked like it
+  // ought to be capped — "rings thinner than a die" — but measuring it says
+  // otherwise: at ringCount 40 on a 561-die wafer the ring findings still carry
+  // 16–148 dies each, because `minimumSampleSize` already rejects any region too
+  // small to test and adjacent regions merge. A cap derived from die count also
+  // rejected ringCount 3 on this repo's own 28-die test wafers, which produce
+  // correct findings. The gate that matters is already there.
+  ringCount:             { min: 1, max: Number.MAX_SAFE_INTEGER },
+} as const;
+
+const VALID_SECTOR_COUNTS = [4, 8, 16, 32] as const;
+
+/**
+ * Clamp the numeric options into ranges that can produce a meaningful analysis,
+ * reporting anything corrected. A caller who passes nonsense previously got a
+ * confident, wrong answer with no indication anything was amiss; they now get
+ * the nearest sane analysis plus a warning saying what was changed.
+ */
+function resolveOptions(
+  options: AnalyzeWaferMapOptions,
+): { resolved: ResolvedOptions; warnings: WaferWarning[] } {
+  const merged = { ...DEFAULT_OPTIONS, ...options } as ResolvedOptions;
+  const warnings: WaferWarning[] = [];
+  const corrections: string[] = [];
+
+  for (const key of ['significanceLevel', 'minimumEffectSize', 'minimumRelativeEffect', 'ringCount'] as const) {
+    const { min, max } = OPTION_BOUNDS[key];
+    const value = merged[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      corrections.push(`${key}=${String(value)} is not a finite number (using ${DEFAULT_OPTIONS[key]})`);
+      merged[key] = DEFAULT_OPTIONS[key];
+      continue;
+    }
+    const clamped = Math.min(max, Math.max(min, value));
+    if (clamped !== value) {
+      corrections.push(`${key}=${value} is outside ${min}–${max} (using ${clamped})`);
+      merged[key] = clamped;
+    }
+  }
+  // ringCount must also be a whole number of rings.
+  if (!Number.isInteger(merged.ringCount)) {
+    const rounded = Math.max(1, Math.round(merged.ringCount));
+    corrections.push(`ringCount=${merged.ringCount} is not a whole number (using ${rounded})`);
+    merged.ringCount = rounded;
+  }
+  if (!VALID_SECTOR_COUNTS.includes(merged.sectorCount as typeof VALID_SECTOR_COUNTS[number])) {
+    corrections.push(
+      `sectorCount=${merged.sectorCount} is not one of ${VALID_SECTOR_COUNTS.join(', ')} `
+      + `(using ${DEFAULT_OPTIONS.sectorCount})`);
+    merged.sectorCount = DEFAULT_OPTIONS.sectorCount;
+  }
+
+  if (corrections.length) {
+    const message = `analyzeWaferMap: ${corrections.join('; ')}. `
+      + `The analysis ran with the corrected values.`;
+    console.warn(`[wafermap] ${message}`);
+    warnings.push({ code: 'analysis-option-corrected', message, severity: 'warning' });
+  }
+  return { resolved: merged, warnings };
+}
 
 const DEFAULT_OPTIONS: ResolvedOptions = {
   ringCount: 4,
@@ -1524,7 +1604,7 @@ export function analyzeWaferMap(
   input: AnalyzeWaferMapInput,
   options: AnalyzeWaferMapOptions = {},
 ): StatsSummary {
-  const baseResolved = { ...DEFAULT_OPTIONS, ...options } as ResolvedOptions;
+  const { resolved: baseResolved, warnings: optionWarnings } = resolveOptions(options);
   const result = normalizeInput(input);
   const isLotStack  = result.isLotStack;
   const stackMethod = result.aggrMethod;
@@ -1588,7 +1668,7 @@ export function analyzeWaferMap(
       ...buildBinFindings(softEligibleDies, sectorRegions, 'soft', result.sbinDefs, 'softBin', resolved),
     );
   }
-  const warnings: WaferWarning[] = [];
+  const warnings: WaferWarning[] = [...optionWarnings];
   let activeTestNumbers: number[] | undefined;
   if (resolved.enableTestValueAnalysis) {
     const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.testDefs, resolved);

@@ -39,6 +39,13 @@
 //      `menuLayerFor` alternative that avoids needing this reasoning at all
 //      for ordinary menus/dropdowns.
 //
+//   4. The chrome-row invariants (below). These are not a style rule but a set
+//      of WIRING facts that each regressed within an hour of being fixed,
+//      because each is a value whose correctness depends on context that the
+//      site itself cannot see. They are asserted by name rather than by
+//      pattern: the point is not that some file mentions a token, it is that
+//      THIS decision was made HERE and is still made here.
+//
 // Run:  node scripts/check-overlay-conventions.mjs
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -128,6 +135,40 @@ for (const file of files) {
   }
 }
 
+// ── Check 2b: no bare `window.devicePixelRatio` ───────────────────────────
+//
+// Same family as Check 2, same cause. A chart card can be reparented into a
+// detached popup, and that popup can sit on a display with a different pixel
+// ratio — reading the OPENER's global there sizes the canvas backing store for
+// the wrong screen, which shows up only on a multi-monitor setup as a blurry or
+// mis-scaled plot. Eight of the ten chart panels did this; `trend` and
+// `testPassRate` had independently worked out that they should not, which is
+// the usual sign the knowledge belongs in one place. It now lives in
+// `chartShell.ts`'s `chartDpr(el)`.
+
+const BARE_DPR_RE = /\bwindow\.devicePixelRatio\b/g;
+
+for (const file of files) {
+  const src = readFileSync(file, 'utf8');
+  const rel = relative(root, file);
+  const dprLines = src.split('\n');
+  for (const m of src.matchAll(BARE_DPR_RE)) {
+    const line = src.slice(0, m.index).split('\n').length;
+    // The helper itself, and any `?? window` fallback chain, are the point.
+    const ctx = src.slice(Math.max(0, m.index - 60), m.index);
+    if (/defaultView\s*\?\?\s*$/.test(ctx)) continue;
+    // Not a comment. `chartDpr`'s own docblock names the thing it exists to
+    // replace, and a scanner that cannot tell an explanation from an offence
+    // reports the documentation — exactly the bug the old button checker had.
+    if (/^\s*(\/\/|\*|\/\*)/.test(dprLines[line - 1] ?? '')) continue;
+    problems.push(
+      `${rel}:${line}: bare 'window.devicePixelRatio' — reads the OPENER's ratio, which is ` +
+      `wrong for content reparented into a popup on a different-DPI display. Use ` +
+      `chartDpr(el) from chartShell.ts, which resolves the element's own view.`,
+    );
+  }
+}
+
 // ── Check 3: `position: sticky`/`fixed` + a bare-literal zIndex needs a ────
 // nearby comment explaining what contains it.
 //
@@ -168,6 +209,44 @@ for (const file of files) {
       `menuLayerFor(anchor) instead if this is a menu/dropdown.`,
     );
   }
+}
+
+// ── 4. Chrome-row invariants ───────────────────────────────────────────────
+//
+// Each entry is a fact that must remain true in one named file, with the
+// incident that made it a rule. A missing one is not a style nit — every one of
+// these shipped a visible defect, twice in two cases.
+const CHROME_RULES = [
+  { file: 'packages/canvas-adapter/renderWaferMap.ts',
+    must: /background:\s*CLR\.canvasBg/,
+    why: "the single map's chrome row must paint the MAP AREA's background (CLR.canvasBg), " +
+         'not inherit the host surface. Inside a gallery card it sits directly above the ' +
+         "canvas, and inheriting the card's white left a pale band across the top of every card." },
+  { file: 'packages/canvas-adapter/renderWaferGallery.ts',
+    must: /background:\s*CLR\.canvasBg/,
+    why: 'the gallery chrome row must paint the same background as the single map\'s, or the ' +
+         'two views sit on different grounds on any host whose page is not already the map colour.' },
+  { file: 'packages/canvas-adapter/renderWaferMap.ts',
+    must: /paddingBottom:\s*SPACE\.lg/,
+    why: 'the chrome row\'s gap below it must be PADDING, not margin. The row paints a ' +
+         'background and a margin falls outside that paint — as a margin it showed 10px of the ' +
+         "card's white between the slate chrome row and the slate canvas." },
+  { file: 'packages/canvas-adapter/renderWaferGallery.ts',
+    must: /chromeInset:\s*MAP_CHROME_INSET/,
+    why: 'gallery CARDS must state their chrome inset. A card already supplies the outer inset, ' +
+         'so a map inside one takes the small MAP_CHROME_INSET; giving every map the default ' +
+         'EDGE_GUTTER stacks two gutters inside the card. This regressed twice — once when ' +
+         'MAP_CHROME_INSET was deleted as apparently unused, once when the chrome row took ' +
+         'EDGE_GUTTER unconditionally to align with the Insights content.' },
+  { file: 'packages/canvas-adapter/renderWaferMap.ts',
+    must: /contentInset:\s*chromeInset/,
+    why: "the Insights tab must be given the SAME inset the chrome row uses, or the tab bar sits " +
+         'a gutter further in than the identity above it and the two step apart on every switch.' },
+];
+for (const { file, must, why } of CHROME_RULES) {
+  let text;
+  try { text = readFileSync(file, 'utf8'); } catch { problems.push(`${file}: missing (chrome-row rule)`); continue; }
+  if (!must.test(text)) problems.push(`${file}: ${why}`);
 }
 
 if (problems.length) {
