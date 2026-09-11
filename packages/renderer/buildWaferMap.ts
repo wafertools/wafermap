@@ -266,8 +266,10 @@ export interface BinDef {
   /** Human-readable bin name, e.g. `"Pass"` or `"Contact Open"`. */
   name: string;
   /**
-   * Optional CSS color override for this bin.
-   * When set, overrides the active colour scheme for this bin value.
+   * Optional CSS colour for this bin — e.g. a site's standard bin colour sheet.
+   * Wins over the bin colour scheme for this bin (unless the viewer turns
+   * "Use colours from bin definitions" off); every bin without one still takes
+   * a palette colour. See `resolveBinColors`.
    */
   color?: string;
 }
@@ -488,6 +490,10 @@ export interface WaferWarning {
    *   the resolved wafer radius (most likely when the diameter was itself inferred
    *   from sparse/partial data). The excluded band is clamped to the whole wafer
    *   rather than silently producing a smaller, wrong ring.
+   * - `'bin-colors-shared'` — raised by the renderers for the bin map on screen:
+   *   some bins are drawn in the same colour as another bin (more bins than the
+   *   bin colour scheme has distinct colours, or a `BinDef.color` repeats one).
+   *   Every die is drawn correctly; colour alone just cannot separate those bins.
    *
    * The union is intentionally open to string so future advisory codes can be
    * added without a breaking change; switch with a `default` branch.

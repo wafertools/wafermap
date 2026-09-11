@@ -2013,7 +2013,9 @@ test('gallery summary panel has no Lot/Findings tab row', async () => {
     assert.ok(!buttonText.includes('Findings'), `no bare "Findings" tab button: ${buttonText}`);
     // And the lot content is present without having to pick a tab.
     const panelText = container.textContent;
-    assert.match(panelText, /Lot Summary/);
+    // No lot ID on these wafers, so the header names the wafers, not a lot.
+    assert.match(panelText, /Summary — 2 wafers/);
+    assert.doesNotMatch(panelText, /Lot Summary/);
     assert.match(panelText, /Wafer Yield/);
   } finally {
     cleanup();

@@ -3,16 +3,12 @@ import assert from 'node:assert/strict';
 import {
   lerpKp,
   VIRIDIS,
-  hardBinColor,
-  hardBinGreyscale,
   valueToViridis,
   valueToGreyscale,
-  softBinColor,
   contrastTextColor,
-  BIN_PALETTE,
-  HARD_BIN_GREY,
   metadataValueColor,
 } from '../dist/packages/renderer/colorMap.js';
+import { getBinColorScheme } from '../dist/packages/renderer/colorSchemes.js';
 
 // ── lerpKp ───────────────────────────────────────────────────────────────────
 
@@ -65,47 +61,6 @@ test('lerpKp — VIRIDIS t=1 is yellow (high r, high g, low b)', () => {
   assert.ok(+m[3] < 100, 'viridis t=1 should have low blue');
 });
 
-// ── hardBinColor ──────────────────────────────────────────────────────────────
-
-test('hardBinColor — bin 1 is green (pass convention)', () => {
-  assert.equal(hardBinColor(1), '#2ecc71');
-});
-
-test('hardBinColor — returns a CSS colour string for any bin', () => {
-  for (const b of [2, 14, 15, 1000, 99999]) {
-    assert.match(hardBinColor(b), /^#[0-9a-f]{6}$/i);
-  }
-});
-
-test('hardBinColor — different bin numbers produce different colours', () => {
-  assert.notEqual(hardBinColor(1), hardBinColor(2));
-  assert.notEqual(hardBinColor(1), hardBinColor(100));
-});
-
-test('hardBinColor — same bin always returns same colour (deterministic)', () => {
-  assert.equal(hardBinColor(42), hardBinColor(42));
-  assert.equal(hardBinColor(10000), hardBinColor(10000));
-});
-
-test('hardBinColor — never returns the no-data grey', () => {
-  const noData = BIN_PALETTE[0];
-  for (const b of [1, 2, 14, 15, 100, 9999]) {
-    assert.notEqual(hardBinColor(b), noData);
-  }
-});
-
-// ── hardBinGreyscale ──────────────────────────────────────────────────────────
-
-test('hardBinGreyscale — bins 0, 1, 2 return distinct shades', () => {
-  assert.equal(hardBinGreyscale(0), HARD_BIN_GREY[0]);
-  assert.equal(hardBinGreyscale(1), HARD_BIN_GREY[1]);
-  assert.notEqual(hardBinGreyscale(1), hardBinGreyscale(2));
-});
-
-test('HARD_BIN_GREY — index 14 is distinct from index 0', () => {
-  assert.notEqual(HARD_BIN_GREY[14], HARD_BIN_GREY[0]);
-});
-
 // ── valueToViridis ────────────────────────────────────────────────────────────
 
 test('valueToViridis — delegates to lerpKp(VIRIDIS)', () => {
@@ -137,26 +92,6 @@ test('valueToGreyscale — brightness is monotonically increasing', () => {
   const v0 = valueToGreyscale(0).match(/rgb\((\d+)/);
   const v1 = valueToGreyscale(1).match(/rgb\((\d+)/);
   assert.ok(+v1[1] > +v0[1]);
-});
-
-// ── softBinColor ──────────────────────────────────────────────────────────────
-
-test('softBinColor — returns a string from BIN_PALETTE', () => {
-  assert.ok(BIN_PALETTE.includes(softBinColor(1)));
-  assert.ok(BIN_PALETTE.includes(softBinColor(10000)));
-});
-
-test('softBinColor — same bin number gives different colour than hardBinColor', () => {
-  for (const b of [1, 2, 6, 100, 10000]) {
-    assert.notEqual(softBinColor(b), hardBinColor(b), `bin ${b} should differ`);
-  }
-});
-
-test('softBinColor — good spread across a high-value range (birthday paradox allows collisions)', () => {
-  // 45 bins into a 63-slot palette: birthday paradox gives ~32 expected unique.
-  // Assert at least 25 distinct to catch degenerate hashes while allowing natural collisions.
-  const colors = Array.from({ length: 45 }, (_, i) => softBinColor(100 + i));
-  assert.ok(new Set(colors).size >= 25, `expected >= 25 distinct colours, got ${new Set(colors).size}`);
 });
 
 // ── contrastTextColor ─────────────────────────────────────────────────────────
@@ -203,10 +138,11 @@ test('metadataValueColor — returns a CSS colour string for any index', () => {
   }
 });
 
-test('metadataValueColor — never returns bin 1/2\'s pass/fail-flavoured colours', () => {
+test('metadataValueColor — never returns the bin palette\'s leading pass/fail colours', () => {
+  const bins = getBinColorScheme('default');
   for (let i = 0; i < 12; i++) {
-    assert.notEqual(metadataValueColor(i), hardBinColor(1)); // green "pass"
-    assert.notEqual(metadataValueColor(i), hardBinColor(2)); // red "fail"
+    assert.notEqual(metadataValueColor(i), bins.pass[0]); // green "pass"
+    assert.notEqual(metadataValueColor(i), bins.fail[0]); // red "fail"
   }
 });
 

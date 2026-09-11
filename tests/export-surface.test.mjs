@@ -27,20 +27,23 @@ const SNAPSHOTS = {
     'dieHasTestData',
     'filterFindings', 'visibleFindings', 'generateDies', 'generateReticleGrid',
     'parseRegionKey', 'resolveGridPitch', 'sectorCompassNames',
-    'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
+    'diePassStatus',
+    'getBinColorScheme', 'getValueColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
     'getReticleCell', 'getRingLabel', 'getUniqueBins', 'hasPosition',
-    'hardBinColor', 'hardBinGreyscale', 'isInsideWafer', 'isParametricTest', 'isPositionedDie', 'isYieldEligibleDie', 'listColorSchemes',
+    'isInsideWafer', 'isParametricTest', 'isPositionedDie', 'isYieldEligibleDie',
+    'listBinColorSchemes', 'listValueColorSchemes',
     'mapDataToDies', 'mergeTestDefs', 'metadataCategoricalValue', 'metadataDisplayValue',
-    'openHtmlReport', 'registerColorScheme', 'resolveMetadataColumns', 'discoverDieMetadataKeys', 'setReportOpener',
+    'openHtmlReport', 'registerBinColorScheme', 'registerValueColorScheme', 'resolveBinColors',
+    'resolveMetadataColumns', 'discoverDieMetadataKeys', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
-    'softBinColor', 'STANDARD_WAFER_DIAMETERS_MM', 'transformDies', 'valueToGreyscale', 'valueToViridis',
+    'STANDARD_WAFER_DIAMETERS_MM', 'transformDies', 'valueToGreyscale', 'valueToViridis',
   ],
   './core': [
     'affineCompose', 'affineIdentity', 'affineInvert', 'affineMirror',
     'affinePoint', 'affineRotation', 'affineSwapsAxes', 'affineVector',
     'aggregateBinCounts', 'aggregateValues',
     'applyOrientation', 'applyProbeSequence',
-    'classifyDie', 'clipDiesToWafer', 'createWafer',
+    'classifyDie', 'clipDiesToWafer', 'createWafer', 'diePassStatus',
     'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
     'hasPosition', 'isInsideWafer', 'isPositionedDie', 'isYieldEligibleDie', 'mapDataToDies',
     'metadataCategoricalValue', 'metadataDisplayValue', 'resolveGridPitch', 'transformDies',
@@ -51,11 +54,10 @@ const SNAPSHOTS = {
   './renderer': [
     'buildHoverText', 'buildMapTitle', 'buildView', 'buildWaferMap',
     'contrastTextColor', 'dieHasTestData',
-    'getColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
-    'hardBinColor', 'hardBinGreyscale',
+    'getBinColorScheme', 'getValueColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
     'isParametricTest',
-    'listColorSchemes', 'registerColorScheme',
-    'softBinColor', 'valueToGreyscale', 'valueToViridis',
+    'listBinColorSchemes', 'listValueColorSchemes', 'registerBinColorScheme', 'registerValueColorScheme',
+    'resolveBinColors', 'valueToGreyscale', 'valueToViridis',
     'STANDARD_WAFER_DIAMETERS_MM',
   ],
   './stats': [
@@ -74,6 +76,10 @@ const SNAPSHOTS = {
   ],
   './render': [
     'renderWaferMap', 'renderWaferGallery', 'setDetachWindowOpener', 'toCanvas',
+    // Which build is actually running, for a host to show in its own About
+    // dialog — the numbers previously only reached a console line, which is not
+    // an answer you can give a fab engineer asking why a map looks wrong.
+    'WMAP_VERSION', 'WMAP_BUILD_TIME',
     // Warning surfacing. `collectWarnings` is public so a host that turns the
     // built-in UI off (`warnings: { display: false }`) can reproduce exactly the
     // set the library would have shown, rather than re-deriving it from two

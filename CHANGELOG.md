@@ -22,10 +22,56 @@ under `### Breaking`.
 
 ---
 
-## [Unreleased]
+## [0.28.0] — 2026-09-11
+
+### Breaking
+
+- **Bin and value colours are separate preferences; `colorScheme` is removed.**
+  `WaferViewOptions.colorScheme` / `ViewOptions.colorScheme` → `binColorScheme` (Hard/Soft Bin maps)
+  and `valueColorScheme` (Test Value and the three stacked modes — a stacked-bin map is a value map,
+  each position's occurrence rate). The single option was reset to `'default'` on every switch into a
+  bin mode (the "not bin-compatible" reset, written out three times), so a value-map choice never
+  survived a mode switch and no host could persist one honestly. `View.colorScheme` →
+  `View.binColorScheme` + `View.valueColorScheme`. Both are `WaferPreferences`, reported through
+  `onViewOptionsChange` with category `'preference'`.
+- **`registerColorScheme` / `getColorScheme` / `listColorSchemes` and `ColorScheme` are replaced by
+  two registries:** `registerBinColorScheme` / `getBinColorScheme` / `listBinColorSchemes`
+  (`BinColorScheme = { label, pass, fail }`) and `registerValueColorScheme` / `getValueColorScheme` /
+  `listValueColorSchemes` (`ValueColorScheme = { label, forValue }`). A host-registered bin palette
+  now appears in the bin-mode Palette menu — the old menu filtered bin modes by hardcoded name, so it
+  never could. `registerBinColorScheme` throws on an empty `pass` or `fail` list.
+- **`hardBinColor`, `softBinColor`, `hardBinGreyscale` and `HARD_BIN_GREY` are removed.** They hashed
+  the bin number (see Fixed). Use `resolveBinColors`, or `View.binColors` from a rendered map.
+- **The `'custom'` pseudo-scheme is gone.** `BinDef.color` is now a layer every bin palette honours,
+  on by default; `useDefinedBinColors: false` (Palette menu: *Use colours from bin definitions*) turns
+  it off. Definition colours used to apply only while "Custom" was selected, and the gallery switched
+  to it only when the host had not passed a scheme — so a host restoring a saved scheme silently
+  hid the colours that came with the data.
+- **Value gradient names:** `'accessible'` → `'cividis'` (the bin half of the old scheme is now the
+  `'accessible'` bin palette, labelled *Colour-blind safe*). `'thermal'` is removed: it had the same
+  keypoints as `'default'` — two menu rows drawing identical maps.
+- **Bin maps look different.** Both bin palettes were re-selected by measurement and colours are now
+  assigned by pass/fail and die count rather than by bin number (see Fixed), so images of bin maps
+  will not match earlier ones.
+- Insights internals: `InsightsTabDeps.getColorSchemeName` → `getBinColors`;
+  `ScatterPanelOptions.colorScheme` → `binColors`; the unused `colorScheme` field is removed from the
+  bin-cluster, boxplot, capability, correlation, histogram and region-yield panel options.
 
 ### Added
 
+- **`resolveBinColors(dies, options)`** — the one rule for bin colour, used by the map, its legends,
+  the summary panels, the mapless footer and the Insights charts. Pass bins (per `passBins`) take the
+  palette's pass colours, failing bins its fail colours, each ranked by die count; a soft bin passes
+  when every die carrying it passes. Returns `BinColors` (`{ hard, soft, shared }`). Exposed on every
+  view as **`View.binColors`**; **`ViewOptions.binColors`** lets a host share one assignment across
+  several maps (`renderWaferGallery` does this for every wafer it shows, so a bin is one colour on every card).
+- **`diePassStatus(die, passBins)`** (`core`) — the per-die pass rule (hard bin, else soft bin),
+  shared by yield, the failing-die hatch and bin colouring.
+- **`bin-colors-shared` warning** — raised by the renderers when bins on the bin map on screen share
+  a colour (more bins than the palette has colours, or a `BinDef.color` repeating one). A gallery
+  states it once for all its wafers rather than per card.
+- `tests/binPalettes.test.mjs` re-measures the built-in bin palettes (CIEDE2000, with simulated
+  deuteranopia, protanopia and tritanopia) so an edit cannot quietly erode their separation.
 - `docs/api.md` now documents `standardDiameters` (§4.1.12) and the metadata helpers
   `metadataDisplayValue` / `metadataCategoricalValue` / `discoverDieMetadataKeys` (§10.1). All
   four were public exports that the reference never mentioned — `STANDARD_WAFER_DIAMETERS_MM`
@@ -58,8 +104,151 @@ under `### Breaking`.
   - Reported against tsmap, where a single-wafer load has exactly this gap; logged there as
     WMAP_ISSUES.md #51.
 
+- `scripts/check-doc-links.mjs` (new, wired into `npm run check`) resolves every internal
+  documentation link and fails on a dead one. Zensical has no link validation and no redirect
+  map, so a wrong anchor is not an error — the browser lands at the top of the page and the
+  reader concludes the docs are wrong about themselves, with nothing in the build saying a word.
+  It checks that link targets exist, that every `#anchor` names a heading the Markdown really
+  produces (using Python-Markdown's slug algorithm, the one Zensical actually runs — validated
+  against a real build at 385/385 anchors), that no two headings in a page slugify to the same
+  id, and that every `zensical.toml` nav entry resolves. The hand-written example and demo pages
+  are scanned too, which is how `theming.html`'s `../api.html#...` was found: the site serves
+  that page at `api/`, so the link had never worked. tsmap carries the same script.
+
+### Changed
+
+- **"Mark failing dies" moved from Colour scheme to Overlays, and both menus gained an action
+  to undo themselves.** It was the one entry in Colour scheme that was not a scheme — a marker
+  drawn over dies, sitting among mutually exclusive palettes — while its sibling concept, the
+  Spec/Test pass-fail display, was already in Overlays. The two are the same judgement about the
+  same dies, and splitting them across two menus made neither findable from the other. Overlays
+  was already the right home in a second way: it already carries conditionally-disabled rows
+  (Reticle grid), so a bin-modes-only entry is not out of place there.
+  **Overlays gained "Clear overlays"** — six toggles are tedious to turn off one at a time, and
+  the row is greyed when nothing is on, so the menu now answers "is anything active?" without the
+  reader auditing every line.
+  **Orientation gained "Reset orientation"**, which matters more than convenience: rotation and
+  mirroring do not commute (`mirror ∘ rot(θ) = rot(−θ) ∘ mirror`), so a reader who has rotated
+  and flipped a few times cannot reliably click their way back. Reset is exactly right, and a
+  wafer map read in the wrong orientation is the class of mistake this library exists to prevent.
+  Both are greyed at the default state.
+  `CheckMenuRow` gained `action: true` for rows that *do* something rather than holding a state.
+  The first version of this change shipped them as ordinary rows, which rendered an unchecked ✓
+  and announced them to a screen reader as checkboxes that were off. The surface snapshot below
+  caught it on its first real use — the diff showed `Clear overlays [unchecked, disabled]`.
+- **`scripts/ui-surface.mjs` (new) records the whole interactive surface to a committed text
+  file** — `docs/ui-surface.txt`, 117 controls across the single map, the gallery and the Insights
+  tab, with every label, accessible name, hint, checked/disabled state and menu ordering.
+  `npm run ui:surface` regenerates it; `npm run ui:surface:check` fails on un-recorded drift.
+  This library's chrome ships inside other people's applications, and every existing check asks
+  whether it is built correctly rather than what it says. Reading the whole surface as one page
+  is also what makes duplication and odd ordering visible — those are invisible while each menu
+  is only ever seen alone. Not in `npm run check`: it needs a browser and a built `dist/`, like
+  `screenshots`.
+- **`WMAP_VERSION` and `WMAP_BUILD_TIME` are now public**, from `@wafertools/wafermap/render`.
+  They already existed — generated by `sync-version.mjs` on every build — but only reached an
+  internal `console.log`. A host embedding this library could tell a user which *application*
+  they were running and had no way to say which **engine** was underneath, and "check the browser
+  console" is not an answer you can give a fab engineer asking why a map looks wrong. Being
+  generated at build time, they describe the bundle actually loaded rather than whatever a nearby
+  `package.json` claims — different things whenever a host is linked to a local checkout. tsmap
+  shows both in its About dialog from 0.1.34.
+- **The docs site gained a light/dark theme, and most of Markdown.** Zensical is bumped
+  0.0.51 → 0.0.60 (nine releases; `requirements.txt`, so CI and local builds move together),
+  and the config now uses what it offers.
+  The find that prompted it: **declaring any `[project.markdown_extensions.*]` section replaces
+  Zensical's default set wholesale rather than merging into it.** The config set only `toc` and
+  `pymdownx.highlight`, which had been silently switching off `admonition`, `abbr`, `def_list`,
+  `attr_list`, `tasklist`, `mark`, `caret` and `tilde` for the life of the site. Nothing
+  reported it, because unsupported syntax renders as ordinary paragraph text — it reads as "we
+  don't use admonitions here", not as a fault. Verified by deleting the sections, at which point
+  `!!! note` and `*[ABBR]:` both started working. The full set is now listed explicitly, with
+  that trap written down beside it. (Mermaid was never affected: Zensical renders those fences
+  natively.)
+  New: a **light/dark/system palette toggle in the header** — the site was light-only, which sat
+  oddly beside a library whose entire chrome is themeable and whose own guide had a dark-theme
+  bug fixed in 0.26.1. `docs/stylesheets/extra.css` stopped hardcoding three light greys and now
+  bridges Material's palette onto wmap's `--wmap-*` custom properties, so **the live wafer-map
+  demos follow the theme too** rather than sitting as bright panels on a dark page — the same
+  trick tsmap uses for its own 16 themes.
+  Also enabled: `toc.follow` and `navigation.top` (a 4,150-line API reference is the case they
+  exist for), `navigation.tracking` so a link copied from deep in a page points there,
+  `navigation.footer`, `search.highlight`/`search.share`, `content.code.annotate`/`select`,
+  `content.tabs.link`, and `content.tooltips` fed by a shared `includes/abbreviations.md` —
+  domain terms only (STDF, PTR, Cpk, the bin records), since tooltipping every "API", "UI" and
+  "CSV" underlined most sentences and told the reader nothing. The include lives outside `docs/`
+  because a snippet inside it is also built as a page of its own.
+  Checked rather than assumed: heading ids are byte-identical across the bump, all 670 site
+  anchors still resolve, no CLI flag was mangled by the newly-enabled `smartsymbols` (`--tests`
+  and friends survive intact), and the dark palette was driven in a real browser.
+- **The Quick Start's synthetic-lot generator now has one home.** The same ~20 lines existed
+  four times — `docs/quickstart.md`'s copy-paste example, `docs/examples/quickstart-live.html`,
+  and a comment-stripped copy inlined in `scripts/capture-definitions.mjs` to shoot
+  `quickstart-first-map.png` — all byte-identical, with nothing enforcing it. Editing the doc
+  would have left the "open this in your browser" page and the screenshot directly beneath it
+  rendering a different wafer from the code the reader had just copied, silently.
+  `docs/examples/quickstart-data.js` is now the source: the live page and the capture import it,
+  so those cannot drift by construction. The Markdown keeps its inline copy deliberately — the
+  snippet promises "copy this into an HTML file, no bundler required", which a local import
+  would break — and `scripts/check-quickstart-snippet.mjs` (wired into `npm run check`) holds it
+  to the fixture, with `--write` to regenerate it. It also fails if either of the other two
+  re-inlines the loop. The refactor is provably inert: `quickstart-first-map.png` re-captures
+  byte-for-byte identical.
+- **The Quick Start no longer detours into partial-wafer geometry.** The "Partial data needs a
+  wafer centre" section — three paragraphs and a second code block, arriving immediately after
+  the reader's first successful map — is now a short callout that names the case, names the
+  `'partial-coverage'` warning, and links to the guide section that already covers it in full.
+  A tutorial's job is the first success; the geometry discussion is a how-to and was already
+  written as one. Nothing was deleted, and a "you have now…" line closes the walkthrough.
+- **The Developer Guide's sections are no longer numbered.** `## 3. Loading real data from a
+  CSV` is now `## Loading real data from a CSV`, and all 42 links that pointed at the numbered
+  anchors — plus the `Guide §N` link labels in `docs/examples/manifest.json`, which name the
+  section they lead to instead — were moved with it. The numbering was chronological by feature
+  addition rather than by reading order, and it was baked into every anchor
+  (`#3-loading-real-data-from-a-csv`), so inserting one section silently broke every link below
+  it. `check-doc-links.mjs` landed first precisely so this move could be proven complete rather
+  than assumed. The API reference keeps its numbering for now — there the numbers are a real
+  hierarchical aid, not an accident of ordering.
+
 ### Fixed
 
+- **Implausible geometry could hang a render.** `toCanvas` sized its hit-test grid from die size
+  alone, so a die size wrong by orders of magnitude — a misread WCR record gave dies ~1e-8 mm
+  wide — asked for more cells than an array can hold: every render and resize threw
+  `Invalid array length`, and the map never appeared. The grid is now sized by `hitGridDims`
+  (internal `hitGrid.ts`), which falls back to the span for non-finite or non-positive sizes and
+  caps the grid at max(4096, 4 × dies) cells; a coarser grid only means a hit test looks at a few
+  more dies. A non-finite die position no longer indexes cell `NaN`. Found via tsmap
+  (WMAP_ISSUES.md #53).
+- **"Lot" was used for any set of wafers, including sets spanning several lots.** A gallery or
+  `analyzeWaferLot` call covers whatever wafers were passed, but the panel read "Lot Summary —
+  26 wafers", yield outliers were "lower than the lot median", the trend chart's reference was
+  the "lot mean", reports were titled "Lot Summary" / "Lot Findings Report" and the stacked
+  tooltip gave "% of lot" — all over a pooled multi-lot load, or one with no lot ID at all. One
+  rule now names the population (`stats/population.ts`): "lot" only when every wafer records the
+  same lot ID (`Summary — Lot LOT123 · 13 wafers`, "lot median"), otherwise the wafers
+  (`Summary — 26 wafers from 2 lots`, "median of all wafers"). The stacked tooltip reads
+  "% of stacked wafers"; two gallery messages became lot-neutral. Public API names
+  (`analyzeWaferLot`, `LotStatsSummary`, `lotStack`) keep "lot" in its looser sense — the
+  glossary now says so. Also corrected: the API reference and developer guide still described
+  the gallery panel's long-gone Lot/Wafers tabs, and called its button "Lot findings" rather than
+  **Summary panel**.
+- **Different bins were drawn in the same colour.** Soft bins and the Accessible palette hashed the
+  bin number into a fixed list, so collisions were certain: among bins 1–16, soft bins 1 and 7 and
+  4 and 6 were identical, as were Accessible bins 4 and 5 and 9 and 13, and only 75 distinct colours
+  covered hard bins 1–255. The hand-picked hard bins 1–14 came in near-duplicate pairs (1/12 green,
+  2/9 red, 5/11 blue…), and bins 4 and 11 were ΔE 1.4 apart for a deuteranope. Colours are now
+  rank-assigned from measured palettes: no two bins share a colour until the palette is exhausted,
+  and then a warning names them. Default: 3 pass + 19 fail colours, every pair ≥ 16 ΔE00. Colour-blind
+  safe: 2 pass + 14 fail colours, every pair ≥ 8.8 ΔE00 under all three simulated deficiencies.
+- **Bin colour contradicted `passBins`.** Bin 1 was always green and bin 2 always red, whatever
+  `passBins` said — with `passBins: [1, 3]` a passing bin 3 drew orange ("marginal") and a failing
+  bin 12 drew green. Pass colours now come from `passBins`, never the number.
+- **The soft-bin failing-die hatch marked the wrong dies.** It tested the plotted *soft* bin number
+  against the *hard* pass-bin list. It now judges each die by `diePassStatus`, the rule yield uses.
+- **`WaferMapController.getActiveLegend()` returned colours the map was not drawing.** It hashed bin
+  numbers directly, ignoring the selected palette, so a host legend built from it disagreed with the
+  map under any non-default scheme. It now reads the view's resolved colours.
 - **`analyzeWaferMap` reported a "correction" for an option that was never set.**
   `{ ...DEFAULT_OPTIONS, ...options }` let an explicit `undefined` overwrite the default, which
   then failed the finite-number test — so the most ordinary thing a host writes (forwarding an

@@ -1,5 +1,6 @@
 import { analyzeWaferMap } from './analyzeWaferMap.js';
 import { median } from '../core/utils.js';
+import { describeWaferPopulation, populationStat, type WaferPopulation } from './population.js';
 import type {
   AnalyzeWaferLotInput,
   AnalyzeWaferMapOptions,
@@ -94,7 +95,9 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
   return findings;
 }
 
-function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer']): StatsFinding[] {
+function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], population: WaferPopulation): StatsFinding[] {
+  // "Lot median" only when the wafers really are one lot — see population.ts.
+  const reference = populationStat(population, 'median');
   const comparable = perWafer
     .map((entry) => ({
       waferIndex: entry.waferIndex,
@@ -126,7 +129,7 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer']): Stats
       comparison: {
         family: 'wafer',
         left: `Wafer ${entry.waferIndex + 1}`,
-        right: 'Lot median',
+        right: reference.charAt(0).toUpperCase() + reference.slice(1),
       },
       effect: {
         direction: delta > 0 ? 'higher' : 'lower',
@@ -139,7 +142,7 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer']): Stats
         sampleSizeLeft: 1,
         sampleSizeRight: comparable.length - 1,
       },
-      summary: `Wafer ${entry.waferIndex + 1} yield is ${Math.abs(delta).toFixed(1)} percentage points ${delta > 0 ? 'higher' : 'lower'} than the lot median`,
+      summary: `Wafer ${entry.waferIndex + 1} yield is ${Math.abs(delta).toFixed(1)} percentage points ${delta > 0 ? 'higher' : 'lower'} than the ${reference}`,
       highlight: {
         kind: 'wafer',
         waferIndices: [entry.waferIndex],
@@ -160,7 +163,7 @@ export function analyzeWaferLot(
   }));
   const findings = [
     ...buildRepeatedPatternFindings(perWafer),
-    ...buildYieldOutlierFindings(perWafer),
+    ...buildYieldOutlierFindings(perWafer, describeWaferPopulation(perWafer.map(w => w.summary.wafer))),
   ].sort((left, right) => {
     const leftRank = left.severity === 'unusual' ? 2 : left.severity === 'notable' ? 1 : 0;
     const rightRank = right.severity === 'unusual' ? 2 : right.severity === 'notable' ? 1 : 0;

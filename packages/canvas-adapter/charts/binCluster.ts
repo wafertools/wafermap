@@ -20,7 +20,6 @@ const MAX_VISIBLE_BINS = 8;
 export interface BinClusterPanelOptions {
   title?: string;
   groups: { key: string; items: BinItem[] }[];
-  colorScheme?: string;
   onSaveImage?: SaveImageHandler;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
@@ -35,8 +34,7 @@ export interface BinClusterPanelHandle {
 }
 
 export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClusterPanelHandle {
-  // `colorScheme` is deliberately no longer read — sub-bars use the fixed
-  // categorical palette (palette.ts); the option stays for API compatibility.
+  // Sub-bars use the fixed categorical palette (palette.ts), not the map's colours.
   const { groups, onSaveImage } = options;
   let binType: BinType = 'hbin';
   let titleText = options.title ?? 'Hard bin pareto';

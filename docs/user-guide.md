@@ -180,12 +180,12 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 |                                                               | Control            | Description                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Section 2](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                                                                                               |
-| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Spec pass/fail (Test Value mode with limits), and Test pass/fail (Test Value mode, active test is functional or has recorded verdicts). |
-| <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Switches the colour palette used for value and stacked modes. Available schemes depend on what the application has registered.                                                                                                                                                                         |
+| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Spec pass/fail (Test Value mode with limits), Test pass/fail (Test Value mode, active test is functional or has recorded verdicts), and **Mark failing dies** (bin modes only). **Clear overlays** at the foot turns off everything in the menu at once, and is greyed when nothing is on — so the menu also answers "is anything active?" without you auditing every row. |
+| <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Picks the colours for the map on screen. In Hard Bin and Soft Bin modes it lists **bin colours** (Default, Colour-blind safe); in every other mode — including the stacked modes, which show values — it lists **value colours**. The two are separate choices, so changing one never resets the other. When bin definitions carry their own colours, **Use colours from bin definitions** turns them on or off. (**Mark failing dies** is in Overlays, beside the pass/fail display it belongs with.) |
 | <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive. Hidden whenever a pass/fail display is active or the active test is functional.                                                                       |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range     | Test Value mode with spec limits only. Toggles the colorbar between the **spec-limit range** (default — the colours mean the same thing on every wafer, so maps are comparable) and the **data range** (stretches the scale to the values actually present, which shows more contrast but is not comparable between wafers). |
 | <img src="images/icons/legend.svg" width="20" height="20">    | Legend style       | Bin modes only. Controls where the bin legend is positioned relative to the map: Default (right), Compact, Left, Top, Bottom, or Floating.                                                                                                                                                             |
-| <img src="images/icons/orient.svg" width="20" height="20">   | Orientation        | Menu of display transforms: **Rotate 90° clockwise** (applies cumulatively), **Flip horizontal**, **Flip vertical**. These change only how the wafer is drawn — die coordinates in tooltips and labels are always the original values, whatever the orientation. |
+| <img src="images/icons/orient.svg" width="20" height="20">   | Orientation        | Menu of display transforms: **Rotate 90° clockwise** (applies cumulatively), **Flip horizontal**, **Flip vertical**, and **Reset orientation**. These change only how the wafer is drawn — die coordinates in tooltips and labels are always the original values, whatever the orientation. Reset is worth knowing about: rotation and mirroring do not combine in the order you applied them, so undoing a few clicks by clicking again does not reliably get you back — Reset does, and is greyed when you are already there. |
 | <img src="images/icons/zoomMode.svg" width="20" height="20">  | Zoom mode          | Click and drag to draw a zoom region.                                                                                                                                                                                                                                                                  |
 | <img src="images/icons/zoomIn.svg" width="20" height="20">    | Zoom in            | Zooms in one step.                                                                                                                                                                                                                                                                                     |
 | <img src="images/icons/zoomOut.svg" width="20" height="20">   | Zoom out           | Zooms out one step.                                                                                                                                                                                                                                                                                    |
@@ -212,6 +212,14 @@ failure category across the wafer.
 <div data-wmap-demo="bin-highlight" class="wmap-demo"></div>
 
 *Bin 2 (Fail) highlighted — all other bins are dimmed.*
+
+**Bin colours** — a bin's colour tells you whether it passed before you read the legend:
+passing bins are always shades of green and failing bins never are, whichever bin numbers
+your test program uses. The bins with the most dies get the most distinct colours. In a
+gallery the colours are worked out across every wafer it shows, so a bin is the same
+colour on every card. If there are more bins than the colour scheme has distinct colours, some bins
+have to share one — a **Data warnings** entry names them, and you can tell them apart with
+the legend, the tooltip, or by highlighting one bin at a time.
 
 ### Overlays
 
@@ -253,7 +261,7 @@ The gallery control bar applies to all cards simultaneously.
 | ------------------------------------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <img src="images/icons/mode.svg" width="20" height="20">     | Plot mode     | Switches the plot mode for all cards.                                                                                                                                              |
 | <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays      | Toggles display layers for all cards simultaneously.                                                                                                                               |
-| <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Switches the colour palette for all cards.                                                                                                                                         |
+| <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Picks bin colours (bin modes) or value colours (other modes) for all cards.                                                                                                         |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
 | <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns in the card grid.                                                                                                                                       |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
@@ -261,9 +269,9 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | Bin modes only. Sets where the bin legend sits relative to each card. |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with spec limits only. Toggles all cards between the spec-limit range and the data range. Leave it on spec limits when comparing wafers — the data range rescales per view. |
-| <img src="images/icons/findings.svg" width="20" height="20"> | Findings      | Opens or closes the lot-level Summary panel.                                                                                                                                     |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a lot-wide chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |
-| <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the lot. Collected across every wafer and de-duplicated, so a problem affecting the whole lot is stated once rather than repeated per card. |
+| <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Opens or closes the Summary panel covering every wafer in the gallery.                                                                                                           |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a chart suite covering every wafer — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |
+| <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the wafers shown. Collected across every wafer and de-duplicated, so a problem affecting all of them is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
 
 Click a card's expand button to detach it into its own separate window with the
@@ -375,11 +383,14 @@ highlight the affected dies.*
 
 Sections, top to bottom:
 
-- **Summary / Lot Summary** — die and wafer counts, yield, and the population
-  the rest of the panel is computed over. On a lot, "Mean wafer yield" is an
+- **Summary** — die and wafer counts, yield, and the population the rest of the
+  panel is computed over. For several wafers the heading names them: **Lot
+  LOT123 · 13 wafers** when every wafer comes from that one lot, otherwise
+  **26 wafers from 2 lots** (or just **13 wafers** when the data records no lot).
+  The panel only says "lot" when it really is one lot. "Mean wafer yield" is an
   *unweighted* mean of each wafer's own yield; it is deliberately not the same
   statistic as the bin breakdown's pass-bin share, which weights every die
-  equally. The two agree only when die counts are even across the lot.
+  equally. The two agree only when die counts are even across the wafers.
 - **Findings** — detected anomalies, most severe first. Severity chips narrow
   the list; Kind and Region dropdowns appear once there are enough findings to
   be worth narrowing.
@@ -392,10 +403,10 @@ Sections, top to bottom:
   Ring is the default because edge roll-off is the pattern that dominates real
   wafer maps; a genuinely asymmetric quadrant is reported as a finding above,
   with a significance test behind it.
-- **Wafer yield** (lot only) — one bar per wafer with the lot median marked.
-  Wafers are in slot order by default, since that is what makes a
+- **Wafer yield** (several wafers only) — one bar per wafer with the median
+  marked. Wafers are in slot order by default, since that is what makes a
   slot-correlated pattern visible; a **Slot / Yield** selector re-sorts. Wafers
-  far below the rest of the lot are labelled "low outlier".
+  far below the rest are labelled "low outlier".
 - **Test values** — per test: mean, **Ppk**, and spec yield. Ppk (not Cpk)
   because it measures against the *overall* spread, including wafer-to-wafer
   variation, which is what the dies actually ship against. The full descriptive
@@ -517,7 +528,8 @@ Insights is organized into three sub-tabs:
   lower and upper spec limit; tests missing a spec still appear, normalized
   onto their own range and sorted by variability), a test-value box plot, a
   value histogram, and a **wafer-to-wafer trend** — one point per wafer at its
-  mean, ±1σ whiskers, the lot mean dashed across, and spec limits where the
+  mean, ±1σ whiskers, the mean of all wafers dashed across (labelled the "lot
+  mean" when they all come from one lot), and spec limits where the
   test has them. The trend is always in slot order, deliberately: drift across
   a cassette only reads in the physical sequence, so there is no sort control
   to destroy it. Clicking a capability box drives the box plot, histogram and

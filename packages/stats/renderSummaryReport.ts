@@ -10,6 +10,7 @@ import { sortBinsForDisplay } from './binPareto.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE } from './facets.js';
 import { visibleFindings } from './filterFindings.js';
 import { buildYieldDataCombined } from './yield.js';
+import { describeWaferPopulation, populationLabel } from './population.js';
 import { buildTestPassRateData, hasJudgeableTests , poolFunctionalYield } from './testPassRate.js';
 import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
@@ -733,7 +734,8 @@ function renderLotGroupSections(
     ...(totalYieldPercent !== null ? [{ label: 'Total yield', value: `${totalYieldPercent.toFixed(1)}%` }] : []),
   ];
 
-  const summarySection = renderSection('Lot Summary', renderMetricGrid(overviewMetrics));
+  const population = describeWaferPopulation(lotSummary.perWafer.map((pw) => pw.summary.wafer));
+  const summarySection = renderSection(population.lotId !== undefined ? 'Lot Summary' : 'Summary', renderMetricGrid(overviewMetrics));
   const metadataSection = renderMetadataSection(items.map((it) => ({ metadata: it.wafer?.metadata })));
   const waferYieldSection = renderSection('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
   const splitsSectionHtml = splitsSection(items, testDefs, passBins);
@@ -811,13 +813,14 @@ export function renderLotSummaryReportHtml(
 
   if (groups.length === 1) {
     const { lotSummary, sections } = renderLotGroupSections(groups[0].items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions);
-    const lotTitle = (() => {
-      const lot = lotSummary.lot;
-      if (!lot) return '';
-      const v = lot['lot'] ?? lot['lotId'];
-      return v ? ` — ${escHtml(String(v))}` : '';
-    })();
-    const title = options.title ?? `Lot Summary${lotTitle}`;
+    // "Lot Summary — LOT123" only when every wafer records that lot; otherwise
+    // the title names the wafers, so a pooled or unlabelled set never reads as
+    // one lot. (`lotSummary.lot` is not enough: it keeps a key that the wafers
+    // carrying it agree on, even when other wafers carry none.)
+    const population = describeWaferPopulation(lotSummary.perWafer.map((pw) => pw.summary.wafer));
+    const title = options.title ?? (population.lotId !== undefined
+      ? `Lot Summary — ${population.lotId}`
+      : `Summary — ${populationLabel(population)}`);
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -836,7 +839,9 @@ ${reportMain(title, sections, now)}
   // Each group's own title (`${title} — ${label}`) already distinguishes it
   // via its own `.report-header` — no need for a second, redundant divider
   // heading. Just space consecutive groups apart with a rule.
-  const baseTitle = options.title ?? 'Lot Summary';
+  // Several groups: the set as a whole is not one lot, so the base title does
+  // not claim to be; each group's heading names its own lot where it has one.
+  const baseTitle = options.title ?? 'Summary';
   const mains = groups.map((g) => {
     const { lotSummary, sections } = renderLotGroupSections(g.items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions);
     // `label` already names every field that varies BETWEEN groups (e.g.

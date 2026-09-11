@@ -61,7 +61,7 @@ if (!block) {
 const MUST_EXIST = [
   'buildWaferMap', 'renderWaferMap', 'renderWaferGallery', 'toCanvas', 'buildView',
   'analyzeWaferMap', 'analyzeWaferLot', 'createWafermapWorker',
-  'getTestPassStatus', 'getDieKey', 'registerColorScheme',
+  'getTestPassStatus', 'getDieKey', 'registerBinColorScheme', 'registerValueColorScheme', 'resolveBinColors',
   'testValues', 'testNumber', 'passFailDisplay', 'activeTest', 'passBins',
   'retestCount', 'retestPolicy', 'isLotStack', 'dieConfig', 'waferConfig',
   'BIN_PALETTE', 'WaferMapDisplayItem', 'RenderOptions', 'WaferMapController',

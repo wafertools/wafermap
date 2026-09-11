@@ -137,7 +137,7 @@ test('stackedBins hover labels percent aggregate as % and does not derive a seco
   // method 'percent', lotSize 3 — the value 66 is ALREADY a percentage.
   const text = buildHoverText(die, 'stackedBins', { aggrMethod: 'percent', lotSize: 3 });
   assert.match(text, /66%/, 'percent aggregate must render as N%');
-  assert.doesNotMatch(text, /\(\d+% of lot\)/, 'must not derive a second percentage from a percentage');
+  assert.doesNotMatch(text, /\(\d+% of stacked wafers\)/, 'must not derive a second percentage from a percentage');
   assert.match(text, /occurrence %/, 'must name the aggregation method');
 });
 
@@ -146,7 +146,7 @@ test('stackedBins hover labels countBin aggregate as a count with optional lot s
   // method 'countBin', lotSize 3 — the value 2 is an occurrence count (2 of 3 wafers).
   const text = buildHoverText(die, 'stackedBins', { aggrMethod: 'countBin', lotSize: 3 });
   assert.match(text, /Bin 2: 2/, 'count aggregate shows the raw count');
-  assert.match(text, /67% of lot/, 'count aggregate annotates its share of the lot');
+  assert.match(text, /67% of stacked wafers/, 'count aggregate annotates its share of the stacked wafers');
   assert.match(text, /occurrence count/, 'must name the aggregation method');
 });
 

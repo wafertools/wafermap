@@ -58,7 +58,7 @@ function mountInsights(items, lot, defaultView) {
   const tab = createInsightsTab({
     getItems: () => items,
     getLotStats: () => lot,
-    getColorSchemeName: () => 'default',
+    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] } }),
     passBins: [1],
     defaultView,
   });
@@ -418,7 +418,7 @@ function mountInsightsWith(items, lot, deps) {
   const tab = createInsightsTab({
     getItems: () => items,
     getLotStats: () => lot,
-    getColorSchemeName: () => 'default',
+    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] } }),
     passBins: [1],
     defaultView: 'distributions',
     ...deps,

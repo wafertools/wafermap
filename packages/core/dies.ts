@@ -149,6 +149,24 @@ export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}
 }
 
 /**
+ * Whether a die passed: its hard bin (else its soft bin) is in `passBins`.
+ * `undefined` when the die carries no bin at all — no verdict, never a fail.
+ *
+ * THE per-die pass rule. Yield, the failing-die hatch and bin colouring all
+ * judge a die through this, so the map cannot call a die failing that the yield
+ * figure beside it counted as passing. Note it judges the DIE, not whichever
+ * bin is being plotted: in soft-bin mode the plotted bin is a soft bin, and
+ * testing that number against hard pass bins answers a different question.
+ */
+export function diePassStatus(
+  die: Pick<Die, 'hbin' | 'sbin'>,
+  passBins: ReadonlySet<number>,
+): boolean | undefined {
+  const bin = die.hbin ?? die.sbin;
+  return bin === undefined ? undefined : passBins.has(bin);
+}
+
+/**
  * Generate a rectangular grid of dies centered on the wafer.
  * Each die carries its width/height for use by the renderer.
  */

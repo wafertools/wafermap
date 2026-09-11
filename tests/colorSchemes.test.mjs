@@ -1,84 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  getColorScheme,
-  listColorSchemes,
-  registerColorScheme,
+  getValueColorScheme,
+  listValueColorSchemes,
+  registerValueColorScheme,
+  getBinColorScheme,
+  listBinColorSchemes,
 } from '../dist/packages/renderer/colorSchemes.js';
 
-// ── listColorSchemes ──────────────────────────────────────────────────────────
+// Bin palettes and value gradients are separate registries. Resolution of bin
+// colours (rank, pass/fail) is covered in binColors.test.mjs, and the built-in
+// bin palettes' measured separation in binPalettes.test.mjs.
 
-test('listColorSchemes — includes all 6 built-in schemes', () => {
-  const names = listColorSchemes().map(s => s.name);
-  for (const expected of ['default', 'viridis', 'greyscale', 'accessible', 'plasma', 'inferno']) {
-    assert.ok(names.includes(expected), `missing scheme: ${expected}`);
+// ── Value gradients ──────────────────────────────────────────────────────────
+
+test('listValueColorSchemes — includes every built-in gradient', () => {
+  const names = listValueColorSchemes().map(s => s.name);
+  for (const expected of ['default', 'viridis', 'cividis', 'greyscale', 'plasma', 'inferno', 'traffic', 'jet']) {
+    assert.ok(names.includes(expected), `missing gradient: ${expected}`);
   }
 });
 
-test('listColorSchemes — does not include "color" alias', () => {
-  const names = listColorSchemes().map(s => s.name);
-  assert.ok(!names.includes('color'), '"color" alias must not appear in listing');
-});
-
-test('listColorSchemes — returns human-readable labels', () => {
-  const map = Object.fromEntries(listColorSchemes().map(s => [s.name, s.label]));
-  assert.equal(map['default'], 'Default');
+test('listValueColorSchemes — returns human-readable labels', () => {
+  const map = Object.fromEntries(listValueColorSchemes().map(s => [s.name, s.label]));
   assert.equal(map['viridis'], 'Viridis');
   assert.equal(map['greyscale'], 'Greyscale');
+  assert.match(map['cividis'], /colour-blind safe/);
 });
 
-// ── getColorScheme ────────────────────────────────────────────────────────────
-
-test('getColorScheme — default', () => {
-  const s = getColorScheme('default');
-  assert.equal(s.label, 'Default');
+test('getValueColorScheme — unknown or missing name falls back to default', () => {
+  const def = getValueColorScheme('default');
+  assert.equal(getValueColorScheme('does-not-exist').label, def.label);
+  assert.equal(getValueColorScheme().label, def.label);
 });
 
-test('getColorScheme — viridis', () => {
-  assert.equal(getColorScheme('viridis').label, 'Viridis');
-});
-
-test('getColorScheme — greyscale', () => {
-  assert.equal(getColorScheme('greyscale').label, 'Greyscale');
-});
-
-test('getColorScheme — accessible', () => {
-  assert.ok(getColorScheme('accessible').label.includes('Accessible'));
-});
-
-test('getColorScheme — plasma', () => {
-  assert.equal(getColorScheme('plasma').label, 'Plasma');
-});
-
-test('getColorScheme — inferno', () => {
-  assert.equal(getColorScheme('inferno').label, 'Inferno');
-});
-
-test('getColorScheme — unknown name falls back to default', () => {
-  const def = getColorScheme('default');
-  const unknown = getColorScheme('does-not-exist');
-  assert.equal(unknown.label, def.label);
-});
-
-test('getColorScheme — no argument falls back to default', () => {
-  const def = getColorScheme('default');
-  assert.equal(getColorScheme().label, def.label);
-});
-
-test('getColorScheme — "color" alias returns same scheme as default', () => {
-  assert.equal(getColorScheme('color').label, getColorScheme('default').label);
-});
-
-test('getColorScheme — forBin(0) returns a non-empty CSS string for all schemes', () => {
-  for (const { name } of listColorSchemes()) {
-    const c = getColorScheme(name).forBin(0);
-    assert.ok(typeof c === 'string' && c.length > 0, `${name}.forBin(0) empty`);
-  }
-});
-
-test('getColorScheme — forValue returns non-empty CSS string at t=0,0.5,1 for all schemes', () => {
-  for (const { name } of listColorSchemes()) {
-    const s = getColorScheme(name);
+test('getValueColorScheme — forValue returns a CSS string at t=0, 0.5, 1 for every gradient', () => {
+  for (const { name } of listValueColorSchemes()) {
+    const s = getValueColorScheme(name);
     for (const t of [0, 0.5, 1]) {
       const c = s.forValue(t);
       assert.ok(typeof c === 'string' && c.length > 0, `${name}.forValue(${t}) empty`);
@@ -86,15 +44,30 @@ test('getColorScheme — forValue returns non-empty CSS string at t=0,0.5,1 for 
   }
 });
 
-// ── registerColorScheme ───────────────────────────────────────────────────────
+test('no two built-in gradients draw identically', () => {
+  const sig = (name) => [0, 0.25, 0.5, 0.75, 1].map(t => getValueColorScheme(name).forValue(t)).join('|');
+  const seen = new Map();
+  for (const { name } of listValueColorSchemes()) {
+    const s = sig(name);
+    assert.ok(!seen.has(s), `${name} draws the same map as ${seen.get(s)}`);
+    seen.set(s, name);
+  }
+});
 
-test('registerColorScheme — custom scheme is retrievable and listed', () => {
-  registerColorScheme('test-custom-scheme', {
-    label: 'Test Custom',
-    forBin: () => '#aabbcc',
-    forValue: () => '#ddeeff',
-  });
-  assert.equal(getColorScheme('test-custom-scheme').label, 'Test Custom');
-  const listed = listColorSchemes().find(s => s.name === 'test-custom-scheme');
-  assert.ok(listed, 'custom scheme must appear in listColorSchemes');
+test('registerValueColorScheme — a registered gradient is retrievable and listed', () => {
+  registerValueColorScheme('test-custom-gradient', { label: 'Test Custom', forValue: () => '#ddeeff' });
+  assert.equal(getValueColorScheme('test-custom-gradient').label, 'Test Custom');
+  assert.ok(listValueColorSchemes().some(s => s.name === 'test-custom-gradient'));
+});
+
+// ── Bin palettes ─────────────────────────────────────────────────────────────
+
+test('listBinColorSchemes — default and colour-blind safe palettes, labelled', () => {
+  const map = Object.fromEntries(listBinColorSchemes().map(s => [s.name, s.label]));
+  assert.equal(map['default'], 'Default');
+  assert.equal(map['accessible'], 'Colour-blind safe');
+});
+
+test('getBinColorScheme — unknown name falls back to default', () => {
+  assert.equal(getBinColorScheme('does-not-exist').label, getBinColorScheme('default').label);
 });

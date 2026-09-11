@@ -1,7 +1,8 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
 import { metadataCategoricalValue } from '../core/metadata.js';
-import { getColorScheme } from '../renderer/colorSchemes.js';
+import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
+import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
@@ -11,7 +12,7 @@ import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap } from './renderWaferMap.js';
 import type { WaferViewOptions, WaferMapController } from './renderWaferMap.js';
-import { classifyChanged } from './renderWaferMap.js';
+import { classifyChanged, COLOR_KEYS } from './renderWaferMap.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest, getDieTestValue } from '../renderer/buildWaferMap.js';
@@ -521,7 +522,7 @@ export function renderWaferGallery(
     if (!BIN_LEGEND_MODES.has(mode)) {
       return sharedOpts.colorbarRangeMode === 'data'
         ? 'Each map has its own value range, so it keeps its own colour bar'
-        : 'This lot has no shared colour bar for value mode, so each map keeps its own';
+        : 'These wafers have no shared colour bar for value mode, so each map keeps its own';
     }
     return null;
   }
@@ -534,7 +535,6 @@ export function renderWaferGallery(
 
   let sharedOpts: WaferViewOptions = {
     plotMode:               'hardBin',
-    colorScheme:            'default',
     showDieLabels:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
@@ -917,7 +917,7 @@ export function renderWaferGallery(
         testDefs:   lotTestDefs(),
         passBins,
         ringCount:      sharedOpts.ringCount,
-        colorScheme:    sharedOpts.colorScheme,
+        binColors:      sharedOpts.binColors,
         // See renderWaferMap's equivalent — the lot bin breakdown follows the
         // gallery's active plot mode.
         plotMode:       sharedOpts.plotMode ?? 'hardBin',
@@ -1237,18 +1237,14 @@ export function renderWaferGallery(
   });
   markMenuTrigger(btnMode, false);
 
-  const itemsHaveCustomColors = (): boolean =>
+  const itemsHaveDefinedBinColors = (): boolean =>
     currentItems.flatMap(it => it ? [...(it.hbinDefs ?? []), ...(it.sbinDefs ?? [])] : []).some(d => d.color);
 
   const { btn: btnPalette, sync: syncPaletteBtn } = makePaletteBtn(
     tbHelpers,
-    () => sharedOpts.plotMode ?? 'hardBin',
-    () => sharedOpts.colorScheme ?? 'default',
-    itemsHaveCustomColors,
-    v => updateShared({ colorScheme: v }),
-    {
-      get: () => sharedOpts.markFailingDies ?? false,
-      set: (v) => updateShared({ markFailingDies: v }) },
+    () => ({ ...sharedOpts, plotMode: sharedOpts.plotMode ?? 'hardBin' }),
+    itemsHaveDefinedBinColors,
+    partial => updateShared(partial),
   );
   syncPaletteBtn();
 
@@ -1370,7 +1366,35 @@ export function renderWaferGallery(
     sharedRangeSyncPending = true;
     const raf = container.ownerDocument.defaultView?.requestAnimationFrame
       ?? ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number);
-    raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); syncSharedMetadataOrder(); });
+    raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); syncSharedMetadataOrder(); syncSharedBinColors(); });
+  }
+
+  /**
+   * Bin colours resolved ONCE over every wafer in the gallery — the bin
+   * counterpart of `sharedMetadataValueOrder`. Per-card resolution would rank
+   * each wafer's bins by its own counts, so bin 7 could be orange on one card
+   * and purple on the next while the shared legend named a third colour. The
+   * original items are the population even in a stacked mode: stacked maps are
+   * value maps and draw no bin colours, and leaving them must not re-rank.
+   */
+  function lotBinColors(): BinColors {
+    const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
+    const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
+    function* lotDies() { for (const it of originalItems) if (it) yield* it.dies; }
+    return resolveBinColors(lotDies(), {
+      passBins,
+      binColorScheme: sharedOpts.binColorScheme,
+      useDefinedBinColors: sharedOpts.useDefinedBinColors,
+      hbinDefs: lotHbinDefs,
+      sbinDefs: lotSbinDefs });
+  }
+
+  /** Re-resolve the gallery-wide bin colours and push them to every live card —
+   *  on every change to the item set, same trigger points as the value range. */
+  function syncSharedBinColors(): void {
+    const next = lotBinColors();
+    sharedOpts = { ...sharedOpts, binColors: next };
+    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ binColors: next });
   }
 
   const btnOverlays = makeOverlaysBtn(
@@ -1382,6 +1406,8 @@ export function renderWaferGallery(
         functionalActive: activeTestIsFunctional(),
         hasLimits: activeTestHasLimits() && !activeTestIsFunctional(),
         hasRecorded: activeTestHasRecordedStatus() && !activeTestIsFunctional(),
+        binMode: (sharedOpts.plotMode ?? 'hardBin') === 'hardBin'
+              || (sharedOpts.plotMode ?? 'hardBin') === 'softBin',
       },
       patch => updateShared(patch),
     ),
@@ -1538,7 +1564,10 @@ export function renderWaferGallery(
       result: { warnings: [
         ...originalItems.flatMap(it => it?.warnings ?? []),
         ...mergedTestDefs().warnings,
-      ] } });
+      ] },
+      // Stated once for the whole gallery, from the same assignment every card draws.
+      extra: [sharedOpts.binColors && binColorWarning(sharedOpts.binColors, sharedOpts.plotMode)]
+        .filter((w): w is WaferWarning => !!w) });
     const changed = next.length !== currentWarnings.length
       || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
     currentWarnings = next;
@@ -1560,7 +1589,7 @@ export function renderWaferGallery(
     const label = `${count} data ${count === 1 ? 'warning' : 'warnings'}`;
     btnWarnings.style.color = worst === 'error' ? CLR.errText : CLR.warnText;
     btnWarnings.ariaLabel = worst === 'error'
-      ? `${label} — wafers in this lot may be positionally wrong`
+      ? `${label} — some wafers may be positionally wrong`
       : label;
   }
 
@@ -1763,7 +1792,7 @@ export function renderWaferGallery(
       insightsTab = createInsightsTab({
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
-      getColorSchemeName: () => sharedOpts.colorScheme ?? 'default',
+      getBinColors: () => sharedOpts.binColors ?? lotBinColors(),
       passBins,
       getRingCount: () => sharedOpts.ringCount ?? 4,
       defaultView: options.insights?.defaultView,
@@ -2282,7 +2311,6 @@ export function renderWaferGallery(
       maxHeight: '86px', overflowY: 'auto', overflowX: 'hidden' } as Partial<CSSStyleDeclaration>);
     legendEl.appendChild(binsRow);
 
-    const scheme    = getColorScheme(sharedOpts.colorScheme);
     const activeBin = sharedOpts.highlightBin;
     const activeMetadataFieldDef = currentItems.flatMap(it => it?.metadataFields ?? []).find(f => f.key === activeMetadataKey);
 
@@ -2372,10 +2400,11 @@ export function renderWaferGallery(
     }
     const binDefMap = activeDefs.length > 0 ? new Map(activeDefs.map(d => [d.bin, d])) : null;
 
-    const binColorFor = (bin: number): string => {
-      const binDef = binDefMap?.get(bin);
-      return (sharedOpts.colorScheme === 'custom' ? binDef?.color : undefined) ?? scheme.forBin(bin);
-    };
+    // The same gallery-wide assignment every card was given, so each swatch names
+    // the colour the dies actually carry on every card.
+    const lotColors = sharedOpts.binColors ?? lotBinColors();
+    const activeColors = mode === 'softBin' ? lotColors.soft : lotColors.hard;
+    const binColorFor = (bin: number): string => activeColors.get(bin) ?? NO_DATA_FILL;
 
     for (const bin of bins) {
       const isActive = activeBin === bin;
@@ -2559,9 +2588,10 @@ export function renderWaferGallery(
   // propagates to cards, fires callback.
   // fireCallback=true (default) fires onViewOptionsChange — used for toolbar interactions.
   // fireCallback=false is used by the public setOptions API to avoid re-entrant callbacks.
-  const BIN_SCHEMES = new Set(['default', 'accessible', 'custom']);
-
   function updateShared(partial: Partial<WaferViewOptions>, { fireCallback = true } = {}): void {
+    // What the caller asked to change — reported to onViewOptionsChange as-is,
+    // before `partial` gains the derived `binColors` below.
+    const requested = Object.keys(partial) as (keyof WaferViewOptions)[];
     const prevMode = sharedOpts.plotMode;
     const prevLegendBlocked = perCardLegendBlockedReason() !== null;
     sharedOpts = { ...sharedOpts, ...partial };
@@ -2570,12 +2600,14 @@ export function renderWaferGallery(
     const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
     const hasPendingFactories = pendingFactoryCount > 0;
 
-    // Switching into a bin mode: reset to default if scheme is not bin-compatible.
-    if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
-      const isBinMode = newMode === 'hardBin' || newMode === 'softBin';
-      if (isBinMode && !BIN_SCHEMES.has(sharedOpts.colorScheme ?? '')) {
-        sharedOpts = { ...sharedOpts, colorScheme: 'default' };
-      }
+    // No colour-scheme reset on a mode switch: bin and value colours are
+    // separate preferences. A change to the bin palette or the defined-colour
+    // toggle re-resolves the gallery-wide assignment here and rides along in the
+    // same partial, so each card rebuilds once rather than twice.
+    if ('binColorScheme' in partial || 'useDefinedBinColors' in partial) {
+      const binColors = lotBinColors();
+      sharedOpts = { ...sharedOpts, binColors };
+      partial = { ...partial, binColors };
     }
 
     if (partial.plotMode !== undefined) {
@@ -2624,7 +2656,9 @@ export function renderWaferGallery(
     syncLegendStyleBtn();
     syncPaletteBtn();
     const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
-    if (partial.colorScheme !== undefined || modeChanged) renderGallerySummaryPanel();
+    if (COLOR_KEYS.some(k => k in partial) || modeChanged) renderGallerySummaryPanel();
+    // The shared-colour advisory depends on the plot mode and the palette.
+    refreshGalleryWarnings();
     syncLogScaleBtn();
     syncColorbarRangeBtn();
     // Recompute after everything above has settled sharedOpts (entering/leaving
@@ -2634,8 +2668,7 @@ export function renderWaferGallery(
     syncSharedValueRange();
     syncSharedMetadataOrder();
     if (fireCallback) {
-      const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
-      options.onViewOptionsChange?.(sharedOpts, changed, classifyChanged(changed));
+      options.onViewOptionsChange?.(sharedOpts, requested, classifyChanged(requested));
     }
   }
 
@@ -2960,11 +2993,9 @@ export function renderWaferGallery(
       }
     }
 
-    // Set 'custom' scheme if items have bin def colours and no explicit scheme was passed.
-    const allDefs = currentItems.flatMap(it => it ? [...(it.hbinDefs ?? []), ...(it.sbinDefs ?? [])] : []);
-    if (allDefs.some(d => d.color) && !options.viewOptions?.colorScheme) {
-      sharedOpts = { ...sharedOpts, colorScheme: 'custom' };
-    }
+    // Bin definition colours need no switch here: they are a layer every
+    // palette honours (`useDefinedBinColors`), not a scheme to select.
+    syncSharedBinColors();
 
     // All sync items are now in currentItems — legend can be built from them.
     rebuildLegend();
@@ -3054,6 +3085,9 @@ export function renderWaferGallery(
   } else {
     buildCards(items);
   }
+  // The first refreshGalleryWarnings ran before buildCards resolved the
+  // gallery-wide bin colours, so it could not yet know whether bins share one.
+  refreshGalleryWarnings();
 
   // Recompute column count when the gallery body width changes (window resize,
   // summary panel open/close, etc.). Only active in auto mode (currentColumns == null).

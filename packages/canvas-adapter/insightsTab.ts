@@ -28,7 +28,9 @@ import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from 
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
-import { getColorScheme } from '../renderer/colorSchemes.js';
+import type { BinColors } from '../renderer/binColors.js';
+import { NO_DATA_FILL } from '../renderer/colorMap.js';
+import { describeWaferPopulation, populationStat } from '../stats/population.js';
 import { LEADING, ALPHA, SPACE, EDGE_GUTTER, FONT, CLR, RADIUS, SHADOW, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
 import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
@@ -80,8 +82,12 @@ export interface InsightsTabDeps {
   getItems: () => Array<WaferMapDisplayItem | null>;
   /** Precomputed lot-level yield, when the host has one — reused directly instead of recomputing (see stats/yield.ts). Omit when there is no lot (e.g. a single wafer). */
   getLotStats?: () => LotStatsSummary | undefined;
-  /** Read fresh each render so a live colour-scheme change is picked up. */
-  getColorSchemeName: () => string;
+  /**
+   * The host map's resolved bin colours (`View.binColors`, or the gallery's
+   * gallery-wide assignment) — read fresh each render so a live palette change is
+   * picked up, and so a bin is the same colour in a chart as on the map.
+   */
+  getBinColors: () => BinColors;
   passBins: number[];
   /** Read fresh each render — used by the Overview tab's ring/quadrant regional yield cards. Default 4. */
   getRingCount?: () => number;
@@ -180,7 +186,7 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
 ];
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
-  const { getItems, getLotStats, getColorSchemeName, passBins, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
+  const { getItems, getLotStats, getBinColors, passBins, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
   const showMetadataStrip = deps.showMetadataStrip ?? true;
   const contentInset = deps.contentInset ?? EDGE_GUTTER;
   const doc = deps.ownerDocument ?? document;
@@ -454,7 +460,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   ): { card: HTMLElement; destroy: () => void } {
     const wrap = makeChartGridWrap(doc);
 
-    const scheme = getColorScheme(getColorSchemeName());
+    const binColors = getBinColors();
     let yieldSortBy: YieldSortBy = 'label';
     const label = groupLabelText ?? 'group';
     // CLAUDE.md: "yield label must name the actual pass bins in use, not
@@ -551,7 +557,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
             softBinCounts: it.statsSummary?.stats.softBinCounts,
           })),
         })),
-        colorScheme: getColorSchemeName(),
         onSaveImage,
         ownerDocument: doc,
       });
@@ -561,7 +566,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
 
     let binType: BinType = 'hbin';
-    const binColorFn = scheme.forBin;
+    // The map's own resolved colours, per bin type — read at draw time so the
+    // Hard/Soft toggle below picks the matching number space.
+    const binColorFor = (binCode: number | undefined): string => binCode === undefined
+      ? NO_DATA_FILL
+      : (binType === 'hbin' ? binColors.hard : binColors.soft).get(binCode) ?? NO_DATA_FILL;
     // Threads each item's already-computed StatsSummary bin counts through
     // (see stats/types.ts's hardBinCounts/softBinCounts doc comment) so
     // buildBinParetoData can skip re-walking `dies` when available.
@@ -579,10 +588,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         options: [['hbin', 'Hard bins'], ['sbin', 'Soft bins']],
         onChange: v => { binType = v as BinType; return { data: makeBinData(), title: `${binType === 'hbin' ? 'Hard' : 'Soft'} bin pareto` }; },
       },
-      // Bin identity keeps the map's registered scheme (forBin) so bins match
-      // the wafer view — including the accessible scheme when selected.
-      // binCode undefined ⇒ bin 0, the codebase-wide no-data grey sentinel.
-      barColor: datum => binColorFn(datum.binCode ?? 0),
+      // Bin identity keeps the map's colours so a bar matches the dies it
+      // counts — including a colour-blind-safe palette or definition colours.
+      // binCode undefined ⇒ no bin recorded ⇒ the no-data fill.
+      barColor: datum => binColorFor(datum.binCode),
       ownerDocument: doc,
     };
     const binPanel = renderBarPanel(binPanelConfig, onSaveImage);
@@ -711,13 +720,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     const ringRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, buildRingRegions);
     if (ringRows.length) {
-      const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, colorScheme: getColorSchemeName(), onSaveImage, ownerDocument: doc });
+      const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, onSaveImage, ownerDocument: doc });
       elements.push(ring.card);
       destroyFns.push(ring.destroy);
     }
     const quadrantRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, buildQuadrantRegions);
     if (quadrantRows.length) {
-      const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, colorScheme: getColorSchemeName(), onSaveImage, ownerDocument: doc });
+      const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, onSaveImage, ownerDocument: doc });
       elements.push(quadrant.card);
       destroyFns.push(quadrant.destroy);
     }
@@ -962,7 +971,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // about which test they were showing, the very fault the shared selection
       // exists to prevent.
       selectedTestNumber: activeSectionTest ?? undefined,
-      items: boxplotItems, testDefs, groups: boxplotGroups, groupLabelText, colorScheme: getColorSchemeName(), onSaveImage,
+      items: boxplotItems, testDefs, groups: boxplotGroups, groupLabelText, onSaveImage,
       onGroupChange: (key) => selectGroupEverywhere(key),
       onOpen: leafAction?.open,
       openActionLabel: leafAction?.label,
@@ -975,7 +984,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       selectedTestNumber: activeSectionTest ?? undefined,
       items, testDefs, groups,
       onGroupChange: (key) => selectGroupEverywhere(key),
-      colorScheme: getColorSchemeName(), onSaveImage,
+      onSaveImage,
       ownerDocument: doc,
     });
     // Wafer-to-wafer trend joins the cross-panel test link below, so picking a
@@ -999,6 +1008,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       })),
       testDefs,
       onSaveImage,
+      centreLabel: populationStat(describeWaferPopulation(items.map(it => it.wafer.metadata)), 'mean'),
       // Not routed through `testLeafAction`: this panel renders an empty state
       // below two wafers, so the single-wafer `focusTest` branch could never
       // fire here anyway — wiring it would be dead code claiming otherwise.
@@ -1031,7 +1041,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     const capability = renderCapabilityPanel({
       title: 'Process capability',
-      items, testDefs, colorScheme: getColorSchemeName(), onSaveImage,
+      items, testDefs, onSaveImage,
       selectedTestNumber: activeSectionTest ?? undefined,
       onSelectTest: (testNumber) => selectTestEverywhere(testNumber),
       ownerDocument: doc,
@@ -1061,12 +1071,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     const scatter = renderScatterPanel({
       title: 'Test scatter',
-      items, testDefs, groups, colorScheme: getColorSchemeName(), onSaveImage,
+      items, testDefs, groups, binColors: getBinColors().hard, onSaveImage,
       ownerDocument: doc,
     });
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
-      items, testDefs, colorScheme: getColorSchemeName(), onSaveImage, onSaveText,
+      items, testDefs, onSaveImage, onSaveText,
       onSelectPair: (x, y) => scatter.setXY(x, y),
       ownerDocument: doc,
     });

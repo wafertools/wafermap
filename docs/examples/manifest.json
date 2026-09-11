@@ -42,8 +42,8 @@
       "title": "Your first wafer map",
       "blurb": "minimal two-call example, no CSV",
       "guide": {
-        "label": "Guide §2",
-        "href": "../guide.md#2-your-first-wafer-map"
+        "label": "Guide: Your first wafer map",
+        "href": "../guide.md#your-first-wafer-map"
       },
       "dataFiles": []
     },
@@ -54,8 +54,8 @@
       "title": "Loading CSV data",
       "blurb": "parse and map real columnar data",
       "guide": {
-        "label": "Guide §3",
-        "href": "../guide.md#3-loading-real-data-from-a-csv"
+        "label": "Guide: Loading real data from a CSV",
+        "href": "../guide.md#loading-real-data-from-a-csv"
       },
       "dataFiles": [
         "../data/dummy-fulldata.csv",
@@ -70,8 +70,8 @@
       "title": "Geometry inference",
       "blurb": "omit die size and let the library infer it",
       "guide": {
-        "label": "Guide §4",
-        "href": "../guide.md#4-adding-die-size-and-wafer-geometry"
+        "label": "Guide: Adding die size and wafer geometry",
+        "href": "../guide.md#adding-die-size-and-wafer-geometry"
       },
       "dataFiles": []
     },
@@ -83,8 +83,8 @@
       "title": "Partial data and centre anchoring",
       "blurb": "anchoring the wafer centre for partial coverage, and why sparse data doesn't need it",
       "guide": {
-        "label": "Guide §4",
-        "href": "../guide.md#4-adding-die-size-and-wafer-geometry"
+        "label": "Guide: Adding die size and wafer geometry",
+        "href": "../guide.md#adding-die-size-and-wafer-geometry"
       },
       "dataFiles": []
     },
@@ -96,8 +96,8 @@
       "title": "Warnings the library surfaces",
       "blurb": "the built-in ⚠ indicator, warning severity, and the `onWarning` opt-out for hosts with their own notification UI",
       "guide": {
-        "label": "Guide §4",
-        "href": "../guide.md#4-adding-die-size-and-wafer-geometry"
+        "label": "Guide: Adding die size and wafer geometry",
+        "href": "../guide.md#adding-die-size-and-wafer-geometry"
       },
       "dataFiles": []
     },
@@ -108,8 +108,8 @@
       "title": "Bins and yield",
       "blurb": "named hard bins, pass/fail colours, yield label",
       "guide": {
-        "label": "Guide §5",
-        "href": "../guide.md#5-working-with-bins"
+        "label": "Guide: Working with bins",
+        "href": "../guide.md#working-with-bins"
       },
       "dataFiles": []
     },
@@ -120,8 +120,8 @@
       "title": "Metadata / layout mode",
       "blurb": "generic categorical colouring from `die.metadata`, coexists with test/bin data",
       "guide": {
-        "label": "Guide §21",
-        "href": "../guide.md#21-metadata-layout-plot-mode"
+        "label": "Guide: Metadata / layout plot mode",
+        "href": "../guide.md#metadata-layout-plot-mode"
       },
       "dataFiles": []
     },
@@ -132,8 +132,8 @@
       "title": "Test values",
       "blurb": "parametric measurements, spec limits, colorbar",
       "guide": {
-        "label": "Guide §6",
-        "href": "../guide.md#6-working-with-test-values"
+        "label": "Guide: Working with test values",
+        "href": "../guide.md#working-with-test-values"
       },
       "dataFiles": []
     },
@@ -144,8 +144,8 @@
       "title": "Retests",
       "blurb": "multi-touch probe sequences and retest policy",
       "guide": {
-        "label": "Guide §7",
-        "href": "../guide.md#7-retests-and-enriching-dies-after-build"
+        "label": "Guide: Retests and enriching dies after build",
+        "href": "../guide.md#retests-and-enriching-dies-after-build"
       },
       "dataFiles": []
     },
@@ -156,8 +156,8 @@
       "title": "Display control",
       "blurb": "rotation, flip, plot mode, colour scheme",
       "guide": {
-        "label": "Guide §8",
-        "href": "../guide.md#8-controlling-the-display"
+        "label": "Guide: Controlling the display",
+        "href": "../guide.md#controlling-the-display"
       },
       "dataFiles": []
     },
@@ -169,8 +169,8 @@
       "title": "Custom colour schemes",
       "blurb": "register your own bin/value palette with `registerColorScheme`",
       "guide": {
-        "label": "Guide §18",
-        "href": "../guide.md#18-custom-colour-schemes"
+        "label": "Guide: Custom colour schemes",
+        "href": "../guide.md#custom-colour-schemes"
       },
       "dataFiles": []
     },
@@ -181,8 +181,8 @@
       "title": "Theming",
       "blurb": "theme the chrome and canvas with `--wmap-*` custom properties (light, dark, Nord, Solarized, brand green)",
       "guide": {
-        "label": "Guide §8",
-        "href": "../guide.md#8-controlling-the-display"
+        "label": "Guide: Controlling the display",
+        "href": "../guide.md#controlling-the-display"
       },
       "dataFiles": []
     },
@@ -193,8 +193,8 @@
       "title": "Interaction API",
       "blurb": "hover, click, box-select, controller methods",
       "guide": {
-        "label": "Guide §9",
-        "href": "../guide.md#9-responding-to-user-interaction"
+        "label": "Guide: Responding to user interaction",
+        "href": "../guide.md#responding-to-user-interaction"
       },
       "dataFiles": []
     },
@@ -205,8 +205,8 @@
       "title": "Web Worker",
       "blurb": "off-main-thread build for large datasets",
       "guide": {
-        "label": "Guide §17",
-        "href": "../guide.md#17-processing-large-datasets-with-a-web-worker"
+        "label": "Guide: Processing large datasets with a Web Worker",
+        "href": "../guide.md#processing-large-datasets-with-a-web-worker"
       },
       "dataFiles": []
     },
@@ -217,8 +217,8 @@
       "title": "Insights chart suite",
       "blurb": "the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add",
       "guide": {
-        "label": "Guide §14",
-        "href": "../guide.md#14-the-insights-tab"
+        "label": "Guide: The Insights tab",
+        "href": "../guide.md#the-insights-tab"
       },
       "dataFiles": []
     },
@@ -230,8 +230,8 @@
       "title": "Statistical findings",
       "blurb": "ring, quadrant, cluster, edge-arc analysis on a single wafer",
       "guide": {
-        "label": "Guide §10",
-        "href": "../guide.md#10-adding-statistical-findings"
+        "label": "Guide: Adding statistical findings",
+        "href": "../guide.md#adding-statistical-findings"
       },
       "dataFiles": []
     },
@@ -243,8 +243,8 @@
       "title": "Summary panel",
       "blurb": "persistent metadata and stats sidebar docked beside the map",
       "guide": {
-        "label": "Guide §11",
-        "href": "../guide.md#11-summary-panel"
+        "label": "Guide: Summary panel",
+        "href": "../guide.md#summary-panel"
       },
       "dataFiles": []
     },
@@ -256,8 +256,8 @@
       "title": "Lot gallery",
       "blurb": "card grid of multiple wafers with shared controls and stacked modes",
       "guide": {
-        "label": "Guide §12",
-        "href": "../guide.md#12-building-a-lot-gallery"
+        "label": "Guide: Building a lot gallery",
+        "href": "../guide.md#building-a-lot-gallery"
       },
       "dataFiles": []
     },
@@ -269,8 +269,8 @@
       "title": "Lot-level findings",
       "blurb": "cross-wafer trend detection with `analyzeWaferLot`",
       "guide": {
-        "label": "Guide §13",
-        "href": "../guide.md#13-lot-level-statistical-findings"
+        "label": "Guide: Lot-level statistical findings",
+        "href": "../guide.md#lot-level-statistical-findings"
       },
       "dataFiles": []
     },
@@ -282,8 +282,8 @@
       "title": "Lot-stack spatial analysis",
       "blurb": "mean/median/stddev maps aggregated across a lot",
       "guide": {
-        "label": "Guide §19",
-        "href": "../guide.md#19-recipes"
+        "label": "Guide: Recipes",
+        "href": "../guide.md#recipes"
       },
       "dataFiles": []
     },
@@ -294,8 +294,8 @@
       "title": "Reticle overlays",
       "blurb": "photolithography field grid and reticle-position findings",
       "guide": {
-        "label": "Guide §15",
-        "href": "../guide.md#15-reticle-overlays"
+        "label": "Guide: Reticle overlays",
+        "href": "../guide.md#reticle-overlays"
       },
       "dataFiles": []
     },
@@ -314,8 +314,8 @@
       "title": "Real wafer data (WM-811K)",
       "blurb": "open dataset with 811 000 wafer records",
       "guide": {
-        "label": "Guide §10",
-        "href": "../guide.md#10-adding-statistical-findings"
+        "label": "Guide: Adding statistical findings",
+        "href": "../guide.md#adding-statistical-findings"
       },
       "dataFiles": [
         "wm811k-sample.json"
@@ -342,8 +342,8 @@
       "title": "Rendering pipeline",
       "blurb": "low-level buildView / toCanvas pipeline",
       "guide": {
-        "label": "Guide §20",
-        "href": "../guide.md#20-advanced-the-rendering-pipeline"
+        "label": "Guide: Advanced: the rendering pipeline",
+        "href": "../guide.md#advanced-the-rendering-pipeline"
       },
       "dataFiles": []
     },

@@ -275,7 +275,7 @@ optimization worth taking, not a fix for a real bottleneck.
 | …plus distribution/box-plot charts | `+ computePerTestStats: true` | Still fast; unlocks Insights → Distributions |
 | A QA/engineering tool that should flag anomalies automatically | `+ enableTestValueAnalysis: true` when the estimate is small, else a `findingsNotice` offering it | The only option that finds spatial patterns for you automatically. Cheap per wafer, seconds per lot — so decide per lot rather than once for the whole app (see "The number that matters is the lot") |
 | A lot gallery (many wafers) | Always pass `perWaferSummaries` to `analyzeWaferLot` | Free reuse of work you already did |
-| Very large lots using `enableTestValueAnalysis` on every wafer | Run analysis in a [Web Worker](guide.md#17-processing-large-datasets-with-a-web-worker) via `createWafermapWorker` | Keeps the main thread free while the heavier pass runs, even though each individual call is fast |
+| Very large lots using `enableTestValueAnalysis` on every wafer | Run analysis in a [Web Worker](guide.md#processing-large-datasets-with-a-web-worker) via `createWafermapWorker` | Keeps the main thread free while the heavier pass runs, even though each individual call is fast |
 | A dashboard rendering many wafers/lots at once | Compute `statsSummary` for every card, then open Insights on demand | Box plot and bin pareto ride along nearly free once Summary panel stats exist |
 | Any app, if your data source has a large parametric test program | Filter `testDefs` down to the tests you actually analyze/display | Correlation and `enableTestValueAnalysis` both scale with test count — unused tests cost you for nothing shown to the user |
 

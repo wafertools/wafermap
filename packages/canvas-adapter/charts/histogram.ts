@@ -21,9 +21,7 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { QUANTITY, categorical } from './palette.js';
 import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
-// `colorScheme` (HistogramPanelOptions) is deliberately no longer read —
-// quantity/series colours are fixed (palette.ts); the option stays for API
-// compatibility with existing callers.
+// Quantity/series colours are fixed (palette.ts), not the map's colours.
 
 const HIST_HEIGHT = 230;
 const HIST_AXIS_HEIGHT = 36;
@@ -75,7 +73,6 @@ export interface HistogramPanelOptions {
   items: HistogramItem[];
   testDefs: TestDef[];
   selectedTestNumber?: number;
-  colorScheme?: string;
   onSaveImage?: SaveImageHandler;
   /**
    * When the Analysis tab's "Group by" is active, this panel switches to an

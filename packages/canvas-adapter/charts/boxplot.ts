@@ -41,7 +41,6 @@ export interface BoxplotPanelOptions {
   items: BoxplotPanelItem[];
   testDefs: TestDef[];
   selectedTestNumber?: number;
-  colorScheme?: string;
   onSaveImage?: SaveImageHandler;
   /**
    * When the Analysis tab's "Group by" is active, this panel shows one
@@ -96,8 +95,7 @@ export interface BoxplotPanelHandle {
 }
 
 export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHandle {
-  // `colorScheme` is deliberately no longer read — box fills are the fixed
-  // neutral quantity colour (palette.ts); the option stays for API compatibility.
+  // Box fills are the fixed neutral quantity colour (palette.ts).
   const { title = 'Test value distribution', items, testDefs, onSaveImage, groups, groupLabelText = 'group', onOpen } = options;
   // Two defaults, one override: the stock wording differs by position ("a box"
   // is any box, the hovered one is "this wafer"), while a host-supplied label

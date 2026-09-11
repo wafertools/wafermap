@@ -10,8 +10,8 @@
 // NOT included here: contrast/overlay effects (the dual dark+light strokes on
 // ring/quadrant boundaries and colorbar limit lines, and per-die label contrast)
 // are relative to the die colour *underneath*, not the theme, so they stay as
-// literal rgba() in toCanvas. Data-viz colours (the bin/value palette) are the
-// orthogonal `colorScheme`, untouched.
+// literal rgba() in toCanvas. Data-viz colours are the orthogonal
+// `binColorScheme`/`valueColorScheme`, untouched.
 
 import type { WmapTokenName } from './toolbar.js';
 

@@ -12,7 +12,7 @@
 // ALL entry points are built in ONE esbuild invocation with `splitting: true`.
 // This is load-bearing, not a tidiness preference. Built separately, each bundle
 // inlines its own private copy of every shared module — including the
-// colour-scheme registry. `registerColorScheme` imported from 'wafermap' then
+// colour-scheme registries. `registerBinColorScheme` imported from 'wafermap' then
 // writes into a registry that 'wafermap/render' cannot see, so a custom scheme
 // silently renders with the default palette. It only reproduces in the bundled
 // site build; under `npm run dev` the unbundled modules resolve to one shared

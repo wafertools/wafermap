@@ -78,6 +78,12 @@ The rectangular exposure field used in photolithography, typically containing a 
 
 A batch of wafers processed together through the fabrication line, typically 25 wafers. All wafers in a lot share the same process conditions and are usually tested together. The library's lot stack feature lets you combine multiple wafers from a lot into a single aggregated map. *Library mapping: `WaferMapInput.lotStack`, `LotStackConfig`.*
 
+In API names — `analyzeWaferLot`, `LotStatsSummary`, `lotStack`, `level: 'lot'` — "lot" means
+*a set of several wafers*, which may span more than one physical lot or record no lot ID at all.
+What the user sees is stricter: a panel, report or finding says "lot" only when every wafer
+records the same lot ID ("Lot LOT123 · 13 wafers", "lot median"); otherwise it names the wafers
+("26 wafers from 2 lots", "median of all wafers").
+
 ### Lot stack
 
 An aggregated wafer map computed from multiple individual wafers, showing a per-die statistic across the lot (mean, median, bin count, etc.). Lot stacking reveals systematic spatial patterns — for example, a recurring hot spot at the same reticle position across all wafers — that would not be visible on any single wafer. *Library mapping: `LotStackConfig`, `WaferViewOptions.plotMode: 'stackedValues' | 'stackedBins' | 'stackedSoftBins'`.*

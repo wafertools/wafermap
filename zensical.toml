@@ -73,18 +73,104 @@ logo    = "images/wafermap-readme-header-256.png"
 features = [
   "navigation.tabs",
   "navigation.sections",
+  "navigation.top",
+  # Updates the address bar to the section you are reading, so a link copied
+  # from a 4,000-line reference points at the part you were actually on.
+  "navigation.tracking",
+  "navigation.footer",
   "content.code.copy",
+  "content.code.select",
+  "content.code.annotate",
+  # Renders `title` attributes and `abbr` definitions as real tooltips — see
+  # the shared includes/abbreviations.md appended to every page below.
+  "content.tooltips",
+  "content.footnote.tooltips",
+  # A reader who picks "Desktop" in one tabbed block gets it in all of them.
+  "content.tabs.link",
+  # The right-hand TOC tracks scroll position — the cheapest possible fix for
+  # "api.md is hard to scan", short of splitting it up.
+  "toc.follow",
+  "search.highlight",
+  "search.share",
 ]
 
-[project.markdown_extensions.toc]
-permalink = true
+# Light / dark / follow-the-system, in that cycle. The docs were light-only
+# until now, which sat oddly against a library whose whole chrome is themeable
+# and whose own guide had a dark-theme rendering bug fixed in 0.26.1.
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
 
-[project.markdown_extensions.pymdownx.highlight]
-anchor_linenums     = true
-line_spans          = "__span"
-pygments_lang_class = true
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
 
-[project.markdown_extensions.pymdownx.superfences]
-custom_fences = [
-  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+# ── Markdown extensions ─────────────────────────────────────────────────────
+#
+# The FULL set has to be listed, including the ones that look like Zensical's
+# defaults. Declaring any `[project.markdown_extensions.*]` section replaces the
+# default set wholesale rather than merging into it — so the previous config,
+# which set only `toc` and `pymdownx.highlight`, was silently switching off
+# `admonition`, `abbr`, `def_list`, `attr_list`, `tasklist`, `mark`, `caret`,
+# `tilde` and the rest. Nothing reported it: unsupported syntax renders as
+# ordinary paragraph text, which reads as "we don't use admonitions here" rather
+# than as a fault. Verified by removing the sections entirely, at which point
+# `!!! note` and `*[ABBR]:` both started working.
+#
+# (Mermaid is unaffected either way — Zensical renders ```mermaid fences
+# natively rather than through `superfences`.)
+[project.markdown_extensions]
+abbr        = {}
+admonition  = {}
+attr_list   = {}
+def_list    = {}
+footnotes   = {}
+md_in_html  = {}
+
+toc.permalink = true
+
+pymdownx.arithmatex.generic          = true
+pymdownx.betterem                    = {}
+pymdownx.caret                       = {}
+pymdownx.details                     = {}
+pymdownx.emoji.emoji_generator       = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index           = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums   = true
+pymdownx.highlight.line_spans        = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite                = {}
+pymdownx.keys                        = {}
+pymdownx.magiclink                   = {}
+pymdownx.mark                        = {}
+pymdownx.smartsymbols                = {}
+pymdownx.superfences.custom_fences   = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]
+pymdownx.tabbed.alternate_style      = true
+pymdownx.tabbed.combine_header_slug  = true
+pymdownx.tasklist.custom_checkbox    = true
+pymdownx.tilde                       = {}
+
+# Appended to every page, so a term like STDF or Cpk carries its own definition
+# on hover wherever it appears — the reader never has to leave the page they are
+# on for the glossary. `content.tooltips` is what renders it as a real tooltip
+# rather than a browser title attribute.
+# Deliberately OUTSIDE docs/: a snippet inside the docs tree is also built as a
+# page of its own, so docs/includes/abbreviations.md shipped as a stray site page
+# listing the raw definitions. base_path resolves from the project root anyway.
+#
+# The list is domain terms only — STDF, PTR, Cpk, the bin records. General
+# computing terms were tried and removed: tooltipping every "API", "UI" and "CSV"
+# put a dotted underline through most sentences and told the reader nothing,
+# which is worse than not having the feature.
+pymdownx.snippets.base_path   = ["."]
+pymdownx.snippets.auto_append = ["includes/abbreviations.md"]

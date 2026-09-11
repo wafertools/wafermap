@@ -16,7 +16,7 @@
 // when no precomputed value is supplied.
 
 import type { Die } from '../core/dies.js';
-import { isYieldEligibleDie } from '../core/dies.js';
+import { isYieldEligibleDie, diePassStatus } from '../core/dies.js';
 import { compareNatural } from '../core/utils.js';
 
 /** Shared row shape for every bar-chart panel (yield, bin pareto, ...). */
@@ -60,12 +60,13 @@ export type YieldSortBy = 'yield' | 'label';
 /** Fallback only — used when an item doesn't carry a precomputed `yieldPercent`. */
 function yieldPercentFromDies(dies: Die[], passBins: number[]): number {
   let pass = 0, total = 0;
+  const passSet = new Set(passBins);
   for (const d of dies) {
     if (!isYieldEligibleDie(d)) continue;
-    const bin = d.hbin ?? d.sbin;
-    if (bin === undefined) continue;
+    const verdict = diePassStatus(d, passSet);
+    if (verdict === undefined) continue;
     total++;
-    if (passBins.includes(bin)) pass++;
+    if (verdict) pass++;
   }
   return total > 0 ? (pass / total) * 100 : 0;
 }

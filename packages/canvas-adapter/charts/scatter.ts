@@ -13,7 +13,7 @@
 // native `title` attribute instead of porting tsmap's `attachTooltip` chrome
 // helper, matching histogram's same trim.
 
-import { getColorScheme } from '../../renderer/colorSchemes.js';
+import { NO_DATA_FILL } from '../../renderer/colorMap.js';
 import { categorical } from './palette.js';
 import { buildScatterData, buildScatterDataGrouped, type ScatterItem, type ScatterPoint } from '../../stats/scatter.js';
 import { pearsonOfPairs } from '../../stats/correlation.js';
@@ -35,7 +35,12 @@ export interface ScatterPanelOptions {
   testDefs: TestDef[];
   xTestNumber?: number;
   yTestNumber?: number;
-  colorScheme?: string;
+  /**
+   * The host map's resolved hard-bin colours (`View.binColors.hard`), so a
+   * point is the colour its die is on the map. Omitted ⇒ points without a
+   * group colour take the no-data fill.
+   */
+  binColors?: ReadonlyMap<number, string>;
   onSaveImage?: SaveImageHandler;
   /**
    * When the Analysis tab's "Group by" is active, every group's points are
@@ -61,7 +66,7 @@ export interface ScatterPanelHandle {
 }
 
 export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHandle {
-  const { title = 'Test scatter', items, testDefs, colorScheme = 'default', onSaveImage, groups } = options;
+  const { title = 'Test scatter', items, testDefs, binColors, onSaveImage, groups } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 
   const testOptions = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
@@ -143,20 +148,16 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       : `${base} · r = ${r.toFixed(3)} · n = ${n.toLocaleString()}`;
   }
 
-  const scheme = getColorScheme(colorScheme);
-  const { forBin } = scheme;
-  // Bin 0 is the codebase-wide no-data grey sentinel (BIN_PALETTE[0] in every
-  // registered colour scheme) — a die with no hard-bin result is categorized
+  // Category '0' is "no hard-bin result" — a die without one is categorized
   // there rather than coerced into a real bin, matching the wafer map's own
-  // "missing bin ≠ bin 0/any bin" rule.
+  // "missing bin ≠ bin 0/any bin" rule, and drawn in the no-data fill.
   const categoryOf = (p: ScatterPoint): string => byGroup ? (p.group ?? '—') : String(p.hbin ?? 0);
   const colorOfCategory = (cat: string): string => {
-    // Bin identity keeps the map's registered scheme (`forBin`) so a bin is
-    // the same colour here as on the wafer map — including the accessible
-    // scheme when selected. Facet groups have no map identity, so they use
-    // the fixed CVD-safe categorical palette instead (palette.ts).
+    // Bin identity keeps the map's resolved colours so a bin is the same
+    // colour here as on the wafer map. Facet groups have no map identity, so
+    // they use the fixed CVD-safe categorical palette instead (palette.ts).
     if (byGroup) return categorical(groupColorIndex.get(cat) ?? 0);
-    return forBin(Number(cat));
+    return cat === '0' ? NO_DATA_FILL : binColors?.get(Number(cat)) ?? NO_DATA_FILL;
   };
   const labelOfCategory = (cat: string): string => byGroup ? cat : cat === '0' ? 'No bin data' : `Bin ${cat}`;
   const activeCats = new Set<string>();

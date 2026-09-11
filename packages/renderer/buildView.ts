@@ -10,7 +10,10 @@ import {
   affinePoint, affineVector, affineSwapsAxes,
 } from '../core/transforms.js';
 import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from './colorMap.js';
-import { getColorScheme } from './colorSchemes.js';
+import { getValueColorScheme } from './colorSchemes.js';
+import { resolveBinColors, binColorsCover, type BinColors } from './binColors.js';
+import { NO_DATA_FILL } from './colorMap.js';
+import { diePassStatus } from '../core/dies.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWaferMap.js';
 import { getDieTestValue, getTestPassStatus, isParametricTest } from './buildWaferMap.js';
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
@@ -165,8 +168,16 @@ export interface View {
   overlays: ViewOverlay[];
   /** The plot mode this view was built for. Colours in `rectangles` follow it. */
   plotMode: PlotMode;
-  /** Name of the colour scheme used, as registered with `registerColorScheme`. */
-  colorScheme: string;
+  /** Bin palette used for hard/soft-bin modes, as registered with `registerBinColorScheme`. */
+  binColorScheme: string;
+  /** Value gradient used for value and stacked modes, as registered with `registerValueColorScheme`. */
+  valueColorScheme: string;
+  /**
+   * Every bin's resolved colour, both bin types — the single source for bin
+   * colour. Die fills are built from it, and legends, panels and charts must
+   * read it rather than re-deriving a colour, or they can disagree with the map.
+   */
+  binColors: BinColors;
   /** Wafer-level metadata carried through from the wafer, or `null`. */
   metadata: WaferMetadata | null;
   /**
@@ -288,8 +299,22 @@ export interface ViewOptions {
   showQuadrantBoundaries?: boolean;
   showXYIndicator?: boolean;
   dieGap?: number;
-  /** Named colour scheme — any scheme registered via registerColorScheme(). Default: 'default'. */
-  colorScheme?: string;
+  /** Bin palette for `hardBin`/`softBin` — any name registered via `registerBinColorScheme()`. Default `'default'`. */
+  binColorScheme?: string;
+  /** Value gradient for `value` and the stacked modes — any name registered via `registerValueColorScheme()`. Default `'default'`. */
+  valueColorScheme?: string;
+  /** Honour `BinDef.color` where a bin definition supplies one. Default true. See `resolveBinColors`. */
+  useDefinedBinColors?: boolean;
+  /**
+   * Bin colours resolved over a WIDER population than these dies — a host
+   * showing several wafers together passes one `resolveBinColors` result to
+   * every map so a bin is the same colour on each (`renderWaferGallery` does
+   * this for you). The bin counterpart of `metadataValueOrder`.
+   *
+   * Ignored, and colours resolved from these dies instead, when it lacks any
+   * bin present here: a stale assignment must never leave a real bin uncoloured.
+   */
+  binColors?: BinColors;
   highlightBin?: number;
   /** Dim every die except this metadata value, `'metadata'` mode's analogue of `highlightBin`. */
   highlightMetadataValue?: string;
@@ -334,8 +359,8 @@ export interface ViewOptions {
   /**
    * Which bins count as passing. Default `[1]`.
    *
-   * Used only to set `ViewRect.binFail`, never to colour anything — bin colour
-   * comes from the colour scheme regardless of pass/fail. Must match the
+   * Sets `ViewRect.binFail` and decides which bins take the palette's pass
+   * colours (see `resolveBinColors`) — never the bin number. Must match the
    * `passBins` given to `buildWaferMap` / `analyzeWaferMap`, or the map will
    * disagree with the yield figure beside it.
    */
@@ -429,7 +454,6 @@ const DIM_FILL = '#e8e9ea';
 // no-data die) and should read as present-but-set-aside, not as more of the
 // same "nothing here" grey.
 const EDGE_EXCLUDED_FILL = '#aab0ba';
-const NO_DATA_FILL     = '#d6d9dd';
 
 /**
  * Read `die.metadata[key]` for `'metadata'` plot mode, stringified. Non-primitive values
@@ -699,12 +723,14 @@ export function buildHoverText(
       //  - 'percent'  → value is ALREADY a percentage; show it as N%, never derive
       //    a second (count/lotSize) percentage (which produced nonsense like "250%").
       //  - countBin/default → value is an occurrence count; optionally annotate with
-      //    its share of the lot.
+      //    its share of the stacked wafers. "of lot" used to say this, but a
+      //    stack can combine wafers from several lots — the denominator is the
+      //    wafers stacked, and the label says so.
       let valueText: string;
       if (aggrMethod === 'percent') {
         valueText = `${value.toFixed(0)}%`;
       } else {
-        const pct = lotSize ? ` (${((value / lotSize) * 100).toFixed(0)}% of lot)` : '';
+        const pct = lotSize ? ` (${((value / lotSize) * 100).toFixed(0)}% of stacked wafers)` : '';
         valueText = `${value}${pct}`;
       }
       // Name the aggregation method so an engineer knows whether they are reading
@@ -1240,8 +1266,10 @@ function pushDieRectangles(
     const bin = getBin(die);
     const fill = bin != null ? colorFns.forBin(bin) : NO_DATA_FILL;
     // A die with no bin is no-data, not a failure — it gets neither the fail
-    // flag nor a marker.
-    const binFail = bin != null && !passBinSet.has(bin) ? true : undefined;
+    // flag nor a marker. The verdict is the DIE's (same rule as yield), not
+    // "is the plotted bin in passBins": in soft-bin mode the plotted bin is a
+    // soft bin, and testing it against hard pass bins hatched the wrong dies.
+    const binFail = bin != null && diePassStatus(die, passBinSet) === false ? true : undefined;
     rectangles.push({ x: physX, y: physY, width: sw, height: sh, fill, type: plotMode, binFail, metadata: die.metadata });
     return;
   }
@@ -1324,10 +1352,10 @@ export function buildView(
     showQuadrantBoundaries = false,
     showXYIndicator = false,
     dieGap = 1,
-    // 'default' is the canonical scheme name ('color' is a deprecated alias). Using
-    // the canonical name here means view.colorScheme matches the toolbar dropdown's
-    // 'default' entry for active-state highlighting.
-    colorScheme = 'default',
+    binColorScheme = 'default',
+    valueColorScheme = 'default',
+    useDefinedBinColors = true,
+    binColors: binColorsOpt,
     passBins = [1],
     highlightBin,
     highlightMetadataValue,
@@ -1367,17 +1395,20 @@ export function buildView(
   const sbinDefMap: BinDefMap | null = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
   const binDefMap: BinDefMap | null  = plotMode === 'softBin' ? sbinDefMap : hbinDefMap;
 
-  const scheme = getColorScheme(colorScheme);
-
   // Set rather than Array.includes — this is consulted once per die, and a lot
   // can carry hundreds of thousands.
   const passBinSet = new Set(passBins);
 
+  const binColors = binColorsOpt && binColorsCover(binColorsOpt, dies)
+    ? binColorsOpt
+    : resolveBinColors(dies, { passBins, binColorScheme, hbinDefs, sbinDefs, useDefinedBinColors });
+  const activeBinColors = plotMode === 'softBin' ? binColors.soft : binColors.hard;
+
   const colorFns: ColorFns = {
-    forValue: buildColorLut(scheme.forValue),
-    forBin:   colorScheme === 'custom' && binDefMap
-      ? (bin) => binDefMap.get(bin)?.color ?? scheme.forBin(bin)
-      : scheme.forBin,
+    forValue: buildColorLut(getValueColorScheme(valueColorScheme).forValue),
+    // Every bin on these dies has an entry (resolved from them, or checked by
+    // binColorsCover), so the fallback is unreachable for a real bin.
+    forBin:   (bin) => activeBinColors.get(bin) ?? NO_DATA_FILL,
   };
 
   // Resolve activeTest (toolbar cursor) → canonical test number for getDieTestValue.
@@ -1583,8 +1614,8 @@ export function buildView(
   // ordered (natural alphanumeric) assignment rather than hashing, so a small known
   // set of values gets maximally-distinct colours deterministically (not
   // dependent on die array iteration order). Never routed through colorFns/
-  // the toolbar's colorScheme picker — those are spectrum schemes for
-  // hard/soft bins with no string-keyed concept to extend; an arbitrary
+  // the toolbar's colour-scheme picker — bin palettes carry pass/fail
+  // meaning keyed on bin numbers, with no string-keyed concept to extend; an arbitrary
   // metadata field has no universal "good/bad" meaning to encode either, so
   // it always uses the dedicated ordered palette + explicit overrides.
   const isMetadataMode = plotMode === 'metadata';
@@ -1682,7 +1713,9 @@ export function buildView(
     texts,
     overlays,
     plotMode,
-    colorScheme,
+    binColorScheme,
+    valueColorScheme,
+    binColors,
     metadata: wafer.metadata ?? null,
     dies,
     valueRange: [vMin, vMax],

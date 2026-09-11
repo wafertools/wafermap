@@ -32,6 +32,13 @@ export interface TrendPanelOptions {
   onSaveImage?: SaveImageHandler;
   /** Click a point to open that wafer's map on this test. */
   onOpen?: (key: number, testNumber: number) => void;
+  /**
+   * What the dashed reference line is, as a noun phrase — "lot mean" when the
+   * items are one lot, else "mean of all wafers" (see stats/population.ts).
+   * The panel sees no wafer metadata, so the host names it. Default
+   * "mean of all wafers", which is true of any set.
+   */
+  centreLabel?: string;
   /** Initial axis toggles, shared with the sibling distribution panels. */
   axisPrefs?: AxisPrefs;
   /** Fired when the user changes an axis toggle here, so siblings can follow. */
@@ -52,7 +59,7 @@ export interface TrendPanelHandle {
 }
 
 export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
-  const { items, testDefs, onSaveImage, onOpen } = options;
+  const { items, testDefs, onSaveImage, onOpen, centreLabel = 'mean of all wafers' } = options;
   const title = options.title ?? 'Wafer-to-wafer trend';
   const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
   // Same reason as boxplot's: opt out of grid stretch so growCardToFitContent's
@@ -127,7 +134,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
     // interaction stale, and absent entirely the first time "Clip outliers" was
     // ticked. `draw` calls this after assigning `lastClippedCount`.
     const syncHint = () => {
-      hint.textContent = 'Point = wafer mean, whisker = ±1σ, dashed = lot mean · wafers in slot order'
+      hint.textContent = `Point = wafer mean, whisker = ±1σ, dashed = ${centreLabel} · wafers in slot order`
         + (onOpen ? ' · click a point to open that wafer' : '')
         + (lastClippedCount ? ` · axis clipped, ${lastClippedCount} outside` : '');
     };
@@ -332,7 +339,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       tooltip.innerHTML = `<strong>${d.label}</strong><br>`
         + `mean ${fmt(d.mean, def?.unit)} · σ ${fmt(d.stddev, def?.unit)}<br>`
         + `n = ${d.count.toLocaleString()}`
-        + (centre !== null ? `<br>Δ vs lot mean ${d.mean - centre >= 0 ? '+' : ''}${fmt(d.mean - centre, def?.unit)}` : '')
+        + (centre !== null ? `<br>Δ vs ${centreLabel} ${d.mean - centre >= 0 ? '+' : ''}${fmt(d.mean - centre, def?.unit)}` : '')
         + (onOpen && d.key !== undefined ? '<br><em>click to open this wafer</em>' : '');
       tooltip.style.display = 'block';
       positionChartTooltip(tooltip, card, e.clientX, e.clientY);

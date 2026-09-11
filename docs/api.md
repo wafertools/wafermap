@@ -32,7 +32,7 @@ throughout; shared types live in §12.
 > for most integrations.
 >
 > For scale: **tsmap**, a complete cross-platform desktop application built on
-> this library, imports **10** of its ~100 exports. `RenderOptions` has 31
+> this library, imports **14** of its ~100 exports. `RenderOptions` has 31
 > fields; a typical integration sets a handful. Everything else here is depth
 > that stays out of your way until you go looking for it.
 >
@@ -421,7 +421,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 {
   bin:    number   // the numeric bin value this defines
   name:   string   // e.g. "Pass", "Contact Open", "Vth - Hi NMOS"
-  color?: string   // optional CSS color override, e.g. "#2ecc71" — overrides the active colour scheme
+  color?: string   // optional CSS colour, e.g. "#2ecc71" — wins over the bin colour scheme for this bin (§11.19)
 }
 ```
 
@@ -666,6 +666,7 @@ The library's one warning vocabulary. Raised by geometry inference on
 | `diameter-exceeds-die-extent` | `warning` | A **supplied** `waferConfig.diameter` that the probed dies fill less than 75% of the radius. The mirror of `geometry-conflict`, which asks whether the dies *fit*; this asks whether they *fill*. An over-large wafer is not harmless — ring bands are equal-radius, so it crushes dies into the inner rings and empties the outer ones (at a 10× diameter every die lands in ring 1), and ring/quadrant/edge findings then describe the assumed wafer rather than the probed area. A genuinely partial map looks identical, so the message names both causes. Not raised when `waferConfig.center` is supplied (that is the documented way to position partial data deliberately) or below 20 dies (too few for the extent to be evidence, and too few for ring analysis to report anything). |
 | `test-count-capped` | `warning` | More tests found than `analyzeWaferMap` will analyse, so **no test findings were computed at all**. Pass `testNumbers` to scope it. |
 | `edge-exclusion-exceeds-radius` | `warning` | `waferConfig.edgeExclusion` exceeds the resolved wafer radius (most likely with an under-inferred diameter). The excluded band is clamped to the whole wafer instead of silently producing a smaller, wrong ring. |
+| `bin-colors-shared` | `warning` | Raised by the renderers (not `buildWaferMap`) for the bin map on screen: some bins are drawn in a colour another bin also has — more bins than the bin colour scheme has distinct colours, or a `BinDef.color` repeats one. Every die is drawn correctly; colour alone cannot separate those bins. A gallery states it once for all its wafers. |
 
 `severity` is about trust in what is on screen, not about how loud the message is:
 `'error'` means the map may be **positionally wrong**; `'warning'` means something
@@ -883,7 +884,7 @@ renderWaferMap(container: HTMLElement, result: RenderableWaferMap, options?: Ren
 > tooltips, die selection and PNG export by default.
 >
 > For calibration, **tsmap** — a full desktop application on this library — passes
-> **6**: `viewOptions` (initial plot mode and colour scheme), `summaryPanel`,
+> **7**: `viewOptions` (initial plot mode and colour scheme), `summaryPanel`,
 > `insights`, `downloadFilename`, `userGuideExtension` and `showHelpButton`. Those
 > six, plus `onSaveImage`/`onSaveText` if you want exports routed through your own
 > save dialog, cover the overwhelming majority of integrations.
@@ -961,7 +962,7 @@ renderWaferMap(container, result, {
   viewOptions: {
     plotMode:      'value',
     activeTest:    1060,       // testNumber to show (must match a testDef.testNumber)
-    colorScheme:   'viridis',
+    valueColorScheme: 'viridis',
     showDieLabels: true,
   },
 });
@@ -981,7 +982,9 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` \| `'metadata'` |
-| `colorScheme` | `string` | `'default'` | Built-in: `'default'` `'viridis'` `'greyscale'` `'accessible'` `'plasma'` `'inferno'` `'traffic'` `'thermal'`. Custom schemes via `registerColorScheme()`. Not used in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.11). |
+| `binColorScheme` | `string` | `'default'` | Bin palette for `hardBin`/`softBin`. Built-in: `'default'`, `'accessible'` (colour-blind safe). Custom palettes via `registerBinColorScheme()` (§11.19). Pass bins take the palette's pass (green) colours and fail bins its fail colours, most populous first — see `resolveBinColors`. |
+| `valueColorScheme` | `string` | `'default'` | Value gradient for `value` and the stacked modes (a stacked-bin map is a value map: each position's occurrence rate). Built-in: `'default'` (blue–cyan–yellow–red), `'viridis'`, `'cividis'` (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'traffic'`, `'jet'`. Custom gradients via `registerValueColorScheme()`. Separate from `binColorScheme`, so switching plot mode never resets either. Neither applies in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.11). |
+| `useDefinedBinColors` | `boolean` | `true` | Honour `BinDef.color` where a bin definition supplies one. The Palette menu offers it as **Use colours from bin definitions**, only when some definition carries a colour. |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.11) |
 | `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Spec pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
@@ -1007,7 +1010,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 #### Persisting user preferences
 
 `WaferViewOptions` is the intersection of two named sub-types:
-- **`WaferPreferences`** — stable settings worth saving (colour scheme, rotation, overlays, legend position, log scale, colorbar range mode)
+- **`WaferPreferences`** — stable settings worth saving (bin and value colour schemes, the bin-definition colour toggle, rotation, overlays, legend position, log scale, colorbar range mode)
 - **`WaferDisplayState`** — transient session state (plot mode, active test, active metadata key, value range, highlight bin)
 
 The `onViewOptionsChange` callback receives a `category` hint (`'preference' | 'state' | 'mixed'`) so you can decide what to persist without filtering keys manually:
@@ -1556,7 +1559,7 @@ Choose the right update method:
 | Zoom − | Zoom out centred on canvas |
 | Reset | Return to fitted view (also: double-click canvas) |
 | Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
-| Palette | Dropdown: all registered colour schemes |
+| Palette | Menu: in Hard/Soft Bin mode, the registered bin colour schemes (plus **Use colours from bin definitions** when a `BinDef` carries a colour); in every other mode, the registered value gradients. Hidden in `'metadata'` mode. |
 | Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Shown only in `value` / `stackedValues` modes, and hidden (not just dimmed) whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
 | Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. In both states all dies keep the gradient fill and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over that fill. |
 | Rings | Toggle ring boundary overlay |
@@ -1606,7 +1609,7 @@ import { renderWaferMap } from '@wafertools/wafermap/render';
 const result = buildWaferMap({ results, waferConfig, dieConfig });
 
 const ctrl = renderWaferMap(document.getElementById('map'), result, {
-  viewOptions: { plotMode: 'hardBin', colorScheme: 'default' },
+  viewOptions: { plotMode: 'hardBin', binColorScheme: 'accessible' },
   onClick:  (die)  => console.log(die.x, die.y, die.hbin, die.sbin),
   onSelect: (dies) => console.log(`Selected ${dies.length} dies`),
   onViewOptionsChange: (opts, changed, category) => {
@@ -1622,7 +1625,7 @@ ctrl.setResult(newResult);
 ctrl.setDies(newDies);
 
 // Programmatically change display mode:
-ctrl.setOptions({ plotMode: 'value', colorScheme: 'plasma' });
+ctrl.setOptions({ plotMode: 'value', valueColorScheme: 'plasma' });
 
 // Clean up:
 ctrl.destroy();
@@ -1949,7 +1952,7 @@ to be pre-built.
 | Button | Action |
 | --- | --- |
 | Mode | Dropdown: plot mode for all cards |
-| Palette | Dropdown: colour scheme for all cards. Hidden in `'metadata'` mode — that mode always uses its own dedicated ordered palette (§4.1.11), never the colour scheme picker, so the control would have no visible effect. |
+| Palette | Menu: bin colour scheme (bin modes) or value gradient (other modes) for all cards — same menu as §5.6. Bin colours are resolved **once across the whole gallery** and handed to every card, so a bin is the same colour on every wafer and in the lot legend. Hidden in `'metadata'` mode — that mode always uses its own dedicated ordered palette (§4.1.11), so the control would have no visible effect. |
 | Log scale | Toggle log₁₀ scale for all cards. Shown only in `value` / `stackedValues` modes, and hidden whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. |
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
@@ -1970,12 +1973,11 @@ Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, 
 
 ### 6.5 Summary panel
 
-When `lotStatsSummary` is provided or any item carries `statsSummary`, a Summary toggle button appears in the control bar. Clicking it opens a panel alongside the grid. The panel has two tabs when both sources are present:
+When `lotStatsSummary` is provided or any item carries `statsSummary`, a **Summary panel** toggle button appears in the control bar. Clicking it opens one panel (no tabs — see §5.5) alongside the grid. With `lotStatsSummary` it shows yield, bin breakdown and ring/quadrant yield across all the wafers, test value statistics, cross-wafer findings (repeated patterns, yield outliers), and a **Wafer Yield** list with each wafer badged by its own findings count; a "Summary report" button opens the full `renderLotSummaryReportHtml` document. Without `lotStatsSummary`, the panel lists the wafers that have findings of their own.
 
-- **Lot** — lot-level yield, bin breakdown, ring/quadrant yield aggregated across all wafers, test value statistics, cross-wafer findings (repeated patterns, yield outliers), and a combined "Summary report" button that opens the full `renderLotSummaryReportHtml` document (stats + findings in one). Only present when `lotStatsSummary` is provided.
-- **Wafers** — a findings index listing every wafer that has notable findings (from `item.statsSummary` or from `lotStatsSummary.perWafer`), plus its own "Findings report" button covering just those wafers' findings. Clicking a row detaches that card into its own window with its summary panel. Only present when per-wafer findings exist.
+The header names the population: `Summary — Lot LOT123 · 13 wafers` when every wafer records the same lot ID, otherwise `Summary — 26 wafers from 2 lots` (or just `13 wafers` when none records a lot). Statistics taken across the set follow the same rule — "lot median" only for one lot, "median of all wafers" otherwise — so a gallery pooling several lots never reads as one.
 
-`analyzeWaferLot` runs per-wafer analysis internally, so passing `lotStatsSummary` alone populates both tabs automatically — no separate `analyzeWaferMap` per item is needed.
+`analyzeWaferLot` runs per-wafer analysis internally, so passing `lotStatsSummary` alone populates the panel — no separate `analyzeWaferMap` per item is needed.
 
 Clicking a finding highlights the affected area:
 
@@ -2648,7 +2650,8 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`.
           | 'sector' | 'cluster' | 'edge-arc' | 'spatial-pattern'
     left:   string          // e.g. "Ring 3 (edge)", "NE", "Rings 1–3", "Reticle cell (1, 0)"
                             // adjacent same-signal regions are merged into one finding (e.g. "Rings 1–3")
-    right:  string          // typically "Rest of wafer" or "Lot median"
+    right:  string          // typically "Rest of wafer", or for a yield outlier "Lot median"
+                            // (every wafer records one lot) / "Median of all wafers" (otherwise)
   }
   effect: {
     direction:      'higher' | 'lower' | 'different'
@@ -3239,6 +3242,19 @@ import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 
 Only `renderWaferMap` and `toCanvas` (both from `/render`) require a browser environment.
 
+### Which build is running — `WMAP_VERSION` / `WMAP_BUILD_TIME`
+
+```ts
+import { WMAP_VERSION, WMAP_BUILD_TIME } from '@wafertools/wafermap/render';
+// '0.28.0'   '2026-09-11T07:58:39.023Z'
+```
+
+Both are generated at build time, so they describe **the bundle actually loaded** rather than
+whatever a nearby `package.json` claims — different things whenever a host is linked to a local
+checkout. Show them wherever your application reports its own version: when a map looks wrong,
+the first question is which engine produced it, and "check the browser console" is not a useful
+answer for an end user. tsmap lists both in its **Help → About tsmap…** dialog.
+
 > **The renderers are not on the root entry point.** `renderWaferMap`, `renderWaferGallery`
 > and `toCanvas` are exported **only** from `@wafertools/wafermap/render` — so
 > `import { renderWaferMap } from '@wafertools/wafermap'` will fail. This is deliberate:
@@ -3685,7 +3701,10 @@ interface ViewOptions {
   showXYIndicator?:        boolean
   ringCount?:              number    // default 4
   dieGap?:                 number    // visual kerf gap in mm, default 1
-  colorScheme?:            string    // default 'default'
+  binColorScheme?:         string    // bin palette for hardBin/softBin, default 'default' — §11.19
+  valueColorScheme?:       string    // value gradient for value/stacked modes, default 'default'
+  useDefinedBinColors?:    boolean   // honour BinDef.color, default true
+  binColors?:              BinColors // colours resolved over a wider population (every wafer in a gallery); ignored unless it covers every bin here
   highlightBin?:           number
   highlightMetadataValue?: string    // 'metadata' mode's analogue of highlightBin
   valueRange?:             [number, number] | { test: number; range: [number, number] }
@@ -3706,7 +3725,7 @@ interface ViewOptions {
 }
 ```
 
-Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `colorScheme`, `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggregationMethod`, `lotSize`, and (for `'metadata'` mode) `metadataFields`, `activeMetadataKey`, `metadataCounts` (`Map<string, number>` — value → die count, mirroring `binCounts`).
+Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `binColorScheme`, `valueColorScheme`, `binColors` (every bin's resolved colour, both bin types — read this for any legend or chart, never re-derive a colour), `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggregationMethod`, `lotSize`, and (for `'metadata'` mode) `metadataFields`, `activeMetadataKey`, `metadataCounts` (`Map<string, number>` — value → die count, mirroring `binCounts`).
 
 Display-transform fields:
 
@@ -3795,31 +3814,69 @@ const die = map.get(getDieKey({ x: 3, y: -2 }));
 
 | Signature | Returns | Description |
 | --------- | ------- | ----------- |
-| `hardBinColor(bin: number)` | `string` | Categorical colour for a hard bin. Bins 1–14 use hand-picked colours (bin 1 = green/pass); bin 15+ uses a Wang hash into a 63-entry palette — any bin number range is supported |
-| `hardBinGreyscale(bin: number)` | `string` | Greyscale variant of `hardBinColor` |
-| `softBinColor(bin: number)` | `string` | Categorical colour for a soft bin. Uses the same 63-entry palette as `hardBinColor` but a different hash salt, so the same bin number maps to a different colour in each scheme |
 | `valueToViridis(t: number)` | `string` | Maps `t ∈ [0,1]` to a Viridis RGB CSS string |
 | `valueToGreyscale(t: number)` | `string` | Maps `t ∈ [0,1]` to a grey RGB CSS string |
 | `contrastTextColor(cssColor: string)` | `'#000000' \| '#ffffff'` | Returns the WCAG-contrast text colour for a given background |
 
-#### Color scheme registry
+#### Bin colours — `resolveBinColors(dies, options?)`
 
 ```ts
-registerColorScheme(name: string, scheme: ColorScheme): void
-getColorScheme(name?: string): ColorScheme
-listColorSchemes(): Array<{ name: string; label: string }>
-```
+resolveBinColors(dies: Iterable<Die>, options?: {
+  passBins?:            number[]    // default [1] — must match the passBins behind the yield figure
+  binColorScheme?:      string      // registered bin palette, default 'default'
+  hbinDefs?:            BinDef[]
+  sbinDefs?:            BinDef[]
+  useDefinedBinColors?: boolean     // honour BinDef.color, default true
+}): BinColors
 
-```ts
-// ColorScheme
+// BinColors
 {
-  label:    string                      // display name shown in the toolbar palette dropdown
-  forBin:   (bin: number) => string     // CSS colour for a bin value
-  forValue: (t: number) => string       // CSS colour for a normalised value t ∈ [0,1]
+  hard:   Map<number, string>                  // hard bin → CSS colour
+  soft:   Map<number, string>                  // soft bin → CSS colour (independent number space)
+  shared: { hard: number[]; soft: number[] }   // bins drawn in a colour another bin also has
 }
 ```
 
-`registerColorScheme` registers a custom palette under `name`; it is then selectable via `colorScheme: name` in view options and appears in the toolbar. `getColorScheme` returns the scheme for `name` (defaults to `'default'`). `listColorSchemes` returns all registered schemes in registration order.
+The one rule for bin colour, used by the map, its legends, the summary panels and the Insights charts. A bin's colour is never a function of its number:
+
+- **Pass/fail follows `passBins`.** Passing bins take the palette's `pass` colours (greens) and failing bins its `fail` colours, so with `passBins: [1, 3]` bin 3 is green and a failing bin 1 is not. A soft bin passes when every die carrying it passes (by the same per-die rule as yield, `diePassStatus`); otherwise, or when no die says, it takes a fail colour.
+- **Ranked, not hashed.** Within each category, bins take palette slots by die count (ties by bin number), so the bins that dominate the map get the most distinct colours and no two bins collide until the palette runs out.
+- **`BinDef.color` wins** over the palette for that bin and takes no palette slot.
+- **`shared`** lists bins that cannot be told apart by colour — the population has more bins than the palette has colours, or a defined colour repeats one. The renderers raise a `bin-colors-shared` warning (§4.4) when the bin map on screen has any.
+
+`renderWaferMap` resolves over its own dies; `renderWaferGallery` resolves once over every wafer it shows and passes the result to every card as `ViewOptions.binColors`, so a bin is the same colour on every wafer. The result is exposed as `View.binColors` — read it rather than resolving again.
+
+#### Colour scheme registries
+
+Bin palettes and value gradients are separate registries, chosen by `binColorScheme` and `valueColorScheme`.
+
+```ts
+registerBinColorScheme(name: string, scheme: BinColorScheme): void      // throws on an empty pass or fail list
+getBinColorScheme(name?: string): BinColorScheme                        // falls back to 'default'
+listBinColorSchemes(): Array<{ name: string; label: string }>
+
+registerValueColorScheme(name: string, scheme: ValueColorScheme): void
+getValueColorScheme(name?: string): ValueColorScheme                    // falls back to 'default'
+listValueColorSchemes(): Array<{ name: string; label: string }>
+```
+
+```ts
+// BinColorScheme
+{
+  label: string              // shown in the toolbar Palette menu in bin modes
+  pass:  readonly string[]   // colours for passing bins, most populous first — greens by convention
+  fail:  readonly string[]   // colours for failing bins, most populous first — most distinct first,
+                             // and never resembling a pass colour
+}
+
+// ValueColorScheme
+{
+  label:    string                   // shown in the Palette menu in value/stacked modes
+  forValue: (t: number) => string    // CSS colour for a normalised value t ∈ [0,1]
+}
+```
+
+A registered scheme appears in the matching toolbar menu automatically. Register once at startup, before rendering; the registries are global for the life of the page. The two built-in bin palettes were selected by measurement: `'default'` keeps every pair of its 3 pass and 19 fail colours at least 16 ΔE00 apart, and `'accessible'` keeps its 2 pass and 14 fail colours at least 8.8 ΔE00 apart under simulated deuteranopia, protanopia and tritanopia together (`tests/binPalettes.test.mjs` re-measures both).
 
 ### 11.20 `isYieldEligibleDie(die, options?)`
 

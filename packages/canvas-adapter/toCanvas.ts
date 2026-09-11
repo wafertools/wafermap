@@ -4,10 +4,12 @@ import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
 import { compareNatural } from '../core/utils.js';
-import { getColorScheme } from '../renderer/colorSchemes.js';
+import { getValueColorScheme } from '../renderer/colorSchemes.js';
+import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH, contrastTextColor } from '../renderer/colorMap.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
 import { resolveCanvasTheme, type CanvasTheme } from './canvasTheme.js';
+import { hitGridDims } from './hitGrid.js';
 
 /**
  * Append an isosceles triangle to the current path, centred on (cx, cy).
@@ -677,7 +679,7 @@ export function toCanvas(
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
   if (drawColorbar) {
-    const scheme    = getColorScheme(view.colorScheme);
+    const scheme    = getValueColorScheme(view.valueColorScheme);
     const labelGap  = colorbarLabelGap;
     // Bar occupies ~75% of the usable height below the top clearance, centred in that area.
     const cbUsableH = drawH - topClearance;
@@ -900,15 +902,14 @@ export function toCanvas(
   let legendBox: { x: number; y: number; w: number; h: number } | undefined;
 
   if (drawLegend) {
-    const scheme = getColorScheme(view.colorScheme);
     const isCompact = effectiveLegendPosition === 'compact';
 
     const activeDefs = view.plotMode === 'softBin' ? sbinDefs : hbinDefs;
     const binDefMap  = activeDefs ? new Map(activeDefs.map(d => [d.bin, d])) : null;
-    const binColor = (bin: number): string => {
-      const def = binDefMap?.get(bin);
-      return (view.colorScheme === 'custom' ? def?.color : undefined) ?? scheme.forBin(bin);
-    };
+    // The view's own resolved colours — the same map the die fills came from,
+    // so a swatch can never disagree with the dies it names.
+    const activeBinColors = view.plotMode === 'softBin' ? view.binColors.soft : view.binColors.hard;
+    const binColor = (bin: number): string => activeBinColors.get(bin) ?? NO_DATA_FILL;
 
     type LegendEntry = {
       key: number | string;  // bin number, negative sentinel for spec categories, or a metadata value string
@@ -1222,24 +1223,25 @@ export function toCanvas(
 
   // Uniform-grid spatial index over hoverPoints for O(1) hit-testing.
   // Each cell holds the indices of dies whose centre falls in that cell.
-  // Cell size = typical die pitch so most queries touch only 1–4 cells.
+  // Cell size = typical die pitch so most queries touch only 1–4 cells —
+  // bounded by hitGridDims, so geometry wrong by orders of magnitude yields a
+  // coarser grid instead of an impossible allocation (see hitGrid.ts).
   const rectW = view.rectangles[0]?.width  ?? 1;
   const rectH = view.rectangles[0]?.height ?? 1;
-  const cellW = rectW * 1.5;
-  const cellH = rectH * 1.5;
   const dieBounds = view.dieBounds;
   const idxMinX = dieBounds ? dieBounds.minX : (pts.length ? Math.min(...pts.map(p => p.x)) : 0);
   const idxMinY = dieBounds ? dieBounds.minY : (pts.length ? Math.min(...pts.map(p => p.y)) : 0);
   const idxMaxX = dieBounds ? dieBounds.maxX : (pts.length ? Math.max(...pts.map(p => p.x)) : 1);
   const idxMaxY = dieBounds ? dieBounds.maxY : (pts.length ? Math.max(...pts.map(p => p.y)) : 1);
-  const nCols = Math.max(1, Math.ceil((idxMaxX - idxMinX) / cellW) + 1);
-  const nRows = Math.max(1, Math.ceil((idxMaxY - idxMinY) / cellH) + 1);
+  const { cellW, cellH, nCols, nRows } =
+    hitGridDims(idxMaxX - idxMinX, idxMaxY - idxMinY, rectW * 1.5, rectH * 1.5, pts.length);
   const gridCells: number[][] = Array.from({ length: nCols * nRows }, () => []);
   for (let i = 0; i < pts.length; i++) {
     const col = Math.floor((pts[i].x - idxMinX) / cellW);
     const row = Math.floor((pts[i].y - idxMinY) / cellH);
-    const ci = Math.max(0, Math.min(nCols - 1, col));
-    const ri = Math.max(0, Math.min(nRows - 1, row));
+    // A non-finite position has no cell; file it in cell 0 rather than index NaN.
+    const ci = Number.isFinite(col) ? Math.max(0, Math.min(nCols - 1, col)) : 0;
+    const ri = Number.isFinite(row) ? Math.max(0, Math.min(nRows - 1, row)) : 0;
     gridCells[ri * nCols + ci].push(i);
   }
   function cellsForRadius(mx: number, my: number, r: number): number[] {

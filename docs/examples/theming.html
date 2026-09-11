@@ -43,7 +43,8 @@
            demo.css) — so the surrounding page chrome (header, intro, this
            switcher) matches, for a cohesive look. These are DEMO styling, NOT
            part of wmap; a real integrator only needs the --wmap-* half.
-       The data palette (bin/value die colours) is separate (colorScheme) and
+       The data palette (bin/value die colours) is separate (binColorScheme /
+       valueColorScheme) and
        intentionally does NOT follow the accent.
 
        Map every --wmap-* token, not just the obvious surfaces. An unmapped
@@ -141,9 +142,10 @@
     <code>--wmap-*</code> CSS custom properties, each with a light default. Set them
     on any ancestor of the render container and everything wmap draws follows —
     switch themes below to watch the gallery re-theme live. The <strong>data
-    palette</strong> (bin colours of the dies) is separate (<code>colorScheme</code>)
+    palette</strong> (bin and value colours of the dies) is separate
+    (<code>binColorScheme</code> / <code>valueColorScheme</code>)
     and deliberately does not follow the chrome accent. See the token reference in
-    the <a href="../api.html#541-theming-wmap-custom-properties">API docs</a>.
+    the <a href="https://wafertools.github.io/wafermap/api/#541-theming-wmap-custom-properties">API docs</a>.
   </div>
 
   <div class="theme-bar">

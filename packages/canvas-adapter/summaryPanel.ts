@@ -24,7 +24,9 @@ import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js'
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
 import { commonMetadata } from '../stats/facets.js';
 import { resolveMetadataColumns, type MetadataColumn } from '../stats/metadataColumns.js';
-import { getColorScheme } from '../renderer/colorSchemes.js';
+import { resolveBinColors, type BinColors } from '../renderer/binColors.js';
+import { NO_DATA_FILL } from '../renderer/colorMap.js';
+import { describeWaferPopulation, populationLabel } from '../stats/population.js';
 import { buildWarningsBanner, collectWarnings, type WaferWarning } from './warnings.js';
 export { buildWarningsBanner };
 import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
@@ -718,7 +720,12 @@ export function buildBinSection(
   dies: Die[],
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
-  colorScheme?: string,
+  /**
+   * The map's resolved colours for this bin type (`View.binColors.hard`/`.soft`),
+   * so bars match die fills. Omitted ⇒ resolved here from `dies` with the
+   * default palette — never a second colour rule.
+   */
+  binColors?: ReadonlyMap<number, string>,
   /**
    * Precomputed counts (e.g. `StatsSummary.stats.hardBinCounts`/`.softBinCounts`,
    * already scoped to the yield-eligible population) — used directly instead
@@ -740,10 +747,20 @@ export function buildBinSection(
   }
   if (!binCounts.size) return null;
 
+  const colors = binColors ?? ownBinColors(dies, mode, binDefs, passBins);
   const wrap = el('div');
   wrap.appendChild(sectionTitle(binSectionTitle(mode, [...binCounts.values()].reduce((a, b) => a + b, 0))));
-  for (const row of binRows(binCounts, binDefs, colorScheme, passBins)) wrap.appendChild(row);
+  for (const row of binRows(binCounts, binDefs, colors, passBins)) wrap.appendChild(row);
   return wrap;
+}
+
+/** Fallback for a caller with no map beside it: the same resolver the map uses. */
+function ownBinColors(
+  dies: Die[], mode: 'hard' | 'soft', binDefs: BinDef[] | undefined, passBins: number[] | undefined,
+): ReadonlyMap<number, string> {
+  const resolved = resolveBinColors(dies, {
+    passBins, ...(mode === 'hard' ? { hbinDefs: binDefs } : { sbinDefs: binDefs }) });
+  return mode === 'hard' ? resolved.hard : resolved.soft;
 }
 
 /** Section title carrying the population, so the percentages below are never a
@@ -760,19 +777,18 @@ function binSectionTitle(mode: 'hard' | 'soft', total: number): string {
 function binRows(
   binCounts: Map<number, number>,
   binDefs: BinDef[] | undefined,
-  colorScheme: string | undefined,
+  colors: ReadonlyMap<number, string>,
   passBins: number[] = [1],
 ): HTMLDivElement[] {
   const total  = [...binCounts.values()].reduce((a, b) => a + b, 0);
   const defMap = binDefs ? new Map(binDefs.map(d => [d.bin, d])) : null;
   const sorted = sortBinsForDisplay(binCounts.entries(), passBins);
 
-  const scheme = getColorScheme(colorScheme);
   return sorted.map(([bin, count]) => {
     const def   = defMap?.get(bin);
     const label = def?.name ? `Bin ${bin} · ${def.name}` : `Bin ${bin}`;
     const pct   = (count / total) * 100;
-    const color = (colorScheme === 'custom' ? def?.color : undefined) ?? scheme.forBin(bin);
+    const color = colors.get(bin) ?? NO_DATA_FILL;
     return progressRow(`${label}  (${count})`, pct, color);
   });
 }
@@ -795,7 +811,8 @@ export function buildBinBreakdownSection(params: {
   dies: Die[];
   hbinDefs?: BinDef[];
   sbinDefs?: BinDef[];
-  colorScheme?: string;
+  /** The map's resolved bin colours (`View.binColors`). Omitted ⇒ resolved from `dies`. */
+  binColors?: BinColors;
   hardCounts?: Record<number, number>;
   softCounts?: Record<number, number>;
   /** The map's active plot mode. `hardBin`/`softBin` pick the matching bin type. */
@@ -803,7 +820,8 @@ export function buildBinBreakdownSection(params: {
   passBins?: number[];
   panel?: HTMLElement;
 }): HTMLDivElement | null {
-  const { dies, hbinDefs, sbinDefs, colorScheme, hardCounts, softCounts, plotMode, passBins = [1], panel } = params;
+  const { dies, hbinDefs, sbinDefs, hardCounts, softCounts, plotMode, passBins = [1], panel } = params;
+  const binColors = params.binColors ?? resolveBinColors(dies, { passBins, hbinDefs, sbinDefs });
 
   const countsFor = (mode: 'hard' | 'soft'): Map<number, number> => {
     const pre = mode === 'hard' ? hardCounts : softCounts;
@@ -848,7 +866,8 @@ export function buildBinBreakdownSection(params: {
       stateKey: 'bins',
       panel,
       render: content => {
-        for (const row of binRows(counts, binDefs, colorScheme, passBins)) content.appendChild(row);
+        const colors = mode === 'hard' ? binColors.hard : binColors.soft;
+        for (const row of binRows(counts, binDefs, colors, passBins)) content.appendChild(row);
       },
       control: (hasHard && hasSoft && panel)
         ? () => makeSegmented(
@@ -878,9 +897,9 @@ export function buildLotBinSection(
   allDies: Die[],
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
-  colorScheme?: string,
+  binColors?: ReadonlyMap<number, string>,
 ): HTMLDivElement | null {
-  return buildBinSection(allDies, binDefs, mode, colorScheme);
+  return buildBinSection(allDies, binDefs, mode, binColors);
 }
 
 /**
@@ -965,7 +984,8 @@ export function buildLotOverviewSection(
   perWaferSummaries: StatsSummary[] = [],
 ): HTMLDivElement {
   const wrap = el('div');
-  wrap.appendChild(sectionTitle('Lot Summary'));
+  const population = describeWaferPopulation(lotSummary.perWafer.map(pw => pw.summary.wafer));
+  wrap.appendChild(sectionTitle(population.lotId !== undefined ? 'Lot Summary' : 'Summary'));
 
   const cards = statCardRow();
   cards.appendChild(statCard(String(lotSummary.stats.waferCount), 'Wafers'));
@@ -2708,7 +2728,8 @@ export function renderWaferSummaryContent(
     warnings?: WaferWarning[];
     passBins?:    number[];
     ringCount?:   number;
-    colorScheme?: string;
+    /** The map's resolved bin colours (`View.binColors`), so bars match die fills. */
+    binColors?:   BinColors;
     /**
      * The map's active plot mode. Selects which bin type the bin breakdown opens
      * on, so the panel describes the population actually on screen — see
@@ -2749,7 +2770,7 @@ export function renderWaferSummaryContent(
     wafer, dies, yieldSummary, dataCoverage,
     hbinDefs, sbinDefs, testDefs,
     statsSummary, passBins = [1], ringCount = 4,
-    colorScheme, plotMode, fallbackFormat,
+    binColors, plotMode, fallbackFormat,
     onFindingClick, activeFindingId = null,
     findingsFilter, onFindingsFilterChange,
     findingsNotice,
@@ -2809,7 +2830,7 @@ export function renderWaferSummaryContent(
   }
 
   sections.push(buildBinBreakdownSection({
-    dies, hbinDefs, sbinDefs, colorScheme,
+    dies, hbinDefs, sbinDefs, binColors,
     hardCounts: statsSummary?.stats.hardBinCounts,
     softCounts: statsSummary?.stats.softBinCounts,
     plotMode, passBins, panel,
@@ -2849,7 +2870,8 @@ export function renderLotSummaryContent(
     testDefs?:        TestDef[];
     passBins?:        number[];
     ringCount?:       number;
-    colorScheme?:     string;
+    /** The gallery-wide bin colours, so bars match every card. */
+    binColors?:       BinColors;
     /** The gallery's active plot mode — see the wafer panel's `plotMode`. */
     plotMode?:        PlotMode;
     fallbackFormat?:  'si' | 'engineering';
@@ -2877,7 +2899,7 @@ export function renderLotSummaryContent(
     lotSummary, items,
     hbinDefs, sbinDefs, testDefs,
     passBins = [1], ringCount = 4,
-    colorScheme, plotMode, fallbackFormat,
+    binColors, plotMode, fallbackFormat,
     onFindingClick, activeFindingId = null,
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
@@ -2885,7 +2907,9 @@ export function renderLotSummaryContent(
     onSaveText, dieListOptions, findingsFor,
   } = params;
 
-  panel.appendChild(panelHeader(`Lot Summary — ${lotSummary.stats.waferCount} wafer${lotSummary.stats.waferCount === 1 ? '' : 's'}`));
+  // Names the population, not an assumed lot: "Lot LOT123 · 13 wafers" only
+  // when every wafer records that lot, else "26 wafers from 2 lots" / "13 wafers".
+  panel.appendChild(panelHeader(`Summary — ${populationLabel(describeWaferPopulation(lotSummary.perWafer.map(pw => pw.summary.wafer)))}`));
 
   // collectWarnings de-duplicates on code+message: the same geometry advisory
   // legitimately fires on many wafers of a lot, and listing it once per wafer
@@ -2984,7 +3008,7 @@ export function renderLotSummaryContent(
   sections.push(
     buildPerWaferYieldSection(lotSummary, items, onWaferClick, panel, findingsFor),
     buildBinBreakdownSection({
-      dies: allDies, hbinDefs, sbinDefs, colorScheme, plotMode, passBins, panel,
+      dies: allDies, hbinDefs, sbinDefs, binColors, plotMode, passBins, panel,
     }),
     buildRegionYieldPanelSection({ diesByWafer, allWafers, ringCount, passBins, panel }),
     testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText, diesByWafer.map(d => ({ dies: d })), panel, 'compact') : null,

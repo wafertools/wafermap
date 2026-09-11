@@ -42,7 +42,6 @@ export interface CapabilityPanelOptions {
   title?: string;
   items: CapabilityItem[];
   testDefs: TestDef[];
-  colorScheme?: string;
   onSaveImage?: SaveImageHandler;
   /** Test to mark as the section's current one, if any. */
   selectedTestNumber?: number;
@@ -86,8 +85,7 @@ export interface CapabilityPanelHandle {
 }
 
 export function renderCapabilityPanel(options: CapabilityPanelOptions): CapabilityPanelHandle {
-  // `colorScheme` is deliberately no longer read — boxes use the fixed
-  // capable/marginal/poor hues (palette.ts); the option stays for API compatibility.
+  // Boxes use the fixed capable/marginal/poor hues (palette.ts).
   const { title = 'Process capability', items, testDefs, onSaveImage, onSelectTest } = options;
   /** Test the surrounding section is showing, marked in the plot. */
   let selectedTest: number | null = options.selectedTestNumber ?? null;

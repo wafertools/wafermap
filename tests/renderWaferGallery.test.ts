@@ -129,8 +129,12 @@ mock.module('../packages/core/aggregates.js', {
 
 mock.module('../packages/renderer/colorSchemes.js', {
   namedExports: {
-    listColorSchemes: mock.fn(() => [{ name: 'color', label: 'Color' }]),
-    getColorScheme:   mock.fn(() => ({ label: 'Color', forBin: () => '#4caf50', forValue: () => '#000' })),
+    listBinColorSchemes:     mock.fn(() => [{ name: 'default', label: 'Default' }]),
+    listValueColorSchemes:   mock.fn(() => [{ name: 'default', label: 'Default' }]),
+    getBinColorScheme:       mock.fn(() => ({ label: 'Default', pass: ['#4caf50'], fail: ['#e53935', '#1e88e5'] })),
+    getValueColorScheme:     mock.fn(() => ({ label: 'Default', forValue: () => '#000' })),
+    registerBinColorScheme:  mock.fn(),
+    registerValueColorScheme: mock.fn(),
   },
 });
 

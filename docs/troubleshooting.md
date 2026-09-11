@@ -149,7 +149,7 @@ for (const w of result.warnings) console.warn(w.code, w.message);
 
 **Fix:** supply what is being guessed — `dieConfig.width`/`height` always, plus
 `waferConfig.diameter` and `waferConfig.center` for partial data. See
-[Guide §4](guide.md#4-adding-die-size-and-wafer-geometry).
+[Guide: Adding die size and wafer geometry](guide.md#adding-die-size-and-wafer-geometry).
 
 ---
 

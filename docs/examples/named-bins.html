@@ -43,8 +43,9 @@
     import { analyzeWaferMap } from 'wafermap/stats';
     import { makeResults, WAFER_CONFIG, DIE_CONFIG, SBIN_DEFS } from './data.js';
 
-    // Custom bin colours — distinct from the default scheme to show that
-    // hbinDefs.color overrides the palette when colorScheme is 'custom'.
+    // Custom bin colours — distinct from the default palette to show that
+    // hbinDefs.color wins over the bin colour scheme (switchable in the
+    // toolbar's Palette menu: "Use colours from bin definitions").
     const HBIN_DEFS = [
       { bin: 1, name: 'Pass',         color: '#0ea5e9' },  // sky blue
       { bin: 2, name: 'Contact Open', color: '#dc2626' },  // red

@@ -14,7 +14,7 @@ import {
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { ICONS } from './icons.js';
-import { hardBinColor, softBinColor, metadataValueColor } from '../renderer/colorMap.js';
+import { metadataValueColor, NO_DATA_FILL } from '../renderer/colorMap.js';
 // TYPE-ONLY. A value import here would pull the whole Insights chart suite
 // (chartShell, histogram, correlation, boxplot, scatter, capability, trend,
 // testPassRate, insightsTab — ~28 KB gzipped) into the initial /render chunk,
@@ -26,6 +26,7 @@ import { createIdentityHeader, collapsedLabel, type IdentityHeaderController } f
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
+import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -34,7 +35,22 @@ import { buildMaplessSummary } from './maplessSummary.js';
  * These describe how the user wants to view wafer maps in general.
  */
 export interface WaferPreferences {
-  colorScheme?:            string;
+  /**
+   * Bin palette for hard/soft-bin maps — a name from `listBinColorSchemes()`.
+   * Default `'default'`. Independent of `valueColorScheme`: each mode keeps
+   * its own choice, and switching modes never resets either.
+   */
+  binColorScheme?:         string;
+  /**
+   * Value gradient for value and stacked maps — a name from
+   * `listValueColorSchemes()`. Default `'default'`.
+   */
+  valueColorScheme?:       string;
+  /**
+   * Honour `BinDef.color` where a bin definition supplies one. Default true.
+   * The toolbar offers the toggle only when some definition carries a colour.
+   */
+  useDefinedBinColors?:    boolean;
   /** Interactive rotation in degrees (0 | 90 | 180 | 270). */
   rotation?:               0 | 90 | 180 | 270;
   flipX?:                  boolean;
@@ -138,6 +154,12 @@ export interface WaferDisplayState {
    * paints every later value in the next map's colour. See `ViewOptions`.
    */
   metadataValueOrder?: { key: string; values: string[] };
+  /**
+   * Bin colours resolved over the whole population being shown together —
+   * set by `renderWaferGallery` so a bin is one colour on every card. A lone
+   * map leaves it unset and resolves over its own dies. See `ViewOptions.binColors`.
+   */
+  binColors?: BinColors;
   /**
    * Aggregation method for `stackedValues` mode.
    * Drives both the per-die aggregation and the hover tooltip label.
@@ -460,10 +482,16 @@ export interface WaferMapController {
 
 // Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
-  'colorScheme', 'rotation', 'flipX', 'flipY',
+  'binColorScheme', 'valueColorScheme', 'useDefinedBinColors', 'rotation', 'flipX', 'flipY',
   'showDieLabels', 'showPartialDies', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
   'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies',
 ]);
+
+/** Options that change die colours without changing what the view contains —
+ *  any of them means every colour-bearing surface (panels, footer) redraws. */
+export const COLOR_KEYS: readonly (keyof WaferViewOptions)[] = [
+  'binColorScheme', 'valueColorScheme', 'useDefinedBinColors', 'binColors',
+];
 
 export function classifyChanged(keys: (keyof WaferViewOptions)[]): 'preference' | 'state' | 'mixed' {
   const hasPref  = keys.some(k => PREFERENCE_KEYS.has(k));
@@ -683,7 +711,8 @@ export function renderWaferMap(
         activeTest: viewOpts.activeTest,
         hbinDefs,
         sbinDefs,
-        colorScheme: viewOpts.colorScheme,
+        binColors: currentView.binColors,
+        valueColorScheme: viewOpts.valueColorScheme,
         logScale: effectiveLogScale,
         colorbarRangeMode: viewOpts.colorbarRangeMode,
         // Full population (positioned + unpositioned), not just
@@ -856,8 +885,20 @@ export function renderWaferMap(
   // can never drift apart.
   let currentWarnings: WaferWarning[] = [];
   let warningsNotified = false;
+  // Set by rebuildView: whether bins on the map now on screen share a colour.
+  // A property of the VIEW (plot mode, palette, bin population), not of the
+  // result or the analysis, so it is carried here and joined in below.
+  let binColorAdvisory: WaferWarning | null = null;
+  // False until the toolbar's warning-button variables exist. rebuildView runs
+  // once during setup, BEFORE they are declared, and calling
+  // syncWarningButton then is a temporal-dead-zone ReferenceError that aborts
+  // the whole mount — exactly on the lots with enough bins to share colours.
+  // The toolbar syncs the button itself when it builds it.
+  let warningUiReady = false;
   function refreshWarnings(): void {
-    const next = collectWarnings({ result, statsSummary: currentStatsSummary });
+    const next = collectWarnings({
+      result, statsSummary: currentStatsSummary,
+      extra: binColorAdvisory ? [binColorAdvisory] : [] });
     const changed = next.length !== currentWarnings.length
       || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
     currentWarnings = next;
@@ -994,11 +1035,10 @@ export function renderWaferMap(
     }
   }
 
-  const hasCustomColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
+  const hasDefinedBinColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
 
   let viewOpts: WaferViewOptions = {
     plotMode:               'hardBin',
-    colorScheme:            hasCustomColors ? 'custom' : 'default',
     showDieLabels:               false,
     showPartialDies:        true,
     showRingBoundaries:     false,
@@ -1034,7 +1074,7 @@ export function renderWaferMap(
         wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
         label: String(wafer.metadata?.waferId ?? ''),
         statsSummary: currentStatsSummary }],
-      getColorSchemeName: () => viewOpts.colorScheme ?? 'default',
+      getBinColors: () => currentView.binColors,
       passBins,
       getRingCount: () => viewOpts.ringCount ?? 4,
       onSaveImage: options.onSaveImage,
@@ -1312,9 +1352,19 @@ export function renderWaferMap(
     // die is never placed on the map, only surfaced via the die-list.
     currentView = buildView(wafer, currentDies.filter(isPositionedDie), {
       plotMode:               so.plotMode,
-      colorScheme:            so.colorScheme,
-      // Sets ViewRect.binFail against the caller's own pass/fail definition,
-      // so the hatch can never disagree with the yield figure beside it.
+      binColorScheme:         so.binColorScheme,
+      valueColorScheme:       so.valueColorScheme,
+      useDefinedBinColors:    so.useDefinedBinColors,
+      // Resolved over EVERY die, positioned or not — the draw list below gets
+      // only positioned dies, but the mapless footer and the Insights charts
+      // show the rest, and they must colour a bin exactly as the map does. A
+      // gallery supplies its gallery-wide assignment instead.
+      binColors: so.binColors ?? resolveBinColors(currentDies, {
+        passBins, binColorScheme: so.binColorScheme, hbinDefs, sbinDefs,
+        useDefinedBinColors: so.useDefinedBinColors }),
+      // Sets ViewRect.binFail and picks pass vs fail colours against the
+      // caller's own pass/fail definition, so neither can disagree with the
+      // yield figure beside it.
       passBins,
       showDieLabels:               so.showDieLabels,
       showPartialDies:        so.showPartialDies,
@@ -1344,6 +1394,15 @@ export function renderWaferMap(
         flipX:    so.flipX   ?? false,
         flipY:    so.flipY   ?? false } } satisfies ViewOptions, { hbinDefs, sbinDefs, metadataFields });
     dieKeyIndex = new Map(currentView.dies.map((d, i) => [getDieKey(d), i]));
+    // Only for colours this map resolved itself. Supplied colours belong to a
+    // wider population (a gallery), whose owner states the advisory once —
+    // repeating it on every card would bury it, and name bins a card lacks.
+    const nextBinWarning = so.binColors ? null : binColorWarning(currentView.binColors, currentView.plotMode);
+    if (nextBinWarning?.message !== binColorAdvisory?.message) {
+      binColorAdvisory = nextBinWarning;
+      refreshWarnings();
+      if (warningUiReady) syncWarningButton();
+    }
   }
 
   rebuildView();
@@ -1393,7 +1452,7 @@ export function renderWaferMap(
       warnings: warningsDisplay ? currentWarnings : [],
       passBins,
       ringCount: viewOpts.ringCount ?? 4,
-      colorScheme: viewOpts.colorScheme,
+      binColors: currentView.binColors,
       // Drives which bin type the panel's bin breakdown opens on, so a soft-bin
       // map is never described by a hard-bin breakdown.
       plotMode: viewOpts.plotMode ?? 'hardBin',
@@ -1483,6 +1542,7 @@ export function renderWaferMap(
   let btnInsights:   HTMLButtonElement | null = null;
   let btnWarnings:   HTMLButtonElement | null = null;
   let btnWarningsSep: HTMLDivElement | null = null;
+  warningUiReady = true;
 
   /** Reflect `currentWarnings` onto the toolbar indicator (hidden when empty). */
   function syncWarningButton(): void {
@@ -1739,13 +1799,9 @@ export function renderWaferMap(
         markMenuTrigger(btnMode, false);
         const { btn: btnPalette, sync: syncPalette } = makePaletteBtn(
           tbHelpers,
-          () => viewOpts.plotMode ?? 'hardBin',
-          () => viewOpts.colorScheme ?? 'default',
-          () => hasCustomColors,
-          v => applyOpts({ colorScheme: v }),
-          {
-            get: () => viewOpts.markFailingDies ?? false,
-            set: (v) => applyOpts({ markFailingDies: v }) },
+          () => ({ ...viewOpts, plotMode: viewOpts.plotMode ?? 'hardBin' }),
+          () => hasDefinedBinColors,
+          applyOpts,
         );
         syncPaletteBtnFn = syncPalette;
         syncPaletteBtnFn();
@@ -1764,7 +1820,9 @@ export function renderWaferMap(
             return overlayMenuRows(
               viewOpts,
               hasReticleNow,
-              { functionalActive, hasLimits, hasRecorded },
+              { functionalActive, hasLimits, hasRecorded,
+                binMode: (viewOpts.plotMode ?? 'hardBin') === 'hardBin'
+                      || (viewOpts.plotMode ?? 'hardBin') === 'softBin' },
               patch => applyOpts(patch),
             );
           },
@@ -1819,7 +1877,7 @@ export function renderWaferMap(
           patch => applyOpts(patch),
         );
         if (showPlotModeSelector) mapViewControlsEl!.appendChild(btnMode);
-        // btnPalette stays even when isMapless: it drives viewOpts.colorScheme,
+        // btnPalette stays even when isMapless: it drives the bin/value colour schemes,
         // which buildMaplessSummary's bin breakdown reads too (see
         // refreshMaplessPanel's syncOpts hook) — genuinely functional here,
         // unlike the spatial-only controls skipped below (nothing to zoom,
@@ -2097,13 +2155,8 @@ export function renderWaferMap(
       // auto-fit originX (colorbar vs bin-legend width), but so do half a dozen
       // other options, and render() now re-reads the fit on every fitted draw.
       // Nulling it here would also strand it null while zoomed.
-      // Switching into a bin mode: reset to default if scheme is not bin-compatible.
-      const newMode = viewOpts.plotMode;
-      const isBinMode = newMode === 'hardBin' || newMode === 'softBin';
-      const BIN_SCHEMES = new Set(['default', 'accessible', 'custom']);
-      if (isBinMode && !BIN_SCHEMES.has(viewOpts.colorScheme ?? '')) {
-        viewOpts = { ...viewOpts, colorScheme: 'default' };
-      }
+      // No colour-scheme reset: bin and value colours are separate
+      // preferences, so no mode can inherit a scheme it cannot draw.
     }
     // These only affect how the canvas is drawn, not what the scene contains, so
     // the scene rebuild can be skipped. markFailingDies qualifies because
@@ -2118,13 +2171,14 @@ export function renderWaferMap(
     syncColorbarRangeBtnFn?.();
     render();
     const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
-    if (partial.colorScheme !== undefined || modeChanged) { renderSummaryPanel(); renderAutoSummaryPanel(); }
+    const colorsChanged = COLOR_KEYS.some(k => k in partial);
+    if (colorsChanged || modeChanged) { renderSummaryPanel(); renderAutoSummaryPanel(); }
     // logScale/colorbarRangeMode: buildMaplessSummary's histogram resolves
     // its own colour range the same way the map's colorbar does (see
     // resolveValueNormalize, maplessSummary.ts) — a change here needs the
     // same refresh as a colour-scheme or mode change, or the histogram's
     // bars silently keep whatever colours they had at the last refresh.
-    if (partial.colorScheme !== undefined || modeChanged || partial.activeTest !== undefined ||
+    if (colorsChanged || modeChanged || partial.activeTest !== undefined ||
         partial.logScale !== undefined || partial.colorbarRangeMode !== undefined) {
       refreshMaplessPanel?.();
     }
@@ -3075,10 +3129,13 @@ export function renderWaferMap(
       const defs = isHard ? hbinDefs : sbinDefs;
       const bins = [...new Set(currentDies.map(d => isHard ? d.hbin : d.sbin).filter((b): b is number => b !== undefined))].sort((a, b) => a - b);
       if (!bins.length) return null;
+      // The view's resolved colours — the ones the dies are drawn in. This used
+      // to hash the bin number itself, so a host building its own legend from
+      // here named colours the map was not using.
+      const colors = isHard ? currentView.binColors.hard : currentView.binColors.soft;
       return bins.map(bin => {
         const def = defs?.find(d => d.bin === bin);
-        const color = def?.color ?? (isHard ? hardBinColor(bin) : softBinColor(bin));
-        return { bin, name: def?.name ?? `Bin ${bin}`, color };
+        return { bin, name: def?.name ?? `Bin ${bin}`, color: colors.get(bin) ?? NO_DATA_FILL };
       });
     },
 

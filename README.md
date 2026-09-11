@@ -72,7 +72,7 @@ export. Add `analyzeWaferMap` for the findings and summary panel, swap in
 
 The API reference is long because it documents every option, not because you need
 them: [tsmap](https://github.com/wafertools/tsmap), a complete cross-platform desktop
-application built on this library, imports **10** of its ~100 exports. Read the
+application built on this library, imports **14** of its ~100 exports. Read the
 [Quick Start](https://wafertools.github.io/wafermap/quickstart/) first and treat the
 [API reference](https://wafertools.github.io/wafermap/api/) as something to search,
 not to read.

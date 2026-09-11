@@ -38,7 +38,6 @@ export interface CorrelationPanelOptions {
   title?: string;
   items: CorrelationItem[];
   testDefs: TestDef[];
-  colorScheme?: string;
   onSaveImage?: SaveImageHandler;
   /**
    * Grouping is NOT this panel's concern — the Insights tab owns one "Show:"
@@ -103,8 +102,7 @@ function blendTowardBg(colour: string, bg: [number, number, number], t: number):
 }
 
 export function renderCorrelationPanel(options: CorrelationPanelOptions): CorrelationPanelHandle {
-  // `colorScheme` is deliberately no longer read — cells use the fixed
-  // sign-aware correlation hues (palette.ts); the option stays for API compatibility.
+  // Cells use the fixed sign-aware correlation hues (palette.ts).
   const { title = 'Test correlation matrix', items, testDefs, onSaveImage, onSelectPair } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
 

@@ -2,8 +2,8 @@
 // regions the ring/quadrant boundary overlays draw on the main map (equal-
 // radius bands for rings, a centre cross for quadrants — see
 // buildRingOverlays/buildQuadrantOverlays in renderer/buildView.ts), each
-// region filled by the registered colour scheme's continuous value ramp
-// (the same `forValue` mapping the yield-by-wafer bar chart uses) and
+// region filled from the fixed yield ramp (palette.ts's `yieldFill`, never the
+// map's value gradient) and
 // labelled with its own yield % directly in the region — not just on
 // hover, so the number is always visible, matching every other stat this
 // library shows (a semiconductor engineer reading a report must be able to
@@ -29,7 +29,6 @@ export interface RegionYieldDiagramOptions {
   mode: RegionYieldMode;
   /** Ring mode: ordered ring 1 (core) → ring N (edge), matching `buildRegionYieldData`'s output for `buildRingRegions`. Quadrant mode: any order — each row's quadrant is read from its `key` (`quadrant:NE` etc.), not position. */
   rows: RegionYieldDatum[];
-  colorScheme?: string;
   onSaveImage?: SaveImageHandler;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
@@ -98,8 +97,6 @@ function drawLabelChip(
 }
 
 export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): RegionYieldDiagramHandle {
-  // `colorScheme` is deliberately no longer read — region fills use the fixed
-  // yield ramp (palette.ts); the option stays for API compatibility.
   const { mode, rows, onSaveImage } = options;
   const title = options.title ?? (mode === 'ring' ? 'Ring yield' : 'Quadrant yield');
   const { card, body } = cardShell(title, onSaveImage, options.ownerDocument);

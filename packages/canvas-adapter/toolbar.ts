@@ -7,7 +7,7 @@ import type { Die } from '../core/dies.js';
 import type { TestDef, MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { dieHasTestData } from '../renderer/buildWaferMap.js';
 import { prettyKey } from '../core/utils.js';
-import { listColorSchemes } from '../renderer/colorSchemes.js';
+import { listBinColorSchemes, listValueColorSchemes } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
 import { WMAP_VERSION, WMAP_BUILD_TIME } from './version.js';
 import type { StatsSeverity } from '../stats/types.js';
@@ -1556,6 +1556,14 @@ export type CheckMenuRow =
        * missing feature, and the user has no way to learn the condition.
        */
       disabledHint?: string;
+      /**
+       * Marks a row that *does* something rather than holding a state — "Clear
+       * overlays", "Reset orientation". Rendered as a plain `menuitem` with no
+       * tick: every other row here is a checkbox, and an action wearing an
+       * unchecked ✓ both looks like a toggle that is off and announces itself as
+       * one to a screen reader.
+       */
+      action?: boolean;
       onClick: (e: MouseEvent) => void;
     };
 
@@ -1599,8 +1607,12 @@ export function buildCheckMenuEl(
       // visible and greyed so the reason is discoverable. See CheckMenuRow.
       if (!enabled && !row.disabledHint) continue;
       const el = doc.createElement('div');
-      el.setAttribute('role', 'menuitemcheckbox');
-      el.setAttribute('aria-checked', row.active ? 'true' : 'false');
+      if (row.action) {
+        el.setAttribute('role', 'menuitem');
+      } else {
+        el.setAttribute('role', 'menuitemcheckbox');
+        el.setAttribute('aria-checked', row.active ? 'true' : 'false');
+      }
       el.tabIndex = -1;
       if (!enabled) {
         el.setAttribute('aria-disabled', 'true');
@@ -1630,7 +1642,10 @@ export function buildCheckMenuEl(
         color:      CLR.iconActive,
         visibility: row.active ? 'visible' : 'hidden',
       });
-      tick.textContent = '✓';
+      // An action has no state to show, so the tick column stays blank rather
+      // than rendering a ✓ the row can never earn — the width is kept so labels
+      // stay aligned with the toggles above.
+      tick.textContent = row.action ? '' : '✓';
       tick.setAttribute('aria-hidden', 'true');
       const lbl = doc.createElement('span');
       lbl.textContent = row.label;
@@ -2738,58 +2753,67 @@ export function openReparentedModal(elements: HTMLElement[], opts: ReparentModal
  * hardBin/softBin restriction (which still changes the die colours, just from
  * a smaller scheme set).
  */
+/** The colour preferences the palette menu reads and writes. */
+export interface PaletteState {
+  plotMode: PlotMode;
+  binColorScheme?: string;
+  valueColorScheme?: string;
+  useDefinedBinColors?: boolean;
+}
+
 /**
- * Colour-scheme picker, plus the optional non-colour failure marking.
+ * Colour-scheme picker. Lists bin palettes in `hardBin`/`softBin` and value
+ * gradients everywhere else — including the stacked modes, whose maps are
+ * values (a bin's occurrence rate per position), not bin categories. The two
+ * are separate preferences, so choosing a gradient for values leaves the bin
+ * palette alone and vice versa; nothing is reset on a mode switch.
  *
- * `markFail` is supplied by hosts that support it. It sits in this menu rather
- * than getting a button of its own because it answers the same question the
- * schemes do — "how is this data encoded" — and keeping it here means one
- * control rather than a new axis of settings.
+ * Colours that arrive with the data (`BinDef.color`) are a layer over the bin
+ * palette, not a pseudo-palette: the "Use colours from bin definitions" row
+ * appears only when some definition carries a colour, and turning it off
+ * shows the palette's own colours for those bins.
+ *
+ * "Mark failing dies" used to live here too; it is in Overlays, beside the
+ * pass/fail display rows it belongs with.
  */
 export function makePaletteBtn(
   helpers: ToolbarHelpers,
-  getPlotMode: () => PlotMode,
-  getColorScheme: () => string,
-  hasCustomColors: () => boolean,
-  setColorScheme: (v: string) => void,
-  markFail?: { get: () => boolean; set: (v: boolean) => void },
+  getState: () => PaletteState,
+  hasDefinedBinColors: () => boolean,
+  apply: (partial: { binColorScheme?: string; valueColorScheme?: string; useDefinedBinColors?: boolean }) => void,
 ): { btn: HTMLButtonElement; sync: () => void } {
-  const isBinMode = () => getPlotMode() === 'hardBin' || getPlotMode() === 'softBin';
-
   const btn = helpers.makeCheckMenuBtn(
     'palette', 'Colour scheme',
     () => {
-      const schemes = isBinMode()
-        ? listColorSchemes().filter(s => s.name === 'default' || s.name === 'accessible')
-        : listColorSchemes();
-      const current = getColorScheme();
+      const state = getState();
       const rows: CheckMenuRow[] = [];
-      if (markFail) rows.push({ section: 'Scheme' });
-      if (hasCustomColors()) {
-        rows.push({ label: 'Custom', active: current === 'custom', onClick: () => setColorScheme('custom') });
-      }
-      for (const s of schemes) {
-        rows.push({ label: s.label, active: current === s.name, onClick: () => setColorScheme(s.name) });
-      }
-      if (markFail) {
-        rows.push({ section: 'Encoding' });
-        rows.push({
-          label: 'Mark failing dies',
-          active: markFail.get(),
-          // Bin modes only: the marking is driven by whether a die's BIN is a
-          // pass bin, which value mode has no answer for — there the spec
-          // markers already play this role.
-          enabled: isBinMode(),
-          disabledHint: isBinMode() ? undefined : 'Available on hard/soft bin maps',
-          onClick: () => markFail.set(!markFail.get()),
-        });
+      if (state.plotMode === 'hardBin' || state.plotMode === 'softBin') {
+        const current = state.binColorScheme ?? 'default';
+        rows.push({ section: 'Bin colours' });
+        for (const s of listBinColorSchemes()) {
+          rows.push({ label: s.label, active: current === s.name, onClick: () => apply({ binColorScheme: s.name }) });
+        }
+        if (hasDefinedBinColors()) {
+          const useDefined = state.useDefinedBinColors ?? true;
+          rows.push({ section: 'Bin definitions' });
+          rows.push({
+            label: 'Use colours from bin definitions',
+            active: useDefined,
+            onClick: () => apply({ useDefinedBinColors: !useDefined }) });
+        }
+      } else {
+        const current = state.valueColorScheme ?? 'default';
+        rows.push({ section: 'Value colours' });
+        for (const s of listValueColorSchemes()) {
+          rows.push({ label: s.label, active: current === s.name, onClick: () => apply({ valueColorScheme: s.name }) });
+        }
       }
       return rows;
     },
     () => { /* the menu carries the state, not the button */ },
   );
   function sync(): void {
-    btn.style.display = getPlotMode() === 'metadata' ? 'none' : '';
+    btn.style.display = getState().plotMode === 'metadata' ? 'none' : '';
   }
   return { btn, sync };
 }
@@ -2817,6 +2841,15 @@ export interface OverlayFlags {
   showReticle?: boolean;
   showXYIndicator?: boolean;
   passFailDisplay?: 'off' | 'spec' | 'test';
+  /**
+   * Moved here from the Colour scheme menu, where it had been the one entry
+   * that was not a scheme — a marker drawn over dies sitting among mutually
+   * exclusive palettes. Overlays is where its sibling already lived: the
+   * pass/fail display rows below are the same kind of judgement about the same
+   * dies, and putting the two in different menus made neither findable from the
+   * other.
+   */
+  markFailingDies?: boolean;
 }
 
 /**
@@ -2838,7 +2871,7 @@ export interface OverlayFlags {
 export function overlayMenuRows(
   flags: OverlayFlags,
   reticleEnabled: boolean,
-  passFail: { functionalActive: boolean; hasLimits: boolean; hasRecorded: boolean },
+  passFail: { functionalActive: boolean; hasLimits: boolean; hasRecorded: boolean; binMode: boolean },
   apply: (patch: OverlayFlags) => void,
 ): CheckMenuRow[] {
   return [
@@ -2856,6 +2889,37 @@ export function overlayMenuRows(
       { ...passFail, display: requestedPassFailDisplay(flags) },
       d => apply({ passFailDisplay: d }),
     ),
+    {
+      label: 'Mark failing dies',
+      active: !!flags.markFailingDies,
+      // Bin modes only: the marking is driven by whether a die's BIN is a pass
+      // bin, which value mode has no answer for — there the spec markers already
+      // play this role.
+      enabled: passFail.binMode,
+      disabledHint: passFail.binMode ? undefined : 'Available on hard/soft bin maps',
+      onClick: () => apply({ markFailingDies: !flags.markFailingDies }),
+    },
+    { section: '' },
+    {
+      // Every row above is a toggle, and turning six of them off one at a time
+      // is the kind of tidying nobody should have to do by hand. Disabled when
+      // nothing is on, which also makes the menu answer "is anything active?"
+      // without the reader auditing six rows.
+      label: 'Clear overlays',
+      active: false,
+      action: true,
+      enabled: anyOverlayActive(flags),
+      disabledHint: 'No overlays are active',
+      onClick: () => apply({
+        showRingBoundaries: false,
+        showQuadrantBoundaries: false,
+        showDieLabels: false,
+        showReticle: false,
+        showXYIndicator: false,
+        passFailDisplay: 'off',
+        markFailingDies: false,
+      }),
+    },
   ];
 }
 
@@ -2863,7 +2927,7 @@ export function overlayMenuRows(
  *  the same reason as the rows: it enumerates the same five flags. */
 export function anyOverlayActive(flags: OverlayFlags): boolean {
   return !!(flags.showRingBoundaries || flags.showQuadrantBoundaries || flags.showDieLabels
-    || flags.showReticle || flags.showXYIndicator
+    || flags.showReticle || flags.showXYIndicator || flags.markFailingDies
     || requestedPassFailDisplay(flags) !== 'off');
 }
 
@@ -3015,6 +3079,22 @@ export function makeOrientationBtn(
       { section: 'Flip' },
       { label: 'Flip horizontal', active: !!getOpts().flipX, onClick: () => setOpts({ flipX: !getOpts().flipX }) },
       { label: 'Flip vertical',   active: !!getOpts().flipY, onClick: () => setOpts({ flipY: !getOpts().flipY }) },
+      { section: '' },
+      {
+        // Getting back to the shipped orientation by eye is genuinely hard, not
+        // merely tedious: rotation and mirroring do not commute
+        // (mirror ∘ rot(θ) = rot(−θ) ∘ mirror), so undoing a few clicks is not a
+        // matter of clicking the same things again. A reader who has rotated and
+        // flipped their way somewhere confusing needs one action that is exactly
+        // right, and a wafer map read in the wrong orientation is the kind of
+        // mistake this library exists to prevent.
+        label: 'Reset orientation',
+        active: false,
+        action: true,
+        enabled: !!(getOpts().rotation || getOpts().flipX || getOpts().flipY),
+        disabledHint: 'Already in the original orientation',
+        onClick: () => setOpts({ rotation: 0, flipX: false, flipY: false }),
+      },
     ],
     (btn) => {
       const { rotation, flipX, flipY } = getOpts();

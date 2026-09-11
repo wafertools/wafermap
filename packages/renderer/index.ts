@@ -25,11 +25,10 @@ export * from './buildWaferMap.js';
 // don't have to reach into /core for the types.
 export type { WaferMetadata, DieMetadata } from '../core/metadata.js';
 export {
-  hardBinColor,
-  hardBinGreyscale,
   valueToViridis,
   valueToGreyscale,
-  softBinColor,
   contrastTextColor,
 } from './colorMap.js';
 export * from './colorSchemes.js';
+export { resolveBinColors } from './binColors.js';
+export type { BinColors, BinColorOptions } from './binColors.js';

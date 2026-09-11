@@ -26,8 +26,8 @@ test('buildBinSection — precomputed counts produce the same text as the raw-sc
     die({ hbin: 1, partial: true }), // excluded from both paths
   ];
   const fallback = buildBinSection(dies, undefined, 'hard');
-  // 5th positional arg, not the 4th — the 4th is `colorScheme`. This previously
-  // passed the counts object into the colorScheme slot, so BOTH sides fell through
+  // 5th positional arg, not the 4th — the 4th is `binColors`. This previously
+  // passed the counts object into the 4th (then colour-scheme) slot, so BOTH sides fell through
   // to the raw-die scan and the assertion compared the fallback with itself: the
   // precomputed path this test exists to cover was never actually exercised.
   const precomputed = buildBinSection(dies, undefined, 'hard', undefined, { 1: 2, 2: 1 });

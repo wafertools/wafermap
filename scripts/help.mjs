@@ -41,6 +41,7 @@ const GROUPS = [
     items: [
       ['npm run preview:site', 'The real bundled site, served on :8002'],
       ['npm run build:images', 'Regenerate doc screenshots after a UI change'],
+      ['npm run ui:surface', 'Re-record every control, label and hint to docs/ui-surface.txt'],
     ],
   },
   {
@@ -48,6 +49,7 @@ const GROUPS = [
     items: [
       ['npm run check:drift', 'Compare agent/tooling config against the config repo'],
       ['npm run check:styles', 'Style-scale budgets alone, without the rest of check'],
+      ['npm run ui:surface:check', 'Fail if the interactive surface moved without being re-recorded'],
     ],
   },
 ];

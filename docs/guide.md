@@ -7,10 +7,12 @@ from a single interactive map up to a multi-wafer gallery with statistical findi
 It focuses on practical patterns; for the full type reference see [API Reference](api.md).
 For a visual overview of how the library fits together, see [Architecture](architecture.md).
 
-**How to read this guide.** Sections 1–6 are the core path — read them in order
-to go from install to a map coloured by bins or test values. Everything after
-that is a topic jump: pick the section for the feature you need (§10 findings,
-§12 gallery, §14 Insights, §17 worker, …). Each feature section ends with a **→ Demo**
+**How to read this guide.** The first six sections — [Installation and setup](#installation-and-setup)
+through [Working with test values](#working-with-test-values) — are the core path: read them in
+order to go from install to a map coloured by bins or test values. Everything after
+that is a topic jump: pick the section for the feature you need
+([findings](#adding-statistical-findings), [gallery](#building-a-lot-gallery),
+[Insights](#the-insights-tab), [worker](#processing-large-datasets-with-a-web-worker), …). Each feature section ends with a **→ Demo**
 link to a live example page showing the same feature as working code.
 
 ## Architecture at a glance
@@ -20,7 +22,7 @@ start with [Architecture](architecture.md). It shows the top-level flow from raw
 wafer data to built maps, rendered views, analysis summaries, and worker-based
 execution.
 
-## 1. Installation and setup
+## Installation and setup
 
 Install the package:
 
@@ -48,7 +50,7 @@ import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 ```
 
 
-## 2. Your first wafer map
+## Your first wafer map
 
 The minimal path is two function calls: `buildWaferMap` to process your data, then
 `renderWaferMap` to draw it.
@@ -103,7 +105,7 @@ opens the map in an enlarged modal overlay without rebuilding the view.
 
 ![Your first wafer map](images/guide-first-map.png)
 
-## 3. Loading real data from a CSV
+## Loading real data from a CSV
 
 In practice your data comes from a wafer prober log, STDF export, or a CSV pulled
 from your database.  A typical row has a wafer ID, die grid position, and one or
@@ -157,7 +159,7 @@ Here we have toggled some toolbar options on: XY Axis indicator and Ring boundar
 
 For a real-world dataset, see [Demo: Real wafer defect data (WM-811K)](examples/real-data.html), which loads a sample from the WM-811K public dataset and lets you explore the spatial findings engine across known defect pattern types (Center, Donut, Edge-Loc, Scratch, etc.).
 
-## 4. Adding die size and wafer geometry
+## Adding die size and wafer geometry
 
 When you supply physical dimensions, `die.physX` and `die.physY` are in millimetres and the wafer boundary is drawn to scale; `die.x`/`die.y` remain die grid positions (prober step coordinates).
 
@@ -290,7 +292,7 @@ buildWaferMap({
 
 
 
-## 5. Working with bins
+## Working with bins
 
 Bins are the primary pass/fail classification from wafer test equipment.  Hard bins
 are the physical sort result; soft bins are the failure category assigned by the
@@ -375,7 +377,7 @@ console.log(yld !== null ? `${yld.toFixed(1)}%` : 'n/a');
 
 ![Named hard bins with colour legend](images/guide-bins-named.png)
 
-## 6. Working with test values
+## Working with test values
 
 Three related terms appear together throughout the API — here is how they fit:
 
@@ -519,14 +521,14 @@ const result = buildWaferMap({ results, testDefs, passBins: [1] });
 
 Selecting a functional test as the active test always renders as **Test pass/fail** (`passFailDisplay: 'test'`) — coloured by the tester's *recorded* verdict from `die.testPass`, green pass / red fail, undirected (there is no "which side" the way spec limits have a high/low side). This is forced regardless of the requested display; a functional test has nothing to put on a gradient. The Overlays menu's "Test pass/fail" toggle is also available on a **parametric** test that happens to carry recorded verdicts (e.g. a tester-recorded PTR `TEST_FLG`), as an alternative to spec-limit judgement.
 
-Functional tests are excluded from every parametric statistic — per-test stats, capability, correlation, distribution charts, value stacks, and regional value findings — since a mean or Cpk of a binary outcome is meaningless. They get their own pass-rate analysis instead: `stats.functionalYield` (one entry per functional test, with `passDies`/`failDies`/`totalDies`/`passRatePercent`), a **Functional Tests** table in the summary panel (§11) alongside — not replacing — the parametric Test values table, and regional pass-rate findings (`kind: 'functionalTest'`).
+Functional tests are excluded from every parametric statistic — per-test stats, capability, correlation, distribution charts, value stacks, and regional value findings — since a mean or Cpk of a binary outcome is meaningless. They get their own pass-rate analysis instead: `stats.functionalYield` (one entry per functional test, with `passDies`/`failDies`/`totalDies`/`passRatePercent`), a **Functional Tests** table in the [summary panel](#summary-panel) alongside — not replacing — the parametric Test values table, and regional pass-rate findings (`kind: 'functionalTest'`).
 
 **Legacy encoding.** If your data predates `testPass` and encodes a functional outcome as a `testValues` entry of `1` (pass) / `0` (fail), that keeps working — `getTestPassStatus(die, testNumber, testDef)` is the single read-path for verdicts everywhere in the library (rendering, stats, findings) and falls back to that encoding for a functional test with no `testPass` entry. New code should write `testPass` and leave functional tests out of `testValues` entirely.
 
 ![Test pass/fail colouring on a functional test](images/guide-test-values-functional.png)
 
 
-## 7. Retests and enriching dies after build
+## Retests and enriching dies after build
 
 ### Handling retests
 
@@ -655,7 +657,7 @@ const result = buildWaferMap({
 
 ![Retests — enriched die tooltip showing retest count](images/guide-retests.png)
 
-## 8. Controlling the display
+## Controlling the display
 
 ### Initial display options
 
@@ -665,7 +667,8 @@ Pass `viewOptions` to `renderWaferMap` to set the initial state:
 renderWaferMap(container, result, {
   viewOptions: {
     plotMode:                'hardBin',
-    colorScheme:             'default',     // 'default', 'greyscale', 'accessible', 'plasma', 'inferno'
+    binColorScheme:          'default',     // bin maps: 'default' | 'accessible' (colour-blind safe)
+    valueColorScheme:        'default',     // value maps: 'default' | 'viridis' | 'cividis' | 'plasma' | …
     showRingBoundaries:      true,
     showQuadrantBoundaries:  false,
     showDieLabels:           false,         // die index labels
@@ -696,7 +699,7 @@ ctrl.setDies(newDies);
 
 // Read current state:
 const opts = ctrl.getOptions();
-console.log(opts.plotMode, opts.colorScheme);
+console.log(opts.plotMode, opts.binColorScheme, opts.valueColorScheme);
 
 // Return to default zoom:
 ctrl.resetZoom();
@@ -714,7 +717,7 @@ const ctrl = renderWaferMap(container, result, {
   viewOptions: { plotMode: 'hardBin' },
   onViewOptionsChange: (opts) => {
     modeDropdown.value     = opts.plotMode;
-    schemeDropdown.value   = opts.colorScheme;
+    schemeDropdown.value   = opts.valueColorScheme ?? 'default';
     ringsCheckbox.checked  = opts.showRingBoundaries ?? false;
   },
 });
@@ -812,7 +815,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary | Only when `statsSummary` is provided | Toggles the Summary panel (metadata, yield, bins, ring/quadrant, test values, findings) |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the map for this wafer's own chart suite — see [§14](#14-the-insights-tab) |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the map for this wafer's own chart suite — see [The Insights tab](#the-insights-tab) |
 | <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). Hidden (and `E` disabled) while the Insights tab is open — see below. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#511-user-guide-extension) |
 
@@ -846,13 +849,13 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch. Cards are size-capped and pack from the left rather than stretching to fill the width |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Download all | Always | Exports all cards as a single tiled PNG |
-| <img src="images/icons/findings.svg" width="20" height="20"> | Lot findings | Only when `lotStatsSummary` is provided | Toggles the lot-level summary and findings panel |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the grid for a lot-wide chart suite — see [§14](#14-the-insights-tab) |
+| <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Only when `lotStatsSummary` is provided | Toggles the summary and findings panel covering every wafer in the gallery |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the grid for a chart suite covering every wafer — see [The Insights tab](#the-insights-tab) |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#511-user-guide-extension) |
 
 **While the Insights tab is open**, every button above except Insights and User guide is hidden
 — none of the others (mode, palette, overlays, columns, download, etc.) apply to the chart
-suite underneath, and Lot findings specifically toggles the summary panel inside the grid body,
+suite underneath, and Summary panel specifically toggles the panel inside the grid body,
 which is already hidden while the Insights tab is showing.
 
 ### Theming the chrome
@@ -880,12 +883,12 @@ wmap's chrome — the toolbar, gallery cards, summary panel, menus, tooltip — 
 
 To follow the OS preference, put the light values on `:root` and override in a `@media (prefers-color-scheme: dark)` block. Canvas colours are re-resolved on a theme change or light/dark flip, so the wafer repaints to match.
 
-The **data palette** (the bin/value colours of the dies) is separate — it's controlled by `colorScheme` (see §18), not these tokens, and does not follow the chrome accent.
+The **data palette** (the bin/value colours of the dies) is separate — it's controlled by `binColorScheme` and `valueColorScheme` (see [Custom colour schemes](#custom-colour-schemes)), not these tokens, and does not follow the chrome accent.
 
 **→ [Demo: Theming with `--wmap-*` tokens](examples/theming.html)** · full token reference in the [API docs](api.md#541-theming-wmap-custom-properties)
 
 
-## 9. Responding to user interaction
+## Responding to user interaction
 
 ### Click and hover callbacks
 
@@ -954,7 +957,7 @@ The filter also works in gallery view — clicking a legend row in the gallery t
 
 ![Bin legend filter — bin 2 selected, all other bins dimmed](images/guide-bins-legend-filter.png)
 
-## 10. Adding statistical findings
+## Adding statistical findings
 
 The statistics engine (`analyzeWaferMap`) scans for spatial patterns across five families: rings, quadrants, angular sectors, contiguous failure clusters, and edge arcs. For each family it compares the local zone to the rest of the wafer using a statistical test appropriate to the variable type.
 
@@ -982,7 +985,7 @@ A "Findings" button (notebook icon) appears in the toolbar. Clicking it opens
 the summary panel — a persistent results panel alongside the map showing yield,
 bin distribution, ring and quadrant stats, test value summaries, and the full
 findings list. Clicking any finding in the panel highlights the affected dies on
-the map. See [§11 Summary panel](#11-summary-panel) for the full panel content
+the map. See [Summary panel](#summary-panel) for the full panel content
 reference and configuration options (auto-open, pinned placement, gallery use).
 
 When you pass a `WaferMapResult` to `analyzeWaferMap`, the `passBins` you gave to
@@ -1204,14 +1207,14 @@ Use `finding.summary` for display text. Use `finding.highlight` to programmatica
 select or colour dies associated with the finding.
 
 For running the stats engine in Node.js without a browser, see the
-[recipe in §19](#analyse-a-lot-in-nodejs-without-a-browser).
+[Analyse a lot in Node.js without a browser](#analyse-a-lot-in-nodejs-without-a-browser) recipe.
 
 **→ [Demo: Statistical findings](examples/statistics.html#findings)**
 
 
 ![Findings panel open with first finding selected](images/guide-findings-panel.png)
 
-## 11. Summary panel
+## Summary panel
 
 The summary panel is a persistent results panel that sits alongside the wafer map.
 It shows yield, bin distribution, ring and quadrant statistics, test value summaries,
@@ -1291,7 +1294,7 @@ For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` �
 - a **Wafer Yield** section listing every wafer, each row badged with its own findings count; clicking a row detaches that wafer's card into its own window with its summary panel
 - a **Findings report** button covering every wafer's findings in one printable document
 
-See [§13 Lot-level statistical findings](#13-lot-level-statistical-findings) for the full example.
+See [Lot-level statistical findings](#lot-level-statistical-findings) for the full example.
 
 If you are building a gallery *without* lot-level analysis — for example, a set of unrelated wafers — you can attach `statsSummary` to each item individually:
 
@@ -1312,7 +1315,7 @@ renderWaferGallery(container, items);
 
 ![Summary panel open on single wafer](images/guide-summary-panel.png)
 
-## 12. Building a lot gallery
+## Building a lot gallery
 
 `renderWaferGallery` renders multiple wafer maps in a responsive card grid.  All cards share a single control bar —
 changing mode, colour, rotate, or flip applies to every card at once.
@@ -1479,12 +1482,14 @@ See also: [Demo: Lot-level findings with stacked modes](examples/statistics.html
 ![Gallery in per-wafer Hard Bin mode — one card per wafer](images/guide-gallery-per-wafer.png)
 
 
-## 13. Lot-level statistical findings
+## Lot-level statistical findings
 
 `analyzeWaferLot` detects cross-wafer patterns across a lot:
 
 - **Repeated patterns** — ring, quadrant, or reticle findings that appear on ≥ 2 wafers
-- **Inter-wafer yield outliers** — individual wafers whose yield deviates from the lot median
+- **Inter-wafer yield outliers** — individual wafers whose yield deviates from the median of
+  the wafers analysed. The finding calls it the "lot median" only when every wafer records the
+  same lot ID; a set pooled from several lots, or with no lot IDs, reads "median of all wafers".
 
 It runs per-wafer analysis internally, so a single call gives you everything — no separate `analyzeWaferMap` per item is needed.
 
@@ -1506,10 +1511,12 @@ renderWaferGallery(container, items, {
 
 Pass `computePerTestStats: true` to also populate `lotSummary.perWaferTestStats` — a per-wafer × per-test five-number summary (min/Q1/median/Q3/max plus mean/stddev/count) ready for box-plot rendering. Each entry corresponds to one wafer and has a `tests` array with the same shape as `StatsSummary.stats.perTestStats`. (`enableTestValueAnalysis: true` populates it too, but also runs the much more expensive regional Welch findings pass — prefer `computePerTestStats` when you only need distribution stats for box plots.)
 
-A "Findings" button appears in the gallery control bar. Clicking it opens a panel with two tabs:
-
-- **Lot** — lot-level yield, bin breakdown, ring/quadrant statistics, cross-wafer findings
-- **Wafers** — per-wafer findings index; click any wafer to detach its card into its own window with full per-wafer findings
+A **Summary panel** button appears in the gallery control bar. Clicking it opens one panel:
+yield, bin breakdown and ring/quadrant statistics across all the wafers, cross-wafer findings,
+and a Wafer Yield list with each wafer badged by its own findings count — click a wafer to
+detach its card into its own window with its full per-wafer findings. The header names the
+population: `Lot LOT123 · 13 wafers` when every wafer records one lot ID, otherwise
+`26 wafers from 2 lots` (or `13 wafers` with no lot IDs).
 
 
 ### What highlighting looks like
@@ -1603,7 +1610,7 @@ All `openHtmlReport` calls — including the summary panel buttons — then rout
 
 ![Lot summary report](images/report-lot-summary.png)
 
-## 14. The Insights tab
+## The Insights tab
 
 `renderWaferMap` and `renderWaferGallery` both support an opt-in **Insights** tab — a chart suite covering per-test pass rates, process capability, value distributions, wafer-to-wafer drift, and test correlation, computed from the same dies already on screen. Enable it with one option; there's no per-chart wiring and no host-computed grouping to set up.
 
@@ -1638,7 +1645,7 @@ renderWaferGallery(container, items, {
 });
 ```
 
-Passing `lotStatsSummary` (§13) also makes the yield panel reuse each wafer's already-computed yield instead of recomputing it — so the Insights tab's numbers always agree with the gallery's own Summary panel and any exported report. Each panel consumes an active grouping in whatever way suits that chart type: yield/bin-pareto/box-plot pool one row per group with click-to-drill; histogram overlays one series per group; capability and correlation restrict to one group at a time via their own "Group:" dropdown (pooling either would be statistically misleading); scatter never restricts, colouring every group's points instead. Full behavior for each panel is in the [API reference](api.md#610-insights-tab).
+Passing `lotStatsSummary` (see [Lot-level statistical findings](#lot-level-statistical-findings)) also makes the yield panel reuse each wafer's already-computed yield instead of recomputing it — so the Insights tab's numbers always agree with the gallery's own Summary panel and any exported report. Each panel consumes an active grouping in whatever way suits that chart type: yield/bin-pareto/box-plot pool one row per group with click-to-drill; histogram overlays one series per group; capability and correlation restrict to one group at a time via their own "Group:" dropdown (pooling either would be statistically misleading); scatter never restricts, colouring every group's points instead. Full behavior for each panel is in the [API reference](api.md#610-insights-tab).
 
 For a single wafer, or a gallery where nothing varies, there's simply no "Group by" control to show — every panel already displays that population directly.
 
@@ -1652,7 +1659,7 @@ Clicking a leaf row in the yield bar or the box plot — or a point on the trend
 
 **→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
 
-## 15. Reticle overlays
+## Reticle overlays
 
 A reticle (stepper field) is a rectangular group of dies that the lithography
 tool exposes in a single step.  The reticle overlay draws the field boundaries on
@@ -1714,7 +1721,7 @@ const items = waferResults.map((r, i) => ({ ...r, label: `W${i + 1}` }));
 
 ![Reticle grid overlay active](images/guide-reticle-overlay.png)
 
-## 16. Multi-site parallel testing
+## Multi-site parallel testing
 
 Modern probers test multiple dies simultaneously using a multi-site probe card. Each
 site on the card contacts a different die, and the tester records which site produced
@@ -1788,7 +1795,7 @@ is fab-specific — so the library stores it as-is without interpretation.
 
 ![Multi-site parallel testing — site yield comparison](images/guide-test-sites.png)
 
-## 17. Processing large datasets with a Web Worker
+## Processing large datasets with a Web Worker
 
 For lots with many wafers or high die counts, `buildWaferMap` can be moved off the
 main thread to avoid blocking the UI.
@@ -1871,51 +1878,67 @@ wmWorker.terminate();
 
 **→ [Demo: Processing large datasets with a Web Worker](examples/worker.html)**
 
-## 18. Custom colour schemes
+## Custom colour schemes
 
-The built-in colour schemes are `'default'`, `'viridis'`, `'greyscale'`, `'accessible'`,
-`'plasma'`, `'inferno'`, `'traffic'` (green→yellow→red, low=good), and `'thermal'`
-(blue→cyan→yellow→red, low=cold).  You can register additional schemes for brand colours,
-thematic colouring, or specialised analysis:
+Bin maps and value maps have **separate** colour schemes, each its own view option and its own
+registry, so a user can keep Viridis for values and the colour-blind-safe palette for bins
+without either resetting the other on a mode switch:
+
+- **`binColorScheme`** — `'default'` or `'accessible'` (colour-blind safe). Used by Hard Bin and
+  Soft Bin maps.
+- **`valueColorScheme`** — `'default'` (blue→cyan→yellow→red), `'viridis'`, `'cividis'`
+  (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'traffic'` (green→yellow→red,
+  low=good) and `'jet'`. Used by Test Value maps and all three stacked modes — a stacked-bin map
+  is a value map, showing how often a bin occurs at each position.
+
+### How bin colours are assigned
+
+A bin's colour is never picked from its number. `resolveBinColors` (which every surface uses —
+map, legend, summary panel, Insights charts) works from the bins actually present:
+
+- **Pass bins are green, fail bins are not.** Which bins pass comes from `passBins`, so a failing
+  bin 1 is never green and a passing bin 3 always is. A soft bin counts as passing when every die
+  carrying it passes.
+- **The biggest bins get the clearest colours.** Bins take palette slots in order of die count,
+  so no two bins share a colour until the palette runs out. When it does, the map raises a
+  `bin-colors-shared` warning naming them rather than letting two bins look identical.
+- **A gallery colours every wafer it shows at once**, so bin 7 is the same colour on every
+  card — whether those wafers come from one lot or several.
+- **Colours from bin definitions win.** A `BinDef.color` (a site's standard bin colour sheet, say)
+  overrides the palette for that bin; the viewer can switch that off with **Use colours from bin
+  definitions** in the Palette menu, and back on again.
+
+### Registering your own
 
 ```ts
-import { registerColorScheme, listColorSchemes } from '@wafertools/wafermap';
+import { registerBinColorScheme, registerValueColorScheme } from '@wafertools/wafermap';
 
-registerColorScheme('my-brand', {
+registerBinColorScheme('my-brand', {
   label: 'My Brand',
-
-  // Colour for a specific bin number (hardBin / softBin modes)
-  forBin: (bin: number) => {
-    const palette = ['#003f88', '#e63946', '#2a9d8f', '#e9c46a', '#f4a261'];
-    return palette[(bin - 1) % palette.length];
-  },
-
-  // Colour for a normalised value t ∈ [0, 1] (value / stackedValues modes)
-  forValue: (t: number) => {
-    const r = Math.round(t * 0);
-    const g = Math.round(t * 100);
-    const b = Math.round(80 + t * 175);
-    return `rgb(${r},${g},${b})`;
-  },
-
+  pass: ['#1b7f3b', '#7cc68a'],                         // passing bins, most populous first
+  fail: ['#c62828', '#1565c0', '#ef6c00', '#6a1b9a'],   // failing bins — most distinct first, no greens
 });
 
-// The scheme now appears in every toolbar colour picker automatically:
-listColorSchemes();  // [..., { name: 'my-brand', label: 'My Brand' }]
+registerValueColorScheme('my-brand', {
+  label: 'My Brand',
+  forValue: (t: number) => `rgb(0,${Math.round(t * 100)},${Math.round(80 + t * 175)})`,  // t ∈ [0, 1]
+});
 
-// Apply programmatically:
-ctrl.setOptions({ colorScheme: 'my-brand' });
+// Each now appears in the matching toolbar Palette menu automatically. Apply programmatically:
+ctrl.setOptions({ binColorScheme: 'my-brand', valueColorScheme: 'my-brand' });
 ```
 
 Register your schemes once, before any `renderWaferMap` call.
-They are global and persist for the lifetime of the page.
+They are global and persist for the lifetime of the page. Both choices are `WaferPreferences`,
+so `onViewOptionsChange` reports a change to either with category `'preference'` — save them
+there and pass them back in `viewOptions` to remember a user's choice.
 
 **→ [Demo: Custom colour schemes](examples/display-control.html#custom-schemes)**
 
 
 ![Colour scheme dropdown open on three-wafer layout](images/guide-color-schemes.png)
 
-## 19. Recipes
+## Recipes
 
 Short, task-focused examples for common integration questions.
 
@@ -2202,7 +2225,7 @@ limits are defined, cluster detection is skipped automatically.
 **→ [Demo: Standalone stacked map with spatial analysis](examples/statistics.html#lot-stack)**
 
 
-## 20. Advanced: the rendering pipeline
+## Advanced: the rendering pipeline
 
 `renderWaferMap` handles the full pipeline for you.  Use
 the manual pipeline only when you need control they cannot provide — for example,
@@ -2262,7 +2285,7 @@ toCanvas(document.getElementById('map'), view);
 
 **→ [Demo: Advanced — the rendering pipeline](examples/pipeline.html)**
 
-## 21. Metadata / layout plot mode
+## Metadata / layout plot mode
 
 Sometimes a grid position represents a classification rather than a test result —
 which project a die belongs to on a multiproject wafer, vendor/third-party

@@ -8,11 +8,21 @@ export const SPEC_FAIL_LOW   = '#3498db';
 export const SPEC_FAIL_HIGH  = '#e74c3c';
 
 /**
- * Shared categorical palette for hard and soft bin colouring.
- * Index 0 is the no-data grey sentinel. Indices 1–63 are perceptually
- * spread colours generated via golden-angle HSL stepping.
- * Hard and soft bins use different hash salts so the same bin number
- * maps to different colours in each scheme.
+ * Fill for a die with no value for what is being plotted — no bin in a bin
+ * mode, no reading in a value mode. Shared by the map and every surface that
+ * draws a "no data" swatch, so the two can never disagree.
+ */
+export const NO_DATA_FILL = '#d6d9dd';
+
+/**
+ * Categorical fallback palette for `'metadata'` mode values beyond
+ * METADATA_PALETTE's fixed slots. Index 0 is a no-data grey sentinel.
+ * Indices 1–63 are perceptually spread colours generated via golden-angle
+ * HSL stepping.
+ *
+ * No longer used for bins: bin colours are rank-assigned from a registered bin
+ * palette by `resolveBinColors` (binColors.ts). Hashing a bin number into this
+ * list is what made two different bins share a colour.
  */
 export const BIN_PALETTE: readonly string[] = [
   '#95a5a6', //  0: no data
@@ -89,39 +99,8 @@ export function wangHash(n: number): number {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
-/** Number of palette slots available for coloured bins (excludes the no-data grey at index 0). */
+/** Number of palette slots available (excludes the no-data grey at index 0). */
 const PALETTE_SIZE = BIN_PALETTE.length - 1;
-
-/** Hard-bin salt — ensures hard and soft bins of the same number get different colours. */
-const HARD_SALT = 0x9e3779b9;
-/** Soft-bin salt. */
-const SOFT_SALT = 0x6c62272e;
-
-/**
- * Bins 1–14 use hand-picked colours chosen for maximum distinctiveness in the
- * low-bin range that appears on most wafers. Bin 15+ uses the hash.
- */
-const HARD_BIN_OVERRIDES: Record<number, string> = {
-   1: '#2ecc71', // pass
-   2: '#e74c3c', // fail
-   3: '#f39c12', // marginal
-   4: '#9b59b6',
-   5: '#3498db',
-   6: '#1abc9c',
-   7: '#e67e22',
-   8: '#2c3e50',
-   9: '#c0392b',
-  10: '#8e44ad',
-  11: '#2980b9',
-  12: '#27ae60',
-  13: '#d35400',
-  14: '#16a085',
-};
-
-/** Categorical colour for a hard bin. No-data handling is the caller's responsibility. */
-export function hardBinColor(bin: number): string {
-  return HARD_BIN_OVERRIDES[bin] ?? BIN_PALETTE[(wangHash(bin ^ HARD_SALT) % PALETTE_SIZE) + 1];
-}
 
 /** Linear interpolation across RGB keypoints for t ∈ [0, 1]. */
 export function lerpKp(kp: readonly [number, number, number][], t: number): string {
@@ -150,15 +129,10 @@ export function valueToViridis(t: number): string {
   return lerpKp(VIRIDIS, t);
 }
 
-/** Categorical colour for a soft bin. No-data handling is the caller's responsibility. */
-export function softBinColor(bin: number): string {
-  return BIN_PALETTE[(wangHash(bin ^ SOFT_SALT) % PALETTE_SIZE) + 1];
-}
-
 /**
  * Ordered qualitative palette for the `'metadata'` plot mode's first ~10
- * distinct values. Deliberately NOT the pass/fail-flavoured
- * `HARD_BIN_OVERRIDES` (green=pass/red=fail) — an arbitrary metadata field
+ * distinct values. Deliberately NOT a bin palette's pass/fail-flavoured
+ * greens and reds — an arbitrary metadata field
  * (project, vendor, test site, …) has no universal "good/bad" meaning, so
  * this is a plain maximally-distinct hue set with no implied ordering.
  */
@@ -185,36 +159,12 @@ const METADATA_SALT = 0x27d4eb2f;
  * iteration order). Ordered assignment, not hashing, for the first
  * `METADATA_PALETTE.length` slots — this maximizes distinctness for the
  * common case of a handful of categories, unlike a hash which doesn't
- * optimize for a *known* small set. Falls back to the same
- * hash+`BIN_PALETTE` mechanism `hardBinColor`/`softBinColor` use (a new
- * salt) for wafers with an unusually large category count.
+ * optimize for a *known* small set. Falls back to hashing into `BIN_PALETTE`
+ * for wafers with an unusually large category count.
  */
 export function metadataValueColor(index: number): string {
   if (index < METADATA_PALETTE.length) return METADATA_PALETTE[index];
   return BIN_PALETTE[(wangHash(index ^ METADATA_SALT) % PALETTE_SIZE) + 1];
-}
-
-/** Categorical greyscale shades for hard bins. Index 0 = no data. */
-export const HARD_BIN_GREY: readonly string[] = [
-  '#aaaaaa', // 0: no data
-  '#f7f7f7', // 1: pass (lightest — clearly distinct)
-  '#303030', // 2: fail (darkest)
-  '#888888', // 3: marginal
-  '#bbbbbb', // 4
-  '#666666', // 5
-  '#999999', // 6
-  '#555555', // 7
-  '#444444', // 8
-  '#222222', // 9
-  '#cccccc', // 10
-  '#777777', // 11
-  '#eeeeee', // 12
-  '#333333', // 13
-  '#888888', // 14
-];
-
-export function hardBinGreyscale(bin: number): string {
-  return HARD_BIN_GREY[Math.max(0, Math.min(bin, HARD_BIN_GREY.length - 1))];
 }
 
 /** Map t ∈ [0, 1] to a greyscale rgb string (range 30–230 to avoid pure black/white). */

@@ -13,16 +13,16 @@ import {
   createWafer,
   generateDies,
   generateReticleGrid,
-  getColorScheme,
+  getBinColorScheme,
+  getValueColorScheme,
   getDieKey,
   getRingLabel,
   getUniqueBins,
-  hardBinColor,
-  hardBinGreyscale,
-  listColorSchemes,
+  listBinColorSchemes,
+  listValueColorSchemes,
   mapDataToDies,
-  registerColorScheme,
-  softBinColor,
+  registerValueColorScheme,
+  resolveBinColors,
   transformDies,
   valueToGreyscale,
   valueToViridis,
@@ -245,27 +245,25 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   assert.equal(fmtColorbarAxis(1e-6, 'Idsat', 'A').axisLabel, 'Idsat (µA)');
   assert.equal(fmtColorbarAxis(1e-6, 'Idsat', 'A').tickFmt(2e-6), '2.00');
 
-  assert.equal(hardBinColor(1), '#2ecc71');   // bin 1 always green (pass)
-  assert.equal(hardBinColor(2), '#e74c3c');   // bin 2 always red (fail)
-  assert.notEqual(hardBinColor(999), hardBinColor(1000)); // hash gives distinct colours
-  assert.equal(hardBinGreyscale(1), '#f7f7f7');
-  assert.notEqual(softBinColor(3), hardBinColor(3)); // same bin number, different colour
+  // Bin colour follows passBins, not the number: bin 1 passes by default.
+  const binColors = resolveBinColors([{ hbin: 1 }, { hbin: 2 }, { hbin: 2 }]);
+  assert.equal(binColors.hard.get(1), getBinColorScheme('default').pass[0]);
+  assert.equal(binColors.hard.get(2), getBinColorScheme('default').fail[0]);
   assert.equal(valueToViridis(-1), 'rgb(68,1,84)');
   assert.equal(valueToGreyscale(1), 'rgb(230,230,230)');
   assert.equal(contrastTextColor('#ffffff'), '#000000');
   assert.equal(contrastTextColor('#000000'), '#ffffff');
 
-  assert.equal(getColorScheme('default').label, 'Default');
-  assert.ok(listColorSchemes().some((scheme) => scheme.name === 'default'));
-  assert.ok(listColorSchemes().some((scheme) => scheme.name === 'accessible'));
+  assert.equal(getBinColorScheme('default').label, 'Default');
+  assert.ok(listBinColorSchemes().some((scheme) => scheme.name === 'accessible'));
+  assert.ok(listValueColorSchemes().some((scheme) => scheme.name === 'default'));
 
-  registerColorScheme('custom-suite', {
+  registerValueColorScheme('custom-suite', {
     label: 'Custom Suite',
-    forBin: (bin) => `bin-${bin}`,
     forValue: (t) => `value-${t.toFixed(2)}`,
   });
-  assert.equal(getColorScheme('custom-suite').label, 'Custom Suite');
-  assert.ok(listColorSchemes().some((scheme) => scheme.name === 'custom-suite'));
+  assert.equal(getValueColorScheme('custom-suite').label, 'Custom Suite');
+  assert.ok(listValueColorSchemes().some((scheme) => scheme.name === 'custom-suite'));
 });
 
 test('renderer scene assembly preserves the public contract', async () => {
@@ -287,7 +285,7 @@ test('renderer scene assembly preserves the public contract', async () => {
   const sbinDefs = [{ bin: 2, name: 'SoftFail', color: '#aa0000' }];
   const scene = buildView(wafer, dies, {
     plotMode: 'hardBin',
-    colorScheme: 'custom',
+    // BinDef.color applies by default now — no 'custom' scheme to select.
     showDieLabels: true,
     showReticle: true,
     showProbePath: true,
@@ -326,7 +324,7 @@ test('renderer scene assembly preserves the public contract', async () => {
   const { generateTextOverlay } = await import('../dist/packages/renderer/buildView.js');
   const textOverlay = generateTextOverlay(dies, null, {
     plotMode: 'value',
-    colorFns: getColorScheme('default'),
+    colorFns: { forValue: getValueColorScheme('default').forValue, forBin: () => '#000000' },
     normalize: (v) => v,
     activeTest: 0,
     valueRange: [0.6, 0.9],

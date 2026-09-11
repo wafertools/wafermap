@@ -5,7 +5,7 @@
 The library provides two complementary analysis systems that both surface
 results as findings in the summary panel:
 
-**Statistical region analysis** (covered in [§10 of the Developer Guide](guide.md#10-adding-statistical-findings))
+**Statistical region analysis** (covered in [Guide: Adding statistical findings](guide.md#adding-statistical-findings))
 compares specific zones of the wafer — rings, quadrants, angular sectors,
 contiguous clusters, and edge arcs — against the rest of the wafer using
 significance tests. It answers: *"is this ring statistically worse than the

@@ -1,4 +1,5 @@
 import type { StatsFinding, StatsSummary, LotStatsSummary } from './types.js';
+import { describeWaferPopulation, populationLabel } from './population.js';
 import {
   formatFindingDelta,
   formatFindingCoverage,
@@ -87,8 +88,14 @@ export function renderFindingsReportHtml(
   summary: StatsSummary | LotStatsSummary,
   options: { title?: string } = {},
 ): string {
-  const isLot = summary.level === 'lot';
-  const title = options.title ?? (isLot ? 'Lot Findings Report' : 'Wafer Findings Report');
+  const population = summary.level === 'lot'
+    ? describeWaferPopulation(summary.perWafer.map((pw) => pw.summary.wafer))
+    : undefined;
+  const title = options.title ?? (!population
+    ? 'Wafer Findings Report'
+    : population.lotId !== undefined
+      ? `Lot ${population.lotId} Findings Report`
+      : `Findings Report — ${populationLabel(population)}`);
   const generatedAt = new Date().toLocaleString();
   // See `visibleFindings` — absorbed restatements are dropped so one fact is not
   // printed twice.

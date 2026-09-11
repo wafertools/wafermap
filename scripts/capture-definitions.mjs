@@ -130,32 +130,19 @@ export const CAPTURES = [
     page: '/examples/first-map.html',  // reuse the demo page infrastructure
     wait: 800,
     screenshotFn: async (page, outFile) => {
-      // Inject the quickstart inline data directly, replacing the demo's result
-      await page.evaluate(() => {
-        return new Promise(resolve => {
-          // Wait for the map to already be rendered, then swap the data
-          const results = [];
-          for (let x = -14; x <= 14; x++) {
-            for (let y = -14; y <= 14; y++) {
-              const r = Math.sqrt(x * x + y * y);
-              if (r > 14.3) continue;
-              const h = ((Math.imul(x + 100, 2654435761) ^ Math.imul(y + 100, 2246822519)) >>> 0);
-              const edgeFail = r > 11 && (h % 100) < 55;
-              results.push({ x, y, hbin: edgeFail ? 2 : 1 });
-            }
-          }
-          window.__quickstartResults = results;
-          resolve();
-        });
-      });
-      // Reinitialise by navigating to a data-URL that uses the local importmap
-      // Instead: render directly using the page's already-loaded modules
+      // Render the Quick Start's own lot on the demo page's already-loaded
+      // modules. The data comes from examples/quickstart-data.js — the same
+      // fixture the live page imports and the Markdown example is checked
+      // against — so this screenshot cannot show a different wafer from the
+      // code above it in the docs. It used to hold a fourth copy of the
+      // generator inlined right here, which is exactly how that drifts.
       await page.evaluate(async () => {
+        const { quickstartResults } = await import('./quickstart-data.js');
         const { buildWaferMap }  = await import('wafermap');
         const { renderWaferMap } = await import('wafermap/render');
         const container = document.getElementById('map');
         container.innerHTML = '';
-        const result = buildWaferMap({ results: window.__quickstartResults, passBins: [1] });
+        const result = buildWaferMap({ results: quickstartResults, passBins: [1] });
         renderWaferMap(container, result);
       });
       await page.waitForTimeout(600);
@@ -566,8 +553,8 @@ export const CAPTURES = [
   },
 
   // ── guide-color-schemes.png — §16 Colour schemes: the registered 'teal-rose'
-  //    scheme shown in the toolbar's own palette picker, which is the point —
-  //    registerColorScheme puts it there with no further wiring. ──────────────
+  //    bin palette shown in the toolbar's own palette menu, which is the point —
+  //    registerBinColorScheme puts it there with no further wiring. ───────────
   {
     file: 'guide-color-schemes',
     group: 'maps',

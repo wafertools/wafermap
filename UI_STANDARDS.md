@@ -571,8 +571,13 @@ models, and mixing them is the usual reason selection "feels wrong":
 | Ctrl/Cmd+Click | toggles one, keeps the rest | redundant — plain click already does this |
 | Checkboxes | absent, or indicators only | the control itself |
 
-**Both repos use the checkbox list.** Every multi-select surface here has
-checkboxes that are the actual control, so:
+**Both repos use the checkbox list** — one model everywhere, even where a
+surface draws no checkbox. tsmap's file filter table has none: the row tint is
+the indicator, `aria-selected` on focusable (roving `tabIndex`) rows in a
+`role="grid"` carries it to assistive tech, and Space toggles the focused row.
+It still follows the checkbox-list rules below, because selection there is built
+up across several searches — a Finder-style click that clears the selection
+would silently deselect rows the current filter hides. So:
 
 - **Shift+Click applies the anchor's own current state to the whole range.**
   Shift-clicking after *un*ticking the anchor therefore **deselects** the range.

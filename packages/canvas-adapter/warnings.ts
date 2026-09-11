@@ -70,6 +70,10 @@ export function collectWarnings(sources: {
   result?: Partial<Pick<WaferMapResult, 'warnings'>> | null;
   statsSummary?: StatsSummary | null;
   lotStatsSummary?: LotStatsSummary | null;
+  /** Advisories about the VIEW rather than the data — e.g. `bin-colours-shared`,
+   *  which depends on the plot mode and palette on screen. Raised by the
+   *  renderer that owns the view. */
+  extra?: readonly WaferWarning[];
 }): WaferWarning[] {
   const out: WaferWarning[] = [];
   const seen = new Set<string>();
@@ -93,6 +97,7 @@ export function collectWarnings(sources: {
   for (const pw of sources.lotStatsSummary?.perWafer ?? []) {
     for (const w of pw.summary.stats.warnings ?? []) add(w);
   }
+  for (const w of sources.extra ?? []) add(w);
 
   return out.sort((a, b) => SEVERITY_ORDER[severityOf(a)] - SEVERITY_ORDER[severityOf(b)]);
 }

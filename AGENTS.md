@@ -19,7 +19,7 @@ loudly over guessing.
 
 ### Entry points
 
-- `@wafertools/wafermap` — `buildWaferMap()`, geometry, `registerColorScheme()`. Pure, no DOM, server-safe.
+- `@wafertools/wafermap` — `buildWaferMap()`, geometry, `registerBinColorScheme()` / `registerValueColorScheme()`. Pure, no DOM, server-safe.
 - `@wafertools/wafermap/render` — `renderWaferMap()`, `renderWaferGallery()`, `toCanvas()`. Needs the DOM.
 - `@wafertools/wafermap/stats` — `analyzeWaferMap()`, `analyzeWaferLot()`. Pure analysis.
 - `@wafertools/wafermap/worker` — `createWafermapWorker()` for off-main-thread builds.
@@ -82,6 +82,12 @@ correctness guarantee that comes with it.
 - `retestPolicy: 'best'`/`'worst'` is pass/fail-aware via `passBins`; bin number only
   breaks ties within a category.
 - Hard bins (`hbin`) and soft bins (`sbin`) are independent number spaces. Never merge them.
+- **Never pick a bin's colour from its number.** Bin colours are assigned by
+  `resolveBinColors` — pass bins (per `passBins`) take green pass colours, fail bins
+  take the rest, most populous first — and a rendered map exposes the result as
+  `View.binColors`. A legend or chart you build yourself must read those, or it
+  will name colours the map is not drawing. Bin maps and value maps have separate
+  schemes: `binColorScheme` and `valueColorScheme`.
 - Build once, render many: `buildWaferMap()` handles data + geometry; re-render UI
   changes through the controller's `setOptions()`, not by rebuilding.
 - `result.view` is internal. Use the promoted fields: `result.plotMode`,
@@ -151,7 +157,9 @@ it is handed, because it has no way to know which tests anyone will look at.
 | `WaferFlat`, field `flat` | `WaferNotch`, field `notch` |
 | `isInsideWaferWithFlat` | `isInsideWafer` |
 | `DieSample` / `WaferMapPoint` | `DieResult` |
-| `colorScheme: 'color'` | `colorScheme: 'default'` |
+| `colorScheme` / `WaferViewOptions.colorScheme` | `binColorScheme` (bin maps) and `valueColorScheme` (value and stacked maps) |
+| `registerColorScheme` / `getColorScheme` / `listColorSchemes` | `registerBinColorScheme` / `registerValueColorScheme` and their `get` / `list` pairs |
+| `hardBinColor` / `softBinColor` / `hardBinGreyscale` | `resolveBinColors`, or `View.binColors` from a rendered map |
 | `plotMode: 'specLimit'` | `passFailDisplay: 'spec'` |
 | standalone `getDieAtPoint` | `hitTarget.getDieAtPoint` from `toCanvas()` |
 | `RenderOptions.tooltipTestLimit` | (was a no-op; nothing replaces it) |
