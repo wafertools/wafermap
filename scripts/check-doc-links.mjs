@@ -29,8 +29,9 @@
  * Run:  node scripts/check-doc-links.mjs
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { dirname, resolve, join, relative, posix } from 'path';
+import { dirname, resolve, join, relative, posix, isAbsolute } from 'path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const problems = [];
@@ -190,6 +191,29 @@ const anchorsFor = (file) => {
 
 let checked = 0;
 let external = 0;
+let localOnly = 0;
+
+// Links a clean checkout cannot resolve: a target in another checkout
+// (UI_STANDARDS.md links to ../tsmap) or a gitignored, local-only file
+// (CLAUDE.md). Testing those for existence passed on a developer machine,
+// where both exist, and failed CI's clean checkout of this repo alone — the
+// wafermap 0.28.0 release commit went red on exactly that. They are counted
+// and skipped like external links, so the check means the same thing
+// everywhere; `git check-ignore` judges the ignore rules, not presence.
+// Kept identical in wafermap's and tsmap's copy of this script.
+const localOnlyCache = new Map();
+function isLocalOnly(relTarget) {
+  if (relTarget === '..' || relTarget.startsWith('../') || isAbsolute(relTarget)) return true;
+  if (!localOnlyCache.has(relTarget)) {
+    let ignored = false;
+    try {
+      execFileSync('git', ['check-ignore', '-q', relTarget], { cwd: root, stdio: 'ignore' });
+      ignored = true;
+    } catch { /* exit 1: not ignored (or not a git checkout) */ }
+    localOnlyCache.set(relTarget, ignored);
+  }
+  return localOnlyCache.get(relTarget);
+}
 
 for (const file of files) {
   for (const { target, line } of linksIn(file)) {
@@ -211,6 +235,7 @@ for (const file of files) {
 
     if (path !== '') {
       const relTarget = posix.normalize(rel(targetFile).split('\\').join('/'));
+      if (isLocalOnly(relTarget)) { localOnly++; continue; }
       if (GENERATED.has(relTarget) || [...GENERATED].some((g) => relTarget.startsWith(g + '/'))) {
         checked++;
         continue;
@@ -270,5 +295,5 @@ if (problems.length) {
 
 console.log(
   `doc links OK — ${checked} internal links across ${files.length} files ` +
-  `(${external} external links not fetched)`,
+  `(${external} external links not fetched, ${localOnly} into another checkout or a local-only file not checked)`,
 );
