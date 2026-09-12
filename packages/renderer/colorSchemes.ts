@@ -54,6 +54,23 @@ export function listValueColorSchemes(): Array<{ name: string; label: string }> 
   return [...valueRegistry.entries()].map(([name, s]) => ({ name, label: s.label }));
 }
 
+/**
+ * The colour function a value surface must actually use: the named gradient,
+ * flipped when `reversed`.
+ *
+ * **Every surface that colours by value resolves through this** — die fills
+ * (`buildView`), the colorbar (`toCanvas`) and the mapless summary's bars, which
+ * each look the gradient up independently. Applying the flip at only some of
+ * them would show one reading as two different colours on the same screen, with
+ * the colorbar — the thing an engineer reads the map against — the most likely
+ * to be missed. Reversing is a flag rather than a second registered entry per
+ * ramp so the menu stays one list and a host's own gradient gets it for free.
+ */
+export function resolveValueColorFn(name?: string, reversed?: boolean): (t: number) => string {
+  const { forValue } = getValueColorScheme(name);
+  return reversed ? (t: number) => forValue(1 - t) : forValue;
+}
+
 // ── Bin palettes ──────────────────────────────────────────────────────────────
 
 export interface BinColorScheme {
@@ -102,30 +119,37 @@ export function listBinColorSchemes(): Array<{ name: string; label: string }> {
 }
 
 // ── Built-in value gradients ──────────────────────────────────────────────────
+//
+// Every built-in reads low = dark, high = light, which is how each of these
+// ramps is defined by matplotlib and seaborn and how anyone who recognises one
+// will read it. That direction is not decoration: it is what makes the rare,
+// interesting end of a map the bright end. On a stacked map the healthy bulk of
+// the wafer (count 0) sits back as dark ground and the edge ring or scratch
+// lights up; inverted, the defects are the dark specks on a glowing field.
+//
+// A caller who wants the opposite for a given map sets `reverseValueScheme`
+// (see `resolveValueColorFn`) rather than selecting a separately registered
+// reversed twin — one flag, not two entries per ramp.
+//
+// The blue–cyan–yellow–red "thermal" ramp that used to be the default was
+// removed in favour of these. Like every rainbow ramp its lightness is not
+// monotonic — cyan and yellow are both near-peak, blue and red much darker — so
+// two different readings land at the same apparent intensity and the fast hue
+// turns at cyan and yellow draw contours that are not in the data. `'jet'`
+// keeps that family available for anyone who wants it, honestly labelled.
 
 /**
- * Thermal gradient keypoints: blue → cyan → yellow → red. Reads low→high
- * intuitively (blue = cold/low, red = hot/high), the convention semiconductor
- * engineers expect for parametric/electrical value maps.
+ * Viridis — perceptually uniform dark purple → teal → green → yellow, and the
+ * widest lightness span of the built-ins (L* ~10 → ~93), which is what lets a
+ * dense die grid resolve small differences. Colour-blind safe.
  *
- * This IS the default gradient. A separate "Thermal" entry with the same
- * keypoints used to sit beside it — two menu rows drawing identical maps.
+ * This IS the default gradient; there is no separate `'viridis'` entry, because
+ * two menu rows drawing identical maps is the defect that removed the old
+ * standalone "Thermal" row.
  */
-const THERMAL_KP: readonly [number, number, number][] = [
-  [  0,   0, 255],  // blue
-  [  0, 255, 255],  // cyan
-  [255, 255,   0],  // yellow
-  [255,   0,   0],  // red
-];
-
 registerValueColorScheme('default', {
-  label: 'Default (Blue–Cyan–Yellow–Red)',
-  forValue: (t) => lerpKp(THERMAL_KP, t) });
-
-/** Perceptually uniform purple → yellow. */
-registerValueColorScheme('viridis', {
-  label: 'Viridis',
-  forValue: (t) => lerpKp(VIRIDIS, 1 - t) });
+  label: 'Default (Viridis)',
+  forValue: (t) => lerpKp(VIRIDIS, t) });
 
 // Cividis keypoints — blue-grey to yellow, avoids red/green transitions.
 const CIVIDIS: readonly [number, number, number][] = [
@@ -143,12 +167,17 @@ const CIVIDIS: readonly [number, number, number][] = [
  */
 registerValueColorScheme('cividis', {
   label: 'Cividis (colour-blind safe)',
-  forValue: (t) => lerpKp(CIVIDIS, 1 - t) });
+  forValue: (t) => lerpKp(CIVIDIS, t) });
 
-/** Grey ramp — monochrome print output. */
+/**
+ * Grey ramp — monochrome print output. Low = dark, high = light, the same rule
+ * as every other built-in and the same as matplotlib's `gray`. For the print
+ * habit of "more ink means more", set `reverseValueScheme` rather than reaching
+ * for a separate reversed scheme.
+ */
 registerValueColorScheme('greyscale', {
   label: 'Greyscale',
-  forValue: (t) => valueToGreyscale(1 - t) });
+  forValue: (t) => valueToGreyscale(t) });
 
 const PLASMA_KP: readonly [number, number, number][] = [
   [ 13,   8, 135],
@@ -161,7 +190,7 @@ const PLASMA_KP: readonly [number, number, number][] = [
 /** Vibrant, perceptually uniform purple → yellow. */
 registerValueColorScheme('plasma', {
   label: 'Plasma',
-  forValue: (t) => lerpKp(PLASMA_KP, 1 - t) });
+  forValue: (t) => lerpKp(PLASMA_KP, t) });
 
 const INFERNO_KP: readonly [number, number, number][] = [
   [  0,   0,   4],
@@ -174,7 +203,36 @@ const INFERNO_KP: readonly [number, number, number][] = [
 /** Black → purple → orange → pale yellow; strong ordering on dark dashboards. */
 registerValueColorScheme('inferno', {
   label: 'Inferno',
-  forValue: (t) => lerpKp(INFERNO_KP, 1 - t) });
+  forValue: (t) => lerpKp(INFERNO_KP, t) });
+
+// Mako is seaborn's cubehelix-derived sequential ramp, sampled at nine even
+// stops from `sns.color_palette('mako', as_cmap=True)`. Its sibling Crest was
+// measured alongside it and deliberately not kept: at L* ~31 → ~78 against
+// Viridis's ~10 → ~93 it has too little lightness span for a dense die grid —
+// on a stacked map a scratch all but disappeared into the surrounding green.
+// Seaborn pitches crest at line plots, where mako's dark end gets lost; that is
+// a different job from colouring thousands of adjacent dies.
+
+const MAKO_KP: readonly [number, number, number][] = [
+  [ 11,   4,   5],
+  [ 43,  28,  53],
+  [ 62,  53, 107],
+  [ 59,  86, 152],
+  [ 53, 123, 163],
+  [ 53, 159, 171],
+  [ 75, 194, 173],
+  [153, 221, 182],
+  [222, 245, 229],
+];
+
+/**
+ * Mako (seaborn) — near-black → blue → teal → pale green. The closest thing to
+ * Viridis in span, with more separation at the top end; its low end is close to
+ * black, which on a light canvas can read as unfilled.
+ */
+registerValueColorScheme('mako', {
+  label: 'Mako',
+  forValue: (t) => lerpKp(MAKO_KP, t) });
 
 const TRAFFIC_KP: readonly [number, number, number][] = [
   [ 46, 204,  113],  // green

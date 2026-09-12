@@ -4,7 +4,7 @@ import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
 import { compareNatural } from '../core/utils.js';
-import { getValueColorScheme } from '../renderer/colorSchemes.js';
+import { resolveValueColorFn } from '../renderer/colorSchemes.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH, contrastTextColor } from '../renderer/colorMap.js';
 import { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
@@ -679,7 +679,7 @@ export function toCanvas(
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
   if (drawColorbar) {
-    const scheme    = getValueColorScheme(view.valueColorScheme);
+    const forValue  = resolveValueColorFn(view.valueColorScheme, view.reverseValueScheme);
     const labelGap  = colorbarLabelGap;
     // Bar occupies ~75% of the usable height below the top clearance, centred in that area.
     const cbUsableH = drawH - topClearance;
@@ -721,7 +721,7 @@ export function toCanvas(
       const t  = 1 - i / (COLORBAR_STEPS - 1);
       const sy = cbY + (i / COLORBAR_STEPS) * cbH;
       const sh = cbH / COLORBAR_STEPS + 1;
-      ctx.fillStyle = scheme.forValue(t);
+      ctx.fillStyle = forValue(t);
       ctx.fillRect(cbX, sy, colorbarWidth, sh);
     }
 

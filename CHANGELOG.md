@@ -22,6 +22,62 @@ under `### Breaking`.
 
 ---
 
+## [0.29.0] — 2026-09-12
+
+### Breaking
+
+- **The default value gradient is now Viridis, and every perceptual gradient reads low = dark,
+  high = light.** The blue–cyan–yellow–red "thermal" ramp is removed. Like every rainbow ramp its
+  lightness is not monotonic — cyan and yellow both sit near peak while blue and red are much
+  darker — so two different readings land at the same apparent intensity, and the fast hue turns
+  at cyan and yellow draw contour lines that are not in the data. On a smooth parametric map that
+  shows up as a bright ring around the wafer centre that no process step put there. Users reported
+  exactly this: being unable to judge the difference between two colours that look equally
+  "intense". `'jet'` keeps the rainbow family available for anyone who wants it, already labelled
+  as such.
+- **`viridis`, `cividis`, `plasma`, `inferno` and `greyscale` were registered reversed, and are
+  no longer.** Each was `forValue: t => ramp(1 - t)`, putting the *bright* end of the ramp at the
+  *low* end of the data, while `default`, `traffic` and `jet` ran the other way. Switching gradient
+  therefore inverted the map. On a stacked map the effect was backwards from what the mode is for:
+  the healthy bulk of the wafer (fail count 0) rendered as a glowing yellow field and the edge
+  ring, scratch or cluster you were looking for became dark specks on it. All five now match their
+  matplotlib/seaborn definitions. `tests/colorSchemes.test.mjs` measures L\* across every
+  perceptual built-in and fails if a reversal reappears.
+
+  This also corrects the record on the change that made thermal the default in the first place
+  (0.14.x, "the reversed-Viridis ramp rendered high values dark purple and low values yellow — not
+  intuitive"). The diagnosis was right and the remedy was aimed at the wrong thing: the defect was
+  the `1 - t`, not Viridis, and the `1 - t` survived the change that was meant to fix it.
+- **The standalone `'viridis'` gradient name is gone** — Viridis *is* `'default'`, labelled
+  **Default (Viridis)**. Two menu rows drawing identical maps is the same defect that removed the
+  old standalone "Thermal" row. `getValueColorScheme('viridis')` falls back to `'default'`, so a
+  persisted `'viridis'` preference still renders Viridis; it no longer appears in
+  `listValueColorSchemes()`.
+- **`View.reverseValueScheme` is a new required field on `View`.** Code that builds a `View`
+  literal must supply it; code that reads one is unaffected.
+
+### Added
+
+- **`reverseValueScheme` (`ViewOptions`, `WaferPreferences`) — flips whichever gradient is
+  selected**, offered in the Colour scheme menu as **Reverse gradient**. One flag rather than a
+  reversed twin of every ramp: it doubles no menu, and a gradient a host registered itself gets
+  the behaviour for free. It is also what makes the direction rule above exception-free —
+  greyscale ships low = dark like everything else, and the print habit of "more ink means more" is
+  one tick box rather than a documented special case.
+- **`resolveValueColorFn(name, reversed)` (`renderer`) — the single read-path for a value
+  gradient.** Die fills, the colorbar and the mapless summary's histogram bars each looked the
+  gradient up independently; a flag applied at some of them and not others would show one reading
+  in two different colours on one screen, with the colorbar — the thing the map is read against —
+  the likeliest to be missed. All three now resolve through this. Any host colouring by value
+  should too, passing `View.valueColorScheme` and `View.reverseValueScheme` together.
+- **`'mako'` value gradient** (seaborn), sampled at nine even stops from
+  `sns.color_palette('mako', as_cmap=True)`. The closest thing to Viridis in lightness span, with
+  more separation at the top end. Its sibling `crest` was measured alongside it and deliberately
+  not added: at L\* ~31 → ~78 against Viridis's ~10 → ~93 it has too little span for a dense die
+  grid — on a stacked map a scratch all but disappeared into the surrounding green. Seaborn pitches
+  crest at line plots, where mako's dark end gets lost; that is a different job from colouring
+  thousands of adjacent dies.
+
 ## [0.28.0] — 2026-09-11
 
 ### Breaking

@@ -668,7 +668,8 @@ renderWaferMap(container, result, {
   viewOptions: {
     plotMode:                'hardBin',
     binColorScheme:          'default',     // bin maps: 'default' | 'accessible' (colour-blind safe)
-    valueColorScheme:        'default',     // value maps: 'default' | 'viridis' | 'cividis' | 'plasma' | …
+    valueColorScheme:        'default',     // value maps: 'default' (Viridis) | 'cividis' | 'plasma' | 'mako' | …
+    reverseValueScheme:      false,         // flip the gradient end-for-end
     showRingBoundaries:      true,
     showQuadrantBoundaries:  false,
     showDieLabels:           false,         // die index labels
@@ -1881,15 +1882,25 @@ wmWorker.terminate();
 ## Custom colour schemes
 
 Bin maps and value maps have **separate** colour schemes, each its own view option and its own
-registry, so a user can keep Viridis for values and the colour-blind-safe palette for bins
+registry, so a user can keep Mako for values and the colour-blind-safe palette for bins
 without either resetting the other on a mode switch:
 
 - **`binColorScheme`** — `'default'` or `'accessible'` (colour-blind safe). Used by Hard Bin and
   Soft Bin maps.
-- **`valueColorScheme`** — `'default'` (blue→cyan→yellow→red), `'viridis'`, `'cividis'`
-  (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'traffic'` (green→yellow→red,
-  low=good) and `'jet'`. Used by Test Value maps and all three stacked modes — a stacked-bin map
-  is a value map, showing how often a bin occurs at each position.
+- **`valueColorScheme`** — `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`,
+  `'plasma'`, `'inferno'`, `'mako'`, `'traffic'` (green→yellow→red, low=good) and
+  `'jet'` (the MATLAB rainbow). Used by Test Value maps and all three stacked modes — a stacked-bin
+  map is a value map, showing how often a bin occurs at each position.
+- **`reverseValueScheme`** — flips whichever gradient is selected, offered in the menu as
+  **Reverse gradient**. One flag rather than a reversed twin of every ramp, so it works on a
+  gradient you registered yourself too.
+
+Every built-in but `'traffic'` and `'jet'` reads **low = dark, high = light** — the direction
+matplotlib and seaborn define these ramps with. It is worth knowing why, because it is easy to
+assume the opposite is friendlier: on a stacked map the healthy bulk of the wafer (fail count 0)
+sits back as dark ground and an edge ring or a scratch lights up. Reversed, the defects become
+dark specks on a glowing field, which is the harder read. Set `reverseValueScheme` when your
+parameter genuinely has its notable end at the bottom.
 
 ### How bin colours are assigned
 

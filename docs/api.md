@@ -962,7 +962,7 @@ renderWaferMap(container, result, {
   viewOptions: {
     plotMode:      'value',
     activeTest:    1060,       // testNumber to show (must match a testDef.testNumber)
-    valueColorScheme: 'viridis',
+    valueColorScheme: 'mako',
     showDieLabels: true,
   },
 });
@@ -983,7 +983,8 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 |---|---|---|---|
 | `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` \| `'metadata'` |
 | `binColorScheme` | `string` | `'default'` | Bin palette for `hardBin`/`softBin`. Built-in: `'default'`, `'accessible'` (colour-blind safe). Custom palettes via `registerBinColorScheme()` (§11.19). Pass bins take the palette's pass (green) colours and fail bins its fail colours, most populous first — see `resolveBinColors`. |
-| `valueColorScheme` | `string` | `'default'` | Value gradient for `value` and the stacked modes (a stacked-bin map is a value map: each position's occurrence rate). Built-in: `'default'` (blue–cyan–yellow–red), `'viridis'`, `'cividis'` (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'traffic'`, `'jet'`. Custom gradients via `registerValueColorScheme()`. Separate from `binColorScheme`, so switching plot mode never resets either. Neither applies in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.11). |
+| `valueColorScheme` | `string` | `'default'` | Value gradient for `value` and the stacked modes (a stacked-bin map is a value map: each position's occurrence rate). Built-in: `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'mako'`, `'traffic'`, `'jet'`. Every one but `'traffic'` and `'jet'` reads low = dark, high = light. Custom gradients via `registerValueColorScheme()`. Separate from `binColorScheme`, so switching plot mode never resets either. Neither applies in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.11). |
+| `reverseValueScheme` | `boolean` | `false` | Flip the value gradient so high values take its low-end colour. The Colour scheme menu offers it as **Reverse gradient**. Use it for a parameter whose *low* end is the notable one, or for monochrome print where more ink should mean more. Applies to the dies, the colorbar and the mapless summary together — resolve any gradient of your own through `resolveValueColorFn(name, reversed)` so it cannot disagree with them. |
 | `useDefinedBinColors` | `boolean` | `true` | Honour `BinDef.color` where a bin definition supplies one. The Palette menu offers it as **Use colours from bin definitions**, only when some definition carries a colour. |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.11) |
@@ -3703,6 +3704,7 @@ interface ViewOptions {
   dieGap?:                 number    // visual kerf gap in mm, default 1
   binColorScheme?:         string    // bin palette for hardBin/softBin, default 'default' — §11.19
   valueColorScheme?:       string    // value gradient for value/stacked modes, default 'default'
+  reverseValueScheme?:     boolean   // flip that gradient end-for-end, default false
   useDefinedBinColors?:    boolean   // honour BinDef.color, default true
   binColors?:              BinColors // colours resolved over a wider population (every wafer in a gallery); ignored unless it covers every bin here
   highlightBin?:           number
@@ -3858,7 +3860,20 @@ listBinColorSchemes(): Array<{ name: string; label: string }>
 registerValueColorScheme(name: string, scheme: ValueColorScheme): void
 getValueColorScheme(name?: string): ValueColorScheme                    // falls back to 'default'
 listValueColorSchemes(): Array<{ name: string; label: string }>
+resolveValueColorFn(name?: string, reversed?: boolean): (t: number) => string
 ```
+
+**Built-in gradients all read low = dark, high = light** — the direction matplotlib
+and seaborn define them with, and the one that puts the rare end of a map at the
+bright end: on a stacked map the healthy bulk of the wafer sits back as dark
+ground while an edge ring or scratch lights up. `'traffic'` and `'jet'` are the
+exceptions, and are not lightness ramps at all.
+
+**Use `resolveValueColorFn`, not `getValueColorScheme().forValue`, anywhere you
+colour by value.** It is the one place `reverseValueScheme` is applied, so a
+legend, chart or export built on it can never show a reading as a different
+colour than the map does. Pass `View.valueColorScheme` and
+`View.reverseValueScheme` together — they always travel as a pair.
 
 ```ts
 // BinColorScheme

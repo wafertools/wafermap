@@ -648,9 +648,9 @@
 
     if (isValues) {
       markerColor  = results.map(r => r.testValues[1050]);
-      // 'Jet' (blue→cyan→yellow→red) matches wmap's default thermal value gradient,
-      // so the two panels compare like-for-like — the differences are features, not colour.
-      colorscale   = 'Jet';
+      // Plotly's 'Viridis' matches wmap's default value gradient, so the two
+      // panels compare like-for-like — the differences are features, not colour.
+      colorscale   = 'Viridis';
       showscale    = true;
       colorbarTitle = 'testA';
     } else {

@@ -77,7 +77,7 @@ test('buildMaplessSummary — value mode bars are coloured by value through the 
     die({ testValues: { 1001: 10.0 } }),
   ];
   const testDefs = [{ testNumber: 1001, name: 'Vdd' }];
-  const el = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'viridis' });
+  const el = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'mako' });
   const els = bars(el);
   const colors = new Set(els.map((b) => b.style.background));
   // At least two distinct colours across the bucket range — proves bars are
@@ -89,7 +89,7 @@ test('buildMaplessSummary — value mode bars are coloured by value through the 
   const buckets = buildTestHistogramData([{ dies }], 1001, 12);
   const spanLow = buckets[0].rangeLow, spanHigh = buckets[buckets.length - 1].rangeHigh;
   const midT = ((buckets[0].rangeLow + buckets[0].rangeHigh) / 2 - spanLow) / (spanHigh - spanLow);
-  const scheme = getValueColorScheme('viridis');
+  const scheme = getValueColorScheme('mako');
   // Round-trip the expected colour through a scratch element's style too —
   // jsdom's CSSOM normalizes "rgb(a,b,c)" to "rgb(a, b, c)" on read, so
   // comparing a raw forValue() string against els[0].style.background
@@ -108,8 +108,8 @@ test('buildMaplessSummary — value mode bar colours change with logScale (match
   ];
   const testDefs = [{ testNumber: 1001, name: 'Vdd' }];
   const colorsOf = (el) => bars(el).map((b) => b.style.background);
-  const linear = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'viridis', logScale: false });
-  const logged = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'viridis', logScale: true });
+  const linear = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'mako', logScale: false });
+  const logged = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'mako', logScale: true });
   assert.notDeepEqual(colorsOf(linear), colorsOf(logged), 'log-scale toggle should change the colour mapping');
 });
 
@@ -121,8 +121,8 @@ test('buildMaplessSummary — value mode bar colours change with colorbarRangeMo
   ];
   const testDefs = [{ testNumber: 1001, name: 'Vdd', limitLow: 0, limitHigh: 100 }];
   const colorsOf = (el) => bars(el).map((b) => b.style.background);
-  const specRange = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'viridis', colorbarRangeMode: 'spec' });
-  const dataRange = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'viridis', colorbarRangeMode: 'data' });
+  const specRange = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'mako', colorbarRangeMode: 'spec' });
+  const dataRange = buildMaplessSummary(dies, testDefs, { plotMode: 'value', activeTest: 1001, valueColorScheme: 'mako', colorbarRangeMode: 'data' });
   assert.notDeepEqual(colorsOf(specRange), colorsOf(dataRange), 'colorbar range mode should change the colour mapping when limits exist');
 });
 
@@ -159,4 +159,21 @@ test('buildMaplessSummary — hardBin mode with no bin data on any die falls bac
   const dies = [die({})];
   const el = buildMaplessSummary(dies, undefined, { plotMode: 'hardBin' });
   assert.match(el.textContent, /No summary available/);
+});
+
+test('mini histogram — reverseValueScheme flips the bars, matching the map colorbar', () => {
+  // The bars resolve their gradient independently of the map, so a reverse flag
+  // that reached the dies but not here would put the same reading in two
+  // different colours on one screen — the whole reason resolveValueColorFn exists.
+  const dies = [
+    die({ testValues: { 1001: 0.0 } }),
+    die({ testValues: { 1001: 10.0 } }),
+  ];
+  const testDefs = [{ testNumber: 1001, name: 'Vdd' }];
+  const base = { plotMode: 'value', activeTest: 1001, valueColorScheme: 'mako' };
+  const plain = bars(buildMaplessSummary(dies, testDefs, base)).map(b => b.style.background);
+  const flipped = bars(buildMaplessSummary(dies, testDefs, { ...base, reverseValueScheme: true }))
+    .map(b => b.style.background);
+  assert.equal(plain.length, flipped.length);
+  assert.deepEqual(flipped, [...plain].reverse());
 });

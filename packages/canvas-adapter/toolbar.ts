@@ -2758,6 +2758,7 @@ export interface PaletteState {
   plotMode: PlotMode;
   binColorScheme?: string;
   valueColorScheme?: string;
+  reverseValueScheme?: boolean;
   useDefinedBinColors?: boolean;
 }
 
@@ -2780,7 +2781,10 @@ export function makePaletteBtn(
   helpers: ToolbarHelpers,
   getState: () => PaletteState,
   hasDefinedBinColors: () => boolean,
-  apply: (partial: { binColorScheme?: string; valueColorScheme?: string; useDefinedBinColors?: boolean }) => void,
+  apply: (partial: {
+    binColorScheme?: string; valueColorScheme?: string;
+    reverseValueScheme?: boolean; useDefinedBinColors?: boolean;
+  }) => void,
 ): { btn: HTMLButtonElement; sync: () => void } {
   const btn = helpers.makeCheckMenuBtn(
     'palette', 'Colour scheme',
@@ -2807,6 +2811,14 @@ export function makePaletteBtn(
         for (const s of listValueColorSchemes()) {
           rows.push({ label: s.label, active: current === s.name, onClick: () => apply({ valueColorScheme: s.name }) });
         }
+        // One flag rather than a reversed twin of every gradient: it doubles no
+        // list, and a host's own registered gradient gets it without asking.
+        const reversed = state.reverseValueScheme ?? false;
+        rows.push({ section: 'Direction' });
+        rows.push({
+          label: 'Reverse gradient',
+          active: reversed,
+          onClick: () => apply({ reverseValueScheme: !reversed }) });
       }
       return rows;
     },

@@ -10,7 +10,7 @@ import {
   affinePoint, affineVector, affineSwapsAxes,
 } from '../core/transforms.js';
 import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from './colorMap.js';
-import { getValueColorScheme } from './colorSchemes.js';
+import { resolveValueColorFn } from './colorSchemes.js';
 import { resolveBinColors, binColorsCover, type BinColors } from './binColors.js';
 import { NO_DATA_FILL } from './colorMap.js';
 import { diePassStatus } from '../core/dies.js';
@@ -173,6 +173,13 @@ export interface View {
   /** Value gradient used for value and stacked modes, as registered with `registerValueColorScheme`. */
   valueColorScheme: string;
   /**
+   * Whether that gradient was flipped (high value takes the gradient's low-end
+   * colour). Any surface colouring by value must pass this to
+   * `resolveValueColorFn` alongside {@link valueColorScheme}, or it will
+   * disagree with the die fills.
+   */
+  reverseValueScheme: boolean;
+  /**
    * Every bin's resolved colour, both bin types — the single source for bin
    * colour. Die fills are built from it, and legends, panels and charts must
    * read it rather than re-deriving a colour, or they can disagree with the map.
@@ -303,6 +310,14 @@ export interface ViewOptions {
   binColorScheme?: string;
   /** Value gradient for `value` and the stacked modes — any name registered via `registerValueColorScheme()`. Default `'default'`. */
   valueColorScheme?: string;
+  /**
+   * Flip the value gradient so the high end takes its low-end colour. Default
+   * false: every built-in reads low = dark, high = light. Set this for a
+   * parameter where low is the notable end, or for monochrome print output
+   * where more ink should mean more. Applies to the dies, the colorbar and the
+   * mapless summary together.
+   */
+  reverseValueScheme?: boolean;
   /** Honour `BinDef.color` where a bin definition supplies one. Default true. See `resolveBinColors`. */
   useDefinedBinColors?: boolean;
   /**
@@ -1354,6 +1369,7 @@ export function buildView(
     dieGap = 1,
     binColorScheme = 'default',
     valueColorScheme = 'default',
+    reverseValueScheme = false,
     useDefinedBinColors = true,
     binColors: binColorsOpt,
     passBins = [1],
@@ -1405,7 +1421,7 @@ export function buildView(
   const activeBinColors = plotMode === 'softBin' ? binColors.soft : binColors.hard;
 
   const colorFns: ColorFns = {
-    forValue: buildColorLut(getValueColorScheme(valueColorScheme).forValue),
+    forValue: buildColorLut(resolveValueColorFn(valueColorScheme, reverseValueScheme)),
     // Every bin on these dies has an entry (resolved from them, or checked by
     // binColorsCover), so the fallback is unreachable for a real bin.
     forBin:   (bin) => activeBinColors.get(bin) ?? NO_DATA_FILL,
@@ -1715,6 +1731,7 @@ export function buildView(
     plotMode,
     binColorScheme,
     valueColorScheme,
+    reverseValueScheme,
     binColors,
     metadata: wafer.metadata ?? null,
     dies,

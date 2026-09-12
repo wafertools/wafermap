@@ -20,7 +20,7 @@ import type { PlotMode } from '../renderer/buildView.js';
 import { resolveTestNumber, findTestDef } from '../renderer/buildView.js';
 import { buildBinSection } from './summaryPanel.js';
 import { buildTestHistogramData, type HistogramBucket } from '../stats/histogram.js';
-import { getValueColorScheme } from '../renderer/colorSchemes.js';
+import { resolveValueColorFn } from '../renderer/colorSchemes.js';
 import type { BinColors } from '../renderer/binColors.js';
 import { TRACKING, SPACE, RADIUS, FONT, CLR, wireTooltip } from './toolbar.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
@@ -34,6 +34,9 @@ export interface MaplessSummaryOptions {
   binColors?: BinColors;
   /** The map's value gradient name, so histogram bars match its colorbar. */
   valueColorScheme?: string;
+  /** The map's `View.reverseValueScheme` — must travel with the name, or the
+   *  bars read opposite to the colorbar they are meant to match. */
+  reverseValueScheme?: boolean;
   /** Effective log-scale setting for the active test — same resolution the
    *  map itself uses (explicit viewOpts.logScale, falling back to the
    *  TestDef's own default). */
@@ -106,7 +109,7 @@ function resolveValueNormalize(
 
 function buildMiniHistogram(
   buckets: HistogramBucket[], testDef: TestDef | undefined, testNumber: number,
-  valueColorScheme: string | undefined, rangeDies: Die[],
+  valueColorScheme: string | undefined, reverseValueScheme: boolean | undefined, rangeDies: Die[],
   colorbarRangeMode: 'data' | 'spec', logScale: boolean,
 ): HTMLDivElement {
   // flex:1;minHeight:0 — lets this stretch to fill whatever height its
@@ -131,7 +134,7 @@ function buildMiniHistogram(
   // value-mode colorbar uses — so a bar and the map (or the map's colour
   // legend) agree on what a given reading looks like regardless of the
   // log-scale/colorbar-range toggles currently active.
-  const scheme = getValueColorScheme(valueColorScheme);
+  const forValue = resolveValueColorFn(valueColorScheme, reverseValueScheme);
   const normalize = resolveValueNormalize(rangeDies, testNumber, testDef, colorbarRangeMode, logScale);
   const maxCount = Math.max(1, ...buckets.map(b => b.count));
   const barsRow = el('div', {
@@ -147,7 +150,7 @@ function buildMiniHistogram(
     // has none — standard histograms don't do that, and neither should this.
     const bar = el('div', {
       flex: '1', minWidth: '2px',
-      background: scheme.forValue(normalize((b.rangeLow + b.rangeHigh) / 2)),
+      background: forValue(normalize((b.rangeLow + b.rangeHigh) / 2)),
       height: `${(b.count / maxCount) * 100}%`,
       borderRadius: '1px 1px 0 0',
     });
@@ -223,7 +226,7 @@ export function buildMaplessSummary(
   options: MaplessSummaryOptions,
 ): HTMLElement {
   const {
-    plotMode, activeTest, hbinDefs, sbinDefs, binColors, valueColorScheme,
+    plotMode, activeTest, hbinDefs, sbinDefs, binColors, valueColorScheme, reverseValueScheme,
     logScale = false, colorbarRangeMode = 'spec', valueRangeDies,
   } = options;
 
@@ -238,7 +241,8 @@ export function buildMaplessSummary(
     const buckets = buildTestHistogramData([{ dies }], testNumber, 12, testDef?.limitLow, testDef?.limitHigh);
     if (buckets.length) {
       return buildMiniHistogram(
-        buckets, testDef, testNumber, valueColorScheme, valueRangeDies ?? dies, colorbarRangeMode, logScale,
+        buckets, testDef, testNumber, valueColorScheme, reverseValueScheme,
+        valueRangeDies ?? dies, colorbarRangeMode, logScale,
       );
     }
   }

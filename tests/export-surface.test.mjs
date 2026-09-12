@@ -34,6 +34,7 @@ const SNAPSHOTS = {
     'listBinColorSchemes', 'listValueColorSchemes',
     'mapDataToDies', 'mergeTestDefs', 'metadataCategoricalValue', 'metadataDisplayValue',
     'openHtmlReport', 'registerBinColorScheme', 'registerValueColorScheme', 'resolveBinColors',
+    'resolveValueColorFn',
     'resolveMetadataColumns', 'discoverDieMetadataKeys', 'setReportOpener',
     'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
     'STANDARD_WAFER_DIAMETERS_MM', 'transformDies', 'valueToGreyscale', 'valueToViridis',
@@ -57,7 +58,7 @@ const SNAPSHOTS = {
     'getBinColorScheme', 'getValueColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
     'isParametricTest',
     'listBinColorSchemes', 'listValueColorSchemes', 'registerBinColorScheme', 'registerValueColorScheme',
-    'resolveBinColors', 'valueToGreyscale', 'valueToViridis',
+    'resolveBinColors', 'resolveValueColorFn', 'valueToGreyscale', 'valueToViridis',
     'STANDARD_WAFER_DIAMETERS_MM',
   ],
   './stats': [

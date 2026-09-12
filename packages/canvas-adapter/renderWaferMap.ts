@@ -47,6 +47,13 @@ export interface WaferPreferences {
    */
   valueColorScheme?:       string;
   /**
+   * Flip the value gradient so high values take its low-end colour. Default
+   * false — every built-in gradient reads low = dark, high = light. Offered in
+   * the Colour scheme menu as "Reverse gradient"; applies to the dies, the
+   * colorbar and the mapless summary together.
+   */
+  reverseValueScheme?:     boolean;
+  /**
    * Honour `BinDef.color` where a bin definition supplies one. Default true.
    * The toolbar offers the toggle only when some definition carries a colour.
    */
@@ -482,7 +489,7 @@ export interface WaferMapController {
 
 // Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
-  'binColorScheme', 'valueColorScheme', 'useDefinedBinColors', 'rotation', 'flipX', 'flipY',
+  'binColorScheme', 'valueColorScheme', 'reverseValueScheme', 'useDefinedBinColors', 'rotation', 'flipX', 'flipY',
   'showDieLabels', 'showPartialDies', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
   'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies',
 ]);
@@ -490,7 +497,7 @@ const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
 /** Options that change die colours without changing what the view contains —
  *  any of them means every colour-bearing surface (panels, footer) redraws. */
 export const COLOR_KEYS: readonly (keyof WaferViewOptions)[] = [
-  'binColorScheme', 'valueColorScheme', 'useDefinedBinColors', 'binColors',
+  'binColorScheme', 'valueColorScheme', 'reverseValueScheme', 'useDefinedBinColors', 'binColors',
 ];
 
 export function classifyChanged(keys: (keyof WaferViewOptions)[]): 'preference' | 'state' | 'mixed' {
@@ -713,6 +720,7 @@ export function renderWaferMap(
         sbinDefs,
         binColors: currentView.binColors,
         valueColorScheme: viewOpts.valueColorScheme,
+        reverseValueScheme: viewOpts.reverseValueScheme,
         logScale: effectiveLogScale,
         colorbarRangeMode: viewOpts.colorbarRangeMode,
         // Full population (positioned + unpositioned), not just
@@ -1354,6 +1362,7 @@ export function renderWaferMap(
       plotMode:               so.plotMode,
       binColorScheme:         so.binColorScheme,
       valueColorScheme:       so.valueColorScheme,
+      reverseValueScheme:     so.reverseValueScheme,
       useDefinedBinColors:    so.useDefinedBinColors,
       // Resolved over EVERY die, positioned or not — the draw list below gets
       // only positioned dies, but the mapless footer and the Insights charts

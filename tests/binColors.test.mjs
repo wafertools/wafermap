@@ -107,8 +107,9 @@ test('bin palettes and value gradients are separate registries', () => {
   const values = listValueColorSchemes().map((s) => s.name);
   assert.deepEqual(bins.slice(0, 2), ['default', 'accessible']);
   assert.ok(!bins.includes('viridis'), 'a gradient is not a bin palette');
-  assert.ok(values.includes('cividis') && values.includes('viridis'));
+  assert.ok(values.includes('cividis') && values.includes('mako'));
   assert.ok(!values.includes('thermal'), 'thermal duplicated default exactly and was removed');
+  assert.ok(!values.includes('viridis'), 'viridis IS the default — a separate row would draw the same map twice');
 });
 
 test('registerBinColorScheme — rejects an empty pass or fail list', () => {
