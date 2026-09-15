@@ -363,13 +363,7 @@ export interface LotStatsSummary {
 }
 
 export interface AnalyzeWaferMapOptions {
-  /**
-   * Should mirror the ring count used by the renderer for consistent semantics.
-   * Defaults to 4, which matches the current render default.
-   */
-  ringCount?: number;
-  passBins?: number[];
-  /**
+  /*
    * REMOVED in 0.27.0 — `significanceLevel`, `minimumEffectSize` and
    * `minimumRelativeEffect` are now internal constants, not options.
    *
@@ -386,12 +380,12 @@ export interface AnalyzeWaferMapOptions {
    * *why* a pattern did or did not produce a finding — which is what callers
    * actually wanted. Values passed by untyped (plain-JS) callers are now
    * validated and clamped rather than honoured; see `resolveOptions`.
+   *
+   * REMOVED in 0.30.0 — the per-analysis switches (enableYieldAnalysis, enableHardBinAnalysis, enableSoftBinAnalysis, enableReticlePositionAnalysis, enableTestSiteAnalysis, enableClusterAnalysis, enableAngularAnalysis, enablePatternClassification).
+   * Each was cheap and on by default; every analysis now runs, and a caller wanting
+   * fewer findings filters them (`filterFindings`). The two switches that cost real
+   * time stay: `enableTestValueAnalysis` and `computePerTestStats`.
    */
-  includePartial?: boolean;
-  includeEdgeExcluded?: boolean;
-  enableYieldAnalysis?: boolean;
-  enableHardBinAnalysis?: boolean;
-  enableSoftBinAnalysis?: boolean;
   /**
    * Full parametric **spatial significance** analysis: Welch comparisons of each
    * test's values between every region (ring/quadrant/reticle/site/sector) and
@@ -414,22 +408,8 @@ export interface AnalyzeWaferMapOptions {
    * Off by default. Implied by `enableTestValueAnalysis`.
    */
   computePerTestStats?: boolean;
-  enableReticlePositionAnalysis?: boolean;
-  /**
-   * Analyse yield and bin distributions by test site (`siteNum`).
-   * Enabled automatically when the wafer contains meaningful site duplication
-   * (at least 2 distinct site numbers each appearing on 3 or more dies).
-   * Set to `false` to suppress, or `true` to force-enable regardless of the guard.
-   */
-  enableTestSiteAnalysis?: boolean;
-  /** Detect contiguous failure clusters and edge arc damage. Default true. */
-  enableClusterAnalysis?: boolean;
-  /** Angular sector analysis (finer-grained than quadrants). Default true. */
-  enableAngularAnalysis?: boolean;
   /** Number of angular sectors for sector analysis. Must be 4, 8, 16, or 32. Default 8. */
   sectorCount?: number;
-  /** Classify the spatial failure pattern (center, edge-ring, scratch, etc.). Default true. */
-  enablePatternClassification?: boolean;
   /**
    * Restrict test value analysis to a specific subset of test numbers.
    * When omitted and more than 250 tests are present in the data, test value

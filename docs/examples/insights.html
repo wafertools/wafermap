@@ -152,8 +152,6 @@
     // Correlation views read; computePerTestStats is the cheap quartile scan,
     // without the expensive regional Welch pass (see performance.md).
     const lotStatsSummary = analyzeWaferLot(items, {
-      ringCount: 4,
-      passBins:  PASS_BINS,
       testDefs,
       computePerTestStats: true,
     });

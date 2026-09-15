@@ -142,7 +142,7 @@ appears in the findings panel. No configuration is required.
 import { buildWaferMap, analyzeWaferMap } from '@wafertools/wafermap';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig });
-const summary = analyzeWaferMap(result, { passBins: [1] });
+const summary = analyzeWaferMap(result);
 
 const patternFindings = summary.findings.filter(
   f => f.comparison.family === 'spatial-pattern'
@@ -155,13 +155,14 @@ const patternFindings = summary.findings.filter(
 To disable it:
 
 ```js
-const summary = analyzeWaferMap(result, {
-  passBins: [1],
-  enablePatternClassification: false,
-});
+const summary = analyzeWaferMap(result);
+const withoutPattern = summary.findings.filter(f => f.comparison.family !== 'spatial-pattern');
 ```
 
 ## Using the geometry features directly
+
+> **Deprecated — removed in 0.31.0:** calling `classifyPattern` directly. `analyzeWaferMap` reports the
+> classified pattern as a finding (`comparison.family === 'spatial-pattern'`).
 
 The geometry features computed for each wafer are exposed in the
 `PatternClassification` return value from `classifyPattern`. You can call

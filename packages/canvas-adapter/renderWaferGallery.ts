@@ -1,17 +1,20 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
 import { metadataCategoricalValue } from '../core/metadata.js';
-import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
+import { resolveBinColorsByWafer, binColorWarning, mixedPassBinsWarning, type BinColors } from '../renderer/binColors.js';
+import { itemPassBins } from '../core/passBins.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
 import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
-import type { Die } from '../core/dies.js';
+import { waferDisplayLabel } from '../core/waferLabel.js';
+import { sortBinsForDisplay } from '../stats/binPareto.js';
+import { diePassStatus, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
-import { renderWaferMap } from './renderWaferMap.js';
-import type { WaferViewOptions, WaferMapController } from './renderWaferMap.js';
+import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
+import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS } from './renderWaferMap.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
@@ -91,8 +94,6 @@ export interface GalleryOptions {
     changed:  (keyof WaferViewOptions)[],
     category: 'preference' | 'state' | 'mixed',
   ) => void;
-  /** Legend position for bin modes. Default 'default'. */
-  legendPosition?:       'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /**
    * Draw a legend on every card as well as the lot-level one. Default false.
    *
@@ -106,8 +107,6 @@ export interface GalleryOptions {
    * disabled with that reason rather than appearing to do nothing.
    */
   perCardLegend?:        boolean;
-  /** Padding inside each card canvas in CSS pixels. Default 6. */
-  cardPadding?:          number;
   /** Filename stem for the composite gallery PNG. Default 'wafer-gallery'. */
   downloadFilename?:     string;
   /**
@@ -127,18 +126,6 @@ export interface GalleryOptions {
    * the default browser download behaviour is unchanged.
    */
   onSaveText?:           SaveTextHandler;
-  /**
-   * Format to use for unitless values outside the normal display range [0.1, 9999].
-   * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
-   * `'si'`: SI prefix with no unit suffix (e.g. `12 µ`).
-   * Values with a unit always use SI prefix regardless of this setting.
-   */
-  fallbackFormat?:         'si' | 'engineering';
-  /**
-   * Show the plot mode selector in the gallery control bar. Default true.
-   * Set to false when the host application manages mode switching itself.
-   */
-  showPlotModeSelector?:   boolean;
   /** Precomputed lot-level stats summary. Enables the summary panel toggle button in the control bar. */
   lotStatsSummary?:        LotStatsSummary;
   /**
@@ -170,27 +157,11 @@ export interface GalleryOptions {
    */
   dieList?:                DieListDisplayOptions;
   /**
-   * Bin numbers treated as pass for yield calculation in the summary panel.
-   * Defaults to `[1]`. Must match the `passBins` passed to `analyzeWaferLot` / `buildWaferMap`
-   * to ensure the summary panel yield label is consistent with the rest of the display.
-   */
-  passBins?:               number[];
-  /**
    * Fix the number of columns in the gallery grid. When set, overrides the
    * auto-computed minimum card width and the toolbar columns control.
    * Omit (default) to let the gallery auto-size cards based on die pitch.
    */
   columns?:                number;
-  /**
-   * Cap each gallery card's rendered width and height at this many CSS pixels.
-   * Cards pack from the left rather than stretching to fill the grid width.
-   *
-   * Omit it and the cap is derived from die density: 480px for an ordinary
-   * wafer, widening (to at most 720px) for high-DPW wafers that need the room
-   * to keep dies readable. Set it to take hard control instead — an explicit
-   * value is never widened, so you own the readability trade-off at high DPW.
-   */
-  maxSize?:                number;
   /**
    * Show a help button in the gallery control bar that opens the built-in end-user guide in a modal.
    * Default false. Enable in applications that want to surface the guide without linking externally.
@@ -237,8 +208,6 @@ export interface GalleryController {
   setOptions(opts: Partial<WaferViewOptions>): void;
   /** Return the current shared scene options. */
   getOptions(): WaferViewOptions;
-  /** Update the fallback format for unitless values across all cards. */
-  setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the lot-level stats summary used by the built-in Summary panel. */
   setLotStatsSummary(summary: LotStatsSummary | undefined): void;
   /**
@@ -246,11 +215,6 @@ export interface GalleryController {
    * `undefined` to clear it once the offered analysis has been run.
    */
   setFindingsNotice(notice: FindingsNotice | undefined): void;
-  /**
-   * Set the number of columns in the gallery grid. Pass `undefined` to restore
-   * the auto-computed layout based on die pitch.
-   */
-  setColumns(columns: number | undefined): void;
   /**
    * Opens the built-in end-user guide window — the same action the help
    * toolbar button performs, but callable directly. Works regardless of
@@ -272,11 +236,6 @@ function deduplicateDefs(defs: BinDef[]): BinDef[] {
   return defs.filter(d => seen.has(d.bin) ? false : (seen.add(d.bin), true));
 }
 
-/**
- * One clickable swatch+label row in the gallery's DOM legend strip — shared by the bin
- * (hardBin/softBin) and metadata legend branches in `rebuildLegend()` so the two can never
- * drift apart in markup/styling.
- */
 /**
  * A single stacked proportional bar — the population split at a glance.
  *
@@ -317,7 +276,14 @@ function buildShareBar(
   }
   const bar = doc.createElement('div');
   Object.assign(bar.style, {
-    display: 'flex', width: '100%', height: '8px', borderRadius: RADIUS.control,
+    // A 1px gap marks where each segment ends. Segments sit in die-count order,
+    // not palette order, so any two palette colours can end up side by side, and
+    // at 8px tall the dark ones (black, indigo #332288, teal #225555, brown
+    // #663333) run together without a divider, as do the pass greens. The
+    // gap is transparent rather than a token-coloured border, so it is always
+    // the strip's own ground in either theme. It adds to the 2px segment floor
+    // below rather than eating into it, so a sliver bin stays visible.
+    display: 'flex', columnGap: '1px', width: '100%', height: '8px', borderRadius: RADIUS.control,
     overflow: 'hidden', border: `1px solid ${CLR.menuBorder}`, boxSizing: 'border-box',
     marginTop: SPACE.xs, flexShrink: '0' } as Partial<CSSStyleDeclaration>);
   bar.setAttribute('role', 'img');
@@ -375,21 +341,34 @@ function fmtLegendPercent(pct: number): string {
 function countLegendPopulation<K>(
   items: readonly WaferMapDisplayItem[],
   keyOf: (die: Die) => K | undefined,
-): { counts: Map<K, number>; total: number } {
+  /**
+   * When given, also counts the dies in this population that pass, each judged
+   * by its OWN item's pass bins (`diePassStatus`, the rule yield uses) — so the
+   * strip's yield shares the swatches' exact denominator.
+   */
+  passBinsOf?: (item: WaferMapDisplayItem) => readonly number[],
+): { counts: Map<K, number>; total: number; pass: number } {
   const counts = new Map<K, number>();
-  let total = 0;
+  let total = 0, pass = 0;
   for (const item of items) {
+    const passSet = passBinsOf ? new Set(passBinsOf(item)) : undefined;
     for (const die of item.dies) {
       if (die.partial || die.edgeExcluded) continue;
       const k = keyOf(die);
       if (k === undefined) continue;
       counts.set(k, (counts.get(k) ?? 0) + 1);
       total++;
+      if (passSet && diePassStatus(die, passSet)) pass++;
     }
   }
-  return { counts, total };
+  return { counts, total, pass };
 }
 
+/**
+ * One clickable swatch+label row in the gallery's DOM legend strip — shared by the bin
+ * (hardBin/softBin) and metadata legend branches in `rebuildLegend()` so the two can never
+ * drift apart in markup/styling.
+ */
 function renderLegendSwatchRow(
   container: HTMLElement,
   opts: {
@@ -472,10 +451,9 @@ export function renderWaferGallery(
   options: GalleryOptions = {},
 ): GalleryController {
   logWmapVersionOnce();
-  const cardPadding          = options.cardPadding          ?? 6;
+  const cardPadding          = 6;   // CSS px inside each card canvas
   const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
   let currentColumns         = options.columns;
-  const showPlotModeSelector = options.showPlotModeSelector ?? true;
   const showHelpButton       = options.showHelpButton       ?? false;
   const userGuideExtension   = options.userGuideExtension;
   const insightsEnabled      = options.insights?.enabled ?? false;
@@ -483,10 +461,29 @@ export function renderWaferGallery(
   // applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ      = applyOverlayZ(options.zIndex);
   const summaryPanelOpts      = options.summaryPanel;
-  const passBins             = options.passBins             ?? [1];
-  let currentFallbackFormat  = options.fallbackFormat;
+  // Each wafer is judged by its own pass bins, carried on the item
+  // (`WaferMapResult.passBins`). There is no gallery-level option: one list for
+  // the whole gallery is wrong the moment it holds wafers from two programs.
+  const passBinsOf = (item: WaferMapDisplayItem | null | undefined): number[] => [...itemPassBins(item)];
+  // Ring count likewise lives on each item (`WaferMapResult.ringCount`): every card
+  // and every wafer's own analysis uses its own. Lot-level ring figures (Summary
+  // panel, report, Insights) need one, and take the first wafer's; wafers built
+  // with different ring counts are named by `ring-count-mixed` rather than pooled
+  // silently under one wafer's definition of "Ring 2".
+  const itemRingCounts = (): number[] => originalItems.flatMap(it => it ? [it.ringCount ?? 4] : []);
+  const lotRingCount = (): number => itemRingCounts()[0] ?? 4;
+  function mixedRingCountWarning(counts: number[]): WaferWarning | null {
+    const distinct = [...new Set(counts)].sort((a, b) => a - b);
+    if (distinct.length < 2) return null;
+    return {
+      code: 'ring-count-mixed',
+      severity: 'warning',
+      message: `These wafers were built with different ring counts (${distinct.join(', ')}). Each card and each `
+        + `wafer's findings use their own; the lot's ring yield in the Summary panel, report and Insights uses `
+        + `${counts[0]} rings.` };
+  }
   let currentLotStats        = options.lotStatsSummary;
-  let currentLegendStyle     = options.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  let currentLegendStyle     = options.viewOptions?.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 
   // Whether each card draws its own legend. Off by default: the lot legend
   // below the toolbar shows the same bins and is itself interactive — clicking
@@ -533,18 +530,17 @@ export function renderWaferGallery(
     for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ showLegend });
   }
 
-  let sharedOpts: WaferViewOptions = {
+  let sharedOpts: CardViewOptions = {
     plotMode:               'hardBin',
     showDieLabels:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
-    ringCount:              4,
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
     ...options.viewOptions };
 
-  let cardControllers: (WaferMapController | null)[] = [];
+  let cardControllers: (CardController | null)[] = [];
   let cardContainers: HTMLDivElement[] = [];      // canvasWrapper per card
   let cardExpandBtns: HTMLButtonElement[] = [];   // per-card header button — toggles expand/reattach
   let currentItems:  WaferMapDisplayItem[] = [];
@@ -612,7 +608,7 @@ export function renderWaferGallery(
   // for a given wafer at a time.
   interface DetachedWindow {
     id: number;
-    ctrl: WaferMapController;      // live controller rendered inside the detached document
+    ctrl: CardController;      // live controller rendered inside the detached document
     close: () => void;            // tears down the window/floating box and calls handlePopupClosed
     closePollId: ReturnType<typeof setInterval> | null; // real popup only — null for the in-page fallback
     setTitle: (text: string) => void; // updates whatever "title" this detach target has (OS title, or an in-page header)
@@ -765,15 +761,15 @@ export function renderWaferGallery(
     const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
     openReportModal(renderLotSummaryReportHtml({
       items: originalItems.map((item, i) => ({
-        label:        item?.label ?? `W${i + 1}`,
+        label:        waferDisplayLabel(item, i),
         wafer:        item?.wafer,
         dies:         item?.dies,
+        passBins:     passBinsOf(item),
         statsSummary: item?.statsSummary })),
       hbinDefs: lotHbinDefs.length ? lotHbinDefs : undefined,
       sbinDefs: lotSbinDefs.length ? lotSbinDefs : undefined,
       testDefs: lotTestDefs(),
-      passBins,
-      ringCount: sharedOpts.ringCount }), { anchor: container });
+      ringCount: lotRingCount() }), { anchor: container });
   }
 
   function renderPerWaferIndexFallback(): void {
@@ -852,7 +848,7 @@ export function renderWaferGallery(
         row.addEventListener('mouseout',  () => { row.style.background = CLR.bgHover; });
 
         const labelSpan = container.ownerDocument.createElement('span');
-        labelSpan.textContent = item.label ?? `W${index + 1}`;
+        labelSpan.textContent = waferDisplayLabel(item, index);
         Object.assign(labelSpan.style, {
           color:         CLR.iconHover,
           overflow:      'hidden',
@@ -865,7 +861,7 @@ export function renderWaferGallery(
         // button, so its accessible name is what a screen reader announces —
         // spell the whole thing out there rather than leaving "W08, 8".
         row.setAttribute('aria-label',
-          `${item.label ?? `W${index + 1}`} — ${badgeCount} finding${badgeCount === 1 ? '' : 's'}`
+          `${waferDisplayLabel(item, index)} — ${badgeCount} finding${badgeCount === 1 ? '' : 's'}`
           + `${unusualCount ? `, ${unusualCount} unusual` : ''} — view wafer`);
         Object.assign(badge.style, {
           marginLeft: SPACE.sm,
@@ -915,13 +911,12 @@ export function renderWaferGallery(
         hbinDefs:   lotHbinDefs.length ? lotHbinDefs : undefined,
         sbinDefs:   lotSbinDefs.length ? lotSbinDefs : undefined,
         testDefs:   lotTestDefs(),
-        passBins,
-        ringCount:      sharedOpts.ringCount,
+        ringCount:      lotRingCount(),
         binColors:      sharedOpts.binColors,
         // See renderWaferMap's equivalent — the lot bin breakdown follows the
         // gallery's active plot mode.
         plotMode:       sharedOpts.plotMode ?? 'hardBin',
-        fallbackFormat: currentFallbackFormat,
+        fallbackFormat: sharedOpts.fallbackFormat,
         activeFindingId: activeLotFindingId,
         warnings: (options.warnings?.display ?? true) ? currentWarnings : [],
         findingsFilter: lotFindingsFilter,
@@ -1311,7 +1306,7 @@ export function renderWaferGallery(
    * that happens not to carry one of the values still paints the others in the
    * colours the shared legend names — see `ViewOptions.metadataValueOrder`.
    */
-  function sharedMetadataValueOrder(): WaferViewOptions['metadataValueOrder'] {
+  function sharedMetadataValueOrder(): CardViewOptions['metadataValueOrder'] {
     if ((sharedOpts.plotMode ?? 'hardBin') !== 'metadata') return undefined;
     const key = sharedOpts.activeMetadataKey;
     if (!key) return undefined;
@@ -1371,22 +1366,31 @@ export function renderWaferGallery(
 
   /**
    * Bin colours resolved ONCE over every wafer in the gallery — the bin
-   * counterpart of `sharedMetadataValueOrder`. Per-card resolution would rank
-   * each wafer's bins by its own counts, so bin 7 could be orange on one card
-   * and purple on the next while the shared legend named a third colour. The
+   * counterpart of `sharedMetadataValueOrder`. Palette colours are keyed by bin
+   * number, so they would agree per card anyway; what per-card resolution would
+   * lose is the rest of the population: a `BinDef.color` supplied by one item
+   * would colour that bin on its own card only, and `shared` (the colour-clash
+   * warning) would describe one wafer rather than the gallery on screen. The
    * original items are the population even in a stacked mode: stacked maps are
-   * value maps and draw no bin colours, and leaving them must not re-rank.
+   * value maps and draw no bin colours.
+   *
+   * Each wafer's dies are judged by that wafer's OWN pass bins. Hard bins that
+   * pass on one wafer and fail on another are recorded in `lotMixedPassBins` for
+   * the `pass-bins-mixed` warning — one colour cannot be right for both.
    */
+  let lotMixedPassBins: number[] = [];
   function lotBinColors(): BinColors {
     const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
     const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
-    function* lotDies() { for (const it of originalItems) if (it) yield* it.dies; }
-    return resolveBinColors(lotDies(), {
-      passBins,
-      binColorScheme: sharedOpts.binColorScheme,
-      useDefinedBinColors: sharedOpts.useDefinedBinColors,
-      hbinDefs: lotHbinDefs,
-      sbinDefs: lotSbinDefs });
+    const { colors, mixedHardBins } = resolveBinColorsByWafer(
+      originalItems.flatMap(it => it ? [{ dies: it.dies, passBins: passBinsOf(it) }] : []),
+      {
+        binColorScheme: sharedOpts.binColorScheme,
+        useDefinedBinColors: sharedOpts.useDefinedBinColors,
+        hbinDefs: lotHbinDefs,
+        sbinDefs: lotSbinDefs });
+    lotMixedPassBins = mixedHardBins;
+    return colors;
   }
 
   /** Re-resolve the gallery-wide bin colours and push them to every live card —
@@ -1395,6 +1399,10 @@ export function renderWaferGallery(
     const next = lotBinColors();
     sharedOpts = { ...sharedOpts, binColors: next };
     for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ binColors: next });
+    // lotBinColors() just re-derived which bins are mixed-pass across the loaded
+    // wafers; the warning must follow it, not wait for an unrelated refresh.
+    // Only ever reached from a frame callback, after the warning UI exists.
+    refreshGalleryWarnings();
   }
 
   const btnOverlays = makeOverlaysBtn(
@@ -1506,7 +1514,7 @@ export function renderWaferGallery(
   Object.assign(galleryViewControlsEl.style, { display: 'inline-flex', alignItems: 'center', gap: '0' });
   barEl.appendChild(galleryViewControlsEl);
 
-  if (showPlotModeSelector) galleryViewControlsEl.appendChild(btnMode);
+  galleryViewControlsEl.appendChild(btnMode);
   galleryViewControlsEl.appendChild(btnPalette);
   galleryViewControlsEl.appendChild(btnAggrMethod);
   galleryViewControlsEl.appendChild(btnLogScale);
@@ -1566,8 +1574,11 @@ export function renderWaferGallery(
         ...mergedTestDefs().warnings,
       ] },
       // Stated once for the whole gallery, from the same assignment every card draws.
-      extra: [sharedOpts.binColors && binColorWarning(sharedOpts.binColors, sharedOpts.plotMode)]
-        .filter((w): w is WaferWarning => !!w) });
+      extra: [
+        sharedOpts.binColors && binColorWarning(sharedOpts.binColors, sharedOpts.plotMode),
+        mixedPassBinsWarning(lotMixedPassBins),
+        mixedRingCountWarning(itemRingCounts()),
+      ].filter((w): w is WaferWarning => !!w) });
     const changed = next.length !== currentWarnings.length
       || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
     currentWarnings = next;
@@ -1793,8 +1804,7 @@ export function renderWaferGallery(
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
       getBinColors: () => sharedOpts.binColors ?? lotBinColors(),
-      passBins,
-      getRingCount: () => sharedOpts.ringCount ?? 4,
+      getRingCount: lotRingCount,
       defaultView: options.insights?.defaultView,
       // No back tab. The bar now stays visible in Insights and carries the
       // toggle, and unlike renderWaferMap's toolbar this one is unconditional —
@@ -1913,8 +1923,7 @@ export function renderWaferGallery(
 
   const TARGET_DIE_PX = 4;   // minimum readable die pixel size at gallery scale
   const MIN_CARD_PX   = 240; // absolute floor
-  // Bounds for the *default* card size cap (used when `options.maxSize` is not
-  // set). The cap is derived from die pitch rather than fixed, because a single
+  // Bounds for the card size cap. The cap is derived from die pitch rather than fixed, because a single
   // number can't serve both ends of the DPW range: 480px keeps an ordinary
   // wafer compact instead of monopolising a wide screen, but at high DPW it
   // silently starves the TARGET_DIE_PX readability target (a 3mm pitch / ~7.8k
@@ -1929,11 +1938,8 @@ export function renderWaferGallery(
   // this comfortable width — using the available width instead of wasting it.
   const COMFORTABLE_CARD_FACTOR = 1.25;
 
-  // An explicit `maxSize` is a hard cap and is never widened for density — the
-  // caller asked for a specific ceiling and owns the readability trade-off.
-  // Otherwise the cap is derived per-density in refreshCardSizeCap().
-  const explicitMaxSize = options.maxSize;
-  let currentMaxCardPx = explicitMaxSize ?? CARD_CAP_FLOOR_PX;
+  // Derived per-density in refreshCardSizeCap().
+  let currentMaxCardPx = CARD_CAP_FLOOR_PX;
 
   /**
    * Card width (px) at which each die renders at TARGET_DIE_PX, before any
@@ -1972,11 +1978,10 @@ export function renderWaferGallery(
    * Widen the default cap toward what this item's die density needs. Grow-only,
    * mirroring currentMinCardPx: items arrive incrementally (factories resolve
    * one at a time), so the cap must settle on the densest wafer seen rather
-   * than whatever resolved last. No-op when the caller set an explicit maxSize.
+   * than whatever resolved last.
    * Returns true when the cap changed, so callers can re-apply it to live cards.
    */
   function refreshCardSizeCap(its: (WaferMapDisplayItem | null)[]): boolean {
-    if (explicitMaxSize != null) return false;
     const needed = cardPxForTargetDieSize(its);
     if (needed == null) return false;
     const next = Math.min(CARD_CAP_CEILING_PX, Math.max(CARD_CAP_FLOOR_PX, needed));
@@ -2254,15 +2259,21 @@ export function renderWaferGallery(
     // Collect bins AND their die counts — one pass, since the strip now states
     // the population split rather than only naming colours.
     const binTally = hasBinLegendMode && !isMetadataMode
-      ? countLegendPopulation(resolvedItems, die => (mode === 'softBin' ? die.sbin : die.hbin) ?? undefined)
-      : { counts: new Map<number, number>(), total: 0 };
-    // Ascending bin number, NOT pareto order. This strip is a colour key and a
-    // click-to-filter control as well as a summary: pareto ordering would move
-    // a swatch under the pointer whenever the data changed, and it would also
-    // disagree with the per-card canvas legends, which sort by number
-    // (toCanvas.ts). The stacked share bar below carries the pareto information
-    // instead, without reordering anything.
-    const bins = [...binTally.counts.keys()].sort((a, b) => a - b);
+      ? countLegendPopulation(resolvedItems, die => (mode === 'softBin' ? die.sbin : die.hbin) ?? undefined, passBinsOf)
+      : { counts: new Map<number, number>(), total: 0, pass: 0 };
+    // Pass bins first, then failing bins by die count — `sortBinsForDisplay`, the
+    // one order every bin list uses (per-card canvas legend, Summary panel,
+    // report, Insights pareto). This strip used to sort by number to keep a
+    // swatch still under the pointer, but a program with dozens of bins is read
+    // for its biggest failures first, and a number-ordered strip beside
+    // count-ordered panels showed one lot two ways.
+    // Pass status comes from the resolved colours, never `passBins`: those are
+    // HARD bin numbers, and a soft bin passes when every die carrying it does.
+    const lotColors = hasBinLegendMode && !isMetadataMode ? (sharedOpts.binColors ?? lotBinColors()) : undefined;
+    const passingBins: ReadonlySet<number> = lotColors
+      ? (mode === 'softBin' ? lotColors.pass.soft : lotColors.pass.hard)
+      : new Set<number>();
+    const bins = sortBinsForDisplay(binTally.counts.entries(), passingBins).map(([bin]) => bin);
 
     // 'metadata' mode's own values — string-keyed, collected across every visible
     // card the same way bin counts are, sorted alphabetically (same determinism
@@ -2274,7 +2285,7 @@ export function renderWaferGallery(
     // coloured under another there.
     const metaTally = hasBinLegendMode && isMetadataMode && activeMetadataKey
       ? countLegendPopulation(resolvedItems, die => metadataCategoricalValue(die.metadata?.[activeMetadataKey]))
-      : { counts: new Map<string, number>(), total: 0 };
+      : { counts: new Map<string, number>(), total: 0, pass: 0 };
     // The SAME ordered list the cards colour from, not a second natural sort of
     // this strip's own tally. A comment used to ask the two orderings to stay in
     // step and nothing made them — they agreed only while every wafer happened
@@ -2347,11 +2358,14 @@ export function renderWaferGallery(
     //
     // It needs no separate computation and cannot disagree with the Summary
     // panel: the legend population is already exactly the yield-eligible one
-    // (partial and edge-excluded dies excluded, above), and `passBins` is the
-    // same array the panel and `analyzeWaferLot` are given. Yield is therefore
-    // the pass bins' share of the same denominator the swatches divide up.
+    // (partial and edge-excluded dies excluded, above), and every die in it is
+    // judged by its OWN wafer's pass bins (diePassStatus, the rule yield uses),
+    // counted in the same pass as the swatches. Summing a pass-bin list over the
+    // bin tally was wrong twice over: in soft-bin mode it applied hard-bin
+    // numbers to soft bins (~0% for most programs), and a gallery of wafers built
+    // with different pass bins has no single list to sum.
     if (!isMetadataMode && binTally.total > 0) {
-      const passCount = passBins.reduce((sum, b) => sum + (binTally.counts.get(b) ?? 0), 0);
+      const passCount = binTally.pass;
       const yieldPct  = (passCount / binTally.total) * 100;
       const yieldEl = container.ownerDocument.createElement('span');
       yieldEl.textContent = `Yield ${fmtLegendPercent(yieldPct)}`;
@@ -2402,8 +2416,8 @@ export function renderWaferGallery(
 
     // The same gallery-wide assignment every card was given, so each swatch names
     // the colour the dies actually carry on every card.
-    const lotColors = sharedOpts.binColors ?? lotBinColors();
-    const activeColors = mode === 'softBin' ? lotColors.soft : lotColors.hard;
+    const resolvedColors = lotColors ?? sharedOpts.binColors ?? lotBinColors();
+    const activeColors = mode === 'softBin' ? resolvedColors.soft : resolvedColors.hard;
     const binColorFor = (bin: number): string => activeColors.get(bin) ?? NO_DATA_FILL;
 
     for (const bin of bins) {
@@ -2573,7 +2587,7 @@ export function renderWaferGallery(
   }
 
   // Extra shared options required for stacked modes (colour scale / lot size metadata).
-  function stackedSharedOpts(mode: PlotMode): Partial<WaferViewOptions> {
+  function stackedSharedOpts(mode: PlotMode): Partial<CardViewOptions> {
     const lotSize = originalItems.length;
     if (mode === 'stackedBins' || mode === 'stackedSoftBins')
       return { valueRange: [0, lotSize] as [number, number], lotSize };
@@ -2588,7 +2602,7 @@ export function renderWaferGallery(
   // propagates to cards, fires callback.
   // fireCallback=true (default) fires onViewOptionsChange — used for toolbar interactions.
   // fireCallback=false is used by the public setOptions API to avoid re-entrant callbacks.
-  function updateShared(partial: Partial<WaferViewOptions>, { fireCallback = true } = {}): void {
+  function updateShared(partial: Partial<CardViewOptions>, { fireCallback = true } = {}): void {
     // What the caller asked to change — reported to onViewOptionsChange as-is,
     // before `partial` gains the derived `binColors` below.
     const requested = Object.keys(partial) as (keyof WaferViewOptions)[];
@@ -2668,7 +2682,7 @@ export function renderWaferGallery(
     syncSharedValueRange();
     syncSharedMetadataOrder();
     if (fireCallback) {
-      options.onViewOptionsChange?.(sharedOpts, requested, classifyChanged(requested));
+      options.onViewOptionsChange?.(toPublicViewOptions(sharedOpts), requested, classifyChanged(requested));
     }
   }
 
@@ -2791,7 +2805,7 @@ export function renderWaferGallery(
     });
   }
 
-  function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: WaferMapController; canvasWrapper: HTMLDivElement; expandBtn: HTMLButtonElement } {
+  function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: CardController; canvasWrapper: HTMLDivElement; expandBtn: HTMLButtonElement } {
     const card = container.ownerDocument.createElement('div');
     card.className = 'wmap-gallery-card';
     Object.assign(card.style, {
@@ -2822,7 +2836,7 @@ export function renderWaferGallery(
       borderBottom:   `1px solid ${CLR.menuBorder}`,
       flexShrink:     '0',
       gap: SPACE.sm });
-    const { wrap: identityWrap, metaPanel } = buildIdentityHeaderRow(document, item.label ?? '', item.wafer.metadata ?? undefined);
+    const { wrap: identityWrap, metaPanel } = buildIdentityHeaderRow(document, waferDisplayLabel(item, cardIndex), item.wafer.metadata ?? undefined);
     header.appendChild(identityWrap);
 
     // Expand button — toggles between "detach into its own window" and, once
@@ -2877,13 +2891,10 @@ export function renderWaferGallery(
     // instead of flashing a legend until the next applyPerCardLegend.
     const cardShowLegend = perCardLegend || perCardLegendBlockedReason() !== null;
     const cardBaseOptions = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
-    const ctrl = renderWaferMap(canvasWrapper, item, {
-      viewOptions:    { ...cardBaseOptions, showLegend: cardShowLegend },
-      toolbarControls: 'full',
+    const ctrl = renderWaferMapCard(canvasWrapper, item, {
+      viewOptions:    { ...cardBaseOptions, showLegend: cardShowLegend, legendPosition: currentLegendStyle },
       showTooltip:     true,
       padding:         cardPadding,
-      legendPosition:  currentLegendStyle,
-      fallbackFormat:  currentFallbackFormat,
       statsSummary:    item.statsSummary,
       onSaveImage:     options.onSaveImage,
       onSaveText:      options.onSaveText,
@@ -2979,7 +2990,7 @@ export function renderWaferGallery(
         placeholder.appendChild(spinner);
         gridEl.appendChild(placeholder);
         currentItems.push(null as unknown as WaferMapDisplayItem); // slot reserved
-        cardControllers.push(null as unknown as WaferMapController);
+        cardControllers.push(null as unknown as CardController);
         cardContainers.push(null as unknown as HTMLDivElement);
         cardExpandBtns.push(null as unknown as HTMLButtonElement);
         factories.push({ index: i, factory: entry, placeholder });
@@ -3155,7 +3166,7 @@ export function renderWaferGallery(
     // race a double-open on the same card.
     for (const w of detachedWindows.values()) if (w.cardIndex === cardIndex) return;
 
-    const label = item.label ?? 'Wafer map';
+    const label = waferDisplayLabel(item, cardIndex);
     const id = nextWindowId++;
     // The grid card's own current view state (plot mode, active test, etc.)
     // — read before it's destroyed below, so the detached window opens
@@ -3304,8 +3315,8 @@ export function renderWaferGallery(
      * at all — see its own doc comment for why that one intentionally always
      * uses the gallery's shared mode instead.
      */
-    liveOptions?: Partial<WaferViewOptions>,
-  ): WaferMapController {
+    liveOptions?: Partial<CardViewOptions>,
+  ): CardController {
     const baseViewOptions = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
     const withLive = liveOptions ? { ...baseViewOptions, ...liveOptions } : baseViewOptions;
     const withMode = testNumber !== undefined
@@ -3317,14 +3328,11 @@ export function renderWaferGallery(
     // from and nothing else offering the bin-highlight control. This overrides
     // `liveOptions`, which is a snapshot of the source card and would otherwise
     // carry the gallery's suppressed state straight into the detached view.
-    const viewOptions = { ...withMode, showLegend: true };
-    const ctrl = renderWaferMap(container, item, {
+    const viewOptions = { ...withMode, showLegend: true, legendPosition: currentLegendStyle };
+    const ctrl = renderWaferMapCard(container, item, {
       viewOptions,
-      toolbarControls: 'full',
       showTooltip:     true,
       padding:         cardPadding,
-      legendPosition:  currentLegendStyle,
-      fallbackFormat:  currentFallbackFormat,
       statsSummary:    item.statsSummary,
       onSaveImage:     options.onSaveImage,
       onSaveText:      options.onSaveText,
@@ -3480,12 +3488,7 @@ export function renderWaferGallery(
     },
 
     getOptions(): WaferViewOptions {
-      return { ...sharedOpts };
-    },
-
-    setFallbackFormat(format: 'si' | 'engineering'): void {
-      currentFallbackFormat = format;
-      for (const ctrl of cardControllers) if (ctrl) ctrl.setFallbackFormat(format);
+      return toPublicViewOptions(sharedOpts);
     },
 
     setFindingsNotice(notice: FindingsNotice | undefined): void {
@@ -3500,10 +3503,6 @@ export function renderWaferGallery(
       refreshGalleryWarnings();
       if (gallerySummaryPanelEl) renderGallerySummaryPanel();
       refreshLotSummaryButton();
-    },
-
-    setColumns(cols: number | undefined): void {
-      setColumnsState(cols);
     },
 
     openUserGuide: openGuideWindow,

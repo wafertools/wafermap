@@ -28,6 +28,8 @@ import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from 
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
+import { waferDisplayLabel } from '../core/waferLabel.js';
+import { INPUT_DEFAULT_PASS_BINS, itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { describeWaferPopulation, populationStat } from '../stats/population.js';
@@ -88,7 +90,6 @@ export interface InsightsTabDeps {
    * picked up, and so a bin is the same colour in a chart as on the map.
    */
   getBinColors: () => BinColors;
-  passBins: number[];
   /** Read fresh each render — used by the Overview tab's ring/quadrant regional yield cards. Default 4. */
   getRingCount?: () => number;
   onSaveImage?: SaveImageHandler;
@@ -174,6 +175,8 @@ export interface InsightsTabHandle {
 
 type Item = FacetItem & {
   dies: Die[]; label: string; waferIndex: number; wafer: Wafer; statsSummary?: StatsSummary;
+  /** This wafer's OWN pass bins — a lot can mix wafers built with different ones. */
+  passBins: readonly number[];
   /** This wafer's OWN test defs, carried through so a scoped population can be
    *  reconciled (`mergeTestDefs`) over just the wafers in scope. */
   testDefs?: TestDef[];
@@ -186,7 +189,7 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
 ];
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
-  const { getItems, getLotStats, getBinColors, passBins, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
+  const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
   const showMetadataStrip = deps.showMetadataStrip ?? true;
   const contentInset = deps.contentInset ?? EDGE_GUTTER;
   const doc = deps.ownerDocument ?? document;
@@ -384,7 +387,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return getItems()
       .map((it, waferIndex): Item | null => it == null ? null : {
         metadata: it.wafer.metadata ?? undefined, dies: it.dies, wafer: it.wafer,
-        label: it.label ?? String(it.wafer.metadata?.waferId ?? ''), waferIndex,
+        label: waferDisplayLabel(it, waferIndex), waferIndex,
+        passBins: itemPassBins(it),
         statsSummary: it.statsSummary, testDefs: it.testDefs,
       })
       .filter((it): it is Item => it != null);
@@ -465,7 +469,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const label = groupLabelText ?? 'group';
     // CLAUDE.md: "yield label must name the actual pass bins in use, not
     // assume bin 1" — mirrors renderSummaryReportHtml's summary-metric label.
-    const passBinsLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
+    const passBinsLabel = describePassBins(items.map(it => it.passBins));
 
     // Prefer each wafer's already-computed yield (e.g. from the host's
     // `analyzeWaferLot` call) over recomputing from dies — guarantees this
@@ -492,8 +496,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const yieldGroups = groups?.map(g => ({ key: g.key, items: g.items.map(withYieldPercent) }));
 
     const makeYieldData = () => yieldGroups
-      ? buildYieldDataCombined(yieldGroups, passBins, yieldSortBy)
-      : buildYieldData(yieldItems, passBins, yieldSortBy);
+      ? buildYieldDataCombined(yieldGroups, INPUT_DEFAULT_PASS_BINS, yieldSortBy)
+      : buildYieldData(yieldItems, INPUT_DEFAULT_PASS_BINS, yieldSortBy);
 
     const yieldPanelConfig: ChartPanel = {
       title: groups ? `Yield by ${label} (pass: ${passBinsLabel})` : `Yield by wafer (pass: ${passBinsLabel})`,
@@ -524,7 +528,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       drill: yieldGroups ? {
         onOpenGroup: datum => {
           const detailItems = yieldGroups.find(g => g.key === datum.label)?.items ?? [];
-          return { data: buildYieldData(detailItems, passBins, yieldSortBy), title: `Yield by wafer — ${label}: ${datum.label} (pass: ${passBinsLabel})` };
+          return { data: buildYieldData(detailItems, INPUT_DEFAULT_PASS_BINS, yieldSortBy), title: `Yield by wafer — ${label}: ${datum.label} (pass: ${passBinsLabel})` };
         },
         onBack: () => ({ data: makeYieldData(), title: `Yield by ${label} (pass: ${passBinsLabel})` }),
         groupLabelText: label,
@@ -718,13 +722,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     elements.push(passRate.card);
     destroyFns.push(passRate.destroy);
 
-    const ringRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, buildRingRegions);
+    // Each wafer judged by its own pass bins — index-aligned with allWafers above.
+    const ringRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, buildRingRegions);
     if (ringRows.length) {
       const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, onSaveImage, ownerDocument: doc });
       elements.push(ring.card);
       destroyFns.push(ring.destroy);
     }
-    const quadrantRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, buildQuadrantRegions);
+    const quadrantRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, buildQuadrantRegions);
     if (quadrantRows.length) {
       const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, onSaveImage, ownerDocument: doc });
       elements.push(quadrant.card);
@@ -777,7 +782,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    * is NOT the die-weighted lot yield and the two differ on an uneven lot.
    */
   function renderOverviewTiles(items: Item[]): HTMLElement {
-    const passBinsLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
+    const passBinsLabel = describePassBins(items.map(it => it.passBins));
     const single = items.length === 1;
     const item = items[0];
 
@@ -823,7 +828,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
 
     if (single) {
-      const yieldPct = buildYieldData([{ ...item, key: item.waferIndex }], passBins)[0]?.percent;
+      const yieldPct = buildYieldData([{ ...item, key: item.waferIndex }], INPUT_DEFAULT_PASS_BINS)[0]?.percent;
       if (yieldPct !== undefined) card.appendChild(tile(`${yieldPct.toFixed(1)}%`, `Yield · pass: ${passBinsLabel}`));
       card.appendChild(tile(String(item.dies.length), 'Total dies'));
       return dropTrailingDivider(card) as HTMLDivElement;
@@ -831,7 +836,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     card.appendChild(tile(String(items.length), 'Wafers'));
 
-    const perWafer = buildYieldData(items.map(it => ({ ...it, key: it.waferIndex })), passBins)
+    const perWafer = buildYieldData(items.map(it => ({ ...it, key: it.waferIndex })), INPUT_DEFAULT_PASS_BINS)
       .map(d => d.percent)
       .filter(p => Number.isFinite(p));
     if (perWafer.length) {
@@ -847,7 +852,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // per wafer" always — a qualifier with nothing on screen to contrast
       // against, which on an even lot is just noise.
       const combined = buildYieldDataCombined(
-        [{ key: 'all', items: items.map(it => ({ ...it, key: it.waferIndex })) }], passBins,
+        [{ key: 'all', items: items.map(it => ({ ...it, key: it.waferIndex })) }], INPUT_DEFAULT_PASS_BINS,
       )[0]?.percent;
       const differs = combined !== undefined && combined.toFixed(1) !== mean.toFixed(1);
       card.appendChild(tile(

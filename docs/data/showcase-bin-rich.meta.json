@@ -1,0 +1,208 @@
+{
+  "waferConfig": {
+    "diameter": 200,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 4,
+    "height": 4
+  },
+  "passBins": [
+    1,
+    2
+  ],
+  "hbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass — grade 1"
+    },
+    {
+      "bin": 2,
+      "name": "Pass — grade 2"
+    },
+    {
+      "bin": 3,
+      "name": "Open / contact"
+    },
+    {
+      "bin": 4,
+      "name": "Short"
+    },
+    {
+      "bin": 5,
+      "name": "IDDQ"
+    },
+    {
+      "bin": 6,
+      "name": "Scan (ATPG)"
+    },
+    {
+      "bin": 7,
+      "name": "Memory BIST"
+    },
+    {
+      "bin": 8,
+      "name": "PLL"
+    },
+    {
+      "bin": 9,
+      "name": "Vmin"
+    },
+    {
+      "bin": 10,
+      "name": "Fmax"
+    },
+    {
+      "bin": 11,
+      "name": "Analog"
+    },
+    {
+      "bin": 12,
+      "name": "IO leakage"
+    },
+    {
+      "bin": 15,
+      "name": "NVM / fuse"
+    },
+    {
+      "bin": 17,
+      "name": "Thermal sensor"
+    },
+    {
+      "bin": 20,
+      "name": "Tester alarm"
+    }
+  ],
+  "sbinDefs": [
+    {
+      "bin": 100,
+      "name": "Pass — Fmax ≥ 3.2 GHz"
+    },
+    {
+      "bin": 200,
+      "name": "Pass — Fmax 2.8–3.2 GHz"
+    },
+    {
+      "bin": 201,
+      "name": "Pass — grade 2, Vmin marginal"
+    },
+    {
+      "bin": 301,
+      "name": "Open — VDD"
+    },
+    {
+      "bin": 302,
+      "name": "Open — IO"
+    },
+    {
+      "bin": 303,
+      "name": "Probe contact"
+    },
+    {
+      "bin": 401,
+      "name": "Short — VDD to GND"
+    },
+    {
+      "bin": 402,
+      "name": "Short — IO"
+    },
+    {
+      "bin": 501,
+      "name": "IDDQ high"
+    },
+    {
+      "bin": 502,
+      "name": "IDDQ delta"
+    },
+    {
+      "bin": 503,
+      "name": "Standby current"
+    },
+    {
+      "bin": 601,
+      "name": "Scan stuck-at"
+    },
+    {
+      "bin": 602,
+      "name": "Scan transition"
+    },
+    {
+      "bin": 603,
+      "name": "Scan chain broken"
+    },
+    {
+      "bin": 701,
+      "name": "MBIST SRAM"
+    },
+    {
+      "bin": 702,
+      "name": "MBIST ROM"
+    },
+    {
+      "bin": 703,
+      "name": "MBIST repair exhausted"
+    },
+    {
+      "bin": 801,
+      "name": "PLL lock timeout"
+    },
+    {
+      "bin": 802,
+      "name": "PLL jitter"
+    },
+    {
+      "bin": 901,
+      "name": "Vmin — core"
+    },
+    {
+      "bin": 902,
+      "name": "Vmin — SRAM"
+    },
+    {
+      "bin": 1001,
+      "name": "Fmax — core"
+    },
+    {
+      "bin": 1002,
+      "name": "Fmax — IO timing"
+    },
+    {
+      "bin": 1101,
+      "name": "ADC INL"
+    },
+    {
+      "bin": 1102,
+      "name": "DAC offset"
+    },
+    {
+      "bin": 1103,
+      "name": "Bandgap trim"
+    },
+    {
+      "bin": 1201,
+      "name": "Input leakage"
+    },
+    {
+      "bin": 1202,
+      "name": "Tristate leakage"
+    },
+    {
+      "bin": 1501,
+      "name": "eFuse"
+    },
+    {
+      "bin": 1502,
+      "name": "OTP"
+    },
+    {
+      "bin": 1701,
+      "name": "Thermal sensor offset"
+    },
+    {
+      "bin": 2001,
+      "name": "Tester alarm"
+    }
+  ]
+}

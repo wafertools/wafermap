@@ -33,10 +33,10 @@ export interface ChartDatum {
    * `label` — a caller with an `onOpen` callback should resolve back to its
    * own item by `key`, not by re-searching for `label`. Labels are only
    * guaranteed unique when the caller supplies one per item; an item with no
-   * `label` falls back to a shared default elsewhere (e.g. `analysisTab.ts`
-   * falls back to `''` when both `label` and `wafer.metadata.waferId` are
-   * absent), so two rows can carry an identical, ambiguous label — matching
-   * on it would silently resolve to the wrong item. Absent on group rows
+   * `label` is named by its wafer ID (`waferDisplayLabel`, core/waferLabel.ts),
+   * and two wafers from different lots can share an ID — so two rows can carry
+   * an identical, ambiguous label, and matching on it would silently resolve
+   * to the wrong item. Absent on group rows
    * (`itemCount > 1`), which are drilled into rather than opened directly.
    */
   key?: string | number;
@@ -45,6 +45,12 @@ export interface ChartDatum {
 export interface YieldItem {
   label?: string;
   dies?: Die[];
+  /**
+   * This item's own pass bins (`WaferMapResult.passBins`). Wins over the
+   * function's `passBins` argument, which only fills in for items without —
+   * a lot can mix wafers built with different pass bins.
+   */
+  passBins?: readonly number[];
   /**
    * Precomputed yield percent for this item (e.g. from `analyzeWaferLot`'s
    * `lotYieldSeries[waferIndex].yieldPercent`) — used directly when present.
@@ -58,7 +64,7 @@ export interface YieldItem {
 export type YieldSortBy = 'yield' | 'label';
 
 /** Fallback only — used when an item doesn't carry a precomputed `yieldPercent`. */
-function yieldPercentFromDies(dies: Die[], passBins: number[]): number {
+function yieldPercentFromDies(dies: Die[], passBins: readonly number[]): number {
   let pass = 0, total = 0;
   const passSet = new Set(passBins);
   for (const d of dies) {
@@ -71,9 +77,9 @@ function yieldPercentFromDies(dies: Die[], passBins: number[]): number {
   return total > 0 ? (pass / total) * 100 : 0;
 }
 
-function resolveYieldPercent(item: YieldItem, passBins: number[]): number {
+function resolveYieldPercent(item: YieldItem, passBins: readonly number[]): number {
   if (item.yieldPercent !== undefined) return item.yieldPercent ?? 0;
-  return yieldPercentFromDies(item.dies ?? [], passBins);
+  return yieldPercentFromDies(item.dies ?? [], item.passBins ?? passBins);
 }
 
 /** Count of dies a yield percentage was actually computed over — excludes
@@ -94,7 +100,7 @@ function sortYieldData(data: ChartDatum[], sortBy: YieldSortBy): void {
 }
 
 /** One bar per item. */
-export function buildYieldData(items: YieldItem[], passBins: number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
+export function buildYieldData(items: YieldItem[], passBins: readonly number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
   const data = items.map((it, i) => {
     const pct = resolveYieldPercent(it, passBins);
     return { label: it.label ?? `#${i}`, value: pct, percent: pct, itemCount: 1, key: it.key };
@@ -116,7 +122,7 @@ export function buildYieldData(items: YieldItem[], passBins: number[] = [1], sor
  * excluded dies (which count toward yield nowhere else) still skew this
  * combined bar.
  */
-export function buildYieldDataCombined(groups: { key: string; items: YieldItem[] }[], passBins: number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
+export function buildYieldDataCombined(groups: { key: string; items: YieldItem[] }[], passBins: readonly number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
   const data = groups.map(g => {
     let weighted = 0, dieCount = 0;
     for (const it of g.items) {

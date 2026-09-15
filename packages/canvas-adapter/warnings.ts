@@ -143,6 +143,10 @@ export const SHORT_LABEL: Record<string, string> = {
   'test-count-capped':             'Test analysis skipped',
   'test-def-collision':            'Test definitions disagree',
   'analysis-option-corrected':     'Analysis option corrected',
+  'bin-colors-shared':             'Bins share a colour',
+  'pass-bins-mixed':               'Pass bins differ by wafer',
+  'ring-count-mixed':              'Ring counts differ by wafer',
+  'input-field-removed':           'Removed input name ignored',
 };
 
 /** Falls back to the message's first sentence when a code has no short form —

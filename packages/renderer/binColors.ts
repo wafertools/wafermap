@@ -1,5 +1,6 @@
 import type { Die } from '../core/dies.js';
 import { diePassStatus } from '../core/dies.js';
+import { INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
 import type { BinDef, WaferWarning } from './buildWaferMap.js';
 import { getBinColorScheme, type BinColorScheme } from './colorSchemes.js';
 
@@ -15,12 +16,20 @@ export interface BinColors {
   hard: Map<number, string>;
   soft: Map<number, string>;
   /**
-   * Bins drawn in a colour that another bin of the same type also has — the
-   * population has more pass or fail bins than the palette has colours, or a
-   * defined colour duplicates one. Empty when every bin is distinguishable by
-   * colour alone. Ascending bin number.
+   * Bins drawn in a colour that another bin of the same type also has — two
+   * bins present whose numbers land on the same palette slot (they differ by a
+   * multiple of the palette's length), or a defined colour that duplicates one.
+   * Empty when every bin is distinguishable by colour alone. Ascending bin number.
    */
   shared: { hard: number[]; soft: number[] };
+  /**
+   * Bins that pass, per type — the verdict the colours were chosen with. Hard:
+   * the bins in `passBins`. Soft: bins whose every die passes. Read this, never
+   * `passBins`, to order, total or judge SOFT bins: `passBins` holds hard-bin
+   * numbers, so testing a soft bin against it treats soft bin 1 as a pass and
+   * soft bin 100 as a fail whatever their dies did.
+   */
+  pass: { hard: Set<number>; soft: Set<number> };
 }
 
 export interface BinColorOptions {
@@ -42,47 +51,135 @@ export interface BinColorOptions {
  * Assign every bin present in `dies` a colour — the ONE rule for bin colour,
  * shared by the map, its legends, the summary panels and the Insights charts.
  *
- * Why not a function of the bin number, as it used to be:
  * - **Pass/fail comes from `passBins`, never the number.** Passing bins take
  *   the palette's pass colours (greens) and failing bins its fail colours, so
- *   with `passBins: [1, 3]` bin 3 is green and a failing bin 12 is not. Keying
- *   colour on the number made bin 1 green even when it failed.
- * - **Rank, not hash.** Bins are ordered by die count (then bin number) and
- *   take palette slots in that order, so the bins that dominate the map get
- *   the most distinct colours and no two bins collide until the palette is
- *   exhausted. Hashing collided from the start: two of the first sixteen soft
- *   bins shared a colour exactly.
+ *   with `passBins: [1, 3]` bin 3 is green and a failing bin 1 is not.
+ * - **Which colour is keyed by bin number, never by die count.** A pass bin
+ *   takes `pass[(bin − 1) mod n]` and a fail bin `fail[(bin − 2) mod n]`: bin 1
+ *   (the conventional pass bin) and bin 2 (the conventional first fail bin)
+ *   land on the front, most distinct colour of each list, and the low bin
+ *   numbers most programs use get the clearest colours. So bin 7 is the same
+ *   colour in every lot, gallery subset and screenshot of a program, which is
+ *   how engineers learn to read a bin map. This used to rank bins by die count,
+ *   which gave "the biggest fail bin" a colour rather than any bin — two lots of
+ *   one program drew the same bin in different colours. Before that it hashed
+ *   the number, which collided two of the first sixteen soft bins; a modular
+ *   index collides only at a palette's length apart, and `shared` names those.
+ * - **The slot counts from the bin number alone**, not its position among the
+ *   pass or fail bins, so changing `passBins` recolours only the bins whose
+ *   verdict changed.
  * - **Soft bins are pass-aware too.** A soft bin passes when every die
  *   carrying it passes (by the same per-die rule yield uses); otherwise, or
  *   when no die says, it takes a fail colour. The library has the data to
  *   decide, so the caller never supplies it.
+ * - **Soft bins read the palette shifted by half its length**, so hard bin n
+ *   and soft bin n are different colours by default. They are separate number
+ *   spaces and are never on screen together, but a shared colour invites
+ *   reading one as the other.
  *
  * A gallery resolves ONCE over every wafer it shows and hands the result to every
- * card (`ViewOptions.binColors`), so a bin is the same colour on every wafer.
+ * card (`ViewOptions.binColors`): a `BinDef.color` supplied by one item then
+ * colours that bin on every card, and `shared` describes the whole gallery.
  * A lone map resolves over its own dies.
  */
 export function resolveBinColors(dies: Iterable<Die>, options: BinColorOptions = {}): BinColors {
-  const passSet = new Set(options.passBins ?? [1]);
+  return resolveBinColorsByWafer([{ dies, passBins: options.passBins }], options).colors;
+}
+
+/** One wafer's dies and the pass bins that wafer was built with. */
+export interface BinPassGroup {
+  dies: Iterable<Die>;
+  /** Omitted ⇒ the input convention `[1]` — pass `WaferMapResult.passBins`. */
+  passBins?: readonly number[];
+}
+
+/**
+ * `resolveBinColors` over several wafers that may carry DIFFERENT pass bins — a
+ * gallery of wafers from more than one test program. Each die is judged by its
+ * own wafer's `passBins`, and a bin passes only when every die carrying it
+ * passes (for one wafer that is exactly "the bin is in `passBins`").
+ *
+ * `mixedHardBins` names hard bins that pass on some wafers and fail on others.
+ * One colour and one legend row cannot be right for both, so the gallery states
+ * it (`mixedPassBinsWarning`) rather than letting either wafer's verdict
+ * silently stand for all of them.
+ */
+export function resolveBinColorsByWafer(
+  groups: Iterable<BinPassGroup>,
+  options: Omit<BinColorOptions, 'passBins'> = {},
+): { colors: BinColors; mixedHardBins: number[] } {
   const scheme = getBinColorScheme(options.binColorScheme);
   const useDefined = options.useDefinedBinColors ?? true;
+  const t = tallyGroups(groups);
+  const hard = assign(t.hardBins, bin => t.pass.hard.has(bin), scheme, useDefined ? options.hbinDefs : undefined, false);
+  const soft = assign(t.softBins, bin => t.pass.soft.has(bin), scheme, useDefined ? options.sbinDefs : undefined, true);
+  return {
+    colors: { hard: hard.colors, soft: soft.colors, shared: { hard: hard.shared, soft: soft.shared }, pass: t.pass },
+    mixedHardBins: t.mixedHardBins,
+  };
+}
 
-  const hardCounts = new Map<number, number>();
-  const softCounts = new Map<number, number>();
-  // Soft bin → "every die carrying it passes so far". A single failing or
-  // verdict-less die makes the soft bin a fail bin for colouring.
+/**
+ * Which hard and soft bins pass — `BinColors.pass` without the colours, for a
+ * caller that has dies but no resolved assignment (the summary report). The same
+ * tally `resolveBinColors` uses, so the two cannot disagree about a verdict.
+ */
+export function binPassSets(dies: Iterable<Die>, passBins?: readonly number[]): BinColors['pass'] {
+  return tallyGroups([{ dies, passBins }]).pass;
+}
+
+/** `binPassSets` over wafers that each carry their own pass bins. */
+export function binPassSetsByWafer(groups: Iterable<BinPassGroup>): BinColors['pass'] {
+  return tallyGroups(groups).pass;
+}
+
+/** One pass over every group's dies — each may be a generator, so each is iterated once. */
+function tallyGroups(groups: Iterable<BinPassGroup>) {
+  // Bin → "every die carrying it passes so far". A single failing or
+  // verdict-less die makes the bin a fail bin. Keys are the bins present.
+  const hardAllPass = new Map<number, boolean>();
   const softAllPass = new Map<number, boolean>();
-  for (const d of dies) {
-    if (d.hbin != null) hardCounts.set(d.hbin, (hardCounts.get(d.hbin) ?? 0) + 1);
-    if (d.sbin != null) {
-      softCounts.set(d.sbin, (softCounts.get(d.sbin) ?? 0) + 1);
+  const hardPassedSomewhere = new Set<number>();
+  for (const g of groups) {
+    const passSet = new Set(g.passBins ?? INPUT_DEFAULT_PASS_BINS);
+    for (const d of g.dies) {
       const passes = diePassStatus(d, passSet) === true;
-      softAllPass.set(d.sbin, (softAllPass.get(d.sbin) ?? true) && passes);
+      if (d.hbin != null) {
+        hardAllPass.set(d.hbin, (hardAllPass.get(d.hbin) ?? true) && passes);
+        if (passes) hardPassedSomewhere.add(d.hbin);
+      }
+      if (d.sbin != null) softAllPass.set(d.sbin, (softAllPass.get(d.sbin) ?? true) && passes);
     }
   }
+  const passing = (m: Map<number, boolean>) => new Set([...m].filter(([, p]) => p).map(([b]) => b));
+  const pass = { hard: passing(hardAllPass), soft: passing(softAllPass) };
+  return {
+    hardBins: [...hardAllPass.keys()],
+    softBins: [...softAllPass.keys()],
+    pass,
+    mixedHardBins: [...hardPassedSomewhere].filter(b => !pass.hard.has(b)).sort((a, b) => a - b),
+  };
+}
 
-  const hard = assign(hardCounts, bin => passSet.has(bin), scheme, useDefined ? options.hbinDefs : undefined);
-  const soft = assign(softCounts, bin => softAllPass.get(bin) === true, scheme, useDefined ? options.sbinDefs : undefined);
-  return { hard: hard.colors, soft: soft.colors, shared: { hard: hard.shared, soft: soft.shared } };
+/** "3, 7, 12" — or the first eight "and N more". Shared by every bin advisory. */
+function formatBinList(bins: readonly number[]): string {
+  return bins.length > 8
+    ? `${bins.slice(0, 8).join(', ')} and ${bins.length - 8} more`
+    : bins.join(', ');
+}
+
+/** The `pass-bins-mixed` advisory for `resolveBinColorsByWafer`'s `mixedHardBins`, or null. */
+export function mixedPassBinsWarning(bins: readonly number[]): WaferWarning | null {
+  if (!bins.length) return null;
+  const one = bins.length === 1;
+  return {
+    code: 'pass-bins-mixed',
+    severity: 'warning',
+    message: `Hard ${one ? 'bin' : 'bins'} ${formatBinList(bins)} ${one ? 'passes' : 'pass'} on some wafers and `
+      + `${one ? 'fails' : 'fail'} on others: these wafers were built with different pass bins. Each wafer's own `
+      + 'yield and die verdicts are correct, but a bin has one colour and one legend row, so '
+      + `${one ? 'it is' : 'they are'} shown as failing there.`,
+  };
 }
 
 /**
@@ -92,6 +189,9 @@ export function resolveBinColors(dies: Iterable<Die>, options: BinColorOptions =
  * real bins without a colour.
  */
 export function binColorsCover(colors: BinColors, dies: Iterable<Die>): boolean {
+  // An assignment built before `pass` existed (a host holding an old object)
+  // cannot order or total soft bins; resolve afresh rather than crash on it.
+  if (!colors.pass) return false;
   for (const d of dies) {
     if (d.hbin != null && !colors.hard.has(d.hbin)) return false;
     if (d.sbin != null && !colors.soft.has(d.sbin)) return false;
@@ -113,9 +213,7 @@ export function binColorWarning(colors: BinColors, plotMode: string | undefined)
   if (!kind) return null;
   const shared = colors.shared[kind];
   if (!shared.length) return null;
-  const list = shared.length > 8
-    ? `${shared.slice(0, 8).join(', ')} and ${shared.length - 8} more`
-    : shared.join(', ');
+  const list = formatBinList(shared);
   return {
     code: 'bin-colors-shared',
     severity: 'warning',
@@ -125,35 +223,37 @@ export function binColorWarning(colors: BinColors, plotMode: string | undefined)
   };
 }
 
+/** The bin number that takes the front colour of each list — see `resolveBinColors`. */
+const FIRST_PASS_BIN = 1;
+const FIRST_FAIL_BIN = 2;
+
+/** `palette[(bin − first) mod n]`, shifted half a palette for soft bins. */
+function paletteColor(palette: readonly string[], bin: number, first: number, soft: boolean): string {
+  const n = palette.length;
+  const offset = soft ? Math.floor(n / 2) : 0;
+  return palette[(((bin - first + offset) % n) + n) % n];
+}
+
 function assign(
-  counts: Map<number, number>,
+  bins: Iterable<number>,
   isPass: (bin: number) => boolean,
   scheme: BinColorScheme,
   defs: readonly BinDef[] | undefined,
+  soft: boolean,
 ): { colors: Map<number, string>; shared: number[] } {
   const defined = new Map<number, string>();
   for (const d of defs ?? []) if (d.color) defined.set(d.bin, d.color);
 
   const colors = new Map<number, string>();
-  const passing: number[] = [];
-  const failing: number[] = [];
-  for (const bin of counts.keys()) {
-    const own = defined.get(bin);
-    // A defined colour takes no palette slot, so the remaining bins still get
-    // the palette's most distinct colours.
-    if (own !== undefined) colors.set(bin, own);
-    else (isPass(bin) ? passing : failing).push(bin);
+  for (const bin of bins) {
+    colors.set(bin, defined.get(bin) ?? (isPass(bin)
+      ? paletteColor(scheme.pass, bin, FIRST_PASS_BIN, soft)
+      : paletteColor(scheme.fail, bin, FIRST_FAIL_BIN, soft)));
   }
 
-  const byRank = (a: number, b: number) => (counts.get(b)! - counts.get(a)!) || a - b;
-  for (const [bins, palette] of [[passing, scheme.pass], [failing, scheme.fail]] as const) {
-    bins.sort(byRank);
-    bins.forEach((bin, i) => colors.set(bin, palette[i % palette.length]));
-  }
-
-  // Whatever the cause — palette exhausted, or a defined colour that happens
-  // to equal a palette colour — two bins in one colour cannot be told apart on
-  // the map, and the viewer has to be told.
+  // Whatever the cause — two bin numbers a palette-length apart, or a defined
+  // colour that happens to equal a palette colour — two bins in one colour
+  // cannot be told apart on the map, and the viewer has to be told.
   const byColor = new Map<string, number[]>();
   for (const [bin, color] of colors) {
     const key = color.toLowerCase();

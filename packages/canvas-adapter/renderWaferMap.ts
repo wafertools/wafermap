@@ -2,19 +2,19 @@ import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
 import { buildView, buildHoverText, findTestDef, resolveTestNumber } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
-import { toCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
+import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, reparentTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { waferDisplayLabel } from '../core/waferLabel.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { ICONS } from './icons.js';
-import { metadataValueColor, NO_DATA_FILL } from '../renderer/colorMap.js';
 // TYPE-ONLY. A value import here would pull the whole Insights chart suite
 // (chartShell, histogram, correlation, boxplot, scatter, capability, trend,
 // testPassRate, insightsTab — ~28 KB gzipped) into the initial /render chunk,
@@ -27,6 +27,7 @@ import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
+import { INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -67,9 +68,17 @@ export interface WaferPreferences {
   showQuadrantBoundaries?: boolean;
   showReticle?:            boolean;
   showXYIndicator?:        boolean;
-  ringCount?:              number;
   /** Legend position for bin modes. Default 'default'. */
   legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
+  /**
+   * Format for unitless values outside the normal display range [0.1, 9999].
+   * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
+   * `'si'`: SI prefix with no unit suffix (e.g. `12 µ`).
+   * Values with a unit always use SI prefix regardless of this setting.
+   * Set it like any other preference — `viewOptions` or `setOptions` — the one
+   * place it is set (it used to have four).
+   */
+  fallbackFormat?:         'si' | 'engineering';
   /**
    * Draw this map's own legend block — the categorical bin legend, the spec/
    * pass-fail legend, or the value colorbar, whichever the plot mode calls for.
@@ -153,32 +162,12 @@ export interface WaferDisplayState {
    */
   valueRange?:   [number, number] | { test: number; range: [number, number] };
   /**
-   * The full, ordered list of metadata values to assign colours from in
-   * `metadata` plot mode — applied only when `key` matches `activeMetadataKey`.
-   * Set by a host rendering several wafers together (`renderWaferGallery` does
-   * it for you) so every map indexes into ONE list; without it each map derives
-   * the order from its own dies, and a wafer missing a value the others have
-   * paints every later value in the next map's colour. See `ViewOptions`.
-   */
-  metadataValueOrder?: { key: string; values: string[] };
-  /**
-   * Bin colours resolved over the whole population being shown together —
-   * set by `renderWaferGallery` so a bin is one colour on every card. A lone
-   * map leaves it unset and resolves over its own dies. See `ViewOptions.binColors`.
-   */
-  binColors?: BinColors;
-  /**
    * Aggregation method for `stackedValues` mode.
    * Drives both the per-die aggregation and the hover tooltip label.
    * Accepted values: `'mean'` | `'median'` | `'stddev'` | `'min'` | `'max'` | `'count'`.
    * Defaults to `'mean'` when not set.
    */
   aggregationMethod?:   string;
-  /**
-   * Total number of wafers in the lot — used to compute bin occurrence percentage
-   * in `stackedBins` hover tooltips.
-   */
-  lotSize?:      number;
 }
 
 /**
@@ -197,7 +186,7 @@ export type WaferViewOptions = WaferPreferences & WaferDisplayState;
  *
  * That inheritance leaked 16 low-level fields onto the top-level render API, and
  * five of them were **accepted and silently ignored** — `renderWaferMap` computes
- * or overrides them on every draw (`topClearance` is hardcoded to 0,
+ * or overrides them on every draw (`topClearance` was always 0, and has since been removed from `toCanvas` too;
  * `minRightReserve` is derived from the legend, and `markFailingDies`/`activeBin`/
  * `hoverBin` are read from `viewOptions` and internal hover state instead). An
  * option that is typed, documented and ignored costs a caller a debugging session
@@ -219,10 +208,8 @@ type ForwardedDrawOptions = Pick<ToCanvasOptions,
   | 'colorbarWidth'
   | 'showAxes'
   | 'showTitle'
-  | 'legendPosition'
   | 'legendOffset'
   | 'diePitchMm'
-  | 'fallbackFormat'
   | 'metadataFields'>;
 
 export interface RenderOptions extends ForwardedDrawOptions {
@@ -264,40 +251,8 @@ export interface RenderOptions extends ForwardedDrawOptions {
    * result has no metadata/lot-stack context.
    */
   showIdentity?: boolean;
-  /**
-   * Inset for this map's own chrome row (identity + toolbar) and for a Summary
-   * panel docked inside the map area, from the edge of the map area.
-   *
-   * Defaults to `EDGE_GUTTER` — correct for a standalone map, where the map
-   * area IS the region and its chrome is a bounded surface against that edge.
-   * Pass the smaller `MAP_CHROME_INSET` when the map is embedded in a surface
-   * that already provides its own inset (this is what `renderWaferGallery`
-   * passes for its cards); a second full gutter inside one stacks two, which
-   * reads as a toolbar standing well off the side of the card.
-   */
-  chromeInset?: string;
   /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
-  /**
-   * Bin numbers treated as pass for yield calculation in the summary panel.
-   * Defaults to `[1]`. Must match the `passBins` passed to `analyzeWaferMap` / `buildWaferMap`
-   * to ensure the summary panel yield label is consistent with the rest of the display.
-   */
-  passBins?: number[];
-  /**
-   * 'full' (default) shows all toolbar controls.
-   * 'view-only' shows only zoom, reset, box-select, and download — used by gallery cards.
-   */
-  toolbarControls?: 'full' | 'view-only';
-  /**
-   * Show the plot mode selector in the toolbar. Default true.
-   * Set to false when the host application manages mode switching itself.
-   */
-  showPlotModeSelector?: boolean;
-  /** Minimum zoom relative to fit. Default 0.4. */
-  minZoom?: number;
-  /** Maximum zoom relative to fit. Default 20. */
-  maxZoom?: number;
   /** Filename for the PNG download (without extension). Default `'wafermap'`. */
   downloadFilename?: string;
   /**
@@ -348,12 +303,6 @@ export interface RenderOptions extends ForwardedDrawOptions {
    */
   dieList?: DieListDisplayOptions;
   /**
-   * Custom tooltip renderer. When provided, replaces the built-in tooltip content.
-   * Return a string (set as innerHTML), an HTMLElement (appended directly), or null to suppress the tooltip.
-   * The built-in tooltip wrapper (positioning, show/hide behaviour) is preserved.
-   */
-  renderTooltip?: (die: Die) => string | HTMLElement | null;
-  /**
    * Show a help button in the toolbar that opens the built-in end-user guide in a modal.
    * Default false. Enable in applications that want to surface the guide without linking externally.
    */
@@ -364,8 +313,6 @@ export interface RenderOptions extends ForwardedDrawOptions {
    * has one help button instead of two. See `UserGuideExtension`.
    */
   userGuideExtension?: UserGuideExtension;
-  /** Override the expand action for both the expand button and the E key. Used by the gallery to route through its own modal logic. */
-  onExpand?: () => void;
   /**
    * Show the expand button in the toolbar and enable the E-key shortcut.
    * Default true. Independent of `showIdentity` — expand is a view control,
@@ -384,15 +331,6 @@ export interface RenderOptions extends ForwardedDrawOptions {
    * inset, or an explicit CSS height). Width always comes from the container.
    */
   height?: number | string;
-  /**
-   * Cap the map's rendered width and height at this many CSS pixels. When
-   * the container is larger, the map sits top-left aligned within it rather
-   * than stretching to fill it. Number only (a fixed pixel ceiling, not a
-   * responsive length like `height`). Omit for no cap (fills the container,
-   * current behaviour). The expand button/E-key still opens the map at full
-   * size, unaffected by this cap.
-   */
-  maxSize?: number;
   /**
    * Base `z-index` for wmap's transient overlays — toolbar menus, the die
    * tooltip, the expand modal, and the user-guide modal. wmap layers its own
@@ -429,8 +367,6 @@ export interface RenderOptions extends ForwardedDrawOptions {
 }
 
 export interface WaferMapController {
-  /** Update the die data (e.g. after a data reload) — rebuilds scene, preserves zoom/pan. */
-  setDies(dies: Die[]): void;
   /** Replace the wafer map result entirely — updates both wafer geometry and die data, preserves zoom/pan. */
   setResult(result: WaferMapResult): void;
   /** Merge scene option overrides — rebuilds scene, preserves zoom/pan. */
@@ -449,40 +385,19 @@ export interface WaferMapController {
   clearSelection(): void;
   /** Reset zoom and pan to fitted view. */
   resetZoom(): void;
-  /** Update the fallback format for unitless values and re-render. */
-  setFallbackFormat(format: 'si' | 'engineering'): void;
   /** Replace the current stats summary used by the built-in Summary panel. */
   setStatsSummary(summary: StatsSummary | undefined): void;
-  /** Show or hide the Summary toolbar button without affecting the panel's content. */
-  setSummaryVisible(visible: boolean): void;
-  /** Show or hide the scene-control toolbar buttons (mode, orientation, etc). */
-  setViewControlsVisible(visible: boolean): void;
-  /** Show or hide the expand toolbar button. */
-  setExpandVisible(visible: boolean): void;
-  /** Show or hide the help toolbar button. */
-  setHelpButtonVisible(visible: boolean): void;
-  /** Show or hide the identity header without affecting its content. */
-  setIdentityVisible(visible: boolean): void;
   /**
    * Opens the built-in end-user guide window — the same action the help
    * toolbar button performs, but callable directly. Works regardless of
-   * `showHelpButton`/`setHelpButtonVisible`'s current value, so a host that
+   * `showHelpButton`, so a host that
    * hides wmap's own help button (e.g. to fold it into its own combined help
    * menu) can still trigger the guide without a DOM query against wmap's
    * internal button markup.
    */
   openUserGuide(): void;
-  /** Close the auto-mounted Summary panel if it is open. No-op if no panel exists. */
-  closeSummaryPanel(): void;
   /** Programmatically open/close the Insights tab. No-op if `insights.enabled` was not set. */
   setInsightsOpen(open: boolean): void;
-  /** Move the floating tooltip into a different parent (e.g. a maximized modal box). */
-  setTooltipParent(parent: HTMLElement): void;
-  /**
-   * Returns the current legend entries in `hardBin`/`softBin`/`metadata` modes, `null` in other
-   * modes. Each entry includes the bin number (or metadata value string), display name, and color.
-   */
-  getActiveLegend(): Array<{ bin: number | string; name: string; color: string }> | null;
   /** Remove all event listeners and DOM elements. */
   destroy(): void;
 }
@@ -491,12 +406,12 @@ export interface WaferMapController {
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
   'binColorScheme', 'valueColorScheme', 'reverseValueScheme', 'useDefinedBinColors', 'rotation', 'flipX', 'flipY',
   'showDieLabels', 'showPartialDies', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
-  'ringCount', 'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies',
+  'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies', 'fallbackFormat',
 ]);
 
 /** Options that change die colours without changing what the view contains —
  *  any of them means every colour-bearing surface (panels, footer) redraws. */
-export const COLOR_KEYS: readonly (keyof WaferViewOptions)[] = [
+export const COLOR_KEYS: readonly (keyof CardViewOptions)[] = [
   'binColorScheme', 'valueColorScheme', 'reverseValueScheme', 'useDefinedBinColors', 'binColors',
 ];
 
@@ -524,6 +439,76 @@ export function classifyChanged(keys: (keyof WaferViewOptions)[]): 'preference' 
  * and each such read had to be found the hard way. Declaring them optional
  * hands that job back to the compiler.
  */
+// ── Gallery → card plumbing (internal) ──────────────────────────────────────
+// renderWaferGallery drives its cards and detached windows through these. None
+// of it is re-exported from an index file: a host rendering one map has no use
+// for a lot-wide colour assignment or a card's inset, and exposing them made
+// the public options look as though a host must set them to get a valid map.
+
+/** @internal State a gallery shares with every card so one lot reads as one lot. */
+export interface CardSharedState {
+  /**
+   * The full, ordered list of metadata values to assign colours from in
+   * `metadata` plot mode — applied only when `key` matches `activeMetadataKey`.
+   * Set by a host rendering several wafers together (`renderWaferGallery` does
+   * it for you) so every map indexes into ONE list; without it each map derives
+   * the order from its own dies, and a wafer missing a value the others have
+   * paints every later value in the next map's colour. See `ViewOptions`.
+   */
+  metadataValueOrder?: { key: string; values: string[] };
+  /**
+   * Bin colours resolved over the whole population being shown together —
+   * set by `renderWaferGallery` so a bin is one colour on every card. A lone
+   * map leaves it unset and resolves over its own dies. See `ViewOptions.binColors`.
+   */
+  binColors?: BinColors;
+  /**
+   * Total number of wafers in the lot — the percentage denominator in
+   * `stackedBins`/`stackedSoftBins` hover tooltips.
+   */
+  lotSize?: number;
+}
+
+/** @internal */
+export type CardViewOptions = WaferViewOptions & CardSharedState;
+
+/** @internal Options only renderWaferGallery passes. */
+export interface CardRenderOptions extends Omit<RenderOptions, 'viewOptions'> {
+  viewOptions?: CardViewOptions;
+  /**
+   * Inset for this map's own chrome row (identity + toolbar) and for a Summary
+   * panel docked inside the map area, from the edge of the map area.
+   *
+   * Defaults to `EDGE_GUTTER` — correct for a standalone map, where the map
+   * area IS the region and its chrome is a bounded surface against that edge.
+   * Pass the smaller `MAP_CHROME_INSET` when the map is embedded in a surface
+   * that already provides its own inset (this is what `renderWaferGallery`
+   * passes for its cards); a second full gutter inside one stacks two, which
+   * reads as a toolbar standing well off the side of the card.
+   */
+  chromeInset?: string;
+  /** Replaces the expand action for both the expand button and the E key. */
+  onExpand?: () => void;
+}
+
+/** @internal */
+export interface CardController extends WaferMapController {
+  setOptions(opts: Partial<CardViewOptions>): void;
+  getOptions(): CardViewOptions;
+  /** Show or hide the Summary toolbar button without affecting the panel's content. */
+  setSummaryVisible(visible: boolean): void;
+  /** Show or hide the view-control toolbar buttons (mode, orientation, etc). */
+  setViewControlsVisible(visible: boolean): void;
+  /** Show or hide the expand toolbar button. */
+  setExpandVisible(visible: boolean): void;
+}
+
+/** @internal The public view of a card's options: everything but the gallery's shared state. */
+export function toPublicViewOptions(opts: CardViewOptions): WaferViewOptions {
+  const { metadataValueOrder: _order, binColors: _colors, lotSize: _lotSize, ...rest } = opts;
+  return rest;
+}
+
 export type RenderableWaferMap =
   Pick<WaferMapResult, 'wafer' | 'dies'> & Partial<Omit<WaferMapResult, 'wafer' | 'dies'>>;
 
@@ -533,6 +518,15 @@ export function renderWaferMap(
   result: RenderableWaferMap,
   options: RenderOptions = {},
 ): WaferMapController {
+  return renderWaferMapCard(container, result, options);
+}
+
+/** @internal renderWaferMap plus the gallery-only options and controller methods. */
+export function renderWaferMapCard(
+  container: HTMLElement,
+  result: RenderableWaferMap,
+  options: CardRenderOptions = {},
+): CardController {
   logWmapVersionOnce();
   // Derive the window/document this container actually belongs to, rather than
   // assuming the bare global `window`/`document` — needed so a container
@@ -588,16 +582,12 @@ export function renderWaferMap(
   // (canvas, toolbar, Insights overlay) — `container` itself is host-owned and
   // may be arbitrarily large, so it can't be capped directly without fighting
   // the host's own layout. mapBox fills the remaining height in outerFrame
-  // (below the header, if any) unless `maxSize` caps it. `position: relative`
+  // (below the header, if any). `position: relative`
   // is unconditional: toolbar and the Insights overlay are absolutely
   // positioned against their nearest positioned ancestor, which must be
   // mapBox (so they track the capped box), not container or outerFrame.
   const mapBox = ownerDocument.createElement('div');
   Object.assign(mapBox.style, { position: 'relative', width: '100%', flex: '1 1 auto', minHeight: '0' });
-  if (options.maxSize != null) {
-    mapBox.style.maxWidth = `${options.maxSize}px`;
-    mapBox.style.maxHeight = `${options.maxSize}px`;
-  }
   // Resolved here rather than in the options destructuring further down: the
   // chrome row is built immediately below, before that runs.
   const chromeInset = options.chromeInset ?? EDGE_GUTTER;
@@ -665,8 +655,8 @@ export function renderWaferMap(
    * empty colour above every such map. The expand-modal path already tested
    * `childElementCount > 0` before reparenting the row; the page path never did.
    *
-   * Hidden CHILDREN count as absent too, since `setIdentityVisible(false)` and
-   * the Insights view both hide the identity in place rather than removing it.
+   * Hidden CHILDREN count as absent too, since an identity can be hidden in place
+   * rather than removed.
    */
   function syncChromeRowVisibility(): void {
     const hasVisibleChild = [...chromeRowEl.children]
@@ -856,13 +846,7 @@ export function renderWaferMap(
     showTooltip          = true,
     showToolbar          = true,
     showIdentity   = true,
-    toolbarControls      = 'full',
-    showPlotModeSelector = true,
-    minZoom              = 0.4,
-    maxZoom              = 20,
     summaryPanel:        summaryPanelOpts,
-    renderTooltip,
-    passBins             = [1],
     showHelpButton       = false,
     userGuideExtension,
     onExpand,
@@ -874,6 +858,15 @@ export function renderWaferMap(
     ...drawOptions
   } = options;
   const insightsEnabled = insightsOpts?.enabled ?? false;
+  // Zoom bounds, relative to the fitted view.
+  const minZoom = 0.4;
+  const maxZoom = 20;
+
+  // Pass bins come from the map itself — the ones `result.yield` was computed
+  // with. A map not built by buildWaferMap states them as `passBins` on the map
+  // object. There is deliberately no render option: a second place to set them
+  // is how every surface ended up judging pass/fail by `[1]`.
+  const passBins: number[] = [...(result.passBins ?? INPUT_DEFAULT_PASS_BINS)];
 
   // Warnings default to ON. The library knows the map may mislead; telling the
   // user is its job, not the caller's. Hosts with their own notification UI opt
@@ -884,7 +877,6 @@ export function renderWaferMap(
   // default applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ = applyOverlayZ(zIndex);
 
-  let currentFallbackFormat = drawOptions.fallbackFormat;
   let currentStatsSummary = options.statsSummary;
 
   // Collected once from every source the library has — geometry advisories on
@@ -955,15 +947,11 @@ export function renderWaferMap(
   // still hides it while Insights is open, purely because the Insights tab
   // already shows this wafer's metadata in its own strip, so showing it twice
   // would be redundant.
-  // Tracks whether the *host* has asked for it hidden via
-  // setIdentityVisible(false), independent of Insights toggling it —
-  // so closing Insights doesn't un-hide a header the host explicitly hid.
   // Mirrors the conditions the Insights toggle button is actually built under
   // (see the toolbar block): a real toolbar, not restricted to `view-only`,
   // with Insights enabled. When true the toolbar owns the way out of Insights.
-  const toolbarHasInsightsToggle = showToolbar && toolbarControls !== 'view-only' && insightsEnabled;
+  const toolbarHasInsightsToggle = showToolbar && insightsEnabled;
 
-  let identityHeaderHostHidden = false;
   let metadataBadge: IdentityHeaderController | null = null;
   let headerBar: HTMLDivElement | null = null;
   // Assigned by the toolbar build below, not here. Expand used to live in
@@ -983,6 +971,12 @@ export function renderWaferMap(
     // stays fixed height) — same contract renderWaferGallery's card headers
     // use, and canvasWrap is already `position: relative`.
     canvasWrap.appendChild(metadataBadge.metaPanel);
+    // Explicitly `visible`, overriding the `visibility: hidden` setInsightsOpen
+    // puts on canvasWrap. The identity row that opens this panel stays up in
+    // BOTH views, so its details must open in both too — inheriting the hidden
+    // state made the chevron toggle nothing while Insights was showing. The
+    // panel's own open/closed state is `display`, so this never shows it early.
+    metadataBadge.metaPanel.style.visibility = 'visible';
     if (!metadataBadge.isEmpty()) {
       headerBar = buildHeaderBar(metadataBadge.wrap);
       // First in the row — the toolbar is appended after it and pins itself
@@ -1030,12 +1024,8 @@ export function renderWaferMap(
     if (!shouldMount && inDom) { headerBar!.remove(); headerBar = null; }
     else if (shouldMount && !inDom) {
       headerBar = buildHeaderBar(metadataBadge.wrap);
-      // Re-apply the visibility state this bar is under. A `setResult` that
-      // introduces metadata remounts the bar, and without this it came back
-      // VISIBLE — popping open over a host that had hidden it via
-      // `setIdentityVisible(false)`, or over an open Insights view where
-      // it has no business appearing.
-      headerBar.style.display = identityHeaderHostHidden ? 'none' : '';
+      // A `setResult` that introduces metadata remounts the bar; it is shown.
+      headerBar.style.display = '';
       // Before the toolbar, not appended — a remount after `setResult` would
       // otherwise land the identity to the RIGHT of the toolbar.
       chromeRowEl.insertBefore(headerBar, chromeRowEl.firstChild);
@@ -1045,7 +1035,7 @@ export function renderWaferMap(
 
   const hasDefinedBinColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
 
-  let viewOpts: WaferViewOptions = {
+  let viewOpts: CardViewOptions = {
     plotMode:               'hardBin',
     showDieLabels:               false,
     showPartialDies:        true,
@@ -1053,12 +1043,10 @@ export function renderWaferMap(
     showQuadrantBoundaries: false,
     showReticle:            false,
     showXYIndicator:        false,
-    ringCount:              4,
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
-    // legendPosition can come from viewOptions or the top-level drawOptions.
-    legendPosition:         drawOptions.legendPosition ?? 'default',
+    legendPosition:         'default',
     ...initialViewOptions };
 
   // ── Insights tab (opt-in) ────────────────────────────────────────────────────
@@ -1080,11 +1068,11 @@ export function renderWaferMap(
       insightsTab = createInsightsTab({
       getItems: () => [{
         wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
-        label: String(wafer.metadata?.waferId ?? ''),
+        label: waferDisplayLabel({ wafer }, 0),
+        passBins,
         statsSummary: currentStatsSummary }],
       getBinColors: () => currentView.binColors,
-      passBins,
-      getRingCount: () => viewOpts.ringCount ?? 4,
+      getRingCount: () => currentResult.ringCount ?? 4,
       onSaveImage: options.onSaveImage,
       onSaveText: options.onSaveText,
       defaultView: insightsOpts?.defaultView,
@@ -1125,20 +1113,15 @@ export function renderWaferMap(
         setInsightsOpen(false);
       },
       ownerDocument });
-    // Positioned sibling of canvasWrap covering the same area. Left with
-    // `z-index: auto` (no explicit value), this positioned element still
-    // paints above canvasWrap's own unpositioned canvas content
-    // (position:static content always sits below any positioned sibling,
-    // explicit z-index or not) while sitting below the toolbar (a direct
-    // child of `mapBox`, not canvasWrap — see its own creation comment —
-    // with its own explicit, much higher z-index via `Z_BASE`) — so it
-    // visually replaces the map without ever making the toolbar
-    // unreachable. Needs an opaque background since the insights grid has
-    // gaps between cards that would otherwise let the covered canvas show
-    // through.
+    // Positioned sibling of canvasWrap covering the same area, `z-index: auto`.
+    // That does NOT put it above canvasWrap's own z-indexed overlays (mapless
+    // summary, unpositioned-dies footer, metaPanel) — setInsightsOpen hides
+    // canvasWrap outright for that reason. Needs an opaque background since
+    // the insights grid has gaps between cards that would otherwise let the
+    // map area show through.
     // overflowY:auto lives HERE, not on insightsTab.el itself — this
     // wrapper has a genuinely definite height (inset:0 against
-    // `mapBox`, so it also respects a `maxSize` cap), so it's the right
+    // `mapBox`), so it's the right
     // place to bound/scroll long content; insightsTab.el's own root stays
     // auto-height so it also works correctly for hosts
     // (renderWaferGallery.ts) that mount it as a plain block child with no
@@ -1239,6 +1222,19 @@ export function renderWaferMap(
     // it is meant to be preserving.
     if (insightsTab && !open && wasOpen) insightsScrollTop = insightsTab.el.scrollTop;
     if (insightsTab) insightsTab.el.style.display = open ? 'flex' : 'none';
+    // Insights REPLACES the map view, so the map view is hidden — not merely
+    // painted over. canvasWrap is `position: relative` with no z-index, so it
+    // forms no stacking context: every explicit z-index inside it (the mapless
+    // summary overlay, the unpositioned-dies footer and its expanded panel, the
+    // identity metaPanel) competes directly with insightsTab.el, which is
+    // `z-index: auto`, and wins. A coordinate-less wafer's "No die position
+    // data" panel therefore sat on top of the chart suite (tsmap,
+    // NO-WAFER-ALL-COORDLESS-01.csv). One rule for the whole subtree rather than
+    // a z-index fix per overlay, which is how each of these got missed in turn.
+    // `visibility`, not `display`: the canvas keeps its measured size, so
+    // closing Insights triggers no resize/redraw, and hidden controls leave the
+    // tab order and the accessibility tree.
+    canvasWrap.style.visibility = open ? 'hidden' : '';
     // Map-specific toolbar controls (zoom/pan/select, mode/palette/overlays/etc.)
     // have no effect on the chart suite — hide them as a group while it's open.
     // Summary is hidden too (refreshSummaryButton checks insightsOpen) since
@@ -1282,7 +1278,7 @@ export function renderWaferMap(
     // this host (`showMetadataStrip: false`) so the two never both render —
     // the same arrangement renderWaferGallery already uses, for the same
     // reason: the frame owns identity, so the tab must not repeat it.
-    if (headerBar) headerBar.style.display = identityHeaderHostHidden ? 'none' : '';
+    if (headerBar) headerBar.style.display = '';
     syncChromeRowVisibility();
     // metaPanel is a separate sibling in canvasWrap with its own explicit
     // Z_ABOVE z-index (see its mount comment above) — it paints above
@@ -1382,7 +1378,7 @@ export function renderWaferMap(
       showReticle:            so.showReticle,
       showXYIndicator:        so.showXYIndicator,
       reticles,
-      ringCount:              so.ringCount,
+      ringCount:              currentResult.ringCount ?? 4,
       highlightBin:           so.highlightBin,
       highlightMetadataValue: so.highlightMetadataValue,
       activeTest:              so.activeTest,
@@ -1397,7 +1393,7 @@ export function renderWaferMap(
       dataAxisFlip,
       colorbarRangeMode:      so.colorbarRangeMode,
       passFailDisplay:        so.passFailDisplay,
-      fallbackFormat:         currentFallbackFormat,
+      fallbackFormat:         so.fallbackFormat,
       interactiveTransform: {
         rotation: so.rotation ?? 0,
         flipX:    so.flipX   ?? false,
@@ -1460,7 +1456,7 @@ export function renderWaferMap(
       // advisories, which no UI surfaced before.
       warnings: warningsDisplay ? currentWarnings : [],
       passBins,
-      ringCount: viewOpts.ringCount ?? 4,
+      ringCount: currentResult.ringCount ?? 4,
       binColors: currentView.binColors,
       // Drives which bin type the panel's bin breakdown opens on, so a soft-bin
       // map is never described by a hard-bin breakdown.
@@ -1470,7 +1466,7 @@ export function renderWaferMap(
       // second time. When the host suppresses that header the panel is the only
       // place the metadata appears, and the section comes back.
       metadataShownElsewhere: showIdentity,
-      fallbackFormat: currentFallbackFormat,
+      fallbackFormat: viewOpts.fallbackFormat,
       activeFindingId: summaryActiveFindingId,
       findingsFilter,
       findingsNotice: currentFindingsNotice,
@@ -1715,10 +1711,10 @@ export function renderWaferMap(
       // Set initial active state — pan is default
       setActive(btnPanMode, true);
 
-      // View controls — hidden in 'view-only' mode (gallery bar owns them).
-      // Wrapped in sceneControlsEl so setViewControlsVisible() can hide/show the
-      // whole group at once (used when reparenting a card into the expand modal).
-      if (toolbarControls !== 'view-only') {
+      // View controls, wrapped in sceneControlsEl so setViewControlsVisible() can
+      // hide/show the whole group at once (a gallery card hides them: the gallery
+      // bar owns them; reparenting a card into the expand modal shows them).
+      {
         sceneControlsEl = ownerDocument.createElement('div');
         Object.assign(sceneControlsEl.style, { display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'wrap', justifyContent: 'flex-end' });
         toolbar.appendChild(sceneControlsEl);
@@ -1885,7 +1881,7 @@ export function renderWaferMap(
           () => viewOpts,
           patch => applyOpts(patch),
         );
-        if (showPlotModeSelector) mapViewControlsEl!.appendChild(btnMode);
+        mapViewControlsEl!.appendChild(btnMode);
         // btnPalette stays even when isMapless: it drives the bin/value colour schemes,
         // which buildMaplessSummary's bin breakdown reads too (see
         // refreshMaplessPanel's syncOpts hook) — genuinely functional here,
@@ -2053,21 +2049,10 @@ export function renderWaferMap(
     reparentRoot.style.flex      = '1';
     reparentRoot.style.minWidth  = '0';
     reparentRoot.style.minHeight = '0';
-    // `maxSize` caps the map in the page; the modal is the deliberate escape
-    // from that cap, and the cap lives on the very element now being moved (it
-    // used to be left behind on mapBox, which is why expanding always opened
-    // full size). Lifted here and restored on close.
-    const cappedMaxWidth  = reparentRoot.style.maxWidth;
-    const cappedMaxHeight = reparentRoot.style.maxHeight;
-    reparentRoot.style.maxWidth  = 'none';
-    reparentRoot.style.maxHeight = 'none';
-
     // toolbar lives in `mapBox` (a sibling of reparentRoot), not inside
     // reparentRoot itself, so openReparentedModal must move it in too —
     // otherwise it stays behind in the now-empty mapBox and the expanded view
-    // has no toolbar at all. This also means expanding escapes any `maxSize`
-    // cap entirely (the cap lives on mapBox, which the expanded content
-    // physically leaves) — the modal always opens at full size. Reparented
+    // has no toolbar at all. Reparented
     // alongside reparentRoot,
     // not as a separate call, so the shared helper's own stale-reference
     // guard sees both moves as one unit — see its own header comment in
@@ -2119,8 +2104,6 @@ export function renderWaferMap(
         : undefined,
       onClosed: () => {
         modalHandle = null;
-        reparentRoot.style.maxWidth  = cappedMaxWidth;
-        reparentRoot.style.maxHeight = cappedMaxHeight;
         // Unconditional: Expand is valid in both views now that the modal can
         // carry the Insights suite, so restoring it must not depend on which
         // view happens to be showing when the modal closes.
@@ -2156,7 +2139,7 @@ export function renderWaferMap(
   // Rebuild and redraw without firing the external callback.
   // Used by ctrl.setOptions() so programmatic updates don't re-fire the callback
   // (consistent with renderWaferGallery behaviour and documented API contract).
-  function syncOpts(partial: Partial<WaferViewOptions>): void {
+  function syncOpts(partial: Partial<CardViewOptions>): void {
     const prevMode = viewOpts.plotMode;
     viewOpts = { ...viewOpts, ...partial };
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
@@ -2195,7 +2178,7 @@ export function renderWaferMap(
 
   // Rebuild, redraw, and fire onViewOptionsChange.
   // Used by all toolbar interactions.
-  function applyOpts(partial: Partial<WaferViewOptions>): void {
+  function applyOpts(partial: Partial<CardViewOptions>): void {
     syncOpts(partial);
     const changed = Object.keys(partial) as (keyof WaferViewOptions)[];
     onViewOptionsChange?.(viewOpts, changed, classifyChanged(changed));
@@ -2237,12 +2220,8 @@ export function renderWaferMap(
             : Math.max(BIN_LEGEND_W, colorbarReserve)
       : undefined;
 
-    const result = toCanvas(canvas, currentView, {
+    const result = drawMapCanvas(canvas, currentView, {
       ...drawOptions,
-      // No toolbar clearance: the toolbar no longer overlays the canvas, so the
-      // wafer can use the full height. This reserved 24px at the top of every
-      // map that showed a toolbar.
-      topClearance:    0,
       minRightReserve: showLegend ? stableRight : 0,
       // toCanvas calls this showColorbar, but it gates the whole legend block
       // (colorbar, bin legend, spec legend) — see WaferViewOptions.showLegend.
@@ -2251,7 +2230,7 @@ export function renderWaferMap(
       legendPosition:  legendPos,
       legendOffset,
       diePitchMm,
-      fallbackFormat: currentFallbackFormat,
+      fallbackFormat: viewOpts.fallbackFormat,
       showAxes:  drawOptions.showAxes ?? (viewport !== null),
       viewport: vp,
       activeBin: viewOpts.plotMode === 'metadata' ? viewOpts.highlightMetadataValue : viewOpts.highlightBin,
@@ -2529,41 +2508,25 @@ export function renderWaferMap(
 
     if (tooltip) {
       if (die) {
-        if (renderTooltip) {
-          const content = renderTooltip(die);
-          if (content === null) {
-            tooltip.style.display = 'none';
-          } else {
-            if (typeof content === 'string') {
-              tooltip.innerHTML = content;
-            } else {
-              tooltip.innerHTML = '';
-              tooltip.appendChild(content);
-            }
-            tooltip.style.display = 'block';
-            positionTooltip(tooltip, canvas, e.clientX, e.clientY);
-          }
-        } else {
-          tooltip.innerHTML = buildHoverText(die, currentView.plotMode, {
-            testDefs,
-            hbinDefs,
-            sbinDefs,
-            fallbackFormat: currentFallbackFormat,
-            // Read aggregation context from the built View, not viewOpts: a
-            // buildWaferMap({ lotStack }) result carries these on the result
-            // (→ currentView.aggrMethod/lotSize), and the caller need not repeat
-            // them in viewOptions. Using viewOpts here showed the wrong/missing
-            // aggregation method on stacked-map tooltips.
-            aggrMethod: currentView.aggrMethod,
-            lotSize: currentView.lotSize,
-            metadataFields,
-            // Active test from the built View (authoritative, like plotMode above):
-            // in value mode the tooltip leads with it; ignored in bin modes.
-            activeTest: currentView.activeTest,
-            reticleConfig });
-          tooltip.style.display = 'block';
-          positionTooltip(tooltip, canvas, e.clientX, e.clientY);
-        }
+        tooltip.innerHTML = buildHoverText(die, currentView.plotMode, {
+          testDefs,
+          hbinDefs,
+          sbinDefs,
+          fallbackFormat: viewOpts.fallbackFormat,
+          // Read aggregation context from the built View, not viewOpts: a
+          // buildWaferMap({ lotStack }) result carries these on the result
+          // (→ currentView.aggrMethod/lotSize), and the caller need not repeat
+          // them in viewOptions. Using viewOpts here showed the wrong/missing
+          // aggregation method on stacked-map tooltips.
+          aggrMethod: currentView.aggrMethod,
+          lotSize: currentView.lotSize,
+          metadataFields,
+          // Active test from the built View (authoritative, like plotMode above):
+          // in value mode the tooltip leads with it; ignored in bin modes.
+          activeTest: currentView.activeTest,
+          reticleConfig });
+        tooltip.style.display = 'block';
+        positionTooltip(tooltip, canvas, e.clientX, e.clientY);
       } else {
         tooltip.style.display = 'none';
       }
@@ -2873,7 +2836,7 @@ export function renderWaferMap(
       onSelect?.([]);
       render();
     }
-    if ((e.key === 'e' || e.key === 'E') && toolbarControls !== 'view-only' && showExpandButton) {
+    if ((e.key === 'e' || e.key === 'E') && showExpandButton) {
       e.stopPropagation();
       (onExpand ?? openExpandModal)();
     }
@@ -2972,13 +2935,6 @@ export function renderWaferMap(
   syncChromeRowVisibility();
 
   return {
-    setDies(newDies: Die[]): void {
-      currentDies = newDies;
-      rebuildView();
-      render();
-      if (summaryPanelEl) renderSummaryPanel();
-    },
-
     setResult(newResult: WaferMapResult): void {
       currentResult = newResult;
       wafer         = newResult.wafer;
@@ -2999,11 +2955,11 @@ export function renderWaferMap(
       if (summaryPanelEl) renderSummaryPanel();
     },
 
-    setOptions(partial: Partial<WaferViewOptions>): void {
+    setOptions(partial: Partial<CardViewOptions>): void {
       syncOpts(partial);
     },
 
-    getOptions(): WaferViewOptions {
+    getOptions(): CardViewOptions {
       return { ...viewOpts };
     },
 
@@ -3017,12 +2973,6 @@ export function renderWaferMap(
     clearSelection(): void {
       selectedKeys = new Set();
       onSelect?.([]);
-      render();
-    },
-
-    setFallbackFormat(format: 'si' | 'engineering'): void {
-      currentFallbackFormat = format;
-      rebuildView();
       render();
     },
 
@@ -3069,19 +3019,6 @@ export function renderWaferMap(
       if (btnExpand) btnExpand.style.display = visible ? 'flex' : 'none';
     },
 
-    setHelpButtonVisible(visible: boolean): void {
-      if (btnHelp) btnHelp.style.display = visible ? 'flex' : 'none';
-    },
-
-    setIdentityVisible(visible: boolean): void {
-      identityHeaderHostHidden = !visible;
-      // Not gated on `insightsOpen` any more: the identity stays visible in the
-      // Insights view too (the chart suite no longer renders its own copy), so
-      // this reflects the host's wish and nothing else.
-      if (headerBar) headerBar.style.display = visible ? '' : 'none';
-      syncChromeRowVisibility();
-    },
-
     openUserGuide: openGuideWindow,
 
     setInsightsOpen(open: boolean): void {
@@ -3097,55 +3034,6 @@ export function renderWaferMap(
           btnInsights.style.color      = CLR.icon;
         }
       }
-    },
-
-    closeSummaryPanel(): void {
-      const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
-      if (!panelEl || panelEl.style.display === 'none') return;
-      panelEl.style.display = 'none';
-      if (btnSummary) {
-        delete btnSummary.dataset.active;
-        btnSummary.style.background = 'transparent';
-        btnSummary.style.color      = CLR.icon;
-      }
-    },
-
-    setTooltipParent(parent: HTMLElement): void {
-      if (tooltip) reparentTooltip(parent);
-    },
-
-    getActiveLegend(): Array<{ bin: number | string; name: string; color: string }> | null {
-      const mode = viewOpts.plotMode;
-      if (mode === 'metadata') {
-        const key = viewOpts.activeMetadataKey;
-        if (!key) return null;
-        const fieldDef = metadataFields?.find(f => f.key === key);
-        const values = [...new Set(
-          currentDies.map(d => d.metadata?.[key])
-            .filter((v): v is string | number | boolean => v !== undefined && v !== null &&
-              (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'))
-            .map(String),
-        )].sort();
-        if (!values.length) return null;
-        return values.map((value, index) => {
-          const valueDef = fieldDef?.values?.find(v => v.value === value);
-          const color = valueDef?.color ?? metadataValueColor(index);
-          return { bin: value, name: valueDef?.label ?? value, color };
-        });
-      }
-      if (mode !== 'hardBin' && mode !== 'softBin') return null;
-      const isHard = mode === 'hardBin';
-      const defs = isHard ? hbinDefs : sbinDefs;
-      const bins = [...new Set(currentDies.map(d => isHard ? d.hbin : d.sbin).filter((b): b is number => b !== undefined))].sort((a, b) => a - b);
-      if (!bins.length) return null;
-      // The view's resolved colours — the ones the dies are drawn in. This used
-      // to hash the bin number itself, so a host building its own legend from
-      // here named colours the map was not using.
-      const colors = isHard ? currentView.binColors.hard : currentView.binColors.soft;
-      return bins.map(bin => {
-        const def = defs?.find(d => d.bin === bin);
-        return { bin, name: def?.name ?? `Bin ${bin}`, color: colors.get(bin) ?? NO_DATA_FILL };
-      });
     },
 
     destroy(): void {

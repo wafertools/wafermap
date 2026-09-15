@@ -237,8 +237,7 @@ When the library detects likely-partial coverage with no `center`, it adds a
 structured `WaferWarning` to `result.warnings` (code `'partial-coverage'`) and sets
 `result.inference.wafer.method` to `'inferred-partial'`. Detection is heuristic,
 so for any partial dataset set `waferConfig.center` explicitly rather than relying
-on the warning. (`result.inference.warnings` is a deprecated string-array mirror
-of the same messages — use `result.warnings` in new code.)
+on the warning.
 
 You do not have to display this yourself. `renderWaferMap` and `renderWaferGallery`
 show a ⚠ indicator in the toolbar whenever the result carries advisories, so an
@@ -371,6 +370,13 @@ const result = buildWaferMap({
 const yld = result.yield.yieldPercent;
 console.log(yld !== null ? `${yld.toFixed(1)}%` : 'n/a');
 ```
+
+Set pass bins **once, here**. The result carries them (`result.passBins`), and every
+renderer, analysis, panel, report and chart reads them from it — so bin 100 above is green,
+listed with the passing bins and counted as good everywhere, with nothing to repeat. In a
+gallery each wafer keeps its own, so a lot mixing test programs is judged wafer by wafer. There is no
+`passBins` option on the renderers or on `analyzeWaferMap`; a map you build yourself, without
+`buildWaferMap`, states its own `passBins` on the map object.
 
 **→ [Demo: Working with bins](examples/named-bins.html)**
 
@@ -674,7 +680,6 @@ renderWaferMap(container, result, {
     showQuadrantBoundaries:  false,
     showDieLabels:           false,         // die index labels
     showXYIndicator:         true,
-    ringCount:               4,
     rotation:                0,             // 0, 90, 180, 270
     flipX:                   false,
     flipY:                   false,
@@ -695,8 +700,8 @@ const ctrl = renderWaferMap(container, result, { viewOptions: { plotMode: 'hardB
 // Switch display mode (activeTest is a testNumber, e.g. from testDefs):
 ctrl.setOptions({ plotMode: 'value', activeTest: 1050 });
 
-// Replace die data (e.g. after a data reload) — preserves zoom/pan:
-ctrl.setDies(newDies);
+// Replace the result (e.g. after a data reload) — preserves zoom/pan:
+ctrl.setResult(newResult);
 
 // Read current state:
 const opts = ctrl.getOptions();
@@ -744,12 +749,10 @@ renderWaferMap(container, result, {
 });
 ```
 
-Or keep the toolbar but remove the mode selector (useful when your app manages the
-mode externally):
+To keep your app's own mode controls in step with the toolbar, listen for changes:
 
 ```ts
 renderWaferMap(container, result, {
-  showPlotModeSelector: false,
   viewOptions: { plotMode: 'value' },
   onViewOptionsChange: (opts) => syncMyModeUI(opts),
 });
@@ -784,11 +787,11 @@ renderWaferMap(container, result, {
 
 The Legend style button is automatically disabled when the map is in `value` or stacked mode, since those modes use a continuous colorbar instead of a bin legend.
 
-For galleries, `legendPosition` is a top-level `GalleryOptions` field and applies to all cards:
+For galleries, set it the same way; it applies to all cards:
 
 ```ts
 renderWaferGallery(container, items, {
-  legendPosition: 'floating',
+  viewOptions: { legendPosition: 'floating' },
 });
 ```
 
@@ -808,7 +811,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/zoomIn.svg" width="20" height="20"> <img src="images/icons/zoomOut.svg" width="20" height="20"> <img src="images/icons/reset.svg" width="20" height="20"> | Zoom in / Zoom out / Reset | Always | Step zoom; Reset returns to fitted view |
 | <img src="images/icons/pan.svg" width="20" height="20"> | Pan mode | Always | Drag to pan |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select | Always | Drag to select a group of dies; fires `onSelect` when provided |
-| <img src="images/icons/mode.svg" width="20" height="20"> | Plot mode | Unless `showPlotModeSelector: false` | Opens mode menu: Test Value, Hard Bin, Soft Bin, and Stacked modes (only when map was built with `lotStack`) |
+| <img src="images/icons/mode.svg" width="20" height="20"> | Plot mode | Always | Opens mode menu: Test Value, Hard Bin, Soft Bin, and Stacked modes (only when map was built with `lotStack`) |
 | <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Opens colour scheme picker |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0; hidden whenever a solid pass/fail display is active or the active test is functional (log scale has no effect on pass/fail colouring) |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range between spec-limit range (`[limitLow, limitHigh]`) and data range (actual min/max). Out-of-spec dies are flagged with ▽/△ markers in both. |
@@ -820,8 +823,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). Hidden (and `E` disabled) while the Insights tab is open — see below. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#511-user-guide-extension) |
 
-The full toolbar is shown when `toolbarControls` is `'full'` (default). A gallery card's
-detached window also uses `'full'`. In the gallery, cards show only the navigation controls
+A gallery card's detached window shows the full toolbar. In the gallery, cards show only the navigation controls
 (download, zoom, pan, select) — the view controls (mode, overlays, orient, etc.) live in the
 shared gallery bar.
 
@@ -840,13 +842,13 @@ The gallery control bar is always visible above the card grid.
 
 | | Button | Condition | What it does |
 | --- | --- | --- | --- |
-| <img src="images/icons/mode.svg" width="20" height="20"> | Plot mode | Unless `showPlotModeSelector: false` | Same mode menu as single map; stacked modes always available in the gallery |
+| <img src="images/icons/mode.svg" width="20" height="20"> | Plot mode | Always | Same mode menu as single map; stacked modes always available in the gallery |
 | <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Colour scheme picker; applies to all cards |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Applies to all cards |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, active test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range: spec-limit range ↔ data range. Out-of-spec dies are flagged with ▽/△ markers in both; applies to all cards |
 | <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator, Spec pass/fail (value mode, active test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) — applies to all cards |
-| <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position; applies to all cards |
+| <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Always | Dropdown: **Legend on each map** toggle (off by default — the lot legend strip stands in for it), then the per-card legend position, available only while that toggle is on and in a bin or metadata mode |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch. Cards are size-capped and pack from the left rather than stretching to fill the width |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Download all | Always | Exports all cards as a single tiled PNG |
@@ -990,8 +992,8 @@ the map. See [Summary panel](#summary-panel) for the full panel content
 reference and configuration options (auto-open, pinned placement, gallery use).
 
 When you pass a `WaferMapResult` to `analyzeWaferMap`, the `passBins` you gave to
-`buildWaferMap` are carried through automatically — you only need to set `passBins`
-explicitly in `analyzeWaferMap` options if you want to override them.
+`buildWaferMap` are carried through automatically. `analyzeWaferMap` has no `passBins` option of
+its own: pass bins are set once, on `buildWaferMap`.
 
 ### What gets analysed
 
@@ -1006,7 +1008,7 @@ By default the engine checks every combination of:
 
 For each spatial family the engine tests: yield, hard bin rate per bin, soft bin rate per bin, and mean test value per test.
 
-**Angular sectors in detail.** Sector analysis divides the wafer into compass-named angular slices — N, NNE, NE, ENE, E, … (16 sectors by default).  Each sector is compared to the rest of the wafer independently, giving finer directional resolution than quadrants: a drift pattern concentrated in the NE corner shows up as a sector finding even if the wider NE quadrant is diluted by clean dies elsewhere in that quarter.  Dies within 0.2 normalised radius of the wafer centre are excluded from sector analysis (they are too close to the centre to be meaningfully attributed to a direction).  The number of sectors is controlled by `sectorCount` (4, 8, 16, or 32); the feature can be disabled entirely with `enableAngularAnalysis: false`.
+**Angular sectors in detail.** Sector analysis divides the wafer into compass-named angular slices — N, NNE, NE, ENE, E, … (16 sectors by default).  Each sector is compared to the rest of the wafer independently, giving finer directional resolution than quadrants: a drift pattern concentrated in the NE corner shows up as a sector finding even if the wider NE quadrant is diluted by clean dies elsewhere in that quarter.  Dies within 0.2 normalised radius of the wafer centre are excluded from sector analysis (they are too close to the centre to be meaningfully attributed to a direction).  The number of sectors is controlled by `sectorCount` (4, 8, 16, or 32).
 
 Findings are suppressed unless they pass both an adjusted p-value threshold and an effect size gate. The effect size gate uses two complementary criteria — absolute and relative — so that meaningful patterns are not missed on wafers with either high or low background failure rates.
 
@@ -1058,20 +1060,12 @@ Use the `summary`, `effect`, and `stats` fields on each `StatsFinding` to displa
 
 ```ts
 const summary = analyzeWaferMap(result, {
-  ringCount:                 4,      // must match the renderer's ringCount
-  passBins:                  [1],
   // significanceLevel / minimumEffectSize / minimumRelativeEffect were REMOVED in
   // 0.27.0 — they are internal constants now. They set what counts as a finding,
   // so a wrong value made the output wrong rather than merely different, and did
   // so silently. See "Interpreting findings and severity" above for the values.
-  enableYieldAnalysis:       true,
-  enableHardBinAnalysis:     true,
-  enableSoftBinAnalysis:     true,
   enableTestValueAnalysis:   true,   // default FALSE — opt in for regional test-value findings (expensive);
                                      // use computePerTestStats: true for box-plot stats without the Welch pass
-  enableReticlePositionAnalysis: true,  // auto-disabled when no reticle config
-  enableAngularAnalysis:     true,   // sector directional analysis
-  enableClusterAnalysis:     true,   // contiguous failure cluster + edge arc detection
   sectorCount:               8,      // 4 | 8 | 16 | 32
 });
 ```
@@ -1087,16 +1081,16 @@ Every enabled variable is compared across **every** enabled region family — th
 
 |                          | Rings | Quadrants | Sectors¹ | Reticle² | Test sites³ |
 |--------------------------|:-----:|:---------:|:--------:|:--------:|:-----------:|
-| **Yield** (`enableYieldAnalysis`)        | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Hard bin** (`enableHardBinAnalysis`)   | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Soft bin** (`enableSoftBinAnalysis`)   | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Yield**        | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Hard bin**   | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Soft bin**   | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Test value** (`enableTestValueAnalysis`) | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 The **column** toggles control which region families are built at all:
 
-1. **Sectors** — built only when `enableAngularAnalysis: true` (default), with `sectorCount` slices.
-2. **Reticle positions** — built only when `enableReticlePositionAnalysis: true` (default) **and** a reticle configuration is present; otherwise skipped automatically.
-3. **Test sites** — built only when the wafer has meaningful site duplication (≥ 2 distinct `siteNum` values, each on ≥ 3 dies), unless `enableTestSiteAnalysis` forces it on (`true`) or off (`false`).
+1. **Sectors** — always built, with `sectorCount` slices.
+2. **Reticle positions** — built only when a reticle configuration is present; otherwise skipped automatically.
+3. **Test sites** — built only when the wafer has meaningful site duplication (≥ 2 distinct `siteNum` values, each on ≥ 3 dies).
 
 Rings and quadrants are always built. The **row** toggles control which variables are compared across whatever families exist.
 
@@ -1181,9 +1175,9 @@ were replaced by a merge and no longer exist in `findings`.
 ### Updating findings after a data change
 
 ```ts
-// After replacing die data:
-ctrl.setDies(newDies);
-const newSummary = analyzeWaferMap({ ...result, dies: newDies });
+// After rebuilding the map with new data (newResult = buildWaferMap(...)):
+ctrl.setResult(newResult);
+const newSummary = analyzeWaferMap(newResult);
 ctrl.setStatsSummary(newSummary);
 ```
 
@@ -1281,9 +1275,9 @@ The panel is divided into sections:
 ```ts
 const ctrl = renderWaferMap(container, result, { statsSummary: summary });
 
-// After a data reload:
-ctrl.setDies(newDies);
-const newSummary = analyzeWaferMap({ ...result, dies: newDies });
+// After a data reload (newResult = buildWaferMap(...)):
+ctrl.setResult(newResult);
+const newSummary = analyzeWaferMap(newResult);
 ctrl.setStatsSummary(newSummary);
 ```
 
@@ -1497,7 +1491,7 @@ It runs per-wafer analysis internally, so a single call gives you everything —
 ```ts
 import { analyzeWaferLot } from '@wafertools/wafermap/stats';
 
-const lotSummary = analyzeWaferLot(waferResults, { ringCount: 4 });
+const lotSummary = analyzeWaferLot(waferResults);
 
 const items = waferResults.map((r, i) => ({
   ...r,
@@ -1546,6 +1540,8 @@ ctrl.setLotStatsSummary(newLotSummary);
 ### Exporting reports
 
 The library can generate standalone printable HTML reports that open in a new browser tab and can be saved as PDF.
+
+> **Calling the report builders directly is deprecated — removed in 0.31.0.** The Summary panel's report button produces these reports; `setReportOpener`, below, routes them into your host and stays.
 
 **Wafer summary report** — everything shown in a single wafer's summary panel (yield, bins, ring/quadrant yield, test stats, findings):
 
@@ -1690,9 +1686,7 @@ Once a `reticleConfig` is set, every die's hover tooltip also gains a
 `Reticle (column, row)` line directly below `Die (x, y)`, showing that die's
 field-local position (`0`-indexed, relative to `anchorDie`) — independent of
 whether the reticle overlay is currently toggled on. This is on by default
-with no extra configuration; custom `toCanvas` pipelines calling
-`buildHoverText` directly can pass `reticleConfig` as its final argument to
-get the same line.
+with no extra configuration.
 
 ### Reticle analysis in the stats engine
 
@@ -1703,7 +1697,7 @@ aberrations:
 
 ```ts
 const result  = buildWaferMap({ results, dieConfig, reticleConfig });
-const summary = analyzeWaferMap(result, { enableReticlePositionAnalysis: true });
+const summary = analyzeWaferMap(result);
 // result.reticleConfig is passed through automatically
 ```
 
@@ -1757,9 +1751,6 @@ monotonically-incrementing counter):
 const summary = analyzeWaferMap(result);
 // test-site findings appear automatically when the guard passes
 
-// To force-enable or suppress explicitly:
-const summary = analyzeWaferMap(result, { enableTestSiteAnalysis: true  });
-const summary = analyzeWaferMap(result, { enableTestSiteAnalysis: false });
 ```
 
 Findings compare each site against all other sites, using the same yield, hard-bin,
@@ -1904,17 +1895,21 @@ parameter genuinely has its notable end at the bottom.
 
 ### How bin colours are assigned
 
-A bin's colour is never picked from its number. `resolveBinColors` (which every surface uses —
-map, legend, summary panel, Insights charts) works from the bins actually present:
+A bin's colour comes from its number and whether it passes, never from how many dies it has, so
+bin 7 is the same colour in every lot, gallery and screenshot of a program. One rule
+(which every surface uses — map, legend, summary panel, Insights charts) applies it:
 
 - **Pass bins are green, fail bins are not.** Which bins pass comes from `passBins`, so a failing
   bin 1 is never green and a passing bin 3 always is. A soft bin counts as passing when every die
   carrying it passes.
-- **The biggest bins get the clearest colours.** Bins take palette slots in order of die count,
-  so no two bins share a colour until the palette runs out. When it does, the map raises a
-  `bin-colors-shared` warning naming them rather than letting two bins look identical.
-- **A gallery colours every wafer it shows at once**, so bin 7 is the same colour on every
-  card — whether those wafers come from one lot or several.
+- **The bin number picks the colour.** Bin 1 takes the palette's first pass colour and bin 2 its
+  first fail colour, then on through each list, wrapping round. The front of each list is the
+  most distinct, so the low bin numbers most programs use get the clearest colours.
+- **Hard and soft bins are coloured separately.** Soft bins start half a palette further on, so
+  hard bin 3 and soft bin 3 are different colours.
+- **Bins a palette-length apart share a colour** (fail bins 2 and 21 in the default palette).
+  When both are on screen the map raises a `bin-colors-shared` warning naming them rather than
+  letting two bins look identical.
 - **Colours from bin definitions win.** A `BinDef.color` (a site's standard bin colour sheet, say)
   overrides the palette for that bin; the viewer can switch that off with **Use colours from bin
   definitions** in the Palette menu, and back on again.
@@ -1926,8 +1921,8 @@ import { registerBinColorScheme, registerValueColorScheme } from '@wafertools/wa
 
 registerBinColorScheme('my-brand', {
   label: 'My Brand',
-  pass: ['#1b7f3b', '#7cc68a'],                         // passing bins, most populous first
-  fail: ['#c62828', '#1565c0', '#ef6c00', '#6a1b9a'],   // failing bins — most distinct first, no greens
+  pass: ['#1b7f3b', '#7cc68a'],                         // passing bins, from bin 1
+  fail: ['#c62828', '#1565c0', '#ef6c00', '#6a1b9a'],   // failing bins, from bin 2 — most distinct first, no greens
 });
 
 registerValueColorScheme('my-brand', {
@@ -2044,20 +2039,16 @@ renderWaferGallery(container, items, { viewOptions: { plotMode: 'value' } });
 > your responsibility. Prefer `{ test, range }` whenever the range was derived
 > from a specific test.
 
-### Keep `ringCount` consistent between renderer and stats engine
+### Changing the ring count
 
-The stats engine partitions dies into rings independently of the renderer. If you
-change `ringCount`, change it in both places or the ring boundaries shown on the
-map won't match the ring findings:
+Set `ringCount` once, on `buildWaferMap` (default 4). The result carries it, and the ring
+boundaries on the map, the Summary panel's ring yield, the report and the ring findings all
+read it, so "Ring 2" always names the same dies:
 
 ```ts
-const RING_COUNT = 4;
-
-const summary = analyzeWaferMap(result, { ringCount: RING_COUNT });
-renderWaferMap(container, result, {
-  statsSummary: summary,
-  viewOptions: { ringCount: RING_COUNT },
-});
+const result  = buildWaferMap({ results, waferConfig, dieConfig, ringCount: 5 });
+const summary = analyzeWaferMap(result);
+renderWaferMap(container, result, { statsSummary: summary });
 ```
 
 ### Sync toolbar state to your own UI controls
@@ -2176,7 +2167,7 @@ and inserted one per browser task as the factories run:
 ```ts
 const items = fixtures.map(sample => () => {
   const result  = buildWaferMap({ results: sample.results, passBins: [1] });
-  const summary = analyzeWaferMap(result,  { passBins: [1] });
+  const summary = analyzeWaferMap(result);
   return { ...result, label: sample.label, statsSummary: summary };
 });
 
@@ -2211,7 +2202,6 @@ const result = buildWaferMap({
 
 // Run spatial analysis on the aggregated result
 const summary = analyzeWaferMap(result, {
-  ringCount:   4,
   testNumbers: [1060],   // optional: restrict to a specific test
 });
 
@@ -2238,63 +2228,12 @@ limits are defined, cluster detection is skipped automatically.
 
 ## Advanced: the rendering pipeline
 
-`renderWaferMap` handles the full pipeline for you.  Use
-the manual pipeline only when you need control they cannot provide — for example,
-to drive a custom canvas renderer, integrate with a non-DOM environment, or step
-through the geometry for debugging.
-
-```ts
-import {
-  createWafer,
-  generateDies,
-  clipDiesToWafer,
-  applyOrientation,
-  applyProbeSequence,
-  transformDies,
-  generateReticleGrid,
-  getDieKey,
-} from '@wafertools/wafermap';
-import { buildView } from '@wafertools/wafermap/renderer';
-import { toCanvas } from '@wafertools/wafermap/render';
-
-// 1. Create the wafer geometry
-const wafer = createWafer({ diameter: 300, notch: { type: 'bottom' } });
-
-// 2. Generate and clip the die grid
-const clipped = clipDiesToWafer(generateDies(wafer, dieSpec), wafer, dieSpec);
-
-// 3. Apply wafer orientation (rotates the data grid to match orientation field)
-const oriented = applyOrientation(clipped, wafer);
-
-// 4. Assign probe sequence (sets die.probeIndex in snake order)
-const sequenced = applyProbeSequence(oriented, { type: 'snake' });
-
-// 5. Merge DieResult[] onto the die grid by (x, y) position
-const resultMap = new Map(results.map(r => [getDieKey(r), r]));
-const enriched  = sequenced.map(die => {
-  const r = resultMap.get(getDieKey(die));
-  return r ? { ...die, hbin: r.hbin, sbin: r.sbin, testValues: r.testValues } : die;
-});
-
-// 6. Build the reticle grid (optional)
-const reticles = generateReticleGrid(wafer, { width: 4, height: 3, diePitchX: 8, diePitchY: 12 });
-
-// 7. Apply interactive transforms (rotation, flip) on top of the base orientation
-const currentDies = transformDies(enriched, { rotation: 90, flipX: false, flipY: false }, wafer.center);
-
-// 8. Build a renderer-agnostic View
-const view = buildView(wafer, currentDies, {
-  plotMode: 'hardBin',
-  reticles,
-  showProbePath: true,
-  interactiveTransform: { rotation: 90, flipX: false, flipY: false },
-});
-
-// 9. Draw to a canvas element (no toolbar, no DOM scaffolding)
-toCanvas(document.getElementById('map'), view);
-```
-
-**→ [Demo: Advanced — the rendering pipeline](examples/pipeline.html)**
+> **Deprecated — removed in 0.31.0.** The manual pipeline (`createWafer`, `generateDies`, `clipDiesToWafer`,
+> `applyOrientation`, `applyProbeSequence`, `transformDies`, `generateReticleGrid`, `buildView`, `toCanvas` and their
+> helpers) is being withdrawn. Nothing known uses it, and it doubled the API a host had to read. Build with
+> `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`, which handle geometry, orientation, probe
+> paths, reticles and interaction. If you depend on the pipeline, say so at
+> https://github.com/wafertools/wafermap/issues.
 
 ## Metadata / layout plot mode
 

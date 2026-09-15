@@ -22,6 +22,241 @@ under `### Breaking`.
 
 ---
 
+## [0.30.0] — 2026-09-15
+
+### Breaking
+
+- **Bin colour is keyed by bin number again, not by die count.** Since 0.28.0,
+  `resolveBinColors` ranked bins by die count and handed out palette colours in that order, so
+  a colour meant "the biggest fail bin in this view" rather than any particular bin: two lots
+  of one program drew hard bin 7 red in one and brown in the other, and filtering a gallery
+  could recolour bins. Industry wafer-map tools key colour on the bin number so engineers can
+  learn a program's colours and compare screenshots; wmap now does the same. A pass bin takes
+  `pass[(bin − 1) mod n]` and a fail bin `fail[(bin − 2) mod n]`, so bin 1 is the first green and
+  bin 2 is red in the default palette. Still pass/fail-aware (a failing bin 1 is never green),
+  still honours `BinDef.color`. The slot comes from the number alone, so changing `passBins`
+  recolours only bins whose verdict changed.
+  - **Soft bins read the palette shifted by half its length**, so hard bin *n* and soft bin *n*
+    are different colours by default.
+  - **`shared` now reports fixed pairs:** bins whose numbers are a palette-length apart (fail
+    bins 2 and 21 in `'default'`, 2 and 16 in `'accessible'`) when both are present, rather than
+    "more bins than colours".
+  - Same function, same types, different colours for the same input, which is why this is
+    breaking. Any host screenshot or test that pinned a rank-derived colour will change.
+- **The `passBins` options on `analyzeWaferMap`, `analyzeWaferLot`, `renderWaferMap` and
+  `renderWaferGallery` are removed.** Pass bins are set once, on `buildWaferMap`'s input, and
+  carried on the result as `WaferMapResult.passBins` (new), which all four read — per wafer in a
+  gallery or lot. A second place to set them is how every surface came to judge pass/fail by `[1]`
+  (see Fixed), and an analysis override produced a summary whose findings and yield figure used
+  different pass bins. A map not built by `buildWaferMap` states them in that same `passBins`
+  field. Passing a removed option is a type error; at runtime `analyzeWaferMap` and
+  `analyzeWaferLot` ignore it and say so with an `analysis-option-corrected` warning, as they do
+  for a stale `ringCount`. To analyse or render with different pass bins, rebuild.
+- **Options and methods removed as unused, duplicated or dead.** Found by measuring what tsmap,
+  the examples and the library itself actually use; each was either never set by anything, a
+  second way to set something that already had one, or accepted and ignored.
+  - `RenderOptions`: `minZoom`/`maxZoom` (fixed at 0.4× and 20× of the fitted view),
+    `renderTooltip`, `maxSize`, `toolbarControls` (its `'view-only'` value was never used),
+    `showPlotModeSelector`, and the top-level `legendPosition` and `fallbackFormat` — set both
+    through `viewOptions`.
+  - `GalleryOptions`: `cardPadding`, `maxSize` (the density-derived card size cap always
+    applies), `showPlotModeSelector`, `legendPosition` and `fallbackFormat` (through `viewOptions`).
+  - `WaferMapController`: `setDies` (it replaced dies but not the wafer geometry, so switching
+    wafers with it kept the previous wafer's outline — use `setResult`), `setFallbackFormat` (use
+    `setOptions({ fallbackFormat })`), `setHelpButtonVisible`, `setTooltipParent`.
+    `GalleryController`: `setFallbackFormat`, `setColumns`.
+  - `ViewOptions.dieGap` (fixed at 1 mm), `ToCanvasOptions.topClearance` (always passed 0),
+    `DieListDisplayOptions.csvFilename`.
+  - `AnalyzeWaferMapOptions.includePartial` / `includeEdgeExcluded`: analysing dies that yield
+    excludes could only make the findings describe a different population from the yield figure
+    beside them. `isYieldEligibleDie`'s own options are unchanged.
+  - `fallbackFormat` is now a view preference (`WaferPreferences.fallbackFormat`), reported
+    through `onViewOptionsChange` with the others.
+  - **Gallery-to-card plumbing is off the public API.** `WaferDisplayState` loses `binColors`,
+    `metadataValueOrder` and `lotSize`; `RenderOptions` loses `chromeInset` and `onExpand`;
+    `WaferMapController` loses `setSummaryVisible` and `setViewControlsVisible`. The gallery set
+    all of them on its own cards, and on a host's map they read as settings a host must supply to
+    get a valid map — a lone map resolves its bin colours, metadata order and lot size itself.
+    `renderWaferGallery`'s `getOptions()` and `onViewOptionsChange` no longer carry the three
+    fields either (`binColors` held `Map`s, which a host persisting its options could not
+    serialise). `ViewOptions.binColors`, `.metadataValueOrder` and `.lotSize` for `buildView` are
+    unchanged.
+- **Ring count is set once, on `buildWaferMap`.** `WaferMapInput.ringCount` (default 4) is
+  carried as `WaferMapResult.ringCount`, and the ring overlay, ring findings, Summary panel,
+  report and Insights all read it. `AnalyzeWaferMapOptions.ringCount` and the view preference
+  `ringCount` are removed: they were two places that had to match, and when they did not, the
+  ring boundaries on the map described different rings from the ring findings beside them.
+  Validation moved with it — a bad value is corrected and reported in `result.warnings` as
+  `analysis-option-corrected`, still with no upper bound. A gallery whose wafers were built with
+  different ring counts raises the new `ring-count-mixed` warning; each card and each wafer's
+  findings use their own. `ViewOptions.ringCount` (for `buildView`) and `classifyDie`'s option
+  are unchanged.
+- **`BinColors` has a new required field, `pass: { hard: Set<number>; soft: Set<number> }`** —
+  the bins that pass, per type, as `resolveBinColors` judged them. A host that builds a
+  `BinColors` by hand must add it; an object without it passed as `ViewOptions.binColors` is
+  now ignored and resolved afresh rather than trusted. `binPassSets(dies, passBins)` gives the
+  same sets without colours.
+- **`WaferMapResult.inference.warnings` is removed.** It has been a deprecated string mirror since
+  0.13.5, when `WaferMapResult.warnings` replaced it with the same messages plus a stable `code` and
+  a severity. Read `result.warnings`. Internally each geometry advisory now records its code where it
+  is detected, rather than having it recovered by matching phrases in the message.
+- **`View.colorBySpec` is removed.** Its input option went in 0.21.0; the output stayed, only ever
+  equal to `passFailDisplay === 'spec'`. Read `view.passFailDisplay`.
+- **`ToCanvasOptions.activeBin`, `.hoverBin` and `.minRightReserve` are removed.** They carry the
+  interactive map's own legend highlight, pointer and mode-switch layout state, which a direct
+  `toCanvas` caller has none of — the same reason `RenderOptions` already dropped them.
+- **`AnalyzeWaferMapOptions` loses its per-analysis switches:** `enableYieldAnalysis`, `enableHardBinAnalysis`, `enableSoftBinAnalysis`, `enableReticlePositionAnalysis`, `enableTestSiteAnalysis`, `enableClusterAnalysis`, `enableAngularAnalysis` and `enablePatternClassification`.
+  Each was cheap and on by default; every analysis now runs, and a caller wanting fewer findings
+  filters them (`filterFindings`). Passing one from untyped JavaScript is reported as
+  `analysis-option-corrected`. The two that cost real time stay: `enableTestValueAnalysis`, and
+  `computePerTestStats`, which triples analysis time on a 7,843-die, 50-test wafer (94 ms → 298 ms)
+  and so cannot simply always run.
+- **`WaferMapController.setExpandVisible`, `setIdentityVisible`, `closeSummaryPanel` and
+  `getActiveLegend` are removed.** The first two duplicated the `showExpandButton` and `showIdentity`
+  options, and nothing used the other two. The gallery keeps expand-button control internally.
+
+### Fixed
+
+- **A wafer with no die positions covered the Insights view.** In `renderWaferMap`, a
+  coordinate-less wafer's "No die position data" summary stayed on top of the chart suite once
+  Insights was opened, hiding most of it. A mixed wafer's "+N dies without position data" footer
+  did the same. Their z-index beat the Insights layer's. The map view is now hidden outright while
+  Insights is open, so nothing inside it can show through, and its controls leave the tab order.
+
+- **Input names removed in earlier releases vanished without a trace.** A plain-JavaScript caller
+  still passing `data` instead of `results` got an empty map, and `values` instead of `testValues`
+  a map with no test data — no error, no warning, nothing that looked wrong. `buildWaferMap` now
+  reports every removed name it finds (`data`, `die`, `stack`, `values`, `TestDef.index`,
+  `dieConfig.origin`, `waferConfig.flat`, `reticleConfig.anchor`, `lotStack.aggr`) as a new
+  `input-field-removed` warning naming each replacement, in `result.warnings` and on the console.
+  It still does not honour them: rename and rebuild.
+- **Pass bins given to `buildWaferMap` were used for `result.yield` and nothing else.** The result
+  had nowhere to keep them, so every later surface fell back to `[1]` unless the caller repeated
+  them: `analyzeWaferMap`'s findings and yield statistics, bin colours and legend order, the
+  failing-die hatch, the Summary panel and report, region yield, the Insights yield charts, the
+  gallery strip's Yield, and the map's own internal view. A program whose bins 1 and 2 both pass
+  therefore showed bin 2 as a failure everywhere except the one yield figure — and the docs
+  already claimed `analyzeWaferMap` inferred them from the result. tsmap hit this on every file
+  whose pass bins are not just bin 1: it gives each wafer's pass bins to `buildWaferMap` and to
+  nothing else. `[1]` is now a default only at `buildWaferMap`'s input; `WaferMapResult.passBins`
+  carries the value everywhere after.
+  - **A gallery judges each wafer by its own pass bins**, so a lot mixing test programs is
+    correct per wafer in cards, strip yield, lot panel, report, region yield and Insights. Hard
+    bins that pass on one wafer and fail on another get one colour and one legend row, so the
+    gallery raises `pass-bins-mixed` naming them. Yield labels say "per wafer: bin 1 · bins 1, 2"
+    when wafers disagree, rather than naming one wafer's set.
+  - The report's lot region-yield table and the gallery strip's yield were separate copies of
+    the per-die pass rule; both now use the shared ones (`buildRegionYieldData`, `diePassStatus`).
+- **A map's bin legend drew its title over the first row when there were many bins.** Rows
+  were fitted to the full canvas height and the "Soft Bin"/"Hard Bin" title placed above them
+  afterwards, clamped below the toolbar, so a legend tall enough to fill the height had its
+  title printed across row one. The title row (and a floating legend's padding and heading) is
+  now reserved before rows are fitted; overflow moves into "+ N more" one row sooner.
+- **Bin legends list pass bins first, then failing bins by die count**, the order the Summary
+  panel, report and Insights pareto already used (`sortBinsForDisplay`). The per-map canvas
+  legend and the gallery's legend strip both sorted by bin number, so one lot was listed two
+  ways on one screen, and a program with dozens of bins buried its biggest failures.
+- **Soft bins were ordered, and the gallery's soft-bin yield was totalled, as if hard pass bin
+  numbers applied to them.** The Summary panel, both report bin tables and the gallery strip
+  judged a soft bin "pass" by looking it up in `passBins`, which holds hard-bin numbers: soft bin
+  1 sorted as a pass and soft bin 100 as a fail whatever their dies did, and the gallery strip's
+  Yield read about 0% in soft-bin mode for any program whose passing soft bins are numbered
+  differently. They now use the soft bin's own verdict (`BinColors.pass.soft`).
+- **A gallery card had no title unless the host passed `label`, and every other surface named
+  that wafer differently.** Without `label` the card header was blank, so an engineer could not
+  tell which wafer a card showed. The findings list, the lot report, the yield list and the die
+  list's Wafer column called it `W3`, a position that reads like a wafer ID and need not match
+  the real one; a detached window called it "Wafer map"; and the Insights tab used the wafer ID.
+  The wafer ID was on every item. One internal rule, `waferDisplayLabel` (`core/waferLabel.ts`),
+  now names a wafer everywhere: the host's `label`, else `wafer.metadata.waferId`, else
+  "Wafer 3 (no ID)". Hosts that pass `label` see no change.
+- **The gallery's Legend style menu offered per-card legend positions as if they applied to
+  a legend nobody could see.** Per-card legends are off by default in `renderWaferGallery`
+  (the lot legend strip stands in for them), yet the menu listed the six positions first,
+  live, with **Default (right)** ticked, and the **Legend on each map** toggle last. It read
+  as though the positions moved the lot strip. The toggle now comes first, and the positions
+  follow under **Position on each map**, greyed and unticked, with the reason as a tooltip,
+  until per-card legends are on. The single-map menu, which has no toggle, is unchanged.
+  The rule is in `makeLegendStyleBtn` (`toolbar.ts`).
+
+### Changed
+
+- **Segments of the gallery legend's population bar are now separated by a 1px gap.**
+  Segments are ordered by die count, so any two palette colours can sit side by side, and at
+  8px tall the darker ones (black, indigo, dark teal, brown) and the pass greens ran together,
+  so the bar read as fewer, wider bins than it held. The gap is transparent, so
+  it shows the strip's own background in either theme, and it adds to each segment's 2px
+  minimum width rather than eating into it.
+
+### Deprecated
+
+- **`valueToViridis`, `valueToGreyscale` and `getValueColorScheme`**, to be removed in
+  0.31.0. Each still works, logs one console notice on first use, and is struck
+  through in editors. Use `resolveValueColorFn(name, reversed)` instead:
+  `resolveValueColorFn('default')` and `resolveValueColorFn('greyscale')` return exactly the
+  colours the first two did. None of the three applies `reverseValueScheme`, so a legend, chart
+  or export built on them could show a reading in a different colour from the map.
+  `listValueColorSchemes()` gives scheme names and labels.
+- **The chart-data builders**, to be removed in 0.31.0: `buildYieldData`,
+  `buildYieldDataCombined`, `buildBinParetoData`, `buildBinClusterData`, `buildCapabilityData`,
+  `buildTestBoxplotData`, `buildTestTrendData`, `trendCentre`, `buildTestPassRateData`,
+  `hasJudgeableTests`, `buildTestHistogramData`, `buildTestHistogramSeries`,
+  `buildCorrelationMatrix`, `filterCorrelationMatrix`, `buildScatterData` and
+  `buildScatterDataGrouped`. They were made public so a host could draw the Insights charts
+  itself, before the Insights tab (`insights: { enabled: true }`) drew them; neither tsmap nor
+  any example calls them. Each still works and logs one console notice on first use. There is
+  no replacement: if you depend on one, say so at https://github.com/wafertools/wafermap/issues. Their types stay until the
+  functions go. `buildFacetTable`, `facetValueOf` and `mergeTestDefs` are not
+  deprecated.
+- **The low-level drawing pipeline**, to be removed in 0.31.0: `buildView`, `toCanvas`, `createWafer`,
+  `generateDies`, `clipDiesToWafer`, `applyOrientation`, `transformDies`, `applyProbeSequence`,
+  `generateReticleGrid`, `mapDataToDies`, `isInsideWafer`, `getReticleCell`, `resolveGridPitch`,
+  `classifyDie`, `getRingLabel`, `aggregateValues`, `aggregateBinCounts`, `getUniqueBins`,
+  `buildHoverText`, `buildMapTitle` and the eight `affine*` helpers. It let a host draw a map without
+  `renderWaferMap`; nothing known does — tsmap draws every map through the renderers — and only the
+  pipeline example used it, which is removed. The types only the pipeline needs (`ViewOptions`,
+  `ToCanvasOptions` and the rest) go with it.
+- **Helpers exported by accident**, to be removed in 0.31.0: the region builders (`buildRingRegions`,
+  `buildQuadrantRegions`, `buildSectorRegions`, `buildReticlePositionRegions`, `buildTestSiteRegions`,
+  `buildRegionYieldData`, `areQuadrantsAdjacent`, `parseRegionKey`, `sectorCompassNames`),
+  `classifyPattern`, `visibleFindings`, `computeFunctionalYield`, `resolveMetadataColumns`,
+  `discoverDieMetadataKeys`, the report builders (`renderSummaryReportHtml`,
+  `renderLotSummaryReportHtml`, `renderFindingsReportHtml`, `openHtmlReport`, `openReportModal`),
+  `resolveBinColors`, `getBinColorScheme`, `contrastTextColor`, `getDieTestValue`, `dieHasTestData`,
+  `isParametricTest`, `isPositionedDie`, `metadataDisplayValue`, `metadataCategoricalValue`,
+  `buildDieListSection`, `DEFAULT_FACET_CURATION` and `STANDARD_WAFER_DIAMETERS_MM`. The library
+  applies each itself. Staying, because each carries a rule or a hook a host needs: `getDieKey`,
+  `getTestPassStatus`, `diePassStatus`, `isYieldEligibleDie`, `hasPosition`, `filterFindings`,
+  `resolveValueColorFn`, `FACET_NONE_VALUE`, `setReportOpener` and `setDetachWindowOpener`. The two
+  constants cannot log a notice; the functions do.
+- **The 0.31.0 removal is enforced**, not just announced: a test fails once the changelog or
+  `package.json` reaches 0.31.0 while any of these exports is still there.
+
+### Docs
+
+- **New example, "Bin colours across a full program"** (`docs/examples/bin-colours.html`).
+  A four-wafer gallery over a new generated dataset, `showcase-bin-rich`: 15 hard bins with two
+  pass grades and gaps in the numbering, and 32 soft bins numbered under their hard bin. Each
+  failure mode has its own spatial pattern. Every other bundled dataset has 2–6 bins, which is
+  too few to show how bin colour behaves across a real program. The soft bins deliberately
+  outnumber the palette, so the example also shows the `bin-colors-shared` warning. The data
+  comes from `scripts/gen-showcase-csvs.mjs` like the other showcase files.
+
+### Internal
+
+- **CI runs once per push to `main`, not twice.** `ci.yml` had its own `push` trigger while
+  `deploy.yml`, which also runs on every push, calls it as its gating job, so the same suite
+  ran twice in parallel on each commit. `ci.yml` now triggers only on pull requests (and as
+  a reusable workflow). `deploy.yml` is therefore the only thing testing pushes to `main`,
+  and says so. The README badge now points at `deploy.yml`.
+- **The perf suite's ratio tests use the fastest of N runs instead of the median**
+  (`fastest()` in `tests/perf.test.mjs`). The two paths in a ratio are timed one after the
+  other, so background load inflated them unequally. The value-vs-hardBin check failed an
+  `npm publish` at 2.86× on a loaded machine where both paths had slowed about 7×. Absolute
+  budget tests keep the median, where a minimum would weaken the guard. The value-mode limit
+  stays at 2.5×: measured, the steadier statistic does not buy back enough headroom under
+  CPU saturation to tighten it.
+
 ## [0.29.0] — 2026-09-12
 
 ### Breaking

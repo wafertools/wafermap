@@ -62,11 +62,11 @@ const result = buildWaferMap({
 //   result.yield.yieldPercent   result.dies   result.wafer   result.inference
 console.log(`yield ${result.yield.yieldPercent?.toFixed(1)}% of ${result.dies.length} dies`);
 
-// inference.warnings tells you when supplied geometry could not contain the
-// data — worth surfacing rather than swallowing, because it means one of the
-// two is wrong.
-if (result.inference.warnings?.length) {
-  console.warn('geometry warnings:', result.inference.warnings);
+// result.warnings carries every advisory the build raised — geometry that could
+// not contain the data, partial coverage, input it ignored. Surface it rather than
+// swallowing it: each one means something on the map may be wrong.
+if (result.warnings.length) {
+  console.warn('wafermap warnings:', result.warnings.map(w => `${w.code}: ${w.message}`));
 }
 
 // ── 3. Render ────────────────────────────────────────────────────────────────

@@ -314,6 +314,18 @@ export interface WaferMapInputBase {
    */
   passBins?: number[];
   /**
+   * Equal-radius rings the wafer is divided into for ring overlays, ring yield and
+   * ring findings. Default 4. Set it here, once: the result carries it
+   * (`WaferMapResult.ringCount`) and the renderers, analysis, panels and reports all
+   * read it, so "Ring 2" names the same dies everywhere. A whole number of at least
+   * 1; anything else is corrected and reported as an `analysis-option-corrected`
+   * warning. No upper bound, deliberately: a fine banding is still gated by the
+   * analysis's minimum region size — at 40 rings on a 561-die wafer the ring
+   * findings still carry 16–148 dies each, and a die-count-derived cap rejected
+   * 3 rings on 28-die wafers that produce correct findings.
+   */
+  ringCount?: number;
+  /**
    * Wafer diameters (mm) treated as standard when sanity-checking an *inferred*
    * diameter — see {@link STANDARD_WAFER_DIAMETERS_MM} for the default
    * (100/125/150/200/300) and the measurements behind it.
@@ -349,7 +361,7 @@ export interface WaferMapInputBase {
    */
   retestPolicy?: 'last' | 'first' | 'best' | 'worst';
   /**
-   * Named test definitions — one per entry in `die.values[]`.
+   * Named test definitions — one per test number in `die.testValues`.
    * When provided, tooltips show `"Idsat: 1.23 A"` instead of `"Values: 1.23"`,
    * and the mode selector offers a per-test dropdown entry.
    */
@@ -481,11 +493,11 @@ export interface WaferWarning {
    * - `'test-count-capped'` — raised by `analyzeWaferMap`: more tests were found in
    *   the die data than the analysis cap allows, so test-value analysis was skipped
    *   entirely and NO test findings were produced. Pass `testNumbers` to scope it.
-   * - `'analysis-option-corrected'` — raised by `analyzeWaferMap`: a numeric option
+   * - `'analysis-option-corrected'` — raised by `analyzeWaferMap` (or `buildWaferMap`, for `ringCount`): a numeric option
    *   was outside the range that can produce a meaningful analysis and was clamped.
    *   The message names each correction. Only reachable from untyped callers now
-   *   that the statistical thresholds are internal, but a wrong `ringCount` or
-   *   `sectorCount` still gets here from TypeScript.
+   *   that the statistical thresholds are internal, but a wrong `sectorCount`, or a
+   *   wrong `ringCount` on `buildWaferMap`, still gets here from TypeScript.
    * - `'edge-exclusion-exceeds-radius'` — `waferConfig.edgeExclusion` is larger than
    *   the resolved wafer radius (most likely when the diameter was itself inferred
    *   from sparse/partial data). The excluded band is clamped to the whole wafer
@@ -494,13 +506,29 @@ export interface WaferWarning {
    *   some bins are drawn in the same colour as another bin (more bins than the
    *   bin colour scheme has distinct colours, or a `BinDef.color` repeats one).
    *   Every die is drawn correctly; colour alone just cannot separate those bins.
+   * - `'pass-bins-mixed'` — raised by `renderWaferGallery`: the wafers shown were
+   *   built with different pass bins, and some hard bins pass on one wafer and fail
+   *   on another. Each wafer's verdicts and yield are its own and correct; a bin
+   *   has one colour and one legend row, so those bins show as failing there.
+   * - `'ring-count-mixed'` — raised by `renderWaferGallery`: its wafers were built with
+   *   different `ringCount`s. Each card and each wafer's findings use their own; the
+   *   lot-level ring figures (Summary panel, report, Insights) use the count named in
+   *   the message.
+   *
+   * - `'input-field-removed'` — raised by `buildWaferMap`: the input used a name
+   *   removed in an earlier release (`data`, `die`, `stack`, `values`,
+   *   `TestDef.index`, `dieConfig.origin`, `waferConfig.flat`,
+   *   `reticleConfig.anchor`, `lotStack.aggr`). It was not honoured, so what it
+   *   described — for `data` and `values`, the data itself — is missing from the
+   *   map. The message names each one and its replacement.
    *
    * The union is intentionally open to string so future advisory codes can be
    * added without a breaking change; switch with a `default` branch.
    */
   code: 'partial-coverage' | 'geometry-conflict' | 'non-standard-diameter'
       | 'diameter-exceeds-die-extent' | 'test-count-capped'
-      | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected' | (string & {});
+      | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected'
+      | 'bin-colors-shared' | 'pass-bins-mixed' | 'ring-count-mixed' | 'input-field-removed' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -578,14 +606,6 @@ export interface WaferMapResult {
     diePitch: { confidence: number; units: 'mm' | 'normalized' };
     /** The die grid's origin and step. */
     grid:     { confidence: number };
-    /**
-     * @deprecated Use the promoted top-level `WaferMapResult.warnings` instead —
-     * it is always present (empty when none) and carries structured
-     * `{ code, message, confidence? }` entries you can branch on. This raw
-     * string array is retained for backward compatibility and mirrors the
-     * `message` of each structured warning.
-     */
-    warnings?: string[];
   };
   /**
    * Structured non-fatal advisories raised while inferring geometry from data.
@@ -615,6 +635,21 @@ export interface WaferMapResult {
     /** `filledDies / totalDies` in [0, 1] — `0` when there are no positioned dies, even if `unpositionedDies` is large. */
     ratio: number;
   };
+  /**
+   * The bins that pass, as given to `buildWaferMap` (default `[1]`) — the ones
+   * `yield` was computed with. Carried so everything downstream judges pass/fail
+   * the same way: `renderWaferMap`, `renderWaferGallery` (per wafer) and
+   * `analyzeWaferMap` all read it, and none of them has a `passBins` option: this
+   * is the one place pass bins are set. A map not built by `buildWaferMap`
+   * states them in this same field.
+   */
+  passBins: number[];
+  /**
+   * Rings the wafer is divided into (`WaferMapInput.ringCount`, default 4). The
+   * renderers, `analyzeWaferMap`, panels and reports read it and none has a ring
+   * count option of its own, so ring boundaries and ring findings always agree.
+   */
+  ringCount: number;
   /** Yield statistics computed against `passBins`. */
   yield: YieldSummary;
   /** Generated reticle geometry — pass as `viewOptions.reticles` to `renderWaferMap` to show the reticle overlay. */
@@ -649,6 +684,10 @@ interface Normalized {
   reticleOpts:  ReticleConfig  | undefined;
   lotStackOpts: LotStackConfig | undefined;
   passBins:     number[];
+  ringCount:    number;
+  /** Correction to `ringCount`, joined into the result's warnings. */
+  ringCountWarning: WaferWarning | undefined;
+  removedFieldWarning: WaferWarning | undefined;
   standardDiameters: number[] | undefined;
   testDefs:     TestDef[] | undefined;
   hbinDefs:     BinDef[]  | undefined;
@@ -658,6 +697,58 @@ interface Normalized {
   edgeDieYieldMode:  'exclude' | 'denominator-only';
 }
 
+
+/** `WaferMapInput.ringCount`, validated — see its doc for why there is no upper bound. */
+function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: WaferWarning | undefined } {
+  const corrected = (ringCount: number, why: string) => ({
+    ringCount,
+    ringCountWarning: {
+      code: 'analysis-option-corrected',
+      severity: 'warning' as const,
+      message: `ringCount=${String(raw)} ${why} (using ${ringCount}).` },
+  });
+  if (raw === undefined) return { ringCount: 4, ringCountWarning: undefined };
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return corrected(4, 'is not a finite number');
+  const whole = Math.max(1, Math.round(raw));
+  return whole === raw ? { ringCount: raw, ringCountWarning: undefined } : corrected(whole, 'is not a whole number of at least 1');
+}
+
+/**
+ * Input names removed in earlier releases. A typed caller cannot pass them; an
+ * untyped one still can, and each used to vanish without a trace — `data` in place
+ * of `results` built an empty map, `values` in place of `testValues` a map with no
+ * test data. Neither looks broken, so every one found is reported. None is
+ * honoured: this reports, it never translates.
+ */
+function removedInputWarning(input: DieResult[] | WaferMapInput): WaferWarning | undefined {
+  const set = (o: unknown, key: string): boolean =>
+    o !== null && typeof o === 'object' && (o as Record<string, unknown>)[key] !== undefined;
+  const top = (Array.isArray(input) ? {} : input) as Record<string, unknown>;
+  const found: string[] = [];
+  const check = (present: boolean, name: string, now: string): void => {
+    if (present) found.push(`\`${name}\` (now \`${now}\`)`);
+  };
+  check(set(top, 'data'),  'data',  'results');
+  check(set(top, 'die'),   'die',   'dieConfig');
+  check(set(top, 'stack'), 'stack', 'lotStack');
+  check(set(top.dieConfig, 'origin'),     'dieConfig.origin',     'dieConfig.coordinateOrigin');
+  check(set(top.waferConfig, 'flat'),     'waferConfig.flat',     'waferConfig.notch');
+  check(set(top.reticleConfig, 'anchor'), 'reticleConfig.anchor', 'reticleConfig.anchorDie');
+  check(set(top.lotStack, 'aggr'),        'lotStack.aggr',        'lotStack.method');
+  check(Array.isArray(top.testDefs) && top.testDefs.some(d => set(d, 'index') && !set(d, 'testNumber')),
+    'TestDef.index', 'TestDef.testNumber');
+  // A sample per wafer is enough: data written against the old field carries it on every die.
+  const lotWafers = set(top.lotStack, 'results') ? (top.lotStack as { results: unknown }).results : [];
+  const wafers = (Array.isArray(input) ? [input] : [top.results, ...(Array.isArray(lotWafers) ? lotWafers : [])])
+    .filter((w): w is unknown[] => Array.isArray(w));
+  check(wafers.some(w => w.slice(0, 100).some(d => set(d, 'values'))), 'values', 'testValues');
+  if (!found.length) return undefined;
+  const many = found.length > 1;
+  const message = `buildWaferMap ignored ${found.join(', ')}: ${many ? 'these names were' : 'that name was'} `
+    + `removed in an earlier release, so what ${many ? 'they' : 'it'} described is not on this map. Rename and rebuild.`;
+  console.warn(`[wafermap] ${message}`);
+  return { code: 'input-field-removed', message, severity: 'error' };
+}
 
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
   if (!Array.isArray(input) && 'results' in input && input.results !== undefined && 'lotStack' in input && input.lotStack !== undefined) {
@@ -672,6 +763,9 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       reticleOpts:      undefined,
       lotStackOpts:     undefined,
       passBins:         [1],
+      ringCount:        4,
+      ringCountWarning: undefined,
+      removedFieldWarning: removedInputWarning(input),
       standardDiameters: undefined,
       testDefs:         undefined,
       hbinDefs:         undefined,
@@ -688,6 +782,8 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     reticleOpts:      input.reticleConfig,
     lotStackOpts:     input.lotStack,
     passBins:         input.passBins ?? [1],
+    ...resolveRingCount(input.ringCount),
+    removedFieldWarning: removedInputWarning(input),
     standardDiameters: input.standardDiameters,
     // An empty array from a HOST means "I described no tests", which is the same
     // statement as not passing the field — so it is normalised to `undefined`
@@ -880,7 +976,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
       }
     }
 
-    // No testValues keys at all — fall back to paramIndex 0 (legacy values[] path).
+    // No test values on any wafer — stack the positions alone; every die comes back with no value.
     if (testKeys.size === 0) {
       return aggregateValues(waferResults, method as CoreAggregationMethod) as DieResult[];
     }
@@ -1266,7 +1362,7 @@ function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
  */
 /**
  * Derive the structured, public `WaferMapResult.warnings` array from the
- * internal `inference` record. Single source of truth for both build paths.
+ * geometry advisories recorded during inference. Single source of truth for both build paths.
  *
  * Only genuinely questionable inference is flagged. Normalized-unit geometry
  * (raw prober steps with no physical dimensions) is the library's primary
@@ -1274,12 +1370,13 @@ function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
  * advisories are `'partial-coverage'` (data not spanning a full symmetric wafer,
  * so the inferred diameter/centre may be wrong), `'geometry-conflict'`,
  * `'non-standard-diameter'` and `'diameter-exceeds-die-extent'`. Detection lives
- * at the inference site; here we just promote its message(s) into the structured
- * shape and recover each one's code (see `codeForAdvisory`).
+ * at the inference site, which records each advisory with its code; here each
+ * gains its severity and the inference confidence.
  */
-function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
-  return (inference.warnings ?? []).map(message => {
-    const code = codeForAdvisory(message);
+type GeometryAdvisory = { code: WaferWarning['code']; message: string };
+
+function buildWarnings(advisories: GeometryAdvisory[], inference: WaferMapResult['inference']): WaferWarning[] {
+  return advisories.map(({ code, message }) => {
     return {
       code,
       message,
@@ -1301,27 +1398,9 @@ function buildWarnings(inference: WaferMapResult['inference']): WaferWarning[] {
   });
 }
 
-/**
- * Map an advisory message to its stable machine-readable code.
- *
- * `inference.warnings` is the (deprecated) string channel and is the one place
- * every geometry advisory is recorded, so the code is recovered here rather than
- * being assumed. Hosts branch on `code`, so stamping every message
- * `'partial-coverage'` — as this did before `'geometry-conflict'` existed —
- * silently misclassifies it. Keep this in step with the push sites in
- * `buildWaferMap`, and with `warnings.ts`'s `SHORT_LABEL` (a test checks that
- * one against the declared code union).
- */
-function codeForAdvisory(message: string): WaferWarning['code'] {
-  if (message.includes(GEOMETRY_CONFLICT_MARKER)) return 'geometry-conflict';
-  if (message.includes(NONSTANDARD_DIAMETER_MARKER)) return 'non-standard-diameter';
-  if (message.includes(UNDERFILLED_WAFER_MARKER))    return 'diameter-exceeds-die-extent';
-  return 'partial-coverage';
-}
-
-/** Distinctive phrase identifying the geometry-conflict advisory in the string channel. */
+/** Opening phrase of the geometry-conflict advisory (tests match on it). */
 const GEOMETRY_CONFLICT_MARKER = 'do not fit inside the supplied';
-/** Distinctive phrase identifying the inferred-pitch advisory in the string channel. */
+/** Opening phrase of the non-standard-diameter advisory. */
 const NONSTANDARD_DIAMETER_MARKER = 'Inferred wafer diameter';
 const UNDERFILLED_WAFER_MARKER = 'The probed dies reach only';
 
@@ -1465,6 +1544,8 @@ export function buildWaferMap(
     wafer:    { confidence: 1.0, method: 'provided' },
     diePitch: { confidence: 1.0, units: 'mm' as 'mm' | 'normalized' },
     grid:     { confidence: 1.0 } };
+  // Geometry advisories, each recorded with its code where it is detected.
+  const advisories: GeometryAdvisory[] = [];
 
   // ── Explicit dies path ─────────────────────────────────────────────────────
 
@@ -1512,6 +1593,10 @@ export function buildWaferMap(
       showReticle,
       plotMode:   autoPlotMode(results, viewOpts),
       testDefs:   norm.testDefs,
+      // The yield's own pass bins — without this the view resolved bin colours
+      // and failing-die marks against buildView's `[1]` default.
+      passBins:   norm.passBins,
+      ringCount:  norm.ringCount,
       isLotStack: false }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
     const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
@@ -1521,11 +1606,13 @@ export function buildWaferMap(
 
     return {
       wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
-      warnings: buildWarnings(inference),
+      warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...buildWarnings(advisories, inference), ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
       plotMode: view.plotMode,
       metadata: view.metadata,
       isLotStack: false,
       dataCoverage: computeCoverage(allDies),
+      passBins: norm.passBins,
+      ringCount: norm.ringCount,
       yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode),
       reticles,
       hbinDefs: norm.hbinDefs,
@@ -1598,13 +1685,13 @@ export function buildWaferMap(
         const stdTable = resolveStandardDiameters(norm.standardDiameters);
         if (!isStandardDiameter(waferDiameter, stdTable)) {
           const nearest = nearestStandardDiameter(waferDiameter, stdTable);
-          (inference.warnings ??= []).push(
+          advisories.push({ code: 'non-standard-diameter', message:
             `${NONSTANDARD_DIAMETER_MARKER} ${waferDiameter.toFixed(1)} mm is not a standard wafer size ` +
             `(nearest is ${nearest} mm). The diameter was derived from the die extent, which assumes the probed ` +
             `grid reaches the wafer edge — a non-standard result usually means it does not, because the outer ` +
             `dies were never probed. Every die is then placed against a wafer that is too small, which moves dies ` +
             `between rings and changes ring and edge findings. Supply waferConfig.diameter.`,
-          );
+          });
         }
       } else {
         // pitchX/pitchY are normalized (no physical info). inferWaferFromXY would
@@ -1628,12 +1715,12 @@ export function buildWaferMap(
   // waferConfig.center) and the data does not look like full symmetric
   // coverage, the inferred centre/diameter may be wrong and dies may be
   // mis-positioned relative to the true boundary. Surface this so callers are
-  // not silently misled (see WaferMapResult.inference.warnings).
+  // not silently misled (see WaferWarning's 'partial-coverage').
   if (!anchored && gridPoints.length > 0 && isLikelyPartialCoverage(gridPoints, offsetX, offsetY)) {
     inference.wafer.method = 'inferred-partial';
-    (inference.warnings ??= []).push(
+    advisories.push({ code: 'partial-coverage', message:
       'Wafer geometry was inferred from die positions alone. The data does not span a full symmetric wafer, so the inferred diameter and centre may be wrong and dies may be mis-positioned relative to the true wafer boundary. Supply waferConfig.diameter and waferConfig.center (the prober coordinate of the wafer centre) to position partial data correctly.',
-    );
+    });
   }
 
   // Does the data FILL the asserted wafer? The mirror of the fit check below.
@@ -1662,13 +1749,13 @@ export function buildWaferMap(
       && gridPoints.length >= MIN_DIES_FOR_FILL_CHECK) {
     const fill = requiredRadius / (waferDiameter / 2);
     if (fill < MIN_WAFER_FILL_RATIO) {
-      (inference.warnings ??= []).push(
+      advisories.push({ code: 'diameter-exceeds-die-extent', message:
         `${UNDERFILLED_WAFER_MARKER} ${(fill * 100).toFixed(0)}% of the ${waferDiameter} mm wafer's radius. ` +
         `Either the diameter is larger than the real one, or this is a partial map covering only part of the ` +
         `wafer. Ring bands are equal-radius, so the outer rings are mostly or entirely empty and ring, quadrant ` +
         `and edge findings describe the assumed wafer rather than the probed area. Check waferConfig.diameter, ` +
         `or drop it and let the diameter be inferred from the die extent.`,
-      );
+      });
     }
   }
 
@@ -1693,13 +1780,13 @@ export function buildWaferMap(
       // the die positions are the trustworthy one. We do NOT silently resize.
       const outside = physPoints.filter(({ x: px, y: py }) =>
         Math.hypot(Math.abs(px) + pitchX / 2, Math.abs(py) + pitchY / 2) > waferDiameter / 2 + 1e-9).length;
-      (inference.warnings ??= []).push(
+      advisories.push({ code: 'geometry-conflict', message:
         `${outside} of ${physPoints.length} probed die positions ${GEOMETRY_CONFLICT_MARKER} ${waferDiameter} mm wafer ` +
         `at the supplied die pitch of ${pitchX} × ${pitchY} mm. A die with test results is a real prober position and is ` +
         `always fully on the wafer, so one of the two supplied values must be wrong: containing these dies at this pitch ` +
         `would need a diameter of at least ${(requiredRadius * 2).toFixed(1)} mm. Check waferConfig.diameter and ` +
         `dieConfig.width/height against the real device.`,
-      );
+      });
     } else if (!pitchWasSupplied) {
       // Containment is guaranteed (resolveGridPitch clamps to fit the diameter),
       // but the assumed aspect ratio may still not match the true die shape when
@@ -1737,7 +1824,7 @@ export function buildWaferMap(
   // the (often inferred) geometry as truth and the measured data as suspect, so an
   // undersized circle invented partial dies that cannot physically exist, greyed
   // them out, and silently dropped them from yield. When the geometry genuinely
-  // cannot contain the data we now say so via inference.warnings above instead.
+  // cannot contain the data we now say so via the geometry-conflict advisory above instead.
   //
   // `partial` remains meaningful for a synthesized die grid clipped to a wafer —
   // see `clipDiesToWafer`, which is where straddling dies legitimately arise.
@@ -1791,6 +1878,8 @@ export function buildWaferMap(
     showReticle,
     plotMode:     autoPlotMode(results, viewOpts),
     testDefs:     norm.testDefs,
+    passBins:     norm.passBins,
+    ringCount:    norm.ringCount,
     dataAxisFlip: { x: flipX, y: flipY },
     isLotStack:   norm.lotStackOpts !== undefined,
     aggregationMethod: norm.lotStackOpts?.method,
@@ -1807,11 +1896,13 @@ export function buildWaferMap(
 
   return {
     wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units, inference,
-    warnings: [...buildWarnings(inference), ...extraWarnings],
+    warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
     plotMode: view.plotMode,
     metadata: view.metadata,
     isLotStack: norm.lotStackOpts !== undefined,
     dataCoverage: computeCoverage(allDies),
+    passBins: norm.passBins,
+    ringCount: norm.ringCount,
     yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode),
     reticles,
     hbinDefs: norm.hbinDefs,

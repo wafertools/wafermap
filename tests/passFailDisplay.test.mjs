@@ -34,7 +34,7 @@ test('functional active test forces test pass/fail display: solid verdict fills,
   const view = buildView(wafer, dies, { plotMode: 'value', testDefs: [F_DEF], activeTest: 2001 });
 
   assert.equal(view.passFailDisplay, 'test', 'F active test must force test display');
-  assert.equal(view.colorBySpec, false);
+  assert.ok(!('colorBySpec' in view), 'View.colorBySpec was removed in 0.30.0 — read passFailDisplay');
   assert.equal(rectFillAt(view, 0, 0), SPEC_PASS_FILL, 'passing die is solid pass green');
   assert.equal(rectFillAt(view, 1, 0), SPEC_FAIL_HIGH, 'failing die is solid fail red');
   assert.notEqual(rectFillAt(view, 0, 1), SPEC_PASS_FILL, 'no-result die must not be pass');
@@ -115,7 +115,7 @@ test('requested displays degrade to off when invalid for the active test (librar
   assert.equal(tst.passFailDisplay, 'off');
 });
 
-test("passFailDisplay: 'spec' sets the view's colorBySpec flag and solid spec fills", () => {
+test("passFailDisplay: 'spec' resolves to spec and draws solid spec fills", () => {
   const results = [
     { x: 0, y: 0, hbin: 1, testValues: { 1010: 1.0 } },
     { x: 1, y: 0, hbin: 2, testValues: { 1010: 5.0 } }, // above limitHigh
@@ -123,7 +123,6 @@ test("passFailDisplay: 'spec' sets the view's colorBySpec flag and solid spec fi
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig, testDefs: [P_DEF] });
   const view = buildView(wafer, dies, { plotMode: 'value', testDefs: [P_DEF], activeTest: 1010, passFailDisplay: 'spec' });
   assert.equal(view.passFailDisplay, 'spec');
-  assert.equal(view.colorBySpec, true);
   assert.equal(rectFillAt(view, 1, 0), SPEC_FAIL_HIGH);
   assert.ok(view.specCounts, 'spec counts still produced');
 });

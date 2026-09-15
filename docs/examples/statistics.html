@@ -138,15 +138,12 @@
         sbinDefs:    SBIN_DEFS,
         testDefs:    ALL_TEST_DEFS,
         passBins:    [1],
+        ringCount:   RING_COUNT,
       });
 
       // All default thresholds — the cluster and angular passes are the only
       // opt-ins, and computePerTestStats fills the panel's test-value section.
       const summary = analyzeWaferMap(result, {
-        ringCount:             RING_COUNT,
-        passBins:              [1],
-        enableClusterAnalysis: true,
-        enableAngularAnalysis: true,
         computePerTestStats:   true,
       });
 
@@ -181,17 +178,17 @@
           sbinDefs:    SBIN_DEFS,
           testDefs:    ALL_TEST_DEFS,
           passBins:    [1],
+          ringCount:   RING_COUNT,
         })
       );
 
       // Per-wafer analyses feed each card's own findings panel in its expand modal.
       const waferSummaries = results.map(r =>
-        analyzeWaferMap(r, { ringCount: RING_COUNT, passBins: [1], computePerTestStats: true })
+        analyzeWaferMap(r, { computePerTestStats: true })
       );
 
       // Lot-level analysis: repeated ring/quadrant patterns and outlier wafers.
       const lotSummary = analyzeWaferLot(results, {
-        ringCount:           RING_COUNT,
         computePerTestStats: true,
         perWaferSummaries:   waferSummaries,
       });
@@ -228,6 +225,7 @@
         waferConfig: { ...WAFER_CONFIG, metadata: stackedMeta },
         dieConfig:   DIE_CONFIG,
         testDefs:    TEST_DEFS,
+        ringCount:   RING_COUNT,
       });
 
       // Vth has limitHigh 0.57 V in TEST_DEFS — dies above it act as the failure
@@ -235,7 +233,6 @@
       // enableTestValueAnalysis runs the regional Welch comparisons on test
       // values; it is off by default because it scales with regions × tests × dies.
       const summary = analyzeWaferMap(result, {
-        ringCount:               RING_COUNT,
         enableTestValueAnalysis: true,
         // Restrict to Vth for a focused demo; drop testNumbers to analyse all tests.
         testNumbers:             [VTH_TEST],
@@ -271,7 +268,7 @@
         // for the toolbar's notebook button; `placement` (default 'right')
         // decides which side it docks to.
         renderWaferMap(host, result, {
-          viewOptions:  { plotMode: 'hardBin', ringCount: RING_COUNT },
+          viewOptions:  { plotMode: 'hardBin' },
           statsSummary: summary,
           summaryPanel: { defaultOpen: state.open },
           // dieList (the Summary panel's "View die list" link) is on by

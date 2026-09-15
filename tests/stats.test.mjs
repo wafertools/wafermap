@@ -33,10 +33,10 @@ test('analyzeWaferMap detects ring-level yield loss', () => {
     dies: enriched,
     waferConfig: { diameter: 60 },
     passBins: [1],
+    ringCount: 3,
   });
 
   const summary = analyzeWaferMap(result, {
-    ringCount: 3,
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
   });
@@ -61,8 +61,8 @@ test('analyzeWaferMap populates hardBinCounts over the yield-eligible population
   // (binPareto, summaryPanel's bin section) uses, or the two would disagree.
   enriched.push({ x: 999, y: 999, hbin: 1, partial: true });
 
-  const result = buildWaferMap({ dies: enriched, waferConfig: { diameter: 60 }, passBins: [1] });
-  const summary = analyzeWaferMap(result, { ringCount: 3 });
+  const result = buildWaferMap({ dies: enriched, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 });
+  const summary = analyzeWaferMap(result);
 
   const expectedBin1 = enriched.filter(d => d.hbin === 1 && !d.partial && !d.edgeExcluded).length;
   const expectedBin2 = enriched.filter(d => d.hbin === 2 && !d.partial && !d.edgeExcluded).length;
@@ -120,11 +120,10 @@ test('analyzeWaferMap detects hard-bin, soft-bin, and test-value regional patter
     testDefs: [{ testNumber: 0, name: 'Idsat', unit: 'A' }],
     hbinDefs: [{ bin: 8, name: 'NE Fail' }],
     sbinDefs: [{ bin: 23, name: 'Edge Signature' }],
-  }, {
     ringCount: 3,
+  }, {
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
-    enableYieldAnalysis: false,
     enableTestValueAnalysis: true,
   });
 
@@ -180,7 +179,6 @@ test('analyzeWaferMap detects repeating reticle-local patterns when reticle conf
   }, {
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
-    enableYieldAnalysis: false,
     enableTestValueAnalysis: true,
   });
 
@@ -217,12 +215,11 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
   const lowYieldDies = dies.map((die) => ({ ...die, hbin: 2 }));
 
   const lot = analyzeWaferLot([
-    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: lowYieldDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1] },
+    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: lowYieldDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
   ], {
-    ringCount: 3,
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
   });
@@ -261,14 +258,13 @@ test('lot findings report uses the lot wafer count for coverage', () => {
   const passDies = dies.map((die) => ({ ...die, hbin: 1 }));
 
   const lot = analyzeWaferLot([
-    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
-    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1] },
+    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: patternDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
+    { dies: passDies, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 },
   ], {
-    ringCount: 3,
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
   });
@@ -429,12 +425,9 @@ test('test-value findings — constant-per-region values produce NO finding (zer
     dies: enriched,
     waferConfig: { diameter: 60 },
     testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'A' }],
-  }, {
     ringCount: 2,
+  }, {
     enableTestValueAnalysis: true,
-    enableAngularAnalysis: false,         // no sectors straddling the ring boundary
-    enableReticlePositionAnalysis: false,
-    enableTestSiteAnalysis: false,
     minimumSampleSize: 3,
     minimumEffectSize: 0.2,
   });
@@ -493,7 +486,8 @@ test('yield findings — hbin-less (sbin-only) dies are not counted as fails (H3
     dies: enriched,
     waferConfig: { diameter: 60 },
     passBins: [1],
-  }, { ringCount: 3, minimumSampleSize: 3, minimumEffectSize: 0.05 });
+    ringCount: 3,
+  }, { minimumSampleSize: 3, minimumEffectSize: 0.05 });
 
   const outerYieldFinding = summary.findings.find(
     f => f.variable.kind === 'yield' && /Ring 3/.test(f.comparison.left ?? ''),

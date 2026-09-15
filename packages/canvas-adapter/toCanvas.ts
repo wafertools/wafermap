@@ -1,6 +1,7 @@
 import type { View, ViewRect } from '../renderer/buildView.js';
 import { fontPx } from './toolbar.js';
 import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
+import { sortBinsForDisplay } from '../stats/binPareto.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
 import { compareNatural } from '../core/utils.js';
@@ -60,14 +61,6 @@ export interface ToCanvasOptions {
    * zoom/pan. Also accepts a zoom-adjusted `snapDist` for hit testing.
    */
   viewport?: ViewportTransform;
-  /** Currently highlighted bin (or metadata value) — drawn with an active indicator in the bin legend. */
-  activeBin?: number | string;
-  /** Bin legend row under the pointer — drawn with a background fill, which is
-   *  deliberately a different channel from `activeBin`'s accent border and bold
-   *  label so "selected" and "pointed at" never look the same. The legend is
-   *  canvas-drawn, so this is the only way it can answer the pointer at all;
-   *  a DOM `:hover` cannot reach it. */
-  hoverBin?: number | string;
   /**
    * Format to use for unitless values outside the normal display range [0.1, 9999].
    * `'engineering'` (default): multiples-of-3 exponent notation (e.g. `12E-6`).
@@ -75,10 +68,6 @@ export interface ToCanvasOptions {
    * Values with a unit always use SI prefix regardless of this setting.
    */
   fallbackFormat?: 'si' | 'engineering';
-  /** Extra space reserved at the top of the canvas in CSS pixels. Default 0. Used by renderWaferMap to prevent the floating toolbar from obscuring the wafer. */
-  topClearance?: number;
-  /** Minimum right-side reserve in CSS pixels. Ensures the wafer draw width stays stable across plot mode switches. */
-  minRightReserve?: number;
   /** Named hard bin definitions — used to label the bin legend. */
   hbinDefs?: import('../renderer/buildWaferMap.js').BinDef[];
   /** Named soft bin definitions — used to label the bin legend. */
@@ -91,6 +80,25 @@ export interface ToCanvasOptions {
    * shrink the map. Set false to suppress (e.g. when a host renders its own heading).
    */
   showTitle?: boolean;
+}
+
+/**
+ * @internal What only `renderWaferMap` knows while it draws: the legend row it
+ * highlights, the one under the pointer, and the right-hand reserve that keeps the
+ * wafer the same size across plot modes. A direct `toCanvas` caller has no pointer
+ * or mode-switch state to pass, so these are not on `ToCanvasOptions`.
+ */
+export interface MapCanvasOptions extends ToCanvasOptions {
+  /** Currently highlighted bin (or metadata value) — drawn with an active indicator in the bin legend. */
+  activeBin?: number | string;
+  /** Bin legend row under the pointer — drawn with a background fill, which is
+   *  deliberately a different channel from `activeBin`'s accent border and bold
+   *  label so "selected" and "pointed at" never look the same. The legend is
+   *  canvas-drawn, so this is the only way it can answer the pointer at all;
+   *  a DOM `:hover` cannot reach it. */
+  hoverBin?: number | string;
+  /** Minimum right-side reserve in CSS pixels. Ensures the wafer draw width stays stable across plot mode switches. */
+  minRightReserve?: number;
 }
 
 /** Internal viewport state shared between toCanvas and renderWaferMap. */
@@ -169,11 +177,25 @@ const BIN_LABEL_GAP        =  5;  // px gap between swatch and label
 const BIN_FLOATING_PADDING =  8;  // px padding around floating legend box
 // px heading row reserved inside the floating plate for the map title.
 const BIN_FLOATING_TITLE_H = 15;
+// px — a legend title drawn above the rows: its text height, and the gap to the
+// first row. Row reservation and title placement both read these, so a long
+// legend can never again be fitted to a height the title is also using.
+const LEGEND_TITLE_H   = 12;
+const LEGEND_TITLE_GAP =  6;
 
 export function toCanvas(
   canvas: HTMLCanvasElement,
   view: View,
   options: ToCanvasOptions = {},
+): ToCanvasResult {
+  return drawMapCanvas(canvas, view, options);
+}
+
+/** @internal `toCanvas` plus the interaction state `renderWaferMap` draws with. */
+export function drawMapCanvas(
+  canvas: HTMLCanvasElement,
+  view: View,
+  options: MapCanvasOptions = {},
 ): ToCanvasResult {
   // Resolve the canvas chrome palette ONCE per draw from the container's
   // --wmap-* variables (see canvasTheme.ts). ~µs cost; never read per-primitive.
@@ -195,7 +217,6 @@ export function toCanvas(
     activeBin,
     hoverBin,
     fallbackFormat,
-    topClearance  = 0,
     minRightReserve,
     hbinDefs,
     sbinDefs,
@@ -223,8 +244,13 @@ export function toCanvas(
   // The bin and pass/fail legends share the same layout/rendering machinery.
   const drawLegend     = drawBinLegend || drawSpecLegend;
 
+  // Pass bins first, then failing bins by die count — `sortBinsForDisplay`, the
+  // one order every bin list uses (Summary panel, report, gallery strip, Insights
+  // pareto). Pass status from the resolved colours, never `passBins`, which are
+  // hard-bin numbers and would misjudge every soft bin.
   const binLegendEntries: Array<[number, number]> = drawBinLegend && view.plotMode !== 'metadata' && view.binCounts
-    ? [...view.binCounts.entries()].sort(([a], [b]) => a - b)
+    ? sortBinsForDisplay(view.binCounts.entries(),
+        view.plotMode === 'softBin' ? view.binColors.pass.soft : view.binColors.pass.hard)
     : [];
   // 'metadata' mode's own entries. Order comes from `metadataColorMap`, which
   // buildView already built in natural (alphanumeric) order — reading it rather than
@@ -396,10 +422,10 @@ export function toCanvas(
     const arrowRight  = nd && nd.x >  0.1 ? ARROW_FOOTPRINT : 0;
 
     const fitW = drawW - arrowLeft - arrowRight;
-    const fitH = drawH - topClearance - arrowTop - arrowBottom;
+    const fitH = drawH - arrowTop - arrowBottom;
     ppm     = Math.min(fitW / dataW, fitH / dataH);
     originX = padding + axisLeftReserve + leftLegendReserve + arrowLeft + (fitW - dataW * ppm) / 2 - minX * ppm;
-    originY = padding + topClearance + topLegendReserve + arrowTop + (fitH - dataH * ppm) / 2 + maxY * ppm;
+    originY = padding + topLegendReserve + arrowTop + (fitH - dataH * ppm) / 2 + maxY * ppm;
   }
 
   const snapDist = viewportOverride?.snapDist ?? Math.max(halfW, halfH, 1) * 1.5;
@@ -622,7 +648,7 @@ export function toCanvas(
     // Safe drawing area — avoids toolbar (top), legend/colorbar (right), and canvas edges
     const safeX1 = padding + axisLeftReserve + leftLegendReserve;
     const safeX2 = cssW - padding - rightReserve;
-    const safeY1 = padding + topClearance + topLegendReserve;
+    const safeY1 = padding + topLegendReserve;
     const safeY2 = cssH - padding - bottomLegendReserve - axisReserve;
     ctx.save();
     ctx.beginPath();
@@ -681,10 +707,10 @@ export function toCanvas(
   if (drawColorbar) {
     const forValue  = resolveValueColorFn(view.valueColorScheme, view.reverseValueScheme);
     const labelGap  = colorbarLabelGap;
-    // Bar occupies ~75% of the usable height below the top clearance, centred in that area.
-    const cbUsableH = drawH - topClearance;
+    // Bar occupies ~75% of the usable height, centred in that area.
+    const cbUsableH = drawH;
     const cbH       = Math.round(cbUsableH * 0.75);
-    const cbY       = padding + topClearance + Math.round((cbUsableH - cbH) / 2);
+    const cbY       = padding + Math.round((cbUsableH - cbH) / 2);
     const cbX       = cssW - padding - colorbarWidth - labelGap;
     const vMin = cbVMin, vMax = cbVMax;
     const vRange    = vMax - vMin;
@@ -698,7 +724,7 @@ export function toCanvas(
       ? buildMapTitle(view, fallbackFormat, cbBinDefs)
       : { primary: '', secondary: '' };
     if (showTitle) {
-      const aboveY = Math.max(cbY - 6, padding + topClearance + 11);
+      const aboveY = Math.max(cbY - 6, padding + 11);
       const aboveLimit = waferCx + Math.max(waferHalfChordAt(aboveY), waferHalfChordAt(aboveY - 12)) + 8;
       drawTitleFitted(titlePrimary, cssW - padding, aboveY, 'right', 'bottom', aboveLimit);
     }
@@ -957,7 +983,17 @@ export function toCanvas(
     const availableWidth = cssW - padding * 2;
 
     if (legendEntries.length > 0) {
-    const maxRows = Math.max(1, Math.floor((cssH - 2 * padding) / BIN_ROW_H));
+    // The height the ROWS may use. Anything sharing the legend's column comes
+    // out of it first: a title above the rows, or a floating plate's padding
+    // and heading row. Rows used to be
+    // fitted to the full canvas height and the title placed afterwards, so a
+    // legend long enough to fill the height had its title drawn over row one.
+    const legendChromeH = legendIsFloating
+      ? BIN_FLOATING_PADDING * 2 + (showTitle ? BIN_FLOATING_TITLE_H : 0)
+      : showTitle && !legendIsTop
+      ? LEGEND_TITLE_H + LEGEND_TITLE_GAP
+      : 0;
+    const maxRows = Math.max(1, Math.floor((cssH - 2 * padding - legendChromeH) / BIN_ROW_H));
     let legendRows = legendEntries.length;
     let legendCols = 1;
     let legendHeight = legendRows * BIN_ROW_H;
@@ -1037,15 +1073,16 @@ export function toCanvas(
       originYLegend = cssH - padding - legendHeight;
     } else if (legendIsTop) {
       originXLegend = padding;
-      // Start below the toolbar clearance so the floating toolbar never covers the top legend.
-      originYLegend = padding + topClearance;
+      originYLegend = padding;
     } else if (legendIsLeft) {
       originXLegend = padding + 4;
-      originYLegend = padding + Math.round((cssH - 2 * padding - legendHeight) / 2);
+      // Centred, but never above the reserved title row.
+      originYLegend = Math.max(padding + Math.round((cssH - 2 * padding - legendHeight) / 2), padding + legendChromeH);
     } else {
       // right (default / compact)
       originXLegend = cssW - padding - legendWidth + 4;
-      originYLegend = padding + Math.round((cssH - 2 * padding - legendHeight) / 2);
+      // Centred, but never above the reserved title row.
+      originYLegend = Math.max(padding + Math.round((cssH - 2 * padding - legendHeight) / 2), padding + legendChromeH);
     }
 
     // Legend title. Primary identifier sits directly ABOVE the legend block (aligned to its leading
@@ -1055,7 +1092,7 @@ export function toCanvas(
     if (showTitle) {
       const activeBinDefs = view.plotMode === 'softBin' ? sbinDefs : hbinDefs;
       const { primary, secondary } = buildMapTitle(view, fallbackFormat, activeBinDefs);
-      const GAP = 6;
+      const GAP = LEGEND_TITLE_GAP;
       // Wafer-clearance limit for a left-aligned title at screen y (right boundary it must not cross).
       const leftAlignLimit = (y: number) =>
         waferCx - Math.max(waferHalfChordAt(y), waferHalfChordAt(y - 12)) - 8;
@@ -1080,8 +1117,8 @@ export function toCanvas(
           legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT(), theme.text);
       } else {
         // right / default / compact / left / bottom → primary just above the legend's first row,
-        // left-aligned to the swatch column, clamped below the toolbar clearance. Secondary below.
-        const yAbove = Math.max(originYLegend - GAP, padding + topClearance + 12);
+        // left-aligned to the swatch column, never above the canvas padding. Secondary below.
+        const yAbove = Math.max(originYLegend - GAP, padding + LEGEND_TITLE_H);
         drawTitleFitted(primary, originXLegend, yAbove, 'left', 'bottom', sideLimit(yAbove));
         if (secondary) {
           const yBelow = legendBottom + GAP;

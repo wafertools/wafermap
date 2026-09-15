@@ -39,7 +39,7 @@
       margin-top: 4px;
     }
 
-    /* Inference-status readouts surfaced from result.inference.warnings */
+    /* Inference-status readouts surfaced from result.warnings */
     .warn-note, .ok-note, .err-note {
       font-size: 12px;
       line-height: 1.45;
@@ -149,7 +149,7 @@
         <strong>F</strong> — supplying <code>waferConfig.center</code> (the prober coordinate of the wafer centre) anchors it correctly.
         <strong>G</strong> — <em>sparse</em> data is different: positions are missing but the extent still reaches the wafer edge, so centre and diameter resolve without a hint.
         <br>
-        The notes under each card read <code>result.inference.warnings</code> directly. <strong>Hover card E</strong> and
+        The notes under each card read <code>result.warnings</code> directly. <strong>Hover card E</strong> and
         you will also see the library's own ⚠ indicator in its toolbar — it raises <code>partial-coverage</code> and now
         says so on screen, without the page doing anything (see the next section).
       </small>
@@ -299,10 +299,10 @@
       const el = document.getElementById(id);
       if (!el) return;
       if (id.startsWith('warn')) {
-        if (warnings.length) el.innerHTML = `<strong>inference.warnings:</strong> ${warnings[0]}`;
+        if (warnings.length) el.innerHTML = `<strong>result.warnings:</strong> ${warnings[0]}`;
         else el.remove();
       } else {
-        if (warnings.length === 0) el.innerHTML = `<strong>inference.warnings:</strong> ${okMessage}`;
+        if (warnings.length === 0) el.innerHTML = `<strong>result.warnings:</strong> ${okMessage}`;
         else el.remove();
       }
     }
@@ -315,7 +315,7 @@
       renderWaferMap(document.getElementById('map-e'), result, opts);
       document.getElementById('diam-e').textContent =
         `Inferred units: '${result.units}', diameter ≈ ${result.wafer.diameter.toFixed(1)} (not the true 300 mm).`;
-      status('warn-e', result.inference.warnings ?? []);
+      status('warn-e', result.warnings.map(w => w.message));
     }
 
     // F — same partial data, anchored with diameter + center: positioned correctly.
@@ -329,7 +329,7 @@
       renderWaferMap(document.getElementById('map-f'), result, opts);
       document.getElementById('diam-f').textContent =
         `Result units: '${result.units}', diameter ${result.wafer.diameter} mm.`;
-      status('ok-f', result.inference.warnings ?? [], 'none — geometry is anchored, placement is correct.');
+      status('ok-f', result.warnings.map(w => w.message), 'none — geometry is anchored, placement is correct.');
     }
 
     // G — sparse but full-extent (every other row & column), no geometry: the extent
@@ -343,7 +343,7 @@
       renderWaferMap(document.getElementById('map-g'), result, opts);
       document.getElementById('diam-g').textContent =
         `Inferred units: '${result.units}', diameter ${result.wafer.diameter} mm (correct).`;
-      status('ok-g', result.inference.warnings ?? [], 'none — full-extent coverage, geometry inferred correctly.');
+      status('ok-g', result.warnings.map(w => w.message), 'none — full-extent coverage, geometry inferred correctly.');
     }
 
     // ── Warnings the library surfaces itself ──────────────────────────────────

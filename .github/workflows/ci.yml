@@ -1,9 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
+  # No `push` trigger: deploy.yml runs on every push to main and calls this, so a
+  # push trigger here only ran the same suite twice in parallel on one commit.
   pull_request:
   # Reusable: deploy.yml calls this so the docs site is never published from a
   # tree that fails typecheck, tests, or the pack check.

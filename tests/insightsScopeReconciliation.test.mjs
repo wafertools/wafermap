@@ -80,8 +80,8 @@ function mount(view) {
   const { items, lot } = twoLots();
   const tab = createInsightsTab({
     getItems: () => items, getLotStats: () => lot,
-    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] } }),
-    passBins: [1], defaultView: view,
+    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
+    defaultView: view,
   });
   host.appendChild(tab.el);
   tab.render();

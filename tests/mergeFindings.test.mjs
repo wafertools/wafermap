@@ -55,11 +55,8 @@ function makeWafer() {
 }
 
 const MERGE_OPTS = {
-  ringCount: 5,
   minimumSampleSize: 3,
   minimumEffectSize: 0.2,
-  // keep pattern classification off so we test the raw merge, not pattern grouping
-  enablePatternClassification: false,
 };
 
 test('adjacent ring yield findings merge into one Rings a–b finding', () => {
@@ -72,7 +69,7 @@ test('adjacent ring yield findings merge into one Rings a–b finding', () => {
   });
 
   const summary = analyzeWaferMap(
-    buildWaferMap({ dies: enriched, waferConfig: { diameter: 100 }, passBins: [1] }),
+    buildWaferMap({ dies: enriched, waferConfig: { diameter: 100 }, passBins: [1], ringCount: 5 }),
     MERGE_OPTS,
   );
 
@@ -112,7 +109,7 @@ test('non-adjacent same-signal rings do NOT merge', () => {
   });
 
   const summary = analyzeWaferMap(
-    buildWaferMap({ dies: enriched, waferConfig: { diameter: 100 }, passBins: [1] }),
+    buildWaferMap({ dies: enriched, waferConfig: { diameter: 100 }, passBins: [1], ringCount: 5 }),
     MERGE_OPTS,
   );
 

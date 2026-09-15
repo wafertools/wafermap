@@ -115,6 +115,21 @@
     },
     {
       "section": "Getting started",
+      "id": "bin-colours",
+      "file": "bin-colours.html",
+      "title": "Bin colours across a full program",
+      "blurb": "a four-wafer lot with 15 hard bins and 32 soft bins — how every bin keeps its colour, two pass grades, and what happens when soft bins outnumber the palette",
+      "guide": {
+        "label": "Guide: How bin colours are assigned",
+        "href": "../guide.md#how-bin-colours-are-assigned"
+      },
+      "dataFiles": [
+        "../data/showcase-bin-rich.csv",
+        "../data/showcase-bin-rich.meta.json"
+      ]
+    },
+    {
+      "section": "Getting started",
       "id": "metadata-mode",
       "file": "metadata-mode.html",
       "title": "Metadata / layout mode",
@@ -334,18 +349,6 @@
       "dataFiles": [
         "mixedwm38-sample.json"
       ]
-    },
-    {
-      "section": "Compatibility and advanced",
-      "id": "pipeline",
-      "file": "pipeline.html",
-      "title": "Rendering pipeline",
-      "blurb": "low-level buildView / toCanvas pipeline",
-      "guide": {
-        "label": "Guide: Advanced: the rendering pipeline",
-        "href": "../guide.md#advanced-the-rendering-pipeline"
-      },
-      "dataFiles": []
     },
     {
       "section": "Compatibility and advanced",

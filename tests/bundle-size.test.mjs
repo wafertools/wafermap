@@ -34,6 +34,14 @@
 //   so a dynamic import is inlined unless the module is stubbed — `stubInsights`
 //   models the split the same way `stubGuide` always has, and
 //   'insightsTab is not statically imported' is what actually holds it in place.
+//   2026-09-14: root raised 48 KB -> 52 KB (measured 48,208 bytes at the time).
+//   The 0.30.0 correctness work had already taken the root to 47,967 — 33 bytes
+//   of headroom: pass bins and ring count carried per wafer on the result
+//   (core/passBins.ts, resolveBinColorsByWafer, the ring-count validation) and
+//   the removed-option warnings. The remaining 241 bytes are the deprecation
+//   notices on valueToViridis/valueToGreyscale/getValueColorScheme
+//   (renderer/deprecate.ts), which leave again when those names are removed —
+//   legitimate library growth, not bloat.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -49,7 +57,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
-  'wafermap (root)':            48_000,   // gzipped bytes — baseline ~43 KB
+  'wafermap (root)':            52_000,   // gzipped bytes — baseline ~48.2 KB
   'wafermap/render (initial)':  130_000,  // gzipped bytes — baseline ~104 KB, guide AND Insights excluded
 };
 

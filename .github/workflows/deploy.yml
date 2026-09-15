@@ -17,6 +17,11 @@ concurrency:
 jobs:
   # Gate the deploy on the full CI suite. Without this the two workflows ran in
   # parallel on the same push, so a red build still published the docs site.
+  #
+  # This is also the ONLY thing that tests pushes to main — ci.yml has no push
+  # trigger of its own, to avoid running the suite twice. Do not add a `paths:`
+  # filter or any condition that skips this workflow: a skipped deploy would
+  # mean an untested push, and nothing would say so.
   test:
     uses: ./.github/workflows/ci.yml
 

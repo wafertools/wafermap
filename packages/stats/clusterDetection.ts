@@ -47,8 +47,6 @@ interface ClusterOptions {
   minimumSampleSize: number;
   minimumClusterSize: number;
   ringCount: number;
-  includePartial: boolean;
-  includeEdgeExcluded: boolean;
   /** Optional override for the failure predicate. Default: hard bin, then soft bin, not in passBins. */
   isFailingDie?: (die: Die) => boolean;
 }

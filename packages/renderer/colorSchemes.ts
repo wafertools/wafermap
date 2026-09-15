@@ -77,15 +77,17 @@ export interface BinColorScheme {
   /** Human-readable display name. */
   label: string;
   /**
-   * Colours for passing bins, handed out most-populous bin first. Convention is
-   * greens: an engineer reads green as pass before reading the legend.
+   * Colours for passing bins, indexed by bin number: pass bin 1 takes the first,
+   * pass bin 2 the second, wrapping round. Convention is greens: an engineer
+   * reads green as pass before reading the legend.
    */
   pass: readonly string[];
   /**
-   * Colours for failing bins, handed out most-populous bin first, so put the
-   * most distinct colours at the front. Must not resemble the pass colours —
-   * a fail bin that reads as a pass is the most expensive misreading a wafer
-   * map can produce.
+   * Colours for failing bins, indexed by bin number: fail bin 2 takes the
+   * first, bin 3 the second, wrapping round. Put the most distinct colours at
+   * the front — the low bin numbers most programs use land there. Must not
+   * resemble the pass colours — a fail bin that reads as a pass is the most
+   * expensive misreading a wafer map can produce.
    */
   fail: readonly string[];
 }
@@ -273,14 +275,15 @@ registerValueColorScheme('jet', {
 // (CIEDE2000) from the Okabe-Ito, Paul Tol, Kelly, Tableau and d3 categorical
 // sets, keeping clear of the no-data, dimmed, partial and edge-excluded fills
 // and excluding every green from the fail list. The front of each list is the
-// most distinct, because the most populous fail bins take the front slots.
+// most distinct, because the lowest bin numbers — the ones most programs use —
+// take the front slots.
 // `tests/binPalettes.test.mjs` re-measures them and fails if an edit erodes the
 // separation, so change these through that test, not around it.
 
 /**
  * Default — 3 pass greens, 19 fail colours, every pair ≥ 16 ΔE00 apart for
- * normal colour vision. The largest fail bin is red, matching the usual
- * pass-green / fail-red reading.
+ * normal colour vision. Bin 2, the conventional first fail bin, is red,
+ * matching the usual pass-green / fail-red reading.
  */
 registerBinColorScheme('default', {
   label: 'Default',

@@ -131,7 +131,7 @@ if (!FIXTURE_MISSING) {
 
       for (const sample of samples) {
         const result = buildWaferMap({ results: sample.results, passBins: [1] });
-        const summary = analyzeWaferMap(result, { passBins: [1] });
+        const summary = analyzeWaferMap(result);
         const detected = [...new Set(summary.findings.map(f => f.comparison.family))];
         detectedPerSample.push(detected);
         if (families.some(f => detected.includes(f))) matched++;
@@ -155,7 +155,7 @@ skip('analyzeWaferMap handles Near-Full and Random without throwing', () => {
   for (const sample of highNoise) {
     const result = buildWaferMap({ results: sample.results, passBins: [1] });
     assert.doesNotThrow(
-      () => analyzeWaferMap(result, { passBins: [1] }),
+      () => analyzeWaferMap(result),
       `analyzeWaferMap threw on ${sample.failureType} W${sample.waferIndex}`,
     );
   }
@@ -254,7 +254,7 @@ if (!MX_FIXTURE_MISSING) {
 
     for (const sample of mxFixture) {
       const result  = buildWaferMap({ results: sample.results, passBins: [1] });
-      const summary = analyzeWaferMap(result, { passBins: [1] });
+      const summary = analyzeWaferMap(result);
       const detected = new Set(summary.findings.map(f => f.comparison.family));
 
       // Decode which base components this class contains

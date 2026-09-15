@@ -20,6 +20,7 @@ Some pages cover several related topics; those links point at the relevant secti
 - [Partial data and centre anchoring](geometry.html#centre-anchoring) — anchoring the wafer centre for partial coverage, and why sparse data doesn't need it · [Guide: Adding die size and wafer geometry](../guide.md#adding-die-size-and-wafer-geometry)
 - [Warnings the library surfaces](geometry.html#warnings) — the built-in ⚠ indicator, warning severity, and the `onWarning` opt-out for hosts with their own notification UI · [Guide: Adding die size and wafer geometry](../guide.md#adding-die-size-and-wafer-geometry)
 - [Bins and yield](named-bins.html) — named hard bins, pass/fail colours, yield label · [Guide: Working with bins](../guide.md#working-with-bins)
+- [Bin colours across a full program](bin-colours.html) — a four-wafer lot with 15 hard bins and 32 soft bins — how every bin keeps its colour, two pass grades, and what happens when soft bins outnumber the palette · [Guide: How bin colours are assigned](../guide.md#how-bin-colours-are-assigned)
 - [Metadata / layout mode](metadata-mode.html) — generic categorical colouring from `die.metadata`, coexists with test/bin data · [Guide: Metadata / layout plot mode](../guide.md#metadata-layout-plot-mode)
 - [Test values](test-values.html) — parametric measurements, spec limits, colorbar · [Guide: Working with test values](../guide.md#working-with-test-values)
 - [Retests](retests.html) — multi-touch probe sequences and retest policy · [Guide: Retests and enriching dies after build](../guide.md#retests-and-enriching-dies-after-build)
@@ -47,7 +48,6 @@ Some pages cover several related topics; those links point at the relevant secti
 
 ## Compatibility and advanced
 
-- [Rendering pipeline](pipeline.html) — low-level buildView / toCanvas pipeline · [Guide: Advanced: the rendering pipeline](../guide.md#advanced-the-rendering-pipeline)
 - [wafermap vs Plotly.js](comparison.html) — side-by-side render timings and feature comparison · [Performance](../performance.md)
 
 ---

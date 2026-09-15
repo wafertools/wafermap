@@ -123,7 +123,7 @@ test('highlightMetadataValue has no effect outside metadata mode', () => {
   assert.equal(rectFillAt(withHighlight, 1, 0), rectFillAt(withoutHighlight, 1, 0));
 });
 
-test('getActiveLegend key matches the string used for highlightMetadataValue (round-trips through toCanvas activeBin)', () => {
+test('metadata legend keys are the strings highlightMetadataValue matches', () => {
   const { wafer, dies } = buildWaferMap({ results, waferConfig, dieConfig });
   const view = buildView(wafer, dies, { plotMode: 'metadata', activeMetadataKey: 'project' });
   const keys = [...view.metadataCounts.keys()].sort();

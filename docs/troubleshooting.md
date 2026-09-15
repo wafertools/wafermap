@@ -60,18 +60,16 @@ The same applies to `renderWaferGallery`, except the gallery is a scrolling card
 
 **Cause:** `passBins` defaults to `[1]`, but your test program uses a different bin for pass (e.g. bin `0`, or multiple bins).
 
-**Fix:** pass the correct `passBins` everywhere it matters — `buildWaferMap`, `analyzeWaferMap`, and `renderWaferMap`:
+**Fix:** pass the correct `passBins` to `buildWaferMap` — the only place they are set. The result carries
+them, and `analyzeWaferMap`, `renderWaferMap` and `renderWaferGallery` read them from it:
 
 ```ts
 const PASS = [1, 2]; // your actual passing bins
 
 const result  = buildWaferMap({ results, passBins: PASS });
-const summary = analyzeWaferMap(result, { passBins: PASS });
+const summary = analyzeWaferMap(result);
 
-renderWaferMap(container, result, {
-  passBins: PASS,        // summary panel yield label
-  statsSummary: summary,
-});
+renderWaferMap(container, result, { statsSummary: summary });
 ```
 
 **How to confirm:** `result.yield.passDies` and `result.yield.failDies` reflect whatever `passBins` was passed to `buildWaferMap`. If the numbers look wrong, check that value first.
@@ -155,8 +153,8 @@ for (const w of result.warnings) console.warn(w.code, w.message);
 
 ## `renderWaferMap is not exported by @wafertools/wafermap`
 
-**Cause:** the renderers are not on the root entry point. `renderWaferMap`,
-`renderWaferGallery` and `toCanvas` are exported **only** from the `/render` subpath.
+**Cause:** the renderers are not on the root entry point. `renderWaferMap` and
+`renderWaferGallery` are exported **only** from the `/render` subpath.
 Depending on your bundler this surfaces as a build-time "no export named
 `renderWaferMap`" error or a runtime `undefined is not a function`.
 
@@ -175,7 +173,7 @@ This split is deliberate: the root entry re-exports only the DOM-free layers (`c
 
 ## `window is not defined` or `document is not defined` on the server
 
-**Cause:** `renderWaferMap` (and `toCanvas`) require a browser DOM. They will throw if called during SSR in Next.js, Nuxt, SvelteKit, or Remix.
+**Cause:** `renderWaferMap` and `renderWaferGallery` require a browser DOM. They will throw if called during SSR in Next.js, Nuxt, SvelteKit, or Remix.
 
 **Fix:** gate the renderer inside the browser lifecycle. `buildWaferMap` and `analyzeWaferMap` are pure functions with no DOM dependency — only the renderer call needs to be deferred.
 

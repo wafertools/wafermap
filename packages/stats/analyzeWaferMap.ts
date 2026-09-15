@@ -30,9 +30,12 @@ interface RawFinding extends StatsFinding {
   effect: StatsFinding['effect'];
 }
 
-type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'enableTestSiteAnalysis'>> & {
+type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers'>> & {
   testNumbers?: number[];
-  enableTestSiteAnalysis?: boolean;
+  // From the analysed result (`WaferMapResult.passBins`/`.ringCount`), never from
+  // options — see analyzeWaferMap.
+  passBins: number[];
+  ringCount: number;
   // Internal — not exposed in AnalyzeWaferMapOptions. These decide what counts as
   // a finding; see the note in types.ts for why they are not callable options.
   significanceLevel: number;
@@ -48,24 +51,14 @@ type ResolvedOptions = Required<Omit<AnalyzeWaferMapOptions, 'testNumbers' | 'en
  * stop them passing the removed options, and honouring an out-of-range value
  * there reintroduces exactly the silent-wrong-answer this release removed.
  *
- * `ringCount` deliberately has NO upper bound — see the note on its entry below
- * for the measurements behind that. (An earlier draft of this comment described
- * a per-wafer ceiling derived from the die grid and pointed at a `clampRingCount`
- * function; neither the ceiling nor the function was ever written.)
+ * `ringCount` is not validated here: it is set once on `buildWaferMap` and
+ * validated there (`WaferMapInput.ringCount`), no-upper-bound reasoning included.
  */
 const OPTION_BOUNDS = {
   // A p-value threshold is a probability, and 0 admits nothing.
   significanceLevel:     { min: 1e-6, max: 1 },
   minimumEffectSize:     { min: 0, max: 1 },
   minimumRelativeEffect: { min: 0, max: Number.MAX_SAFE_INTEGER },
-  // No upper bound on ringCount, deliberately. A fine banding looked like it
-  // ought to be capped — "rings thinner than a die" — but measuring it says
-  // otherwise: at ringCount 40 on a 561-die wafer the ring findings still carry
-  // 16–148 dies each, because `minimumSampleSize` already rejects any region too
-  // small to test and adjacent regions merge. A cap derived from die count also
-  // rejected ringCount 3 on this repo's own 28-die test wafers, which produce
-  // correct findings. The gate that matters is already there.
-  ringCount:             { min: 1, max: Number.MAX_SAFE_INTEGER },
 } as const;
 
 const VALID_SECTOR_COUNTS = [4, 8, 16, 32] as const;
@@ -80,9 +73,9 @@ function resolveOptions(
   options: AnalyzeWaferMapOptions,
 ): { resolved: ResolvedOptions; warnings: WaferWarning[] } {
   // Explicit `undefined` is ABSENCE, not a value. `{ ...defaults, ...options }`
-  // makes `{ ringCount: undefined }` overwrite the default with `undefined`,
+  // makes `{ sectorCount: undefined }` overwrite the default with `undefined`,
   // which then fails the finite-number test below and reports a correction — so
-  // the most ordinary way a host forwards an optional (`{ ringCount: opts.rings }`,
+  // the most ordinary way a host forwards an optional (`{ sectorCount: opts.sectors }`,
   // where `opts.rings` is simply unset) raised an `analysis-option-corrected`
   // advisory, and that advisory is not quiet: it reaches the toolbar's warning
   // indicator and the Summary panel's banner. Dropping undefined keys first
@@ -95,7 +88,7 @@ function resolveOptions(
   const warnings: WaferWarning[] = [];
   const corrections: string[] = [];
 
-  for (const key of ['significanceLevel', 'minimumEffectSize', 'minimumRelativeEffect', 'ringCount'] as const) {
+  for (const key of ['significanceLevel', 'minimumEffectSize', 'minimumRelativeEffect'] as const) {
     const { min, max } = OPTION_BOUNDS[key];
     const value = merged[key];
     if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -108,12 +101,6 @@ function resolveOptions(
       corrections.push(`${key}=${value} is outside ${min}–${max} (using ${clamped})`);
       merged[key] = clamped;
     }
-  }
-  // ringCount must also be a whole number of rings.
-  if (!Number.isInteger(merged.ringCount)) {
-    const rounded = Math.max(1, Math.round(merged.ringCount));
-    corrections.push(`ringCount=${merged.ringCount} is not a whole number (using ${rounded})`);
-    merged.ringCount = rounded;
   }
   if (!VALID_SECTOR_COUNTS.includes(merged.sectorCount as typeof VALID_SECTOR_COUNTS[number])) {
     corrections.push(
@@ -128,6 +115,31 @@ function resolveOptions(
     console.warn(`[wafermap] ${message}`);
     warnings.push({ code: 'analysis-option-corrected', message, severity: 'warning' });
   }
+
+  // Removed in 0.30.0: both are set once, on buildWaferMap, and read from the
+  // result. A plain-JavaScript caller still passing them gets no type error, and
+  // silently ignoring the value would leave them believing their pass bins or
+  // ring banding were in effect — so say where the analysis took them from.
+  const removed = (['passBins', 'ringCount'] as const)
+    .filter(key => (supplied as Record<string, unknown>)[key] !== undefined);
+  if (removed.length) {
+    const message = `analyzeWaferMap: ${removed.join(' and ')} ${removed.length > 1 ? 'are' : 'is'} no longer `
+      + `an analysis option and was ignored. Set ${removed.length > 1 ? 'them' : 'it'} on buildWaferMap; `
+      + `the analysis used the value the map was built with.`;
+    console.warn(`[wafermap] ${message}`);
+    warnings.push({ code: 'analysis-option-corrected', message, severity: 'warning' });
+  }
+
+  // Removed in 0.30.0: the per-analysis switches. Every analysis now runs, so a
+  // caller that passed `false` expecting fewer findings is told why it got them.
+  const switches = ['enableYieldAnalysis', 'enableHardBinAnalysis', 'enableSoftBinAnalysis', 'enableReticlePositionAnalysis', 'enableTestSiteAnalysis', 'enableClusterAnalysis', 'enableAngularAnalysis', 'enablePatternClassification']
+    .filter(key => (supplied as Record<string, unknown>)[key] !== undefined);
+  if (switches.length) {
+    const message = `analyzeWaferMap: ${switches.join(', ')} ${switches.length > 1 ? 'are' : 'is'} no longer `
+      + `an option and was ignored: every analysis now runs. Filter the findings (filterFindings) to show fewer.`;
+    console.warn(`[wafermap] ${message}`);
+    warnings.push({ code: 'analysis-option-corrected', message, severity: 'warning' });
+  }
   return { resolved: merged, warnings };
 }
 
@@ -138,22 +150,13 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   minimumEffectSize: 0.20,
   minimumRelativeEffect: 1.0,
   minimumSampleSize: 5,        // internal, not in public AnalyzeWaferMapOptions
-  includePartial: false,
-  includeEdgeExcluded: false,
-  enableYieldAnalysis: true,
-  enableHardBinAnalysis: true,
-  enableSoftBinAnalysis: true,
   // Off by default: the regional Welch pass is the expensive part of analysis
   // (scales with regions × tests × dies). Callers that display regional
   // test-value findings opt in explicitly. For cheap per-test quartiles without
   // the spatial comparisons, use computePerTestStats instead.
   enableTestValueAnalysis: false,
   computePerTestStats: false,
-  enableReticlePositionAnalysis: true,
-  enableClusterAnalysis: true,
-  enableAngularAnalysis: true,
   sectorCount: 8,
-  enablePatternClassification: true,
   minimumClusterSize: 5,     // overwritten by adaptOptions()
 };
 
@@ -180,8 +183,8 @@ function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
   return 'wafer' in input && 'dies' in input && 'view' in input ? input : buildWaferMap(input);
 }
 
-function isEligibleDie(die: Die, options: ResolvedOptions): die is EligibleDie {
-  if (!isYieldEligibleDie(die, options)) return false;
+function isEligibleDie(die: Die): die is EligibleDie {
+  if (!isYieldEligibleDie(die)) return false;
   return (
     die.hbin !== undefined ||
     die.sbin !== undefined ||
@@ -484,7 +487,6 @@ function labelForBin(bin: number, defs: BinDef[] | undefined, prefix: 'HBin' | '
 }
 
 function labelForTest(testNumber: number, defs: TestDef[] | undefined): { label: string; unit?: string } {
-  // Match by testNumber first, then fall back to index for the deprecated path.
   const def = defs?.find((entry) => entry.testNumber === testNumber);
   return { label: def?.name ?? `Test ${testNumber}`, unit: def?.unit };
 }
@@ -1617,20 +1619,30 @@ export function analyzeWaferMap(
   input: AnalyzeWaferMapInput,
   options: AnalyzeWaferMapOptions = {},
 ): StatsSummary {
-  const { resolved: baseResolved, warnings: optionWarnings } = resolveOptions(options);
+  const { resolved: optionResolved, warnings: optionWarnings } = resolveOptions(options);
   const result = normalizeInput(input);
+  // Pass bins come from the result — the ones `result.yield` was computed with.
+  // There is no analysis option to contradict them (removed: a second place to
+  // set pass bins is how every surface came to judge by `[1]`). Assigned
+  // unconditionally, so an untyped caller still passing the removed option
+  // cannot override them through the options spread above. DEFAULT_OPTIONS'
+  // `[1]` only reaches a hand-built result that carries none.
+  const baseResolved: ResolvedOptions = { ...optionResolved, passBins: result.passBins ?? DEFAULT_OPTIONS.passBins,
+    // Ring count likewise: set once on buildWaferMap, so ring boundaries on the map
+    // and ring findings here cannot describe different rings.
+    ringCount: result.ringCount ?? DEFAULT_OPTIONS.ringCount };
   const isLotStack  = result.isLotStack;
   const stackMethod = result.aggrMethod;
   const hasHbinData = !isLotStack ||
     stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
-  const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die, baseResolved));
+  const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die));
   // Cluster/pattern detection are spatial (physX/physY-based flood-fill and
   // shape features) — an unpositioned die can't belong to a spatial cluster
   // or contribute to a spatial pattern, so both take this instead of
   // eligibleDies directly.
   const positionedEligibleDies = eligibleDies.filter(isPositionedDie);
   const resolved = adaptOptions(baseResolved, eligibleDies.length);
-  const includedDies = result.dies.filter((die) => isYieldEligibleDie(die, resolved));
+  const includedDies = result.dies.filter((die) => isYieldEligibleDie(die));
   // Ring/quadrant/reticle-position/sector are spatial — an unpositioned die
   // has no ring/quadrant/etc. by definition, so it's excluded from every one
   // of these region families. buildTestSiteRegions is deliberately exempt
@@ -1640,20 +1652,14 @@ export function analyzeWaferMap(
   const positionedIncludedDies = includedDies.filter(isPositionedDie);
   const ringRegions = buildRingRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
   const quadrantRegions = buildQuadrantRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
-  const reticlePositionRegions = resolved.enableReticlePositionAnalysis
-    ? buildReticlePositionRegions(positionedIncludedDies, result.reticleConfig)
-    : [];
-  // enableTestSiteAnalysis: undefined means auto (guard in buildTestSiteRegions decides);
-  // true forces it on; false suppresses it.
-  const testSiteRegions = resolved.enableTestSiteAnalysis === false
-    ? []
-    : buildTestSiteRegions(includedDies, resolved.enableTestSiteAnalysis === true);
-  const sectorRegions = resolved.enableAngularAnalysis
-    ? buildSectorRegions(positionedIncludedDies, result.wafer, resolved.sectorCount)
-    : [];
+  const reticlePositionRegions = buildReticlePositionRegions(positionedIncludedDies, result.reticleConfig);
+  // Test-site regions exist only when the wafer has meaningful site duplication —
+  // buildTestSiteRegions' own guard decides.
+  const testSiteRegions = buildTestSiteRegions(includedDies, false);
+  const sectorRegions = buildSectorRegions(positionedIncludedDies, result.wafer, resolved.sectorCount);
 
   const findings: RawFinding[] = [];
-  if (resolved.enableYieldAnalysis && hasHbinData) {
+  if (hasHbinData) {
     findings.push(
       ...buildYieldFindings(eligibleDies, ringRegions, resolved.passBins, resolved),
       ...buildYieldFindings(eligibleDies, quadrantRegions, resolved.passBins, resolved),
@@ -1662,7 +1668,7 @@ export function analyzeWaferMap(
       ...buildYieldFindings(eligibleDies, sectorRegions, resolved.passBins, resolved),
     );
   }
-  if (resolved.enableHardBinAnalysis && hasHbinData) {
+  if (hasHbinData) {
     findings.push(
       ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
@@ -1671,7 +1677,7 @@ export function analyzeWaferMap(
       ...buildBinFindings(eligibleDies, sectorRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
     );
   }
-  if (resolved.enableSoftBinAnalysis) {
+  {
     const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined);
     findings.push(
       ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.sbinDefs, 'softBin', resolved),
@@ -1712,7 +1718,7 @@ export function analyzeWaferMap(
       ...buildFunctionalPassFindings(eligibleDies, sectorRegions, result.testDefs, resolved),
     );
   }
-  if (resolved.enableClusterAnalysis) {
+  {
     const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.testDefs);
     if (!isLotStack || hasHbinData || failPredicate !== undefined) {
       findings.push(...buildClusterFindings(positionedEligibleDies, result.wafer, {
@@ -1736,7 +1742,7 @@ export function analyzeWaferMap(
   findings.length = 0;
   findings.push(...mergedFindings);
 
-  if (resolved.enablePatternClassification && hasHbinData) {
+  if (hasHbinData) {
     const patternResult = classifyPattern(positionedEligibleDies, result.wafer, {
       passBins:  resolved.passBins,
       ringCount: resolved.ringCount });

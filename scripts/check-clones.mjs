@@ -34,7 +34,9 @@ const MIN_RUN = 150;
  *  to admit a new one. */
 const BUDGET = 0;
 
-const SKIP = /(\.test\.ts|userGuideHtml\.ts|icons\.ts|version\.ts|guideExtension\.ts)$/;
+// `deprecated.ts` holds each package's temporary deprecation wrappers (gone in 0.31.0): one
+// deliberately uniform line per deprecated export, which is repetition by design.
+const SKIP = /(\.test\.ts|userGuideHtml\.ts|icons\.ts|version\.ts|guideExtension\.ts|deprecated\.ts)$/;
 
 function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {

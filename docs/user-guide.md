@@ -57,7 +57,9 @@ not counted in yield calculations.
 ### 1.4 Legend and colorbar
 
 **Bin modes** show a discrete colour legend: one swatch per bin, with bin number
-and name if the application has supplied bin names.
+and name if the application has supplied bin names. Passing bins are listed first,
+then failing bins from the most dies to the fewest — the same order as the Summary
+panel and reports.
 
 **Value mode** shows a continuous colorbar: the colour scale runs from the minimum
 to maximum value, with units when available. The colorbar is informational only —
@@ -215,11 +217,13 @@ failure category across the wafer.
 
 **Bin colours** — a bin's colour tells you whether it passed before you read the legend:
 passing bins are always shades of green and failing bins never are, whichever bin numbers
-your test program uses. The bins with the most dies get the most distinct colours. In a
-gallery the colours are worked out across every wafer it shows, so a bin is the same
-colour on every card. If there are more bins than the colour scheme has distinct colours, some bins
-have to share one — a **Data warnings** entry names them, and you can tell them apart with
-the legend, the tooltip, or by highlighting one bin at a time.
+your test program uses. Each bin number keeps its colour: bin 7 is the same colour in every
+lot, every gallery and every screenshot, however many dies it holds, so you can learn your
+program's colours. Hard and soft bins are coloured separately, so hard bin 3 and soft bin 3
+are different colours. A colour scheme has a limited number of colours, so bins far enough
+apart in number repeat one — when two of them are on screen together a **Data warnings**
+entry names them, and you can tell them apart with the legend, the tooltip, or by
+highlighting one bin at a time.
 
 ### Overlays
 
@@ -267,7 +271,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
-| <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | Bin modes only. Sets where the bin legend sits relative to each card. |
+| <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | **Legend on each map** adds a legend to every card as well as the shared one above the grid (off by default). While it is on, bin modes also let you choose where that legend sits on each card. |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with spec limits only. Toggles all cards between the spec-limit range and the data range. Leave it on spec limits when comparing wafers — the data range rescales per view. |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Opens or closes the Summary panel covering every wafer in the gallery.                                                                                                           |
 | <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a chart suite covering every wafer — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |

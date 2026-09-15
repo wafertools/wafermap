@@ -20,8 +20,8 @@ function buildWaferWithFinding() {
     const { ring } = classifyDie(die, baseWafer, { ringCount: 3 });
     return { ...die, hbin: ring === 3 ? 2 : 1 };
   });
-  const wafer = buildWaferMap({ dies: enriched, waferConfig: { diameter: 60 }, passBins: [1] });
-  const statsSummary = analyzeWaferMap(wafer, { ringCount: 3, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+  const wafer = buildWaferMap({ dies: enriched, waferConfig: { diameter: 60 }, passBins: [1], ringCount: 3 });
+  const statsSummary = analyzeWaferMap(wafer, { minimumSampleSize: 3, minimumEffectSize: 0.2 });
   return { wafer, statsSummary };
 }
 
@@ -674,7 +674,7 @@ test('renderWaferGallery builds cards, detaches a card into a real popup window,
       { ...base, label: 'B' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+    const ctrl = renderWaferGallery(container, items);
     assert.equal(container.querySelectorAll('.wmap-gallery-card').length, 2);
     assert.equal(container.querySelectorAll('canvas').length >= 2, true);
     assert.equal(container.querySelectorAll('button').length > 0, true);
@@ -834,7 +834,7 @@ test('renderWaferGallery falls back to an in-page floating window when window.op
       { ...base, label: 'B' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+    const ctrl = renderWaferGallery(container, items);
     const expandBtn = container.querySelector('[data-wmap-expand-btn]');
 
     click(window, expandBtn);
@@ -1015,7 +1015,7 @@ test('renderWaferGallery supports multiple simultaneous detached popup windows a
       { ...base, label: 'C' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+    const ctrl = renderWaferGallery(container, items);
 
     const expandBtns = container.querySelectorAll('[data-wmap-expand-btn]');
     assert.equal(expandBtns.length, 3);
@@ -1066,7 +1066,7 @@ test('renderWaferGallery reattaches a detached card via its own toggle button', 
       { ...base, label: 'B' },
     ];
 
-    const ctrl = renderWaferGallery(container, items, { cardPadding: 4 });
+    const ctrl = renderWaferGallery(container, items);
     const expandBtn = container.querySelector('[data-wmap-expand-btn]');
 
     click(window, expandBtn);
@@ -1421,8 +1421,6 @@ test('renderWaferMap: summaryPanel option renders a docked Summary panel with se
     const findingRows = [...root.querySelectorAll('button[data-wmap-finding]')];
     assert.ok(findingRows.length > 0, 'at least one finding row should render');
 
-    // Summary button stays reachable/independent even without Insights enabled.
-    ctrl.closeSummaryPanel();
     ctrl.destroy();
   } finally {
     cleanup();
@@ -1757,11 +1755,6 @@ test('renderWaferMap: metadata mode menu entry appears only when a configured fi
     click(window, projectRow);
     assert.equal(ctrl.getOptions().plotMode, 'metadata');
     assert.equal(ctrl.getOptions().activeMetadataKey, 'project');
-
-    const legend = ctrl.getActiveLegend();
-    assert.ok(legend, 'getActiveLegend returns entries in metadata mode');
-    const names = legend.map((e) => e.name).sort();
-    assert.deepEqual(names, ['our-project', 'vendor']);
 
     ctrl.destroy();
   } finally {

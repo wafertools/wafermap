@@ -52,7 +52,7 @@ test('mixed wafer — buildWaferMap keeps every die, coverage/yield split correc
 
 test('mixed wafer — analyzeWaferMap findings never reference an unpositioned die', () => {
   const { result } = buildMixedWafer();
-  const summary = analyzeWaferMap(result, { passBins: [1] });
+  const summary = analyzeWaferMap(result);
 
   const unpositionedIds = new Set(
     result.dies.filter((d) => d.x === undefined).map((d) => d.id),
@@ -74,7 +74,7 @@ test('mixed wafer — analyzeWaferMap findings never reference an unpositioned d
 
 test('mixed wafer — testSpecYield/perTestStats/functionalYield counts include unpositioned dies', () => {
   const { result, positionedCount, unpositionedCount } = buildMixedWafer();
-  const summary = analyzeWaferMap(result, { passBins: [1], computePerTestStats: true });
+  const summary = analyzeWaferMap(result, { computePerTestStats: true });
 
   // perTestStats' sample count for test 1001 must cover every die (both
   // positioned and unpositioned) that carries a value for it — non-spatial.
@@ -99,7 +99,7 @@ test('a wafer with zero positioned dies produces no spatial findings, no crash',
     waferConfig: { diameter: 40 },
     testDefs: [{ testNumber: 1001, name: 'Vdd' }],
   });
-  const summary = analyzeWaferMap(result, { passBins: [1], computePerTestStats: true });
+  const summary = analyzeWaferMap(result, { computePerTestStats: true });
 
   for (const finding of summary.findings) {
     assert.notEqual(finding.comparison?.family, 'ring');

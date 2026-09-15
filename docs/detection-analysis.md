@@ -10,8 +10,7 @@ and the design decisions that resulted from it.
 
 ## The two detection systems
 
-**Spatial pattern classifier** (`classifyPattern`, called by `analyzeWaferMap`
-when `enablePatternClassification` is true) uses pure geometry — connected
+**Spatial pattern classifier** (`classifyPattern`, called by `analyzeWaferMap`) uses pure geometry — connected
 components, radial distance distributions, eccentricity, and linear scores —
 to label the whole-wafer failure signature as edge-ring, center, scratch, etc.
 It is rule-based with no trained model.

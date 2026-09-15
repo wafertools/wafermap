@@ -59,13 +59,13 @@ if (!block) {
 // guide is actively steering agents at something that is not there.
 
 const MUST_EXIST = [
-  'buildWaferMap', 'renderWaferMap', 'renderWaferGallery', 'toCanvas', 'buildView',
+  'buildWaferMap', 'renderWaferMap', 'renderWaferGallery',
   'analyzeWaferMap', 'analyzeWaferLot', 'createWafermapWorker',
-  'getTestPassStatus', 'getDieKey', 'registerBinColorScheme', 'registerValueColorScheme', 'resolveBinColors',
+  'getTestPassStatus', 'getDieKey', 'registerBinColorScheme', 'registerValueColorScheme',
   'testValues', 'testNumber', 'passFailDisplay', 'activeTest', 'passBins',
   'retestCount', 'retestPolicy', 'isLotStack', 'dieConfig', 'waferConfig',
   'BIN_PALETTE', 'WaferMapDisplayItem', 'RenderOptions', 'WaferMapController',
-  'HitTarget', 'ViewOptions', 'WaferNotch', 'isInsideWafer', 'DieResult',
+  'WaferNotch', 'DieResult',
   // These are the CURRENT names of the geometry inputs. Worth pinning: an
   // internal note claimed they had been renamed to WaferOptions/DieOptions,
   // which do not exist — following that would send agents at a phantom type.
@@ -90,7 +90,7 @@ for (const sym of MUST_EXIST) {
 // each still exists in a DIFFERENT legitimate role and a bare name match would
 // produce a false failure:
 //   values         — `testValues`, `aggregateValues`, jsdoc prose
-//   colorBySpec    — removed as an INPUT option, retained as a View OUTPUT field
+//   warnings       — removed from `inference`, retained as `WaferMapResult.warnings`
 //   getDieAtPoint  — removed as a standalone export, retained on HitTarget
 //   index          — far too generic
 // Those three are covered structurally in step 4 instead.
@@ -100,7 +100,7 @@ for (const sym of MUST_EXIST) {
 // X" happens — the table is what an agent reads, so the table is what is checked.
 const AMBIGUOUS = new Map([
   ['values',        'appears as testValues / aggregateValues and in prose'],
-  ['colorBySpec',   'removed as an input option, retained as a View output field'],
+  ['warnings',      'removed from inference, retained as WaferMapResult.warnings'],
   ['getDieAtPoint', 'removed as a standalone export, retained on HitTarget'],
   ['index',         'far too generic to grep'],
   ['flat',          'ordinary English word'],
@@ -217,13 +217,6 @@ for (const [iface, banned, replacement] of structural) {
   if (replacement && !props.includes(replacement)) {
     fail(`AGENTS.md points agents at ${iface}.${replacement}, which ${iface} does not declare`);
   }
-}
-
-// colorBySpec: removed as an input, retained as a View output. Assert exactly that,
-// since the guide's table makes the narrower claim.
-const viewOpts = types.match(/interface ViewOptions \{([\s\S]*?)\n\}/);
-if (viewOpts && /^\s+colorBySpec\??:/m.test(viewOpts[1])) {
-  fail("AGENTS.md says ViewOptions.colorBySpec was removed, but it is declared on ViewOptions");
 }
 
 // ── 4c. Optionality claims ──────────────────────────────────────────────────

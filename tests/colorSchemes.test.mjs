@@ -10,7 +10,7 @@ import {
 } from '../dist/packages/renderer/colorSchemes.js';
 
 // Bin palettes and value gradients are separate registries. Resolution of bin
-// colours (rank, pass/fail) is covered in binColors.test.mjs, and the built-in
+// colours (bin-number slots, pass/fail) is covered in binColors.test.mjs, and the built-in
 // bin palettes' measured separation in binPalettes.test.mjs.
 
 // ── Value gradients ──────────────────────────────────────────────────────────

@@ -14,7 +14,8 @@
 
 import type { Die } from '../core/dies.js';
 import { hasPosition, isPositionedDie } from '../core/dies.js';
-import { classifyDie, type Wafer } from '../core/index.js';
+import { classifyDie } from '../core/classify.js';
+import type { Wafer } from '../core/index.js';
 import { isParametricTest, getTestPassStatus, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { resolveMetadataColumns, type MetadataKeySelection } from '../stats/metadataColumns.js';
@@ -94,8 +95,6 @@ export interface DieListDisplayOptions {
    * directly into a long document).
    */
   maxHeight?: string;
-  /** CSV filename, including extension. Default: `'dies.csv'`. */
-  csvFilename?: string;
 }
 
 export interface DieListOptions extends DieListDisplayOptions {
@@ -470,7 +469,7 @@ export function buildDieListSection(
     for (const die of dies) {
       lines.push(columns.map((c) => csvField((c.csvGet ?? c.get)(die))).join(','));
     }
-    saveTextFile(lines.join('\n'), options.csvFilename ?? 'dies.csv', 'text/csv', options.onSaveText);
+    saveTextFile(lines.join('\n'), 'dies.csv', 'text/csv', options.onSaveText);
   });
 
   return outer;

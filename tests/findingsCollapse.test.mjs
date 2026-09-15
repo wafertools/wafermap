@@ -20,7 +20,7 @@ import { plainBinTerms } from '../dist/packages/renderer/fmt.js';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Wafer with a heavy edge-failure ring, hbin and sbin carrying the SAME partition. */
-function edgeFailWafer({ mirrorSoftBins = true } = {}) {
+function edgeFailWafer({ mirrorSoftBins = true, passBins = [1] } = {}) {
   const R = 12;
   const results = [];
   for (let x = -R; x <= R; x++) {
@@ -47,12 +47,12 @@ function edgeFailWafer({ mirrorSoftBins = true } = {}) {
     results,
     waferConfig: { diameter: 300, notch: { type: 'bottom' } },
     dieConfig:   { width: 10, height: 10 },
-    passBins:    [1],
+    passBins,
   });
 }
 
 const analyse = (result, opts = {}) =>
-  analyzeWaferMap(result, { ringCount: 4, passBins: [1], ...opts });
+  analyzeWaferMap(result, opts);
 
 const claimedIds = (summary) => new Set(summary.findings.flatMap(f => f.absorbedIds ?? []));
 const visible = (summary) => {
@@ -136,7 +136,8 @@ test('the single pass bin is absorbed into the yield finding that restates it', 
 });
 
 test('with several pass bins, no single bin row equals yield, so nothing is absorbed on that rule', () => {
-  const summary = analyse(edgeFailWafer(), { passBins: [1, 2] });
+  // Pass bins are set on the build — the analysis reads them from the result.
+  const summary = analyse(edgeFailWafer({ passBins: [1, 2] }));
   const claimed = claimedIds(summary);
 
   // A bin-1 row is no longer the same statement as yield (yield counts 1 AND 2),
@@ -191,8 +192,6 @@ test('absorbed findings do not reappear as their own lot-level rows', async () =
   const results = Array.from({ length: 6 }, () => edgeFailWafer());
   const perWaferSummaries = results.map(r => analyse(r));
   const lot = analyzeWaferLot(results, {
-    ringCount: 4,
-    passBins: [1],
     perWaferSummaries,
   });
 

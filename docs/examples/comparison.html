@@ -855,7 +855,7 @@
         ],
       });
       const t0 = performance.now();
-      const summary = analyzeWaferMap(result, { ringCount: 4 });
+      const summary = analyzeWaferMap(result);
       const analysisMs = performance.now() - t0;
 
       renderWaferMap(document.getElementById('analysis-container'), result, {

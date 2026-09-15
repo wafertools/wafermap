@@ -20,9 +20,10 @@ export const NO_DATA_FILL = '#d6d9dd';
  * Indices 1–63 are perceptually spread colours generated via golden-angle
  * HSL stepping.
  *
- * No longer used for bins: bin colours are rank-assigned from a registered bin
- * palette by `resolveBinColors` (binColors.ts). Hashing a bin number into this
- * list is what made two different bins share a colour.
+ * No longer used for bins: bin colours come from a registered bin palette,
+ * indexed by bin number and pass/fail, in `resolveBinColors` (binColors.ts).
+ * Hashing a bin number into this list is what made two different bins share a
+ * colour.
  */
 export const BIN_PALETTE: readonly string[] = [
   '#95a5a6', //  0: no data

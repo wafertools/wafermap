@@ -459,4 +459,126 @@ function geometry({ radiusMm, pitchMmX, pitchMmY, edgeExcludeMm, notch = 'bottom
   console.log(`showcase-parser-stress.csv — ${lines.length - 4} rows · ${dies.length} die/wafer · 2 wafers · CRLF+quotes`);
 }
 
+// ── File 8: Bin-rich logic SoC — many hard and soft bins ───────────────────
+// 200 mm wafer, 4.0 × 4.0 mm die → ~1,850 die/wafer, 4 wafers.
+// 15 hard bins (two pass grades, gaps in the numbering as real programs have)
+// and 32 soft bins numbered under their hard bin, the way a sort program groups
+// them. Every other file here has 2–6 bins, which cannot show how bin colour
+// behaves across a realistic program — including the soft-bin palette running
+// out, which is what the `bin-colors-shared` warning exists to report.
+// Each failure mode has its own spatial signature, so a colour can be matched
+// to a shape: opens at the edge, a shorts cluster, IDDQ at the centre, an MBIST
+// scratch, Vmin/Fmax tilts (the Fmax side also drives grade-2 passes), IO
+// leakage in the outer ring and a tester-alarm streak on one wafer.
+// Column names: LOT, WAFER, X, Y, HBIN, SBIN
+
+{
+  const radiusMm = 100, pX = 4.0, pY = 4.0;
+  const dies = waferGrid({ radiusMm, pitchMmX: pX, pitchMmY: pY, edgeExcludeMm: 3 });
+  const wafers = ['S01', 'S02', 'S03', 'S04'];
+
+  const hbinDefs = [
+    { bin: 1,  name: 'Pass — grade 1' },
+    { bin: 2,  name: 'Pass — grade 2' },
+    { bin: 3,  name: 'Open / contact' },
+    { bin: 4,  name: 'Short' },
+    { bin: 5,  name: 'IDDQ' },
+    { bin: 6,  name: 'Scan (ATPG)' },
+    { bin: 7,  name: 'Memory BIST' },
+    { bin: 8,  name: 'PLL' },
+    { bin: 9,  name: 'Vmin' },
+    { bin: 10, name: 'Fmax' },
+    { bin: 11, name: 'Analog' },
+    { bin: 12, name: 'IO leakage' },
+    { bin: 15, name: 'NVM / fuse' },
+    { bin: 17, name: 'Thermal sensor' },
+    { bin: 20, name: 'Tester alarm' },
+  ];
+  const sbinDefs = [
+    { bin: 100,  name: 'Pass — Fmax ≥ 3.2 GHz' },
+    { bin: 200,  name: 'Pass — Fmax 2.8–3.2 GHz' },
+    { bin: 201,  name: 'Pass — grade 2, Vmin marginal' },
+    { bin: 301,  name: 'Open — VDD' },
+    { bin: 302,  name: 'Open — IO' },
+    { bin: 303,  name: 'Probe contact' },
+    { bin: 401,  name: 'Short — VDD to GND' },
+    { bin: 402,  name: 'Short — IO' },
+    { bin: 501,  name: 'IDDQ high' },
+    { bin: 502,  name: 'IDDQ delta' },
+    { bin: 503,  name: 'Standby current' },
+    { bin: 601,  name: 'Scan stuck-at' },
+    { bin: 602,  name: 'Scan transition' },
+    { bin: 603,  name: 'Scan chain broken' },
+    { bin: 701,  name: 'MBIST SRAM' },
+    { bin: 702,  name: 'MBIST ROM' },
+    { bin: 703,  name: 'MBIST repair exhausted' },
+    { bin: 801,  name: 'PLL lock timeout' },
+    { bin: 802,  name: 'PLL jitter' },
+    { bin: 901,  name: 'Vmin — core' },
+    { bin: 902,  name: 'Vmin — SRAM' },
+    { bin: 1001, name: 'Fmax — core' },
+    { bin: 1002, name: 'Fmax — IO timing' },
+    { bin: 1101, name: 'ADC INL' },
+    { bin: 1102, name: 'DAC offset' },
+    { bin: 1103, name: 'Bandgap trim' },
+    { bin: 1201, name: 'Input leakage' },
+    { bin: 1202, name: 'Tristate leakage' },
+    { bin: 1501, name: 'eFuse' },
+    { bin: 1502, name: 'OTP' },
+    { bin: 1701, name: 'Thermal sensor offset' },
+    { bin: 2001, name: 'Tester alarm' },
+  ];
+  // Soft bins belong to the hard bin whose number prefixes theirs (1502 → 15).
+  const sbinsByHbin = {};
+  for (const { bin } of sbinDefs) {
+    const h = Math.floor(bin / 100);
+    (sbinsByHbin[h] ??= []).push(bin);
+  }
+
+  const rows = [];
+  for (let wi = 0; wi < wafers.length; wi++) {
+    const rng = makeLcg(0x5EED_0B1D + wi);
+    // The shorts cluster and the MBIST scratch move from wafer to wafer.
+    const cx = [-6, 8, 3, -9][wi], cy = [5, -4, 9, -7][wi];
+    for (const die of dies) {
+      const xMm = die.x * pX, yMm = die.y * pY;
+      const r = Math.hypot(xMm, yMm) / radiusMm;             // 0 at centre, ~1 at edge
+      const tilt = (xMm + yMm) / (radiusMm * Math.SQRT2);    // −1 SW … +1 NE
+      let hbin = 0;
+      if (r > 0.9 && rng() < 0.30) hbin = 3;
+      else if (Math.hypot(die.x - cx, die.y - cy) < 2.5 && rng() < 0.8) hbin = 4;
+      else if (r < 0.18 && rng() < 0.35) hbin = 5;
+      else if (Math.abs(die.y - die.x * 0.6 - (wi * 3 - 4)) < 0.7 && Math.abs(die.x) < 14 && rng() < 0.85) hbin = 7;
+      else if (wi === 2 && die.y === 10 && die.x > -8 && die.x < 6) hbin = 20;
+      else if (tilt > 0.45 && rng() < 0.25 * tilt) hbin = 9;
+      else if (tilt < -0.45 && rng() < -0.25 * tilt) hbin = 10;
+      else if (r > 0.8 && rng() < 0.06) hbin = 12;
+      else {
+        const u = rng();
+        hbin = u < 0.030 ? 6 : u < 0.042 ? 8 : u < 0.052 ? 11 : u < 0.058 ? 15 : (wi === 1 && u < 0.066) ? 17 : 0;
+      }
+      // Passing dies: grade 2 becomes more common towards the slow (SW) side.
+      if (hbin === 0) hbin = rng() < 0.12 + Math.max(0, -tilt) * 0.35 ? 2 : 1;
+      const choices = sbinsByHbin[hbin];
+      rows.push({
+        LOT: 'SOC-A7-2025-118', WAFER: wafers[wi],
+        X: die.x, Y: die.y, HBIN: hbin,
+        SBIN: choices[Math.floor(rng() * choices.length)],
+      });
+    }
+  }
+
+  writeMeta('showcase-bin-rich', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1, 2],
+    // Names only, no colours: this dataset exists to show the palette's own
+    // assignment. A site colour sheet would be `color` on these entries.
+    hbinDefs,
+    sbinDefs,
+  });
+  writeFileSync(join(OUT, 'showcase-bin-rich.csv'),
+    csv(['LOT','WAFER','X','Y','HBIN','SBIN'], rows));
+  console.log(`showcase-bin-rich.csv      — ${rows.length} rows · ${dies.length} die/wafer · 4 wafers · ${hbinDefs.length} hard / ${sbinDefs.length} soft bins`);
+}
+
 console.log(`\nAll files written to ${OUT}`);

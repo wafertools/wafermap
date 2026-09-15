@@ -82,12 +82,3 @@ test('an identity alone earns the row', () => {
   ctrl.destroy();
 });
 
-test('hiding the identity at runtime collapses the row again', () => {
-  const { ctrl, row } = render({ showToolbar: false, showIdentity: true }, { lot: 'LOT-A', wafer: 'W01' });
-  assert.equal(row.style.display, 'flex');
-  ctrl.setIdentityVisible(false);
-  assert.equal(row.style.display, 'none', 'a hidden child is as absent as no child');
-  ctrl.setIdentityVisible(true);
-  assert.equal(row.style.display, 'flex');
-  ctrl.destroy();
-});

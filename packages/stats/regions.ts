@@ -1,4 +1,9 @@
-import { classifyDie, getReticleCell, getRingLabel, isPositionedDie, type Die, type PositionedDie, type Wafer, getDieKey} from '../core/index.js';
+// Deprecated exports are imported from their defining modules, never through core/index.js,
+// whose wrappers would log a notice the host did not cause.
+import { classifyDie, getRingLabel } from '../core/classify.js';
+import { getReticleCell } from '../core/reticle.js';
+import { isPositionedDie, diePassStatus, getDieKey } from '../core/dies.js';
+import type { Die, PositionedDie, Wafer } from '../core/index.js';
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
 
 export interface StatsRegion {
@@ -28,21 +33,26 @@ export interface RegionYieldDatum {
  * computation — consumed by both the summary panel's progress-bar rows and
  * the ring/quadrant yield diagrams, which previously each recomputed the
  * same pass/total tally independently.
+ *
+ * `passBins` is one set for every wafer, or a lookup by wafer index for a lot
+ * whose wafers were built with different pass bins (pass each item's
+ * `WaferMapResult.passBins`). Each die is judged by `diePassStatus`, the rule
+ * yield itself uses.
  */
 export function buildRegionYieldData(
   diesByWafer: Die[][],
   allWafers: Wafer[],
   ringCount: number,
-  passBins: number[],
+  passBins: readonly number[] | ((waferIndex: number) => readonly number[]),
   regionBuilder: (dies: PositionedDie[], wafer: Wafer, ringCount: number) => StatsRegion[],
 ): RegionYieldDatum[] {
-  const passSet = new Set(passBins);
   const totals = new Map<string, { label: string; pass: number; total: number }>();
   const order: string[] = [];
 
   for (let wi = 0; wi < allWafers.length; wi++) {
     const wDies = diesByWafer[wi];
     if (!wDies?.length) continue;
+    const passSet = new Set(typeof passBins === 'function' ? passBins(wi) : passBins);
     // Ring/quadrant (the only regionBuilders this is ever called with) are
     // spatial — unpositioned dies never enter a region, but dieByKey below
     // still looks results up against the full population so a positioned
@@ -57,10 +67,10 @@ export function buildRegionYieldData(
       for (const key of region.dieKeys) {
         const d = dieByKey.get(key);
         if (!d || d.partial || d.edgeExcluded) continue;
-        const b = d.hbin ?? d.sbin;
-        if (b == null) continue;
+        const verdict = diePassStatus(d, passSet);
+        if (verdict === undefined) continue;
         acc.total++;
-        if (passSet.has(b)) acc.pass++;
+        if (verdict) acc.pass++;
       }
       totals.set(region.key, acc);
     }

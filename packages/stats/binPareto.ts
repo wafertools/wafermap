@@ -137,10 +137,15 @@ export function buildBinClusterData(groups: { key: string; items: BinItem[] }[],
  *
  * Pass bins are pinned to the top rather than competing on count: they are the
  * reference the failures are read against, not themselves a failure mode.
+ *
+ * `passBins` must be the passing bins OF THE TYPE BEING SORTED. For hard bins
+ * that is `passBins`; for soft bins it is `BinColors.pass.soft` (or
+ * `binPassSets(dies, passBins).soft`) — hard pass numbers applied to a soft
+ * tally pin the wrong rows.
  */
 export function sortBinsForDisplay(
   entries: Iterable<[bin: number, count: number]>,
-  passBins: number[] = [1],
+  passBins: Iterable<number> = [1],
 ): Array<[bin: number, count: number]> {
   const passSet = new Set(passBins);
   return [...entries].sort((a, b) => {

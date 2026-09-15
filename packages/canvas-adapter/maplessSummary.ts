@@ -232,8 +232,9 @@ export function buildMaplessSummary(
 
   if (plotMode === 'hardBin' || plotMode === 'softBin') {
     const binDefs = plotMode === 'hardBin' ? hbinDefs : sbinDefs;
-    const colors = plotMode === 'hardBin' ? binColors?.hard : binColors?.soft;
-    const section = buildBinSection(dies, binDefs, plotMode === 'hardBin' ? 'hard' : 'soft', colors);
+    // The whole resolution, not one colour map: buildBinSection reads the pass
+    // verdicts from it too. Passing only colours left it judging pass bins by `[1]`.
+    const section = buildBinSection(dies, binDefs, plotMode === 'hardBin' ? 'hard' : 'soft', binColors);
     if (section) return section;
   } else if (plotMode === 'value') {
     const { testNumber } = resolveTestNumber(activeTest ?? 0, testDefs);

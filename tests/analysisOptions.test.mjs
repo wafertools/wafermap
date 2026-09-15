@@ -40,7 +40,7 @@ function edgeEffectWafer() {
 
 const { result, testDefs } = edgeEffectWafer();
 const analyse = (options) =>
-  analyzeWaferMap(result, { ringCount: 4, testDefs, enableTestValueAnalysis: true, ...options });
+  analyzeWaferMap(result, { testDefs, enableTestValueAnalysis: true, ...options });
 
 test('the statistical thresholds are no longer part of the public API', () => {
   // A type-level removal, so the check is on the published declarations rather
@@ -54,8 +54,15 @@ test('the statistical thresholds are no longer part of the public API', () => {
     assert.doesNotMatch(declarations, new RegExp(`\\b${removed}\\??:`),
       `${removed} must not be a callable option — it decides what counts as a finding`);
   }
+  // Pass bins are set once, on buildWaferMap, and read from the result — an
+  // analysis option could only produce a summary whose findings and yield
+  // figure judged pass/fail differently.
+  assert.doesNotMatch(declarations, /\bpassBins\??:/, 'passBins must not be an analysis option');
   // The options that legitimately remain are still there.
-  for (const kept of ['ringCount', 'sectorCount', 'passBins', 'enableTestValueAnalysis']) {
+  // Ring count is set once, on buildWaferMap, so ring boundaries and ring
+  // findings cannot disagree.
+  assert.doesNotMatch(declarations, /\bringCount\??:/, 'ringCount must not be an analysis option');
+  for (const kept of ['sectorCount', 'enableTestValueAnalysis']) {
     assert.match(declarations, new RegExp(`\\b${kept}\\??:`), `${kept} should still be an option`);
   }
 });
@@ -69,10 +76,6 @@ test('a baseline analysis reports findings and no option warnings', () => {
 
 test('out-of-range numeric options are corrected, reported, and still analysed', () => {
   const cases = [
-    ['ringCount: 0',           { ringCount: 0 }],
-    ['ringCount: -3',          { ringCount: -3 }],
-    ['ringCount: 2.7',         { ringCount: 2.7 }],
-    ['ringCount: NaN',         { ringCount: NaN }],
     ['sectorCount: 7',         { sectorCount: 7 }],
     // Only reachable from untyped callers now, which is exactly why it is guarded.
     ['significanceLevel: -0.2', { significanceLevel: -0.2 }],
@@ -106,8 +109,9 @@ test('a fine ring banding is left alone — minimumSampleSize already guards it'
   // thinner than a die") until measured: at ringCount 40 the ring findings still
   // carry tens of dies each, and a die-count-derived cap rejected ringCount 3 on
   // this repo's own small test wafers.
-  const summary = analyse({ ringCount: 40 });
-  const codes = (summary.stats.warnings ?? []).map(w => w.code);
+  const fine = buildWaferMap({ dies: result.dies, passBins: [1], testDefs, ringCount: 40 });
+  const summary = analyzeWaferMap(fine, { testDefs, enableTestValueAnalysis: true });
+  const codes = [...fine.warnings, ...(summary.stats.warnings ?? [])].map(w => w.code);
   assert.ok(!codes.includes('analysis-option-corrected'),
     'a fine but legitimate banding must not be corrected');
   const ringFindings = summary.findings.filter(f => f.comparison?.family === 'ring');
@@ -130,7 +134,7 @@ test('a forwarded, unset option is not reported as a correction', () => {
   const realWarn = console.warn;
   console.warn = (...a) => warned.push(a.join(' '));
   try {
-    const summary = analyse({ ringCount: undefined, sectorCount: undefined });
+    const summary = analyse({ sectorCount: undefined });
     const corrections = (summary.stats.warnings ?? []).filter(w => w.code === 'analysis-option-corrected');
     assert.deepEqual(corrections, [], 'nothing was corrected, so nothing should be reported');
     assert.deepEqual(warned, [], 'and nothing should reach the console either');
@@ -147,11 +151,48 @@ test('a genuinely bad value is still corrected and still reported', () => {
   const realWarn = console.warn;
   console.warn = () => {};
   try {
-    const summary = analyse({ ringCount: 0 });
+    const summary = analyse({ sectorCount: 7 });
     const corrections = (summary.stats.warnings ?? []).filter(w => w.code === 'analysis-option-corrected');
     assert.equal(corrections.length, 1);
-    assert.match(corrections[0].message, /ringCount=0/);
+    assert.match(corrections[0].message, /sectorCount=7/);
   } finally {
     console.warn = realWarn;
   }
+});
+
+// ── Ring count: set, and validated, on buildWaferMap ─────────────────────────
+
+test('ringCount is validated on buildWaferMap, reported, and still analysed', () => {
+  for (const [raw, expected] of [[0, 1], [-3, 1], [2.7, 3], [NaN, 4]]) {
+    const built = buildWaferMap({ dies: result.dies, passBins: [1], testDefs, ringCount: raw });
+    assert.equal(built.ringCount, expected, `ringCount ${raw} resolves to ${expected}`);
+    const w = built.warnings.find(x => x.code === 'analysis-option-corrected');
+    assert.ok(w && /ringCount=/.test(w.message), `ringCount ${raw} must be reported, not applied silently`);
+    assert.ok(analyzeWaferMap(built, { testDefs, enableTestValueAnalysis: true }).findings.length > 0,
+      `ringCount ${raw} must still produce an analysis`);
+  }
+  assert.equal(buildWaferMap({ dies: result.dies, passBins: [1] }).ringCount, 4, 'default 4');
+});
+
+test('the analysis uses the ring count the map was built with', () => {
+  const three = analyzeWaferMap(buildWaferMap({ dies: result.dies, passBins: [1], testDefs, ringCount: 3 }));
+  const ringLabels = three.findings.filter(f => f.comparison?.family === 'ring').map(f => f.comparison.left ?? '');
+  assert.ok(ringLabels.length > 0, 'the fixture should produce ring findings');
+  assert.ok(ringLabels.every(l => !/Ring 4/.test(l)), `a 3-ring build must not report Ring 4: ${ringLabels}`);
+});
+
+test('the removed passBins/ringCount analysis options are reported, not silently ignored', () => {
+  const built = buildWaferMap({ dies: result.dies, passBins: [1], testDefs, ringCount: 3 });
+  const clean = analyzeWaferMap(built, { testDefs });
+  assert.ok(!(clean.stats.warnings ?? []).some(w => /no longer/.test(w.message)), 'no warning when not passed');
+
+  const stale = analyzeWaferMap(built, { testDefs, passBins: [1, 2], ringCount: 6 });
+  const w = (stale.stats.warnings ?? []).find(x => /no longer/.test(x.message));
+  assert.ok(w, 'a stale option must be reported');
+  assert.equal(w.code, 'analysis-option-corrected');
+  assert.match(w.message, /passBins and ringCount/);
+  assert.match(w.message, /buildWaferMap/);
+  // …and the build's values are still the ones in effect.
+  const ringLabels = stale.findings.filter(f => f.comparison?.family === 'ring').map(f => f.comparison.left ?? '');
+  assert.ok(ringLabels.every(l => !/Ring [56]/.test(l)), 'ring banding comes from the build, not the stale option');
 });

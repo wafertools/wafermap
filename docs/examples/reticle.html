@@ -26,7 +26,7 @@
   <div class="demo-intro">
     A reticle (stepper field) is the group of dies exposed in one lithography step.
     Pass <code>reticleConfig</code> to <code>buildWaferMap</code> to generate field boundary geometry, then pass <code>reticles</code> to <code>renderWaferMap</code> to draw the overlay.
-    <code>analyzeWaferMap</code> with <code>enableReticlePositionAnalysis: true</code> detects systematic defects at the same position within every field.
+    <code>analyzeWaferMap</code> detects systematic defects at the same position within every field.
     Toggle the overlay on/off above, or switch to Value mode to see the parametric spatial pattern.
     The findings panel (open on the right) shows any detected reticle-position findings.
   </div>
@@ -110,11 +110,7 @@
 
     // Run stats engine with reticle-position analysis enabled.
     // result.reticleConfig is passed through automatically by analyzeWaferMap.
-    const summary = analyzeWaferMap(result, {
-      ringCount:                     4,
-      passBins:                      [1],
-      enableReticlePositionAnalysis: true,
-    });
+    const summary = analyzeWaferMap(result);
 
     // Mount the renderer — pass reticles so the overlay has geometry to draw.
     // Reticle-position findings appear in the built-in summary panel (defaultOpen: true).

@@ -169,7 +169,7 @@
         passBins:  [1],
       });
 
-      const summary = analyzeWaferMap(result, { passBins: [1] });
+      const summary = analyzeWaferMap(result);
 
       // Update sidebar metadata
       document.getElementById('meta-lot').textContent   = waferMeta.lot   ?? '—';
@@ -179,9 +179,10 @@
       document.getElementById('meta-temp').textContent  = waferMeta.temp;
 
       // Update the existing renderer rather than destroying and recreating it —
-      // setDies + setStatsSummary is more efficient (no DOM teardown/rebuild).
+      // setResult + setStatsSummary is more efficient (no DOM teardown/rebuild).
+      // setResult, not a dies-only update: each wafer has its own geometry.
       if (ctrl) {
-        ctrl.setDies(result.dies);
+        ctrl.setResult(result);
         ctrl.setStatsSummary(summary);
       } else {
         ctrl = renderWaferMap(canvasEl, result, {

@@ -14,6 +14,8 @@
 
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
+import { waferDisplayLabel } from '../core/waferLabel.js';
+import { itemPassBins, passBinsLabel } from '../core/passBins.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from '../stats/regions.js';
@@ -24,7 +26,7 @@ import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js'
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
 import { commonMetadata } from '../stats/facets.js';
 import { resolveMetadataColumns, type MetadataColumn } from '../stats/metadataColumns.js';
-import { resolveBinColors, type BinColors } from '../renderer/binColors.js';
+import { resolveBinColors, resolveBinColorsByWafer, type BinColors } from '../renderer/binColors.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { describeWaferPopulation, populationLabel } from '../stats/population.js';
 import { buildWarningsBanner, collectWarnings, type WaferWarning } from './warnings.js';
@@ -703,7 +705,7 @@ export function buildYieldSection(
     cards.appendChild(statCard(String(yieldSummary.partialDies), 'Partial'));
   }
   if (yieldSummary.yieldPercent !== null) {
-    const binLabel = passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`;
+    const binLabel = passBinsLabel([passBins]);
     cards.appendChild(statCard(`${yieldSummary.yieldPercent.toFixed(1)}%`, 'Yield', `pass: ${binLabel}`));
   }
   cards.finish();
@@ -721,19 +723,19 @@ export function buildBinSection(
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
   /**
-   * The map's resolved colours for this bin type (`View.binColors.hard`/`.soft`),
-   * so bars match die fills. Omitted ⇒ resolved here from `dies` with the
-   * default palette — never a second colour rule.
+   * The map's resolved bin colours (`View.binColors`) — colours AND pass
+   * verdicts, so bars match die fills and pass rows sit where the map's legend
+   * puts them. Omitted ⇒ resolved here from `dies` — never a second rule.
    */
-  binColors?: ReadonlyMap<number, string>,
+  binColors?: BinColors,
   /**
    * Precomputed counts (e.g. `StatsSummary.stats.hardBinCounts`/`.softBinCounts`,
    * already scoped to the yield-eligible population) — used directly instead
    * of re-walking `dies` when supplied.
    */
   precomputedCounts?: Record<number, number>,
-  /** Pass bins, pinned to the top of the pareto ordering. See `binRows`. */
-  passBins?: number[],
+  /** Used only to resolve colours and verdicts when `binColors` is omitted. */
+  passBins?: readonly number[],
 ): HTMLDivElement | null {
   const binCounts = new Map<number, number>();
   if (precomputedCounts) {
@@ -747,20 +749,14 @@ export function buildBinSection(
   }
   if (!binCounts.size) return null;
 
-  const colors = binColors ?? ownBinColors(dies, mode, binDefs, passBins);
+  // The map's own resolution when given; otherwise the same resolver the map
+  // uses, so a caller with no map beside it still gets one rule for both.
+  const resolved = binColors ?? resolveBinColors(dies, {
+    passBins, ...(mode === 'hard' ? { hbinDefs: binDefs } : { sbinDefs: binDefs }) });
   const wrap = el('div');
   wrap.appendChild(sectionTitle(binSectionTitle(mode, [...binCounts.values()].reduce((a, b) => a + b, 0))));
-  for (const row of binRows(binCounts, binDefs, colors, passBins)) wrap.appendChild(row);
+  for (const row of binRows(binCounts, binDefs, resolved[mode], resolved.pass[mode])) wrap.appendChild(row);
   return wrap;
-}
-
-/** Fallback for a caller with no map beside it: the same resolver the map uses. */
-function ownBinColors(
-  dies: Die[], mode: 'hard' | 'soft', binDefs: BinDef[] | undefined, passBins: number[] | undefined,
-): ReadonlyMap<number, string> {
-  const resolved = resolveBinColors(dies, {
-    passBins, ...(mode === 'hard' ? { hbinDefs: binDefs } : { sbinDefs: binDefs }) });
-  return mode === 'hard' ? resolved.hard : resolved.soft;
 }
 
 /** Section title carrying the population, so the percentages below are never a
@@ -778,11 +774,12 @@ function binRows(
   binCounts: Map<number, number>,
   binDefs: BinDef[] | undefined,
   colors: ReadonlyMap<number, string>,
-  passBins: number[] = [1],
+  /** Bins of THIS type that pass — `BinColors.pass.hard`/`.soft`, never `passBins` for soft bins. */
+  passing: Iterable<number>,
 ): HTMLDivElement[] {
   const total  = [...binCounts.values()].reduce((a, b) => a + b, 0);
   const defMap = binDefs ? new Map(binDefs.map(d => [d.bin, d])) : null;
-  const sorted = sortBinsForDisplay(binCounts.entries(), passBins);
+  const sorted = sortBinsForDisplay(binCounts.entries(), passing);
 
   return sorted.map(([bin, count]) => {
     const def   = defMap?.get(bin);
@@ -867,7 +864,7 @@ export function buildBinBreakdownSection(params: {
       panel,
       render: content => {
         const colors = mode === 'hard' ? binColors.hard : binColors.soft;
-        for (const row of binRows(counts, binDefs, colors, passBins)) content.appendChild(row);
+        for (const row of binRows(counts, binDefs, colors, binColors.pass[mode])) content.appendChild(row);
       },
       control: (hasHard && hasSoft && panel)
         ? () => makeSegmented(
@@ -897,7 +894,7 @@ export function buildLotBinSection(
   allDies: Die[],
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
-  binColors?: ReadonlyMap<number, string>,
+  binColors?: BinColors,
 ): HTMLDivElement | null {
   return buildBinSection(allDies, binDefs, mode, binColors);
 }
@@ -922,7 +919,8 @@ export function buildRegionYieldPanelSection(params: {
   diesByWafer: Die[][];
   allWafers: Wafer[];
   ringCount: number;
-  passBins: number[];
+  /** One set for every wafer, or a lookup by index into `allWafers` — see `buildRegionYieldData`. */
+  passBins: readonly number[] | ((waferIndex: number) => readonly number[]);
   panel?: HTMLElement;
 }): HTMLDivElement | null {
   const { diesByWafer, allWafers, ringCount, passBins, panel } = params;
@@ -1068,7 +1066,7 @@ export function buildPerWaferYieldSection(
   const waferData = lotSummary.perWafer
     .map(pw => ({
       waferIndex: pw.waferIndex,
-      label: (items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`)
+      label: waferDisplayLabel(items[pw.waferIndex], pw.waferIndex)
         .replace(/\s*·\s*\d+(\.\d+)?%$/, ''),
       yieldPct: pw.summary.stats.yieldPercent,
     }))
@@ -2864,7 +2862,8 @@ export function renderLotSummaryContent(
   panel: HTMLDivElement,
   params: {
     lotSummary:       LotStatsSummary;
-    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[]; statsSummary?: StatsSummary; metadataFields?: MetadataFieldDef[] } | null>;
+    /** `passBins` on an item is that wafer's own (`WaferMapResult.passBins`) and wins over the top-level fallback. */
+    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[]; passBins?: readonly number[]; statsSummary?: StatsSummary; metadataFields?: MetadataFieldDef[] } | null>;
     hbinDefs?:        BinDef[];
     sbinDefs?:        BinDef[];
     testDefs?:        TestDef[];
@@ -2926,9 +2925,10 @@ export function renderLotSummaryContent(
     // param for its own display, which is a separate, unaffected concern.
     openReportModal(renderLotSummaryReportHtml({
       items: items.map((item, i) => ({
-        label:        item?.label ?? `W${i + 1}`,
+        label:        waferDisplayLabel(item, i),
         wafer:        item?.wafer,
         dies:         item?.dies,
+        passBins:     [...itemPassBins(item, passBins)],
         statsSummary: item?.statsSummary,
       })),
       hbinDefs, sbinDefs, testDefs,
@@ -2940,6 +2940,10 @@ export function renderLotSummaryContent(
   const allWafers: Wafer[] = [];
   const diesByWafer: Die[][] = [];
   const allDies: Die[] = [];
+  // Index-aligned with allWafers (which skips items without a wafer), for region
+  // yield: each wafer's dies and that wafer's own pass bins.
+  const regionDies: Die[][] = [];
+  const regionPassBins: (readonly number[])[] = [];
   // Per-die wafer attribution for the lot-wide die list below — the one
   // thing only this lot-pooled context can supply, since a single die
   // carries no wafer identity of its own. waferByDie feeds Ring/Quadrant
@@ -2949,9 +2953,13 @@ export function renderLotSummaryContent(
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (!item) { diesByWafer.push([]); continue; }
-    if (item.wafer) allWafers.push(item.wafer);
+    if (item.wafer) {
+      allWafers.push(item.wafer);
+      regionDies.push(item.dies ?? []);
+      regionPassBins.push(itemPassBins(item, passBins));
+    }
     const wd = item.dies ?? [];
-    const label = item.label ?? `W${i + 1}`;
+    const label = waferDisplayLabel(item, i);
     for (const d of wd) {
       waferLabelByDie.set(d, label);
       if (item.wafer) waferByDie.set(d, item.wafer);
@@ -3008,9 +3016,16 @@ export function renderLotSummaryContent(
   sections.push(
     buildPerWaferYieldSection(lotSummary, items, onWaferClick, panel, findingsFor),
     buildBinBreakdownSection({
-      dies: allDies, hbinDefs, sbinDefs, binColors, plotMode, passBins, panel,
+      dies: allDies, hbinDefs, sbinDefs, plotMode, passBins, panel,
+      // The gallery-wide colours when given; otherwise resolved wafer by wafer,
+      // so a lot mixing test programs is judged per wafer here too.
+      binColors: binColors ?? resolveBinColorsByWafer(
+        items.flatMap((it) => it ? [{ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }] : []),
+        { hbinDefs, sbinDefs }).colors,
     }),
-    buildRegionYieldPanelSection({ diesByWafer, allWafers, ringCount, passBins, panel }),
+    // regionDies, not diesByWafer: diesByWafer also holds an entry for items with
+    // no wafer, so its indices drift from allWafers'.
+    buildRegionYieldPanelSection({ diesByWafer: regionDies, allWafers, ringCount, passBins: (wi) => regionPassBins[wi], panel }),
     testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText, diesByWafer.map(d => ({ dies: d })), panel, 'compact') : null,
     testDefs?.length ? buildLotFunctionalSection(allDies, testDefs, perWaferSummaries, onSaveText, panel) : null,
   );

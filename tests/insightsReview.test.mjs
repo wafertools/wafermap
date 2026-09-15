@@ -58,8 +58,7 @@ function mountInsights(items, lot, defaultView) {
   const tab = createInsightsTab({
     getItems: () => items,
     getLotStats: () => lot,
-    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] } }),
-    passBins: [1],
+    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView,
   });
   host.appendChild(tab.el);
@@ -418,8 +417,7 @@ function mountInsightsWith(items, lot, deps) {
   const tab = createInsightsTab({
     getItems: () => items,
     getLotStats: () => lot,
-    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] } }),
-    passBins: [1],
+    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView: 'distributions',
     ...deps,
   });

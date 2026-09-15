@@ -30,32 +30,51 @@ test('resolveBinColors — with two pass bins, both are pass colours and distinc
   assert.ok(PAL.fail.includes(c.hard.get(2)));
 });
 
-// ── Rank, not hash ───────────────────────────────────────────────────────────
+// ── By bin number, never by die count ────────────────────────────────────────
 
-test('resolveBinColors — the most populous fail bin takes the first fail colour', () => {
-  const c = resolveBinColors(dies([[1, undefined, 50], [7, undefined, 3], [42, undefined, 30]]));
-  assert.equal(c.hard.get(42), PAL.fail[0]);
-  assert.equal(c.hard.get(7), PAL.fail[1]);
+test('resolveBinColors — a bin keeps its colour whatever its die count', () => {
+  // Same bins, opposite populations. Ranking by count swapped these two
+  // colours between lots, so two screenshots of one program disagreed.
+  const a = resolveBinColors(dies([[1, undefined, 50], [7, undefined, 30], [42, undefined, 3]]));
+  const b = resolveBinColors(dies([[1, undefined, 50], [7, undefined, 3], [42, undefined, 30]]));
+  assert.equal(a.hard.get(7), b.hard.get(7));
+  assert.equal(a.hard.get(42), b.hard.get(42));
+  assert.notEqual(a.hard.get(7), a.hard.get(42));
 });
 
-test('resolveBinColors — ties break by bin number, so the result is deterministic', () => {
-  const a = resolveBinColors(dies([[9, undefined, 2], [4, undefined, 2]]));
-  const b = resolveBinColors(dies([[4, undefined, 2], [9, undefined, 2]]));
-  assert.deepEqual([...a.hard], [...b.hard].sort((x, y) => [...a.hard.keys()].indexOf(x[0]) - [...a.hard.keys()].indexOf(y[0])));
-  assert.equal(a.hard.get(4), PAL.fail[0]);
+test('resolveBinColors — a bin keeps its colour whichever other bins are present', () => {
+  const alone = resolveBinColors(dies([[9, undefined, 1]]));
+  const crowd = resolveBinColors(dies([[2, undefined, 5], [3, undefined, 5], [9, undefined, 1]]));
+  assert.equal(alone.hard.get(9), crowd.hard.get(9));
 });
 
-test('resolveBinColors — no two bins share a colour until the palette runs out', () => {
-  const spec = Array.from({ length: PAL.fail.length }, (_, i) => [100 + i, undefined, 1]);
+test('resolveBinColors — bin 1 takes the first pass colour, bin 2 the first fail colour', () => {
+  const c = resolveBinColors(dies([[1, undefined, 1], [2, undefined, 1], [3, undefined, 1]]));
+  assert.equal(c.hard.get(1), PAL.pass[0]);
+  assert.equal(c.hard.get(2), PAL.fail[0]);
+  assert.equal(c.hard.get(3), PAL.fail[1]);
+});
+
+test('resolveBinColors — changing passBins recolours only the bins whose verdict changed', () => {
+  const spec = dies([[1, undefined, 1], [3, undefined, 1], [5, undefined, 1]]);
+  const a = resolveBinColors(spec, { passBins: [1] });
+  const b = resolveBinColors(spec, { passBins: [1, 3] });
+  assert.equal(a.hard.get(5), b.hard.get(5));
+  assert.notEqual(a.hard.get(3), b.hard.get(3));
+});
+
+test('resolveBinColors — consecutive fail bins are distinct for a whole palette', () => {
+  const spec = Array.from({ length: PAL.fail.length }, (_, i) => [2 + i, undefined, 1]);
   const c = resolveBinColors(dies([[1, undefined, 1], ...spec]));
   assert.equal(new Set(c.hard.values()).size, c.hard.size);
   assert.deepEqual(c.shared.hard, []);
 });
 
-test('resolveBinColors — one fail bin past the palette is reported in `shared`', () => {
-  const spec = Array.from({ length: PAL.fail.length + 1 }, (_, i) => [100 + i, undefined, 1]);
-  const c = resolveBinColors(dies(spec));
-  assert.ok(c.shared.hard.length >= 2, 'the extra bin and the bin it repeats must both be named');
+test('resolveBinColors — fail bins a palette-length apart share a colour and are reported', () => {
+  const n = PAL.fail.length;
+  const c = resolveBinColors(dies([[2, undefined, 1], [2 + n, undefined, 1]]));
+  assert.equal(c.hard.get(2), c.hard.get(2 + n));
+  assert.deepEqual(c.shared.hard, [2, 2 + n]);
 });
 
 // ── Soft bins ────────────────────────────────────────────────────────────────
@@ -78,14 +97,58 @@ test('resolveBinColors — hard and soft bins are resolved in separate number sp
   assert.equal(c.soft.size, 1);
 });
 
+test('resolveBinColors — hard bin n and soft bin n are different colours', () => {
+  for (const name of ['default', 'accessible']) {
+    for (let n = 1; n <= 16; n++) {
+      const c = resolveBinColors(dies([[n, n, 1]]), { binColorScheme: name });
+      assert.notEqual(c.hard.get(n), c.soft.get(n), `${name}: hard and soft bin ${n}`);
+    }
+  }
+});
+
+// ── Pass sets ────────────────────────────────────────────────────────────────
+
+test('resolveBinColors — `pass` names the passing bins of each type by their own verdict', () => {
+  const c = resolveBinColors(dies([
+    [1, 100, 4],               // sbin 100: every die passes
+    [1, 101, 1], [3, 101, 1],  // sbin 101: one failing die
+    [3, 1, 2],                 // sbin 1: numbered like the hard pass bin, but its dies fail
+  ]));
+  assert.deepEqual([...c.pass.hard].sort((a, b) => a - b), [1]);
+  assert.deepEqual([...c.pass.soft], [100], 'soft bin 1 must not pass just because hard bin 1 does');
+});
+
+test('binPassSets — the same verdict resolveBinColors colours with', async () => {
+  const { binPassSets } = await import('../dist/packages/renderer/binColors.js');
+  const spec = dies([[1, 100, 3], [2, 200, 1], [1, 200, 1], [4, 401, 2]]);
+  const c = resolveBinColors(spec, { passBins: [1, 4] });
+  const p = binPassSets(spec, [1, 4]);
+  assert.deepEqual([...p.hard].sort(), [...c.pass.hard].sort());
+  assert.deepEqual([...p.soft].sort(), [...c.pass.soft].sort());
+});
+
+test('sortBinsForDisplay — a soft pass set pins soft pass bins, not hard pass numbers', async () => {
+  const { sortBinsForDisplay } = await import('../dist/packages/stats/binPareto.js');
+  // Soft bin 100 passes; soft bin 1 is a failing bin that happens to share hard pass bin 1's number.
+  const order = sortBinsForDisplay([[1, 2], [301, 40], [100, 500], [502, 9]], new Set([100])).map(([b]) => b);
+  assert.deepEqual(order, [100, 301, 502, 1]);
+});
+
+test('buildView — an assignment without `pass` (an older object) is resolved afresh, not trusted', () => {
+  const { wafer, ds } = viewDies([{ hbin: 1, sbin: 100 }]);
+  const old = resolveBinColors(dies([[1, 100, 1]]));
+  delete old.pass;
+  const v = buildView(wafer, ds, { plotMode: 'softBin', binColors: old });
+  assert.ok(v.binColors.pass?.soft.has(100));
+});
+
 // ── Colours from bin definitions ─────────────────────────────────────────────
 
-test('resolveBinColors — BinDef.color wins and takes no palette slot', () => {
+test('resolveBinColors — BinDef.color wins and leaves every other bin on its own slot', () => {
   const c = resolveBinColors(dies([[1, undefined, 1], [5, undefined, 9], [6, undefined, 4]]), {
     hbinDefs: [{ bin: 5, name: 'Open', color: '#123456' }] });
   assert.equal(c.hard.get(5), '#123456');
-  // Bin 6 is the biggest bin still on the palette, so it gets the first slot.
-  assert.equal(c.hard.get(6), PAL.fail[0]);
+  assert.equal(c.hard.get(6), PAL.fail[6 - 2]);
 });
 
 test('resolveBinColors — useDefinedBinColors: false ignores BinDef.color', () => {
@@ -96,7 +159,7 @@ test('resolveBinColors — useDefinedBinColors: false ignores BinDef.color', () 
 
 test('resolveBinColors — a defined colour equal to a palette colour is reported as shared', () => {
   const c = resolveBinColors(dies([[5, undefined, 9], [6, undefined, 1]]), {
-    hbinDefs: [{ bin: 6, name: 'Dup', color: PAL.fail[0] }] });
+    hbinDefs: [{ bin: 6, name: 'Dup', color: PAL.fail[5 - 2] }] });
   assert.deepEqual(c.shared.hard, [5, 6]);
 });
 
@@ -155,12 +218,12 @@ test('buildView — die fills come from the resolved colours exposed on the view
 
 test('buildView — a supplied lot-wide assignment is used when it covers every bin', () => {
   const { wafer, ds } = viewDies([{ hbin: 2 }]);
-  const lot = resolveBinColors(dies([[2, undefined, 1], [3, undefined, 50]]));
+  // The colour comes from another item's bin definition, which this wafer's
+  // own view options do not carry — only the lot-wide assignment knows it.
+  const lot = resolveBinColors(dies([[2, undefined, 1], [3, undefined, 50]]), {
+    hbinDefs: [{ bin: 2, name: 'Open', color: '#123456' }] });
   const v = buildView(wafer, ds, { plotMode: 'hardBin', binColors: lot });
-  // Bin 3 dominates the lot, so bin 2 is NOT the first fail colour lot-wide —
-  // though it would be if this wafer ranked its own bins.
-  assert.equal(v.rectangles[0].fill, lot.hard.get(2));
-  assert.notEqual(v.rectangles[0].fill, PAL.fail[0]);
+  assert.equal(v.rectangles[0].fill, '#123456');
 });
 
 test('buildView — a supplied assignment missing a bin is ignored, never leaving a bin uncoloured', () => {

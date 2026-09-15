@@ -36,8 +36,18 @@ const OUT_ZIP  = resolve(SITE, `${NAME}.zip`);
 
 const version = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version;
 
-// Large fixtures that no example fetches. They are regenerable and add ~3.7 MB.
+// Large regenerable fixtures (~3.7 MB) — omitted UNLESS an example declares one.
+// The name alone used to decide, which silently dropped showcase-bin-rich.csv
+// from the package the moment bin-colours.html started fetching it; the
+// dataFiles check below caught it. The manifest already says what every example
+// loads, so it decides here too.
 const SKIP_DATA = /^showcase-.*\.csv$/;
+const DECLARED_DATA = new Set(
+  loadManifest().demos
+    .flatMap(d => d.dataFiles ?? [])
+    .filter(df => df.startsWith('../data/'))
+    .map(df => df.slice('../data/'.length)),
+);
 
 const die = (msg) => { console.error(`build-examples-archive: ${msg}`); process.exit(1); };
 
@@ -75,7 +85,7 @@ let skipped = 0;
 for (const f of readdirSync(dataSrc)) {
   const src = resolve(dataSrc, f);
   if (statSync(src).isDirectory()) continue;
-  if (SKIP_DATA.test(f)) { skipped++; continue; }
+  if (SKIP_DATA.test(f) && !DECLARED_DATA.has(f)) { skipped++; continue; }
   cpSync(src, resolve(dataOut, f));
 }
 
@@ -279,8 +289,8 @@ Edit any example in place and reload — there is no build step.
 wafermap against Plotly.js, which it fetches from a CDN. Without a connection
 that page explains itself and stops; everything else is unaffected.
 
-The larger synthetic datasets (\`showcase-*.csv\`) are omitted to keep the
-download small; regenerate them with \`scripts/gen-showcase-csvs.mjs\` from the
+The larger synthetic datasets (\`showcase-*.csv\`) that no example uses are
+omitted to keep the download small; regenerate them with \`scripts/gen-showcase-csvs.mjs\` from the
 [repository](https://github.com/wafertools/wafermap) if you want them.
 
 ## Using it in a real project

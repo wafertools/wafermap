@@ -70,12 +70,6 @@ function makeEdgeArcResults() {
 test('cluster detection — tight failure cluster produces a cluster finding', () => {
   const result = buildWaferMap({ results: makeClusterResults(), waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: true,
-    enableAngularAnalysis: false,
-    enableYieldAnalysis: false,
-    enableHardBinAnalysis: false,
-    enableSoftBinAnalysis: false,
     enableTestValueAnalysis: false,
   });
   const clusterFindings = summary.findings.filter(f => f.comparison.family === 'cluster');
@@ -86,12 +80,6 @@ test('cluster detection — tight failure cluster produces a cluster finding', (
 test('cluster detection — scattered low-density fails produce no cluster finding', () => {
   const result = buildWaferMap({ results: makeScatteredResults(0.025), waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: true,
-    enableAngularAnalysis: false,
-    enableYieldAnalysis: false,
-    enableHardBinAnalysis: false,
-    enableSoftBinAnalysis: false,
     enableTestValueAnalysis: false,
     minimumClusterSize: 3,
   });
@@ -104,12 +92,6 @@ test('cluster detection — scattered low-density fails produce no cluster findi
 test('cluster detection — edge arc pattern produces an edge-arc finding', () => {
   const result = buildWaferMap({ results: makeEdgeArcResults(), waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: true,
-    enableAngularAnalysis: false,
-    enableYieldAnalysis: false,
-    enableHardBinAnalysis: false,
-    enableSoftBinAnalysis: false,
     enableTestValueAnalysis: false,
   });
   const arcFindings = summary.findings.filter(f => f.comparison.family === 'edge-arc');
@@ -126,12 +108,6 @@ test('cluster detection — minimumClusterSize suppresses small clusters', () =>
     dieConfig: DIE,
   });
   const summaryStrict = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: true,
-    enableAngularAnalysis: false,
-    enableYieldAnalysis: false,
-    enableHardBinAnalysis: false,
-    enableSoftBinAnalysis: false,
     enableTestValueAnalysis: false,
     minimumClusterSize: 10,
   });
@@ -144,12 +120,6 @@ test('cluster detection — minimumClusterSize suppresses small clusters', () =>
 test('cluster detection — cluster findings have correct finding structure', () => {
   const result = buildWaferMap({ results: makeClusterResults(), waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: true,
-    enableAngularAnalysis: false,
-    enableYieldAnalysis: false,
-    enableHardBinAnalysis: false,
-    enableSoftBinAnalysis: false,
     enableTestValueAnalysis: false,
   });
   const clusterFindings = summary.findings.filter(f => f.comparison.family === 'cluster');
@@ -164,15 +134,9 @@ test('cluster detection — cluster findings have correct finding structure', ()
   }
 });
 
-test('sector analysis — sector findings present with angular analysis enabled', () => {
+test('sector analysis — sector findings are well-formed (a merged run of adjacent sectors is "Sectors A–B")', () => {
   const result = buildWaferMap({ results: makeClusterResults(), waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: false,
-    enableAngularAnalysis: true,
-    enableYieldAnalysis: true,
-    enableHardBinAnalysis: false,
-    enableSoftBinAnalysis: false,
     enableTestValueAnalysis: false,
     sectorCount: 16,
   });
@@ -180,9 +144,11 @@ test('sector analysis — sector findings present with angular analysis enabled'
   // Sector analysis may or may not fire depending on data, but structure should be correct when present
   for (const f of sectorFindings) {
     assert.equal(f.comparison.family, 'sector');
-    assert.match(f.comparison.left, /^Sector /);
-    assert.equal(f.highlight.kind, 'region');
-    assert.equal(f.highlight.regionFamily, 'sector');
+    assert.match(f.comparison.left, /^Sectors? /);
+    // A yield finding highlights its region; a bin finding highlights the bin within its regions.
+    assert.ok(['region', 'bin'].includes(f.highlight.kind), `unexpected highlight kind ${f.highlight.kind}`);
+    if (f.highlight.kind === 'region') assert.equal(f.highlight.regionFamily, 'sector');
+    else assert.ok(f.highlight.regionKeys?.length > 0, 'a sector bin finding names its sectors');
   }
 });
 
@@ -194,12 +160,6 @@ test('cluster detection — cluster covering ≥10% of wafer scores unusual', ()
 
   const result  = buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: true,
-    enableAngularAnalysis: false,
-    enableYieldAnalysis: false,
-    enableHardBinAnalysis: false,
-    enableSoftBinAnalysis: false,
     enableTestValueAnalysis: false,
   });
 
@@ -218,13 +178,3 @@ test('cluster detection — cluster covering ≥10% of wafer scores unusual', ()
     `cluster covering ${(fraction * 100).toFixed(1)}% of wafer should score unusual, got ${largest.severity}`);
 });
 
-test('sector analysis — no sector findings when angular analysis disabled', () => {
-  const result = buildWaferMap({ results: makeClusterResults(), waferConfig: WAFER, dieConfig: DIE });
-  const summary = analyzeWaferMap(result, {
-    passBins: [1],
-    enableClusterAnalysis: false,
-    enableAngularAnalysis: false,
-  });
-  const sectorFindings = summary.findings.filter(f => f.comparison.family === 'sector');
-  assert.equal(sectorFindings.length, 0);
-});

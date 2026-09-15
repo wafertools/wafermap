@@ -132,7 +132,7 @@ if (FIXTURE_MISSING) {
 
       // Regional analysis rescue?
       let summary;
-      try { summary = analyzeWaferMap(result, { passBins: [1] }); } catch { continue; }
+      try { summary = analyzeWaferMap(result); } catch { continue; }
       const firedFamilies = summary.findings
         .map(f => f.comparison.family)
         .filter(f => REGIONAL_FAMILIES.has(f));

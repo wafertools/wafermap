@@ -147,18 +147,11 @@ test('returns null when failing dies below minimum threshold', () => {
 
 test('analyzeWaferMap emits spatial-pattern finding for edge-ring', () => {
   const result = makeEdgeRing();
-  const summary = analyzeWaferMap(result, { passBins: [1] });
+  const summary = analyzeWaferMap(result);
   const patternFindings = summary.findings.filter(f => f.comparison.family === 'spatial-pattern');
   assert.ok(patternFindings.length === 1, 'should have exactly one spatial-pattern finding');
   assert.ok(patternFindings[0].summary.toLowerCase().includes('edge-ring'));
   assert.equal(patternFindings[0].severity, 'unusual');
-});
-
-test('analyzeWaferMap respects enablePatternClassification: false', () => {
-  const result = makeEdgeRing();
-  const summary = analyzeWaferMap(result, { passBins: [1], enablePatternClassification: false });
-  const patternFindings = summary.findings.filter(f => f.comparison.family === 'spatial-pattern');
-  assert.equal(patternFindings.length, 0, 'should suppress spatial-pattern findings');
 });
 
 test('adaptive minimumFailingDies — returns null when fails below 0.3% of die count', () => {
@@ -175,7 +168,7 @@ test('adaptive minimumFailingDies — returns null when fails below 0.3% of die 
 
 test('RELATED_FAMILIES — edge-ring pattern downgrades ring findings to info', () => {
   const result = makeEdgeRing();
-  const summary = analyzeWaferMap(result, { passBins: [1] });
+  const summary = analyzeWaferMap(result);
   const patternFinding = summary.findings.find(f => f.comparison.family === 'spatial-pattern');
   assert.ok(patternFinding, 'should have a spatial-pattern finding');
   // Ring findings correlated with an edge-ring should be downgraded to info
@@ -196,7 +189,7 @@ test('RELATED_FAMILIES — edge-local pattern downgrades sector/quadrant/edge-ar
     // Upper-right quadrant, outer zone
     return norm >= 0.70 && i > 0 && j > 0;
   });
-  const summary = analyzeWaferMap(result, { passBins: [1] });
+  const summary = analyzeWaferMap(result);
   const patternFinding = summary.findings.find(f => f.comparison.family === 'spatial-pattern');
   if (!patternFinding || patternFinding.comparison.left !== 'Edge-local') return; // skip if not classified as edge-local
   // Sector/quadrant/edge-arc findings in relatedIds should be info

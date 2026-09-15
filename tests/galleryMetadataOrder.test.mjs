@@ -69,17 +69,14 @@ function mount() {
   return { root, ctrl };
 }
 
-test('the gallery hands every card one lot-wide metadata order', () => {
-  const { ctrl } = mount();
-  const order = ctrl.getOptions().metadataValueOrder;
-  assert.deepEqual(order, { key: 'defect', values: ['D0', 'D1', 'D10'] },
-    'the union of every wafer\'s values, naturally sorted (D10 last, not after D0)');
-  ctrl.destroy();
-});
+// The lot-wide order: the union of every wafer's values, naturally sorted (D10
+// last, not after D0). The gallery hands it to its cards internally — it is not
+// on the public options — so the legend text below is what proves it is used.
+const LOT_ORDER = { key: 'defect', values: ['D0', 'D1', 'D10'] };
 
 test('a wafer missing a category still paints the rest in the lot-wide colours', () => {
   const { ctrl } = mount();
-  const order = ctrl.getOptions().metadataValueOrder;
+  const order = LOT_ORDER;
   // What the card actually renders, via the same entry point it uses itself.
   const w02 = ITEMS[1];
   const view = buildView(w02.wafer, w02.dies, {
@@ -96,7 +93,7 @@ test('a wafer missing a category still paints the rest in the lot-wide colours',
 
 test('the shared legend lists exactly that order, so strip and maps cannot disagree', () => {
   const { root, ctrl } = mount();
-  const order = ctrl.getOptions().metadataValueOrder;
+  const order = LOT_ORDER;
   const text = root.textContent;
   const positions = order.values.map(v => text.indexOf(v));
   assert.ok(positions.every(p => p >= 0), `every value appears in the legend: ${text.slice(0, 200)}`);
@@ -104,9 +101,19 @@ test('the shared legend lists exactly that order, so strip and maps cannot disag
   ctrl.destroy();
 });
 
-test('leaving metadata mode clears the order rather than leaving a stale one', () => {
-  const { ctrl } = mount();
-  ctrl.setOptions({ plotMode: 'hardBin' });
-  assert.equal(ctrl.getOptions().metadataValueOrder, undefined);
+test('the gallery\'s shared card state stays off its public options and change callback', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const seen = [];
+  const ctrl = renderWaferGallery(root, ITEMS, {
+    viewOptions: { plotMode: 'metadata', activeMetadataKey: 'defect' },
+    onViewOptionsChange: (opts) => seen.push(opts),
+  });
+  for (const opts of [ctrl.getOptions(), ...(ctrl.setOptions({ plotMode: 'hardBin' }), [ctrl.getOptions()])]) {
+    for (const key of ['metadataValueOrder', 'binColors', 'lotSize']) {
+      assert.ok(!(key in opts), `${key} is gallery-to-card plumbing, not a host option`);
+    }
+  }
+  for (const opts of seen) assert.ok(!('binColors' in opts) && !('metadataValueOrder' in opts));
   ctrl.destroy();
 });

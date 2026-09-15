@@ -20,14 +20,13 @@ loudly over guessing.
 ### Entry points
 
 - `@wafertools/wafermap` — `buildWaferMap()`, geometry, `registerBinColorScheme()` / `registerValueColorScheme()`. Pure, no DOM, server-safe.
-- `@wafertools/wafermap/render` — `renderWaferMap()`, `renderWaferGallery()`, `toCanvas()`. Needs the DOM.
+- `@wafertools/wafermap/render` — `renderWaferMap()`, `renderWaferGallery()`. Needs the DOM.
 - `@wafertools/wafermap/stats` — `analyzeWaferMap()`, `analyzeWaferLot()`. Pure analysis.
 - `@wafertools/wafermap/worker` — `createWafermapWorker()` for off-main-thread builds.
 
 Default path: `buildWaferMap()` once when data loads, then `renderWaferMap()` for a
-single wafer or `renderWaferGallery()` for several. Reach for `toCanvas()`/`buildView()`
-only when you need the low-level pipeline — they give up the toolbar and every UI
-correctness guarantee that comes with it.
+single wafer or `renderWaferGallery()` for several. Do not use `toCanvas()`, `buildView()`
+or the other low-level pipeline functions: they are deprecated and removed in 0.31.0.
 
 ### Traps that produce silently wrong maps
 
@@ -65,7 +64,6 @@ correctness guarantee that comes with it.
   the wrong place. The renderers surface these themselves in a toolbar indicator, so
   do NOT hand-roll a second display — pass
   `warnings: { display: false, onWarning }` if the app has its own notification UI.
-  (`result.inference.warnings` is a deprecated string mirror; do not use it.)
 - **Give the container a resolved height.** `renderWaferMap` fills its container.
   A bare block-flow `<div>` is fine — it grows to the canvas. The real failure is a
   flex/grid child whose ancestors never resolve a height: it stays 0-tall and the
@@ -82,11 +80,10 @@ correctness guarantee that comes with it.
 - `retestPolicy: 'best'`/`'worst'` is pass/fail-aware via `passBins`; bin number only
   breaks ties within a category.
 - Hard bins (`hbin`) and soft bins (`sbin`) are independent number spaces. Never merge them.
-- **Never pick a bin's colour from its number.** Bin colours are assigned by
-  `resolveBinColors` — pass bins (per `passBins`) take green pass colours, fail bins
-  take the rest, most populous first — and a rendered map exposes the result as
-  `View.binColors`. A legend or chart you build yourself must read those, or it
-  will name colours the map is not drawing. Bin maps and value maps have separate
+- **Do not colour bins yourself.** The maps give each bin one colour from its number
+  and its pass/fail verdict (pass bins, per `passBins`, take green pass colours), so a
+  bin is the same colour in every lot. To choose colours, set `BinDef.color` or register
+  a palette with `registerBinColorScheme`. Bin maps and value maps have separate
   schemes: `binColorScheme` and `valueColorScheme`.
 - Build once, render many: `buildWaferMap()` handles data + geometry; re-render UI
   changes through the controller's `setOptions()`, not by rebuilding.
@@ -146,6 +143,8 @@ it is handed, because it has no way to know which tests anyone will look at.
 | `DieResult.values` / `Die.values` | `testValues` (keyed by test number) |
 | `TestDef.index` | `TestDef.testNumber` (required) |
 | `ViewOptions.colorBySpec` | `passFailDisplay: 'spec'` |
+| `View.colorBySpec` | `view.passFailDisplay` |
+| `WaferMapResult.inference.warnings` | `WaferMapResult.warnings` (structured, with a `code`) |
 | `ViewOptions.testIndex` | `activeTest` |
 | `mountWaferCanvas` | `renderWaferMap` |
 | `HARD_BIN_COLORS` / `SOFT_BIN_COLORS` | `BIN_PALETTE` |
@@ -153,15 +152,15 @@ it is handed, because it has no way to know which tests anyone will look at.
 | `MountOptions` | `RenderOptions` |
 | `WaferCanvasController` | `WaferMapController` |
 | `CanvasHitTarget` | `HitTarget` |
-| `buildScene` / `BuildSceneOptions` / `SceneOptions` | `buildView` / `ViewOptions` |
+| `buildScene` / `BuildSceneOptions` / `SceneOptions` | `renderWaferMap` |
 | `WaferFlat`, field `flat` | `WaferNotch`, field `notch` |
-| `isInsideWaferWithFlat` | `isInsideWafer` |
+| `isInsideWaferWithFlat` | nothing — `buildWaferMap` resolves the geometry |
 | `DieSample` / `WaferMapPoint` | `DieResult` |
 | `colorScheme` / `WaferViewOptions.colorScheme` | `binColorScheme` (bin maps) and `valueColorScheme` (value and stacked maps) |
 | `registerColorScheme` / `getColorScheme` / `listColorSchemes` | `registerBinColorScheme` / `registerValueColorScheme` and their `get` / `list` pairs |
-| `hardBinColor` / `softBinColor` / `hardBinGreyscale` | `resolveBinColors`, or `View.binColors` from a rendered map |
+| `hardBinColor` / `softBinColor` / `hardBinGreyscale` | `BinDef.color`, or `registerBinColorScheme` |
 | `plotMode: 'specLimit'` | `passFailDisplay: 'spec'` |
-| standalone `getDieAtPoint` | `hitTarget.getDieAtPoint` from `toCanvas()` |
+| standalone `getDieAtPoint` | `onHover` / `onClick` on `renderWaferMap` |
 | `RenderOptions.tooltipTestLimit` | (was a no-op; nothing replaces it) |
 
 Passing a removed option is a type error, and is ignored at runtime. Do not add

@@ -3021,30 +3021,39 @@ export function makeLegendStyleBtn(
     () => {
       const current = getOpts().legendPosition ?? 'default';
       const rows: CheckMenuRow[] = [];
-      // Position applies to the categorical legend only — in value mode the
-      // legend is a colorbar, which has its own fixed placement.
-      if (isBinLegendMode(getOpts().plotMode)) {
-        if (perMap) rows.push({ section: 'Position' });
-        for (const p of LEGEND_POSITIONS) {
-          rows.push({
-            label: p.label,
-            active: current === p.value,
-            onClick: () => setLegendPosition(p.value),
-          });
-        }
-      }
+      // Every position row describes a per-map legend. In the gallery those are
+      // off by default — the lot-level strip stands in for them — so the toggle
+      // comes first and the positions only apply while it is on. Listing them
+      // live, with "Default (right)" ticked, beside a gallery that shows no
+      // per-card legend at all read as if they moved the lot strip.
+      let perMapOn = true;
       if (perMap) {
         const blocked = perMap.blockedReason();
-        rows.push({ section: 'Per map' });
+        perMapOn = blocked ? true : perMap.get();
         rows.push({
           label: 'Legend on each map',
           // A blocked toggle still reports the state it would have, so the row
           // doesn't appear to have silently flipped when the block clears.
-          active: blocked ? true : perMap.get(),
+          active: perMapOn,
           enabled: !blocked,
           disabledHint: blocked ?? undefined,
           onClick: () => perMap.set(!perMap.get()),
         });
+      }
+      // Position applies to the categorical legend only — in value mode the
+      // legend is a colorbar, which has its own fixed placement.
+      if (isBinLegendMode(getOpts().plotMode)) {
+        if (perMap) rows.push({ section: 'Position on each map' });
+        for (const p of LEGEND_POSITIONS) {
+          rows.push({
+            label: p.label,
+            // No tick while there is no per-map legend for the choice to describe.
+            active: perMapOn && current === p.value,
+            enabled: perMapOn,
+            disabledHint: perMapOn ? undefined : 'Turn on "Legend on each map" to position it',
+            onClick: () => setLegendPosition(p.value),
+          });
+        }
       }
       return rows;
     },

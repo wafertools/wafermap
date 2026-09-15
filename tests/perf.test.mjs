@@ -81,6 +81,29 @@ function median(fn, n = 41) {
   return samples[(n - 1) >> 1];
 }
 
+/**
+ * Fastest wall-clock time of `fn` over `n` runs — the right statistic for the
+ * RATIO tests below, which divide one code path's time by another's.
+ *
+ * A median still carries whatever the scheduler did to the middle of the
+ * sample, and the two paths are measured one after the other, so background
+ * load lands on them unequally and moves the ratio without either path
+ * changing. That is not hypothetical: the value-vs-hardBin check below failed
+ * an `npm publish` at 2.86× on a machine where both paths had inflated ~7×
+ * (hardBin 3.53ms, value 10.07ms) against 0.5ms apiece when idle. The work is
+ * deterministic, so the fastest run is the one that got closest to an
+ * uninterrupted CPU — noise can only ever add time, never remove it, which is
+ * exactly what makes the minimum the robust estimator here.
+ *
+ * Absolute BUDGET assertions deliberately keep using `median`: there, a
+ * minimum would quietly weaken the guard rather than steady it.
+ */
+function fastest(fn, n = 41) {
+  let best = Infinity;
+  for (let i = 0; i < n; i++) best = Math.min(best, time(fn));
+  return best;
+}
+
 // ── buildWaferMap ────────────────────────────────────────────────────────────
 
 test('buildWaferMap — 300mm/8mm die completes within budget', () => {
@@ -112,7 +135,7 @@ test('buildWaferMap — complexity is sub-quadratic (2× die count ≤ 16× time
 test('analyzeWaferMap — 300mm/8mm die (~4300 dies) completes within budget', () => {
   const { results } = makeWafer({ pitchX: 8, pitchY: 8, failRate: 0.08 });
   const wmr = buildWaferMap({ results, passBins: [1] });
-  const ms = time(() => analyzeWaferMap(wmr, { passBins: [1] }));
+  const ms = time(() => analyzeWaferMap(wmr));
   // ~25ms measured; budget 1000ms
   assert.ok(ms < 1000, `analyzeWaferMap took ${ms.toFixed(0)}ms (budget 1000ms, ${wmr.dies.length} dies)`);
 });
@@ -120,7 +143,7 @@ test('analyzeWaferMap — 300mm/8mm die (~4300 dies) completes within budget', (
 test('analyzeWaferMap — high-density 300mm/4mm die (~16k dies) completes within budget', () => {
   const { results } = makeWafer({ pitchX: 4, pitchY: 4, failRate: 0.08 });
   const wmr = buildWaferMap({ results, passBins: [1] });
-  const ms = time(() => analyzeWaferMap(wmr, { passBins: [1] }));
+  const ms = time(() => analyzeWaferMap(wmr));
   // ~120ms measured; budget 3000ms
   assert.ok(ms < 3000, `analyzeWaferMap took ${ms.toFixed(0)}ms (budget 3000ms, ${wmr.dies.length} dies)`);
 });
@@ -128,7 +151,7 @@ test('analyzeWaferMap — high-density 300mm/4mm die (~16k dies) completes withi
 test('analyzeWaferMap — with test values completes within budget', () => {
   const { results, testDefs } = makeWafer({ pitchX: 8, pitchY: 8, failRate: 0.08, tests: 4 });
   const wmr = buildWaferMap({ results, testDefs, passBins: [1] });
-  const ms = time(() => analyzeWaferMap(wmr, { passBins: [1] }));
+  const ms = time(() => analyzeWaferMap(wmr));
   // ~50ms measured; budget 1500ms
   assert.ok(ms < 1500, `analyzeWaferMap (4 tests) took ${ms.toFixed(0)}ms (budget 1500ms)`);
 });
@@ -141,11 +164,11 @@ test('analyzeWaferMap — complexity is sub-quadratic (2× die count ≤ 6× tim
   const wmrLarge = buildWaferMap({ results: large.results, passBins: [1] });
 
   // Warm up
-  analyzeWaferMap(wmrSmall, { passBins: [1] });
-  analyzeWaferMap(wmrLarge, { passBins: [1] });
+  analyzeWaferMap(wmrSmall);
+  analyzeWaferMap(wmrLarge);
 
-  const tSmall = time(() => analyzeWaferMap(wmrSmall, { passBins: [1] }));
-  const tLarge = time(() => analyzeWaferMap(wmrLarge, { passBins: [1] }));
+  const tSmall = time(() => analyzeWaferMap(wmrSmall));
+  const tLarge = time(() => analyzeWaferMap(wmrLarge));
   const ratio  = tLarge / tSmall;
 
   // Die counts: small ~1,700, large ~6,900 — ratio ~4×
@@ -163,7 +186,7 @@ test('analyzeWaferMap — high failure rate (50%) does not cause super-linear sl
   // At 50% fail, F ≈ N/2, so O(F²) = O(N²/4) — worst case for the old code.
   const { results } = makeWafer({ pitchX: 8, pitchY: 8, failRate: 0.5 });
   const wmr = buildWaferMap({ results, passBins: [1] });
-  const ms = time(() => analyzeWaferMap(wmr, { passBins: [1] }));
+  const ms = time(() => analyzeWaferMap(wmr));
   // At 50% fail the cluster finder produces many components; still must be fast.
   // Budget 2000ms.
   assert.ok(ms < 2000, `analyzeWaferMap (50% fail) took ${ms.toFixed(0)}ms (budget 2000ms, ${wmr.dies.length} dies)`);
@@ -176,8 +199,8 @@ test('analyzeWaferLot — 6-wafer lot completes within budget', () => {
     const { results } = makeWafer({ pitchX: 8, pitchY: 8, failRate: 0.08 });
     return buildWaferMap({ results, passBins: [1] });
   });
-  const waferSummaries = waferMapResults.map(r => analyzeWaferMap(r, { passBins: [1] }));
-  const ms = time(() => analyzeWaferLot(waferMapResults, { passBins: [1], perWaferSummaries: waferSummaries }));
+  const waferSummaries = waferMapResults.map(r => analyzeWaferMap(r));
+  const ms = time(() => analyzeWaferLot(waferMapResults, { perWaferSummaries: waferSummaries }));
   // analyzeWaferLot itself (cross-wafer only) is trivially fast; budget 200ms
   assert.ok(ms < 200, `analyzeWaferLot took ${ms.toFixed(0)}ms (budget 200ms)`);
 });
@@ -205,14 +228,21 @@ test('buildView value mode — no more than 2× slower than hardBin', () => {
   // Warmup
   buildHardBin();
   buildValue();
-  const tHardBin = median(buildHardBin);
-  const tValue   = median(buildValue);
+  const tHardBin = fastest(buildHardBin);
+  const tValue   = fastest(buildValue);
   // Floor the denominator at a real measured magnitude (not 0.1) so a tiny
-  // hardBin median can't manufacture a huge ratio. Limit loosened to 2.5× to
-  // absorb residual JIT/GC variance while still catching a per-die-allocation
-  // regression (pre-LUT value mode was ~3×).
+  // hardBin time can't manufacture a huge ratio.
+  //
+  // The limit stays 2.5× despite the test's name. Switching to `fastest` was
+  // measured, not assumed, and it narrows the ratio's spread over 12 trials
+  // from 0.07 to 0.02 when idle — but only 0.25 to 0.19 under CPU saturation.
+  // Tightening to the 2× in the name would therefore spend more headroom than
+  // the better statistic buys back (61% of budget at worst, against 46% for
+  // the old median-at-2.5). Keep the steadier statistic AND the loose limit:
+  // 2.5× still catches the regression this guards, since pre-LUT value mode
+  // was ~3× and the current paths measure ~0.9×.
   const ratio = tValue / Math.max(tHardBin, 0.5);
-  assert.ok(ratio < 2.5, `value mode median is ${ratio.toFixed(2)}× slower than hardBin (limit 2.5×, hardBin=${tHardBin.toFixed(2)}ms value=${tValue.toFixed(2)}ms) — color LUT may have regressed`);
+  assert.ok(ratio < 2.5, `value mode is ${ratio.toFixed(2)}× slower than hardBin (limit 2.5×, hardBin=${tHardBin.toFixed(2)}ms value=${tValue.toFixed(2)}ms) — color LUT may have regressed`);
 });
 
 test('buildView — complexity is sub-quadratic (2× die count ≤ 4× time)', () => {
@@ -228,8 +258,8 @@ test('buildView — complexity is sub-quadratic (2× die count ≤ 4× time)', (
   // Warmup
   buildSmall();
   buildLarge();
-  const tSmall = median(buildSmall);
-  const tLarge = median(buildLarge);
+  const tSmall = fastest(buildSmall);
+  const tLarge = fastest(buildLarge);
   const dieRatio = wmrLarge.dies.length / wmrSmall.dies.length;
   const timeRatio = tLarge / Math.max(tSmall, 0.1);
   assert.ok(
@@ -245,9 +275,9 @@ test('analyzeWaferLot — does not re-run analyzeWaferMap when perWaferSummaries
     const { results } = makeWafer({ pitchX: 8, pitchY: 8, failRate: 0.08 });
     return buildWaferMap({ results, passBins: [1] });
   });
-  const waferSummaries = waferMapResults.map(r => analyzeWaferMap(r, { passBins: [1] }));
-  const tPerWafer = time(() => analyzeWaferMap(waferMapResults[0], { passBins: [1] }));
-  const tLot = time(() => analyzeWaferLot(waferMapResults, { passBins: [1], perWaferSummaries: waferSummaries }));
+  const waferSummaries = waferMapResults.map(r => analyzeWaferMap(r));
+  const tPerWafer = time(() => analyzeWaferMap(waferMapResults[0]));
+  const tLot = time(() => analyzeWaferLot(waferMapResults, { perWaferSummaries: waferSummaries }));
   // Lot should be well under 1 full wafer analysis (not 4×).
   assert.ok(
     tLot < tPerWafer,
@@ -306,8 +336,8 @@ test('buildCapabilityData — complexity is sub-quadratic (2× values per test �
   const large = makeAnalysisLot(3, 8);  // denser: ~4,300 dies/wafer (~4× the values)
   buildCapabilityData(small, ANALYSIS_TEST_DEFS);
   buildCapabilityData(large, ANALYSIS_TEST_DEFS);
-  const tSmall = median(() => buildCapabilityData(small, ANALYSIS_TEST_DEFS), 5);
-  const tLarge = median(() => buildCapabilityData(large, ANALYSIS_TEST_DEFS), 5);
+  const tSmall = fastest(() => buildCapabilityData(small, ANALYSIS_TEST_DEFS), 5);
+  const tLarge = fastest(() => buildCapabilityData(large, ANALYSIS_TEST_DEFS), 5);
   const ratio = tLarge / Math.max(tSmall, 0.1);
   const valueRatio = large.reduce((n, it) => n + it.dies.length, 0) / small.reduce((n, it) => n + it.dies.length, 0);
   // An O(n log n) sort ratio is a bit above the value-count ratio; 6× leaves

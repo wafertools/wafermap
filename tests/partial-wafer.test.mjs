@@ -48,7 +48,7 @@ test('partial: half-wafer anchored at (0,0) positions the centre die at physical
   assert.ok(result.dies.every((d) => d.physX >= -1e-9));
   assert.equal(result.wafer.diameter, 300);
   // Anchored → no partial-data warning.
-  assert.ok(!result.inference.warnings || result.inference.warnings.length === 0);
+  assert.equal(result.warnings.length, 0);
 });
 
 test('partial: single quadrant anchored at (0,0) keeps dies in the +X/+Y quadrant', () => {
@@ -59,7 +59,7 @@ test('partial: single quadrant anchored at (0,0) keeps dies in the +X/+Y quadran
   assert.equal(centre.physX, 0);
   assert.equal(centre.physY, 0);
   assert.ok(result.dies.every((d) => d.physX >= -1e-9 && d.physY >= -1e-9));
-  assert.ok(!result.inference.warnings || result.inference.warnings.length === 0);
+  assert.equal(result.warnings.length, 0);
 });
 
 test('partial: off-center prober origin — center at prober (5,5) anchors there, labels preserved', () => {
@@ -91,21 +91,16 @@ test('partial: half-wafer with NO geometry emits an inference warning (current f
   const results = disc(0, 0, 15, (x) => x >= 0);
   const result = buildWaferMap({ results });
 
-  assert.ok(Array.isArray(result.inference.warnings));
-  assert.ok(result.inference.warnings.length > 0);
+  assert.ok(result.warnings.length > 0);
   assert.equal(result.inference.wafer.method, 'inferred-partial');
 
-  // Promoted structured channel mirrors the deprecated string array.
+  // The structured channel carries the advisory, with its code.
   assert.ok(Array.isArray(result.warnings));
   const partial = result.warnings.find((w) => w.code === 'partial-coverage');
   assert.ok(partial, 'structured partial-coverage warning present');
   assert.equal(typeof partial.message, 'string');
   assert.ok(partial.message.length > 0);
-  // String mirror and structured messages stay in sync.
-  assert.deepEqual(
-    result.inference.warnings,
-    result.warnings.map((w) => w.message),
-  );
+  assert.ok(!('warnings' in result.inference), 'the string mirror was removed in 0.30.0');
   // Documented limitation (not asserted as correct): with no anchor the data
   // midpoint — not the true centre — is placed at the origin, so the centre die
   // is pushed off the physical origin. This is exactly why the warning fires.
@@ -120,7 +115,7 @@ test('partial: symmetric full wafer with no geometry is unchanged and warning-fr
   const centre = findDie(result, 0, 0);
   assert.equal(centre.physX, 0);
   assert.equal(centre.physY, 0);
-  assert.ok(!result.inference.warnings || result.inference.warnings.length === 0);
+  assert.equal(result.warnings.length, 0);
   // Promoted channel is always an array; empty when geometry is trustworthy.
   assert.ok(Array.isArray(result.warnings));
   assert.equal(result.warnings.length, 0);
@@ -132,13 +127,13 @@ test('partial: full wafer with an off-origin prober coordinate system does NOT w
   // at the centre, so this must not be flagged as partial.
   const results = disc(5, 5, 15);
   const result = buildWaferMap({ results });
-  assert.ok(!result.inference.warnings || result.inference.warnings.length === 0);
+  assert.equal(result.warnings.length, 0);
 });
 
 test('partial: single quadrant with no geometry is flagged as partial', () => {
   const results = disc(0, 0, 15, (x, y) => x >= 0 && y >= 0);
   const result = buildWaferMap({ results });
-  assert.ok(result.inference.warnings && result.inference.warnings.length > 0);
+  assert.ok(result.warnings.some((w) => w.code === 'partial-coverage'));
 });
 
 test('sparse: full-extent skip-sampled data is NOT flagged (positions missing, extent intact)', () => {
@@ -151,7 +146,7 @@ test('sparse: full-extent skip-sampled data is NOT flagged (positions missing, e
   const centre = findDie(result, 0, 0);
   assert.equal(centre.physX, 0);
   assert.equal(centre.physY, 0);
-  assert.ok(!result.inference.warnings || result.inference.warnings.length === 0);
+  assert.equal(result.warnings.length, 0);
 });
 
 // ── Probed dies are always fully on the wafer ────────────────────────────────
@@ -226,7 +221,7 @@ test('invariant: caller geometry too small for the probed dies warns, and is not
   });
   // The caller asserted 100 mm — we report the contradiction rather than overriding it.
   assert.equal(result.wafer.diameter, 100, 'explicit diameter must be respected, not silently changed');
-  const warning = (result.inference.warnings ?? []).find(w => w.includes('do not fit inside'));
+  const warning = result.warnings.find(w => w.code === 'geometry-conflict')?.message;
   assert.ok(warning, 'expected a geometry-contradiction warning');
   assert.match(warning, /probed die positions/);
   assert.match(warning, /at least/, 'warning should state the diameter actually required');
@@ -288,8 +283,7 @@ test('invariant: geometry-conflict is its own warning code, distinct from partia
   assert.ok(partial.warnings.length > 0);
   assert.ok(partial.warnings.every(w => w.code === 'partial-coverage'));
 
-  // The deprecated string channel and the structured channel stay in sync.
-  for (const result of [conflict, partial]) {
-    assert.deepEqual(result.inference.warnings, result.warnings.map(w => w.message));
-  }
+  // Each advisory's code is recorded where it is detected, not recovered from its prose,
+  // and the string mirror that code used to be recovered from is gone.
+  for (const result of [conflict, partial]) assert.ok(!('warnings' in result.inference));
 });

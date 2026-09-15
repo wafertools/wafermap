@@ -645,3 +645,33 @@ regressing.
 Neither blocks anything. Do them when next touching either file — the point of
 writing them down is that "extracted, therefore safer" is only true while
 something checks the extraction.
+
+---
+
+## Remove the exports deprecated in 0.30.0 — due in 0.31.0
+
+Deprecated in 0.30.0 (unreleased as of 2026-09-15). `tests/deprecations.test.mjs` fails
+once the changelog gains a `## [0.31.0]` heading, or `package.json` reaches 0.31.0, while any of
+them is still exported — so 0.31.0 cannot be prepared with them by accident.
+
+All 78 names registered through `deprecated()`/`deprecatedValue()` — `DEPRECATED_EXPORTS` in
+`packages/renderer/deprecate.ts`, pinned to an exact list by `tests/deprecations.test.mjs` — across
+the four index files: the value-gradient helpers, the chart-data builders, the low-level drawing
+pipeline and the helpers exported by accident. The 0.30.0 CHANGELOG `### Deprecated` section names
+them all.
+
+To remove:
+1. Delete `deprecated.ts` in core, renderer, stats and canvas-adapter, the re-export that ends each
+   package's `index.ts`, and `deprecated.ts` from `scripts/check-clones.mjs`'s `SKIP`, and `packages/renderer/deprecate.ts`
+   if nothing new has been deprecated through it.
+2. Drop the type exports no remaining public signature references — the chart builders' types,
+   `ViewOptions`, `ToCanvasOptions`, `View`'s draw-list types and the pipeline's own types.
+3. `docs/api.md`: delete §7.6–7.8, §7.13, §7.15, §9, §10.3, §11 (keeping what §11 says stays), the
+   builder rows in §7.16 and the deprecated rows in §10.1/§11.19; delete the guide's pipeline and
+   report-builder passages;
+   update `tests/export-surface.test.mjs`'s snapshot and rerun `check-api-claims --write`.
+4. `CHANGELOG.md`: a `### Breaking` entry naming them all.
+5. `tests/deprecations.test.mjs`: delete it, or reset it if something else is deprecated for a
+   later release. Keep its "no library module imports through an index file" check.
+6. The root bundle loses about 0.5 KB; lower `tests/bundle-size.test.mjs`'s threshold only
+   with a dated log entry.

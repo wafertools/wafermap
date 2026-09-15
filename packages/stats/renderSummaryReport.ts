@@ -1,7 +1,10 @@
 import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
+import { waferDisplayLabel } from '../core/waferLabel.js';
+import { binPassSets, binPassSetsByWafer, type BinPassGroup } from '../renderer/binColors.js';
+import { itemPassBins, passBinsLabel } from '../core/passBins.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary } from '../renderer/buildWaferMap.js';
-import { buildRingRegions, buildQuadrantRegions } from './regions.js';
+import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
 import { openHtmlReport } from './renderFindingsReport.js';
 import { analyzeWaferLot } from './analyzeWaferLot.js';
@@ -14,7 +17,7 @@ import { describeWaferPopulation, populationLabel } from './population.js';
 import { buildTestPassRateData, hasJudgeableTests , poolFunctionalYield } from './testPassRate.js';
 import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
-import { getDieKey, isPositionedDie } from '../core/dies.js';
+import { getDieKey, isPositionedDie, diePassStatus } from '../core/dies.js';
 import {
   formatFindingDelta,
   formatFindingCoverage,
@@ -76,7 +79,8 @@ function binSection(
   if (!counts.size) return '';
   const total = [...counts.values()].reduce((a, b) => a + b, 0);
   const defMap = binDefs ? new Map(binDefs.map(d => [d.bin, d])) : null;
-  const rows = sortBinsForDisplay(counts.entries(), passBins)
+  // Pass status per bin TYPE: `passBins` are hard-bin numbers.
+  const rows = sortBinsForDisplay(counts.entries(), binPassSets(dies, passBins)[mode])
     .map(([bin, count]) => {
       const def  = defMap?.get(bin);
       const name = def?.name ?? '—';
@@ -90,7 +94,7 @@ function regionYieldSection(
   title: string,
   regions: Array<{ label: string; dieKeys: string[] }>,
   dies: Die[],
-  passBins: number[],
+  passBins: readonly number[],
 ): string {
   const passSet  = new Set(passBins);
   const dieByKey = new Map(dies.map(d => [getDieKey(d), d]));
@@ -103,10 +107,10 @@ function regionYieldSection(
     for (const key of region.dieKeys) {
       const d = dieByKey.get(key);
       if (!d || d.partial || d.edgeExcluded) continue;
-      const b = d.hbin ?? d.sbin;
-      if (b == null) continue;
+      const verdict = diePassStatus(d, passSet);
+      if (verdict === undefined) continue;
       total++;
-      if (passSet.has(b)) pass++;
+      if (verdict) pass++;
     }
     if (!total) continue;
     rows.push([region.label, String(pass), String(total), pct(pass, total)]);
@@ -271,7 +275,7 @@ export function renderSummaryReportHtml(
     { label: 'Pass dies', value: String(yieldSummary.passDies) },
     { label: 'Fail dies', value: String(yieldSummary.failDies) },
     ...(yieldSummary.partialDies > 0 ? [{ label: 'Partial', value: String(yieldSummary.partialDies) }] : []),
-    ...(yieldSummary.yieldPercent !== null ? [{ label: `Yield (pass: ${passBins.length === 1 ? `bin ${passBins[0]}` : `bins ${passBins.join(', ')}`})`, value: `${yieldSummary.yieldPercent.toFixed(1)}%` }] : []),
+    ...(yieldSummary.yieldPercent !== null ? [{ label: `Yield (pass: ${passBinsLabel([passBins])})`, value: `${yieldSummary.yieldPercent.toFixed(1)}%` }] : []),
     ...(yieldSummary.edgeExcludedDies > 0 ? [{ label: 'Edge excluded (outer zone)', value: String(yieldSummary.edgeExcludedDies) }] : []),
   ];
 
@@ -322,6 +326,8 @@ export interface LotSummaryReportParams {
     label: string;
     wafer?: Wafer;
     dies?: Die[];
+    /** This wafer's own pass bins (`WaferMapResult.passBins`). Omitted ⇒ the top-level `passBins`. */
+    passBins?: number[];
     /** Reused directly as `analyzeWaferLot`'s `perWaferSummaries` — the expensive
      *  per-wafer pass (`analyzeWaferMap`) is never re-run here. */
     statsSummary?: StatsSummary;
@@ -329,6 +335,7 @@ export interface LotSummaryReportParams {
   hbinDefs?:  BinDef[];
   sbinDefs?:  BinDef[];
   testDefs?:  TestDef[];
+  /** Fallback for items that carry no `passBins` of their own. Default `[1]`. */
   passBins?:  number[];
   ringCount?: number;
   /** Passthrough to the internal per-group `analyzeWaferLot` call, e.g. `{ enableTestValueAnalysis: true }`. */
@@ -337,7 +344,7 @@ export interface LotSummaryReportParams {
 
 function lotWaferYieldTable(lotSummary: LotStatsSummary, items: LotSummaryReportParams['items']): string {
   const rows = lotSummary.perWafer.map((pw) => {
-    const label = items[pw.waferIndex]?.label ?? `W${pw.waferIndex + 1}`;
+    const label = waferDisplayLabel(items[pw.waferIndex], pw.waferIndex);
     const yld = pw.summary.stats.yieldPercent;
     return [label, yld !== null ? `${yld.toFixed(1)}%` : 'N/A'];
   });
@@ -396,7 +403,7 @@ const MAX_SPLIT_FACETS = 3;
 function splitsSection(
   items: LotSummaryReportParams['items'],
   testDefs: TestDef[],
-  passBins: number[],
+  passBins: readonly number[],
 ): string {
   const facetItems = items.map(it => ({ metadata: it.wafer?.metadata }));
   const facets = buildFacetTable(facetItems, { facetableOnly: true }).filter(f => f.splittable);
@@ -422,7 +429,7 @@ function splitsSection(
     // Yield per arm, die-weighted within each arm (buildYieldDataCombined) — the
     // same computation the Insights yield chart uses when grouping is active.
     const yieldRows = buildYieldDataCombined(
-      groups.map(g => ({ key: g.key, items: g.items.map(it => ({ label: it.label, dies: it.dies })) })),
+      groups.map(g => ({ key: g.key, items: g.items.map(it => ({ label: it.label, dies: it.dies, passBins: itemPassBins(it, passBins) })) })),
       passBins,
     ).map(d => [escHtml(d.label), String(d.itemCount), `${d.percent.toFixed(1)}%`]);
 
@@ -488,8 +495,9 @@ function lotAggregateBinTable(
   allDies: Die[],
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
-  perWaferSummaries?: StatsSummary[],
-  passBins: number[] = [1],
+  perWaferSummaries: StatsSummary[] | undefined,
+  /** Each wafer's dies with its own pass bins — a lot can mix programs. */
+  passGroups: BinPassGroup[],
 ): string {
   const counts = new Map<number, number>();
   const field = mode === 'hard' ? 'hardBinCounts' as const : 'softBinCounts' as const;
@@ -511,7 +519,8 @@ function lotAggregateBinTable(
 
   const total = [...counts.values()].reduce((a, b) => a + b, 0);
   const defs = binDefs ? new Map(binDefs.map((d) => [d.bin, d])) : null;
-  const rows = sortBinsForDisplay(counts.entries(), passBins)
+  // Pass status per bin TYPE: `passBins` are hard-bin numbers.
+  const rows = sortBinsForDisplay(counts.entries(), binPassSetsByWafer(passGroups)[mode])
     .map(([bin, count]) => {
       const def = defs?.get(bin);
       const label = def?.name ? `Bin ${bin} · ${def.name} (${count})` : `Bin ${bin} (${count})`;
@@ -530,41 +539,14 @@ function lotRegionYieldTable(
   diesByWafer: Die[][],
   allWafers: Wafer[],
   ringCount: number,
-  passBins: number[],
+  /** Index-aligned with `allWafers`: each wafer's own pass bins. */
+  passBinsByWafer: readonly (readonly number[])[],
 ): string {
-  const passSet = new Set(passBins);
-  const totals = new Map<string, { pass: number; total: number }>();
-  const order: string[] = [];
-
-  for (let wi = 0; wi < allWafers.length; wi++) {
-    const wafer = allWafers[wi];
-    const wDies = diesByWafer[wi] ?? [];
-    if (!wDies.length) continue;
-    const regions = regionFn(wDies.filter(isPositionedDie), wafer, ringCount);
-    const dieByKey = new Map(wDies.map((die) => [getDieKey(die), die]));
-
-    for (const region of regions) {
-      if (!order.includes(region.label)) order.push(region.label);
-      const acc = totals.get(region.label) ?? { pass: 0, total: 0 };
-      for (const key of region.dieKeys) {
-        const die = dieByKey.get(key);
-        if (!die || die.partial || die.edgeExcluded) continue;
-        const bin = die.hbin ?? die.sbin;
-        if (bin == null) continue;
-        acc.total++;
-        if (passSet.has(bin)) acc.pass++;
-      }
-      totals.set(region.label, acc);
-    }
-  }
-
-  if (!totals.size) return '';
-  const rows = order
-    .filter((label) => totals.get(label)?.total)
-    .map((label) => {
-      const acc = totals.get(label)!;
-      return [label, pct(acc.pass, acc.total)];
-    });
+  // The shared computation (stats/regions.ts), not a copy of it: this table
+  // used to re-implement the same per-region pass/total tally, with its own
+  // `hbin ?? sbin` verdict and one lot-wide pass-bin list.
+  const rows = buildRegionYieldData(diesByWafer, allWafers, ringCount, (wi) => passBinsByWafer[wi], regionFn)
+    .map((d) => [d.label, `${d.yieldPercent.toFixed(1)}%`]);
   return rows.length ? renderSection(title, renderTable(['Region', 'Yield'], rows, { className: 'compact' })) : '';
 }
 
@@ -657,7 +639,8 @@ function renderLotGroupSections(
   hbinDefs: BinDef[] | undefined,
   sbinDefs: BinDef[] | undefined,
   testDefs: TestDef[],
-  passBins: number[],
+  /** Fallback for items that carry no pass bins of their own. */
+  passBins: readonly number[],
   ringCount: number,
   analyzeOptions: AnalyzeWaferMapOptions | undefined,
 ): { lotSummary: LotStatsSummary; sections: string } {
@@ -677,14 +660,19 @@ function renderLotGroupSections(
   const allWafers: Wafer[] = [];
   const allDies: Die[] = [];
   const diesByWafer: Die[][] = [];
+  // Aligned with allWafers/diesByWafer: each wafer's own pass bins.
+  const passBinsByWafer: (readonly number[])[] = [];
   for (const item of items) {
     const wDies = item.dies ?? [];
     if (item.wafer) {
       allWafers.push(item.wafer);
       diesByWafer.push(wDies);
+      passBinsByWafer.push(itemPassBins(item, passBins));
     }
     if (wDies.length) allDies.push(...wDies);
   }
+  // Every item's dies with its own pass bins, including items without a wafer.
+  const passGroups: BinPassGroup[] = items.map((it) => ({ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }));
 
   const hasHbin = allDies.some((die) => die.hbin != null);
   const hasSbin = allDies.some((die) => die.sbin != null);
@@ -706,17 +694,22 @@ function renderLotGroupSections(
   // regionYieldSection/lotRegionYieldTable below, just walked once over every
   // die instead of per-region. Small-lot/characterization workflows need the
   // exact good/bad part counts, not just a percentage.
-  const passSet = new Set(passBins);
+  // Each wafer's dies judged by that wafer's OWN pass bins, through
+  // diePassStatus (the rule yield uses) — one lot-wide list would call a
+  // wafer's good dies bad whenever the lot mixes test programs.
   let totalDies = 0, analyzedDies = 0, goodDies = 0, edgeExcludedDies = 0, partialDies = 0;
-  for (const d of allDies) {
-    totalDies++;
-    if (d.edgeExcluded) edgeExcludedDies++;
-    if (d.partial) partialDies++;
-    if (d.partial || d.edgeExcluded) continue;
-    const b = d.hbin ?? d.sbin;
-    if (b == null) continue;
-    analyzedDies++;
-    if (passSet.has(b)) goodDies++;
+  for (const group of passGroups) {
+    const passSet = new Set(group.passBins);
+    for (const d of group.dies) {
+      totalDies++;
+      if (d.edgeExcluded) edgeExcludedDies++;
+      if (d.partial) partialDies++;
+      if (d.partial || d.edgeExcluded) continue;
+      const verdict = diePassStatus(d, passSet);
+      if (verdict === undefined) continue;
+      analyzedDies++;
+      if (verdict) goodDies++;
+    }
   }
   const badDies = analyzedDies - goodDies;
   const totalYieldPercent = analyzedDies > 0 ? (goodDies / analyzedDies) * 100 : null;
@@ -742,14 +735,14 @@ function renderLotGroupSections(
   const perWaferSummaries = lotSummary.perWafer.map((pw) => pw.summary);
   const binSection = hasBins
     ? (hasHbin
-        ? lotAggregateBinTable(allDies, hbinDefs, 'hard', perWaferSummaries, passBins)
-        : lotAggregateBinTable(allDies, sbinDefs, 'soft', perWaferSummaries, passBins))
+        ? lotAggregateBinTable(allDies, hbinDefs, 'hard', perWaferSummaries, passGroups)
+        : lotAggregateBinTable(allDies, sbinDefs, 'soft', perWaferSummaries, passGroups))
     : '';
   const ringSection = hasBins && allWafers.length
-    ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, diesByWafer, allWafers, ringCount, passBins)
+    ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, diesByWafer, allWafers, ringCount, passBinsByWafer)
     : '';
   const quadSection = hasBins && allWafers.length
-    ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBins)
+    ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBinsByWafer)
     : '';
   const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries) : '';
   const functionalSectionHtml = testDefs.length ? lotFunctionalTable(allDies, testDefs, perWaferSummaries) : '';
