@@ -175,7 +175,8 @@ import { classifyPattern } from '@wafertools/wafermap/stats';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig });
 const classification = classifyPattern(result.dies, result.wafer, {
-  passBins: [1],
+  passBins:  result.passBins,   // what the map was built with — never restate them
+  ringCount: result.ringCount,
 });
 
 // classification.features contains:

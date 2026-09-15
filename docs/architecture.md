@@ -69,7 +69,7 @@ graph LR
 
     subgraph Renderer[renderer]
         r1["buildWaferMap"]
-        r2["buildView"]
+        r2["buildView<br/>(deprecated export)"]
         r3["colorMap"]
         r4["colorSchemes"]
     end
@@ -77,7 +77,7 @@ graph LR
     subgraph Canvas[canvas-adapter]
         c1["renderWaferMap"]
         c2["renderWaferGallery"]
-        c3["toCanvas"]
+        c3["toCanvas<br/>(deprecated export)"]
         c4["toolbar"]
         c5["summaryPanel"]
         c6["canvasTheme"]
@@ -192,7 +192,7 @@ graph TB
 
 **What this shows**
 
-`buildView()` converts the map result into a drawable view: rectangles, overlays, labels, colors, and hover targets. `toCanvas()` renders that view onto a canvas and returns hit-testing and viewport information. `renderWaferMap()` wraps both steps with the interactive toolbar, selection, tooltips, and optional summary panel. `renderWaferGallery()` repeats the same display model across multiple cards and, via each card's expand button, detaches a card into its own `renderWaferMap()` instance in a separate window — falling back to an in-page floating window when a real separate window isn't available (e.g. inside Tauri/Electron).
+`buildView()` converts the map result into a drawable view: rectangles, overlays, labels, colors, and hover targets. `toCanvas()` renders that view onto a canvas and returns hit-testing and viewport information. Both are internal steps: their public exports are deprecated and removed in 0.31.0, so a host draws through `renderWaferMap()` or `renderWaferGallery()`. `renderWaferMap()` wraps both steps with the interactive toolbar, selection, tooltips, and optional summary panel. `renderWaferGallery()` repeats the same display model across multiple cards and, via each card's expand button, detaches a card into its own `renderWaferMap()` instance in a separate window — falling back to an in-page floating window when a real separate window isn't available (e.g. inside Tauri/Electron).
 
 ## 5. Analysis and worker flow
 

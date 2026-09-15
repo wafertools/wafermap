@@ -204,7 +204,7 @@ necessarily every test in the underlying test program. A few features scale
 with test count, and one of them (test correlation) scales *quadratically*,
 since it compares every test against every other test:
 
-| Tests passed | `computePerTestStats` | `enableTestValueAnalysis` | `buildCorrelationMatrix` (pairs) |
+| Tests passed | `computePerTestStats` | `enableTestValueAnalysis` | Insights test correlation (pairs) |
 |---|---|---|---|
 | 6 | 8.7ms | 25.1ms | 0.2ms (15 pairs) |
 | 15 | 10.7ms | 36.5ms | 1.2ms (105 pairs) |

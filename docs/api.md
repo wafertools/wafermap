@@ -89,14 +89,12 @@ graph TD
     bwm["buildWaferMap()<br/>data layer — no DOM"]
     rwm["renderWaferMap()"]
     rg["renderWaferGallery()"]
-    tc["toCanvas()"]
     awm["analyzeWaferMap()"]
     awl["analyzeWaferLot()"]
     wk["createWafermapWorker()"]
 
     bwm --> rwm
     bwm --> rg
-    bwm --> tc
     bwm --> awm
     bwm --> awl
     bwm --> wk
@@ -123,7 +121,7 @@ graph TD
 
 | Section | Description |
 |---|---|
-| [9 Low-level canvas API](#9-low-level-canvas-api) | `toCanvas` — draw to a canvas you own, no toolbar |
+| [9 Low-level canvas API](#9-low-level-canvas-api) | Deprecated: `toCanvas` — draw to a canvas you own, no toolbar |
 | [11 Advanced Pipeline](#11-advanced-manual-pipeline) | Deprecated: `buildView` and the manual pipeline |
 | [13 Limitations](#13-current-limitations) | Known constraints |
 
@@ -220,7 +218,6 @@ A single die record from wafer test equipment.
                                            // parametric tests: value in testValues, optionally the tester's verdict here
                                            // (e.g. STDF PTR TEST_FLG); functional tests (testType 'F'): verdict here ONLY —
                                            // they have no measured value. e.g. { 2001: true, 2002: false }
-  values?:     number[]                    // @deprecated: use testValues. Positional array — fragile when tests are added or removed
   hbin?:       number                      // hard bin assignment (physical sort result; STDF V4 range 0–32767)
   sbin?:       number                      // soft bin assignment (test-program failure category; independent 0–32767 space)
   siteNum?:    number                      // STDF site_num — which parallel test site tested this die
@@ -930,9 +927,6 @@ renderWaferMap(container, result, { height: 600 }); // px, or '70vh', etc.
 
 See [Troubleshooting → Map is blank, invisible, or the wrong height](troubleshooting.md)
 for all four valid sizing patterns.
-
-Passing an `HTMLCanvasElement` directly is deprecated but still works for one release.
-
 The toolbar gives users direct access to every display option without any app-level
 chrome: plot mode, colour scheme, ring and quadrant overlays, die labels, rotate,
 flip, zoom, box-select, and PNG download. An **expand** button (⛶) in the toolbar
@@ -2829,7 +2823,10 @@ Called automatically by `analyzeWaferMap`. Call directly when you need the geome
 import { classifyPattern } from '@wafertools/wafermap/stats';
 
 const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
-const c = classifyPattern(result.dies, result.wafer, { passBins: [1] });
+const c = classifyPattern(result.dies, result.wafer, {
+  passBins:  result.passBins,    // what the map was built with — never restate them
+  ringCount: result.ringCount,
+});
 
 if (c) {
   console.log(c.pattern);     // 'edge-ring' | 'center' | 'scratch' | ...
@@ -3069,8 +3066,8 @@ per wafer compared with `run` + `runAnalysis`.
 
 ```ts
 const { results, waferSummaries, lotSummary } = await worker.runWithAnalysis(
-  waferIds.map(id => ({ results: dataByWafer[id], dieConfig })),
-  { passBins: [1] },
+  waferIds.map(id => ({ results: dataByWafer[id], dieConfig, passBins: [1] })),
+  {},
   waferIds.length > 1,
 );
 results.forEach((result, i) =>
@@ -4000,7 +3997,6 @@ directory is public.
   width:         number    // die width in mm (or normalized units)
   height:        number    // die height in mm (or normalized units)
   testValues?:   Record<number, number>  // test measurements keyed by test number
-  values?:       number[]  // @deprecated: use testValues
   hbin?:         number    // hard bin (physical sort result; STDF V4 range 0–32767)
   sbin?:         number    // soft bin (test-program failure category; independent 0–32767 space)
   metadata?:     DieMetadata

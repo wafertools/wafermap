@@ -1549,14 +1549,10 @@ The library can generate standalone printable HTML reports that open in a new br
 import { renderSummaryReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
 
 const html = renderSummaryReportHtml({
-  wafer, dies,
+  ...result,   // wafer, dies, bin/test defs, and the passBins + ringCount the map was built with
   yieldSummary:  summary.stats,
   dataCoverage:  summary.stats.dataCoverage,
-  hbinDefs:      result.hbinDefs,
-  sbinDefs:      result.sbinDefs,
-  testDefs:      result.testDefs,
   statsSummary:  summary,
-  passBins:      [1],
 });
 openHtmlReport(html);
 ```
@@ -1567,15 +1563,12 @@ openHtmlReport(html);
 import { renderLotSummaryReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
 
 const html = renderLotSummaryReportHtml({
-  items: waferMapResults.map((r, i) => ({
-    label: `W${i + 1}`,
-    wafer: r.wafer,
-    dies:  r.dies,
-  })),
+  // Each item carries its own wafer, dies and passBins from its result.
+  items: waferMapResults.map((r, i) => ({ ...r, label: `W${i + 1}` })),
   hbinDefs:  waferMapResults[0].hbinDefs,
   sbinDefs:  waferMapResults[0].sbinDefs,
   testDefs:  waferMapResults[0].testDefs,
-  passBins:  [1],
+  ringCount: waferMapResults[0].ringCount,
 });
 openHtmlReport(html);
 ```
@@ -1850,8 +1843,8 @@ result objects are not cloned back into the worker just to be analysed:
 
 ```ts
 const { results, waferSummaries, lotSummary } = await wmWorker.runWithAnalysis(
-  waferIds.map(id => ({ results: dataByWafer[id], dieConfig: { width: 10, height: 10 } })),
-  { passBins: [1] },
+  waferIds.map(id => ({ results: dataByWafer[id], dieConfig: { width: 10, height: 10 }, passBins: [1] })),
+  {},
   waferIds.length > 1,
 );
 ```

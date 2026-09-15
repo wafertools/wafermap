@@ -141,8 +141,8 @@
         ringCount:   RING_COUNT,
       });
 
-      // All default thresholds — the cluster and angular passes are the only
-      // opt-ins, and computePerTestStats fills the panel's test-value section.
+      // All default thresholds — every analysis runs; computePerTestStats fills
+      // the panel's test-value section.
       const summary = analyzeWaferMap(result, {
         computePerTestStats:   true,
       });

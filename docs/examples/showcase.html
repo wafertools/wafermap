@@ -371,7 +371,7 @@
 
       setLoading('Analysing…');
 
-      const { waferSummaries, lotSummary } = await worker.runAnalysis(waferMapResults, { passBins }, hasMultiWafer);
+      const { waferSummaries, lotSummary } = await worker.runAnalysis(waferMapResults, {}, hasMultiWafer);
 
       const useLazy = validWaferIds.length >= 4;
       const items = validWaferIds.map((wid, i) => {
