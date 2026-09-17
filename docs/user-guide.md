@@ -203,9 +203,10 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 
 **This guide's own window** (and a gallery card detached into its own window,
 see [Section 3 — Gallery](#gallery) below) is a floating window, not a modal —
-its header shows minimize, maximize, and close buttons, and it can be dragged
-and resized by its corner grip. Minimizing collapses it to a small title strip
-without closing it; click it again to restore.
+its header shows collapse, maximize, and close buttons, and it can be dragged
+and resized by its corner grip. Collapse shrinks it to a small title strip
+without closing it; click the same button (now **Show contents**) to restore it.
+While the window is maximized only restore and close are shown.
 
 **Highlight bin** — in bin modes, click any bin swatch in the legend to highlight
 that bin and dim all others. Click again to clear. Useful for isolating a specific
@@ -267,7 +268,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays      | Toggles display layers for all cards simultaneously.                                                                                                                               |
 | <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Picks bin colours (bin modes) or value colours (other modes) for all cards, including **Reverse gradient**.                                                                                                         |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
-| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns in the card grid.                                                                                                                                       |
+| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns. **Auto** fits as many cards as stay readable; a number divides the full width between that many columns.                                             |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
@@ -604,9 +605,17 @@ Every chart panel has a **camera** button that saves the current view as a PNG a
 resolution. To get a clean full-resolution render, use the panel's expand (corner-arrows)
 button first to open it in the fullscreen modal, then click the camera button.
 
-Each exported PNG includes a header strip above the chart with the panel title, source
-filename, wafer and die counts, the active test name (where applicable), and the time of
-export. The live card is unchanged — the header appears only in the saved file.
+The saved image is the chart as shown, on a white background. It carries no title or
+context of its own, but its file name identifies the lot, wafers and chart (see below).
+
+### Names of saved files
+
+Every image and CSV you save is named for what it shows: the lot, then the wafer (or how many
+wafers), then the content. For example, `LOT123_W05_hard-bin.png`, `LOT123_W05_die-list.csv` or
+`LOT123_25-wafers_yield-by-wafer.png`. Saving the same export from different wafers gives
+different names, so files don't overwrite each other or need renaming. A part is left out when
+the data doesn't have it, for example a wafer with no ID. Your application may choose its own
+name for map images instead.
 
 ---
 

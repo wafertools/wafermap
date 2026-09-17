@@ -12,16 +12,12 @@
 import { deprecated } from '../renderer/deprecate.js';
 import { toCanvas as toCanvasImpl } from './toCanvas.js';
 import { buildDieListSection as buildDieListSectionImpl } from './dieList.js';
-import { openReportModal as openReportModalImpl } from './toolbar.js';
 
 const DEPRECATION_ISSUES = "If you depend on it, say so at https://github.com/wafertools/wafermap/issues.";
 const ADVICE_PIPELINE = "It belongs to the low-level drawing pipeline, which is being withdrawn: build with buildWaferMap and draw with renderWaferMap or renderWaferGallery.";
 const ADVICE_DIE_LIST = "renderWaferMap and renderWaferGallery show the die list themselves (the dieList option).";
-const ADVICE_REPORT = "Reports open from the Summary panel's report button; route them into your host with setReportOpener.";
 
 /** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
 export const toCanvas = deprecated(toCanvasImpl, 'toCanvas', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. `renderWaferMap` and `renderWaferGallery` show the die list themselves (the `dieList` option). */
 export const buildDieListSection = deprecated(buildDieListSectionImpl, 'buildDieListSection', `${ADVICE_DIE_LIST} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. Reports open from the Summary panel's report button; route them into your host with `setReportOpener`. */
-export const openReportModal = deprecated(openReportModalImpl, 'openReportModal', `${ADVICE_REPORT} ${DEPRECATION_ISSUES}`);

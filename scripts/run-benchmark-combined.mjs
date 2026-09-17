@@ -20,7 +20,8 @@ import { classifyPattern } from '../dist/packages/stats/patternClassification.js
 import { analyzeWaferMap } from '../dist/packages/stats/analyzeWaferMap.js';
 
 const NPZ_PATH = process.argv[2] ?? './tests/fixtures/wm811k-benchmark.npz';
-const VENV_PY  = './.venv/bin/python3';
+// Any Python with numpy. The repo's .venv is the docs site's (Zensical) and has none.
+const VENV_PY = process.env.PYTHON ?? 'python3';
 
 const LABEL_MAP = {
   'Center':    'center',
@@ -121,7 +122,7 @@ await new Promise((resolve, reject) => {
 
     total++;
 
-    const c   = classifyPattern(result.dies, result.wafer, { passBins: [1], ringCount: 4 });
+    const c   = classifyPattern(result.dies, result.wafer, { passBins: result.passBins, ringCount: result.ringCount });
     const got = c?.pattern ?? 'none';
 
     const isRealPattern = expected !== 'none' && expected !== 'random';
@@ -139,7 +140,7 @@ await new Promise((resolve, reject) => {
 
       let summary;
       try {
-        summary = analyzeWaferMap(result, { passBins: [1] });
+        summary = analyzeWaferMap(result);
       } catch { return; }
 
       const regionalFamilies = summary.findings

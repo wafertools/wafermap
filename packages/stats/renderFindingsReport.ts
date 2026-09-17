@@ -4,13 +4,13 @@ import {
   formatFindingDelta,
   formatFindingCoverage,
   formatFindingTooltip,
-  escHtml,
   buildMetadataRows,
   renderDefinitionList,
   renderSection,
   renderSeverityBadge,
   reportStyles,
 } from './reportHtml.js';
+import { escHtml } from '../core/utils.js';
 import { buildFindingsNarrative } from './findingsNarrative.js';
 import { plainBinTerms } from '../renderer/fmt.js';
 import { visibleFindings } from './filterFindings.js';

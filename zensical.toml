@@ -37,26 +37,26 @@ nav = [
       { "Loading CSV data"               = "examples/csv-data.html"       },
       { "Geometry and inference"         = "examples/geometry.html"       },
       { "Bins and yield"                 = "examples/named-bins.html"     },
-      { "Bin colours"                    = "examples/bin-colours.html"    },
-      { "Metadata / layout mode"         = "examples/metadata-mode.html"  },
       { "Test values"                    = "examples/test-values.html"    },
+      { "Bin colours"                    = "examples/bin-colours.html"    },
       { "Retests"                        = "examples/retests.html"        },
     ]},
-    { "Interaction and control" = [
+    { "Display and interaction" = [
       { "Display control"                = "examples/display-control.html" },
       { "Theming"                        = "examples/theming.html"         },
       { "Interaction API"                = "examples/interaction.html"     },
-      { "Web Worker"                     = "examples/worker.html"          },
-    ]},
-    { "Analysis and layout" = [
-      { "Insights chart suite"           = "examples/insights.html"        },
-      { "Statistics and findings"        = "examples/statistics.html"      },
+      { "Metadata / layout mode"         = "examples/metadata-mode.html"   },
       { "Reticle overlays"               = "examples/reticle.html"         },
-      { "Multi-site parallel testing"    = "examples/test-sites.html"      },
-      { "Real wafer data (WM-811K)"      = "examples/real-data.html"       },
-      { "Mixed patterns (MixedWM38)"    = "examples/mixedwm38.html"       },
     ]},
-    { "Compatibility and advanced" = [
+    { "Galleries and analysis" = [
+      { "Findings, Summary panel and galleries" = "examples/statistics.html" },
+      { "Multi-site parallel testing"    = "examples/test-sites.html"      },
+      { "Insights chart suite"           = "examples/insights.html"        },
+    ]},
+    { "Real data and performance" = [
+      { "Real wafer data (WM-811K)"      = "examples/real-data.html"       },
+      { "Mixed patterns (MixedWM38)"     = "examples/mixedwm38.html"       },
+      { "Web Worker"                     = "examples/worker.html"          },
       { "wafermap vs Plotly.js"          = "examples/comparison.html"      },
     ]},
   ]},

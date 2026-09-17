@@ -469,7 +469,7 @@ export function buildDieListSection(
     for (const die of dies) {
       lines.push(columns.map((c) => csvField((c.csvGet ?? c.get)(die))).join(','));
     }
-    saveTextFile(lines.join('\n'), 'dies.csv', 'text/csv', options.onSaveText);
+    saveTextFile(lines.join('\n'), 'die-list.csv', 'text/csv', options.onSaveText);
   });
 
   return outer;

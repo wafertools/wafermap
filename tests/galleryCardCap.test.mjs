@@ -89,3 +89,55 @@ test('every card is sized for the densest wafer, not the first one in the lot', 
   assert.deepEqual(caps, ['720px', '720px']);
   ctrl.destroy();
 });
+
+// ── Fixed column counts ───────────────────────────────────────────────────────
+// The cap is auto layout's: it stops a few cards inflating across a wide
+// screen when the library picks the column count. A count the user or host
+// picks divides the width that many ways. Both of these regressed: a fixed
+// count was still capped (2 columns left the row half empty, 0.21.1–0.30.0),
+// and a `columns` option given at mount was never applied at all.
+
+function gridTemplate(root) {
+  return [...root.querySelectorAll('div')].find(d => d.style.display === 'grid')?.style.gridTemplateColumns;
+}
+function cardMaxWidths(root) {
+  return [...root.querySelectorAll('.wmap-gallery-card')].map(c => c.style.maxWidth);
+}
+
+test('a columns option at mount is applied, and its cards are not capped', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')], { columns: 2 });
+  assert.match(gridTemplate(root), /^repeat\(2, minmax\(0(px)?, 1fr\)\)$/);
+  assert.deepEqual(cardMaxWidths(root), ['none', 'none']);
+  ctrl.destroy();
+});
+
+test('setColumns switches between a fixed count and auto, restoring the cap on auto', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  assert.deepEqual(cardMaxWidths(root), ['480px', '480px']);
+
+  ctrl.setColumns(2);
+  assert.match(gridTemplate(root), /^repeat\(2, minmax\(0(px)?, 1fr\)\)$/);
+  assert.deepEqual(cardMaxWidths(root), ['none', 'none']);
+
+  ctrl.setColumns(undefined);
+  assert.match(gridTemplate(root), /480px/);
+  assert.deepEqual(cardMaxWidths(root), ['480px', '480px']);
+  ctrl.destroy();
+});
+
+test('an invalid column count falls back to auto; a fraction rounds', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  for (const bad of [0, -3, NaN, Infinity, '2']) {
+    ctrl.setColumns(bad);
+    assert.deepEqual(cardMaxWidths(root), ['480px', '480px'], `setColumns(${String(bad)}) should mean auto`);
+  }
+  ctrl.setColumns(2.4);
+  assert.match(gridTemplate(root), /^repeat\(2, /);
+  ctrl.destroy();
+});

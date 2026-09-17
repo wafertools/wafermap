@@ -18,6 +18,7 @@ import { fmt } from '../../renderer/fmt.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { QUANTITY } from './palette.js';
 import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { escHtml } from '../../core/utils.js';
 
 const PLOT_H = 220;
 const AXIS_W = 56;
@@ -336,10 +337,10 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       if (i < 0) { tooltip.style.display = 'none'; canvas.style.cursor = 'default'; return; }
       const d = data[i];
       canvas.style.cursor = onOpen && d.key !== undefined ? 'pointer' : 'default';
-      tooltip.innerHTML = `<strong>${d.label}</strong><br>`
-        + `mean ${fmt(d.mean, def?.unit)} · σ ${fmt(d.stddev, def?.unit)}<br>`
+      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong><br>`
+        + escHtml(`mean ${fmt(d.mean, def?.unit)} · σ ${fmt(d.stddev, def?.unit)}`) + '<br>'
         + `n = ${d.count.toLocaleString()}`
-        + (centre !== null ? `<br>Δ vs ${centreLabel} ${d.mean - centre >= 0 ? '+' : ''}${fmt(d.mean - centre, def?.unit)}` : '')
+        + (centre !== null ? '<br>' + escHtml(`Δ vs ${centreLabel} ${d.mean - centre >= 0 ? '+' : ''}${fmt(d.mean - centre, def?.unit)}`) : '')
         + (onOpen && d.key !== undefined ? '<br><em>click to open this wafer</em>' : '');
       tooltip.style.display = 'block';
       positionChartTooltip(tooltip, card, e.clientX, e.clientY);

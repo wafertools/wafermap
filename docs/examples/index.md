@@ -20,34 +20,34 @@ Some pages cover several related topics; those links point at the relevant secti
 - [Partial data and centre anchoring](geometry.html#centre-anchoring) — anchoring the wafer centre for partial coverage, and why sparse data doesn't need it · [Guide: Adding die size and wafer geometry](../guide.md#adding-die-size-and-wafer-geometry)
 - [Warnings the library surfaces](geometry.html#warnings) — the built-in ⚠ indicator, warning severity, and the `onWarning` opt-out for hosts with their own notification UI · [Guide: Adding die size and wafer geometry](../guide.md#adding-die-size-and-wafer-geometry)
 - [Bins and yield](named-bins.html) — named hard bins, pass/fail colours, yield label · [Guide: Working with bins](../guide.md#working-with-bins)
-- [Bin colours across a full program](bin-colours.html) — a four-wafer lot with 15 hard bins and 32 soft bins — how every bin keeps its colour, two pass grades, and what happens when soft bins outnumber the palette · [Guide: How bin colours are assigned](../guide.md#how-bin-colours-are-assigned)
-- [Metadata / layout mode](metadata-mode.html) — generic categorical colouring from `die.metadata`, coexists with test/bin data · [Guide: Metadata / layout plot mode](../guide.md#metadata-layout-plot-mode)
 - [Test values](test-values.html) — parametric measurements, spec limits, colorbar · [Guide: Working with test values](../guide.md#working-with-test-values)
+- [Bin colours across a full program](bin-colours.html) — a four-wafer lot with 15 hard bins and 32 soft bins — how every bin keeps its colour, two pass grades, and what happens when soft bins outnumber the palette · [Guide: How bin colours are assigned](../guide.md#how-bin-colours-are-assigned)
 - [Retests](retests.html) — multi-touch probe sequences and retest policy · [Guide: Retests and enriching dies after build](../guide.md#retests-and-enriching-dies-after-build)
 
-## Interaction and control
+## Display and interaction
 
 - [Display control](display-control.html) — rotation, flip, plot mode, colour scheme · [Guide: Controlling the display](../guide.md#controlling-the-display)
-- [Custom colour schemes](display-control.html#custom-schemes) — register your own bin/value palette with `registerColorScheme` · [Guide: Custom colour schemes](../guide.md#custom-colour-schemes)
+- [Custom colour schemes](display-control.html#custom-schemes) — register your own bin palette with `registerBinColorScheme` and value gradient with `registerValueColorScheme` · [Guide: Custom colour schemes](../guide.md#custom-colour-schemes)
 - [Theming](theming.html) — theme the chrome and canvas with `--wmap-*` custom properties (light, dark, Nord, Solarized, brand green) · [Guide: Controlling the display](../guide.md#controlling-the-display)
 - [Interaction API](interaction.html) — hover, click, box-select, controller methods · [Guide: Responding to user interaction](../guide.md#responding-to-user-interaction)
-- [Web Worker](worker.html) — off-main-thread build for large datasets · [Guide: Processing large datasets with a Web Worker](../guide.md#processing-large-datasets-with-a-web-worker)
+- [Metadata / layout mode](metadata-mode.html) — generic categorical colouring from `die.metadata`, coexists with test/bin data · [Guide: Metadata / layout plot mode](../guide.md#metadata-layout-plot-mode)
+- [Reticle overlays](reticle.html) — photolithography field grid and reticle-position findings · [Guide: Reticle overlays](../guide.md#reticle-overlays)
 
-## Analysis and layout
+## Galleries and analysis
 
-- [Insights chart suite](insights.html) — the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add · [Guide: The Insights tab](../guide.md#the-insights-tab)
-- [Statistical findings](statistics.html#findings) — ring, quadrant, cluster, edge-arc analysis on a single wafer · [Guide: Adding statistical findings](../guide.md#adding-statistical-findings)
 - [Summary panel](statistics.html#summary-panel) — persistent metadata and stats sidebar docked beside the map · [Guide: Summary panel](../guide.md#summary-panel)
+- [Statistical findings](statistics.html#findings) — ring, quadrant, cluster, edge-arc analysis on a single wafer · [Guide: Adding statistical findings](../guide.md#adding-statistical-findings)
 - [Lot gallery](statistics.html#lot-gallery) — card grid of multiple wafers with shared controls and stacked modes · [Guide: Building a lot gallery](../guide.md#building-a-lot-gallery)
 - [Lot-level findings](statistics.html#lot-findings) — cross-wafer trend detection with `analyzeWaferLot` · [Guide: Lot-level statistical findings](../guide.md#lot-level-statistical-findings)
 - [Lot-stack spatial analysis](statistics.html#lot-stack) — mean/median/stddev maps aggregated across a lot · [Guide: Recipes](../guide.md#recipes)
-- [Reticle overlays](reticle.html) — photolithography field grid and reticle-position findings · [Guide: Reticle overlays](../guide.md#reticle-overlays)
 - [Multi-site parallel testing](test-sites.html) — site-based analysis across a multi-site prober card
+- [Insights chart suite](insights.html) — the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add · [Guide: The Insights tab](../guide.md#the-insights-tab)
+
+## Real data and performance
+
 - [Real wafer data (WM-811K)](real-data.html) — open dataset with 811 000 wafer records · [Guide: Adding statistical findings](../guide.md#adding-statistical-findings)
 - [Mixed patterns (MixedWM38)](mixedwm38.html) — classified failure pattern dataset · [Pattern Detection](../pattern-detection.md)
-
-## Compatibility and advanced
-
+- [Web Worker](worker.html) — off-main-thread build for large datasets · [Guide: Processing large datasets with a Web Worker](../guide.md#processing-large-datasets-with-a-web-worker)
 - [wafermap vs Plotly.js](comparison.html) — side-by-side render timings and feature comparison · [Performance](../performance.md)
 
 ---

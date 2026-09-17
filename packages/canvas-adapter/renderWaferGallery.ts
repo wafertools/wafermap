@@ -1,14 +1,16 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
 import { metadataCategoricalValue } from '../core/metadata.js';
-import { resolveBinColorsByWafer, binColorWarning, mixedPassBinsWarning, type BinColors } from '../renderer/binColors.js';
-import { itemPassBins } from '../core/passBins.js';
+import { resolveBinColorsForMaps, mergeBinDefs, binColorWarning, mixedPassBinsWarning, type BinColors } from '../renderer/binColors.js';
+import { itemPassBins, INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
 import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
-import { waferDisplayLabel } from '../core/waferLabel.js';
+import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
+import { metadataDisplayValue } from '../core/metadata.js';
+import { withExportContext, noticeDownloadFilenameChange } from './exportName.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import { diePassStatus, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
@@ -24,8 +26,8 @@ import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { compareNatural } from '../core/utils.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
-import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent } from './summaryPanel.js';
-import { renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
+import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent, reportMapsFromItems } from './summaryPanel.js';
+import { renderLotReportHtml } from '../stats/renderSummaryReport.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { prettyKey } from '../stats/facets.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
@@ -107,14 +109,22 @@ export interface GalleryOptions {
    * disabled with that reason rather than appearing to do nothing.
    */
   perCardLegend?:        boolean;
-  /** Filename stem for the composite gallery PNG. Default 'wafer-gallery'. */
+  /**
+   * Name for the composite gallery PNG, without extension. When omitted, it is
+   * named for its lots, wafer count and plot mode
+   * (`LOT123_25-wafers_gallery-hard-bin.png`); cards, CSV exports and charts are
+   * always named that way. See docs/api.md §5.4.5.
+   *
+   * **Changes in 0.31.0:** this becomes a prefix for every file the gallery and
+   * its cards save. Passing it logs a one-time notice.
+   */
   downloadFilename?:     string;
   /**
    * Host hook for persisting the composite gallery PNG. When provided, the save
    * action calls `onSaveImage(blob, suggestedName)` instead of triggering a
    * browser `<a download>` — letting embedded hosts (Tauri, Electron, WebView2)
    * route the image through a native save dialog. `suggestedName` includes the
-   * `.png` extension and is derived from `downloadFilename`. When omitted, the
+   * `.png` extension and is the generated name (see `downloadFilename`). When omitted, the
    * default browser download behaviour is unchanged.
    */
   onSaveImage?:          SaveImageHandler;
@@ -158,7 +168,8 @@ export interface GalleryOptions {
   dieList?:                DieListDisplayOptions;
   /**
    * Fix the number of columns in the gallery grid. When set, overrides the
-   * auto-computed minimum card width and the toolbar columns control.
+   * auto-computed layout and the toolbar columns control: the columns share the
+   * full grid width, with no density-derived card size cap.
    * Omit (default) to let the gallery auto-size cards based on die pitch.
    */
   columns?:                number;
@@ -216,6 +227,18 @@ export interface GalleryController {
    */
   setFindingsNotice(notice: FindingsNotice | undefined): void;
   /**
+   * Set the number of grid columns, as the toolbar's Columns control does: the
+   * columns share the full grid width. Pass `undefined` to return to the
+   * automatic layout, which sizes cards by die pitch.
+   */
+  setColumns(columns: number | undefined): void;
+  /**
+   * The bin colours every card draws, resolved once over the whole gallery with
+   * the palette currently chosen — for a host surface of its own (a table
+   * swatch, an export). Hard and soft bins are separate maps.
+   */
+  getBinColors(): BinColors;
+  /**
    * Opens the built-in end-user guide window — the same action the help
    * toolbar button performs, but callable directly. Works regardless of
    * `showHelpButton`'s current value, so a host that hides wmap's own help
@@ -231,10 +254,18 @@ export interface GalleryController {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function deduplicateDefs(defs: BinDef[]): BinDef[] {
-  const seen = new Set<number>();
-  return defs.filter(d => seen.has(d.bin) ? false : (seen.add(d.bin), true));
+/**
+ * A column count the grid can lay out: a whole number of at least 1, or
+ * `undefined` for the automatic layout. Anything else (0, negative, NaN, a
+ * string from untyped JS) falls back to automatic rather than writing an
+ * invalid `grid-template-columns`; fractions round to the nearest column.
+ */
+function normalizeColumns(cols: unknown): number | undefined {
+  if (typeof cols !== 'number' || !Number.isFinite(cols)) return undefined;
+  const n = Math.round(cols);
+  return n >= 1 ? n : undefined;
 }
+
 
 /**
  * A single stacked proportional bar — the population split at a glance.
@@ -452,8 +483,7 @@ export function renderWaferGallery(
 ): GalleryController {
   logWmapVersionOnce();
   const cardPadding          = 6;   // CSS px inside each card canvas
-  const downloadFilename     = options.downloadFilename     ?? 'wafer-gallery';
-  let currentColumns         = options.columns;
+  let currentColumns         = normalizeColumns(options.columns);
   const showHelpButton       = options.showHelpButton       ?? false;
   const userGuideExtension   = options.userGuideExtension;
   const insightsEnabled      = options.insights?.enabled ?? false;
@@ -544,6 +574,22 @@ export function renderWaferGallery(
   let cardContainers: HTMLDivElement[] = [];      // canvasWrapper per card
   let cardExpandBtns: HTMLButtonElement[] = [];   // per-card header button — toggles expand/reattach
   let currentItems:  WaferMapDisplayItem[] = [];
+
+  // Every gallery-level file — the composite PNG, the lot Summary panel's and
+  // die list's CSVs, the lot Insights charts — is named for the lots and wafers
+  // currently shown (see exportName.ts). Cards and detached windows are
+  // renderers in their own right: they get the host's RAW hooks and name their
+  // files for their own wafer, so these must never be passed to them.
+  const exportHooks = withExportContext(() => {
+    const shown = currentItems.filter((it): it is WaferMapDisplayItem => it != null);
+    const lots = [...new Set(shown.map(it => metadataDisplayValue(it.wafer.metadata?.lot)).filter((l): l is string => l !== undefined))]
+      .sort(compareNatural);
+    return {
+      lots,
+      ...(shown.length === 1 ? { wafer: waferIdentityLabel(shown[0]) } : { waferCount: shown.length }),
+    };
+  }, options.onSaveImage, options.onSaveText);
+  noticeDownloadFilenameChange(options.downloadFilename);
   // Per-wafer source items; null = factory not yet resolved. Populated from `items`
   // immediately (not lazily before buildCards) so findings-gated UI decided during
   // this function's own setup — e.g. the Lot Summary button/panel's "any item
@@ -757,19 +803,7 @@ export function renderWaferGallery(
    *  per-wafer findings section. Reached from the no-lot-stats fallback list
    *  below; the lot panel builds its own via `renderLotSummaryContent`. */
   function openLotSummaryReport(): void {
-    const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
-    const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
-    openReportModal(renderLotSummaryReportHtml({
-      items: originalItems.map((item, i) => ({
-        label:        waferDisplayLabel(item, i),
-        wafer:        item?.wafer,
-        dies:         item?.dies,
-        passBins:     passBinsOf(item),
-        statsSummary: item?.statsSummary })),
-      hbinDefs: lotHbinDefs.length ? lotHbinDefs : undefined,
-      sbinDefs: lotSbinDefs.length ? lotSbinDefs : undefined,
-      testDefs: lotTestDefs(),
-      ringCount: lotRingCount() }), { anchor: container });
+    openReportModal(renderLotReportHtml(reportMapsFromItems(originalItems, INPUT_DEFAULT_PASS_BINS, lotRingCount())), { anchor: container });
   }
 
   function renderPerWaferIndexFallback(): void {
@@ -903,8 +937,8 @@ export function renderWaferGallery(
       // (`buildRegionYieldData`, `StatsSummary.stats.*` — see
       // summaryPanel.ts's header comment), so the two surfaces can overlap
       // without ever disagreeing.
-      const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
-      const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
+      const lotHbinDefs = mergeBinDefs(originalItems.map(it => it?.hbinDefs));
+      const lotSbinDefs = mergeBinDefs(originalItems.map(it => it?.sbinDefs));
       renderLotSummaryContent(gallerySummaryPanelEl, {
         lotSummary: currentLotStats,
         items:      originalItems,
@@ -922,7 +956,7 @@ export function renderWaferGallery(
         findingsFilter: lotFindingsFilter,
         findingsNotice: currentFindingsNotice,
         onFindingsFilterChange: renderGallerySummaryPanel,
-        onSaveText: options.onSaveText,
+        onSaveText: exportHooks.onSaveText,
         onFindingClick: (finding, row) => {
           if (activeLotFindingId === finding.id) {
             clearLotFindingHighlight();
@@ -1380,15 +1414,11 @@ export function renderWaferGallery(
    */
   let lotMixedPassBins: number[] = [];
   function lotBinColors(): BinColors {
-    const lotHbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.hbinDefs ?? []));
-    const lotSbinDefs = deduplicateDefs(originalItems.flatMap(it => it?.sbinDefs ?? []));
-    const { colors, mixedHardBins } = resolveBinColorsByWafer(
-      originalItems.flatMap(it => it ? [{ dies: it.dies, passBins: passBinsOf(it) }] : []),
-      {
-        binColorScheme: sharedOpts.binColorScheme,
-        useDefinedBinColors: sharedOpts.useDefinedBinColors,
-        hbinDefs: lotHbinDefs,
-        sbinDefs: lotSbinDefs });
+    // The same rule binColorsForMaps gives a host, so the colours a host reads
+    // for its own surfaces are the ones these cards draw.
+    const { colors, mixedHardBins } = resolveBinColorsForMaps(
+      originalItems.filter((it): it is WaferMapDisplayItem => it != null),
+      { binColorScheme: sharedOpts.binColorScheme, useDefinedBinColors: sharedOpts.useDefinedBinColors });
     lotMixedPassBins = mixedHardBins;
     return colors;
   }
@@ -1824,8 +1854,8 @@ export function renderWaferGallery(
       // both views — this tab's own strip would just be a second, redundant
       // copy of identical content.
       showMetadataStrip: false,
-      onSaveImage: options.onSaveImage,
-      onSaveText: options.onSaveText,
+      onSaveImage: exportHooks.onSaveImage,
+      onSaveText: exportHooks.onSaveText,
       ownerDocument: container.ownerDocument,
       // Opens one wafer's full map in a modal, from a chart panel bar/row
       // click (yield's leaf rows, boxplot's leaf rows). Reuses
@@ -1990,12 +2020,27 @@ export function renderWaferGallery(
     return true;
   }
 
+  /**
+   * A card's max width/height as a CSS value — the single rule for whether the
+   * density cap applies, read by both the cards and the grid tracks.
+   *
+   * The cap belongs to auto layout only, where the library chooses the column
+   * count and the cap stops a few cards inflating across a wide screen. A column
+   * count the user or host picked is an explicit instruction to divide the width
+   * that many ways: capping it there left 2 columns at 480px each with the rest
+   * of the row empty (0.21.1–0.30.0).
+   */
+  function cardMaxSize(): string {
+    return currentColumns != null ? 'none' : `${currentMaxCardPx}px`;
+  }
+
   /** Re-apply the current cap to every card already in the grid. */
   function applyCardSizeCap(): void {
+    const max = cardMaxSize();
     for (const card of Array.from(gridEl.children) as HTMLElement[]) {
       if (!card.classList.contains('wmap-gallery-card')) continue; // skip factory placeholders
-      card.style.maxWidth  = `${currentMaxCardPx}px`;
-      card.style.maxHeight = `${currentMaxCardPx}px`;
+      card.style.maxWidth  = max;
+      card.style.maxHeight = max;
     }
   }
 
@@ -2008,29 +2053,33 @@ export function renderWaferGallery(
     // below) — and before computeMinCardPx, which clamps to the current cap.
     const capChanged = refreshCardSizeCap(its);
     if (capChanged) applyCardSizeCap();
-    if (currentColumns != null) {
-      if (capChanged) applyGridTemplate(); // tracks are sized by the cap
-      return;
+    // Always written, fixed count or not: this is also the first call after
+    // mount, and gating the fixed-count write on `capChanged` meant a
+    // `columns` option was never applied — the grid kept its initial one track.
+    if (currentColumns == null) {
+      const newMin = computeMinCardPx(its);
+      if (newMin > currentMinCardPx) currentMinCardPx = newMin;
     }
-    const newMin = computeMinCardPx(its);
-    if (newMin > currentMinCardPx) currentMinCardPx = newMin;
     applyGridTemplate();
   }
 
   function setColumnsState(cols: number | undefined): void {
-    currentColumns = cols;
+    currentColumns = normalizeColumns(cols);
+    applyCardSizeCap(); // switching between auto and fixed changes whether the cap applies
     applyGridTemplate();
   }
 
-  // Tracks are capped at the current card cap rather than `1fr`: a `1fr` track always
-  // takes an equal share of the full container width, so a card clamped by its
-  // own max-size sits at the left edge of an oversized track and the leftover
-  // shows up as whitespace bands between columns. minmax(0, cap) lets a track
-  // shrink below the cap when the container is narrow (grid grows tracks
-  // equally until the space runs out) but never exceed it, so columns stay
-  // adjacent and the grid packs left via justify-content: start.
+  // In auto layout, tracks are capped at the current card cap rather than `1fr`:
+  // a `1fr` track always takes an equal share of the full container width, so a
+  // card clamped by its own max-size sits at the left edge of an oversized track
+  // and the leftover shows up as whitespace bands between columns. minmax(0, cap)
+  // lets a track shrink below the cap when the container is narrow (grid grows
+  // tracks equally until the space runs out) but never exceed it, so columns
+  // stay adjacent and the grid packs left via justify-content: start.
+  // A fixed column count lifts the cap (see cardMaxSize), so its tracks share
+  // the full width and no card is clamped inside one.
   function trackTemplate(cols: number): string {
-    return `repeat(${cols}, minmax(0, ${currentMaxCardPx}px))`;
+    return `repeat(${cols}, minmax(0, ${currentColumns != null ? '1fr' : `${currentMaxCardPx}px`}))`;
   }
 
   /**
@@ -2530,7 +2579,7 @@ export function renderWaferGallery(
     }
 
     if (mode === 'stackedBins') {
-      let defs = deduplicateDefs(resolvedItems.flatMap(it => it.hbinDefs ?? []));
+      let defs = mergeBinDefs(resolvedItems.map(it => it?.hbinDefs));
       if (!defs || defs.length === 0) {
         const uniqueBins = [...new Set(resolvedItems.flatMap(it =>
           it.dies.map(d => d.hbin).filter((b): b is number => b != null)
@@ -2557,7 +2606,7 @@ export function renderWaferGallery(
     }
 
     if (mode === 'stackedSoftBins') {
-      let defs = deduplicateDefs(resolvedItems.flatMap(it => it.sbinDefs ?? []));
+      let defs = mergeBinDefs(resolvedItems.map(it => it?.sbinDefs));
       if (!defs || defs.length === 0) {
         const uniqueBins = [...new Set(resolvedItems.flatMap(it =>
           it.dies.map(d => d.sbin).filter((b): b is number => b != null)
@@ -2825,8 +2874,8 @@ export function renderWaferGallery(
       // Grid items default to `stretch`; a max-size smaller than the track
       // clamps the card there and falls back to start (top-left) alignment
       // for the leftover cell space — no justify-items/-self override needed.
-      maxWidth:      `${currentMaxCardPx}px`,
-      maxHeight:     `${currentMaxCardPx}px` });
+      maxWidth:      cardMaxSize(),
+      maxHeight:     cardMaxSize() });
 
     const header = container.ownerDocument.createElement('div');
     Object.assign(header.style, {
@@ -3359,19 +3408,23 @@ export function renderWaferGallery(
 
   /** Cleanup shared by both the popup's own OS-level close and the card's
    * reattach-button click. If still linked to a live grid slot, rebuilds that
-   * slot's card fresh, first reading back the detached window's own live view
-   * options (rotation, colour scheme, log scale, etc. — anything the user
-   * changed from the popup's own full toolbar) so a rebuild doesn't silently
-   * discard them; only options genuinely un-settable from that toolbar fall
-   * back to the gallery's current shared options. If unlinked, there is no
-   * slot to rebuild and the popup's controller is simply released. */
+   * slot's card fresh from the item as the host supplied it, so the card
+   * rejoins the gallery: its plot mode, palettes and overlays are the gallery's
+   * shared options again, as for every other card. If unlinked, there is no
+   * slot to rebuild and the popup's controller is simply released.
+   *
+   * This used to read the window's live options back and store them on the
+   * item as its per-card `viewOptions`. Those overrides win over the shared
+   * options every time the card is built, so a card reattached in soft-bin mode
+   * stayed soft-bin — and in a palette the gallery no longer used — under a
+   * gallery bar and legend strip describing hard bins: one card on screen
+   * mislabelled. It also replaced any per-card overrides the host had set. */
   function handlePopupClosed(id: number): void {
     const win = detachedWindows.get(id);
     if (!win) return; // already handled — poll/pagehide race, or reattach-button already ran this
     detachedWindows.delete(id);
     if (win.closePollId != null) clearInterval(win.closePollId);
     win.stopThemeSync?.();
-    const liveOptions = win.ctrl.getOptions();
     win.ctrl.destroy();
 
     if (win.cardIndex === null) return; // unlinked — no grid slot to rebuild
@@ -3379,9 +3432,7 @@ export function renderWaferGallery(
     const cardIndex = win.cardIndex;
     const item = currentItems[cardIndex];
     if (!item) return; // defensive — shouldn't happen while linked
-    const rebuiltItem: WaferMapDisplayItem = { ...item, viewOptions: liveOptions };
-    currentItems[cardIndex] = rebuiltItem;
-    const { card, ctrl, canvasWrapper, expandBtn } = buildCard(rebuiltItem, cardIndex, currentItems.length);
+    const { card, ctrl, canvasWrapper, expandBtn } = buildCard(item, cardIndex, currentItems.length);
     cardContainers[cardIndex]?.parentElement?.replaceWith(card);
     cardControllers[cardIndex] = ctrl;
     cardContainers[cardIndex] = canvasWrapper;
@@ -3456,7 +3507,14 @@ export function renderWaferGallery(
     });
     off.toBlob(blob => {
       if (!blob) return;
-      saveImageBlob(blob, downloadFilename, options.onSaveImage);
+      // Cards share one plot mode, so any rendered card's title names them all.
+      // A host-set downloadFilename keeps its documented meaning until 0.31.0.
+      if (options.downloadFilename != null) {
+        saveImageBlob(blob, options.downloadFilename, options.onSaveImage);
+        return;
+      }
+      const title = cardControllers.find(c => c != null)?.getExportTitle();
+      saveImageBlob(blob, ['gallery', title].filter(Boolean).join(' '), exportHooks.onSaveImage);
     });
   }
 
@@ -3494,6 +3552,14 @@ export function renderWaferGallery(
     setFindingsNotice(notice: FindingsNotice | undefined): void {
       currentFindingsNotice = notice;
       renderGallerySummaryPanel();
+    },
+
+    setColumns(cols: number | undefined): void {
+      setColumnsState(cols);
+    },
+
+    getBinColors(): BinColors {
+      return sharedOpts.binColors ?? lotBinColors();
     },
 
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {

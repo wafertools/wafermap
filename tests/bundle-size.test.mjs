@@ -42,6 +42,14 @@
 //   notices on valueToViridis/valueToGreyscale/getValueColorScheme
 //   (renderer/deprecate.ts), which leave again when those names are removed —
 //   legitimate library growth, not bloat.
+//   2026-09-16: root raised 52 KB -> 56 KB (measured 52,685 bytes at the time).
+//   0.30.1 added the supported replacements for exports deprecated in 0.30.0:
+//   capability, tester-verdict pass rates and ring/quadrant yield now come back
+//   from analyzeWaferMap/analyzeWaferLot (stats/summaryFigures.ts, pulling the
+//   capability, pass-rate and region builders into analysis), the result-based
+//   report builders, binColorsForMaps and the layout-only buildWaferMap. Much of
+//   the chart-builder code was already in the root; what is new is that analysis
+//   now reaches it. Legitimate library growth, not bloat.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -57,7 +65,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
-  'wafermap (root)':            52_000,   // gzipped bytes — baseline ~48.2 KB
+  'wafermap (root)':            56_000,   // gzipped bytes — baseline ~52.7 KB
   'wafermap/render (initial)':  130_000,  // gzipped bytes — baseline ~104 KB, guide AND Insights excluded
 };
 

@@ -4,7 +4,8 @@ import type { Wafer } from '../core/wafer.js';
 import type { Reticle } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
 import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
-import { applyOrientation, transformDies } from '../core/transforms.js';
+import { applyOrientation, transformDies, clipDiesToWafer } from '../core/transforms.js';
+import { generateDies } from '../core/dies.js';
 import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
@@ -406,6 +407,7 @@ export interface WaferMapInputSingle extends WaferMapInputBase {
   /** Per-die test results from the prober. */
   results?: DieResult[];
   lotStack?: never;
+  layout?: never;
 }
 
 /** Lot-stack input — collapse results from multiple wafers into a single aggregated map. */
@@ -413,14 +415,35 @@ export interface WaferMapInputLotStack extends WaferMapInputBase {
   /** Lot-level stacking — collapse results from several wafers into a single map. */
   lotStack: LotStackConfig;
   results?: never;
+  layout?: never;
 }
 
 /**
- * Input accepted by {@link buildWaferMap}.
- * Use {@link WaferMapInputSingle} for a single wafer or {@link WaferMapInputLotStack}
- * for an aggregated lot-stack map. Passing both `results` and `lotStack` is a type error.
+ * Layout input — a wafer's die sites with no test data: gross die per wafer,
+ * reticle and step planning, the expected die map before data exists.
+ *
+ * Requires `waferConfig.diameter` and `dieConfig.width`/`height`. The map holds
+ * every die site lying **fully** on the wafer (notch and flat included), which is
+ * the gross die count and the set of sites a prober can step to — so, like a map
+ * built from results, it never contains edge-straddling dies. Die `(0, 0)` is the
+ * site centred on the wafer, and `x`/`y` count sites in the directions
+ * `dieConfig.xAxisDirection`/`yAxisDirection` give. `waferConfig.center` is
+ * ignored: the layout defines the centre. `edgeExclusion`, `reticleConfig` and
+ * orientation apply as for any map.
  */
-export type WaferMapInput = WaferMapInputSingle | WaferMapInputLotStack;
+export interface WaferMapInputLayout extends WaferMapInputBase {
+  layout: true;
+  results?: never;
+  lotStack?: never;
+}
+
+/**
+ * Input accepted by {@link buildWaferMap}: one wafer's results
+ * ({@link WaferMapInputSingle}), an aggregated lot stack
+ * ({@link WaferMapInputLotStack}), or a die layout with no data
+ * ({@link WaferMapInputLayout}). Combining them is a type error.
+ */
+export type WaferMapInput = WaferMapInputSingle | WaferMapInputLotStack | WaferMapInputLayout;
 
 /** Options forwarded to {@link buildView}. */
 export interface WaferMapOptions extends ViewOptions {
@@ -515,6 +538,10 @@ export interface WaferWarning {
    *   lot-level ring figures (Summary panel, report, Insights) use the count named in
    *   the message.
    *
+   * - `'input-values-not-numbers'` — raised by `buildWaferMap`: bins or test values
+   *   were given as text (or verdicts as something other than true/false), as a
+   *   CSV parser produces. They are not converted, so those dies are judged and
+   *   plotted wrongly — a bin of "1" is not pass bin 1. The message counts them.
    * - `'input-field-removed'` — raised by `buildWaferMap`: the input used a name
    *   removed in an earlier release (`data`, `die`, `stack`, `values`,
    *   `TestDef.index`, `dieConfig.origin`, `waferConfig.flat`,
@@ -528,7 +555,8 @@ export interface WaferWarning {
   code: 'partial-coverage' | 'geometry-conflict' | 'non-standard-diameter'
       | 'diameter-exceeds-die-extent' | 'test-count-capped'
       | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected'
-      | 'bin-colors-shared' | 'pass-bins-mixed' | 'ring-count-mixed' | 'input-field-removed' | (string & {});
+      | 'bin-colors-shared' | 'pass-bins-mixed' | 'ring-count-mixed' | 'input-field-removed'
+      | 'input-values-not-numbers' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -688,6 +716,7 @@ interface Normalized {
   /** Correction to `ringCount`, joined into the result's warnings. */
   ringCountWarning: WaferWarning | undefined;
   removedFieldWarning: WaferWarning | undefined;
+  nonNumericWarning:  WaferWarning | undefined;
   standardDiameters: number[] | undefined;
   testDefs:     TestDef[] | undefined;
   hbinDefs:     BinDef[]  | undefined;
@@ -720,6 +749,71 @@ function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: 
  * test data. Neither looks broken, so every one found is reported. None is
  * honoured: this reports, it never translates.
  */
+/**
+ * Bins, test values and verdicts of the wrong type. CSV parsers hand every field
+ * over as text, and string x/y are caught (buildWaferMap throws), but a string
+ * bin or test value built a map that looked fine and was wrong: a bin of "1" is
+ * not pass bin 1, so every such die counted as a fail and yield read 0 %, and a
+ * test value of "0.5" is not a number to colour or analyse. Reported, not
+ * converted — the same rule as removed input names: the caller fixes the data.
+ * Bins are checked on every die. Test values and verdicts are checked on every die
+ * too, for the test numbers found on a sample of dies (the first 50 and every
+ * 100th): walking every die's own keys cost more than the rest of the build, and a
+ * parser that leaves a column as text does so for the whole column, so the sample
+ * always sees it.
+ */
+function nonNumericInputWarning(input: DieResult[] | WaferMapInput): WaferWarning | undefined {
+  const top = (Array.isArray(input) ? {} : input) as { results?: unknown; lotStack?: { results?: unknown } };
+  const stacked = Array.isArray(top.lotStack?.results) ? top.lotStack!.results as unknown[] : [];
+  const wafers = (Array.isArray(input) ? [input] : [top.results, ...stacked])
+    .filter((w): w is unknown[] => Array.isArray(w));
+  const counts = { hbin: 0, sbin: 0, testValues: 0, testPass: 0 };
+  let example: string | undefined;
+  const note = (field: keyof typeof counts, value: unknown) => {
+    counts[field]++;
+    example ??= `${field} ${JSON.stringify(value)}`;
+  };
+  type Row = { hbin?: unknown; sbin?: unknown; testValues?: Record<string, unknown>; testPass?: Record<string, unknown> };
+  for (const wafer of wafers) {
+    const valueKeys = new Set<string>();
+    const verdictKeys = new Set<string>();
+    for (let i = 0; i < wafer.length; i += i < 50 ? 1 : 100) {
+      const r = wafer[i] as Row | null;
+      if (r === null || typeof r !== 'object') continue;
+      if (r.testValues && typeof r.testValues === 'object') for (const k of Object.keys(r.testValues)) valueKeys.add(k);
+      if (r.testPass && typeof r.testPass === 'object') for (const k of Object.keys(r.testPass)) verdictKeys.add(k);
+    }
+    const vKeys = [...valueKeys];
+    const pKeys = [...verdictKeys];
+    for (const d of wafer) {
+      if (d === null || typeof d !== 'object') continue;
+      const r = d as Row;
+      if (r.hbin != null && typeof r.hbin !== 'number') note('hbin', r.hbin);
+      if (r.sbin != null && typeof r.sbin !== 'number') note('sbin', r.sbin);
+      const tv = r.testValues;
+      if (tv && typeof tv === 'object') {
+        for (let i = 0; i < vKeys.length; i++) { const v = tv[vKeys[i]]; if (v != null && typeof v !== 'number') note('testValues', v); }
+      }
+      const tp = r.testPass;
+      if (tp && typeof tp === 'object') {
+        for (let i = 0; i < pKeys.length; i++) { const v = tp[pKeys[i]]; if (v != null && typeof v !== 'boolean') note('testPass', v); }
+      }
+    }
+  }
+  const parts: string[] = [];
+  if (counts.hbin)       parts.push(`${counts.hbin} hard bin${counts.hbin === 1 ? '' : 's'}`);
+  if (counts.sbin)       parts.push(`${counts.sbin} soft bin${counts.sbin === 1 ? '' : 's'}`);
+  if (counts.testValues) parts.push(`${counts.testValues} test value${counts.testValues === 1 ? '' : 's'}`);
+  if (counts.testPass)   parts.push(`${counts.testPass} pass/fail verdict${counts.testPass === 1 ? '' : 's'}`);
+  if (!parts.length) return undefined;
+  const message = `buildWaferMap received ${parts.join(', ')} of the wrong type (for example ${example}). `
+    + 'Bins and test values must be numbers and verdicts true/false — a bin of "1" is not pass bin 1, so those dies '
+    + 'count as fails and yield is wrong, and a test value given as text is not plotted or analysed correctly. '
+    + 'Convert them with Number() (and verdicts to booleans) and rebuild.';
+  console.warn(`[wafermap] ${message}`);
+  return { code: 'input-values-not-numbers', message, severity: 'error' };
+}
+
 function removedInputWarning(input: DieResult[] | WaferMapInput): WaferWarning | undefined {
   const set = (o: unknown, key: string): boolean =>
     o !== null && typeof o === 'object' && (o as Record<string, unknown>)[key] !== undefined;
@@ -750,6 +844,41 @@ function removedInputWarning(input: DieResult[] | WaferMapInput): WaferWarning |
   return { code: 'input-field-removed', message, severity: 'error' };
 }
 
+/**
+ * Turn a layout request into ordinary results: one data-less result per die site
+ * lying fully on the wafer, anchored so site (0, 0) is the wafer centre. Every
+ * later step — orientation, axis flips, edge exclusion, reticles, the view — is
+ * then the same code a map built from test data runs, and the invariant that a
+ * result die is always fully on the wafer holds by construction.
+ */
+function expandLayout(input: WaferMapInput): WaferMapInput {
+  if ((input as { results?: unknown }).results !== undefined || (input as { lotStack?: unknown }).lotStack !== undefined) {
+    throw new Error('buildWaferMap: pass `layout`, `results` or `lotStack` — only one.');
+  }
+  const diameter = input.waferConfig?.diameter;
+  const width = input.dieConfig?.width;
+  const height = input.dieConfig?.height;
+  if (!(diameter! > 0 && width! > 0 && height! > 0)) {
+    throw new Error('buildWaferMap: `layout` needs waferConfig.diameter and dieConfig.width and height, all positive.');
+  }
+  // Clipped in the wafer's own frame, before orientation — the frame the notch is
+  // defined in. Orientation and axis flips are applied to these positions later,
+  // exactly as for prober data, so a site is expressed in the caller's axis
+  // directions here: a site physically above centre is y = -1 when y counts down.
+  const wafer = createWafer({ diameter: diameter!, notch: input.waferConfig?.notch, orientation: 0 });
+  const sites = clipDiesToWafer(generateDies(wafer, { width: width!, height: height! }), wafer, { width: width!, height: height! })
+    .filter(die => !die.partial);
+  const { flipX, flipY } = resolveAxisFlips(input.dieConfig, { type: 'center' });
+  const { layout: _layout, ...rest } = input as WaferMapInputLayout;
+  return {
+    ...rest,
+    results: sites.map(site => ({ x: flipX ? -site.x! : site.x!, y: flipY ? -site.y! : site.y! })),
+    waferConfig: { ...input.waferConfig, center: { x: 0, y: 0 } },
+    // The layout's own coordinates are centre-origin; axis directions carry over.
+    dieConfig: { ...input.dieConfig, coordinateOrigin: { type: 'center' } },
+  };
+}
+
 function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
   if (!Array.isArray(input) && 'results' in input && input.results !== undefined && 'lotStack' in input && input.lotStack !== undefined) {
     throw new Error('buildWaferMap: pass either `results` or `lotStack`, not both.');
@@ -766,6 +895,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       ringCount:        4,
       ringCountWarning: undefined,
       removedFieldWarning: removedInputWarning(input),
+      nonNumericWarning:  nonNumericInputWarning(input),
       standardDiameters: undefined,
       testDefs:         undefined,
       hbinDefs:         undefined,
@@ -784,6 +914,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     passBins:         input.passBins ?? [1],
     ...resolveRingCount(input.ringCount),
     removedFieldWarning: removedInputWarning(input),
+    nonNumericWarning:  nonNumericInputWarning(input),
     standardDiameters: input.standardDiameters,
     // An empty array from a HOST means "I described no tests", which is the same
     // statement as not passing the field — so it is normalised to `undefined`
@@ -1505,7 +1636,7 @@ export function buildWaferMap(
   input: DieResult[] | WaferMapInput,
   options?: WaferMapOptions,
 ): WaferMapResult {
-  const norm = normalizeInput(input);
+  const norm = normalizeInput(!Array.isArray(input) && input.layout ? expandLayout(input) : input);
   const { debug: _debug, ...viewOpts } = options ?? {};
 
   const rawResults = norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts, norm.testDefs) : norm.results;
@@ -1606,7 +1737,7 @@ export function buildWaferMap(
 
     return {
       wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
-      warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...buildWarnings(advisories, inference), ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
+      warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
       plotMode: view.plotMode,
       metadata: view.metadata,
       isLotStack: false,
@@ -1896,7 +2027,7 @@ export function buildWaferMap(
 
   return {
     wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units, inference,
-    warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
+    warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
     plotMode: view.plotMode,
     metadata: view.metadata,
     isLotStack: norm.lotStackOpts !== undefined,

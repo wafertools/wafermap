@@ -473,6 +473,17 @@ export function drawMapCanvas(
   // ── Draw rectangles ────────────────────────────────────────────────────────
   ctx.save();
   ctx.setTransform(ppm * dpr, 0, 0, -ppm * dpr, originX * dpr, originY * dpr);
+  // Map-space sizes for strokes and markers. The transform above maps 1 mm to
+  // ppm·dpr device pixels, so `n * cssPx` draws n CSS pixels: the same physical
+  // size at every display scale, just sharper as dpr rises — the canvas
+  // convention, and what the colorbar's screen-space limit markers already do.
+  // Dividing by ppm·dpr instead pinned sizes to DEVICE pixels, so every line
+  // and marker halved on a 2× display and thirded on a 3× one.
+  const cssPx    = 1 / ppm;
+  // The one deliberate exception: the die outline is a hairline separator, one
+  // device pixel wide at most. In CSS pixels it would cover a larger share of
+  // each small die as dpr rises and grey out a dense map on a high-DPI screen.
+  const devicePx = 1 / (ppm * dpr);
 
   // Batch rectangles by fill color — one beginPath/fill per unique color instead of per die.
   // Uses ctx.rect() on pre-parsed ViewRect coords, eliminating svgPathToCanvas string parsing.
@@ -492,7 +503,7 @@ export function drawMapCanvas(
     }
     // Single stroke pass over all rects (constant color and width for all dies).
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-    ctx.lineWidth = 0.5 / (ppm * dpr);
+    ctx.lineWidth = 0.5 * devicePx;
     ctx.beginPath();
     for (const r of view.rectangles) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
     ctx.stroke();
@@ -503,8 +514,8 @@ export function drawMapCanvas(
     // carries the meaning, so it survives greyscale and colour-vision deficiency.
     // The glyph colour is chosen per die for maximum contrast against that die's
     // own gradient fill (black or white), with an opposite-colour halo so it reads
-    // on any scheme. Sizes are in data units divided by (ppm * dpr) so they hold a
-    // constant on-screen size at any zoom.
+    // on any scheme. Sizes are in CSS pixels (`cssPx`) so they hold a constant
+    // on-screen size at any zoom and any display scale.
     // Failing-die hatch (bin modes, opt-in via `markFailingDies`). A second,
     // non-colour channel for pass/fail so the map does not depend on hue alone.
     //
@@ -534,10 +545,10 @@ export function drawMapCanvas(
         for (const [glyph, group] of byGlyph) {
           ctx.strokeStyle = glyph;
           ctx.globalAlpha = 0.55;
-          ctx.lineWidth = Math.max(0.6 / (ppm * dpr), Math.min(group[0].width, group[0].height) * 0.10);
+          ctx.lineWidth = Math.max(0.6 * cssPx, Math.min(group[0].width, group[0].height) * 0.10);
           for (const r of group) {
             const hw = r.width / 2, hh = r.height / 2;
-            const step = Math.max(1.6 / (ppm * dpr), Math.min(r.width, r.height) / 3);
+            const step = Math.max(1.6 * cssPx, Math.min(r.width, r.height) / 3);
             ctx.save();
             ctx.beginPath();
             ctx.rect(r.x - hw, r.y - hh, r.width, r.height);
@@ -570,7 +581,7 @@ export function drawMapCanvas(
         if (!group) { group = []; buckets.set(key, group); }
         group.push(r);
       }
-      const haloW = 2.5 / (ppm * dpr);
+      const haloW = 2.5 * cssPx;
       ctx.lineJoin = 'round';
       for (const [key, group] of buckets) {
         const [mark, glyph] = key.split('|');
@@ -578,7 +589,7 @@ export function drawMapCanvas(
         const dir = mark === 'failHigh' ? 1 : -1; // up for fail-high, down for fail-low
         // Triangle half-size: proportional to die, floored so it stays visible zoomed out.
         const minDie = Math.min(group[0].width, group[0].height);
-        const tri = Math.max(2.5 / (ppm * dpr), minDie * 0.30);
+        const tri = Math.max(2.5 * cssPx, minDie * 0.30);
         // Halo pass (opposite colour), then fill pass — both over one batched path.
         ctx.beginPath();
         for (const r of group) triPath(ctx, r.x, r.y, tri, dir);
@@ -613,14 +624,14 @@ export function drawMapCanvas(
     // in the else branch (wafer boundary, probe path).
     if (overlay.kind === 'ring-boundary' || overlay.kind === 'quadrant-boundary' || overlay.kind === 'reticle') {
       ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-      ctx.lineWidth   = 3 / (ppm * dpr);
+      ctx.lineWidth   = 3 * cssPx;
       ctx.stroke();
       ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineWidth   = 1 / (ppm * dpr);
+      ctx.lineWidth   = 1 * cssPx;
       ctx.stroke();
     } else {
       ctx.strokeStyle = overlay.lineColor;
-      ctx.lineWidth   = overlay.lineWidth / (ppm * dpr);
+      ctx.lineWidth   = overlay.lineWidth * cssPx;
       ctx.stroke();
     }
   }

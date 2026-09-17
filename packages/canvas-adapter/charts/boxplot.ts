@@ -25,6 +25,7 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
 import { QUANTITY } from './palette.js';
 import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { escHtml } from '../../core/utils.js';
 
 const BOX_ROW_HEIGHT = 24;
 const BOX_ROW_GAP = 5;
@@ -539,9 +540,9 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       if (row >= 0 && data[row].count > 0) {
         const d = data[row];
         const clickHint = isGroupOverview
-          ? `<br><em>click to see this ${groupLabelText} by wafer</em>`
-          : (leafClickable(row) ? `<br><em>click to ${openTooltipLabel}</em>` : '');
-        tooltip.innerHTML = `<strong>${d.label}</strong> (${d.count} dies)<br>max ${fmt(d.max)}<br>q3 ${fmt(d.q3)}<br>median ${fmt(d.median)}<br>q1 ${fmt(d.q1)}<br>min ${fmt(d.min)}${clickHint}`;
+          ? `<br><em>click to see this ${escHtml(groupLabelText)} by wafer</em>`
+          : (leafClickable(row) ? `<br><em>click to ${escHtml(openTooltipLabel)}</em>` : '');
+        tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (${d.count} dies)<br>max ${escHtml(fmt(d.max))}<br>q3 ${escHtml(fmt(d.q3))}<br>median ${escHtml(fmt(d.median))}<br>q1 ${escHtml(fmt(d.q1))}<br>min ${escHtml(fmt(d.min))}${clickHint}`;
         tooltip.style.display = 'block';
         positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else {

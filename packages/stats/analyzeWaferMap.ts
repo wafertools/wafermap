@@ -1,6 +1,8 @@
 import type { Die } from '../core/dies.js';
+import { normalizeInput } from './normalizeInput.js';
+import { computeCapability, computeTestFlagYield, computeRegionYield } from './summaryFigures.js';
 import { isYieldEligibleDie, getDieKey, isPositionedDie } from '../core/dies.js';
-import { buildWaferMap, getTestPassStatus, isParametricTest, type WaferMapResult } from '../renderer/buildWaferMap.js';
+import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 import type {
   AnalyzeWaferMapInput,
@@ -15,7 +17,7 @@ import {
   sectorCompassNames, areQuadrantsAdjacent, parseRegionKey,
   type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
-import { classifyPattern } from './patternClassification.js';
+import { classifyPattern, type PatternClassification } from './patternClassification.js';
 import { normalCdf } from './math.js';
 import { quantile } from './math.js';
 import { mean, clamp01 } from '../core/utils.js';
@@ -179,9 +181,6 @@ function adaptOptions(base: ResolvedOptions, dieCount: number): ResolvedOptions 
   return adapted;
 }
 
-function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
-  return 'wafer' in input && 'dies' in input && 'view' in input ? input : buildWaferMap(input);
-}
 
 function isEligibleDie(die: Die): die is EligibleDie {
   if (!isYieldEligibleDie(die)) return false;
@@ -1742,10 +1741,14 @@ export function analyzeWaferMap(
   findings.length = 0;
   findings.push(...mergedFindings);
 
+  // Kept for stats.spatialPattern, for every wafer the classifier could measure —
+  // including 'random' and 'none', which raise no finding below.
+  let spatialPattern: PatternClassification | undefined;
   if (hasHbinData) {
     const patternResult = classifyPattern(positionedEligibleDies, result.wafer, {
       passBins:  resolved.passBins,
       ringCount: resolved.ringCount });
+    spatialPattern = patternResult ?? undefined;
     if (patternResult !== null && patternResult.pattern !== 'random' && patternResult.pattern !== 'none') {
       const LABEL_MAP: Record<string, string> = {
         'center':     'Center cluster',
@@ -1853,6 +1856,7 @@ export function analyzeWaferMap(
   if (specYield) stats.testSpecYield = specYield;
   const functionalYield = computeFunctionalYield(result.dies, result.testDefs);
   if (functionalYield) stats.functionalYield = functionalYield;
+  if (spatialPattern) stats.spatialPattern = spatialPattern;
   // Per-test descriptive stats (quartiles for box plots). Produced when the full
   // test-value analysis ran (reusing its discovered test numbers) OR when the
   // caller asked for the cheap computePerTestStats pass on its own. This may push
@@ -1865,7 +1869,14 @@ export function analyzeWaferMap(
   if (activeTestNumbers?.length) {
     const perTestStats = computePerTestStats(result.dies, activeTestNumbers, result.testDefs, resolved.minimumSampleSize);
     if (perTestStats) stats.perTestStats = perTestStats;
+    // Same tests and same gate as perTestStats: both scan every value of every test.
+    const capability = computeCapability([{ dies: result.dies }], result.testDefs, activeTestNumbers);
+    if (capability) stats.capability = capability;
   }
+  Object.assign(stats, computeTestFlagYield(result.dies, result.testDefs));
+  const regionYield = computeRegionYield(
+    [{ dies: result.dies, wafer: result.wafer, passBins: resolved.passBins, ringCount: resolved.ringCount }]);
+  if (regionYield) stats.regionYield = regionYield;
   // Assign warnings last so cap warnings raised by the cheap perTestStats path
   // above are not lost (they are pushed after the earlier assignment point).
   if (warnings.length > 0) stats.warnings = warnings;

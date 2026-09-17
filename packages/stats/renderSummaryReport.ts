@@ -1,14 +1,15 @@
 import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
-import { binPassSets, binPassSetsByWafer, type BinPassGroup } from '../renderer/binColors.js';
+import { binPassSets, binPassSetsByWafer, mergeBinDefs, type BinPassGroup } from '../renderer/binColors.js';
 import { itemPassBins, passBinsLabel } from '../core/passBins.js';
-import { isParametricTest, type BinDef, type TestDef, type YieldSummary } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
 import { openHtmlReport } from './renderFindingsReport.js';
 import { analyzeWaferLot } from './analyzeWaferLot.js';
-import { computeFunctionalYield } from './analyzeWaferMap.js';
+import { computeFunctionalYield, analyzeWaferMap } from './analyzeWaferMap.js';
+import { mergeTestDefs } from './mergeTestDefs.js';
 import { sortBinsForDisplay } from './binPareto.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE } from './facets.js';
 import { visibleFindings } from './filterFindings.js';
@@ -22,13 +23,14 @@ import {
   formatFindingDelta,
   formatFindingCoverage,
   formatFindingTooltip,
-  escHtml,
   renderMetadataSection,
   renderMetricGrid,
   renderSection,
   renderSeverityBadge,
   renderTable,
-  reportStyles } from './reportHtml.js';
+  reportStyles,
+} from './reportHtml.js';
+import { escHtml } from '../core/utils.js';
 
 export interface SummaryReportParams {
   wafer:        Wafer;
@@ -331,6 +333,14 @@ export interface LotSummaryReportParams {
     /** Reused directly as `analyzeWaferLot`'s `perWaferSummaries` — the expensive
      *  per-wafer pass (`analyzeWaferMap`) is never re-run here. */
     statsSummary?: StatsSummary;
+    /**
+     * @internal The built map these pieces came from, analysed in place of them.
+     * The pieces alone are not an analysable map: `analyzeWaferLot` took them for
+     * a fresh input with no results and analysed an EMPTY wafer, so a report for
+     * wafers without a precomputed summary had no findings, no yields and lost
+     * its lot title. `renderLotReportHtml` always sets it.
+     */
+    source?: WaferMapResult;
   }>;
   hbinDefs?:  BinDef[];
   sbinDefs?:  BinDef[];
@@ -644,7 +654,7 @@ function renderLotGroupSections(
   ringCount: number,
   analyzeOptions: AnalyzeWaferMapOptions | undefined,
 ): { lotSummary: LotStatsSummary; sections: string } {
-  const lotSummary = analyzeWaferLot(items, {
+  const lotSummary = analyzeWaferLot(items.map((it) => it.source ?? (it as unknown as WaferMapResult)), {
     // Index-aligned; analyzeWaferLot falls back to computing analyzeWaferMap
     // per-index when an entry is missing (its own `perWaferSummaries?.[i] ??
     // analyzeWaferMap(...)` logic), so a partial or absent array is safe —
@@ -874,3 +884,78 @@ ${sectionsHtml}
 }
 
 export { openHtmlReport };
+
+// ── Report builders from built maps ───────────────────────────────────────────
+// The supported way to produce a report without the UI — a nightly lot report,
+// an archive of each wafer's, an email. They take built maps, which always carry
+// their own pass bins and ring count, so a report cannot silently judge by bin 1
+// or draw four rings for a map built with six. The library's own report buttons
+// use these too.
+
+/** A built map as the report builders read it. A `WaferMapResult` is one. */
+export type ReportMap = Pick<WaferMapResult, 'wafer' | 'dies' | 'passBins' | 'ringCount'>
+  & Partial<Pick<WaferMapResult, 'hbinDefs' | 'sbinDefs' | 'testDefs'>>
+  & {
+    /** The name to show for this wafer; defaults to its wafer ID. */
+    label?: string;
+    /** This wafer's analysis, when already run — reused, never recomputed. */
+    statsSummary?: StatsSummary;
+  };
+
+/**
+ * The wafer summary report for one built map, as a standalone HTML document.
+ * Analyses the map with `analyzeWaferMap` when `summary` is not given and the
+ * map is a built `WaferMapResult`; a map assembled from pieces is not analysable
+ * (the analysis would take it for a fresh input with no results), so its report
+ * has no findings section rather than findings of an empty wafer.
+ */
+export function renderWaferReportHtml(
+  map: ReportMap & { yield: YieldSummary; dataCoverage: SummaryReportParams['dataCoverage'] },
+  summary?: StatsSummary,
+  options: { title?: string } = {},
+): string {
+  return renderSummaryReportHtml({
+    wafer:        map.wafer,
+    dies:         map.dies,
+    yieldSummary: map.yield,
+    dataCoverage: map.dataCoverage,
+    hbinDefs:     map.hbinDefs,
+    sbinDefs:     map.sbinDefs,
+    testDefs:     map.testDefs,
+    statsSummary: summary ?? map.statsSummary ?? ('view' in map ? analyzeWaferMap(map as unknown as WaferMapResult) : undefined),
+    passBins:     [...map.passBins],
+    ringCount:    map.ringCount,
+  }, options);
+}
+
+/**
+ * The lot summary report for several built maps, as a standalone HTML document.
+ * Wafers are grouped by lot identity inside; bin and test definitions are merged
+ * across the maps; each wafer is judged by its own pass bins. Lot-level ring
+ * figures use the first map's ring count, as the gallery does.
+ */
+export function renderLotReportHtml(
+  maps: readonly ReportMap[],
+  options: { title?: string; analyzeOptions?: AnalyzeWaferMapOptions } = {},
+): string {
+  const hbinDefs = mergeBinDefs(maps.map(m => m.hbinDefs));
+  const sbinDefs = mergeBinDefs(maps.map(m => m.sbinDefs));
+  const testDefs = maps.some(m => m.testDefs?.length) ? mergeTestDefs([...maps]).defs : undefined;
+  return renderLotSummaryReportHtml({
+    items: maps.map((m, i) => ({
+      label:        waferDisplayLabel(m, i),
+      wafer:        m.wafer,
+      dies:         m.dies,
+      passBins:     [...m.passBins],
+      statsSummary: m.statsSummary,
+      // A built map carries `view`; a hand-assembled ReportMap does not, and is
+      // then analysed from its pieces as before.
+      source:       'view' in m ? (m as unknown as WaferMapResult) : undefined,
+    })),
+    hbinDefs: hbinDefs.length ? hbinDefs : undefined,
+    sbinDefs: sbinDefs.length ? sbinDefs : undefined,
+    testDefs,
+    ringCount: maps[0]?.ringCount,
+    analyzeOptions: options.analyzeOptions,
+  }, { title: options.title });
+}

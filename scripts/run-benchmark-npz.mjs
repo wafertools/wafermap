@@ -9,7 +9,8 @@ import { buildWaferMap }  from '../dist/index.js';
 import { classifyPattern } from '../dist/packages/stats/patternClassification.js';
 
 const NPZ_PATH = process.argv[2] ?? './tests/fixtures/wm811k-benchmark.npz';
-const VENV_PY  = './.venv/bin/python3';
+// Any Python with numpy. The repo's .venv is the docs site's (Zensical) and has none.
+const VENV_PY = process.env.PYTHON ?? 'python3';
 
 const LABEL_MAP = {
   'Center':    'center',  'Donut':     'donut',
@@ -70,7 +71,7 @@ await new Promise((resolve, reject) => {
       });
     } catch { return; }
 
-    const c   = classifyPattern(result.dies, result.wafer, { passBins: [1], ringCount: 4 });
+    const c   = classifyPattern(result.dies, result.wafer, { passBins: result.passBins, ringCount: result.ringCount });
     const got = c?.pattern ?? 'none';
     if (confusion[expected]?.[got] !== undefined) confusion[expected][got]++;
     total++;

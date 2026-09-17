@@ -66,6 +66,7 @@ export interface GroupedBarPlotOptions {
   /** Sub-bar colour by group index. Defaults to the CVD-safe categorical ramp. */
   colorOf?: (groupIndex: number) => string;
   /** Tooltip HTML for a hovered sub-bar. */
+  /** HTML for the hover tooltip. Escape every label with `escHtml` (core/utils.ts): they come from input files. */
   tooltipHtml: (rowIndex: number, groupIndex: number) => string;
 }
 

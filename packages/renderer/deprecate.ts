@@ -26,6 +26,18 @@ export const DEPRECATED_EXPORTS = new Map<string, 'function' | 'value'>();
 const noticed = new Set<string>();
 
 /**
+ * @internal Log `message` once per `key` for the life of the page — the one
+ * copy of the once-only rule, for export deprecations (`deprecated`) and for
+ * notices about an option whose behaviour is changing, which is not an export
+ * and so is not registered in DEPRECATED_EXPORTS or held to its removal.
+ */
+export function noticeOnce(key: string, message: string): void {
+  if (noticed.has(key)) return;
+  noticed.add(key);
+  console.warn(`[wafermap] ${message}`);
+}
+
+/**
  * @internal Wrap `fn` so its first call logs one notice naming `name` and `advice`.
  * The wrapper has exactly `fn`'s type — generics and overloads included — so a
  * deprecated export's signature does not change until it is removed.
@@ -34,10 +46,7 @@ export function deprecated<F extends (...args: never[]) => unknown>(fn: F, name:
   DEPRECATED_EXPORTS.set(name, 'function');
   const call = fn as unknown as (...args: unknown[]) => unknown;
   return ((...args: unknown[]) => {
-    if (!noticed.has(name)) {
-      noticed.add(name);
-      console.warn(`[wafermap] ${name} is deprecated and will be removed in ${DEPRECATED_REMOVAL_VERSION}. ${advice}`);
-    }
+    noticeOnce(name, `${name} is deprecated and will be removed in ${DEPRECATED_REMOVAL_VERSION}. ${advice}`);
     return call(...args);
   }) as unknown as F;
 }

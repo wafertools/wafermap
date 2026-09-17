@@ -147,6 +147,7 @@ export const SHORT_LABEL: Record<string, string> = {
   'pass-bins-mixed':               'Pass bins differ by wafer',
   'ring-count-mixed':              'Ring counts differ by wafer',
   'input-field-removed':           'Removed input name ignored',
+  'input-values-not-numbers':      'Bins or test values are text',
 };
 
 /** Falls back to the message's first sentence when a code has no short form —

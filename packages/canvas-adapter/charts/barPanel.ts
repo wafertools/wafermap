@@ -4,6 +4,7 @@
 import type { ChartDatum } from '../../stats/yield.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { cardShell, formatValue, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeSegmented, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { escHtml } from '../../core/utils.js';
 
 const ROW_HEIGHT = 24;
 const ROW_GAP = 5;
@@ -300,9 +301,9 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
     if (row >= 0) {
       const d = data[row];
       const hintLine = isGroupRow
-        ? `<br><em>click to see this ${drill!.groupLabelText} by wafer</em>`
+        ? `<br><em>click to see this ${escHtml(drill!.groupLabelText)} by wafer</em>`
         : (panel.onOpen ? '<br><em>click to open this wafer</em>' : '');
-      tooltip.innerHTML = `<strong>${d.label}</strong><br>${valueTextOf(d)}${hintLine}`;
+      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong><br>${escHtml(valueTextOf(d))}${hintLine}`;
       tooltip.style.display = 'block';
       positionChartTooltip(tooltip, card, e.clientX, e.clientY);
     } else { tooltip.style.display = 'none'; }

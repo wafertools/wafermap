@@ -29,6 +29,7 @@ import {
   cardShell, makeTooltip, makeSegmented, renderEmptyState, type SaveImageHandler,
 } from './chartShell.js';
 import { renderGroupedBarPlot, type GroupedBarPlotHandle } from './groupedBarPlot.js';
+import { escHtml } from '../../core/utils.js';
 
 const CLUSTER_LABEL_WIDTH = 100;
 const MAX_VISIBLE_TESTS = 8;
@@ -164,16 +165,16 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
       tooltipHtml: (ri, gi) => {
         const row = rows[ri];
         const value = row.byGroup[gi];
-        const who = grouped ? ` · ${data.groups[gi]}` : '';
+        const who = grouped ? ` · ${escHtml(String(data.groups[gi]))}` : '';
         if (value.passRatePercent === null) {
-          return `<strong>${row.label}</strong>${who}<br>no dies with a verdict`;
+          return `<strong>${escHtml(row.label)}</strong>${who}<br>no dies with a verdict`;
         }
         // Fail direction is parametric-only and belongs on the specific test's
         // own row: "failing high" and "failing low" are different process stories.
         const dir = (kind === 'spec' && !grouped && (row.failLowDies || row.failHighDies))
           ? `<br>${row.failLowDies ?? 0} below LSL · ${row.failHighDies ?? 0} above USL`
           : '';
-        return `<strong>${row.label}</strong>${who}<br>`
+        return `<strong>${escHtml(row.label)}</strong>${who}<br>`
           + `${value.passRatePercent.toFixed(1)}% pass<br>`
           + `${value.passDies.toLocaleString()} pass · ${value.failDies.toLocaleString()} fail · n = ${value.totalDies.toLocaleString()}`
           + dir;

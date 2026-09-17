@@ -4,11 +4,11 @@
 
 ---
 
-## Map renders as an empty grey circle
+## Bins or test values from a CSV are strings
 
-**Cause:** Die coordinates from a CSV parser are strings, not numbers. The library matches data to the die grid by integer position — string `"5"` does not match integer `5`, so no dies get filled.
+**Cause:** a CSV parser gives every field as a string. String **coordinates** make `buildWaferMap` throw (`x and y must be numbers, received strings`). String **bins and test values** are not converted: a bin of `"1"` is not the pass bin `1`, so those dies read as fails and yield is wrong, and a test value of `"0.5"` is not a number to colour or analyse. Since 0.30.1 the map reports this as an `input-values-not-numbers` warning — a red ⛔ in the toolbar and an entry in `result.warnings` — counting each kind.
 
-**Fix:** Cast every numeric field with `+` or `Number()` before passing to `buildWaferMap`:
+**Fix:** cast every numeric field with `+` or `Number()` before passing it to `buildWaferMap`:
 
 ```ts
 buildWaferMap({
@@ -21,7 +21,7 @@ buildWaferMap({
 });
 ```
 
-**How to confirm:** check `result.dataCoverage.filledDies`. If it is `0` with non-empty input, coordinates are not matching.
+**How to confirm:** look for `input-values-not-numbers` in `result.warnings`, or check `typeof result.dies[0].hbin` — it should be `'number'`.
 
 ---
 
@@ -226,6 +226,14 @@ Use a dynamic import with `ssr: false`, or guard with `typeof window !== 'undefi
 **How to confirm:** in DevTools, find the tooltip/menu/modal element (search for `wmap-overlay-box` or the tooltip's inline `position: fixed` style) and check where it sits in the DOM — if it's a child of `document.body` while your own modal is a native `<dialog>` elsewhere in the tree, you're on a wmap version predating this fix.
 
 See also: [API Reference §5.4, "Overlay z-index"](api.md#54-renderoptions) for the full stacking model.
+
+---
+
+## A bin or test name shows HTML tags
+
+**Cause:** since 0.30.1, names from your data — test and bin names, units, wafer labels, metadata values — are shown as text in every tooltip, never interpreted as HTML. A file with a malicious test name could otherwise run script when someone hovered a die. A name containing markup, such as `<b>Leakage</b>`, now shows the tags literally.
+
+**Fix:** put plain text in names. Styling belongs to the map, not the data.
 
 ---
 

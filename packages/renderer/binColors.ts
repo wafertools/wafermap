@@ -1,6 +1,6 @@
 import type { Die } from '../core/dies.js';
 import { diePassStatus } from '../core/dies.js';
-import { INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
+import { INPUT_DEFAULT_PASS_BINS, itemPassBins } from '../core/passBins.js';
 import type { BinDef, WaferWarning } from './buildWaferMap.js';
 import { getBinColorScheme, type BinColorScheme } from './colorSchemes.js';
 
@@ -84,6 +84,68 @@ export interface BinColorOptions {
  */
 export function resolveBinColors(dies: Iterable<Die>, options: BinColorOptions = {}): BinColors {
   return resolveBinColorsByWafer([{ dies, passBins: options.passBins }], options).colors;
+}
+
+/** The inputs a built map carries for its bin colours. A `WaferMapResult` is one. */
+export interface BinColorSource {
+  dies: Iterable<Die>;
+  /** The pass bins the map was built with (`WaferMapResult.passBins`). */
+  passBins?: readonly number[];
+  hbinDefs?: readonly BinDef[];
+  sbinDefs?: readonly BinDef[];
+}
+
+/** Display choices for `binColorsForMaps` — the palette and whether defined colours win. */
+export interface MapBinColorOptions {
+  /** Registered bin palette name (`registerBinColorScheme`). Default `'default'`. */
+  binColorScheme?: string;
+  /** Honour `BinDef.color`. Default true. */
+  useDefinedBinColors?: boolean;
+}
+
+/**
+ * The bin colours for one or more built maps — exactly the colours
+ * `renderWaferMap` and `renderWaferGallery` draw them in, for a host surface of
+ * its own: a table swatch, a PDF, a chart in another library.
+ *
+ * Takes the maps rather than dies and a `passBins` list, so pass/fail cannot be
+ * judged by the wrong bins: each map's dies are judged by that map's own
+ * `passBins`, and bin definitions (with any `BinDef.color`) are merged across the
+ * maps, first definition of a bin winning — the gallery's own rule. For a live
+ * map with the user's palette choice, read `WaferMapController.getBinColors()` or
+ * `GalleryController.getBinColors()` instead.
+ */
+export function binColorsForMaps(
+  maps: BinColorSource | readonly BinColorSource[],
+  options: MapBinColorOptions = {},
+): BinColors {
+  return resolveBinColorsForMaps(Array.isArray(maps) ? maps : [maps as BinColorSource], options).colors;
+}
+
+/** @internal `binColorsForMaps` plus the hard bins that pass on some maps and fail on others. */
+export function resolveBinColorsForMaps(
+  maps: readonly BinColorSource[],
+  options: MapBinColorOptions = {},
+): { colors: BinColors; mixedHardBins: number[] } {
+  return resolveBinColorsByWafer(
+    maps.map(m => ({ dies: m.dies, passBins: itemPassBins(m) })),
+    { ...options, hbinDefs: mergeBinDefs(maps.map(m => m.hbinDefs)), sbinDefs: mergeBinDefs(maps.map(m => m.sbinDefs)) },
+  );
+}
+
+/**
+ * @internal Bin definitions merged across maps: one per bin, the first map's
+ * definition winning. The one rule for a multi-map legend, report or colouring.
+ */
+export function mergeBinDefs(lists: Iterable<readonly BinDef[] | undefined>): BinDef[] {
+  const seen = new Set<number>();
+  const out: BinDef[] = [];
+  for (const list of lists) for (const d of list ?? []) {
+    if (seen.has(d.bin)) continue;
+    seen.add(d.bin);
+    out.push(d);
+  }
+  return out;
 }
 
 /** One wafer's dies and the pass bins that wafer was built with. */

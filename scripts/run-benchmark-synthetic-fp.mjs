@@ -1,10 +1,10 @@
 /**
- * Synthetic false positive benchmark — minimumRegionExcessFails sweep.
+ * Synthetic false positive benchmark.
  *
  * Generates wafers with purely random (i.i.d. Bernoulli) die failures at
- * varying yield levels and grid sizes representative of the WM-811K dataset.
- * Sweeps minimumRegionExcessFails to find a value that suppresses the 10%
- * failure-rate FP spike without hurting the rescue rate on real patterns.
+ * varying yield levels and grid sizes representative of the WM-811K dataset,
+ * and measures how often regional analysis flags a pattern that is not there.
+ * Also reports the WM-811K rescue rate alongside it.
  *
  * Usage: node scripts/run-benchmark-synthetic-fp.mjs
  */
@@ -19,10 +19,12 @@ const FAIL_RATES  = [0.02, 0.05, 0.10, 0.20, 0.40, 0.60];
 const REPLICATES  = 500;
 const DIAMETER    = 300;
 const NPZ_PATH    = './tests/fixtures/wm811k-benchmark.npz';
-const VENV_PY     = './.venv/bin/python3';
+// Any Python with numpy. The repo's .venv is the docs site's (Zensical) and has none.
+const VENV_PY = process.env.PYTHON ?? 'python3';
 
-// Candidate excess-fail gate values to sweep
-const GATE_VALUES = [0, 5, 10, 15, 20, 30];
+// A single run. This used to sweep `minimumRegionExcessFails`, an option the library never
+// had, so every value measured the same thing; the loop is kept so the report format holds.
+const GATE_VALUES = [0];
 
 const REGIONAL_FAMILIES = new Set(['ring', 'quadrant', 'sector', 'edge-arc', 'cluster']);
 
@@ -133,7 +135,7 @@ for (const gate of GATE_VALUES) {
         cell.total++;
         let summary;
         try {
-          summary = analyzeWaferMap(result, { passBins: [1], minimumRegionExcessFails: gate });
+          summary = analyzeWaferMap(result);
         } catch { continue; }
         if (summary.findings.some(f => REGIONAL_FAMILIES.has(f.comparison.family))) cell.regionalFP++;
         processed++;
@@ -186,14 +188,14 @@ for (const gate of GATE_VALUES) {
       } catch { return; }
 
       r.realPatternTotal++;
-      const c = classifyPattern(result.dies, result.wafer, { passBins: [1], ringCount: 4 });
+      const c = classifyPattern(result.dies, result.wafer, { passBins: result.passBins, ringCount: result.ringCount });
       const classifierFired = (c?.pattern ?? 'none') !== 'none' && (c?.pattern ?? 'none') !== 'random';
       if (classifierFired) { r.classifierDetected++; return; }
 
       r.missTotal++;
       let summary;
       try {
-        summary = analyzeWaferMap(result, { passBins: [1], minimumRegionExcessFails: gate });
+        summary = analyzeWaferMap(result);
       } catch { return; }
 
       const families = summary.findings.map(f => f.comparison.family).filter(f => REGIONAL_FAMILIES.has(f));

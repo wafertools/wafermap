@@ -1,5 +1,5 @@
 import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
-import { buildView, buildHoverText, findTestDef, resolveTestNumber } from '../renderer/buildView.js';
+import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
@@ -8,7 +8,9 @@ import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult }
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
-import { waferDisplayLabel } from '../core/waferLabel.js';
+import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
+import { metadataDisplayValue } from '../core/metadata.js';
+import { withExportContext, noticeDownloadFilenameChange } from './exportName.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent } from './summaryPanel.js';
@@ -253,14 +255,21 @@ export interface RenderOptions extends ForwardedDrawOptions {
   showIdentity?: boolean;
   /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
-  /** Filename for the PNG download (without extension). Default `'wafermap'`. */
+  /**
+   * Name for the map's PNG download, without extension. When omitted, the PNG
+   * is named for its lot, wafer and map title (`LOT123_W05_hard-bin.png`); CSV
+   * exports are always named that way. See docs/api.md §5.4.5.
+   *
+   * **Changes in 0.31.0:** this becomes a prefix for every file the map saves,
+   * with the lot, wafer and content appended. Passing it logs a one-time notice.
+   */
   downloadFilename?: string;
   /**
    * Host hook for persisting the rendered PNG. When provided, the toolbar's save
    * action calls `onSaveImage(blob, suggestedName)` instead of triggering a
    * browser `<a download>` — letting embedded hosts (Tauri, Electron, WebView2)
    * route the image through a native save dialog. `suggestedName` includes the
-   * `.png` extension and is derived from `downloadFilename`. When omitted, the
+   * `.png` extension and is the generated name (see `downloadFilename`). When omitted, the
    * default browser download behaviour is unchanged.
    */
   onSaveImage?: SaveImageHandler;
@@ -388,6 +397,19 @@ export interface WaferMapController {
   /** Replace the current stats summary used by the built-in Summary panel. */
   setStatsSummary(summary: StatsSummary | undefined): void;
   /**
+   * Close the Summary panel if it is open; no-op if it is closed or the map has
+   * none. For a host that needs the map's full width back — loading a new file,
+   * opening its own dialog, moving to a narrower layout. The user reopens it from
+   * the toolbar's Summary button.
+   */
+  closeSummaryPanel(): void;
+  /**
+   * The bin colours this map draws, with the palette currently chosen — for a
+   * host surface of its own (a table swatch, an export). Inside a gallery these
+   * are the gallery-wide colours. Hard and soft bins are separate maps.
+   */
+  getBinColors(): BinColors;
+  /**
    * Opens the built-in end-user guide window — the same action the help
    * toolbar button performs, but callable directly. Works regardless of
    * `showHelpButton`, so a host that
@@ -501,6 +523,8 @@ export interface CardController extends WaferMapController {
   setViewControlsVisible(visible: boolean): void;
   /** Show or hide the expand toolbar button. */
   setExpandVisible(visible: boolean): void;
+  /** The map's title as a file-name content part — the gallery names its composite PNG by it. */
+  getExportTitle(): string;
 }
 
 /** @internal The public view of a card's options: everything but the gallery's shared state. */
@@ -536,6 +560,33 @@ export function renderWaferMapCard(
   // when this module was first evaluated.
   const ownerDocument = container.ownerDocument;
   const ownerWindow = ownerDocument.defaultView ?? window;
+
+  // Every file this map saves — its PNG, the Summary panel's and die list's
+  // CSVs, the Insights charts — goes through these, which name it for the lot
+  // and wafer on screen at save time (see exportName.ts). Pass these, never
+  // options.onSaveImage/onSaveText, to anything inside this map. The state they
+  // read is declared further down; it is only read when a save happens.
+  const exportHooks = withExportContext(() => {
+    const lot = metadataDisplayValue(wafer.metadata?.lot);
+    return {
+      lots:   lot !== undefined ? [lot] : [],
+      ...(currentResult.isLotStack
+        ? { stackedWafers: currentView?.lotSize ?? true }
+        : { wafer: waferIdentityLabel({ label: (currentResult as { label?: string }).label, wafer }) }),
+    };
+  }, options.onSaveImage, options.onSaveText);
+  noticeDownloadFilenameChange(options.downloadFilename);
+
+  /**
+   * The map's title as drawn beside its legend (`buildMapTitle`) — the content
+   * part of the PNG's name. A stacked map's "stacked (N wafers)" line is left
+   * out: the export context already says so.
+   */
+  function mapExportTitle(): string {
+    const binDefs = currentView.plotMode === 'softBin' || currentView.plotMode === 'stackedSoftBins' ? sbinDefs : hbinDefs;
+    const { primary, secondary } = buildMapTitle(currentView, viewOpts.fallbackFormat, binDefs);
+    return [primary, currentResult.isLotStack ? '' : secondary].filter(Boolean).join(' ') || 'wafer-map';
+  }
   if (ownerWindow.getComputedStyle(container).position === 'static') container.style.position = 'relative';
   // Container height as the host laid it out, before we touch anything. A flex/grid
   // child whose ancestors never resolve a height reports 0 here — the case where the
@@ -690,7 +741,7 @@ export function renderWaferMapCard(
       if (showingTable) {
         const table = buildDieListSection(unpositionedDies, result.testDefs, {
           ...options.dieList,
-          onSaveText:     options.onSaveText,
+          onSaveText:     exportHooks.onSaveText,
           waferMetadata:  wafer.metadata, // live local, not result.metadata which goes stale after setResult()
           metadataFields, // live local (setResult-reassigned), not result.metadataFields which goes stale
           ownerDocument });
@@ -1073,8 +1124,8 @@ export function renderWaferMapCard(
         statsSummary: currentStatsSummary }],
       getBinColors: () => currentView.binColors,
       getRingCount: () => currentResult.ringCount ?? 4,
-      onSaveImage: options.onSaveImage,
-      onSaveText: options.onSaveText,
+      onSaveImage: exportHooks.onSaveImage,
+      onSaveText: exportHooks.onSaveText,
       defaultView: insightsOpts?.defaultView,
       // Both of these are FALLBACKS, passed only when the toolbar cannot carry
       // them. The toolbar now stays visible while Insights is open, so its own
@@ -1471,7 +1522,7 @@ export function renderWaferMapCard(
       findingsFilter,
       findingsNotice: currentFindingsNotice,
       onFindingsFilterChange: renderSummaryPanel,
-      onSaveText: options.onSaveText,
+      onSaveText: exportHooks.onSaveText,
       metadataFields,
       dieListOptions: options.dieList,
       onFindingClick: (finding, _row) => {
@@ -1599,6 +1650,23 @@ export function renderWaferMapCard(
     }
   }
 
+  // The toolbar helpers are created with the toolbar; kept here so the Summary
+  // panel's open state can be set from outside the toolbar block.
+  let setButtonActive: ((btn: HTMLButtonElement, active: boolean) => void) | null = null;
+
+  /**
+   * Open or close the Summary panel — the one path for the toolbar button and
+   * `closeSummaryPanel`, so the button's active state and its findings
+   * indicator colour (owned by refreshSummaryButton) can't be set two ways.
+   */
+  function setSummaryPanelOpen(open: boolean): void {
+    const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
+    if (!panelEl) return;
+    panelEl.style.display = open ? 'block' : 'none';
+    if (btnSummary) setButtonActive?.(btnSummary, open);
+    refreshSummaryButton();
+  }
+
   if (showToolbar) {
     {
       toolbar = ownerDocument.createElement('div');
@@ -1654,6 +1722,7 @@ export function renderWaferMapCard(
       const tbTooltip = getTooltip(ownerDocument);
       const tbHelpers = createToolbarHelpers(tbTooltip);
       const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
+      setButtonActive = setActive;
       tbCloseOpenMenu = closeOpenMenu;
       tbGetOpenMenu   = getOpenMenu;
       // Single persistent listener — closes any open dropdown on outside click.
@@ -1916,11 +1985,7 @@ export function renderWaferMapCard(
         if (currentStatsSummary) {
           btnSummary = makeBtn('findings', 'Summary panel', () => {
             const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
-            if (!panelEl) return;
-            const isOpen = panelEl.style.display !== 'none';
-            panelEl.style.display = isOpen ? 'none' : 'block';
-            setActive(btnSummary!, !isOpen);
-            refreshSummaryButton();
+            if (panelEl) setSummaryPanelOpen(panelEl.style.display === 'none');
           });
           sceneControlsEl!.appendChild(makeSep());
           sceneControlsEl!.appendChild(btnSummary);
@@ -2140,6 +2205,18 @@ export function renderWaferMapCard(
   // Used by ctrl.setOptions() so programmatic updates don't re-fire the callback
   // (consistent with renderWaferGallery behaviour and documented API contract).
   function syncOpts(partial: Partial<CardViewOptions>): void {
+    // A gallery supplies a resolved population-wide bin map to each card, so
+    // cards initially agree even when one item carries a definition another
+    // lacks. A detached card has its own palette control, though: choosing a
+    // bin palette there is an explicit request to resolve colours locally.
+    // Without clearing the inherited map, rebuildView deliberately prefers it
+    // over binColorScheme and the menu appears to do nothing. The gallery's
+    // own update path always supplies its freshly resolved binColors in the
+    // same patch, so preserve that authoritative assignment.
+    if (('binColorScheme' in partial || 'useDefinedBinColors' in partial)
+        && !('binColors' in partial) && viewOpts.binColors !== undefined) {
+      partial = { ...partial, binColors: undefined };
+    }
     const prevMode = viewOpts.plotMode;
     viewOpts = { ...viewOpts, ...partial };
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
@@ -2352,7 +2429,10 @@ export function renderWaferMapCard(
   function downloadPng(): void {
     canvas.toBlob(blob => {
       if (!blob) return;
-      saveImageBlob(blob, options.downloadFilename ?? 'wafermap', options.onSaveImage);
+      // A host-set downloadFilename keeps its documented meaning until 0.31.0 —
+      // the whole PNG name — so it bypasses the generated name.
+      if (options.downloadFilename != null) saveImageBlob(blob, options.downloadFilename, options.onSaveImage);
+      else saveImageBlob(blob, mapExportTitle(), exportHooks.onSaveImage);
     });
   }
 
@@ -2496,7 +2576,7 @@ export function renderWaferMapCard(
     if (legendRow) {
       canvas.style.cursor = 'pointer';
       if (tooltip) {
-        tooltip.innerHTML     = legendRow.label ?? `Bin ${legendRow.bin}`;
+        tooltip.textContent   = legendRow.label ?? `Bin ${legendRow.bin}`; // bin names come from input files: text, never HTML
         tooltip.style.display = 'block';
         positionTooltip(tooltip, canvas, e.clientX, e.clientY);
       }
@@ -3005,6 +3085,18 @@ export function renderWaferMapCard(
         renderAutoSummaryPanel();
       }
       refreshSummaryButton();
+    },
+
+    closeSummaryPanel(): void {
+      setSummaryPanelOpen(false);
+    },
+
+    getExportTitle(): string {
+      return mapExportTitle();
+    },
+
+    getBinColors(): BinColors {
+      return currentView.binColors;
     },
 
     setSummaryVisible(visible: boolean): void {

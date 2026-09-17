@@ -18,6 +18,7 @@ import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { LEADING, SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
 import { fmt } from '../../renderer/fmt.js';
+import { escHtml } from '../../core/utils.js';
 
 const CAP_MIN_COL = 30;
 // The Analysis tab always gives this panel the full container width (unlike
@@ -432,8 +433,8 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       // fmt(v, unit) applies proper SI-prefix scaling (e.g. "33.3 pA") —
       // a naive .toFixed(2) collapses pA/nA-scale measurements to "0.00",
       // which reads as "no signal" rather than a real small value.
-      const fv = (v: number) => fmt(v, d.unit);
-      tooltip.innerHTML = `<strong>${d.label}</strong> (n=${d.n})<br>`
+      const fv = (v: number) => escHtml(fmt(v, d.unit));
+      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (n=${d.n})<br>`
         + (d.hasSpec
           ? `LSL ${fv(d.lsl!)} · USL ${fv(d.usl!)}<br>`
             + `mean ${fv(d.mean)}<br>`

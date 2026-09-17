@@ -115,6 +115,18 @@
     },
     {
       "section": "Getting started",
+      "id": "test-values",
+      "file": "test-values.html",
+      "title": "Test values",
+      "blurb": "parametric measurements, spec limits, colorbar",
+      "guide": {
+        "label": "Guide: Working with test values",
+        "href": "../guide.md#working-with-test-values"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
       "id": "bin-colours",
       "file": "bin-colours.html",
       "title": "Bin colours across a full program",
@@ -130,30 +142,6 @@
     },
     {
       "section": "Getting started",
-      "id": "metadata-mode",
-      "file": "metadata-mode.html",
-      "title": "Metadata / layout mode",
-      "blurb": "generic categorical colouring from `die.metadata`, coexists with test/bin data",
-      "guide": {
-        "label": "Guide: Metadata / layout plot mode",
-        "href": "../guide.md#metadata-layout-plot-mode"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Getting started",
-      "id": "test-values",
-      "file": "test-values.html",
-      "title": "Test values",
-      "blurb": "parametric measurements, spec limits, colorbar",
-      "guide": {
-        "label": "Guide: Working with test values",
-        "href": "../guide.md#working-with-test-values"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Getting started",
       "id": "retests",
       "file": "retests.html",
       "title": "Retests",
@@ -165,7 +153,7 @@
       "dataFiles": []
     },
     {
-      "section": "Interaction and control",
+      "section": "Display and interaction",
       "id": "display-control",
       "file": "display-control.html",
       "title": "Display control",
@@ -177,12 +165,12 @@
       "dataFiles": []
     },
     {
-      "section": "Interaction and control",
+      "section": "Display and interaction",
       "id": "color-schemes",
       "file": "display-control.html",
       "anchor": "#custom-schemes",
       "title": "Custom colour schemes",
-      "blurb": "register your own bin/value palette with `registerColorScheme`",
+      "blurb": "register your own bin palette with `registerBinColorScheme` and value gradient with `registerValueColorScheme`",
       "guide": {
         "label": "Guide: Custom colour schemes",
         "href": "../guide.md#custom-colour-schemes"
@@ -190,7 +178,7 @@
       "dataFiles": []
     },
     {
-      "section": "Interaction and control",
+      "section": "Display and interaction",
       "id": "theming",
       "file": "theming.html",
       "title": "Theming",
@@ -202,7 +190,7 @@
       "dataFiles": []
     },
     {
-      "section": "Interaction and control",
+      "section": "Display and interaction",
       "id": "interaction",
       "file": "interaction.html",
       "title": "Interaction API",
@@ -214,44 +202,31 @@
       "dataFiles": []
     },
     {
-      "section": "Interaction and control",
-      "id": "worker",
-      "file": "worker.html",
-      "title": "Web Worker",
-      "blurb": "off-main-thread build for large datasets",
+      "section": "Display and interaction",
+      "id": "metadata-mode",
+      "file": "metadata-mode.html",
+      "title": "Metadata / layout mode",
+      "blurb": "generic categorical colouring from `die.metadata`, coexists with test/bin data",
       "guide": {
-        "label": "Guide: Processing large datasets with a Web Worker",
-        "href": "../guide.md#processing-large-datasets-with-a-web-worker"
+        "label": "Guide: Metadata / layout plot mode",
+        "href": "../guide.md#metadata-layout-plot-mode"
       },
       "dataFiles": []
     },
     {
-      "section": "Analysis and layout",
-      "id": "insights",
-      "file": "insights.html",
-      "title": "Insights chart suite",
-      "blurb": "the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add",
+      "section": "Display and interaction",
+      "id": "reticle",
+      "file": "reticle.html",
+      "title": "Reticle overlays",
+      "blurb": "photolithography field grid and reticle-position findings",
       "guide": {
-        "label": "Guide: The Insights tab",
-        "href": "../guide.md#the-insights-tab"
+        "label": "Guide: Reticle overlays",
+        "href": "../guide.md#reticle-overlays"
       },
       "dataFiles": []
     },
     {
-      "section": "Analysis and layout",
-      "id": "findings",
-      "file": "statistics.html",
-      "anchor": "#findings",
-      "title": "Statistical findings",
-      "blurb": "ring, quadrant, cluster, edge-arc analysis on a single wafer",
-      "guide": {
-        "label": "Guide: Adding statistical findings",
-        "href": "../guide.md#adding-statistical-findings"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Analysis and layout",
+      "section": "Galleries and analysis",
       "id": "summary-panel",
       "file": "statistics.html",
       "anchor": "#summary-panel",
@@ -264,7 +239,20 @@
       "dataFiles": []
     },
     {
-      "section": "Analysis and layout",
+      "section": "Galleries and analysis",
+      "id": "findings",
+      "file": "statistics.html",
+      "anchor": "#findings",
+      "title": "Statistical findings",
+      "blurb": "ring, quadrant, cluster, edge-arc analysis on a single wafer",
+      "guide": {
+        "label": "Guide: Adding statistical findings",
+        "href": "../guide.md#adding-statistical-findings"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Galleries and analysis",
       "id": "gallery",
       "file": "statistics.html",
       "anchor": "#lot-gallery",
@@ -277,7 +265,7 @@
       "dataFiles": []
     },
     {
-      "section": "Analysis and layout",
+      "section": "Galleries and analysis",
       "id": "lot-findings",
       "file": "statistics.html",
       "anchor": "#lot-findings",
@@ -290,7 +278,7 @@
       "dataFiles": []
     },
     {
-      "section": "Analysis and layout",
+      "section": "Galleries and analysis",
       "id": "lot-stack",
       "file": "statistics.html",
       "anchor": "#lot-stack",
@@ -303,19 +291,7 @@
       "dataFiles": []
     },
     {
-      "section": "Analysis and layout",
-      "id": "reticle",
-      "file": "reticle.html",
-      "title": "Reticle overlays",
-      "blurb": "photolithography field grid and reticle-position findings",
-      "guide": {
-        "label": "Guide: Reticle overlays",
-        "href": "../guide.md#reticle-overlays"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Analysis and layout",
+      "section": "Galleries and analysis",
       "id": "test-sites",
       "file": "test-sites.html",
       "title": "Multi-site parallel testing",
@@ -323,7 +299,19 @@
       "dataFiles": []
     },
     {
-      "section": "Analysis and layout",
+      "section": "Galleries and analysis",
+      "id": "insights",
+      "file": "insights.html",
+      "title": "Insights chart suite",
+      "blurb": "the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add",
+      "guide": {
+        "label": "Guide: The Insights tab",
+        "href": "../guide.md#the-insights-tab"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Real data and performance",
       "id": "real-data",
       "file": "real-data.html",
       "title": "Real wafer data (WM-811K)",
@@ -337,7 +325,7 @@
       ]
     },
     {
-      "section": "Analysis and layout",
+      "section": "Real data and performance",
       "id": "mixedwm38",
       "file": "mixedwm38.html",
       "title": "Mixed patterns (MixedWM38)",
@@ -351,7 +339,19 @@
       ]
     },
     {
-      "section": "Compatibility and advanced",
+      "section": "Real data and performance",
+      "id": "worker",
+      "file": "worker.html",
+      "title": "Web Worker",
+      "blurb": "off-main-thread build for large datasets",
+      "guide": {
+        "label": "Guide: Processing large datasets with a Web Worker",
+        "href": "../guide.md#processing-large-datasets-with-a-web-worker"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Real data and performance",
       "id": "comparison",
       "file": "comparison.html",
       "title": "wafermap vs Plotly.js",

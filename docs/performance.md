@@ -42,17 +42,17 @@ number repeated in six places is a number that will be wrong in five of them.
 
 | Entry point | gzipped | When it is downloaded |
 | --- | --- | --- |
-| `@wafertools/wafermap` — the data and stats layer, no DOM | **~49 KB** | Always, if you import it |
-| `@wafertools/wafermap/render` — the interactive renderer | **~111 KB** | Always, if you render |
+| `@wafertools/wafermap` — the data and stats layer, no DOM | **~52 KB** | Always, if you import it |
+| `@wafertools/wafermap/render` — the interactive renderer | **~114 KB** | Always, if you render |
 | Insights chart suite | +~25 KB | On first open, only if `insights: { enabled: true }` |
 | In-app user guide | +~36 KB | On first open of the guide |
 
 Two things worth reading off that table:
 
 - **The data layer runs without a DOM**, so a Node pipeline that builds and analyses wafer
-  maps without drawing them pays ~46 KB, not the renderer's ~108 KB.
+  maps without drawing them pays only the first row, not the renderer's.
 - **The two largest optional pieces are lazy.** A page that renders maps but never opens
-  Insights or the guide never downloads those 59 KB. They are separate chunks, fetched on
+  Insights or the guide never downloads those last two rows. They are separate chunks, fetched on
   first use — any bundler with dynamic `import()` splitting (Vite, Rollup, webpack, esbuild
   with `splitting: true`) does this by default.
 
@@ -77,8 +77,8 @@ scripts/check-bundle-size.mjs` prints the per-chunk breakdown.
 | Option | What you get | Where it shows up |
 |---|---|---|
 | *(none — just `buildWaferMap` + `renderWaferMap`)* | The interactive map itself | Always |
-| `analyzeWaferMap()` — no extra flags | Yield %, bin breakdown, ring/quadrant yield, basic findings | Summary panel, Insights → Overview |
-| `analyzeWaferMap({ computePerTestStats: true })` | Per-test five-number summaries (min/Q1/median/Q3/max) | Insights → Distributions (box plot) |
+| `analyzeWaferMap()` — no extra flags | Yield %, bin breakdown, ring/quadrant yield (`stats.regionYield`), pass rates by spec, verdict and functional test, basic findings | Summary panel, Insights → Overview |
+| `analyzeWaferMap({ computePerTestStats: true })` | Per-test five-number summaries (min/Q1/median/Q3/max) and Cp/Cpk/Pp/Ppk (`stats.capability`) | Insights → Distributions |
 | `analyzeWaferMap({ enableTestValueAnalysis: true })` | Automatic spatial statistical findings — flags regions where a test's values differ significantly (Welch's t-test per region) | Summary panel's findings list |
 | `insights: { enabled: true }` (Insights tab) | Process capability, distributions, correlation charts | Insights tab (opt-in toolbar button) |
 | `analyzeWaferLot(..., { perWaferSummaries })` | Lot-level findings + reuses per-wafer stats you already computed | Gallery's lot Summary panel |
@@ -260,7 +260,10 @@ Without `perWaferSummaries`, `analyzeWaferLot` quietly redoes the entire
 per-wafer analysis itself internally — for a 6-wafer lot, that's roughly six
 times the per-wafer `analyzeWaferMap` cost from the table above, paid a
 second time for no benefit. With `perWaferSummaries` supplied, the lot-level
-pass adds no measurable time on top of the per-wafer work you already did.
+pass adds no measurable time on top of the per-wafer work you already did:
+lot capability, pass rates and region yield are pooled from the wafer summaries
+rather than recomputed from the dies (well under a millisecond for 25 wafers of
+4,000 dies and 15 tests).
 Either way the absolute cost is small at typical lot sizes — this is a free
 optimization worth taking, not a fix for a real bottleneck.
 

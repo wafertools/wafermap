@@ -21,6 +21,7 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { QUANTITY, categorical } from './palette.js';
 import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
+import { escHtml } from '../../core/utils.js';
 // Quantity/series colours are fixed (palette.ts), not the map's colours.
 
 const HIST_HEIGHT = 230;
@@ -407,7 +408,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       if (bar !== hovered) { hovered = bar; draw(); }
       if (bar >= 0) {
         const b = buckets[bar];
-        tooltip.innerHTML = `<strong>${fmt(b.rangeLow, unit, 'engineering')} – ${fmt(b.rangeHigh, unit, 'engineering')}</strong><br>${b.count} dies`;
+        tooltip.innerHTML = `<strong>${escHtml(`${fmt(b.rangeLow, unit, 'engineering')} – ${fmt(b.rangeHigh, unit, 'engineering')}`)}</strong><br>${b.count} dies`;
         tooltip.style.display = 'block';
         positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else { tooltip.style.display = 'none'; }
@@ -619,9 +620,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       if (b >= 0) {
         const r = ranges[b];
         const rows = series.map((s, i) =>
-          `<span style="${chartSwatchCss(colorOf(i))};margin-right:4px"></span>${s.groupKey}: ${s.counts[b]}`
+          `<span style="${chartSwatchCss(colorOf(i))};margin-right:4px"></span>${escHtml(`${s.groupKey}: ${s.counts[b]}`)}`
         ).join('<br>');
-        tooltip.innerHTML = `<strong>${fmt(r.rangeLow, unit, 'engineering')} – ${fmt(r.rangeHigh, unit, 'engineering')}</strong><br>${rows}`;
+        tooltip.innerHTML = `<strong>${escHtml(`${fmt(r.rangeLow, unit, 'engineering')} – ${fmt(r.rangeHigh, unit, 'engineering')}`)}</strong><br>${rows}`;
         tooltip.style.display = 'block';
         positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else {

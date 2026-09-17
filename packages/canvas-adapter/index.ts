@@ -65,9 +65,12 @@ export { ICONS } from './icons.js';
 // setReportOpener/openHtmlReport for the "open as a real separate page"
 // fallback this modal's own header button and toolbar link both route through.
 export type { OverlayHandle } from './toolbar.js';
+// Shows report HTML in wmap's own modal — the partner of setReportOpener, for a
+// host whose opener saves or logs a report and still wants to show it here.
+export { openReportModal } from './toolbar.js';
 
 // Deprecated in 0.30.0, removed in 0.31.0. Each is wrapped in ./deprecated.ts, whose
 // declarations carry the `@deprecated` tags; this named re-export shadows any `export *` above.
 export {
-  toCanvas, buildDieListSection, openReportModal,
+  toCanvas, buildDieListSection,
 } from './deprecated.js';

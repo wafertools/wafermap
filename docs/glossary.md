@@ -28,7 +28,7 @@ The bin number(s) considered a passing result for yield calculation. The library
 
 ### Yield
 
-The fraction of tested dies that pass, expressed as a percentage. The library computes gross die yield: passing dies divided by total testable dies, where "testable" excludes any dies removed by edge exclusion. *Library mapping: `YieldSummary.yieldPercent`.*
+The fraction of tested dies that pass, expressed as a percentage. By default the library divides passing dies by the dies that count toward yield — edge-excluded and partial dies are left out of both numerator and denominator. *Library mapping: `YieldSummary.yieldPercent`; see also gross die yield.*
 
 ### Edge exclusion
 
@@ -56,19 +56,19 @@ Metadata describing one parametric test: a stable integer ID (`testNumber`), a h
 
 ### Spec limit
 
-The acceptable range for a parametric test value (`limitLow`, `limitHigh`). Dies whose test value falls outside the spec limits are coloured blue (below `limitLow`) or red (above `limitHigh`) in `value` plot mode. Enable pass/fail colouring by setting `passFailDisplay: 'spec'` in `WaferViewOptions`, or toggling "Spec pass/fail" in the Overlays toolbar menu. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.passFailDisplay`.*
+The acceptable range for a parametric test value (`limitLow`, `limitHigh`). In `value` plot mode an out-of-spec die keeps its colour on the value gradient and is marked with a triangle: ▽ below `limitLow`, △ above `limitHigh`. Switch to solid pass/fail colours — green pass, blue below, red above — with `passFailDisplay: 'spec'` in `WaferViewOptions`, or "Spec pass/fail" in the toolbar. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.passFailDisplay`.*
 
 ### Functional test
 
-A test with no measured value — only a recorded pass/fail outcome (a continuity check, boundary scan, or any other go/no-go test). Set `testType: 'F'` on the test's `TestDef` (default `'P'`, parametric) and record the outcome per die in `testPass`, keyed by `testNumber` like `testValues`. Selecting a functional test as the active test always displays as **Test pass/fail** — there is no value to put on a gradient. Functional tests are excluded from every parametric statistic (per-test stats, capability, correlation, distribution charts) and instead get pass-rate analysis: `stats.functionalYield`, a "Functional Tests" summary-panel table, and regional pass-rate findings. *Library mapping: `TestDef.testType`, `DieResult.testPass`, `isParametricTest()`, `getTestPassStatus()`.*
+A test with no measured value — only a recorded pass/fail outcome (a continuity check, boundary scan, or any other go/no-go test). Set `testType: 'F'` on the test's `TestDef` (default `'P'`, parametric) and record the outcome per die in `testPass`, keyed by `testNumber` like `testValues`. Selecting a functional test as the active test always displays as **Test pass/fail** — there is no value to put on a gradient. Functional tests are excluded from every parametric statistic (per-test stats, capability, correlation, distribution charts) and instead get pass-rate analysis: `stats.functionalYield`, a "Functional Tests" summary-panel table, and regional pass-rate findings. *Library mapping: `TestDef.testType`, `DieResult.testPass`, `getTestPassStatus()`.*
 
 ### Pass/fail display
 
-The solid, categorical colouring shown in `value` plot mode in place of the continuous gradient — set via `WaferViewOptions.passFailDisplay`. `'spec'` judges dies against the active test's spec limits (green pass / blue fail-low / red fail-high). `'test'` colours dies by the tester's own **recorded** verdict (`DieResult.testPass`) instead — green pass / red fail, undirected — and is what a functional test (no measured value) always renders as, regardless of the requested display. *Library mapping: `WaferViewOptions.passFailDisplay`, `ToCanvasOptions` §9.4.*
+The solid, categorical colouring shown in `value` plot mode in place of the continuous gradient — set via `WaferViewOptions.passFailDisplay`. `'spec'` judges dies against the active test's spec limits (green pass / blue fail-low / red fail-high). `'test'` colours dies by the tester's own **recorded** verdict (`DieResult.testPass`) instead — green pass / red fail, undirected — and is what a functional test (no measured value) always renders as, regardless of the requested display. *Library mapping: `WaferViewOptions.passFailDisplay`.*
 
 ### Process capability (Cp / Cpk / Pp / Ppk)
 
-A statistical measure of how well a parametric test's values fit within its spec limits — the Insights tab's Distributions sub-tab plots one box per test with both spec limits defined, normalized so `limitLow = 0` and `limitHigh = 1`, worst `Ppk` first. `Cp`/`Cpk` ("potential"/short-term capability) use the pooled *within-wafer* standard deviation, treating each wafer as the natural short-term subgroup; `Cp` ignores how centered the distribution is, `Cpk` penalizes an off-center mean. `Pp`/`Ppk` ("performance"/long-term capability) use the plain standard deviation across every die instead. Higher is better; ≥1.33 is a common (but process-specific) threshold for "capable." `Cp`/`Cpk` are omitted when no wafer contributes at least two values (no within-subgroup variance is computable). Tests missing one or both spec limits are not omitted from the chart — they still appear (muted, dashed, no capability indices), normalized onto their own observed range instead, and sorted after spec'd tests by most-variable-first, since a lot with sparse spec coverage would otherwise render an all-but-empty chart. *Library mapping: `CapabilityDatum.hasSpec` (`@wafertools/wafermap/stats`).*
+A statistical measure of how well a parametric test's values fit within its spec limits — the Insights tab's Distributions sub-tab plots one box per test, normalised so `limitLow = 0` and `limitHigh = 1` where both limits are defined, worst `Ppk` first. `Cp`/`Cpk` ("potential"/short-term capability) use the pooled *within-wafer* standard deviation, treating each wafer as the natural short-term subgroup; `Cp` ignores how centered the distribution is, `Cpk` penalizes an off-center mean. `Pp`/`Ppk` ("performance"/long-term capability) use the plain standard deviation across every die instead. Higher is better; ≥1.33 is a common (but process-specific) threshold for "capable." `Cp`/`Cpk` are omitted when no wafer contributes at least two values (no within-subgroup variance is computable). Tests missing one or both spec limits are not omitted from the chart — they still appear (muted, dashed, no capability indices), normalized onto their own observed range instead, and sorted after spec'd tests by most-variable-first, since a lot with sparse spec coverage would otherwise render an all-but-empty chart. *Library mapping: `StatsSummary.stats.capability` and `LotStatsSummary.stats.capability` (`TestCapability`), from `analyzeWaferMap`/`analyzeWaferLot` with `computePerTestStats`.*
 
 ### Reticle
 
@@ -94,7 +94,7 @@ Some probers contact a die more than once, either due to contact failures (a ret
 
 ### STDF
 
-Standard Test Data Format — the binary file format output by most ATE systems after a wafer test run. STDF encodes die bin results, parametric test values, and lot/wafer metadata in a compact binary record structure. The library does not parse STDF directly; see `guide.md` for how to extract and map STDF data to `DieResult` records.
+Standard Test Data Format — the binary file format output by most ATE systems after a wafer test run. STDF encodes die bin results, parametric test values, and lot/wafer metadata in a compact binary record structure. The library does not parse STDF itself: map the records to `DieResult` rows yourself (die position, bins and test results), or open the file in [tsmap](https://github.com/wafertools/tsmap), which reads STDF and ATDF directly.
 
 ### ATE
 
@@ -102,7 +102,11 @@ Automatic Test Equipment — the tester (e.g. Teradyne, Advantest) that executes
 
 ### Gross die yield
 
-Yield expressed as passing dies divided by the total number of testable dies, where testable excludes edge-excluded dies. "Gross" means no credit is taken for known-bad dies from prior inspections — it is the raw electrical yield from the test floor. The library reports gross die yield; the denominator is clearly documented in the stats output so engineers are not misled by edge-exclusion effects. *Library mapping: `YieldSummary.yieldPercent`, `YieldSummary.edgeExcludedDies`.*
+Yield with edge-excluded dies counted in the denominator but never as passes, so edge losses show up in the figure instead of being excluded from it — the usual way to quantify yield lost to edge effects. The library reports it alongside ordinary yield when `edgeDieYieldMode: 'denominator-only'` is set. *Library mapping: `YieldSummary.yieldPercentGross`, `WaferMapInput.edgeDieYieldMode`.*
+
+### Gross die per wafer
+
+The number of complete die sites that fit on a wafer — the ceiling on how many dies a wafer can yield, and the denominator in many cost-per-die estimates. A die straddling the edge is not counted. *Library mapping: `buildWaferMap({ layout: true, waferConfig, dieConfig }).dies.length`.*
 
 ---
 

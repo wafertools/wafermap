@@ -62,7 +62,7 @@ any wafer regardless of diameter, die size, or coordinate system.
 ## Benchmark results
 
 The classifier was tested against the **WM-811K dataset** — 25,519 labelled
-wafers from real-world TSMC 300mm fabrication, collected across 46,293 lots
+wafers from real-world production, collected across 46,393 lots
 (Wu et al., *IEEE Transactions on Semiconductor Manufacturing*, 2015).
 
 | Pattern | Recall | Precision |
@@ -73,7 +73,7 @@ wafers from real-world TSMC 300mm fabrication, collected across 46,293 lots
 | Center | 60% | 85% |
 | Random | 59% | 47% |
 | Scratch | 26% | 33% |
-| Donut | 15% | 48% |
+| Donut | 15% | 7% |
 
 **Overall exact-match accuracy: 64%**
 
@@ -112,8 +112,8 @@ typical semiconductor die pitches (5–15mm). The geometry features work best
 on clean, contiguous scratches — fragmented or faint scratches tend to fall
 through to "random".
 
-**Calibrated on WM-811K (TSMC 300mm).** The thresholds were derived from one
-specific fab and process node. Wafers from significantly different die pitches,
+**Calibrated on WM-811K.** The thresholds were derived from one fab's
+production data. Wafers from significantly different die pitches,
 wafer sizes, or process types may show different geometric signatures. The
 geometry features are radially normalised so they transfer well across different
 wafer diameters and die pitches; the classifier thresholds themselves are fixed
@@ -161,32 +161,33 @@ const withoutPattern = summary.findings.filter(f => f.comparison.family !== 'spa
 
 ## Using the geometry features directly
 
-> **Deprecated — removed in 0.31.0:** calling `classifyPattern` directly. `analyzeWaferMap` reports the
-> classified pattern as a finding (`comparison.family === 'spatial-pattern'`).
-
-The geometry features computed for each wafer are exposed in the
-`PatternClassification` return value from `classifyPattern`. You can call
-this function directly and use the `features` object as input to your own
-model or reporting pipeline:
+To label a wafer, the classifier first measures the shape of its failing dies — how much of the
+wafer and of its edge is failing, where the failing cluster sits radially, how elongated and how
+line-like it is. `analyzeWaferMap` returns that measurement for every wafer as
+`stats.spatialPattern`, alongside the label and confidence:
 
 ```js
 import { buildWaferMap } from '@wafertools/wafermap';
-import { classifyPattern } from '@wafertools/wafermap/stats';
+import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 
-const result = buildWaferMap({ results, waferConfig, dieConfig });
-const classification = classifyPattern(result.dies, result.wafer, {
-  passBins:  result.passBins,   // what the map was built with — never restate them
-  ringCount: result.ringCount,
-});
+const result  = buildWaferMap({ results, waferConfig, dieConfig });
+const summary = analyzeWaferMap(result);
 
-// classification.features contains:
-// globalRdd, edgeRdd, p25DistNorm, centroidDistNorm,
-// eccentricity, linearScore, edgeAngularSpread, innerOuterRatio, ...
+summary.stats.spatialPattern;
+// { pattern: 'edge-ring', confidence: 'high',
+//   features: { globalRdd, edgeRdd, centroidDistNorm, minDistNorm, maxDistNorm,
+//               p25DistNorm, innerOuterRatio, eccentricity, linearScore, ... } }
 ```
 
-These features are radially normalised and work at any wafer size or die pitch,
-making them suitable as input to a trained classifier if higher accuracy is
-needed for your specific process. Published CNN-based classifiers achieve 96–99%
-exact-match accuracy on WM-811K when trained on labelled examples — the
-`PatternFeatures` struct provides a compact, interpretable feature vector that
-can serve as input to such a model without requiring pixel-level wafer images.
+It is present on **every** wafer the classifier could measure, including those labelled
+`'random'` or `'none'`, which raise no finding — so a set of summaries gives you features for
+negative examples as well as patterned ones. It is absent only when the map has no bin data, or too
+few failing dies to have a shape (fewer than 5, or 0.3% of the wafer).
+
+The features are radially normalised and work at any wafer size or die pitch, which makes them
+suitable input for a trained classifier if you need more accuracy for your own process. Published
+CNN-based classifiers reach 96–99% exact-match accuracy on WM-811K when trained on labelled
+examples; these features are a compact, interpretable alternative to pixel-level wafer images.
+
+> Calling `classifyPattern` directly is deprecated and removed in 0.31.0 — `stats.spatialPattern`
+> is the same measurement.

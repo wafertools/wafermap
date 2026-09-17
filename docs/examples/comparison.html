@@ -12,6 +12,7 @@
   }}</script>
 
   <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
 
   <!-- Plotly full bundle required for scattergl (WebGL) -->
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
@@ -22,7 +23,7 @@
     body { padding: 0 0 60px; }
 
     /* ── Header ──────────────────────────────────────────── */
-    header {
+    .cmp-intro {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       padding: 18px 32px;
@@ -30,13 +31,13 @@
       align-items: baseline;
       gap: 16px;
     }
-    header h1 {
+    .cmp-intro h1 {
       font-size: 20px;
       font-weight: 700;
       color: var(--text);
     }
-    header h1 span { color: var(--muted); font-weight: 400; margin: 0 4px; }
-    header p { font-size: 15px; color: var(--muted); }
+    .cmp-intro h1 span { color: var(--muted); font-weight: 400; margin: 0 4px; }
+    .cmp-intro p { font-size: 15px; color: var(--muted); }
 
     /* ── Controls ────────────────────────────────────────── */
     .controls {
@@ -245,10 +246,17 @@
 </head>
 <body>
 
-<header>
+<header class="demo-header">
+  <span class="demo-logo">wafer<em>map</em></span>
+  <div class="demo-sep"></div>
+  <span class="demo-title">wafermap vs Plotly.js</span>
+  <span class="demo-desc">render timings and features, same wafer data in both libraries</span>
+</header>
+
+<div class="cmp-intro">
   <h1>@wafertools/wafermap <span>vs</span> Plotly.js</h1>
   <p>Rendering the same wafer data in both libraries. Timings from <code>performance.now()</code> — data fetch excluded.</p>
-</header>
+</div>
 
 <div class="controls">
   <div class="scenario-tabs">
@@ -265,7 +273,7 @@
   <div class="panel">
     <div class="panel-header">
       <span class="lib-name">@wafertools/wafermap</span>
-      <span class="lib-size">~104 KB gzip (core), +25 KB Insights, +34 KB guide — both lazy</span>
+      <span class="lib-size">~114 KB gzip (core), +25 KB Insights, +36 KB guide — both lazy</span>
     </div>
     <div class="render-area" id="wmap-area">
       <div id="wmap-container" style="width:100%;height:100%;"></div>
@@ -473,7 +481,7 @@
       <tr class="group"><td colspan="3">Integration</td></tr>
       <tr>
         <td>Library size (gzip)</td>
-        <td class="yes">~104 KB (core)<span class="note">+~25 KB lazy-loaded on first Insights open, +~34 KB if the in-app guide is opened — neither is downloaded otherwise</span></td>
+        <td class="yes">~114 KB (core)<span class="note">+~25 KB lazy-loaded on first Insights open, +~36 KB if the in-app guide is opened — neither is downloaded otherwise</span></td>
         <td class="part">~1.3 MB (full bundle)<span class="note">~350 KB with plotly-basic (no WebGL, so no scattergl)</span></td>
       </tr>
       <tr>

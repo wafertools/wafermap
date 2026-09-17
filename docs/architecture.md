@@ -91,7 +91,7 @@ graph LR
         s2["analyzeWaferLot"]
         s3["regions"]
         s4["clusterDetection"]
-        s5["chart data builders<br/>capability, boxplot, histogram, trend,<br/>correlation, scatter, yield, binPareto,<br/>testPassRate"]
+        s5["chart data builders<br/>capability, boxplot, histogram, trend,<br/>correlation, scatter, yield, binPareto,<br/>testPassRate<br/>(deprecated exports)"]
     end
 
     subgraph Worker[worker]
@@ -135,18 +135,18 @@ The codebase is organized as a stack. `core` is the pure foundation, `renderer` 
 
 `insightsTab` and `charts/*` are internal to `canvas-adapter` — reachable only through `insights.enabled` (§5.9/§6.10 in the [API Reference](api.md)), not an independently importable subpath. The chart panels are pure DOM/canvas rendering; the actual per-chart computations (`capability`, `boxplot`, `histogram`, `correlation`, `scatter`, `yield`, `binPareto` under `stats/`) are public and importable from `/stats` on their own, if you want to drive a different chart library from the same numbers.
 
-`identityHeader` is also internal to `canvas-adapter` — `createIdentityHeader` builds the "label + click-to-expand full metadata" row `renderWaferMap` mounts above the canvas (`RenderOptions.showIdentity`, default `true`), a real layout row rather than a corner overlay, so it can't be missed or collide with anything the canvas draws. It also owns the map's "expand to full view" affordance (`RenderOptions.showExpandButton`/`onExpand`) — one trigger for that action, not a separate toolbar button. It exists so basic wafer/lot identity (lot, wafer ID, product, test program, temperature) is never hidden behind a toolbar/Insights toggle. `renderWaferGallery` doesn't call this module (grid cards, detached popups, and the floating-window fallback all pass `showIdentity: false` to their internal `renderWaferMap`): it instead (a) folds a lot-wide distinct-values summary, built on `buildFacetTable` (`stats/facets.ts`), into its existing bin-legend strip, and (b) gives every per-wafer view (grid card header, popup window, floating window) its own expandable identity header for that wafer's full metadata via its own `buildIdentityHeaderRow` builder, sharing only the low-level `wireExpandToggle` interaction helper (`toolbar.ts`) with `identityHeader` — a known remaining duplication (two composition sites for the same feature) flagged for a future consolidation pass, not yet unified.
+`identityHeader` is also internal to `canvas-adapter` — `createIdentityHeader` builds the "label + click-to-expand full metadata" row `renderWaferMap` mounts above the canvas (`RenderOptions.showIdentity`, default `true`), a real layout row rather than a corner overlay, so it can't be missed or collide with anything the canvas draws. It also owns the map's "expand to full view" affordance (`RenderOptions.showExpandButton`) — one trigger for that action, not a separate toolbar button. It exists so basic wafer/lot identity (lot, wafer ID, product, test program, temperature) is never hidden behind a toolbar/Insights toggle. `renderWaferGallery` doesn't call this module (grid cards, detached popups, and the floating-window fallback all pass `showIdentity: false` to their internal `renderWaferMap`): it instead (a) folds a lot-wide distinct-values summary, built on `buildFacetTable` (`stats/facets.ts`), into its existing bin-legend strip, and (b) gives every per-wafer view (grid card header, popup window, floating window) its own expandable identity header for that wafer's full metadata via its own `buildIdentityHeaderRow` builder, sharing only the low-level `wireExpandToggle` interaction helper (`toolbar.ts`) with `identityHeader` — a known remaining duplication (two composition sites for the same feature) flagged for a future consolidation pass, not yet unified.
 
 ## 3. Data construction pipeline
 
 ```mermaid
 graph TB
-    input["WaferMapInput<br/>results, waferConfig, dieConfig, reticleConfig, lotStack"]
+    input["WaferMapInput<br/>results, lotStack or layout;<br/>waferConfig, dieConfig, reticleConfig"]
 
-    normalize["Normalize inputs<br/>DieResult[] / lot stack / legacy values"]
+    normalize["Normalize inputs<br/>DieResult[] / lot stack / layout sites"]
     inferGeo["Infer geometry<br/>inferWaferFromXY<br/>resolveGridPitch<br/>assignGridIndices"]
-    makeDies["Generate dies and wafer<br/>createWafer<br/>generateDies"]
-    transform["Apply transforms<br/>applyOrientation<br/>transformDies<br/>clipDiesToWafer"]
+    makeDies["Build wafer and dies<br/>createWafer<br/>one die per result position"]
+    transform["Apply transforms<br/>applyOrientation<br/>transformDies<br/>edge exclusion"]
     reticle["Build reticle overlay<br/>generateReticleGrid"]
     output["WaferMapResult<br/>wafer, dies, view metadata,<br/>optional bin/test definitions"]
 
@@ -161,7 +161,9 @@ graph TB
 
 **What this shows**
 
-This is the part of the library that turns loose wafer test data into a structured result. You can provide as much or as little geometry as you know: explicit wafer and die sizes, or just raw `x`/`y` step coordinates. The pipeline infers the missing pieces, generates the die model, applies orientation and clipping, and attaches any reticle overlay that should travel with the map.
+This is the part of the library that turns loose wafer test data into a structured result. You can provide as much or as little geometry as you know: explicit wafer and die sizes, or just raw `x`/`y` step coordinates. The pipeline infers the missing pieces, builds one die per result position, applies orientation, axis flips and edge exclusion, and attaches any reticle overlay that should travel with the map.
+
+Dies are never clipped to the wafer on this path. A die with test results is a real prober position, and a prober only steps to sites fully on the wafer, so a die outside the circle means the geometry is wrong, which is raised as a warning, not a reason to trim the data. The one place a die grid is generated and clipped is `layout: true`: with no results, the normalize step produces every site lying fully on the wafer (`generateDies` + `clipDiesToWafer`, internally), and those positions then take the same path as prober data.
 
 ## 4. Rendering pipeline
 
@@ -203,7 +205,7 @@ graph LR
     lotStats["analyzeWaferLot()"]
     waferSummary["StatsSummary"]
     lotSummary["LotStatsSummary"]
-    findings["Findings panel"]
+    findings["Summary panel"]
     lotPanel["Lot summary panel"]
 
     result --> waferStats
@@ -229,7 +231,7 @@ The analysis layer consumes the same `WaferMapResult` that the renderer uses. Th
 
 The worker helper mirrors that shape: you send in a `WaferMapInput` or a batch of `WaferMapResult` objects, and the promise resolves with the computed `WaferMapResult`, `StatsSummary`, or `LotStatsSummary` depending on the request.
 
-> Don't confuse this with the toolbar's **Insights tab** (`insights.enabled`, §2 above) — that's a separate chart-suite view (`insightsTab`/`charts/*`) built on the `stats` package's chart data builders, not on `analyzeWaferMap`/`analyzeWaferLot`. The two "Analysis" names are unrelated: one produces findings/summaries, the other renders charts.
+> The **Insights tab** (`insights.enabled`, §2 above) is a chart-suite view (`insightsTab`/`charts/*`), separate from the Summary panel. It draws its charts with the `stats` package's chart-data builders, which are the same computations behind the analysis output — capability, pass rates and region yield in `StatsSummary`/`LotStatsSummary` come from that code — and where a summary is already available it reuses its figures rather than rescanning the dies. So a chart and the analysis output never disagree about a number.
 
 ## 6. How to choose an entry point
 

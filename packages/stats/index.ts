@@ -4,7 +4,9 @@ export * from './analyzeWaferMap.js';
 export * from './analyzeWaferLot.js';
 export * from './filterFindings.js';
 export type { PatternLabel, PatternClassification, PatternFeatures } from './patternClassification.js';
-export { setReportOpener } from './renderFindingsReport.js';
+export { setReportOpener, renderFindingsReportHtml } from './renderFindingsReport.js';
+export { renderWaferReportHtml, renderLotReportHtml } from './renderSummaryReport.js';
+export type { ReportMap } from './renderSummaryReport.js';
 export type { SummaryReportParams, LotSummaryReportParams } from './renderSummaryReport.js';
 export { buildFacetTable, facetValueOf, FACET_NONE_VALUE } from './facets.js';
 export type { FacetField, FacetValue, FacetCuration, FacetItem, BuildFacetTableOptions } from './facets.js';
@@ -33,7 +35,7 @@ export {
   buildYieldData, buildYieldDataCombined, buildBinParetoData, buildBinClusterData,
   buildRingRegions, buildQuadrantRegions, buildSectorRegions, buildReticlePositionRegions,
   buildTestSiteRegions, buildRegionYieldData, areQuadrantsAdjacent, parseRegionKey,
-  sectorCompassNames, classifyPattern, visibleFindings, computeFunctionalYield,
-  resolveMetadataColumns, discoverDieMetadataKeys, renderFindingsReportHtml, openHtmlReport,
+  sectorCompassNames, classifyPattern, computeFunctionalYield,
+  resolveMetadataColumns, discoverDieMetadataKeys, openHtmlReport,
   renderSummaryReportHtml, renderLotSummaryReportHtml, DEFAULT_FACET_CURATION,
 } from './deprecated.js';

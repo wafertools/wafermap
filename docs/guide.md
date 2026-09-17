@@ -7,8 +7,8 @@ from a single interactive map up to a multi-wafer gallery with statistical findi
 It focuses on practical patterns; for the full type reference see [API Reference](api.md).
 For a visual overview of how the library fits together, see [Architecture](architecture.md).
 
-**How to read this guide.** The first six sections — [Installation and setup](#installation-and-setup)
-through [Working with test values](#working-with-test-values) — are the core path: read them in
+**How to read this guide.** The sections from [Installation and setup](#installation-and-setup)
+through [Working with test values](#working-with-test-values) are the core path: read them in
 order to go from install to a map coloured by bins or test values. Everything after
 that is a topic jump: pick the section for the feature you need
 ([findings](#adding-statistical-findings), [gallery](#building-a-lot-gallery),
@@ -279,6 +279,28 @@ buildWaferMap({
 });
 ```
 
+### A die layout with no test data
+
+When there are no test results yet — to count gross dies per wafer, plan reticle steps, or show the
+expected map before data arrives — ask `buildWaferMap` for the layout:
+
+```ts
+const layout = buildWaferMap({
+  layout:      true,
+  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+  dieConfig:   { width: 10, height: 8 },
+});
+
+layout.dies.length;                  // gross die per wafer
+renderWaferMap(container, layout);   // draws like any map, every die as no-data
+```
+
+The layout holds every die site lying **fully** on the wafer, notch or flat included — the sites a
+prober can step to, so it never contains edge-straddling dies. Die `(0, 0)` is the site centred on
+the wafer, and `x`/`y` count sites in the directions `dieConfig.xAxisDirection`/`yAxisDirection`
+give. The diameter and die size are both required: without them `buildWaferMap` throws rather than
+guessing. Edge exclusion, reticles and orientation apply as for any map.
+
 **→ [Demo: Die size and wafer geometry](examples/geometry.html)**
 
 
@@ -382,6 +404,44 @@ gallery each wafer keeps its own, so a lot mixing test programs is judged wafer 
 
 
 ![Named hard bins with colour legend](images/guide-bins-named.png)
+
+## How bin colours are assigned
+
+A bin's colour comes from its number and whether it passes, never from how many dies it has, so
+bin 7 is the same colour in every lot, gallery and screenshot of a program. One rule
+(which every surface uses — map, legend, summary panel, Insights charts) applies it:
+
+- **Pass bins are green, fail bins are not.** Which bins pass comes from `passBins`, so a failing
+  bin 1 is never green and a passing bin 3 always is. A soft bin counts as passing when every die
+  carrying it passes.
+- **The bin number picks the colour.** Bin 1 takes the palette's first pass colour and bin 2 its
+  first fail colour, then on through each list, wrapping round. The front of each list is the
+  most distinct, so the low bin numbers most programs use get the clearest colours.
+- **Hard and soft bins are coloured separately.** Soft bins start half a palette further on, so
+  hard bin 3 and soft bin 3 are different colours.
+- **Bins a palette-length apart share a colour** (fail bins 2 and 21 in the default palette).
+  When both are on screen the map raises a `bin-colors-shared` warning naming them rather than
+  letting two bins look identical.
+- **Colours from bin definitions win.** A `BinDef.color` (a site's standard bin colour sheet, say)
+  overrides the palette for that bin; the viewer can switch that off with **Use colours from bin
+  definitions** in the Palette menu, and back on again.
+
+### Using bin colours in your own UI
+
+When your application shows bins next to the map — a table with colour swatches, an exported chart,
+a slide — use the colours the map draws rather than picking your own:
+
+```ts
+const colors = ctrl.getBinColors();   // a live map or gallery, with the palette the user chose
+colors.hard.get(7);                   // hard bin 7's colour
+colors.pass.hard.has(2);              // whether hard bin 2 passes on this map
+
+import { binColorsForMaps } from '@wafertools/wafermap';
+const exportColors = binColorsForMaps(results, { binColorScheme: 'accessible' });  // no map on screen
+```
+
+`binColorsForMaps` judges each map by its own `passBins`, so bins keep the colours they have on
+screen, even in a lot that mixes test programs. Hard and soft bins are separate `Map`s.
 
 ## Working with test values
 
@@ -534,6 +594,151 @@ Functional tests are excluded from every parametric statistic — per-test stats
 ![Test pass/fail colouring on a functional test](images/guide-test-values-functional.png)
 
 
+## Working with metadata
+
+Metadata is anything describing a wafer or die beyond its test results: the lot and test program a
+wafer came from, or the project a die belongs to on a multiproject wafer. It shows in the identity
+header, tooltips and die-list exports, and can colour the map itself.
+
+### Wafer vs. per-die metadata
+
+Lot- and wafer-level facts — lot, product, test program, temperature, test date — belong on **`WaferMetadata`**, passed once via `waferConfig.metadata`. A die cannot differ from its wafer on these, so they live on the wafer and the tooltip reads them from there:
+
+```ts
+const result = buildWaferMap({
+  results: rows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
+  waferConfig: {
+    metadata: { lot: 'LOT-001', product: 'NMOS-A', testProgram: 'NM_v3.2', temperature: 25 },
+  },
+  dieConfig: { width: 10, height: 10 },
+});
+```
+
+Use the `metadata` field on a `DieResult` only for data that **genuinely varies die-to-die** — any key is accepted via the open index signature and shown in the tooltip:
+
+```ts
+results: rows.map(r => ({
+  x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin),
+  metadata: { probeCard: r.probe_card, inkDate: r.ink_date },
+})),
+```
+
+**Metadata appears automatically in hover tooltips** — no extra configuration. The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. `null`/`undefined` values are skipped. wmap renders whatever keys you supply, so you control tooltip content through the metadata you set.
+
+**Metadata also reaches the die-list table and its CSV export** ([API §5.4.4](api.md#544-die-list-csv-export)) — not only the tooltip. Die metadata is on by default, one column per key; wafer metadata is CSV-only by default, since it's constant down every row (screen noise) but exactly what makes a detached CSV self-describing enough to concatenate several wafers' exports and still know which wafer each row came from. Column labels use `metadataFields[].label` when declared, else a Title-Cased version of the key, matching the tooltip's own labels.
+
+> **Changed in 0.15.0:** wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were removed from `DieMetadata` — set them on `WaferMetadata` instead. See the migration note in the changelog.
+
+Read metadata back from the die in any callback:
+
+```ts
+renderWaferMap(container, result, {
+  onClick: (die) => {
+    console.log(die.metadata?.lotId);      // named field
+    console.log(die.metadata?.probeCard);  // custom field
+  },
+});
+```
+
+### Wafer-level metadata
+
+Custom fields work the same way on `waferConfig.metadata` (`WaferMetadata → §12.3`). They appear in the summary panel header alongside the named fields:
+
+```ts
+const result = buildWaferMap({
+  results: rows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
+  dieConfig: { width: 10, height: 10 },
+  waferConfig: {
+    metadata: {
+      lot:      'LOT123',
+      waferId:  1,
+      testDate: '2026-04-23',
+      // custom fields — shown in summary panel header
+      equipmentId: 'P-01',
+      recipe:      'NMOS-R2',
+    },
+  },
+});
+```
+
+### Metadata / layout plot mode
+
+Sometimes a grid position represents a classification rather than a test result —
+which project a die belongs to on a multiproject wafer, vendor/third-party
+ownership, or reserved/shared area. Mapping that onto hard bins borrows
+pass/fail-flavoured colours and "Hard Bin" terminology for data that isn't a bin
+at all. The `'metadata'` plot mode is a generic alternative: it colours and
+legends the map from whatever key you already have in `die.metadata`, no new
+per-die field required.
+
+#### Opting a field in
+
+A key is only offered in the toolbar's mode menu once it's listed in
+`metadataFields` — never auto-detected:
+
+```ts
+const result = buildWaferMap({
+  results: [
+    { x: 4, y: -2, hbin: 1, metadata: { project: 'our-project' } },
+    { x: 5, y: -2, metadata: { project: 'vendor' } }, // vendor die — no test data at all
+  ],
+  metadataFields: [
+    { key: 'project', label: 'Project', values: [
+      { value: 'our-project', color: '#4e79a7' },
+      { value: 'vendor',      label: 'Third-party vendor', color: '#bab0ac' },
+    ] },
+  ],
+});
+
+renderWaferMap(container, result, {
+  viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project' },
+});
+```
+
+`values` is optional per field — distinct values with no override are still
+shown, auto-labelled with the raw value and auto-coloured from an ordered
+palette (assigned in natural alphanumeric order — `D0, D1, D2, D10`, not the
+lexicographic `D0, D1, D10, D2` — so colours are stable across reloads and the
+legend reads in the order an engineer expects).
+
+#### Coexists with test/bin data
+
+A die can carry `hbin`/`testValues` *and* a metadata classification at the same
+time — `'metadata'` is just another selectable toolbar view of the same die,
+the way `hardBin`/`softBin`/`value` already are. `die.metadata` already renders
+in every tooltip regardless of plot mode, so switching into `'metadata'` mode
+changes the map's colour/legend without changing what the tooltip shows.
+
+#### Click-to-highlight in the legend
+
+Clicking a legend swatch dims every other value, exactly like `hardBin`/
+`softBin` — click the same swatch again to clear it. This is
+`highlightMetadataValue`, the string-keyed analogue of `highlightBin`:
+
+```ts
+renderWaferMap(container, result, {
+  viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project', highlightMetadataValue: 'vendor' },
+});
+```
+
+#### What's deliberately absent
+
+- **No lot-stacking.** A die's layout classification is a constant of the
+  design, not a per-wafer measurement — there's nothing meaningful to
+  aggregate across a lot, so `'metadata'` has no `stackedX` counterpart.
+- **No colour-scheme picker.** The palette control is hidden in this mode —
+  colouring always uses the dedicated ordered palette plus `values[].color`
+  overrides, never the built-in schemes.
+- **Never affects yield.** `die.metadata` was never part of the
+  yield-eligibility pipeline, so a die's yield/pass-fail status (if it has
+  one) is entirely unaffected by its metadata classification.
+
+Selection, zoom, and PNG export need no special handling — none of them are
+plot-mode-aware.
+
+**→ [Demo: Metadata / layout plot mode](examples/metadata-mode.html)**
+
+
 ## Retests and enriching dies after build
 
 ### Handling retests
@@ -596,67 +801,6 @@ renderWaferMap(container, { ...result, dies: enrichedDies, testDefs });
 
 > Always use `getDieKey(die)` for lookups rather than manually formatting `"${die.x},${die.y}"` —
 > it guarantees the correct format after any grid offset correction.
-
-### Wafer vs. per-die metadata
-
-Lot- and wafer-level facts — lot, product, test program, temperature, test date — belong on **`WaferMetadata`**, passed once via `waferConfig.metadata`. A die cannot differ from its wafer on these, so they live on the wafer and the tooltip reads them from there:
-
-```ts
-const result = buildWaferMap({
-  results: rows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
-  waferConfig: {
-    metadata: { lot: 'LOT-001', product: 'NMOS-A', testProgram: 'NM_v3.2', temperature: 25 },
-  },
-  dieConfig: { width: 10, height: 10 },
-});
-```
-
-Use the `metadata` field on a `DieResult` only for data that **genuinely varies die-to-die** — any key is accepted via the open index signature and shown in the tooltip:
-
-```ts
-results: rows.map(r => ({
-  x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin),
-  metadata: { probeCard: r.probe_card, inkDate: r.ink_date },
-})),
-```
-
-**Metadata appears automatically in hover tooltips** — no extra configuration. The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. `null`/`undefined` values are skipped. wmap renders whatever keys you supply, so you control tooltip content through the metadata you set.
-
-**Metadata also reaches the die-list table and its CSV export** ([API §5.4.4](api.md#544-die-list-csv-export)) — not only the tooltip. Die metadata is on by default, one column per key; wafer metadata is CSV-only by default, since it's constant down every row (screen noise) but exactly what makes a detached CSV self-describing enough to concatenate several wafers' exports and still know which wafer each row came from. Column labels use `metadataFields[].label` when declared, else a Title-Cased version of the key, matching the tooltip's own labels.
-
-> **Changed in 0.15.0:** wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were removed from `DieMetadata` — set them on `WaferMetadata` instead. See the migration note in the changelog.
-
-Read metadata back from the die in any callback:
-
-```ts
-renderWaferMap(container, result, {
-  onClick: (die) => {
-    console.log(die.metadata?.lotId);      // named field
-    console.log(die.metadata?.probeCard);  // custom field
-  },
-});
-```
-
-### Wafer-level metadata
-
-Custom fields work the same way on `waferConfig.metadata` (`WaferMetadata → §12.3`). They appear in the summary panel header alongside the named fields:
-
-```ts
-const result = buildWaferMap({
-  results: rows.map(r => ({ x: Number(r.x), y: Number(r.y), hbin: Number(r.hbin) })),
-  dieConfig: { width: 10, height: 10 },
-  waferConfig: {
-    metadata: {
-      lot:      'LOT123',
-      waferId:  1,
-      testDate: '2026-04-23',
-      // custom fields — shown in summary panel header
-      equipmentId: 'P-01',
-      recipe:      'NMOS-R2',
-    },
-  },
-});
-```
 
 **→ [Demo: Working with retested dies](examples/retests.html)**
 
@@ -889,6 +1033,60 @@ To follow the OS preference, put the light values on `:root` and override in a `
 The **data palette** (the bin/value colours of the dies) is separate — it's controlled by `binColorScheme` and `valueColorScheme` (see [Custom colour schemes](#custom-colour-schemes)), not these tokens, and does not follow the chrome accent.
 
 **→ [Demo: Theming with `--wmap-*` tokens](examples/theming.html)** · full token reference in the [API docs](api.md#541-theming-wmap-custom-properties)
+
+
+### Custom colour schemes
+
+Bin maps and value maps have **separate** colour schemes, each its own view option and its own
+registry, so a user can keep Mako for values and the colour-blind-safe palette for bins
+without either resetting the other on a mode switch:
+
+- **`binColorScheme`** — `'default'` or `'accessible'` (colour-blind safe). Used by Hard Bin and
+  Soft Bin maps.
+- **`valueColorScheme`** — `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`,
+  `'plasma'`, `'inferno'`, `'mako'`, `'traffic'` (green→yellow→red, low=good) and
+  `'jet'` (the MATLAB rainbow). Used by Test Value maps and all three stacked modes — a stacked-bin
+  map is a value map, showing how often a bin occurs at each position.
+- **`reverseValueScheme`** — flips whichever gradient is selected, offered in the menu as
+  **Reverse gradient**. One flag rather than a reversed twin of every ramp, so it works on a
+  gradient you registered yourself too.
+
+Every built-in but `'traffic'` and `'jet'` reads **low = dark, high = light** — the direction
+matplotlib and seaborn define these ramps with. It is worth knowing why, because it is easy to
+assume the opposite is friendlier: on a stacked map the healthy bulk of the wafer (fail count 0)
+sits back as dark ground and an edge ring or a scratch lights up. Reversed, the defects become
+dark specks on a glowing field, which is the harder read. Set `reverseValueScheme` when your
+parameter genuinely has its notable end at the bottom.
+
+#### Registering your own
+
+```ts
+import { registerBinColorScheme, registerValueColorScheme } from '@wafertools/wafermap';
+
+registerBinColorScheme('my-brand', {
+  label: 'My Brand',
+  pass: ['#1b7f3b', '#7cc68a'],                         // passing bins, from bin 1
+  fail: ['#c62828', '#1565c0', '#ef6c00', '#6a1b9a'],   // failing bins, from bin 2 — most distinct first, no greens
+});
+
+registerValueColorScheme('my-brand', {
+  label: 'My Brand',
+  forValue: (t: number) => `rgb(0,${Math.round(t * 100)},${Math.round(80 + t * 175)})`,  // t ∈ [0, 1]
+});
+
+// Each now appears in the matching toolbar Palette menu automatically. Apply programmatically:
+ctrl.setOptions({ binColorScheme: 'my-brand', valueColorScheme: 'my-brand' });
+```
+
+Register your schemes once, before any `renderWaferMap` call.
+They are global and persist for the lifetime of the page. Both choices are `WaferPreferences`,
+so `onViewOptionsChange` reports a change to either with category `'preference'` — save them
+there and pass them back in `viewOptions` to remember a user's choice.
+
+**→ [Demo: Custom colour schemes](examples/display-control.html#custom-schemes)**
+
+
+![Colour scheme dropdown open on three-wafer layout](images/guide-color-schemes.png)
 
 
 ## Responding to user interaction
@@ -1172,6 +1370,29 @@ Note `relatedIds` is a *different* relationship and is not interchangeable: it
 records a finding's finer-grained supporting detail, and some of the ids it names
 were replaced by a merge and no longer exist in `findings`.
 
+### Capability, pass rates and region yield
+
+The analysis also returns the numbers behind the Insights charts and the Summary panel, for
+exports and your own UI:
+
+```ts
+const summary = analyzeWaferMap(result, { computePerTestStats: true });
+
+summary.stats.capability;                   // Cp/Cpk/Pp/Ppk per parametric test, worst first
+summary.stats.testSpecYield;                // pass rate by spec limits
+summary.stats.testFlagYield;                // pass rate by the tester's own recorded verdict
+summary.stats.functionalYield;              // pass rate of functional (pass/fail-only) tests
+summary.stats.specVerdictDisagreementDies;  // dies where spec limits and the tester disagree
+summary.stats.regionYield;                  // { ring, quadrant } yield, with die and pass counts
+```
+
+`analyzeWaferLot` returns the same fields for the whole lot. There, capability treats each wafer
+as a subgroup, so Cp (within-wafer spread) and Pp (overall spread) genuinely differ; pass rates and
+region yield sum each wafer's counts, and are left out unless every wafer reported them. Read these
+rather than computing capability or ring yield yourself: the pooled standard deviation and
+per-wafer pass bins are easy to get subtly wrong. `capability` needs `computePerTestStats` (or
+`enableTestValueAnalysis`), because it scans every test value.
+
 ### Updating findings after a data change
 
 ```ts
@@ -1279,30 +1500,6 @@ const ctrl = renderWaferMap(container, result, { statsSummary: summary });
 ctrl.setResult(newResult);
 const newSummary = analyzeWaferMap(newResult);
 ctrl.setStatsSummary(newSummary);
-```
-
-### Summary panel in a gallery
-
-For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Summary" button appears in the control bar opening one panel — no tabs — with:
-
-- lot-level findings: cross-wafer patterns and yield outliers
-- a **Wafer Yield** section listing every wafer, each row badged with its own findings count; clicking a row detaches that wafer's card into its own window with its summary panel
-- a **Findings report** button covering every wafer's findings in one printable document
-
-See [Lot-level statistical findings](#lot-level-statistical-findings) for the full example.
-
-If you are building a gallery *without* lot-level analysis — for example, a set of unrelated wafers — you can attach `statsSummary` to each item individually:
-
-```ts
-const items = waferResults.map((r, i) => ({
-  ...r,
-  label:        `Wafer ${i + 1}`,
-  statsSummary: analyzeWaferMap(r),
-}));
-
-renderWaferGallery(container, items);
-// → Summary panel button appears in the toolbar, listing the wafers with findings
-// → Each card's own window shows its own per-wafer summary
 ```
 
 **→ [Demo: Summary panel](examples/statistics.html#summary-panel)**
@@ -1469,6 +1666,30 @@ summary — detach the card into its own window and click the findings button to
 see ring, quadrant, sector, and cluster findings on the aggregated map.  No extra
 code is required.
 
+### Summary panel in a gallery
+
+For a gallery, call `analyzeWaferLot` and pass the result as `lotStatsSummary` — that's all you need. `analyzeWaferLot` runs per-wafer analysis internally, so the result contains complete findings for every wafer. A "Summary" button appears in the control bar opening one panel — no tabs — with:
+
+- lot-level findings: cross-wafer patterns and yield outliers
+- a **Wafer Yield** section listing every wafer, each row badged with its own findings count; clicking a row detaches that wafer's card into its own window with its summary panel
+- a **Findings report** button covering every wafer's findings in one printable document
+
+See [Lot-level statistical findings](#lot-level-statistical-findings) for the full example.
+
+If you are building a gallery *without* lot-level analysis — for example, a set of unrelated wafers — you can attach `statsSummary` to each item individually:
+
+```ts
+const items = waferResults.map((r, i) => ({
+  ...r,
+  label:        `Wafer ${i + 1}`,
+  statsSummary: analyzeWaferMap(r),
+}));
+
+renderWaferGallery(container, items);
+// → Summary panel button appears in the toolbar, listing the wafers with findings
+// → Each card's own window shows its own per-wafer summary
+```
+
 **→ [Demo: Building a lot gallery](examples/statistics.html#lot-gallery)**  
 See also: [Demo: Lot-level findings with stacked modes](examples/statistics.html#lot-findings)
 
@@ -1537,69 +1758,6 @@ ctrl.setLotStatsSummary(newLotSummary);
 
 ![Lot findings gallery with panel open](images/guide-lot-findings-gallery.png)
 
-### Exporting reports
-
-The library can generate standalone printable HTML reports that open in a new browser tab and can be saved as PDF.
-
-> **Calling the report builders directly is deprecated — removed in 0.31.0.** The Summary panel's report button produces these reports; `setReportOpener`, below, routes them into your host and stays.
-
-**Wafer summary report** — everything shown in a single wafer's summary panel (yield, bins, ring/quadrant yield, test stats, findings):
-
-```ts
-import { renderSummaryReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
-
-const html = renderSummaryReportHtml({
-  ...result,   // wafer, dies, bin/test defs, and the passBins + ringCount the map was built with
-  yieldSummary:  summary.stats,
-  dataCoverage:  summary.stats.dataCoverage,
-  statsSummary:  summary,
-});
-openHtmlReport(html);
-```
-
-**Lot summary report** — the lot-level equivalent, covering per-wafer yield table, bin breakdown, ring/quadrant yield, lot-level test stats, and lot findings. Grouping, per-group analysis, and rendering all happen internally — pass the raw `items` list, never a pre-computed `lotSummary`; a mixed multi-lot/multi-product/multi-temperature load is automatically split into separate labelled sections rather than pooled:
-
-```ts
-import { renderLotSummaryReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
-
-const html = renderLotSummaryReportHtml({
-  // Each item carries its own wafer, dies and passBins from its result.
-  items: waferMapResults.map((r, i) => ({ ...r, label: `W${i + 1}` })),
-  hbinDefs:  waferMapResults[0].hbinDefs,
-  sbinDefs:  waferMapResults[0].sbinDefs,
-  testDefs:  waferMapResults[0].testDefs,
-  ringCount: waferMapResults[0].ringCount,
-});
-openHtmlReport(html);
-```
-
-**Findings-only report** — a lighter report with just the severity-coded findings table, works for both wafer and lot summaries:
-
-```ts
-import { renderFindingsReportHtml, openHtmlReport } from '@wafertools/wafermap/stats';
-
-openHtmlReport(renderFindingsReportHtml(lotSummary));
-```
-
-The summary panel's "Summary report" button in `renderWaferMap` and `renderWaferGallery` calls the appropriate function automatically — you only need to call these directly when building a custom export flow.
-
-**Embedded hosts (Tauri, Electron, WebView2).** In hosts where `window.open` is blocked, register a custom opener once at startup:
-
-```ts
-import { setReportOpener } from '@wafertools/wafermap/stats';
-
-setReportOpener(html => {
-  // route to a host-managed window, IPC call, etc.
-  myApp.showReport(html);
-});
-```
-
-All `openHtmlReport` calls — including the summary panel buttons — then route through your opener automatically.
-
-![Wafer summary report](images/report-wafer-summary.png)
-
-![Lot summary report](images/report-lot-summary.png)
-
 ## The Insights tab
 
 `renderWaferMap` and `renderWaferGallery` both support an opt-in **Insights** tab — a chart suite covering per-test pass rates, process capability, value distributions, wafer-to-wafer drift, and test correlation, computed from the same dies already on screen. Enable it with one option; there's no per-chart wiring and no host-computed grouping to set up.
@@ -1648,6 +1806,75 @@ Histogram, correlation, and scatter each draw one shared chart rather than one p
 Clicking a leaf row in the yield bar or the box plot — or a point on the trend chart — opens that wafer in a modal. A box-plot click is context-aware: it opens the wafer already in **test-value mode on the test you were looking at**, not the toolbar's default plot mode — so drilling from "Idsat" in the box plot lands you on the Idsat colour map, not a hard-bin view you'd have to switch away from.
 
 **→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
+
+## Exporting reports
+
+The library generates standalone printable HTML reports, which can be shown in wmap's own modal, opened in a browser tab, saved as a file or printed to PDF. They need no DOM, so they also run in Node — a nightly lot report, an archive of each wafer's report.
+
+**Wafer summary report** — everything shown in a single wafer's Summary panel (yield, bins, ring/quadrant yield, test stats, capability, findings). Pass the built map; it carries the pass bins and ring count the report must use:
+
+```ts
+import { analyzeWaferMap, renderWaferReportHtml } from '@wafertools/wafermap/stats';
+import { openReportModal } from '@wafertools/wafermap/render';
+
+const summary = analyzeWaferMap(result);
+openReportModal(renderWaferReportHtml(result, summary));   // summary is optional — omitted, it is computed
+```
+
+**Lot summary report** — the lot-level equivalent: per-wafer yield table, bin breakdown, ring/quadrant yield, lot test stats and lot findings. Pass the built maps; bin and test definitions are merged across them, and a load spanning more than one lot, product, program or temperature is split into separate labelled sections rather than pooled:
+
+```ts
+import { renderLotReportHtml } from '@wafertools/wafermap/stats';
+
+const html = renderLotReportHtml(waferMapResults);   // each may carry a label and a precomputed statsSummary
+fs.writeFileSync('lot-report.html', html);           // or openReportModal(html) in a page
+```
+
+**Findings-only report** — a lighter report with just the severity-coded findings table, for a wafer or a lot summary:
+
+```ts
+import { renderFindingsReportHtml } from '@wafertools/wafermap/stats';
+
+openReportModal(renderFindingsReportHtml(lotSummary));
+```
+
+The Summary panel's "Summary report" button in `renderWaferMap` and `renderWaferGallery` uses the same builders — you only need to call them yourself for a custom export flow.
+
+> `renderSummaryReportHtml`, `renderLotSummaryReportHtml` and `openHtmlReport` are deprecated — removed in 0.31.0. The first two took loose pieces with `passBins` and `ringCount` defaulting to `[1]` and `4`; the builders above read them from the map.
+
+**Embedded hosts (Tauri, Electron, WebView2).** In hosts where `window.open` is blocked, register a custom opener once at startup:
+
+```ts
+import { setReportOpener } from '@wafertools/wafermap/stats';
+
+setReportOpener(html => {
+  // route to a host-managed window, IPC call, etc.
+  myApp.showReport(html);
+});
+```
+
+All `openHtmlReport` calls — including the summary panel buttons — then route through your opener automatically.
+
+![Wafer summary report](images/report-wafer-summary.png)
+
+![Lot summary report](images/report-lot-summary.png)
+
+### Names of saved files
+
+Every image and CSV the library saves is named for its data — the lot, then the wafer or wafer
+count, then the content:
+
+```text
+LOT123_W05_hard-bin.png                a map
+LOT123_W05_die-list.csv                the die list
+LOT123_25-wafers_yield-by-wafer.png    an Insights chart from a gallery
+```
+
+A part the data doesn't have is left out, never invented. Your `onSaveImage` and `onSaveText`
+hooks receive this name as `suggestedName`. `downloadFilename` still names a map's or gallery's PNG
+outright; from 0.31.0 it becomes a prefix for every saved file — see the
+[API reference](api.md#545-saved-file-names).
+
 
 ## Reticle overlays
 
@@ -1862,80 +2089,6 @@ wmWorker.terminate();
 > server-side environment.
 
 **→ [Demo: Processing large datasets with a Web Worker](examples/worker.html)**
-
-## Custom colour schemes
-
-Bin maps and value maps have **separate** colour schemes, each its own view option and its own
-registry, so a user can keep Mako for values and the colour-blind-safe palette for bins
-without either resetting the other on a mode switch:
-
-- **`binColorScheme`** — `'default'` or `'accessible'` (colour-blind safe). Used by Hard Bin and
-  Soft Bin maps.
-- **`valueColorScheme`** — `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`,
-  `'plasma'`, `'inferno'`, `'mako'`, `'traffic'` (green→yellow→red, low=good) and
-  `'jet'` (the MATLAB rainbow). Used by Test Value maps and all three stacked modes — a stacked-bin
-  map is a value map, showing how often a bin occurs at each position.
-- **`reverseValueScheme`** — flips whichever gradient is selected, offered in the menu as
-  **Reverse gradient**. One flag rather than a reversed twin of every ramp, so it works on a
-  gradient you registered yourself too.
-
-Every built-in but `'traffic'` and `'jet'` reads **low = dark, high = light** — the direction
-matplotlib and seaborn define these ramps with. It is worth knowing why, because it is easy to
-assume the opposite is friendlier: on a stacked map the healthy bulk of the wafer (fail count 0)
-sits back as dark ground and an edge ring or a scratch lights up. Reversed, the defects become
-dark specks on a glowing field, which is the harder read. Set `reverseValueScheme` when your
-parameter genuinely has its notable end at the bottom.
-
-### How bin colours are assigned
-
-A bin's colour comes from its number and whether it passes, never from how many dies it has, so
-bin 7 is the same colour in every lot, gallery and screenshot of a program. One rule
-(which every surface uses — map, legend, summary panel, Insights charts) applies it:
-
-- **Pass bins are green, fail bins are not.** Which bins pass comes from `passBins`, so a failing
-  bin 1 is never green and a passing bin 3 always is. A soft bin counts as passing when every die
-  carrying it passes.
-- **The bin number picks the colour.** Bin 1 takes the palette's first pass colour and bin 2 its
-  first fail colour, then on through each list, wrapping round. The front of each list is the
-  most distinct, so the low bin numbers most programs use get the clearest colours.
-- **Hard and soft bins are coloured separately.** Soft bins start half a palette further on, so
-  hard bin 3 and soft bin 3 are different colours.
-- **Bins a palette-length apart share a colour** (fail bins 2 and 21 in the default palette).
-  When both are on screen the map raises a `bin-colors-shared` warning naming them rather than
-  letting two bins look identical.
-- **Colours from bin definitions win.** A `BinDef.color` (a site's standard bin colour sheet, say)
-  overrides the palette for that bin; the viewer can switch that off with **Use colours from bin
-  definitions** in the Palette menu, and back on again.
-
-### Registering your own
-
-```ts
-import { registerBinColorScheme, registerValueColorScheme } from '@wafertools/wafermap';
-
-registerBinColorScheme('my-brand', {
-  label: 'My Brand',
-  pass: ['#1b7f3b', '#7cc68a'],                         // passing bins, from bin 1
-  fail: ['#c62828', '#1565c0', '#ef6c00', '#6a1b9a'],   // failing bins, from bin 2 — most distinct first, no greens
-});
-
-registerValueColorScheme('my-brand', {
-  label: 'My Brand',
-  forValue: (t: number) => `rgb(0,${Math.round(t * 100)},${Math.round(80 + t * 175)})`,  // t ∈ [0, 1]
-});
-
-// Each now appears in the matching toolbar Palette menu automatically. Apply programmatically:
-ctrl.setOptions({ binColorScheme: 'my-brand', valueColorScheme: 'my-brand' });
-```
-
-Register your schemes once, before any `renderWaferMap` call.
-They are global and persist for the lifetime of the page. Both choices are `WaferPreferences`,
-so `onViewOptionsChange` reports a change to either with category `'preference'` — save them
-there and pass them back in `viewOptions` to remember a user's choice.
-
-**→ [Demo: Custom colour schemes](examples/display-control.html#custom-schemes)**
-
-
-![Colour scheme dropdown open on three-wafer layout](images/guide-color-schemes.png)
 
 ## Recipes
 
@@ -2227,80 +2380,7 @@ limits are defined, cluster detection is skipped automatically.
 > `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`, which handle geometry, orientation, probe
 > paths, reticles and interaction. If you depend on the pipeline, say so at
 > https://github.com/wafertools/wafermap/issues.
-
-## Metadata / layout plot mode
-
-Sometimes a grid position represents a classification rather than a test result —
-which project a die belongs to on a multiproject wafer, vendor/third-party
-ownership, or reserved/shared area. Mapping that onto hard bins borrows
-pass/fail-flavoured colours and "Hard Bin" terminology for data that isn't a bin
-at all. The `'metadata'` plot mode is a generic alternative: it colours and
-legends the map from whatever key you already have in `die.metadata`, no new
-per-die field required.
-
-### Opting a field in
-
-A key is only offered in the toolbar's mode menu once it's listed in
-`metadataFields` — never auto-detected:
-
-```ts
-const result = buildWaferMap({
-  results: [
-    { x: 4, y: -2, hbin: 1, metadata: { project: 'our-project' } },
-    { x: 5, y: -2, metadata: { project: 'vendor' } }, // vendor die — no test data at all
-  ],
-  metadataFields: [
-    { key: 'project', label: 'Project', values: [
-      { value: 'our-project', color: '#4e79a7' },
-      { value: 'vendor',      label: 'Third-party vendor', color: '#bab0ac' },
-    ] },
-  ],
-});
-
-renderWaferMap(container, result, {
-  viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project' },
-});
-```
-
-`values` is optional per field — distinct values with no override are still
-shown, auto-labelled with the raw value and auto-coloured from an ordered
-palette (assigned in natural alphanumeric order — `D0, D1, D2, D10`, not the
-lexicographic `D0, D1, D10, D2` — so colours are stable across reloads and the
-legend reads in the order an engineer expects).
-
-### Coexists with test/bin data
-
-A die can carry `hbin`/`testValues` *and* a metadata classification at the same
-time — `'metadata'` is just another selectable toolbar view of the same die,
-the way `hardBin`/`softBin`/`value` already are. `die.metadata` already renders
-in every tooltip regardless of plot mode, so switching into `'metadata'` mode
-changes the map's colour/legend without changing what the tooltip shows.
-
-### Click-to-highlight in the legend
-
-Clicking a legend swatch dims every other value, exactly like `hardBin`/
-`softBin` — click the same swatch again to clear it. This is
-`highlightMetadataValue`, the string-keyed analogue of `highlightBin`:
-
-```ts
-renderWaferMap(container, result, {
-  viewOptions: { plotMode: 'metadata', activeMetadataKey: 'project', highlightMetadataValue: 'vendor' },
-});
-```
-
-### What's deliberately absent
-
-- **No lot-stacking.** A die's layout classification is a constant of the
-  design, not a per-wafer measurement — there's nothing meaningful to
-  aggregate across a lot, so `'metadata'` has no `stackedX` counterpart.
-- **No colour-scheme picker.** The palette control is hidden in this mode —
-  colouring always uses the dedicated ordered palette plus `values[].color`
-  overrides, never the built-in schemes.
-- **Never affects yield.** `die.metadata` was never part of the
-  yield-eligibility pipeline, so a die's yield/pass-fail status (if it has
-  one) is entirely unaffected by its metadata classification.
-
-Selection, zoom, and PNG export need no special handling — none of them are
-plot-mode-aware.
-
-**→ [Demo: Metadata / layout plot mode](examples/metadata-mode.html)**
+>
+> For a die layout with no test data — gross die per wafer, reticle planning — use
+> `buildWaferMap({ layout: true, waferConfig: { diameter }, dieConfig: { width, height } })`, which replaces
+> `createWafer` + `generateDies` + `clipDiesToWafer` and keeps every site fully on the wafer.

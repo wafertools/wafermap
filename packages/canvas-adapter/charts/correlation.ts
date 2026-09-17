@@ -24,6 +24,7 @@ import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, saveTextFile, type SaveTextHandler } from '../toolbar.js';
 import { attachChartTip, cardShell, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
+import { escHtml } from '../../core/utils.js';
 
 const MATRIX_LIMIT_MIN = 5;
 const MATRIX_LIMIT_MAX = 100;
@@ -423,11 +424,11 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       const xLabel = matrix.tests[xi].label;
       const yLabel = matrix.tests[yi].label;
       if (isDiag) {
-        tooltip.innerHTML = `<strong>${xLabel}</strong>`;
+        tooltip.innerHTML = `<strong>${escHtml(xLabel)}</strong>`;
       } else if (cell?.r !== null && cell?.r !== undefined) {
-        tooltip.innerHTML = `<strong>${shortLabel(matrix.tests[yi])}</strong> (#${matrix.tests[yi].testNumber}) vs <strong>${shortLabel(matrix.tests[xi])}</strong> (#${matrix.tests[xi].testNumber})<br>r = ${cell.r.toFixed(4)} · n = ${cell.n.toLocaleString()}${onSelectPair ? '<br><em>click to view in scatter</em>' : ''}`;
+        tooltip.innerHTML = `<strong>${escHtml(shortLabel(matrix.tests[yi]))}</strong> (#${matrix.tests[yi].testNumber}) vs <strong>${escHtml(shortLabel(matrix.tests[xi]))}</strong> (#${matrix.tests[xi].testNumber})<br>r = ${cell.r.toFixed(4)} · n = ${cell.n.toLocaleString()}${onSelectPair ? '<br><em>click to view in scatter</em>' : ''}`;
       } else {
-        tooltip.innerHTML = `${yLabel} vs ${xLabel}<br><em>insufficient data</em>`;
+        tooltip.innerHTML = `${escHtml(`${yLabel} vs ${xLabel}`)}<br><em>insufficient data</em>`;
       }
       tooltip.style.display = 'block';
       positionChartTooltip(tooltip, card, e.clientX, e.clientY);

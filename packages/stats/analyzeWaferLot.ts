@@ -1,4 +1,8 @@
 import { analyzeWaferMap } from './analyzeWaferMap.js';
+import { normalizeInput } from './normalizeInput.js';
+import { poolCapability, poolRegionYield, poolPassRates } from './summaryFigures.js';
+import { mergeTestDefs } from './mergeTestDefs.js';
+import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import { median } from '../core/utils.js';
 import { describeWaferPopulation, populationStat, type WaferPopulation } from './population.js';
 import type {
@@ -157,9 +161,12 @@ export function analyzeWaferLot(
   items: AnalyzeWaferLotInput,
   options: AnalyzeWaferMapOptions & { perWaferSummaries?: StatsSummary[] } = {},
 ): LotStatsSummary {
-  const perWafer = items.map((item, waferIndex) => ({
+  // Built once here, so the lot figures below and each wafer's own analysis read
+  // the same dies without building a raw input twice.
+  const results = items.map(normalizeInput);
+  const perWafer = results.map((result, waferIndex) => ({
     waferIndex,
-    summary: options.perWaferSummaries?.[waferIndex] ?? analyzeWaferMap(item, options),
+    summary: options.perWaferSummaries?.[waferIndex] ?? analyzeWaferMap(result, options),
   }));
   const findings = [
     ...buildRepeatedPatternFindings(perWafer),
@@ -216,9 +223,24 @@ export function analyzeWaferLot(
     findings,
     lot: Object.keys(lotIdentity).length > 0 ? lotIdentity : undefined,
     ...(mixedIdentityFields.length > 0 ? { mixedIdentityFields } : {}),
-    stats: { waferCount: items.length },
+    stats: { waferCount: items.length, ...lotFigures(results, perWafer.map(w => w.summary)) },
     lotYieldSeries,
     perWafer,
     ...(perWaferTestStatsRaw.length > 0 ? { perWaferTestStats: perWaferTestStatsRaw } : {}),
   };
+}
+
+/**
+ * Lot-level capability, pass rates and region yield, all pooled from the wafer
+ * summaries without revisiting a die: pass rates and region yield sum counts,
+ * and capability sums each wafer's moments, from which the pooled within-wafer
+ * and overall standard deviations follow exactly.
+ */
+function lotFigures(results: WaferMapResult[], summaries: StatsSummary[]): Partial<LotStatsSummary['stats']> {
+  const out: Partial<LotStatsSummary['stats']> = { ...poolPassRates(summaries) };
+  const capability = poolCapability(summaries, mergeTestDefs(results).defs);
+  if (capability) out.capability = capability;
+  const regionYield = poolRegionYield(summaries, results.map(r => r.ringCount));
+  if (regionYield) out.regionYield = regionYield;
+  return out;
 }

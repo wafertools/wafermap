@@ -127,3 +127,23 @@ export function csvField(value: string): string {
   const v = (FORMULA_LEAD.test(value) && Number.isNaN(Number(value))) ? `'${value}` : value;
   return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
+
+/**
+ * Escape text for insertion into HTML — the one copy for the whole library.
+ *
+ * Every string the library puts into `innerHTML` that did not come from its own
+ * literals must go through this: test names, units, bin names, wafer labels and
+ * metadata values all arrive from input files (STDF/ATDF/CSV headers, MES
+ * fields, operator free text), and a name like `<img src=x onerror=…>` would
+ * otherwise run as script when a tooltip showed it — in a Tauri or Electron
+ * host, inside the app's own webview. It used to live in stats/reportHtml.ts,
+ * where only the reports used it, while every tooltip interpolated raw names.
+ */
+export function escHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

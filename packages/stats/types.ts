@@ -1,3 +1,4 @@
+import type { PatternClassification } from './patternClassification.js';
 import type { WaferMapInput, WaferMapResult, WaferWarning } from '../renderer/buildWaferMap.js';
 
 export type { WaferWarning };
@@ -288,7 +289,111 @@ export interface StatsSummary {
       q1:         number;
       q3:         number;
     }>;
+    /**
+     * Cp/Cpk/Pp/Ppk for each parametric test with values, worst first: tests with
+     * both limits by Ppk, then tests without by variability. Populated under the
+     * same conditions as `perTestStats` and over the same tests.
+     */
+    capability?: TestCapability[];
+    /**
+     * Per-test pass rate by the tester's recorded verdict, for parametric tests
+     * with recorded verdicts — the counterpart of `testSpecYield` (spec limits)
+     * and `functionalYield` (functional tests). Worst first.
+     */
+    testFlagYield?: TestVerdictYield[];
+    /**
+     * Dies whose spec-limit judgement and recorded tester verdict disagree, across
+     * every parametric test that has both. Absent when no test has both sources;
+     * `0` means both are present and agree everywhere. Not an error — guard bands
+     * make disagreement expected — but worth a look.
+     */
+    specVerdictDisagreementDies?: number;
+    /** Yield by ring and by quadrant (positioned dies only). */
+    regionYield?: RegionYieldFigures;
+    /**
+     * The spatial pattern classifier's result for this wafer — its label, confidence
+     * and the geometry features it measured (failure density overall and at the edge,
+     * the failing cluster's radial position, eccentricity, linearity, …). Present for
+     * every wafer the classifier could measure, including `'random'` and `'none'`,
+     * which raise no finding — so the features can train or feed a model of your own,
+     * negatives included. Absent when the map has no bin data, or too few failing dies
+     * to have a shape (fewer than 5, or 0.3% of the wafer).
+     */
+    spatialPattern?: PatternClassification;
   };
+}
+
+/**
+ * Process capability for one parametric test.
+ *
+ * Cp/Cpk use `stdWithin` — the pooled within-wafer sample stddev, each wafer
+ * being the short-term subgroup — and Pp/Ppk use `stdOverall`. For a single
+ * wafer there is one subgroup, so `stdWithin` equals `stdOverall` and Cp equals
+ * Pp. Partial and edge-excluded dies are excluded, as for yield.
+ */
+export interface TestCapability {
+  testNumber: number;
+  label:      string;
+  unit?:      string;
+  /** Both `limitLow` and `limitHigh` defined. When false, `lsl`/`usl` are absent and every index is null. */
+  hasSpec:    boolean;
+  lsl?:       number;
+  usl?:       number;
+  mean:       number;
+  /** Sample stddev (ddof = 1) over every value. */
+  stdOverall: number;
+  /** Pooled within-wafer sample stddev. NaN when no wafer contributed two or more values. */
+  stdWithin:  number;
+  /** Values counted. */
+  n:          number;
+  /** Null when `hasSpec` is false or `stdWithin` is NaN or 0. */
+  cp:  number | null;
+  cpk: number | null;
+  /** Null when `hasSpec` is false or `stdOverall` is 0. */
+  pp:  number | null;
+  ppk: number | null;
+}
+
+/**
+ * Pass rate for one test, judged by the tester's own recorded verdict
+ * (`die.testPass`, STDF PTR `TEST_FLG`) — which exists whether or not spec
+ * limits do, and can legitimately disagree with a spec-limit judgement (guard
+ * bands, dynamic or per-site limits). Read through `getTestPassStatus`; dies
+ * with no recorded verdict are not counted as fails.
+ */
+export interface TestVerdictYield {
+  testNumber:      number;
+  label:           string;
+  passDies:        number;
+  failDies:        number;
+  /** Dies with a recorded verdict for this test. */
+  totalDies:       number;
+  /** `(passDies / totalDies) × 100`, or `null` when no die had a verdict. */
+  passRatePercent: number | null;
+}
+
+/** Yield of one wafer region, each die judged by its own wafer's pass bins. */
+export interface RegionYield {
+  /** Stable identity, e.g. `"ring:2"` or `"quadrant:NE"`. Use it as a key; do not parse it. */
+  key:          string;
+  /** Display name, e.g. `"Ring 4 (edge)"` or `"NE"`. */
+  label:        string;
+  /** `(pass / n) × 100`, in [0, 100]. */
+  yieldPercent: number;
+  /** Yield-eligible dies with a bin in this region. */
+  n:            number;
+  /** Of those, the dies that pass — so regions can be pooled exactly. */
+  passDies:     number;
+}
+
+/**
+ * Yield by ring and by quadrant — the Summary panel's region yield. Regions with
+ * no eligible dies are omitted. `ring` is absent from a lot summary whose wafers
+ * were built with different ring counts, which have no common rings to pool.
+ */
+export interface RegionYieldFigures {
+  ring?:    RegionYield[];
+  quadrant: RegionYield[];
 }
 
 export interface LotStatsSummary {
@@ -325,6 +430,23 @@ export interface LotStatsSummary {
   /** Engine-computed analysis stats for this lot. */
   stats: {
     waferCount: number;
+    /**
+     * Cp/Cpk/Pp/Ppk over the whole lot, each wafer as a subgroup — so `stdWithin`
+     * is the pooled within-wafer stddev and Cp and Pp genuinely differ. Present
+     * when per-test statistics were computed (`computePerTestStats` or
+     * `enableTestValueAnalysis`). Worst first.
+     */
+    capability?: TestCapability[];
+    /** `testSpecYield` pooled over the lot: counts summed per test. Absent unless every wafer has it. */
+    testSpecYield?: NonNullable<StatsSummary['stats']['testSpecYield']>;
+    /** `functionalYield` pooled over the lot: counts summed per test. Absent unless every wafer has it. */
+    functionalYield?: NonNullable<StatsSummary['stats']['functionalYield']>;
+    /** `testFlagYield` pooled over the lot: counts summed per test. Absent unless every wafer has it. */
+    testFlagYield?: TestVerdictYield[];
+    /** `specVerdictDisagreementDies` summed over the lot. Absent unless every wafer has it. */
+    specVerdictDisagreementDies?: number;
+    /** Ring and quadrant yield pooled over the lot: counts summed per region, each wafer judged by its own pass bins. Absent unless every wafer has it; `ring` also absent when ring counts differ. */
+    regionYield?: RegionYieldFigures;
   };
   /** Per-wafer yield as a flat series, ordered by waferIndex. `yieldPercent` is in [0, 100]; null when a wafer had no bin data. */
   lotYieldSeries: Array<{ waferIndex: number; yieldPercent: number | null }>;

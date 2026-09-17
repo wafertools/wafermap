@@ -52,17 +52,17 @@ const CHART_BUILDERS_NAMES = [
 ];
 const PIPELINE = [
   'buildView', 'toCanvas', 'createWafer', 'generateDies', 'clipDiesToWafer', 'applyOrientation', 'transformDies',
-  'applyProbeSequence', 'generateReticleGrid', 'mapDataToDies', 'isInsideWafer', 'getReticleCell', 'resolveGridPitch',
+  'applyProbeSequence', 'generateReticleGrid', 'mapDataToDies', 'isInsideWafer', 'resolveGridPitch',
   'classifyDie', 'getRingLabel', 'aggregateValues', 'aggregateBinCounts', 'getUniqueBins', 'buildHoverText', 'buildMapTitle',
   'affineIdentity', 'affineRotation', 'affineMirror', 'affineCompose', 'affineInvert', 'affinePoint', 'affineVector', 'affineSwapsAxes',
 ];
 const ACCIDENTAL = [
   'buildRingRegions', 'buildQuadrantRegions', 'buildSectorRegions', 'buildReticlePositionRegions', 'buildTestSiteRegions',
   'buildRegionYieldData', 'areQuadrantsAdjacent', 'parseRegionKey', 'sectorCompassNames',
-  'classifyPattern', 'visibleFindings', 'computeFunctionalYield', 'resolveMetadataColumns', 'discoverDieMetadataKeys',
-  'renderSummaryReportHtml', 'renderLotSummaryReportHtml', 'renderFindingsReportHtml', 'openHtmlReport', 'openReportModal',
+  'classifyPattern', 'computeFunctionalYield', 'resolveMetadataColumns', 'discoverDieMetadataKeys',
+  'renderSummaryReportHtml', 'renderLotSummaryReportHtml', 'openHtmlReport',
   'resolveBinColors', 'getBinColorScheme', 'contrastTextColor',
-  'getDieTestValue', 'dieHasTestData', 'isParametricTest', 'isPositionedDie', 'metadataDisplayValue', 'metadataCategoricalValue',
+  'getDieTestValue', 'dieHasTestData', 'isParametricTest', 'isPositionedDie', 'metadataCategoricalValue',
   'buildDieListSection', 'DEFAULT_FACET_CURATION', 'STANDARD_WAFER_DIAMETERS_MM',
 ];
 const EXPECTED = [...GRADIENT_HELPERS, ...CHART_BUILDERS_NAMES, ...PIPELINE, ...ACCIDENTAL];
@@ -75,6 +75,8 @@ const KEPT = [
   'resolveValueColorFn', 'FACET_NONE_VALUE', 'setReportOpener', 'setDetachWindowOpener',
   'buildFacetTable', 'facetValueOf', 'mergeTestDefs', 'collectWarnings', 'severityOf',
   'registerBinColorScheme', 'registerValueColorScheme', 'listBinColorSchemes', 'listValueColorSchemes',
+  // Deprecated in 0.30.0, withdrawn in 0.30.1 on review (API_REMOVALS.md, Part 2).
+  'visibleFindings', 'openReportModal', 'metadataDisplayValue', 'getReticleCell', 'renderFindingsReportHtml',
 ];
 
 test('the registry holds exactly the names announced for removal', () => {

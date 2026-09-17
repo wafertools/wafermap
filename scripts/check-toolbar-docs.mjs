@@ -81,7 +81,7 @@ const galleryDoc = galleryHeading === -1 ? '' : guide.slice(galleryHeading);
 // Icons that are deliberately not toolbar buttons: window/modal chrome and the
 // overlay-menu rows, which the guide covers as prose inside the Overlays entry.
 const NON_TOOLBAR = new Set([
-  'close', 'maximize', 'minimize', 'windowMinimize', 'windowRestore',
+  'close', 'maximize', 'minimize', 'windowMinimize', 'windowRestore', 'collapse', 'uncollapse',
   'rings', 'quadrants', 'labels', 'reticle', 'wafer', 'xyIndicator',
 ]);
 

@@ -22,6 +22,181 @@ under `### Breaking`.
 
 ---
 
+## [0.30.1] — 2026-09-16
+
+### Security
+
+- **Names from a data file could run script in a tooltip.** The die tooltip and the Insights
+  chart tooltips (correlation, capability, boxplot, trend, histogram, bar and grouped-bar
+  charts), plus the legend-row and toolbar tooltips, built HTML from test names, units, bin
+  names, wafer labels and metadata values without escaping them. A file with a test named
+  `<img src=x onerror=…>` ran that script when a user hovered, in a Tauri, Electron or
+  WebView2 host inside the app's own webview. Every such value is now escaped. The escape
+  helper, formerly private to the reports, is the one copy for the library (`core/utils.ts`),
+  and `tests/htmlEscaping.test.mjs` fails if a tooltip puts a raw label into HTML again.
+
+### Changed
+
+- **Every saved file is named for the data it came from.** Exports were named for their content
+  alone — `dies.csv`, `test-values.csv`, `wafermap.png`, `wafer-gallery.png`, a chart's title — so
+  the same export from two wafers of a lot saved as `dies.csv` and `dies (1).csv`, with nothing in
+  either name to say which wafer it described. Map, gallery and chart PNGs and every CSV export
+  are now named `[lot]_[wafer]_[content]`, for example `LOT123_W05_hard-bin.png`,
+  `LOT123_W05_die-list.csv` and `LOT123_25-wafers_yield-by-wafer.png` (see API §5.4.5).
+  - A part the data doesn't have is left out, never invented. A wafer with no `label` or
+    `waferId` gets no wafer part, not a position that could be read as an ID.
+  - A gallery writes its lot and wafer counts (`2-lots`, `25-wafers`), and a lot-stacked map
+    writes `stacked-N-wafers`. A card or detached window names files for its own wafer.
+  - The name is worked out at save time, so it follows `setResult`, `setItems` and plot-mode
+    changes.
+  - Names are safe on every common filesystem: path and reserved characters are replaced,
+    length is limited, and Windows device names are avoided.
+  - **`downloadFilename` is unchanged.** When a host sets it, the map or gallery PNG is still
+    named `<downloadFilename>.png`. Only its defaults change: without it, the map PNG was
+    `wafermap.png` and the gallery PNG `wafer-gallery.png`, and both now get the generated name.
+    Gallery cards, which never read it, also get the generated name, as do all CSVs and charts.
+  - `onSaveImage` and `onSaveText` receive the generated name as `suggestedName`. A host that
+    matched one of the old default names needs to change.
+  - The die-list export's content part is `die-list` (was `dies`).
+- **A floating window's minimize button is now Collapse, and is hidden while the window is
+  maximized.** In a desktop host such as Tauri, where a detached gallery card falls back to an
+  in-page window, a maximized window's header sits directly under the app's own title bar. Its
+  `_` minimize looked like the OS button beside it but only shrank the window to a title strip.
+  The button is now drawn as chevrons, with the tooltip **Collapse** (**Show contents** while
+  collapsed), and a maximized window shows only restore and close, like a modal. This applies to
+  the detached-card fallback window and the user guide window. Modals are unchanged, and
+  `ICONS.windowMinimize`/`windowRestore` are still exported.
+- **The data layer is about 3 KB larger (~52 KB gzip).** Analysis now returns capability, pass
+  rates by recorded verdict and region yield (see Added), so it includes the code that computes
+  them.
+
+### Deprecated
+
+- **`downloadFilename` (on `RenderOptions` and `GalleryOptions`) becomes a prefix in 0.31.0.** It
+  will lead the name of every file a map or gallery saves, CSVs included, with the lot, wafer and
+  content appended, for example `LOT123_sort_W05_hard-bin.png`. Parts it already names won't be
+  repeated, so a host passing a source-file stem that contains the lot won't see the lot twice.
+  It is not being removed. Until 0.31.0 it keeps its current meaning, and passing it logs a
+  one-time console notice. If you rely on setting a map's whole file name, say so at
+  https://github.com/wafertools/wafermap/issues.
+- **Five 0.30.0 deprecations are withdrawn on review**, as each is the only supported path to
+  something a host needs: `visibleFindings` (the one rule for collapsing restated findings —
+  `summary.findings` is deliberately uncollapsed), `openReportModal` (shows a report when a host
+  has installed its own `setReportOpener`), `metadataDisplayValue` (the one rule for a metadata
+  value's text in an export), `getReticleCell` (the only source of a die's reticle cell outside
+  the tooltip) and `renderFindingsReportHtml` (it takes a summary alone, so it cannot be given
+  inconsistent inputs). They log no notice and stay.
+- **Every remaining deprecation notice now names what to use instead**, or says plainly that
+  there is no data replacement (the histogram, scatter and correlation builders). The review
+  behind each verdict is recorded in the repository's `API_REMOVALS.md`.
+
+### Fixed
+
+- **A test could not be chosen from the plot-mode menu on a touchscreen.** With more tests than
+  fit inline, "Test Value ▶" opens a submenu, and it opened on hover only. On a phone or tablet a
+  tap opened the submenu and the same tap closed it again, so the list flashed and no test could
+  be picked. From the keyboard, Enter on the row did nothing. The row now also opens the submenu
+  when tapped or activated with Enter or Space. Focus moves into the submenu when it is opened from
+  the keyboard, the arrow keys move through its tests, and Escape closes it. Tapping the submenu's
+  filter box no longer closes the menu underneath. Applies to both `renderWaferMap` and
+  `renderWaferGallery`. Guarded by `tests/modeMenuCascade.test.mjs`.
+- **Map lines and markers got thinner as display scaling rose.** Ring, quadrant and reticle
+  lines, the wafer outline, the probe path, the +X/+Y indicator, out-of-spec triangles and the
+  failing-die hatch were sized in device pixels, so on a 2× display they drew at half their
+  intended size and on a 3× display at a third. The ring and quadrant lines' light centre fell
+  below one CSS pixel and faded to a faint hairline. They are now sized in CSS pixels, like the
+  colorbar's limit markers, so they look the same at every scale and are sharper at higher ones.
+  A 1× display draws exactly as before. The die outline stays at its device-pixel width, so
+  dense maps on high-DPI screens are not greyed out. Guarded by `tests/strokeScale.test.mjs`.
+- **Outlined buttons lost their border in a dark theme.** Summary report, View die list and the
+  Test values / Functional CSV buttons drew a fixed dark edge (`rgba(0,0,0,0.30)`) whatever the
+  theme, so on a dark panel they had no visible outline while the ring/quadrant toggles beside
+  them did. `--wmap-control-border` now falls back to `--wmap-border` — the edge the
+  toggles use — so a theme that sets `--wmap-border` gets the same outline on both. With neither
+  set the default is unchanged, and a host that sets `--wmap-control-border` is unaffected.
+- **Bins and test values given as text built a wrong map without a warning.** A CSV parser gives
+  every field as a string. String `x`/`y` already made `buildWaferMap` throw, but a bin of `"1"`
+  is not pass bin `1`, so those dies counted as fails and yield read 0 %, and a test value of
+  `"0.5"` was not plotted or analysed as a number — with nothing to say so. `buildWaferMap` now
+  raises an `input-values-not-numbers` warning (severity `error`) counting text bins, text test
+  values and non-boolean verdicts, with an example. The values are not converted: convert them
+  and rebuild.
+- **Changing the bin palette inside an expanded gallery card did not recolour the map.** A card
+  keeps the gallery-wide bin colours so every card agrees, and those took precedence over the
+  palette chosen in the card's own menu, so the menu appeared to do nothing — most visibly for soft
+  bins. A palette or "Use colours from bin definitions" change made in the card now resolves the
+  card's colours from that choice; a change made in the gallery still recolours every card
+  together.
+- **A card reattached to the gallery kept the view it had while expanded.** Reattaching stored the
+  expanded window's options — plot mode, palettes, overlays — as that card's per-card overrides,
+  which win every time the card is built. A card switched to soft bins while expanded stayed a
+  soft-bin map under a gallery bar and legend strip describing hard bins, and later gallery palette
+  changes left it in colours matching no other card. A reattached card now takes the gallery's
+  shared options again, like every other card. This also stops reattaching from discarding
+  per-card `viewOptions` the host set on the item.
+- **A lot report built for wafers without a precomputed summary analysed empty wafers.** The
+  report ran its lot analysis on `{ label, wafer, dies, passBins }` pieces, which the analysis
+  does not recognise as built maps, so it treated each as a fresh input with no results. The
+  report then had no findings, `N/A` per-wafer yields, and a title of "Summary — N wafers"
+  instead of "Lot Summary — <lot>". It now analyses the built maps (`renderLotReportHtml`, and
+  the gallery's and lot panel's report buttons, which use it).
+- **A gallery with a fixed column count left most of the row empty.** Picking 2 columns drew two
+  480px cards and left the rest of the row empty, because a fixed column count was still capped
+  by die density (since 0.21.1). A fixed column count now divides the full width; Auto keeps the
+  cap.
+- **`GalleryOptions.columns` was ignored at mount**, so the grid always drew a single column.
+  Invalid counts (`0`, negative, `NaN`) now fall back to automatic layout, and fractions round.
+
+### Added
+
+Supported replacements for exports deprecated in 0.30.0 that had no other path. Each deprecated
+export's notice names its replacement; the old names are still removed in 0.31.0.
+
+- **Capability, pass rates by recorded verdict, and region yield in the analysis output**
+  (API §7.4.1), replacing `buildCapabilityData`, `buildTestPassRateData`/`hasJudgeableTests`
+  and `buildRegionYieldData` with the ring/quadrant builders:
+  - `stats.capability` — Cp/Cpk/Pp/Ppk per parametric test, computed when per-test statistics
+    are (`computePerTestStats`). On a lot summary each wafer is a subgroup, so `stdWithin` is the
+    pooled within-wafer stddev and Cp and Pp differ. The chart's normalised five-number fields
+    are not included; they are not the test's real minimum and quartiles.
+  - `stats.testFlagYield` — per-test pass rate by the tester's recorded verdict — and
+    `stats.specVerdictDisagreementDies`, the dies where that verdict and the spec-limit judgement
+    disagree. They complement the existing `testSpecYield` and `functionalYield`.
+  - `stats.regionYield` — `{ ring, quadrant }` yield with each region's die and pass counts, each
+    die judged by its own wafer's pass bins.
+  - On `LotStatsSummary.stats`: `capability`, `regionYield`, `testSpecYield`, `functionalYield`,
+    `testFlagYield` and `specVerdictDisagreementDies`, all pooled exactly from the wafer summaries
+    — counts summed, and capability from each wafer's moments — so a lot analysis given
+    `perWaferSummaries` stays cheap. A pooled figure is absent unless every wafer reported it. Lot ring yield is also absent when wafers
+    were built with different ring counts.
+  - `analyzeWaferLot` now builds a raw `WaferMapInput` once and passes the built map to each
+    wafer's analysis.
+- **`renderWaferReportHtml(result, summary?)` and `renderLotReportHtml(results)`**, replacing
+  `renderSummaryReportHtml` and `renderLotSummaryReportHtml`. They take built maps, so pass bins
+  and ring count come from the map rather than defaulting to `[1]` and `4`. They need no DOM.
+  The Summary panel's report buttons use them.
+- **`binColorsForMaps(results, options?)` and `getBinColors()` on `WaferMapController` and
+  `GalleryController`** — the colours the maps draw, for a host's own table, export or chart —
+  replacing `resolveBinColors` and `getBinColorScheme`. `binColorsForMaps` judges each map by its
+  own pass bins; the gallery's own colouring now goes through the same function.
+- **`buildWaferMap({ layout: true, waferConfig, dieConfig })`** — a die layout with no test data:
+  every site fully on the wafer (the gross die count), die `(0, 0)` at the centre, counted in the
+  configured axis directions. It replaces `createWafer` + `generateDies` + `clipDiesToWafer`, and
+  renders like any other result.
+- **`stats.spatialPattern` on `analyzeWaferMap`'s result** — the spatial pattern classifier's label,
+  confidence and geometry features (failure density overall and at the edge, the failing
+  cluster's radial position, eccentricity, linearity, …), replacing a direct `classifyPattern`
+  call. It is present for every wafer the classifier can measure, including those labelled
+  `'random'` or `'none'`, which raise no finding, so the features can feed a model of your own with
+  negative examples as well as patterned ones.
+- **`ICONS.collapse` and `ICONS.uncollapse`**, the floating-window header's collapse and
+  show-contents icons.
+- **`WaferMapController.closeSummaryPanel()` and `GalleryController.setColumns()` are restored.**
+  Both were removed in 0.30.0 without a deprecation period. A host needs the first to get the
+  map's full width back, for example when loading a new file, and the second to apply its own
+  column control or a saved preference without rebuilding the gallery. Closing the panel no
+  longer resets the Summary button's notable-findings colour, as the 0.29 version did.
+
 ## [0.30.0] — 2026-09-15
 
 ### Breaking

@@ -11,6 +11,8 @@ import * as canvasApi       from '../dist/packages/canvas-adapter/index.js';
 
 const SNAPSHOTS = {
   '.' : [
+    // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
+    'binColorsForMaps', 'renderLotReportHtml', 'renderWaferReportHtml',
     'affineCompose', 'affineIdentity', 'affineInvert', 'affineMirror',
     'affinePoint', 'affineRotation', 'affineSwapsAxes', 'affineVector',
     'aggregateBinCounts', 'aggregateValues', 'analyzeWaferLot', 'analyzeWaferMap',
@@ -53,6 +55,8 @@ const SNAPSHOTS = {
   // removed from the public surface in 0.22.0 — internal view-pipeline helpers with no
   // documented contract. In-repo callers import them from './buildView.js' directly.
   './renderer': [
+    // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
+    'binColorsForMaps',
     'buildHoverText', 'buildMapTitle', 'buildView', 'buildWaferMap',
     'contrastTextColor', 'dieHasTestData',
     'getBinColorScheme', 'getValueColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
@@ -62,6 +66,8 @@ const SNAPSHOTS = {
     'STANDARD_WAFER_DIAMETERS_MM',
   ],
   './stats': [
+    // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
+    'renderLotReportHtml', 'renderWaferReportHtml',
     'analyzeWaferLot', 'analyzeWaferMap', 'areQuadrantsAdjacent',
     'buildBinClusterData', 'buildBinParetoData',
     'buildCapabilityData', 'buildCorrelationMatrix', 'buildFacetTable',

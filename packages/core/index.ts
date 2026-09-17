@@ -22,7 +22,7 @@ export {
   applyOrientation, transformDies, mapDataToDies, isInsideWafer,
   affineIdentity, affineRotation, affineMirror, affineCompose,
   affineInvert, affinePoint, affineVector, affineSwapsAxes,
-  applyProbeSequence, generateReticleGrid, getReticleCell, classifyDie,
+  applyProbeSequence, generateReticleGrid, classifyDie,
   getRingLabel, aggregateValues, aggregateBinCounts, getUniqueBins,
-  metadataDisplayValue, metadataCategoricalValue, resolveGridPitch,
+  metadataCategoricalValue, resolveGridPitch,
 } from './deprecated.js';

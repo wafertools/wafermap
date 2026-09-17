@@ -25,6 +25,8 @@ export interface RegionYieldDatum {
   yieldPercent: number;
   /** Yield-eligible, binned die count in this region. */
   n: number;
+  /** Of those, the dies that pass. */
+  passDies: number;
 }
 
 /**
@@ -80,7 +82,7 @@ export function buildRegionYieldData(
     .map((key): RegionYieldDatum | null => {
       const acc = totals.get(key)!;
       if (acc.total === 0) return null;
-      return { key, label: acc.label, n: acc.total, yieldPercent: (acc.pass / acc.total) * 100 };
+      return { key, label: acc.label, n: acc.total, passDies: acc.pass, yieldPercent: (acc.pass / acc.total) * 100 };
     })
     .filter((d): d is RegionYieldDatum => d !== null);
 }

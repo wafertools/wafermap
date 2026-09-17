@@ -375,7 +375,16 @@ export const CLR = {
   // label with a faint box round it — the border was ~2.5x lighter than the one
   // tsmap uses for the same job (#aaa). Themeable separately so a host can tune
   // control weight without moving every divider in the library.
-  controlBorder: t('control-border', 'rgba(0,0,0,0.30)'),
+  //
+  // Unset, it follows `--wmap-border`, and only with neither set does it use its own
+  // light default. A host that themes wmap sets `--wmap-border` to the edge it wants
+  // (tsmap maps it to its control-grade `--border-mid`), and the segmented toggles
+  // already draw with it — so outlined buttons must match them, not guess a strength
+  // of their own. A fixed `rgba(0,0,0,0.30)` fallback drew a near-black edge on a dark
+  // panel (Summary report, View die list, the CSV exports lost their outline); a
+  // text-derived one was weaker than the host's border in tsmap's dark theme and
+  // stronger in its light one.
+  controlBorder: t('control-border', t('border', 'rgba(0,0,0,0.30)')),
   menuHover:   t('menu-hover',   '#f0f4fc'),
   menuActive:  t('menu-active',  '#dce8f8'),
   // The map area's own background — the same chain `resolveChartCanvasColors`
@@ -669,10 +678,19 @@ export function saveImageBlob(blob: Blob, filename: string, onSaveImage?: SaveIm
     void onSaveImage(blob, suggestedName);
     return;
   }
+  downloadBlob(blob, suggestedName);
+}
+
+/**
+ * The browser's default save: a `<a download>` click. The one copy, used when
+ * no host hook is supplied — by `saveImageBlob`, `saveTextFile`, and the
+ * export-naming wrappers in exportName.ts, which must fall back to it too.
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a   = document.createElement('a');
   a.href = url;
-  a.download = suggestedName;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -703,13 +721,7 @@ export function saveTextFile(text: string, filename: string, mimeType: string, o
     void onSaveText(text, filename, mimeType);
     return;
   }
-  const blob = new Blob([text], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a   = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(new Blob([text], { type: mimeType }), filename);
 }
 
 // ── Accessibility ──────────────────────────────────────────────────────────────
@@ -1332,7 +1344,22 @@ export function buildModeMenuEl(
       }
     } else {
       const cascadeActive = currentMode === 'value';
-      const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, () => {});
+      // The row opens the submenu on hover (mouse) AND on click, which is what a
+      // tap (touch) and Enter/Space (keyboard, via wireListNavigation) produce.
+      // It used to open on hover alone with a no-op click: on a touchscreen the
+      // tap's emulated mouseenter opened the submenu and the same tap's click
+      // closed it again, so a test could never be chosen; from the keyboard it
+      // never opened at all.
+      const cascadeRow = makeMenuRow(MODE_LABELS.value + ' ▶', cascadeActive, false, e => {
+        e.stopPropagation();
+        cancelClose();
+        openSub();
+        // detail 0 = a click synthesised from the keyboard: move focus into the
+        // submenu so arrow keys reach its rows. A tap leaves focus alone, so a
+        // phone does not pop its keyboard up for the filter box.
+        if (e.detail === 0) focusSub();
+      });
+      cascadeRow.setAttribute('aria-haspopup', 'menu');
       cascadeRow.style.display        = 'flex';
       cascadeRow.style.justifyContent = 'space-between';
       cascadeRow.style.alignItems     = 'center';
@@ -1348,7 +1375,27 @@ export function buildModeMenuEl(
       // the submenu itself cancels the pending close.
       let closeTimer: ReturnType<typeof setTimeout> | null = null;
       const cancelClose = () => { if (closeTimer !== null) { clearTimeout(closeTimer); closeTimer = null; } };
-      const closeSub = () => { cancelClose(); subMenu?.remove(); subMenu = null; };
+      // Closes the submenu on a click anywhere outside it and its row. A
+      // persistent listener that ignores those two, not a `{ once: true }` one:
+      // registered during a tap's emulated mouseenter, a once-listener was
+      // consumed by that same tap's click and closed the submenu it had just
+      // opened.
+      const onOutsideClick = (e: MouseEvent) => {
+        const t = e.target as Node | null;
+        if (t && (cascadeRow.contains(t) || subMenu?.contains(t))) return;
+        closeSub();
+      };
+      const closeSub = () => {
+        cancelClose();
+        subMenu?.remove();
+        subMenu = null;
+        ownerWindow.document.removeEventListener('click', onOutsideClick);
+        cascadeRow.setAttribute('aria-expanded', 'false');
+      };
+      const focusSub = () => {
+        const first = subMenu?.querySelector<HTMLElement>('input, [role="menuitemradio"]');
+        if (first) nextFrame(() => first.focus(), ownerWindow);
+      };
       const scheduleClose = () => { cancelClose(); closeTimer = setTimeout(closeSub, 300); };
       const openSub = () => {
         if (subMenu) return;
@@ -1359,6 +1406,11 @@ export function buildModeMenuEl(
         const subLeft = subFitsRight ? rowRect.right + 2 : Math.max(4, rowRect.left - 2 - subMinWidth);
         const subTop = Math.min(rowRect.top - 4, Math.max(4, (ownerWindow.innerHeight ?? Infinity) - subMaxHeight - 4));
         subMenu = document.createElement('div');
+        // Marks it as part of the open menu for the toolbar's outside-click
+        // close (`closeOpenMenu`): the submenu is a sibling of `menu`, not a
+        // child, so a tap on its filter box or a row used to close the menu too.
+        subMenu.setAttribute('data-wmap-submenu', '');
+        subMenu.setAttribute('role', 'menu');
         Object.assign(subMenu.style, {
           position:      'fixed',
           top:           `${subTop}px`,
@@ -1404,6 +1456,11 @@ export function buildModeMenuEl(
         }
         subMenu.addEventListener('mouseenter', cancelClose);
         subMenu.addEventListener('mouseleave', scheduleClose);
+        wireListNavigation(
+          subMenu,
+          () => testRows.filter(r => r.row.style.display !== 'none').map(r => r.row),
+          () => { closeSub(); cascadeRow.focus(); },
+        );
         // Append into the same stacking root as the parent menu so the submenu
         // is visible when the menu is inside a maximized modal box (no real
         // fullscreen element exists — see openModal's CSS maximize).
@@ -1416,8 +1473,12 @@ export function buildModeMenuEl(
         // this handler, so the submenu never closes there (same class of bug
         // as overlayRootFor's own doc comment, and the identical fix used by the
         // collapsible-section `collapse` listener further down this file).
-        ownerWindow.document.addEventListener('click', closeSub, { once: true });
+        ownerWindow.document.addEventListener('click', onOutsideClick);
+        cascadeRow.setAttribute('aria-expanded', 'true');
       };
+      // Escape in the parent menu closes that menu (wireMenuA11y); take the
+      // submenu with it rather than leaving it floating on its own.
+      menu.addEventListener('keydown', e => { if (e.key === 'Escape') closeSub(); });
       cascadeRow.addEventListener('mouseenter', () => { cancelClose(); openSub(); });
       cascadeRow.addEventListener('mouseleave', scheduleClose);
       menu.appendChild(cascadeRow);
@@ -1709,7 +1770,8 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       // created with — some callers (e.g. the colorbar-range and Insights
       // toggle buttons) update ariaLabel after creation to reflect a changed
       // state, and the tooltip must track that rather than showing stale text.
-      tooltip.innerHTML     = btn.ariaLabel ?? label;
+      // Text, not HTML: some labels carry data (a wafer's label, a field name).
+      tooltip.textContent   = btn.ariaLabel ?? label;
       tooltip.style.display = 'block';
       positionTooltip(tooltip, btn, e.clientX, e.clientY);
     });
@@ -1923,7 +1985,10 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   }
 
   function closeOpenMenu(e: MouseEvent): void {
-    if (openMenu && !openMenu.contains(e.target as Node)) {
+    // A cascade submenu (`data-wmap-submenu`, buildModeMenuEl) is a sibling of
+    // the menu it belongs to, not a child — a click inside it is still inside.
+    const inSubmenu = (e.target as Element | null)?.closest?.('[data-wmap-submenu]');
+    if (openMenu && !openMenu.contains(e.target as Node) && !inSubmenu) {
       openMenu.remove();
       openMenu = null;
       // Keep menu-trigger aria in sync: a trigger button that re-opens the menu
@@ -2212,7 +2277,10 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   header.appendChild(spacer);
 
   // Minimize collapses the box to just its header strip (title + buttons) —
-  // window mode only. A modal's backdrop still blocks the rest of the page
+  // window mode only. Drawn and labelled as "Collapse", not as a minimize: in a
+  // desktop host (Tauri) a maximized floating window's header sits directly
+  // under the OS title bar, and an OS-style `_` there read as a second minimize
+  // button that did something else. A modal's backdrop still blocks the rest of the page
   // even while "minimized," so minimizing one would be pointless; only a
   // non-modal floating window benefits (the page/gallery stays usable, and
   // now the window itself can be tucked out of the way without closing it).
@@ -2220,8 +2288,8 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   if (!isModal) {
     minimizeBtn = doc.createElement('button');
     minimizeBtn.type = 'button';
-    minimizeBtn.innerHTML = ICONS.windowMinimize;
-    minimizeBtn.setAttribute('aria-label', 'Minimize');
+    minimizeBtn.innerHTML = ICONS.collapse;
+    minimizeBtn.setAttribute('aria-label', 'Collapse');
     // Themed tooltip reading aria-label, like every other icon button. The
     // setMinimized/setMaximized handlers below relabel in place, and the tooltip
     // re-reads at hover time, so no re-wiring is needed on state change.
@@ -2290,6 +2358,10 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     maximized = next;
     maximizeBtn.innerHTML = maximized ? ICONS.minimize : ICONS.maximize;
     maximizeBtn.setAttribute('aria-label', maximized ? 'Restore (F)' : 'Maximize (F)');
+    // No collapse while maximized: jumping straight from full-window to a title
+    // strip is not a useful step, and hiding it leaves a maximized window with
+    // restore + close only — the same pair a modal and a host dialog show.
+    if (minimizeBtn) minimizeBtn.style.display = maximized ? 'none' : '';
     resizeGrip.style.display = maximized ? 'none' : 'block';
     if (maximized) {
       box.style.borderRadius = '0';
@@ -2327,8 +2399,8 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   const MINIMIZED_WIDTH = 220;
   function setMinimized(next: boolean): void {
     minimized = next;
-    minimizeBtn!.innerHTML = minimized ? ICONS.windowRestore : ICONS.windowMinimize;
-    minimizeBtn!.setAttribute('aria-label', minimized ? 'Restore' : 'Minimize');
+    minimizeBtn!.innerHTML = minimized ? ICONS.uncollapse : ICONS.collapse;
+    minimizeBtn!.setAttribute('aria-label', minimized ? 'Show contents' : 'Collapse');
     resizeGrip.style.display = minimized ? 'none' : 'block';
     if (minimized) {
       preMinimizeHeight = box.style.height;

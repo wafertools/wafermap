@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { buildWaferMap, analyzeWaferMap, classifyDie, clipDiesToWafer, createWafer, generateDies } from '../dist/index.js';
+import { buildWaferMap, analyzeWaferMap, classifyDie, clipDiesToWafer, createWafer, generateDies, binColorsForMaps } from '../dist/index.js';
 import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
+import { renderWaferMapCard } from '../dist/packages/canvas-adapter/renderWaferMap.js';
 
 // A wafer with a clean ring-3 (edge) yield loss — triggers a real StatsFinding
 // from analyzeWaferMap (same fixture shape as tests/stats.test.mjs's
@@ -542,6 +546,232 @@ test('renderWaferMap onSaveText hook intercepts the Summary panel\'s CSV export'
   }
 });
 
+test('saved files are named for the lot and wafer on screen, whichever export saves them', () => {
+  // Every export used to be named for its content alone, so a PNG and CSV from
+  // two wafers of one lot were indistinguishable on disk (dies.csv, dies (1).csv).
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '700px', height: '500px' });
+    root.appendChild(container);
+
+    const build = (waferId) => buildWaferMap({
+      results: [
+        { x: 0, y: 0, testValues: { 1010: 0.5 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 1010: 2.5 }, hbin: 2 },
+        { x: 0, y: 1, testValues: { 1010: 5.0 }, hbin: 1 },
+      ],
+      waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId } },
+      dieConfig: { width: 10, height: 10 },
+      testDefs: [{ testNumber: 1010, name: 'Vth', unit: 'V' }],
+    });
+    const w05 = build('W05');
+
+    const images = [];
+    const texts = [];
+    const ctrl = renderWaferMap(container, w05, {
+      statsSummary: analyzeWaferMap(w05),
+      summaryPanel: { placement: 'right', defaultOpen: true },
+      onSaveImage: (_blob, name) => { images.push(name); },
+      onSaveText:  (_text, name) => { texts.push(name); },
+    });
+
+    const button = (pred) => [...root.querySelectorAll('button')].find(pred);
+    click(window, button((b) => b.ariaLabel === 'Download PNG'));
+    click(window, button((b) => /CSV$/.test(b.textContent)));
+    assert.deepEqual(images, ['LOT123_W05_hard-bin.png'], 'map PNG: lot, wafer, then the map title');
+    assert.deepEqual(texts, ['LOT123_W05_test-values.csv'], 'Summary panel CSV: lot, wafer, then the export');
+
+    // The name is read at save time, so it follows the wafer now on screen.
+    const w06 = build('W06');
+    ctrl.setResult(w06);
+    ctrl.setStatsSummary(analyzeWaferMap(w06));
+    click(window, button((b) => b.ariaLabel === 'Download PNG'));
+    assert.equal(images.at(-1), 'LOT123_W06_hard-bin.png', 'after setResult the name names the new wafer');
+  } finally {
+    cleanup();
+  }
+});
+
+test('a host downloadFilename still names the map PNG exactly, and nothing else, until 0.31.0', () => {
+  // Making it a prefix is a change of meaning, so it waits for a minor release.
+  //
+  // Release gate: this behaviour is announced as changing in 0.31.0. Checked
+  // against CHANGELOG headings as well as package.json because `npm version`
+  // runs the tests before it bumps the version, so this fails while 0.31.0 is
+  // being prepared rather than after it is tagged.
+  const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const pkgVersion = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
+  const headings = [...fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8').matchAll(/^## \[(\d+)\.(\d+)\.\d+\]/gm)];
+  const reached = [pkgVersion.split('.').slice(0, 2).map(Number), ...headings.map(m => [Number(m[1]), Number(m[2])])]
+    .some(([major, minor]) => major > 0 || minor >= 31);
+  assert.ok(!reached,
+    'Preparing 0.31.0: downloadFilename must become a prefix for every saved file, as announced in 0.30.1. '
+    + 'TODO.md, "downloadFilename becomes a prefix in 0.31.0", lists the steps; this test is replaced as part of them.');
+
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '700px', height: '500px' });
+    root.appendChild(container);
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, testValues: { 1010: 0.5 }, hbin: 1 },
+        { x: 1, y: 0, testValues: { 1010: 2.5 }, hbin: 2 },
+      ],
+      waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId: 'W05' } },
+      dieConfig: { width: 10, height: 10 },
+      testDefs: [{ testNumber: 1010, name: 'Vth', unit: 'V' }],
+    });
+    const images = [];
+    const texts = [];
+    renderWaferMap(container, wafer, {
+      downloadFilename: 'LOT123_sort',
+      statsSummary: analyzeWaferMap(wafer),
+      summaryPanel: { placement: 'right', defaultOpen: true },
+      onSaveImage: (_blob, name) => { images.push(name); },
+      onSaveText:  (_text, name) => { texts.push(name); },
+    });
+    const buttons = [...root.querySelectorAll('button')];
+    click(window, buttons.find((b) => b.ariaLabel === 'Download PNG'));
+    click(window, buttons.find((b) => /CSV$/.test(b.textContent)));
+    assert.deepEqual(images, ['LOT123_sort.png'], 'the PNG keeps the documented name');
+    assert.deepEqual(texts, ['LOT123_W05_test-values.csv'], 'CSVs never read downloadFilename, and are not prefixed yet');
+  } finally {
+    cleanup();
+  }
+});
+
+test('the gallery names its own files for the lot, and each card names its files for its own wafer', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+    const build = (waferId) => buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }, { x: 0, y: 1, hbin: 1 }],
+      waferConfig: { diameter: 40, metadata: { lot: 'LOT123', waferId } },
+      dieConfig: { width: 10, height: 10 },
+    });
+    const images = [];
+    const ctrl = renderWaferGallery(container, [build('W01'), build('W02'), build('W03')], {
+      viewOptions: { plotMode: 'hardBin' },
+      onSaveImage: (_blob, name) => { images.push(name); },
+    });
+
+    const buttons = [...container.querySelectorAll('button')];
+    click(window, buttons.find((b) => b.ariaLabel === 'Download gallery PNG'));
+    assert.equal(images.at(-1), 'LOT123_3-wafers_gallery-hard-bin.png', 'gallery PNG: lot, wafer count, mode');
+
+    // A card is its own renderer: it must name ITS wafer, and must not receive
+    // the gallery's already-named hooks (which would name the lot twice).
+    const card = container.querySelectorAll('.wmap-gallery-card')[1];
+    click(window, [...card.querySelectorAll('button')].find((b) => b.ariaLabel === 'Download PNG'));
+    assert.equal(images.at(-1), 'LOT123_W02_hard-bin.png', 'card PNG: its own wafer, lot named once');
+    ctrl.destroy();
+
+    // A host downloadFilename still names only the composite PNG; cards never read it.
+    const ctrl2 = renderWaferGallery(container, [build('W01'), build('W02')], {
+      viewOptions: { plotMode: 'hardBin' },
+      downloadFilename: 'lot-overview',
+      onSaveImage: (_blob, name) => { images.push(name); },
+    });
+    click(window, [...container.querySelectorAll('button')].find((b) => b.ariaLabel === 'Download gallery PNG'));
+    assert.equal(images.at(-1), 'lot-overview.png');
+    const card2 = container.querySelectorAll('.wmap-gallery-card')[0];
+    click(window, [...card2.querySelectorAll('button')].find((b) => b.ariaLabel === 'Download PNG'));
+    assert.equal(images.at(-1), 'LOT123_W01_hard-bin.png');
+    ctrl2.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('closeSummaryPanel closes the panel and leaves the Summary button showing notable findings', () => {
+  // Restored after 0.30.0 removed it. The 0.29 version reset the button to its
+  // plain colour, hiding the notable-findings indicator it also carries.
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '700px', height: '500px' });
+    root.appendChild(container);
+    const wafer = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+    const statsSummary = { ...analyzeWaferMap(wafer), hasNotableFindings: true };
+    const ctrl = renderWaferMap(container, wafer, { statsSummary, summaryPanel: { defaultOpen: true } });
+    const btn = [...root.querySelectorAll('button')].find((b) => b.ariaLabel === 'Summary panel');
+    assert.equal(btn.dataset.active, '1', 'panel starts open');
+
+    ctrl.closeSummaryPanel();
+    assert.equal(btn.dataset.active, undefined, 'button no longer active');
+    assert.match(btn.style.color, /finding-indicator/, 'notable-findings colour shown once the panel is closed');
+
+    ctrl.closeSummaryPanel(); // no-op when already closed
+    click(window, btn);
+    assert.equal(btn.dataset.active, '1', 'the toolbar button reopens it');
+  } finally {
+    cleanup();
+  }
+});
+
+test('getBinColors returns the colours a map and a gallery draw, and binColorsForMaps agrees', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '600px', height: '400px' });
+    root.appendChild(container);
+    const build = (waferId, passBins) => buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }, { x: 0, y: 1, hbin: 7 }],
+      waferConfig: { diameter: 40, metadata: { lot: 'L', waferId } },
+      dieConfig: { width: 10, height: 10 },
+      passBins,
+    });
+    const single = build('W1', [1, 2]);
+    const ctrl = renderWaferMap(container, single, { viewOptions: { plotMode: 'hardBin' } });
+    const drawn = ctrl.getBinColors();
+    assert.ok(drawn.pass.hard.has(2), 'the map judges bin 2 by its own pass bins');
+    assert.deepEqual([...drawn.hard], [...binColorsForMaps(single).hard], 'a host resolving the same map gets the same colours');
+    ctrl.setOptions({ binColorScheme: 'accessible' });
+    assert.notDeepEqual([...ctrl.getBinColors().hard], [...drawn.hard], 'and a palette change is reflected');
+    ctrl.destroy();
+
+    const items = [build('W1', [1]), build('W2', [1])];
+    const gallery = renderWaferGallery(container, items, { viewOptions: { plotMode: 'hardBin' } });
+    assert.deepEqual([...gallery.getBinColors().hard], [...binColorsForMaps(items).hard]);
+    gallery.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('a card that inherited gallery bin colours resolves its own palette after a local palette change', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '600px', height: '400px' });
+    root.appendChild(container);
+    const wafer = buildWaferMap({
+      results: [{ x: 0, y: 0, sbin: 1 }, { x: 1, y: 0, sbin: 2 }, { x: 0, y: 1, sbin: 3 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+    const inherited = binColorsForMaps(wafer);
+    const ctrl = renderWaferMapCard(container, wafer, {
+      viewOptions: { plotMode: 'softBin', binColors: inherited },
+    });
+
+    assert.deepEqual([...ctrl.getBinColors().soft], [...inherited.soft], 'the card starts with gallery colours');
+    ctrl.setOptions({ binColorScheme: 'accessible' });
+    assert.notDeepEqual([...ctrl.getBinColors().soft], [...inherited.soft],
+      'a detached card palette choice must replace its inherited gallery assignment');
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
 test('renderWaferMap zIndex option sets --wmap-z for its lifetime and restores on destroy', () => {
   const { window, root, cleanup } = setupDom();
   try {
@@ -1040,6 +1270,50 @@ test('renderWaferGallery supports multiple simultaneous detached popup windows a
     assert.equal(reattachBtnsRemaining.length, 0); // no grid slot still offers reattach
 
     ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('a reattached card follows the gallery again, not the options it had while expanded', () => {
+  // Reattaching used to store the expanded window's options as the card's
+  // per-card overrides, which win every time the card is built: a card switched
+  // to soft bins while expanded stayed soft-bin under a gallery bar and legend
+  // strip describing hard bins, and ignored later gallery palette changes.
+  const { window, root, cleanup } = setupDom();
+  window.open = () => null; // in-page floating window, so its menus are in this document
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+    const build = (id) => ({
+      ...buildWaferMap({
+        results: [{ x: 0, y: 0, hbin: 1, sbin: 1 }, { x: 1, y: 0, hbin: 2, sbin: 7 }, { x: 0, y: 1, hbin: 1, sbin: 3 }],
+        waferConfig: { diameter: 40 }, dieConfig: { width: 10, height: 10 },
+      }),
+      label: id,
+    });
+    const gallery = renderWaferGallery(container, [build('A'), build('B')], { viewOptions: { plotMode: 'hardBin' } });
+    const expandBtn = () => container.querySelector('[data-wmap-expand-btn]');
+    const box = () => window.document.querySelector('.wmap-window-box');
+    const checkedMode = () => {
+      click(window, [...box().querySelectorAll('button')].find(b => b.ariaLabel === 'Plot mode'));
+      const menu = [...window.document.querySelectorAll('[role="menu"]')].at(-1);
+      return [...menu.querySelectorAll('[role="menuitemradio"]')].find(r => r.getAttribute('aria-checked') === 'true')?.textContent;
+    };
+    const pickMode = (label) => {
+      click(window, [...box().querySelectorAll('button')].find(b => b.ariaLabel === 'Plot mode'));
+      click(window, [...window.document.querySelectorAll('[role="menuitemradio"]')].find(r => r.textContent === label));
+    };
+
+    click(window, expandBtn());                 // expand card A
+    pickMode('Soft Bin');                       // change it while expanded
+    assert.equal(checkedMode(), 'Soft Bin');
+    click(window, window.document.body);        // close the menu
+    click(window, expandBtn());                 // reattach
+
+    click(window, expandBtn());                 // expand it again: it opens from the card's own view
+    assert.equal(checkedMode(), 'Hard Bin', 'the reattached card took the gallery\'s plot mode again');
+    gallery.destroy();
   } finally {
     cleanup();
   }

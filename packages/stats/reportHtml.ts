@@ -1,6 +1,7 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { fmt } from '../renderer/fmt.js';
 import { buildFacetTable, prettyKey, type FacetItem } from './facets.js';
+import { escHtml } from '../core/utils.js';
 
 export interface MetricItem {
   label: string;
@@ -8,13 +9,6 @@ export interface MetricItem {
   hint?: string;
 }
 
-export function escHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 export function renderSection(title: string, body: string, className = ''): string {
   const classes = ['report-section', className].filter(Boolean).join(' ');

@@ -13,6 +13,7 @@ import { buildBinClusterData, type BinItem, type BinType } from '../../stats/bin
 import { SPACE, FONT, CLR } from '../toolbar.js';
 import { cardShell, makeTooltip, makeSegmented, renderEmptyState, type SaveImageHandler } from './chartShell.js';
 import { renderGroupedBarPlot, type GroupedBarPlotHandle } from './groupedBarPlot.js';
+import { escHtml } from '../../core/utils.js';
 
 const CLUSTER_LABEL_WIDTH = 90;
 const MAX_VISIBLE_BINS = 8;
@@ -85,7 +86,7 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
         const bin = bins[ri];
         const count = bin.counts[gi];
         const pct = bin.total > 0 ? (count / bin.total) * 100 : 0;
-        return `<strong>${bin.label}</strong> · ${clusterGroups[gi]}<br>${count} dies (${pct.toFixed(1)}% of bin)`;
+        return `<strong>${escHtml(bin.label)}</strong> · ${escHtml(String(clusterGroups[gi]))}<br>${count} dies (${pct.toFixed(1)}% of bin)`;
       },
     });
   }

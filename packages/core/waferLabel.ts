@@ -18,10 +18,22 @@ import { metadataDisplayValue, type WaferMetadata } from './metadata.js';
  * own `metadata.waferId`, then a position that says plainly it is not an ID.
  */
 export function waferDisplayLabel(
-  item: { label?: string; wafer?: { metadata?: WaferMetadata | null } | null } | null | undefined,
+  item: WaferLabelSource,
   index: number,
 ): string {
+  return waferIdentityLabel(item) ?? `Wafer ${index + 1} (no ID)`;
+}
+
+type WaferLabelSource = { label?: string; wafer?: { metadata?: WaferMetadata | null } | null } | null | undefined;
+
+/**
+ * The wafer's real identity — the caller's `label`, else `metadata.waferId` —
+ * or `undefined` when it has none. `waferDisplayLabel` without its positional
+ * fallback, for places where a position must not stand in for an identity: a
+ * saved file's name (see canvas-adapter/exportName.ts), where "Wafer 3 (no ID)"
+ * would be written into every export of a lot and read back later as an ID.
+ */
+export function waferIdentityLabel(item: WaferLabelSource): string | undefined {
   return (item?.label?.trim() || undefined)
-    ?? metadataDisplayValue(item?.wafer?.metadata?.waferId)
-    ?? `Wafer ${index + 1} (no ID)`;
+    ?? metadataDisplayValue(item?.wafer?.metadata?.waferId);
 }

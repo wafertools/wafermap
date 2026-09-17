@@ -18,7 +18,7 @@ import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWa
 import { getDieTestValue, getTestPassStatus, isParametricTest } from './buildWaferMap.js';
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 import { metadataValueColor } from './colorMap.js';
-import { compareNatural, clamp01 } from '../core/utils.js';
+import { compareNatural, clamp01, escHtml } from '../core/utils.js';
 import { prettyKey } from '../core/utils.js';
 
 type BinDefMap = Map<number, BinDef>;
@@ -640,7 +640,10 @@ function collectTestRows(
   die: Die,
   testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
-): Array<{ key: number; label: string; value: string }> {
+): Array<{ key: number; label: string; value: string; recordedFail?: boolean }> {
+  // Plain text only — the caller escapes and adds markup. `recordedFail` is a
+  // flag rather than an inline "<i>(recorded fail)</i>", which the tooltip's
+  // escaping would otherwise print as literal tags.
   if (testDefs?.length) {
     const rows = testDefs.flatMap(def => {
       const key = def.testNumber;
@@ -651,8 +654,7 @@ function collectTestRows(
       }
       const v = getDieTestValue(die, key);
       if (v === undefined) return [];
-      const recordedFail = die.testPass?.[key] === false ? ' <i>(recorded fail)</i>' : '';
-      return [{ key, label: def.name, value: `${fmt(v, def.unit, fallbackFormat)}${recordedFail}` }];
+      return [{ key, label: def.name, value: fmt(v, def.unit, fallbackFormat), recordedFail: die.testPass?.[key] === false }];
     });
     if (rows.length) return rows;
   }
@@ -705,13 +707,17 @@ export function buildHoverText(
   } = opts;
   const hbinMap = hbinDefs ? new Map(hbinDefs.map(d => [d.bin, d])) : null;
   const sbinMap = sbinDefs ? new Map(sbinDefs.map(d => [d.bin, d])) : null;
-  const lines: string[] = [`Die (${die.x}, ${die.y})`];
+  // Returns HTML, and most of what it shows comes from input files — test and
+  // bin names, units, metadata. Every line is therefore assembled as plain text
+  // and escaped here; the only markup is the library's own <b>/<i> around
+  // already-escaped text, and the <br> joins.
+  const lines: string[] = [escHtml(`Die (${die.x}, ${die.y})`)];
   // Only a positioned die can belong to a reticle field — hover text is only
   // ever generated for a rendered (i.e. positioned) die in practice, but the
   // guard keeps this correct if that assumption ever changes.
   if (reticleConfig && hasPosition(die)) {
     const cell = getReticleCell(die, reticleConfig);
-    lines.push(`Reticle (${cell.column}, ${cell.row})`);
+    lines.push(escHtml(`Reticle (${cell.column}, ${cell.row})`));
   }
 
   if (plotMode === 'stackedValues') {
@@ -722,7 +728,7 @@ export function buildHoverText(
       const tn    = def?.testNumber;
       const name  = def?.name ?? (tn != null ? `Test ${tn}` : 'Value');
       const method = aggrMethod ? ` (${aggrMethod})` : '';
-      lines.push(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`);
+      lines.push(escHtml(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`));
     }
   } else if (plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
     const value = getDieTestValue(die, 0);
@@ -749,7 +755,7 @@ export function buildHoverText(
       // Name the aggregation method so an engineer knows whether they are reading
       // an occurrence count or a percentage.
       const method = aggrMethod ? ` [${fmtAggregationMethod(aggrMethod)}]` : '';
-      lines.push(`${binLabel}: ${valueText}${method}`);
+      lines.push(escHtml(`${binLabel}: ${valueText}${method}`));
     }
   } else {
     // Standard modes (value / hardBin / softBin). The tooltip stays COMPACT — it is a
@@ -774,7 +780,7 @@ export function buildHoverText(
       if (leadIdx < 0) leadIdx = 0; // degrade: lead with the first present test
       const lead = testRows[leadIdx];
 
-      let leadLine = `<b>${lead.label}: ${lead.value}</b>`;
+      let leadLine = `<b>${escHtml(`${lead.label}: ${lead.value}`)}${lead.recordedFail ? ' <i>(recorded fail)</i>' : ''}</b>`;
       // Note out-of-spec status for the active test (complements the ▽/△ die markers).
       if (lead.key === testNumber && activeDef) {
         const spec = classifySpec(activeVal, activeDef);
@@ -803,15 +809,15 @@ export function buildHoverText(
         const value = name ? `${die.sbin} · ${name}` : String(die.sbin);
         parts.push(`SBin: ${value}`);
       }
-      lines.push(parts.join(' &nbsp;·&nbsp; '));
+      lines.push(parts.map(escHtml).join(' &nbsp;·&nbsp; '));
     }
   }
 
-  if (die.retestCount !== undefined) lines.push(`Retests: ${die.retestCount}`);
-  if (die.siteNum     !== undefined) lines.push(`Site: ${die.siteNum}`);
-  if (die.partId      !== undefined) lines.push(`Part ID: ${die.partId}`);
+  if (die.retestCount !== undefined) lines.push(escHtml(`Retests: ${die.retestCount}`));
+  if (die.siteNum     !== undefined) lines.push(escHtml(`Site: ${die.siteNum}`));
+  if (die.partId      !== undefined) lines.push(escHtml(`Part ID: ${die.partId}`));
   if (die.partial) lines.push('<i>partial die</i>');
-  if (die.probeIndex !== undefined) lines.push(`Probe: #${die.probeIndex}`);
+  if (die.probeIndex !== undefined) lines.push(escHtml(`Probe: #${die.probeIndex}`));
 
   // Wafer-level facts (lot, wafer id, product, program, …) are shown once,
   // always-visible or one click away, in the badge/card header — repeating
@@ -822,7 +828,7 @@ export function buildHoverText(
     const text = metadataDisplayValue(value);
     if (text === undefined) continue;
     const label = metadataFields?.find(f => f.key === key)?.label ?? prettyKey(key);
-    lines.push(`${label}: ${text}`);
+    lines.push(escHtml(`${label}: ${text}`));
   }
 
   return lines.join('<br>');

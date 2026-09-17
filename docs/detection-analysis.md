@@ -30,8 +30,8 @@ findings are supporting evidence.
 
 ## Benchmark dataset
 
-All benchmarks were run against **WM-811K** — 25,519 labelled wafers from TSMC
-300mm fabrication (Wu et al., *IEEE Transactions on Semiconductor Manufacturing*,
+All benchmarks were run against **WM-811K** — 25,519 labelled wafers from
+real-world production (Wu et al., *IEEE Transactions on Semiconductor Manufacturing*,
 2015). This is the standard public dataset for wafer map pattern classification.
 
 Scripts are in `scripts/`:
@@ -43,12 +43,16 @@ Scripts are in `scripts/`:
 | `run-benchmark-fp.mjs` | FP rate on WM-811K "Random"/"none" wafers |
 | `run-benchmark-synthetic-fp.mjs` | FP rate on synthetic i.i.d. random wafers |
 
-Dataset source: `/home/paul/projects/LSWMD.pkl` → converted to
+Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 `tests/fixtures/wm811k-benchmark.npz` via `scripts/prepare-benchmark.py`.
 
 ---
 
 ## Detection rates
+
+> **Re-run 2026-09-16 (0.30.1).** Every figure on this page was re-measured against the 0.30.1
+> build and reproduced exactly: classifier recall and exact match, the 86.2% detection rate,
+> the combined 99.3% / 99.1% rates and per-label rescue, and both false-positive tables.
 
 ### Classifier alone
 
@@ -139,10 +143,9 @@ WM-811K's range):
 > the regional-analysis population as phantom `partial` dies. The 10% spike
 > shrank (55.9% → 49.5%) but is not eliminated; it remains the same underlying
 > statistical-power issue, just measured over a slightly larger, correct
-> population. (Aside, not related to the `partial` fix: `run-benchmark-synthetic-fp.mjs`
-> now also sweeps `minimumRegionExcessFails` — all swept values produced
-> identical results, which is worth a follow-up look at whether that option is
-> actually wired into the regional-analysis path.)
+> population. (Aside: the script used to sweep a `minimumRegionExcessFails` option, and every
+> value produced identical results — because no such option exists in the library.
+> The sweep was removed in 0.30.1.)
 
 The **10% failure rate spike** is a fundamental statistical power problem: with
 1,700+ dies on a large wafer, the two-proportion z-test is powerful enough to

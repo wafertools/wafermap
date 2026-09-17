@@ -17,6 +17,36 @@ bug from this list), while `[x]` on a partial fix buries the remainder. An
 
 ---
 
+## [~] `downloadFilename` becomes a prefix in 0.31.0 — naming shipped in 0.30.1, the prefix change is due
+
+0.30.1 names every saved file `[lot]_[wafer]_[content]` (`canvas-adapter/exportName.ts`, API
+§5.4.5), but a host-set `downloadFilename` still names the map/gallery PNG verbatim, because
+changing what an option means is breaking and can't go in a patch. 0.30.1's CHANGELOG
+**Deprecated** section and a one-time console notice announce the change for 0.31.0.
+
+**Enforced:** the test `a host downloadFilename still names the map PNG exactly…` in
+`tests/dom-adapter.test.mjs` fails as soon as `package.json` or a CHANGELOG heading reaches 0.31.0.
+
+Steps for 0.31.0:
+1. `renderWaferMap` `downloadPng` and `renderWaferGallery` `downloadGalleryPng`: remove the
+   `options.downloadFilename != null` verbatim branch, so the PNG always goes through
+   `exportHooks`.
+2. In both renderers' `withExportContext` getters, set `prefix: options.downloadFilename`. The
+   prefix logic and its tests are already in `exportName.ts` / `tests/exportName.test.mjs`.
+3. Pass `downloadFilename` on to gallery cards and detached windows (both `renderWaferMapCard`
+   calls), so card files carry the host prefix too. Cards get the raw host hooks, so the prefix
+   is applied exactly once.
+4. Delete `noticeDownloadFilenameChange` and its test; `noticeOnce` in `renderer/deprecate.ts`
+   stays.
+5. Replace the verbatim test (and its release gate) with prefix tests, e.g.
+   `LOT123_sort` → `LOT123_sort_W05_hard-bin.png`, CSVs prefixed, cards prefixed.
+6. Update the option JSDoc (both files), API §5.4.5, the api.md option comments and the
+   user guide's "Names of saved files", and add a CHANGELOG `### Breaking` entry.
+7. Check the tsmap side: it passes its source-file stem, so its names become
+   `<stem>_<wafer>_<content>`.
+
+---
+
 ## [x] Summary-panel geometry warnings cannot be dismissed or collapsed
 
 **Problem:** a geometry advisory (e.g. the inferred-die-pitch warning) renders

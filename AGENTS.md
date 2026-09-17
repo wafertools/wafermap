@@ -84,7 +84,9 @@ or the other low-level pipeline functions: they are deprecated and removed in 0.
   and its pass/fail verdict (pass bins, per `passBins`, take green pass colours), so a
   bin is the same colour in every lot. To choose colours, set `BinDef.color` or register
   a palette with `registerBinColorScheme`. Bin maps and value maps have separate
-  schemes: `binColorScheme` and `valueColorScheme`.
+  schemes: `binColorScheme` and `valueColorScheme`. Need the colours for a surface of
+  your own (a table swatch, an export)? Read `controller.getBinColors()` for a live map,
+  or `binColorsForMaps(results)` — never a palette lookup of your own.
 - Build once, render many: `buildWaferMap()` handles data + geometry; re-render UI
   changes through the controller's `setOptions()`, not by rebuilding.
 - `result.view` is internal. Use the promoted fields: `result.plotMode`,
@@ -96,8 +98,8 @@ or the other low-level pipeline functions: they are deprecated and removed in 0.
   `w.message` to display, branch on `w.code`. Code that calls a string method on an
   entry — `warnings[0].includes('…')` — is the old shape and will throw.
 - **`summary.findings` is the complete list and contains restatements of the same
-  fact.** Building a list for a human to read? Exclude what other findings absorb:
-  `const absorbed = new Set(summary.findings.flatMap(f => f.absorbedIds ?? []))`.
+  fact.** Building a list for a human to read? Pass it through `visibleFindings()`,
+  which drops what other findings absorb — do not re-implement that filter.
   Skip that and one edge failure is reported up to three times per region — a hard
   bin row, its soft-bin twin, and the yield row that restates the pass bin. Do NOT
   use `relatedIds` for this; it is a different relationship and some ids it names
@@ -133,6 +135,14 @@ it is handed, because it has no way to know which tests anyone will look at.
 - **A Web Worker buys responsiveness, not speed.** `createWafermapWorker` copies data
   across `postMessage`, so total time goes *up*. Use it when a build would otherwise
   visibly freeze the page, not for small datasets.
+- **Capability, pass rates and region yield come back from the analysis** —
+  `stats.capability` (with `computePerTestStats`), `stats.testSpecYield`,
+  `stats.testFlagYield`, `stats.functionalYield` and `stats.regionYield`, on wafer and
+  lot summaries alike. Do not compute Cp/Cpk or ring yield yourself: the pooled
+  within-wafer stddev and per-wafer pass bins are easy to get subtly wrong.
+- **Reports from code: `renderWaferReportHtml(result, summary)` and
+  `renderLotReportHtml(results)`** — they take the built maps, so pass bins and ring
+  count cannot be wrong. They run in Node.
 - **In a gallery, pass `perWaferSummaries` to `analyzeWaferLot`** so it reuses the
   per-wafer analysis you already ran instead of redoing it.
 

@@ -20,7 +20,7 @@ import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type Me
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from '../stats/regions.js';
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
-import { renderSummaryReportHtml, renderLotSummaryReportHtml } from '../stats/renderSummaryReport.js';
+import { renderWaferReportHtml, renderLotReportHtml, type ReportMap } from '../stats/renderSummaryReport.js';
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
 import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
@@ -2782,13 +2782,12 @@ export function renderWaferSummaryContent(
 
   const summaryReportBtn = (yieldSummary && dataCoverage)
     ? reportButton('Summary report', () => {
-        openReportModal(renderSummaryReportHtml({
-          wafer, dies, yieldSummary, dataCoverage,
+        openReportModal(renderWaferReportHtml({
+          wafer, dies, yield: yieldSummary, dataCoverage,
           hbinDefs, sbinDefs, testDefs,
-          statsSummary,
           passBins,
           ringCount,
-        }), { anchor: panel });
+        }, statsSummary), { anchor: panel });
       })
     : null;
 
@@ -2858,12 +2857,44 @@ export function renderWaferSummaryContent(
 }
 
 /** Render lot-level content into the panel. Clears existing content. */
+/** A gallery item as the lot report reads it — every field optional, since a slot may not have loaded. */
+type ReportItem = {
+  label?: string; wafer?: Wafer; dies?: Die[]; passBins?: readonly number[]; ringCount?: number;
+  hbinDefs?: BinDef[]; sbinDefs?: BinDef[]; testDefs?: TestDef[]; statsSummary?: StatsSummary;
+};
+
+/**
+ * @internal Gallery items as report maps — the one conversion for the gallery's
+ * and the lot panel's report buttons. A slot not yet loaded is skipped, but each
+ * wafer keeps the label its position gives it, so a report names wafers exactly
+ * as the cards do. `passBins`/`ringCount` fill in only for an item built without them.
+ */
+export function reportMapsFromItems(
+  items: ReadonlyArray<ReportItem | null | undefined>,
+  passBins: readonly number[],
+  ringCount: number,
+): ReportMap[] {
+  const maps: ReportMap[] = [];
+  items.forEach((item, i) => {
+    if (!item?.wafer || !item.dies) return;
+    maps.push({
+      ...item,
+      wafer: item.wafer,
+      dies: item.dies,
+      label: waferDisplayLabel(item, i),
+      passBins: [...itemPassBins(item, passBins)],
+      ringCount: item.ringCount ?? ringCount,
+    });
+  });
+  return maps;
+}
+
 export function renderLotSummaryContent(
   panel: HTMLDivElement,
   params: {
     lotSummary:       LotStatsSummary;
     /** `passBins` on an item is that wafer's own (`WaferMapResult.passBins`) and wins over the top-level fallback. */
-    items:            Array<{ label?: string; wafer?: Wafer; dies?: Die[]; passBins?: readonly number[]; statsSummary?: StatsSummary; metadataFields?: MetadataFieldDef[] } | null>;
+    items:            Array<ReportItem & { metadataFields?: MetadataFieldDef[] } | null>;
     hbinDefs?:        BinDef[];
     sbinDefs?:        BinDef[];
     testDefs?:        TestDef[];
@@ -2923,18 +2954,7 @@ export function renderLotSummaryContent(
     // all happen inside renderLotSummaryReportHtml now (see its own doc
     // comment). The on-screen panel above still uses the pooled `lotSummary`
     // param for its own display, which is a separate, unaffected concern.
-    openReportModal(renderLotSummaryReportHtml({
-      items: items.map((item, i) => ({
-        label:        waferDisplayLabel(item, i),
-        wafer:        item?.wafer,
-        dies:         item?.dies,
-        passBins:     [...itemPassBins(item, passBins)],
-        statsSummary: item?.statsSummary,
-      })),
-      hbinDefs, sbinDefs, testDefs,
-      passBins,
-      ringCount,
-    }), { anchor: panel });
+    openReportModal(renderLotReportHtml(reportMapsFromItems(items, passBins, ringCount)), { anchor: panel });
   });
 
   const allWafers: Wafer[] = [];

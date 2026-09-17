@@ -20,7 +20,8 @@ export * from './buildWaferMap.js';
 // don't have to reach into /core for the types.
 export type { WaferMetadata, DieMetadata } from '../core/metadata.js';
 export * from './colorSchemes.js';
-export type { BinColors, BinColorOptions } from './binColors.js';
+export type { BinColors, BinColorOptions, BinColorSource, MapBinColorOptions } from './binColors.js';
+export { binColorsForMaps } from './binColors.js';
 
 // Deprecated in 0.30.0, removed in 0.31.0. Each is wrapped in ./deprecated.ts, whose
 // declarations carry the `@deprecated` tags; this named re-export shadows any `export *` above.

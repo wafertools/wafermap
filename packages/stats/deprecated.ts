@@ -22,41 +22,40 @@ import { buildScatterData as buildScatterDataImpl, buildScatterDataGrouped as bu
 import { buildYieldData as buildYieldDataImpl, buildYieldDataCombined as buildYieldDataCombinedImpl } from './yield.js';
 import { buildBinParetoData as buildBinParetoDataImpl, buildBinClusterData as buildBinClusterDataImpl } from './binPareto.js';
 
-const CHART_DATA_ADVICE = 'It prepared data for the Insights charts, which wmap now draws itself '
-  + '(insights: { enabled: true }). If you depend on it, say so at https://github.com/wafertools/wafermap/issues.';
+const DEPRECATION_ISSUES = "If you depend on it, say so at https://github.com/wafertools/wafermap/issues.";
 
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildCapabilityData = deprecated(buildCapabilityDataImpl, 'buildCapabilityData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildCorrelationMatrix = deprecated(buildCorrelationMatrixImpl, 'buildCorrelationMatrix', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const filterCorrelationMatrix = deprecated(filterCorrelationMatrixImpl, 'filterCorrelationMatrix', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildTestBoxplotData = deprecated(buildTestBoxplotDataImpl, 'buildTestBoxplotData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildTestTrendData = deprecated(buildTestTrendDataImpl, 'buildTestTrendData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const trendCentre = deprecated(trendCentreImpl, 'trendCentre', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildTestPassRateData = deprecated(buildTestPassRateDataImpl, 'buildTestPassRateData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const hasJudgeableTests = deprecated(hasJudgeableTestsImpl, 'hasJudgeableTests', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildTestHistogramData = deprecated(buildTestHistogramDataImpl, 'buildTestHistogramData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildTestHistogramSeries = deprecated(buildTestHistogramSeriesImpl, 'buildTestHistogramSeries', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildScatterData = deprecated(buildScatterDataImpl, 'buildScatterData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildScatterDataGrouped = deprecated(buildScatterDataGroupedImpl, 'buildScatterDataGrouped', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildYieldData = deprecated(buildYieldDataImpl, 'buildYieldData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildYieldDataCombined = deprecated(buildYieldDataCombinedImpl, 'buildYieldDataCombined', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildBinParetoData = deprecated(buildBinParetoDataImpl, 'buildBinParetoData', CHART_DATA_ADVICE);
-/** @deprecated Removed in 0.31.0. Prepared data for the Insights charts, which wmap now draws itself (`insights: { enabled: true }`). */
-export const buildBinClusterData = deprecated(buildBinClusterDataImpl, 'buildBinClusterData', CHART_DATA_ADVICE);
+/** @deprecated Removed in 0.31.0. `analyzeWaferMap` and `analyzeWaferLot` now return Cp/Cpk/Pp/Ppk as `stats.capability` (enable `computePerTestStats`); a lot's uses the pooled within-wafer stddev. */
+export const buildCapabilityData = deprecated(buildCapabilityDataImpl, 'buildCapabilityData', `analyzeWaferMap and analyzeWaferLot now return Cp/Cpk/Pp/Ppk as stats.capability (enable computePerTestStats); a lot's uses the pooled within-wafer stddev. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. It prepared data for the Insights correlation matrix, which wmap draws itself (`insights: { enabled: true }`); there is no data replacement yet. */
+export const buildCorrelationMatrix = deprecated(buildCorrelationMatrixImpl, 'buildCorrelationMatrix', `It prepared data for the Insights correlation matrix, which wmap draws itself (insights: { enabled: true }); there is no data replacement yet. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. It prepared data for the Insights correlation matrix, which wmap draws itself (`insights: { enabled: true }`); there is no data replacement. */
+export const filterCorrelationMatrix = deprecated(filterCorrelationMatrixImpl, 'filterCorrelationMatrix', `It prepared data for the Insights correlation matrix, which wmap draws itself (insights: { enabled: true }); there is no data replacement. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Five-number summaries are `stats.perTestStats` (enable `computePerTestStats`), and `perWaferTestStats` on `analyzeWaferLot`'s result. */
+export const buildTestBoxplotData = deprecated(buildTestBoxplotDataImpl, 'buildTestBoxplotData', `Five-number summaries are stats.perTestStats (enable computePerTestStats), and perWaferTestStats on analyzeWaferLot's result. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Per-wafer means and stddevs in slot order are `perWaferTestStats` on `analyzeWaferLot`'s result (enable `computePerTestStats`). */
+export const buildTestTrendData = deprecated(buildTestTrendDataImpl, 'buildTestTrendData', `Per-wafer means and stddevs in slot order are perWaferTestStats on analyzeWaferLot's result (enable computePerTestStats). ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Compute the die-weighted mean from `perWaferTestStats` (mean × count) on `analyzeWaferLot`'s result. */
+export const trendCentre = deprecated(trendCentreImpl, 'trendCentre', `Compute the die-weighted mean from perWaferTestStats (mean × count) on analyzeWaferLot's result. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. `analyzeWaferMap` and `analyzeWaferLot` now return per-test pass rates as `stats.testSpecYield` (spec limits), `stats.testFlagYield` (tester verdicts) and `stats.functionalYield`, with `stats.specVerdictDisagreementDies.` */
+export const buildTestPassRateData = deprecated(buildTestPassRateDataImpl, 'buildTestPassRateData', `analyzeWaferMap and analyzeWaferLot now return per-test pass rates as stats.testSpecYield (spec limits), stats.testFlagYield (tester verdicts) and stats.functionalYield, with stats.specVerdictDisagreementDies. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Read which pass rates exist from `stats.testSpecYield`, `stats.testFlagYield` and `stats.functionalYield` on `analyzeWaferMap`'s or `analyzeWaferLot`'s result. */
+export const hasJudgeableTests = deprecated(hasJudgeableTestsImpl, 'hasJudgeableTests', `Read which pass rates exist from stats.testSpecYield, stats.testFlagYield and stats.functionalYield on analyzeWaferMap's or analyzeWaferLot's result. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. It prepared data for the Insights histogram, which wmap draws itself (`insights: { enabled: true }`); there is no data replacement. */
+export const buildTestHistogramData = deprecated(buildTestHistogramDataImpl, 'buildTestHistogramData', `It prepared data for the Insights histogram, which wmap draws itself (insights: { enabled: true }); there is no data replacement. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. It prepared data for the Insights histogram, which wmap draws itself (`insights: { enabled: true }`); there is no data replacement. */
+export const buildTestHistogramSeries = deprecated(buildTestHistogramSeriesImpl, 'buildTestHistogramSeries', `It prepared data for the Insights histogram, which wmap draws itself (insights: { enabled: true }); there is no data replacement. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. It prepared data for the Insights scatter plot, which wmap draws itself (`insights: { enabled: true }`); there is no data replacement. */
+export const buildScatterData = deprecated(buildScatterDataImpl, 'buildScatterData', `It prepared data for the Insights scatter plot, which wmap draws itself (insights: { enabled: true }); there is no data replacement. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. It prepared data for the Insights scatter plot, which wmap draws itself (`insights: { enabled: true }`); there is no data replacement. */
+export const buildScatterDataGrouped = deprecated(buildScatterDataGroupedImpl, 'buildScatterDataGrouped', `It prepared data for the Insights scatter plot, which wmap draws itself (insights: { enabled: true }); there is no data replacement. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Per-wafer yield is `lotYieldSeries` on `analyzeWaferLot`'s result, and `stats.yieldPercent` on each summary. */
+export const buildYieldData = deprecated(buildYieldDataImpl, 'buildYieldData', `Per-wafer yield is lotYieldSeries on analyzeWaferLot's result, and stats.yieldPercent on each summary. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Per-wafer yield is `lotYieldSeries` on `analyzeWaferLot`'s result; weight it by each wafer's die count to combine groups. */
+export const buildYieldDataCombined = deprecated(buildYieldDataCombinedImpl, 'buildYieldDataCombined', `Per-wafer yield is lotYieldSeries on analyzeWaferLot's result; weight it by each wafer's die count to combine groups. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Bin counts are `stats.hardBinCounts` and `stats.softBinCounts` on `analyzeWaferMap`'s result. */
+export const buildBinParetoData = deprecated(buildBinParetoDataImpl, 'buildBinParetoData', `Bin counts are stats.hardBinCounts and stats.softBinCounts on analyzeWaferMap's result. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Bin counts per wafer are `stats.hardBinCounts` and `stats.softBinCounts` on each perWafer summary of `analyzeWaferLot`'s result. */
+export const buildBinClusterData = deprecated(buildBinClusterDataImpl, 'buildBinClusterData', `Bin counts per wafer are stats.hardBinCounts and stats.softBinCounts on each perWafer summary of analyzeWaferLot's result. ${DEPRECATION_ISSUES}`);
 
 // ── Deprecated in 0.30.0, removed in 0.31.0 ─────────────────────────────────
 // The analysis's own internals and the report builders, exported by accident.
@@ -64,55 +63,47 @@ export const buildBinClusterData = deprecated(buildBinClusterDataImpl, 'buildBin
 import { deprecatedValue } from '../renderer/deprecate.js';
 import { buildRingRegions as buildRingRegionsImpl, buildQuadrantRegions as buildQuadrantRegionsImpl, buildSectorRegions as buildSectorRegionsImpl, buildReticlePositionRegions as buildReticlePositionRegionsImpl, buildTestSiteRegions as buildTestSiteRegionsImpl, buildRegionYieldData as buildRegionYieldDataImpl, areQuadrantsAdjacent as areQuadrantsAdjacentImpl, parseRegionKey as parseRegionKeyImpl, sectorCompassNames as sectorCompassNamesImpl } from './regions.js';
 import { classifyPattern as classifyPatternImpl } from './patternClassification.js';
-import { visibleFindings as visibleFindingsImpl } from './filterFindings.js';
 import { computeFunctionalYield as computeFunctionalYieldImpl } from './analyzeWaferMap.js';
 import { resolveMetadataColumns as resolveMetadataColumnsImpl, discoverDieMetadataKeys as discoverDieMetadataKeysImpl } from './metadataColumns.js';
-import { renderFindingsReportHtml as renderFindingsReportHtmlImpl, openHtmlReport as openHtmlReportImpl } from './renderFindingsReport.js';
+import { openHtmlReport as openHtmlReportImpl } from './renderFindingsReport.js';
 import { renderSummaryReportHtml as renderSummaryReportHtmlImpl, renderLotSummaryReportHtml as renderLotSummaryReportHtmlImpl } from './renderSummaryReport.js';
 import { DEFAULT_FACET_CURATION as DEFAULT_FACET_CURATIONImpl } from './facets.js';
 
-const DEPRECATION_ISSUES = "If you depend on it, say so at https://github.com/wafertools/wafermap/issues.";
-const ADVICE_INTERNAL = "It is an internal helper that was exported by accident; buildWaferMap, analyzeWaferMap and the renderers already apply it.";
-const ADVICE_PATTERN = "analyzeWaferMap reports the classified pattern as a finding (comparison.family 'spatial-pattern').";
+const ADVICE_PATTERN = "analyzeWaferMap returns the classification, with its geometry features, as stats.spatialPattern for every wafer, and a detected pattern as a finding (comparison.family 'spatial-pattern').";
 const ADVICE_FUNCTIONAL = "analyzeWaferMap returns the same figures as stats.functionalYield.";
 const ADVICE_META_COLS = "The die list resolves its metadata columns itself (the dieList.metadataColumns option).";
-const ADVICE_REPORT = "Reports open from the Summary panel's report button; route them into your host with setReportOpener.";
 
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const buildRingRegions = deprecated(buildRingRegionsImpl, 'buildRingRegions', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const buildQuadrantRegions = deprecated(buildQuadrantRegionsImpl, 'buildQuadrantRegions', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const buildSectorRegions = deprecated(buildSectorRegionsImpl, 'buildSectorRegions', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const buildReticlePositionRegions = deprecated(buildReticlePositionRegionsImpl, 'buildReticlePositionRegions', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const buildTestSiteRegions = deprecated(buildTestSiteRegionsImpl, 'buildTestSiteRegions', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const buildRegionYieldData = deprecated(buildRegionYieldDataImpl, 'buildRegionYieldData', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const areQuadrantsAdjacent = deprecated(areQuadrantsAdjacentImpl, 'areQuadrantsAdjacent', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const parseRegionKey = deprecated(parseRegionKeyImpl, 'parseRegionKey', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const sectorCompassNames = deprecated(sectorCompassNamesImpl, 'sectorCompassNames', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. `analyzeWaferMap` reports the classified pattern as a finding (comparison.family 'spatial-pattern'). */
+/** @deprecated Removed in 0.31.0. Ring yield is `stats.regionYield.ring` on `analyzeWaferMap`'s or `analyzeWaferLot`'s result; ring findings are in findings. */
+export const buildRingRegions = deprecated(buildRingRegionsImpl, 'buildRingRegions', `Ring yield is stats.regionYield.ring on analyzeWaferMap's or analyzeWaferLot's result; ring findings are in findings. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Quadrant yield is `stats.regionYield.quadrant` on `analyzeWaferMap`'s or `analyzeWaferLot`'s result; quadrant findings are in findings. */
+export const buildQuadrantRegions = deprecated(buildQuadrantRegionsImpl, 'buildQuadrantRegions', `Quadrant yield is stats.regionYield.quadrant on analyzeWaferMap's or analyzeWaferLot's result; quadrant findings are in findings. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Sector findings are in `analyzeWaferMap`'s findings (`comparison.family` 'sector'). */
+export const buildSectorRegions = deprecated(buildSectorRegionsImpl, 'buildSectorRegions', `Sector findings are in analyzeWaferMap's findings (comparison.family 'sector'). ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Reticle-position findings are in `analyzeWaferMap`'s findings; a die's reticle cell is `getReticleCell(die, reticleConfig)`. */
+export const buildReticlePositionRegions = deprecated(buildReticlePositionRegionsImpl, 'buildReticlePositionRegions', `Reticle-position findings are in analyzeWaferMap's findings; a die's reticle cell is getReticleCell(die, reticleConfig). ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Test-site findings are in `analyzeWaferMap`'s findings (`comparison.family` 'test-site'). */
+export const buildTestSiteRegions = deprecated(buildTestSiteRegionsImpl, 'buildTestSiteRegions', `Test-site findings are in analyzeWaferMap's findings (comparison.family 'test-site'). ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. `analyzeWaferMap` and `analyzeWaferLot` now return ring and quadrant yield as `stats.regionYield.` */
+export const buildRegionYieldData = deprecated(buildRegionYieldDataImpl, 'buildRegionYieldData', `analyzeWaferMap and analyzeWaferLot now return ring and quadrant yield as stats.regionYield. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. It is an internal helper of the quadrant findings, which `analyzeWaferMap` already reports. */
+export const areQuadrantsAdjacent = deprecated(areQuadrantsAdjacentImpl, 'areQuadrantsAdjacent', `It is an internal helper of the quadrant findings, which analyzeWaferMap already reports. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Findings name their region in prose (`comparison.left`) and region yield in `RegionYield.label`; region keys are identities, not to be parsed. */
+export const parseRegionKey = deprecated(parseRegionKeyImpl, 'parseRegionKey', `Findings name their region in prose (comparison.left) and region yield in RegionYield.label; region keys are identities, not to be parsed. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Sector findings name their sector in prose (`comparison.left`). */
+export const sectorCompassNames = deprecated(sectorCompassNamesImpl, 'sectorCompassNames', `Sector findings name their sector in prose (comparison.left). ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. `analyzeWaferMap` returns the classification, with its geometry features, as `stats.spatialPattern` for every wafer, and a detected pattern as a finding (`comparison.family` `'spatial-pattern'`). */
 export const classifyPattern = deprecated(classifyPatternImpl, 'classifyPattern', `${ADVICE_PATTERN} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const visibleFindings = deprecated(visibleFindingsImpl, 'visibleFindings', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. `analyzeWaferMap` returns the same figures as `stats.functionalYield`. */
 export const computeFunctionalYield = deprecated(computeFunctionalYieldImpl, 'computeFunctionalYield', `${ADVICE_FUNCTIONAL} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. The die list resolves its metadata columns itself (the `dieList.metadataColumns` option). */
 export const resolveMetadataColumns = deprecated(resolveMetadataColumnsImpl, 'resolveMetadataColumns', `${ADVICE_META_COLS} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. The die list resolves its metadata columns itself (the `dieList.metadataColumns` option). */
 export const discoverDieMetadataKeys = deprecated(discoverDieMetadataKeysImpl, 'discoverDieMetadataKeys', `${ADVICE_META_COLS} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. Reports open from the Summary panel's report button; route them into your host with `setReportOpener`. */
-export const renderFindingsReportHtml = deprecated(renderFindingsReportHtmlImpl, 'renderFindingsReportHtml', `${ADVICE_REPORT} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. Reports open from the Summary panel's report button; route them into your host with `setReportOpener`. */
-export const openHtmlReport = deprecated(openHtmlReportImpl, 'openHtmlReport', `${ADVICE_REPORT} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. Reports open from the Summary panel's report button; route them into your host with `setReportOpener`. */
-export const renderSummaryReportHtml = deprecated(renderSummaryReportHtmlImpl, 'renderSummaryReportHtml', `${ADVICE_REPORT} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. Reports open from the Summary panel's report button; route them into your host with `setReportOpener`. */
-export const renderLotSummaryReportHtml = deprecated(renderLotSummaryReportHtmlImpl, 'renderLotSummaryReportHtml', `${ADVICE_REPORT} ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Open reports with `openReportModal(html)`, or route them into your host with `setReportOpener`. */
+export const openHtmlReport = deprecated(openHtmlReportImpl, 'openHtmlReport', `Open reports with openReportModal(html), or route them into your host with setReportOpener. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Use `renderWaferReportHtml(result, summary)`, which reads pass bins and ring count from the built map. */
+export const renderSummaryReportHtml = deprecated(renderSummaryReportHtmlImpl, 'renderSummaryReportHtml', `Use renderWaferReportHtml(result, summary), which reads pass bins and ring count from the built map. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Use `renderLotReportHtml(results)`, which reads each wafer's pass bins and ring count from its built map. */
+export const renderLotSummaryReportHtml = deprecated(renderLotSummaryReportHtmlImpl, 'renderLotSummaryReportHtml', `Use renderLotReportHtml(results), which reads each wafer's pass bins and ring count from its built map. ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. `buildFacetTable` applies it by default. */
 export const DEFAULT_FACET_CURATION = deprecatedValue(DEFAULT_FACET_CURATIONImpl, 'DEFAULT_FACET_CURATION');

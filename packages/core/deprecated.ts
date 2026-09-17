@@ -15,29 +15,27 @@ import { createWafer as createWaferImpl } from './wafer.js';
 import { generateDies as generateDiesImpl, isPositionedDie as isPositionedDieImpl } from './dies.js';
 import { clipDiesToWafer as clipDiesToWaferImpl, applyOrientation as applyOrientationImpl, transformDies as transformDiesImpl, mapDataToDies as mapDataToDiesImpl, isInsideWafer as isInsideWaferImpl, affineIdentity as affineIdentityImpl, affineRotation as affineRotationImpl, affineMirror as affineMirrorImpl, affineCompose as affineComposeImpl, affineInvert as affineInvertImpl, affinePoint as affinePointImpl, affineVector as affineVectorImpl, affineSwapsAxes as affineSwapsAxesImpl } from './transforms.js';
 import { applyProbeSequence as applyProbeSequenceImpl } from './probe.js';
-import { generateReticleGrid as generateReticleGridImpl, getReticleCell as getReticleCellImpl } from './reticle.js';
+import { generateReticleGrid as generateReticleGridImpl } from './reticle.js';
 import { classifyDie as classifyDieImpl, getRingLabel as getRingLabelImpl } from './classify.js';
 import { aggregateValues as aggregateValuesImpl, aggregateBinCounts as aggregateBinCountsImpl, getUniqueBins as getUniqueBinsImpl } from './aggregates.js';
-import { metadataDisplayValue as metadataDisplayValueImpl, metadataCategoricalValue as metadataCategoricalValueImpl } from './metadata.js';
+import { metadataCategoricalValue as metadataCategoricalValueImpl } from './metadata.js';
 import { resolveGridPitch as resolveGridPitchImpl } from './inference/pitch.js';
 
 const DEPRECATION_ISSUES = "If you depend on it, say so at https://github.com/wafertools/wafermap/issues.";
 const ADVICE_PIPELINE = "It belongs to the low-level drawing pipeline, which is being withdrawn: build with buildWaferMap and draw with renderWaferMap or renderWaferGallery.";
 const ADVICE_POSITION = "Use hasPosition to test whether a die has a position.";
 const ADVICE_MAP_DATA = "buildWaferMap maps results onto dies.";
-const ADVICE_RETICLE_CELL = "With reticleConfig set, each die's tooltip shows its reticle cell.";
-const ADVICE_INTERNAL = "It is an internal helper that was exported by accident; buildWaferMap, analyzeWaferMap and the renderers already apply it.";
 const ADVICE_LOT_STACK = "Stack wafers with buildWaferMap's lotStack option.";
 const ADVICE_PITCH = "buildWaferMap resolves the die pitch itself; each built die's width and height carry it.";
 
-/** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
-export const createWafer = deprecated(createWaferImpl, 'createWafer', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
-export const generateDies = deprecated(generateDiesImpl, 'generateDies', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. For a die layout with no test data use `buildWaferMap({ layout: true, waferConfig, dieConfig })`; otherwise build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
+export const createWafer = deprecated(createWaferImpl, 'createWafer', `For a die layout with no test data use buildWaferMap({ layout: true, waferConfig, dieConfig }); otherwise build with buildWaferMap and draw with renderWaferMap or renderWaferGallery. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. For a die layout with no test data use `buildWaferMap({ layout: true, waferConfig, dieConfig })`, which keeps every site fully on the wafer. */
+export const generateDies = deprecated(generateDiesImpl, 'generateDies', `For a die layout with no test data use buildWaferMap({ layout: true, waferConfig, dieConfig }), which keeps every site fully on the wafer. ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. Use `hasPosition` to test whether a die has a position. */
 export const isPositionedDie = deprecated(isPositionedDieImpl, 'isPositionedDie', `${ADVICE_POSITION} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
-export const clipDiesToWafer = deprecated(clipDiesToWaferImpl, 'clipDiesToWafer', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. For a die layout with no test data use `buildWaferMap({ layout: true, waferConfig, dieConfig })`, which keeps every site fully on the wafer. */
+export const clipDiesToWafer = deprecated(clipDiesToWaferImpl, 'clipDiesToWafer', `For a die layout with no test data use buildWaferMap({ layout: true, waferConfig, dieConfig }), which keeps every site fully on the wafer. ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
 export const applyOrientation = deprecated(applyOrientationImpl, 'applyOrientation', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
@@ -66,21 +64,17 @@ export const affineSwapsAxes = deprecated(affineSwapsAxesImpl, 'affineSwapsAxes'
 export const applyProbeSequence = deprecated(applyProbeSequenceImpl, 'applyProbeSequence', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
 export const generateReticleGrid = deprecated(generateReticleGridImpl, 'generateReticleGrid', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. With `reticleConfig` set, each die's tooltip shows its reticle cell. */
-export const getReticleCell = deprecated(getReticleCellImpl, 'getReticleCell', `${ADVICE_RETICLE_CELL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const classifyDie = deprecated(classifyDieImpl, 'classifyDie', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const getRingLabel = deprecated(getRingLabelImpl, 'getRingLabel', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. A die's ring and quadrant are in the die list's CSV export (Ring and Quadrant columns); ring and quadrant yield is `stats.regionYield.` */
+export const classifyDie = deprecated(classifyDieImpl, 'classifyDie', `A die's ring and quadrant are in the die list's CSV export (Ring and Quadrant columns); ring and quadrant yield is stats.regionYield. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Ring labels come with ring yield (`stats.regionYield.ring[].label`) and ring findings (`comparison.left`). */
+export const getRingLabel = deprecated(getRingLabelImpl, 'getRingLabel', `Ring labels come with ring yield (stats.regionYield.ring[].label) and ring findings (comparison.left). ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. Stack wafers with `buildWaferMap`'s `lotStack` option. */
 export const aggregateValues = deprecated(aggregateValuesImpl, 'aggregateValues', `${ADVICE_LOT_STACK} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. Stack wafers with `buildWaferMap`'s `lotStack` option. */
 export const aggregateBinCounts = deprecated(aggregateBinCountsImpl, 'aggregateBinCounts', `${ADVICE_LOT_STACK} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. Stack wafers with `buildWaferMap`'s `lotStack` option. */
 export const getUniqueBins = deprecated(getUniqueBinsImpl, 'getUniqueBins', `${ADVICE_LOT_STACK} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const metadataDisplayValue = deprecated(metadataDisplayValueImpl, 'metadataDisplayValue', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
-export const metadataCategoricalValue = deprecated(metadataCategoricalValueImpl, 'metadataCategoricalValue', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Use `metadataDisplayValue` for a metadata value's text. */
+export const metadataCategoricalValue = deprecated(metadataCategoricalValueImpl, 'metadataCategoricalValue', `Use metadataDisplayValue for a metadata value's text. ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. `buildWaferMap` resolves the die pitch itself; each built die's width and height carry it. */
 export const resolveGridPitch = deprecated(resolveGridPitchImpl, 'resolveGridPitch', `${ADVICE_PITCH} ${DEPRECATION_ISSUES}`);

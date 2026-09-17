@@ -48,7 +48,6 @@ import { dieHasTestData as dieHasTestDataImpl, isParametricTest as isParametricT
 
 const DEPRECATION_ISSUES = "If you depend on it, say so at https://github.com/wafertools/wafermap/issues.";
 const ADVICE_PIPELINE = "It belongs to the low-level drawing pipeline, which is being withdrawn: build with buildWaferMap and draw with renderWaferMap or renderWaferGallery.";
-const ADVICE_BIN_COLORS = "The maps resolve bin colours themselves: set a colour with BinDef.color, or register a palette with registerBinColorScheme.";
 const ADVICE_INTERNAL = "It is an internal helper that was exported by accident; buildWaferMap, analyzeWaferMap and the renderers already apply it.";
 const ADVICE_TEST_VALUE = "Read die.testValues[testNumber].";
 
@@ -58,10 +57,10 @@ export const buildView = deprecated(buildViewImpl, 'buildView', `${ADVICE_PIPELI
 export const buildHoverText = deprecated(buildHoverTextImpl, 'buildHoverText', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. It belongs to the low-level drawing pipeline, which is being withdrawn: build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. */
 export const buildMapTitle = deprecated(buildMapTitleImpl, 'buildMapTitle', `${ADVICE_PIPELINE} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. The maps resolve bin colours themselves: set a colour with `BinDef.color`, or register a palette with `registerBinColorScheme`. */
-export const resolveBinColors = deprecated(resolveBinColorsImpl, 'resolveBinColors', `${ADVICE_BIN_COLORS} ${DEPRECATION_ISSUES}`);
-/** @deprecated Removed in 0.31.0. The maps resolve bin colours themselves: set a colour with `BinDef.color`, or register a palette with `registerBinColorScheme`. */
-export const getBinColorScheme = deprecated(getBinColorSchemeImpl, 'getBinColorScheme', `${ADVICE_BIN_COLORS} ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. Read the colours a map draws with `binColorsForMaps(results)`, which takes each map's own pass bins, or with `getBinColors()` on a WaferMapController or GalleryController. */
+export const resolveBinColors = deprecated(resolveBinColorsImpl, 'resolveBinColors', `Read the colours a map draws with binColorsForMaps(results), which takes each map's own pass bins, or with getBinColors() on a WaferMapController or GalleryController. ${DEPRECATION_ISSUES}`);
+/** @deprecated Removed in 0.31.0. A raw palette lookup bypasses the bin colour rule. Read the colours a map draws with `binColorsForMaps(results)`, or `getBinColors()` on a map or gallery controller. */
+export const getBinColorScheme = deprecated(getBinColorSchemeImpl, 'getBinColorScheme', `A raw palette lookup bypasses the bin colour rule. Read the colours a map draws with binColorsForMaps(results), or getBinColors() on a map or gallery controller. ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
 export const contrastTextColor = deprecated(contrastTextColorImpl, 'contrastTextColor', `${ADVICE_INTERNAL} ${DEPRECATION_ISSUES}`);
 /** @deprecated Removed in 0.31.0. It is an internal helper that was exported by accident; `buildWaferMap`, `analyzeWaferMap` and the renderers already apply it. */
