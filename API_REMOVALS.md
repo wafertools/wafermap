@@ -726,10 +726,6 @@ already have a real single read-path in `getTestPassStatus`, which stays.
 
 **Fixed in 0.30.1** (CHANGELOG, Security).
 
-`buildHoverText` builds the die tooltip as HTML, and `renderWaferMap` inserts it with
-`innerHTML`. Test names, bin names and die metadata values from the input file are **not
-escaped**. Verified: a test named `<img src=x onerror=alert(1)>` produces that element in the
-output. The same pattern appears in at least the legend-row tooltip and the correlation, bar,
-boxplot, trend, capability and grouped-bar chart tooltips. A crafted data file can therefore run
-script when a user hovers. In a Tauri host that script runs inside the app's webview. This needs
-fixing regardless of any deprecation decision.
+A security issue in how names from input files are displayed was found while reviewing the
+tooltip exports. It is unrelated to any deprecation decision and is fixed in 0.30.1. Details
+are deliberately not recorded here, since earlier versions remain in use.

@@ -231,7 +231,7 @@ See also: [API Reference §5.4, "Overlay z-index"](api.md#54-renderoptions) for 
 
 ## A bin or test name shows HTML tags
 
-**Cause:** since 0.30.1, names from your data — test and bin names, units, wafer labels, metadata values — are shown as text in every tooltip, never interpreted as HTML. A file with a malicious test name could otherwise run script when someone hovered a die. A name containing markup, such as `<b>Leakage</b>`, now shows the tags literally.
+**Cause:** since 0.30.1, names from your data — test and bin names, units, wafer labels, metadata values — are shown as text in every tooltip, never interpreted as HTML. A name containing markup, such as `<b>Leakage</b>`, now shows the tags literally.
 
 **Fix:** put plain text in names. Styling belongs to the map, not the data.
 

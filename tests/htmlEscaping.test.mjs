@@ -1,8 +1,6 @@
 // Text from input files must never reach the page as HTML. Test names, units,
 // bin names, wafer labels and metadata values come from STDF/ATDF/CSV files and
-// MES fields; before 0.30.1 the die tooltip and the Insights chart tooltips put
-// them into innerHTML raw, so a test named `<img src=x onerror=…>` ran script on
-// hover — inside the app's own webview in a Tauri or Electron host.
+// MES fields, which are untrusted input.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

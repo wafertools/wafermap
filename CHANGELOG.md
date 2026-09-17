@@ -26,14 +26,10 @@ under `### Breaking`.
 
 ### Security
 
-- **Names from a data file could run script in a tooltip.** The die tooltip and the Insights
-  chart tooltips (correlation, capability, boxplot, trend, histogram, bar and grouped-bar
-  charts), plus the legend-row and toolbar tooltips, built HTML from test names, units, bin
-  names, wafer labels and metadata values without escaping them. A file with a test named
-  `<img src=x onerror=…>` ran that script when a user hovered, in a Tauri, Electron or
-  WebView2 host inside the app's own webview. Every such value is now escaped. The escape
-  helper, formerly private to the reports, is the one copy for the library (`core/utils.ts`),
-  and `tests/htmlEscaping.test.mjs` fails if a tooltip puts a raw label into HTML again.
+- **Fixes a security issue in how names from a data file are displayed.** Earlier versions are
+  affected; update to 0.30.1, particularly if your app opens files from sources you don't
+  control. Names now always display as plain text, so a name that contains markup shows it
+  literally.
 
 ### Changed
 
