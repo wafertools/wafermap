@@ -679,7 +679,11 @@ function renderLotGroupSections(
       diesByWafer.push(wDies);
       passBinsByWafer.push(itemPassBins(item, passBins));
     }
-    if (wDies.length) allDies.push(...wDies);
+    // A loop, not `allDies.push(...wDies)`: the spread passes one argument per
+    // die, and V8 throws RangeError above ~131k of them — so this failed on a
+    // single wafer with more dies than that, while any lot of ordinary wafers
+    // passed.
+    for (const d of wDies) allDies.push(d);
   }
   // Every item's dies with its own pass bins, including items without a wafer.
   const passGroups: BinPassGroup[] = items.map((it) => ({ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }));

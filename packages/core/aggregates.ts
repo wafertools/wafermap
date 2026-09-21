@@ -1,4 +1,5 @@
 import type { Die } from './dies.js';
+import { minOf, maxOf } from './utils.js';
 import { getDieKey } from './dies.js';
 
 export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count';
@@ -80,9 +81,9 @@ export function aggregateValues(
       const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
       agg = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / (vals.length - 1));
     } else if (method === 'min') {
-      agg = Math.min(...vals);
+      agg = minOf(vals);
     } else if (method === 'max') {
-      agg = Math.max(...vals);
+      agg = maxOf(vals);
     } else {
       agg = vals.length; // 'count'
     }

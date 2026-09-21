@@ -12,7 +12,7 @@ import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
 import { generateReticleGrid } from '../core/reticle.js';
 import { buildView, type View, type ViewOptions, type PlotMode } from './buildView.js';
-import { modeOf } from '../core/utils.js';
+import { maxOf, minOf, modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
@@ -1287,10 +1287,10 @@ function buildReticles(
       [r.x - hw, r.y - hh], [r.x + hw, r.y - hh],
       [r.x + hw, r.y + hh], [r.x - hw, r.y + hh],
     ] as const).map(([x, y]) => affinePoint(gridToBaked, x, y));
-    const x0 = Math.min(...corners.map(c => c.x));
-    const x1 = Math.max(...corners.map(c => c.x));
-    const y0 = Math.min(...corners.map(c => c.y));
-    const y1 = Math.max(...corners.map(c => c.y));
+    const x0 = minOf(corners.map(c => c.x));
+    const x1 = maxOf(corners.map(c => c.x));
+    const y0 = minOf(corners.map(c => c.y));
+    const y1 = maxOf(corners.map(c => c.y));
     return dies.some(d => d.physX >= x0 && d.physX < x1 && d.physY >= y0 && d.physY < y1);
   });
 }
@@ -1800,10 +1800,8 @@ export function buildWaferMap(
    * is never edge-straddling. The wafer must therefore be at least this big; the
    * die extent is ground truth and the inferred diameter is the guess.
    */
-  const requiredRadius = physPoints.length > 0
-    ? Math.max(...physPoints.map(({ x: px, y: py }) =>
-        Math.hypot(Math.abs(px) + pitchX / 2, Math.abs(py) + pitchY / 2)))
-    : 0;
+  const requiredRadius = maxOf(physPoints.map(({ x: px, y: py }) =>
+    Math.hypot(Math.abs(px) + pitchX / 2, Math.abs(py) + pitchY / 2)));
 
   if (waferDiameter === undefined) {
     if (gridPoints.length > 0) {

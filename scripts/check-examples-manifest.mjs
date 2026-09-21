@@ -143,6 +143,25 @@ for (const f of readdirSync(EX_DIR)) {
   }
 }
 
+// ── The page count quoted to agents ─────────────────────────────────────────
+//
+// AGENTS.md and llms.txt both tell an agent how many runnable examples there are.
+// A number in prose beside a growing directory is a stale fact waiting to happen —
+// and these two files are the ones an agent reads instead of looking. Pin both to
+// the manifest, which is what the examples nav is actually built from.
+
+const navPages = new Set(navDemos.map(d => d.file)).size;
+for (const rel of ['AGENTS.md', 'llms.txt']) {
+  const file = resolve(root, rel);
+  if (!existsSync(file)) continue;
+  const text = readFileSync(file, 'utf8');
+  const m = text.match(/(\d+) runnable( demo)? pages/);
+  if (!m) errors.push(`${rel}: expected a "<n> runnable pages" count beside the examples link`);
+  else if (Number(m[1]) !== navPages) {
+    errors.push(`${rel} says ${m[1]} runnable pages; the manifest has ${navPages} — update the prose`);
+  }
+}
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 if (errors.length) {

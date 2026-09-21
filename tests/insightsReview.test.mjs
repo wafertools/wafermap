@@ -514,3 +514,42 @@ test('shared axis toggles survive a re-render, as the selected test already does
     'reopening Insights used to hand back the default, discarding the choice');
   tab.destroy();
 });
+
+// ── Tab switching reuses an already-built view ────────────────────────────────
+
+test('insights — returning to a tab reuses its section instead of rebuilding it', () => {
+  // Rebuilding cost seconds on a large lot: leaving Distributions and coming
+  // back re-ran capability, boxplot, histogram and trend from scratch for a
+  // panel that was already built and unchanged. Identity of the section element
+  // is the observable proxy for "was it rebuilt".
+  const { items, lot } = lotItems(4);
+  const tab = mountInsights(items, lot, 'distributions');
+  const sectionOf = (t) => t.el.querySelector('[data-wmap-chart-title]')?.closest('div');
+
+  const first = sectionOf(tab);
+  assert.ok(first, 'a section is built for the default view');
+
+  const tabButton = (label) =>
+    [...tab.el.querySelectorAll('button')].find(b => b.textContent === label);
+
+  tabButton('Correlation')?.click();
+  tabButton('Distributions')?.click();
+
+  const again = sectionOf(tab);
+  assert.ok(again, 'the section is back after switching away and returning');
+  assert.equal(again, first, 'the SAME element is reused — a rebuild would produce a new one');
+});
+
+test('insights — a data or grouping change still rebuilds, cache or not', () => {
+  // The cache must never outlive the thing it was built from. Only a tab switch
+  // reuses; an explicit render() (new data, Group by, axis prefs) invalidates.
+  const { items, lot } = lotItems(4);
+  const tab = mountInsights(items, lot, 'distributions');
+  const sectionOf = (t) => t.el.querySelector('[data-wmap-chart-title]')?.closest('div');
+
+  const first = sectionOf(tab);
+  tab.render();
+  const afterRender = sectionOf(tab);
+  assert.ok(afterRender, 'a section exists after an explicit render');
+  assert.notEqual(afterRender, first, 'an explicit render rebuilds rather than reusing a stale section');
+});

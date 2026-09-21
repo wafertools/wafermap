@@ -353,7 +353,27 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     activeSectionGroup = key;
     render();
   };
-  let panelHandles: Array<{ destroy: () => void }> = [];
+  /**
+   * The active view's built section, kept per view so returning to a tab the user
+   * has already opened is instant.
+   *
+   * Rebuilding it was costing seconds on a large lot: switching away from
+   * Distributions and back re-ran capability, boxplot, histogram and trend from
+   * scratch — about 5 s at 400k dies — for a panel that was already built and
+   * unchanged.
+   *
+   * Reuse happens **only on a pure tab switch** (`render({ keepSections: true })`,
+   * which only the tab buttons pass). Every other path into `render()` — new data,
+   * Group by, scope, axis preferences — invalidates the whole cache. That is exact
+   * rather than a guess: there is no signature of "what the section depends on" to
+   * get subtly wrong, and no way for a stale panel to survive a change.
+   */
+  let sectionCache = new Map<InsightsView, { card: HTMLElement; destroy: () => void }>();
+
+  function dropSectionCache(): void {
+    for (const cached of sectionCache.values()) cached.destroy();
+    sectionCache = new Map();
+  }
 
   function openWaferDetailModal(waferIndex: number, title: string, testNumber?: number): void {
     openWafer?.(waferIndex, title, testNumber);
@@ -431,7 +451,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // page's Tab order; Left/Right (wired on tabBar above) moves among the
     // rest without adding every tab to it.
     btn.tabIndex = isActive ? 0 : -1;
-    btn.addEventListener('click', () => { if (activeView !== view) { activeView = view; render(); } });
+    // `keepSections`: a tab switch changes nothing the sections were built from,
+    // so reuse whichever views have already been built (see `sectionCache`).
+    btn.addEventListener('click', () => { if (activeView !== view) { activeView = view; render({ keepSections: true }); } });
     return btn;
   }
 
@@ -1094,9 +1116,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return { card: wrap, destroy: () => { correlation.destroy(); scatter.destroy(); } };
   }
 
-  function render(): void {
-    for (const h of panelHandles) h.destroy();
-    panelHandles = [];
+  function render(opts?: { keepSections?: boolean }): void {
+    if (!opts?.keepSections) dropSectionCache();
+    // Clearing bodyEl detaches the cached cards without destroying them — the
+    // elements, their listeners and their canvas contents all survive, so
+    // re-appending shows the panel exactly as the user left it.
     bodyEl.innerHTML = '';
     tabBar.innerHTML = '';
 
@@ -1247,10 +1271,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       activeSectionTest = null;
     }
 
-    const section =
+    const cached = opts?.keepSections ? sectionCache.get(activeView) : undefined;
+    const section = cached ?? (
       activeView === 'overview'      ? renderOverviewSection(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
       activeView === 'distributions' ? renderDistributionsSection(scopeItems, scopedTestDefs, scopeGroups, groupLabelText) :
-      renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups);
+      renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups));
+    if (!cached) sectionCache.set(activeView, section);
     // Say why the test list is short, and how to get the rest back — above
     // whichever view is active, because all three reconcile over the scope and
     // any of them can be withholding. Without it the reader sees a handful of
@@ -1276,7 +1302,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       bodyEl.appendChild(note);
     }
 
-    panelHandles.push(section);
     bodyEl.appendChild(section.card);
   }
 
@@ -1284,7 +1309,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     el: rootEl,
     render,
     destroy: () => {
-      for (const h of panelHandles) h.destroy();
+      dropSectionCache();
       rootEl.remove();
     },
   };

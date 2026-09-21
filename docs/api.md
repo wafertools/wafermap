@@ -1789,7 +1789,7 @@ colour, rotate, or flip in the gallery bar applies to every card instantly.
 renderWaferGallery(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
 ```
 
-> **As with `renderWaferMap`, `options` is optional.** `GalleryOptions` has 16
+> **As with `renderWaferMap`, `options` is optional.** `GalleryOptions` has 18
 > top-level fields; tsmap passes the same six it passes to `renderWaferMap`. The
 > two option types deliberately overlap, so what you learned there mostly carries
 > over — this section documents the gallery-only additions (`columns`,
@@ -1892,6 +1892,27 @@ to be pre-built.
   viewOptions?:           WaferViewOptions  // initial shared state
   onViewOptionsChange?:   (opts: WaferViewOptions, changed: (keyof WaferViewOptions)[], category: 'preference' | 'state' | 'mixed') => void
                           // mirrors control bar changes; same category semantics as renderWaferMap
+  onItemsResolved?:        () => void        // fires once the gallery is settled: every factory resolved and the
+                                            // lot-wide legend, colours and Summary panel up to date. Always async,
+                                            // and always fires whether you passed factories or pre-built items, so a
+                                            // host holding a progress indicator over a large lot needs no polling and
+                                            // no knowledge of which path the gallery took. Fires again on a rebuild
+                                            // (setItems, or switching into a stacked mode).
+                                            // It waits for the Summary panel's own render, which on a big lot finishes
+                                            // seconds after the last card: 50 wafers x 8,000 dies x 50 tests in Chrome
+                                            // are carded at 3.6 s and settled at 8.2 s. Hold your indicator to here —
+                                            // clearing it when the cards land leaves the rest of the wait unexplained
+  onItemResolved?:         (resolved: number, total: number) => void
+                                            // fires as each card is built, with how many of the expected items exist
+                                            // now and how many there will be. `total` is the count you passed, so it
+                                            // is right from the first call and a bar can be sized before anything
+                                            // arrives. This is the ADVANCE signal; onItemsResolved is the SETTLED one.
+                                            // Fires on the pre-built path too — a fully synchronous mount is one call
+                                            // with resolved === total — so you never branch on which form you passed;
+                                            // a mixed set reports its pre-built items in one call, then one per factory.
+                                            // It covers the cards only: after resolved === total the Summary panel is
+                                            // still filling in with no card activity, and onItemsResolved marks the end
+                                            // of that. Not called for an empty item list
   downloadFilename?:       string             // name for the composite PNG, without extension; omit to name it for the
                                             // lots, wafer count and mode (§5.4.5). Becomes a prefix in 0.31.0
   onSaveImage?:            (blob: Blob, suggestedName: string) => void | Promise<void>
@@ -3059,7 +3080,7 @@ import {
 | `hasJudgeableTests(groups, testDefs, kind)` | `boolean` | **Deprecated.** Whether `kind` would produce anything — use it to offer only the modes the data supports. For `'testFlag'` it takes the **dies**, not just the definitions: every parametric test *could* carry a verdict, so a definition-only check would offer a mode that renders empty. |
 | `buildTestHistogramData(items, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramBucket[]` | **Deprecated.** Bucketed value counts across `items`, pooled. |
 | `buildTestHistogramSeries(groups, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramSeriesData` | **Deprecated.** Shared bucket ranges with one count series per group — `{ ranges, series: [{ groupKey, counts }] }`. |
-| `buildCorrelationMatrix(dies, testDefs)` | `CorrelationMatrix` | **Deprecated.** Pearson r for every parametric test pair. |
+| `buildCorrelationMatrix(dies, testDefs)` | `CorrelationMatrix` | **Deprecated.** Pearson r for every parametric test pair. **Reads at most 25,000 dies.** Correlation is the only analysis here that is quadratic in tests *and* linear in dies (a 400,000-die, 50-test lot is 490 million pair updates), so above that budget the dies carrying test values are sampled by an even stride across the whole population — never a prefix, which on lot-ordered dies would describe the first few wafers rather than the lot. At 25,000 dies the standard error of `r` is under 0.007, so the coefficients are unchanged at the precision anything displays them to. A sampled matrix carries `sample` and **any surface showing it must say so** — an unlabelled sample estimate is a number the reader takes for the whole population. |
 | `filterCorrelationMatrix(matrix, options)` | `{ matrix, strongPairs, moderatePairs, hiddenWeakPairs, strongestPair }` | **Deprecated.** Caps matrix size (`options.maxTests`) and requires a minimum test count (`options.minTests`), keeping the pairs with the largest correlation magnitude. |
 | `buildScatterData(items, xTest, yTest)` | `ScatterPoint[]` | **Deprecated.** One point per die with valid values for both tests. |
 | `buildScatterDataGrouped(groups, xTest, yTest)` | `ScatterPoint[]` | **Deprecated.** Same, with each point tagged `group: string` — every group's points are returned together (this function never restricts to one group). |
@@ -4329,6 +4350,7 @@ and, where noted, precomputed statistics that are used in preference to re-walki
 | `YieldSortBy` | `/stats` | `'yield' \| 'label'`. |
 | `CorrelationCell` | `/stats` | One matrix cell — `{ xIndex, yIndex, r, n }` (`r` is `null` on insufficient data). `n` is the dies carrying a finite value for **both** tests, which is not the population size when the two tests have different coverage — an `r` without its own `n` is not interpretable. |
 | `CorrelationTestInfo` | `/stats` | A matrix axis entry — `{ testNumber, label, unit? }`. |
+| `CorrelationMatrix` | `/stats` | `buildCorrelationMatrix` return — `{ tests, cells, sample? }`. `sample` is present **only** when the matrix was computed from a sample: `of` is the population that carried test values, `used` how many were read (see `buildCorrelationMatrix` above). Absent means every die was read. |
 | `CorrelationSummary` | `/stats` | `filterCorrelationMatrix` return. |
 | `FacetItem` | `/stats` | Input to `buildFacetTable` — `{ metadata?, dieCount? }`. |
 | `FacetValue` | `/stats` | One distinct value — `{ value, waferCount, dieCount }`. |

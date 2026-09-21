@@ -21,7 +21,7 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { QUANTITY, categorical } from './palette.js';
 import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
-import { escHtml } from '../../core/utils.js';
+import { escHtml, maxOf } from '../../core/utils.js';
 // Quantity/series colours are fixed (palette.ts), not the map's colours.
 
 const HIST_HEIGHT = 230;
@@ -268,7 +268,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     }
 
     // Bounded spread: one entry per bucket (16), not per die.
-    const maxCount = Math.max(...buckets.map(b => b.count), 1);
+    const maxCount = Math.max(maxOf(buckets.map(b => b.count)), 1);
 
     const statsLabel = card.ownerDocument.createElement('div');
     Object.assign(statsLabel.style, { fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);

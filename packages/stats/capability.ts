@@ -38,8 +38,9 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { type Chunked, drain } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
-import { quantile } from './math.js';
+import { type DescriptiveStats, describeSorted, quantile } from './math.js';
 import type { TestCapability } from './types.js';
 
 export interface CapabilityDatum {
@@ -85,6 +86,14 @@ export interface CapabilityItem {
   dies?: Die[];
 }
 
+/**
+ * Roughly how many die-test values one step of the chunked die pass reads
+ * before offering to yield. 250,000 measured at ~75 ms on a 2021 laptop in
+ * Chrome, comfortably inside the ~500 ms a main thread may block without the
+ * browser calling the page unresponsive, with room for a slower machine.
+ */
+const VALUES_PER_STEP = 250_000;
+
 /** Running moments for one test: overall, plus the pooled within-subgroup variance. */
 interface CapabilityMoments {
   n: number; sum: number; sumSq: number;
@@ -119,12 +128,15 @@ function capabilityDefs(testDefs: TestDef[]): CapabilityDefs {
  * nesting once a lot has many spec-limited tests. `values` collects every value
  * per test only when a caller needs quantiles (the chart); the analysis output
  * does not, and skipping the collection and sort is most of its cost.
+ *
+ * {@link Chunked} so a lot-sized pass can be driven a slice at a time — see
+ * `accumulateMoments` below for the plain synchronous entry.
  */
-function accumulateMoments(
+function* accumulateMomentsSteps(
   items: CapabilityItem[],
   defByTestNumber: Map<number, TestDef>,
   values: Map<number, number[]> | null,
-): Map<number, CapabilityMoments> {
+): Chunked<Map<number, CapabilityMoments>> {
   // Flat arrays indexed by test slot, not a Map entry per test: this pass runs
   // once per die per test, and per-entry lookups and allocations dominated it.
   const slotOf = new Map<number, number>();
@@ -138,10 +150,18 @@ function accumulateMoments(
   // Reading each test off every die beats walking every die's keys until the
   // test list is wide enough that most reads would miss.
   const directRead = T <= 64;
+  // Yield on a VALUE budget, not a die budget: this pass costs dies x tests, so
+  // "every 20,000 dies" is a short step at 5 tests and a multi-second one at
+  // 100. The floor keeps a very wide program making real progress per step.
+  const diesPerStep = Math.max(500, Math.floor(VALUES_PER_STEP / Math.max(1, T)));
+  let sinceYield = 0;
 
   for (const item of items) {
     wn.fill(0); wsum.fill(0); wsumSq.fill(0);
     for (const die of item.dies ?? []) {
+      // Safe to pause here: every accumulator is already written, and the
+      // within-wafer roll-up below only reads `wn`/`wsum`/`wsumSq`.
+      if (++sinceYield >= diesPerStep) { sinceYield = 0; yield; }
       if (!isYieldEligibleDie(die)) continue;
       const dieValues = die.testValues;
       if (!dieValues) continue;
@@ -185,6 +205,15 @@ function accumulateMoments(
     if (values && lists[slot]) values.set(tn, lists[slot]!);
   }
   return accs;
+}
+
+/** {@link accumulateMomentsSteps}, run straight through. */
+function accumulateMoments(
+  items: CapabilityItem[],
+  defByTestNumber: Map<number, TestDef>,
+  values: Map<number, number[]> | null,
+): Map<number, CapabilityMoments> {
+  return drain(accumulateMomentsSteps(items, defByTestNumber, values));
 }
 
 /** The capability indices for one test from its moments — the one copy of the Cp/Cpk/Pp/Ppk formulas. */
@@ -245,20 +274,175 @@ function sortCapability<T extends { hasSpec: boolean; stdOverall: number; ppk: n
  * (most-variable-first within that tier).
  */
 export function buildCapabilityData(items: CapabilityItem[], testDefs: TestDef[]): CapabilityDatum[] {
-  const { defByTestNumber, specByTest } = capabilityDefs(testDefs);
-  if (defByTestNumber.size === 0) return [];
-  const values = new Map<number, number[]>();
-  const accs = accumulateMoments(items, defByTestNumber, values);
+  return drain(buildCapabilityDataSteps(items, testDefs));
+}
 
+/**
+ * @internal {@link buildCapabilityData} as a {@link Chunked} computation, for a
+ * caller rendering on the main thread — a lot-sized call walks every die of
+ * every wafer once per test and then sorts every value of every test, which is
+ * seconds of uninterruptible work at lot scale. Steps are one slice of the die
+ * pass, or one test's sort. Same result, same order; the synchronous entry
+ * above is this function drained.
+ */
+export function* buildCapabilityDataSteps(items: CapabilityItem[], testDefs: TestDef[]): Chunked<CapabilityDatum[]> {
+  // Sliced, not handed out directly: the pooled result is memoised and shared
+  // with the summary panel, so a caller that sorted or spliced the array it got
+  // back would be editing the next caller's data.
+  return (yield* pooledTestStatsSteps(items, testDefs)).capability.slice();
+}
+
+/** @internal Everything {@link pooledTestStatsSteps} derives from its one pass. */
+export interface PooledTestStats {
+  /**
+   * Raw (NOT normalised) descriptive statistics per test number, over the
+   * pooled eligible dies — the population every other figure here describes.
+   * Only tests that are parametric, carry a `TestDef`, and have at least one
+   * finite value appear.
+   */
+  stats: Map<number, DescriptiveStats>;
+  /**
+   * Per test, how many pooled values fell outside the test's own spec limits —
+   * the spec-yield tally, counted off the sorted values this pass already held.
+   * Only tests carrying at least one limit appear. `fail` counts `v < limitLow`
+   * or `v > limitHigh`, matching the per-die judgement everywhere else.
+   *
+   * This is here rather than the sorted arrays themselves because the result is
+   * memoised: a tally is a handful of numbers per test, whereas the values are
+   * every die-test reading in the lot (~160 MB on a 200k x 100 lot, §5's
+   * browser ceiling territory) and must not outlive the pass that built them.
+   */
+  specTally: Map<number, { n: number; fail: number }>;
+  /** Capability indices plus the chart's normalised five-number summary,
+   *  worst-Ppk first. */
+  capability: CapabilityDatum[];
+}
+
+/**
+ * The pooled population, in the only terms the cache can honestly key on: which
+ * `Die[]` arrays and which `TestDef`s. Sound because a `Die` is frozen once
+ * `buildWaferMap` returns it — every mutation (`attachData`, probe sequencing,
+ * retest resolution, edge exclusion, which re-stamps rather than assigns) runs
+ * at build time, and `edgeExclusion` is a `waferConfig` field with no runtime
+ * toggle. So an array's identity determines its contents for its whole life.
+ *
+ * `testDefs` is matched by VALUE, not identity: the lot panel, the Insights
+ * Overview and the capability chart each build their own array over the same
+ * definitions, so identity would miss on every cross-surface hit — which is the
+ * only hit worth having.
+ */
+const pooledCache = new Map<string, PooledTestStats>();
+const POOLED_CACHE_ENTRIES = 4;
+
+/** Stable ids for die arrays. A `WeakMap`, so a retained key string never
+ *  retains a lot's dies — the cache can go stale but can never leak. */
+const dieArrayIds = new WeakMap<readonly Die[], number>();
+let nextDieArrayId = 1;
+
+function pooledCacheKey(items: CapabilityItem[], testDefs: TestDef[]): string {
+  const ids: number[] = [];
+  for (const item of items) {
+    const dies = item.dies;
+    if (!dies) { ids.push(0); continue; }
+    let id = dieArrayIds.get(dies);
+    if (id === undefined) { id = nextDieArrayId++; dieArrayIds.set(dies, id); }
+    ids.push(id);
+  }
+  // Every field the pass reads off a def, so a changed limit cannot hit a
+  // cached tally computed against the old one.
+  const defs = testDefs.map(d =>
+    `${d.testNumber}${d.testType ?? 'P'}${d.limitLow ?? ''}${d.limitHigh ?? ''}${d.name ?? ''}${d.unit ?? ''}`);
+  return `${ids.join(',')}${defs.join('')}`;
+}
+
+/** @internal Test seam — `tests/pooledTestStatsCache.test.mjs`. */
+export function clearPooledTestStatsCache(): void { pooledCache.clear(); }
+
+/** Index of the first value >= `x` in an ascending array. */
+function lowerBound(sorted: ArrayLike<number>, x: number): number {
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+/** Index of the first value > `x` in an ascending array. */
+function upperBound(sorted: ArrayLike<number>, x: number): number {
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] <= x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+/**
+ * @internal Per-test descriptive statistics AND capability indices for a pooled
+ * population, from **one** walk of the dies.
+ *
+ * The summary panel used to scan the pooled dies three times over: once per
+ * test for min/σ/quartiles, once per test again to count spec failures, and a
+ * third time inside `buildCapabilityData` for the Ppk column beside them — all
+ * reading the same values off the same dies and all of them O(dies × tests).
+ * On a 50-wafer lot of 4,000 dies × 100 tests that was 40 s of a 41 s panel
+ * render. One pass collects the values, one sort per test serves the quantiles
+ * of both the table and the chart, and the spec tally reads the sorted array.
+ *
+ * {@link Chunked}: one step per slice of the die pass, one per test thereafter.
+ */
+export function* pooledTestStatsSteps(
+  items: CapabilityItem[],
+  testDefs: TestDef[],
+): Chunked<PooledTestStats> {
+  const key = pooledCacheKey(items, testDefs);
+  const hit = pooledCache.get(key);
+  // Re-inserted so the eviction below is least-recently-USED, not oldest: the
+  // lot panel and Insights read the same entry repeatedly across a session.
+  if (hit) { pooledCache.delete(key); pooledCache.set(key, hit); return hit; }
+
+  const empty: PooledTestStats = { stats: new Map(), specTally: new Map(), capability: [] };
+  const { defByTestNumber, specByTest } = capabilityDefs(testDefs);
+  if (defByTestNumber.size === 0) return empty;
+  const values = new Map<number, number[]>();
+  const accs = yield* accumulateMomentsSteps(items, defByTestNumber, values);
+
+  const stats = new Map<number, DescriptiveStats>();
+  const specTally = new Map<number, { n: number; fail: number }>();
   const out: CapabilityDatum[] = [];
   for (const def of testDefs) {
+    yield;
     const testNumber = def.testNumber;
     if (testNumber === undefined) continue;
     const acc = accs.get(testNumber);
     if (!acc || acc.n === 0 || !defByTestNumber.has(testNumber)) continue;
+    // Sorted as a `Float64Array`, NOT as the plain array the pass collected
+    // into. This one line is the whole per-test step, and the per-test step is
+    // the longest task this library runs: measured in Chrome on a 50-wafer lot
+    // of 8,000 dies x 50 tests, `array.sort((a, b) => a - b)` over one test's
+    // 400,000 pooled values was 486 ms of a 497 ms step and 10.9 s of a 13.3 s
+    // panel. A typed array sorts numerically in the engine with no comparator
+    // callback per comparison: the same 400,000 values, including the copy in,
+    // are 45 ms on the same machine — 4.4x, and it is what puts the longest
+    // step back under the ~500 ms at which the browser starts offering to kill
+    // the page.
+    //
+    // The plain array is dropped from `values` as it is copied, so the extra
+    // copy is one test's values (~3 MB at 400k), never the lot's.
+    const raw = values.get(testNumber)!;
+    values.delete(testNumber);
+    const allValues = Float64Array.from(raw);
+    // No comparator: `TypedArray.prototype.sort` is numeric ascending by
+    // definition, which is exactly what `(a, b) => a - b` asked for. Every
+    // value here passed `Number.isFinite`, so there are no NaNs to order.
+    allValues.sort();
+    stats.set(testNumber, describeSorted(allValues));
+
+    // The spec-limit tally, by binary search on the array we just sorted — the
+    // panel used to get this from a second full scan of every pooled die.
+    if (def.limitLow !== undefined || def.limitHigh !== undefined) {
+      const below = def.limitLow !== undefined ? lowerBound(allValues, def.limitLow) : 0;
+      const above = def.limitHigh !== undefined ? allValues.length - upperBound(allValues, def.limitHigh) : 0;
+      specTally.set(testNumber, { n: allValues.length, fail: below + above });
+    }
+
     const spec = specByTest.get(testNumber);
     const figures = capabilityFromMoments(testNumber, def, spec, acc);
-    const allValues = values.get(testNumber)!.sort((a, b) => a - b);
 
     let norm: (v: number) => number;
     if (spec) {
@@ -278,7 +462,14 @@ export function buildCapabilityData(items: CapabilityItem[], testDefs: TestDef[]
       max: norm(allValues[allValues.length - 1]),
     });
   }
-  return sortCapability(out);
+  const result: PooledTestStats = { stats, specTally, capability: sortCapability(out) };
+  // `values` — every reading in the lot — goes out of scope here. Only the
+  // per-test derivations above are cached.
+  pooledCache.set(key, result);
+  if (pooledCache.size > POOLED_CACHE_ENTRIES) {
+    pooledCache.delete(pooledCache.keys().next().value as string);
+  }
+  return result;
 }
 
 /**

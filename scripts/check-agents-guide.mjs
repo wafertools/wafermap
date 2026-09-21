@@ -40,8 +40,45 @@ let types = '';
   }
 })(DIST);
 
+// The names a consumer can actually import, from the entry points package.json
+// declares — NOT every name that appears somewhere under dist/. A bare text
+// search over all of dist/**/*.d.ts counts internal module exports as public,
+// which is how the removal table came to point agents at `BIN_PALETTE`: it is
+// declared in renderer/colorMap.ts, re-exported by nothing, and importable from
+// no entry point, yet a substring check found it and passed.
+const ENTRY_POINTS = [
+  '../dist/index.js',
+  '../dist/packages/core/index.js',
+  '../dist/packages/renderer/index.js',
+  '../dist/packages/stats/index.js',
+  '../dist/packages/canvas-adapter/index.js',
+  '../dist/packages/worker/index.js',
+];
+const publicValues = new Set();
+for (const ep of ENTRY_POINTS) {
+  try {
+    for (const name of Object.keys(await import(new URL(ep, import.meta.url)))) publicValues.add(name);
+  } catch (err) {
+    fail(`could not import ${ep} to read its public exports: ${err.message}`);
+  }
+}
+
 const guide = readFileSync(AGENTS, 'utf8');
-const has = (sym) => new RegExp(`\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(types);
+const rx = (sym) => new RegExp(`\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+
+// A name the guide may recommend is one of three things, in order of strength:
+//   1. a runtime export of an entry point  — importable, the strongest claim
+//   2. a declared type / interface / class — not a runtime value, but reachable
+//      through the signatures of (1), so naming it is legitimate
+//   3. a declared property                 — `passBins`, `activeTest`, `testValues`
+// Anything else is a name that exists only inside the build: an agent told to
+// use it writes an import that does not resolve.
+const declaresType = (sym) =>
+  new RegExp(`\\b(?:interface|type|class|enum|namespace)\\s+${sym}\\b`).test(types);
+const declaresProp = (sym) => new RegExp(`^\\s+(?:readonly\\s+)?${sym}\\??[:(<]`, 'm').test(types);
+const has = (sym) => publicValues.has(sym) || declaresType(sym) || declaresProp(sym);
+// Kept for the removal checks, where any trace at all is the thing to catch.
+const appearsAnywhere = (sym) => rx(sym).test(types);
 
 // ── 1. The copy-paste block is intact ───────────────────────────────────────
 
@@ -64,7 +101,7 @@ const MUST_EXIST = [
   'getTestPassStatus', 'getDieKey', 'registerBinColorScheme', 'registerValueColorScheme',
   'testValues', 'testNumber', 'passFailDisplay', 'activeTest', 'passBins',
   'retestCount', 'retestPolicy', 'isLotStack', 'dieConfig', 'waferConfig',
-  'BIN_PALETTE', 'WaferMapDisplayItem', 'RenderOptions', 'WaferMapController',
+  'binColorsForMaps', 'WaferMapDisplayItem', 'RenderOptions', 'WaferMapController',
   'WaferNotch', 'DieResult',
   // These are the CURRENT names of the geometry inputs. Worth pinning: an
   // internal note claimed they had been renamed to WaferOptions/DieOptions,
@@ -78,7 +115,8 @@ const MUST_EXIST = [
 const mentions = (sym) => new RegExp(`\\b${sym}\\b`).test(guide);
 
 for (const sym of MUST_EXIST) {
-  if (!has(sym)) fail(`AGENTS.md recommends '${sym}', which no longer exists in dist/**/*.d.ts`);
+  if (!has(sym)) fail(`AGENTS.md recommends '${sym}', which is not importable from any entry point ` +
+                      `(not a public export, type or property)`);
   // Word-boundary, not substring: 'getDieKey' must not be satisfied by a typo
   // like 'getDieKeyXYZ' sitting in the guide.
   if (!mentions(sym)) fail(`'${sym}' is checked but no longer mentioned in AGENTS.md — update one or the other`);
@@ -131,7 +169,7 @@ if (MUST_BE_GONE.length < 15) {
 }
 
 for (const sym of MUST_BE_GONE) {
-  if (has(sym)) {
+  if (appearsAnywhere(sym)) {
     fail(`AGENTS.md says '${sym}' was removed, but it is still in the public types — ` +
          `either it came back, or the guide's removal table is wrong`);
   }
@@ -154,7 +192,7 @@ const NOT_API = new Set([
   'Record', 'die', 'result', 'x', 'y', 'flat', 'notch', 'values', 'index', 'grey',
   'hardBin', 'softBin', 'value', 'metadata', 'stackedValues', 'stackedBins',
   'stackedSoftBins', 'specLimit', 'spec', 'test', 'off', 'best', 'worst', 'mean',
-  'default', 'color', 'P', 'F', 'N',
+  'default', 'color', 'P', 'F', 'N', 'warn', 'console.warn', 'Number',
 ]);
 
 const spans = [...rulesText().matchAll(/`([^`]+)`/g)].map(m => m[1]);
@@ -168,8 +206,8 @@ for (const raw of spans) {
   if (/^[a-z]+$/.test(sym) && sym.length < 4) continue;
 
   if (!has(sym)) {
-    fail(`AGENTS.md names '${raw}', which does not exist in dist/**/*.d.ts — ` +
-         `either it is a typo or the API moved. Agents will emit this verbatim.`);
+    fail(`AGENTS.md names '${raw}', which is not importable from any entry point — ` +
+         `either it is a typo, it is internal, or the API moved. Agents will emit this verbatim.`);
   }
 }
 

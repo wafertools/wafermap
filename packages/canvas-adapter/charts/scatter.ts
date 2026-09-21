@@ -14,6 +14,7 @@
 // helper, matching histogram's same trim.
 
 import { NO_DATA_FILL } from '../../renderer/colorMap.js';
+import { maxOf, minOf } from '../../core/utils.js';
 import { categorical } from './palette.js';
 import { buildScatterData, buildScatterDataGrouped, type ScatterItem, type ScatterPoint } from '../../stats/scatter.js';
 import { pearsonOfPairs } from '../../stats/correlation.js';
@@ -371,9 +372,13 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     syncHint();
 
     if (points.length > 0) {
+      // minOf/maxOf, not a spread: `points` is one entry per die, and a spread
+      // passes one argument per element — V8 throws RangeError above ~131k of
+      // them, which on a large lot takes the whole Insights rebuild with it. The
+      // histogram panel already hit exactly this (see its `testValueExtent`).
       const xs = points.map(p => p.x), ys = points.map(p => p.y);
-      const xMin = Math.min(...xs), xMax = Math.max(...xs);
-      const yMin = Math.min(...ys), yMax = Math.max(...ys);
+      const xMin = minOf(xs), xMax = maxOf(xs);
+      const yMin = minOf(ys), yMax = maxOf(ys);
       const xPad = (xMax - xMin) * 0.05 || 1, yPad = (yMax - yMin) * 0.05 || 1;
       xLo = xMin - xPad; xHi = xMax + xPad;
       yLo = yMin - yPad; yHi = yMax + yPad;

@@ -2325,6 +2325,36 @@ runs — if the label depends on computed data (e.g. a findings count), it appea
 when the card does rather than upfront. If the label is known in advance and you
 want it visible immediately, pre-build items as usual for those cards.
 
+**Showing progress while it runs.** A large lot can stage for 10–25 seconds, and a
+host indicator that can only say "loading" for that long reads as a hang. The
+gallery reports both its advance and its completion:
+
+```ts
+renderWaferGallery(container, items, {
+  onItemResolved: (resolved, total) => {      // advance — one call per card
+    bar.max = total;                          // `total` is right from the first call
+    bar.value = resolved;
+    label.textContent = `Rendering wafer ${resolved} of ${total}…`;
+  },
+  onItemsResolved: () => {                    // settled — hide the indicator here
+    indicator.hidden = true;
+  },
+});
+```
+
+Two things to get right, both of which are why these are two separate signals:
+
+- **Hold your indicator to `onItemsResolved`, not to `resolved === total`.** The
+  lot-wide Summary panel is the last surface to settle and on a big lot it keeps
+  filling in for seconds after the last card, with no card activity to report.
+  Clearing the indicator when the cards land leaves the rest of the wait
+  unexplained — the failure the progressive path exists to prevent, one layer up.
+- **Neither callback needs you to know which form you passed.** A fully pre-built
+  mount is one `onItemResolved` call with `resolved === total`, and
+  `onItemsResolved` always fires, always asynchronously, after
+  `renderWaferGallery` has returned. Both fire again on a rebuild — `setItems`, or
+  switching into a stacked mode.
+
 ### Standalone stacked lot map with programmatic findings access
 
 The gallery's stacked modes cover most use cases. Use `buildWaferMap({ lotStack })`

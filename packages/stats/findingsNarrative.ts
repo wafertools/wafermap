@@ -1,4 +1,5 @@
 import type { StatsFinding, StatsComparisonFamily, StatsSeverity } from './types.js';
+import { minOf } from '../core/utils.js';
 
 const SEVERITY_RANK: Record<StatsSeverity, number> = { unusual: 0, notable: 1, info: 2 };
 
@@ -358,8 +359,8 @@ function regionalSentence(findings: StatsFinding[]): string {
   // Choose the family with the strongest evidence (min adjusted p); tie-break by
   // resolution preference sector > quadrant > ring.
   const chosen = [...byFamily.keys()].sort((a, b) => {
-    const pa = Math.min(...byFamily.get(a)!.map(adjustedP));
-    const pb = Math.min(...byFamily.get(b)!.map(adjustedP));
+    const pa = minOf(byFamily.get(a)!.map(adjustedP));
+    const pb = minOf(byFamily.get(b)!.map(adjustedP));
     if (pa !== pb) return pa - pb;
     return FAMILY_RES.indexOf(a) - FAMILY_RES.indexOf(b);
   })[0];

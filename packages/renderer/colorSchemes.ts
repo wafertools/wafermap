@@ -282,8 +282,14 @@ registerValueColorScheme('jet', {
 
 /**
  * Default — 3 pass greens, 19 fail colours, every pair ≥ 16 ΔE00 apart for
- * normal colour vision. Bin 2, the conventional first fail bin, is red,
- * matching the usual pass-green / fail-red reading.
+ * normal colour vision. Bin 2, the conventional first fail bin, is red, so the
+ * common bin-1/bin-2 map reads pass-green / fail-red as engineers expect.
+ * That is the FRONT of the fail list, not a rule about failing: every other
+ * fail bin takes its own distinct colour (bin 3 indigo, bin 4 amber, bin 5
+ * black …), and a lot binning 1/3/4 has no red in it at all. Green does mean
+ * pass — the whole pass list is greens — but red does not mean fail, it means
+ * bin 2. Do not describe this palette as "green = pass, red = fail"; the
+ * quickstart said that and it was wrong for every map past two bins.
  */
 registerBinColorScheme('default', {
   label: 'Default',

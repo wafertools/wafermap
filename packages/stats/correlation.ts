@@ -69,6 +69,58 @@ export function pearsonOfPairs(pairs: ArrayLike<{ x: number; y: number }>): { r:
 export interface CorrelationMatrix {
   tests: CorrelationTestInfo[];
   cells: CorrelationCell[];
+  /**
+   * Present only when the matrix was computed from a sample of the dies rather
+   * than all of them — see `CORRELATION_DIE_BUDGET`. `of` is the population that
+   * carried test values, `used` how many were read.
+   *
+   * **Any surface showing this matrix must say so.** An `r` from a sample is a
+   * perfectly good estimate, but an unlabelled one is a number the reader will
+   * take for the whole population — the exact class of quietly-wrong figure this
+   * library exists to prevent. `correlationSampleNote()` is the wording.
+   */
+  sample?: { of: number; used: number };
+}
+
+/**
+ * Dies read before `buildCorrelationMatrix` starts sampling.
+ *
+ * Correlation is the only computation here that is quadratic in tests *and*
+ * linear in dies: a 400k-die, 50-test lot is 1,225 pairs per die — 490 million
+ * pair updates, each touching six accumulators — which in a browser presents as
+ * a panel that never renders (tsmap WMAP_ISSUES #61).
+ *
+ * 25,000 is far past the point where more dies change a Pearson coefficient: the
+ * standard error of r is about `(1 - r²)/sqrt(n)`, so at n = 25,000 it is under
+ * 0.007 even for r = 0. Sixteen times more dies would halve an error that is
+ * already invisible at two decimal places.
+ */
+export const CORRELATION_DIE_BUDGET = 25_000;
+
+/**
+ * Evenly spread `budget` indices across `length` — every stride-th die, not the
+ * first N.
+ *
+ * Taking a prefix would be a biased sample of a wafer map, not a cheap one: dies
+ * arrive grouped by wafer and ordered within it, so the first 25,000 of a 400k-die
+ * lot are the first few wafers, and a correlation computed from them describes
+ * those wafers rather than the lot. Striding covers every wafer and every region
+ * of each.
+ */
+function strideIndices(length: number, budget: number): number[] {
+  const out: number[] = [];
+  // Float step, floored per index: distributes the remainder instead of letting
+  // an integer stride run out before the end of the array.
+  const step = length / budget;
+  for (let k = 0; k < budget; k++) out.push(Math.floor(k * step));
+  return out;
+}
+
+/** The sentence a panel puts next to a sampled matrix. */
+export function correlationSampleNote(sample: CorrelationMatrix['sample']): string | undefined {
+  if (!sample) return undefined;
+  return `From a ${sample.used.toLocaleString()}-die sample of ${sample.of.toLocaleString()}, `
+    + `spread evenly across the lot`;
 }
 
 function testInfoFrom(testDefs: TestDef[]): CorrelationTestInfo[] {
@@ -112,11 +164,24 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
     return xi * n - ((xi * (xi + 1)) >> 1) + (yi - xi - 1);
   }
 
-  for (const die of dies) {
-    if (!die.testValues) continue;
-    // Read all test values for this die once
-    const vals = new Float64Array(n);
-    const valid = new Uint8Array(n);
+  // With test values, and in a stable order, so the sample can stride across the
+  // whole population rather than over dies that may carry nothing.
+  const withValues = dies.filter(
+    (d): d is Die & { testValues: NonNullable<Die['testValues']> } => d.testValues !== undefined,
+  );
+  const sampling = withValues.length > CORRELATION_DIE_BUDGET;
+  const read = sampling
+    ? strideIndices(withValues.length, CORRELATION_DIE_BUDGET).map(i => withValues[i])
+    : withValues;
+
+  // Hoisted out of the die loop: these were allocated per die, which is two
+  // allocations per die (800k on a 400k-die lot) for scratch that is fully
+  // overwritten each time.
+  const vals = new Float64Array(n);
+  const valid = new Uint8Array(n);
+
+  for (const die of read) {
+    valid.fill(0);
     for (let i = 0; i < n; i++) {
       const v = die.testValues[nums[i]];
       if (v !== undefined && Number.isFinite(v)) { vals[i] = v; valid[i] = 1; }
@@ -154,7 +219,9 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
       cells.push({ xIndex: xi, yIndex: yi, r: pearsonFromAccumulators(pi), n: cnt[pi] });
     }
   }
-  return { tests, cells };
+  return sampling
+    ? { tests, cells, sample: { of: withValues.length, used: read.length } }
+    : { tests, cells };
 }
 
 export interface CorrelationSummary {

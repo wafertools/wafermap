@@ -1356,7 +1356,11 @@ export interface AxisPrefs {
  *
  *  Returns null when there are too few values for quartiles to mean anything. */
 export function robustFence(values: number[], k = 1.5): { lo: number; hi: number } | null {
-  const finite = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b);
+  // Typed sort: the histogram's outlier clip passes every value of the active
+  // test, which is one per die — see `pooledTestStatsSteps` for the measurement
+  // behind preferring this over a `(a, b) => a - b` comparator at that size.
+  const finite = Float64Array.from(values.filter(v => Number.isFinite(v)));
+  finite.sort();
   if (finite.length < 8) return null;
   const q = (p: number) => {
     const idx = (finite.length - 1) * p;

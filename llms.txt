@@ -1,7 +1,10 @@
 # wafermap
 
 Browser-first wafer map visualization toolkit for semiconductor test data.
-Primary entry point: build wafer models with `buildWaferMap()`, then render with a canvas.
+Primary path: `buildWaferMap()` to build the map once, then `renderWaferMap()` (one wafer)
+or `renderWaferGallery()` (several) to render it, and `analyzeWaferMap()` for statistics
+and findings. The renderers carry their own toolbar, summary panel, Insights charts and
+reports — the low-level pipeline below them is deprecated and removed in 0.31.0.
 
 BEFORE INTEGRATING: tsmap (https://github.com/wafertools/tsmap) is a finished, free,
 MIT-licensed desktop and browser application built on this library — it opens STDF,
@@ -20,11 +23,11 @@ where repo-relative paths do not resolve.
 - [Examples](https://wafertools.github.io/wafermap/examples/) - 20 runnable demo pages, also downloadable at https://wafertools.github.io/wafermap/wafermap-examples.zip to run offline.
 
 ## Public package entry points
-- `@wafertools/wafermap`
-- `@wafertools/wafermap/render`
-- `@wafertools/wafermap/stats`
-- `@wafertools/wafermap/worker`
-- `@wafertools/wafermap/worker-script`
+- `@wafertools/wafermap` - `buildWaferMap()`, geometry, colour-scheme registries. Pure, no DOM.
+- `@wafertools/wafermap/render` - `renderWaferMap()`, `renderWaferGallery()`. Needs the DOM.
+- `@wafertools/wafermap/stats` - `analyzeWaferMap()`, `analyzeWaferLot()`, HTML reports. Pure.
+- `@wafertools/wafermap/worker` - `createWafermapWorker()` for off-main-thread builds.
+- `@wafertools/wafermap/worker-script` - the worker script itself.
 
 ## Important notes
 - `x` and `y` in `DieResult` are die grid positions (prober step integers), not millimetres.
@@ -33,7 +36,9 @@ where repo-relative paths do not resolve.
 - All coordinates shown to the user (axis ticks, tooltips) must be original die grid positions (`die.x` / `die.y`), not post-transform display coordinates.
 - `buildWaferMap()` is pure and server-safe; renderers require the DOM.
 - Recommended path for most users: `buildWaferMap()` + `renderWaferMap()`.
-- `passBins` sets both the yield number and the wording of its label — do not assume `[1]`.
+- Bins, test values and verdicts must be numbers/booleans. A parser that leaves `hbin` as `"1"` builds a map where those dies count as fails — convert with `Number()` at parse time.
+- `passBins` and `ringCount` are set once on `buildWaferMap()` and travel on the result. Neither is an option on `analyzeWaferMap`, `analyzeWaferLot`, `renderWaferMap` or `renderWaferGallery`. `passBins` sets both the yield number and the wording of its label — do not assume `[1]`.
+- Statistics surfaces are built in: pass `statsSummary` for the Summary panel and `insights: { enabled: true }` for the chart suite. Do not rebuild those charts from the deprecated chart-data builders.
 - `activeTest` takes a test number (e.g. `1050`), not a positional index.
 - Functional tests (`testType: 'F'`) have no value; read verdicts only via `getTestPassStatus()`. A missing verdict is no-data, never a fail.
 - `PlotMode` values are camelCase (`'hardBin'`, `'stackedValues'`), never snake_case.

@@ -34,8 +34,8 @@ export { buildWarningsBanner };
 import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
-import { quantile } from '../stats/math.js';
-import { buildCapabilityData, type CapabilityItem } from '../stats/capability.js';
+import { describeSorted, quantile } from '../stats/math.js';
+import { pooledTestStatsSteps, type CapabilityItem } from '../stats/capability.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import { poolFunctionalYield } from '../stats/testPassRate.js';
 import { makeLabeledSelect, makeSegmented } from './charts/chartShell.js';
@@ -44,7 +44,7 @@ import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 // Re-exported from its original home so existing importers keep working; the
 // implementation now lives in core/utils.ts (see its comment).
 export { csvField } from '../core/utils.js';
-import { medianOfSorted, csvField } from '../core/utils.js';
+import { type Chunked, csvField, drain, maxOf, medianOfSorted, minOf } from '../core/utils.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import type { WaferMetadata } from '../core/metadata.js';
 
@@ -1074,8 +1074,8 @@ export function buildPerWaferYieldSection(
 
   if (!waferData.length) return null;
 
-  const minY = Math.min(...waferData.map(w => w.yieldPct));
-  const maxY = Math.max(...waferData.map(w => w.yieldPct));
+  const minY = minOf(waferData.map(w => w.yieldPct));
+  const maxY = maxOf(waferData.map(w => w.yieldPct));
   const rangeNote = minY === maxY ? '' : ` (${minY.toFixed(1)}–${maxY.toFixed(1)}%)`;
 
   const sortedYields = [...waferData.map(w => w.yieldPct)].sort((a, b) => a - b);
@@ -1202,14 +1202,7 @@ interface TestStatRow {
 }
 
 function computeDescriptive(vals: number[]): Omit<TestStatRow, 'testNumber'> {
-  const sorted = [...vals].sort((a, b) => a - b);
-  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-  const variance = vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length;
-  return {
-    min: sorted[0], max: sorted[sorted.length - 1], mean, count: vals.length,
-    stddev: Math.sqrt(variance),
-    median: quantile(sorted, 0.5), q1: quantile(sorted, 0.25), q3: quantile(sorted, 0.75),
-  };
+  return describeSorted([...vals].sort((a, b) => a - b));
 }
 
 /**
@@ -1269,7 +1262,23 @@ function csvPopulationColumn(csv: CsvExportContext | undefined): MetadataColumn[
   }];
 }
 
-export function buildTestSection(
+/**
+ * {@link buildTestSectionSteps}, run straight through — the entry for every
+ * caller that is not staging its render across tasks.
+ */
+export function buildTestSection(...args: Parameters<typeof buildTestSectionSteps>): HTMLDivElement | null {
+  return drain(buildTestSectionSteps(...args));
+}
+
+/**
+ * @internal The Test Values table as a {@link Chunked} computation: one step per
+ * test for the descriptive statistics, plus the steps of the capability pass it
+ * delegates to. This is the single largest piece of work in either summary
+ * panel — at lot scale it scans the pooled dies once per test and sorts every
+ * test's values — so it is the one that has to be interruptible for the panel
+ * not to block the main thread for seconds at a time.
+ */
+export function* buildTestSectionSteps(
   dies: Die[],
   testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
@@ -1315,7 +1324,7 @@ export function buildTestSection(
    * regardless.
    */
   columns: 'compact' | 'full' = 'full',
-): HTMLDivElement | null {
+): Chunked<HTMLDivElement | null> {
   const activeDies = dies.filter(d => !d.partial && !d.edgeExcluded);
   const perTestStatsByNumber = new Map((precomputedTestStats?.perTestStats ?? []).map(s => [s.testNumber, s]));
   const specYieldByNumber = new Map((precomputedTestStats?.testSpecYield ?? []).map(s => [s.testNumber, s]));
@@ -1358,41 +1367,77 @@ export function buildTestSection(
   };
   const rows: ResolvedRow[] = [];
 
+  const hasFullStats = (p?: { stddev?: number; median?: number; q1?: number; q3?: number }): boolean =>
+    !!p && p.stddev !== undefined && p.median !== undefined && p.q1 !== undefined && p.q3 !== undefined;
+  const hasLimit = (e: TestEntry): boolean => e.limitLow !== undefined || e.limitHigh !== undefined;
+
+  // ── One pooled pass over the dies, for everything below that needs them ──
+  //
+  // The Ppk column, the descriptive statistics and the spec-yield tally all
+  // read the same values off the same dies, and each used to walk them
+  // separately — three O(dies x tests) passes, which on a 50-wafer lot of
+  // 4,000 dies x 100 tests was the whole of a 41 s panel render. They now
+  // share `pooledTestStatsSteps`, which collects each test's values once,
+  // sorts them once, and derives all three.
+  //
+  // Skipped entirely when nothing actually needs the dies: a single wafer whose
+  // `analyzeWaferMap` summary already carries full per-test statistics and spec
+  // yields, with no Ppk column asked for, must not pay for a pass. Without
+  // `testDefs` there is nothing for it to key on either (the entries came from
+  // the dies' own keys), and those tests keep the raw scan below.
+  const wantsPpk = !!(capabilityItems?.length && testDefs?.length);
+  const needsPooledDies = wantsPpk || entriesWithData.some(e =>
+    !hasFullStats(perTestStatsByNumber.get(e.testNumber))
+    || (hasLimit(e) && !specYieldByNumber.has(e.testNumber)));
+  const pooled = (needsPooledDies && testDefs?.length)
+    ? yield* pooledTestStatsSteps(capabilityItems ?? [{ dies }], testDefs)
+    : undefined;
+
   for (const entry of entriesWithData) {
+    yield;
     const precomputed = perTestStatsByNumber.get(entry.testNumber);
-    const hasFullPrecomputed = precomputed
-      && precomputed.stddev !== undefined && precomputed.median !== undefined
-      && precomputed.q1 !== undefined && precomputed.q3 !== undefined;
+    // The pooled pass counted these; `undefined` for a test it did not cover.
+    const pooledSpec = pooled?.specTally.get(entry.testNumber);
+    const pooledStats = pooled?.stats.get(entry.testNumber);
+    // One scan of the dies for this test — the last resort, for a test no
+    // precomputed summary and no pooled pass covered.
+    const scanValues = (): number[] => activeDies
+      .map(d => d.testValues?.[entry.testNumber])
+      .filter((v): v is number => v !== undefined && isFinite(v));
 
     let stats: TestStatRow;
-    if (hasFullPrecomputed) {
+    if (hasFullStats(precomputed)) {
       const p = precomputed!;
       stats = {
         testNumber: entry.testNumber, min: p.min, max: p.max, mean: p.mean, count: p.count,
         stddev: p.stddev!, median: p.median!, q1: p.q1!, q3: p.q3!,
       };
+    } else if (pooledStats) {
+      stats = { testNumber: entry.testNumber, ...pooledStats };
     } else {
-      const vals = activeDies
-        .map(d => d.testValues?.[entry.testNumber])
-        .filter((v): v is number => v !== undefined && isFinite(v));
+      const vals = scanValues();
       if (!vals.length) continue;
       stats = { testNumber: entry.testNumber, ...computeDescriptive(vals) };
     }
 
     let specYieldPct: number | null = null;
     let specN = 0;
-    if (entry.limitLow !== undefined || entry.limitHigh !== undefined) {
+    if (hasLimit(entry)) {
       const specYieldEntry = specYieldByNumber.get(entry.testNumber);
       if (specYieldEntry) {
         ({ yieldPercent: specYieldPct, totalDies: specN } = specYieldEntry);
+      } else if (pooledSpec) {
+        specN = pooledSpec.n;
+        specYieldPct = specN > 0 ? ((specN - pooledSpec.fail) / specN) * 100 : null;
       } else {
-        const vals = activeDies
-          .map(d => d.testValues?.[entry.testNumber])
-          .filter((v): v is number => v !== undefined && isFinite(v));
-        const specFail = vals.filter(v =>
-          (entry.limitLow !== undefined && v < entry.limitLow) ||
-          (entry.limitHigh !== undefined && v > entry.limitHigh),
-        ).length;
+        // No precomputed summary and no pooled pass for this test — the last
+        // resort, one scan of the dies for this test alone.
+        const vals = scanValues();
+        let specFail = 0;
+        for (const v of vals) {
+          if ((entry.limitLow !== undefined && v < entry.limitLow)
+            || (entry.limitHigh !== undefined && v > entry.limitHigh)) specFail++;
+        }
         specN = vals.length;
         specYieldPct = vals.length > 0 ? ((vals.length - specFail) / vals.length) * 100 : null;
       }
@@ -1402,9 +1447,10 @@ export function buildTestSection(
   }
   if (!rows.length) return null;
 
-  // Ppk per test, from the same `buildCapabilityData` the Insights capability
-  // panel and the summary report use — not a local mean/σ division, so the three
-  // surfaces cannot disagree.
+  // Ppk per test, out of the pooled pass above — the same
+  // `pooledTestStatsSteps` computation behind `buildCapabilityData`, which the
+  // Insights capability panel and the summary report use, not a local mean/σ
+  // division, so the three surfaces cannot disagree.
   //
   // Ppk, not Cpk, and deliberately. Cp/Cpk use the pooled WITHIN-wafer stddev;
   // on the single-wafer panel there is exactly one subgroup, so `stdWithin` and
@@ -1419,11 +1465,16 @@ export function buildTestSection(
   // report (`renderSummaryReport.ts`'s capability section prints all four).
   //
   // Needs BOTH limits (`hasSpec`); single-sided tests get no index and render '—'.
+  //
+  // `wantsPpk` gates it HERE, not in the pooled pass: the pass always derives
+  // capability (it is a few quantile lookups on an array it has already sorted)
+  // so that one memoised result serves the panel, the Insights capability chart
+  // and the summary report alike. Whether this table shows a Ppk column is this
+  // table's decision — it needs the lot as its population, which is exactly
+  // what `capabilityItems` supplies.
   const ppkByTest = new Map<number, number | null>();
-  if (capabilityItems?.length && testDefs?.length) {
-    for (const d of buildCapabilityData(capabilityItems, testDefs)) {
-      if (d.hasSpec) ppkByTest.set(d.testNumber, d.ppk);
-    }
+  for (const d of (wantsPpk ? pooled?.capability : undefined) ?? []) {
+    if (d.hasSpec) ppkByTest.set(d.testNumber, d.ppk);
   }
   const hasPpk = ppkByTest.size > 0;
 
@@ -2378,7 +2429,14 @@ export function buildFindingsSectionWithFilter(
  * they aren't reconstructable from per-wafer quartiles alone — but
  * `buildTestSection`'s display doesn't need them.)
  */
-export function buildLotTestSection(
+/** {@link buildLotTestSectionSteps}, run straight through. */
+export function buildLotTestSection(...args: Parameters<typeof buildLotTestSectionSteps>): HTMLDivElement | null {
+  return drain(buildLotTestSectionSteps(...args));
+}
+
+/** @internal {@link buildLotTestSection} as a {@link Chunked} computation —
+ *  see {@link buildTestSectionSteps}, which does the work. */
+export function* buildLotTestSectionSteps(
   allDies: Die[],
   testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
@@ -2394,7 +2452,7 @@ export function buildLotTestSection(
   panel?: HTMLElement,
   /** See `buildTestSection`'s `columns`. Defaults to the full set. */
   columns: 'compact' | 'full' = 'full',
-): HTMLDivElement | null {
+): Chunked<HTMLDivElement | null> {
   const csv: CsvExportContext | undefined = perWaferSummaries?.length ? {
     perWaferMetadata: perWaferSummaries.map(s => s.wafer ?? {}),
     populationLabel: `${perWaferSummaries.length} wafer${perWaferSummaries.length === 1 ? '' : 's'} pooled`,
@@ -2445,7 +2503,7 @@ export function buildLotTestSection(
     };
   }
 
-  return buildTestSection(allDies, testDefs, fallbackFormat, pooled, onSaveText, csv, capabilityItems, panel, columns);
+  return yield* buildTestSectionSteps(allDies, testDefs, fallbackFormat, pooled, onSaveText, csv, capabilityItems, panel, columns);
 }
 
 
@@ -2705,8 +2763,25 @@ function openDieListModal(
   if (section) handle.contentWrap.appendChild(section);
 }
 
-/** Render all wafer-level sections into a panel element. Clears existing content. */
-export function renderWaferSummaryContent(
+/**
+ * {@link renderWaferSummaryContentSteps}, run straight through — the entry for a
+ * caller that does not stage its render.
+ */
+export function renderWaferSummaryContent(...args: Parameters<typeof renderWaferSummaryContentSteps>): void {
+  drain(renderWaferSummaryContentSteps(...args));
+}
+
+/**
+ * @internal Render all wafer-level sections into a panel element, as a
+ * {@link Chunked} computation. Clears existing content.
+ *
+ * Chunked for the same reason the lot panel is: the Test Values table walks
+ * every die once per test, which on a single 400,000-die wafer is seconds of
+ * uninterruptible work on the main thread. Sections are appended as they are
+ * built, so the panel fills in. The synchronous entry above is this drained —
+ * one implementation, not a second progressive copy.
+ */
+export function* renderWaferSummaryContentSteps(
   panel: HTMLDivElement,
   params: {
     wafer:        Wafer;
@@ -2761,7 +2836,7 @@ export function renderWaferSummaryContent(
      */
     metadataShownElsewhere?: boolean;
   },
-): void {
+): Chunked<void> {
   const savedScroll = panel.scrollTop;
   panel.innerHTML = '';
   const {
@@ -2804,50 +2879,56 @@ export function renderWaferSummaryContent(
   const reportRow = reportButtonRow(summaryReportBtn, dieListBtn);
   if (reportRow) panel.appendChild(reportRow);
 
-  const sections: (HTMLDivElement | null)[] = [];
+  // Appended as they are built, not collected and appended at the end — see
+  // the lot panel's identical `append`: the point of stepping is that the panel
+  // fills in while the work runs.
+  let first = true;
+  const append = (section: HTMLDivElement | null): void => {
+    if (!section) return;
+    if (!first) panel.appendChild(separator());
+    first = false;
+    panel.appendChild(section);
+  };
 
   const lotStackStats = statsSummary?.stats.isLotStack ? statsSummary.stats : undefined;
   const stacked = lotStackStats?.lotSize !== undefined
     ? { lotSize: lotStackStats.lotSize, aggrMethod: fmtAggregationMethod(lotStackStats.aggregationMethod) }
     : undefined;
   if (!metadataShownElsewhere) {
-    sections.push(buildMetadataInfoSection([{ metadata: wafer.metadata ?? undefined }], stacked));
+    append(buildMetadataInfoSection([{ metadata: wafer.metadata ?? undefined }], stacked));
   }
 
-  if (yieldSummary && dataCoverage) sections.push(buildYieldSection(yieldSummary, dataCoverage, passBins));
+  if (yieldSummary && dataCoverage) append(buildYieldSection(yieldSummary, dataCoverage, passBins));
+  yield;
 
   // Findings sit directly under the headline stats, not at the bottom of the
   // panel. They are the only actionable section, the only one with a badge
   // count, and they used to be reachable only after scrolling past two full
   // test tables — the panel's most important content behind its densest.
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
-    sections.push(buildFindingsSectionWithFilter(
+    append(buildFindingsSectionWithFilter(
       statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice,
     ));
+    yield;
   }
 
-  sections.push(buildBinBreakdownSection({
+  append(buildBinBreakdownSection({
     dies, hbinDefs, sbinDefs, binColors,
     hardCounts: statsSummary?.stats.hardBinCounts,
     softCounts: statsSummary?.stats.softBinCounts,
     plotMode, passBins, panel,
   }));
+  yield;
 
-  sections.push(buildRegionYieldPanelSection({
+  append(buildRegionYieldPanelSection({
     diesByWafer: [dies], allWafers: [wafer], ringCount, passBins, panel,
   }));
+  yield;
 
   const csvIdentity: CsvExportContext | undefined = wafer.metadata ? { waferMetadata: wafer.metadata } : undefined;
-  sections.push(buildTestSection(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText, csvIdentity, [{ dies }], panel, 'compact'));
-  sections.push(buildFunctionalTestSection(dies, testDefs, statsSummary?.stats.functionalYield, onSaveText, csvIdentity, panel));
-
-  let first = true;
-  for (const s of sections) {
-    if (!s) continue;
-    if (!first) panel.appendChild(separator());
-    first = false;
-    panel.appendChild(s);
-  }
+  append(yield* buildTestSectionSteps(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText, csvIdentity, [{ dies }], panel, 'compact'));
+  yield;
+  append(buildFunctionalTestSection(dies, testDefs, statsSummary?.stats.functionalYield, onSaveText, csvIdentity, panel));
 
   // Browsers ignore padding-bottom on scrollable containers. A bottom spacer
   // ensures the last finding card is not clipped when scrolled to the end.
@@ -2889,7 +2970,24 @@ export function reportMapsFromItems(
   return maps;
 }
 
-export function renderLotSummaryContent(
+/**
+ * {@link renderLotSummaryContentSteps}, run straight through — the entry for a
+ * caller that is not staging the render across tasks.
+ */
+export function renderLotSummaryContent(...args: Parameters<typeof renderLotSummaryContentSteps>): void {
+  drain(renderLotSummaryContentSteps(...args));
+}
+
+/**
+ * @internal The lot summary panel as a {@link Chunked} computation: it pools
+ * every die of every wafer and derives bin, region and per-test sections from
+ * that pool, which at lot scale is the longest single piece of work anywhere in
+ * this library — 15.3 s on a 50-wafer lot of 4,000 dies x 100 tests, enough for
+ * the browser to offer to kill the page. Each step is one section, or one test
+ * within the Test Values table, and each section is appended as it is built, so
+ * the panel fills in rather than arriving at once.
+ */
+export function* renderLotSummaryContentSteps(
   panel: HTMLDivElement,
   params: {
     lotSummary:       LotStatsSummary;
@@ -2922,7 +3020,7 @@ export function renderLotSummaryContent(
     findingsFor?: (waferIndex: number) => { total: number; unusual: number; notable: number } | undefined;
 
   },
-): void {
+): Chunked<void> {
   const savedScroll = panel.scrollTop;
   panel.innerHTML = '';
   const {
@@ -2971,6 +3069,9 @@ export function renderLotSummaryContent(
   const waferLabelByDie = new WeakMap<Die, string>();
   const waferByDie = new WeakMap<Die, Wafer>();
   for (let i = 0; i < items.length; i++) {
+    // One wafer per step: pooling is only ~100 ms for a 200,000-die lot, but it
+    // is the first thing to run and a step boundary here costs nothing.
+    yield;
     const item = items[i];
     if (!item) { diesByWafer.push([]); continue; }
     if (item.wafer) {
@@ -2985,7 +3086,11 @@ export function renderLotSummaryContent(
       if (item.wafer) waferByDie.set(d, item.wafer);
     }
     diesByWafer.push(wd);
-    allDies.push(...wd);
+    // A loop, not `allDies.push(...wd)`: the spread passes one argument per
+    // die, and V8 throws RangeError above ~131k of them — so this failed on a
+    // single wafer with more dies than that, while any lot of ordinary wafers
+    // passed.
+    for (const d of wd) allDies.push(d);
   }
 
   const dieListBtn = (dieListOptions?.enabled ?? true)
@@ -3014,48 +3119,57 @@ export function renderLotSummaryContent(
 
   const perWaferSummaries = items.map(i => i?.statsSummary).filter((s): s is StatsSummary => !!s);
 
-  const sections: (HTMLDivElement | null)[] = [
-    buildLotOverviewSection(lotSummary, perWaferSummaries),
-    // No buildMetadataInfoSection here, unlike the single-wafer summary panel
-    // (below, line ~1979) which is its OWN sole source for this. On the lot
-    // path the gallery's top strip (renderWaferGallery.ts's legendEl, built
-    // from the identical buildMetadataStripRow/items pair) already renders
-    // this exact facet table above the grid — confirmed byte-identical
-    // against a live 13-wafer lot, not assumed. A second copy here cost a
-    // third of the sidebar's width for zero new information.
-  ];
+  // Appended as they are built, not collected and appended at the end: the
+  // whole point of stepping is that the panel fills in while the work runs.
+  let first = true;
+  const append = (section: HTMLDivElement | null): void => {
+    if (!section) return;
+    if (!first) panel.appendChild(separator());
+    first = false;
+    panel.appendChild(section);
+  };
+
+  append(buildLotOverviewSection(lotSummary, perWaferSummaries));
+  // No buildMetadataInfoSection here, unlike the single-wafer summary panel
+  // (below, line ~1979) which is its OWN sole source for this. On the lot
+  // path the gallery's top strip (renderWaferGallery.ts's legendEl, built
+  // from the identical buildMetadataStripRow/items pair) already renders
+  // this exact facet table above the grid — confirmed byte-identical
+  // against a live 13-wafer lot, not assumed. A second copy here cost a
+  // third of the sidebar's width for zero new information.
+  yield;
 
   // Same reasoning as the wafer panel: findings directly under the headline
   // stats, ahead of the bin/region/test detail.
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {
-    sections.push(buildFindingsSectionWithFilter(
+    append(buildFindingsSectionWithFilter(
       lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice,
     ));
+    yield;
   }
 
-  sections.push(
-    buildPerWaferYieldSection(lotSummary, items, onWaferClick, panel, findingsFor),
-    buildBinBreakdownSection({
-      dies: allDies, hbinDefs, sbinDefs, plotMode, passBins, panel,
-      // The gallery-wide colours when given; otherwise resolved wafer by wafer,
-      // so a lot mixing test programs is judged per wafer here too.
-      binColors: binColors ?? resolveBinColorsByWafer(
-        items.flatMap((it) => it ? [{ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }] : []),
-        { hbinDefs, sbinDefs }).colors,
-    }),
-    // regionDies, not diesByWafer: diesByWafer also holds an entry for items with
-    // no wafer, so its indices drift from allWafers'.
-    buildRegionYieldPanelSection({ diesByWafer: regionDies, allWafers, ringCount, passBins: (wi) => regionPassBins[wi], panel }),
-    testDefs?.length ? buildLotTestSection(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText, diesByWafer.map(d => ({ dies: d })), panel, 'compact') : null,
-    testDefs?.length ? buildLotFunctionalSection(allDies, testDefs, perWaferSummaries, onSaveText, panel) : null,
-  );
+  append(buildPerWaferYieldSection(lotSummary, items, onWaferClick, panel, findingsFor));
+  yield;
 
-  let first = true;
-  for (const s of sections) {
-    if (!s) continue;
-    if (!first) panel.appendChild(separator());
-    first = false;
-    panel.appendChild(s);
+  append(buildBinBreakdownSection({
+    dies: allDies, hbinDefs, sbinDefs, plotMode, passBins, panel,
+    // The gallery-wide colours when given; otherwise resolved wafer by wafer,
+    // so a lot mixing test programs is judged per wafer here too.
+    binColors: binColors ?? resolveBinColorsByWafer(
+      items.flatMap((it) => it ? [{ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }] : []),
+      { hbinDefs, sbinDefs }).colors,
+  }));
+  yield;
+
+  // regionDies, not diesByWafer: diesByWafer also holds an entry for items with
+  // no wafer, so its indices drift from allWafers'.
+  append(buildRegionYieldPanelSection({ diesByWafer: regionDies, allWafers, ringCount, passBins: (wi) => regionPassBins[wi], panel }));
+  yield;
+
+  if (testDefs?.length) {
+    append(yield* buildLotTestSectionSteps(allDies, testDefs, fallbackFormat, perWaferSummaries, onSaveText, diesByWafer.map(d => ({ dies: d })), panel, 'compact'));
+    yield;
+    append(buildLotFunctionalSection(allDies, testDefs, perWaferSummaries, onSaveText, panel));
   }
 
   panel.appendChild(el('div', { height: '12px', flexShrink: '0' }));

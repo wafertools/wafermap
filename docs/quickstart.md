@@ -75,7 +75,7 @@ Copy this into an HTML file and open it in a browser. No bundler required.
 
 ## What you just built
 
-The canvas shows your dies colour-coded by bin (green = pass, red = fail by default). The toolbar (top-right) is always shown — use it to switch plot mode, change colour scheme, rotate or flip the wafer, toggle die labels, zoom in, or download a PNG. Hover over any individual die to see a tooltip with its coordinates and bin.
+The canvas shows your dies colour-coded by bin: passing bins take the palette's greens and failing bins its fail colours, so here bin 1 is green and bin 2 red. Which bins pass is `passBins`, never the bin number — and beyond bin 2 the fail colours are not reds (bin 3 is indigo, bin 4 amber, and so on), so each bin stays the same colour across every lot and screenshot. The toolbar (top-right) is always shown — use it to switch plot mode, change colour scheme, rotate or flip the wafer, toggle die labels, zoom in, or download a PNG. Hover over any individual die to see a tooltip with its coordinates and bin.
 
 You have now rendered and interacted with a real wafer map, in about twenty lines
 and with no build step.

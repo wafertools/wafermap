@@ -16,8 +16,8 @@
 // warning) itself from `items`/`groups`, and owns its own matrix-size state
 // internally — same end-user behavior, one fewer indirection.
 
-import { buildCorrelationMatrix, filterCorrelationMatrix, type CorrelationMatrix, type CorrelationTestInfo } from '../../stats/correlation.js';
-import { csvField } from '../../core/utils.js';
+import { buildCorrelationMatrix, filterCorrelationMatrix, correlationSampleNote, type CorrelationMatrix, type CorrelationTestInfo } from '../../stats/correlation.js';
+import { csvField, maxOf } from '../../core/utils.js';
 import { CORRELATION_POSITIVE, CORRELATION_NEGATIVE } from './palette.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
@@ -203,8 +203,20 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   let draw: () => void = () => {};
 
-  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[], pairN: number | null): void {
+  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[], pairN: number | null, sample: CorrelationMatrix['sample']): void {
     hintRow.innerHTML = '';
+
+    // A sampled matrix must say so where the reader cannot miss it. Above
+    // ~25k dies the matrix is computed from an even spread rather than every die
+    // (see CORRELATION_DIE_BUDGET) — a sound estimate, but an unlabelled one is a
+    // number the reader takes for the whole population.
+    const sampleNote = correlationSampleNote(sample);
+    if (sampleNote) {
+      const note = card.ownerDocument.createElement('div');
+      note.textContent = `${sampleNote} — r is an estimate, not the whole population.`;
+      Object.assign(note.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
+      hintRow.appendChild(note);
+    }
 
     if (mixedFields.length > 0) {
       const warn = card.ownerDocument.createElement('div');
@@ -274,7 +286,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     const n = matrix.tests.length;
 
     const shortLabel = (t: CorrelationTestInfo) => t.label.split(' (#')[0];
-    const maxLabelChars = Math.min(14, Math.max(...matrix.tests.map(t => shortLabel(t).length)));
+    const maxLabelChars = Math.min(14, maxOf(matrix.tests.map(t => shortLabel(t).length)));
     const LABEL_W = maxLabelChars * 6.5 + 8;
 
     const MAX_HEADER_LBL = 10;
@@ -466,7 +478,9 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     const offDiag = matrix.cells.filter(c => c.xIndex !== c.yIndex).map(c => c.n).sort((a, b) => a - b);
     const pairN = offDiag.length ? offDiag[Math.floor(offDiag.length / 2)] : null;
     lastMatrix = matrix;
-    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields, pairN);
+    // `fullMatrix`'s sample note, not `matrix`'s: filterCorrelationMatrix narrows
+    // which tests are shown, and does not carry the sampling forward.
+    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields, pairN, fullMatrix.sample);
     draw = buildMatrixView(matrix);
     draw();
   }

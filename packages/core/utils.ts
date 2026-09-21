@@ -35,6 +35,33 @@ export function prettyKey(key: string): string {
 }
 
 /** Clamp `v` into [0, 1] — the normalization range every colour scale expects. */
+/**
+ * Smallest / largest of `values`, by iteration rather than `Math.min(...values)`.
+ *
+ * **Never spread a per-die array into `Math.min`/`Math.max`.** Spread passes one
+ * argument per element, and V8 throws `RangeError: Maximum call stack size
+ * exceeded` somewhere above ~125k arguments — so the idiom works on every test
+ * fixture and every small wafer, then fails outright on a real production lot.
+ * It did: `buildWaferMap` could not build a 400k-die map at all, and the aggregate
+ * min/max stacks had the same latent fault.
+ *
+ * Returns 0 for an empty array, matching the callers that treat "no values" as no
+ * extent rather than as ±Infinity.
+ */
+export function minOf(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  let m = values[0];
+  for (let i = 1; i < values.length; i++) if (values[i] < m) m = values[i];
+  return m;
+}
+
+export function maxOf(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  let m = values[0];
+  for (let i = 1; i < values.length; i++) if (values[i] > m) m = values[i];
+  return m;
+}
+
 export function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
@@ -81,7 +108,18 @@ export function median(values: number[]): number {
  */
 export function percentile98(values: number[]): number {
   if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
+  // A `Float64Array` sort, unlike `median` above, because this one's caller
+  // passes ONE VALUE PER DIE — `inferWaferFromXY` hands it a radius for every
+  // die on the wafer, so it is a 400,000-element sort on a large map, inside
+  // `buildWaferMap`. A typed sort is ~4x a `(a, b) => a - b` comparator at that
+  // size (measured in Chrome; see `pooledTestStatsSteps`). `median`'s callers
+  // pass one value per WAFER, where the typed array would cost more to
+  // allocate than the comparator costs to run.
+  //
+  // Non-finite input sorts last here rather than in an order the spec does not
+  // define; every caller screens its values first.
+  const sorted = Float64Array.from(values);
+  sorted.sort();
   const idx = Math.floor(sorted.length * 0.98);
   return sorted[Math.min(idx, sorted.length - 1)];
 }
@@ -146,4 +184,70 @@ export function escHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Shallow structural equality for the three collection shapes the library's
+ * shared display options are built from — the one copy of each rule.
+ *
+ * These exist for a single purpose: deciding whether a recomputed option is
+ * actually DIFFERENT before pushing it to every live card. A gallery resolves
+ * its wafers one at a time and re-derives the lot-wide options (bin colours,
+ * value range, metadata order) after each one, and each of those derivations
+ * allocates a fresh object — so a reference check always reports "changed" and
+ * every card rebuilds its view and redraws. Measured on 50 wafers x 8,000 dies,
+ * that pushed the same unchanged bin-colour map 1,275 times and cost 24 s of
+ * the load. Identity is the wrong question; value is the right one.
+ *
+ * Deliberately shallow: every value compared here is a number, a string or a
+ * colour, never a nested object. A generic deep-equal would invite use on
+ * `Die` or `View`, where it would be both wrong and ruinously slow.
+ */
+export function arrayEqual<T>(a: readonly T[] | undefined, b: readonly T[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** See {@link arrayEqual}. Same keys, same values — insertion order is not compared. */
+export function mapEqual<K, V>(a: ReadonlyMap<K, V> | undefined, b: ReadonlyMap<K, V> | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.size !== b.size) return false;
+  // `b.get(k) !== v` alone would treat a missing key as equal when v is
+  // undefined, so the size check above is load-bearing, not an optimisation.
+  for (const [k, v] of a) if (!b.has(k) || b.get(k) !== v) return false;
+  return true;
+}
+
+/** See {@link arrayEqual}. Same members — order is meaningless in a Set. */
+export function setEqual<T>(a: ReadonlySet<T> | undefined, b: ReadonlySet<T> | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
+
+/**
+ * A computation written as a generator so its caller decides how much of it to
+ * run at once: each `yield` is a point at which the work may be paused and the
+ * thread handed back. The generator's return value is the finished result, so a
+ * chunked computation has exactly ONE implementation — a caller that does not
+ * care runs it to completion with {@link drain} and cannot observe the
+ * difference, while a caller on the main thread drives it a slice at a time
+ * (see `runChunked` in `canvas-adapter/chunked.ts`).
+ *
+ * This shape, rather than a callback or an `async` rewrite, because the work
+ * here is synchronous and CPU-bound: there is nothing to await, only somewhere
+ * to stop. A second "progressive" copy of the same builder is the alternative,
+ * and two copies of a rule is the bug this library keeps finding.
+ */
+export type Chunked<T> = Generator<void, T, void>;
+
+/** Run a {@link Chunked} computation to completion without yielding, and
+ *  return its result — the synchronous entry point for any chunked builder. */
+export function drain<T>(work: Chunked<T>): T {
+  let step = work.next();
+  while (!step.done) step = work.next();
+  return step.value;
 }

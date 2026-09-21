@@ -22,6 +22,82 @@ under `### Breaking`.
 
 ---
 
+## [0.30.2] — 2026-09-20
+
+### Added
+
+- **A gallery now reports its own progress, so a host's indicator can be honest about a long
+  load.** `GalleryOptions` gains two callbacks (API §6.2):
+  - `onItemResolved(resolved, total)` — the **advance** signal, fired as each card is built.
+    `total` is the count you passed, so it is right from the first call and a progress bar can be
+    sized before anything arrives.
+  - `onItemsResolved()` — the **settled** signal, fired once the gallery has finished: every
+    factory resolved *and* the lot-wide legend, shared colours and Summary panel up to date. On a
+    large lot the panel keeps filling in for seconds after the last card, so this is deliberately
+    later than "the cards are in" — a host clearing its indicator when the cards land leaves the
+    rest of the wait unexplained.
+  - Both fire whichever form the items took, so no host branches on the path the gallery chose: a
+    fully pre-built mount is one `onItemResolved` call with `resolved === total`, and
+    `onItemsResolved` always fires asynchronously, after `renderWaferGallery` has returned. Both
+    fire again on a rebuild (`setItems`, or switching into a stacked mode).
+- **`CorrelationMatrix.sample`** — present only when the matrix was computed from a sample of the
+  dies, with `of` (the dies that carried test values) and `used` (how many were read).
+  The Insights correlation panel labels a sampled matrix from it; a host reading the matrix
+  directly must do the same.
+
+### Changed
+
+- **Correlation is computed from at most 25,000 dies.** It is the only analysis here that is
+  quadratic in tests and linear in dies — a 400,000-die, 50-test lot is 490 million pair updates,
+  which in a browser presents as a panel that never renders. Above that budget the dies are
+  sampled by an even stride across the whole population, never a prefix (dies arrive grouped by
+  wafer, so the first 25,000 of a lot are its first few wafers and would describe those rather
+  than the lot). At 25,000 dies the standard error of `r` is under 0.007, so the coefficients are
+  unchanged at the precision they are displayed to. **A sampled matrix always says so** — in the
+  Insights panel and in `CorrelationMatrix.sample`.
+- **The lot and wafer Summary panels are built across tasks instead of in one block, and fill in
+  section by section.** Pooling every die of every wafer and deriving the bin, region and
+  per-test sections from it is the longest single piece of work this library does: 15.3 s on a
+  50-wafer lot of 4,000 dies × 100 tests, which is where a browser starts offering to kill the
+  page. It is now around 335 steps of a few hundred ms at most. An ordinary lot still renders in
+  one synchronous pass and looks exactly as it did. A panel render in flight is abandoned when
+  the lot, filter or highlight changes, and on `destroy()`.
+- **The same panel work is also about 2.3× cheaper, and a lot pays for it once.** The per-test
+  pass over a lot's pooled dies is memoised on the population it describes, so the lot Summary
+  panel, the Insights Overview and the Insights capability chart share one computation instead of
+  running three; the sort inside it uses a `Float64Array` (4× on the whole pooled pass); and the
+  Test Values rows are built in one pass instead of three.
+- **Switching Insights tabs no longer rebuilds the panel you are returning to.** A built section
+  is kept per view, so going back to Distributions is instant rather than re-running capability,
+  boxplot, histogram and trend (about 5 s at 400,000 dies). Only a pure tab switch reuses it —
+  new data, Group by, scope or an axis preference still rebuilds everything.
+- **A lot-wide option is pushed to the cards only when its value actually changed.** `binColors`,
+  `valueRange` and `metadataValueOrder` are re-derived from the whole population as each wafer
+  resolves, and each derivation allocates a fresh object, so every card was being rebuilt and
+  redrawn for an identical value. On a progressive load that is quadratic: on 50 wafers × 8,000
+  dies × 50 tests in Chrome the bin-colour map alone was 1,275 pushes and 24 s of a 64 s load,
+  and is now one push.
+- **The gallery's lot Summary panel now settles once, when the last wafer resolves, instead of
+  re-rendering after every one.** A progressive load was re-pooling and redrawing the whole
+  panel on each newly resolved wafer, which is quadratic in wafer count and was the single
+  largest cost on this path: 175 s of a 182 s, 50-card progressive load. The panel still renders
+  once at mount and again whenever a user opens it. Combined with the change above, 50 cards of
+  8,000 dies now load in **7.7 s of non-blocking work with no task over 440 ms**, down from
+  182 s.
+
+### Fixed
+
+- **A large wafer or lot could fail outright with "Maximum call stack size exceeded".**
+  `Math.min(...)`/`Math.max(...)` spread a whole die array into a call, which throws once the
+  array passes roughly 100,000 entries — reachable on a single 400,000-die wafer in aggregated
+  values, inferred wafer geometry, reticle bounds and several chart scales. Every such call now
+  uses the `minOf`/`maxOf` helpers, and `scripts/check-spread-limits.mjs` (wired into
+  `npm run check`) fails the build if one comes back.
+- **A non-finite test value could make a whole test's statistics `NaN`.** `computePerTestStats`
+  sorted and summarised whatever `testValues` held, with no `Number.isFinite` screen, so one
+  `NaN` or `Infinity` from a parser silently turned that test's mean, median, sigma and Cpk into
+  `NaN` rather than being dropped as no data.
+
 ## [0.30.1] — 2026-09-16
 
 ### Security

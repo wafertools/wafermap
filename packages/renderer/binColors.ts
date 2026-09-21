@@ -3,6 +3,7 @@ import { diePassStatus } from '../core/dies.js';
 import { INPUT_DEFAULT_PASS_BINS, itemPassBins } from '../core/passBins.js';
 import type { BinDef, WaferWarning } from './buildWaferMap.js';
 import { getBinColorScheme, type BinColorScheme } from './colorSchemes.js';
+import { arrayEqual, mapEqual, setEqual } from '../core/utils.js';
 
 /**
  * Resolved bin → colour assignments for one population, per bin type.
@@ -323,4 +324,28 @@ function assign(
   }
   const shared = [...byColor.values()].filter(b => b.length > 1).flat().sort((a, b) => a - b);
   return { colors, shared };
+}
+
+/**
+ * Do two resolved assignments say the same thing? Compares every field of
+ * `BinColors` by value — the colour maps, the clash lists and the pass sets.
+ *
+ * The gallery's check before it pushes `binColors` to every card. Every
+ * `resolveBinColors*` call allocates fresh Maps and Sets even when the
+ * population's bins have not changed, so a reference comparison can only ever
+ * say "different", and each false positive costs a `buildView` plus a full
+ * canvas redraw on every card on screen. `pass` is compared as well as
+ * `hard`/`soft`: it is the verdict the colours were chosen with, it drives bin
+ * ORDER and soft-bin yield downstream, and a lot can change which bins pass
+ * (`pass-bins-mixed`) without any colour landing on a different value.
+ */
+export function binColorsEqual(a: BinColors | undefined, b: BinColors | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return mapEqual(a.hard, b.hard)
+      && mapEqual(a.soft, b.soft)
+      && arrayEqual(a.shared.hard, b.shared.hard)
+      && arrayEqual(a.shared.soft, b.shared.soft)
+      && setEqual(a.pass.hard, b.pass.hard)
+      && setEqual(a.pass.soft, b.pass.soft);
 }

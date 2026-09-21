@@ -234,12 +234,32 @@ work instead of re-scanning every die:
 |---|---|---|
 | Box plot | up to ~1ms | **~2µs** |
 | Bin pareto | up to ~175µs | **~2µs** |
-| Capability, correlation, scatter, histogram | up to ~21ms | *(always reads raw die values — no reuse path, by design)* |
+| Capability | up to ~21ms | **shared** — the pooled per-test pass is computed once per population and reused |
+| Correlation, scatter, histogram | up to ~21ms | *(always reads raw die values — no reuse path, by design)* |
 
 **Practical effect:** if a user opens the Summary panel first and then the
 Insights tab, box plot and bin pareto are effectively free. If Insights is
 the *first* thing they open, everything computes fresh — still fast, just
 not quite as fast.
+
+**The per-test pass over a lot's pooled dies is computed once**, whoever asks for
+it first: the lot Summary panel, the Insights Overview and the capability chart
+share one computation instead of running three. It is memoised on the population
+it describes, so any change to that population recomputes it — there is no
+signature of "what it depends on" to get subtly wrong.
+
+**Returning to an Insights tab you have already opened is instant.** A built
+section is kept per view, so going back to Distributions does not re-run
+capability, boxplot, histogram and trend (about 5s at 400,000 dies). Only a pure
+tab switch reuses it — new data, Group by, scope or an axis preference rebuilds
+everything.
+
+**Correlation reads at most 25,000 dies.** It is the one analysis that is
+quadratic in tests *and* linear in dies, so above that budget it samples by an
+even stride across the whole population rather than running for minutes. The
+coefficients are unchanged at the precision they are shown to (the standard error
+of `r` at n=25,000 is under 0.007), and a sampled matrix always says so on the
+panel and in `CorrelationMatrix.sample`.
 
 ---
 
@@ -278,6 +298,7 @@ optimization worth taking, not a fix for a real bottleneck.
 | …plus distribution/box-plot charts | `+ computePerTestStats: true` | Still fast; unlocks Insights → Distributions |
 | A QA/engineering tool that should flag anomalies automatically | `+ enableTestValueAnalysis: true` when the estimate is small, else a `findingsNotice` offering it | The only option that finds spatial patterns for you automatically. Cheap per wafer, seconds per lot — so decide per lot rather than once for the whole app (see "The number that matters is the lot") |
 | A lot gallery (many wafers) | Always pass `perWaferSummaries` to `analyzeWaferLot` | Free reuse of work you already did |
+| A lot gallery large enough to stage visibly | Pass factories, and hold your own indicator to `onItemsResolved` | The cards stream in one per task instead of blocking; `onItemResolved` sizes and advances a bar, and the Summary panel keeps filling in for seconds after the last card ([guide](guide.md#keep-a-gallery-responsive-when-building-many-maps)) |
 | Very large lots using `enableTestValueAnalysis` on every wafer | Run analysis in a [Web Worker](guide.md#processing-large-datasets-with-a-web-worker) via `createWafermapWorker` | Keeps the main thread free while the heavier pass runs, even though each individual call is fast |
 | A dashboard rendering many wafers/lots at once | Compute `statsSummary` for every card, then open Insights on demand | Box plot and bin pareto ride along nearly free once Summary panel stats exist |
 | Any app, if your data source has a large parametric test program | Filter `testDefs` down to the tests you actually analyze/display | Correlation and `enableTestValueAnalysis` both scale with test count — unused tests cost you for nothing shown to the user |

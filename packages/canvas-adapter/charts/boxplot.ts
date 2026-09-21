@@ -25,7 +25,7 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
 import { QUANTITY } from './palette.js';
 import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
-import { escHtml } from '../../core/utils.js';
+import { escHtml, maxOf, minOf } from '../../core/utils.js';
 
 const BOX_ROW_HEIGHT = 24;
 const BOX_ROW_GAP = 5;
@@ -288,8 +288,8 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     let hovered = -1;
 
     const finite = data.filter(d => d.count > 0);
-    const dataMin = Math.min(...finite.map(d => d.min));
-    const dataMax = Math.max(...finite.map(d => d.max));
+    const dataMin = minOf(finite.map(d => d.min));
+    const dataMax = maxOf(finite.map(d => d.max));
     const resolvedIncludeLimits = axisIncludesLimits
       ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
     axisCtl.sync(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);

@@ -18,7 +18,7 @@ import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWa
 import { getDieTestValue, getTestPassStatus, isParametricTest } from './buildWaferMap.js';
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 import { metadataValueColor } from './colorMap.js';
-import { compareNatural, clamp01, escHtml } from '../core/utils.js';
+import { clamp01, compareNatural, escHtml, minOf } from '../core/utils.js';
 import { prettyKey } from '../core/utils.js';
 
 type BinDefMap = Map<number, BinDef>;
@@ -1442,7 +1442,7 @@ export function buildView(
       const firstKey = dies.reduce<number | undefined>((min, d) => {
         if (!d.testValues) return min;
         const keys = Object.keys(d.testValues).map(Number);
-        const lo = keys.length ? Math.min(...keys) : undefined;
+        const lo = keys.length ? minOf(keys) : undefined;
         return lo !== undefined && (min === undefined || lo < min) ? lo : min;
       }, undefined);
       if (firstKey !== undefined) {

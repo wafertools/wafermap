@@ -32,8 +32,24 @@ loudly over guessing.
 - `@wafertools/wafermap/worker` — `createWafermapWorker()` for off-main-thread builds.
 
 Default path: `buildWaferMap()` once when data loads, then `renderWaferMap()` for a
-single wafer or `renderWaferGallery()` for several. Do not use `toCanvas()`, `buildView()`
-or the other low-level pipeline functions: they are deprecated and removed in 0.31.0.
+single wafer or `renderWaferGallery()` for several.
+
+**The types still export a large deprecated surface that is removed in 0.31.0 — do not
+reach into it just because autocomplete offers it.** Four groups, all replaced by the
+default path above:
+
+- the low-level drawing pipeline — `buildView()`, `toCanvas()`, `createWafer()`,
+  `generateDies()`, and the geometry and transform helpers around them;
+- the chart-data builders — `buildYieldData()`, `buildCorrelationMatrix()`,
+  `buildTestBoxplotData()` and the rest: these were the internals of the Insights tab,
+  which the renderers now mount for you (see below);
+- the region builders — `buildRingRegions()`, `buildQuadrantRegions()` and friends:
+  region yield comes back from `analyzeWaferMap()`;
+- per-die and per-colour helpers — `getDieTestValue()`, `buildHoverText()`,
+  `resolveBinColors()`, `getValueColorScheme()`, `valueToViridis()`.
+
+If the only way to do something is through one of these, that is a library gap worth
+reporting, not a pattern to build on.
 
 ### Traps that produce silently wrong maps
 
@@ -44,8 +60,20 @@ or the other low-level pipeline functions: they are deprecated and removed in 0.
   through unchanged; `dieConfig.width`/`height` convert to physical units. Do not
   pre-multiply. The geometry inputs are `waferConfig` (type `WaferConfig`) and
   `dieConfig` (type `DieConfig`) — both optional, both inferred when omitted.
-- **`passBins` decides both the yield number and the wording of its label.** Set it
-  from the actual test program. Do not assume `[1]`.
+- **Bins and test values must be numbers, and verdicts booleans.** Every parser —
+  CSV, JSON, a spreadsheet export — hands you `"1"`, and `"1"` is not pass bin 1: those
+  dies count as fails and the yield is wrong, while a test value left as text is not
+  plotted or analysed correctly. Convert with `Number()` at parse time. `buildWaferMap`
+  samples the input and reports `input-values-not-numbers` (severity `'error'`) rather
+  than coercing behind your back, so a build that "works" can still be wrong — read the
+  warnings.
+- **`passBins` and `ringCount` are set once, on `buildWaferMap`, and travel on the
+  result.** Neither is an option on `analyzeWaferMap`, `analyzeWaferLot`,
+  `renderWaferMap` or `renderWaferGallery` — passing one there is a type error in
+  TypeScript, and in JavaScript it is ignored with an `analysis-option-corrected`
+  warning while the real value is read from the map. `passBins` decides both the yield
+  number and the wording of its label, so set it from the actual test program: do not
+  assume `[1]`, and never re-default to `[1]` downstream — read `result.passBins`.
 - **`testValues` is keyed by test number**, e.g. `{ 1050: 0.42 }` — not a positional
   array. `activeTest` likewise takes a *test number* (`1050`), not an index.
 - **Functional tests (`testType: 'F'`) have no measured value.** Read their verdicts
@@ -95,7 +123,26 @@ or the other low-level pipeline functions: they are deprecated and removed in 0.
   your own (a table swatch, an export)? Read `controller.getBinColors()` for a live map,
   or `binColorsForMaps(results)` — never a palette lookup of your own.
 - Build once, render many: `buildWaferMap()` handles data + geometry; re-render UI
-  changes through the controller's `setOptions()`, not by rebuilding.
+  changes through the controller's `setOptions()`, not by rebuilding. New data for a
+  map that is already mounted goes through `setResult()` — do not `destroy()` and
+  remount.
+- **The analysis surfaces are already built — do not reimplement them.** Pass
+  `statsSummary` to `renderWaferMap` and it mounts the Summary panel; pass
+  `insights: { enabled: true }` and it mounts the chart suite (yield, bin pareto,
+  boxplot, histogram, correlation, scatter, capability). `renderWaferGallery` takes the
+  same option across a whole lot. Supply or replace the analysis later with
+  `setStatsSummary()`. Hand-building those charts is what the deprecated chart-data
+  builders were for, and they go in 0.31.0.
+- **Click-to-highlight is wired, not hand-rolled.** `onSelect` reports what the user
+  picked; `setSelection(dies)` / `clearSelection()` drive it from your own UI — for
+  example from a finding, whose `dieKeys` match `getDieKey(die)` exactly.
+- A die layout with no test data — a map of the reticle or the grid alone — is
+  `buildWaferMap({ layout: true, waferConfig, dieConfig })`, not a synthesized results
+  array.
+- `valueColorScheme` and `reverseValueScheme` travel as a pair. Every built-in gradient
+  but `'traffic'` and `'jet'` reads low = dark, high = light; if you draw your own
+  colorbar or swatch, resolve the colour through `resolveValueColorFn(name, reversed)`
+  so it cannot disagree with the dies.
 - `result.view` is internal. Use the promoted fields: `result.plotMode`,
   `result.metadata`, `result.isLotStack`, `result.hbinDefs`, `result.sbinDefs`,
   `result.testDefs`.
@@ -142,10 +189,10 @@ it is handed, because it has no way to know which tests anyone will look at.
 - **A Web Worker buys responsiveness, not speed.** `createWafermapWorker` copies data
   across `postMessage`, so total time goes *up*. Use it when a build would otherwise
   visibly freeze the page, not for small datasets.
-- **Capability, pass rates and region yield come back from the analysis** —
-  `stats.capability` (with `computePerTestStats`), `stats.testSpecYield`,
-  `stats.testFlagYield`, `stats.functionalYield` and `stats.regionYield`, on wafer and
-  lot summaries alike. Do not compute Cp/Cpk or ring yield yourself: the pooled
+- **Capability, pass rates, region yield and the spatial-pattern label come back from
+  the analysis** — `stats.capability` (with `computePerTestStats`), `stats.testSpecYield`,
+  `stats.testFlagYield`, `stats.functionalYield`, `stats.regionYield` and
+  `stats.spatialPattern`, on wafer and lot summaries alike. Do not compute Cp/Cpk or ring yield yourself: the pooled
   within-wafer stddev and per-wafer pass bins are easy to get subtly wrong.
 - **Reports from code: `renderWaferReportHtml(result, summary)` and
   `renderLotReportHtml(results)`** — they take the built maps, so pass bins and ring
@@ -164,7 +211,7 @@ it is handed, because it has no way to know which tests anyone will look at.
 | `WaferMapResult.inference.warnings` | `WaferMapResult.warnings` (structured, with a `code`) |
 | `ViewOptions.testIndex` | `activeTest` |
 | `mountWaferCanvas` | `renderWaferMap` |
-| `HARD_BIN_COLORS` / `SOFT_BIN_COLORS` | `BIN_PALETTE` |
+| `HARD_BIN_COLORS` / `SOFT_BIN_COLORS` | `BinDef.color`, or `registerBinColorScheme` — there is no exported palette constant |
 | `GalleryItem` | `WaferMapDisplayItem` |
 | `MountOptions` | `RenderOptions` |
 | `WaferCanvasController` | `WaferMapController` |
@@ -179,6 +226,8 @@ it is handed, because it has no way to know which tests anyone will look at.
 | `plotMode: 'specLimit'` | `passFailDisplay: 'spec'` |
 | standalone `getDieAtPoint` | `onHover` / `onClick` on `renderWaferMap` |
 | `RenderOptions.tooltipTestLimit` | (was a no-op; nothing replaces it) |
+| `enableYieldAnalysis` / `enableHardBinAnalysis` / `enableSoftBinAnalysis` / `enableReticlePositionAnalysis` / `enableTestSiteAnalysis` / `enableClusterAnalysis` / `enableAngularAnalysis` / `enablePatternClassification` | nothing — every analysis runs; scope cost with `testNumbers` instead |
+| `WaferMapController.setIdentityVisible` | `showIdentity` in `RenderOptions` |
 
 Passing a removed option is a type error, and is ignored at runtime. Do not add
 compatibility shims for them.

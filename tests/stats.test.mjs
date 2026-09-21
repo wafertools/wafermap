@@ -353,6 +353,30 @@ test('analyzeWaferMap populates perTestStats with quartiles', () => {
   assert.ok(entry.q3 <= entry.max, 'q3 <= max');
 });
 
+test('perTestStats screens non-finite readings instead of letting one poison the row', () => {
+  // Before this was screened, computePerTestStats collected every defined value
+  // including NaN: `mean` and `stddev` came back NaN for the whole test, and the
+  // sort was left in an order the spec does not define because `(a, b) => a - b`
+  // returns NaN. One bad reading took out a test's entire statistics, silently.
+  const { dies } = makeBaseDies();
+  const clean = dies.map((die, i) => ({ ...die, testValues: { 1050: i % 10 } }));
+  const poisoned = clean.map((die, i) => (i === 3
+    ? { ...die, testValues: { 1050: NaN } }
+    : i === 5 ? { ...die, testValues: { 1050: Infinity } } : die));
+
+  const of = (input) => analyzeWaferMap({ dies: input, waferConfig: { diameter: 60 } },
+    { computePerTestStats: true }).stats.perTestStats.find(s => s.testNumber === 1050);
+  const a = of(clean);
+  const b = of(poisoned);
+
+  assert.ok(Number.isFinite(b.mean) && Number.isFinite(b.stddev),
+    `mean/stddev must stay finite, got ${b.mean}/${b.stddev}`);
+  assert.ok(Number.isFinite(b.min) && Number.isFinite(b.max));
+  assert.equal(b.count, a.count - 2, 'the two unusable readings are out of the population, not counted as measurements');
+  assert.ok(b.min <= b.q1 && b.q1 <= b.median && b.median <= b.q3 && b.q3 <= b.max,
+    'the five-number summary is still ordered');
+});
+
 test('test-value analysis is off by default — no test findings, no perTestStats', () => {
   const { wafer, dies } = makeBaseDies();
   const enriched = dies.map((die) => {

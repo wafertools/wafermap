@@ -4,7 +4,7 @@ import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
-import { compareNatural } from '../core/utils.js';
+import { compareNatural, maxOf, minOf } from '../core/utils.js';
 import { resolveValueColorFn } from '../renderer/colorSchemes.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH, contrastTextColor } from '../renderer/colorMap.js';
@@ -1013,7 +1013,7 @@ export function drawMapCanvas(
 
     const isHorizontal = legendIsBottom || legendIsTop;
     if (isHorizontal) {
-      const minColWidth = Math.max(...legendEntries.map(e => e.totalWidth));
+      const minColWidth = maxOf(legendEntries.map(e => e.totalWidth));
       const maxCols = Math.max(1, Math.min(legendEntries.length, Math.floor((availableWidth + 8) / (minColWidth + 8))));
       for (let cols = maxCols; cols >= 1; cols--) {
         const rows = Math.ceil(legendEntries.length / cols);
@@ -1045,7 +1045,7 @@ export function drawMapCanvas(
     let originYLegend: number;
     if (legendIsFloating) {
       // Measure full labels (floating is never compact) so the box fits all content.
-      const floatingEntryWidth = Math.max(...legendEntries.map(e =>
+      const floatingEntryWidth = maxOf(legendEntries.map(e =>
         BIN_SWATCH_SIZE + BIN_LABEL_GAP + ctx.measureText(e.label).width + BIN_COUNT_W));
       const floatingWidth = Math.ceil(floatingEntryWidth);
       columnWidths = [floatingWidth];
@@ -1277,10 +1277,14 @@ export function drawMapCanvas(
   const rectW = view.rectangles[0]?.width  ?? 1;
   const rectH = view.rectangles[0]?.height ?? 1;
   const dieBounds = view.dieBounds;
-  const idxMinX = dieBounds ? dieBounds.minX : (pts.length ? Math.min(...pts.map(p => p.x)) : 0);
-  const idxMinY = dieBounds ? dieBounds.minY : (pts.length ? Math.min(...pts.map(p => p.y)) : 0);
-  const idxMaxX = dieBounds ? dieBounds.maxX : (pts.length ? Math.max(...pts.map(p => p.x)) : 1);
-  const idxMaxY = dieBounds ? dieBounds.maxY : (pts.length ? Math.max(...pts.map(p => p.y)) : 1);
+  // minOf/maxOf, not `minOf(pts.map(…))`: `pts` is one entry per die, and a
+  // spread passes one argument per element — V8 throws RangeError above ~131k of
+  // them. This is the fallback path taken when `view.dieBounds` is absent, so it
+  // would have failed only on a large lot, and only when that field was missing.
+  const idxMinX = dieBounds ? dieBounds.minX : (pts.length ? minOf(pts.map(p => p.x)) : 0);
+  const idxMinY = dieBounds ? dieBounds.minY : (pts.length ? minOf(pts.map(p => p.y)) : 0);
+  const idxMaxX = dieBounds ? dieBounds.maxX : (pts.length ? maxOf(pts.map(p => p.x)) : 1);
+  const idxMaxY = dieBounds ? dieBounds.maxY : (pts.length ? maxOf(pts.map(p => p.y)) : 1);
   const { cellW, cellH, nCols, nRows } =
     hitGridDims(idxMaxX - idxMinX, idxMaxY - idxMinY, rectW * 1.5, rectH * 1.5, pts.length);
   const gridCells: number[][] = Array.from({ length: nCols * nRows }, () => []);

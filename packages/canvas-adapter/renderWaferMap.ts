@@ -13,7 +13,8 @@ import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext, noticeDownloadFilenameChange } from './exportName.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import {
-  createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContent } from './summaryPanel.js';
+  createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContentSteps } from './summaryPanel.js';
+import { runChunked, type ChunkedRun } from './chunked.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { ICONS } from './icons.js';
@@ -1496,8 +1497,17 @@ export function renderWaferMapCard(
     }
   }
 
+  // One in-flight staged render per panel element, cancelled before the next
+  // starts and on destroy. A staged render that keeps appending to a panel a
+  // newer render has already cleared is the failure this guards against; the
+  // gallery's lot panel is wired the same way. At most two entries — the two
+  // panel elements this controller owns — so the map never grows.
+  const panelRuns = new Map<HTMLDivElement, ChunkedRun>();
+
   function renderSummaryPanelInto(el: HTMLDivElement): void {
-    renderWaferSummaryContent(el, {
+    panelRuns.get(el)?.cancel();
+    panelRuns.delete(el);
+    const run = runChunked(renderWaferSummaryContentSteps(el, {
       wafer, dies: currentDies,
       yieldSummary: currentResult.yield,
       dataCoverage: currentResult.dataCoverage,
@@ -1535,7 +1545,10 @@ export function renderWaferMapCard(
           applyFindingHighlightFromPanel(finding);
         }
         renderSummaryPanel();
-      } });
+      } }));
+    // Small wafers finish inside `runChunked`'s first slice and never stage, so
+    // there is nothing to hold on to or cancel.
+    if (!run.done) panelRuns.set(el, run);
   }
 
   function renderSummaryPanel(): void {
@@ -3129,6 +3142,8 @@ export function renderWaferMapCard(
     },
 
     destroy(): void {
+      for (const run of panelRuns.values()) run.cancel();
+      panelRuns.clear();
       modalHandle?.close();
       tbGetOpenMenu?.()?.remove();
       if (tbCloseOpenMenu) ownerDocument.removeEventListener('click', tbCloseOpenMenu, true);

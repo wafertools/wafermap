@@ -1,7 +1,7 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
 import { metadataCategoricalValue } from '../core/metadata.js';
-import { resolveBinColorsForMaps, mergeBinDefs, binColorWarning, mixedPassBinsWarning, type BinColors } from '../renderer/binColors.js';
+import { resolveBinColorsForMaps, mergeBinDefs, binColorWarning, mixedPassBinsWarning, binColorsEqual, type BinColors } from '../renderer/binColors.js';
 import { itemPassBins, INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
@@ -24,9 +24,9 @@ import { buildWaferMap, getTestPassStatus, isParametricTest, getDieTestValue } f
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
-import { compareNatural } from '../core/utils.js';
+import { compareNatural, arrayEqual } from '../core/utils.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
-import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContent, reportMapsFromItems } from './summaryPanel.js';
+import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContentSteps, reportMapsFromItems } from './summaryPanel.js';
 import { renderLotReportHtml } from '../stats/renderSummaryReport.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { prettyKey } from '../stats/facets.js';
@@ -38,6 +38,7 @@ import type { MergedTestDefs } from '../stats/mergeTestDefs.js';
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
 import type { DieListDisplayOptions } from './dieList.js';
 import { getDieKey, hasPosition } from '../core/dies.js';
+import { runChunked, type ChunkedRun } from './chunked.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -96,6 +97,61 @@ export interface GalleryOptions {
     changed:  (keyof WaferViewOptions)[],
     category: 'preference' | 'state' | 'mixed',
   ) => void;
+  /**
+   * Called once the gallery has finished building: every factory resolved, and
+   * the lot-wide surfaces (legend, shared colours, summary panel) settled.
+   *
+   * Exists so a host can hold its own progress indicator over a large lot's
+   * load without polling the gallery's DOM. **Always fires, and always
+   * asynchronously, whichever form the items took** — a host passing factories
+   * and a host passing pre-built items get the same one signal, so neither has
+   * to know which path the gallery took. With factories it fires after the last
+   * card; with pre-built items, on the next task after mount (never before
+   * `renderWaferGallery` returns, so the controller is always in hand).
+   *
+   * **It waits for the Summary panel's own render to finish**, which on a large
+   * lot is seconds after the last card appears — the panel is staged across
+   * tasks, and on 50 wafers x 8,000 dies x 50 tests in Chrome the cards are in
+   * at 3.6 s and the panel at 8.2 s. That is the point of it: a host clearing
+   * its indicator when the cards land would leave the rest of the wait
+   * unexplained, which is the failure this signal exists to prevent. There is
+   * deliberately no earlier "cards are in" variant — one settle signal, one
+   * meaning.
+   *
+   * Fires once per build, so a rebuild fires it again — `setItems`, and the
+   * internal rebuild that switching into a stacked mode does. It says "the
+   * gallery is settled", not "this happened for the first time".
+   */
+  onItemsResolved?: () => void;
+  /**
+   * Called as each card is built, with how many of the expected items now
+   * exist and how many there will be. `total` is the count `setItems` was
+   * given, so it is correct from the first call and a progress bar can be
+   * sized before anything arrives.
+   *
+   * This is the *advance* signal; `onItemsResolved` is the *settled* one, and
+   * they are not interchangeable. A progressive mount of a large lot runs for
+   * 10-25 s, and a host indicator that can only say "loading" for that long
+   * reads as a hang — which is the failure the progressive path exists to
+   * prevent, reintroduced one layer up.
+   *
+   * **Fires on the pre-built path too**, so no host has to branch on which
+   * form it passed: a fully pre-built mount is one call with
+   * `resolved === total`. A mixed set reports its pre-built items in one call
+   * and then one call per factory.
+   *
+   * It covers the cards only. On a large lot the Summary panel keeps filling
+   * in for seconds after the last card, with no card activity to report —
+   * `onItemsResolved` is what marks the end of *that*. There is deliberately
+   * no third callback between them: if a host needs to name that phase, it
+   * knows it has begun when `resolved === total` and ended when
+   * `onItemsResolved` fires.
+   *
+   * Deferred a task and generation-guarded like every callback here, so a
+   * gallery rebuilt or destroyed before the turn arrives stays quiet. Not
+   * called at all for an empty item list.
+   */
+  onItemResolved?: (resolved: number, total: number) => void;
   /**
    * Draw a legend on every card as well as the lot-level one. Default false.
    *
@@ -921,8 +977,29 @@ export function renderWaferGallery(
     gallerySummaryPanelEl.appendChild(spacer);
   }
 
+  /** The lot panel render in flight, if any — see `renderGallerySummaryPanel`. */
+  let lotPanelRun: ChunkedRun | null = null;
+
+  /**
+   * Set while a build is waiting on the lot panel before telling the host the
+   * gallery has settled — see the settle branch of `resolveNext`.
+   *
+   * It is deliberately NOT cleared when a render is cancelled: a cancel here
+   * always means another render is starting in its place (that is the first
+   * thing `renderGallerySummaryPanel` does), so the replacement run inherits
+   * the pending emit and the host still gets exactly one signal. The only
+   * path that drops it is `destroy()`, where every other deferred callback is
+   * dropped too.
+   */
+  let panelSettleEmit: (() => void) | null = null;
+
   function renderGallerySummaryPanel(): void {
     if (!gallerySummaryPanelEl) return;
+    // A render already staging is now describing a lot, a filter or a
+    // highlight that is no longer current, and it would keep appending
+    // sections to a panel this one is about to clear. Abandon it first.
+    lotPanelRun?.cancel();
+    lotPanelRun = null;
 
     // One panel, no tabs. The old Lot/Findings tab pair put a findings list in
     // BOTH tabs (lot-level in "Lot", none at all in "Findings" — which listed
@@ -939,7 +1016,14 @@ export function renderWaferGallery(
       // without ever disagreeing.
       const lotHbinDefs = mergeBinDefs(originalItems.map(it => it?.hbinDefs));
       const lotSbinDefs = mergeBinDefs(originalItems.map(it => it?.sbinDefs));
-      renderLotSummaryContent(gallerySummaryPanelEl, {
+      // Staged across tasks rather than rendered in one: pooling every die of
+      // every wafer and deriving the bin, region and per-test sections from
+      // that pool is the longest single piece of work this library does — 15.3 s
+      // on a 50-wafer lot of 4,000 dies x 100 tests, which is where the browser
+      // starts offering to kill the page. `runChunked`'s first slice is long
+      // enough that an ordinary lot still renders in one synchronous pass and
+      // looks exactly as it did.
+      lotPanelRun = runChunked(renderLotSummaryContentSteps(gallerySummaryPanelEl, {
         lotSummary: currentLotStats,
         items:      originalItems,
         hbinDefs:   lotHbinDefs.length ? lotHbinDefs : undefined,
@@ -970,7 +1054,11 @@ export function renderWaferGallery(
         // payoff for a click, and a promise the label did not keep.
         onWaferClick: openWindowForCardIndex,
         findingsFor: findingsTallyFor,
-        dieListOptions: options.dieList });
+        dieListOptions: options.dieList }), {
+        // The panel is the last lot-wide surface to settle, so finishing it is
+        // what makes `onItemsResolved` true — see `panelSettleEmit`.
+        onDone: () => { const emit = panelSettleEmit; panelSettleEmit = null; emit?.(); },
+      });
     } else {
       renderPerWaferIndexFallback();
     }
@@ -1335,6 +1423,45 @@ export function renderWaferGallery(
   }
 
   /**
+   * Assign one lot-wide display option and push it to every live card — but
+   * only when its VALUE changed.
+   *
+   * THE way a shared option reaches the cards. All three lot-wide options
+   * (`binColors`, `valueRange`, `metadataValueOrder`) are re-derived from the
+   * whole population whenever the item set changes, and every derivation
+   * allocates a fresh object, so `prev !== next` is true even when the lot's
+   * bins, range and values are identical. Each card's `setOptions` is
+   * unconditional — it rebuilds the view and redraws the canvas for any patch
+   * it is handed — so an unchanged push is a full redraw of every card on
+   * screen for no visible difference.
+   *
+   * That is quadratic on the incremental path: a gallery resolving n wafers
+   * re-derives after each one and pushes to the k cards already built, so the
+   * load does n(n+1)/2 redraws. Measured in Chrome on 50 wafers x 8,000 dies x
+   * 50 tests, the bin-colour map alone accounted for 1,275 pushes and 24 s of a
+   * 64 s load; with this check it is 1 push, and the redraw count is 2n.
+   *
+   * `eq` is only consulted when both sides are present — undefined on either
+   * side is a real change (an option being cleared or set for the first time),
+   * which is what makes this safe for the case that must still write: LEAVING
+   * metadata mode, where the stale order has to be cleared.
+   *
+   * Returns whether anything was pushed, for callers with follow-on work.
+   */
+  function pushSharedOption<K extends 'binColors' | 'valueRange' | 'metadataValueOrder'>(
+    key: K,
+    next: CardViewOptions[K],
+    eq: (a: NonNullable<CardViewOptions[K]>, b: NonNullable<CardViewOptions[K]>) => boolean,
+  ): boolean {
+    const prev = sharedOpts[key];
+    if (prev === next) return false;
+    if (prev != null && next != null && eq(prev, next)) return false;
+    sharedOpts = { ...sharedOpts, [key]: next };
+    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ [key]: next });
+    return true;
+  }
+
+  /**
    * The lot-wide metadata value order for the active metadata key, or undefined
    * outside `metadata` mode. Every card colours from this ONE list, so a wafer
    * that happens not to carry one of the values still paints the others in the
@@ -1354,18 +1481,16 @@ export function renderWaferGallery(
     return { key, values: [...distinct].sort(compareNatural) };
   }
 
-  /** Recomputes that order and pushes it to every live card. Paired with
-   *  `syncSharedValueRange` — same trigger points, same shape, including its
-   *  early return: outside `metadata` mode there is nothing to push, and
-   *  pushing `undefined` anyway costs a full `rebuildView()` + re-render on
-   *  every card, on every toolbar change and every resolved item. The one case
-   *  that must still write is LEAVING metadata mode, where the stale order has
-   *  to be cleared — hence "already undefined", not "not in metadata mode". */
+  /** Recomputes that order and pushes it to every live card, via
+   *  `pushSharedOption` — which is what keeps "outside metadata mode there is
+   *  nothing to push" from costing a `rebuildView()` + redraw on every card on
+   *  every toolbar change and every resolved item, while still writing in the
+   *  one case that must: LEAVING metadata mode, where the stale order has to be
+   *  cleared. Paired with `syncSharedValueRange` — same trigger points, same
+   *  shape. */
   function syncSharedMetadataOrder(): void {
-    const next = sharedMetadataValueOrder();
-    if (next === undefined && sharedOpts.metadataValueOrder === undefined) return;
-    sharedOpts = { ...sharedOpts, metadataValueOrder: next };
-    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ metadataValueOrder: next });
+    pushSharedOption('metadataValueOrder', sharedMetadataValueOrder(),
+      (a, b) => a.key === b.key && arrayEqual(a.values, b.values));
   }
 
   /**
@@ -1380,8 +1505,14 @@ export function renderWaferGallery(
     const { testNumber, td } = activeTestDefShared();
     const range = sharedDataValueRange(testNumber, td);
     const next: WaferViewOptions['valueRange'] = range ? { test: testNumber, range } : undefined;
-    sharedOpts = { ...sharedOpts, valueRange: next };
-    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ valueRange: next });
+    // A bare [lo, hi] is never produced here, but the option type allows it, so
+    // the comparison handles both forms rather than assuming this one.
+    pushSharedOption('valueRange', next, (a, b) => {
+      const parts = (v: NonNullable<WaferViewOptions['valueRange']>) =>
+        Array.isArray(v) ? { test: undefined as number | undefined, range: v } : { test: v.test, range: v.range };
+      const pa = parts(a), pb = parts(b);
+      return pa.test === pb.test && arrayEqual(pa.range, pb.range);
+    });
   }
 
   // Coalesced variant for the incremental-load path. Each resolving factory used
@@ -1396,6 +1527,38 @@ export function renderWaferGallery(
     const raf = container.ownerDocument.defaultView?.requestAnimationFrame
       ?? ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number);
     raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); syncSharedMetadataOrder(); syncSharedBinColors(); });
+  }
+
+  /**
+   * Coalesced `rebuildLegend()`, for the same reason as the value-range sync
+   * above: it tallies the legend population across every die of every resolved
+   * item (`countLegendPopulation`), so one call per resolving factory costs
+   * k x dies-per-item on the kth card. One rebuild per frame gives the identical
+   * result — the legend describes whatever is resolved when it runs.
+   *
+   * Keep it, but do not credit it with more than it does. Two corrections from
+   * the profile that found the real quadratics (`pushSharedOption` above, and
+   * the summary panel's settle in `resolveNext`):
+   *
+   * - The cost this coalescing avoids is small. Measured in Chrome on 50 wafers
+   *   x 8,000 dies x 50 tests, `rebuildLegend` totals ~200 ms over the whole
+   *   load. An earlier comment here attributed ~3 s per card and a 6.4 s task to
+   *   it; those belonged to the unchanged-`binColors` pushes and the per-
+   *   resolution lot-panel render, which were measured separately and fixed.
+   * - On the factory path it coalesces nothing anyway. Each resolution owns a
+   *   `setTimeout` task longer than a frame, so every one gets its own rAF
+   *   flush. That is why adding it "changed nothing measurable" — the same is
+   *   true of `scheduleSharedValueRangeSync`. Both still earn their keep for a
+   *   burst of resolutions inside one frame (small wafers), which is the case
+   *   they were written for.
+   */
+  let legendRebuildPending = false;
+  function scheduleLegendRebuild(): void {
+    if (legendRebuildPending) return;
+    legendRebuildPending = true;
+    const raf = container.ownerDocument.defaultView?.requestAnimationFrame
+      ?? ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number);
+    raf(() => { legendRebuildPending = false; rebuildLegend(); });
   }
 
   /**
@@ -1426,9 +1589,7 @@ export function renderWaferGallery(
   /** Re-resolve the gallery-wide bin colours and push them to every live card —
    *  on every change to the item set, same trigger points as the value range. */
   function syncSharedBinColors(): void {
-    const next = lotBinColors();
-    sharedOpts = { ...sharedOpts, binColors: next };
-    for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions({ binColors: next });
+    pushSharedOption('binColors', lotBinColors(), binColorsEqual);
     // lotBinColors() just re-derived which bins are mixed-pass across the loaded
     // wafers; the warning must follow it, not wait for an unrelated refresh.
     // Only ever reached from a frame callback, after the warning UI exists.
@@ -3068,14 +3229,71 @@ export function renderWaferGallery(
     // Capture the generation at the time buildCards was called — if buildCards runs
     // again (mode switch, destroy) the generation increments and stale callbacks bail out.
     const generation = ++buildGeneration;
+
+    /**
+     * Tell the host the gallery is settled — see `GalleryOptions.onItemsResolved`.
+     *
+     * Always deferred a task, even on the no-factory path where the work is
+     * already done: firing synchronously would run the host's callback *inside*
+     * `renderWaferGallery`, before it has returned the controller the host would
+     * naturally reach for. Generation-guarded like every other deferred callback
+     * here, so a gallery rebuilt or destroyed before the turn arrives stays
+     * quiet rather than reporting a build that no longer exists.
+     */
+    const emitItemsResolved = (): void => {
+      setTimeout(() => { if (generation === buildGeneration) options.onItemsResolved?.(); }, 0);
+    };
+    /**
+     * Tell the host how far the card build has got — see
+     * `GalleryOptions.onItemResolved`. `resolved` is passed by value, not read
+     * from a counter at callback time: these are deferred, so a burst of
+     * resolutions would otherwise all report the latest count and the host
+     * would see the bar jump rather than advance.
+     */
+    const emitItemResolved = (resolved: number): void => {
+      setTimeout(() => {
+        if (generation === buildGeneration) options.onItemResolved?.(resolved, newItems.length);
+      }, 0);
+    };
+    // Pre-built items already have their cards by the time we get here. Report
+    // them in one call so a fully synchronous mount still produces exactly one
+    // `onItemResolved(total, total)` and a host never has to ask which path it
+    // took. Nothing to report for an empty gallery.
+    let resolvedCount = newItems.length - factories.length;
+    if (resolvedCount > 0) emitItemResolved(resolvedCount);
     let fi = 0;
     function resolveNext(): void {
       if (generation !== buildGeneration) return; // stale — gallery was rebuilt or destroyed
       if (fi >= factories.length) {
         if (STACKED_MODES.has(sharedOpts.plotMode!)) {
           const mode = sharedOpts.plotMode!;
+          // That rebuild renders the panel and emits for itself, under its own
+          // generation — emitting here as well would report the same settle twice.
           buildCards(buildStackedItems(mode));
+          return;
         }
+        // The lot is in. This is where the summary panel settles — see the
+        // comment on its call site below for why it does not follow each
+        // resolution.
+        //
+        // And the host is told AFTER that render finishes, not after it starts.
+        // The panel is staged across tasks (`runChunked`), so on a large lot it
+        // keeps building for seconds after the last card: measured in Chrome on
+        // 50 wafers x 8,000 dies x 50 tests, the cards were in at 3.6 s and the
+        // panel finished at 16.8 s. Emitting at the start of it told every host
+        // the gallery was settled 13 s early — tsmap tore its progress
+        // indicator down there and sat showing an idle topbar over a panel that
+        // was still filling in, which is the wait this signal exists to explain.
+        panelSettleEmit = emitItemsResolved;
+        renderGallerySummaryPanel();
+        // No panel to wait for — none configured, or no lot stats to fill it,
+        // so no render started and nothing will ever call `onDone`. The test is
+        // `lotPanelRun`, NOT the pending emit: a render still staging leaves
+        // that flag set too, and emitting on it would reinstate the early
+        // signal this branch exists to fix. A panel that finished inside
+        // `runChunked`'s synchronous first slice — every ordinary lot — has
+        // already emitted through `onDone` and cleared the flag by here.
+        if (!lotPanelRun) { panelSettleEmit = null; emitItemsResolved(); }
         return;
       }
       const { index, factory, placeholder } = factories[fi++];
@@ -3089,7 +3307,9 @@ export function renderWaferGallery(
       cardExpandBtns[index] = expandBtn;
       pendingFactoryCount--;
       placeholder.replaceWith(card);
-      rebuildLegend();
+      emitItemResolved(++resolvedCount);
+      // Coalesced, not per resolution — see scheduleLegendRebuild.
+      scheduleLegendRebuild();
       // This factory's dies just joined originalItems — refresh the lot-wide
       // 'value'-mode range so cards already on screen widen to include it too.
       // Coalesced: a burst of factories resolving together does one pass.
@@ -3125,14 +3345,27 @@ export function renderWaferGallery(
           barEl.appendChild(btnLotSummary);
         }
         refreshLotSummaryButton();
-      } else if (gallerySummaryPanelEl && gallerySummaryPanelEl.style.display !== 'none') {
-        // Panel is open — refresh the index to show newly resolved items.
-        renderGallerySummaryPanel();
       }
+      // NOT refreshed per resolution, even while open. renderLotSummaryContent
+      // pools every die of every resolved item and recomputes the bin, region
+      // and per-test sections from that pool, so following each resolution costs
+      // k x dies-per-wafer on the kth card — the dominant quadratic on this
+      // path. Measured in Chrome on 50 wafers x 8,000 dies x 50 tests: 175 s of
+      // panel renders, an 11.3 s task, and only 41 of 50 cards inside three
+      // minutes; the same load with the panel settled once is 7.7 s end to end
+      // with no task over 500 ms.
+      //
+      // So the lot panel describes the lot once the lot is in (above), not a
+      // growing prefix of it. Nothing is lost while loading: the panel is
+      // rendered at mount, the toolbar's own toggle re-renders on open, and a
+      // prefix panel was never a figure anyone should act on anyway — its
+      // header names the full lot the caller passed while its sections would
+      // tally only the wafers resolved so far.
       refreshLotSummaryButton();
       setTimeout(resolveNext, 0);
     }
     if (factories.length > 0) setTimeout(resolveNext, 0);
+    else emitItemsResolved(); // nothing to resolve — already settled
   }
 
   // originalItems is already populated (see its declaration) — factories fill their
@@ -3575,6 +3808,14 @@ export function renderWaferGallery(
 
     destroy(): void {
       buildGeneration++; // cancel any pending factory resolvers
+      // Same reason as the queued resize frame below: a staged lot-panel render
+      // would otherwise keep waking up and appending to a torn-down panel.
+      lotPanelRun?.cancel();
+      lotPanelRun = null;
+      // A gallery being torn down never settles, so a build still waiting on
+      // the panel is dropped rather than reported — the same rule the
+      // generation guard applies to every other deferred callback here.
+      panelSettleEmit = null;
       // Close every open popup (linked or already-unlinked) and release its
       // controller — unlike a linked grid card, a detached card's own controller
       // was already destroyed at detach time, so there's no grid-side destroy
