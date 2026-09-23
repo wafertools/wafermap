@@ -10,11 +10,20 @@
 // core/ is side-effect free.
 
 /**
- * The release that deletes every export deprecated through this helper. Named in
- * each notice and each `@deprecated` tag, and held to by tests/deprecations.test.mjs,
- * which fails once the changelog or package.json reaches it with them still here.
+ * The release that deletes an export deprecated through this helper, unless its
+ * deprecation names a later one. Named in each notice and each `@deprecated` tag,
+ * and held to by tests/deprecations.test.mjs, which fails once the changelog or
+ * package.json reaches an export's removal release with it still here.
  */
 export const DEPRECATED_REMOVAL_VERSION = '0.31.0';
+
+/**
+ * @internal The release that removes each deprecated name. A name deprecated
+ * after the default removal release was scheduled gets a later one — a removal
+ * must follow a release in which the name shipped deprecated, never coincide
+ * with it.
+ */
+export const DEPRECATED_REMOVALS = new Map<string, string>();
 
 /**
  * @internal Every name deprecated through this module, and whether it is a function
@@ -42,11 +51,14 @@ export function noticeOnce(key: string, message: string): void {
  * The wrapper has exactly `fn`'s type — generics and overloads included — so a
  * deprecated export's signature does not change until it is removed.
  */
-export function deprecated<F extends (...args: never[]) => unknown>(fn: F, name: string, advice: string): F {
+export function deprecated<F extends (...args: never[]) => unknown>(
+  fn: F, name: string, advice: string, removal: string = DEPRECATED_REMOVAL_VERSION,
+): F {
   DEPRECATED_EXPORTS.set(name, 'function');
+  DEPRECATED_REMOVALS.set(name, removal);
   const call = fn as unknown as (...args: unknown[]) => unknown;
   return ((...args: unknown[]) => {
-    noticeOnce(name, `${name} is deprecated and will be removed in ${DEPRECATED_REMOVAL_VERSION}. ${advice}`);
+    noticeOnce(name, `${name} is deprecated and will be removed in ${removal}. ${advice}`);
     return call(...args);
   }) as unknown as F;
 }
@@ -55,7 +67,8 @@ export function deprecated<F extends (...args: never[]) => unknown>(fn: F, name:
  * @internal Register a deprecated constant. A value cannot log on use, so its
  * `@deprecated` tag and the changelog are the only announcement.
  */
-export function deprecatedValue<T>(value: T, name: string): T {
+export function deprecatedValue<T>(value: T, name: string, removal: string = DEPRECATED_REMOVAL_VERSION): T {
   DEPRECATED_EXPORTS.set(name, 'value');
+  DEPRECATED_REMOVALS.set(name, removal);
   return value;
 }

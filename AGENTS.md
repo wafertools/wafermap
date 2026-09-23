@@ -240,7 +240,7 @@ compatibility shims for them.
 - [API reference](https://wafertools.github.io/wafermap/api/) — every type, option and return value
 - [Developer guide](https://wafertools.github.io/wafermap/guide/) — worked walkthroughs
 - [Troubleshooting](https://wafertools.github.io/wafermap/troubleshooting/)
-- [Examples](https://wafertools.github.io/wafermap/examples/) — 20 runnable pages, also
+- [Examples](https://wafertools.github.io/wafermap/examples/) — 22 runnable pages, also
   [downloadable](https://wafertools.github.io/wafermap/wafermap-examples.zip) to run offline
 
 When a rule here and the API reference disagree, the API reference wins — tell the

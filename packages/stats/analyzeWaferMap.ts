@@ -4,6 +4,7 @@ import { computeCapability, computeTestFlagYield, computeRegionYield } from './s
 import { isYieldEligibleDie, getDieKey, isPositionedDie } from '../core/dies.js';
 import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
+import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 import type {
   AnalyzeWaferMapInput,
   AnalyzeWaferMapOptions,
@@ -314,7 +315,8 @@ export function computeFunctionalYield(
     const totalDies = passDies + failDies;
     result.push({
       testNumber:      tn,
-      label:           td.name,
+      label:           markedTestLabel(td, tn),
+      ...derivedFields(td),
       passDies,
       failDies,
       totalDies,
@@ -452,6 +454,16 @@ function summarizeRegionLabel(label: string, family: RegionFamily): string {
   return label;
 }
 
+/**
+ * The verb for a region as the subject of a finding sentence. A merged region
+ * is plural — "Rings 1–2 have", "Quadrants NE & SE have" — and the merge
+ * labels (`mergeRingLabel`, `mergeSectorLabel`, `mergeQuadrantLabel`) are the
+ * only places a plural region word is produced, so their leading word decides.
+ */
+function regionHas(label: string): 'has' | 'have' {
+  return /^(Rings|Sectors|Quadrants)\b/.test(label) ? 'have' : 'has';
+}
+
 function summarizeBinFinding(
   label: string,
   binLabel: string,
@@ -460,7 +472,7 @@ function summarizeBinFinding(
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
   const pp = (Math.abs(delta) * 100).toFixed(1);
-  return `${familyLabel} has ${binLabel} occurrence ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
+  return `${familyLabel} ${regionHas(familyLabel)} ${binLabel} occurrence ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
 }
 
 function summarizeFunctionalFinding(
@@ -471,7 +483,7 @@ function summarizeFunctionalFinding(
 ): string {
   const familyLabel = summarizeRegionLabel(label, family);
   const pp = (Math.abs(delta) * 100).toFixed(1);
-  return `${familyLabel} has ${testName} pass rate ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
+  return `${familyLabel} ${regionHas(familyLabel)} ${testName} pass rate ${pp} percentage points ${delta > 0 ? 'higher' : 'lower'} than ${comparisonTarget(family)}`;
 }
 
 function summarizeTestFinding(
@@ -498,9 +510,12 @@ function labelForBin(bin: number, defs: BinDef[] | undefined, prefix: 'HBin' | '
   return def?.name ? `${prefix} ${bin} (${def.name})` : `${prefix} ${bin}`;
 }
 
-function labelForTest(testNumber: number, defs: TestDef[] | undefined): { label: string; unit?: string } {
+function labelForTest(
+  testNumber: number,
+  defs: TestDef[] | undefined,
+): { label: string; unit?: string; derived?: true; expression?: string } {
   const def = defs?.find((entry) => entry.testNumber === testNumber);
-  return { label: def?.name ?? `Test ${testNumber}`, unit: def?.unit };
+  return { label: markedTestLabel(def, testNumber), unit: def?.unit, ...derivedFields(def) };
 }
 
 /**
@@ -788,7 +803,8 @@ function buildFunctionalPassFindings(
         variable: {
           kind: 'functionalTest',
           index: testNumber,
-          label: `${fDefs[i].name} pass rate` },
+          label: `${markedTestLabel(fDefs[i], testNumber)} pass rate`,
+          ...derivedFields(fDefs[i]) },
         comparison: {
           family: region.family,
           left: region.label,
@@ -803,7 +819,7 @@ function buildFunctionalPassFindings(
           pValue,
           sampleSizeLeft: leftSize,
           sampleSizeRight: rightSize },
-        summary: summarizeFunctionalFinding(region.label, fDefs[i].name, delta, region.family),
+        summary: summarizeFunctionalFinding(region.label, markedTestLabel(fDefs[i], testNumber), delta, region.family),
         highlight: {
           kind: 'region',
           regionFamily: region.family,
@@ -1008,7 +1024,7 @@ function buildTestValueFindings(
 
       const { pValue, effectSize, delta } = welchFromStats(leftN, leftMean, leftVar, rightN, rightMean, rightVar);
       const region = regionFamily[r];
-      const { label, unit } = labelForTest(testNumber, defs);
+      const { label, unit, ...derivation } = labelForTest(testNumber, defs);
       const relativeDelta = rightMean !== 0 ? delta / Math.abs(rightMean) : undefined;
 
       findings.push({
@@ -1019,7 +1035,8 @@ function buildTestValueFindings(
           kind: 'test',
           index: testNumber,
           label,
-          unit },
+          unit,
+          ...derivation },
         comparison: {
           family: region.family,
           left: region.label,
@@ -1125,8 +1142,9 @@ function buildSpecLimitFindings(
           variable: {
             kind: 'test',
             index: tn,
-            label: td.name,
-            unit: td.unit },
+            label: markedTestLabel(td, tn),
+            unit: td.unit,
+            ...derivedFields(td) },
           comparison: {
             family: region.family,
             left: region.label,
@@ -1141,7 +1159,7 @@ function buildSpecLimitFindings(
             pValue,
             sampleSizeLeft: leftValid.length,
             sampleSizeRight: rightValid.length },
-          summary: `${region.label} spec-fail rate for ${td.name} is ${(Math.abs(delta) * 100).toFixed(1)} pp ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`,
+          summary: `${region.label} spec-fail rate for ${markedTestLabel(td, tn)} is ${(Math.abs(delta) * 100).toFixed(1)} pp ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`,
           highlight: {
             kind: 'region',
             regionFamily: region.family,
@@ -1395,6 +1413,44 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     severity = severityForFinding(pValue, delta, effect.relativeDelta);
     summary = summarizeYieldFinding(label, delta, family);
     idMetric = 'yield';
+  } else if (kind === 'functionalTest') {
+    // A functional pass rate, recomputed over the merged region exactly as
+    // `buildFunctionalTestFindings` computes it per region: verdicts through
+    // `getTestPassStatus`, dies without a verdict excluded from both sides.
+    //
+    // This branch did not exist until 0.31.0. A functional run fell through to
+    // the bin branch below, which counted dies whose hard bin equalled
+    // `variable.bin` — undefined for a functional finding — so every side
+    // counted 0, the merged finding reported a 0.0 pp difference as
+    // "HBin undefined occurrence", and it REPLACED the correct per-ring
+    // findings it merged. A real functional signal spanning adjacent rings was
+    // reported as no difference at all.
+    const testNumber = template.variable.index!;
+    const def = ctx.testDefs?.find(d => d.testNumber === testNumber);
+    let leftPass = 0, leftN = 0, rightPass = 0, rightN = 0;
+    for (const d of leftDies) {
+      const s = getTestPassStatus(d, testNumber, def);
+      if (s === undefined) continue;
+      leftN++; if (s) leftPass++;
+    }
+    for (const d of rightDies) {
+      const s = getTestPassStatus(d, testNumber, def);
+      if (s === undefined) continue;
+      rightN++; if (s) rightPass++;
+    }
+    const leftRate = leftN > 0 ? leftPass / leftN : 0;
+    const rightRate = rightN > 0 ? rightPass / rightN : 0;
+    const delta = leftRate - rightRate;
+    const pValue = twoProportionPValue(leftPass, leftN, rightPass, rightN);
+    effect = {
+      direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
+      absoluteDelta: delta,
+      relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
+      effectSize: delta };
+    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
+    severity = severityForFinding(pValue, delta, effect.relativeDelta);
+    summary = summarizeFunctionalFinding(label, markedTestLabel(def, testNumber), delta, family);
+    idMetric = `functional:${testNumber}`;
   } else {
     // hardBin / softBin — count occurrences of the target bin.
     const bin = template.variable.bin!;

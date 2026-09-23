@@ -1128,6 +1128,7 @@ export function renderWaferMapCard(
       onSaveImage: exportHooks.onSaveImage,
       onSaveText: exportHooks.onSaveText,
       defaultView: insightsOpts?.defaultView,
+      sweeps: insightsOpts?.sweeps,
       // Both of these are FALLBACKS, passed only when the toolbar cannot carry
       // them. The toolbar now stays visible while Insights is open, so its own
       // toggle and Help are permanently reachable in a fixed corner; passing

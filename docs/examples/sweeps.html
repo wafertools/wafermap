@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parametric sweeps — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    /* Page-level scroll, same reasoning as insights.html: the chart suite is
+       tall and a bounded box would pin the intro above the fold. */
+    .demo-content { padding: 0; }
+    #stage { width: 100%; padding: 14px; box-sizing: border-box; }
+    #stage > div { width: 100%; height: 900px; }
+
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+      margin: 4px 14px 18px;
+    }
+    .spec-grid section {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      background: var(--surface, #fff);
+    }
+    .spec-grid h3 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .spec-grid p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
+    .spec-grid pre {
+      margin: 0 0 8px;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      background: var(--code-bg, #f6f8fa);
+      padding: 8px 10px;
+      border-radius: 4px;
+    }
+    .spec-grid .look { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Parametric sweeps</span>
+    <span class="demo-desc" id="banner"></span>
+  </header>
+
+  <div class="demo-intro">
+    A test program often measures one quantity at a series of conditions — supply
+    voltage, gate voltage, bake time, load current — and records each condition as its
+    own test number. Read one test at a time, that is a row of unrelated distributions.
+    Declared as a <strong>sweep</strong>, each block becomes a curve, and the chart
+    measures the pair of curves against each other: where they <strong>cross</strong>,
+    and how far apart they are, horizontally, at a given level (the
+    <strong>width</strong>).
+    <br><br>
+    Every sweep you define gets a card in the Insights <strong>Sweeps</strong> tab, which
+    this page opens on. Each line is the median across the dies in scope, with a
+    p10–p90 band; the <strong>Show</strong> and <strong>Group by</strong> controls above
+    rescope all four at once. The four below are common characterisation sweeps, each
+    showing a different use of the crossing and the width.
+  </div>
+
+  <div class="spec-grid">
+    <section>
+      <h3>1 · Temperature inversion</h3>
+      <pre>{ id: 'fmax-vdd',
+  title: 'Fmax vs VDD — 25 °C vs 125 °C',
+  series: [
+    { label: '25 °C',  tests: FMAX_COLD, xValues: VDD },
+    { label: '125 °C', tests: FMAX_HOT,  xValues: VDD },
+  ],
+  separationAt: [1.2e9, 2.0e9],
+  xLabel: 'VDD (V)', yLabel: 'Fmax' }</pre>
+      <p class="look">At advanced nodes the hot corner is <em>faster</em> at low
+        voltage: threshold voltage falls with temperature faster than mobility loss
+        slows the transistor. The <strong>crossing</strong> is the temperature-inversion
+        voltage — below it, 125 °C is no longer the worst case, which changes which
+        corner a low-voltage sign-off has to be run at. The two <strong>widths</strong>
+        are the extra VDD the slower corner needs to reach 1.2 GHz and 2.0 GHz; note
+        that the slower corner swaps between them.</p>
+    </section>
+
+    <section>
+      <h3>2 · DIBL, on a log scale</h3>
+      <pre>// One derived test per step: log10 of the measured drain current.
+{ testNumber: 3200 + i, name: `log Id lin ${vg}`,
+  expression: `log10(t[${3100 + i}])` }
+
+{ id: 'dibl',
+  title: 'NMOS transfer curve — Vds 0.05 V vs 0.8 V',
+  series: [
+    { label: 'Vds = 0.05 V', tests: LOG_ID_LIN, xValues: VG },
+    { label: 'Vds = 0.8 V',  tests: LOG_ID_SAT, xValues: VG },
+  ],
+  crossing: false,
+  separationAt: [-7],
+  xLabel: 'Vg (V)', yLabel: 'log10 Id (A)' }</pre>
+      <p class="look">A transfer curve spans decades of current, so it is only
+        readable on a log axis. There is no log option on a sweep — and no need: a sweep
+        reads any test, including a <strong>derived</strong> one, so each step is swept as
+        <code>log10(t[n])</code>. The <strong>width</strong> at log10 Id = −7
+        (100&nbsp;nA) is the gate-voltage shift between the two drain biases at constant
+        current — the constant-current threshold shift. Divided by the 0.75&nbsp;V change
+        in Vds it is DIBL. The curves never cross, so <code>crossing: false</code> keeps
+        the card from reporting that.</p>
+      <p class="look">The map opens on <strong>Subthreshold slope</strong>, a derived
+        test of two of those derived tests: <code>0.1 / (t[3202] - t[3200])</code>, the
+        gate voltage per decade of current. The mark after its name says it was not
+        measured.</p>
+    </section>
+
+    <section>
+      <h3>3 · Data retention</h3>
+      <pre>const BAKE_H = [0, 24, 48, 96, 168, 336, 500, 750, 1000];
+
+{ id: 'retention',
+  title: 'Retention — cell Vt through a 150 °C bake',
+  series: [
+    { label: 'Programmed', tests: VT_PROG,  xValues: BAKE_H },
+    { label: 'Erased',     tests: VT_ERASE, xValues: BAKE_H },
+  ],
+  xLabel: 'Bake time (h)', yLabel: 'Cell Vt' }</pre>
+      <p class="look">The two cell states drift towards each other as charge leaks
+        during an accelerated bake; the <strong>crossing</strong> is where the median read
+        window closes completely. The read points are not evenly spaced — they rarely are
+        in a qualification — which is what <code>xValues</code> is for: with it the
+        crossing is reported in hours, and without it the axis would be the ordinal
+        position of each read, with the crossing "between the 8th and 9th". Nothing is
+        interpolated along test numbers, which are identifiers, not a scale.</p>
+    </section>
+
+    <section>
+      <h3>4 · Output drive strength</h3>
+      <pre>const LOAD_MA = [0, 2, 4, 6, 8, 10, 12, 14, 16];
+
+{ id: 'io-drive',
+  title: 'Output driver — VOH vs VOL under load',
+  series: [
+    { label: 'VOH (sourcing)', tests: VOH, xValues: LOAD_MA },
+    { label: 'VOL (sinking)',  tests: VOL, xValues: LOAD_MA },
+  ],
+  xLabel: 'Load current (mA)', yLabel: 'Output voltage' }</pre>
+      <p class="look">As load current rises, the high output sags and the low output
+        climbs. Where they <strong>cross</strong>, the pin can no longer present two
+        distinguishable logic levels: that current is the absolute ceiling on what the
+        driver can deliver, well beyond where it would already have left the VOH/VOL
+        spec. The p10–p90 bands show how much of the population gets there early.</p>
+    </section>
+  </div>
+
+  <div class="demo-content">
+    <div id="stage"><div id="gallery"></div></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap } from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferLot } from 'wafermap/stats';
+    import { makeResults, makeWaferConfig, DIE_CONFIG, rng, HBIN_DEFS, SBIN_DEFS } from './data.js';
+
+    const WAFER_COUNT = 4;
+    const PASS_BINS   = [1];
+
+    /** A run of `n` consecutive test numbers starting at `from` — sweep order. */
+    const span = (from, n) => Array.from({ length: n }, (_, i) => from + i);
+
+    // ── Sweep conditions ─────────────────────────────────────────────────────
+    const VDD     = [0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95];   // V
+    const VG      = [0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60];   // V
+    const BAKE_H  = [0, 24, 48, 96, 168, 336, 500, 750, 1000];                 // h — deliberately uneven
+    const LOAD_MA = [0, 2, 4, 6, 8, 10, 12, 14, 16];                           // mA
+
+    // ── Test numbers, one block per series ───────────────────────────────────
+    const FMAX_COLD = span(3000, 9), FMAX_HOT = span(3010, 9);
+    const ID_LIN    = span(3100, 9), ID_SAT   = span(3110, 9);
+    const LOG_ID_LIN = span(3200, 9), LOG_ID_SAT = span(3210, 9);   // derived
+    const VT_PROG   = span(3300, 9), VT_ERASE = span(3310, 9);
+    const VOH       = span(3400, 9), VOL      = span(3410, 9);
+
+    // Characterisation data: no spec limits on the individual sweep points, which
+    // is usual — the judgement is made on the curve, not on each point.
+    const TEST_DEFS = [
+      ...FMAX_COLD.map((tn, i) => ({ testNumber: tn, name: `Fmax 25C ${VDD[i].toFixed(2)}V`,  unit: 'Hz' })),
+      ...FMAX_HOT .map((tn, i) => ({ testNumber: tn, name: `Fmax 125C ${VDD[i].toFixed(2)}V`, unit: 'Hz' })),
+      ...ID_LIN   .map((tn, i) => ({ testNumber: tn, name: `Id lin Vg${VG[i].toFixed(2)}`,    unit: 'A' })),
+      ...ID_SAT   .map((tn, i) => ({ testNumber: tn, name: `Id sat Vg${VG[i].toFixed(2)}`,    unit: 'A' })),
+      ...VT_PROG  .map((tn, i) => ({ testNumber: tn, name: `Vt prog ${BAKE_H[i]}h`,           unit: 'V' })),
+      ...VT_ERASE .map((tn, i) => ({ testNumber: tn, name: `Vt erase ${BAKE_H[i]}h`,          unit: 'V' })),
+      ...VOH      .map((tn, i) => ({ testNumber: tn, name: `VOH ${LOAD_MA[i]}mA`,             unit: 'V' })),
+      ...VOL      .map((tn, i) => ({ testNumber: tn, name: `VOL ${LOAD_MA[i]}mA`,             unit: 'V' })),
+    ];
+
+    // ── Derived tests ────────────────────────────────────────────────────────
+    // log10 of each measured current, so the transfer curve can be swept on a
+    // log axis. A sweep reads any test, derived ones included.
+    const DERIVED_TESTS = [
+      ...LOG_ID_LIN.map((tn, i) => ({ testNumber: tn, name: `log Id lin Vg${VG[i].toFixed(2)}`, expression: `log10(t[${ID_LIN[i]}])` })),
+      ...LOG_ID_SAT.map((tn, i) => ({ testNumber: tn, name: `log Id sat Vg${VG[i].toFixed(2)}`, expression: `log10(t[${ID_SAT[i]}])` })),
+      // Gate voltage per decade of current, from two subthreshold points 0.1 V
+      // apart — a derived test reading two derived tests.
+      { testNumber: 900010, name: 'Subthreshold slope', unit: 'V',
+        expression: `0.1 / (t[${LOG_ID_LIN[2]}] - t[${LOG_ID_LIN[0]}])`, limitHigh: 0.1 },
+    ];
+
+    const SWEEPS = [
+      {
+        id: 'fmax-vdd', title: 'Fmax vs VDD — 25 °C vs 125 °C',
+        series: [
+          { label: '25 °C',  tests: FMAX_COLD, xValues: VDD },
+          { label: '125 °C', tests: FMAX_HOT,  xValues: VDD },
+        ],
+        separationAt: [1.2e9, 2.0e9],
+        xLabel: 'VDD (V)', yLabel: 'Fmax',
+      },
+      {
+        id: 'dibl', title: 'NMOS transfer curve — Vds 0.05 V vs 0.8 V',
+        series: [
+          { label: 'Vds = 0.05 V', tests: LOG_ID_LIN, xValues: VG },
+          { label: 'Vds = 0.8 V',  tests: LOG_ID_SAT, xValues: VG },
+        ],
+        crossing: false,
+        separationAt: [-7],
+        xLabel: 'Vg (V)', yLabel: 'log10 Id (A)',
+      },
+      {
+        id: 'retention', title: 'Retention — cell Vt through a 150 °C bake',
+        series: [
+          { label: 'Programmed', tests: VT_PROG,  xValues: BAKE_H },
+          { label: 'Erased',     tests: VT_ERASE, xValues: BAKE_H },
+        ],
+        xLabel: 'Bake time (h)', yLabel: 'Cell Vt',
+      },
+      {
+        id: 'io-drive', title: 'Output driver — VOH vs VOL under load',
+        series: [
+          { label: 'VOH (sourcing)', tests: VOH, xValues: LOAD_MA },
+          { label: 'VOL (sinking)',  tests: VOL, xValues: LOAD_MA },
+        ],
+        xLabel: 'Load current (mA)', yLabel: 'Output voltage',
+      },
+    ];
+
+    // ── Device models ────────────────────────────────────────────────────────
+    // Simple, physically-shaped models with per-die variation. `radial` runs 0 at
+    // the centre to ~1 at the edge, where every device here is a little weaker —
+    // so the maps and the p10–p90 bands have structure rather than noise alone.
+
+    /** Alpha-power delay model: Fmax ∝ (VDD − Vth)^1.3 / VDD. */
+    const fmax = (vdd, vth, mobility) =>
+      4.96e9 * mobility * Math.max(vdd - vth, 0.01) ** 1.3 / vdd;
+
+    /** EKV-style drain current: exponential below threshold, quadratic above. */
+    const drainCurrent = (vg, vth) =>
+      2e-7 * Math.log(1 + Math.exp((vg - vth) / 0.074)) ** 2;
+
+    function addSweeps(results, waferIndex) {
+      for (const r of results) {
+        const radial = Math.min(1, Math.hypot(r.x, r.y) / 18);
+        const noise = (k) => rng(r.x, r.y, 100 + 17 * waferIndex + k) - 0.5;   // ±0.5
+        const tv = {};
+
+        // 1 · Fmax: Vth falls ~90 mV hot, mobility drops to 72 %.
+        const dvth = 0.02 * noise(1) + 0.015 * radial;
+        VDD.forEach((v, i) => {
+          tv[FMAX_COLD[i]] = fmax(v, 0.40 + dvth, 1.00) * (1 + 0.01 * noise(10 + i));
+          tv[FMAX_HOT[i]]  = fmax(v, 0.31 + dvth, 0.72) * (1 + 0.01 * noise(20 + i));
+        });
+
+        // 2 · Transfer curve: DIBL ~80 mV/V, a little worse at the edge.
+        const vthLin = 0.38 + 0.02 * noise(2) + 0.01 * radial;
+        const dibl   = 0.080 + 0.012 * noise(3) + 0.015 * radial;
+        const vthSat = vthLin - dibl * 0.75;
+        VG.forEach((vg, i) => {
+          tv[ID_LIN[i]] = 0.86 * drainCurrent(vg, vthLin) * (1 + 0.02 * noise(30 + i));   // low Vds: linear region
+          tv[ID_SAT[i]] =        drainCurrent(vg, vthSat) * (1 + 0.02 * noise(40 + i));
+        });
+
+        // 3 · Retention: both states drift with log(time); edge cells leak faster.
+        const leak = 1 + 0.25 * radial + 0.1 * noise(4);
+        BAKE_H.forEach((h, i) => {
+          const L = Math.log10(1 + h / 8);
+          tv[VT_PROG[i]]  = 4.00 - 0.90 * leak * L + 0.04 * noise(50 + i);
+          tv[VT_ERASE[i]] = 1.10 + 0.50 * leak * L + 0.04 * noise(60 + i);
+        });
+
+        // 4 · Output drive: on-resistance ~75 Ω pull-up, ~60 Ω pull-down, rising
+        // a little with current. Sized so VOH stays above 0 V across the sweep —
+        // a real output cannot pull below its own ground.
+        const ron = 1 + 0.08 * noise(5) + 0.10 * radial;
+        LOAD_MA.forEach((ma, i) => {
+          tv[VOH[i]] = 1.8 - ron * (0.075 * ma + 0.0010 * ma * ma) + 0.005 * noise(70 + i);
+          tv[VOL[i]] =       ron * (0.060 * ma + 0.0010 * ma * ma) + 0.005 * noise(80 + i);
+        });
+
+        // Only the sweep tests: the shared demo data's own tests are not the
+        // subject here, and their spec limits would put noise in the test lists.
+        r.testValues = tv;
+        delete r.testPass;
+      }
+      return results;
+    }
+
+    const items = [];
+    for (let i = 0; i < WAFER_COUNT; i++) {
+      const result = buildWaferMap({
+        results:      addSweeps(makeResults({ seed: 31 + i, waferIndex: i }), i),
+        waferConfig:  makeWaferConfig(i),
+        dieConfig:    DIE_CONFIG,
+        passBins:     PASS_BINS,
+        testDefs:     TEST_DEFS,
+        derivedTests: DERIVED_TESTS,
+        hbinDefs:     HBIN_DEFS,
+        sbinDefs:     SBIN_DEFS,
+      });
+      items.push({ ...result, label: result.metadata?.waferId ?? `W0${i + 1}` });
+    }
+
+    // Anything wrong with a derived test is reported, not thrown — surfaced on the
+    // page so a broken expression is visible while editing.
+    const problems = items[0].warnings.filter(w => w.code === 'derived-test-invalid');
+    if (problems.length) {
+      const box = document.createElement('div');
+      box.className = 'demo-intro';
+      box.style.color = 'var(--err, #b3261e)';
+      box.innerHTML = '<strong>derived-test-invalid:</strong><br>' + problems.map(p => p.message).join('<br>');
+      document.querySelector('.demo-content').before(box);
+    }
+
+    renderWaferGallery(document.getElementById('gallery'), items, {
+      lotStatsSummary: analyzeWaferLot(items),
+      insights: { enabled: true, sweeps: SWEEPS, defaultOpen: true, defaultView: 'sweeps' },
+      // Behind the Insights view, the map opens on a derived per-die test.
+      viewOptions: { plotMode: 'value', activeTest: 900010 },
+      showHelpButton: true,
+    });
+
+    document.getElementById('banner').textContent =
+      `${WAFER_COUNT} wafers · ${SWEEPS.length} sweeps · ${TEST_DEFS.length} measured tests`;
+  </script>
+</body>
+</html>

@@ -31,6 +31,7 @@ import { renderLotReportHtml } from '../stats/renderSummaryReport.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { prettyKey } from '../stats/facets.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
+import { testLabel, markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import type { MergedTestDefs } from '../stats/mergeTestDefs.js';
 // TYPE-ONLY — see renderWaferMap.ts's identical import for why. The chart
@@ -1997,6 +1998,7 @@ export function renderWaferGallery(
       getBinColors: () => sharedOpts.binColors ?? lotBinColors(),
       getRingCount: lotRingCount,
       defaultView: options.insights?.defaultView,
+      sweeps: options.insights?.sweeps,
       // No back tab. The bar now stays visible in Insights and carries the
       // toggle, and unlike renderWaferMap's toolbar this one is unconditional —
       // there is no option to suppress it, and `btnInsights` exists whenever
@@ -2716,19 +2718,26 @@ export function renderWaferGallery(
       if (!itemDefs?.length) {
         const uniqueNums = getUniqueTestNumbers(resolvedItems.flatMap(it => it.dies));
 
-        defs = uniqueNums.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
+        defs = uniqueNums.map(tn => ({ testNumber: tn, name: testLabel(undefined, tn) }));
       }
       if (!defs?.length) return [];
 
       const method = (sharedOpts.aggregationMethod ?? 'mean') as AggregationMethod;
       return defs.map(def => {
         const dies = aggregateValues(allDies, method, def.testNumber) as Die[];
-        const cardTestDef = { testNumber: 0, name: def.name, unit: def.unit };
+        // testNumber 0 is where `aggregateValues` stores the stacked scalar. The
+        // derived-test fields travel onto this synthetic def: it is what the
+        // card's title and tooltip read, and a stack of a derived test is still
+        // a derived quantity.
+        const cardTestDef = {
+          testNumber: 0, name: def.name, unit: def.unit,
+          ...derivedFields(def),
+        };
         return {
           wafer: stackedWafer,
           dies,
           testDefs: [cardTestDef],
-          label: `${def.name} · ${method}`,
+          label: `${markedTestLabel(def, def.testNumber)} · ${method}`,
           isLotStack: true,
           aggrMethod: method,
           lotSize,

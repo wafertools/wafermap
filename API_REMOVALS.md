@@ -464,7 +464,7 @@ replacement, but it already takes a summary alone, so it was withdrawn rather th
 
 | Verdict | Count | Items |
 |---|---|---|
-| **Keep** (withdrawn 0.30.1) | 5 | `visibleFindings`, `openReportModal`, `metadataDisplayValue`, `getReticleCell`, `renderFindingsReportHtml` |
+| **Keep** (withdrawn 0.30.1) | 5 | `visibleFindings`, `openReportModal`, `metadataDisplayValue`, `getReticleCell`, `renderFindingsReportHtml` (deprecated again in 0.31.0 — see its entry) |
 | **Replace before removal** (replaced 0.30.1) | 12 | `resolveBinColors`; `buildCapabilityData`; `buildTestPassRateData`, `hasJudgeableTests`; `buildRegionYieldData`, `buildRingRegions`, `buildQuadrantRegions`; `renderSummaryReportHtml`, `renderLotSummaryReportHtml`; `createWafer`, `generateDies`, `clipDiesToWafer` |
 | **Remove as planned** | 61 | everything else, below |
 
@@ -532,14 +532,22 @@ the exports that must stay.
 
 ### `renderFindingsReportHtml` (stats)
 
-**Status:** deprecation withdrawn in 0.30.1.
+**Status:** deprecation withdrawn in 0.30.1; **deprecated again in 0.31.0, removed in 0.32.0.**
 
 - **What it does:** the findings-only report, as standalone HTML.
-- **Why deprecated:** reports open from the Summary panel's button.
-- **Why keep:** it takes a `StatsSummary` or `LotStatsSummary` and nothing else, so unlike the
-  wafer and lot report builders it has no loose parameters to get wrong. Replacing it would
-  only have renamed it. It runs in Node, for the same headless reporting need as below.
-- **Risk:** none. **Cost:** none; the Summary panel uses it.
+- **Why it was kept in 0.30.1:** it takes a `StatsSummary` or `LotStatsSummary` and nothing else,
+  so it has no loose parameters to get wrong, and "the Summary panel uses it".
+- **Why that was wrong:** the Summary panel stopped calling it in **0.20.0**, ten releases before
+  the review; it opens the wafer and lot reports. Nothing in wmap or tsmap calls it, and its only
+  caller anywhere was a guide snippet. Meanwhile it kept its own copy of the findings table, which
+  had drifted from the one in the wafer and lot reports (only it translated `HBin 2` into plain
+  language) — the duplicate that keeping an unused builder costs.
+- **Verdict (0.31.0):** deprecate. Both reports now render one table (`findingsTableHtml`), and
+  `renderWaferReportHtml`/`renderLotReportHtml` carry it together with the population and yield
+  the findings were drawn from. Removal is 0.32.0, not 0.31.0 with the rest of this list: a
+  removal must follow a release in which the name shipped deprecated. `deprecated()` takes the
+  removal version per name for this.
+- **Danger of restoring it:** a second report builder with its own table is how the two drifted.
 
 ---
 

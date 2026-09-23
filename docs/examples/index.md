@@ -42,6 +42,8 @@ Some pages cover several related topics; those links point at the relevant secti
 - [Lot-stack spatial analysis](statistics.html#lot-stack) — mean/median/stddev maps aggregated across a lot · [Guide: Recipes](../guide.md#recipes)
 - [Multi-site parallel testing](test-sites.html) — site-based analysis across a multi-site prober card
 - [Insights chart suite](insights.html) — the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add · [Guide: The Insights tab](../guide.md#the-insights-tab)
+- [Derived tests and sweeps](derived-tests.html) — tests computed per die from an expression, and an ordered run of tests read as a response curve with its crossing point and separation measured · [API: DerivedTestDef](../api.md#419-derivedtestdef)
+- [Parametric sweeps](sweeps.html) — four characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention and output drive — each read as a pair of curves with the crossing and width measured · [Guide: Derived tests and sweeps](../guide.md#derived-tests-and-sweeps)
 
 ## Real data and performance
 

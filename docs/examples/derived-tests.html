@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Derived tests and sweeps — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    /* Page-level scroll, same reasoning as insights.html: the chart suite is
+       tall and a bounded box would pin the intro above the fold. */
+    .demo-content { padding: 0; }
+    #stage { width: 100%; padding: 14px; box-sizing: border-box; }
+    #stage > div { width: 100%; height: 620px; }
+
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+      margin: 4px 14px 18px;
+    }
+    .spec-grid section {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      background: var(--surface, #fff);
+    }
+    .spec-grid h3 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .spec-grid p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
+    .spec-grid pre {
+      margin: 0 0 8px;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      background: var(--code-bg, #f6f8fa);
+      padding: 8px 10px;
+      border-radius: 4px;
+    }
+    .spec-grid .look { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Derived tests and parametric sweeps</span>
+    <span class="demo-desc" id="banner"></span>
+  </header>
+
+  <div class="demo-intro">
+    Two ways to ask a question the test program did not record an answer to.
+    <br><br>
+    A <strong>derived test</strong> is computed per die from other tests on the same
+    die — pass <code>derivedTests</code> to <code>buildWaferMap</code> and it becomes an
+    ordinary test from that moment on: a plot mode, a colorbar, a tooltip line, a row in
+    every statistic and chart. Expressions are parsed to a typed tree and walked; there
+    is no <code>eval</code>, no <code>new&nbsp;Function</code> and no third-party
+    expression engine, so a set of them is safe to share between teams as plain JSON.
+    <br><br>
+    A <strong>sweep</strong> reads an ordered run of tests as a response curve instead
+    of as independent tests, and measures the pair: where two curves cross and how far
+    apart they are at a given level. This lot sweeps a SET and a RESET threshold across
+    nine steps. For more sweeps, see the <a href="sweeps.html">parametric sweeps</a>
+    example.
+    <br><br>
+    Open the <strong>Insights</strong> tab and choose <strong>Sweeps</strong> for the
+    sweep. Use the plot-mode menu on the map for the derived tests: they appear in the
+    list beside the measured ones, marked <strong>†</strong>.
+  </div>
+
+  <div class="spec-grid">
+    <section>
+      <h3>Derived tests on this map</h3>
+      <pre>{ testNumber: 900001, name: 'Switching Window', unit: 'V',
+  expression: 't[1202] - t[1212]',
+  limitLow: 0.33 }</pre>
+      <p class="look">The gap between the two curves at a fixed read step — the
+        switching window, per die: how far apart the two states are at the level a
+        read would use. Its <code>limitLow</code> is the margin a reliable read needs, so
+        the few dies below it — mostly at the edge, where the window narrows — get
+        the ▽ marker on the map like any measured test. <code>SET Span</code> below reduces a range: there is
+        no vector arithmetic in the grammar, so a range must always be reduced.</p>
+      <pre>{ testNumber: 900002, name: 'SET Span', unit: 'V',
+  expression: 'max(t[1200..1208]) - min(t[1200..1208])' }</pre>
+      <pre>{ testNumber: 900003, name: 'Vth/Idsat Ratio', unit: '',
+  expression: 't[1060] / t[1050]' }</pre>
+      <p class="look">A missing input makes the value <em>absent</em> on that die — it
+        renders no-data grey and is excluded from the statistics. Never zero.</p>
+    </section>
+
+    <section>
+      <h3>Verdicts, and nesting</h3>
+      <pre>{ testNumber: 900004, name: 'Window OK', testType: 'F',
+  expression: 'specPass[900001]' }</pre>
+      <p class="look">A boolean expression is a <em>verdict</em>: declare
+        <code>testType:&nbsp;'F'</code> and it lands in <code>die.testPass</code>, never
+        as a 1/0 in <code>testValues</code> where it would enter the correlation matrix
+        and the Cpk table. This one reads another derived test — nesting is ordered by
+        dependency, so declaration order does not matter.</p>
+      <pre>{ testNumber: 900005, name: 'All Steps Pass', testType: 'F',
+  expression: 'all(specPass[1200..1208]) and testPass[1080]' }</pre>
+      <p class="look"><code>specPass[n]</code> is the spec-limit judgement;
+        <code>testPass[n]</code> is the tester's recorded verdict. Different questions —
+        a value can be out of spec while the tester recorded a pass — so they are
+        separate accessors.</p>
+    </section>
+
+    <section>
+      <h3>The sweep</h3>
+      <pre>const STEPS     = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const SET_TESTS = [1200, 1201, 1202, 1203, 1204, 1205, 1206, 1207, 1208];
+const RST_TESTS = [1210, 1211, 1212, 1213, 1214, 1215, 1216, 1217, 1218];
+
+{ id: 'threshold',
+  title: 'SET / RESET threshold — crossing and width',
+  series: [
+    { label: 'SET',   tests: SET_TESTS, xValues: STEPS },
+    { label: 'RESET', tests: RST_TESTS, xValues: STEPS },
+  ],
+  separationAt: [0.40, 0.70, 1.00],
+  xLabel: 'Sweep step' }</pre>
+      <p class="look"><strong><code>tests</code> is a plain array — the
+        <code>1200..1208</code> range above works in a derived test's
+        <em>expression</em>, which is a string this library parses, and not here.</strong>
+        Sweep order is the x axis and is never sorted, so the array is written out (or
+        built with a helper) rather than implied by a range: a range would impose
+        ascending order on a series that may legitimately run downwards, and would make
+        the length implicit just where <code>xValues</code> has to match it element for
+        element.</p>
+      <p class="look">SET falls, RESET rises, and they cross near the bottom — so the
+        <em>pair</em> traces a V. Each line is monotonic, so a level above the crossing
+        meets each curve exactly once and the <strong>width</strong> of the V there is
+        unambiguous. It widens as the level rises: 0.40&nbsp;V is a narrow slot just
+        above the crossing, 1.00&nbsp;V is nearly the full sweep.</p>
+      <p class="look"><code>xValues</code> gives the real swept quantity, so the crossing
+        is reported at a sweep step rather than "between the 3rd and 4th test". Without
+        it the axis is the ordinal position — test numbers are identifiers and nothing
+        guarantees they are evenly spaced.</p>
+      <p class="look">Each line is the population median with a p10–p90 band, not one
+        trace per die. The per-die view of the same data is the derived tests above,
+        plotted on the map where position is visible.</p>
+    </section>
+  </div>
+
+  <div class="demo-content">
+    <div id="stage"><div id="gallery"></div></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap } from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferLot } from 'wafermap/stats';
+    import {
+      makeResults, makeWaferConfig, DIE_CONFIG, rng,
+      TEST_DEFS, FUNCTIONAL_TEST_DEF, HBIN_DEFS, SBIN_DEFS,
+    } from './data.js';
+
+    const WAFER_COUNT = 4;
+    const PASS_BINS   = [1];
+
+    // ── The swept tests ──────────────────────────────────────────────────────
+    // Two monotonic threshold curves measured over the same nine sweep steps:
+    // SET falls as the step increases, RESET rises. They cross near the BOTTOM
+    // of the range, so the PAIR traces a V — which is the shape a SET/RESET
+    // threshold sweep makes, and the shape the crossing and width measurements
+    // exist for. Each line is monotonic, so a level above the crossing meets
+    // each curve exactly once and its width is unambiguous.
+    const STEPS     = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const SET_TESTS = STEPS.map(i => 1200 + i);
+    const RST_TESTS = STEPS.map(i => 1210 + i);
+
+    const V_FLOOR = 0.15;   // where the two curves meet
+    const V_SPAN  = 0.85;   // rise above the floor at the extremes
+
+    const SWEEP_DEFS = [
+      ...SET_TESTS.map((tn, i) => ({
+        testNumber: tn, name: `SET s${STEPS[i]}`, unit: 'V', limitLow: 0.05, limitHigh: 1.20,
+      })),
+      ...RST_TESTS.map((tn, i) => ({
+        testNumber: tn, name: `RESET s${STEPS[i]}`, unit: 'V', limitLow: 0.05, limitHigh: 1.20,
+      })),
+    ];
+
+    /** Add the swept measurements to each die of a generated wafer. */
+    function addSweep(results, waferIndex) {
+      const last = STEPS.length - 1;
+      for (const r of results) {
+        // Independent per-die offsets for the two curves. A shared term would
+        // cancel exactly in any difference of the two, leaving every derived
+        // test near-constant and the map a flat colour.
+        const radial   = Math.hypot(r.x, r.y) / 18;
+        const jitterSet = (rng(r.x, r.y,  7 + waferIndex) - 0.5) * 0.07;
+        const jitterRst = (rng(r.x, r.y, 91 + waferIndex) - 0.5) * 0.07;
+
+        STEPS.forEach((step, i) => {
+          const t = step / last;
+          // Quadratic, so the curves flatten as they approach each other and the
+          // V has a rounded bottom rather than a sharp corner.
+          const set = V_FLOOR + V_SPAN * (1 - t) ** 2 + jitterSet;
+          const rst = V_FLOOR + V_SPAN * t ** 2 + jitterRst + 0.06 * radial;
+          r.testValues[SET_TESTS[i]] = Number(set.toFixed(4));
+          r.testValues[RST_TESTS[i]] = Number(rst.toFixed(4));
+        });
+      }
+      return results;
+    }
+
+    // ── The derived tests ────────────────────────────────────────────────────
+    // Plain data: no functions, no closures. This array could equally have been
+    // read from a .json file an engineer shared.
+    const DERIVED_TESTS = [
+      // The gap between the two curves at a fixed read step — the switching
+      // window. Measured at step 2, well before the curves converge, where a
+      // healthy die has ~0.4 V between its states; the RESET curve's radial term
+      // narrows it towards the edge, so the 0.33 V margin catches an edge band
+      // and leaves the rest of the wafer in spec. (At the middle step, where the
+      // curves cross, the gap sits around zero and nearly every die would fail —
+      // a map of ▽ markers that says nothing.)
+      {
+        testNumber: 900001, name: 'Switching Window', unit: 'V',
+        expression: 't[1202] - t[1212]',
+        limitLow: 0.33,
+      },
+      {
+        testNumber: 900002, name: 'SET Span', unit: 'V',
+        expression: 'max(t[1200..1208]) - min(t[1200..1208])',
+      },
+      {
+        testNumber: 900003, name: 'Vth/Idsat Ratio',
+        expression: 't[1060] / t[1050]',
+      },
+      // Reads 900001 — a derived test of a derived test. Declared here in
+      // dependency order for readability, but the order is not what makes it
+      // work: compilation sorts by what each expression actually reads.
+      {
+        testNumber: 900004, name: 'Window OK', testType: 'F',
+        expression: 'specPass[900001]',
+      },
+      {
+        testNumber: 900005, name: 'All Steps Pass', testType: 'F',
+        expression: 'all(specPass[1200..1208]) and testPass[1080]',
+      },
+    ];
+
+    const SWEEPS = [{
+      id: 'threshold',
+      title: 'SET / RESET threshold — crossing and width',
+      series: [
+        { label: 'SET',   tests: SET_TESTS, xValues: STEPS },
+        { label: 'RESET', tests: RST_TESTS, xValues: STEPS },
+      ],
+      // Levels above the crossing, so the V's width is measurable at each.
+      separationAt: [0.40, 0.70, 1.00],
+      xLabel: 'Sweep step',
+      yLabel: 'Threshold',
+    }];
+
+    const testDefs = [...TEST_DEFS, FUNCTIONAL_TEST_DEF, ...SWEEP_DEFS];
+
+    const items = [];
+    for (let i = 0; i < WAFER_COUNT; i++) {
+      const result = buildWaferMap({
+        results:      addSweep(makeResults({ seed: 11 + i, waferIndex: i, quadrant: true, edgeFail: true }), i),
+        waferConfig:  makeWaferConfig(i),
+        dieConfig:    DIE_CONFIG,
+        passBins:     PASS_BINS,
+        testDefs,
+        derivedTests: DERIVED_TESTS,
+        hbinDefs:     HBIN_DEFS,
+        sbinDefs:     SBIN_DEFS,
+      });
+      items.push({ ...result, label: result.metadata?.waferId ?? `W0${i + 1}` });
+    }
+
+    // Anything wrong with a derived test is reported here rather than thrown —
+    // surfaced on the page so a broken expression is visible while editing, not
+    // silently missing from the mode list.
+    const problems = items[0].warnings.filter(w => w.code === 'derived-test-invalid');
+    if (problems.length) {
+      const box = document.createElement('div');
+      box.className = 'demo-intro';
+      box.style.color = 'var(--err, #b3261e)';
+      box.innerHTML = '<strong>derived-test-invalid:</strong><br>'
+        + problems.map(p => p.message).join('<br>');
+      document.querySelector('.demo-content').before(box);
+    }
+
+    const lotStatsSummary = analyzeWaferLot(items, {
+      testDefs: items[0].testDefs,
+      computePerTestStats: true,
+    });
+
+    renderWaferGallery(document.getElementById('gallery'), items, {
+      lotStatsSummary,
+      insights:     { enabled: true, sweeps: SWEEPS, defaultView: 'sweeps' },
+      summaryPanel: { placement: 'right' },
+      // Open on the derived switching window, so the first thing on screen is a map of
+      // something no instrument measured.
+      viewOptions:  { plotMode: 'value', activeTest: 900001 },
+      showHelpButton: true,
+    });
+
+    const derivedCount = items[0].testDefs.filter(d => d.derived).length;
+    document.getElementById('banner').textContent =
+      `${WAFER_COUNT} wafers · ${items.reduce((n, i) => n + i.dies.length, 0).toLocaleString()} dies · `
+      + `${testDefs.length} measured tests + ${derivedCount} derived · 1 sweep over ${STEPS.length} steps`;
+  </script>
+
+</body>
+</html>

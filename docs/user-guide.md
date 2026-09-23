@@ -169,6 +169,21 @@ verdicts, as an alternative to spec-limit judgement.
 
 ---
 
+### Derived tests (†)
+
+A test name followed by **†** is a *derived* test: its value was calculated
+from other tests on the same die — a difference, a ratio, a margin — rather
+than measured by the tester. It behaves like any other test: you can map it,
+chart it and find patterns in it.
+
+The dagger appears wherever the test is named: the map title, tooltips,
+Insights charts, findings, the Summary panel and reports. The words
+**† Derived, not measured** always appear nearby. Hovering over a derived
+value, or reading the key line under a table or findings list, shows the
+expression it was computed from, e.g. `t[1020] - t[1010]`. The numbers in
+square brackets are the test numbers it reads. In a CSV export the expression
+appears in a **Derived from** column instead.
+
 ## 3. Toolbar controls
 
 The toolbar sits at the top-right of the map and is always visible. Controls that
@@ -514,7 +529,8 @@ sidebar (Section 6) — the two toggle independently, and opening one never
 hides the other's toolbar button, since Findings has nothing to highlight
 against once the map is replaced.
 
-Insights is organized into three sub-tabs:
+Insights is organized into three sub-tabs, plus a fourth, **Sweeps**, when
+the application has defined any sweeps (see *Sweep cards* below):
 
 - **Overview** — a **test pass rate** chart showing which test fails most (and,
   with "Group by" active, whether it fails more in one split than another). It
@@ -598,6 +614,50 @@ box drives the box plot and histogram onto that test.*
 positive, orange = negative; intensity = strength) and a die-level scatter
 plot coloured by hard bin. Clicking a matrix cell drives the scatter plot
 onto that pair.*
+
+### Sweep cards
+
+A **sweep** appears in its own **Sweeps** sub-tab when your application has
+defined one. It exists for a test program that measures the same quantity at a
+series of drive levels and records each level as its own test number — often one
+block sweeping up and another sweeping down. Read one test at a time that is a
+row of unrelated distributions; read as a sweep it is a pair of response curves,
+and the card measures the pair.
+
+**Each line is the population median, with a shaded p10–p90 band** — not one
+trace per die. A lot is thousands of dies, so per-die traces would be a solid
+block of ink. The band is the spread across the dies currently in scope, so a
+band that widens at one end of the sweep is telling you the population disagrees
+most at that level.
+
+**The dies behind it are whatever Insights is scoped to.** A sweep names tests,
+not dies — so the group or wafer selected in the panels above it decides the
+population, and the card's die count states what that came to.
+
+Two measurements are drawn on the plot and restated underneath:
+
+- **Crossing** — where the first two curves meet. If they cross more than once
+  the card says so rather than reporting the first as though it were the only
+  one.
+- **Separation** — the horizontal distance between the two curves at the levels
+  the application asked about. With one curve rising and one falling the pair
+  traces a V, and this is the width of that V. A level that one of the curves
+  never reaches reads **not measurable**, naming the curve — never `0`, which
+  would read as "they meet here".
+
+Only the **first two** curves are measured. Any further ones are drawn for
+context.
+
+**The x axis is the sweep, not the lot** — that is what distinguishes this card
+from the wafer-to-wafer trend, which walks one test across wafers. If the
+application supplied the real swept quantity, the axis is in those units (dBm,
+volts, °C) and the crossing is reported in them. If it did not, the axis is the
+position in the sequence, labelled by test, because test numbers are identifiers
+— treating them as a scale would invent spacing the data never claimed.
+
+The card footer reports anything that limits what you are seeing: tests in the
+sweep that have no definition, functional (pass/fail) tests inside a sweep,
+which have no value to plot, and series whose tests carry different units.
 
 ### Exporting a chart
 

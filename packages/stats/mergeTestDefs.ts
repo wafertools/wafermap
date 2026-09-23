@@ -237,6 +237,19 @@ export function mergeTestDefs(items: Array<{ testDefs?: TestDef[] } | null | und
       ...(group.find(d => d.logScale !== undefined) ? { logScale: group.find(d => d.logScale !== undefined)!.logScale } : {}),
       ...(!limitsConflict && lows[0]  !== undefined ? { limitLow:  lows[0]  } : {}),
       ...(!limitsConflict && highs[0] !== undefined ? { limitHigh: highs[0] } : {}),
+      // The derived flag survives the merge. This list reconstructs a def field by
+      // field rather than copying one, so anything not named here is dropped —
+      // and a dropped `derived` is the one failure this flag exists to prevent:
+      // the test renders across every cross-wafer panel as though the tester
+      // measured it. Marked when ANY item states it, deliberately asymmetric.
+      // The two directions are not equally bad: marking a measured test is a
+      // visible oddity someone queries, while leaving a derived one unmarked
+      // is invisible and is what puts a Cpk on a derived quantity with nothing
+      // to say so.
+      ...(group.some(d => d.derived) ? { derived: true as const } : {}),
+      ...(group.find(d => d.expression !== undefined)
+        ? { expression: group.find(d => d.expression !== undefined)!.expression }
+        : {}),
     });
   }
 

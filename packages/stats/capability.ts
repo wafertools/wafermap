@@ -40,6 +40,7 @@ import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { type Chunked, drain } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
+import { testLabel, derivedFields } from '../renderer/testLabel.js';
 import { type DescriptiveStats, describeSorted, quantile } from './math.js';
 import type { TestCapability } from './types.js';
 
@@ -47,6 +48,10 @@ export interface CapabilityDatum {
   testNumber: number;
   label: string;
   unit?: string;
+  /** Computed from other tests rather than measured — see `TestCapability.derived`. */
+  derived?: true;
+  /** The expression a `derived` test was computed from, for display. */
+  expression?: string;
   /**
    * Whether this test has both `limitLow` and `limitHigh` defined. When
    * false, `lsl`/`usl`/`cp`/`cpk`/`pp`/`ppk` are all absent/null — there is
@@ -238,7 +243,8 @@ function capabilityFromMoments(
     cpk = Number.isFinite(stdWithin) && stdWithin > 0 ? Math.min((usl - mean) / (3 * stdWithin), (mean - lsl) / (3 * stdWithin)) : null;
   }
   return {
-    testNumber, label: def.name ?? `Test ${testNumber}`, unit: def.unit,
+    testNumber, label: testLabel(def, testNumber), unit: def.unit,
+    ...derivedFields(def),
     hasSpec: spec !== undefined, lsl: spec?.lsl, usl: spec?.usl,
     mean, stdOverall, stdWithin, n, cp, cpk, pp, ppk,
   };

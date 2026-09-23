@@ -8,6 +8,7 @@
 import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
+import { testLabel } from '../../renderer/testLabel.js';
 
 export type { SaveImageHandler };
 
@@ -358,11 +359,50 @@ export function formatValue(v: number): string {
  * colorbar uses, so axes never show raw exponent soup like "861E-6" next
  * to a tooltip that says "861 µA". Falls back to `formatValue` ticks and
  * no label when the test has no unit.
+ *
+ * Pass `step` — the tick spacing from `fitTicks` (`renderer/axisTicks.ts`) —
+ * and every label carries exactly the decimals that step needs. `tickWithUnit`
+ * is the same label with the scaled unit appended, for an axis with no
+ * separate unit label.
  */
-export function makeAxisFormat(vRef: number, unit: string | undefined): { tick: (v: number) => string; unitLabel: string } {
-  if (!unit) return { tick: formatValue, unitLabel: '' };
-  const { tickFmt, axisLabel } = fmtColorbarAxis(vRef, null, unit);
-  return { tick: tickFmt, unitLabel: axisLabel };
+export function makeAxisFormat(
+  vRef: number,
+  unit: string | undefined,
+  step?: number,
+): { tick: (v: number) => string; tickWithUnit: (v: number) => string; unitLabel: string } {
+  if (!unit && step === undefined) return { tick: formatValue, tickWithUnit: formatValue, unitLabel: '' };
+  const { tickFmt, axisLabel, scaledUnit } = fmtColorbarAxis(vRef, null, unit, 'engineering', step);
+  return {
+    tick: tickFmt,
+    tickWithUnit: scaledUnit ? v => `${tickFmt(v)} ${scaledUnit}` : tickFmt,
+    unitLabel: axisLabel,
+  };
+}
+
+/**
+ * Clear space between neighbouring labels on a horizontal axis, px. Enough to
+ * keep labels visibly separate at the chart label size; any more costs density
+ * — at 12 px a 200 px box plot of 0.86–1.56 fell from a 0.1 step to 0.2.
+ */
+const AXIS_LABEL_GAP_PX = 8;
+
+/** Minimum distance between tick centres on a vertical axis, px — a label line and room around it. */
+export const VERTICAL_TICK_SPACING_PX = 28;
+
+/**
+ * The spacing a horizontal axis's ticks need at a given step: the widest label
+ * that step would draw — measured, in the context's current font — plus a gap.
+ * Passed to `fitTicks`, which then picks the finest round step whose labels fit.
+ */
+export function horizontalTickSpacing(
+  ctx: CanvasRenderingContext2D,
+  vRef: number,
+  unit: string | undefined,
+): (step: number, ticks: number[]) => number {
+  return (step, ticks) => {
+    const fmt = makeAxisFormat(vRef, unit, step).tick;
+    return ticks.reduce((w, t) => Math.max(w, ctx.measureText(fmt(t)).width), 0) + AXIS_LABEL_GAP_PX;
+  };
 }
 
 /** Draw a small "(unit)" label at (x, y), restoring the context's text state afterward. */
@@ -946,7 +986,7 @@ export function makeTestSelect(
   const { maxWidth = '200px', emptyText = 'No parametric tests', ownerDocument = document } = opts;
 
   return makeListSelect(
-    testOptions.map(t => ({ value: String(t.testNumber), label: t.name || `Test ${t.testNumber}` })),
+    testOptions.map(t => ({ value: String(t.testNumber), label: testLabel(t, t.testNumber) })),
     selected !== null ? String(selected) : '',
     v => onChange(Number(v)),
     { maxWidth, ownerDocument, ariaLabel: 'Test', emptyText, searchPlaceholder: 'Filter tests…' },

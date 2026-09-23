@@ -17,7 +17,8 @@ import { isParametricTest, type TestDef } from '../../renderer/buildWaferMap.js'
 import { fmt } from '../../renderer/fmt.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { fitTicks } from '../../renderer/axisTicks.js';
 import { escHtml } from '../../core/utils.js';
 
 const PLOT_H = 220;
@@ -225,10 +226,10 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      for (const frac of [0, 0.5, 1]) {
-        const v = lo + (hi - lo) * frac;
-        ctx.fillText(fmt(v, def?.unit), plotLeft - 6, yOf(v));
-      }
+      // Round values, labelled to their step with the unit on each tick.
+      const yTicks = fitTicks(lo, hi, plotBottom - plotTop, () => VERTICAL_TICK_SPACING_PX);
+      const yAxis = makeAxisFormat(Math.max(Math.abs(lo), Math.abs(hi)), def?.unit, yTicks.step || undefined);
+      for (const v of yTicks.ticks) ctx.fillText(yAxis.tickWithUnit(v), plotLeft - 6, yOf(v));
 
       // A limit outside the plotted range gets an edge marker rather than being
       // silently absent — otherwise "off-screen" reads as "this test has no limits".

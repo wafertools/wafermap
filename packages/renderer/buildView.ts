@@ -15,11 +15,17 @@ import { resolveBinColors, binColorsCover, type BinColors } from './binColors.js
 import { NO_DATA_FILL } from './colorMap.js';
 import { diePassStatus } from '../core/dies.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWaferMap.js';
+// `classifySpec`/`SpecCategory` moved to ./spec.ts (one judgement, shared with stats);
+// re-exported here so existing importers of buildView.js keep working.
 import { getDieTestValue, getTestPassStatus, isParametricTest } from './buildWaferMap.js';
+import { classifySpec, type SpecCategory } from './spec.js';
+export { classifySpec };
+export type { SpecCategory };
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 import { metadataValueColor } from './colorMap.js';
 import { clamp01, compareNatural, escHtml, minOf } from '../core/utils.js';
 import { prettyKey } from '../core/utils.js';
+import { testLabel, markedTestLabel, derivedTestNote, isDerivedTest, DERIVED_MARK, DERIVED_KEY } from './testLabel.js';
 
 type BinDefMap = Map<number, BinDef>;
 
@@ -481,31 +487,7 @@ function getDieMetadataValue(die: Die, key: string | undefined): string | undefi
 }
 
 /** A die's spec classification for `value` mode against the active test's limits. */
-export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
 
-/**
- * Classify a value against the active test's spec limits, using the SAME rules as the value-mode
- * die colouring in `pushDieRectangles`. Returns null when there is no value. Shared by the colour
- * branch and the spec-count tally so the two never diverge.
- *
- * Out-of-spec *classification* depends ONLY on whether limits are defined — never on
- * `colorbarRangeMode`. An out-of-spec die is always flagged when limits exist, regardless of
- * how the colorbar is scaled. The *form* of the indication, decided in `pushDieRectangles`,
- * depends only on the effective `passFailDisplay`: under `'spec'` (pass/fail mode) the die gets a solid
- * green/blue/red categorical fill; in normal value/gradient mode it keeps the value gradient
- * fill (like every other die, so the distribution stays readable and out-of-spec colours don't
- * collide with the scheme) and is flagged with a ▽/△ marker (`ViewRect.specMark`). Either way
- * the die is never drawn as plain in-spec — the silent correctness bug this guards against.
- */
-export function classifySpec(
-  value: number | undefined,
-  activeTestDef: { limitLow?: number; limitHigh?: number } | undefined,
-): SpecCategory | null {
-  if (value === undefined) return null;
-  if (activeTestDef?.limitLow !== undefined && value < activeTestDef.limitLow) return 'failLow';
-  if (activeTestDef?.limitHigh !== undefined && value > activeTestDef.limitHigh) return 'failHigh';
-  return 'pass';
-}
 
 /**
  * The complete set of display transforms for one view, each tagged with the
@@ -650,23 +632,23 @@ function collectTestRows(
       if (!isParametricTest(def)) {
         const p = getTestPassStatus(die, key, def);
         if (p === undefined) return [];
-        return [{ key, label: def.name, value: p ? 'Pass' : 'Fail' }];
+        return [{ key, label: markedTestLabel(def, key), value: p ? 'Pass' : 'Fail' }];
       }
       const v = getDieTestValue(die, key);
       if (v === undefined) return [];
-      return [{ key, label: def.name, value: fmt(v, def.unit, fallbackFormat), recordedFail: die.testPass?.[key] === false }];
+      return [{ key, label: markedTestLabel(def, key), value: fmt(v, def.unit, fallbackFormat), recordedFail: die.testPass?.[key] === false }];
     });
     if (rows.length) return rows;
   }
   if (die.testValues && Object.keys(die.testValues).length > 0) {
     return Object.entries(die.testValues).map(([k, v]) => ({
-      key: Number(k), label: `Test ${k}`, value: fmt(v, undefined, fallbackFormat),
+      key: Number(k), label: testLabel(undefined, Number(k)), value: fmt(v, undefined, fallbackFormat),
     }));
   }
   // Verdict-only dies with no matching defs: a recorded pass/fail is still a result.
   if (die.testPass && Object.keys(die.testPass).length > 0) {
     return Object.entries(die.testPass).map(([k, p]) => ({
-      key: Number(k), label: `Test ${k}`, value: p ? 'Pass' : 'Fail',
+      key: Number(k), label: testLabel(undefined, Number(k)), value: p ? 'Pass' : 'Fail',
     }));
   }
   return [];
@@ -725,10 +707,11 @@ export function buildHoverText(
     const v = getDieTestValue(die, 0);
     if (v !== undefined) {
       const def   = testDefs?.[0];
-      const tn    = def?.testNumber;
-      const name  = def?.name ?? (tn != null ? `Test ${tn}` : 'Value');
+      const name  = def ? markedTestLabel(def, def.testNumber) : 'Value';
       const method = aggrMethod ? ` (${aggrMethod})` : '';
       lines.push(escHtml(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`));
+      const note = derivedTestNote(def);
+      if (note) lines.push(`<i>${escHtml(note)}</i>`);
     }
   } else if (plotMode === 'stackedBins' || plotMode === 'stackedSoftBins') {
     const value = getDieTestValue(die, 0);
@@ -787,6 +770,11 @@ export function buildHoverText(
         if (spec === 'failLow' || spec === 'failHigh') leadLine += ' <i>(out of spec)</i>';
       }
       lines.push(leadLine);
+      // The glyph in the lead label is only half the marker: the tooltip has
+      // room for the words, and for the expression — which is the answer to the
+      // question a derived value raises, "where did this number come from".
+      const leadNote = derivedTestNote(findTestDef(testDefs, lead.key));
+      if (leadNote) lines.push(`<i>${escHtml(leadNote)}</i>`);
 
       const more = testRows.length - 1;
       if (more > 0) lines.push(`<i>+${more} more test${more === 1 ? '' : 's'}</i>`);
@@ -842,6 +830,14 @@ export function buildHoverText(
 export interface MapTitleParts {
   primary: string;
   secondary: string;
+  /**
+   * The derived-test key, `"† Derived, not measured"`, when the test the
+   * map shows is derived — drawn on its own line below `secondary`, because
+   * `primary` then carries the `†` and a glyph must never appear without its
+   * key. Absent for a measured test. Deliberately NOT part of the export file
+   * name, which reads `primary` and `secondary` only.
+   */
+  note?: string;
 }
 
 /**
@@ -861,6 +857,22 @@ export interface MapTitleParts {
  * @param binDefs the active bin defs (hbinDefs for hard modes, sbinDefs for soft) — used to name
  *   the bin on single-bin stacked cards.
  */
+/**
+ * The test name as the map title shows it: the def's own name with the
+ * derived-test marker when it is derived, or `undefined` when there is no
+ * name — so `fmtColorbarAxis` and the callers' fallbacks behave exactly as
+ * they do for an unnamed measured test. The marker goes on the NAME, before
+ * `fmtColorbarAxis` adds the unit, giving `"Vth Margin † (V)"`.
+ */
+function titleName(def: TestDef | undefined): string | undefined {
+  return def?.name ? markedTestLabel(def, def.testNumber) : undefined;
+}
+
+/** `{ note }` for a derived test, `{}` otherwise — spread into a MapTitleParts. */
+function derivedNote(def: TestDef | undefined): { note?: string } {
+  return isDerivedTest(def) ? { note: `${DERIVED_MARK} ${DERIVED_KEY}` } : {};
+}
+
 export function buildMapTitle(
   view: View,
   fallbackFormat: 'si' | 'engineering' = 'engineering',
@@ -896,31 +908,31 @@ export function buildMapTitle(
     case 'stackedValues': {
       const def = view.testDefs?.[0];
       const vRef = view.valueRange[1] || view.valueRange[0] || 0;
-      const { axisLabel } = fmtColorbarAxis(vRef, def?.name, def?.unit, fallbackFormat);
+      const { axisLabel } = fmtColorbarAxis(vRef, titleName(def), def?.unit, fallbackFormat);
       const base = axisLabel || 'Value';
       const method = view.aggrMethod ? ` · ${fmtAggregationMethod(view.aggrMethod)}` : '';
-      return { primary: `${base}${method}`, secondary: stackedContext };
+      return { primary: `${base}${method}`, secondary: stackedContext, ...derivedNote(def) };
     }
     case 'value':
     default: {
       const def = findTestDef(view.testDefs, view.activeTest);
       const vRef = view.valueRange[1] || view.valueRange[0] || 0;
-      const { axisLabel } = fmtColorbarAxis(vRef, def?.name, def?.unit, fallbackFormat);
-      const named = axisLabel || def?.name;
+      const { axisLabel } = fmtColorbarAxis(vRef, titleName(def), def?.unit, fallbackFormat);
+      const named = axisLabel || titleName(def);
       if (view.passFailDisplay !== 'off') {
         // Pass/fail display: identify the test (name + number) above the legend, and name
         // WHICH pass/fail is shown below it — spec-limit judgement vs the tester's recorded
         // verdict — so the two can never be confused even when they disagree.
         const num = def?.testNumber ?? view.activeTest;
-        const primary = named ? `${named} · #${num}` : `Test ${num}`;
+        const primary = named ? `${named} · #${num}` : testLabel(undefined, num);
         const secondary = view.passFailDisplay === 'spec'
           ? 'Spec pass/fail'
           : (def !== undefined && !isParametricTest(def))
             ? 'Functional pass/fail'
             : 'Tester pass/fail';
-        return { primary, secondary };
+        return { primary, secondary, ...derivedNote(def) };
       }
-      return { primary: named ?? `Test ${view.activeTest}`, secondary: '' };
+      return { primary: named ?? testLabel(undefined, view.activeTest), secondary: '', ...derivedNote(def) };
     }
   }
 }

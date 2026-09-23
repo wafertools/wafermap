@@ -1,13 +1,10 @@
-import type { StatsFinding, StatsSummary, LotStatsSummary } from './types.js';
+import type { StatsSummary, LotStatsSummary } from './types.js';
 import { describeWaferPopulation, populationLabel } from './population.js';
 import {
-  formatFindingDelta,
-  formatFindingCoverage,
-  formatFindingTooltip,
+  findingsTableHtml,
   buildMetadataRows,
   renderDefinitionList,
   renderSection,
-  renderSeverityBadge,
   reportStyles,
 } from './reportHtml.js';
 import { escHtml } from '../core/utils.js';
@@ -49,41 +46,6 @@ function summaryMetaBlock(summary: StatsSummary | LotStatsSummary, generatedAt: 
   ]);
 }
 
-function findingsRows(findings: StatsFinding[], totalWafers?: number): string {
-  if (!findings.length) {
-    return '<tr><td colspan="5" class="no-data">No significant findings</td></tr>';
-  }
-
-  return findings.map((finding) => {
-    const tooltip = escHtml(formatFindingTooltip(finding));
-    return `<tr title="${tooltip}">
-      <td class="tight">${renderSeverityBadge(finding.severity)}</td>
-      <td class="tight">${escHtml(finding.comparison.left)}</td>
-      <td>${escHtml(plainBinTerms(finding.variable.label))}</td>
-      <td class="numeric">${escHtml(formatFindingDelta(finding))}</td>
-      <td class="numeric">${escHtml(formatFindingCoverage(finding, totalWafers))}</td>
-    </tr>`;
-  }).join('\n');
-}
-
-function findingsTable(findings: StatsFinding[], totalWafers?: number): string {
-  const coverageHeader = totalWafers !== undefined ? 'Wafers' : 'N (region/rest)';
-  return `<table class="report-table findings-table compact">
-  <thead>
-    <tr>
-      <th>Severity</th>
-      <th>Region</th>
-      <th>Metric</th>
-      <th class="numeric">Delta</th>
-      <th class="numeric">${coverageHeader}</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${findingsRows(findings, totalWafers)}
-  </tbody>
-</table>`;
-}
-
 export function renderFindingsReportHtml(
   summary: StatsSummary | LotStatsSummary,
   options: { title?: string } = {},
@@ -106,7 +68,7 @@ export function renderFindingsReportHtml(
     ? `<p class="findings-narrative">${escHtml(narrativeText)}</p>\n` : '';
   const body = [
     renderSection('Summary', summaryMetaBlock(summary, generatedAt)),
-    renderSection('Findings', narrativeParagraph + findingsTable(findings, totalWafers)),
+    renderSection('Findings', narrativeParagraph + findingsTableHtml(findings, totalWafers)),
   ].join('\n');
 
   return `<!DOCTYPE html>

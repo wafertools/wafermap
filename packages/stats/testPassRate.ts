@@ -33,6 +33,8 @@
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { isParametricTest, getTestPassStatus, type TestDef } from '../renderer/buildWaferMap.js';
+import { classifySpec } from '../renderer/spec.js';
+import { testLabel, derivedFields } from '../renderer/testLabel.js';
 import type { StatsSummary } from './types.js';
 
 export type TestPassKind = 'spec' | 'testFlag' | 'functional';
@@ -111,7 +113,7 @@ export function buildTestPassRateData(
 
   for (const def of wanted) {
     const tn = def.testNumber!;
-    byTest.set(tn, { label: def.name ?? `Test ${tn}`, overall: zero(), perGroup: groupOrder.map(() => zero()) });
+    byTest.set(tn, { label: testLabel(def, tn), overall: zero(), perGroup: groupOrder.map(() => zero()) });
   }
 
   const add = (tn: number, gi: number, d: Partial<Acc>) => {
@@ -157,18 +159,18 @@ export function buildTestPassRateData(
         if (!isYieldEligibleDie(die)) continue;
         for (const def of wanted) {
           const tn = def.testNumber!;
-          const specVerdict = specJudgement(die, def);
+          const specCat = classifySpec(die.testValues?.[tn], def);
           const flagVerdict = getTestPassStatus(die, tn, def);
 
-          if (comparingParametric && specVerdict !== undefined && flagVerdict !== undefined) {
+          if (comparingParametric && specCat !== null && flagVerdict !== undefined) {
             comparableDies++;
-            if (specVerdict.pass !== flagVerdict) disagreements++;
+            if ((specCat === 'pass') !== flagVerdict) disagreements++;
           }
 
           if (kind === 'spec') {
-            if (specVerdict === undefined) continue;
-            if (specVerdict.pass) add(tn, gi, { pass: 1 });
-            else if (specVerdict.low) add(tn, gi, { fail: 1, failLow: 1 });
+            if (specCat === null) continue;
+            if (specCat === 'pass') add(tn, gi, { pass: 1 });
+            else if (specCat === 'failLow') add(tn, gi, { fail: 1, failLow: 1 });
             else add(tn, gi, { fail: 1, failHigh: 1 });
           } else {
             if (flagVerdict === undefined) continue;
@@ -216,16 +218,6 @@ export function buildTestPassRateData(
 
 /** Spec-limit judgement for one die/test, or undefined when it cannot be made
  *  (no value, or no limit to judge against). */
-function specJudgement(
-  die: Die, def: TestDef,
-): { pass: boolean; low: boolean } | undefined {
-  if (def.limitLow === undefined && def.limitHigh === undefined) return undefined;
-  const v = die.testValues?.[def.testNumber!];
-  if (v === undefined || !Number.isFinite(v)) return undefined;
-  const low = def.limitLow !== undefined && v < def.limitLow;
-  const high = def.limitHigh !== undefined && v > def.limitHigh;
-  return { pass: !low && !high, low };
-}
 
 /** True when this item must be walked die-by-die even in 'spec' mode — i.e. it
  *  carries recorded verdicts, so the spec/flag comparison needs the raw dies the
@@ -286,10 +278,13 @@ export function poolFunctionalYield(
   if (!perWaferSummaries?.length) return undefined;
   if (!perWaferSummaries.every(s => s.stats.functionalYield !== undefined)) return undefined;
 
-  const byTest = new Map<number, { label: string; passDies: number; failDies: number; totalDies: number }>();
+  // `derived`/`expression` ride along with the label: this rebuilds each row,
+  // and a rebuilt row that forgets them is how a derived test's pass rate
+  // reaches the lot table looking measured.
+  const byTest = new Map<number, { label: string; derived?: true; expression?: string; passDies: number; failDies: number; totalDies: number }>();
   for (const s of perWaferSummaries) {
     for (const t of s.stats.functionalYield ?? []) {
-      const acc = byTest.get(t.testNumber) ?? { label: t.label, passDies: 0, failDies: 0, totalDies: 0 };
+      const acc = byTest.get(t.testNumber) ?? { label: t.label, ...derivedFields(t), passDies: 0, failDies: 0, totalDies: 0 };
       acc.passDies += t.passDies;
       acc.failDies += t.failDies;
       acc.totalDies += t.totalDies;

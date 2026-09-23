@@ -17,11 +17,13 @@ import type { Die } from '../core/dies.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
 import { itemPassBins, passBinsLabel } from '../core/passBins.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
+import { testLabel, markedTestLabel, unmarkedLabel, derivedFields, derivedKeyText, derivedCsvCell, isDerivedTest, DERIVED_CSV_HEADER } from '../renderer/testLabel.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from '../stats/regions.js';
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 import { renderWaferReportHtml, renderLotReportHtml, type ReportMap } from '../stats/renderSummaryReport.js';
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
+import { formatFindingTooltip } from '../stats/reportHtml.js';
 import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
 import { commonMetadata } from '../stats/facets.js';
@@ -1331,7 +1333,7 @@ export function* buildTestSectionSteps(
 
   // Build a unified list of { testNumber, name, unit } from testDefs when present,
   // or from the testNumber keys found in die.testValues when absent.
-  type TestEntry = { testNumber: number; name: string; unit?: string; limitLow?: number; limitHigh?: number };
+  type TestEntry = { testNumber: number; name: string; unit?: string; limitLow?: number; limitHigh?: number; derived?: true; expression?: string };
   let entries: TestEntry[];
 
   if (testDefs?.length) {
@@ -1339,10 +1341,17 @@ export function* buildTestSectionSteps(
     // (mean/σ/median/quartiles) is a parametric statistic.
     entries = testDefs
       .filter(isParametricTest)
-      .map(def => ({ testNumber: def.testNumber, name: def.name, unit: def.unit, limitLow: def.limitLow, limitHigh: def.limitHigh }));
+      // `derived`/`expression` travel with the entry: this table prints a mean
+      // and a sigma per test, and a derived quantity must not read as a
+      // measured one here any more than it may in the capability grid.
+      .map(def => ({
+        testNumber: def.testNumber, name: def.name, unit: def.unit,
+        limitLow: def.limitLow, limitHigh: def.limitHigh,
+        ...derivedFields(def),
+      }));
   } else {
     const testNumbers = getUniqueTestNumbers(activeDies);
-    entries = testNumbers.map(tn => ({ testNumber: tn, name: `Test ${tn}` }));
+    entries = testNumbers.map(tn => ({ testNumber: tn, name: testLabel(undefined, tn) }));
   }
 
   if (!entries.length) return null;
@@ -1522,6 +1531,11 @@ export function* buildTestSectionSteps(
       cols.push('LSL', 'USL', 'Spec Yield %');
       if (specNDiffers) cols.push('Spec Yield N');
     }
+    // Derived tests are stated as data, not a glyph: a CSV has no key, and it
+    // goes to tools that will otherwise treat the value as measured. Only when
+    // some row is derived, so a measured-only export keeps its columns.
+    const anyDerived = rows.some(r => isDerivedTest(r.entry));
+    if (anyDerived) cols.push(DERIVED_CSV_HEADER);
     const idCols = [...resolveCsvIdentityColumns(csv, cols), ...csvPopulationColumn(csv)];
     const allCols = [...idCols.map(c => c.label), ...cols];
     const lines = [allCols.map(csvField).join(',')];
@@ -1546,6 +1560,7 @@ export function* buildTestSectionSteps(
           fields.push((entry.limitLow !== undefined || entry.limitHigh !== undefined) ? String(specN) : '');
         }
       }
+      if (anyDerived) fields.push(derivedCsvCell(entry));
       lines.push(fields.map(csvField).join(','));
     }
     saveTextFile(lines.join('\n'), 'test-values.csv', 'text/csv', onSaveText);
@@ -1615,7 +1630,7 @@ export function* buildTestSectionSteps(
       }, text);
       row.appendChild(td);
     };
-    cell(entry.name, 'left');
+    cell(markedTestLabel(entry, entry.testNumber), 'left');
     if (uniformN === null) cell(`${stats.count}`);
     if (columns === 'full') { cell(f(stats.min)); cell(f(stats.q1)); cell(f(stats.median)); }
     cell(f(stats.mean));
@@ -1642,11 +1657,12 @@ export function* buildTestSectionSteps(
 
   const scroll = el('div', { overflowX: 'auto' });
   scroll.appendChild(table);
+  const tableBlock = withDerivedKey(scroll, rows.map(r => ({ label: r.entry.name, ...derivedFields(r.entry) })));
 
   // Collapsible only when a panel owns the state; the report and any other
   // stateless consumer keep the flat title + table they had.
   if (!panel) {
-    outer.appendChild(scroll);
+    outer.appendChild(tableBlock);
     return outer;
   }
   // Reuse the section shell rather than the local header row: the title becomes
@@ -1656,7 +1672,7 @@ export function* buildTestSectionSteps(
   const { outer: shell } = collapsibleSection(titleText, true, undefined, {
     stateKey: 'testValues',
     panel,
-    render: content => content.appendChild(scroll),
+    render: content => content.appendChild(tableBlock),
     control: () => exportBtn,
   });
   return shell;
@@ -1717,13 +1733,17 @@ export function buildFunctionalTestSection(
   wireControlHover(exportBtn);
   exportBtn.addEventListener('click', () => {
     const cols = ['Test', 'N', 'Pass', 'Fail', 'Pass Rate %'];
+    // As the parametric export: plain names, and the derivation as a column.
+    const anyDerived = rows.some(r => isDerivedTest(r));
+    if (anyDerived) cols.push(DERIVED_CSV_HEADER);
     const idCols = [...resolveCsvIdentityColumns(csv, cols), ...csvPopulationColumn(csv)];
     const lines = [[...idCols.map(c => c.label), ...cols].map(csvField).join(',')];
     for (const r of rows) {
       lines.push([
         ...idCols.map(c => c.constant ?? ''),
-        r.label, String(r.totalDies), String(r.passDies), String(r.failDies),
+        unmarkedLabel(r.label), String(r.totalDies), String(r.passDies), String(r.failDies),
         r.passRatePercent !== null ? r.passRatePercent.toFixed(1) : '',
+        ...(anyDerived ? [derivedCsvCell(r)] : []),
       ].map(csvField).join(','));
     }
     saveTextFile(lines.join('\n'), 'functional-tests.csv', 'text/csv', onSaveText);
@@ -1779,14 +1799,16 @@ export function buildFunctionalTestSection(
   const scroll = el('div', { overflowX: 'auto' });
   scroll.appendChild(table);
 
+  // Labels are marked at the source (`computeFunctionalYield`); this is the key for them.
+  const fnBlock = withDerivedKey(scroll, rows);
   if (!panel) {
-    outer.appendChild(scroll);
+    outer.appendChild(fnBlock);
     return outer;
   }
   headerRow.remove();
   const { outer: shell } = collapsibleSection(
     titleText, true, undefined,
-    { stateKey: 'functionalTests', panel, render: content => content.appendChild(scroll), control: () => exportBtn },
+    { stateKey: 'functionalTests', panel, render: content => content.appendChild(fnBlock), control: () => exportBtn },
   );
   return shell;
 }
@@ -1838,11 +1860,41 @@ function sevDot(s: StatsFinding['severity']): HTMLSpanElement {
 function findingRowText(finding: StatsFinding, groupLeft?: string): string {
   let text = finding.summary;
   if (groupLeft) {
-    if (text.startsWith(`${groupLeft} has `)) text = text.slice(groupLeft.length + 5);
+    // "has" or "have": a merged region is plural (`regionHas` in analyzeWaferMap).
+    const verb = [' has ', ' have '].find(v => text.startsWith(`${groupLeft}${v}`));
+    if (verb) text = text.slice(groupLeft.length + verb.length);
     else if (text.startsWith(`${groupLeft} `)) text = text.slice(groupLeft.length + 1);
   }
   text = plainBinTerms(text);
   return text.length ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+/**
+ * The `†` key for a findings list, or `null` when none of the shown findings
+ * is about a derived test. The glyph sits inside the finding sentences, and a
+ * glyph on screen without its words reads as a rendering artefact.
+ */
+function derivedFindingsKey(shown: StatsFinding[]): HTMLElement | null {
+  return derivedKeyLine(shown.map(f => ({ label: f.variable.label, ...derivedFields(f.variable) })));
+}
+
+/** {@link derivedKeyText} as a panel line, or `null` when nothing shown is derived. */
+function derivedKeyLine(entries: Parameters<typeof derivedKeyText>[0]): HTMLElement | null {
+  const text = derivedKeyText(entries);
+  return text ? el('div', { fontSize: FONT.body, color: LABEL_COLOR, marginTop: SPACE.sm, lineHeight: LEADING.base }, text) : null;
+}
+
+/**
+ * A table's scroller with the `†` key under it — outside the scroller, so a wide
+ * table scrolling sideways never carries the key out of view. Returns the
+ * scroller alone when no row is derived.
+ */
+function withDerivedKey(scroll: HTMLElement, entries: Parameters<typeof derivedKeyText>[0]): HTMLElement {
+  const key = derivedKeyLine(entries);
+  if (!key) return scroll;
+  const block = el('div', {});
+  block.append(scroll, key);
+  return block;
 }
 
 export function buildFindingsSection(
@@ -1933,6 +1985,13 @@ export function buildFindingsSection(
     f => f.comparison.family !== 'spatial-pattern' && !relatedIdSet.has(f.id),
   );
   const groups = buildGroups(standaloneFindings);
+  // Every finding this section actually shows — the grouped rows, and the
+  // related findings nested under each spatial pattern — so the `†` key
+  // appears exactly when a marked finding is on screen.
+  const shownFindings = (): StatsFinding[] => [
+    ...groups.flatMap(g => g.findings),
+    ...patternFindings.flatMap(pf => findings.filter(f => pf.relatedIds?.includes(f.id))),
+  ];
 
   // Helper: build a clickable finding row button. `groupLeft` is the group
   // header's own subject — passed so the row can drop that redundant prefix.
@@ -1942,7 +2001,7 @@ export function buildFindingsSection(
     row.type = 'button';
     row.dataset.wmapFinding = finding.id;
     row.textContent = findingRowText(finding, groupLeft);
-    wireTooltip(row, finding.summary);
+    wireTooltip(row, formatFindingTooltip(finding));
     // isActive already drives the row's highlighted background/font-weight
     // visually; aria-current carries the same "this is the one currently
     // shown on the map" state to a screen reader, which colour/weight alone
@@ -2066,6 +2125,8 @@ export function buildFindingsSection(
           }, findingRowText(f, left)));
         }
       }
+      const modalKey = derivedFindingsKey(shownFindings());
+      if (modalKey) listWrap.appendChild(modalKey);
       handle.contentWrap.appendChild(listWrap);
       Object.assign(handle.contentWrap.style, { flexDirection: 'column', overflow: 'hidden' });
     });
@@ -2191,6 +2252,9 @@ export function buildFindingsSection(
       content.appendChild(makeFindingRow(finding, false, left));
     }
   }
+
+  const key = derivedFindingsKey(shownFindings());
+  if (key) content.appendChild(key);
 
   return outer;
 }

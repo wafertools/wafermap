@@ -1774,7 +1774,7 @@ Either way, an **Insights** button appears in the toolbar. Clicking it swaps the
 
 The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button instead, for enlarging just that chart.
 
-The tab lays out three sub-tabs:
+The tab lays out three sub-tabs — four when you define sweeps, which get a **Sweeps** tab of their own (see [Derived tests and sweeps](#derived-tests-and-sweeps)):
 
 - **Overview** — headline tiles naming the population (wafers, dies analysed and excluded, and for a lot the mean wafer yield), a **per-test pass rate** chart (worst test first, one sub-bar per group when grouping is active), a yield bar labelled with the actual pass bins in use and marked with a dashed median reference, and a hard/soft bin pareto.
 - **Distributions** — process capability, a test-value box plot, a value histogram, and a **wafer-to-wafer trend** (one point per wafer at its mean, ±1σ whiskers, the die-weighted lot mean as a centre line, and spec limits where the test has them). The trend is always in slot order and has no sort control by design — drift only reads in the population's own sequence.
@@ -1807,6 +1807,93 @@ Clicking a leaf row in the yield bar or the box plot — or a point on the trend
 
 **→ [Demo: Your first wafer map](examples/first-map.html)** and **[Demo: Building a lot gallery](examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
 
+## Derived tests and sweeps
+
+Two features for test data that means more together than test by test. A **derived test** computes a new per-die value from the tests already on the die — a shift, a ratio, a margin — and from the build onwards behaves as an ordinary test. A **sweep** reads an ordered run of tests as one response curve and measures the pair of curves against each other. They pair naturally: a sweep shows you the population's curve, and the per-die view of the same thing is a derived scalar plotted on the map, where position is visible.
+
+**→ [Demo: Derived tests and sweeps](examples/derived-tests.html)**
+
+### Computing a test from other tests
+
+Pass `derivedTests` to `buildWaferMap` alongside your measured `testDefs`. Each entry is a normal `TestDef` — `unit`, `limitLow`/`limitHigh`, `logScale` all mean what they usually mean — plus an `expression`:
+
+```ts
+const result = buildWaferMap({
+  results, testDefs, waferConfig, dieConfig,
+  derivedTests: [
+    { testNumber: 900001, name: 'Leakage Shift', unit: 'uA',
+      expression: 'abs(t[1020] - t[1010])', limitHigh: 5 },
+  ],
+});
+```
+
+That is all the wiring there is. Test 900001 now appears in the test-value plot modes, the colorbar, tooltips, `analyzeWaferMap`, the Insights panels and the report, with its `limitHigh` driving spec marks and Cpk exactly as a measured limit would.
+
+Three accessors read the die, and the distinction between the last two matters: `t[1020]` is the measured value, `testPass[1020]` is the verdict the *tester* recorded, and `specPass[1020]` is the verdict *the limits* imply. Those two genuinely disagree in the field — guard bands and dynamic limits routinely cause it — so they are separate accessors rather than one conflated "did it pass". `diePass()` gives the die's bin verdict under the map's `passBins`.
+
+A range accessor reads a block of test numbers and must be reduced to a scalar:
+
+```ts
+{ testNumber: 900002, name: 'Sweep All Pass', testType: 'F',
+  expression: 'all(testPass[1010..1025])' }
+```
+
+Note `testType: 'F'`. A boolean expression is a *verdict* and has to be declared functional, so it lands in `die.testPass` rather than as a 1/0 in `die.testValues` — a 1/0 there would walk straight into the correlation matrix and the Cpk table as if it were a measurement. Declaring a type the expression does not produce is rejected rather than coerced.
+
+Two behaviours worth designing around:
+
+- **Missing input means missing output, never a zero.** If any test the expression needs is absent on a die, the derived value is absent for that die: no-data grey on the map, excluded from every statistic. A non-finite result (`0/0`, `ln(-1)`) is treated the same way. Reducers are the deliberate exception — they skip unknown elements and reduce what is there, which is why `countKnown` exists to let you state the denominator.
+- **They are computed on raw probe records** — before lot stacking and before retest resolution — so every derived value comes from one real touchdown. Deriving after a stack would subtract one aggregate from another; deriving after a retest collapse could pair a value from one touchdown with a verdict from another.
+
+A derived test may read another (`t[900001]`), and evaluation follows dependency order rather than declaration order, so you can list them either way round. Anything the library can check statically it checks at build: a parse or type error, a `testNumber` colliding with measured data, `t[n]` on a functional test, an undeclared test number, a cycle. The offending test is **dropped whole** with a `derived-test-invalid` warning naming the character position — never half-applied, because a half-working expression plots wrong numbers rather than no numbers. Read `result.warnings`; the toolbar's advisory indicator surfaces it too.
+
+There is no `eval` and no expression engine behind this — the string is tokenised and walked as a typed tree, with no member access and no way to name a host object, so a set of derived tests is safe to share between teams as plain JSON.
+
+### Reading an ordered run of tests as a curve
+
+A test program that measures one quantity at a series of drive levels records it as a block of consecutive test numbers — often one block sweeping up and another sweeping down. Read as individual tests that is two dozen unrelated distributions. Declare it as a sweep and it becomes a pair of curves, which is the form the actual question takes: where do they cross, and how far apart are they at a given level?
+
+```ts
+renderWaferGallery(container, items, {
+  insights: {
+    enabled: true,
+    sweeps: [{
+      id: 'power',
+      title: 'Power Sweep — rise vs fall',
+      series: [
+        { label: 'Rising',  tests: [1200, 1201, 1202], xValues: [0, 3, 6] },
+        { label: 'Falling', tests: [1210, 1211, 1212], xValues: [0, 3, 6] },
+      ],
+      separationAt: [0.45, 0.60],
+      xLabel: 'Drive level (dBm)',
+    }],
+  },
+});
+```
+
+Each sweep gets a card in the **Sweeps** sub-tab, which appears only when at least one sweep is defined — on a single map or a gallery alike. Pass `defaultView: 'sweeps'` to open on it.
+
+**→ [Example: Parametric sweeps](examples/sweeps.html)** — four characterisation sweeps: temperature inversion, DIBL, data retention and output drive.
+
+**A log-scale curve is a sweep over derived tests.** There is no log option on a sweep, and none is needed: a sweep reads any test, so a transfer curve spanning decades of current is swept as one derived test per step, `log10(t[n])`. The width at a constant log-current is then the constant-current threshold shift — DIBL, for two drain biases.
+
+**Supply `xValues` whenever you know them.** Without it the x axis is the ordinal position in the sequence, because test numbers are identifiers — nothing guarantees they are evenly spaced or even ascending, and interpolating a crossing point along them would assume a scale the data never claimed. With it, the crossing is reported in dBm rather than "somewhere between the third and fourth test".
+
+**Order is the x axis, and is never sorted.** A falling series recorded from the top level down is listed in that order and stays that way. This is also why `tests` takes a plain array and has no `1200..1230` range syntax, even though a derived-test expression does: a range implies ascending order, and it would make the length implicit just where `xValues` has to match it element for element. Build the array in the host — the length stays visible and a reversal is one call:
+
+```ts
+const span = (from: number, to: number) =>
+  Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+{ label: 'Falling', tests: span(1240, 1270).reverse(), xValues: levels }
+```
+
+Each line is the population **median with a p10–p90 band**, never one trace per die — a production lot is thousands of dies and the spaghetti would carry nothing. `crossing` and `separationAt` measure the **first two series**; any further series are drawn for context but not measured, so a single-series sweep is the degenerate case rather than the normal one.
+
+A sweep carries **no population scope of its own**. It names which tests form the curve and nothing about which dies, so one definition stays valid for any lot and portable between hosts — the dies it aggregates are whatever the Insights view is currently scoped to, including the group or wafer picked in the panel above it.
+
+The card is explicit about what it cannot measure rather than quietly rounding it off: a crossing that happens more than once says so instead of presenting the first as the only one, a separation level that either curve never reaches reads "not measurable" and names which series rather than reporting `0`, and tests missing from `testDefs`, functional tests inside a sweep, and series carrying different units are all listed in the card footer.
+
 ## Exporting reports
 
 The library generates standalone printable HTML reports, which can be shown in wmap's own modal, opened in a browser tab, saved as a file or printed to PDF. They need no DOM, so they also run in Node — a nightly lot report, an archive of each wafer's report.
@@ -1830,16 +1917,10 @@ const html = renderLotReportHtml(waferMapResults);   // each may carry a label a
 fs.writeFileSync('lot-report.html', html);           // or openReportModal(html) in a page
 ```
 
-**Findings-only report** — a lighter report with just the severity-coded findings table, for a wafer or a lot summary:
-
-```ts
-import { renderFindingsReportHtml } from '@wafertools/wafermap/stats';
-
-openReportModal(renderFindingsReportHtml(lotSummary));
-```
-
 The Summary panel's "Summary report" button in `renderWaferMap` and `renderWaferGallery` uses the same builders — you only need to call them yourself for a custom export flow.
 
+> `renderFindingsReportHtml`, the findings-only report, is deprecated — removed in 0.32.0. The wafer and lot reports above contain the same findings table, with the population and yield it was found in.
+>
 > `renderSummaryReportHtml`, `renderLotSummaryReportHtml` and `openHtmlReport` are deprecated — removed in 0.31.0. The first two took loose pieces with `passBins` and `ringCount` defaulting to `[1]` and `4`; the builders above read them from the map.
 
 **Embedded hosts (Tauri, Electron, WebView2).** In hosts where `window.open` is blocked, register a custom opener once at startup:

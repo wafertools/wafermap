@@ -37,7 +37,7 @@ const rendererApi = await import('../dist/packages/renderer/index.js');
 const statsApi    = await import('../dist/packages/stats/index.js');
 const renderApi   = await import('../dist/packages/canvas-adapter/index.js');
 const ENTRIES = [api, coreApi, rendererApi, statsApi, renderApi];
-const { DEPRECATED_EXPORTS, DEPRECATED_REMOVAL_VERSION: REMOVAL } = await import('../dist/packages/renderer/deprecate.js');
+const { DEPRECATED_EXPORTS, DEPRECATED_REMOVALS, DEPRECATED_REMOVAL_VERSION: REMOVAL } = await import('../dist/packages/renderer/deprecate.js');
 
 const exportedFrom = (name) => ENTRIES.filter(entry => name in entry);
 
@@ -66,6 +66,11 @@ const ACCIDENTAL = [
   'buildDieListSection', 'DEFAULT_FACET_CURATION', 'STANDARD_WAFER_DIAMETERS_MM',
 ];
 const EXPECTED = [...GRADIENT_HELPERS, ...CHART_BUILDERS_NAMES, ...PIPELINE, ...ACCIDENTAL];
+// Deprecated after REMOVAL was scheduled, so removed a release later: a removal
+// must follow a release in which the name shipped deprecated.
+const LATER = { renderFindingsReportHtml: '0.32.0' };
+const ALL = [...EXPECTED, ...Object.keys(LATER)];
+const removalOf = (name) => LATER[name] ?? REMOVAL;
 const VALUES = ['DEFAULT_FACET_CURATION', 'STANDARD_WAFER_DIAMETERS_MM'];
 
 // Exports a host needs, which must NOT be swept up by a deprecation.
@@ -76,16 +81,18 @@ const KEPT = [
   'buildFacetTable', 'facetValueOf', 'mergeTestDefs', 'collectWarnings', 'severityOf',
   'registerBinColorScheme', 'registerValueColorScheme', 'listBinColorSchemes', 'listValueColorSchemes',
   // Deprecated in 0.30.0, withdrawn in 0.30.1 on review (API_REMOVALS.md, Part 2).
-  'visibleFindings', 'openReportModal', 'metadataDisplayValue', 'getReticleCell', 'renderFindingsReportHtml',
+  // renderFindingsReportHtml was withdrawn too, then deprecated again in 0.31.0 — see LATER.
+  'visibleFindings', 'openReportModal', 'metadataDisplayValue', 'getReticleCell',
 ];
 
 test('the registry holds exactly the names announced for removal', () => {
-  assert.deepEqual([...DEPRECATED_EXPORTS.keys()].sort(), [...EXPECTED].sort());
+  assert.deepEqual([...DEPRECATED_EXPORTS.keys()].sort(), [...ALL].sort());
+  for (const name of ALL) assert.equal(DEPRECATED_REMOVALS.get(name), removalOf(name), `${name} is removed in ${removalOf(name)}`);
   for (const name of VALUES) assert.equal(DEPRECATED_EXPORTS.get(name), 'value', `${name} is a constant`);
 });
 
 test('every deprecated name is still exported, and nothing a host needs was swept up', () => {
-  for (const name of EXPECTED) assert.ok(exportedFrom(name).length > 0, `${name} must stay exported until ${REMOVAL}`);
+  for (const name of ALL) assert.ok(exportedFrom(name).length > 0, `${name} must stay exported until ${removalOf(name)}`);
   for (const name of KEPT) {
     assert.ok(exportedFrom(name).length > 0, `${name} is exported`);
     assert.ok(!DEPRECATED_EXPORTS.has(name), `${name} is not deprecated`);
@@ -169,7 +176,7 @@ test('a deprecated function returns exactly what its implementation does', () =>
 // ── Notices, declarations, and the library's own imports ─────────────────────
 
 test('each deprecated function gives one notice, naming the release that removes it', () => {
-  const functions = EXPECTED.filter(name => !VALUES.includes(name));
+  const functions = ALL.filter(name => !VALUES.includes(name));
   for (let i = 0; i < 3; i++) {
     for (const name of functions) {
       for (const entry of exportedFrom(name)) {
@@ -181,7 +188,7 @@ test('each deprecated function gives one notice, naming the release that removes
   for (const name of functions) {
     const mine = notices.filter(n => n.includes(`] ${name} is deprecated`));
     assert.equal(mine.length, 1, `${name}: ${mine.length} notices`);
-    assert.ok(mine[0].includes(`will be removed in ${REMOVAL}.`), `${name} names ${REMOVAL}: ${mine[0]}`);
+    assert.ok(mine[0].includes(`will be removed in ${removalOf(name)}.`), `${name} names ${removalOf(name)}: ${mine[0]}`);
   }
   for (const name of GRADIENT_HELPERS) {
     assert.match(notices.find(n => n.includes(`] ${name} is deprecated`)), /resolveValueColorFn/, `${name} names its replacement`);
@@ -235,10 +242,10 @@ test('no library module imports from a deprecated.ts — only each index re-expo
 test('the published declarations tag each one "@deprecated Removed in <version>."', () => {
   const dts = ['packages/core', 'packages/renderer', 'packages/stats', 'packages/canvas-adapter']
     .map(dir => fs.readFileSync(path.join(root, 'dist', dir, 'deprecated.d.ts'), 'utf8')).join('\n');
-  const version = REMOVAL.replace(/\./g, '\\.');
-  for (const name of EXPECTED) {
+  for (const name of ALL) {
+    const version = removalOf(name).replace(/\./g, '\\.');
     const decl = new RegExp(`/\\*\\*(?:(?!\\*/)[\\s\\S])*@deprecated Removed in ${version}\\.(?:(?!\\*/)[\\s\\S])*\\*/\\s*export declare const ${name}\\b`);
-    assert.match(dts, decl, `${name} must carry "@deprecated Removed in ${REMOVAL}." on its own declaration`);
+    assert.match(dts, decl, `${name} must carry "@deprecated Removed in ${removalOf(name)}." on its own declaration`);
   }
 });
 
@@ -251,7 +258,7 @@ test('no library module imports a deprecated name through an index file', () => 
       if (!p.endsWith('.ts') || e.name === 'index.ts') continue;
       const src = fs.readFileSync(p, 'utf8');
       for (const m of src.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*'([^']*index\.js)'/g)) {
-        for (const name of EXPECTED) {
+        for (const name of ALL) {
           if (new RegExp(`\\b${name}\\b`).test(m[1])) offenders.push(`${path.relative(root, p)}: ${name} from ${m[2]}`);
         }
       }
@@ -274,9 +281,13 @@ test(`the deprecated exports are gone before ${REMOVAL} is prepared`, () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
   const released = [pkg.version, ...[...changelog.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map(m => m[1])];
-  const reached = released.filter(v => minorOf(v) >= minorOf(REMOVAL));
-  const stillExported = EXPECTED.filter(name => exportedFrom(name).length > 0);
-  assert.ok(reached.length === 0 || stillExported.length === 0,
-    `${reached[0]} is being released, but ${stillExported.length} exports deprecated for removal in ${REMOVAL} ` +
-    `are still exported (${stillExported.slice(0, 4).join(', ')}…). Remove them — TODO.md lists the steps.`);
+  // One check per removal release: each name is held to its own.
+  for (const version of new Set(ALL.map(removalOf))) {
+    assert.match(version, /^\d+\.\d+\.0$/, 'a removal lands in a minor release');
+    const reached = released.filter(v => minorOf(v) >= minorOf(version));
+    const stillExported = ALL.filter(name => removalOf(name) === version && exportedFrom(name).length > 0);
+    assert.ok(reached.length === 0 || stillExported.length === 0,
+      `${reached[0]} is being released, but ${stillExported.length} exports deprecated for removal in ${version} ` +
+      `are still exported (${stillExported.slice(0, 4).join(', ')}…). Remove them — TODO.md lists the steps.`);
+  }
 });

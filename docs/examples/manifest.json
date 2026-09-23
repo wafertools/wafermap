@@ -311,6 +311,30 @@
       "dataFiles": []
     },
     {
+      "section": "Galleries and analysis",
+      "id": "derived-tests",
+      "file": "derived-tests.html",
+      "title": "Derived tests and sweeps",
+      "blurb": "tests computed per die from an expression, and an ordered run of tests read as a response curve with its crossing point and separation measured",
+      "guide": {
+        "label": "API: DerivedTestDef",
+        "href": "../api.md#419-derivedtestdef"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Galleries and analysis",
+      "id": "sweeps",
+      "file": "sweeps.html",
+      "title": "Parametric sweeps",
+      "blurb": "four characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention and output drive — each read as a pair of curves with the crossing and width measured",
+      "guide": {
+        "label": "Guide: Derived tests and sweeps",
+        "href": "../guide.md#derived-tests-and-sweeps"
+      },
+      "dataFiles": []
+    },
+    {
       "section": "Real data and performance",
       "id": "real-data",
       "file": "real-data.html",

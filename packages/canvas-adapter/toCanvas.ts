@@ -1,6 +1,7 @@
 import type { View, ViewRect } from '../renderer/buildView.js';
 import { fontPx } from './toolbar.js';
 import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
+import { niceStep } from '../renderer/axisTicks.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
@@ -157,6 +158,8 @@ const COLORBAR_LABEL_PAD    = 2;  // px between the tick and its label
 const COLORBAR_EDGE_MARGIN  = 6;  // px kept clear between the label and the canvas edge
 const COLORBAR_LABEL_GAP_MIN = 20;  // px — the historic fixed gap, now a floor
 const MAP_TITLE_FONT      = () => `600 ${fontPx()}px system-ui, sans-serif`;   // primary identifier, above scale
+/** Minimum spacing between colorbar tick centres, px. */
+const COLORBAR_MIN_TICK_PX = 36;
 const MAP_SUBTITLE_FONT   = () => `${fontPx(-1)}px system-ui, sans-serif`;       // secondary context, below scale
 const SCALE_NOTE_FONT     = () => `600 ${fontPx(-1)}px system-ui, sans-serif`;   // log/linear scale note, below scale
 const COLORBAR_STEPS = 128;
@@ -338,8 +341,18 @@ export function drawMapCanvas(
     : (cbTestDef?.name ?? (view.activeTest != null ? `Test ${view.activeTest}` : undefined));
   const cbUnit = cbIsCountMode ? undefined : cbTestDef?.unit;
   const [cbVMin, cbVMax] = view.valueRange;
-  const { tickFmt: cbBaseFmt } = fmtColorbarAxis(cbVMax, cbName, cbUnit, fallbackFormat);
-  const cbTickFmt = view.allIntegerValues ? (v: number) => String(Math.round(v)) : cbBaseFmt;
+  const cbIntFmt = (v: number) => String(Math.round(v));
+  // The linear bar's labels take their decimals from its tick step, which is
+  // not known until the bar is laid out. A taller bar means a finer step and
+  // more decimals, and the bar is never taller than the canvas — so measuring
+  // with the finest step it could have bounds the widest label it will draw.
+  // A log bar's ticks are decades, not a linear grid, and keep size-based labels.
+  const cbFinestStep = view.logScale || view.allIntegerValues
+    ? undefined
+    : niceStep(Math.max(0, cbVMax - cbVMin) * COLORBAR_MIN_TICK_PX / Math.max(1, cssH)) || undefined;
+  const cbBandFmt = view.allIntegerValues
+    ? cbIntFmt
+    : fmtColorbarAxis(cbVMax, cbName, cbUnit, fallbackFormat, cbFinestStep).edgeFmt;
 
   let colorbarLabelW = 0;
   if (drawColorbar) {
@@ -347,8 +360,8 @@ export function drawMapCanvas(
     // resets its state, so only the measurement is kept, never the font.
     const measureCtx = canvas.getContext('2d')!;
     measureCtx.font = COLORBAR_LABEL_FONT();
-    const candidates = [cbTickFmt(cbVMin), cbTickFmt(cbVMax)];
-    if (cbVMin < 0) candidates.push(cbTickFmt(-Math.max(Math.abs(cbVMin), Math.abs(cbVMax))));
+    const candidates = [cbBandFmt(cbVMin), cbBandFmt(cbVMax)];
+    if (cbVMin < 0) candidates.push(cbBandFmt(-Math.max(Math.abs(cbVMin), Math.abs(cbVMax))));
     for (const label of candidates) {
       colorbarLabelW = Math.max(colorbarLabelW, measureCtx.measureText(label).width);
     }
@@ -731,9 +744,9 @@ export function drawMapCanvas(
     // Supporting context (secondary) and the scale note go BELOW the bar, stacked via `belowCursor`
     // in the roomy lower-right area beneath the colorbar.
     const cbBinDefs = view.plotMode === 'stackedSoftBins' ? sbinDefs : hbinDefs;
-    const { primary: titlePrimary, secondary: titleSecondary } = showTitle
+    const { primary: titlePrimary, secondary: titleSecondary, note: titleNote } = showTitle
       ? buildMapTitle(view, fallbackFormat, cbBinDefs)
-      : { primary: '', secondary: '' };
+      : { primary: '', secondary: '', note: undefined };
     if (showTitle) {
       const aboveY = Math.max(cbY - 6, padding + 11);
       const aboveLimit = waferCx + Math.max(waferHalfChordAt(aboveY), waferHalfChordAt(aboveY - 12)) + 8;
@@ -774,9 +787,12 @@ export function drawMapCanvas(
     ctx.lineWidth   = 0.5;
 
     const tickLen       = COLORBAR_TICK_LEN;
-    const minPixels     = 36;  // minimum px between tick centres
+    const minPixels     = COLORBAR_MIN_TICK_PX;
     const endpointGuard = 14;
 
+    // The linear grid's step, for its labels' decimals; undefined for the log
+    // and integer bars, which format by their own rules.
+    let cbStep: number | undefined;
     const ticks: number[] = view.logScale && logRange > 0
       ? logTicks(vMin, vMax, cbH, minPixels, endpointGuard, logMin, logRange)
       : view.allIntegerValues
@@ -795,6 +811,7 @@ export function drawMapCanvas(
           const step  = vRange > 0 ? niceStep(vRange * minPixels / cbH) : 0;
           const ts: number[] = [];
           if (step > 0) {
+            cbStep = step;
             const first = Math.ceil(vMin / step) * step;
             for (let v = first; v <= vMax + step * 1e-6; v += step) {
               const py = (1 - (v - vMin) / vRange) * cbH;
@@ -807,7 +824,11 @@ export function drawMapCanvas(
     // Derived above, where the label band was measured — same values.
     const testDef = cbTestDef;
     const isCountMode = cbIsCountMode;
-    const tickFmt = cbTickFmt;
+    const cbAxis = fmtColorbarAxis(vMax, cbName, cbUnit, fallbackFormat, cbStep);
+    const tickFmt = view.allIntegerValues ? cbIntFmt : cbAxis.tickFmt;
+    // The exact min and max are data values, not grid values: one decimal more
+    // than the ticks where the ticks' own would round past the data.
+    const edgeFmt = view.allIntegerValues ? cbIntFmt : cbAxis.edgeFmt;
 
     // Draw intermediate ticks.
     ctx.textBaseline = 'middle';
@@ -826,14 +847,14 @@ export function drawMapCanvas(
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY);
     ctx.stroke();
     ctx.textBaseline = 'top';
-    ctx.fillText(tickFmt(vMax), cbX + colorbarWidth + tickLen + COLORBAR_LABEL_PAD, cbY);
+    ctx.fillText(edgeFmt(vMax), cbX + colorbarWidth + tickLen + COLORBAR_LABEL_PAD, cbY);
 
     ctx.beginPath();
     ctx.moveTo(cbX + colorbarWidth, cbY + cbH);
     ctx.lineTo(cbX + colorbarWidth + tickLen, cbY + cbH);
     ctx.stroke();
     ctx.textBaseline = 'bottom';
-    ctx.fillText(tickFmt(vMin), cbX + colorbarWidth + tickLen + COLORBAR_LABEL_PAD, cbY + cbH);
+    ctx.fillText(edgeFmt(vMin), cbX + colorbarWidth + tickLen + COLORBAR_LABEL_PAD, cbY + cbH);
 
     // Spec limit markers — left-side labels + dual-stroke line (white halo + dark rule).
     // In spec mode: limits sit at the bar endpoints, so draw left-side labels there.
@@ -930,6 +951,15 @@ export function drawMapCanvas(
     // lower-right area below the colorbar.
     if (showTitle && titleSecondary) {
       drawTitleFitted(titleSecondary, cssW - padding, belowCursor, 'right', 'top',
+        belowLimitAt(belowCursor), MAP_SUBTITLE_FONT(), theme.text);
+      belowCursor += 15;
+    }
+    // The derived-test key, on its own line: the title above the bar carries the
+    // `†`, and a glyph must never be on screen without the words for it. This
+    // corner is already where the stacked-map context goes, so a derived test
+    // adds a line to space that exists rather than moving anything.
+    if (showTitle && titleNote) {
+      drawTitleFitted(titleNote, cssW - padding, belowCursor, 'right', 'top',
         belowLimitAt(belowCursor), MAP_SUBTITLE_FONT(), theme.text);
     }
   }
@@ -1102,8 +1132,14 @@ export function drawMapCanvas(
     // (Stacked-bin modes use the colorbar branch above, not this legend.)
     if (showTitle) {
       const activeBinDefs = view.plotMode === 'softBin' ? sbinDefs : hbinDefs;
-      const { primary, secondary } = buildMapTitle(view, fallbackFormat, activeBinDefs);
+      const { primary, secondary, note } = buildMapTitle(view, fallbackFormat, activeBinDefs);
       const GAP = LEGEND_TITLE_GAP;
+      // Supplementary lines under the legend: the pass/fail kind, then the
+      // derived-test key when the test is derived. Stacked 16px apart in every
+      // layout, so the key lands exactly where a second line already would.
+      const subLines = [secondary, note].filter((t): t is string => !!t);
+      const drawSubLines = (x: number, y: number, limit: (y: number) => number) =>
+        subLines.forEach((t, i) => drawTitleFitted(t, x, y + i * 16, 'left', 'top', limit(y + i * 16), MAP_SUBTITLE_FONT(), theme.text));
       // Wafer-clearance limit for a left-aligned title at screen y (right boundary it must not cross).
       const leftAlignLimit = (y: number) =>
         waferCx - Math.max(waferHalfChordAt(y), waferHalfChordAt(y - 12)) - 8;
@@ -1114,8 +1150,7 @@ export function drawMapCanvas(
         const y = legendBottom + GAP;
         drawTitleFitted(primary, originXLegend, y, 'left', 'top',
           waferCx - Math.max(waferHalfChordAt(y), waferHalfChordAt(y + 12)) - 8);
-        if (secondary) drawTitleFitted(secondary, originXLegend, y + 16, 'left', 'top',
-          leftAlignLimit(y + 16), MAP_SUBTITLE_FONT(), theme.text);
+        drawSubLines(originXLegend, y + 16, leftAlignLimit);
       } else if (legendIsFloating) {
         // Floating box → primary INSIDE the plate's reserved heading row, so it
         // gets the same backdrop the rows do. Secondary still goes below the
@@ -1124,17 +1159,13 @@ export function drawMapCanvas(
         drawTitleFitted(primary, legendBox!.x + BIN_FLOATING_PADDING,
           legendBox!.y + BIN_FLOATING_PADDING, 'left', 'top',
           legendBox!.x + legendBox!.w - BIN_FLOATING_PADDING);
-        if (secondary) drawTitleFitted(secondary, legendBox!.x, legendBottom + GAP, 'left', 'top',
-          legendBox!.x + legendBox!.w, MAP_SUBTITLE_FONT(), theme.text);
+        drawSubLines(legendBox!.x, legendBottom + GAP, () => legendBox!.x + legendBox!.w);
       } else {
         // right / default / compact / left / bottom → primary just above the legend's first row,
         // left-aligned to the swatch column, never above the canvas padding. Secondary below.
         const yAbove = Math.max(originYLegend - GAP, padding + LEGEND_TITLE_H);
         drawTitleFitted(primary, originXLegend, yAbove, 'left', 'bottom', sideLimit(yAbove));
-        if (secondary) {
-          const yBelow = legendBottom + GAP;
-          drawTitleFitted(secondary, originXLegend, yBelow, 'left', 'top', sideLimit(yBelow), MAP_SUBTITLE_FONT(), theme.text);
-        }
+        drawSubLines(originXLegend, legendBottom + GAP, sideLimit);
       }
     }
 
@@ -1465,12 +1496,6 @@ function drawAxisTicks(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function niceStep(rawMm: number): number {
-  const magnitude = Math.pow(10, Math.floor(Math.log10(rawMm)));
-  const f = rawMm / magnitude;
-  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * magnitude;
-}
 
 function logTicks(
   vMin: number, vMax: number,

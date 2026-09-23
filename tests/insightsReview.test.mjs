@@ -553,3 +553,54 @@ test('insights — a data or grouping change still rebuilds, cache or not', () =
   assert.ok(afterRender, 'a section exists after an explicit render');
   assert.notEqual(afterRender, first, 'an explicit render rebuilds rather than reusing a stale section');
 });
+
+// ── The Sweeps sub-tab ────────────────────────────────────────────────────────
+// Sweeps get their own tab, present exactly when any are defined: not an option,
+// and not a count threshold that would move a sweep between tabs as others are
+// added. They are not in Distributions, which is driven by one selected test.
+
+function mountWithSweeps(items, lot, defaultView, sweeps) {
+  const host = dom.window.document.getElementById('host');
+  host.innerHTML = '';
+  const tab = createInsightsTab({
+    getItems: () => items,
+    getLotStats: () => lot,
+    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
+    defaultView,
+    sweeps,
+  });
+  host.appendChild(tab.el);
+  tab.render();
+  return tab;
+}
+
+const SWEEP = {
+  id: 's1', title: 'Vth sweep card',
+  series: [{ label: 'A', tests: [1050] }, { label: 'B', tests: [1050] }],
+};
+// The title is the attribute's VALUE — the card's text also holds its body.
+const chartTitleAttrs = (tab) => [...tab.el.querySelectorAll('[data-wmap-chart-title]')].map(c => c.dataset.wmapChartTitle);
+const tabLabels = (tab) => [...tab.el.querySelectorAll('button[role="tab"]')].map(b => b.textContent);
+const selectedTab = (tab) => tab.el.querySelector('button[role="tab"][aria-selected="true"]')?.textContent;
+
+test('the Sweeps tab exists only when sweeps are defined', () => {
+  const { items, lot } = lotItems(2);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), ['Overview', 'Distributions', 'Correlation']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), ['Overview', 'Distributions', 'Correlation']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), ['Overview', 'Distributions', 'Correlation', 'Sweeps']);
+});
+
+test('sweep cards are in the Sweeps tab, not in Distributions', () => {
+  const { items, lot } = lotItems(2);
+  const sweepsTab = mountWithSweeps(items, lot, 'sweeps', [SWEEP]);
+  assert.equal(selectedTab(sweepsTab), 'Sweeps');
+  assert.ok(chartTitleAttrs(sweepsTab).includes('Vth sweep card'), chartTitleAttrs(sweepsTab).join(' | '));
+
+  const distTab = mountWithSweeps(items, lot, 'distributions', [SWEEP]);
+  assert.ok(!chartTitleAttrs(distTab).includes('Vth sweep card'), 'no sweep card in Distributions');
+});
+
+test("defaultView 'sweeps' with no sweeps opens Overview — there is no such tab", () => {
+  const { items, lot } = lotItems(2);
+  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', undefined)), 'Overview');
+});

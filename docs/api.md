@@ -182,7 +182,8 @@ type WaferMapInputBase = {
   testDefs?:         TestDef[],        // named test definitions — one per testValues entry
   hbinDefs?:         BinDef[],         // named hard bin definitions — one per distinct hbin value
   sbinDefs?:         BinDef[],         // named soft bin definitions — one per distinct sbin value
-  metadataFields?:   MetadataFieldDef[], // opts a die.metadata key into the 'metadata' plot mode — §4.1.10
+  metadataFields?:   MetadataFieldDef[], // opts a die.metadata key into the 'metadata' plot mode — §4.1.12
+  derivedTests?:     DerivedTestDef[],  // tests computed from other tests on the same die — §4.1.9
 }
 
 // Single-wafer variant (WaferMapInputSingle):
@@ -264,7 +265,7 @@ When a die position appears more than once in the `results` array (a retest), th
                   //   > 150 mm → V-notch ~3.5 mm wide, 1.25 mm deep  (SEMI M1)
   orientation?:   number         // degrees CW to rotate the die grid on screen; default 0 (see note below)
   edgeExclusion?: number         // exclusion band width in mm measured inward from the wafer edge; dies in this band are dimmed
-                                 // how these dies affect yield is controlled by the top-level edgeDieYieldMode option (§4.1.10)
+                                 // how these dies affect yield is controlled by the top-level edgeDieYieldMode option (§4.1.11)
   metadata?:      WaferMetadata  // arbitrary lot/wafer-level data attached to the view (lot ID, date, etc.)
 }
 ```
@@ -409,16 +410,100 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
                        // outcome would be meaningless). They get pass-rate analysis
                        // instead: stats.functionalYield, "Functional Tests" tables, and
                        // regional pass-rate findings (kind 'functionalTest')
+
+  // ── Set by buildWaferMap on a derived test, never by the caller — see §4.1.9
+  readonly derived?:     true    // marks this test as derived rather than measured
+  readonly expression?:  string  // the expression it was computed from, verbatim
+  readonly constants?:   Record<string, number>  // the constants that expression resolved
 }
 ```
 
 `testNumber` must match the key used in `DieResult.testValues` / `DieResult.testPass`.
 
+**`derived` is on `TestDef`, not only on `DerivedTestDef`, deliberately.** `result.testDefs` is one homogeneous `TestDef[]` — a derived test is an ordinary test from the build onwards — so every surface that shows a test name reads its defs from there. Putting the flag only on the input type would mean each of those surfaces needed a cast to ask whether a value was measured or derived, and a display that cannot ask that question cannot mark it: an engineer reading a Cpk table would be left to assume the number came off the tester. `expression` travels for the same reason — it is what a tooltip or panel needs to answer *where did this number come from*, without the host holding its own `derivedTests` input alongside the result and joining the two by test number.
+
 `isParametricTest(def)` (exported; deprecated — removed in 0.31.0) returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric, so untyped callers are unaffected.
 
 **Legacy functional encoding:** callers that predate `DieResult.testPass` encoded a functional outcome as a `testValues` entry of `1` (pass) / `0` (fail). That data keeps working everywhere — rendering, stats, and findings all read verdicts through `getTestPassStatus` (§10.1), which documents the fallback. New code should write `testPass` and leave functional tests out of `testValues` entirely.
 
-#### 4.1.9 `BinDef`
+#### 4.1.9 `DerivedTestDef`
+
+A test computed from other tests on the same die, rather than measured. It is a `TestDef` plus an `expression`, so `unit`, `limitLow`/`limitHigh` and `logScale` already mean the right thing — and from the build onwards it is an ordinary test: it appears in `result.testDefs`, in the value plot modes, the colorbar, tooltips, `analyzeWaferMap`, Insights and the report, with no other change required.
+
+```ts
+{
+  ...TestDef          // testNumber, name, unit, limitLow/limitHigh, logScale, testType
+  expression:  string // the computation — see the grammar below
+  constants?:  Record<string, number>  // named values usable in `expression`
+  derived?:    true   // set by buildWaferMap, never by the caller — marks the def as derived
+}
+```
+
+The admitted def joins `result.testDefs` carrying `derived: true` **and its `expression` and `constants`** (§4.1.8), so any surface showing the test can both mark it as computed and say what it was computed from.
+
+**How a derived test is shown.** Everywhere the library names a test, a derived one is marked with `†` after its name — never `ƒ`, which reads as femto beside `fA`/`fF` units — and the glyph never appears without its key, *Derived, not measured*:
+
+| Surface | Marker | Where the key is |
+|---|---|---|
+| Map title and colorbar | `Leak Shift † (nA)` — before the unit, so it qualifies the name | Its own line under the colorbar or legend |
+| Map tooltip | `Leak Shift †: 2.06 nA` | The next line, with the expression |
+| Process capability panel | After each column label, in a lane reserved only when a derived test is shown, so names stay aligned | The panel legend; the tooltip adds the expression |
+| Findings (`variable.label`, `summary`) | In the sentence | Row tooltip; a key line under the list naming each expression |
+| `stats.functionalYield[].label` and the Summary panel's tables | After the name | A key line under the table naming each expression |
+| HTML reports | In the findings table | A key line under it naming each expression — a printed report has no hover |
+| CSV exports | None — plain names | A trailing **Derived from** column holding the expression, added only when a row is derived |
+
+The structured form travels alongside: `TestDef.derived`/`expression` (§4.1.8), `StatsFinding.variable.derived`/`expression`, and `derived`/`expression` on `functionalYield` rows — so a host rendering its own view never has to parse the glyph back out.
+
+```ts
+buildWaferMap({
+  results, testDefs, waferConfig, dieConfig,
+  derivedTests: [
+    { testNumber: 900001, name: 'Leakage Shift', unit: 'uA',
+      expression: 'abs(t[1020] - t[1010])', limitHigh: 5 },
+    { testNumber: 900002, name: 'Sweep All Pass', testType: 'F',
+      expression: 'all(testPass[1010..1025])' },
+  ],
+});
+```
+
+**Reading die data.** Three accessors, each with one meaning and one read-path:
+
+| | Reads | Type | Valid on |
+|---|---|---|---|
+| `t[1020]` | the measured value | number | parametric tests |
+| `testPass[1020]` | the tester's recorded verdict (`die.testPass`, via `getTestPassStatus`) | boolean | any test |
+| `specPass[1020]` | the spec-limit judgement | boolean | parametric tests declaring a limit |
+| `diePass()` | the die's bin verdict under the map's `passBins` | boolean | any die |
+
+`testPass` and `specPass` are the same distinction `passFailDisplay: 'test' \| 'spec'` draws, and they are genuinely different questions — a value can be outside its limits while the tester recorded a pass. They are separate accessors rather than one because most CSV-sourced parametric data has measurements and no recorded verdict at all, so a single conflated accessor would silently return "unknown" for every die.
+
+**Ranges and reducers.** A range accessor — `t[1010..1015]` — yields a set, which must be reduced. A range names a block of test numbers; only the numbers actually declared in `testDefs` are read, so a sweep with gaps works.
+
+| Over values | Over verdicts |
+|---|---|
+| `mean` `sum` `min` `max` | `all` `any` `none` `countTrue` `countFalse` |
+| `countKnown` — the number of elements that have data, over either | |
+
+A set can **only** be produced by a range accessor and **only** consumed by a reducer: there is no vector arithmetic and no elementwise operator, which is what keeps this a scalar grammar.
+
+**Operators and functions.** `+ - * / % ^` (`^` right-associative), comparisons `< <= > >= == !=`, `and` / `or` / `not`, and `if(cond, a, b)`. Functions: `abs sqrt ln log10 exp floor ceil round sign pow min max`. Identifiers resolve only to entries in `constants`.
+
+**No script evaluation.** The expression is tokenised, parsed to a typed tree and walked per die. There is no `eval`, no `new Function`, no third-party expression engine, no member access and no way to name a host object — so a set of derived tests can be shared between teams as plain JSON.
+
+**When they are computed.** On the raw probe records, **before** lot stacking and before retest resolution, so every derived value comes from one real touchdown. Deriving after a stack would subtract one aggregate from another; deriving after retest collapse could mix a value from one touchdown with a verdict from another.
+
+**Value or verdict.** A numeric expression writes to `die.testValues[testNumber]`. A boolean expression is a verdict: declare `testType: 'F'` and it writes to `die.testPass[testNumber]`, never as a 1/0 in `testValues` — which would put it in the correlation matrix and the Cpk table. A declared `testType` that disagrees with what the expression produces is rejected.
+
+**Unknown data.** If any input the expression needs is missing on a die, the derived value is **absent** for that die — it renders as no-data grey and is excluded from the stat populations. Never `0`, never `false`. A non-finite result (`0/0`, `ln(-1)`) is absent for the same reason. Reducers are the one exception: they skip unknown elements and reduce what is known, which is why `countKnown` exists to make the denominator explicit.
+
+**Validation.** Everything statically knowable is checked at build and reported as a `derived-test-invalid` warning on `result.warnings`, naming the test and the character position: parse and type errors, a `testNumber` that collides with measured data (measured values are never overwritten), a `testType` mismatch, `t[n]` on a functional test, `specPass[n]` on a test with no limits, an undeclared test number, an unknown function or name. **A rejected derived test is dropped, never half-applied** — a half-working expression plots wrong numbers rather than no numbers.
+
+**Nesting.** A derived test may read another derived test — `t[900001]` resolves to a derived value just as it would a measured one. Evaluation follows dependency order, not declaration order, so the two can be listed either way round. A cycle, a self-reference, or a dependency on a test that was itself rejected drops the dependent with a warning naming the cause: an expression whose input never materialises would otherwise evaluate to no-data on every die and read as missing data.
+
+A unit mismatch across `+`/`-` (subtracting volts from amps) is reported but still computed, since unit strings are free text and a site may legitimately write both `"uA"` and `"µA"`.
+
+#### 4.1.10 `BinDef`
 
 Named definition for one bin number.  Used for both hard bin (`hbinDefs`) and soft bin (`sbinDefs`) — the shape is identical but the number spaces are independent.
 
@@ -434,7 +519,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 
 **Hard bins** (`hbinDefs`) are the physical sort result — where the part goes on the handler.  **Soft bins** (`sbinDefs`) are the logical test-program classification — the failure category as determined by the test algorithm, used for debug and yield analysis.  Many soft bins typically map to one hard bin.
 
-#### 4.1.10 `edgeDieYieldMode`
+#### 4.1.11 `edgeDieYieldMode`
 
 ```ts
 edgeDieYieldMode?: 'exclude' | 'denominator-only'   // default 'exclude'
@@ -460,7 +545,7 @@ const { yieldPercent, yieldPercentGross } = result.yield;
 // yieldPercentGross — gross die yield (edge dies counted against you)
 ```
 
-#### 4.1.11 `MetadataFieldDef`
+#### 4.1.12 `MetadataFieldDef`
 
 Named definition for one `die.metadata` key, opting it into the **`'metadata'` plot mode** — a generic categorical/layout view, distinct from test results and bins. Use this for any per-die classification that isn't a test outcome: which project a die belongs to on a multiproject wafer, vendor/third-party ownership, reserved/shared/unassigned areas, or any other host-defined grouping already carried in `die.metadata`.
 
@@ -501,7 +586,7 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
 - **Click-to-highlight in the legend**, exactly like `hardBin`/`softBin`: clicking a legend swatch dims every die except that value (`highlightMetadataValue`, the string-keyed analogue of `highlightBin`); clicking the same swatch again clears it.
 - Reuses wafer geometry, tooltip, selection, zoom, and PNG export unchanged — none of those are plot-mode-aware. The one thing genuinely new is the colour fill, the legend, and the toolbar entry.
 
-#### 4.1.12 `standardDiameters`
+#### 4.1.13 `standardDiameters`
 
 ```ts
 standardDiameters?: number[]   // default [100, 125, 150, 200, 300]
@@ -546,7 +631,7 @@ ladder without restating it.
   hbinDefs?:     BinDef[]       // named hard bin definitions passed to buildWaferMap
   sbinDefs?:     BinDef[]       // named soft bin definitions passed to buildWaferMap
   testDefs?:     TestDef[]      // named test definitions passed to buildWaferMap
-  metadataFields?: MetadataFieldDef[]  // named metadata-field definitions passed to buildWaferMap — §4.1.11
+  metadataFields?: MetadataFieldDef[]  // named metadata-field definitions passed to buildWaferMap — §4.1.12
   reticles:      Reticle[]      // generated reticle geometry — wired automatically when passed as a WaferMapDisplayItem
   reticleConfig: ReticleConfig | undefined  // the reticle config that was used; passed through to analyzeWaferMap automatically
   units:   'mm' | 'normalized'   // coordinate space of die.physX/die.physY and wafer dimensions
@@ -671,7 +756,7 @@ The library's one warning vocabulary. Raised by geometry inference on
 | --- | --- | --- |
 | `partial-coverage` | `error` | Data does not span a full wafer; inferred diameter/centre may be wrong and dies may be mis-positioned. Supply `waferConfig.center` + `.diameter`. |
 | `geometry-conflict` | `error` | `waferConfig.diameter` and `dieConfig.width`/`height` were both supplied and cannot contain the probed dies. |
-| `non-standard-diameter` | `warning` | A die pitch was supplied without a `diameter`, so the wafer was sized from the die extent — and the result is off the standard wafer-size ladder (SEMI M1: 100/150/200/300 mm and the smaller legacy sizes). Silicon only comes in those sizes, so e.g. 210 mm is evidence the probed grid did not reach the wafer edge and the wafer is really larger. Dies are then placed against a wafer that is too small, which moves them between rings and changes ring/edge findings. Supply `waferConfig.diameter` — or, if your line genuinely runs a size that is not on the ladder, extend or empty the ladder itself with `standardDiameters` (§4.1.12) rather than muting every geometry advisory. There is **no** matching advisory for an inferred *pitch*: that is derived to fit the supplied diameter, so it is self-consistent by construction and there is nothing to check it against. |
+| `non-standard-diameter` | `warning` | A die pitch was supplied without a `diameter`, so the wafer was sized from the die extent — and the result is off the standard wafer-size ladder (SEMI M1: 100/150/200/300 mm and the smaller legacy sizes). Silicon only comes in those sizes, so e.g. 210 mm is evidence the probed grid did not reach the wafer edge and the wafer is really larger. Dies are then placed against a wafer that is too small, which moves them between rings and changes ring/edge findings. Supply `waferConfig.diameter` — or, if your line genuinely runs a size that is not on the ladder, extend or empty the ladder itself with `standardDiameters` (§4.1.13) rather than muting every geometry advisory. There is **no** matching advisory for an inferred *pitch*: that is derived to fit the supplied diameter, so it is self-consistent by construction and there is nothing to check it against. |
 | `diameter-exceeds-die-extent` | `warning` | A **supplied** `waferConfig.diameter` that the probed dies fill less than 75% of the radius. The mirror of `geometry-conflict`, which asks whether the dies *fit*; this asks whether they *fill*. An over-large wafer is not harmless — ring bands are equal-radius, so it crushes dies into the inner rings and empties the outer ones (at a 10× diameter every die lands in ring 1), and ring/quadrant/edge findings then describe the assumed wafer rather than the probed area. A genuinely partial map looks identical, so the message names both causes. Not raised when `waferConfig.center` is supplied (that is the documented way to position partial data deliberately) or below 20 dies (too few for the extent to be evidence, and too few for ring analysis to report anything). |
 | `test-count-capped` | `warning` | More tests found than `analyzeWaferMap` will analyse, so **no test findings were computed at all**. Pass `testNumbers` to scope it. |
 | `edge-exclusion-exceeds-radius` | `warning` | `waferConfig.edgeExclusion` exceeds the resolved wafer radius (most likely with an under-inferred diameter). The excluded band is clamped to the whole wafer instead of silently producing a smaller, wrong ring. |
@@ -679,6 +764,7 @@ The library's one warning vocabulary. Raised by geometry inference on
 | `pass-bins-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different pass bins, and some hard bins pass on one wafer and fail on another. Every wafer's own verdicts and yield are correct; a bin has one colour and one legend row, so the named bins are shown as failing there. |
 | `ring-count-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different `ringCount`s. Each card and each wafer's findings use their own; the lot-level ring figures (Summary panel, report, Insights) use the count the message names. |
 | `input-values-not-numbers` | `error` | Raised by `buildWaferMap`: bins or test values were given as text, or pass/fail verdicts as something other than `true`/`false` — what a CSV parser produces unless each field is converted. They are **not** converted, so those dies are judged and plotted wrongly: a bin of `"1"` is not pass bin `1`, so they count as fails and yield is wrong. The message counts each kind and shows an example; it is also logged to the console. (String `x`/`y` throw instead.) |
+| `derived-test-invalid` | `warning` | Raised by `buildWaferMap`: a `derivedTests` entry (§4.1.9) could not be compiled or applied, and was **dropped** — a rejected derived test is never half-applied, because a half-working expression plots wrong numbers rather than no numbers. The message names the test and the character position within its `expr`. Causes: a parse or type error, a `testNumber` colliding with measured data (measured values are never overwritten), a `testType` mismatch, `t[n]` on a functional test, `specPass[n]` on a test with no limits, an undeclared test number, or an unknown function or name. Every other derived test in the same input still applies, so a map missing one derived test is the expected shape of this warning. |
 | `input-field-removed` | `error` | Raised by `buildWaferMap`: the input used a name removed in an earlier release — `data`, `die`, `stack`, `values`, `TestDef.index`, `dieConfig.origin`, `waferConfig.flat`, `reticleConfig.anchor` or `lotStack.aggr`. It is **not** honoured, so what it described is missing from the map (for `data` and `values`, the data itself). The message names each one and its replacement; it is also logged to the console, for a caller that does not read `result.warnings`. |
 
 `severity` is about trust in what is on screen, not about how loud the message is:
@@ -983,11 +1069,11 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 |---|---|---|---|
 | `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` \| `'metadata'` |
 | `binColorScheme` | `string` | `'default'` | Bin palette for `hardBin`/`softBin`. Built-in: `'default'`, `'accessible'` (colour-blind safe). Custom palettes via `registerBinColorScheme()` (§11.19). Pass bins take the palette's pass (green) colours and fail bins its fail colours, each chosen by bin number so a bin is the same colour in every lot — see `resolveBinColors`. |
-| `valueColorScheme` | `string` | `'default'` | Value gradient for `value` and the stacked modes (a stacked-bin map is a value map: each position's occurrence rate). Built-in: `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'mako'`, `'traffic'`, `'jet'`. Every one but `'traffic'` and `'jet'` reads low = dark, high = light. Custom gradients via `registerValueColorScheme()`. Separate from `binColorScheme`, so switching plot mode never resets either. Neither applies in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.11). |
+| `valueColorScheme` | `string` | `'default'` | Value gradient for `value` and the stacked modes (a stacked-bin map is a value map: each position's occurrence rate). Built-in: `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'mako'`, `'traffic'`, `'jet'`. Every one but `'traffic'` and `'jet'` reads low = dark, high = light. Custom gradients via `registerValueColorScheme()`. Separate from `binColorScheme`, so switching plot mode never resets either. Neither applies in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.12). |
 | `reverseValueScheme` | `boolean` | `false` | Flip the value gradient so high values take its low-end colour. The Colour scheme menu offers it as **Reverse gradient**. Use it for a parameter whose *low* end is the notable one, or for monochrome print where more ink should mean more. Applies to the dies, the colorbar and the mapless summary together — resolve any gradient of your own through `resolveValueColorFn(name, reversed)` so it cannot disagree with them. |
 | `useDefinedBinColors` | `boolean` | `true` | Honour `BinDef.color` where a bin definition supplies one. The Palette menu offers it as **Use colours from bin definitions**, only when some definition carries a colour. |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
-| `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.11) |
+| `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.12) |
 | `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Spec pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
 | `highlightBin` | `number` | — | Dim all bins except this one. Clicking a bin/soft-bin legend swatch toggles it. |
 | `highlightMetadataValue` | `string` | — | `'metadata'` mode's analogue of `highlightBin` — dim every die except this metadata value. Clicking a metadata legend swatch toggles it. |
@@ -1352,7 +1438,8 @@ The on-screen test table carries Test / Mean / **Ppk** / Spec yield only; the fu
 ```ts
 {
   enabled?:     boolean                                          // show the Insights toolbar button; default false
-  defaultView?: 'overview' | 'distributions' | 'correlation'      // sub-tab shown first; default 'overview'
+  defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps'  // sub-tab shown first; default 'overview'.
+                                                                      // 'sweeps' with no sweeps defined falls back to 'overview'
   defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
 }
 ```
@@ -1641,7 +1728,7 @@ Passing `insights: { enabled: true }` adds an **Insights** toolbar button. Click
 
 **Separate from the Summary panel (§5.4.2) on purpose.** A finding's entire value is click-to-highlight-on-map, which can't work inside a full takeover of the map — so the Summary panel (which includes findings) stays docked, always co-visible with the map, while Insights takes over the full view for chart-heavy content that doesn't reference specific dies. The two toggle independently; opening one never hides the other's toolbar button. Insights' Overview numbers and the Summary panel's compact bin/ring/quadrant/test-value rows read the same underlying computation, so they never disagree even though both can be on screen in principle.
 
-Insights has three sub-tabs:
+Insights has three sub-tabs, and a fourth, **Sweeps**, when `insights.sweeps` defines any:
 
 - **Overview** — a **per-test pass rate** chart (worst test first, clustered by group when "Group by" is active), headline tiles naming the population (wafer count, dies analysed and excluded, and for a lot the mean wafer yield, labelled *unweighted, per wafer* to distinguish it from the die-weighted figure), a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)", with a dashed median reference line), a hard/soft bin pareto, and a details card with ring/quadrant regional yield and the full per-test statistics table. The pass-rate chart has three modes — the same three pass rates `analyzeWaferMap` returns as `stats.testSpecYield`, `stats.testFlagYield` and `stats.functionalYield` (§7.4.1) — because a parametric test carries **two independent** pass/fail notions and a functional test only one:
 
@@ -1660,6 +1747,55 @@ Only the modes the data supports are offered, judged from the dies for `'testFla
 For a single wafer there is no "Group by" control (grouping needs more than one wafer to be meaningful — see §6.10) and no click-to-open-wafer action (the map you're looking at already *is* the only wafer there is to open). Everything else — the wafer picker on histogram/correlation/scatter, the capability↔boxplot/histogram cross-link, the correlation↔scatter cross-link — behaves the same as the gallery version.
 
 `insights.enabled` only changes what the toolbar exposes; it needs no other options.
+
+**`insights.sweeps`** — parametric sweeps, one card each in their own **Sweeps** sub-tab, which appears only when at least one is defined. Sweeps get a tab rather than joining Distributions because that view is driven by one selected test (capability → boxplot → histogram → trend), while a sweep draws many tests as one curve and ignores the selection; and the tab exists exactly when there is something in it, rather than behind an option or a count threshold, so a sweep never moves tabs because another was added. `defaultView: 'sweeps'` opens on it. **→ [Example: Parametric sweeps](examples/sweeps.html)**
+
+A sweep reads an ordered run of tests as a response curve rather than as independent tests, and measures the **pair**: where the first two series cross, and how far apart they are at given levels. The case it exists for is one quantity measured at a series of drive levels and recorded as a block of consecutive test numbers — swept up in one block, down in another.
+
+```ts
+insights: {
+  enabled: true,
+  sweeps: [{
+    id: 'power',
+    title: 'Power Sweep — rise vs fall',
+    series: [
+      { label: 'Rising',  tests: [1200, 1201, 1202], xValues: [0, 3, 6] },
+      { label: 'Falling', tests: [1210, 1211, 1212], xValues: [0, 3, 6] },
+    ],
+    separationAt: [0.45, 0.60],
+    xLabel: 'Drive level (dBm)',
+  }],
+}
+```
+
+| Field | | |
+|---|---|---|
+| `id` | `string` | Stable identity, so a host can persist which sweep was selected |
+| `title` | `string` | Card title |
+| `series[].tests` | `number[]` | Test numbers **in sweep order** — never sorted. A plain array, not an expression: there is no `1200..1230` range syntax here (see below) |
+| `series[].xValues` | `number[]` | The real swept quantity per test. Without it the x axis is the ordinal position, because test numbers are identifiers and nothing guarantees they are evenly spaced — interpolating a crossing along them would assume a scale the data never claimed. Supply it and the crossing is reported in dBm rather than "between the 3rd and 4th test". |
+| `series[].color` | `string` | Optional override. Omit it and the series take CVD-safe palette colours that theme correctly in dark mode; a hardcoded hex does neither. |
+| `crossing` | `boolean` | Default `true` when there are two or more series |
+| `separationAt` | `number[]` | Y levels at which to report the **width** between the first two series — the horizontal distance between the points where each crosses that level. When one curve falls and the other rises, the pair traces a V and this is the width of the V at that level, which widens as the level rises above the crossing. Each series must be monotonic for the width to be unambiguous; a level that meets a curve twice reports the first crossing. |
+| `xLabel` / `yLabel` | `string` | Axis titles |
+
+Each line is the population **median with a p10–p90 band**, not one trace per die — a lot is thousands of dies. The per-die view of the same data is a derived test (§4.1.9) plotted on the map, where position is visible.
+
+A sweep deliberately carries **no population scope of its own**: it names which tests form the curve, so the same definition is valid for any population and stays portable between lots and hosts. The dies it aggregates are whatever the Insights view is currently scoped to.
+
+**No range syntax in `tests` — and that is deliberate.** A derived test's expression (§4.1.9) accepts `t[1200..1230]` because it is a string the library tokenises; `tests` is an ordinary `number[]`, so a range would mean typing the field as `number[] | string` and adding a second parser. Three things would be lost. Order *is* the x axis and is never sorted, so a range would impose ascending order on the one place a descending run is normal — a falling sweep recorded from the top level down. `xValues` must be the same length as `tests`, which is checkable at a glance against a literal array but becomes implicit under a range, so a single gap silently pairs every physical x with the wrong test. And gaps differ in meaning: an undeclared number inside a derived-test range is skipped silently, whereas a sweep test missing from `testDefs` is reported in the card footer, because a hole in a curve is something you want to be told about. Build the array in the host instead — the length stays explicit and the falling series is a `.reverse()` away:
+
+```ts
+const span = (from: number, to: number) =>
+  Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+series: [
+  { label: 'Rising',  tests: span(1200, 1230), xValues: span(0, 30).map(i => i * 0.5) },
+  { label: 'Falling', tests: span(1240, 1270), xValues: span(0, 30).map(i => i * 0.5) },
+]
+```
+
+A crossing is measured only where both series share an x value, and a multiple crossing is reported as such rather than presenting the first as if it were the only one. A width level that either curve never reaches reads "not measurable", naming which series — never `0`. Tests missing from `testDefs`, functional tests inside a sweep, and series measuring different units are reported in the card footer.
 
 **The chart suite is loaded on demand.** It is a separate chunk (~25 KB gzipped), fetched
 the first time Insights is opened and never downloaded by a page that only renders maps —
@@ -1827,7 +1963,7 @@ interface WaferMapDisplayItem {
   hbinDefs?:     BinDef[]                             // hard bin names/colors
   sbinDefs?:     BinDef[]                             // soft bin names/colors
   testDefs?:     TestDef[]                            // named test definitions
-  metadataFields?: MetadataFieldDef[]                 // opts die.metadata keys into 'metadata' plot mode — §4.1.11
+  metadataFields?: MetadataFieldDef[]                 // opts die.metadata keys into 'metadata' plot mode — §4.1.12
   reticles?:     Reticle[]                            // reticle field geometry
 
   label?:        string                               // names this wafer on its card header, in findings/yield lists, reports,
@@ -1970,7 +2106,7 @@ to be pre-built.
 | Button | Action |
 | --- | --- |
 | Mode | Dropdown: plot mode for all cards |
-| Palette | Menu: bin colour scheme (bin modes) or value gradient (other modes) for all cards — same menu as §5.6. Bin colours are resolved **once across the whole gallery** and handed to every card, so a bin is the same colour on every wafer and in the lot legend. Hidden in `'metadata'` mode — that mode always uses its own dedicated ordered palette (§4.1.11), so the control would have no visible effect. |
+| Palette | Menu: bin colour scheme (bin modes) or value gradient (other modes) for all cards — same menu as §5.6. Bin colours are resolved **once across the whole gallery** and handed to every card, so a bin is the same colour on every wafer and in the lot legend. Hidden in `'metadata'` mode — that mode always uses its own dedicated ordered palette (§4.1.12), so the control would have no visible effect. |
 | Log scale | Toggle log₁₀ scale for all cards. Shown only in `value` / `stackedValues` modes, and hidden whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. |
 | Rings | Toggle ring boundaries on all cards |
 | Quadrants | Toggle quadrant boundaries on all cards |
@@ -2467,7 +2603,9 @@ Either the rate criterion or the size criterion can trigger the severity level; 
                                       // verdicts read via getTestPassStatus (recorded testPass first, then the
                                       // legacy 0/1 testValues fallback); partial/edge-excluded dies excluded
       testNumber:      number
-      label:           string         // testDef.name
+      label:           string         // testDef.name, ending in " †" for a derived test
+      derived?:        true           // computed from other tests (TestDef.derived) — see §4.1.9
+      expression?:     string         // what it was computed from, verbatim
       passDies:        number
       failDies:        number
       totalDies:       number         // dies with a recorded verdict — never counts untested dies as fails
@@ -2593,7 +2731,7 @@ Added in 0.30.1. These replace calling the chart-data builders (§7.16) yourself
 
 ### 7.6 `renderFindingsReportHtml`
 
-> Deprecated in 0.30.0 and **withdrawn in 0.30.1**: it stays. It takes a summary and nothing else, so it cannot be given inconsistent inputs. For the full wafer and lot reports use §7.6.1.
+> **Deprecated — removed in 0.32.0.** Use `renderWaferReportHtml`/`renderLotReportHtml` (§7.6.1): their Findings section is the same table, since 0.31.0 rendered by one shared builder, alongside the population and yield the findings were drawn from. (Deprecated in 0.30.0, withdrawn in 0.30.1 on the grounds that the Summary panel used it — which it had not since 0.20.0 — and deprecated again in 0.31.0.)
 
 ```ts
 import { renderFindingsReportHtml } from '@wafertools/wafermap/stats';
@@ -2653,7 +2791,7 @@ Generates a standalone printable HTML **full summary report** — a snapshot of 
 }
 ```
 
-`Wafer` → §12.2 · `Die` → §12.1 · `YieldSummary` → §4.2.1 · `BinDef` → §4.1.9 · `TestDef` → §4.1.8 · `StatsSummary` → §7.4
+`Wafer` → §12.2 · `Die` → §12.1 · `YieldSummary` → §4.2.1 · `BinDef` → §4.1.10 · `TestDef` → §4.1.8 · `DerivedTestDef` → §4.1.9 · `StatsSummary` → §7.4
 
 The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided, and opens the result via `openReportModal` (§10.3).
 
@@ -2688,7 +2826,7 @@ Generates a standalone printable HTML **full lot summary report** — the lot-le
 }
 ```
 
-`Wafer` → §12.2 · `Die` → §12.1 · `BinDef` → §4.1.9 · `TestDef` → §4.1.8 · `StatsSummary` → §7.4 · `AnalyzeWaferMapOptions` → §7.3
+`Wafer` → §12.2 · `Die` → §12.1 · `BinDef` → §4.1.10 · `TestDef` → §4.1.8 · `DerivedTestDef` → §4.1.9 · `StatsSummary` → §7.4 · `AnalyzeWaferMapOptions` → §7.3
 
 There is no `lotSummary` parameter — grouping, per-group analysis (`analyzeWaferLot`), and rendering all happen internally from the flat `items` list, so callers never pre-compute a lot summary or pre-partition by lot identity themselves. `items` is partitioned by whichever of `lot`/`product`/`testProgram`/`temperature` actually vary across the wafers' `wafer.metadata` (a `split` difference alone never triggers a split — comparing splits *within* one report is the point of that field, not a reason to separate them into different documents). The common single-lot case produces one report identical to a plain single-lot call; a load that spans more than one lot/product/program/temperature is split into multiple side-by-side sections instead of silently pooling stats across populations that shouldn't be averaged together, with a banner explaining the split.
 
@@ -2732,8 +2870,10 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`.
     kind:   'yield' | 'hardBin' | 'softBin' | 'test' | 'functionalTest' | 'spatialPattern'
     index?: number          // test number — the key from testValues (for 'test' kind)
     bin?:   number          // bin value (for 'hardBin'/'softBin' kind)
-    label:  string          // human-readable name
+    label:  string          // human-readable name; ends in " †" for a derived test, as does its name in `summary`
     unit?:  string
+    derived?:    true       // the finding is about a derived test (TestDef.derived) — the structured form of the †
+    expression?: string     // what that test was computed from, verbatim
   }
   comparison: {
     family: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'wafer'
@@ -3832,7 +3972,7 @@ interface ViewOptions {
   testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
   hbinDefs?:               BinDef[]    // named hard bin definitions (hbin, 0–32767 space)
   sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
-  metadataFields?:         MetadataFieldDef[]  // opts die.metadata keys into 'metadata' plot mode — §4.1.11
+  metadataFields?:         MetadataFieldDef[]  // opts die.metadata keys into 'metadata' plot mode — §4.1.12
   activeTest?:              number      // testNumber to display in 'value' mode (matches testDef.testNumber, NOT a positional index); defaults to first available test
   activeMetadataKey?:      string      // die.metadata key to display in 'metadata' mode (matches a metadataFields[].key)
   logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
@@ -3905,8 +4045,10 @@ buildMapTitle(
   view:            View,
   fallbackFormat?: 'si' | 'engineering',   // default 'engineering'
   binDefs?:        BinDef[],               // active bin defs — names a single-bin stacked card's bin
-): MapTitleParts   // { primary: string; secondary: string }
+): MapTitleParts   // { primary: string; secondary: string; note?: string }
 ```
+
+`note` is `"† Derived, not measured"` when the map shows a derived test (§4.1.9); `primary` then carries the `†` after the test name, and `toCanvas` draws `note` on its own line below `secondary`. Absent for a measured test.
 
 Builds the on-canvas map title for any plot mode, derived from the `View`. Returns a primary/secondary split so the renderer can place the key identifier above the colorbar/legend and supporting context (stack/wafer-count, or `Spec pass/fail`) below it. `toCanvas` calls this automatically when `showTitle` is true; exported so custom pipelines can render the same title. See the title table under §9.1.
 

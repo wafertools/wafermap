@@ -93,10 +93,24 @@ export interface StatsFinding {
     index?: number;
     /** For bin kinds, the bin number this finding is about. */
     bin?: number;
-    /** Display name, already resolved through any supplied bin/test definitions. */
+    /**
+     * Display name, already resolved through any supplied bin/test definitions.
+     * For a derived test (`derived`) it ends in `" †"`, as does the test's name
+     * inside `summary` — marked at the source, so no reader of a finding can
+     * present a derived value as a measured one. A surface showing either
+     * string should show the key ("† Derived, not measured") with it.
+     */
     label: string;
     /** Unit of `effect.absoluteDelta`, when the variable has one. */
     unit?: string;
+    /**
+     * True when the finding is about a test computed from other tests rather
+     * than measured (`TestDef.derived`). The structured form of the `†` in
+     * `label`, for a host that wants to mark it its own way.
+     */
+    derived?: true;
+    /** The expression a `derived` test was computed from, for display. */
+    expression?: string;
   };
   /** Which two populations were compared. */
   comparison: {
@@ -265,6 +279,10 @@ export interface StatsSummary {
     functionalYield?: Array<{
       testNumber:      number;
       label:           string;
+      /** Computed from other tests rather than measured; `label` then ends in `" †"`. See `TestDef.derived`. */
+      derived?:        true;
+      /** The expression a `derived` test was computed from, for display. */
+      expression?:     string;
       passDies:        number;
       failDies:        number;
       /** Dies with a recorded pass/fail verdict for this test. */
@@ -335,6 +353,15 @@ export interface TestCapability {
   testNumber: number;
   label:      string;
   unit?:      string;
+  /**
+   * True when this test was computed from other tests rather than measured
+   * (`TestDef.derived`). Carried onto the row so the panel can mark it: a Cpk
+   * printed against a derived quantity is a valid figure, but a reader who
+   * takes it for a measured one draws the wrong conclusion about the process.
+   */
+  derived?:   true;
+  /** The expression a `derived` test was computed from, for display. */
+  expression?: string;
   /** Both `limitLow` and `limitHigh` defined. When false, `lsl`/`usl` are absent and every index is null. */
   hasSpec:    boolean;
   lsl?:       number;

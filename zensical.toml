@@ -52,6 +52,8 @@ nav = [
       { "Findings, Summary panel and galleries" = "examples/statistics.html" },
       { "Multi-site parallel testing"    = "examples/test-sites.html"      },
       { "Insights chart suite"           = "examples/insights.html"        },
+      { "Derived tests and sweeps"       = "examples/derived-tests.html"   },
+      { "Parametric sweeps"              = "examples/sweeps.html"          },
     ]},
     { "Real data and performance" = [
       { "Real wafer data (WM-811K)"      = "examples/real-data.html"       },

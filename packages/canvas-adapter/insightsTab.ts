@@ -38,6 +38,8 @@ import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
 import { renderBoxplotPanel } from './charts/boxplot.js';
 import { renderTrendPanel } from './charts/trend.js';
+import { renderSweepPanel } from './charts/sweep.js';
+import type { SweepSpec } from '../stats/sweep.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
 import { renderScatterPanel } from './charts/scatter.js';
@@ -52,7 +54,7 @@ import { buildLotTestSection, buildLotFunctionalSection, buildMetadataStripBox }
 import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
-export type InsightsView = 'overview' | 'distributions' | 'correlation';
+export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps';
 
 /** Public option shape for `RenderOptions.insights`/`GalleryOptions.insights`. */
 export interface InsightsOptions {
@@ -61,11 +63,50 @@ export interface InsightsOptions {
    * grid with wmap's own chart suite across three sub-tabs — Overview
    * (yield, bins, ring/quadrant yield, test values), Distributions
    * (process capability, boxplot, histogram), and Correlation (matrix +
-   * scatter). Default false.
+   * scatter) — plus a fourth, Sweeps, when `sweeps` defines any. Default false.
    */
   enabled?: boolean;
-  /** Which sub-tab is shown first. Default 'overview'. */
+  /** Which sub-tab is shown first. Default 'overview'. `'sweeps'` with no
+   *  `sweeps` defined falls back to 'overview' — there is no such tab to open. */
   defaultView?: InsightsView;
+  /**
+   * Parametric sweeps, one card each in their own Sweeps sub-tab — which appears
+   * only when this is non-empty.
+   *
+   * A sweep reads an ordered run of tests as a response curve rather than as
+   * independent tests, and measures the PAIR: where the first two series cross,
+   * and how far apart they are at given levels. The case it exists for is the
+   * same quantity measured at a series of power levels, recorded as a block of
+   * consecutive test numbers, swept up in one block and down in another.
+   *
+   * ```ts
+   * insights: { enabled: true, sweeps: [{
+   *   id: 'power', title: 'Power Sweep',
+   *   series: [
+   *     { label: 'Rising',  tests: [1010, 1011, 1012], xValues: [0, 5, 10] },
+   *     { label: 'Falling', tests: [1020, 1021, 1022], xValues: [0, 5, 10] },
+   *   ],
+   *   separationAt: [1.2, 2.5],
+   * }] }
+   * ```
+   *
+   * Deliberately carries no population scope of its own: a sweep definition
+   * says which tests form the curve, and is therefore valid for any population
+   * and portable between hosts. The dies it aggregates are whatever the
+   * Insights view is currently scoped to.
+   *
+   * **Provisional.** This arrived as one site's request. The mechanism — an
+   * ordered run of tests read as a curve — is a recurring semiconductor shape
+   * (shmoo, VDD/temperature sweeps, retention, endurance, IV), which is the case
+   * for it being library-level; against it is that only one host has asked. It
+   * is shipping so tsmap can put it in front of that user, and the answer
+   * decides it: a second sweep-shaped use means it is general and stays, while
+   * "also measure X, and split by Y" means it is a bespoke chart and belongs
+   * behind a host-contributed-panel extension point instead. `separationAt` is
+   * the narrowest part of the surface and the first thing to drop if it is not
+   * used. Do not widen this shape before that question is settled.
+   */
+  sweeps?: SweepSpec[];
   /**
    * Open the Insights view on mount instead of starting on the map/grid.
    * Default false — the tab is offered, the map is what you see first.
@@ -123,6 +164,8 @@ export interface InsightsTabDeps {
   focusTest?: (testNumber: number) => void;
   /** Default sub-tab shown on first render. Default 'overview'. */
   defaultView?: InsightsView;
+  /** Sweep definitions to render in the Distributions view — see `InsightsOptions.sweeps`. */
+  sweeps?: SweepSpec[];
   /**
    * When provided, the tab bar gets a leading "‹ Map"/"‹ Gallery" tab that
    * exits Insights back to the host's normal view — one visible navigation
@@ -187,6 +230,17 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
   { key: 'distributions', label: 'Distributions' },
   { key: 'correlation',   label: 'Correlation' },
 ];
+
+/**
+ * Sweeps get their own sub-tab, shown only when any are defined — neither an
+ * option nor a count threshold. A threshold would make a sweep's location
+ * depend on how many siblings it has, so a chart would move tabs the day a
+ * colleague added another; an option would be a layout flag with one right
+ * answer. And they never belonged in Distributions: that view is driven by one
+ * selected test (capability → boxplot → histogram → trend), while a sweep
+ * ignores the selected test and draws many tests as one curve.
+ */
+const SWEEPS_VIEW: { key: InsightsView; label: string } = { key: 'sweeps', label: 'Sweeps' };
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
@@ -319,7 +373,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   rootEl.appendChild(tabBar);
   rootEl.appendChild(bodyEl);
 
-  let activeView: InsightsView = deps.defaultView ?? 'overview';
+  const hasSweeps = (deps.sweeps?.length ?? 0) > 0;
+  const views = hasSweeps ? [...VIEWS, SWEEPS_VIEW] : VIEWS;
+  let activeView: InsightsView = deps.defaultView === 'sweeps' && !hasSweeps
+    ? 'overview'
+    : deps.defaultView ?? 'overview';
   let analysisGroupKey: string | undefined;
 
   // Distributions' shared selected test and group scope live HERE, not inside
@@ -1081,7 +1139,29 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // instead of forcing a large dead box next to functional siblings.
     wrap.append(capability.card, boxplot.card, histogram.card, trend.card);
 
-    return { card: wrap, destroy: () => { capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); } };
+    return {
+      card: wrap,
+      destroy: () => {
+        capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy();
+      },
+    };
+  }
+
+  /**
+   * One card per defined sweep. Each aggregates over whatever population the
+   * Insights view is scoped to — the spec names only the tests, never the dies,
+   * which is what keeps a saved sweep portable between lots and between hosts.
+   */
+  function renderSweepsSection(items: Item[]): { card: HTMLElement; destroy: () => void } {
+    const wrap = makeChartGridWrap(doc);
+    // The FULL reconciled set, not the parametric-only list the other sections
+    // use: a sweep must be able to see that one of its tests is functional in
+    // order to say so, rather than silently plotting a gap.
+    const testDefs = mergeTestDefs(items).defs;
+    const dies = items.flatMap(it => it.dies);
+    const panels = (deps.sweeps ?? []).map(spec => renderSweepPanel({ spec, dies, testDefs, onSaveImage, ownerDocument: doc }));
+    for (const p of panels) wrap.appendChild(p.card);
+    return { card: wrap, destroy: () => { for (const p of panels) p.destroy(); } };
   }
 
   /** Correlation matrix + scatter together, wired so clicking a matrix cell
@@ -1125,7 +1205,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     tabBar.innerHTML = '';
 
     if (deps.backTab) tabBar.appendChild(makeBackTabButton(deps.backTab));
-    for (const v of VIEWS) tabBar.appendChild(makeTabButton(v.key, v.label));
+    for (const v of views) tabBar.appendChild(makeTabButton(v.key, v.label));
 
     const allItems = facetItems();
     renderMetadataStrip(allItems);
@@ -1275,6 +1355,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const section = cached ?? (
       activeView === 'overview'      ? renderOverviewSection(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
       activeView === 'distributions' ? renderDistributionsSection(scopeItems, scopedTestDefs, scopeGroups, groupLabelText) :
+      activeView === 'sweeps'        ? renderSweepsSection(scopeItems) :
       renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups));
     if (!cached) sectionCache.set(activeView, section);
     // Say why the test list is short, and how to get the rest back — above

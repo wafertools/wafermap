@@ -1,3 +1,5 @@
+import { stepDecimals } from './axisTicks.js';
+
 const SI_PREFIXES: [number, string][] = [
   [1e12, 'T'], [1e9, 'G'], [1e6, 'M'], [1e3, 'k'],
   [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'],
@@ -99,36 +101,77 @@ export function fmt(v: number, unit?: string, fallbackFormat?: 'si' | 'engineeri
 }
 
 /**
- * Format a range of values for a colorbar axis.
- *
- * Returns `{ tickFmt, axisLabel }` where:
- * - `tickFmt(v)` formats a single tick value as a compact number (no unit suffix).
- * - `axisLabel` is the quantity label for the axis, combining name and scaled unit
- *   so it only appears once (e.g. `"Idsat (mA)"`, `"Ioff (nA)"`, `"Vth (V)"`).
- *
- * A shared SI scale is chosen from the representative value (typically `vMax`).
- * All ticks are divided by the same scale factor so the axis is consistent.
- *
- * Without a unit the ticks use `fmt()` directly and `axisLabel` is just the name.
+ * A tick label in a shared scale. With `step` — the spacing of the ticks being
+ * labelled — every label carries exactly the decimals that step needs
+ * (`stepDecimals`): a 1–10 axis in steps of 2 reads "2 4 6 8", and a bandgap's
+ * 1.195–1.205 V in steps of 2 mV reads "1.196 1.198 1.200". Without a step the
+ * decimals follow each value's own size — the right rule for a lone value such
+ * as a die label, and the wrong one for a tick grid, where it printed "2.00" on
+ * a coarse axis and "1.20" five times on a fine one.
  */
-function makeTickFormatter(scale: number): (v: number) => string {
+function makeTickFormatter(scale: number, step?: number): (v: number) => string {
+  const fixed = step !== undefined && step > 0 ? stepDecimals(step / scale) : undefined;
   return (v: number): string => {
     if (!isFinite(v)) return String(v);
     if (v === 0) return '0';
     const scaled = v / scale;
+    if (fixed !== undefined) return scaled.toFixed(fixed);
     const a = Math.abs(scaled);
     const digits = a >= 100 ? 0 : a >= 10 ? 1 : 2;
     return scaled.toFixed(digits);
   };
 }
 
+/**
+ * A data value shown at an axis end — the colorbar's exact min and max — which
+ * is not on the tick grid. One decimal more than the ticks, dropped again when
+ * it is a zero: with the ticks' own decimals a 9.87 maximum on a 2-step axis
+ * would print as "10", a value past the data.
+ */
+function makeEdgeFormatter(scale: number, step: number | undefined, tick: (v: number) => string): (v: number) => string {
+  if (step === undefined || !(step > 0)) return tick;
+  const d = stepDecimals(step / scale) + 1;
+  return (v: number): string => {
+    if (!isFinite(v)) return String(v);
+    if (v === 0) return '0';
+    const s = (v / scale).toFixed(d);
+    return s.endsWith('0') ? s.slice(0, d === 1 ? -2 : -1) : s;
+  };
+}
+
+export interface AxisFormat {
+  /** A tick label: a bare number in the axis's shared scale. */
+  tickFmt: (v: number) => string;
+  /** A data value at an axis end (not on the tick grid) — see `makeEdgeFormatter`. */
+  edgeFmt: (v: number) => string;
+  /** Name plus scaled unit, shown once for the axis — e.g. `"Idsat (mA)"`. */
+  axisLabel: string;
+  /** The scaled unit alone (`"mA"`), for an axis that prints it on every tick; `''` when none. */
+  scaledUnit: string;
+}
+
+/**
+ * The formatting for one numeric axis: a shared SI scale chosen from `vRef`
+ * (typically the largest-magnitude value), applied to every tick so the axis
+ * reads consistently, with the scaled unit returned once.
+ *
+ * Pass `step` — the spacing of the ticks, from `fitTicks` (`axisTicks.ts`) —
+ * for a tick grid. Omit it for lone values, which keep size-based decimals.
+ * Without a unit, values in [0.1, 9999] are unscaled and, with no step, use
+ * `fmt()` as before.
+ */
 export function fmtColorbarAxis(
   vRef: number,
   name: string | null | undefined,
   unit: string | undefined,
   fallbackFormat: 'si' | 'engineering' = 'engineering',
-): { tickFmt: (v: number) => string; axisLabel: string } {
+  step?: number,
+): AxisFormat {
   const abs = Math.abs(vRef);
+  const build = (scale: number, axisLabel: string, scaledUnit: string, plain?: (v: number) => string): AxisFormat => {
+    const tickFmt = plain && step === undefined ? plain : makeTickFormatter(scale, step);
+    return { tickFmt, edgeFmt: makeEdgeFormatter(scale, step, tickFmt), axisLabel, scaledUnit };
+  };
 
   if (unit) {
     // With unit: pick SI prefix from vRef (folded back to the bare base unit first, in case
@@ -141,17 +184,13 @@ export function fmtColorbarAxis(
       : (SI_PREFIXES.find(([s]) => baseAbs >= s * 0.9999) ?? [1e-15, 'f']);
 
     const scaledUnit = `${prefix}${base}`;
-    const axisLabel  = name ? `${name} (${scaledUnit})` : scaledUnit;
-    return { tickFmt: makeTickFormatter(scale / preScale), axisLabel };
+    return build(scale / preScale, name ? `${name} (${scaledUnit})` : scaledUnit, scaledUnit);
   }
 
   // No unit. Values in the normal display range [0.1, 9999] need no scaling —
   // ticks show as plain numbers and the label is just the name.
   if (abs === 0 || (abs >= 0.1 && abs < 1e4)) {
-    return {
-      tickFmt:   v => fmt(v, undefined, fallbackFormat),
-      axisLabel: name ?? '',
-    };
+    return build(1, name ?? '', '', v => fmt(v, undefined, fallbackFormat));
   }
 
   if (fallbackFormat === 'si') {
@@ -160,8 +199,7 @@ export function fmtColorbarAxis(
     const [scale] = SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f'];
     const exp      = Math.round(Math.log10(scale));
     const expLabel = exp === 0 ? '' : `×10E${exp}`;
-    const axisLabel = name ? (expLabel ? `${name} (${expLabel})` : name) : expLabel;
-    return { tickFmt: makeTickFormatter(scale), axisLabel };
+    return build(scale, name ? (expLabel ? `${name} (${expLabel})` : name) : expLabel, expLabel);
   }
 
   // Engineering mode: pick the shared E±N exponent from vRef, ticks are bare scaled numbers,
@@ -170,9 +208,6 @@ export function fmtColorbarAxis(
   const clamped = Math.max(-15, Math.min(12, exp3));
   const scale   = Math.pow(10, clamped);
   const expLabel  = clamped === 0 ? '' : `×10E${clamped}`;
-  const axisLabel = name
-    ? (expLabel ? `${name} (${expLabel})` : name)
-    : expLabel;
-  return { tickFmt: makeTickFormatter(scale), axisLabel };
+  return build(scale, name ? (expLabel ? `${name} (${expLabel})` : name) : expLabel, expLabel);
 }
 

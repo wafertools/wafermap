@@ -270,3 +270,34 @@ test('a scope of one item can never collide with itself', () => {
   ]);
   assert.deepEqual(conflicts, []);
 });
+
+// ---------------------------------------------------------------------------
+// Derived tests must stay marked across the merge. This module rebuilds each
+// def field by field, so a field it does not name is silently dropped — which
+// is how `derived` went missing from every cross-wafer panel: the gallery's
+// capability grid drew a derived test with no marker while the single-wafer
+// view marked it.
+// ---------------------------------------------------------------------------
+
+test('derived and its expression survive the merge', () => {
+  const derived = { testNumber: 900001, name: 'Shift', derived: true, expression: 't[1020] - t[1010]' };
+  const { defs } = mergeTestDefs([item(derived), item(derived)]);
+  assert.equal(defs[0].derived, true);
+  assert.equal(defs[0].expression, 't[1020] - t[1010]');
+});
+
+test('a test derived in any item is marked derived', () => {
+  // Deliberately asymmetric: marking a measured test is a visible oddity
+  // someone queries; leaving a derived one unmarked is invisible.
+  const { defs } = mergeTestDefs([
+    item({ testNumber: 900001, name: 'Shift' }),
+    item({ testNumber: 900001, name: 'Shift', derived: true, expression: 't[1020] - t[1010]' }),
+  ]);
+  assert.equal(defs[0].derived, true);
+});
+
+test('a measured test gains no derived fields from the merge', () => {
+  const { defs } = mergeTestDefs([item({ testNumber: 1010, name: 'Idsat' })]);
+  assert.equal('derived' in defs[0], false);
+  assert.equal('expression' in defs[0], false);
+});

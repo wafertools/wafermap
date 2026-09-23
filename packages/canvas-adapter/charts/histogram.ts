@@ -19,8 +19,9 @@ import { buildTestHistogramData, collectTestValues, buildTestHistogramSeries, te
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
+import { niceStep, fitTicks } from '../../renderer/axisTicks.js';
 import { QUANTITY, categorical } from './palette.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, horizontalTickSpacing, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
 import { escHtml, maxOf } from '../../core/utils.js';
 // Quantity/series colours are fixed (palette.ts), not the map's colours.
 
@@ -35,17 +36,15 @@ function drawCountAxis(
   maxCount: number, colors: { text: string; axis: string; grid: string },
   targetTicks = 4,
 ): void {
-  const rawStep = Math.max(1, maxCount / targetTicks);
-  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-  const norm = rawStep / mag;
-  const niceStep = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+  // Counts are whole, so never a step below 1; otherwise the shared rule.
+  const countStep = Math.max(1, niceStep(maxCount / targetTicks));
   const plotH = plotBottom - plotTop;
 
   ctx.save();
   ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  for (let v = 0; v <= maxCount + 1e-9; v += niceStep) {
+  for (let v = 0; v <= maxCount + 1e-9; v += countStep) {
     const y = plotBottom - (v / (maxCount || 1)) * plotH;
     ctx.strokeStyle = colors.grid;
     ctx.lineWidth = 1;
@@ -287,7 +286,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const bucketMin = buckets[0].rangeLow;
     const bucketMax = buckets[buckets.length - 1].rangeHigh;
     const bucketSpan = bucketMax - bucketMin || 1;
-    const axis = makeAxisFormat(Math.max(Math.abs(bucketMin), Math.abs(bucketMax)), unit);
+    // The scale reference; the formatter itself is built per draw, once the
+    // tick step for the current width is known.
+    const axisRef = Math.max(Math.abs(bucketMin), Math.abs(bucketMax));
 
     function plotRect(height: number) {
       const plotX = PADDING + 36;
@@ -351,7 +352,8 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         dataMin: bucketMin, dataMax: bucketMax, limitLow, limitHigh, includeLimits: false });
       drawOffAxisLimits(ctx, offAxis,
         { left: plotX, right: plotX + plotMaxWidth, top: plotTop, bottom: plotBottom },
-        'horizontal', theme.limitLine, axis.tick);
+        // A limit is a data value, not a grid value: size-based decimals, as before.
+        'horizontal', theme.limitLine, makeAxisFormat(axisRef, unit).tick);
       const offAxisValues = new Set(offAxis.map(o => o.value));
       for (const [limit, label] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
         if (limit === undefined || offAxisValues.has(limit)) continue;
@@ -379,13 +381,13 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       ctx.fillStyle = theme.textMuted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const minLabelPx = 44;
-      const maxLabels = Math.max(2, Math.floor(plotMaxWidth / minLabelPx));
-      const rawStep = Math.ceil(buckets.length / maxLabels);
-      const labelStep = Math.max(1, rawStep);
-      for (let i = 0; i <= buckets.length; i += labelStep) {
-        const value = i < buckets.length ? buckets[i].rangeLow : buckets[buckets.length - 1].rangeHigh;
-        const x = plotX + i * barWidth;
+      // Round values, placed by value — not the bucket edges, which sit wherever
+      // the binning put them and labelled the axis "1.0342 1.0517 …".
+      // As many round values as the measured labels allow in the plot's width.
+      const { ticks: valueTicks, step: valueStep } = fitTicks(bucketMin, bucketMax, plotMaxWidth, horizontalTickSpacing(ctx, axisRef, unit));
+      const axis = makeAxisFormat(axisRef, unit, valueStep || undefined);
+      for (const value of valueTicks) {
+        const x = plotX + ((value - bucketMin) / bucketSpan) * plotMaxWidth;
         ctx.beginPath();
         ctx.moveTo(x, plotBottom); ctx.lineTo(x, plotBottom + 4);
         ctx.stroke();
@@ -480,7 +482,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const bucketMin = ranges[0].rangeLow;
     const bucketMax = ranges[ranges.length - 1].rangeHigh;
     const bucketSpan = bucketMax - bucketMin || 1;
-    const axis = makeAxisFormat(Math.max(Math.abs(bucketMin), Math.abs(bucketMax)), unit);
+    const axisRef = Math.max(Math.abs(bucketMin), Math.abs(bucketMax));
     // Outer height, margins included: `offsetHeight` alone put the canvas over
     // the legend's bottom margin — the same overlap `applyCanvasFlow` was fixed
     // for on the scatter.
@@ -584,12 +586,11 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       ctx.fillStyle = theme.textMuted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const minLabelPx = 44;
-      const maxLabels = Math.max(2, Math.floor(plotMaxWidth / minLabelPx));
-      const labelStep = Math.max(1, Math.ceil(ranges.length / maxLabels));
-      for (let b = 0; b <= ranges.length; b += labelStep) {
-        const value = b < ranges.length ? ranges[b].rangeLow : ranges[ranges.length - 1].rangeHigh;
-        const x = plotX + b * barWidth;
+      // As many round values as the measured labels allow in the plot's width.
+      const { ticks: valueTicks, step: valueStep } = fitTicks(bucketMin, bucketMax, plotMaxWidth, horizontalTickSpacing(ctx, axisRef, unit));
+      const axis = makeAxisFormat(axisRef, unit, valueStep || undefined);
+      for (const value of valueTicks) {
+        const x = plotX + ((value - bucketMin) / bucketSpan) * plotMaxWidth;
         ctx.beginPath();
         ctx.moveTo(x, plotBottom); ctx.lineTo(x, plotBottom + 4);
         ctx.stroke();

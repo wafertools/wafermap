@@ -22,6 +22,232 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Derived tests** — `WaferMapInput.derivedTests`: tests computed from other tests
+  on the same die, rather than measured. Each entry is a `TestDef` plus an
+  `expression`, and from the build onwards it is an ordinary test — it appears in
+  `result.testDefs`, in the value plot modes, the colorbar, tooltips,
+  `analyzeWaferMap`, Insights and the report, with no other change required.
+
+  ```ts
+  derivedTests: [
+    { testNumber: 900001, name: 'Leakage Shift', unit: 'uA',
+      expression: 'abs(t[1020] - t[1010])', limitHigh: 5 },
+    { testNumber: 900002, name: 'Sweep All Pass', testType: 'F',
+      expression: 'all(testPass[1010..1025])' },
+  ]
+  ```
+
+  Expressions read `t[n]` (measured value), `testPass[n]` (the tester's recorded
+  verdict), `specPass[n]` (spec-limit judgement) and `diePass()` (the die's bin
+  verdict) — the same `'test'`/`'spec'` distinction `passFailDisplay` already
+  draws, because they are different questions and a single accessor would have
+  silently meant "recorded verdict" for parametric data that has none. A range
+  (`t[1010..1015]`) yields a set that must be reduced by `mean`, `sum`, `min`,
+  `max`, `all`, `any`, `none`, `countTrue`, `countFalse` or `countKnown`; there is
+  no vector arithmetic, which is what stops the grammar becoming an array
+  language. Operators `+ - * / % ^`, comparisons, `and`/`or`/`not`, and
+  `if(cond, a, b)`.
+
+  Parsed to a typed tree at build time and walked per die — **no `eval`, no
+  `Function`, no third-party expression engine, and no way to name a host
+  object** — so a chart spec can be shared between teams as plain JSON. This is
+  why the root bundle grows ~5 KB gzip.
+
+  Evaluated on raw probe records **before** lot stacking and retest resolution, so
+  every derived value comes from one real touchdown: deriving after a stack would
+  subtract one aggregate from another, and deriving after retest collapse could mix
+  a value from one touchdown with a verdict from another.
+
+  A boolean expression is a verdict — declare `testType: 'F'` and the result lands
+  in `die.testPass`, never as a 1/0 in `testValues` where it would enter the
+  correlation matrix and the Cpk table. An unknown input yields an **absent** value
+  (no-data grey), never `0` and never `false`.
+
+  Everything statically knowable is checked at build and reported as a
+  `derived-test-invalid` warning naming the position — a parse or type error, a
+  `testNumber` colliding with measured data, a `testType` that disagrees with the
+  expression, `t[n]` on a functional test, `specPass[n]` on a test with no limits.
+  A rejected derived test is **dropped**, never half-applied.
+
+- **Parametric sweeps** — `insights.sweeps` on `renderWaferMap`/`renderWaferGallery`:
+  an ordered run of tests read as a response curve rather than as independent
+  tests, with the crossing point of the first two series and the horizontal
+  separation at named levels measured and stated. `xValues` supplies the real
+  swept quantity so the crossing is reported in physical units; without it the
+  axis is the ordinal position, because test numbers are identifiers and are not
+  guaranteed to be evenly spaced. Each line is the population median with a
+  p10–p90 band. A multiple crossing says so; a level neither curve reaches reads
+  "not measurable" naming the series, never `0`.
+- **Nested derived tests** — a derived test may read another. Compilation
+  topologically sorts by what each expression reads, so declaration order does
+  not matter; cycles, self-references and dependents of a rejected test are
+  dropped with the cause named.
+- New example: **Derived tests and sweeps** (`docs/examples/derived-tests.html`).
+- **Sweeps have their own Insights sub-tab**, shown only when `insights.sweeps`
+  defines at least one; `InsightsView` gains `'sweeps'` for `defaultView`, which
+  falls back to `'overview'` when there are none. Not an option and not a count
+  threshold: a threshold would move a sweep between tabs the day a colleague
+  added another, and an option would be a layout flag with one right answer.
+  They never belonged in Distributions either — that view is driven by one
+  selected test (capability → boxplot → histogram → trend), while a sweep draws
+  many tests as one curve and ignores the selection.
+- New example: **Parametric sweeps** (`docs/examples/sweeps.html`) — four
+  characterisation sweeps in the Sweeps tab, each a different use of the
+  crossing and the width: the temperature-inversion voltage (Fmax vs VDD at
+  25/125 °C, with the iso-frequency VDD gap at two speeds), DIBL from an NMOS
+  transfer curve at two drain biases, the retention bake at which the read
+  window closes (uneven read times, which is what `xValues` is for), and an
+  output driver's maximum drive current (VOH vs VOL under load). The transfer
+  curve is swept over **derived** `log10(t[n])` tests — a sweep reads any test,
+  which is how a log-scale curve is drawn without a log option.
+- **Derived tests are marked on the sweep card**: `SweepPoint` carries `derived`
+  and `expression`, ordinal tick labels keep the `†` after truncation, the
+  tooltip marks each series row and adds each expression, and the footer shows
+  the key.
+- **Sweep card text.** The crossing line lower-cased the y label ("Cell Vt"
+  became "cell vt", "Fmax" became "fmax") — the width line had already been
+  fixed for the same reason ("dBm" → "dbm"); widths printed in engineering
+  notation (`32.7E-3`); and an x label carrying its own unit doubled the
+  brackets (`(VDD (V))`). X values — ticks, crossing and widths — now share one
+  plain-decimal rule, and a width reads "0.0327 on the VDD (V) axis".
+- The derived-tests example opened on a Switching Window measured at the step
+  where its two curves cross, so the gap sat around zero against `limitLow: 0`
+  and nearly every die carried a ▽. It is now measured at a fixed read step
+  with a 0.33 V margin, so only an edge band fails.
+- **A derived test is now identifiable from `result.testDefs` alone.** `derived`
+  was declared only on the `DerivedTestDef` *input* type, while `result.testDefs`
+  is a homogeneous `TestDef[]` — so every display surface needed a cast to ask
+  whether a value was measured or derived, and `expression`/`constants` were
+  stripped off the admitted def entirely, leaving nothing to say where a number
+  came from. All three now travel on `TestDef` as `readonly` fields set by
+  `buildWaferMap`. This is the prerequisite for marking derived tests in the UI:
+  a display that cannot ask the question cannot mark it, and an engineer reading a
+  Cpk table should never be left to assume a number came off the tester. The
+  alternative — hosts holding their own `derivedTests` input beside the result and
+  joining by test number — is a second source of truth that can disagree with the
+  def actually admitted, which carries the resolved `testType`.
+- **`testLabel` / `isDerivedTest` / `derivedTestSource` / `hasDerivedTests`**
+  (`renderer/testLabel.ts`, internal) — one definition of how a test is named and
+  how a derived one is distinguished. The "name, or *Test N* when it has none"
+  fallback existed in six places (`stats/sweep.ts`, `capability.ts`, `testPassRate.ts`,
+  `analyzeWaferMap.ts`, `charts/chartShell.ts`), all now routed through it. Around
+  sixteen surfaces display a test name; a marker added per surface would have been
+  that rule twenty-odd times over, which is how two of them end up disagreeing.
+- **Derived tests are marked in the process capability panel.** A `†` follows
+  the test name, the legend gains the key "† Derived, not measured", and the
+  tooltip says the same in words and shows the expression the value was
+  computed from. A dagger, not `ƒ`: in this domain `f` reads as femto,
+  and a `ƒ` beside `fA`/`fF` units is a real misread. The column labels are
+  right-aligned, so the marker sits at the aligned end of each name, and every
+  name — marked or not — is shifted by the marker's width, so names stay aligned
+  with each other. That lane is reserved only when the population contains a
+  derived test; otherwise the panel is unchanged to the pixel.
+  `TestCapability`/`CapabilityDatum` gain `derived` and `expression`.
+- **…and everywhere else a test is named.** The map title and colorbar
+  (`Leak Shift † (nA)` — the marker precedes the unit, so it qualifies the name)
+  with the key on its own line beneath, drawn via a new optional
+  `MapTitleParts.note`; the map tooltip, which adds the key and the expression;
+  finding labels and sentences, marked at the source so no reader of a finding
+  can show it unmarked, with `StatsFinding.variable.derived`/`expression` as the
+  structured form; `stats.functionalYield[].label` (plus `derived`/`expression`);
+  the Summary panel's parametric and functional tables and its findings list,
+  each with a key line naming every expression; and both HTML reports, whose key
+  lists the expressions because a printed report has no hover. CSV exports carry
+  plain names plus a trailing **Derived from** column, only when a row is
+  derived — a CSV has nowhere to put a key. The key is a single short string,
+  *Derived, not measured*, so it fits the corner of a map and cannot drift
+  between surfaces. Every surface goes through `renderer/testLabel.ts`, which
+  also replaced two more hand-written *Test N* fallbacks in `buildView.ts` and
+  one in the gallery's stacked cards, whose synthetic def now keeps the flag.
+  The finding tooltip now has one rule, `formatFindingTooltip`, which the
+  Summary panel shares with both reports instead of using `summary` directly.
+- Getting there turned up two places that dropped the flag. **`mergeTestDefs`**,
+  which builds a gallery's single test list, rebuilt each def field by field and
+  never named `derived`, so every cross-wafer panel would have shown a derived
+  test unmarked while the single-wafer view marked it. It now carries `derived`
+  and `expression`, marking a test derived when **any** wafer says so: marking
+  a measured test is an oddity someone queries, while leaving a derived one
+  unmarked goes unnoticed. The Summary panel's per-test table narrowed defs the
+  same way and now keeps both fields. It also held a seventh copy of the
+  *Test N* fallback, now routed through `testLabel`.
+- The derived-tests example showed a sweep's `tests` as `[1200…1208]` in a code
+  block two sections below the real `t[1200..1208]` range syntax of a derived-test
+  expression. That reads as a supported range, and `tests` has none. The block now
+  shows the plain arrays the page actually runs, with a note on why a sweep takes
+  no range.
+
+### Changed
+
+- **Axis ticks sit on round values, and are labelled to their spacing.** Tick
+  labels used to take their decimals from each value's own size, never from the
+  gap between ticks, so a 1–10 axis read "2.00 4.00 6.00 8.00" and a bandgap's
+  1.195–1.205 V read "1.20" five times — a sloped curve labelled as a flat line.
+  And only the colorbar placed ticks on round numbers: the box plot, scatter,
+  trend and sweep divided the data range into equal fractions (2.54 / 2.04 /
+  1.53 GHz), the histogram labelled its bucket edges, and its count axis carried
+  an inline copy of the rounding rule with different breakpoints. Every numeric
+  axis now goes through `renderer/axisTicks.ts` — one 1-2-5 rounding rule
+  (`niceStep`), round ticks inside the data range, and labels with exactly the
+  decimals the step needs (`stepDecimals`): "2 4 6 8", "1.196 1.198 1.200".
+  **Density comes from the space, not a tick count:** `fitTicks` takes the
+  finest round step whose labels fit — measured label widths plus an 8 px gap
+  on a horizontal axis, a line spacing on a vertical one. A fixed count, tried
+  first, rounded a 200 px Idsat box plot (0.863–1.56 mA) to 1.0 / 1.2 / 1.4 —
+  fewer ticks than the five it replaced; it now reads 0.9 / 1.0 / … / 1.5. The colorbar's exact min and max are data values rather than grid
+  values, so they get one decimal more, dropped when it is a zero — a 9.87
+  maximum no longer rounds to "10". Log-scale and integer-valued colorbars, die
+  labels and limit labels keep size-based formatting; they are not tick grids.
+  Every chart's tick labels change, so doc screenshots need recapturing.
+- **The wafer and lot reports' findings table now uses plain bin terms**
+  ("hard bin 2", not "HBin 2"). Both HTML reports render one findings table,
+  `findingsTableHtml`; each report module had kept its own, and only the
+  findings-only report translated the bin terms.
+
+### Deprecated
+
+- **`renderFindingsReportHtml`** — removed in 0.32.0. Use
+  `renderWaferReportHtml(result, summary)` or `renderLotReportHtml(results)`:
+  their Findings section is the same table, alongside the population and yield
+  it was found in. It was kept in 0.30.1 on the grounds that the Summary panel
+  used it, which had not been true since 0.20.0; nothing in wmap or tsmap calls
+  it. Removal is a release later than the 0.30.0 deprecations, so it ships
+  deprecated first: `deprecated()` now takes a removal version per name.
+
+### Fixed
+
+- **A functional-test finding merged across adjacent regions reported no
+  difference, and hid the real one.** Since 0.20.3, when a functional pass-rate
+  signal spanned adjacent rings, sectors or quadrants, the merge pass that joins
+  them into one finding (`Rings 1–2`) had no functional branch and fell through
+  to the bin one. It counted dies whose hard bin equalled `variable.bin` — which
+  a functional finding does not have — so both sides counted 0, and the merged
+  finding read *"Rings 1–2 has HBin undefined occurrence 0.0 percentage points
+  lower than the rest of the map"*, with a meaningless p-value. It also
+  **replaced** the correct per-region findings it merged, so a real functional
+  signal spanning adjacent regions was shown as no difference at all. The merge
+  now recomputes the pass rate over the merged region exactly as the per-region
+  builder does (verdicts through `getTestPassStatus`, dies without a verdict
+  excluded), and the sentence names the test. Found while testing the
+  derived-test marker, whose test wafer happened to have exactly this shape.
+- **Merged-region findings used a singular verb:** *"Rings 1–2 has HBin 3
+  occurrence…"*, *"Quadrants NE & SE has…"*. A merged region is plural; bin and
+  functional pass-rate sentences now say "have". The Summary panel, which strips
+  the region from a row shown under its own group header, accepts either verb.
+- **A `NaN` test value was classified as in-spec.** The spec-limit rule existed in
+  two places — `classifySpec` (die colouring, ▽/△ markers, the legend's spec tally)
+  and a private `specJudgement` in `stats/testPassRate.ts` (spec pass-rate tables) —
+  and they disagreed on two cases. `classifySpec` compared with `<` and `>`, which
+  are both false for `NaN`, so a non-finite measurement fell through to `'pass'`:
+  the exact "never drawn as plain in-spec" failure its own doc comment described.
+  It also reported `'pass'` for a test declaring no limits at all, inflating a spec
+  pass rate to 100% for every unlimited test. There is now one implementation
+  (`renderer/spec.ts`), strict on both, used by the renderer, stats and the
+  `specPass[n]` accessor.
+
 ## [0.30.2] — 2026-09-20
 
 ### Added

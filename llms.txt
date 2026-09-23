@@ -20,7 +20,7 @@ where repo-relative paths do not resolve.
 - [API Reference](https://wafertools.github.io/wafermap/api/) - public API, input types, coordinate system rules, and configuration details.
 - [Quick start](https://wafertools.github.io/wafermap/quickstart/) - install and first map.
 - [Troubleshooting](https://wafertools.github.io/wafermap/troubleshooting/) - common failure modes.
-- [Examples](https://wafertools.github.io/wafermap/examples/) - 20 runnable demo pages, also downloadable at https://wafertools.github.io/wafermap/wafermap-examples.zip to run offline.
+- [Examples](https://wafertools.github.io/wafermap/examples/) - 22 runnable demo pages, also downloadable at https://wafertools.github.io/wafermap/wafermap-examples.zip to run offline.
 
 ## Public package entry points
 - `@wafertools/wafermap` - `buildWaferMap()`, geometry, colour-scheme registries. Pure, no DOM.

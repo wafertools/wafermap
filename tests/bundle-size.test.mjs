@@ -65,7 +65,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
-  'wafermap (root)':            56_000,   // gzipped bytes — baseline ~52.7 KB
+  // Raised deliberately from 56_000 in 0.31.0: derived tests add a hand-written
+  // expression parser + evaluator (~5 KB gz). That cost buys the absence of a
+  // third-party expression engine on the one security boundary between a shared
+  // JSON template and the host app.
+  'wafermap (root)':            62_000,   // gzipped bytes — baseline ~57.9 KB
   'wafermap/render (initial)':  130_000,  // gzipped bytes — baseline ~104 KB, guide AND Insights excluded
 };
 

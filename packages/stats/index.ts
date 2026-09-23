@@ -4,7 +4,7 @@ export * from './analyzeWaferMap.js';
 export * from './analyzeWaferLot.js';
 export * from './filterFindings.js';
 export type { PatternLabel, PatternClassification, PatternFeatures } from './patternClassification.js';
-export { setReportOpener, renderFindingsReportHtml } from './renderFindingsReport.js';
+export { setReportOpener } from './renderFindingsReport.js';
 export { renderWaferReportHtml, renderLotReportHtml } from './renderSummaryReport.js';
 export type { ReportMap } from './renderSummaryReport.js';
 export type { SummaryReportParams, LotSummaryReportParams } from './renderSummaryReport.js';
@@ -38,4 +38,6 @@ export {
   sectorCompassNames, classifyPattern, computeFunctionalYield,
   resolveMetadataColumns, discoverDieMetadataKeys, openHtmlReport,
   renderSummaryReportHtml, renderLotSummaryReportHtml, DEFAULT_FACET_CURATION,
+  // Deprecated in 0.31.0, removed in 0.32.0.
+  renderFindingsReportHtml,
 } from './deprecated.js';

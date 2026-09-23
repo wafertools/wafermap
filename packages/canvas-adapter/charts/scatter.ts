@@ -21,7 +21,8 @@ import { pearsonOfPairs } from '../../stats/correlation.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas } from './chartShell.js';
+import { fitTicks } from '../../renderer/axisTicks.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -255,25 +256,28 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       return;
     }
 
-    const ticks = 4;
+    // Round values on each axis, placed by value and labelled to their step.
+    ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+    const xUnit = activeX !== null ? testMeta(activeX).unit : undefined;
+    const xTicks = fitTicks(xLo, xHi, plotW, horizontalTickSpacing(ctx, Math.max(Math.abs(xLo), Math.abs(xHi)), xUnit));
+    const yTicks = fitTicks(yLo, yHi, plotH, () => VERTICAL_TICK_SPACING_PX);
     // One shared SI scale per axis (makeAxisFormat) — bare "861E-6" ticks
     // with a lone "(A)" in the corner become "861 · 1020 · …" with "(µA)".
-    const xAxisFmt = makeAxisFormat(Math.max(Math.abs(xLo), Math.abs(xHi)), activeX !== null ? testMeta(activeX).unit : undefined);
-    const yAxisFmt = makeAxisFormat(Math.max(Math.abs(yLo), Math.abs(yHi)), activeY !== null ? testMeta(activeY).unit : undefined);
+    const xAxisFmt = makeAxisFormat(Math.max(Math.abs(xLo), Math.abs(xHi)), activeX !== null ? testMeta(activeX).unit : undefined, xTicks.step || undefined);
+    const yAxisFmt = makeAxisFormat(Math.max(Math.abs(yLo), Math.abs(yHi)), activeY !== null ? testMeta(activeY).unit : undefined, yTicks.step || undefined);
     ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 0.5;
     ctx.fillStyle = theme.textMuted;
 
-    for (let i = 0; i <= ticks; i++) {
-      const xv = xLo + (xSpan * i) / ticks;
-      const cx = SCATTER_LEFT + (i / ticks) * plotW;
+    for (const xv of xTicks.ticks) {
+      const cx = SCATTER_LEFT + ((xv - xLo) / xSpan) * plotW;
       ctx.beginPath(); ctx.moveTo(cx, SCATTER_TOP); ctx.lineTo(cx, SCATTER_TOP + plotH); ctx.stroke();
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText(xAxisFmt.tick(xv), cx, SCATTER_TOP + plotH + 4);
-
-      const yv = yLo + (ySpan * i) / ticks;
-      const cy = SCATTER_TOP + (1 - i / ticks) * plotH;
+    }
+    for (const yv of yTicks.ticks) {
+      const cy = SCATTER_TOP + (1 - (yv - yLo) / ySpan) * plotH;
       ctx.beginPath(); ctx.moveTo(SCATTER_LEFT, cy); ctx.lineTo(SCATTER_LEFT + plotW, cy); ctx.stroke();
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       ctx.fillText(yAxisFmt.tick(yv), SCATTER_LEFT - 4, cy);

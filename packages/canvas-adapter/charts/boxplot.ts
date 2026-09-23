@@ -23,8 +23,9 @@ import { buildTestBoxplotData, type BoxplotItem } from '../../stats/boxplot.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
+import { fitTicks } from '../../renderer/axisTicks.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
 import { escHtml, maxOf, minOf } from '../../core/utils.js';
 
 const BOX_ROW_HEIGHT = 24;
@@ -312,7 +313,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     const logMax = useLog ? Math.log10(globalMax) : 0;
     const logSpan = logMax - logMin || 1;
 
-    const axis = makeAxisFormat(Math.max(Math.abs(globalMin), Math.abs(globalMax)), unit);
+    const axisRef = Math.max(Math.abs(globalMin), Math.abs(globalMax));
 
     function plotRect() {
       const plotX = PADDING + BOX_LABEL_WIDTH;
@@ -325,10 +326,19 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       return plotX + ((value - globalMin) / span) * plotMaxWidth;
     }
 
-    function axisTickValues(): number[] {
-      const ticks: number[] = [];
-      for (let i = 0; i <= 4; i++) ticks.push(useLog ? Math.pow(10, logMin + (logSpan * i) / 4) : globalMin + (span * i) / 4);
-      return ticks;
+    /**
+     * Linear: round values, as many as the measured labels allow in the plot's
+     * width, labelled to their step. Log: five decade-spaced ticks with
+     * size-based labels, as before.
+     */
+    function axisTicks(ctx: CanvasRenderingContext2D, plotMaxWidth: number): { ticks: number[]; axis: ReturnType<typeof makeAxisFormat> } {
+      if (useLog) {
+        const ticks: number[] = [];
+        for (let i = 0; i <= 4; i++) ticks.push(Math.pow(10, logMin + (logSpan * i) / 4));
+        return { ticks, axis: makeAxisFormat(axisRef, unit) };
+      }
+      const fit = fitTicks(globalMin, globalMax, plotMaxWidth, horizontalTickSpacing(ctx, axisRef, unit));
+      return { ticks: fit.ticks, axis: makeAxisFormat(axisRef, unit, fit.step || undefined) };
     }
 
     function draw() {
@@ -504,7 +514,8 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       ctx.fillStyle = theme.textMuted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      for (const tick of axisTickValues()) {
+      const { ticks: tickValues, axis } = axisTicks(ctx, plotMaxWidth);
+      for (const tick of tickValues) {
         const x = xFor(tick, plotX, plotMaxWidth);
         ctx.beginPath();
         ctx.moveTo(x, axisY); ctx.lineTo(x, axisY + 4);

@@ -20,13 +20,10 @@ import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
 import { getDieKey, isPositionedDie, diePassStatus } from '../core/dies.js';
 import {
-  formatFindingDelta,
-  formatFindingCoverage,
-  formatFindingTooltip,
+  findingsTableHtml,
   renderMetadataSection,
   renderMetricGrid,
   renderSection,
-  renderSeverityBadge,
   renderTable,
   reportStyles,
 } from './reportHtml.js';
@@ -207,30 +204,13 @@ function capabilitySection(items: Array<{ dies?: Die[] }>, testDefs: TestDef[]):
 
 /** The findings table alone, for callers that supply their own heading — the
  *  per-wafer section renders one per wafer under a single section. */
-function findingsTableOnly(findings: StatsFinding[], totalWafers?: number): string {
-  const rows = findings.map((f) => {
-    const tooltip = escHtml(formatFindingTooltip(f));
-    return `<tr title="${tooltip}">
-      <td class="tight">${renderSeverityBadge(f.severity)}</td>
-      <td class="tight">${escHtml(f.comparison.left)}</td>
-      <td>${escHtml(f.variable.label)}</td>
-      <td class="numeric">${escHtml(formatFindingDelta(f))}</td>
-      <td class="numeric">${escHtml(formatFindingCoverage(f, totalWafers))}</td>
-    </tr>`;
-  }).join('\n');
-  const coverageHeader = totalWafers !== undefined ? 'Wafers' : 'N (region/rest)';
-  return `<table class="report-table findings-table compact"><thead><tr>
-    <th>Severity</th><th>Region</th><th>Metric</th><th class="numeric">Delta</th><th class="numeric">${coverageHeader}</th>
-  </tr></thead><tbody>${rows}</tbody></table>`;
-}
-
 function findingsSection(allFindings: StatsFinding[], totalWafers?: number): string {
   // Absorbed restatements dropped, matching the Summary panel and the findings
   // report. Without this a wafer with 8 merged hard/soft twins printed 16 rows —
   // each merged row immediately followed by the bare row it had just absorbed.
   const findings = visibleFindings(allFindings);
   if (!findings.length) return '';
-  return renderSection('Findings', findingsTableOnly(findings, totalWafers));
+  return renderSection('Findings', findingsTableHtml(findings, totalWafers));
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -379,7 +359,7 @@ function perWaferFindingsSection(lotSummary: LotStatsSummary): string {
     if (!findings.length) continue;
     const label = (pw.summary.wafer?.waferId as string | undefined) ?? `Wafer ${pw.waferIndex + 1}`;
     blocks.push(`<h3 class="report-subheading">${escHtml(label)}</h3>`
-      + findingsTableOnly(findings));
+      + findingsTableHtml(findings));
   }
   if (!blocks.length) return '';
   // State the denominator: this section lists only wafers that HAVE findings, and

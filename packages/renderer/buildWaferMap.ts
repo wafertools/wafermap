@@ -11,6 +11,10 @@ import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
 import { assignGridIndices } from '../core/inference/grid.js';
 import { generateReticleGrid } from '../core/reticle.js';
+import { applyDerivedTests, type DerivedTestDef } from './derivedTests/apply.js';
+// Hosts construct `WaferMapInput.derivedTests`, so the type is part of the public
+// input surface and is re-exported through this module's `export *` in index.ts.
+export type { DerivedTestDef } from './derivedTests/apply.js';
 import { buildView, type View, type ViewOptions, type PlotMode } from './buildView.js';
 import { maxOf, minOf, modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
@@ -243,6 +247,24 @@ export interface TestDef {
    * would be meaningless. Default: `'P'`.
    */
   testType?: 'P' | 'F';
+  /**
+   * Set by `buildWaferMap` on a test computed from `derivedTests`, never by the
+   * caller. It lives on `TestDef` rather than only on `DerivedTestDef` because
+   * `result.testDefs` is one homogeneous `TestDef[]`: every display surface
+   * reads its test names from there, and a derived value must be
+   * distinguishable from a measured one without a cast — an engineer reading a
+   * Cpk table cannot be left to assume a number came off the tester.
+   */
+  readonly derived?: true;
+  /**
+   * The expression a `derived` test was computed from, carried through verbatim
+   * so a display surface can answer "where did this number come from" without
+   * the caller having to hold the definition alongside the result. Absent on a
+   * measured test.
+   */
+  readonly expression?: string;
+  /** Named constants the `expression` resolved, for the same reason. */
+  readonly constants?: Record<string, number>;
 }
 
 /**
@@ -381,6 +403,34 @@ export interface WaferMapInputBase {
    * Both spaces range 0–32767 and may overlap — define them separately.
    */
   sbinDefs?: BinDef[];
+  /**
+   * Tests computed from other tests on the same die, rather than measured.
+   *
+   * Each entry is a `TestDef` plus an `expression`. They are evaluated per probe
+   * record at build time — before lot stacking and before retest resolution, so
+   * every value is derived from one real touchdown — and then behave as ordinary
+   * tests: they appear in `testDefs`, in the value plot modes, the colorbar,
+   * tooltips, `analyzeWaferMap`, Insights and the report.
+   *
+   * ```ts
+   * derivedTests: [
+   *   { testNumber: 900001, name: 'Leakage Shift', unit: 'uA',
+   *     expression: 'abs(t[1020] - t[1010])', limitHigh: 5 },
+   *   { testNumber: 900002, name: 'Sweep All Pass', testType: 'F',
+   *     expression: 'all(testPass[1010..1025])' },
+   * ]
+   * ```
+   *
+   * Expressions are parsed to a typed tree and walked — there is no `eval`, no
+   * `Function`, and no way to reach a host object — so a spec can be shared as
+   * plain JSON between teams. An entry that cannot be compiled is DROPPED with a
+   * `derived-test-invalid` warning naming the position; it is never partially
+   * applied.
+   *
+   * A boolean expression is a verdict: declare `testType: 'F'` and the result
+   * lands in `die.testPass`, never as a 1/0 in `testValues`.
+   */
+  derivedTests?: DerivedTestDef[];
   /**
    * Named definitions for `die.metadata` keys that should be selectable as the
    * `'metadata'` plot mode — a generic categorical view driven by whatever
@@ -542,6 +592,15 @@ export interface WaferWarning {
    *   were given as text (or verdicts as something other than true/false), as a
    *   CSV parser produces. They are not converted, so those dies are judged and
    *   plotted wrongly — a bin of "1" is not pass bin 1. The message counts them.
+   * - `'derived-test-invalid'` — raised by `buildWaferMap`: a `derivedTests` entry
+   *   could not be compiled — a parse or type error in its `expression`, a
+   *   `testNumber` that collides with a measured test, a `testType` that
+   *   disagrees with what the expression produces, or an accessor that is
+   *   statically impossible (`t[n]` on a functional test, `specPass[n]` on a test
+   *   with no limits). The message names the test and the position in the
+   *   expression. That derived test is DROPPED — never partially applied, since a
+   *   half-working expression plots wrong numbers rather than no numbers. Also
+   *   used for the non-fatal unit-mismatch advisory, where the value IS computed.
    * - `'input-field-removed'` — raised by `buildWaferMap`: the input used a name
    *   removed in an earlier release (`data`, `die`, `stack`, `values`,
    *   `TestDef.index`, `dieConfig.origin`, `waferConfig.flat`,
@@ -556,7 +615,7 @@ export interface WaferWarning {
       | 'diameter-exceeds-die-extent' | 'test-count-capped'
       | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected'
       | 'bin-colors-shared' | 'pass-bins-mixed' | 'ring-count-mixed' | 'input-field-removed'
-      | 'input-values-not-numbers' | (string & {});
+      | 'input-values-not-numbers' | 'derived-test-invalid' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -722,6 +781,7 @@ interface Normalized {
   hbinDefs:     BinDef[]  | undefined;
   sbinDefs:     BinDef[]  | undefined;
   metadataFields: MetadataFieldDef[] | undefined;
+  derivedTests: DerivedTestDef[] | undefined;
   retestPolicy:      'last' | 'first' | 'best' | 'worst';
   edgeDieYieldMode:  'exclude' | 'denominator-only';
 }
@@ -901,6 +961,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       hbinDefs:         undefined,
       sbinDefs:         undefined,
       metadataFields:   undefined,
+      derivedTests:     undefined,
       retestPolicy:     'last',
       edgeDieYieldMode: 'exclude' };
   }
@@ -932,6 +993,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     hbinDefs:         input.hbinDefs,
     sbinDefs:         input.sbinDefs,
     metadataFields:   input.metadataFields,
+    derivedTests:     input.derivedTests?.length ? input.derivedTests : undefined,
     retestPolicy:     input.retestPolicy ?? 'last',
     edgeDieYieldMode: input.edgeDieYieldMode ?? 'exclude' };
 }
@@ -1639,6 +1701,30 @@ export function buildWaferMap(
   const norm = normalizeInput(!Array.isArray(input) && input.layout ? expandLayout(input) : input);
   const { debug: _debug, ...viewOpts } = options ?? {};
 
+  // Derived tests are computed on the RAW probe records — before lot stacking and
+  // before retest resolution — so every derived value comes from one real
+  // touchdown. Deriving after a stack would subtract one aggregate from another
+  // and plot a number with no physical meaning; deriving after retest collapse
+  // could mix a value from one touchdown with a verdict from another.
+  const derivedWarnings: WaferWarning[] = [];
+  if (norm.derivedTests) {
+    const passBinSet = new Set(norm.passBins);
+    if (norm.lotStackOpts) {
+      const perWafer = norm.lotStackOpts.results.map(
+        wafer => applyDerivedTests(wafer, norm.testDefs, norm.derivedTests, passBinSet));
+      norm.lotStackOpts = { ...norm.lotStackOpts, results: perWafer.map(r => r.results) };
+      // Every wafer in the stack compiles the same specs against the same defs,
+      // so the warnings are identical per wafer — report them once.
+      norm.testDefs = perWafer[0]?.testDefs ?? norm.testDefs;
+      derivedWarnings.push(...(perWafer[0]?.warnings ?? []));
+    } else {
+      const applied = applyDerivedTests(norm.results, norm.testDefs, norm.derivedTests, passBinSet);
+      norm.results  = applied.results;
+      norm.testDefs = applied.testDefs;
+      derivedWarnings.push(...applied.warnings);
+    }
+  }
+
   const rawResults = norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts, norm.testDefs) : norm.results;
 
   // Fail fast on string coordinates — common mistake when piping CSV without numeric casting
@@ -1737,7 +1823,7 @@ export function buildWaferMap(
 
     return {
       wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
-      warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
+      warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
       plotMode: view.plotMode,
       metadata: view.metadata,
       isLotStack: false,
@@ -2025,7 +2111,7 @@ export function buildWaferMap(
 
   return {
     wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units, inference,
-    warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
+    warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
     plotMode: view.plotMode,
     metadata: view.metadata,
     isLotStack: norm.lotStackOpts !== undefined,

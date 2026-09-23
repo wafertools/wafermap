@@ -19,6 +19,7 @@ import { LEADING, SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
 import { fmt } from '../../renderer/fmt.js';
 import { escHtml } from '../../core/utils.js';
+import { DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
 
 const CAP_MIN_COL = 30;
 // The Analysis tab always gives this panel the full container width (unlike
@@ -111,7 +112,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
   let draw: () => void = () => {};
 
-  function renderCaption(shownCount: number, unspecCount: number, totalTests: number): void {
+  function renderCaption(shownCount: number, unspecCount: number, totalTests: number, derivedCount: number): void {
     hintRow.innerHTML = '';
     const line = card.ownerDocument.createElement('span');
     Object.assign(line.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm, color: CLR.value, fontSize: FONT.body, fontWeight: '500' } as Partial<CSSStyleDeclaration>);
@@ -152,7 +153,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
     // With nothing spec'd there are no capability verdicts to key, so the
     // three-band legend would explain colours that never appear.
-    hintRow.appendChild(buildCapabilityLegend(card.ownerDocument, unspecCount > 0, allUnspec));
+    hintRow.appendChild(buildCapabilityLegend(card.ownerDocument, unspecCount > 0, allUnspec, derivedCount > 0));
   }
 
   /**
@@ -161,7 +162,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
    * nothing on screen said what the bands were — leaving an all-orange chart
    * reading as a palette choice rather than "every test is marginal".
    */
-  function buildCapabilityLegend(doc: Document, includeUnspec: boolean, allUnspec = false): HTMLElement {
+  function buildCapabilityLegend(doc: Document, includeUnspec: boolean, allUnspec = false, includeDerived = false): HTMLElement {
     const row = doc.createElement('div');
     Object.assign(row.style, {
       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: `${SPACE.xs} ${SPACE.xl}`,
@@ -190,6 +191,23 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       item.append(sw, txt);
       row.appendChild(item);
     }
+
+    // The marker's key. A glyph a reader has to decode is worse than no marker
+    // at all — it reads as a rendering artefact — so wherever the dagger can
+    // appear, the line saying what it means appears with it. It carries no
+    // colour swatch because it is not a colour: it qualifies the test name, not
+    // the box.
+    if (includeDerived) {
+      const item = doc.createElement('span');
+      Object.assign(item.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm } as Partial<CSSStyleDeclaration>);
+      const mark = doc.createElement('span');
+      mark.textContent = DERIVED_MARK;
+      Object.assign(mark.style, { color: CLR.value, fontWeight: '600' } as Partial<CSSStyleDeclaration>);
+      const txt = doc.createElement('span');
+      txt.textContent = DERIVED_KEY;
+      item.append(mark, txt);
+      row.appendChild(item);
+    }
     return row;
   }
 
@@ -207,6 +225,8 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     body.appendChild(canvas);
 
     const n = rows.length;
+    // Per view, not per column — see the label-drawing comment below.
+    const anyDerived = rows.some(d => d.derived);
 
     const domainMin = Math.min(0, ...rows.map(d => d.min));
     const domainMax = Math.max(1, ...rows.map(d => d.max));
@@ -397,6 +417,8 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         ctx.fillStyle = d.hasSpec ? color : theme.textMuted;
         ctx.fillText(d.hasSpec ? fmtIndex(d.ppk) : '—', midX, plotTop - 8);
 
+        // Truncate the NAME, then place the marker — so a long name can never
+        // eat the one glyph that says this number was not measured.
         const lbl = d.label.length > 12 ? `${d.label.slice(0, 11)}…` : d.label;
         ctx.save();
         ctx.translate(midX, plotBottom + 6);
@@ -404,8 +426,20 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+        // These labels are right-aligned at each column, so it is the END of
+        // the string that lands on a fixed diagonal — the far end is ragged by
+        // name length. The marker therefore goes last, where it forms a lane
+        // that reads down the row, and every name is shifted out by the lane
+        // width whether or not it is marked, so the names stay aligned with
+        // each other. Reserved per view: with no derived test in the
+        // population the lane is zero and nothing moves at all.
+        const lane = anyDerived ? ctx.measureText(`${DERIVED_MARK} `).width : 0;
         ctx.fillStyle = theme.textMuted;
-        ctx.fillText(lbl, 0, 0);
+        ctx.fillText(lbl, -lane, 0);
+        if (d.derived) {
+          ctx.fillStyle = theme.text;
+          ctx.fillText(DERIVED_MARK, 0, 0);
+        }
         ctx.restore();
       });
 
@@ -434,7 +468,16 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       // a naive .toFixed(2) collapses pA/nA-scale measurements to "0.00",
       // which reads as "no signal" rather than a real small value.
       const fv = (v: number) => escHtml(fmt(v, d.unit));
-      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (n=${d.n})<br>`
+      // The tooltip has room for words, so it says it rather than relying on
+      // the glyph, and shows the expression — "where did this number come
+      // from" is the actual question a derived test raises, and the answer is
+      // the author's own text, matchable against their test program.
+      const derivedNote = d.derived
+        ? `<em>${DERIVED_MARK} ${escHtml(DERIVED_KEY)}</em>`
+          + (d.expression ? `<br><code>${escHtml(d.expression)}</code>` : '')
+          + '<br>'
+        : '';
+      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (n=${d.n})<br>${derivedNote}`
         + (d.hasSpec
           ? `LSL ${fv(d.lsl!)} · USL ${fv(d.usl!)}<br>`
             + `mean ${fv(d.mean)}<br>`
@@ -462,7 +505,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     const data = buildCapabilityData(currentItems(), testDefs);
     const totalTestable = testDefs.filter(d => d.testNumber !== undefined).length;
     const unspecCount = data.filter(d => !d.hasSpec).length;
-    renderCaption(data.length, unspecCount, totalTestable);
+    renderCaption(data.length, unspecCount, totalTestable, data.filter(d => d.derived).length);
     draw = buildView(data);
     draw();
   }

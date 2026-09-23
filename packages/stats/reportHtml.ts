@@ -1,7 +1,8 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
-import { fmt } from '../renderer/fmt.js';
+import { fmt, plainBinTerms } from '../renderer/fmt.js';
 import { buildFacetTable, prettyKey, type FacetItem } from './facets.js';
 import { escHtml } from '../core/utils.js';
+import { derivedTestNote, derivedKeyText, derivedFields } from '../renderer/testLabel.js';
 
 export interface MetricItem {
   label: string;
@@ -115,8 +116,66 @@ export function formatFindingDelta(finding: Pick<StatsFinding, 'effect' | 'varia
   return `${sign}${fmt(Math.abs(delta), finding.variable.unit)}`;
 }
 
+/**
+ * A finding's hover text, for the Summary panel and both HTML reports alike —
+ * the one rule for it. The sentence already carries the `†` for a finding about
+ * a derived test; the tooltip adds the words for it and the expression, on a
+ * line of their own.
+ */
 export function formatFindingTooltip(finding: StatsFinding): string {
-  return finding.summary;
+  const note = derivedTestNote(finding.variable);
+  return note ? `${finding.summary}\n${note}` : finding.summary;
+}
+
+/**
+ * The `†` key under a findings table, as HTML — `''` when no finding in it is
+ * about a derived test. A printed report has no hover, so unlike the on-screen
+ * key this one names each derived test's expression: for a reader of the PDF
+ * it is the only place to learn what a value was computed from.
+ */
+export function derivedFindingsKeyHtml(findings: StatsFinding[]): string {
+  const text = derivedKeyText(findings.map(f => ({ label: f.variable.label, ...derivedFields(f.variable) })));
+  return text ? `<p class="report-note">${escHtml(text)}</p>` : '';
+}
+
+/**
+ * THE findings table, for every HTML report — the wafer and lot reports' Findings
+ * sections and the findings-only report alike, with the derived-test key under
+ * it when any row is about a derived test.
+ *
+ * It existed twice until 0.31.0, once per report module, and the copies had
+ * already drifted: only the findings report translated the internal bin terms
+ * ("HBin 2" → "hard bin 2"), so the wafer and lot reports printed the jargon the
+ * design principles keep out of the UI.
+ *
+ * `totalWafers` switches the coverage column from "N (region/rest)" to a count
+ * of wafers, for lot-level findings.
+ */
+export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number): string {
+  const rows = findings.length
+    ? findings.map((f) => `<tr title="${escHtml(formatFindingTooltip(f))}">
+      <td class="tight">${renderSeverityBadge(f.severity)}</td>
+      <td class="tight">${escHtml(f.comparison.left)}</td>
+      <td>${escHtml(plainBinTerms(f.variable.label))}</td>
+      <td class="numeric">${escHtml(formatFindingDelta(f))}</td>
+      <td class="numeric">${escHtml(formatFindingCoverage(f, totalWafers))}</td>
+    </tr>`).join('\n')
+    : '<tr><td colspan="5" class="no-data">No significant findings</td></tr>';
+  const coverageHeader = totalWafers !== undefined ? 'Wafers' : 'N (region/rest)';
+  return `<table class="report-table findings-table compact">
+  <thead>
+    <tr>
+      <th>Severity</th>
+      <th>Region</th>
+      <th>Metric</th>
+      <th class="numeric">Delta</th>
+      <th class="numeric">${coverageHeader}</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows}
+  </tbody>
+</table>${derivedFindingsKeyHtml(findings)}`;
 }
 
 export function formatFindingCoverage(
