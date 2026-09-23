@@ -16,7 +16,7 @@ import { buildCapabilityData, type CapabilityDatum, type CapabilityItem } from '
 import { capabilityColor } from './palette.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { LEADING, SPACE, fontPx, FONT, CLR } from '../toolbar.js';
-import { cardShell, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
+import { cardShell, isExpandedCard, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
 import { fmt } from '../../renderer/fmt.js';
 import { escHtml } from '../../core/utils.js';
 import { DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
@@ -225,9 +225,6 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     body.appendChild(canvas);
 
     const n = rows.length;
-    // Per view, not per column — see the label-drawing comment below.
-    const anyDerived = rows.some(d => d.derived);
-
     const domainMin = Math.min(0, ...rows.map(d => d.min));
     const domainMax = Math.max(1, ...rows.map(d => d.max));
     const domainPad = (domainMax - domainMin) * 0.05 || 0.1;
@@ -235,8 +232,11 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     const plotMax = domainMax + domainPad;
     const plotSpan = plotMax - plotMin || 1;
 
+    // Expanded, the columns spread across the whole width instead of stopping
+    // at the grid cap — the box inside each stays at the grid's widest (below).
     function colSize(availW: number): number {
-      return Math.max(CAP_MIN_COL, Math.min(CAP_MAX_COL, Math.floor(availW / n)));
+      const byWidth = Math.floor(availW / n);
+      return Math.max(CAP_MIN_COL, isExpandedCard(card) ? byWidth : Math.min(CAP_MAX_COL, byWidth));
     }
 
     function yFor(v: number, plotTop: number, plotH: number): number {
@@ -330,7 +330,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       rows.forEach((d, i) => {
         const x = CAP_AXIS_W + i * cs;
         const midX = x + cs / 2;
-        const boxW = Math.max(4, cs * 0.55);
+        const boxW = Math.max(4, Math.min(cs, CAP_MAX_COL) * 0.55);
 
         if (i === hovered) {
           // Bounded to the plot area only (not the rotated labels below it) —
@@ -417,8 +417,8 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         ctx.fillStyle = d.hasSpec ? color : theme.textMuted;
         ctx.fillText(d.hasSpec ? fmtIndex(d.ppk) : '—', midX, plotTop - 8);
 
-        // Truncate the NAME, then place the marker — so a long name can never
-        // eat the one glyph that says this number was not measured.
+        // Truncate the NAME, then place the marker in front of it — so a long
+        // name can never eat the one glyph that says this was not measured.
         const lbl = d.label.length > 12 ? `${d.label.slice(0, 11)}…` : d.label;
         ctx.save();
         ctx.translate(midX, plotBottom + 6);
@@ -426,19 +426,14 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-        // These labels are right-aligned at each column, so it is the END of
-        // the string that lands on a fixed diagonal — the far end is ragged by
-        // name length. The marker therefore goes last, where it forms a lane
-        // that reads down the row, and every name is shifted out by the lane
-        // width whether or not it is marked, so the names stay aligned with
-        // each other. Reserved per view: with no derived test in the
-        // population the lane is zero and nothing moves at all.
-        const lane = anyDerived ? ctx.measureText(`${DERIVED_MARK} `).width : 0;
+        // The marker goes in front of the name, as on every other surface.
+        // These labels are right-aligned at each column, so names end on one
+        // diagonal and the marker sits just before wherever each name starts.
         ctx.fillStyle = theme.textMuted;
-        ctx.fillText(lbl, -lane, 0);
+        ctx.fillText(lbl, 0, 0);
         if (d.derived) {
           ctx.fillStyle = theme.text;
-          ctx.fillText(DERIVED_MARK, 0, 0);
+          ctx.fillText(`${DERIVED_MARK} `, -ctx.measureText(lbl).width, 0);
         }
         ctx.restore();
       });

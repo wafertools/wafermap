@@ -6,6 +6,7 @@ import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import type { TestDef, MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { dieHasTestData } from '../renderer/buildWaferMap.js';
+import { testLabel, isDerivedTest, DERIVED_MARK, DERIVED_KEY } from '../renderer/testLabel.js';
 import { prettyKey } from '../core/utils.js';
 import { listBinColorSchemes, listValueColorSchemes } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
@@ -883,10 +884,14 @@ export function overlayRootFor(anchor: Element): Element {
 // and never used for anything else — so no persistent chrome anywhere in the
 // library (present or future) can ever accidentally outrank a menu just by
 // picking a bigger sticky/fixed z-index of its own. The layer sits above
-// `Z_BASE`/`Z_ABOVE` (ordinary chrome, tooltips) and below `Z_ABOVE2`
+// `Z_BASE`/`Z_ABOVE` (ordinary chrome) and below `Z_ABOVE2`
 // (content that must clear a maximized modal), matching where menus already
 // needed to sit — this doesn't change the ordering, it makes the ordering
 // impossible to accidentally violate from the "chrome" side.
+//
+// The shared hover tooltip lives in this layer too (`positionTooltip`), above
+// the menus in it: a tip explains the thing under the pointer, and when that is
+// a menu row, the menu must not cover its own explanation.
 //
 // Reuses `overlayRootFor`'s own root resolution first — a menu opened from a
 // toolbar living inside a host's own native `<dialog>` (or a wmap modal box)
@@ -970,7 +975,10 @@ export function getTooltip(doc: Document = document): HTMLDivElement {
       maxHeight:    'min(60vh, 480px)',
       overflow:     'hidden',
       whiteSpace:   'pre-wrap',
-      zIndex:       Z_ABOVE,
+      // Compared only inside the menu layer it is positioned into (see
+      // `positionTooltip`), where it must clear every menu: Z_BASE for most,
+      // Z_ABOVE for the cascade submenu.
+      zIndex:       Z_ABOVE2,
       display:      'none',
       fontFamily:   FONT.family,
       boxShadow:    SHADOW.menu,
@@ -1033,9 +1041,27 @@ export function reparentTooltip(parent?: HTMLElement): void {
  * be feasible: flip to just below it, else just above it. A large anchor keeps
  * exactly the previous cursor-following behaviour.
  */
-export function positionTooltip(tooltip: HTMLDivElement, anchor: Element, clientX: number, clientY: number): void {
-  const root = overlayRootFor(anchor);
-  if (tooltip.parentElement !== root) root.appendChild(tooltip);
+/**
+ * Place the shared tooltip beside the pointer, inside the viewport.
+ *
+ * By default it also keeps off `anchor` when that is small enough to step
+ * around — a toolbar button's tip must not cover the button. Pass
+ * `followPointer` when the pointer is on the very content the tip describes (a
+ * die on the map): there is nothing to step around, and stepping clear of the
+ * whole canvas threw the tip hundreds of pixels from the die whenever the map
+ * was under 40% of the window tall — every gallery card.
+ */
+export function positionTooltip(
+  tooltip: HTMLDivElement, anchor: Element, clientX: number, clientY: number,
+  opts: { followPointer?: boolean } = {},
+): void {
+  // Inside the menu layer of the anchor's root, not beside it: a tip for a menu
+  // row (a disabled row's reason) was drawn UNDER the menu it explained, because
+  // the layer outranks the root's other children by design. In the layer, the
+  // tip's own z-index (Z_ABOVE2) beats every menu's, and the root is
+  // still resolved per anchor — a host <dialog>, a wmap modal box.
+  const layer = menuLayerFor(anchor);
+  if (tooltip.parentElement !== layer) layer.appendChild(tooltip);
   const ownerWindow = tooltip.ownerDocument.defaultView ?? window;
   tooltip.style.left = '0';
   tooltip.style.top  = '0';
@@ -1053,7 +1079,7 @@ export function positionTooltip(tooltip: HTMLDivElement, anchor: Element, client
   // 40% of the viewport: below this an anchor is a discrete control or datum with
   // room beside it; above it (the map canvas, a full-height panel) there is no
   // "beside", and displacing the tooltip that far would be worse than overlapping.
-  const canAvoid = r.height > 0 && r.height <= vh * 0.4;
+  const canAvoid = !opts.followPointer && r.height > 0 && r.height <= vh * 0.4;
   if (canAvoid) {
     const overlapsAnchor = y < r.bottom && y + th > r.top && x < r.right && x + tw > r.left;
     if (overlapsAnchor) {
@@ -1137,7 +1163,7 @@ export interface ToolbarHelpers {
   makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement;
   setActive(btn: HTMLButtonElement, active: boolean): void;
   makeSep(): HTMLDivElement;
-  makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void): HTMLDivElement;
+  makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void, mark?: { derived: boolean }): HTMLDivElement;
   makeMenuSection(label: string): HTMLDivElement;
   makeDropdown<T extends string>(
     iconKey: string,
@@ -1163,7 +1189,9 @@ export interface ToolbarHelpers {
   setOpenMenu(menu: HTMLDivElement | null): void;
 }
 
-export type ModeEntry = { plotMode: PlotMode; activeTest?: number; activeMetadataKey?: string; label: string; logScale?: boolean };
+/** `label` is the plain name (with unit); `derived` puts the † in front of it
+ *  when the menu draws the row — kept apart so the menu can align it in a slot. */
+export type ModeEntry = { plotMode: PlotMode; activeTest?: number; activeMetadataKey?: string; label: string; logScale?: boolean; derived?: true };
 
 /**
  * Which plot modes the data actually supports — the single derivation shared by
@@ -1204,13 +1232,14 @@ export function buildDataModeEntries(
         ? testDefs.map(t => ({
             plotMode: 'value' as PlotMode,
             activeTest: t.testNumber,
-            label: t.unit ? `${t.name} (${t.unit})` : t.name,
+            label: t.unit ? `${testLabel(t, t.testNumber)} (${t.unit})` : testLabel(t, t.testNumber),
             logScale: t.logScale,
+            ...(isDerivedTest(t) ? { derived: true as const } : {}),
           }))
         : getUniqueTestNumbers(dies).map(tn => ({
             plotMode: 'value' as PlotMode,
             activeTest: tn,
-            label: `Test ${tn}`,
+            label: testLabel(undefined, tn),
           })))
     : [];
 
@@ -1445,14 +1474,29 @@ export function buildModeMenuEl(
           subMenu.appendChild(searchBox);
         }
         const testRows: { row: HTMLDivElement; label: string }[] = [];
+        // A derived test is marked in front of its name, in a slot every row
+        // reserves when the list holds any — so names stay aligned and the marks
+        // form a column. With no derived test there is no slot and no key.
+        const lane = testEntries.some(e => e.derived);
         for (const entry of testEntries) {
           const row = makeMenuRow(entry.label, isCurrentEntry(entry), false, e => {
             e.stopPropagation();
             closeSub();
             pickEntry(entry, menu);
-          });
+          }, lane ? { derived: entry.derived === true } : undefined);
           testRows.push({ row, label: entry.label.toLowerCase() });
           subMenu.appendChild(row);
+        }
+        if (lane) {
+          // Wherever the mark appears, the words for it appear too.
+          const key = ownerWindow.document.createElement('div');
+          key.setAttribute('role', 'presentation');
+          key.textContent = `${DERIVED_MARK} ${DERIVED_KEY}`;
+          Object.assign(key.style, {
+            padding: '6px 14px', fontSize: FONT.meta, color: CLR.label,
+            borderTop: `1px solid ${CLR.menuBorder}`, marginTop: '4px', whiteSpace: 'nowrap',
+          } as Partial<CSSStyleDeclaration>);
+          subMenu.appendChild(key);
         }
         subMenu.addEventListener('mouseenter', cancelClose);
         subMenu.addEventListener('mouseleave', scheduleClose);
@@ -1816,9 +1860,22 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
     return sep;
   }
 
-  function makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void): HTMLDivElement {
+  function makeMenuRow(
+    label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void,
+    /** Reserve the derived-test slot in front of the label; `derived` fills it. */
+    mark?: { derived: boolean },
+  ): HTMLDivElement {
     const row = doc.createElement('div');
-    row.textContent = label;
+    if (mark) {
+      const slot = doc.createElement('span');
+      slot.textContent = mark.derived ? DERIVED_MARK : '';
+      slot.setAttribute('aria-hidden', 'true');
+      Object.assign(slot.style, { display: 'inline-block', width: '1.1em' } as Partial<CSSStyleDeclaration>);
+      row.append(slot, label);
+      if (mark.derived) row.setAttribute('aria-label', `${label} — ${DERIVED_KEY.toLowerCase()}`);
+    } else {
+      row.textContent = label;
+    }
     // Single-select menu semantics; container role/keyboard nav added when the
     // menu is mounted (applyMenuRoles / wireMenuKeyboard).
     row.setAttribute('role', 'menuitemradio');
@@ -2103,6 +2160,9 @@ export interface OverlayHandle {
   close: () => void;
   /** Raise this window above other open windows. No-op in 'modal' mode. */
   bringToFront: () => void;
+  /** Replace the box's natural height (see `OverlayOptions.boxSize`) — applied
+   *  now unless maximized or minimized, and restored to from either. */
+  setNaturalHeight: (height: string) => void;
 }
 
 // Window mode needs its own incrementing stacking band, above the (dynamic,
@@ -2194,7 +2254,10 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   // other size silently snapped back to 700px square the first time it was
   // maximized or minimized and restored.
   const naturalWidth  = opts.boxSize?.width  ?? 'min(90vw, 700px)';
-  const naturalHeight = opts.boxSize?.height ?? 'min(90vh, 700px)';
+  // `let`: content that knows its own height only once it is laid out (a
+  // chart of rows) resets it through `setNaturalHeight`, so the size it fits
+  // to is also the size maximize and minimize restore to.
+  let naturalHeight = opts.boxSize?.height ?? 'min(90vh, 700px)';
   Object.assign(box.style, {
     // Baseline positioning context for the resize grip's `position: absolute`
     // (window mode overrides this to `fixed` below; modal mode keeps `relative`).
@@ -2717,7 +2780,12 @@ body>*:not(.wmap-overlay-box):not(#wmap-modal-backdrop):not(.wmap-overlay-ancest
   // readers announce the dialog. Prefer the close button (a predictable target).
   nextFrame(() => (closeBtn.isConnected ? closeBtn : box).focus(), win);
 
-  return { backdrop, box, contentWrap, close, bringToFront };
+  function setNaturalHeight(height: string): void {
+    naturalHeight = height;
+    if (!maximized && !minimized) box.style.height = height;
+  }
+
+  return { backdrop, box, contentWrap, close, bringToFront, setNaturalHeight };
 }
 
 /** Create and open a resizable, maximizable, exclusive expand modal — dims and
@@ -2765,6 +2833,14 @@ export interface ReparentModalOptions {
   boxSize?: { width: string; height: string };
   /** Called after the modal has closed and every element has been restored to its original position (or appended back, if its original spot is no longer available — see the stale-reference note above). Runs once, even if nothing was actually moved (the re-entrancy guard tripped). */
   onClosed?: () => void;
+  /**
+   * Where to resolve the modal's root from — see `OverlayOptions.anchor`.
+   * Defaults to `elements[0]`, which is right whenever that element is already
+   * on the page. Pass one explicitly when it is not: an element built only to
+   * be shown in the modal (a drilldown chart card) has no parent, so resolving
+   * from it lands on bare `doc.body`, behind a host's own `<dialog>`.
+   */
+  anchor?: Element;
 }
 
 /**
@@ -2787,7 +2863,7 @@ export function openReparentedModal(elements: HTMLElement[], opts: ReparentModal
     // elements[0]'s CURRENT position (before the reparent loop below moves it)
     // — resolves the modal's own root from wherever the caller's live content
     // actually sits right now, e.g. inside a host's own <dialog>.
-    anchor: elements[0],
+    anchor: opts.anchor ?? elements[0],
     onClose: () => {
       for (const r of records) {
         reparentedByModal.delete(r.el);

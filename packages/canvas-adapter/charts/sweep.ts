@@ -17,35 +17,40 @@ import { buildSweepData, type SweepData, type SweepSpec, type SweepPoint } from 
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { fmt } from '../../renderer/fmt.js';
-import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
+import { SPACE, fontPx, FONT, CLR, ALPHA } from '../toolbar.js';
 import { categorical } from './palette.js';
 import {
   cardShell, observeResize, makeTooltip, positionChartTooltip, renderEmptyState,
-  growCardToFitContent, chartFillHeight, PADDING, prepareCanvas, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type SaveImageHandler,
+  chartFillHeight, populationPhrase, PADDING, prepareCanvas, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type SaveImageHandler,
 } from './chartShell.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { escHtml } from '../../core/utils.js';
 import { unmarkedLabel, derivedTestNote, DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
 
 /**
- * An ordinal tick's text: the test name cut to fit, THEN the derived mark — so
- * truncation can never eat the one glyph that says the value was not measured.
+ * An x value as the card prints it — ticks, crossing and widths alike. With an
+ * `xUnit`, SI-prefixed through `fmt` (`47.3 kΩ`), the way the y axis prints.
+ * Without one, plain decimals to three significant figures (`0.0327`, `0.55`,
+ * `518`), never `fmt`'s engineering notation: with no unit to carry a prefix,
+ * `fmt` printed a 33 mV width as `32.7E-3`.
  */
-/**
- * An x value as the card prints it — ticks, crossing and widths alike. Plain
- * decimals to three significant figures (`0.0327`, `0.55`, `518`), never `fmt`'s
- * engineering notation: a sweep has no x unit to attach a prefix to (the unit, if
- * any, is inside `xLabel`), so `fmt` printed a 33 mV width as `32.7E-3`.
- */
-function fmtX(v: number): string {
+function fmtX(v: number, xUnit?: string): string {
+  // Trailing zeros dropped: a swept level of 2 kΩ is not "2.00 kΩ", which
+  // claims a precision the level never had. Measured values keep theirs.
+  if (xUnit) return fmt(v, xUnit).replace(/(\.\d*?)0+(?=\D|$)/, '$1').replace(/\.(?=\D|$)/, '');
   if (Number.isInteger(v)) return String(v);
   return String(Number(v.toPrecision(3)));
 }
 
+/**
+ * An ordinal tick's text: the derived mark, then the test name cut to fit — the
+ * name is truncated, never the mark, so a cut can never remove the one glyph that
+ * says the value was not measured.
+ */
 function tickText(p: SweepPoint): string {
   const name = unmarkedLabel(p.label);
   const short = name.length > 9 ? `${name.slice(0, 8)}…` : name;
-  return p.derived ? `${short} ${DERIVED_MARK}` : short;
+  return p.derived ? `${DERIVED_MARK} ${short}` : short;
 }
 
 const PLOT_H = 260;
@@ -60,6 +65,14 @@ export interface SweepPanelOptions {
    *  a property of the sweep: the same definition is valid for any population,
    *  which is what keeps a saved spec portable. */
   dies: Die[];
+  /**
+   * Who `dies` are, read straight after the count — `"selected on W03"` gives
+   * "median across 12 dies selected on W03". Omit when the dies are simply the
+   * view's own population (the Insights tab, which states its scope itself).
+   * A sweep of a hand-picked subset looks exactly like a whole-wafer one, so
+   * a drilldown must always pass this.
+   */
+  population?: string;
   testDefs: TestDef[] | undefined;
   onSaveImage?: SaveImageHandler;
   ownerDocument?: Document;
@@ -72,15 +85,17 @@ export interface SweepPanelHandle {
   setDies: (dies: Die[]) => void;
 }
 
-/** Unit of the first test of the first series — what the y axis is in. */
-function yUnit(spec: SweepSpec, testDefs: TestDef[] | undefined): string | undefined {
-  const first = spec.series[0]?.tests[0];
+/** Unit of the first test of the first series — what the y axis is in. Read
+ *  from the built data, where ranges are already expanded to test numbers. */
+function yUnit(data: SweepData, testDefs: TestDef[] | undefined): string | undefined {
+  const first = data.series[0]?.points[0]?.testNumber;
   return first === undefined ? undefined : testDefs?.find(d => d.testNumber === first)?.unit;
 }
 
 export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
-  const { spec, testDefs, onSaveImage } = options;
+  const { spec, testDefs, onSaveImage, population } = options;
   let dies = options.dies;
+
 
   const { card, body } = cardShell(spec.title, onSaveImage, options.ownerDocument);
   card.style.alignSelf = 'start';
@@ -97,7 +112,7 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
   const tooltip = makeTooltip(card);
   let resizeHandle: { disconnect: () => void } | null = null;
   let data: SweepData | null = null;
-  const unit = yUnit(spec, testDefs);
+  let unit: string | undefined;
 
   /** Colour for series `i` — the caller's own, else the CVD-safe categorical
    *  palette. A hardcoded hex in a shared spec would not theme, so it is a
@@ -117,6 +132,7 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
     }
 
     data = buildSweepData(dies, testDefs, spec);
+    unit = yUnit(data, testDefs);
     const plotted = data.series.filter(s => s.points.some(p => p.count > 0));
     if (plotted.length === 0) {
       hint.textContent = '';
@@ -127,14 +143,14 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
 
     // Names the population and what a line is, so nobody reads the band as a
     // spec limit or the line as a single die.
-    hint.textContent = `Line = median across ${data.dieCount.toLocaleString()} dies, band = p10–p90`
+    hint.textContent = `Line = median across ${populationPhrase(data.dieCount, dies.length, population)}, band = p10–p90`
       + (spec.series.length > 2 ? ' · crossing and separation measured between the first two series' : '');
 
     const canvas = doc.createElement('canvas');
     canvas.style.display = 'block';
     body.appendChild(canvas);
 
-    let geom: { left: number; right: number; xLo: number; xHi: number; yOf: (v: number) => number } | null = null;
+    let geom: { left: number; right: number; xLo: number; xHi: number; yOf: (v: number) => number; ax: (v: number) => number } | null = null;
 
     const draw = (): void => {
       const d = data;
@@ -145,13 +161,16 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
       if (!prep) return;
       const { ctx, theme } = prep;
 
+      // x in axis space: log10 on a log axis, so every position below — points,
+      // bands, ticks, the crossing marker — is placed by the one mapping `xOf`.
+      const ax = (v: number): number => d.xScale === 'log' ? Math.log10(v) : v;
       // Y range spans every band, so a p90 is never clipped by the range itself.
       let lo = Infinity, hi = -Infinity, xLo = Infinity, xHi = -Infinity;
       for (const s of d.series) {
         for (const p of s.points) {
           if (p.count === 0) continue;
           lo = Math.min(lo, p.p10); hi = Math.max(hi, p.p90);
-          xLo = Math.min(xLo, p.x); xHi = Math.max(xHi, p.x);
+          xLo = Math.min(xLo, ax(p.x)); xHi = Math.max(xHi, ax(p.x));
         }
       }
       // Separation levels are part of the question, so they must be on screen
@@ -162,6 +181,11 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
       const pad = (hi - lo) * 0.08;
       lo -= pad; hi += pad;
       if (xLo === xHi) { xLo -= 0.5; xHi += 0.5; }
+      if (d.xScale === 'log') {
+        // A little room either side, so the end points are not on the frame.
+        const padX = (xHi - xLo) * 0.03;
+        xLo -= padX; xHi += padX;
+      }
 
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       const plotLeft = PADDING + AXIS_W;
@@ -169,8 +193,8 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
       const plotTop = PADDING;
       const plotBottom = height - LABEL_H;
       const yOf = (v: number): number => plotBottom - ((v - lo) / (hi - lo)) * (plotBottom - plotTop);
-      const xOf = (v: number): number => plotLeft + ((v - xLo) / (xHi - xLo)) * (plotRight - plotLeft);
-      geom = { left: plotLeft, right: plotRight, xLo, xHi, yOf };
+      const xOf = (v: number): number => plotLeft + ((ax(v) - xLo) / (xHi - xLo)) * (plotRight - plotLeft);
+      geom = { left: plotLeft, right: plotRight, xLo, xHi, yOf, ax };
 
       // Axes
       ctx.strokeStyle = theme.border;
@@ -284,7 +308,7 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
             .sort((m, n) => m - n)
             // Plain integers for whole swept values: `fmt` renders 3 as
             // "3.000", which reads as precision the level does not have.
-            .map(x => ({ x, label: fmtX(x) }))
+            .map(x => ({ x, label: fmtX(x, d.xUnit) }))
         : (d.series[0]?.points ?? []).map(p => ({
             x: p.x,
             label: tickText(p),
@@ -327,7 +351,9 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
         lx += ctx.measureText(s.label).width + 16;
       });
 
-      growCardToFitContent(card, body, height);
+      // No second request of the drawn height here: chartFillHeight has asked
+      // for the floor, and asking for what the card was GIVEN would stop it
+      // shrinking when the expand modal is made smaller.
     };
 
     draw();
@@ -338,7 +364,9 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
       if (d === null || geom === null) { tooltip.style.display = 'none'; return; }
       const rect = canvas.getBoundingClientRect();
       const px = e.clientX - rect.left;
+      // In axis space, like the positions it is compared against below.
       const xValue = geom.xLo + ((px - geom.left) / Math.max(1, geom.right - geom.left)) * (geom.xHi - geom.xLo);
+      const axOf = geom.ax;
 
       // Nearest measured x across every series, so hovering between two points
       // still reports a real measurement rather than an interpolated fiction.
@@ -346,7 +374,7 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
       for (const s of d.series) {
         for (const p of s.points) {
           if (p.count === 0) continue;
-          const dist = Math.abs(p.x - xValue);
+          const dist = Math.abs(axOf(p.x) - xValue);
           if (best === null || dist < best.dist) best = { x: p.x, dist };
         }
       }
@@ -358,8 +386,10 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
         if (p === undefined) return '';
         // The mark goes on the series row, because each series at this x is a
         // different test and only some of them may be derived.
-        return `<span style="color:${colorOf(si)}">■</span> ${escHtml(s.label)}${p.derived ? ` ${DERIVED_MARK}` : ''}: `
-          + escHtml(`${fmt(p.median, unit)} (p10 ${fmt(p.p10, unit)} – p90 ${fmt(p.p90, unit)}, n=${p.count.toLocaleString()})`);
+        // Median on the series line, spread and n beneath it: one line held all
+        // of it and ran well past the tooltip's width.
+        return `<span style="color:${colorOf(si)}">■</span> ${p.derived ? `${DERIVED_MARK} ` : ''}${escHtml(s.label)}: <strong>${escHtml(fmt(p.median, unit))}</strong>`
+          + `<br><span style="opacity:${ALPHA.muted}">p10 ${escHtml(fmt(p.p10, unit))} – p90 ${escHtml(fmt(p.p90, unit))} · n=${p.count.toLocaleString()}</span>`;
       }).filter(Boolean);
       if (rows.length === 0) { tooltip.style.display = 'none'; return; }
 
@@ -385,8 +415,10 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
     if (d === null) return;
     const parts: string[] = [];
 
-    if (d.crossing) {
-      parts.push(`<strong>Crossing:</strong> ${escHtml(`${d.xLabel} = ${fmtX(d.crossing.x)}`)} · ${escHtml(`${d.yLabel} ${fmt(d.crossing.y, unit)}`)}`
+    if (d.notMeasured !== undefined) {
+      parts.push(`<strong>Crossing and widths:</strong> not measured — ${escHtml(d.notMeasured)}`);
+    } else if (d.crossing) {
+      parts.push(`<strong>Crossing:</strong> ${escHtml(`${d.xLabel} = ${fmtX(d.crossing.x, d.xUnit)}`)} · ${escHtml(`${d.yLabel} ${fmt(d.crossing.y, unit)}`)}`
         + (d.crossing.multiple ? ' <em>(first of several — the curves cross more than once)</em>' : ''));
     } else if ((spec.crossing ?? true) && spec.series.length >= 2) {
       parts.push('<strong>Crossing:</strong> the first two series do not cross over the swept range');
@@ -398,7 +430,12 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
         // the width of the V they form at that level, which is how the people
         // reading it describe it. The label is reproduced verbatim — lower-casing
         // it turned "dBm" into "dbm", which is a different unit symbol.
-        parts.push(`<strong>Width at ${escHtml(fmt(s.y, unit))}:</strong> ${escHtml(`${fmtX(s.distance)} on the ${d.xLabel} axis`)}`);
+        // On a log axis a width is a ratio: the same shift in log x is the same
+        // multiple anywhere along it, and a difference in Ω would not be.
+        const width = s.ratio !== undefined && s.from !== undefined && s.to !== undefined
+          ? `×${Number(s.ratio.toPrecision(3))} on the ${d.xLabel} axis (${fmtX(s.from, d.xUnit)} → ${fmtX(s.to, d.xUnit)})`
+          : `${fmtX(s.distance, d.xUnit)} on the ${d.xLabel} axis`;
+        parts.push(`<strong>Width at ${escHtml(fmt(s.y, unit))}:</strong> ${escHtml(width)}`);
       } else {
         const which = s.reason === 'second-series-never-reaches' ? d.series[1]?.label : d.series[0]?.label;
         parts.push(`<strong>Width at ${escHtml(fmt(s.y, unit))}:</strong> not measurable — ${escHtml(which ?? 'a series')} never reaches this level`);

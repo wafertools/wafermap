@@ -1418,7 +1418,7 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     // `buildFunctionalTestFindings` computes it per region: verdicts through
     // `getTestPassStatus`, dies without a verdict excluded from both sides.
     //
-    // This branch did not exist until 0.31.0. A functional run fell through to
+    // This branch did not exist until 0.30.3. A functional run fell through to
     // the bin branch below, which counted dies whose hard bin equalled
     // `variable.bin` — undefined for a functional finding — so every side
     // counted 0, the merged finding reported a 0.0 pp difference as

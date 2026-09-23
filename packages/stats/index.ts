@@ -38,6 +38,6 @@ export {
   sectorCompassNames, classifyPattern, computeFunctionalYield,
   resolveMetadataColumns, discoverDieMetadataKeys, openHtmlReport,
   renderSummaryReportHtml, renderLotSummaryReportHtml, DEFAULT_FACET_CURATION,
-  // Deprecated in 0.31.0, removed in 0.32.0.
+  // Deprecated in 0.30.3, removed in 0.31.0 with the rest.
   renderFindingsReportHtml,
 } from './deprecated.js';

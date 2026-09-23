@@ -18,36 +18,6 @@
     #stage { width: 100%; padding: 14px; box-sizing: border-box; }
     #stage > div { width: 100%; height: 620px; }
 
-    .spec-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 14px;
-      margin: 4px 14px 18px;
-    }
-    .spec-grid section {
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px 14px;
-      background: var(--surface, #fff);
-    }
-    .spec-grid h3 {
-      margin: 0 0 6px;
-      font-size: 13px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    .spec-grid p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
-    .spec-grid pre {
-      margin: 0 0 8px;
-      font-size: 12px;
-      line-height: 1.5;
-      overflow-x: auto;
-      background: var(--code-bg, #f6f8fa);
-      padding: 8px 10px;
-      border-radius: 4px;
-    }
-    .spec-grid .look { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
   </style>
 </head>
 <body class="demo-page">
@@ -75,82 +45,159 @@
     nine steps. For more sweeps, see the <a href="sweeps.html">parametric sweeps</a>
     example.
     <br><br>
-    Open the <strong>Insights</strong> tab and choose <strong>Sweeps</strong> for the
-    sweep. Use the plot-mode menu on the map for the derived tests: they appear in the
-    list beside the measured ones, marked <strong>†</strong>.
+    The two are configured in different places, and the page is in two parts to match:
+    derived tests are part of the <em>data</em> (<code>buildWaferMap</code>), a sweep is
+    a <em>chart</em> (the renderer's <code>insights</code> options).
+    <br><br>
+    <strong>Where to look:</strong> the map below opens on a derived test, and the
+    plot-mode menu lists the others beside the measured tests, marked
+    <strong>†</strong>. The sweep is a chart, so it is in the <strong>Insights</strong>
+    tab — the chart button at the right of the gallery's toolbar, which this page opens
+    on its <strong>Sweeps</strong> view (or use <em>Show the sweep</em> below).
   </div>
 
-  <div class="spec-grid">
+  <div class="spec-part">
+    <h2>Part 1 · Derived tests — part of the data</h2>
+    <p>Passed to <code>buildWaferMap</code> as <code>derivedTests</code>, beside the
+      measured <code>testDefs</code>: from then on each is a test like any other. In
+      <a href="https://wafertools.github.io/tsmap/">tsmap</a> they are rows of the
+      test-definitions file, with an <code>expression</code> column.</p>
+  </div>
+  <div class="spec-list">
     <section>
       <h3>Derived tests on this map</h3>
-      <pre>{ testNumber: 900001, name: 'Switching Window', unit: 'V',
-  expression: 't[1202] - t[1212]',
-  limitLow: 0.33 }</pre>
-      <p class="look">The gap between the two curves at a fixed read step — the
-        switching window, per die: how far apart the two states are at the level a
-        read would use. Its <code>limitLow</code> is the margin a reliable read needs, so
-        the few dies below it — mostly at the edge, where the window narrows — get
-        the ▽ marker on the map like any measured test. <code>SET Span</code> below reduces a range: there is
-        no vector arithmetic in the grammar, so a range must always be reduced.</p>
-      <pre>{ testNumber: 900002, name: 'SET Span', unit: 'V',
+      <div class="spec-row">
+        <div class="spec-code">
+          <pre>const result = buildWaferMap({
+  results, testDefs, waferConfig, dieConfig,
+  derivedTests: [
+    { testNumber: 900001, name: 'Switching Window', unit: 'V',
+      expression: 't[1202] - t[1212]',
+      limitLow: 0.33 },
+    // …the entries below go in this same list
+  ],
+});</pre>
+        </div>
+        <div class="spec-notes">
+          <p class="look">The gap between the two curves at a fixed read step — the
+          switching window, per die: how far apart the two states are at the level a
+          read would use. Its <code>limitLow</code> is the margin a reliable read needs, so
+          the few dies below it — mostly at the edge, where the window narrows — get
+          the ▽ marker on the map like any measured test. <code>SET Span</code> below reduces a range: there is
+          no vector arithmetic in the grammar, so a range must always be reduced.</p>
+        </div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-code">
+          <pre>// derivedTests, continued
+{ testNumber: 900002, name: 'SET Span', unit: 'V',
   expression: 'max(t[1200..1208]) - min(t[1200..1208])' }</pre>
-      <pre>{ testNumber: 900003, name: 'Vth/Idsat Ratio', unit: '',
+          <pre>{ testNumber: 900003, name: 'Vth/Idsat Ratio', unit: '',
   expression: 't[1060] / t[1050]' }</pre>
-      <p class="look">A missing input makes the value <em>absent</em> on that die — it
-        renders no-data grey and is excluded from the statistics. Never zero.</p>
+        </div>
+        <div class="spec-notes">
+          <p class="look">A missing input makes the value <em>absent</em> on that die — it
+          renders no-data grey and is excluded from the statistics. Never zero.</p>
+        </div>
+      </div>
     </section>
 
     <section>
       <h3>Verdicts, and nesting</h3>
-      <pre>{ testNumber: 900004, name: 'Window OK', testType: 'F',
+      <div class="spec-row">
+        <div class="spec-code">
+          <pre>// derivedTests, continued
+{ testNumber: 900004, name: 'Window OK', testType: 'F',
   expression: 'specPass[900001]' }</pre>
-      <p class="look">A boolean expression is a <em>verdict</em>: declare
-        <code>testType:&nbsp;'F'</code> and it lands in <code>die.testPass</code>, never
-        as a 1/0 in <code>testValues</code> where it would enter the correlation matrix
-        and the Cpk table. This one reads another derived test — nesting is ordered by
-        dependency, so declaration order does not matter.</p>
-      <pre>{ testNumber: 900005, name: 'All Steps Pass', testType: 'F',
+        </div>
+        <div class="spec-notes">
+          <p class="look">A boolean expression is a <em>verdict</em>: declare
+          <code>testType:&nbsp;'F'</code> and it lands in <code>die.testPass</code>, never
+          as a 1/0 in <code>testValues</code> where it would enter the correlation matrix
+          and the Cpk table. This one reads another derived test — nesting is ordered by
+          dependency, so declaration order does not matter.</p>
+        </div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-code">
+          <pre>{ testNumber: 900005, name: 'All Steps Pass', testType: 'F',
   expression: 'all(specPass[1200..1208]) and testPass[1080]' }</pre>
-      <p class="look"><code>specPass[n]</code> is the spec-limit judgement;
-        <code>testPass[n]</code> is the tester's recorded verdict. Different questions —
-        a value can be out of spec while the tester recorded a pass — so they are
-        separate accessors.</p>
+        </div>
+        <div class="spec-notes">
+          <p class="look"><code>specPass[n]</code> is the spec-limit judgement;
+          <code>testPass[n]</code> is the tester's recorded verdict. Different questions —
+          a value can be out of spec while the tester recorded a pass — so they are
+          separate accessors.</p>
+        </div>
+      </div>
     </section>
 
-    <section>
-      <h3>The sweep</h3>
-      <pre>const STEPS     = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-const SET_TESTS = [1200, 1201, 1202, 1203, 1204, 1205, 1206, 1207, 1208];
-const RST_TESTS = [1210, 1211, 1212, 1213, 1214, 1215, 1216, 1217, 1218];
+  </div>
 
-{ id: 'threshold',
-  title: 'SET / RESET threshold — crossing and width',
-  series: [
-    { label: 'SET',   tests: SET_TESTS, xValues: STEPS },
-    { label: 'RESET', tests: RST_TESTS, xValues: STEPS },
-  ],
-  separationAt: [0.40, 0.70, 1.00],
-  xLabel: 'Sweep step' }</pre>
-      <p class="look"><strong><code>tests</code> is a plain array — the
-        <code>1200..1208</code> range above works in a derived test's
-        <em>expression</em>, which is a string this library parses, and not here.</strong>
-        Sweep order is the x axis and is never sorted, so the array is written out (or
-        built with a helper) rather than implied by a range: a range would impose
-        ascending order on a series that may legitimately run downwards, and would make
-        the length implicit just where <code>xValues</code> has to match it element for
-        element.</p>
-      <p class="look">SET falls, RESET rises, and they cross near the bottom — so the
-        <em>pair</em> traces a V. Each line is monotonic, so a level above the crossing
-        meets each curve exactly once and the <strong>width</strong> of the V there is
-        unambiguous. It widens as the level rises: 0.40&nbsp;V is a narrow slot just
-        above the crossing, 1.00&nbsp;V is nearly the full sweep.</p>
-      <p class="look"><code>xValues</code> gives the real swept quantity, so the crossing
-        is reported at a sweep step rather than "between the 3rd and 4th test". Without
-        it the axis is the ordinal position — test numbers are identifiers and nothing
-        guarantees they are evenly spaced.</p>
-      <p class="look">Each line is the population median with a p10–p90 band, not one
-        trace per die. The per-die view of the same data is the derived tests above,
-        plotted on the map where position is visible.</p>
+  <div class="spec-part">
+    <h2>Part 2 · A sweep — a chart of the data</h2>
+    <p>Not a test and not in the same list: a sweep is a <em>chart definition</em>,
+      passed to the renderer as <code>insights.sweeps</code> and drawn in the Insights
+      tab. It reads tests — measured or derived — but adds none. In tsmap it is a
+      separate sweeps file (Setup ▾ → Sweeps…), not part of the test definitions.</p>
+    <p>This page has one sweep. The <a href="sweeps.html"><strong>parametric sweeps
+      example</strong></a> has five, each a different use of the crossing and the width
+      — temperature inversion, DIBL on a log scale, data retention, output drive with
+      an x unit, and an RRAM resistance distribution read from the test names onto a
+      log axis.</p>
+  </div>
+  <div class="spec-list">
+    <section>
+      <h3>SET / RESET threshold sweep</h3>
+      <div class="spec-row">
+        <div class="spec-code">
+          <pre>// The pulse amplitude at each of the nine steps, in volts.
+const PULSE_V = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4];
+
+renderWaferGallery(container, items, {
+  insights: {
+    enabled: true,           // adds the Insights tab to the toolbar
+    defaultView: 'sweeps',   // …and opens it on Sweeps
+    sweeps: [{
+      id: 'threshold',
+      title: 'SET / RESET threshold — crossing and width',
+      series: [
+        { label: 'SET',   tests: ['1200..1208'], xValues: PULSE_V },
+        { label: 'RESET', tests: ['1210..1218'], xValues: PULSE_V },
+      ],
+      separationAt: [0.40, 0.70, 1.00],   // levels to measure the width at
+      xLabel: 'Pulse amplitude', xUnit: 'V',
+    }],
+  },
+});</pre>
+          <button type="button" class="spec-action" id="show-sweep">Show the sweep ↓</button>
+        </div>
+        <div class="spec-notes">
+          <p class="look"><strong>A sweep is a chart, not a test</strong>, so it is not in
+          the map's plot-mode menu: it is a card in the <strong>Insights</strong> tab's
+          <strong>Sweeps</strong> view. The button under the code opens it.</p>
+          <p class="look"><strong><code>'1200..1208'</code> is the same range syntax as
+          <code>t[1200..1208]</code> in the <code>SET Span</code> expression above</strong>,
+          read by the same code, so the same text always names the same tests. It expands
+          to the tests declared inside it, ascending, and is checked against
+          <code>xValues</code>: if a test in the range is missing from the data, the card
+          lists the tests it did find and does not measure the crossing or widths, rather
+          than pairing the remaining amplitudes with the wrong tests.</p>
+          <p class="look">SET falls, RESET rises, and they cross near the bottom — so the
+          <em>pair</em> traces a V. Each line is monotonic, so a level above the crossing
+          meets each curve exactly once and the <strong>width</strong> of the V there is
+          unambiguous. It widens as the level rises: 0.40&nbsp;V is a narrow slot just
+          above the crossing, 1.00&nbsp;V is nearly the full sweep.</p>
+          <p class="look"><code>xValues</code> gives the real swept quantity, so the crossing
+          is reported as a pulse amplitude — in volts, because of <code>xUnit</code> —
+          rather than "between the 3rd and 4th test". Without
+          it the axis is the ordinal position — test numbers are identifiers and nothing
+          guarantees they are evenly spaced.</p>
+          <p class="look">Each line is the population median with a p10–p90 band, not one
+          trace per die. The per-die view of the same data is the derived tests above,
+          plotted on the map where position is visible.</p>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -178,6 +225,7 @@ const RST_TESTS = [1210, 1211, 1212, 1213, 1214, 1215, 1216, 1217, 1218];
     // exist for. Each line is monotonic, so a level above the crossing meets
     // each curve exactly once and its width is unambiguous.
     const STEPS     = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const PULSE_V   = STEPS.map(i => 0.8 + 0.2 * i);          // the swept quantity, V
     const SET_TESTS = STEPS.map(i => 1200 + i);
     const RST_TESTS = STEPS.map(i => 1210 + i);
 
@@ -258,12 +306,12 @@ const RST_TESTS = [1210, 1211, 1212, 1213, 1214, 1215, 1216, 1217, 1218];
       id: 'threshold',
       title: 'SET / RESET threshold — crossing and width',
       series: [
-        { label: 'SET',   tests: SET_TESTS, xValues: STEPS },
-        { label: 'RESET', tests: RST_TESTS, xValues: STEPS },
+        { label: 'SET',   tests: ['1200..1208'], xValues: PULSE_V },
+        { label: 'RESET', tests: ['1210..1218'], xValues: PULSE_V },
       ],
       // Levels above the crossing, so the V's width is measurable at each.
       separationAt: [0.40, 0.70, 1.00],
-      xLabel: 'Sweep step',
+      xLabel: 'Pulse amplitude', xUnit: 'V',
       yLabel: 'Threshold',
     }];
 
@@ -310,6 +358,18 @@ const RST_TESTS = [1210, 1211, 1212, 1213, 1214, 1215, 1216, 1217, 1218];
       // something no instrument measured.
       viewOptions:  { plotMode: 'value', activeTest: 900001 },
       showHelpButton: true,
+    });
+
+    // "Show the sweep": scroll to the gallery and press its own Insights button —
+    // the same control a reader would use, so the page shows where it is rather
+    // than opening the tab by some route the reader cannot repeat. The gallery
+    // opens Insights on Sweeps because of `defaultView` above.
+    document.getElementById('show-sweep').addEventListener('click', () => {
+      const gallery = document.getElementById('gallery');
+      gallery.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // The button's stable hook; `dataset.active` says whether it is already open.
+      const insights = gallery.querySelector('[data-wmap-insights-btn]');
+      if (insights && !insights.dataset.active) insights.click();
     });
 
     const derivedCount = items[0].testDefs.filter(d => d.derived).length;

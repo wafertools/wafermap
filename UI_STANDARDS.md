@@ -211,7 +211,8 @@ number" solved one side and broke the other:
    compared against anything outside the grid at all), *and* stop menus from
    sharing a tier with arbitrary persistent chrome in the first place —
    `menuLayerFor` gives every menu/dropdown/cascade-submenu in the library one
-   dedicated layer (`Z_MENU`, between `Z_ABOVE` and `Z_ABOVE2`) that no sticky
+   dedicated layer (the shared hover tooltip is positioned into it too, above
+   the menus, so a menu row's hint is never drawn under its own menu) (`Z_MENU`, between `Z_ABOVE` and `Z_ABOVE2`) that no sticky
    or fixed element can ever accidentally outrank, because menus no longer
    compete on the general scale.
 

@@ -48,6 +48,7 @@ const result = await esbuild.build({
   splitting: true,
   outdir: 'out',
   write: false,
+  metafile: true,
   logLevel: 'silent',
 });
 
@@ -66,26 +67,60 @@ const rootResult = await esbuild.build({
 });
 const rootKB = Math.round(gzipSync(Buffer.from(rootResult.outputFiles[0].contents)).length / 1024);
 
-let coreGzip = 0;
-let guideGzip = 0;
-let insightsGzip = 0;
-for (const file of result.outputFiles) {
-  const gzip = gzipSync(Buffer.from(file.contents)).length;
-  if (file.path.includes('userGuideHtml')) guideGzip += gzip;
-  else if (file.path.includes('insightsTab')) insightsGzip += gzip;
-  else coreGzip += gzip;
+// Lazy attribution is by REACHABILITY, not by file name. A feature loaded on
+// first use (the guide, Insights, drilldown) costs its own chunk plus whatever
+// it imports statically that the entry does not. Naming broke the moment two of
+// those features shared code: esbuild splits the shared part into an anonymous
+// `chunk-*.js`, which a name test counted as core — Insights and drilldown
+// sharing the chart panels put ~5 KB of lazy code into the "always downloaded"
+// figure that way.
+//
+// Only THESE features count as lazy. Other dynamic imports (the gallery, reached
+// from renderWaferMap's detach path) stay in core, as they always have: the
+// documented renderer figure means "what rendering a map costs", and a consumer
+// importing the /render entry gets the gallery statically.
+const LAZY_FEATURES = ['userGuideHtml', 'insightsTab', 'drilldown'];
+const outputs = result.metafile.outputs;
+const base = (p) => p.split('/').pop();
+const gzipOf = new Map(result.outputFiles.map(f => [base(f.path), gzipSync(Buffer.from(f.contents)).length]));
+/** Every output statically reachable from `start` (itself included). */
+function staticClosure(start, seen = new Set()) {
+  if (seen.has(start)) return seen;
+  seen.add(start);
+  for (const imp of outputs[start]?.imports ?? []) {
+    if (imp.kind === 'import-statement') staticClosure(imp.path, seen);
+  }
+  return seen;
 }
+const entryOut = Object.keys(outputs).find(k => outputs[k].entryPoint !== undefined);
+const entryStatic = staticClosure(entryOut);
+/** A lazy feature's outputs: its own static closure, less what the entry already loads. */
+function featureOutputs(nameFragment) {
+  const out = Object.keys(outputs).find(k => base(k).startsWith(nameFragment));
+  return out ? [...staticClosure(out)].filter(k => !entryStatic.has(k)) : [];
+}
+const sumGzip = (keys) => keys.reduce((n, k) => n + (gzipOf.get(base(k)) ?? 0), 0);
+const lazySet = new Set(LAZY_FEATURES.flatMap(featureOutputs));
+
+const coreGzip = sumGzip(Object.keys(outputs).filter(k => !lazySet.has(k)));
+const guideGzip = sumGzip(featureOutputs('userGuideHtml'));
+const insightsGzip = sumGzip(featureOutputs('insightsTab'));
+const drilldownGzip = sumGzip(featureOutputs('drilldown'));
 // `WMAP_CHUNKS=1 node scripts/check-bundle-size.mjs` prints the per-chunk
 // breakdown — the quickest way to see what a size change actually landed in.
 if (process.env.WMAP_CHUNKS) {
   for (const f of result.outputFiles) {
-    console.log(`  ${(gzipSync(Buffer.from(f.contents)).length / 1024).toFixed(1).padStart(7)} KB  ${f.path.split('/').pop()}`);
+    const name = base(f.path);
+    const where = [...lazySet].some(k => base(k) === name) ? 'lazy' : 'core';
+    console.log(`  ${(gzipOf.get(name) / 1024).toFixed(1).padStart(7)} KB  ${where}  ${name}`);
   }
 }
 
 const coreKB = Math.round(coreGzip / 1024);
 const insightsKB = Math.round(insightsGzip / 1024);
-const totalKB = Math.round((coreGzip + guideGzip + insightsGzip) / 1024);
+// Every output, once — the lazy closures overlap (shared chart code), so
+// summing them would count that code twice.
+const totalKB = Math.round([...gzipOf.values()].reduce((a, b) => a + b, 0) / 1024);
 
 const docPath = resolve(root, 'docs/examples/comparison.html');
 const doc = readFileSync(docPath, 'utf8');
@@ -193,5 +228,5 @@ if (problems.length) {
 }
 
 console.log(
-  `bundle size OK — core ~${coreKB} KB gzip (+~${insightsKB} KB Insights, +~${Math.round(guideGzip / 1024)} KB guide; ~${totalKB} KB all in)`
+  `bundle size OK — core ~${coreKB} KB gzip (+~${insightsKB} KB Insights, +~${Math.round(drilldownGzip / 1024)} KB drilldown, +~${Math.round(guideGzip / 1024)} KB guide; ~${totalKB} KB all in)`
 );

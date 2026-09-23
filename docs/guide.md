@@ -1873,24 +1873,60 @@ renderWaferGallery(container, items, {
 
 Each sweep gets a card in the **Sweeps** sub-tab, which appears only when at least one sweep is defined — on a single map or a gallery alike. Pass `defaultView: 'sweeps'` to open on it.
 
-**→ [Example: Parametric sweeps](examples/sweeps.html)** — four characterisation sweeps: temperature inversion, DIBL, data retention and output drive.
+**→ [Example: Parametric sweeps](examples/sweeps.html)** — five characterisation sweeps: temperature inversion, DIBL, data retention, output drive, and an RRAM resistance distribution read from test names on a log axis.
 
-**A log-scale curve is a sweep over derived tests.** There is no log option on a sweep, and none is needed: a sweep reads any test, so a transfer curve spanning decades of current is swept as one derived test per step, `log10(t[n])`. The width at a constant log-current is then the constant-current threshold shift — DIBL, for two drain biases.
+**Give the swept quantity whenever you know it.** Without it the x axis is the ordinal position in the sequence, because test numbers are identifiers — nothing guarantees they are evenly spaced or even ascending, and interpolating a crossing point along them would assume a scale the data never claimed. With it, the crossing is reported in dBm rather than "somewhere between the third and fourth test". There are two ways to give it:
 
-**Supply `xValues` whenever you know them.** Without it the x axis is the ordinal position in the sequence, because test numbers are identifiers — nothing guarantees they are evenly spaced or even ascending, and interpolating a crossing point along them would assume a scale the data never claimed. With it, the crossing is reported in dBm rather than "somewhere between the third and fourth test".
+- **`xValues`** — one number per test, in order. Right when the program's documentation gives you the levels.
+- **`xFromName`** — read each test's value out of its name, for programs that write the swept quantity only into the test text. See *Swept values in test names* below.
 
-**Order is the x axis, and is never sorted.** A falling series recorded from the top level down is listed in that order and stays that way. This is also why `tests` takes a plain array and has no `1200..1230` range syntax, even though a derived-test expression does: a range implies ascending order, and it would make the length implicit just where `xValues` has to match it element for element. Build the array in the host — the length stays visible and a reversal is one call:
+**Name the tests with a range.** `tests` takes numbers and range strings in the derived-test syntax — `'1200..1230'` is every test **declared** in `testDefs` from 1200 to 1230, ascending, so a program numbered in steps of two needs no step syntax. Entries expand in the order written, and order is the x axis: it is never sorted.
 
 ```ts
-const span = (from: number, to: number) =>
-  Array.from({ length: to - from + 1 }, (_, i) => from + i);
-
-{ label: 'Falling', tests: span(1240, 1270).reverse(), xValues: levels }
+series: [
+  { label: 'Rising',  tests: ['1200..1230'], xValues: RISE_DBM },
+  // Recorded from the top level down: the test numbers still ascend, and the
+  // levels say which way the sweep went.
+  { label: 'Falling', tests: ['1240..1270'], xValues: FALL_DBM },
+]
 ```
+
+A range is checked, not trusted: if one test inside it is missing from this lot, the range comes up one short of `xValues`, the card lists the tests it did match, and the crossing and widths are **not measured** — pairing the remaining values with the remaining tests would slide every later x onto the wrong test and report a plausible, wrong crossing.
+
+**A curve that spans decades.** Two different axes, two different tools:
+
+- **Along y** (a transfer curve's current, from 1 nA to 1 mA) — sweep a derived test per step, `log10(t[n])`. The width at a constant log-current is then the constant-current threshold shift: DIBL, for two drain biases.
+- **Along x** (thresholds of 1k, 2k, 5k … 1M) — set `xScale: 'log'`. The steps get equal room, the crossing is interpolated along log x, and a width is reported as a **ratio** with both ends, `×2.49 (15.9 kΩ → 39.7 kΩ)`, because on a log axis the same shift is the same multiple anywhere along it. `xUnit` makes the axis and those values read in SI units.
+
+**Swept values in test names.** Some programs record the swept value only in the test text — a resistance CDF with one test per threshold, named `Normalized_LRS= LRS_STATS_12K / Total_LRS= …`. `xFromName` reads it from there with a placeholder pattern:
+
+```ts
+sweeps: [{
+  id: 'lrs-cdf',
+  title: 'LRS CDF — before vs after bake',
+  xLabel: 'LRS threshold', xUnit: 'Ω', xScale: 'log',   // thresholds grow by multiples
+  yLabel: 'Fraction of cells below',
+  separationAt: [0.5],                                   // the median resistance shift
+  crossing: false,                                       // two CDFs of one cell population do not meet
+  series: [
+    // "LRS_STATS_{x}" finds the number after LRS_STATS_ anywhere in the name,
+    // with its SI prefix: 12K → 12,000 Ω.
+    { label: 'Before bake', tests: ['31200..31230'], xFromName: 'LRS_STATS_{x}' },
+    { label: 'After bake',  tests: ['31300..31330'], xFromName: 'LRS_STATS_{x}' },
+  ],
+}]
+```
+
+- `{x}` reads a number, `*` matches any text, and everything else must appear in the name — in any case, because test text changes case between programs. The pattern is found anywhere in the name, so it needs only enough text around `{x}` to be unambiguous.
+- `{x}` reads an SI prefix with the number, case-sensitively: `m` is milli, `M` mega, and `K` is accepted as kilo. A letter is a prefix only when it stands alone or comes before a unit (`12K`, `12kΩ`, `5us`), so `12Kangaroos` reads 12. In a name written all in capitals the case is gone, so a prefix before a unit is read in any case — except `M`, which could be milli or mega and is reported rather than guessed (`2MV`). Put the letter in the pattern (`'V_{x}MV'`) and the unit in `xLabel` to read those.
+- It is **not a regular expression**, deliberately. Sweep definitions are shared, and JavaScript cannot interrupt a runaway regex; this matcher's cost is bounded whatever the pattern says.
+- Each value stays attached to its own test, so a missing test costs one point instead of shifting the rest. A name the pattern does not fit is named in the card footer, and nothing is measured.
 
 Each line is the population **median with a p10–p90 band**, never one trace per die — a production lot is thousands of dies and the spaghetti would carry nothing. `crossing` and `separationAt` measure the **first two series**; any further series are drawn for context but not measured, so a single-series sweep is the degenerate case rather than the normal one.
 
 A sweep carries **no population scope of its own**. It names which tests form the curve and nothing about which dies, so one definition stays valid for any lot and portable between hosts — the dies it aggregates are whatever the Insights view is currently scoped to, including the group or wafer picked in the panel above it.
+
+The same definitions reach **drilldown**: a user who selects dies on a map, or right-clicks a wafer, gets a menu of charts drawn from just that population — a value histogram, process capability, and each sweep — opened in a modal that states how many dies it plots and from which wafer. There is nothing to wire; a single map offers the sweeps even with `insights.enabled` off. A map with no parametric tests and no sweeps has nothing to chart and leaves right-click alone, so a host's own context menu still works there. The user guide (§4.4) describes it from the user's side.
 
 The card is explicit about what it cannot measure rather than quietly rounding it off: a crossing that happens more than once says so instead of presenting the first as the only one, a separation level that either curve never reaches reads "not measurable" and names which series rather than reporting `0`, and tests missing from `testDefs`, functional tests inside a sweep, and series carrying different units are all listed in the card footer.
 
@@ -1919,7 +1955,7 @@ fs.writeFileSync('lot-report.html', html);           // or openReportModal(html)
 
 The Summary panel's "Summary report" button in `renderWaferMap` and `renderWaferGallery` uses the same builders — you only need to call them yourself for a custom export flow.
 
-> `renderFindingsReportHtml`, the findings-only report, is deprecated — removed in 0.32.0. The wafer and lot reports above contain the same findings table, with the population and yield it was found in.
+> `renderFindingsReportHtml`, the findings-only report, is deprecated — removed in 0.31.0. The wafer and lot reports above contain the same findings table, with the population and yield it was found in.
 >
 > `renderSummaryReportHtml`, `renderLotSummaryReportHtml` and `openHtmlReport` are deprecated — removed in 0.31.0. The first two took loose pieces with `passBins` and `ringCount` defaulting to `[1]` and `4`; the builders above read them from the map.
 

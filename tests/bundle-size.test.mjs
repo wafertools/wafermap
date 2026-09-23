@@ -65,7 +65,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
 const THRESHOLDS = {
-  // Raised deliberately from 56_000 in 0.31.0: derived tests add a hand-written
+  // Raised deliberately from 56_000 in 0.30.3: derived tests add a hand-written
   // expression parser + evaluator (~5 KB gz). That cost buys the absence of a
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
@@ -108,6 +108,20 @@ const stubInsights = {
   },
 };
 
+// Drilldown (drilldown.ts) opens chart panels on a map selection and is loaded
+// on first use for the same reason — stubbed here so the threshold measures what
+// a consumer downloads up front; the static-import test below holds the deferral.
+const stubDrilldown = {
+  name: 'stub-drilldown',
+  setup(b) {
+    b.onResolve({ filter: /\/drilldown\.js$/ }, () => ({ path: 'drilldown', namespace: 'drilldown' }));
+    b.onLoad({ filter: /.*/, namespace: 'drilldown' }, () => ({
+      contents: 'export const openDrilldownMenu = () => () => {};',
+      loader: 'js',
+    }));
+  },
+};
+
 const stubGuide = {
   name: 'stub-guide',
   setup(b) {
@@ -128,7 +142,7 @@ test('wafermap (root) bundle size is within threshold', async () => {
 });
 
 test('wafermap/render initial chunk size is within threshold', async () => {
-  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights]);
+  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown]);
   assert.ok(
     gz <= THRESHOLDS['wafermap/render (initial)'],
     `wafermap/render initial chunk too large: ${gz} bytes gzipped (threshold ${THRESHOLDS['wafermap/render (initial)']}). Check for new static imports of heavy modules.`,
@@ -173,4 +187,15 @@ test('userGuideHtml is not statically imported by renderWaferMap or renderWaferG
     !staticImportRe.test(gallerySrc),
     'renderWaferGallery.js has a static import of userGuideHtml — must use dynamic import() instead.',
   );
+});
+
+test('drilldown is not statically imported by renderWaferMap or renderWaferGallery', async () => {
+  const { readFile } = await import('fs/promises');
+  const [mapSrc, gallerySrc] = await Promise.all([
+    readFile(resolve(dist, 'packages/canvas-adapter/renderWaferMap.js'), 'utf8'),
+    readFile(resolve(dist, 'packages/canvas-adapter/renderWaferGallery.js'), 'utf8'),
+  ]);
+  const staticImportRe = /^import\s+.*drilldown/m;
+  assert.ok(!staticImportRe.test(mapSrc), 'renderWaferMap.js has a static import of drilldown — must use dynamic import() instead.');
+  assert.ok(!staticImportRe.test(gallerySrc), 'renderWaferGallery.js has a static import of drilldown — must use dynamic import() instead.');
 });

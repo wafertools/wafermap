@@ -25,7 +25,7 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, fitRowsHeight, setChartGrow, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
 import { escHtml, maxOf, minOf } from '../../core/utils.js';
 
 const BOX_ROW_HEIGHT = 24;
@@ -72,6 +72,9 @@ export interface BoxplotPanelOptions {
    *  same test in value mode instead of defaulting to hard-bin mode.
    *  Never called for a pooled group-overview row (that drills instead). */
   onOpen?: (waferIndex: number, testNumber: number) => void;
+  /** Right-click on a wafer's box — see `WaferContextMenuHandler`. Not called
+   *  for a pooled group row. */
+  onWaferContextMenu?: WaferContextMenuHandler;
   /** What `onOpen` will actually do, in the user's words — substituted into
    *  both click affordances ("click a box to …" / "click to …"). Default
    *  wording describes opening that wafer, which is what a gallery host does;
@@ -105,6 +108,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   const openHintLabel    = options.openActionLabel ?? 'open that wafer';
   const openTooltipLabel = options.openActionLabel ?? 'open this wafer';
   const { card, heading, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
+  setChartGrow(card, 'rows');
 
   // Unlike capability's fill-the-container canvas, this panel's canvas is an
   // in-flow element sized from its own content (row count) — it wants to be
@@ -275,16 +279,9 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     // mid-measurement.
     body.style.overflowY = 'auto';
     body.style.scrollbarGutter = 'stable';
-    // growCardToFitContent itself is called after the first draw() below,
-    // not here — canvas was just created and is still at its unstyled
-    // browser default size (300×150), so body.clientHeight measured now
-    // would reflect that stale default rather than the real content,
-    // corrupting growCardToFitContent's `overhead = card.offsetHeight -
-    // body.clientHeight` every single rebuild (each rebuild recreates
-    // canvas from scratch via body.innerHTML = ''). That inflated overhead
-    // then gets baked into card's new minHeight, which becomes next
-    // rebuild's stale card.offsetHeight — an unbounded growth ratchet on
-    // every redraw (e.g. every checkbox toggle in this panel's controls).
+    // The card's height request and this cap are both set in draw(), through
+    // fitRowsHeight — which measures the card's chrome from its siblings, so it
+    // no longer depends on the canvas having its final size first.
 
     let hovered = -1;
 
@@ -347,8 +344,10 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       // (no separate scroll wrapper), so measuring from it directly stays
       // correct even when body has its own vertical scrollbar (data.length
       // > BOX_MAX_VISIBLE_ROWS) narrowing its content box.
-      const width = body.clientWidth;
       const height = PADDING * 2 + data.length * (BOX_ROW_HEIGHT + BOX_ROW_GAP) + AXIS_HEIGHT;
+      // Before measuring the width: a new cap can add or remove the scrollbar.
+      body.style.maxHeight = `${fitRowsHeight(card, body, visibleAreaHeight, height)}px`;
+      const width = body.clientWidth;
       const prep = prepareCanvas(canvas, card, width, height);
       if (!prep) return;
       const { ctx } = prep;
@@ -553,7 +552,8 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         const clickHint = isGroupOverview
           ? `<br><em>click to see this ${escHtml(groupLabelText)} by wafer</em>`
           : (leafClickable(row) ? `<br><em>click to ${escHtml(openTooltipLabel)}</em>` : '');
-        tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (${d.count} dies)<br>max ${escHtml(fmt(d.max))}<br>q3 ${escHtml(fmt(d.q3))}<br>median ${escHtml(fmt(d.median))}<br>q1 ${escHtml(fmt(d.q1))}<br>min ${escHtml(fmt(d.min))}${clickHint}`;
+        const menuHint = !isGroupOverview && options.onWaferContextMenu && rowItems[row]?.waferIndex !== undefined ? WAFER_MENU_HINT : '';
+        tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (${d.count} dies)<br>max ${escHtml(fmt(d.max))}<br>q3 ${escHtml(fmt(d.q3))}<br>median ${escHtml(fmt(d.median))}<br>q1 ${escHtml(fmt(d.q1))}<br>min ${escHtml(fmt(d.min))}${clickHint}${menuHint}`;
         tooltip.style.display = 'block';
         positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else {
@@ -574,14 +574,18 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       const waferIndex = rowItems[row]?.waferIndex;
       if (onOpen && waferIndex !== undefined && activeTest !== null) onOpen(waferIndex, activeTest);
     });
+    canvas.addEventListener('contextmenu', e => {
+      const rect = canvas.getBoundingClientRect();
+      const row = rowAt(e.clientY - rect.top);
+      const waferIndex = row === -1 ? undefined : rowItems[row]?.waferIndex;
+      if (isGroupOverview || waferIndex === undefined || !options.onWaferContextMenu) return;
+      tooltip.style.display = 'none';
+      options.onWaferContextMenu(waferIndex, activeTest ?? undefined, e);
+    });
 
     resizeHandle?.disconnect();
     resizeHandle = observeResize(card, () => draw());
     draw();
-    // Now that canvas has its real, final size, body.clientHeight
-    // accurately reflects the content — safe to measure card's true
-    // overhead from it (see the comment above where this used to be).
-    growCardToFitContent(card, body, visibleAreaHeight);
   }
 
   rebuildBody();

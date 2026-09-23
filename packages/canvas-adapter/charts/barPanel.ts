@@ -3,7 +3,7 @@
 
 import type { ChartDatum } from '../../stats/yield.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
-import { cardShell, formatValue, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeSegmented, growCardToFitContent, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { cardShell, formatValue, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeSegmented, fitRowsHeight, setChartGrow, resolveChartCanvasColors, PADDING, VALUE_WIDTH, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
 import { escHtml } from '../../core/utils.js';
 
 const ROW_HEIGHT = 24;
@@ -62,6 +62,9 @@ export interface ChartPanel {
    * instead, via `drill.onOpenGroup` — this is never called for those.
    */
   onOpen?: (datum: ChartDatum) => void;
+  /** Right-click on a leaf row that carries a wafer (`datum.key`) — see
+   *  `WaferContextMenuHandler`. Not called for a group row. */
+  onWaferContextMenu?: WaferContextMenuHandler;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -79,6 +82,7 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
   let title = panel.title;
   let data = panel.data;
   const { card, heading, controlsRow, body } = cardShell(title, onSaveImage, panel.ownerDocument);
+  setChartGrow(card, 'rows');
 
   if (panel.selfControl) {
     const sc = panel.selfControl;
@@ -141,16 +145,15 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
   }
 
   function draw() {
-    scrollArea.style.maxHeight = `${visibleAreaHeight()}px`;
-    growCardToFitContent(card, body, visibleAreaHeight());
+    const fullHeight = PADDING * 2 + refBandH() + data.length * (ROW_HEIGHT + ROW_GAP);
+    scrollArea.style.maxHeight = `${fitRowsHeight(card, body, visibleAreaHeight(), fullHeight)}px`;
     // scrollArea's own width, not card's — scrollArea sits inside body/card's
     // padding box, so measuring from it directly (rather than re-deriving via
     // card.clientWidth minus a padding constant) stays correct even when
     // scrollArea has its own vertical scrollbar (data.length > MAX_VISIBLE_ROWS)
     // narrowing its content box.
     const width = scrollArea.clientWidth;
-    const height = PADDING * 2 + refBandH() + data.length * (ROW_HEIGHT + ROW_GAP);
-    const prep = prepareCanvas(canvas, card, width, height);
+    const prep = prepareCanvas(canvas, card, width, fullHeight);
     if (!prep) return;
     const { ctx } = prep;
     ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
@@ -303,7 +306,8 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
       const hintLine = isGroupRow
         ? `<br><em>click to see this ${escHtml(drill!.groupLabelText)} by wafer</em>`
         : (panel.onOpen ? '<br><em>click to open this wafer</em>' : '');
-      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong><br>${escHtml(valueTextOf(d))}${hintLine}`;
+      const menuHint = !isGroupRow && panel.onWaferContextMenu && typeof d.key === 'number' ? WAFER_MENU_HINT : '';
+      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong><br>${escHtml(valueTextOf(d))}${hintLine}${menuHint}`;
       tooltip.style.display = 'block';
       positionChartTooltip(tooltip, card, e.clientX, e.clientY);
     } else { tooltip.style.display = 'none'; }
@@ -316,6 +320,15 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
     const datum = data[row];
     if (drill && !drillActive && datum.itemCount > 1) { onDrillOpen(datum); return; }
     panel.onOpen?.(datum);
+  });
+  canvas.addEventListener('contextmenu', e => {
+    const rect = canvas.getBoundingClientRect();
+    const row = rowAt(e.clientY - rect.top);
+    if (row === -1 || !panel.onWaferContextMenu) return;
+    const datum = data[row];
+    if ((drill && !drillActive && datum.itemCount > 1) || typeof datum.key !== 'number') return;
+    tooltip.style.display = 'none';
+    panel.onWaferContextMenu(datum.key, undefined, e);
   });
 
   const resizeHandle = observeResize(card, () => draw());

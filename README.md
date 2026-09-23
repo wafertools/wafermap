@@ -32,6 +32,9 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 - `renderWaferMap` — interactive canvas map with toolbar, zoom/pan, tooltips, die selection, and summary panel
 - `renderWaferGallery` — lot-level card grid with shared controls and click-to-expand
 - Insights tab (`insights: { enabled: true }`) — an in-toolbar chart suite (yield, per-test pass rate, bin pareto, capability, boxplot, histogram, wafer-to-wafer trend, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
+- Derived tests (`derivedTests`) — tests computed per die from other tests (`abs(t[1020] - t[1010])`), which then work everywhere a measured test does, marked † as not measured
+- Parametric sweeps (`insights.sweeps`) — an ordered run of tests read as a response curve, with the crossing and widths between two curves measured; x values given directly or read from the test names, on a linear or log axis
+- Drilldown — right-click selected dies, a wafer card or a wafer's bar to chart just that population, with the population stated on the chart
 - `analyzeWaferMap` / `analyzeWaferLot` — spatial analysis across rings, quadrants, sectors, and reticle positions; failure cluster detection; lot trend series
 - Pure ES modules, no server, no runtime dependencies — works in React, Svelte, Vue, plain HTML, or a Web Worker
 
@@ -72,7 +75,7 @@ export. Add `analyzeWaferMap` for the findings and summary panel, swap in
 
 The API reference is long because it documents every option, not because you need
 them: [tsmap](https://github.com/wafertools/tsmap), a complete cross-platform desktop
-application built on this library, imports **15** of its ~100 exports. Read the
+application built on this library, imports **17** of its ~100 exports. Read the
 [Quick Start](https://wafertools.github.io/wafermap/quickstart/) first and treat the
 [API reference](https://wafertools.github.io/wafermap/api/) as something to search,
 not to read.

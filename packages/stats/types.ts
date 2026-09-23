@@ -95,7 +95,7 @@ export interface StatsFinding {
     bin?: number;
     /**
      * Display name, already resolved through any supplied bin/test definitions.
-     * For a derived test (`derived`) it ends in `" †"`, as does the test's name
+     * For a derived test (`derived`) it starts with `"† "`, as does the test's name
      * inside `summary` — marked at the source, so no reader of a finding can
      * present a derived value as a measured one. A surface showing either
      * string should show the key ("† Derived, not measured") with it.
@@ -279,7 +279,7 @@ export interface StatsSummary {
     functionalYield?: Array<{
       testNumber:      number;
       label:           string;
-      /** Computed from other tests rather than measured; `label` then ends in `" †"`. See `TestDef.derived`. */
+      /** Computed from other tests rather than measured; `label` then starts with `"† "`. See `TestDef.derived`. */
       derived?:        true;
       /** The expression a `derived` test was computed from, for display. */
       expression?:     string;

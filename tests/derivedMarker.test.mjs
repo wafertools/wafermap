@@ -2,8 +2,8 @@
 // value was computed from other tests rather than measured.
 //
 // The rules under test:
-//  - the `†` follows the name wherever a single test is named in text (tooltip,
-//    map title, finding label and sentence, functional pass-rate label)
+//  - the `†` goes in FRONT of the name wherever a test is named (tooltip, map
+//    title, finding label and sentence, functional pass-rate label, pickers)
 //  - the glyph never appears without its key: tooltips carry the words and the
 //    expression, the map title adds a key line, lists and reports add a key line
 //  - a surface with no derived test is unchanged — no key, no extra column
@@ -20,8 +20,11 @@ import { poolFunctionalYield } from '../dist/packages/stats/testPassRate.js';
 import { formatFindingTooltip, derivedFindingsKeyHtml } from '../dist/packages/stats/reportHtml.js';
 import {
   markedTestLabel, unmarkedLabel, derivedKeyText, derivedCsvCell, derivedTestNote,
-  DERIVED_MARK, DERIVED_KEY,
+  DERIVED_MARK, DERIVED_KEY, DERIVED_LANE_PAD,
 } from '../dist/packages/renderer/testLabel.js';
+import { testOptionLabels } from '../dist/packages/canvas-adapter/charts/chartShell.js';
+import { buildDataModeEntries } from '../dist/packages/canvas-adapter/toolbar.js';
+import { buildCorrelationMatrix } from '../dist/packages/stats/correlation.js';
 
 const TEST_DEFS = [
   { testNumber: 1010, name: 'Leak', unit: 'A' },
@@ -67,16 +70,16 @@ const defOf = (tn) => RESULT.testDefs.find(d => d.testNumber === tn);
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-test('the marker follows the name, and only on a derived test', () => {
-  assert.equal(markedTestLabel(defOf(900001), 900001), `Leak x2 ${DERIVED_MARK}`);
+test('the marker precedes the name, and only on a derived test', () => {
+  assert.equal(markedTestLabel(defOf(900001), 900001), `${DERIVED_MARK} Leak x2`);
   assert.equal(markedTestLabel(defOf(1010), 1010), 'Leak');
   assert.equal(unmarkedLabel(markedTestLabel(defOf(900001), 900001)), 'Leak x2');
 });
 
 test('the key line names each derived test once, with its expression, and is absent otherwise', () => {
   const text = derivedKeyText([
-    { label: `Leak x2 ${DERIVED_MARK}`, derived: true, expression: 't[1010] * 2' },
-    { label: `Leak x2 ${DERIVED_MARK}`, derived: true, expression: 't[1010] * 2' },
+    { label: `${DERIVED_MARK} Leak x2`, derived: true, expression: 't[1010] * 2' },
+    { label: `${DERIVED_MARK} Leak x2`, derived: true, expression: 't[1010] * 2' },
     { label: 'Leak' },
   ]);
   assert.equal(text, `${DERIVED_MARK} ${DERIVED_KEY} — Leak x2: t[1010] * 2`);
@@ -94,7 +97,7 @@ test('a CSV cell states the expression for a derived test and is blank for a mea
 test('the map tooltip marks a derived active test and explains it in words', () => {
   const die = RESULT.dies.find(d => d.testValues?.[900001] !== undefined);
   const html = buildHoverText(die, 'value', { testDefs: RESULT.testDefs, activeTest: 900001 });
-  assert.match(html, new RegExp(`Leak x2 ${DERIVED_MARK}:`));
+  assert.match(html, new RegExp(`${DERIVED_MARK} Leak x2:`));
   assert.ok(html.includes(`${DERIVED_MARK} ${DERIVED_KEY}: t[1010] * 2`), html);
 });
 
@@ -104,10 +107,10 @@ test('the map tooltip for a measured active test carries no marker', () => {
   assert.ok(!html.includes(DERIVED_MARK), html);
 });
 
-test('the map title marks the name before the unit and adds the key as its own line', () => {
+test('the map title marks the name in front, the unit after it, and adds the key as its own line', () => {
   const view = buildView(RESULT.wafer, RESULT.dies, { plotMode: 'value', testDefs: RESULT.testDefs, activeTest: 900001 });
   const title = buildMapTitle(view);
-  assert.match(title.primary, new RegExp(`^Leak x2 ${DERIVED_MARK} \\(`), 'marker qualifies the name, not the unit');
+  assert.match(title.primary, new RegExp(`^${DERIVED_MARK} Leak x2 \\(`), 'marker in front of the name, unit after');
   assert.equal(title.note, `${DERIVED_MARK} ${DERIVED_KEY}`);
 });
 
@@ -124,8 +127,8 @@ const SUMMARY = analyzeWaferMap(RESULT, { enableTestValueAnalysis: true });
 test('a finding about a derived test is marked in its label and sentence, and carries the flag', () => {
   const f = SUMMARY.findings.find(x => x.variable.kind === 'test' && x.variable.index === 900001);
   assert.ok(f, 'the outer-ring shift produces a finding on the derived test');
-  assert.ok(f.variable.label.endsWith(` ${DERIVED_MARK}`));
-  assert.ok(f.summary.includes(`Leak x2 ${DERIVED_MARK}`), f.summary);
+  assert.ok(f.variable.label.startsWith(`${DERIVED_MARK} `));
+  assert.ok(f.summary.includes(`${DERIVED_MARK} Leak x2`), f.summary);
   assert.equal(f.variable.derived, true);
   assert.equal(f.variable.expression, 't[1010] * 2');
 });
@@ -140,11 +143,11 @@ test('a finding about a measured test carries no marker and no flag', () => {
 test('a derived functional test is marked in its finding and its pass-rate row', () => {
   const f = SUMMARY.findings.find(x => x.variable.kind === 'functionalTest' && x.variable.index === 900002);
   assert.ok(f, 'the outer-ring failures produce a pass-rate finding on the derived verdict');
-  assert.ok(f.variable.label.startsWith(`Func OK ${DERIVED_MARK}`), f.variable.label);
+  assert.ok(f.variable.label.startsWith(`${DERIVED_MARK} Func OK`), f.variable.label);
   assert.equal(f.variable.derived, true);
 
   const row = SUMMARY.stats.functionalYield.find(r => r.testNumber === 900002);
-  assert.equal(row.label, `Func OK ${DERIVED_MARK}`);
+  assert.equal(row.label, `${DERIVED_MARK} Func OK`);
   assert.equal(row.derived, true);
   assert.equal(row.expression, 'testPass[2000]');
 });
@@ -176,7 +179,7 @@ test('the report key appears under a findings table only when a finding is about
 // ── Merged functional findings (a pre-existing bug, fixed alongside) ─────────
 
 test('a functional finding merged across adjacent rings is recomputed as a pass rate', () => {
-  // Until 0.31.0 the adjacent-region merge had no functional branch and fell
+  // Until 0.30.3 the adjacent-region merge had no functional branch and fell
   // through to the bin one: it counted dies whose hard bin equalled
   // `variable.bin` (undefined), reported a 0.0 pp difference as "HBin undefined
   // occurrence", and REPLACED the correct per-ring findings it merged.
@@ -214,4 +217,31 @@ test('the wafer report renders its findings through the shared table', async () 
   const { visibleFindings } = await import('../dist/packages/stats/filterFindings.js');
   const html = renderWaferReportHtml(RESULT, SUMMARY);
   assert.ok(html.includes(findingsTableHtml(visibleFindings(SUMMARY.findings))), 'the same table, byte for byte');
+});
+
+// ── Test pickers and lists: the mark in front, names aligned ─────────────────
+// Where tests are chosen — the plot-mode menu, the Insights pickers, the
+// correlation matrix — a derived test is marked like everywhere else, and a list
+// holding one keeps measured names aligned with it.
+
+
+test('picker labels put the mark in front and pad measured names only when a derived test is listed', () => {
+  assert.deepEqual(testOptionLabels([defOf(1010), defOf(900001)]), [`${DERIVED_LANE_PAD}Leak`, `${DERIVED_MARK} Leak x2`]);
+  assert.deepEqual(testOptionLabels([defOf(1010)]), ['Leak'], 'no derived test, no padding');
+});
+
+test('plot-mode test entries carry the derived flag and a plain label for the menu to mark', () => {
+  const { testEntries } = buildDataModeEntries(RESULT.dies, RESULT.testDefs, { includeStacked: false });
+  const derived = testEntries.find(e => e.activeTest === 900001);
+  assert.equal(derived.derived, true);
+  assert.equal(derived.label, 'Leak x2 (A)', 'the menu draws the mark in its own slot');
+  assert.equal('derived' in testEntries.find(e => e.activeTest === 1010), false);
+});
+
+test('the correlation matrix marks a derived test on its axes and carries the flag', () => {
+  const m = buildCorrelationMatrix(RESULT.dies, RESULT.testDefs);
+  const t = m.tests.find(x => x.testNumber === 900001);
+  assert.equal(t.label, `${DERIVED_MARK} Leak x2`);
+  assert.equal(t.derived, true);
+  assert.equal(m.tests.find(x => x.testNumber === 1010).label, 'Leak');
 });

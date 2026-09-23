@@ -23,8 +23,9 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, saveTextFile, type SaveTextHandler } from '../toolbar.js';
-import { attachChartTip, cardShell, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
+import { attachChartTip, cardShell, setChartGrow, isExpandedCard, bodyRoom, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
 import { escHtml } from '../../core/utils.js';
+import { unmarkedLabel, derivedCsvCell, DERIVED_CSV_HEADER, DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
 
 const MATRIX_LIMIT_MIN = 5;
 const MATRIX_LIMIT_MAX = 100;
@@ -106,6 +107,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
   // Cells use the fixed sign-aware correlation hues (palette.ts).
   const { title = 'Test correlation matrix', items, testDefs, onSaveImage, onSelectPair } = options;
   const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
+  setChartGrow(card, 'square');
 
   body.style.overflowX = 'auto';
   // Size to the matrix's own content instead of stretching to the grid
@@ -176,16 +178,21 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       // and an r without its n is not interpretable.
       const m = lastMatrix;
       if (!m) return;
-      const lines = ['Test X,Test X number,Test Y,Test Y number,r,n'];
+      // A CSV has no key to explain a glyph, so a derived test is stated as data
+      // — a "derived from" column per side, present only when one is derived.
+      const anyDerived = m.tests.some(t => t.derived);
+      const lines = ['Test X,Test X number,Test Y,Test Y number,r,n'
+        + (anyDerived ? `,Test X ${DERIVED_CSV_HEADER.toLowerCase()},Test Y ${DERIVED_CSV_HEADER.toLowerCase()}` : '')];
       for (let yi = 0; yi < m.tests.length; yi++) {
         for (let xi = yi + 1; xi < m.tests.length; xi++) {
           const cell = m.cells.find(c => c.xIndex === xi && c.yIndex === yi);
           if (!cell) continue;
           lines.push([
-            csvField(m.tests[xi].label), String(m.tests[xi].testNumber),
-            csvField(m.tests[yi].label), String(m.tests[yi].testNumber),
+            csvField(unmarkedLabel(m.tests[xi].label)), String(m.tests[xi].testNumber),
+            csvField(unmarkedLabel(m.tests[yi].label)), String(m.tests[yi].testNumber),
             cell.r === null ? '' : cell.r.toFixed(6),
             String(cell.n),
+            ...(anyDerived ? [csvField(derivedCsvCell(m.tests[xi])), csvField(derivedCsvCell(m.tests[yi]))] : []),
           ].join(','));
         }
       }
@@ -203,7 +210,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   let draw: () => void = () => {};
 
-  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[], pairN: number | null, sample: CorrelationMatrix['sample']): void {
+  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[], pairN: number | null, sample: CorrelationMatrix['sample'], anyDerived: boolean): void {
     hintRow.innerHTML = '';
 
     // A sampled matrix must say so where the reader cannot miss it. Above
@@ -234,9 +241,12 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     // by |r| alone, and |r| ≥ 0.7 over 6 dies is not the same claim as over 6,000.
     // `n` is the median across displayed pairs because tests can have different
     // coverage — a single number would otherwise silently be one pair's.
-    hintText.textContent = pairN !== null
+    // The derived-test key rides on this line whenever a marked name is on the
+    // matrix — a glyph with no key reads as a rendering artefact.
+    hintText.textContent = (pairN !== null
       ? `Pearson r · n ≈ ${pairN.toLocaleString()} dies per pair · click a cell to view that pair in scatter ·`
-      : 'Pearson r · click a cell to view that pair in scatter ·';
+      : 'Pearson r · click a cell to view that pair in scatter ·')
+      + (anyDerived ? ` ${DERIVED_MARK} ${DERIVED_KEY} ·` : '');
     hint.appendChild(hintText);
     const scaleWrap = card.ownerDocument.createElement('span');
     Object.assign(scaleWrap.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
@@ -307,9 +317,16 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     let selectedXi = -1;
     let selectedYi = -1;
 
+    // Expanded, a cell grows to what the shorter side allows — up to this, so
+    // three tests do not become three giant tiles.
+    const EXPANDED_MAX_CELL = 96;
+
     function cellSize(availW: number): number {
       const plotW = Math.max(0, availW - LABEL_W);
-      return Math.max(MIN_CELL, Math.min(PREF_CELL, Math.floor(plotW / n)));
+      const byWidth = Math.floor(plotW / n);
+      if (!isExpandedCard(card)) return Math.max(MIN_CELL, Math.min(PREF_CELL, byWidth));
+      const byHeight = Math.floor((bodyRoom(card, body, canvas) - LABEL_H - 4) / n);
+      return Math.max(MIN_CELL, Math.min(EXPANDED_MAX_CELL, byWidth, byHeight));
     }
 
     const cellsByRow = new Map<number, typeof matrix.cells>();
@@ -480,7 +497,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     lastMatrix = matrix;
     // `fullMatrix`'s sample note, not `matrix`'s: filterCorrelationMatrix narrows
     // which tests are shown, and does not carry the sampling forward.
-    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields, pairN, fullMatrix.sample);
+    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields, pairN, fullMatrix.sample, matrix.tests.some(t => t.derived));
     draw = buildMatrixView(matrix);
     draw();
   }

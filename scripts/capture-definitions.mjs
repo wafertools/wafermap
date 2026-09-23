@@ -123,6 +123,68 @@ export const CAPTURES = [
     setup: [['hover'], ['showCursorOn', '#map canvas', -120, -100]],
   },
 
+  // ── guide-drilldown-*.png — §4.4 Charting dies and wafers ─────────────────
+  // A box-selected cluster on the first gallery card of the sweeps demo, the
+  // right-click menu over it, then the histogram it opens. Drawn by the real
+  // UI with the real mouse gestures, so the picture cannot show a menu the
+  // library does not build.
+  {
+    file: 'guide-drilldown-menu',
+    group: 'drilldown',
+    page: '/examples/sweeps.html',
+    wait: 1500,
+    viewport: { width: 1280, height: 900 },
+    screenshotFn: async (page, outFile) => {
+      await page.getByRole('button', { name: 'Back to gallery view' }).first().click();
+      await page.waitForTimeout(800);
+      const canvas = page.locator('#gallery canvas').first();
+      await canvas.scrollIntoViewIfNeeded();
+      const b = await canvas.boundingBox();
+      await page.getByRole('button', { name: 'Select (drag to select dies)' }).first().click();
+      await page.mouse.move(b.x + b.width * 0.30, b.y + b.height * 0.30);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width * 0.48, b.y + b.height * 0.48, { steps: 8 });
+      await page.mouse.up();
+      await page.mouse.click(b.x + b.width * 0.40, b.y + b.height * 0.40, { button: 'right' });
+      await page.waitForSelector('[data-wmap-drilldown-menu]');
+      // Onto the menu's first row, as a user reaching for it would: that also
+      // takes the pointer off the map, so no die tooltip sits over the picture.
+      await page.locator('[data-wmap-drilldown-menu] [role="menuitem"]').first().hover();
+      await page.waitForTimeout(300);
+      const menu = await page.locator('[data-wmap-drilldown-menu]').boundingBox();
+      const card = await canvas.locator('xpath=ancestor::div[.//button[@data-wmap-expand-btn]][1]').boundingBox();
+      const x = Math.min(card.x, menu.x) - 8, y = Math.min(card.y, menu.y) - 8;
+      await page.screenshot({ path: outFile, clip: {
+        x, y,
+        width:  Math.max(card.x + card.width, menu.x + menu.width) - x + 8,
+        height: Math.max(card.y + card.height, menu.y + menu.height) - y + 8,
+      } });
+    },
+  },
+  {
+    file: 'guide-drilldown-chart',
+    group: 'drilldown',
+    page: '/examples/sweeps.html',
+    wait: 1500,
+    viewport: { width: 1280, height: 900 },
+    screenshotFn: async (page, outFile) => {
+      await page.getByRole('button', { name: 'Back to gallery view' }).first().click();
+      await page.waitForTimeout(800);
+      const canvas = page.locator('#gallery canvas').first();
+      await canvas.scrollIntoViewIfNeeded();
+      const b = await canvas.boundingBox();
+      await page.getByRole('button', { name: 'Select (drag to select dies)' }).first().click();
+      await page.mouse.move(b.x + b.width * 0.30, b.y + b.height * 0.30);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width * 0.48, b.y + b.height * 0.48, { steps: 8 });
+      await page.mouse.up();
+      await page.mouse.click(b.x + b.width * 0.40, b.y + b.height * 0.40, { button: 'right' });
+      await page.locator('[data-wmap-drilldown-menu] [role="menuitem"]', { hasText: 'Value histogram' }).click();
+      await page.waitForTimeout(1200);
+      await page.locator('.wmap-overlay-box').first().screenshot({ path: outFile });
+    },
+  },
+
   // ── quickstart-first-map.png — quickstart example: edge-ring pattern ────────
   {
     file: 'quickstart-first-map',

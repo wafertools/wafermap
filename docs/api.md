@@ -32,7 +32,7 @@ throughout; shared types live in §12.
 > for most integrations.
 >
 > For scale: **tsmap**, a complete cross-platform desktop application built on
-> this library, imports **15** of its ~100 exports. `RenderOptions` has 22
+> this library, imports **17** of its ~100 exports. `RenderOptions` has 22
 > fields; a typical integration sets a handful. Everything else here is depth
 > that stays out of your way until you go looking for it.
 >
@@ -441,17 +441,23 @@ A test computed from other tests on the same die, rather than measured. It is a 
 
 The admitted def joins `result.testDefs` carrying `derived: true` **and its `expression` and `constants`** (§4.1.8), so any surface showing the test can both mark it as computed and say what it was computed from.
 
-**How a derived test is shown.** Everywhere the library names a test, a derived one is marked with `†` after its name — never `ƒ`, which reads as femto beside `fA`/`fF` units — and the glyph never appears without its key, *Derived, not measured*:
+**How a derived test is shown.** Everywhere the library names a test, a derived one is marked with `†` **in front of** its name — never `ƒ`, which reads as femto beside `fA`/`fF` units — and the glyph never appears without its key, *Derived, not measured*. In front, on every surface: in a list the marks form a column down the left edge, so a derived test is found at a glance, and truncating a long name can never cut the mark off. A list that holds a derived test pads its measured names by the mark's width, so every name starts at the same x; a list without one is unchanged.
 
 | Surface | Marker | Where the key is |
 |---|---|---|
-| Map title and colorbar | `Leak Shift † (nA)` — before the unit, so it qualifies the name | Its own line under the colorbar or legend |
-| Map tooltip | `Leak Shift †: 2.06 nA` | The next line, with the expression |
-| Process capability panel | After each column label, in a lane reserved only when a derived test is shown, so names stay aligned | The panel legend; the tooltip adds the expression |
+| Map title and colorbar | `† Leak Shift (nA)` | Its own line under the colorbar or legend |
+| Map tooltip | `† Leak Shift: 2.06 nA` | The next line, with the expression |
+| Plot-mode test menu | In a slot in front of each name, reserved only when a derived test is listed | A line at the foot of the test list |
+| Insights test pickers (boxplot, histogram, trend, scatter) | In front of the name, measured names padded to align | The Distributions and Correlation tabs' own key lines |
+| Process capability panel | In front of each column label | The panel legend; the tooltip adds the expression |
+| Correlation matrix | In front of each axis label | The line above the matrix |
 | Findings (`variable.label`, `summary`) | In the sentence | Row tooltip; a key line under the list naming each expression |
-| `stats.functionalYield[].label` and the Summary panel's tables | After the name | A key line under the table naming each expression |
+| `stats.functionalYield[].label` and the Summary panel's tables | In front of the name | A key line under the table naming each expression |
+| Die list | In front of the column header | A key line above the table naming each expression |
 | HTML reports | In the findings table | A key line under it naming each expression — a printed report has no hover |
-| CSV exports | None — plain names | A trailing **Derived from** column holding the expression, added only when a row is derived |
+| CSV exports | None — plain names | A trailing **Derived from** column holding the expression, added only when a row is derived. Where tests are columns (die list, correlation), the header or a per-side column says what it was derived from |
+
+A host listing tests in its own UI marks them the same way with the exported `DERIVED_MARK` (`'†'`) and `DERIVED_KEY` (`'Derived, not measured'`) — never its own copy of the glyph or the words.
 
 The structured form travels alongside: `TestDef.derived`/`expression` (§4.1.8), `StatsFinding.variable.derived`/`expression`, and `derived`/`expression` on `functionalYield` rows — so a host rendering its own view never has to parse the glyph back out.
 
@@ -478,7 +484,7 @@ buildWaferMap({
 
 `testPass` and `specPass` are the same distinction `passFailDisplay: 'test' \| 'spec'` draws, and they are genuinely different questions — a value can be outside its limits while the tester recorded a pass. They are separate accessors rather than one because most CSV-sourced parametric data has measurements and no recorded verdict at all, so a single conflated accessor would silently return "unknown" for every die.
 
-**Ranges and reducers.** A range accessor — `t[1010..1015]` — yields a set, which must be reduced. A range names a block of test numbers; only the numbers actually declared in `testDefs` are read, so a sweep with gaps works.
+**Ranges and reducers.** A range accessor — `t[1010..1015]` — yields a set, which must be reduced. A range names a block of test numbers; only the numbers actually declared in `testDefs` are read, ascending, so a program numbered in steps of 2 needs no step syntax. A range that runs backwards, or matches no declared test, rejects the expression. The same range text is accepted in a sweep's `tests` (§5.9), parsed by the same code, so it always names the same tests in both places.
 
 | Over values | Over verdicts |
 |---|---|
@@ -1649,6 +1655,7 @@ Choose the right update method:
 | Zoom region | Drag to draw a zoom rectangle |
 | Pan | Drag to pan the map (default mode) |
 | Box select | Draw selection rectangle — fires `onSelect` callback if provided |
+| Chart | Drilldown menu (§5.12) for the selected dies, or for the whole wafer when nothing is selected — the same menu right-click opens. Shown only when there is something to chart: a parametric test in the data, or a sweep in `insights.sweeps`. |
 | Zoom + | Zoom in centred on canvas |
 | Zoom − | Zoom out centred on canvas |
 | Reset | Return to fitted view (also: double-click canvas) |
@@ -1687,6 +1694,8 @@ Choose the right update method:
 | Hover over die | Any | Tooltip + `onHover` callback |
 | Click bin legend entry | Any | Toggle `highlightBin` — dims all non-matching bins |
 | Double-click | Any | Reset to fitted view |
+| Right-click | Any | Drilldown menu (§5.12): on an unselected die, selects it first; on a selected die or empty space, keeps the selection; with nothing selected, charts the whole wafer. Left to the browser (or host) when there is nothing to chart |
+| Menu key / Shift+F10 | Any (focus on canvas) | The same menu, from the keyboard |
 | Esc | Any | Clear selection; also closes the expand modal |
 | `E` key | Any (focus on canvas) | Open / close the expand modal |
 
@@ -1772,32 +1781,58 @@ insights: {
 |---|---|---|
 | `id` | `string` | Stable identity, so a host can persist which sweep was selected |
 | `title` | `string` | Card title |
-| `series[].tests` | `number[]` | Test numbers **in sweep order** — never sorted. A plain array, not an expression: there is no `1200..1230` range syntax here (see below) |
-| `series[].xValues` | `number[]` | The real swept quantity per test. Without it the x axis is the ordinal position, because test numbers are identifiers and nothing guarantees they are evenly spaced — interpolating a crossing along them would assume a scale the data never claimed. Supply it and the crossing is reported in dBm rather than "between the 3rd and 4th test". |
+| `series[].tests` | `(number \| string)[]` | Test numbers **in sweep order** — never sorted. An entry may be a range string, `"1200..1230"` (see below) |
+| `series[].xValues` | `number[]` | The real swept quantity per test, one per test **after** ranges are expanded. Without it the x axis is the ordinal position, because test numbers are identifiers and nothing guarantees they are evenly spaced — interpolating a crossing along them would assume a scale the data never claimed. Supply it and the crossing is reported in dBm rather than "between the 3rd and 4th test". |
+| `series[].xFromName` | `string` | Read each test's x value from its **name** instead of `xValues` — for programs that record the swept quantity only in the test text. A placeholder pattern, not a regex: `{x}` reads a number, `*` matches anything, the rest is literal. Found anywhere in the name; literal text matches regardless of case. `{x}` reads an SI prefix (`12K` → 12,000, `1M` → 1,000,000; case-sensitive, so `m` is milli, with `K` accepted as kilo). A letter counts as a prefix only when it stands alone or leads a unit symbol — `12K`, `12kΩ`, `5us` — so `12Kangaroos` reads 12. In a name written all in capitals a prefix before a unit is read in any case (`5NS` → 5 ns), except `M`, which could be milli or mega and is reported rather than guessed (`2MV`): spell it in the pattern (`"V_{x}MV"`). Put the prefix in the pattern (`"LRS_STATS_{x}K"`) to keep the number as written. Each x stays attached to its own test, so a missing test loses one point rather than shifting the rest. A name the pattern does not fit is reported and nothing is measured. Not a regex because a shared file must not be able to freeze the app: this matcher's cost is bounded whatever the pattern. |
 | `series[].color` | `string` | Optional override. Omit it and the series take CVD-safe palette colours that theme correctly in dark mode; a hardcoded hex does neither. |
 | `crossing` | `boolean` | Default `true` when there are two or more series |
 | `separationAt` | `number[]` | Y levels at which to report the **width** between the first two series — the horizontal distance between the points where each crosses that level. When one curve falls and the other rises, the pair traces a V and this is the width of the V at that level, which widens as the level rises above the crossing. Each series must be monotonic for the width to be unambiguous; a level that meets a curve twice reports the first crossing. |
 | `xLabel` / `yLabel` | `string` | Axis titles |
+| `xUnit` | `string` | Bare unit of the x values (`"Ω"`, `"V"`). Ticks, crossing and widths then print SI-prefixed — `47.3 kΩ` |
+| `xScale` | `'linear' \| 'log'` | `'log'` for steps that grow by multiples (1k, 2k, 5k … 1M). The crossing is interpolated along log x and a width is reported as a ratio, `×2.49 (15.9 kΩ → 39.7 kΩ)`. Needs every x positive; otherwise the axis stays linear and the card says so. Default `'linear'` |
 
 Each line is the population **median with a p10–p90 band**, not one trace per die — a lot is thousands of dies. The per-die view of the same data is a derived test (§4.1.9) plotted on the map, where position is visible.
 
 A sweep deliberately carries **no population scope of its own**: it names which tests form the curve, so the same definition is valid for any population and stays portable between lots and hosts. The dies it aggregates are whatever the Insights view is currently scoped to.
 
-**No range syntax in `tests` — and that is deliberate.** A derived test's expression (§4.1.9) accepts `t[1200..1230]` because it is a string the library tokenises; `tests` is an ordinary `number[]`, so a range would mean typing the field as `number[] | string` and adding a second parser. Three things would be lost. Order *is* the x axis and is never sorted, so a range would impose ascending order on the one place a descending run is normal — a falling sweep recorded from the top level down. `xValues` must be the same length as `tests`, which is checkable at a glance against a literal array but becomes implicit under a range, so a single gap silently pairs every physical x with the wrong test. And gaps differ in meaning: an undeclared number inside a derived-test range is skipped silently, whereas a sweep test missing from `testDefs` is reported in the card footer, because a hole in a curve is something you want to be told about. Build the array in the host instead — the length stays explicit and the falling series is a `.reverse()` away:
+**Drilldown.** Every sweep is also offered on a population the user picks — selected dies, one wafer — alongside a value histogram and process capability. See §5.12.
+
+**Swept values in test names, on a log axis.** A resistance CDF — one test per threshold, the threshold written only in the test text (`Normalized_LRS= LRS_STATS_12K / …`), thresholds growing by multiples:
 
 ```ts
-const span = (from: number, to: number) =>
-  Array.from({ length: to - from + 1 }, (_, i) => from + i);
+sweeps: [{
+  id: 'lrs-cdf',
+  title: 'LRS CDF — before vs after bake',
+  xLabel: 'LRS threshold', xUnit: 'Ω', xScale: 'log',
+  yLabel: 'Fraction of cells below',
+  separationAt: [0.5],        // the median resistance shift, reported as a ratio
+  crossing: false,            // two CDFs of one population are not expected to meet
+  series: [
+    { label: 'Before bake', tests: ['31200..31230'], xFromName: 'LRS_STATS_{x}' },  // 12K → 12,000 Ω
+    { label: 'After bake',  tests: ['31300..31330'], xFromName: 'LRS_STATS_{x}' },
+  ],
+}]
+```
 
+**Ranges in `tests`.** An entry of `tests` may be a range string — the exact syntax of a derived-test expression's `t[1200..1230]` (§4.1.9), parsed by the same code, so the same text always names the same tests:
+
+```ts
 series: [
-  { label: 'Rising',  tests: span(1200, 1230), xValues: span(0, 30).map(i => i * 0.5) },
-  { label: 'Falling', tests: span(1240, 1270), xValues: span(0, 30).map(i => i * 0.5) },
+  { label: 'Rising',  tests: ['1200..1230'],       xValues: RISE_DBM },
+  { label: 'Falling', tests: ['1240..1270', 1290], xValues: FALL_DBM },
 ]
 ```
 
+- A range expands to the tests **declared** in `testDefs` inside it, ascending. A program numbered in steps of 2 needs no step syntax: `"1200..1230"` is 16 tests there.
+- Entries expand in the order written, so a number or a second range can follow a block.
+- A range that runs backwards, or matches no declared test, is reported in the card footer and contributes no tests. A series recorded from the top level down keeps ascending test numbers and says so in `xValues`.
+- **`xValues` is checked against the expanded list.** A test missing from a range — not in this lot's program, or not loaded by the host — leaves the range one short, and the footer lists exactly which tests it matched. The card is then drawn in test order and the crossing and widths are **not measured**, because pairing the remaining x values with the remaining tests would slide every later x onto the wrong test and report a plausible, wrong crossing. The same applies when some series have `xValues` and others do not.
+
+A plain number that is not declared still keeps its place in the curve with no data, and is reported — naming a test explicitly asserts that it should be there.
+
 A crossing is measured only where both series share an x value, and a multiple crossing is reported as such rather than presenting the first as if it were the only one. A width level that either curve never reaches reads "not measurable", naming which series — never `0`. Tests missing from `testDefs`, functional tests inside a sweep, and series measuring different units are reported in the card footer.
 
-**The chart suite is loaded on demand.** It is a separate chunk (~25 KB gzipped), fetched
+**The chart suite is loaded on demand.** It is a separate chunk (size in [Performance → Download size](performance.md#download-size)), fetched
 the first time Insights is opened and never downloaded by a page that only renders maps —
 the same treatment the in-app user guide gets. Two consequences worth knowing:
 
@@ -1914,6 +1949,38 @@ The list is deliberately **one flat list, not grouped or split by source** — a
 **Matching wmap's reading measure.** wmap's own guide content is capped at `max-width: var(--wmap-guide-reading-width, 720px)`, widening to `1000px` when the guide window is maximised (the property is set on the shared content wrapper, so it cascades to anything using it). Give the host content's own top-level block the same `max-width: var(--wmap-guide-reading-width, <yourDefault>)` — and matching padding, e.g. `padding: 24px 32px` — to keep the two sections' margins and line lengths visually identical as the window resizes, rather than introducing a visible seam between "the host's part" and "wmap's part."
 
 ---
+
+### 5.12 Drilldown — charting a selection or a wafer
+
+Right-click a population and pick a chart drawn from **just those dies**, opened in the same modal an expanded Insights card uses. It needs no host wiring and has no option: it is there whenever there is something to chart. **→ User guide §4.4** describes it from the user's side.
+
+**Populations** — what the user right-clicks decides the dies:
+
+| Where | Population |
+| --- | --- |
+| A selected die, or empty map space with a selection | The selected dies |
+| An unselected die | That die — it is selected first, file-manager style (`onSelect` fires) |
+| Empty map space with nothing selected | The whole wafer |
+| A gallery card outside its map (header, the space around the map) | That card's whole wafer |
+| One wafer's bar in *Yield by wafer*, box in *Test value distribution*, or point in *Wafer-to-wafer trend* (Insights) | That wafer — the tooltip says "right-click to chart this wafer". A pooled group row is not a wafer and does not offer it |
+
+The map's **Chart** toolbar button (§5.6), the Menu key and Shift+F10 open the same menu without a mouse. A population is a **snapshot**: the chart keeps its dies if the selection changes afterwards.
+
+**Charts** offered for it:
+
+| Chart | Available when | Notes |
+| --- | --- | --- |
+| Value histogram | Some parametric test has a value in the population | Opens on the test the map is showing (`plotMode: 'value'`) |
+| Process capability | Some parametric test has at least two values | Below 30 dies the card adds that each Ppk is a rough estimate |
+| Each `insights.sweeps` entry | The population has values for the sweep's tests | A single map offers them even when `insights.enabled` is off; the gallery passes its sweeps to every card |
+
+A chart that cannot be drawn stays in the menu, **disabled, with the reason** as its hint — no values for its tests, too few dies, or a lot-stack map, whose dies are per-position aggregates rather than measured dies (every chart is disabled there). Charts that compare wafers (the boxplot, the trend) are not offered: every population here is one wafer.
+
+**What the chart says.** The modal title and a line on the card state how many dies are plotted and from which wafer — "12 dies selected on W03", "2,644 dies on W03". Partial and edge-excluded dies are left out, as in every chart, and then counted: "10 of 12 dies selected on W03 (partial and edge-excluded dies left out)". The wafer is named by the item's `label`, else `metadata.waferId`; with neither it reads "this wafer" — never a positional "Wafer 3 (no ID)", which would read as an ID.
+
+**Right-click is taken over only when there is something to chart** — a parametric test in the data, or a sweep defined. A bins-only map with no sweeps leaves right-click to the browser, or to a host's own context menu. The map canvas owns right-click on itself: a right-click it declines (the bin legend, a mapless map) never reaches a gallery card or a host handler around it.
+
+The menu and its charts are a separate chunk, loaded on the first right-click — a page that never uses it never downloads it.
 
 ## 6 `renderWaferGallery(container, items, options?)` — gallery
 
@@ -2121,7 +2188,9 @@ to be pre-built.
 | Insights | Toggle the Insights tab — swaps the grid for a lot-wide chart suite. Only shown when `insights.enabled: true`. See §6.10. |
 | User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
-Per-card toolbars show only: box-select (when `onSelect` provided), zoom +/−, reset, download.
+Per-card toolbars show only the map tools: download, zoom region, zoom +/−, reset, pan, box-select and **Chart** (§5.12, when there is something to chart).
+
+**Right-click on a card** anywhere outside its map — the header, the space around the map — opens the drilldown menu (§5.12) for that card's whole wafer; on the map itself it behaves as on a single map. Insights' per-wafer marks (a *Yield by wafer* bar, a boxplot row, a trend point) offer the same menu for their wafer.
 
 **While the Insights tab is open**, the grid/mode/palette/overlay/orientation/columns/download controls above, and Summary, are all hidden as a group — none of them apply to the chart suite, and Summary specifically toggles the gallery's Summary panel, which lives inside the grid body already hidden underneath. Summary, Insights, and User guide stay visible.
 
@@ -2603,7 +2672,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
                                       // verdicts read via getTestPassStatus (recorded testPass first, then the
                                       // legacy 0/1 testValues fallback); partial/edge-excluded dies excluded
       testNumber:      number
-      label:           string         // testDef.name, ending in " †" for a derived test
+      label:           string         // testDef.name, starting "† " for a derived test
       derived?:        true           // computed from other tests (TestDef.derived) — see §4.1.9
       expression?:     string         // what it was computed from, verbatim
       passDies:        number
@@ -2731,7 +2800,7 @@ Added in 0.30.1. These replace calling the chart-data builders (§7.16) yourself
 
 ### 7.6 `renderFindingsReportHtml`
 
-> **Deprecated — removed in 0.32.0.** Use `renderWaferReportHtml`/`renderLotReportHtml` (§7.6.1): their Findings section is the same table, since 0.31.0 rendered by one shared builder, alongside the population and yield the findings were drawn from. (Deprecated in 0.30.0, withdrawn in 0.30.1 on the grounds that the Summary panel used it — which it had not since 0.20.0 — and deprecated again in 0.31.0.)
+> **Deprecated — removed in 0.31.0.** Use `renderWaferReportHtml`/`renderLotReportHtml` (§7.6.1): their Findings section is the same table, since 0.30.3 rendered by one shared builder, alongside the population and yield the findings were drawn from. (Deprecated in 0.30.0, withdrawn in 0.30.1 on the grounds that the Summary panel used it — which it had not since 0.20.0 — and deprecated again in 0.30.3.)
 
 ```ts
 import { renderFindingsReportHtml } from '@wafertools/wafermap/stats';
@@ -2870,7 +2939,7 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`.
     kind:   'yield' | 'hardBin' | 'softBin' | 'test' | 'functionalTest' | 'spatialPattern'
     index?: number          // test number — the key from testValues (for 'test' kind)
     bin?:   number          // bin value (for 'hardBin'/'softBin' kind)
-    label:  string          // human-readable name; ends in " †" for a derived test, as does its name in `summary`
+    label:  string          // human-readable name; starts "† " for a derived test, as does its name in `summary`
     unit?:  string
     derived?:    true       // the finding is about a derived test (TestDef.derived) — the structured form of the †
     expression?: string     // what that test was computed from, verbatim
@@ -4048,7 +4117,7 @@ buildMapTitle(
 ): MapTitleParts   // { primary: string; secondary: string; note?: string }
 ```
 
-`note` is `"† Derived, not measured"` when the map shows a derived test (§4.1.9); `primary` then carries the `†` after the test name, and `toCanvas` draws `note` on its own line below `secondary`. Absent for a measured test.
+`note` is `"† Derived, not measured"` when the map shows a derived test (§4.1.9); `primary` then carries the `†` in front of the test name, and `toCanvas` draws `note` on its own line below `secondary`. Absent for a measured test.
 
 Builds the on-canvas map title for any plot mode, derived from the `View`. Returns a primary/secondary split so the renderer can place the key identifier above the colorbar/legend and supporting context (stack/wafer-count, or `Spec pass/fail`) below it. `toCanvas` calls this automatically when `showTitle` is true; exported so custom pipelines can render the same title. See the title table under §9.1.
 

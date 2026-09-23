@@ -532,7 +532,7 @@ the exports that must stay.
 
 ### `renderFindingsReportHtml` (stats)
 
-**Status:** deprecation withdrawn in 0.30.1; **deprecated again in 0.31.0, removed in 0.32.0.**
+**Status:** deprecation withdrawn in 0.30.1; **deprecated again in 0.30.3, removed in 0.31.0.**
 
 - **What it does:** the findings-only report, as standalone HTML.
 - **Why it was kept in 0.30.1:** it takes a `StatsSummary` or `LotStatsSummary` and nothing else,
@@ -542,11 +542,11 @@ the exports that must stay.
   caller anywhere was a guide snippet. Meanwhile it kept its own copy of the findings table, which
   had drifted from the one in the wafer and lot reports (only it translated `HBin 2` into plain
   language) — the duplicate that keeping an unused builder costs.
-- **Verdict (0.31.0):** deprecate. Both reports now render one table (`findingsTableHtml`), and
+- **Verdict (0.30.3):** deprecate. Both reports now render one table (`findingsTableHtml`), and
   `renderWaferReportHtml`/`renderLotReportHtml` carry it together with the population and yield
-  the findings were drawn from. Removal is 0.32.0, not 0.31.0 with the rest of this list: a
-  removal must follow a release in which the name shipped deprecated. `deprecated()` takes the
-  removal version per name for this.
+  the findings were drawn from. It is removed in 0.31.0 with the rest of this list: 0.30.3 is
+  the release it ships deprecated in, which a removal must follow. (It was first set for 0.32.0,
+  when this batch was expected to be 0.31.0 itself.)
 - **Danger of restoring it:** a second report builder with its own table is how the two drifted.
 
 ---

@@ -23,7 +23,7 @@
 import { categorical } from './palette.js';
 import { SPACE, FONT, CLR } from '../toolbar.js';
 import {
-  observeResize, positionChartTooltip, growCardToFitContent, prepareCanvas,
+  observeResize, positionChartTooltip, fitRowsHeight, setChartGrow, prepareCanvas,
   chartSwatchCss, PADDING, VALUE_WIDTH,
 } from './chartShell.js';
 
@@ -98,6 +98,7 @@ export function renderGroupedBarPlot(
   } = options;
 
   const doc = card.ownerDocument;
+  setChartGrow(card, 'rows');
   const seriesCount = Math.max(1, groups.length);
   const clusterHeight = seriesCount * SUBBAR_HEIGHT + (seriesCount - 1) * SUBBAR_GAP;
   const rowPitch = clusterHeight + CLUSTER_GAP;
@@ -138,7 +139,6 @@ export function renderGroupedBarPlot(
     overflowX: 'hidden', overflowY: 'auto', minHeight: '0', flex: '1',
     maxHeight: `${visibleHeight}px`, scrollbarGutter: 'stable',
   } as Partial<CSSStyleDeclaration>);
-  growCardToFitContent(card, body, legendHeight + visibleHeight);
   body.appendChild(scrollArea);
 
   const canvas = doc.createElement('canvas');
@@ -168,8 +168,10 @@ export function renderGroupedBarPlot(
   function draw(): void {
     // scrollArea's own width, not the card's — stays correct once scrollArea's
     // vertical scrollbar is active (rows.length > maxVisibleRows).
-    const width = scrollArea.clientWidth;
     const height = PADDING * 2 + rows.length * rowPitch;
+    // Before measuring the width: a new cap can add or remove the scrollbar.
+    scrollArea.style.maxHeight = `${fitRowsHeight(card, body, visibleHeight, height, legendHeight)}px`;
+    const width = scrollArea.clientWidth;
     const prep = prepareCanvas(canvas, card, width, height);
     if (!prep) return;
     const { ctx, theme } = prep;

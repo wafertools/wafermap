@@ -12,12 +12,16 @@
 
 import type { Die } from '../core/dies.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
+import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 
 /** Minimal per-test identity carried on a correlation matrix's axes. */
 export interface CorrelationTestInfo {
   testNumber: number;
+  /** Display name; a derived test's starts with `"† "` (`markedTestLabel`). */
   label: string;
   unit?: string;
+  derived?: true;
+  expression?: string;
 }
 
 export interface CorrelationCell {
@@ -126,7 +130,7 @@ export function correlationSampleNote(sample: CorrelationMatrix['sample']): stri
 function testInfoFrom(testDefs: TestDef[]): CorrelationTestInfo[] {
   return testDefs
     .filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined && isParametricTest(d))
-    .map(d => ({ testNumber: d.testNumber, label: d.name, unit: d.unit }));
+    .map(d => ({ testNumber: d.testNumber, label: markedTestLabel(d, d.testNumber), unit: d.unit, ...derivedFields(d) }));
 }
 
 /**

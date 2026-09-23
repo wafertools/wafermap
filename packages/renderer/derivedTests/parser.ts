@@ -235,11 +235,22 @@ class Parser {
 
   parse(): Typed {
     const out = this.parseOr();
+    this.expectEnd();
+    return out;
+  }
+
+  /** A whole source that is nothing but a test reference — see `parseTestReference`. */
+  parseTestRefOnly(): { tests: number[]; range: boolean } {
+    const ref = this.parseTestRef(this.peek().pos);
+    this.expectEnd();
+    return ref;
+  }
+
+  private expectEnd(): void {
     const t = this.peek();
     if (t.kind !== 'eof') {
       throw new ParseError(`Unexpected ${JSON.stringify(t.text)} at position ${t.pos}`, t.pos);
     }
-    return out;
   }
 
   private requireScalar(v: Typed, what: string, pos: number): ExprType {
@@ -411,36 +422,18 @@ class Parser {
   /** `t[1020]`, `testPass[1020]`, `specPass[1010..1015]`. */
   private parseAccessor(kind: AccessorKind, pos: number): Typed {
     this.expect('[');
-    const from = this.expectInt();
-    let tests: number[] | undefined;
-    if (this.eat('..')) {
-      const to = this.expectInt();
-      if (to < from) {
-        throw new ParseError(`Test range ${from}..${to} at position ${pos} runs backwards`, pos);
-      }
-      // A range is a convenience for naming a contiguous block of test numbers;
-      // it is not an assertion that every number in it exists. Only the numbers
-      // that ARE declared tests are read, so a sweep with gaps still works. An
-      // entirely empty range is a mistake worth reporting, though.
-      tests = [];
-      for (let n = from; n <= to; n++) if (this.ctx.testDefs.has(n)) tests.push(n);
-      if (tests.length === 0) {
-        throw new ParseError(
-          `Test range ${from}..${to} at position ${pos} matches no declared test`, pos);
-      }
-    }
+    const { tests: numbers, range } = this.parseTestRef(pos);
     this.expect(']');
 
-    const numbers = tests ?? [from];
     for (const n of numbers) this.checkAccessible(kind, n, pos);
     for (const n of numbers) this.reads.push({ kind, test: n });
 
     const elemType: ExprType = kind === 't' ? 'number' : 'boolean';
-    if (tests === undefined) {
-      return { node: { k: 'acc', kind, test: from }, type: elemType };
+    if (!range) {
+      return { node: { k: 'acc', kind, test: numbers[0]! }, type: elemType };
     }
     return {
-      node: { k: 'vec', kind, tests },
+      node: { k: 'vec', kind, tests: numbers },
       type: elemType === 'number' ? 'numberVec' : 'boolVec',
     };
   }
@@ -473,6 +466,35 @@ class Parser {
           pos);
       }
     }
+  }
+
+  /**
+   * A test reference — `1020`, or the range `1010..1015`. This is the ONE place
+   * the range rule lives: the same text means the same tests inside an
+   * expression's `t[…]` and in a sweep's `tests` (`parseTestReference`).
+   *
+   * A range is a convenience for naming a block of test numbers; it is not an
+   * assertion that every number in it exists. It resolves to the DECLARED tests
+   * inside it, ascending — so a program numbered in steps of 2 needs no step
+   * syntax. An entirely empty range is a mistake worth reporting. A single
+   * number is returned as written and not checked here: each caller has its own
+   * rule for a named test that does not exist.
+   */
+  private parseTestRef(pos: number): { tests: number[]; range: boolean } {
+    const from = this.expectInt();
+    if (!this.eat('..')) return { tests: [from], range: false };
+    const to = this.expectInt();
+    if (to < from) {
+      throw new ParseError(`Test range ${from}..${to} at position ${pos} runs backwards`, pos);
+    }
+    // Filter the declared tests rather than counting from `from` to `to`: a
+    // shared template is untrusted input, and `0..2000000000` must not be a loop.
+    const tests = [...this.ctx.testDefs.keys()].filter(n => n >= from && n <= to).sort((a, b) => a - b);
+    if (tests.length === 0) {
+      throw new ParseError(
+        `Test range ${from}..${to} at position ${pos} matches no declared test`, pos);
+    }
+    return { tests, range: true };
   }
 
   private expectInt(): number {
@@ -573,6 +595,35 @@ export function parseExpression(source: string, ctx: ParseContext): ParseResult 
       };
     }
     return { ok: true, ast: node, type, reads: parser.reads, usesDiePass: parser.usesDiePass };
+  } catch (e) {
+    if (e instanceof ParseError) return { ok: false, message: e.message, position: e.position };
+    throw e;
+  }
+}
+
+export type TestReferenceResult =
+  | { ok: true; tests: number[]; range: boolean }
+  | ParseErr;
+
+/**
+ * Parse a standalone test reference — `"1020"` or `"1010..1030"` — with exactly
+ * the lexer and range rule an expression's `t[…]` uses. This is how a sweep's
+ * `tests` accepts ranges: the syntax is shared, never re-implemented, so the
+ * same text can never mean different tests in the two places.
+ *
+ * Never throws.
+ */
+export function parseTestReference(source: string, testDefs: Map<number, TestDef>): TestReferenceResult {
+  try {
+    if (source.length > MAX_EXPRESSION_LENGTH) {
+      return {
+        ok: false,
+        message: `Test reference is ${source.length} characters, over the ${MAX_EXPRESSION_LENGTH} limit`,
+        position: MAX_EXPRESSION_LENGTH,
+      };
+    }
+    const { tests, range } = new Parser(tokenize(source), { testDefs, constants: {} }).parseTestRefOnly();
+    return { ok: true, tests, range };
   } catch (e) {
     if (e instanceof ParseError) return { ok: false, message: e.message, position: e.position };
     throw e;

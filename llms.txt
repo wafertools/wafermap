@@ -38,7 +38,8 @@ where repo-relative paths do not resolve.
 - Recommended path for most users: `buildWaferMap()` + `renderWaferMap()`.
 - Bins, test values and verdicts must be numbers/booleans. A parser that leaves `hbin` as `"1"` builds a map where those dies count as fails — convert with `Number()` at parse time.
 - `passBins` and `ringCount` are set once on `buildWaferMap()` and travel on the result. Neither is an option on `analyzeWaferMap`, `analyzeWaferLot`, `renderWaferMap` or `renderWaferGallery`. `passBins` sets both the yield number and the wording of its label — do not assume `[1]`.
-- Statistics surfaces are built in: pass `statsSummary` for the Summary panel and `insights: { enabled: true }` for the chart suite. Do not rebuild those charts from the deprecated chart-data builders.
+- Statistics surfaces are built in: pass `statsSummary` for the Summary panel and `insights: { enabled: true }` for the chart suite (plus `insights.sweeps` for response curves). Do not rebuild those charts from the deprecated chart-data builders.
+- A value computed from other tests goes in `buildWaferMap`'s `derivedTests` (`{ testNumber, name, expression: 'abs(t[1020] - t[1010])' }`), never injected into `testValues` by the host.
 - `activeTest` takes a test number (e.g. `1050`), not a positional index.
 - Functional tests (`testType: 'F'`) have no value; read verdicts only via `getTestPassStatus()`. A missing verdict is no-data, never a fail.
 - `PlotMode` values are camelCase (`'hardBin'`, `'stackedValues'`), never snake_case.

@@ -119,8 +119,13 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   const testSelect = testSel.el;
   controlsRow.appendChild(testSelect);
 
-  const itemSelect = makeWaferSelect(items, activeItem, i => { activeItem = i; rebuildBody(); }, { ownerDocument: card.ownerDocument });
-  controlsRow.appendChild(itemSelect);
+  // Only with a choice to make — the same rule scatter and correlation apply.
+  // With one wafer it offered "All wafers" over a population of one, which a
+  // drilldown of a single wafer (or a single-map Insights tab) always is.
+  const itemSelect = items.length > 1
+    ? makeWaferSelect(items, activeItem, i => { activeItem = i; rebuildBody(); }, { ownerDocument: card.ownerDocument })
+    : null;
+  if (itemSelect) controlsRow.appendChild(itemSelect);
 
   /** Apply a group scope locally. Never broadcasts — callers representing a
    *  USER action fire `onGroupChange` themselves. */
@@ -218,7 +223,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
           facetedIncludeLimits ? testMeta(activeTest).limitHigh : undefined,
           facetedClip)
       : null;
-    itemSelect.style.display = faceted ? 'none' : '';
+    if (itemSelect) itemSelect.style.display = faceted ? 'none' : '';
     if (faceted) {
       // The axis toggles apply to the faceted view too, and now genuinely do:
       // `axisIncludesLimits` and `clipOutliers` are both honoured above, when

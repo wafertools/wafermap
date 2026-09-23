@@ -8,7 +8,7 @@ import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult }
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
-import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
+import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext, noticeDownloadFilenameChange } from './exportName.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
@@ -25,6 +25,9 @@ import { ICONS } from './icons.js';
 // default. It is loaded on first open instead, the same way userGuideHtml is,
 // and tests/bundle-size.test.mjs pins both.
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
+// TYPE-ONLY, for the same reason: drilldown opens chart panels, loaded on first use.
+import type { DrilldownContext } from './drilldown.js';
+import { hasDrilldownTargets, selectionPopulation, waferPopulation, type DrilldownSource } from './chartPopulation.js';
 import { createIdentityHeader, collapsedLabel, type IdentityHeaderController } from './identityHeader.js';
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
@@ -567,13 +570,18 @@ export function renderWaferMapCard(
   // and wafer on screen at save time (see exportName.ts). Pass these, never
   // options.onSaveImage/onSaveText, to anything inside this map. The state they
   // read is declared further down; it is only read when a save happens.
+  /** The label the host gave this result, if any. */
+  const hostLabel = (): string | undefined => (currentResult as { label?: string }).label;
+  /** The wafer's real identity — the host's label, else its wafer ID, never a
+   *  positional stand-in. ONE rule for file names, Insights and drilldown. */
+  const mapIdentity = (): string | undefined => waferIdentityLabel({ label: hostLabel(), wafer });
   const exportHooks = withExportContext(() => {
     const lot = metadataDisplayValue(wafer.metadata?.lot);
     return {
       lots:   lot !== undefined ? [lot] : [],
       ...(currentResult.isLotStack
         ? { stackedWafers: currentView?.lotSize ?? true }
-        : { wafer: waferIdentityLabel({ label: (currentResult as { label?: string }).label, wafer }) }),
+        : { wafer: mapIdentity() }),
     };
   }, options.onSaveImage, options.onSaveText);
   noticeDownloadFilenameChange(options.downloadFilename);
@@ -971,6 +979,20 @@ export function renderWaferMapCard(
   let currentDies     = result.dies;
   // Selected die keys ("i,j") — key-based so references survive scene rebuilds.
   let selectedKeys    = new Set<string>();
+  // Drilldown: a chart opened on the selected dies, or on the whole wafer.
+  // Offered only when there is a chart to open (`drilldownOffered`) — with
+  // none, right-click stays the browser's (or host's).
+  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, onSaveImage: exportHooks.onSaveImage };
+  /** Read live: `testDefs` changes with `setData`. */
+  const drilldownOffered = (): boolean => !isMapless && hasDrilldownTargets(testDefs, insightsOpts?.sweeps);
+  let closeDrilldownMenu: (() => void) | null = null;
+  let btnDrilldown: HTMLButtonElement | null = null;
+  /** Set by the ContextMenu key / Shift+F10, so the `contextmenu` event that
+   *  follows is read as keyboard-opened: its coordinates are then not a
+   *  pointer position and must not pick a die. */
+  let keyboardMenuPending = false;
+  /** A lazily-loaded menu resolving after teardown must not open. */
+  let destroyed = false;
   // Data-derived state from the result — callers no longer pass these via viewOptions.
   let hbinDefs: BinDef[]    | undefined = result.hbinDefs;
   let sbinDefs: BinDef[]    | undefined = result.sbinDefs;
@@ -1120,7 +1142,10 @@ export function renderWaferMapCard(
       insightsTab = createInsightsTab({
       getItems: () => [{
         wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
-        label: waferDisplayLabel({ wafer }, 0),
+        // The host's own label, raw — Insights derives its display label and
+        // the identity from it. A display label here ("Wafer 1 (no ID)")
+        // would reach chart titles as though it were an ID.
+        label: hostLabel(),
         passBins,
         statsSummary: currentStatsSummary }],
       getBinColors: () => currentView.binColors,
@@ -1791,6 +1816,21 @@ export function renderWaferMapCard(
       btnBoxSelect = makeBtn('boxSelect', 'Select (drag to select dies)', () => setInteractMode('select'));
       mapToolsEl.appendChild(btnBoxSelect);
 
+      // The visible way into drilldown — right-click is only an accelerator,
+      // and touch devices without a long-press menu have no other path. Same
+      // rule as right-click: the selection when there is one, else the wafer.
+      // Visibility and label are kept current by `syncDrilldownBtn`.
+      {
+        const btn = makeBtn('drilldown', 'Chart this wafer', () => {
+          const r = btn.getBoundingClientRect();
+          openDrilldown({ x: r.left, y: r.bottom + 4 }, btn);
+        });
+        btn.setAttribute('aria-haspopup', 'menu');
+        btnDrilldown = btn;
+        syncDrilldownBtn();
+        mapToolsEl.appendChild(btn);
+      }
+
       // Set initial active state — pan is default
       setActive(btnPanMode, true);
 
@@ -2349,6 +2389,7 @@ export function renderWaferMapCard(
 
     if (selectedKeys.size > 0) drawSelectionOverlay();
     if (isBoxSelecting) drawBoxOverlay();
+    syncDrilldownBtn();
   }
 
   // ── Selection highlight overlay ────────────────────────────────────────────
@@ -2497,6 +2538,7 @@ export function renderWaferMapCard(
   }
 
   function onPointerDown(e: PointerEvent): void {
+    keyboardMenuPending = false;
     if (e.button !== 0) return;
     if (!currentViewport()) return;
     canvas.focus({ preventScroll: true });
@@ -2592,7 +2634,7 @@ export function renderWaferMapCard(
       if (tooltip) {
         tooltip.textContent   = legendRow.label ?? `Bin ${legendRow.bin}`; // bin names come from input files: text, never HTML
         tooltip.style.display = 'block';
-        positionTooltip(tooltip, canvas, e.clientX, e.clientY);
+        positionTooltip(tooltip, canvas, e.clientX, e.clientY, { followPointer: true });
       }
       onHover?.(null, e);
       return;
@@ -2620,7 +2662,7 @@ export function renderWaferMapCard(
           activeTest: currentView.activeTest,
           reticleConfig });
         tooltip.style.display = 'block';
-        positionTooltip(tooltip, canvas, e.clientX, e.clientY);
+        positionTooltip(tooltip, canvas, e.clientX, e.clientY, { followPointer: true });
       } else {
         tooltip.style.display = 'none';
       }
@@ -2799,6 +2841,73 @@ export function renderWaferMapCard(
     return result;
   }
 
+  // ── Drilldown ──────────────────────────────────────────────────────────────
+  function syncDrilldownBtn(): void {
+    if (!btnDrilldown) return;
+    btnDrilldown.style.display = drilldownOffered() ? 'flex' : 'none';
+    btnDrilldown.ariaLabel = selectedKeys.size > 0 ? 'Chart the selected dies (or right-click)' : 'Chart this wafer (or right-click)';
+  }
+
+  /** What a drilldown opened now would chart: the selection if there is one,
+   *  else the whole wafer — snapshotted, see DrilldownSource. */
+  function drilldownSource(): DrilldownSource {
+    const facts = {
+      waferLabel: mapIdentity(),
+      testDefs,
+      isLotStack: currentResult.isLotStack,
+      activeTest: viewOpts.plotMode === 'value' ? viewOpts.activeTest : undefined,
+    };
+    return selectedKeys.size > 0
+      ? selectionPopulation(selectionAsDies(), facts)
+      : waferPopulation(currentDies, facts);
+  }
+
+  function openDrilldown(at: { x: number; y: number }, anchor: HTMLElement): void {
+    if (!drilldownOffered()) return;
+    const source = drilldownSource();
+    void import('./drilldown.js').then(({ openDrilldownMenu }) => {
+      if (destroyed) return;
+      closeDrilldownMenu = openDrilldownMenu(at, anchor, source, drilldownCtx);
+    });
+  }
+
+  /**
+   * Right-click (and the ContextMenu key / Shift+F10, and a touch long-press
+   * where the platform maps it to `contextmenu`). File-manager convention: on
+   * a die outside the selection it selects just that die first; on a selected
+   * die or empty space it keeps the selection. With nothing selected, empty
+   * space charts the whole wafer. When no chart could exist for this data
+   * (`drilldownOffered`), the event is left alone for the browser or host.
+   */
+  function onContextMenu(e: MouseEvent): void {
+    // The canvas owns right-click on itself, like its clicks (see
+    // onCanvasClick). When it declines — the legend, a mapless map — the
+    // browser's menu is the answer; bubbling on reached a gallery card's
+    // handler, which opened the wafer's charts where a single map opens nothing.
+    e.stopPropagation();
+    const fromKeyboard = keyboardMenuPending;
+    keyboardMenuPending = false;
+    if (!drilldownOffered() || insightsOpen) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!fromKeyboard) {
+      const cssPx = e.clientX - rect.left;
+      const cssPy = e.clientY - rect.top;
+      if (legendBoxRect && pointInRect(cssPx, cssPy, legendBoxRect)) return;
+      const vp = currentViewport();
+      const die = vp ? hitTest((cssPx - vp.originX) / vp.ppm, (vp.originY - cssPy) / vp.ppm, vp.snapDist)?.die : undefined;
+      if (die && !selectedKeys.has(getDieKey(die))) {
+        selectedKeys = new Set([getDieKey(die)]);
+        onSelect?.(selectionAsDies());
+        render();
+      }
+    }
+    e.preventDefault();
+    const at = fromKeyboard
+      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      : { x: e.clientX, y: e.clientY };
+    openDrilldown(at, canvas);
+  }
+
   function onPointerLeave(): void {
     // Otherwise a legend row stays lit after the pointer has left the canvas —
     // the mousemove handler is the only other thing that clears it, and it
@@ -2925,6 +3034,7 @@ export function renderWaferMapCard(
 
   // ── Wire canvas events ─────────────────────────────────────────────────────
   function onKeyDown(e: KeyboardEvent): void {
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) keyboardMenuPending = true;
     if (e.key === 'Escape' && selectedKeys.size > 0) {
       selectedKeys = new Set();
       onSelect?.([]);
@@ -2992,6 +3102,7 @@ export function renderWaferMapCard(
   canvas.addEventListener('dblclick',     onDblClick);
   canvas.addEventListener('keydown',      onKeyDown);
   canvas.addEventListener('keyup',        onKeyUp);
+  canvas.addEventListener('contextmenu',  onContextMenu);
   // Always stop propagation — prevents canvas interactions (bin legend clicks,
   // die clicks, pan gestures) from bubbling to parent containers such as a
   // gallery card's click-to-modal handler.
@@ -3143,6 +3254,7 @@ export function renderWaferMapCard(
     },
 
     destroy(): void {
+      destroyed = true;
       for (const run of panelRuns.values()) run.cancel();
       panelRuns.clear();
       modalHandle?.close();
@@ -3158,6 +3270,8 @@ export function renderWaferMapCard(
       canvas.removeEventListener('dblclick',     onDblClick);
       canvas.removeEventListener('keydown',      onKeyDown);
       canvas.removeEventListener('keyup',        onKeyUp);
+      canvas.removeEventListener('contextmenu',  onContextMenu);
+      closeDrilldownMenu?.();
       canvas.removeEventListener('click',        onCanvasClick);
       resizeObserver.disconnect();
       dprMediaQuery.removeEventListener('change', onDprChange);

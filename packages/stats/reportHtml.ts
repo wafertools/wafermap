@@ -143,7 +143,7 @@ export function derivedFindingsKeyHtml(findings: StatsFinding[]): string {
  * sections and the findings-only report alike, with the derived-test key under
  * it when any row is about a derived test.
  *
- * It existed twice until 0.31.0, once per report module, and the copies had
+ * It existed twice until 0.30.3, once per report module, and the copies had
  * already drifted: only the findings report translated the internal bin terms
  * ("HBin 2" → "hard bin 2"), so the wafer and lot reports printed the jargon the
  * design principles keep out of the UI.

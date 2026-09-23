@@ -13,6 +13,9 @@ const SNAPSHOTS = {
   '.' : [
     // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
     'binColorsForMaps', 'renderLotReportHtml', 'renderWaferReportHtml',
+    // Added in 0.30.3 so a host marks derived tests in its own UI exactly as the
+    // library does (tsmap's test selector).
+    'DERIVED_KEY', 'DERIVED_MARK',
     'affineCompose', 'affineIdentity', 'affineInvert', 'affineMirror',
     'affinePoint', 'affineRotation', 'affineSwapsAxes', 'affineVector',
     'aggregateBinCounts', 'aggregateValues', 'analyzeWaferLot', 'analyzeWaferMap',
@@ -57,6 +60,8 @@ const SNAPSHOTS = {
   './renderer': [
     // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
     'binColorsForMaps',
+    // Added in 0.30.3 — see the root entry above.
+    'DERIVED_KEY', 'DERIVED_MARK',
     'buildHoverText', 'buildMapTitle', 'buildView', 'buildWaferMap',
     'contrastTextColor', 'dieHasTestData',
     'getBinColorScheme', 'getValueColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',

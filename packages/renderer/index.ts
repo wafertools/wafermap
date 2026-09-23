@@ -22,6 +22,10 @@ export type { WaferMetadata, DieMetadata } from '../core/metadata.js';
 export * from './colorSchemes.js';
 export type { BinColors, BinColorOptions, BinColorSource, MapBinColorOptions } from './binColors.js';
 export { binColorsForMaps } from './binColors.js';
+// The derived-test mark and its key, for a host that lists tests in its own UI
+// (tsmap's test selector) — so it marks them exactly as the library does,
+// rather than keeping a copy of the glyph and the words that can drift.
+export { DERIVED_MARK, DERIVED_KEY } from './testLabel.js';
 
 // Deprecated in 0.30.0, removed in 0.31.0. Each is wrapped in ./deprecated.ts, whose
 // declarations carry the `@deprecated` tags; this named re-export shadows any `export *` above.

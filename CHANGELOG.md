@@ -26,6 +26,67 @@ under `### Breaking`.
 
 ### Added
 
+- **Sweep x values from test names, an x unit, and a log x axis.** For a
+  program that records the swept quantity only in the test text — a
+  resistance CDF named `Normalized_LRS= LRS_STATS_12K / …`, one test per
+  threshold:
+  - `SweepSeriesSpec.xFromName` reads each test's x from its name with a
+    placeholder pattern, `"LRS_STATS_{x}"`: `{x}` reads a number with its SI
+    prefix (`12K` → 12,000; case-sensitive, `K` accepted as kilo; a letter is a
+    prefix only alone or before a unit, so `12Kangaroos` reads 12; in an all-capitals
+    name the unit's case is gone, so `5NS` is 5 ns and `2MV` — milli or mega? — is
+    reported, not guessed), `*` matches
+    anything, literal text matches in any case, anywhere in the name. Not a
+    regular expression: a sweeps file is shared, and JavaScript cannot
+    interrupt a runaway regex, whereas this matcher's cost is bounded whatever
+    the pattern (`stats/sweepXFromName.ts`). Each x stays attached to its own
+    test, so a missing test loses one point instead of shifting the rest.
+  - `SweepSpec.xUnit` prints the x axis, crossing and widths SI-prefixed
+    (`47.3 kΩ`), trailing zeros dropped (`2 kΩ`, not `2.00 kΩ`).
+  - `SweepSpec.xScale: 'log'` places x on a log axis; the crossing is
+    interpolated along log x and a width is reported as a ratio with both ends
+    (`×2.49 (15.9 kΩ → 39.7 kΩ)`), via new `SweepSeparation.ratio`/`from`/`to`.
+    `SweepData.xScale` is the axis actually drawn: a non-positive x keeps it
+    linear, with a warning.
+  - Reported, never guessed, and then not measured: a name the pattern does not
+    fit, a series giving both `xValues` and `xFromName`, and — for every x
+    source — a series that revisits an x value, which the crossing previously
+    mis-paired silently.
+
+- **Drilldown: chart a selection or a wafer.** Right-click a population for a
+  menu of charts drawn from just those dies, opened in the same modal as an
+  expanded Insights card:
+  - **Populations:** the dies selected on a map (a single map or any gallery
+    card); a whole wafer, from empty map space with nothing selected, from a
+    gallery card anywhere outside its map, or from one wafer's bar, box or point
+    in *Yield by wafer*, *Test value distribution* or *Wafer-to-wafer trend* in
+    Insights (their tooltips say "right-click to chart this wafer"). The Menu
+    key, Shift+F10 and a new map toolbar **Chart** button (the selection if
+    there is one, else the wafer) reach the same menu without a mouse.
+  - **Charts:** value histogram (opening on the test the map shows), process
+    capability, and the sweeps defined in `insights.sweeps` — the gallery now
+    passes those to each card, and a single map offers them whether or not
+    `insights.enabled` is set.
+  - **Population stated on every chart**, in the modal title and on the card
+    ("12 dies selected on W03", "10 of 12 … (partial and edge-excluded dies left
+    out)"). Capability below 30 dies adds that each Ppk is a rough estimate.
+    Charts are snapshots: changing the selection afterwards does not change them.
+    The wafer is named by the item's `label`, else its `metadata.waferId` — never a
+    positional "Wafer 3 (no ID)" — on the map, the gallery and Insights alike.
+  - **The library decides what is offered:** a chart that cannot be drawn stays
+    listed, greyed, with the reason (no values for its tests; fewer than two
+    dies for capability; a lot-stack map, whose dies are per-position aggregates
+    rather than measured dies). Right-clicking an unselected die selects it
+    first. A map with no parametric tests and no sweeps leaves right-click to
+    the browser or host, and the map canvas owns right-click on itself: one it
+    declines (the bin legend) never reaches a gallery card or host handler.
+  - Documented in api.md §5.12, the user guide §4.4 (with screenshots from
+    `capture-definitions.mjs`) and the developer guide.
+  - Built on one source/target mechanism (`canvas-adapter/chartPopulation.ts`
+    builds the populations, `drilldown.ts` the menu and charts, loaded on first
+    use and pinned by `tests/bundle-size.test.mjs`), so a further population or
+    chart is one more of either rather than a menu per pairing.
+
 - **Derived tests** — `WaferMapInput.derivedTests`: tests computed from other tests
   on the same die, rather than measured. Each entry is a `TestDef` plus an
   `expression`, and from the build onwards it is an ordinary test — it appears in
@@ -82,6 +143,19 @@ under `### Breaking`.
   guaranteed to be evenly spaced. Each line is the population median with a
   p10–p90 band. A multiple crossing says so; a level neither curve reaches reads
   "not measurable" naming the series, never `0`.
+- **Test ranges in a sweep's `tests`** — an entry may be `"1010..1030"`, the exact
+  syntax of a derived-test expression's `t[1010..1030]` and parsed by the same code
+  (`parseTestReference`), so the same text always names the same tests. A range
+  expands to the declared tests inside it, ascending — a program numbered in steps
+  of 2 needs no step syntax. `xValues` is checked against the expanded list: when
+  a test is missing from a range, the footer lists what the range matched and the
+  card is drawn in test order with the crossing and widths **not measured**
+  (`SweepData.notMeasured`), rather than sliding every later x value onto the
+  wrong test. The same now applies when only some series carry `xValues`, which
+  before put physical and ordinal x positions on one axis and reported an ordinal
+  crossing under the physical x label. A range resolves by filtering the declared
+  tests rather than counting through every integer, so `0..2000000000` in a shared
+  template is not a two-billion-step loop — in expressions too.
 - **Nested derived tests** — a derived test may read another. Compilation
   topologically sorts by what each expression reads, so declaration order does
   not matter; cycles, self-references and dependents of a rejected test are
@@ -105,7 +179,7 @@ under `### Breaking`.
   curve is swept over **derived** `log10(t[n])` tests — a sweep reads any test,
   which is how a log-scale curve is drawn without a log option.
 - **Derived tests are marked on the sweep card**: `SweepPoint` carries `derived`
-  and `expression`, ordinal tick labels keep the `†` after truncation, the
+  and `expression`, ordinal tick labels keep the `†` in front of a truncated name, the
   tooltip marks each series row and adds each expression, and the footer shows
   the key.
 - **Sweep card text.** The crossing line lower-cased the y label ("Cell Vt"
@@ -137,18 +211,18 @@ under `### Breaking`.
   `analyzeWaferMap.ts`, `charts/chartShell.ts`), all now routed through it. Around
   sixteen surfaces display a test name; a marker added per surface would have been
   that rule twenty-odd times over, which is how two of them end up disagreeing.
-- **Derived tests are marked in the process capability panel.** A `†` follows
+- **Derived tests are marked in the process capability panel.** A `†` precedes
   the test name, the legend gains the key "† Derived, not measured", and the
   tooltip says the same in words and shows the expression the value was
   computed from. A dagger, not `ƒ`: in this domain `f` reads as femto,
-  and a `ƒ` beside `fA`/`fF` units is a real misread. The column labels are
-  right-aligned, so the marker sits at the aligned end of each name, and every
-  name — marked or not — is shifted by the marker's width, so names stay aligned
-  with each other. That lane is reserved only when the population contains a
-  derived test; otherwise the panel is unchanged to the pixel.
+  and a `ƒ` beside `fA`/`fF` units is a real misread.
   `TestCapability`/`CapabilityDatum` gain `derived` and `expression`.
-- **…and everywhere else a test is named.** The map title and colorbar
-  (`Leak Shift † (nA)` — the marker precedes the unit, so it qualifies the name)
+- **…and everywhere else a test is named, always in front of the name.** In a
+  list the marks then form a column down the left edge, so a derived test is found
+  at a glance, and truncating a long name can never cut the mark off; a list
+  holding a derived test pads its measured names by the mark's width so names stay
+  aligned, and a list without one is unchanged. The map title and colorbar
+  (`† Leak Shift (nA)`)
   with the key on its own line beneath, drawn via a new optional
   `MapTitleParts.note`; the map tooltip, which adds the key and the expression;
   finding labels and sentences, marked at the source so no reader of a finding
@@ -165,6 +239,18 @@ under `### Breaking`.
   one in the gallery's stacked cards, whose synthetic def now keeps the flag.
   The finding tooltip now has one rule, `formatFindingTooltip`, which the
   Summary panel shares with both reports instead of using `summary` directly.
+  The places a test is *chosen* are marked too: the plot-mode test menu (a slot
+  in front of each name, reserved only when a derived test is listed, and a key
+  line at the foot), the Insights test pickers (`testOptionLabels`), the
+  correlation matrix's axis labels and tooltip (key on its hint line; its CSV
+  gains per-side *derived from* columns) and the die list's column headers (key
+  line above the table; the CSV header states the expression). The last two
+  hand-written *Test N* fallbacks, in the plot-mode menu and the die list, now go
+  through `testLabel`.
+- **`DERIVED_MARK` and `DERIVED_KEY` are exported** (root and `/renderer`), so a
+  host listing tests in its own UI marks derived tests exactly as the library does
+  instead of keeping its own copy of the glyph and the words. tsmap's test selector
+  is the first use.
 - Getting there turned up two places that dropped the flag. **`mergeTestDefs`**,
   which builds a gallery's single test list, rebuilt each def field by field and
   never named `derived`, so every cross-wafer panel would have shown a derived
@@ -174,14 +260,40 @@ under `### Breaking`.
   unmarked goes unnoticed. The Summary panel's per-test table narrowed defs the
   same way and now keeps both fields. It also held a seventh copy of the
   *Test N* fallback, now routed through `testLabel`.
-- The derived-tests example showed a sweep's `tests` as `[1200…1208]` in a code
-  block two sections below the real `t[1200..1208]` range syntax of a derived-test
-  expression. That reads as a supported range, and `tests` has none. The block now
-  shows the plain arrays the page actually runs, with a note on why a sweep takes
-  no range.
 
 ### Changed
 
+- **Docs and examples brought up to date with this release.** The developer
+  guide's sweep section no longer says `tests` has no range syntax or that a
+  sweep has no log option; it covers ranges, `xFromName`, `xUnit`, `xScale` and
+  drilldown. The sweeps example adds a fifth sweep (an RRAM resistance
+  distribution read from test names on a log axis) and gives the output-driver
+  sweep an x unit; the derived-tests example's sweep uses ranges and a real swept
+  quantity (pulse amplitude in volts) instead of ordinal steps, and places the †
+  in front of the name as everywhere else. The README, `AGENTS.md` and
+  `llms.txt` now mention derived tests, sweeps and drilldown.
+  Those two examples' code cards, a four-across grid that cut every code
+  block off at about half its width in 12 px type, now show one example per
+  row — the code whole, in monospace at 13.5 px, beside notes at 14.5 px,
+  stacked on narrow screens — from one shared style in `demo.css`. `--mono`,
+  which every example's code referenced and nothing defined, is now set.
+  The derived-tests example is now in two labelled parts — derived tests are
+  *data* (`buildWaferMap`'s `derivedTests`; tsmap's test-definitions file), a
+  sweep is a *chart* (the renderer's `insights.sweeps`; tsmap's separate sweeps
+  file) — because a run of look-alike snippets read as one list. Its snippets
+  show the whole call each belongs to, it says the sweep is in Insights →
+  Sweeps, with a *Show the sweep* button that presses the gallery's own Insights
+  button, and it links to the sweeps example. The sweeps example opens with
+  where its entries go.
+
+- **`scripts/check-bundle-size.mjs` attributes lazy chunks by what imports
+  them, not by file name.** Once drilldown and Insights shared the chart panels,
+  esbuild split the shared code into an anonymous `chunk-*.js`, which a file-name
+  test counted as core. That would have added ~5 KB of lazy code to the "always
+  downloaded" figure. The guide, Insights and drilldown now count as their own
+  static closure minus what the entry already loads. The Insights figure now
+  includes the chart code it shares with drilldown, because opening Insights
+  downloads it.
 - **Axis ticks sit on round values, and are labelled to their spacing.** Tick
   labels used to take their decimals from each value's own size, never from the
   gap between ticks, so a 1–10 axis read "2.00 4.00 6.00 8.00" and a bandgap's
@@ -209,15 +321,61 @@ under `### Breaking`.
 
 ### Deprecated
 
-- **`renderFindingsReportHtml`** — removed in 0.32.0. Use
+- **`renderFindingsReportHtml`** — removed in 0.31.0. Use
   `renderWaferReportHtml(result, summary)` or `renderLotReportHtml(results)`:
   their Findings section is the same table, alongside the population and yield
   it was found in. It was kept in 0.30.1 on the grounds that the Summary panel
   used it, which had not been true since 0.20.0; nothing in wmap or tsmap calls
-  it. Removal is a release later than the 0.30.0 deprecations, so it ships
-  deprecated first: `deprecated()` now takes a removal version per name.
+  it. It ships deprecated in this release, so it goes in 0.31.0 with the 0.30.0
+  deprecations. `deprecated()` now takes a removal version per name, for a name
+  deprecated too late to go with the rest.
 
 ### Fixed
+
+- **A menu row's hint is no longer drawn under its own menu.** Menus sit in a
+  dedicated layer (`menuLayerFor`) that outranks everything else in its root,
+  and the shared tooltip was placed beside that layer — so the reason on a
+  greyed-out row (the drilldown menu's, the Overlays menu's) appeared behind the
+  menu it explained. `positionTooltip` now places the tooltip inside the
+  anchor's menu layer at `Z_ABOVE2`, above every menu there, still resolved per
+  root (a host `<dialog>`, a wmap modal).
+
+- **The map's hover tooltip no longer jumps away from the die.** The shared
+  tooltip steps clear of its anchor when the anchor is under 40% of the window
+  tall — right for a toolbar button, which its tip must not cover, and wrong
+  for the map canvas, where the pointer is on the die the tip describes. Every
+  map that small (every gallery card, the smaller maps on a page such as the
+  geometry example, any map in a tall window) had its tip thrown below or above
+  the whole canvas, measured at up to 266 px from the pointer. The map now
+  passes `followPointer` to `positionTooltip` and the tip stays beside the
+  pointer; control tips keep stepping around their buttons.
+
+- **An expanded chart grows into its modal, in the direction that suits it.**
+  Several cards kept their grid-card size inside the expand modal: the trend
+  and sweep plots stayed a few hundred pixels tall, ring and quadrant yield
+  kept a fixed-size circle, the correlation matrix kept small cells, process
+  capability stopped at ~160 px per test, and row charts (yield by wafer,
+  pareto, pass rate, value distribution) left most of a 700 px box empty. Each
+  card now declares how it grows (`setChartGrow`): **plots** fill width and
+  height in a wider box; **row charts** keep bars full-width, show every row the
+  box has room for, and the box opens sized to its rows (within the viewport);
+  **square** charts grow to the shorter side in a square box. Capability's
+  columns spread across the width while each box keeps its grid maximum width.
+  Growth past the grid size happens only while expanded, so the Insights grid
+  is unchanged; maximise/restore and drag-resize shrink back correctly.
+- **Chart cards measure their chrome, not their stretch.**
+  `growCardToFitContent` took the card's overhead as `card height − body
+  height`, which counts any stretch as overhead and grows the card on every
+  redraw — why several panels opted out of stretching (`alignSelf: 'start'`),
+  which is what kept them small in the modal. It now sums the card's other
+  children, so a stretched card is harmless. Trend and sweep no longer ask for
+  the height they were given as their minimum, which would have stopped a
+  shrinking modal.
+- **Chart tooltips wrap inside their background.** They were `nowrap` under a
+  280 px cap, so a longer line — a sweep row with its p10–p90 and n, a derived
+  test's expression — ran out past the dark box. They now wrap within 320 px,
+  breaking an unbroken expression if they must. The sweep tooltip puts each
+  series' spread and n on a line of their own under its median.
 
 - **A functional-test finding merged across adjacent regions reported no
   difference, and hid the real one.** Since 0.20.3, when a functional pass-rate

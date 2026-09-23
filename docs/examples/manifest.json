@@ -327,7 +327,7 @@
       "id": "sweeps",
       "file": "sweeps.html",
       "title": "Parametric sweeps",
-      "blurb": "four characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention and output drive — each read as a pair of curves with the crossing and width measured",
+      "blurb": "five characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention, output drive, and an RRAM resistance distribution whose thresholds are read from the test names onto a log axis — each read as a pair of curves with the crossing and width measured",
       "guide": {
         "label": "Guide: Derived tests and sweeps",
         "href": "../guide.md#derived-tests-and-sweeps"

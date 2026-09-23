@@ -108,7 +108,7 @@ export const renderLotSummaryReportHtml = deprecated(renderLotSummaryReportHtmlI
 /** @deprecated Removed in 0.31.0. `buildFacetTable` applies it by default. */
 export const DEFAULT_FACET_CURATION = deprecatedValue(DEFAULT_FACET_CURATIONImpl, 'DEFAULT_FACET_CURATION');
 
-// ── Deprecated in 0.31.0, removed in 0.32.0 ─────────────────────────────────
+// ── Deprecated in 0.30.3, removed in 0.31.0 ─────────────────────────────────
 // The findings-only report. It was kept in 0.30.1 because "the Summary panel
 // uses it", which had not been true since 0.20.0; no host calls it, and the
 // wafer and lot reports carry the same findings table (the one both now render,
@@ -116,5 +116,5 @@ export const DEFAULT_FACET_CURATION = deprecatedValue(DEFAULT_FACET_CURATIONImpl
 // findings were drawn from. See API_REMOVALS.md.
 import { renderFindingsReportHtml as renderFindingsReportHtmlImpl } from './renderFindingsReport.js';
 
-/** @deprecated Removed in 0.32.0. Use `renderWaferReportHtml(result, summary)` or `renderLotReportHtml(results)`: their Findings section is the same table, alongside the population and yield it was found in. */
-export const renderFindingsReportHtml = deprecated(renderFindingsReportHtmlImpl, 'renderFindingsReportHtml', `Use renderWaferReportHtml(result, summary) or renderLotReportHtml(results): their Findings section is the same table, alongside the population and yield it was found in. ${DEPRECATION_ISSUES}`, '0.32.0');
+/** @deprecated Removed in 0.31.0. Use `renderWaferReportHtml(result, summary)` or `renderLotReportHtml(results)`: their Findings section is the same table, alongside the population and yield it was found in. */
+export const renderFindingsReportHtml = deprecated(renderFindingsReportHtmlImpl, 'renderFindingsReportHtml', `Use renderWaferReportHtml(result, summary) or renderLotReportHtml(results): their Findings section is the same table, alongside the population and yield it was found in. ${DEPRECATION_ISSUES}`);

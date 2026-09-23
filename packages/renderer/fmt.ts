@@ -5,7 +5,10 @@ const SI_PREFIXES: [number, string][] = [
   [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'],
 ];
 
-const SI_PREFIX_SCALE: Record<string, number> = {
+/** Multiplier per SI prefix letter. Exported for the one place that PARSES a
+ *  prefixed number (`stats/sweepXFromName.ts`), so reading and printing values
+ *  agree on every prefix. Internal — not re-exported from the package. */
+export const SI_PREFIX_SCALE: Record<string, number> = {
   T: 1e12, G: 1e9, M: 1e6, k: 1e3,
   m: 1e-3, µ: 1e-6, u: 1e-6, n: 1e-9, p: 1e-12, f: 1e-15,
 };
@@ -13,7 +16,9 @@ const SI_PREFIX_SCALE: Record<string, number> = {
 // Base units test defs commonly carry (electrical + frequency). Used only to detect a caller
 // passing an already-prefixed unit (e.g. "MHz", "nA") despite the documented contract that
 // `unit` must be the bare base unit — see docs/api.md's TestDef.unit note.
-const KNOWN_BASE_UNITS = ['Hz', 'V', 'A', 'W', 'F', 'Ω', 'Ohm', 'S', 'H', 'J', 'C', 's'];
+// Also read by `stats/sweepXFromName.ts`, to tell a prefix before a unit
+// (`12kΩ`, `10GHz`) from a letter that merely starts a word (`12Kangaroos`).
+export const KNOWN_BASE_UNITS = ['Hz', 'V', 'A', 'W', 'F', 'Ω', 'Ohm', 'ohm', 'S', 'H', 'J', 'C', 's'];
 
 /**
  * If `unit` looks like a known base unit with a single SI-prefix letter stuck on the front

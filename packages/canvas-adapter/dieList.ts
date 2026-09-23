@@ -22,6 +22,10 @@ import { resolveMetadataColumns, type MetadataKeySelection } from '../stats/meta
 import { LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, saveTextFile, type SaveTextHandler } from './toolbar.js';
 import { csvField } from './summaryPanel.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
+import { testLabel, markedTestLabel, derivedFields, derivedKeyText, derivedTestSource, isDerivedTest, DERIVED_KEY } from '../renderer/testLabel.js';
+
+/** A column header: the test's label, then its unit in brackets when it has one. */
+const withUnit = (label: string, unit: string | undefined): string => (unit ? `${label} (${unit})` : label);
 
 /** Display preferences for the built-in die-list table. Everything here is a
  *  choice about what to show; the *data* it acts on (wafer metadata, metadata
@@ -229,7 +233,7 @@ function resolveTestColumns(dies: Die[], testDefs: TestDef[] | undefined): TestD
   for (const die of dies) {
     for (const key of Object.keys(die.testValues ?? {})) {
       const tn = Number(key);
-      if (!seen.has(tn)) seen.set(tn, { testNumber: tn, name: `Test ${tn}` });
+      if (!seen.has(tn)) seen.set(tn, { testNumber: tn, name: testLabel(undefined, tn) });
     }
   }
   return [...seen.values()].sort((a, b) => a.testNumber - b.testNumber);
@@ -329,7 +333,7 @@ export function buildDieListSection(
   const reservedLabels = [
     ...(options.extraColumn ? [options.extraColumn.label] : []),
     'X', 'Y', 'Ring', 'Quadrant', 'Edge excluded', 'Site', 'Hard bin', 'Soft bin',
-    ...testColumns.map(td => (td.unit ? `${td.name} (${td.unit})` : td.name)),
+    ...testColumns.map(td => withUnit(testLabel(td, td.testNumber), td.unit)),
   ];
 
   const { columns: metaColumns, truncatedKeys } = resolveMetadataColumns({
@@ -344,6 +348,10 @@ export function buildDieListSection(
 
   type DieColumn = {
     label: string;
+    /** CSV header when it must differ from the on-screen one — a derived test's
+     *  column, where the screen shows the † mark and the file, which has no key
+     *  to explain a glyph, states what it was derived from. */
+    csvLabel?: string;
     get: (die: Die) => string;
     /** CSV rendering when it must differ from the on-screen cell — see the test
      *  columns, where the screen shows `300 mV` and the file a bare `300`. */
@@ -372,7 +380,10 @@ export function buildDieListSection(
         // "300 mV" strings is text to a spreadsheet and cannot be summed,
         // plotted or filtered — and per-value SI scaling can even put "300 mV"
         // and "1.2 V" in the same column.
-        label: td.unit ? `${td.name} (${td.unit})` : td.name,
+        label: withUnit(markedTestLabel(td, td.testNumber), td.unit),
+        ...(isDerivedTest(td) ? {
+          csvLabel: `${withUnit(testLabel(td, td.testNumber), td.unit)} [derived from ${derivedTestSource(td) ?? DERIVED_KEY}]`,
+        } : {}),
         get: (d: Die) => {
           // A functional test has no measured value; its verdict is the result.
           // getTestPassStatus is the only sanctioned read path — it owns the
@@ -402,6 +413,12 @@ export function buildDieListSection(
     ...metaColumns.map((c) => ({ label: c.label, get: c.get, csvOnly: c.csvOnly })),
   ];
   const visibleColumns = columns.filter((c) => !c.csvOnly);
+
+  // The key for the † on any derived test column, with each one's expression.
+  const derivedKey = derivedKeyText(testColumns.map(td => ({ label: markedTestLabel(td, td.testNumber), ...derivedFields(td) })));
+  if (derivedKey) {
+    outer.appendChild(el(doc, 'div', { fontSize: FONT.body, color: CLR.label, lineHeight: LEADING.base, flexShrink: '0' }, derivedKey));
+  }
 
   const scrollWrap = el(doc, 'div', {
     // minWidth:0 for the same reason as `outer` above — this is the element
@@ -465,7 +482,7 @@ export function buildDieListSection(
   }
 
   exportBtn.addEventListener('click', () => {
-    const lines = [columns.map((c) => csvField(c.label)).join(',')];
+    const lines = [columns.map((c) => csvField(c.csvLabel ?? c.label)).join(',')];
     for (const die of dies) {
       lines.push(columns.map((c) => csvField((c.csvGet ?? c.get)(die))).join(','));
     }

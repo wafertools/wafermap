@@ -64,11 +64,14 @@ const ACCIDENTAL = [
   'resolveBinColors', 'getBinColorScheme', 'contrastTextColor',
   'getDieTestValue', 'dieHasTestData', 'isParametricTest', 'isPositionedDie', 'metadataCategoricalValue',
   'buildDieListSection', 'DEFAULT_FACET_CURATION', 'STANDARD_WAFER_DIAMETERS_MM',
+  'renderFindingsReportHtml',
 ];
 const EXPECTED = [...GRADIENT_HELPERS, ...CHART_BUILDERS_NAMES, ...PIPELINE, ...ACCIDENTAL];
-// Deprecated after REMOVAL was scheduled, so removed a release later: a removal
-// must follow a release in which the name shipped deprecated.
-const LATER = { renderFindingsReportHtml: '0.32.0' };
+// A name deprecated after REMOVAL was scheduled goes here with its own later
+// removal version: a removal must follow a release in which the name shipped
+// deprecated. Empty since renderFindingsReportHtml ships deprecated in 0.30.3,
+// ahead of 0.31.0 — it is in ACCIDENTAL above.
+const LATER = {};
 const ALL = [...EXPECTED, ...Object.keys(LATER)];
 const removalOf = (name) => LATER[name] ?? REMOVAL;
 const VALUES = ['DEFAULT_FACET_CURATION', 'STANDARD_WAFER_DIAMETERS_MM'];

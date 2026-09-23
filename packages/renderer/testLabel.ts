@@ -66,22 +66,37 @@ export function testLabel(def: { name?: string } | undefined, testNumber: number
 }
 
 /**
- * {@link testLabel} with the derived-test marker appended when the def is
- * derived — `"On/Off Ratio †"`. The form for any surface that shows a test name
- * in running text or a single label, where there is no separate lane to put the
- * glyph in: the map title, tooltips, findings.
+ * {@link testLabel} with the derived-test marker in front when the def is
+ * derived — `"† On/Off Ratio"`. The form every surface uses to name a test: the
+ * map title, tooltips, findings, tables, pickers and menus.
  *
- * The marker always FOLLOWS the name and precedes any unit, so it qualifies the
- * name and nothing else: `"Vth Margin † (V)"`, never `"Vth Margin (V) †"`, which
- * would read as a note on the unit.
+ * The marker always PRECEDES the name, everywhere (Paul, 2026-09-23). In a list
+ * the eye runs down the left edge, so leading marks form a column and a derived
+ * test is found at a glance, where trailing ones land at a different x on every
+ * row; and truncating a long name can never cut the marker off. One position on
+ * every surface, so a reader learns it once. A unit follows the name as usual —
+ * `"† Vth Margin (V)"` — so the marker qualifies the whole test.
+ *
+ * A list that should keep measured names aligned with marked ones pads them by
+ * the marker's width when any entry is derived — {@link DERIVED_LANE_PAD} for
+ * plain text, a fixed-width slot where there is DOM or canvas to measure with.
  */
 export function markedTestLabel(
   def: (TestDef | { name?: string; derived?: true }) | undefined,
   testNumber: number,
 ): string {
   const label = testLabel(def, testNumber);
-  return def?.derived === true ? `${label} ${DERIVED_MARK}` : label;
+  return def?.derived === true ? `${DERIVED_MARK} ${label}` : label;
 }
+
+/**
+ * Plain-text stand-in for `"† "` in front of a MEASURED name, for a text-only
+ * list (a native `<select>`) that holds derived tests too, so every name starts
+ * at about the same x. A figure space plus a thin space: close to the width of
+ * a dagger and a space in the UI fonts, and invisible. Approximate by nature —
+ * a surface that can measure uses a real fixed-width slot instead.
+ */
+export const DERIVED_LANE_PAD = '\u2007\u2009';
 
 /**
  * The one-line explanation of a derived test for a tooltip:
@@ -133,7 +148,8 @@ export function derivedFields(def: DerivedSource): { derived?: true; expression?
  * two live side by side.
  */
 export function unmarkedLabel(label: string): string {
-  return label.replace(` ${DERIVED_MARK}`, '');
+  const prefix = `${DERIVED_MARK} `;
+  return label.startsWith(prefix) ? label.slice(prefix.length) : label;
 }
 
 /** Header of the column a CSV export adds when any row is a derived test. */

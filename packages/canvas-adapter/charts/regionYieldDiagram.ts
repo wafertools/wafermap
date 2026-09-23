@@ -20,7 +20,7 @@ import type { RegionYieldDatum } from '../../stats/regions.js';
 import { parseRegionKey } from '../../stats/regions.js';
 import { yieldFill } from './palette.js';
 import { fontPx } from '../toolbar.js';
-import { cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent, renderEmptyState, type SaveImageHandler, type ChartCanvasColors, prepareCanvas } from './chartShell.js';
+import { cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent, setChartGrow, isExpandedCard, bodyRoom, renderEmptyState, type SaveImageHandler, type ChartCanvasColors, prepareCanvas } from './chartShell.js';
 
 export type RegionYieldMode = 'ring' | 'quadrant';
 
@@ -100,6 +100,7 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
   const { mode, rows, onSaveImage } = options;
   const title = options.title ?? (mode === 'ring' ? 'Ring yield' : 'Quadrant yield');
   const { card, body } = cardShell(title, onSaveImage, options.ownerDocument);
+  setChartGrow(card, 'square');
 
   const hasData = rows.length > 0;
   if (!hasData) {
@@ -120,8 +121,13 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
 
 
   function draw(): void {
-    const size = Math.max(MIN_SIZE, Math.min(body.clientWidth || DIAGRAM_SIZE, DIAGRAM_SIZE));
-    growCardToFitContent(card, body, size);
+    // The grid size is what the card asks for; expanded, the circle grows to
+    // the shorter side of the space it is given.
+    const base = Math.max(MIN_SIZE, Math.min(body.clientWidth || DIAGRAM_SIZE, DIAGRAM_SIZE));
+    growCardToFitContent(card, body, base);
+    const size = isExpandedCard(card)
+      ? Math.max(base, Math.floor(Math.min(body.clientWidth, bodyRoom(card, body, canvas))))
+      : base;
 
     const prep = prepareCanvas(canvas, card, size, size);
     if (!prep) return;

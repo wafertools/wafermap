@@ -171,13 +171,15 @@ verdicts, as an alternative to spec-limit judgement.
 
 ### Derived tests (†)
 
-A test name followed by **†** is a *derived* test: its value was calculated
+A test name marked **†** in front is a *derived* test: its value was calculated
 from other tests on the same die — a difference, a ratio, a margin — rather
 than measured by the tester. It behaves like any other test: you can map it,
 chart it and find patterns in it.
 
-The dagger appears wherever the test is named: the map title, tooltips,
-Insights charts, findings, the Summary panel and reports. The words
+The dagger appears wherever the test is named — the map title, tooltips, the
+plot-mode test list, Insights charts and their test pickers, findings, the
+Summary panel, the die list and reports — always in front of the name, so in a
+list the derived tests line up in a column down the left edge. The words
 **† Derived, not measured** always appear nearby. Hovering over a derived
 value, or reading the key line under a table or findings list, shows the
 expression it was computed from, e.g. `t[1020] - t[1010]`. The numbers in
@@ -209,6 +211,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/reset.svg" width="20" height="20">     | Reset zoom         | Returns the map to the default fitted view.                                                                                                                                                                                                                                                            |
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)).                                                                                                                                                                                                              |
+| <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
 | <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it.                                                                                                                |
 | <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
@@ -265,6 +268,7 @@ Use the **Overlays** menu to toggle optional display layers on and off:
 | **F**                    | Maximise / restore the modal (when expanded)            |
 | **Esc**                  | Close the expanded modal, or clear the die selection    |
 | **Ctrl / Cmd + click**   | Add a die to the current selection                      |
+| **Right-click**, **Menu key** or **Shift + F10** | Chart the selected dies, or the whole wafer (see [Section 4.4](#44-charting-dies-and-wafers)) |
 | **Mouse wheel / scroll** | Zoom in and out at the cursor                           |
 | **Ctrl / Cmd + `+`** / **`-`** | Zoom in / zoom out                                |
 | **Ctrl / Cmd + `0`**     | Reset zoom to the fitted view                           |
@@ -293,6 +297,10 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a chart suite covering every wafer — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |
 | <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the wafers shown. Collected across every wafer and de-duplicated, so a problem affecting all of them is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
+
+Right-click a card anywhere outside its map to chart that wafer on its own — a
+histogram, process capability or a sweep (see
+[Section 4.4](#44-charting-dies-and-wafers)).
 
 Click a card's expand button to detach it into its own separate window with the
 complete single-map toolbar (falls back to a floating window inside the page if
@@ -337,6 +345,52 @@ Press **Esc** to clear.
 
 *A block of dies near the centre is shown pre-selected. Choose Box select in the
 toolbar and drag to make your own selection, or Ctrl/Cmd + click individual dies.*
+
+### 4.4 Charting dies and wafers
+
+**Right-click** a population to open a menu of charts drawn from just those
+dies. Picking one opens it in a window over the map. This is how you look at a
+cluster, a scratch or an edge region on its own, or at one wafer out of a lot.
+
+What you right-click decides the population:
+
+- **Selected dies** — select some dies, then right-click on the map. Right-
+  clicking a die that is **not** selected selects that die alone first;
+  right-clicking a selected die, or empty space, keeps the selection.
+- **A whole wafer** — right-click empty map space with nothing selected, a
+  gallery card anywhere outside its map (its header, the space around the map),
+  or one wafer's bar, box or point in an Insights chart (*Yield by wafer*,
+  *Test value distribution*, *Wafer-to-wafer trend* — their tooltips say
+  "right-click to chart this wafer").
+
+On the map you can also press the **Menu** key or **Shift + F10**, or use the
+**Chart** toolbar button, which charts the selection when there is one and the
+wafer otherwise.
+
+The menu offers:
+
+- **Value histogram** — one test's distribution, opening on the test the map
+  is showing.
+- **Process capability** — every test normalised to its spec limits, with its
+  Ppk. Below 30 dies the chart says each Ppk is a rough estimate: a Ppk from a
+  handful of dies can be far from the process's real capability.
+- **Sweeps** your application has defined (see [Sweep cards](#sweep-cards)).
+
+What every chart opened this way does:
+
+- It states its population — how many dies and which wafer they came from — in
+  its title and above the plot, so it cannot be mistaken for a chart of the
+  whole lot. Partial and edge-excluded dies are left out, as they are
+  everywhere else, and the chart says how many that was.
+- It is a **snapshot**: changing the selection afterwards does not change a
+  chart that is already open.
+- A chart that cannot be drawn from the population stays in the menu, greyed,
+  with the reason — for instance when none of the dies has values for its tests,
+  or when the map is a lot stack, whose dies are averages across wafers rather
+  than measured dies.
+
+A map with only bin data and no sweeps has nothing to chart, and right-click
+there does what it normally does.
 
 ---
 
@@ -529,7 +583,12 @@ sidebar (Section 6) — the two toggle independently, and opening one never
 hides the other's toolbar button, since Findings has nothing to highlight
 against once the map is replaced.
 
-Insights is organized into three sub-tabs, plus a fourth, **Sweeps**, when
+Any chart mark that stands for one wafer — a bar in *Yield by wafer*, a box in
+*Test value distribution*, a point in *Wafer-to-wafer trend* — can be
+right-clicked to chart that wafer on its own (see
+[Section 4.4](#44-charting-dies-and-wafers)); its tooltip says so.
+
+Insights is organised into three sub-tabs, plus a fourth, **Sweeps**, when
 the application has defined any sweeps (see *Sweep cards* below):
 
 - **Overview** — a **test pass rate** chart showing which test fails most (and,
@@ -632,7 +691,9 @@ most at that level.
 
 **The dies behind it are whatever Insights is scoped to.** A sweep names tests,
 not dies — so the group or wafer selected in the panels above it decides the
-population, and the card's die count states what that came to.
+population, and the card's die count states what that came to. To sweep a
+hand-picked set of dies instead, select them on a map and right-click (see
+[Section 4.4](#44-charting-dies-and-wafers)).
 
 Two measurements are drawn on the plot and restated underneath:
 
@@ -655,9 +716,22 @@ volts, °C) and the crossing is reported in them. If it did not, the axis is the
 position in the sequence, labelled by test, because test numbers are identifiers
 — treating them as a scale would invent spacing the data never claimed.
 
+Some sweeps step by multiples — thresholds of 1k, 2k, 5k … 1M — and are drawn
+on a **logarithmic** x axis, so each step gets the same room. There the crossing
+is found along the log axis, and a width is given as a **ratio** between the two
+curves, with the level each reaches: *×2.49 (15.9 kΩ → 39.7 kΩ)*. On a log axis
+the same shift is the same multiple anywhere along it, which a difference in Ω
+would hide.
+
 The card footer reports anything that limits what you are seeing: tests in the
 sweep that have no definition, functional (pass/fail) tests inside a sweep,
 which have no value to plot, and series whose tests carry different units.
+
+If the swept values no longer line up with the tests — usually because a test in
+the sweep is missing from this data — the footer lists the tests it did find, and
+the card is drawn in test order with **the crossing and widths not measured**.
+Pairing the remaining values with the remaining tests would put every later point
+at the wrong level, which gives a plausible curve and a wrong crossing.
 
 ### Exporting a chart
 

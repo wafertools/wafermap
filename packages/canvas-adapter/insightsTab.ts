@@ -28,7 +28,9 @@ import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from 
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
-import { waferDisplayLabel } from '../core/waferLabel.js';
+import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
+import { hasDrilldownTargets, waferPopulation } from './chartPopulation.js';
+import { openDrilldownMenu } from './drilldown.js';
 import { INPUT_DEFAULT_PASS_BINS, itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
@@ -47,7 +49,7 @@ import { renderBarPanel, type ChartPanel } from './charts/barPanel.js';
 import { renderBinClusterPanel } from './charts/binCluster.js';
 import { renderTestPassRatePanel } from './charts/testPassRate.js';
 import { QUANTITY } from './charts/palette.js';
-import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, type AxisPrefs } from './charts/chartShell.js';
+import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
 import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../stats/yield.js';
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
 import { buildLotTestSection, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
@@ -95,6 +97,10 @@ export interface InsightsOptions {
    * and portable between hosts. The dies it aggregates are whatever the
    * Insights view is currently scoped to.
    *
+   * The same definitions drive drilldown: a user can select dies on a map and
+   * right-click (or use the toolbar's "Chart the selection") to sweep just
+   * those dies. A single map offers this even when `enabled` is off.
+   *
    * **Provisional.** This arrived as one site's request. The mechanism — an
    * ordered run of tests read as a curve — is a recurring semiconductor shape
    * (shmoo, VDD/temperature sweeps, retention, endurance, IV), which is the case
@@ -105,6 +111,12 @@ export interface InsightsOptions {
    * behind a host-contributed-panel extension point instead. `separationAt` is
    * the narrowest part of the surface and the first thing to drop if it is not
    * used. Do not widen this shape before that question is settled.
+   *
+   * Range strings in `tests` (`"1010..1030"`) are NOT a widening in that sense:
+   * they are input syntax for the same list of tests, and add nothing to what a
+   * sweep measures. They were added because ranges are the first thing anyone
+   * writing a sweep by hand asks for, and they share the derived-test parser so
+   * the syntax is one syntax library-wide.
    */
   sweeps?: SweepSpec[];
   /**
@@ -223,6 +235,10 @@ type Item = FacetItem & {
   /** This wafer's OWN test defs, carried through so a scoped population can be
    *  reconciled (`mergeTestDefs`) over just the wafers in scope. */
   testDefs?: TestDef[];
+  /** The wafer's real identity (`waferIdentityLabel`) — never the positional
+   *  "Wafer N (no ID)" that `label` falls back to, which in a chart title would
+   *  read as an ID. */
+  identity?: string;
 };
 
 const VIEWS: Array<{ key: InsightsView; label: string }> = [
@@ -447,6 +463,27 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    * `null` means no leaf action, which is what the panels key their click
    * affordances off.
    */
+  /**
+   * Right-click on one wafer's bar, box or point → the drilldown menu for that
+   * whole wafer. Resolved by `waferIndex` against the items the chart was
+   * built from, never by label (two wafers can share a fallback label).
+   * Undefined when nothing could be charted, so the charts neither take over
+   * the right-click nor advertise one in their tooltips.
+   */
+  function waferContextMenu(items: Item[]): WaferContextMenuHandler | undefined {
+    if (!items.some(it => hasDrilldownTargets(it.testDefs, deps.sweeps))) return undefined;
+    return (waferIndex, testNumber, e) => {
+      const it = items.find(i => i.waferIndex === waferIndex);
+      if (!it || !hasDrilldownTargets(it.testDefs, deps.sweeps)) return;
+      e.preventDefault();
+      const source = waferPopulation(it.dies, {
+        waferLabel: it.identity, testDefs: it.testDefs,
+        activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex,
+      });
+      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, onSaveImage });
+    };
+  }
+
   function testLeafAction(items: Item[]): { open: (waferIndex: number, testNumber: number) => void; label?: string } | null {
     if (openWafer) {
       return { open: (waferIndex, testNumber) => openWaferDetailModal(
@@ -465,7 +502,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return getItems()
       .map((it, waferIndex): Item | null => it == null ? null : {
         metadata: it.wafer.metadata ?? undefined, dies: it.dies, wafer: it.wafer,
-        label: waferDisplayLabel(it, waferIndex), waferIndex,
+        label: waferDisplayLabel(it, waferIndex), identity: waferIdentityLabel(it), waferIndex,
         passBins: itemPassBins(it),
         statsSummary: it.statsSummary, testDefs: it.testDefs,
       })
@@ -621,6 +658,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       onOpen: openWafer ? datum => {
         if (typeof datum.key === 'number') openWaferDetailModal(datum.key, `Wafer ${datum.label}`);
       } : undefined,
+      onWaferContextMenu: waferContextMenu(items),
       ownerDocument: doc,
     };
     let yieldPanel: ReturnType<typeof renderBarPanel> | null = null;
@@ -1060,6 +1098,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       onGroupChange: (key) => selectGroupEverywhere(key),
       onOpen: leafAction?.open,
       openActionLabel: leafAction?.label,
+      onWaferContextMenu: waferContextMenu(items),
       ownerDocument: doc,
     });
     const histogram = renderHistogramPanel({
@@ -1100,6 +1139,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       onOpen: openWafer
         ? (key, testNumber) => openWaferDetailModal(key, `Wafer ${items.find(it => it.waferIndex === key)?.label ?? key}`, testNumber)
         : undefined,
+      onWaferContextMenu: waferContextMenu(items),
       ownerDocument: doc,
     });
 

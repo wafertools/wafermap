@@ -20,6 +20,9 @@
   --text:      #0f172a;
   --text-2:    #334155;
   --muted:     #64748b;
+  /* Used by every code element on the example pages; it was referenced and
+     never defined, so inline code fell back to the body font. */
+  --mono:      ui-monospace, 'Cascadia Code', 'Segoe UI Mono', 'SF Mono', Menlo, Consolas, monospace;
   --shadow:    0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
 
   /* Radius roles — control 4, container 6, pill full. `--radius` was a single
@@ -531,4 +534,107 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,24
     min-height: 240px;
     max-height: 420px;
   }
+}
+
+/* ── Annotated code: an example's source beside what it shows ──────────────────
+   Used by the pages that explain their own configuration (sweeps.html,
+   derived-tests.html). One example per row, so a code block gets the width it
+   needs: code on the left at its natural width (up to ~80 characters), the
+   explanation beside it at a readable measure, stacked on narrower screens.
+   These were a four-across grid of 300 px cards, which cut every code block off
+   at 313 px of 425–598 px behind a scrollbar, in 12 px type. */
+.spec-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxl);
+  margin: var(--space-xs) var(--space-xl) var(--space-xxxl);
+}
+.spec-list section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-container);
+  padding: var(--space-xxl) 20px;
+  background: var(--surface);
+}
+.spec-list h3 {
+  margin: 0 0 var(--space-xl);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.spec-row {
+  display: grid;
+  /* One code width for every row, so the notes line up down the page instead of
+     starting wherever each block's longest line ends: ~80 monospace characters
+     plus the block's padding — in px, because `ch` here would be measured in the
+     page's proportional font, not the code's. The notes take the rest, never
+     narrower than a readable column. */
+  grid-template-columns: minmax(0, 720px) minmax(32ch, 1fr);
+  gap: var(--space-xxl) 28px;
+  align-items: start;
+}
+.spec-row + .spec-row { margin-top: var(--space-xxxl); }
+.spec-code { min-width: 0; display: flex; flex-direction: column; gap: var(--space-md); }
+.spec-code pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--space-xl) var(--space-xxl);
+  overflow-x: auto;          /* last resort on a very narrow screen */
+}
+.spec-notes { max-width: 72ch; }
+.spec-notes p {
+  margin: 0 0 var(--space-lg);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.spec-notes p:last-child { margin-bottom: 0; }
+.spec-notes code {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 1px 5px;
+  white-space: nowrap;        /* `crossing: false` is one token, not two lines */
+}
+/* A heading over a group of annotated examples, saying where they belong —
+   derived-tests.html has two kinds of configuration that go to different places. */
+.spec-part { margin: var(--space-xxxl) var(--space-xl) var(--space-xl); max-width: 110ch; }
+.spec-part h2 { margin: 0 0 var(--space-sm); font-size: 18px; color: var(--text); }
+.spec-part p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--text-2); }
+.spec-part p + p { margin-top: var(--space-md); }
+.spec-part pre.spec-wiring {
+  margin: var(--space-md) 0; font-family: var(--mono); font-size: 13.5px; line-height: 1.55;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-control); padding: var(--space-lg) var(--space-xxl); overflow-x: auto;
+}
+.spec-part code {
+  font-family: var(--mono); font-size: 13px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-control); padding: 1px 5px;
+}
+/* A call to action under a snippet — "Show the sweep ↓". */
+.spec-action {
+  align-self: flex-start;
+  padding: var(--space-sm) var(--space-xl);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent-lo);
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.spec-action:hover { background: #dbeafe; }
+/* Stacked: code first, full width, then its notes. */
+@media (max-width: 1100px) {
+  .spec-row { grid-template-columns: minmax(0, 1fr); }
+  .spec-notes { max-width: none; }
 }

@@ -8,7 +8,7 @@
 import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
-import { testLabel } from '../../renderer/testLabel.js';
+import { markedTestLabel, DERIVED_LANE_PAD } from '../../renderer/testLabel.js';
 
 export type { SaveImageHandler };
 
@@ -22,33 +22,78 @@ export type { SaveImageHandler };
 // free this way too, matching the wafer-map popups' own feature set.
 
 /**
- * `triggerBtn`, when given, is hidden for the modal's duration and shown
+ * The card's own expand button is hidden for the modal's duration and shown
  * again on close — a card already sitting inside its own expand modal must
  * not offer a second "expand" of itself: clicking it would reparent the same
  * card into a *second*, nested modal, leaving the first one open but empty
  * (found via exactly that — every card kept its expand icon once expanded).
+ * The button is found on the card (`data-wmap-chart-expand`) rather than
+ * passed in, so a card opened straight into a modal by something other than
+ * its own button — a drilldown — gets the same treatment.
+ *
+ * `opts.anchor` is for a card that is not on the page yet (see
+ * `ReparentModalOptions.anchor`); `opts.onClosed` runs once the modal has
+ * closed and the card is back where it came from — the place for a card that
+ * existed only for the modal to be destroyed.
  */
-export function openChartExpandModal(card: HTMLElement, title: string, triggerBtn?: HTMLButtonElement): void {
+export function openChartExpandModal(
+  card: HTMLElement,
+  title: string,
+  opts: { anchor?: Element; onClosed?: () => void } = {},
+): void {
   // The card is about to be reparented into the modal. Any hover tip currently
   // showing would travel with it and never be dismissed — the control it
   // belongs to is hidden while expanded, so no mouseleave can fire.
   for (const tip of card.querySelectorAll<HTMLElement>('div[style*="position: absolute"]')) {
     if (tip.style.display === 'block' && tip.style.pointerEvents === 'none') tip.style.display = 'none';
   }
+  const expandBtn = card.querySelector<HTMLElement>('[data-wmap-chart-expand]');
   const savedStyle = card.getAttribute('style') ?? '';
-  Object.assign(card.style, { flex: '1', minHeight: '0', border: 'none', borderRadius: '0' } as Partial<CSSStyleDeclaration>);
+  const grow = (card.dataset.wmapChartGrow ?? 'plot') as ChartGrow;
+  // `alignSelf: 'stretch'` undoes a grid-only `start` — several panels opt out
+  // of the grid's row stretch, and without this they kept grid-card height in
+  // a modal several times taller.
+  Object.assign(card.style, { flex: '1', minHeight: '0', alignSelf: 'stretch', border: 'none', borderRadius: '0' } as Partial<CSSStyleDeclaration>);
+  card.dataset.wmapExpanded = '1';
 
   const handle = openReparentedModal([card], {
     title,
+    anchor: opts.anchor,
+    ownerDocument: card.ownerDocument,
+    boxSize: EXPAND_BOX[grow],
     onClosed: () => {
+      delete card.dataset.wmapExpanded;
       card.setAttribute('style', savedStyle);
-      if (triggerBtn) triggerBtn.style.display = 'flex';
+      if (expandBtn) expandBtn.style.display = 'flex';
+      opts.onClosed?.();
     },
   });
-  if (!handle) { card.setAttribute('style', savedStyle); return; } // already expanded — re-entrancy guard
+  if (!handle) { delete card.dataset.wmapExpanded; card.setAttribute('style', savedStyle); return; } // already expanded — re-entrancy guard
 
-  if (triggerBtn) triggerBtn.style.display = 'none';
+  if (expandBtn) expandBtn.style.display = 'none';
+
+  // A list of rows opens tall enough to show every row (within the viewport)
+  // rather than at a fixed size that is mostly empty for a short list. Its
+  // full height is known once the card has drawn — `fitRowsHeight` records it.
+  if (grow === 'rows') {
+    const fit = (): void => {
+      const full = Number(card.dataset.wmapChartFullH);
+      if (!full) return;
+      const header = handle.box.offsetHeight - handle.contentWrap.clientHeight;
+      handle.setNaturalHeight(`min(90vh, ${Math.ceil(header + full)}px)`);
+    };
+    fit();
+    // A card built for the modal (a drilldown) has not drawn yet.
+    (card.ownerDocument.defaultView ?? window).requestAnimationFrame(fit);
+  }
 }
+
+/** Natural box size per growth direction — see `ChartGrow`. */
+const EXPAND_BOX: Record<ChartGrow, { width: string; height: string }> = {
+  plot:   { width: 'min(94vw, 1100px)', height: 'min(90vh, 760px)' },
+  rows:   { width: 'min(94vw, 960px)',  height: 'min(90vh, 700px)' },
+  square: { width: 'min(94vw, 820px)',  height: 'min(90vh, 860px)' },
+};
 
 // ── Canvas-safe theme colors ─────────────────────────────────────────────────
 // `CLR`'s values are `var(--wmap-…, fallback)` strings — correct for DOM
@@ -190,10 +235,10 @@ export function observeResize(el: HTMLElement, onResize: () => void): { disconne
  * (drag-resize, maximize/restore); a "only grow, never shrink" policy would
  * leave a stale, too-large min-height stuck from a bigger prior size after
  * the modal shrinks, forcing the exact overflow this function exists to
- * prevent. Recomputing from `card`'s current live overhead every call is
- * self-correcting in both directions and converges in one extra resize-
- * observer pass (chrome overhead doesn't change with `card`'s own height,
- * so the fixed point is reached immediately, not oscillating).
+ * prevent. The overhead is measured from `card`'s other children
+ * (`cardOverhead`), so it is the same whether or not the card is currently
+ * stretched, and one call is exact. Ask for the height the content NEEDS,
+ * never the height the card was given — the latter can only ever grow.
  *
  * The Analysis tab composes several of these cards into one CSS Grid row
  * per section (`makeChartGridWrap`); nothing about that grid's own row
@@ -209,8 +254,7 @@ export function observeResize(el: HTMLElement, onResize: () => void): { disconne
  *   directly with their visible-rows height.
  */
 export function growCardToFitContent(card: HTMLElement, body: HTMLElement, contentHeight: number): void {
-  const overhead = card.offsetHeight - body.clientHeight;
-  const next = `${overhead + contentHeight}px`;
+  const next = `${cardOverhead(card, body) + contentHeight}px`;
   // Every panel observes `card` and calls this from inside that callback, so an
   // unconditional write re-invalidates the very element being observed and the
   // browser reports "ResizeObserver loop completed with undelivered
@@ -218,6 +262,150 @@ export function growCardToFitContent(card: HTMLElement, body: HTMLElement, conte
   // the corrective pass this function is designed around still happens, but the
   // pass after it is a no-op instead of another notification.
   if (card.style.minHeight !== next) card.style.minHeight = next;
+}
+
+/**
+ * Everything in `card` that is not `body`, as a height: the in-flow siblings
+ * (heading, controls, hint, footer — margins included) plus, for a border-box
+ * card, its own padding and border. `card.style.minHeight = overhead + content`
+ * then gives `body` exactly `content`.
+ *
+ * Measured from the siblings, never as `card.offsetHeight - body.clientHeight`,
+ * which it used to be. That difference is only the overhead while the card is
+ * exactly as tall as it asked to be: stretch it (a grid row matching a taller
+ * neighbour, or the expand modal) and the stretch is counted as overhead, baked
+ * into the next min-height, and the card grows on every redraw. Several panels
+ * opted out of stretching (`alignSelf: 'start'`) for that reason alone, which
+ * left them at grid-card size inside the expand modal.
+ */
+function cardOverhead(card: HTMLElement, body: HTMLElement): number {
+  const view = card.ownerDocument.defaultView ?? window;
+  const cs = view.getComputedStyle(card);
+  let h = 0;
+  for (const child of Array.from(card.children)) {
+    if (child === body) continue;
+    const el = child as HTMLElement;
+    const ccs = view.getComputedStyle(el);
+    if (ccs.display === 'none' || ccs.position === 'absolute' || ccs.position === 'fixed') continue;
+    h += el.offsetHeight + (parseFloat(ccs.marginTop) || 0) + (parseFloat(ccs.marginBottom) || 0);
+  }
+  if (cs.boxSizing === 'border-box') {
+    h += (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)
+      + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  }
+  return h;
+}
+
+/** Outer height of `body`'s children other than `except` — what sits beside
+ *  the element that is being sized. */
+function siblingsHeight(body: HTMLElement, except: Element): number {
+  const view = body.ownerDocument.defaultView ?? window;
+  let h = 0;
+  for (const child of Array.from(body.children)) {
+    if (child === except) continue;
+    const el = child as HTMLElement;
+    const cs = view.getComputedStyle(el);
+    if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') continue;
+    h += el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+  }
+  return h;
+}
+
+// ── Right-click on a wafer's mark ────────────────────────────────────────────
+
+/**
+ * Right-click on one wafer's bar, box or point. The chart hands over the wafer
+ * and the test it is showing; the handler owns the event (`preventDefault` to
+ * replace the browser's menu) and decides what to offer — Insights opens the
+ * drilldown menu on that wafer. Group rows (several wafers pooled) never call it.
+ */
+export type WaferContextMenuHandler = (waferIndex: number, testNumber: number | undefined, e: MouseEvent) => void;
+
+/** The tooltip line saying a mark has one — one wording on every chart. */
+export const WAFER_MENU_HINT = '<br><em>right-click to chart this wafer</em>';
+
+// ── Population wording ───────────────────────────────────────────────────────
+
+/**
+ * How many dies a chart is drawn from, and who they are: "12 dies", "12 dies
+ * selected on W03", or "10 of 12 dies selected on W03 (partial and
+ * edge-excluded dies left out)" when eligibility dropped some — which a
+ * hand-picked selection makes visible in a way a whole wafer does not.
+ *
+ * `counted` is what the chart actually used; `total` what it was given.
+ * `population` omitted = the view's own population, which says so elsewhere.
+ */
+export function populationPhrase(counted: number, total: number, population?: string): string {
+  const n = counted.toLocaleString();
+  const unit = counted === 1 ? 'die' : 'dies';
+  if (!population) return `${n} ${unit}`;
+  if (counted === total) return `${n} ${unit} ${population}`;
+  return `${n} of ${total.toLocaleString()} dies ${population} (partial and edge-excluded dies left out)`;
+}
+
+// ── Growing inside the expand modal ──────────────────────────────────────────
+//
+// In the Insights grid a card is the size it asks for. Expanded, it sits in a
+// box the user sized (or maximised), and must use that space — in the direction
+// that suits the chart, which `openChartExpandModal` reads from
+// `data-wmap-chart-grow`:
+//
+// - `plot` (default) — a continuous plot fills width and height.
+// - `rows` — one row per item: the bars take the width, the rows take the
+//   height up to all of them, and the box opens sized to fit them. Taller rows
+//   would only spread the same few bars apart.
+// - `square` — a circle or a matrix of square cells grows to the shorter side.
+//
+// Growth beyond the grid size happens ONLY while expanded (`isExpandedCard`).
+// In the grid a card that drew into whatever height a neighbour stretched its
+// row to would change size with its neighbours; the grid layout is deliberate.
+
+export type ChartGrow = 'plot' | 'rows' | 'square';
+
+/** Declare how a card grows when expanded — see the block comment above. */
+export function setChartGrow(card: HTMLElement, grow: ChartGrow): void {
+  card.dataset.wmapChartGrow = grow;
+}
+
+/** True while `card` is in its expand modal. */
+export function isExpandedCard(card: HTMLElement): boolean {
+  return card.dataset.wmapExpanded === '1';
+}
+
+/** Height `body` has for content when it takes all of `card`'s free space,
+ *  less `body`'s children other than `except`. */
+export function bodyRoom(card: HTMLElement, body: HTMLElement, except?: Element): number {
+  const view = card.ownerDocument.defaultView ?? window;
+  const cs = view.getComputedStyle(card);
+  const inner = card.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+  const border = cs.boxSizing === 'border-box'
+    ? (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+    : 0;
+  // cardOverhead includes padding+border for a border-box card; `inner` has
+  // already taken the padding off, so only the siblings are subtracted here.
+  return inner - (cardOverhead(card, body) - border) - (except ? siblingsHeight(body, except) : 0);
+}
+
+/**
+ * Height to show a list of rows at. The card asks for `cappedHeight` (the grid
+ * size, rows beyond it scroll); expanded, it shows as many more rows as the
+ * modal has room for, up to `fullHeight`. `besideHeight` is whatever else is in
+ * `body` above the rows (a legend).
+ *
+ * The request never includes the extra: a card that asked for the height it had
+ * been given would never shrink when the modal is made smaller.
+ *
+ * Also records the card's full height, for `openChartExpandModal` to open the
+ * box at a size that shows every row.
+ */
+export function fitRowsHeight(
+  card: HTMLElement, body: HTMLElement, cappedHeight: number, fullHeight: number, besideHeight = 0,
+): number {
+  growCardToFitContent(card, body, besideHeight + cappedHeight);
+  card.dataset.wmapChartFullH = String(Math.ceil(cardOverhead(card, body) + besideHeight + fullHeight));
+  if (!isExpandedCard(card)) return cappedHeight;
+  const room = bodyRoom(card, body) - besideHeight;
+  return Math.max(cappedHeight, Math.min(fullHeight, Math.floor(room)));
 }
 
 /**
@@ -235,14 +423,7 @@ export function chartFillHeight(card: HTMLElement, body: HTMLElement, canvas: HT
   // same omission appeared — `applyCanvasFlow`'s callers and the histogram's
   // own `siblingH` were the other two — which is why it is fixed here, at the
   // helper every chart shares, rather than a third time at a call site.
-  const view = card.ownerDocument.defaultView ?? window;
-  let siblingHeight = 0;
-  for (const child of Array.from(body.children)) {
-    if (child === canvas) continue;
-    const el = child as HTMLElement;
-    const cs = view.getComputedStyle(el);
-    siblingHeight += el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
-  }
+  const siblingHeight = siblingsHeight(body, canvas);
   growCardToFitContent(card, body, siblingHeight + minHeight);
   // Re-read after the resize above so a card that just changed size reports
   // its now-correct body height in the same pass, not next redraw.
@@ -611,7 +792,8 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   } as Partial<CSSStyleDeclaration>);
   wireControlHover(expandBtn);
   attachChartTip(expandBtn, card, headerTip, 'Expand');
-  expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title, expandBtn));
+  expandBtn.dataset.wmapChartExpand = '1';
+  expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title));
   headingRow.appendChild(expandBtn);
   card.appendChild(headingRow);
 
@@ -964,6 +1146,19 @@ export function makeListSelect(
 export interface TestSelectItem {
   testNumber: number;
   name?: string;
+  /** A derived test — listed as `"† name"`, like everywhere else it is named. */
+  derived?: true;
+}
+
+/**
+ * Picker labels for a list of tests: the derived mark in front of a derived
+ * test's name, and — when the list holds any — measured names padded by the
+ * mark's width so every name starts at about the same x. A list with no derived
+ * test is plain names, unchanged.
+ */
+export function testOptionLabels(items: readonly TestSelectItem[]): string[] {
+  const lane = items.some(t => t.derived);
+  return items.map(t => (lane && !t.derived ? DERIVED_LANE_PAD : '') + markedTestLabel(t, t.testNumber));
 }
 
 /**
@@ -986,7 +1181,7 @@ export function makeTestSelect(
   const { maxWidth = '200px', emptyText = 'No parametric tests', ownerDocument = document } = opts;
 
   return makeListSelect(
-    testOptions.map(t => ({ value: String(t.testNumber), label: testLabel(t, t.testNumber) })),
+    testOptionLabels(testOptions).map((label, i) => ({ value: String(testOptions[i].testNumber), label })),
     selected !== null ? String(selected) : '',
     v => onChange(Number(v)),
     { maxWidth, ownerDocument, ariaLabel: 'Test', emptyText, searchPlaceholder: 'Filter tests…' },
@@ -1294,7 +1489,11 @@ export function makeTooltip(card: HTMLElement): HTMLElement {
     background: 'rgba(30, 32, 40, 0.93)', color: '#f0f0f2',
     border: '1px solid rgba(255,255,255,0.10)', borderRadius: RADIUS.control,
     padding: `${SPACE.sm} ${SPACE.xl}`, fontSize: FONT.sub, fontFamily: FONT.family,
-    maxWidth: '280px', whiteSpace: 'nowrap', boxShadow: SHADOW.menu,
+    // Wraps inside its width. This was `nowrap` under the same 280px cap, so any
+    // line longer than the cap (a sweep row with its p10–p90 and n, a derived
+    // test's expression) ran out past the dark background. `overflowWrap`
+    // breaks a single unbroken token — an expression — rather than let it out.
+    maxWidth: '320px', whiteSpace: 'normal', overflowWrap: 'break-word', boxShadow: SHADOW.menu,
   } as Partial<CSSStyleDeclaration>);
   card.appendChild(tooltip);
   return tooltip;

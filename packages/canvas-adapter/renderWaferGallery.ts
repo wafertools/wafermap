@@ -16,6 +16,7 @@ import { diePassStatus, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
+import { hasDrilldownTargets, waferPopulation } from './chartPopulation.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS } from './renderWaferMap.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
@@ -544,6 +545,9 @@ export function renderWaferGallery(
   const showHelpButton       = options.showHelpButton       ?? false;
   const userGuideExtension   = options.userGuideExtension;
   const insightsEnabled      = options.insights?.enabled ?? false;
+  /** What each card's own map gets of `insights`: the sweep definitions, for
+   *  drilldown on that card's selection, and nothing that makes it an Insights host. */
+  const cardInsights = options.insights?.sweeps ? { sweeps: options.insights.sweeps } : undefined;
   // Host-supplied overlay stacking (no-op when undefined; safe high default
   // applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ      = applyOverlayZ(options.zIndex);
@@ -3105,6 +3109,27 @@ export function renderWaferGallery(
     // render that the ResizeObserver would otherwise need to correct.
     gridEl.appendChild(card);
 
+    // Drilldown on this whole wafer from anywhere on the card the map did not
+    // take for itself — the header, the space around the map. The map's own
+    // right-click (a die, the selection, or empty map space) marks the event
+    // handled, so only what it declined reaches here. See chartPopulation.ts.
+    card.addEventListener('contextmenu', (e) => {
+      if (e.defaultPrevented) return;
+      const sweeps = options.insights?.sweeps;
+      if (!hasDrilldownTargets(item.testDefs, sweeps)) return;
+      e.preventDefault();
+      const view = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
+      // Snapshotted now, before the lazy import — see chartPopulation.ts.
+      const source = waferPopulation(item.dies, {
+        waferLabel: waferIdentityLabel(item), testDefs: item.testDefs, isLotStack: item.isLotStack,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: cardIndex,
+      });
+      const at = { x: e.clientX, y: e.clientY };
+      void import('./drilldown.js').then(({ openDrilldownMenu }) => {
+        if (card.isConnected) openDrilldownMenu(at, card, source, { sweeps, onSaveImage: options.onSaveImage });
+      });
+    });
+
     // Grid cards take the current per-card-legend state at mount, so a card
     // rendered lazily (or after a re-layout) matches the ones already on screen
     // instead of flashing a legend until the next applyPerCardLegend.
@@ -3119,6 +3144,9 @@ export function renderWaferGallery(
       onSaveText:      options.onSaveText,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
+      // Sweep definitions only — the card is not an Insights host (`enabled`
+      // stays off); it needs them to offer a sweep of its selected dies.
+      insights:        cardInsights,
       onExpand:        () => openWindowForCard(cardIndex, item),
       // The card's own header already shows item.label (wafer identity), and
       // the gallery's shared legend strip already shows lot-level metadata —
@@ -3629,6 +3657,7 @@ export function renderWaferGallery(
       onSaveText:      options.onSaveText,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
+      insights:        cardInsights,
       // This view is already detached into its own window (a real popup or
       // the in-page fallback) — there is nowhere sensible for it to "expand"
       // to, so suppress both the toolbar button and the `E` key entirely

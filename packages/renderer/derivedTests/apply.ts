@@ -21,6 +21,7 @@
  * with no further change.
  */
 
+import { diePassStatus } from '../../core/dies.js';
 import type { DieResult, TestDef, WaferWarning } from '../buildWaferMap.js';
 import { getTestPassStatus, isParametricTest } from '../buildWaferMap.js';
 import { classifySpec } from '../spec.js';
@@ -379,10 +380,9 @@ export function applyDerivedTests(
         const cat = classifySpec(readValue(t), defsByNumber.get(t));
         return cat === null ? undefined : cat === 'pass';
       },
-      diePass: () => {
-        const bin = record.hbin ?? record.sbin;
-        return bin === undefined ? undefined : passBins.has(bin);
-      },
+      // THE per-die pass rule, not a copy of it: `diePass()` in an expression
+      // must agree with yield and the failing-die hatch on every die.
+      diePass: () => diePassStatus(record, passBins),
     };
 
     for (const c of compiled) {

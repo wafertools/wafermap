@@ -17,7 +17,7 @@ import { isParametricTest, type TestDef } from '../../renderer/buildWaferMap.js'
 import { fmt } from '../../renderer/fmt.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, growCardToFitContent, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type AxisPrefs, type SaveImageHandler, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { escHtml } from '../../core/utils.js';
 
@@ -34,6 +34,8 @@ export interface TrendPanelOptions {
   onSaveImage?: SaveImageHandler;
   /** Click a point to open that wafer's map on this test. */
   onOpen?: (key: number, testNumber: number) => void;
+  /** Right-click on a wafer's point — see `WaferContextMenuHandler`. */
+  onWaferContextMenu?: WaferContextMenuHandler;
   /**
    * What the dashed reference line is, as a noun phrase — "lot mean" when the
    * items are one lot, else "mean of all wafers" (see stats/population.ts).
@@ -323,7 +325,9 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
         ctx.fillText(label, xOf(i), plotBottom + 6);
       });
 
-      growCardToFitContent(card, body, height);
+      // No second request of the drawn height here: chartFillHeight has asked
+      // for the floor, and asking for what the card was GIVEN would stop it
+      // shrinking when the expand modal is made smaller.
     };
 
     const indexAt = (e: MouseEvent): number => {
@@ -342,7 +346,8 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
         + escHtml(`mean ${fmt(d.mean, def?.unit)} · σ ${fmt(d.stddev, def?.unit)}`) + '<br>'
         + `n = ${d.count.toLocaleString()}`
         + (centre !== null ? '<br>' + escHtml(`Δ vs ${centreLabel} ${d.mean - centre >= 0 ? '+' : ''}${fmt(d.mean - centre, def?.unit)}`) : '')
-        + (onOpen && d.key !== undefined ? '<br><em>click to open this wafer</em>' : '');
+        + (onOpen && d.key !== undefined ? '<br><em>click to open this wafer</em>' : '')
+        + (options.onWaferContextMenu && d.key !== undefined ? WAFER_MENU_HINT : '');
       tooltip.style.display = 'block';
       positionChartTooltip(tooltip, card, e.clientX, e.clientY);
     });
@@ -352,6 +357,13 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       if (i < 0 || !onOpen) return;
       const d = data[i];
       if (d.key !== undefined && activeTest !== null) onOpen(d.key, activeTest);
+    });
+    canvas.addEventListener('contextmenu', e => {
+      const i = indexAt(e);
+      const key = i < 0 ? undefined : data[i].key;
+      if (key === undefined || !options.onWaferContextMenu) return;
+      tooltip.style.display = 'none';
+      options.onWaferContextMenu(key, activeTest ?? undefined, e);
     });
 
     draw();

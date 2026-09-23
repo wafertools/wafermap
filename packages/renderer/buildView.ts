@@ -862,7 +862,7 @@ export interface MapTitleParts {
  * derived-test marker when it is derived, or `undefined` when there is no
  * name — so `fmtColorbarAxis` and the callers' fallbacks behave exactly as
  * they do for an unnamed measured test. The marker goes on the NAME, before
- * `fmtColorbarAxis` adds the unit, giving `"Vth Margin † (V)"`.
+ * `fmtColorbarAxis` adds the unit, giving `"† Vth Margin (V)"`.
  */
 function titleName(def: TestDef | undefined): string | undefined {
   return def?.name ? markedTestLabel(def, def.testNumber) : undefined;
