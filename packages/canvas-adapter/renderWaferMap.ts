@@ -740,7 +740,7 @@ export function renderWaferMapCard(
   // mini histogram matching the current plot mode, reusing the map's own
   // colour scheme) rather than the dense buildDieListSection table — a
   // "View die list" toggle still reaches the table for CSV export / per-die
-  // inspection. See WMAP_ISSUES.md #39.
+  // inspection.
   let refreshMaplessPanel: (() => void) | null = null;
   if (unpositionedDieCount > 0) {
     const unpositionedDies = result.dies.filter((d) => !hasPosition(d));
@@ -1892,10 +1892,7 @@ export function renderWaferMapCard(
           // which silently emptied this menu entirely (no bin/value entries
           // ever appeared, even though the dies have hbin/sbin/test data —
           // exactly the non-spatial data this menu is supposed to offer modes
-          // for). See WMAP_ISSUES.md #39's follow-up entries for the same
-          // "positioned-only source used where the full population was
-          // needed" mistake elsewhere (dataCoverage.totalDies vs
-          // yieldSummary.totalDies).
+          // for).
           const dies     = currentDies;
           const testDefs = currentView.testDefs;
           // Value mode is available for any per-test data — numeric values or recorded

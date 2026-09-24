@@ -9,9 +9,7 @@
 //     buildTestHistogramData — not the full Insights-tab renderHistogramPanel,
 //     which is ~230px with axis/dropdown chrome too heavy for a card corner.
 //   - every other mode (metadata, stacked-*, yield) falls back to a one-line
-//     message rather than silently rendering a blank panel — see
-//     WMAP_ISSUES.md #39's follow-up entry for why metadata/stacked modes
-//     don't get a dedicated representation yet.
+//     message rather than silently rendering a blank panel.
 
 import type { Die } from '../core/dies.js';
 import type { TestDef, BinDef } from '../renderer/buildWaferMap.js';

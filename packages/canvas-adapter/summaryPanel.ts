@@ -2629,10 +2629,7 @@ export function createSummaryPanelEl(
     //
     // This fixes the silent loss only. Whether this content should be shown in
     // a wide-short band AT ALL is a separate, open question (the stat tiles,
-    // per-test tables and findings list were designed for a narrow-tall panel);
-    // see TODO.md "Summary panel content clips silently in 'top'/'bottom'
-    // placement", which holds the full `placement` review, up to and including
-    // dropping those two values.
+    // per-test tables and findings list were designed for a narrow-tall panel).
     overflowY:   'auto',
     overflowX:   isVertical ? 'auto'   : 'hidden',
     flexShrink:  '0',

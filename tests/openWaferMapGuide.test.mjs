@@ -16,8 +16,8 @@ const { openWaferMapGuide } = await import('../dist/packages/canvas-adapter/inde
 
 // ── openWaferMapGuide opens the same guide window a live controller's own
 // openUserGuide() opens, but with NO renderWaferMap/renderWaferGallery call
-// having happened first — the whole point of this export (WMAP_ISSUES.md #37,
-// the empty-state guide-access gap). ─────────────────────────────────────────
+// having happened first — the whole point of this export (guide access from
+// the empty state). ──────────────────────────────────────────────────────────
 
 // openWaferMapGuide is fire-and-forget (mirrors the controller closures it
 // wraps) — its dynamic imports resolve on a later tick even when the modules

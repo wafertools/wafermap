@@ -100,20 +100,19 @@ const SNAPSHOTS = {
     // General-purpose die-list table + CSV export (position/site/bins/per-test
     // values) — used internally for coordinate-less wafers, and exposed so a
     // host (tsmap's lot-level "Die list…" toolbar button) can build its own
-    // combined view. See WMAP_ISSUES.md #39.
+    // combined view.
     'buildDieListSection',
     // The toolbar's own icon set — exposed so a host rendering its own chrome
     // alongside wmap's can match wmap's iconography instead of copy-pasting
-    // SVGs that silently drift on the next redesign. See WMAP_ISSUES.md #16.
+    // SVGs that silently drift on the next redesign.
     'ICONS',
     // In-app modal for report HTML — the Summary panel's "Summary report"
     // button now opens through this by default, no setReportOpener wiring
-    // required just to view a report. See WMAP_ISSUES.md #37.
+    // required just to view a report.
     'openReportModal',
     // Opens the same guide window WaferMapController/GalleryController's own
     // openUserGuide() opens, but with no live render required — for a host
-    // whose help entry point must also work before anything is loaded. See
-    // WMAP_ISSUES.md #37.
+    // whose help entry point must also work before anything is loaded.
     'openWaferMapGuide',
   ],
 };

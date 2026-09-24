@@ -8,7 +8,7 @@
 // compare directly on one axis. Unlike boxplot/capability, wmap's Analysis
 // tab hands this one the `groups` list directly (it already computes it),
 // rather than a `groupBy` callback over a flat wafer list like tsmap's
-// version — same result, one fewer indirection (see WMAP_ISSUES.md).
+// version — same result, one fewer indirection.
 //
 // Deliberate exception to the "prefer StatsSummary.stats.perTestStats over
 // raw Die[]" dedup pattern used elsewhere in this package (boxplot.ts,

@@ -92,7 +92,7 @@ export interface CorrelationMatrix {
  * Correlation is the only computation here that is quadratic in tests *and*
  * linear in dies: a 400k-die, 50-test lot is 1,225 pairs per die — 490 million
  * pair updates, each touching six accumulators — which in a browser presents as
- * a panel that never renders (tsmap WMAP_ISSUES #61).
+ * a panel that never renders.
  *
  * 25,000 is far past the point where more dies change a Pearson coefficient: the
  * standard error of r is about `(1 - r²)/sqrt(n)`, so at n = 25,000 it is under

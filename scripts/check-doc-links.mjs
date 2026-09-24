@@ -136,8 +136,8 @@ function linksIn(file) {
   const links = [];
   const lines = src.split('\n');
   lines.forEach((rawLine, i) => {
-    // Inline code spans are prose ABOUT markup, not markup: WMAP_ISSUES.md
-    // discusses `<a download href="blob:…">`, which is not a link to check.
+    // Inline code spans are prose ABOUT markup, not markup: `<a download
+    // href="blob:…">` written in backticks is not a link to check.
     const line = rawLine.replace(/`[^`]*`/g, '');
     // Markdown inline links and images, plus raw href/src in embedded HTML.
     for (const m of line.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {

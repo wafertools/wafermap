@@ -3,8 +3,7 @@
 // The map is drawn under setTransform(ppm·dpr, …), so a lineWidth divided by
 // ppm·dpr is a fixed number of DEVICE pixels — it halved on a 2× display and
 // thirded on a 3× one, turning the ring/quadrant dual-stroke into a faint
-// hairline on exactly the high-DPI screens most users have (tsmap
-// WMAP_ISSUES #55). The die outline is the one deliberate exception: a
+// hairline on exactly the high-DPI screens most users have. The die outline is the one deliberate exception: a
 // device-pixel hairline, so it does not grey out a dense map as dpr rises.
 import test from 'node:test';
 import assert from 'node:assert/strict';

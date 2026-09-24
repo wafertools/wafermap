@@ -5,7 +5,7 @@
  * server + headless Chromium + a setup-step vocabulary) pointed at a different
  * app. This is the one pair of scripts here that is genuinely duplicated rather
  * than coincidentally same-named, and extracting the shared harness is a real
- * (unstarted) job — see TODO.md. Until then, a fix to the harness half of one
+ * (unstarted) job. Until then, a fix to the harness half of one
  * usually belongs in the other too; the capture *definitions* never do.
  *
  * Usage:

@@ -41,9 +41,8 @@ export function logWmapVersionOnce(): void {
 // render container and the DOM chrome follows. This is the colour analogue of
 // `--wmap-z` (stacking): one host-settable token set, safe light defaults.
 //
-// NOTE: this covers DOM chrome only. The <canvas> draws its own hardcoded colours
-// (axis text, grid, halos) which a stylesheet can't reach — those need a separate
-// draw-time resolve pass (tracked as a follow-up; see tsmap WMAP_ISSUES #25).
+// NOTE: this covers DOM chrome only. The <canvas> (axis text, grid, halos) can't
+// read a stylesheet, so it resolves the same tokens at draw time (canvasTheme.ts).
 //
 // `WMAP_TOKEN_NAMES` is the single source of truth for which `--wmap-*` custom
 // properties exist — `CLR` below, `canvasTheme.ts`'s `resolveCanvasTheme`, and
@@ -579,9 +578,8 @@ export function syncWmapPopupTheme(themeSource: Element, popupDocumentElement: H
 // openWindowForCard) needs a real, OS-window-manager-controlled window — not
 // an in-page `position: fixed` div — so it can be dragged outside the host
 // browser/Tauri window's own bounds. `window.open()` is the default, but it is
-// blocked/returns `null` silently in Tauri's WebView (confirmed in tsmap's own
-// history — see WMAP_ISSUES.md and `setReportOpener` below, which solves the
-// same class of problem for a different feature). Mirrors that pattern:
+// blocked/returns `null` silently in Tauri's WebView (see `setReportOpener`
+// below, which solves the same class of problem for a different feature). Mirrors that pattern:
 // a host registers a custom opener at startup; the default falls back to
 // plain `window.open`.
 export type DetachWindowOpener = (label: string) => Window | null;

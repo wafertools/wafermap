@@ -6,8 +6,8 @@
 // `charts/binCluster.ts`). Self-contained: owns the hard/soft bin toggle
 // and redraws in place.
 //
-// Trimmed from tsmap's version for this port: no click-to-open-wafer, same
-// deferral as the rest of this pass (see WMAP_ISSUES.md).
+// No click-to-open-wafer: pareto and cluster bars are deliberately not
+// clickable.
 
 import { buildBinClusterData, type BinItem, type BinType } from '../../stats/binPareto.js';
 import { SPACE, FONT, CLR } from '../toolbar.js';

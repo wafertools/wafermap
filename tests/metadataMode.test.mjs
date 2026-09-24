@@ -226,8 +226,7 @@ test('natural ordering is locale-independent, so colours are reproducible across
     'numbers must order by value within each alpha prefix');
 });
 
-// ── Lot-wide colour order (TODO.md "Gallery metadata-mode colours can mismatch
-//    the shared legend") ─────────────────────────────────────────────────────
+// ── Lot-wide colour order ──────────────────────────────────────────────────────
 //
 // Each view used to assign colours by index into the values on ITS OWN dies, so
 // a wafer that never exhibited one category shifted every later value up a

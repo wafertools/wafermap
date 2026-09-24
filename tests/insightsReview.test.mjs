@@ -404,7 +404,7 @@ test('every CSV button names what it exports', async () => {
   tab.destroy();
 });
 
-// ── Single-wafer leaf clicks: focusTest (WMAP_ISSUES #51) ────────────────────
+// ── Single-wafer leaf clicks: focusTest ──────────────────────────────────────
 //
 // `renderWaferMap` passes no `openWafer` — opening the only wafer on screen in
 // a modal is two maps of one wafer. That left the boxplot's leaf row inert,

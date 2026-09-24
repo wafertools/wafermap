@@ -515,9 +515,8 @@ test('renderWaferMap onSaveText hook intercepts the Summary panel\'s CSV export'
     const statsSummary = analyzeWaferMap(wafer);
 
     const saved = [];
-    // Same bypass-the-<a-download> contract as onSaveImage — tsmap (WMAP_ISSUES.md
-    // #33) hit this exact gap: the CSV export button had no host hook at all, so
-    // it always fell through to a raw anchor click, a silent no-op in Tauri.
+    // Same bypass-the-<a-download> contract as onSaveImage: without a host hook
+    // the CSV export falls through to a raw anchor click, a silent no-op in Tauri.
     let anchorClicks = 0;
     const origClick = window.HTMLAnchorElement.prototype.click;
     window.HTMLAnchorElement.prototype.click = function () { anchorClicks++; };
@@ -607,7 +606,7 @@ test('a host downloadFilename still names the map PNG exactly, and nothing else,
     .some(([major, minor]) => major > 0 || minor >= 31);
   assert.ok(!reached,
     'Preparing 0.31.0: downloadFilename must become a prefix for every saved file, as announced in 0.30.1. '
-    + 'TODO.md, "downloadFilename becomes a prefix in 0.31.0", lists the steps; this test is replaced as part of them.');
+    + 'This test is replaced as part of that change.');
 
   const { window, root, cleanup } = setupDom();
   try {
@@ -1443,8 +1442,8 @@ test('renderWaferGallery clears stacked options when leaving stacked mode', () =
 
     // Verify the shared options don't contain stacked-specific properties.
     // valueRange is NOT cleared to undefined here: plain 'value' mode now carries
-    // its own lot-wide range (every card compared on one shared scale — see
-    // TODO.md "Gallery value-mode colour range..."), computed fresh from the
+    // its own lot-wide range (every card compared on one shared scale), computed
+    // fresh from the
     // dies across all three items for test 0 (values 0.9, 0.7, 0.8).
     const opts = ctrl.getOptions();
     assert.deepEqual(opts.valueRange, { test: 0, range: [0.7, 0.9] });
@@ -1466,8 +1465,7 @@ test('renderWaferGallery value mode without limits shares a lot-wide range acros
     root.appendChild(container);
 
     // No limitLow/limitHigh on the test — this used to leave each card to
-    // auto-scale to only its own dies (see TODO.md "Gallery value-mode colour
-    // range..."). Each item below has a different min/max so a per-card bug
+    // auto-scale to only its own dies. Each item below has a different min/max so a per-card bug
     // would show up as opts.valueRange staying undefined or narrower than the
     // true lot-wide extent.
     const makeItem = (label, values) => ({
@@ -1723,7 +1721,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.ok(summaryBtn, 'Summary toolbar button should exist alongside Insights');
     // Stable identity hook — this button's aria-label is toggled by open
     // state (asserted below), so tooling needs a hook that doesn't change
-    // with it. See tsmap's WMAP_ISSUES.md #36.
+    // with it.
     assert.equal(insightsBtn.dataset.wmapInsightsBtn, '1', 'Insights button carries a stable data-wmap-insights-btn hook');
 
     ctrl.setInsightsOpen(true);
@@ -1742,7 +1740,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
 
     // Overview's chart cards (cardShell) carry stable card/title hooks —
     // the only way tooling could locate "Yield by wafer" before this was
-    // matching its heading's raw textContent (WMAP_ISSUES.md #36).
+    // matching its heading's raw textContent.
     const chartCards = [...root.querySelectorAll('[data-wmap-chart-card]')];
     assert.ok(chartCards.length > 0, 'at least one chart card renders in Overview');
     // "Hard bin pareto" (not "Yield by wafer") — the yield panel is skipped
@@ -1866,7 +1864,7 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
   }
 });
 
-test('renderWaferGallery: the summary report opens an in-app modal, not window.open (WMAP_ISSUES.md #37)', () => {
+test('renderWaferGallery: the summary report opens an in-app modal, not window.open', () => {
   const { window, root, cleanup } = setupDom();
   // No real popup available (Tauri/Electron/WebView2 shape) — the fix under
   // test is exactly that this no longer matters for viewing the report.

@@ -4,8 +4,7 @@ import { JSDOM } from 'jsdom';
 
 import { cardShell, makeChartGridWrap, makeLabeledSelect } from '../dist/packages/canvas-adapter/charts/chartShell.js';
 
-// Unit coverage for the data-wmap-* hooks added to close (most of)
-// tsmap's WMAP_ISSUES.md #36 — these three factories are what
+// Unit coverage for the data-wmap-* hooks — these three factories are what
 // insightsTab.ts's chart cards, section grids, and Group-by/per-panel
 // Group selects are all built from, so testing them here covers every
 // caller at once. Full-pipeline coverage (the hooks actually reaching a
@@ -36,7 +35,7 @@ test('cardShell: card carries data-wmap-chart-card and data-wmap-chart-title', (
 
 test('cardShell: title is carried verbatim, including titles that collide with other cards\' prefixes', () => {
   withDocument(() => {
-    // Regression guard for the exact WMAP_ISSUES.md #36 failure mode: the
+    // Regression guard for the prefix-matching failure mode: the
     // old approach matched a card by heading textContent PREFIX
     // (startsWith), so "Yield by wafer" and a hypothetical "Yield by wafer
     // (grouped)" card were ambiguous to find. A data attribute holding the

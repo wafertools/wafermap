@@ -6,7 +6,7 @@
 //   wafermap/render (initial): ~88 KB  (userGuideHtml deferred — must not appear in initial chunk)
 //   2026-07-10: raised from ~62 KB after capability/boxplot gained per-panel
 //   grouping UI (restrict dropdown, drill-in-place, back button) — legitimate
-//   library growth, not bloat; see wmap/tsmap WMAP_ISSUES.md #31.
+//   library growth, not bloat.
 //   2026-07-12: raised from ~75 KB after the Analysis tab chart suite, plus
 //   the user-guide window and gallery card detach gaining real-window
 //   support (window.open with fallback) and live --wmap-* theme resync —

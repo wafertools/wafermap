@@ -356,7 +356,7 @@ test('renderLotSummaryContent — "View die list" pools every wafer\'s dies with
   assert.deepEqual(waferCol.sort(), ['W1', 'W2', 'W2']);
 });
 
-// ── "Summary report": opens in an in-app modal by default (WMAP_ISSUES.md #37) —
+// ── "Summary report": opens in an in-app modal by default —
 // no setReportOpener/window.open required just to view a report. ─────────────
 
 test('renderWaferSummaryContent — "Summary report" opens an in-app modal with the report as an iframe, not window.open', () => {

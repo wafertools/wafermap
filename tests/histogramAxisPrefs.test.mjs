@@ -5,8 +5,7 @@
 // the data via shouldIncludeLimitsByDefault. So the same test, with the user
 // having expressed no preference, included the spec limits in the axis ungrouped
 // and dropped them grouped — the axis range moved under the reader while the
-// toggle beside it stayed put. See TODO.md "Histogram resolves includeLimits two
-// different ways".
+// toggle beside it stayed put.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

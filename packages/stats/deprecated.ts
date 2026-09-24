@@ -1,4 +1,4 @@
-// Exports deprecated in 0.30.0 and removed in 0.31.0 — TODO.md lists the removal.
+// Exports deprecated in 0.30.0, to be removed in 0.31.0.
 //
 // They live here, re-exported by index.ts, rather than in index.ts itself, so the
 // declaration carrying each `@deprecated` tag is its own module: an editor strikes

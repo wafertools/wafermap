@@ -97,7 +97,7 @@ test('specLimit — only limitLow defined: low end is limitLow, high end is data
 // (an explicit range used to skip the auto-scan entirely and default to false,
 // which made the colorbar AND die labels show decimal "n.0" ticks even when
 // every underlying value — e.g. stacked-bin occurrence counts — is a whole
-// number. See TODO.md.)
+// number.)
 
 test('value mode — explicit array valueRange still derives allIntegerValues=true from integer data', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V' }];

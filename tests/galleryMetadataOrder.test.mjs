@@ -4,8 +4,7 @@
 // a wafer that never exhibited one category shifted every later category up a
 // colour — and disagreed with the shared legend strip beside it, which ranked
 // the union across every card. A comment asked the two to stay in step; nothing
-// made them. See TODO.md "Gallery metadata-mode colours can mismatch the shared
-// legend".
+// made them.
 //
 // Written as .mjs deliberately: `npm test` runs `tests/*.test.mjs` only, so a
 // .ts test (tests/renderWaferGallery.test.ts) is never executed.

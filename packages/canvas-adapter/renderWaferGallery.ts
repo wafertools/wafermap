@@ -1399,7 +1399,7 @@ export function renderWaferGallery(
   /**
    * Lot-wide min/max for the active test's 'data' colour range in plain `value`
    * mode — every card must be compared on one shared scale, not each auto-scaled
-   * to only its own dies (see TODO.md, "Gallery value-mode colour range...").
+   * to only its own dies.
    *
    * Returns undefined when a spec-anchored range applies instead: the active
    * test's limits are identical for every card already, so buildView's own
@@ -1977,10 +1977,8 @@ export function renderWaferGallery(
   // ── Insights tab (opt-in) ────────────────────────────────────────────────────
   // Takes over the full body when active — swaps out the grid/summary panel
   // rather than sitting alongside them, since the chart suite wants the room.
-  // First slice: a single Process capability panel plus a shared "Group by"
-  // control (computed from each item's wafer.metadata — see stats/facets.ts).
-  // More panels land incrementally; see tsmap's WMAP_ISSUES.md for the tracked
-  // migration this is part of.
+  // A shared "Group by" control is computed from each item's wafer.metadata
+  // (see stats/facets.ts).
   //
   // Built only when `insightsEnabled` — mirrors `renderWaferMap.ts`'s own
   // gating, so a gallery with the feature off (the default) doesn't pay for
@@ -2389,8 +2387,8 @@ export function renderWaferGallery(
   // One wrapper has one height, whatever it is.
   //
   // `position: sticky` needs a scrolling ancestor to stick within, which this
-  // component doesn't itself create (WMAP_ISSUES.md — the gallery never sets
-  // overflow on `container`) — it works because tsmap gives `#map-container`
+  // component doesn't itself create (the gallery never sets overflow on
+  // `container`) — it works because tsmap gives `#map-container`
   // `overflow-y: auto` when showing a gallery, and sticky finds that ancestor
   // regardless of which element owns the scrollbar.
   const stickyHeaderEl = container.ownerDocument.createElement('div');

@@ -3,8 +3,7 @@
 // tsmap's charts/histogram.ts.
 //
 // Grouping is a third distinct pattern from capability's restrict-dropdown
-// and boxplot's drill-in-place (verified by reading tsmap's actual source,
-// not assumed — see WMAP_ISSUES.md on why that check matters here):
+// and boxplot's drill-in-place (verified by reading tsmap's actual source):
 // **overlaid multi-series** — every group drawn as a separate coloured
 // series on one shared-bucket chart, with a legend to click-emphasize one
 // series at a time (dimming the rest). The per-item "which wafer" selector

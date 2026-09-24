@@ -12,8 +12,7 @@
 // This is pinned because the wrong version SHIPPED once (whole-load), and
 // because the fix lives in `render()` above the view switch — a refactor that
 // moved it back inside one section would restore the bug silently for the other
-// two. WMAP_ISSUES #50's follow-up recorded Overview and Correlation as still
-// unscoped after the first cut; they are not, and this is what keeps that true.
+// two. Overview and Correlation are scoped too, and this is what keeps that true.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

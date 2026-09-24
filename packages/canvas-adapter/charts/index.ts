@@ -4,8 +4,7 @@
 // canvas-adapter's toolbar primitives (CLR, saveImageBlob, openModal, ICONS)
 // and has no consumer outside canvas-adapter — a sibling package would
 // create a circular package dependency. Not part of the package.json
-// "exports" map yet — see WMAP_ISSUES.md tracked follow-up on whether/how to
-// publish this as its own subpath once more panels land.
+// "exports" map.
 
 export { renderCapabilityPanel } from './capability.js';
 export type { CapabilityPanelOptions, CapabilityPanelHandle } from './capability.js';

@@ -739,8 +739,8 @@ export function cardFrameStyle(): Partial<CSSStyleDeclaration> {
 export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDocument: Document = document): CardShell {
   const card = ownerDocument.createElement('div');
   // Stable test/tooling hooks — this card carries no other id/class, and
-  // its heading is a bare div matched today only by user-visible text (see
-  // tsmap's WMAP_ISSUES.md #36). Follows the existing data-wmap-* convention
+  // its heading is a bare div otherwise matched only by user-visible text.
+  // Follows the existing data-wmap-* convention
   // (data-wmap-toolbar, data-wmap-finding, …) — not for styling.
   card.dataset.wmapChartCard = '1';
   card.dataset.wmapChartTitle = title;

@@ -291,6 +291,6 @@ test(`the deprecated exports are gone before ${REMOVAL} is prepared`, () => {
     const stillExported = ALL.filter(name => removalOf(name) === version && exportedFrom(name).length > 0);
     assert.ok(reached.length === 0 || stillExported.length === 0,
       `${reached[0]} is being released, but ${stillExported.length} exports deprecated for removal in ${version} ` +
-      `are still exported (${stillExported.slice(0, 4).join(', ')}…). Remove them — TODO.md lists the steps.`);
+      `are still exported (${stillExported.slice(0, 4).join(', ')}…). Remove them before releasing.`);
   }
 });

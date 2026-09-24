@@ -53,9 +53,8 @@ drifting:
 **Colour** — every chrome colour is a themeable `--wmap-*` custom property via
 the `CLR` token map (`toolbar.ts`). Canonical list: `WMAP_TOKEN_NAMES`. Never
 hardcode a colour that has a `CLR.*` equivalent — it breaks host theming and
-dark mode. Known gap: canvas-drawn content (axis text, grid lines, halos)
-draws hardcoded colours because a stylesheet can't reach into a `<canvas>` —
-tracked separately (tsmap `WMAP_ISSUES` #25), not solved by this doc.
+dark mode. Canvas-drawn content (axis text, grid lines, halos) can't read a
+stylesheet, so it resolves the same tokens at draw time (`canvasTheme.ts`).
 
 **Type scale** — de facto sizes in use: `10px`/`11px`/`12px`/`13px` for chrome
 text (menus, labels, controls), `14px`–`20px` for headings/emphasis. Pick from
@@ -179,7 +178,7 @@ still opens, just on bare `doc.body`, landing **behind** a host's own native
 `<dialog>` (`.showModal()`, browser top layer) regardless of z-index, no
 matter how high `--wmap-z`/`Z_ABOVE2` is set. This is a *different* failure
 from the `--wmap-z` stacking-value problem solved by the `zIndex` render
-option (see `docs/api.md` §5.4, and tsmap's `WMAP_ISSUES.md` #5/#22/#23) —
+option (see `docs/api.md` §5.4) —
 that mechanism controls the stacking *value* once an overlay is a body-level
 sibling; `anchor` controls whether it lands inside the right subtree at all,
 which no `--wmap-z` value can fix. The die-list modal shipped in v0.24.0

@@ -1,4 +1,4 @@
-// End-to-end for WMAP_ISSUES #51: a boxplot leaf click in a SINGLE-wafer
+// End-to-end: a boxplot leaf click in a SINGLE-wafer
 // `renderWaferMap` has to reach the map itself — switch it to value mode on the
 // clicked test and leave Insights. `insightsReview.test.mjs` pins the tab's own
 // half (which host gets `focusTest`); this pins that the host actually wires it
@@ -128,4 +128,4 @@ test('the click follows the boxplot to a second test, not just the first', async
 // NOT tested here: the scroll-position restore across a close/reopen. JSDOM has
 // no layout, so `scrollTop` is whatever was last assigned and never resets —
 // a test would pass with the restore deleted (checked). Verified in the browser
-// instead; see wmap's CHANGELOG entry and tsmap's WMAP_ISSUES.md #51.
+// instead.
