@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildScatterData, buildScatterDataGrouped } from '../dist/packages/stats/scatter.js';
+import { binCategoryOf, binCategories, NO_BIN_CATEGORY } from '../dist/packages/canvas-adapter/charts/scatter.js';
+
+test('scatter legend — a real hard bin 0 is its own category, not "No bin data"', () => {
+  assert.equal(binCategoryOf(0), '0');
+  assert.equal(binCategoryOf(undefined), NO_BIN_CATEGORY);
+  assert.notEqual(binCategoryOf(0), binCategoryOf(undefined));
+});
+
+test('scatter legend — bins ascending, missing bin last, bin 0 kept', () => {
+  const cats = binCategories([{ hbin: 3 }, { hbin: undefined }, { hbin: 0 }, { hbin: 1 }, { hbin: 3 }]);
+  assert.deepEqual(cats, ['0', '1', '3', NO_BIN_CATEGORY]);
+});
 
 function die(x, y, hbin) { return { x: 0, y: 0, hbin, testValues: { 1: x, 2: y } }; }
 

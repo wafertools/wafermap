@@ -31,6 +31,26 @@ const SCATTER_BOTTOM = 44;
 
 type ScatterPanelItem = FacetItem & ScatterItem & { label?: string };
 
+// Not a number, so it can never collide with a real bin — bin 0 is legal.
+export const NO_BIN_CATEGORY = 'none';
+
+export function binCategoryOf(hbin: number | undefined): string {
+  return hbin === undefined ? NO_BIN_CATEGORY : String(hbin);
+}
+
+/** Legend order: bins ascending, then "No bin data" last. */
+export function binCategories(points: readonly Pick<ScatterPoint, 'hbin'>[]): string[] {
+  const bins = new Set<number>();
+  let noBin = false;
+  for (const p of points) {
+    if (p.hbin === undefined) noBin = true;
+    else bins.add(p.hbin);
+  }
+  const cats = Array.from(bins).sort((a, b) => a - b).map(String);
+  if (noBin) cats.push(NO_BIN_CATEGORY);
+  return cats;
+}
+
 export interface ScatterPanelOptions {
   title?: string;
   items: ScatterPanelItem[];
@@ -150,18 +170,15 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       : `${base} · r = ${r.toFixed(3)} · n = ${n.toLocaleString()}`;
   }
 
-  // Category '0' is "no hard-bin result" — a die without one is categorized
-  // there rather than coerced into a real bin, matching the wafer map's own
-  // "missing bin ≠ bin 0/any bin" rule, and drawn in the no-data fill.
-  const categoryOf = (p: ScatterPoint): string => byGroup ? (p.group ?? '—') : String(p.hbin ?? 0);
+  const categoryOf = (p: ScatterPoint): string => byGroup ? (p.group ?? '—') : binCategoryOf(p.hbin);
   const colorOfCategory = (cat: string): string => {
     // Bin identity keeps the map's resolved colours so a bin is the same
     // colour here as on the wafer map. Facet groups have no map identity, so
     // they use the fixed CVD-safe categorical palette instead (palette.ts).
     if (byGroup) return categorical(groupColorIndex.get(cat) ?? 0);
-    return cat === '0' ? NO_DATA_FILL : binColors?.get(Number(cat)) ?? NO_DATA_FILL;
+    return cat === NO_BIN_CATEGORY ? NO_DATA_FILL : binColors?.get(Number(cat)) ?? NO_DATA_FILL;
   };
-  const labelOfCategory = (cat: string): string => byGroup ? cat : cat === '0' ? 'No bin data' : `Bin ${cat}`;
+  const labelOfCategory = (cat: string): string => byGroup ? cat : cat === NO_BIN_CATEGORY ? 'No bin data' : `Bin ${cat}`;
   const activeCats = new Set<string>();
 
   const legend = card.ownerDocument.createElement('div');
@@ -370,7 +387,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       const present = new Set(points.map(categoryOf));
       cats = groupKeys.filter(g => present.has(g));
     } else {
-      cats = Array.from(new Set(points.map(p => p.hbin ?? 0))).sort((a, b) => a - b).map(String);
+      cats = binCategories(points);
     }
     rebuildLegend(cats);
     syncHint();

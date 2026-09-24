@@ -22,6 +22,13 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Scatter chart legend:** hard bin 0 has its own entry and colour, and dies without a bin
+  are listed last as "No bin data".
+
 ## [0.30.3] — 2026-09-23
 
 ### Added
