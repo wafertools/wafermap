@@ -1,6 +1,6 @@
 // Process capability panel — one normalized boxplot per parametric test with
-// recorded values. Tests with both a lower and upper spec limit normalize
-// LSL→0/USL→1 and get full Cp/Cpk/Pp/Ppk, sorted worst-Ppk-first; tests
+// recorded values. Tests with both a lower and upper limit (spec limits, or
+// test limits when there are none) normalize low→0/high→1 and get full Cp/Cpk/Pp/Ppk, sorted worst-Ppk-first; tests
 // without full limits still render (muted, dashed) normalized onto their own
 // observed range, sorted after the spec'd tests by most-variable-first —
 // see `buildCapabilityData` in stats/capability.ts for the two-tier sort.
@@ -21,6 +21,30 @@ import { fmt } from '../../renderer/fmt.js';
 import { escHtml } from '../../core/utils.js';
 import { DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
 
+/**
+ * Names for the limits a capability column is normalised to. Capability uses
+ * a test's spec limits when it has them and its test limits otherwise
+ * (`CapabilityDatum.limitBasis`), and the two are different numbers — so every
+ * label says which, in the STDF terms an engineer reads on their datalog.
+ */
+function limitNames(basis: 'spec' | 'test' | undefined): { lo: string; hi: string; noun: string } {
+  return basis === 'spec'
+    ? { lo: 'LSL', hi: 'USL', noun: 'spec limits' }
+    : { lo: 'Lo limit', hi: 'Hi limit', noun: 'test limits' };
+}
+
+/** The shared basis of every limited row, or `'mixed'` when they differ. */
+function sharedBasis(rows: readonly CapabilityDatum[]): 'spec' | 'test' | 'mixed' | undefined {
+  let basis: 'spec' | 'test' | undefined;
+  for (const d of rows) {
+    if (!d.hasSpec) continue;
+    const b = d.limitBasis ?? 'test';
+    if (basis === undefined) basis = b;
+    else if (basis !== b) return 'mixed';
+  }
+  return basis;
+}
+
 const CAP_MIN_COL = 30;
 // The Analysis tab always gives this panel the full container width (unlike
 // tsmap's original version of this panel, which usually lived in a small
@@ -35,7 +59,8 @@ const CAP_LABEL_H = 90;
 // to communicate, previously available only by hovering.
 const CAP_TOP_MARGIN = 28;
 // Left gutter for the normalized axis. The y scale is a normalization, not a
-// measurement, so the axis names its two meaningful levels (LSL at 0, USL at 1)
+// measurement, so the axis names its two meaningful levels (the low limit at 0,
+// the high limit at 1)
 // rather than printing numbers that would be unitless and, for the unspec'd
 // columns, meaningless.
 const CAP_AXIS_W = 42;
@@ -112,13 +137,13 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
   let draw: () => void = () => {};
 
-  function renderCaption(shownCount: number, unspecCount: number, totalTests: number, derivedCount: number): void {
+  function renderCaption(shownCount: number, unspecCount: number, totalTests: number, derivedCount: number, basis: 'spec' | 'test' | 'mixed' | undefined): void {
     hintRow.innerHTML = '';
     const line = card.ownerDocument.createElement('span');
     Object.assign(line.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm, color: CLR.value, fontSize: FONT.body, fontWeight: '500' } as Partial<CSSStyleDeclaration>);
 
     const excluded = totalTests - shownCount;
-    const unspecNote = unspecCount > 0 ? ` · ${unspecCount} without spec limits` : '';
+    const unspecNote = unspecCount > 0 ? ` · ${unspecCount} without both limits` : '';
     const summary = card.ownerDocument.createElement('span');
     summary.textContent = excluded > 0
       ? `${shownCount} of ${totalTests} tests shown${unspecNote} · ${excluded} excluded (no recorded values)`
@@ -142,9 +167,12 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     const allUnspec = unspecCount >= shownCount;
     const method = card.ownerDocument.createElement('div');
     method.textContent = allUnspec
-      ? 'No test has both spec limits, so each is normalised to its own observed range '
+      ? 'No test has both limits, so each is normalised to its own observed range '
         + '(min = 0, max = 1) and sorted most-variable first. Ppk needs limits, so none is shown.'
-      : 'Normalised to spec limits (LSL = 0, USL = 1), worst Ppk first. '
+      : (basis === 'mixed'
+          ? 'Normalised to each test\'s spec limits (LSL = 0, USL = 1), or its test limits '
+            + '(Lo limit = 0, Hi limit = 1) where it has no spec limits, worst Ppk first. '
+          : `Normalised to ${limitNames(basis).noun} (${limitNames(basis).lo} = 0, ${limitNames(basis).hi} = 1), worst Ppk first. `)
         + 'Tests without both limits are normalised to their own observed range and drawn muted/dashed.';
     Object.assign(method.style, {
       color: CLR.label, fontSize: FONT.body, lineHeight: LEADING.base, marginTop: SPACE.xs, maxWidth: '78ch',
@@ -174,7 +202,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       { color: capabilityColor(1.1),  label: 'Marginal · Ppk ≥ 1.0' },
       { color: capabilityColor(0.5),  label: 'Poor · Ppk < 1.0' },
     ];
-    if (includeUnspec) entries.push({ color: CLR.label, label: 'No spec limits · no Ppk', dashed: true });
+    if (includeUnspec) entries.push({ color: CLR.label, label: 'No limits · no Ppk', dashed: true });
 
     for (const e of entries) {
       const item = doc.createElement('span');
@@ -267,9 +295,13 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       const specd   = rows.filter(d => d.hasSpec).length;
       const allSpecd = specd === rows.length;
       const noneSpecd = specd === 0;
-      const hiLabel = noneSpecd ? 'max' : 'USL';
-      const loLabel = noneSpecd ? 'min' : 'LSL';
-      const axisTitle = allSpecd ? 'normalised to spec'
+      const basis = sharedBasis(rows);
+      const names = basis === 'mixed' ? { lo: 'Lo', hi: 'Hi', noun: 'limits' } : limitNames(basis);
+      // The gutter holds three or four characters beside the rotated title, so
+      // the test-limit ticks read "Lo"/"Hi" — the title names which limits.
+      const hiLabel = noneSpecd ? 'max' : basis === 'spec' ? names.hi : 'Hi';
+      const loLabel = noneSpecd ? 'min' : basis === 'spec' ? names.lo : 'Lo';
+      const axisTitle = allSpecd ? `normalised to ${names.noun}`
         : noneSpecd ? 'normalised to range'
         : 'normalised (per test)';
 
@@ -474,11 +506,11 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         : '';
       tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (n=${d.n})<br>${derivedNote}`
         + (d.hasSpec
-          ? `LSL ${fv(d.lsl!)} · USL ${fv(d.usl!)}<br>`
+          ? `${limitNames(d.limitBasis).lo} ${fv(d.lsl!)} · ${limitNames(d.limitBasis).hi} ${fv(d.usl!)}<br>`
             + `mean ${fv(d.mean)}<br>`
             + `Cp ${fmtIndex(d.cp)} · Cpk ${fmtIndex(d.cpk)}<br>`
             + `Pp ${fmtIndex(d.pp)} · Ppk ${fmtIndex(d.ppk)}`
-          : `<em>No spec limits — sorted by variability</em><br>`
+          : `<em>No limits — sorted by variability</em><br>`
             + `mean ${fv(d.mean)} · stddev ${fv(d.stdOverall)}`)
         + (onSelectTest ? '<br><em>click to view in boxplot</em>' : '');
       tooltip.style.display = 'block';
@@ -500,7 +532,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     const data = buildCapabilityData(currentItems(), testDefs);
     const totalTestable = testDefs.filter(d => d.testNumber !== undefined).length;
     const unspecCount = data.filter(d => !d.hasSpec).length;
-    renderCaption(data.length, unspecCount, totalTestable, data.filter(d => d.derived).length);
+    renderCaption(data.length, unspecCount, totalTestable, data.filter(d => d.derived).length, sharedBasis(data));
     draw = buildView(data);
     draw();
   }

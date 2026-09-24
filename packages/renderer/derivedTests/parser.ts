@@ -457,7 +457,7 @@ class Parser {
     if (kind === 'specPass') {
       if (!isParametricTest(def)) {
         throw new ParseError(
-          `specPass[${test}] at position ${pos} needs spec limits, but test ${test} is functional (testType 'F') — use testPass[${test}] for its recorded verdict`,
+          `specPass[${test}] at position ${pos} needs test limits, but test ${test} is functional (testType 'F') — use testPass[${test}] for its recorded verdict`,
           pos);
       }
       if (!hasSpecLimits(def)) {

@@ -50,7 +50,7 @@ export interface Die {
   /** STDF site_num — which parallel test site tested this die. Only meaningful when > 1 distinct value appears per wafer. */
   siteNum?: number;
   /** STDF pir.part_id — tester-assigned identifier for this tested unit. Encodes probe sequence at most fabs. */
-  partId?: number;
+  partId?: number | string;
 }
 
 export interface DieEligibilityOptions {

@@ -55,9 +55,9 @@ test('limits are included by default only when they leave the data room', () => 
 
 test('an off-axis limit is reported so it can be marked, not silently dropped', () => {
   const r = resolveAxisRange({ dataMin: 9, dataMax: 11, limitLow: 0, limitHigh: 100, includeLimits: false });
-  assert.deepEqual(r.offAxis.map(o => o.label).sort(), ['LSL', 'USL']);
-  assert.equal(r.offAxis.find(o => o.label === 'LSL').side, 'lo');
-  assert.equal(r.offAxis.find(o => o.label === 'USL').side, 'hi');
+  assert.deepEqual(r.offAxis.map(o => o.label).sort(), ['Hi limit', 'Lo limit']);
+  assert.equal(r.offAxis.find(o => o.label === 'Lo limit').side, 'lo');
+  assert.equal(r.offAxis.find(o => o.label === 'Hi limit').side, 'hi');
   // "limits exist but are off-screen" must be distinguishable from "no limits".
   const none = resolveAxisRange({ dataMin: 9, dataMax: 11, includeLimits: false });
   assert.deepEqual(none.offAxis, []);

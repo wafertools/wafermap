@@ -148,6 +148,8 @@ export const SHORT_LABEL: Record<string, string> = {
   'ring-count-mixed':              'Ring counts differ by wafer',
   'input-field-removed':           'Removed input name ignored',
   'input-values-not-numbers':      'Bins or test values are text',
+  'input-values-outside-stdf':     'Values outside STDF ranges',
+  'retests-by-part-id':            'Retests matched by part ID',
   'derived-test-invalid':          'Derived test not applied',
 };
 

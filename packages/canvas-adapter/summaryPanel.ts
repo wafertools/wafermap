@@ -30,6 +30,7 @@ import { commonMetadata } from '../stats/facets.js';
 import { resolveMetadataColumns, type MetadataColumn } from '../stats/metadataColumns.js';
 import { resolveBinColors, resolveBinColorsByWafer, type BinColors } from '../renderer/binColors.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
+import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 import { describeWaferPopulation, populationLabel } from '../stats/population.js';
 import { buildWarningsBanner, collectWarnings, type WaferWarning } from './warnings.js';
 export { buildWarningsBanner };
@@ -1333,7 +1334,7 @@ export function* buildTestSectionSteps(
 
   // Build a unified list of { testNumber, name, unit } from testDefs when present,
   // or from the testNumber keys found in die.testValues when absent.
-  type TestEntry = { testNumber: number; name: string; unit?: string; limitLow?: number; limitHigh?: number; derived?: true; expression?: string };
+  type TestEntry = { testNumber: number; name: string; unit?: string; limitLow?: number; limitHigh?: number; limitLowInclusive?: boolean; limitHighInclusive?: boolean; derived?: true; expression?: string };
   let entries: TestEntry[];
 
   if (testDefs?.length) {
@@ -1347,6 +1348,7 @@ export function* buildTestSectionSteps(
       .map(def => ({
         testNumber: def.testNumber, name: def.name, unit: def.unit,
         limitLow: def.limitLow, limitHigh: def.limitHigh,
+        limitLowInclusive: def.limitLowInclusive, limitHighInclusive: def.limitHighInclusive,
         ...derivedFields(def),
       }));
   } else {
@@ -1444,8 +1446,7 @@ export function* buildTestSectionSteps(
         const vals = scanValues();
         let specFail = 0;
         for (const v of vals) {
-          if ((entry.limitLow !== undefined && v < entry.limitLow)
-            || (entry.limitHigh !== undefined && v > entry.limitHigh)) specFail++;
+          if (isOutOfSpec(classifySpec(v, entry))) specFail++;
         }
         specN = vals.length;
         specYieldPct = vals.length > 0 ? ((vals.length - specFail) / vals.length) * 100 : null;
@@ -1528,8 +1529,8 @@ export function* buildTestSectionSteps(
     // toward the spec population, so the column is kept whenever that happens.
     const specNDiffers = rows.some(r => r.specYieldPct !== null && r.specN !== r.stats.count);
     if (hasAnyLimit) {
-      cols.push('LSL', 'USL', 'Spec Yield %');
-      if (specNDiffers) cols.push('Spec Yield N');
+      cols.push('Lo limit', 'Hi limit', 'Limit Yield %');
+      if (specNDiffers) cols.push('Limit Yield N');
     }
     // Derived tests are stated as data, not a glyph: a CSV has no key, and it
     // goes to tools that will otherwise treat the value as measured. Only when
@@ -1588,8 +1589,8 @@ export function* buildTestSectionSteps(
   headers.push('Mean');
   if (columns === 'full') headers.push('Q3', 'Max', 'StdDev');
   if (hasPpk) headers.push('Ppk');
-  if (columns === 'full' && hasAnyLimit) headers.push('LSL', 'USL');
-  if (hasAnyLimit) headers.push('Spec yield');
+  if (columns === 'full' && hasAnyLimit) headers.push('Lo limit', 'Hi limit');
+  if (hasAnyLimit) headers.push('Limit yield');
   for (const h of headers) {
     const th = el('th', {
       textAlign:    h === 'Test' ? 'left' : 'right',

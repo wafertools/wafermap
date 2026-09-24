@@ -52,3 +52,42 @@ test('lot-stack inputs are checked too', () => {
   ] } }));
   assert.ok(codeOf(r).includes('input-values-not-numbers'));
 });
+
+// ── STDF V4 ranges: reported, values used as given (for now) ────────────────
+
+test('values outside the STDF V4 ranges are reported, and used as given', () => {
+  const r = quiet(() => buildWaferMap({
+    results: [
+      { x: 0, y: 0, hbin: 40000, sbin: -1, siteNum: 300, testValues: { 10: Infinity } },
+      { x: 1.5, y: 0, hbin: 2.5, testValues: { 10: 1 } },
+      { x: 0, y: 1, hbin: 1, testValues: { '-5': 1 } },
+    ],
+    waferConfig: { orientation: 45 },
+  }));
+  const w = r.warnings.find(w => w.code === 'input-values-outside-stdf');
+  assert.ok(w, JSON.stringify(codeOf(r)));
+  assert.equal(w.severity, 'warning');
+  assert.match(w.message, /3 bins \(legal: whole numbers 0–32767\)/);
+  assert.match(w.message, /1 coordinate /);
+  assert.match(w.message, /1 test number /);
+  assert.match(w.message, /1 test value that is not finite/);
+  assert.match(w.message, /1 site number/);
+  assert.match(w.message, /orientation other than 0, 90, 180 or 270/);
+  assert.equal(r.dies.find(d => d.x === 0 && d.y === 0).hbin, 40000, 'used as given');
+});
+
+test('a NaN bin is no bin: not a fail, and reported', () => {
+  const r = quiet(() => buildWaferMap({ results: [
+    { x: 0, y: 0, hbin: NaN }, { x: 1, y: 0, hbin: 1 },
+  ] }));
+  assert.equal(r.dies.find(d => d.x === 0).hbin, undefined);
+  assert.equal(r.yield.failDies, 0, 'a missing bin is not a fail');
+  assert.match(r.warnings.find(w => w.code === 'input-values-outside-stdf').message, /1 bin was NaN/);
+});
+
+test('in-range input raises no STDF range warning', () => {
+  const r = buildWaferMap({ results: [
+    { x: -32767, y: 32767, hbin: 0, sbin: 32767, siteNum: 255, testValues: { 4294967295: 0 } },
+  ], waferConfig: { orientation: -90 } });
+  assert.ok(!codeOf(r).includes('input-values-outside-stdf'), JSON.stringify(r.warnings));
+});

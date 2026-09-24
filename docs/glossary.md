@@ -52,11 +52,15 @@ A continuous numeric measurement recorded for one die on one parametric test —
 
 ### TestDef
 
-Metadata describing one parametric test: a stable integer ID (`testNumber`), a human-readable name, an SI unit string, and optional spec limits. `TestDef` entries drive tooltip labels, the plot-mode dropdown, and spec-limit colouring in the rendered map. *Library mapping: `TestDef`, `WaferMapInput.testDefs`.*
+Metadata describing one parametric test: a stable integer ID (`testNumber`), a human-readable name, an SI unit string, and optional test and spec limits. `TestDef` entries drive tooltip labels, the plot-mode dropdown, and limit colouring in the rendered map. *Library mapping: `TestDef`, `WaferMapInput.testDefs`.*
+
+### Test limit
+
+The range a parametric test value must fall in to pass (`limitLow`, `limitHigh` — STDF's LO_LIMIT and HI_LIMIT, labelled Lo limit and Hi limit on charts). A value exactly on a limit passes unless the test says otherwise (`limitLowInclusive`/`limitHighInclusive: false`, which STDF and ATDF files state per test). In `value` plot mode a die outside the test limits keeps its colour on the value gradient and is marked with a triangle: ▽ below `limitLow`, △ above `limitHigh`. Switch to solid pass/fail colours — green pass, blue below, red above — with `passFailDisplay: 'spec'` in `WaferViewOptions`, or "Limit pass/fail" in the toolbar. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.passFailDisplay`.*
 
 ### Spec limit
 
-The acceptable range for a parametric test value (`limitLow`, `limitHigh`). In `value` plot mode an out-of-spec die keeps its colour on the value gradient and is marked with a triangle: ▽ below `limitLow`, △ above `limitHigh`. Switch to solid pass/fail colours — green pass, blue below, red above — with `passFailDisplay: 'spec'` in `WaferViewOptions`, or "Spec pass/fail" in the toolbar. *Library mapping: `TestDef.limitLow`, `TestDef.limitHigh`, `WaferViewOptions.passFailDisplay`.*
+The product specification for a parametric test (`specLow`, `specHigh` — STDF's LO_SPEC and HI_SPEC, labelled LSL and USL). Test limits are often set inside the spec limits as a guard band. Process capability (Cp/Cpk/Pp/Ppk) is measured against the spec limits when a test has both, and against its test limits otherwise; the chart and report say which. *Library mapping: `TestDef.specLow`, `TestDef.specHigh`, `TestCapability.limitBasis`.*
 
 ### Functional test
 

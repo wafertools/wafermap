@@ -301,3 +301,24 @@ test('a measured test gains no derived fields from the merge', () => {
   assert.equal('derived' in defs[0], false);
   assert.equal('expression' in defs[0], false);
 });
+
+test('the same limit judged inclusive on one wafer and exclusive on another is a limits conflict', () => {
+  const { defs, conflicts } = mergeTestDefs([
+    item({ testNumber: 1, name: 'Vt', limitLow: 1, limitHigh: 2 }),
+    item({ testNumber: 1, name: 'Vt', limitLow: 1, limitHigh: 2, limitLowInclusive: false }),
+  ]);
+  assert.equal(conflicts.length, 1);
+  assert.equal(conflicts[0].kind, 'limits');
+  assert.deepEqual(conflicts[0].values, ['≥ 1', '> 1']);
+  assert.equal(defs[0].limitLow, undefined);
+});
+
+test('an agreed exclusive limit survives the merge', () => {
+  const { defs, conflicts } = mergeTestDefs([
+    item({ testNumber: 1, name: 'Vt', limitLow: 1, limitHigh: 2, limitHighInclusive: false }),
+    item({ testNumber: 1, name: 'Vt', limitLow: 1, limitHigh: 2, limitHighInclusive: false }),
+  ]);
+  assert.deepEqual(conflicts, []);
+  assert.equal(defs[0].limitHighInclusive, false);
+  assert.equal(defs[0].limitLowInclusive, undefined);
+});

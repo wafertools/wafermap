@@ -13,7 +13,7 @@
 // data is better served by plotting a derived scalar on the wafer map, where
 // position is visible.
 
-import { buildSweepData, type SweepData, type SweepSpec, type SweepPoint } from '../../stats/sweep.js';
+import { buildSweepData, sweepAppliesTo, type SweepData, type SweepSpec, type SweepPoint } from '../../stats/sweep.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { fmt } from '../../renderer/fmt.js';
@@ -136,7 +136,13 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
     const plotted = data.series.filter(s => s.points.some(p => p.count > 0));
     if (plotted.length === 0) {
       hint.textContent = '';
-      renderEmptyState(body, 'No values recorded for the tests in this sweep.');
+      // Two different situations: tests that exist but hold no values here,
+      // and a sweep naming no test of this data at all — typically one kept
+      // from another test program. The second says so, rather than reading as
+      // an empty measurement.
+      renderEmptyState(body, sweepAppliesTo(spec, testDefs)
+        ? 'No values recorded for the tests in this sweep.'
+        : 'None of this sweep’s tests are in this data — it may belong to another test program.');
       writeFooter();
       return;
     }

@@ -22,6 +22,10 @@
  * `null` means no verdict and must be treated as no-data by every caller, never
  * as a pass and never as a fail.
  *
+ * A value exactly equal to a limit passes unless the test says otherwise
+ * (`limitLowInclusive`/`limitHighInclusive: false`, which STDF's `PARM_FLG` bits
+ * 6/7 and ATDF's Limit Compare letters state per test).
+ *
  * Out-of-spec *classification* depends ONLY on whether limits are defined — never on
  * `colorbarRangeMode`. An out-of-spec die is always flagged when limits exist, regardless
  * of how the colorbar is scaled. The *form* of the indication, decided in
@@ -37,6 +41,10 @@ export type SpecCategory = 'pass' | 'failHigh' | 'failLow';
 export interface SpecLimits {
   limitLow?: number;
   limitHigh?: number;
+  /** A value equal to `limitLow` passes. Default `true`; STDF `PARM_FLG` bit 6. */
+  limitLowInclusive?: boolean;
+  /** A value equal to `limitHigh` passes. Default `true`; STDF `PARM_FLG` bit 7. */
+  limitHighInclusive?: boolean;
 }
 
 /**
@@ -50,9 +58,43 @@ export function classifySpec(
   if (value === undefined || !Number.isFinite(value)) return null;
   if (limits === undefined) return null;
   if (limits.limitLow === undefined && limits.limitHigh === undefined) return null;
-  if (limits.limitLow !== undefined && value < limits.limitLow) return 'failLow';
-  if (limits.limitHigh !== undefined && value > limits.limitHigh) return 'failHigh';
+  if (limits.limitLow !== undefined
+    && (limits.limitLowInclusive === false ? value <= limits.limitLow : value < limits.limitLow)) return 'failLow';
+  if (limits.limitHigh !== undefined
+    && (limits.limitHighInclusive === false ? value >= limits.limitHigh : value > limits.limitHigh)) return 'failHigh';
   return 'pass';
+}
+
+/** True for a verdict that is outside the limits. */
+export function isOutOfSpec(category: SpecCategory | null): boolean {
+  return category === 'failLow' || category === 'failHigh';
+}
+
+/**
+ * How many values in an ascending, finite array `classifySpec` would judge out of
+ * spec — the same rule, counted by binary search instead of one call per value,
+ * for callers that already hold the values sorted. `tests/specLimits.test.mjs`
+ * holds the two in agreement.
+ */
+export function countOutOfSpecSorted(sorted: ArrayLike<number>, limits: SpecLimits): number {
+  let below = 0, above = 0;
+  if (limits.limitLow !== undefined) {
+    const low = limits.limitLow;
+    const failsLow = limits.limitLowInclusive === false ? (v: number) => v <= low : (v: number) => v < low;
+    let lo = 0, hi = sorted.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (failsLow(sorted[mid])) lo = mid + 1; else hi = mid; }
+    below = lo;
+  }
+  if (limits.limitHigh !== undefined) {
+    const high = limits.limitHigh;
+    const passesHigh = limits.limitHighInclusive === false ? (v: number) => v < high : (v: number) => v <= high;
+    let lo = 0, hi = sorted.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (passesHigh(sorted[mid])) lo = mid + 1; else hi = mid; }
+    // Not below `below`: with both limits exclusive and equal, a value on them
+    // fails low AND high, and it is one out-of-spec value, not two.
+    above = sorted.length - Math.max(lo, below);
+  }
+  return below + above;
 }
 
 /** True when `limits` can produce a verdict at all — i.e. at least one limit is

@@ -1662,7 +1662,7 @@ export function renderWaferGallery(
 
   // Colorbar range (spec limits ↔ data extents) — value mode only, when the active test has limits
   // and we are not colouring by spec pass/fail (where the bar is irrelevant). Mirrors single-map.
-  const btnColorbarRange = makeBtn('specRange', 'Colorbar range: spec limits', () => {
+  const btnColorbarRange = makeBtn('specRange', 'Colorbar range: test limits', () => {
     const next = sharedOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
     updateShared({ colorbarRangeMode: next });
   });
@@ -1674,8 +1674,8 @@ export function renderWaferGallery(
     const isSpec = (sharedOpts.colorbarRangeMode ?? 'spec') === 'spec';
     setActive(btnColorbarRange, isSpec);
     btnColorbarRange.ariaLabel = isSpec
-      ? 'Colorbar range: spec limits (click for data range)'
-      : 'Colorbar range: data range (click for spec limits)';
+      ? 'Colorbar range: test limits (click for data range)'
+      : 'Colorbar range: data range (click for test limits)';
   }
   syncColorbarRangeBtn();
 
@@ -2001,6 +2001,7 @@ export function renderWaferGallery(
       getRingCount: lotRingCount,
       defaultView: options.insights?.defaultView,
       sweeps: options.insights?.sweeps,
+      onRemoveSweeps: options.insights?.onRemoveSweeps,
       // No back tab. The bar now stays visible in Insights and carries the
       // toggle, and unlike renderWaferMap's toolbar this one is unconditional —
       // there is no option to suppress it, and `btnInsights` exists whenever

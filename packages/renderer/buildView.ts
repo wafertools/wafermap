@@ -767,7 +767,7 @@ export function buildHoverText(
       // Note out-of-spec status for the active test (complements the ▽/△ die markers).
       if (lead.key === testNumber && activeDef) {
         const spec = classifySpec(activeVal, activeDef);
-        if (spec === 'failLow' || spec === 'failHigh') leadLine += ' <i>(out of spec)</i>';
+        if (spec === 'failLow' || spec === 'failHigh') leadLine += ' <i>(outside test limits)</i>';
       }
       lines.push(leadLine);
       // The glyph in the lead label is only half the marker: the tooltip has
@@ -926,7 +926,7 @@ export function buildMapTitle(
         const num = def?.testNumber ?? view.activeTest;
         const primary = named ? `${named} · #${num}` : testLabel(undefined, num);
         const secondary = view.passFailDisplay === 'spec'
-          ? 'Spec pass/fail'
+          ? 'Limit pass/fail'
           : (def !== undefined && !isParametricTest(def))
             ? 'Functional pass/fail'
             : 'Tester pass/fail';

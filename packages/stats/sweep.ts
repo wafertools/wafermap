@@ -234,6 +234,21 @@ function resolveSeries(s: SweepSeriesSpec, defs: Map<number, TestDef>, warnings:
   return { spec: s, tests, usedRange };
 }
 
+/**
+ * Whether `spec` names at least one parametric test in `testDefs` — i.e.
+ * whether it can draw anything for data with these tests. False means none of
+ * its tests exist here: typically a sweep from another test program, still
+ * defined after a different lot was loaded. Internal: the Sweeps tab and the
+ * sweep card say so themselves.
+ */
+export function sweepAppliesTo(spec: SweepSpec, testDefs: readonly TestDef[] | undefined): boolean {
+  const defs = new Map((testDefs ?? []).map(d => [d.testNumber, d]));
+  return spec.series.some(s => resolveSeries(s, defs, []).tests.some(tn => {
+    const def = defs.get(tn);
+    return def !== undefined && isParametricTest(def);
+  }));
+}
+
 /** At most `max` numbers, then a count — a mismatch message must name what a
  *  range matched without becoming a wall of numbers. */
 function listTests(tests: number[], max = 16): string {

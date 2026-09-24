@@ -865,8 +865,8 @@ export function drawMapCanvas(
       const isSpecMode = view.colorbarRangeMode === 'spec';
 
       for (const [value, label] of [
-        [testDef.limitLow,  'LSL'] as const,
-        [testDef.limitHigh, 'USL'] as const,
+        [testDef.limitLow,  'Lo limit'] as const,
+        [testDef.limitHigh, 'Hi limit'] as const,
       ]) {
         if (value === undefined) continue;
         if (view.logScale && value <= 0) continue;
@@ -908,7 +908,7 @@ export function drawMapCanvas(
           // marker shape to its limit (▽ below LSL, △ above USL). Shown in both
           // colorbar ranges, since the ▽/△ die markers now appear in both.
           // Screen space here: y increases downward, so apex-up needs dir=-1.
-          const dir = label === 'USL' ? -1 : 1; // up for USL (fail-high), down for LSL
+          const dir = label === 'Hi limit' ? -1 : 1; // up for the high limit (fail-high), down for the low limit
           const keyTri = 4;
           const kx = cbX - 3 - ctx.measureText(label).width - keyTri - 4;
           ctx.beginPath();

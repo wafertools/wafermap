@@ -337,7 +337,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.textBaseline = 'top';
 
-      for (const [lim, label] of [[xMeta.limitLow, 'LSL'], [xMeta.limitHigh, 'USL']] as const) {
+      for (const [lim, label] of [[xMeta.limitLow, 'Lo limit'], [xMeta.limitHigh, 'Hi limit']] as const) {
         if (lim === undefined || lim < xLo || lim > xHi) continue;
         const cx = SCATTER_LEFT + ((lim - xLo) / xSpan) * plotW;
         ctx.beginPath();
@@ -348,7 +348,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
         ctx.fillText(label, cx + 2, SCATTER_TOP + 2);
       }
 
-      for (const [lim, label] of [[yMeta.limitLow, 'LSL'], [yMeta.limitHigh, 'USL']] as const) {
+      for (const [lim, label] of [[yMeta.limitLow, 'Lo limit'], [yMeta.limitHigh, 'Hi limit']] as const) {
         if (lim === undefined || lim < yLo || lim > yHi) continue;
         const cy = SCATTER_TOP + (1 - (lim - yLo) / ySpan) * plotH;
         ctx.beginPath();

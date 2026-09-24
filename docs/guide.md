@@ -512,32 +512,32 @@ With `testDefs` in place:
 
 Add `limitLow` and/or `limitHigh` to a `TestDef` to specify the engineering specification window. Both are optional independently — one-sided limits are valid. Once limits are defined, two things happen automatically across all plot modes:
 
-**In `value` mode** — spec limits affect both the colorbar and the die colours:
+**In `value` mode** — test limits affect both the colorbar and the die colours:
 
-The colorbar always shows LSL / USL labels at the limit positions. Exactly how depends on the colorbar range mode (toggled via the bracket toolbar button):
+The colorbar always shows "Lo limit" / "Hi limit" labels at the limit positions. Exactly how depends on the colorbar range mode (toggled via the bracket toolbar button):
 
-`colorbarRangeMode` controls **only** the colorbar's numeric range — not how out-of-spec dies are shown:
+`colorbarRangeMode` controls **only** the colorbar's numeric range — not how dies outside the limits are shown:
 
-- **`colorbarRangeMode: 'spec'` (default when limits are present)** — the bar spans `[limitLow, limitHigh]`. The limit values appear as "LSL" / "USL" labels at the bar endpoints alongside the numeric values.
-- **`colorbarRangeMode: 'data'`** — the bar spans the actual data min/max. LSL / USL are shown as marker lines on the bar wherever the limits fall within the data range.
+- **`colorbarRangeMode: 'spec'` (default when limits are present)** — the bar spans `[limitLow, limitHigh]`. The limit values appear as "Lo limit" / "Hi limit" labels at the bar endpoints alongside the numeric values.
+- **`colorbarRangeMode: 'data'`** — the bar spans the actual data min/max. The limits are shown as marker lines on the bar wherever the limits fall within the data range.
 
-In **both** ranges, all dies are coloured by the gradient so the value distribution stays readable and the bar and die colours agree; out-of-spec dies additionally carry a triangle marker — **▽** (below `limitLow`) / **△** (above `limitHigh`), each tagged with a matching key beside the LSL / USL labels — so they remain flagged without dropping out of the distribution. The triangle is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme, and its **shape** (not colour) carries the below/above-limit meaning — readable even in greyscale or with colour-vision deficiency.
+In **both** ranges, all dies are coloured by the gradient so the value distribution stays readable and the bar and die colours agree; dies outside the limits additionally carry a triangle marker — **▽** (below `limitLow`) / **△** (above `limitHigh`), each tagged with a matching key beside the limit labels — so they remain flagged without dropping out of the distribution. The triangle is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme, and its **shape** (not colour) carries the below/above-limit meaning — readable even in greyscale or with colour-vision deficiency.
 
-**With `passFailDisplay: 'spec'`** — a categorical pass/fail view instead of the continuous gradient, judged against the spec limits:
-- Pass (in spec): green (`#2ecc71`)
-- Fail low (below LSL): blue (`#3498db`)
-- Fail high (above USL): red (`#e74c3c`)
+**With `passFailDisplay: 'spec'`** — a categorical pass/fail view instead of the continuous gradient, judged against the test limits:
+- Pass (within limits): green (`#2ecc71`)
+- Fail low (below the low limit): blue (`#3498db`)
+- Fail high (above the high limit): red (`#e74c3c`)
 - No data: grey
 
-In this mode the colorbar is replaced by a **spec legend** showing the categories that apply (Pass always; Fail high / Fail low only when the test defines that limit) with per-category die counts. The title reads `{test} · #{number}` above the legend and `Spec pass/fail` below it.
+In this mode the colorbar is replaced by a **Pass/Fail legend** showing the categories that apply (Pass always; Fail high / Fail low only when the test defines that limit) with per-category die counts. The title reads `{test} · #{number}` above the legend and `Limit pass/fail` below it.
 
 ```ts
 const testDefs = [
   { testNumber: 1050, name: 'Idsat', unit: 'A' },
   {
     testNumber: 1060, name: 'Vth', unit: 'V',
-    limitLow:  0.44,  // LSL — below this is a spec failure
-    limitHigh: 0.57,  // USL — above this is a spec failure
+    limitLow:  0.44,  // low test limit — below this fails
+    limitHigh: 0.57,  // high test limit — above this fails
   },
   { testNumber: 1070, name: 'Ioff', unit: 'A' },
 ];
@@ -562,9 +562,9 @@ Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.sta
 
 ![Test value heatmap with colorbar](images/guide-test-values-colorbar.png)
 
-The same map with the view option 'Spec pass/fail' selected. Now the map shows the dies in spec limits in green and the dies out of limits in red, for the given test.
+The same map with the view option 'Limit pass/fail' selected. Now the map shows the dies within the test limits in green and the dies out of limits in red, for the given test.
 
-![Spec pass/fail colouring active](images/guide-test-values-spec-passfail.png)
+![Limit pass/fail colouring active](images/guide-test-values-spec-passfail.png)
 
 ### Functional tests (pass/fail only, no measured value)
 
@@ -959,7 +959,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Opens colour scheme picker |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0; hidden whenever a solid pass/fail display is active or the active test is functional (log scale has no effect on pass/fail colouring) |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range between spec-limit range (`[limitLow, limitHigh]`) and data range (actual min/max). Out-of-spec dies are flagged with ▽/△ markers in both. |
-| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Spec pass/fail (value mode, test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Limit pass/fail (value mode, test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary | Only when `statsSummary` is provided | Toggles the Summary panel (metadata, yield, bins, ring/quadrant, test values, findings) |
@@ -991,7 +991,7 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Applies to all cards |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, active test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range: spec-limit range ↔ data range. Out-of-spec dies are flagged with ▽/△ markers in both; applies to all cards |
-| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator, Spec pass/fail (value mode, active test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) — applies to all cards |
+| <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator, Limit pass/fail (value mode, active test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) — applies to all cards |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Always | Dropdown: **Legend on each map** toggle (off by default — the lot legend strip stands in for it), then the per-card legend position, available only while that toggle is on and in a bin or metadata mode |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch. Cards are size-capped and pack from the left rather than stretching to fill the width |

@@ -3096,7 +3096,7 @@ export function passFailMenuRows(
   if (state.functionalActive) return [];
   const rows: CheckMenuRow[] = [];
   if (state.hasLimits) rows.push({
-    label: 'Spec pass/fail',
+    label: 'Limit pass/fail',
     active: state.display === 'spec',
     onClick: () => setDisplay(state.display === 'spec' ? 'off' : 'spec'),
   });

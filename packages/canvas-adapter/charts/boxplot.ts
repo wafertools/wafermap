@@ -471,7 +471,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         { left: plotX, right: plotX + plotMaxWidth, top: 0, bottom: axisY },
         'horizontal', theme.limitLine, v => fmtUnit(v, unit, 'engineering'));
       const offAxisValues = new Set(range.offAxis.map(o => o.value));
-      for (const [limit, limLabel] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
+      for (const [limit, limLabel] of [[limitLow, 'Lo limit'], [limitHigh, 'Hi limit']] as const) {
         if (limit === undefined || offAxisValues.has(limit)) continue;
         const x = xFor(limit, plotX, plotMaxWidth);
         ctx.strokeStyle = theme.limitLine;
@@ -497,7 +497,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         // text off the plot edge; that is a layout worry overriding what the
         // mark says, which is the wrong way round.
         const dir = limitLabelSide(
-          x, ctx.measureText(limLabel).width, plotX, plotX + plotMaxWidth, limLabel === 'LSL');
+          x, ctx.measureText(limLabel).width, plotX, plotX + plotMaxWidth, limLabel === 'Lo limit');
         ctx.textAlign = dir < 0 ? 'right' : 'left';
         ctx.textBaseline = 'bottom';
         ctx.fillText(limLabel, x + dir * 3, axisY - 1);

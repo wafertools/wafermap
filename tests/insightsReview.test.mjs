@@ -212,14 +212,14 @@ test('the card offers only the modes the data can answer', () => {
   // A single mode is not worth a toggle.
   const c = mountPassRate([{ key: '', items: [{ dies: noFlags }] }], [PF_DEFS[0]]);
   assert.deepEqual(seg(c), []);
-  assert.match(c.card.textContent, /spec limits/);
+  assert.match(c.card.textContent, /test limits/);
   c.destroy();
 });
 
 test('each mode names how it judged, so a screenshot is never ambiguous', () => {
   const dies = [pfDie({ 1: 5 }, { 1: true, 90: true })];
   const handle = mountPassRate([{ key: '', items: [{ dies }] }]);
-  assert.match(handle.card.textContent, /Parametric pass rate · spec limits/);
+  assert.match(handle.card.textContent, /Parametric pass rate · test limits/);
 
   const pick = (v) => {
     const r = [...handle.card.querySelectorAll('input[type=radio]')].find(x => x.value === v);
@@ -272,7 +272,7 @@ test('a dataset with nothing judgeable says why, rather than drawing an empty ch
     [{ key: '', items: [{ dies: [pfDie({ 7: 1 }, undefined)] }] }],
     [{ testNumber: 7, name: 'unbounded' }],
   );
-  assert.match(handle.card.textContent, /parametric tests need spec limits/);
+  assert.match(handle.card.textContent, /parametric tests need test limits/);
   handle.destroy();
 });
 
@@ -559,7 +559,7 @@ test('insights — a data or grouping change still rebuilds, cache or not', () =
 // and not a count threshold that would move a sweep between tabs as others are
 // added. They are not in Distributions, which is driven by one selected test.
 
-function mountWithSweeps(items, lot, defaultView, sweeps) {
+function mountWithSweeps(items, lot, defaultView, sweeps, onRemoveSweeps) {
   const host = dom.window.document.getElementById('host');
   host.innerHTML = '';
   const tab = createInsightsTab({
@@ -568,6 +568,7 @@ function mountWithSweeps(items, lot, defaultView, sweeps) {
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView,
     sweeps,
+    onRemoveSweeps,
   });
   host.appendChild(tab.el);
   tab.render();
@@ -603,4 +604,28 @@ test('sweep cards are in the Sweeps tab, not in Distributions', () => {
 test("defaultView 'sweeps' with no sweeps opens Overview — there is no such tab", () => {
   const { items, lot } = lotItems(2);
   assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', undefined)), 'Overview');
+});
+
+test('a sweep naming no test of this data gets a notice on the Sweeps tab, with Remove when the host offers it', () => {
+  const { items, lot } = lotItems(2);
+  const FOREIGN = { id: 'other', title: 'Other program', series: [{ label: 'A', tests: ['7000..7010'] }] };
+  const noticeOf = (tab) => tab.el.querySelector('[role="status"]');
+
+  const quiet = mountWithSweeps(items, lot, 'sweeps', [SWEEP]);
+  assert.equal(noticeOf(quiet), null, 'no notice when every sweep matches');
+
+  let removed;
+  const tab = mountWithSweeps(items, lot, 'sweeps', [SWEEP, FOREIGN], ids => { removed = ids; });
+  const notice = noticeOf(tab);
+  assert.ok(notice, 'notice shown');
+  assert.match(notice.textContent, /1 of 2 sweeps name no test in this data: Other program/);
+  const btn = notice.querySelector('button');
+  assert.equal(btn.textContent, 'Remove this sweep');
+  btn.click();
+  assert.deepEqual(removed, ['other'], 'only the unmatched sweep is handed back');
+
+  const noHandler = mountWithSweeps(items, lot, 'sweeps', [FOREIGN]);
+  assert.ok(noticeOf(noHandler), 'the notice shows without a handler');
+  assert.equal(noticeOf(noHandler).querySelector('button'), null, 'but offers no button');
+  assert.match(noHandler.el.textContent, /None of this sweep’s tests are in this data/);
 });

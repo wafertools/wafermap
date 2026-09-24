@@ -193,12 +193,14 @@ function capabilitySection(items: Array<{ dies?: Die[] }>, testDefs: TestDef[]):
   const fmtIndex = (v: number | null) => v === null ? '—' : v.toFixed(2);
   const rows = data.map(d => [
     escHtml(d.label),
-    d.hasSpec ? `${fmt(d.lsl!, d.unit)} – ${fmt(d.usl!, d.unit)}` : '—',
+    d.hasSpec
+      ? (d.limitBasis === 'spec' ? `LSL ${fmt(d.lsl!, d.unit)} – USL ${fmt(d.usl!, d.unit)}` : `Lo limit ${fmt(d.lsl!, d.unit)} – Hi limit ${fmt(d.usl!, d.unit)}`)
+      : '—',
     fmt(d.mean, d.unit),
     fmtIndex(d.cp), fmtIndex(d.cpk), fmtIndex(d.pp), fmtIndex(d.ppk),
   ]);
   return renderSection('Process Capability', renderTable(
-    ['Test', 'Spec (LSL–USL)', 'Mean', 'Cp', 'Cpk', 'Pp', 'Ppk'], rows, { className: 'compact' },
+    ['Test', 'Limits', 'Mean', 'Cp', 'Cpk', 'Pp', 'Ppk'], rows, { className: 'compact' },
   ));
 }
 
@@ -451,7 +453,7 @@ function splitsSection(
         ...r.byGroup.map(v => v.passRatePercent === null ? '—' : `${v.passRatePercent.toFixed(1)}%`),
         r.overall.passRatePercent === null ? '—' : `${r.overall.passRatePercent.toFixed(1)}%`,
       ]);
-      const heading = kind === 'spec' ? 'Pass rate · spec limits'
+      const heading = kind === 'spec' ? 'Pass rate · test limits'
         : kind === 'testFlag' ? 'Pass rate · tester flag'
         : 'Pass rate · functional';
       // The disagreement count is a property of the facet's population, not of

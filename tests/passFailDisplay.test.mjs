@@ -82,7 +82,7 @@ test('map title names the display: functional vs recorded vs spec', () => {
   const tView = buildView(built.wafer, built.dies, { plotMode: 'value', testDefs: [P_DEF], activeTest: 1010, passFailDisplay: 'test' });
   assert.equal(buildMapTitle(tView).secondary, 'Tester pass/fail');
   const sView = buildView(built.wafer, built.dies, { plotMode: 'value', testDefs: [P_DEF], activeTest: 1010, passFailDisplay: 'spec' });
-  assert.equal(buildMapTitle(sView).secondary, 'Spec pass/fail');
+  assert.equal(buildMapTitle(sView).secondary, 'Limit pass/fail');
 });
 
 test('parametric test pass/fail display: recorded FAIL colours the die red even when in-spec', () => {

@@ -73,12 +73,19 @@ export interface DieResult {
    */
   siteNum?: number;
   /**
-   * STDF `pir.part_id` — tester-assigned identifier for this tested unit.
-   * At most fabs this encodes the probe sequence (the order in which the prober
-   * stepped across the wafer), but the field is semantically neutral — its
-   * meaning is fab-specific.
+   * STDF PRR `PART_ID` — the tester's part identification, text in STDF (a
+   * number is accepted too). Data about the part, not an identifier: a die's
+   * identity is its position. Its meaning is fab-specific; at many fabs it
+   * encodes the probe sequence.
    */
-  partId?: number;
+  partId?: number | string;
+  /**
+   * The tester marked this record as replacing an earlier one (STDF PRR
+   * `PART_FLG` bit 0/1): `'partId'` — the earlier record with the same part ID;
+   * `'position'` — the earlier record at the same position. Such a record always
+   * wins, whatever `retestPolicy` says.
+   */
+  supersedes?: 'partId' | 'position';
   /** Per-die metadata — all fields appear automatically in hover tooltips. See `DieMetadata → §12.4`. */
   metadata?: DieMetadata;
 }
@@ -227,16 +234,28 @@ export interface TestDef {
    */
   logScale?: boolean;
   /**
-   * Lower specification limit in the same units as the test value.
-   * When set, values below this limit are considered out-of-spec.
-   * Both limits are optional independently — some tests have one-sided limits.
+   * Lower **test limit** (STDF `LO_LIMIT`) — the pass/fail limit, in the test
+   * value's units. A value below it is outside the test limits. Both limits are
+   * optional independently — some tests have one-sided limits.
    */
   limitLow?: number;
-  /**
-   * Upper specification limit in the same units as the test value.
-   * When set, values above this limit are considered out-of-spec.
-   */
+  /** Upper test limit (STDF `HI_LIMIT`). A value above it is outside the test limits. */
   limitHigh?: number;
+  /**
+   * Whether a value exactly equal to `limitLow` passes. Default `true`. STDF
+   * states it per test in `PARM_FLG` bit 6, ATDF in the Limit Compare field.
+   */
+  limitLowInclusive?: boolean;
+  /** Whether a value exactly equal to `limitHigh` passes. Default `true`; STDF `PARM_FLG` bit 7. */
+  limitHighInclusive?: boolean;
+  /**
+   * Lower **specification limit** (STDF `LO_SPEC`) — separate from the test limits,
+   * and what process capability (Cp/Cpk/Pp/Ppk) is judged against when both spec
+   * limits are given. Without them, capability uses the test limits and says so.
+   */
+  specLow?: number;
+  /** Upper specification limit (STDF `HI_SPEC`). See `specLow`. */
+  specHigh?: number;
   /**
    * Test kind: `'P'` (parametric — a continuous measured value) or `'F'`
    * (functional — a pass/fail outcome, conventionally recorded as 1 = pass,
@@ -592,6 +611,15 @@ export interface WaferWarning {
    *   were given as text (or verdicts as something other than true/false), as a
    *   CSV parser produces. They are not converted, so those dies are judged and
    *   plotted wrongly — a bin of "1" is not pass bin 1. The message counts them.
+   * - `'input-values-outside-stdf'` — raised by `buildWaferMap`: bins, coordinates,
+   *   test numbers, site numbers or `waferConfig.orientation` outside the STDF V4
+   *   ranges, or test values that are not finite. Used as given for now; a future
+   *   release treats them as missing. A `NaN` bin is already treated as no bin, and
+   *   is counted here too.
+   * - `'retests-by-part-id'` — raised by `buildWaferMap` (severity `'info'`): dies
+   *   with no position that share a part ID were treated as retests of one die.
+   *   Blank part IDs never match, and part IDs are not used on a wafer where one
+   *   value covers more than 20% of the unpositioned records (a default, not an ID).
    * - `'derived-test-invalid'` — raised by `buildWaferMap`: a `derivedTests` entry
    *   could not be compiled — a parse or type error in its `expression`, a
    *   `testNumber` that collides with a measured test, a `testType` that
@@ -615,7 +643,8 @@ export interface WaferWarning {
       | 'diameter-exceeds-die-extent' | 'test-count-capped'
       | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected'
       | 'bin-colors-shared' | 'pass-bins-mixed' | 'ring-count-mixed' | 'input-field-removed'
-      | 'input-values-not-numbers' | 'derived-test-invalid' | (string & {});
+      | 'input-values-not-numbers' | 'input-values-outside-stdf' | 'retests-by-part-id'
+      | 'derived-test-invalid' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -775,7 +804,8 @@ interface Normalized {
   /** Correction to `ringCount`, joined into the result's warnings. */
   ringCountWarning: WaferWarning | undefined;
   removedFieldWarning: WaferWarning | undefined;
-  nonNumericWarning:  WaferWarning | undefined;
+  /** Wrong-type and outside-STDF-range input values, joined into the result's warnings. */
+  inputValueWarnings: WaferWarning[];
   standardDiameters: number[] | undefined;
   testDefs:     TestDef[] | undefined;
   hbinDefs:     BinDef[]  | undefined;
@@ -810,7 +840,10 @@ function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: 
  * honoured: this reports, it never translates.
  */
 /**
- * Bins, test values and verdicts of the wrong type. CSV parsers hand every field
+ * Input values that are the wrong type or outside STDF V4's ranges — one pass over
+ * the input for both.
+ *
+ * Wrong type: bins, test values and verdicts. CSV parsers hand every field
  * over as text, and string x/y are caught (buildWaferMap throws), but a string
  * bin or test value built a map that looked fine and was wrong: a bin of "1" is
  * not pass bin 1, so every such die counted as a fail and yield read 0 %, and a
@@ -822,8 +855,10 @@ function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: 
  * parser that leaves a column as text does so for the whole column, so the sample
  * always sees it.
  */
-function nonNumericInputWarning(input: DieResult[] | WaferMapInput): WaferWarning | undefined {
-  const top = (Array.isArray(input) ? {} : input) as { results?: unknown; lotStack?: { results?: unknown } };
+function inputValueWarnings(input: DieResult[] | WaferMapInput): WaferWarning[] {
+  const top = (Array.isArray(input) ? {} : input) as {
+    results?: unknown; lotStack?: { results?: unknown }; waferConfig?: { orientation?: unknown };
+  };
   const stacked = Array.isArray(top.lotStack?.results) ? top.lotStack!.results as unknown[] : [];
   const wafers = (Array.isArray(input) ? [input] : [top.results, ...stacked])
     .filter((w): w is unknown[] => Array.isArray(w));
@@ -833,7 +868,22 @@ function nonNumericInputWarning(input: DieResult[] | WaferMapInput): WaferWarnin
     counts[field]++;
     example ??= `${field} ${JSON.stringify(value)}`;
   };
-  type Row = { hbin?: unknown; sbin?: unknown; testValues?: Record<string, unknown>; testPass?: Record<string, unknown> };
+  // STDF V4 ranges — reported only; the values are used as given.
+  const outside = { bins: 0, positions: 0, testNumbers: 0, values: 0, sites: 0, orientation: 0 };
+  let binsNaN = 0;
+  const isBin = (v: number) => Number.isInteger(v) && v >= 0 && v <= STDF_BIN_MAX;
+  const checkBin = (v: unknown) => {
+    if (typeof v !== 'number') return;
+    if (Number.isNaN(v)) binsNaN++;
+    else if (!isBin(v)) outside.bins++;
+  };
+  const checkCoord = (v: unknown) => {
+    if (typeof v === 'number' && !(Number.isInteger(v) && Math.abs(v) <= STDF_COORD_MAX)) outside.positions++;
+  };
+  type Row = {
+    hbin?: unknown; sbin?: unknown; x?: unknown; y?: unknown; siteNum?: unknown;
+    testValues?: Record<string, unknown>; testPass?: Record<string, unknown>;
+  };
   for (const wafer of wafers) {
     const valueKeys = new Set<string>();
     const verdictKeys = new Set<string>();
@@ -845,14 +895,28 @@ function nonNumericInputWarning(input: DieResult[] | WaferMapInput): WaferWarnin
     }
     const vKeys = [...valueKeys];
     const pKeys = [...verdictKeys];
+    for (const k of new Set([...vKeys, ...pKeys])) {
+      const n = Number(k);
+      if (!(Number.isInteger(n) && n >= 0 && n <= STDF_TEST_NUM_MAX)) outside.testNumbers++;
+    }
     for (const d of wafer) {
       if (d === null || typeof d !== 'object') continue;
       const r = d as Row;
       if (r.hbin != null && typeof r.hbin !== 'number') note('hbin', r.hbin);
       if (r.sbin != null && typeof r.sbin !== 'number') note('sbin', r.sbin);
+      checkBin(r.hbin);
+      checkBin(r.sbin);
+      checkCoord(r.x);
+      checkCoord(r.y);
+      if (typeof r.siteNum === 'number' && !(Number.isInteger(r.siteNum) && r.siteNum >= 0 && r.siteNum <= 255)) outside.sites++;
       const tv = r.testValues;
       if (tv && typeof tv === 'object') {
-        for (let i = 0; i < vKeys.length; i++) { const v = tv[vKeys[i]]; if (v != null && typeof v !== 'number') note('testValues', v); }
+        for (let i = 0; i < vKeys.length; i++) {
+          const v = tv[vKeys[i]];
+          if (v == null) continue;
+          if (typeof v !== 'number') note('testValues', v);
+          else if (!Number.isFinite(v)) outside.values++;
+        }
       }
       const tp = r.testPass;
       if (tp && typeof tp === 'object') {
@@ -860,19 +924,53 @@ function nonNumericInputWarning(input: DieResult[] | WaferMapInput): WaferWarnin
       }
     }
   }
+  const orientation = top.waferConfig?.orientation;
+  if (typeof orientation === 'number' && ![0, 90, 180, 270].includes(((orientation % 360) + 360) % 360)) {
+    outside.orientation++;
+  }
+
+  const warnings: WaferWarning[] = [];
+  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
   const parts: string[] = [];
-  if (counts.hbin)       parts.push(`${counts.hbin} hard bin${counts.hbin === 1 ? '' : 's'}`);
-  if (counts.sbin)       parts.push(`${counts.sbin} soft bin${counts.sbin === 1 ? '' : 's'}`);
-  if (counts.testValues) parts.push(`${counts.testValues} test value${counts.testValues === 1 ? '' : 's'}`);
-  if (counts.testPass)   parts.push(`${counts.testPass} pass/fail verdict${counts.testPass === 1 ? '' : 's'}`);
-  if (!parts.length) return undefined;
-  const message = `buildWaferMap received ${parts.join(', ')} of the wrong type (for example ${example}). `
-    + 'Bins and test values must be numbers and verdicts true/false — a bin of "1" is not pass bin 1, so those dies '
-    + 'count as fails and yield is wrong, and a test value given as text is not plotted or analysed correctly. '
-    + 'Convert them with Number() (and verdicts to booleans) and rebuild.';
-  console.warn(`[wafermap] ${message}`);
-  return { code: 'input-values-not-numbers', message, severity: 'error' };
+  if (counts.hbin)       parts.push(plural(counts.hbin, 'hard bin'));
+  if (counts.sbin)       parts.push(plural(counts.sbin, 'soft bin'));
+  if (counts.testValues) parts.push(plural(counts.testValues, 'test value'));
+  if (counts.testPass)   parts.push(plural(counts.testPass, 'pass/fail verdict'));
+  if (parts.length) {
+    const message = `buildWaferMap received ${parts.join(', ')} of the wrong type (for example ${example}). `
+      + 'Bins and test values must be numbers and verdicts true/false — a bin of "1" is not pass bin 1, so those dies '
+      + 'count as fails and yield is wrong, and a test value given as text is not plotted or analysed correctly. '
+      + 'Convert them with Number() (and verdicts to booleans) and rebuild.';
+    console.warn(`[wafermap] ${message}`);
+    warnings.push({ code: 'input-values-not-numbers', message, severity: 'error' });
+  }
+
+  const range: string[] = [];
+  if (outside.bins)        range.push(`${plural(outside.bins, 'bin')} (legal: whole numbers 0–${STDF_BIN_MAX})`);
+  if (outside.positions)   range.push(`${plural(outside.positions, 'coordinate')} (legal: whole numbers −${STDF_COORD_MAX} to ${STDF_COORD_MAX})`);
+  if (outside.testNumbers) range.push(`${plural(outside.testNumbers, 'test number')} (legal: whole numbers 0–${STDF_TEST_NUM_MAX})`);
+  if (outside.values)      range.push(`${plural(outside.values, 'test value')} that ${outside.values === 1 ? 'is' : 'are'} not finite`);
+  if (outside.sites)       range.push(`${plural(outside.sites, 'site number')} (legal: 0–255)`);
+  if (outside.orientation) range.push('a waferConfig.orientation other than 0, 90, 180 or 270');
+  if (range.length || binsNaN) {
+    const sentences: string[] = [];
+    if (range.length) {
+      sentences.push(`buildWaferMap received values outside the STDF V4 ranges: ${range.join('; ')}. `
+        + 'They are used as given for now; a future release treats them as missing.');
+    }
+    if (binsNaN) sentences.push(`${plural(binsNaN, 'bin was', 'bins were')} NaN and ${binsNaN === 1 ? 'is' : 'are'} treated as no bin.`);
+    const message = sentences.join(' ');
+    console.warn(`[wafermap] ${message}`);
+    warnings.push({ code: 'input-values-outside-stdf', message, severity: 'warning' });
+  }
+  return warnings;
 }
+
+/** STDF V4 legal ranges: PRR HARD_BIN/SOFT_BIN, X_COORD/Y_COORD, and TEST_NUM (U*4). */
+const STDF_BIN_MAX = 32_767;
+const STDF_COORD_MAX = 32_767;
+const STDF_TEST_NUM_MAX = 4_294_967_295;
 
 function removedInputWarning(input: DieResult[] | WaferMapInput): WaferWarning | undefined {
   const set = (o: unknown, key: string): boolean =>
@@ -955,7 +1053,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       ringCount:        4,
       ringCountWarning: undefined,
       removedFieldWarning: removedInputWarning(input),
-      nonNumericWarning:  nonNumericInputWarning(input),
+      inputValueWarnings: inputValueWarnings(input),
       standardDiameters: undefined,
       testDefs:         undefined,
       hbinDefs:         undefined,
@@ -975,7 +1073,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     passBins:         input.passBins ?? [1],
     ...resolveRingCount(input.ringCount),
     removedFieldWarning: removedInputWarning(input),
-    nonNumericWarning:  nonNumericInputWarning(input),
+    inputValueWarnings: inputValueWarnings(input),
     standardDiameters: input.standardDiameters,
     // An empty array from a HOST means "I described no tests", which is the same
     // statement as not passing the field — so it is normalised to `undefined`
@@ -1374,66 +1472,115 @@ function applyEdgeExclusion(dies: PositionedDie[], wafer: Wafer, exclusionMm: nu
 
 // ── Retest deduplication ──────────────────────────────────────────────────────
 
+/** Share of a wafer's unpositioned records one part ID may cover before part IDs
+ *  stop being treated as identifiers there (a constant or default value). */
+const PART_ID_DEFAULT_SHARE = 0.2;
+
+/**
+ * One result per die. Retests are recognised from the evidence the file gives:
+ *
+ * - the same position within the wafer, as always;
+ * - for a die with no position, the same part ID — but only when part IDs look
+ *   like identifiers: blank ones never match, and when one part ID covers more than
+ *   `PART_ID_DEFAULT_SHARE` of the wafer's unpositioned records it is a default,
+ *   and part IDs are not used on that wafer at all.
+ *
+ * Which record counts is `retestPolicy`'s choice, except that a record the tester
+ * marked as superseding an earlier one (`DieResult.supersedes`) always wins; with
+ * `'partId'`, an earlier record with the same part ID at another position is
+ * removed too. Merging by part ID is an inference, so it is reported.
+ */
 function applyRetestPolicy(
   allResults: DieResult[],
   policy: 'last' | 'first' | 'best' | 'worst',
   passBins: number[],
-): DieResult[] {
-  // Retesting is inherently a "same x/y tested more than once" concept — an
-  // unpositioned die has no coordinate identity to dedupe by at this stage
-  // (DieResult doesn't carry an id the way a built Die does), so it passes
-  // through untouched, one result in, one result out, never merged with
-  // another unpositioned entry.
-  const results = allResults.filter(hasPosition);
-  const unpositioned = allResults.filter(r => !hasPosition(r));
-
-  const counts = new Map<number, Map<number, number>>();
-  for (const d of results) {
-    let yCounts = counts.get(d.x);
-    if (!yCounts) {
-      yCounts = new Map<number, number>();
-      counts.set(d.x, yCounts);
-    }
-    yCounts.set(d.y, (yCounts.get(d.y) ?? 0) + 1);
-  }
-
+): { results: DieResult[]; warning: WaferWarning | undefined } {
   const passBinSet = new Set(passBins);
-  // Returns true when the candidate should replace the existing winner.
   // 'best': pass beats fail; within same category, lower hbin wins.
   // 'worst': fail beats pass; within same category, higher hbin wins.
-  function shouldReplace(existing: DieResult, candidate: DieResult): boolean {
-    const eHbin = existing.hbin;
-    const cHbin = candidate.hbin;
+  function policyPrefers(existing: DieResult, candidate: DieResult): boolean {
+    if (policy === 'last') return true;
+    if (policy === 'first') return false;
+    const eHbin = inputBin(existing.hbin);
+    const cHbin = inputBin(candidate.hbin);
     if (eHbin === undefined || cHbin === undefined) return false;
     const ePass = passBinSet.has(eHbin);
     const cPass = passBinSet.has(cHbin);
     if (policy === 'best') {
-      if (cPass !== ePass) return cPass;  // pass beats fail
-      return cHbin < eHbin;              // tiebreak: lower bin number
+      if (cPass !== ePass) return cPass;
+      return cHbin < eHbin;
+    }
+    if (cPass !== ePass) return ePass;
+    return cHbin > eHbin;
+  }
+  const replaces = (existing: DieResult, candidate: DieResult) =>
+    candidate.supersedes !== undefined || policyPrefers(existing, candidate);
+
+  const partIdOf = (d: DieResult): string | undefined => {
+    const t = d.partId === undefined ? '' : String(d.partId).trim();
+    return t === '' ? undefined : t;
+  };
+
+  // Unpositioned: part IDs count only when no single one is a default.
+  const unpositioned = allResults.filter(r => !hasPosition(r));
+  const idCounts = new Map<string, number>();
+  for (const d of unpositioned) {
+    const id = partIdOf(d);
+    if (id !== undefined) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+  }
+  const maxShare = unpositioned.length === 0 ? 0
+    : Math.max(0, ...idCounts.values()) / unpositioned.length;
+  const useUnpositionedIds = maxShare <= PART_ID_DEFAULT_SHARE;
+
+  type Slot = { winner: DieResult; count: number };
+  const slots = new Map<string, Slot>();
+  const order: string[] = [];
+  const holderOfPartId = new Map<string, string>();
+  let mergedByPartId = 0;
+  let separate = 0;
+
+  for (const d of allResults) {
+    const id = partIdOf(d);
+    let key: string;
+    if (hasPosition(d)) {
+      key = `p:${getDieKey(d)}`;
+    } else if (useUnpositionedIds && id !== undefined) {
+      key = `i:${id}`;
     } else {
-      if (cPass !== ePass) return ePass; // fail beats pass (i.e. replace when existing is pass)
-      return cHbin > eHbin;              // tiebreak: higher bin number
+      key = `u:${separate++}`;
     }
+    // A 'partId' supersede replaces the earlier record with that part ID, wherever it is.
+    if (d.supersedes === 'partId' && id !== undefined) {
+      const earlier = holderOfPartId.get(id);
+      if (earlier !== undefined && earlier !== key && slots.has(earlier)) slots.delete(earlier);
+    }
+    const slot = slots.get(key);
+    if (slot === undefined) {
+      slots.set(key, { winner: d, count: 1 });
+      order.push(key);
+    } else {
+      slot.count++;
+      if (key.startsWith('i:')) mergedByPartId++;
+      if (replaces(slot.winner, d)) slot.winner = d;
+    }
+    if (id !== undefined) holderOfPartId.set(id, key);
   }
 
-  const winners = new Map<string, DieResult & { x: number; y: number }>();
-  for (const d of results) {
-    const key = getDieKey(d);
-    const existing = winners.get(key);
-    if (policy === 'first' && existing) continue;
-    if ((policy === 'best' || policy === 'worst') && existing) {
-      if (!shouldReplace(existing, d)) continue;
-    }
-    winners.set(key, d);
+  const results: DieResult[] = [];
+  const positionedFirst = [...order.filter(k => k.startsWith('p:')), ...order.filter(k => !k.startsWith('p:'))];
+  for (const key of positionedFirst) {
+    const slot = slots.get(key);
+    if (slot === undefined) continue;
+    results.push(slot.count > 1 ? { ...slot.winner, retestCount: slot.count } : slot.winner);
   }
 
-  const deduped = Array.from(winners.values()).map(d => {
-    const xMap = counts.get(d.x);
-    const count = xMap?.get(d.y) ?? 1;
-    return count > 1 ? { ...d, retestCount: count } : d;
-  });
-
-  return [...deduped, ...unpositioned];
+  const warning: WaferWarning | undefined = mergedByPartId > 0 ? {
+    code: 'retests-by-part-id',
+    severity: 'info',
+    message: `${mergedByPartId} record${mergedByPartId === 1 ? '' : 's'} with no position shared a part ID `
+      + `with an earlier record and ${mergedByPartId === 1 ? 'was' : 'were'} treated as a retest of it.`,
+  } : undefined;
+  return { results, warning };
 }
 
 // ── Test value helpers ────────────────────────────────────────────────────────
@@ -1483,10 +1630,17 @@ export function dieHasTestData(die: Pick<Die, 'testValues' | 'testPass'>): boole
 
 // ── Data attachment ───────────────────────────────────────────────────────────
 
+/** A bin from the input: `NaN` is no bin — never a bin number, never a fail. */
+function inputBin(bin: number | undefined): number | undefined {
+  return bin === undefined || Number.isNaN(bin) ? undefined : bin;
+}
+
 function attachData<D extends Die>(die: D, pt: DieResult): D {
   const base: Partial<Die> = {};
-  if (pt.hbin        !== undefined) base.hbin        = pt.hbin;
-  if (pt.sbin        !== undefined) base.sbin        = pt.sbin;
+  const hbin = inputBin(pt.hbin);
+  const sbin = inputBin(pt.sbin);
+  if (hbin           !== undefined) base.hbin        = hbin;
+  if (sbin           !== undefined) base.sbin        = sbin;
   if (pt.retestCount !== undefined) base.retestCount = pt.retestCount;
   if (pt.siteNum     !== undefined) base.siteNum     = pt.siteNum;
   if (pt.partId      !== undefined) base.partId      = pt.partId;
@@ -1755,7 +1909,7 @@ export function buildWaferMap(
     }
   }
 
-  const results: DieResult[] = applyRetestPolicy(rawResults, norm.retestPolicy, norm.passBins);
+  const { results, warning: retestWarning } = applyRetestPolicy(rawResults, norm.retestPolicy, norm.passBins);
 
   const inference: WaferMapResult['inference'] = {
     wafer:    { confidence: 1.0, method: 'provided' },
@@ -1823,7 +1977,7 @@ export function buildWaferMap(
 
     return {
       wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
-      warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
+      warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...norm.inputValueWarnings, ...(retestWarning ? [retestWarning] : []), ...buildWarnings(advisories, inference), ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
       plotMode: view.plotMode,
       metadata: view.metadata,
       isLotStack: false,
@@ -2111,7 +2265,7 @@ export function buildWaferMap(
 
   return {
     wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units, inference,
-    warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...(norm.nonNumericWarning ? [norm.nonNumericWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
+    warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...norm.inputValueWarnings, ...(retestWarning ? [retestWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
     plotMode: view.plotMode,
     metadata: view.metadata,
     isLotStack: norm.lotStackOpts !== undefined,

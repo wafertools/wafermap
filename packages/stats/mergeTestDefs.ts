@@ -50,7 +50,7 @@
 import type { TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 
 /** Which field disagreed. `'limits'` is the soft tier; the rest are hard. */
-export type TestDefConflictKind = 'name' | 'unit' | 'testType' | 'limits';
+export type TestDefConflictKind = 'name' | 'unit' | 'testType' | 'limits' | 'specLimits';
 
 /** One test number whose defs could not be reconciled across the population. */
 export interface TestDefConflict {
@@ -212,7 +212,11 @@ export function mergeTestDefs(items: Array<{ testDefs?: TestDef[] } | null | und
 
     const lows  = distinctLimits(group.map(d => d.limitLow ).filter((v): v is number => v !== undefined));
     const highs = distinctLimits(group.map(d => d.limitHigh).filter((v): v is number => v !== undefined));
-    const limitsConflict = lows.length > 1 || highs.length > 1;
+    // Whether a value equal to a limit passes is part of the judgement too: the
+    // same number judged `≥` on one wafer and `>` on another is two specs.
+    const lowIncl  = distinct(group.filter(d => d.limitLow  !== undefined).map(d => d.limitLowInclusive  !== false), b => String(b));
+    const highIncl = distinct(group.filter(d => d.limitHigh !== undefined).map(d => d.limitHighInclusive !== false), b => String(b));
+    const limitsConflict = lows.length > 1 || highs.length > 1 || lowIncl.length > 1 || highIncl.length > 1;
 
     if (limitsConflict) {
       // BOTH limits are dropped, not just the disagreeing one. A surviving
@@ -223,7 +227,24 @@ export function mergeTestDefs(items: Array<{ testDefs?: TestDef[] } | null | und
         testNumber,
         kind: 'limits',
         excluded: false,
-        values: (lows.length > 1 ? lows : highs).map(v => String(v)),
+        values: lows.length > 1 ? lows.map(v => String(v))
+          : highs.length > 1 ? highs.map(v => String(v))
+          : lowIncl.length > 1 ? lowIncl.map(incl => `${incl ? '≥' : '>'} ${lows[0]}`)
+          : highIncl.map(incl => `${incl ? '≤' : '<'} ${highs[0]}`),
+      });
+    }
+
+    // Spec limits get the same soft-tier rule, separately: a disagreement drops
+    // the spec pair (capability then falls back to the test limits, and says so).
+    const specLows  = distinctLimits(group.map(d => d.specLow ).filter((v): v is number => v !== undefined));
+    const specHighs = distinctLimits(group.map(d => d.specHigh).filter((v): v is number => v !== undefined));
+    const specConflict = specLows.length > 1 || specHighs.length > 1;
+    if (specConflict) {
+      conflicts.push({
+        testNumber,
+        kind: 'specLimits',
+        excluded: false,
+        values: (specLows.length > 1 ? specLows : specHighs).map(v => String(v)),
       });
     }
 
@@ -237,6 +258,10 @@ export function mergeTestDefs(items: Array<{ testDefs?: TestDef[] } | null | und
       ...(group.find(d => d.logScale !== undefined) ? { logScale: group.find(d => d.logScale !== undefined)!.logScale } : {}),
       ...(!limitsConflict && lows[0]  !== undefined ? { limitLow:  lows[0]  } : {}),
       ...(!limitsConflict && highs[0] !== undefined ? { limitHigh: highs[0] } : {}),
+      ...(!limitsConflict && lowIncl[0]  === false ? { limitLowInclusive:  false } : {}),
+      ...(!limitsConflict && highIncl[0] === false ? { limitHighInclusive: false } : {}),
+      ...(!specConflict && specLows[0]  !== undefined ? { specLow:  specLows[0]  } : {}),
+      ...(!specConflict && specHighs[0] !== undefined ? { specHigh: specHighs[0] } : {}),
       // The derived flag survives the merge. This list reconstructs a def field by
       // field rather than copying one, so anything not named here is dropped —
       // and a dropped `derived` is the one failure this flag exists to prevent:
@@ -260,6 +285,7 @@ function buildWarnings(conflicts: TestDefConflict[]): WaferWarning[] {
   const out: WaferWarning[] = [];
   const excluded = conflicts.filter(c => c.excluded);
   const limits   = conflicts.filter(c => c.kind === 'limits');
+  const specs    = conflicts.filter(c => c.kind === 'specLimits');
 
   if (excluded.length > 0) {
     out.push({
@@ -280,11 +306,22 @@ function buildWarnings(conflicts: TestDefConflict[]): WaferWarning[] {
       code: 'test-limit-conflict',
       severity: 'warning',
       message:
-        `${limits.length} ${limits.length === 1 ? 'test is' : 'tests are'} held to different spec ` +
+        `${limits.length} ${limits.length === 1 ? 'test is' : 'tests are'} held to different test ` +
         'limits in different wafers. Affected: ' + summarise(limits) + '. ' +
-        'The measured values are still comparable, so distributions include them, but capability ' +
-        '(Cp/Cpk/Pp/Ppk), spec yield and the limit lines are withheld for these tests — there is no ' +
-        'single spec to judge the merged population against.',
+        'The measured values are still comparable, so distributions include them, but the ' +
+        'limit yield, the limit lines, and capability measured against the test limits are ' +
+        'withheld for these tests — there is no single pair of limits to judge the merged population against.',
+    });
+  }
+
+  if (specs.length > 0) {
+    out.push({
+      code: 'test-limit-conflict',
+      severity: 'warning',
+      message:
+        `${specs.length} ${specs.length === 1 ? 'test has' : 'tests have'} different spec limits in ` +
+        'different wafers. Affected: ' + summarise(specs) + '. Their spec limits are withheld for the ' +
+        'merged population, so capability uses the test limits where they agree.',
     });
   }
 

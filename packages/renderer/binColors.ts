@@ -290,11 +290,13 @@ export function binColorWarning(colors: BinColors, plotMode: string | undefined)
 const FIRST_PASS_BIN = 1;
 const FIRST_FAIL_BIN = 2;
 
-/** `palette[(bin − first) mod n]`, shifted half a palette for soft bins. */
+/** `palette[(bin − first) mod n]`, shifted half a palette for soft bins. A bin
+ *  that is not a whole number (outside STDF, reported by `buildWaferMap`) takes
+ *  the colour of the whole bin below it rather than indexing off the palette. */
 function paletteColor(palette: readonly string[], bin: number, first: number, soft: boolean): string {
   const n = palette.length;
   const offset = soft ? Math.floor(n / 2) : 0;
-  return palette[(((bin - first + offset) % n) + n) % n];
+  return palette[(((Math.floor(bin) - first + offset) % n) + n) % n];
 }
 
 function assign(

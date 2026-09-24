@@ -113,3 +113,35 @@ test('buildCapabilityData — functional tests (testType F) are excluded', () =>
   const out = buildCapabilityData(items, testDefs);
   assert.deepEqual(out.map(d => d.testNumber), [1], 'only the parametric test should appear');
 });
+
+test('buildCapabilityData — spec limits win over test limits, and the basis is reported', () => {
+  const items = [{ dies: Array.from({ length: 11 }, (_, i) => ({ x: i, y: 0, testValues: { 1: i, 2: i } })) }];
+  const testDefs = [
+    { testNumber: 1, name: 'Spec', limitLow: 2, limitHigh: 8, specLow: 0, specHigh: 10 },
+    { testNumber: 2, name: 'TestOnly', limitLow: 2, limitHigh: 8 },
+  ];
+  const byTest = new Map(buildCapabilityData(items, testDefs).map(d => [d.testNumber, d]));
+  assert.equal(byTest.get(1).limitBasis, 'spec');
+  assert.equal(byTest.get(1).lsl, 0);
+  assert.equal(byTest.get(1).usl, 10);
+  assert.equal(byTest.get(2).limitBasis, 'test');
+  assert.equal(byTest.get(2).lsl, 2);
+  assert.equal(byTest.get(2).usl, 8);
+});
+
+test('buildCapabilityData — only one spec limit falls back to the test limits', () => {
+  const items = [{ dies: dies([1, 2, 3, 4, 5]) }];
+  const [d] = buildCapabilityData(items, [{ testNumber: 1, name: 'T', limitLow: 0, limitHigh: 6, specLow: -1 }]);
+  assert.equal(d.limitBasis, 'test');
+  assert.equal(d.lsl, 0);
+  assert.equal(d.usl, 6);
+});
+
+test('buildCapabilityData — a spec-limit change is not served from the cache', () => {
+  const items = [{ dies: dies([1, 2, 3, 4, 5]) }];
+  const a = buildCapabilityData(items, [{ testNumber: 1, name: 'T', limitLow: 0, limitHigh: 6 }]);
+  const b = buildCapabilityData(items, [{ testNumber: 1, name: 'T', limitLow: 0, limitHigh: 6, specLow: -2, specHigh: 8 }]);
+  assert.equal(a[0].limitBasis, 'test');
+  assert.equal(b[0].limitBasis, 'spec');
+  assert.equal(b[0].usl, 8);
+});

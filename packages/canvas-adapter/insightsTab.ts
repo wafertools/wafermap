@@ -41,7 +41,7 @@ import { renderCapabilityPanel } from './charts/capability.js';
 import { renderBoxplotPanel } from './charts/boxplot.js';
 import { renderTrendPanel } from './charts/trend.js';
 import { renderSweepPanel } from './charts/sweep.js';
-import type { SweepSpec } from '../stats/sweep.js';
+import { sweepAppliesTo, type SweepSpec } from '../stats/sweep.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
 import { renderScatterPanel } from './charts/scatter.js';
@@ -120,6 +120,14 @@ export interface InsightsOptions {
    */
   sweeps?: SweepSpec[];
   /**
+   * Offers a "Remove" button on the Sweeps tab's notice about sweeps that name
+   * none of the data's tests — typically sweeps a host kept from another test
+   * program. Called with those sweeps' ids; the host drops them and re-renders
+   * with the remaining `sweeps`. Without it the notice still shows, with no
+   * button. The library never edits the host's sweep list itself.
+   */
+  onRemoveSweeps?: (ids: string[]) => void;
+  /**
    * Open the Insights view on mount instead of starting on the map/grid.
    * Default false — the tab is offered, the map is what you see first.
    *
@@ -178,6 +186,8 @@ export interface InsightsTabDeps {
   defaultView?: InsightsView;
   /** Sweep definitions to render in the Distributions view — see `InsightsOptions.sweeps`. */
   sweeps?: SweepSpec[];
+  /** See `InsightsOptions.onRemoveSweeps`. */
+  onRemoveSweeps?: (ids: string[]) => void;
   /**
    * When provided, the tab bar gets a leading "‹ Map"/"‹ Gallery" tab that
    * exits Insights back to the host's normal view — one visible navigation
@@ -1199,9 +1209,46 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // order to say so, rather than silently plotting a gap.
     const testDefs = mergeTestDefs(items).defs;
     const dies = items.flatMap(it => it.dies);
-    const panels = (deps.sweeps ?? []).map(spec => renderSweepPanel({ spec, dies, testDefs, onSaveImage, ownerDocument: doc }));
+    const sweeps = deps.sweeps ?? [];
+    const unmatched = sweeps.filter(spec => !sweepAppliesTo(spec, testDefs));
+    if (unmatched.length > 0) wrap.appendChild(sweepMismatchNotice(unmatched, sweeps.length));
+    const panels = sweeps.map(spec => renderSweepPanel({ spec, dies, testDefs, onSaveImage, ownerDocument: doc }));
     for (const p of panels) wrap.appendChild(p.card);
     return { card: wrap, destroy: () => { for (const p of panels) p.destroy(); } };
+  }
+
+  /**
+   * The notice above the sweep cards when some sweeps name no test of this data.
+   * Said here, where the empty cards are, not only in a host's log — and with
+   * the way out beside it when the host can act on it.
+   */
+  function sweepMismatchNotice(unmatched: SweepSpec[], total: number): HTMLElement {
+    const box = doc.createElement('div');
+    box.setAttribute('role', 'status');
+    Object.assign(box.style, {
+      gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.md,
+      padding: `${SPACE.sm} ${SPACE.md}`, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`,
+      borderRadius: RADIUS.container, color: CLR.warnText, fontSize: FONT.body, lineHeight: LEADING.base,
+    } as Partial<CSSStyleDeclaration>);
+    const n = unmatched.length;
+    const text = doc.createElement('span');
+    text.style.flex = '1 1 24ch';
+    text.textContent = (n === total
+      ? (n === 1 ? 'This sweep names no test in this data' : 'None of these sweeps names a test in this data')
+      : `${n} of ${total} sweeps name no test in this data: ${unmatched.map(s => s.title).join(', ')}`)
+      + ` — ${n === 1 ? 'it' : 'they'} may belong to another test program.`;
+    box.appendChild(text);
+    if (deps.onRemoveSweeps) {
+      const btn = doc.createElement('button');
+      btn.type = 'button';
+      Object.assign(btn.style, controlStyle('outlined'));
+      btn.textContent = n === 1 ? 'Remove this sweep' : `Remove these ${n} sweeps`;
+      wireControlHover(btn);
+      const ids = unmatched.map(s => s.id);
+      btn.addEventListener('click', () => deps.onRemoveSweeps!(ids));
+      box.appendChild(btn);
+    }
+    return box;
   }
 
   /** Correlation matrix + scatter together, wired so clicking a matrix cell

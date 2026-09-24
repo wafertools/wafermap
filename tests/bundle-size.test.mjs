@@ -50,6 +50,11 @@
 //   report builders, binColorsForMaps and the layout-only buildWaferMap. Much of
 //   the chart-builder code was already in the root; what is new is that analysis
 //   now reaches it. Legitimate library growth, not bloat.
+//   2026-09-24: root raised 62 KB -> 66 KB (measured 62,044 bytes at the time).
+//   STDF value rules on input: the `input-values-outside-stdf` checks, retests
+//   resolved by `supersedes` and by part ID (with the default-part-ID rule),
+//   spec limits kept apart from test limits in capability and the test-def
+//   merge, and exclusive limit comparison. Legitimate library growth, not bloat.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -69,7 +74,7 @@ const THRESHOLDS = {
   // expression parser + evaluator (~5 KB gz). That cost buys the absence of a
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
-  'wafermap (root)':            62_000,   // gzipped bytes — baseline ~57.9 KB
+  'wafermap (root)':            66_000,   // gzipped bytes — baseline ~62.0 KB
   'wafermap/render (initial)':  130_000,  // gzipped bytes — baseline ~104 KB, guide AND Insights excluded
 };
 

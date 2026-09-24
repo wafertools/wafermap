@@ -22,6 +22,7 @@ import { classifyPattern, type PatternClassification } from './patternClassifica
 import { normalCdf } from './math.js';
 import { quantile } from './math.js';
 import { mean, clamp01 } from '../core/utils.js';
+import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -204,11 +205,7 @@ function makeClusterFailurePredicate(
   if (limited.length === 0) return undefined;
   return (die: Die): boolean => {
     for (const td of limited) {
-      const tn = td.testNumber;
-      const v = die.testValues?.[tn];
-      if (v === undefined) continue;
-      if (td.limitLow  !== undefined && v < td.limitLow)  return true;
-      if (td.limitHigh !== undefined && v > td.limitHigh) return true;
+      if (isOutOfSpec(classifySpec(die.testValues?.[td.testNumber], td))) return true;
     }
     return false;
   };
@@ -264,16 +261,12 @@ function computeTestSpecYield(
     let passDies = 0, failLowDies = 0, failHighDies = 0, totalDies = 0;
     for (const die of dies) {
       if (die.partial || die.edgeExcluded) continue;
-      const v = die.testValues?.[tn];
-      if (v === undefined) continue;
+      const category = classifySpec(die.testValues?.[tn], td);
+      if (category === null) continue;
       totalDies++;
-      if (td.limitLow !== undefined && v < td.limitLow) {
-        failLowDies++;
-      } else if (td.limitHigh !== undefined && v > td.limitHigh) {
-        failHighDies++;
-      } else {
-        passDies++;
-      }
+      if (category === 'failLow') failLowDies++;
+      else if (category === 'failHigh') failHighDies++;
+      else passDies++;
     }
     result.push({
       testNumber:   tn,
@@ -1115,13 +1108,7 @@ function buildSpecLimitFindings(
         }
 
         const hasValue = (d: Die) => (d.testValues?.[tn]) !== undefined;
-        const isSpecFail = (d: Die) => {
-          const v = d.testValues?.[tn];
-          if (v === undefined) return false;
-          if (td.limitLow !== undefined && v < td.limitLow) return true;
-          if (td.limitHigh !== undefined && v > td.limitHigh) return true;
-          return false;
-        };
+        const isSpecFail = (d: Die) => isOutOfSpec(classifySpec(d.testValues?.[tn], td));
 
         const leftValid = leftDies.filter(hasValue);
         const rightValid = rightDies.filter(hasValue);
@@ -1159,7 +1146,7 @@ function buildSpecLimitFindings(
             pValue,
             sampleSizeLeft: leftValid.length,
             sampleSizeRight: rightValid.length },
-          summary: `${region.label} spec-fail rate for ${markedTestLabel(td, tn)} is ${(Math.abs(delta) * 100).toFixed(1)} pp ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`,
+          summary: `${region.label} limit fail rate for ${markedTestLabel(td, tn)} is ${(Math.abs(delta) * 100).toFixed(1)} pp ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`,
           highlight: {
             kind: 'region',
             regionFamily: region.family,

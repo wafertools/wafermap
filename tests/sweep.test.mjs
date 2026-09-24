@@ -501,3 +501,15 @@ test('a log axis with a non-positive x falls back to linear and says so', () => 
   assert.equal(d.xScale, 'linear');
   assert.ok(d.warnings.some(w => /log x axis needs every x value to be positive/.test(w)));
 });
+
+test('sweepAppliesTo — true when any series names a parametric test in the defs', async () => {
+  const { sweepAppliesTo } = await import('../dist/packages/stats/sweep.js');
+  const spec = { id: 's', title: 'S', series: [{ label: 'A', tests: ['1200..1210'] }, { label: 'B', tests: [1300] }] };
+  const P = n => ({ testNumber: n, name: `T${n}` });
+  assert.equal(sweepAppliesTo(spec, [P(1205)]), true, 'a range matching one declared test');
+  assert.equal(sweepAppliesTo(spec, [P(1300)]), true, 'a plain number that is declared');
+  assert.equal(sweepAppliesTo(spec, [P(5), P(6)]), false, 'another program’s tests');
+  assert.equal(sweepAppliesTo(spec, [{ ...P(1300), testType: 'F' }]), false, 'a functional test has nothing to sweep');
+  assert.equal(sweepAppliesTo(spec, undefined), false);
+});
+

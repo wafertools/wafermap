@@ -501,3 +501,50 @@ test('specCounts — undefined outside spec mode', () => {
   const view = buildView(wafer, dies, { plotMode: 'value', testDefs, activeTest: 1010 });
   assert.equal(view.specCounts, undefined);
 });
+
+// ── One limit rule: the sorted tally agrees with the per-value judgement ────────
+
+test('countOutOfSpecSorted agrees with classifySpec, including values on a limit', async () => {
+  const { classifySpec, countOutOfSpecSorted, isOutOfSpec } = await import('../dist/packages/renderer/spec.js');
+  const values = Float64Array.from([-2, -1, -1, 0, 0.5, 1, 1, 1, 2, 3, 3, 4]).sort();
+  for (const limits of [
+    { limitLow: -1, limitHigh: 3 }, { limitLow: 1 }, { limitHigh: 1 },
+    { limitLow: 5, limitHigh: 6 }, { limitLow: -5, limitHigh: -3 },
+    { limitLow: -1, limitHigh: 3, limitLowInclusive: false },
+    { limitLow: -1, limitHigh: 3, limitHighInclusive: false },
+    { limitLow: 1, limitHigh: 1, limitLowInclusive: false, limitHighInclusive: false },
+  ]) {
+    const expected = [...values].filter(v => isOutOfSpec(classifySpec(v, limits))).length;
+    assert.equal(countOutOfSpecSorted(values, limits), expected, JSON.stringify(limits));
+  }
+});
+
+test('testSpecYield — a NaN reading is no verdict, not a pass', () => {
+  const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0, limitHigh: 1 }];
+  const result = buildWaferMap({
+    results: [makeResult(0, 0, 0.5), makeResult(1, 0, NaN), makeResult(0, 1, 2)],
+    waferConfig, dieConfig, testDefs,
+  });
+  const row = analyzeWaferMap(result).stats.testSpecYield[0];
+  assert.equal(row.totalDies, 2);
+  assert.equal(row.passDies, 1);
+  assert.equal(row.failHighDies, 1);
+});
+
+test('a value on a limit passes unless the test says the comparison is exclusive', async () => {
+  const { classifySpec } = await import('../dist/packages/renderer/spec.js');
+  assert.equal(classifySpec(1, { limitLow: 1, limitHigh: 2 }), 'pass');
+  assert.equal(classifySpec(2, { limitLow: 1, limitHigh: 2 }), 'pass');
+  assert.equal(classifySpec(1, { limitLow: 1, limitHigh: 2, limitLowInclusive: false }), 'failLow');
+  assert.equal(classifySpec(2, { limitLow: 1, limitHigh: 2, limitHighInclusive: false }), 'failHigh');
+  assert.equal(classifySpec(1.5, { limitLow: 1, limitHigh: 2, limitLowInclusive: false, limitHighInclusive: false }), 'pass');
+});
+
+test('testSpecYield honours an exclusive limit', () => {
+  const testDefs = [{ testNumber: 1, name: 'T', limitLow: 0, limitHigh: 1, limitHighInclusive: false }];
+  const results = [0, 0.5, 1, 1].map((v, i) => ({ x: i, y: 0, hbin: 1, testValues: { 1: v } }));
+  const map = buildWaferMap({ results, testDefs });
+  const s = analyzeWaferMap(map);
+  const row = s.stats.testSpecYield.find(r => r.testNumber === 1);
+  assert.equal(row.yieldPercent, 50);
+});

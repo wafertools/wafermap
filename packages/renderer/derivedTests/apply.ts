@@ -244,7 +244,7 @@ function compile(
       continue;
     }
     if (producesBoolean && (raw.limitLow !== undefined || raw.limitHigh !== undefined)) {
-      warnings.push(warn(`Derived test ${label}: spec limits are ignored on a true/false derived test.`));
+      warnings.push(warn(`Derived test ${label}: test limits are ignored on a true/false derived test.`));
     }
 
     if (raw.testNumber === undefined) continue;

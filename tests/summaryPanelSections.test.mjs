@@ -229,7 +229,7 @@ test('the compact table shows Ppk and drops the columns that never fitted', () =
   // column-set tests at the end of this file).
   const section = buildTestSection(dies, specDefs, undefined, undefined, undefined, undefined, [{ dies }], undefined, 'compact');
   const headers = [...section.querySelectorAll('th')].map(th => th.textContent);
-  assert.deepEqual(headers, ['Test', 'Mean', 'Ppk', 'Spec yield']);
+  assert.deepEqual(headers, ['Test', 'Mean', 'Ppk', 'Limit yield']);
   // Twelve columns in a 260px panel meant four were visible; the rest live in
   // the report and the CSV.
   for (const gone of ['Q1', 'Q3', 'Median', 'StdDev', 'Min', 'Max', 'LSL', 'USL']) {
@@ -509,13 +509,13 @@ test('the compact column set is the docked panel\'s alone — other callers keep
   // unconditionally.
   const full = buildLotTestSection(dies, defs, undefined, undefined, undefined, [{ dies }]);
   const fullHeaders = [...full.querySelectorAll('th')].map(t => t.textContent);
-  for (const col of ['Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev', 'LSL', 'USL']) {
+  for (const col of ['Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev', 'Lo limit', 'Hi limit']) {
     assert.ok(fullHeaders.includes(col), `full table must keep ${col}: ${fullHeaders}`);
   }
 
   const compact = buildLotTestSection(dies, defs, undefined, undefined, undefined, [{ dies }], undefined, 'compact');
   const compactHeaders = [...compact.querySelectorAll('th')].map(t => t.textContent);
-  assert.deepEqual(compactHeaders, ['Test', 'Mean', 'Ppk', 'Spec yield']);
+  assert.deepEqual(compactHeaders, ['Test', 'Mean', 'Ppk', 'Limit yield']);
 });
 
 test('the docked wafer panel asks for the compact set', () => {

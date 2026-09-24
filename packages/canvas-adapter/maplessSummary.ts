@@ -170,7 +170,7 @@ function buildMiniHistogram(
   // loosely (charts/histogram.ts) — that one draws over a flat/mostly-empty
   // canvas background, so a dashed line alone is enough there.
   const limits: { pct: number; text: string }[] = [];
-  for (const [limit, label] of [[testDef?.limitLow, 'LSL'], [testDef?.limitHigh, 'USL']] as const) {
+  for (const [limit, label] of [[testDef?.limitLow, 'Lo limit'], [testDef?.limitHigh, 'Hi limit']] as const) {
     if (limit === undefined || limit < spanLow || limit > spanHigh) continue;
     const pct = axisT(limit) * 100;
     // pointerEvents:'none' — the marker sits on top of a bar and must let

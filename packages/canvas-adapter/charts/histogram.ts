@@ -359,7 +359,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         // A limit is a data value, not a grid value: size-based decimals, as before.
         'horizontal', theme.limitLine, makeAxisFormat(axisRef, unit).tick);
       const offAxisValues = new Set(offAxis.map(o => o.value));
-      for (const [limit, label] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
+      for (const [limit, label] of [[limitLow, 'Lo limit'], [limitHigh, 'Hi limit']] as const) {
         if (limit === undefined || offAxisValues.has(limit)) continue;
         const x = xForVal(limit);
         ctx.strokeStyle = theme.limitLine;
@@ -564,7 +564,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
       const xForVal = (v: number) => plotX + ((v - bucketMin) / bucketSpan) * plotMaxWidth;
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-      for (const [limit, label] of [[limitLow, 'LSL'], [limitHigh, 'USL']] as const) {
+      for (const [limit, label] of [[limitLow, 'Lo limit'], [limitHigh, 'Hi limit']] as const) {
         if (limit === undefined) continue;
         const x = xForVal(limit);
         ctx.strokeStyle = theme.limitLine;

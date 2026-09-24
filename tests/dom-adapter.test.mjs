@@ -1596,7 +1596,7 @@ test('renderWaferMap handles empty scenes gracefully', () => {
   }
 });
 
-test('renderWaferGallery exposes Spec pass/fail and Colorbar range for value maps with limits', () => {
+test('renderWaferGallery exposes Limit pass/fail and Colorbar range for value maps with limits', () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -1625,15 +1625,15 @@ test('renderWaferGallery exposes Spec pass/fail and Colorbar range for value map
     ctrl.setOptions({ plotMode: 'value', activeTest: 1010 });
     assert.notEqual(rangeBtn.style.display, 'none', 'Colorbar range visible in value mode with limits');
 
-    // Overlays menu offers an enabled "Spec pass/fail" row in value mode.
+    // Overlays menu offers an enabled "Limit pass/fail" row in value mode.
     const overlaysBtn = buttons().find((b) => b.ariaLabel === 'Overlays');
     assert.ok(overlaysBtn, 'Overlays button exists');
     click(window, overlaysBtn);
     const menu = [...window.document.querySelectorAll('[role="menu"]')].at(-1);
     // Disabled overlay rows are omitted entirely; presence here ⇒ enabled (active test has limits).
     const specRow = [...menu.querySelectorAll('[role="menuitemcheckbox"]')]
-      .find((el) => /Spec pass\/fail/.test(el.textContent ?? ''));
-    assert.ok(specRow, 'Spec pass/fail row present (enabled) when active test has limits');
+      .find((el) => /Limit pass\/fail/.test(el.textContent ?? ''));
+    assert.ok(specRow, 'Limit pass/fail row present (enabled) when active test has limits');
 
     // Enabling spec mode hides the colorbar-range button (bar irrelevant in pass/fail).
     ctrl.setOptions({ passFailDisplay: 'spec' });
@@ -1934,7 +1934,7 @@ test('pass/fail display toolbar: menu entries appear per data validity; log butt
 
     // P test with limits AND recorded verdicts: both entries offered.
     click(window, overlaysBtn);
-    assert.ok(menuRowByLabel('Spec pass/fail'), 'spec entry offered for a limited P test');
+    assert.ok(menuRowByLabel('Limit pass/fail'), 'spec entry offered for a limited P test');
     const testRow = menuRowByLabel('Test pass/fail');
     assert.ok(testRow, 'test entry offered when recorded verdicts exist');
     click(window, testRow);
@@ -1946,7 +1946,7 @@ test('pass/fail display toolbar: menu entries appear per data validity; log butt
     ctrl.setOptions({ activeTest: 2001, passFailDisplay: 'off' });
     click(window, overlaysBtn); // close
     click(window, overlaysBtn); // reopen with fresh rows
-    assert.equal(menuRowByLabel('Spec pass/fail'), undefined, 'no spec entry for an F test');
+    assert.equal(menuRowByLabel('Limit pass/fail'), undefined, 'no spec entry for an F test');
     assert.equal(menuRowByLabel('Test pass/fail'), undefined, 'no test entry for an F test');
     assert.equal(logBtn.style.display, 'none', 'log scale hidden for a functional test');
 

@@ -24,10 +24,49 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **`input-values-outside-stdf` warning** from `buildWaferMap`: bins, coordinates, test
+  numbers or site numbers outside the STDF V4 ranges, test values that are not finite, and a
+  `waferConfig.orientation` other than 0, 90, 180 or 270. The values are used as given; a
+  future release treats them as missing.
+- **`DieResult.supersedes`** (`'partId' | 'position'`): the tester marked the record as
+  replacing an earlier one. Such a record always wins, whatever `retestPolicy` says.
+- **Retests of dies with no position are matched by part ID** within a wafer, resolved by
+  `retestPolicy` and reported with an `info` warning, `retests-by-part-id`. Blank part IDs
+  never match, and part IDs are not used on a wafer where one value covers more than 20% of
+  the unpositioned records.
+- **`TestDef.specLow` / `TestDef.specHigh`**: a test's spec limits, separate from its test
+  limits (`limitLow`/`limitHigh`), as STDF records them. Process capability uses the spec
+  limits when both are given and the test limits otherwise, and reports which as
+  `TestCapability.limitBasis`. Wafers that disagree on a test's spec limits raise a
+  `specLimits` test-definition conflict.
+- **Sweeps tab notice for sweeps that name no test in the data**, and
+  **`InsightsOptions.onRemoveSweeps`**, which adds a Remove button to it. The sweep's own card
+  says the same in place of an empty chart.
+- **`TestDef.limitLowInclusive` / `TestDef.limitHighInclusive`**: whether a value exactly
+  equal to a test limit passes (default `true`), as STDF and ATDF state per test. Every
+  pass/fail judgement, yield and out-of-limit marker honours them. Wafers that disagree on
+  them raise a `limits` test-definition conflict.
+
 ### Changed
 
+- **`DieResult.partId` and `Die.partId` accept text** (`number | string`), as STDF defines
+  part IDs; a number is still accepted.
 - **Scatter chart legend:** hard bin 0 has its own entry and colour, and dies without a bin
   are listed last as "No bin data".
+- **A `NaN` bin is no bin**: it is neither a bin number nor a fail, and is counted in the new
+  warning.
+- **One spec-limit judgement** (`classifySpec`) serves every surface, including the per-test
+  spec yield, lot-stack fail filtering, regional spec-fail findings and the Summary panel.
+  A value that is not a finite number has no verdict everywhere, rather than counting as a
+  pass on some surfaces.
+- **Bin colours** for a bin that is not a whole number are taken from the whole bin below it.
+- **Test limits and spec limits are labelled apart.** `limitLow`/`limitHigh` are test limits,
+  labelled "Lo limit"/"Hi limit" on charts; LSL/USL appear only where a test's spec limits
+  are shown. The pass/fail option is "Limit pass/fail", the Summary panel's yield column is
+  "Limit yield", and the capability chart, tooltip and report name the limits each test was
+  judged against.
 
 ## [0.30.3] — 2026-09-23
 

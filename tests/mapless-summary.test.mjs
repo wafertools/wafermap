@@ -137,8 +137,8 @@ test('buildMaplessSummary — value mode draws LSL/USL markers when the test has
   const markers = [...el.querySelectorAll('[data-wmap-limit-marker]')];
   assert.equal(markers.length, 2);
   // Always-visible label chips (not hover-gated) carry the LSL/USL text.
-  assert.match(el.textContent, /LSL/);
-  assert.match(el.textContent, /USL/);
+  assert.match(el.textContent, /Lo limit/);
+  assert.match(el.textContent, /Hi limit/);
 });
 
 test('buildMaplessSummary — value mode omits limit markers when the test has none', () => {

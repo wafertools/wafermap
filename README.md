@@ -5,7 +5,7 @@
 [![CI and deploy](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml/badge.svg)](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml)
 [![npm](https://img.shields.io/npm/v/@wafertools/wafermap.svg)](https://www.npmjs.com/package/@wafertools/wafermap)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
-![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~59%20kB-blue)
+![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~61%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 <img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
@@ -13,7 +13,7 @@
 Browser-first wafer map visualization for semiconductor test data.
 
 **Zero runtime dependencies.** Pure ES modules with TypeScript types — works in React,
-Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~59 kB
+Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~61 kB
 min+gz; the interactive renderer is larger, and its chart suite and in-app guide are
 loaded on demand rather than shipped up front — [measured sizes](docs/performance.md).
 

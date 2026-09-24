@@ -497,5 +497,5 @@ test('Spec Yield N is emitted only when it can differ from the row N', () => {
   const same = Array.from({ length: 10 }, (_, i) => die({ hbin: 1, testValues: { 1050: 300 + i } }));
   const section = buildTestSection(same, testDefs, undefined, undefined, (t) => { saved.text = t; });
   clickExport(section);
-  assert.ok(!saved.text.split('\n')[0].includes('Spec Yield N'), saved.text.split('\n')[0]);
+  assert.ok(!saved.text.split('\n')[0].includes('Limit Yield N'), saved.text.split('\n')[0]);
 });

@@ -127,3 +127,58 @@ test('retestPolicy — retestCount is always set regardless of policy', () => {
     assert.equal(die?.retestCount, 2, `retestCount should be 2 for policy '${policy}'`);
   }
 });
+
+// ── Part IDs and the tester's supersede flag ─────────────────────────────────
+
+const noPos = (partId, hbin, extra = {}) => ({ partId, hbin, ...extra });
+const many = (n) => Array.from({ length: n }, (_, i) => noPos(`P${i}`, 1));
+
+test('unpositioned dies sharing a part ID are one retested die, and it is reported', () => {
+  const r = buildWaferMap({ results: [
+    result(0, 0, 1), noPos('A7', 3), ...many(8), noPos('A7', 1),
+  ], waferConfig, dieConfig });
+  const a7 = r.dies.filter(d => d.partId === 'A7');
+  assert.equal(a7.length, 1);
+  assert.equal(a7[0].hbin, 1, "'last' wins");
+  assert.equal(a7[0].retestCount, 2);
+  const w = r.warnings.find(w => w.code === 'retests-by-part-id');
+  assert.equal(w?.severity, 'info');
+});
+
+test('blank part IDs never match', () => {
+  const r = buildWaferMap({ results: [noPos('', 1), noPos('  ', 2), noPos(undefined, 3)], waferConfig, dieConfig });
+  assert.equal(r.dies.filter(d => d.x === undefined).length, 3);
+  assert.ok(!r.warnings.some(w => w.code === 'retests-by-part-id'));
+});
+
+test('a part ID on more than 20% of the unpositioned records is a default, not an ID', () => {
+  // "0" on 3 of 10 records (30%): part IDs are not used at all on this wafer.
+  const r = buildWaferMap({ results: [
+    noPos('0', 1), noPos('0', 2), noPos('0', 3), noPos('B', 1), noPos('B', 2), ...many(5),
+  ], waferConfig, dieConfig });
+  assert.equal(r.dies.length, 10, 'nothing merged');
+  assert.ok(!r.warnings.some(w => w.code === 'retests-by-part-id'));
+});
+
+test("a superseding record wins whatever retestPolicy says", () => {
+  const { dies } = buildWaferMap({
+    results: [result(0, 0, 1), { ...result(0, 0, 5), supersedes: 'position' }],
+    retestPolicy: 'best', passBins: [1],
+    waferConfig, dieConfig,
+  });
+  const d = dies.find(d => d.x === 0 && d.y === 0);
+  assert.equal(d.hbin, 5);
+  assert.equal(d.retestCount, 2);
+});
+
+test("a 'partId' supersede removes the earlier record with that part ID at another position", () => {
+  const { dies } = buildWaferMap({
+    results: [
+      { ...result(0, 0, 3), partId: 'Q1' }, result(1, 0, 1),
+      { ...result(2, 0, 1), partId: 'Q1', supersedes: 'partId' },
+    ],
+    waferConfig, dieConfig,
+  });
+  assert.equal(dies.find(d => d.x === 0 && d.y === 0)?.hbin, undefined, 'the superseded record is gone');
+  assert.equal(dies.find(d => d.x === 2 && d.y === 0)?.hbin, 1);
+});

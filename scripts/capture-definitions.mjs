@@ -31,7 +31,7 @@
  *   ['hover']                               hover canvas centre, pin toolbar
  *   ['hover', '#my-map']
  *
- *   ['hoverEl', 'Colorbar range: spec limits (click for data range)']   hover any element by aria-label or CSS selector, pin toolbar
+ *   ['hoverEl', 'Colorbar range: test limits (click for data range)']   hover any element by aria-label or CSS selector, pin toolbar
  *   ['hoverEl', 'Plot mode', '#my-map']    …with explicit container for toolbar pin
  *
  *   ['openPanel']                           open the summary/findings panel
@@ -91,7 +91,7 @@
  *
  * toggleOverlay (Overlays dropdown, default btn):
  *   'Ring boundaries'  'Quadrant lines'  'Die labels'
- *   'Reticle grid'     'XY indicator'    'Spec pass/fail'
+ *   'Reticle grid'     'XY indicator'    'Limit pass/fail'
  *
  * toggleOverlay (Orientation dropdown, btn = 'Orientation'):
  *   'Rotate 90° clockwise'  'Flip horizontal'  'Flip vertical'
@@ -287,8 +287,8 @@ export const CAPTURES = [
     page: '/examples/test-values.html',
     selector: '.demo-content',
     wait: 800,
-    setup: [['hoverEl', 'Colorbar range: spec limits (click for data range)'],
-    ['showCursorOn', 'Colorbar range: spec limits (click for data range)']],
+    setup: [['hoverEl', 'Colorbar range: test limits (click for data range)'],
+    ['showCursorOn', 'Colorbar range: test limits (click for data range)']],
   },
   // ── guide-test-values-spec-passfail.png — §6 Test values: spec pass/fail colouring ─
   {
@@ -297,7 +297,7 @@ export const CAPTURES = [
     page: '/examples/test-values.html',
     selector: '.demo-content',
     wait: 800,
-    setup: [['toggleOverlay', 'Spec pass/fail'], ['showCursorOn', 'Overlays', 90, 140]],
+    setup: [['toggleOverlay', 'Limit pass/fail'], ['showCursorOn', 'Overlays', 90, 140]],
   },
 
   // ── guide-test-values-functional.png — §6 Functional tests: Continuity forced into Test pass/fail ─

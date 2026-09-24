@@ -40,6 +40,7 @@ import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { type Chunked, drain } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
+import { countOutOfSpecSorted, hasSpecLimits } from '../renderer/spec.js';
 import { testLabel, derivedFields } from '../renderer/testLabel.js';
 import { type DescriptiveStats, describeSorted, quantile } from './math.js';
 import type { TestCapability } from './types.js';
@@ -62,6 +63,8 @@ export interface CapabilityDatum {
   hasSpec: boolean;
   lsl?: number;
   usl?: number;
+  /** Which limits `lsl`/`usl` are — see `TestCapability.limitBasis`. */
+  limitBasis?: 'spec' | 'test';
   mean: number;
   /** Sample stddev, ddof=1, pooled across every die across all items. */
   stdOverall: number;
@@ -107,22 +110,33 @@ interface CapabilityMoments {
 
 interface CapabilityDefs {
   defByTestNumber: Map<number, TestDef>;
-  specByTest: Map<number, { lsl: number; usl: number }>;
+  specByTest: Map<number, CapabilityLimits>;
+}
+
+/** The limits capability is judged against, and which kind they are. */
+interface CapabilityLimits { lsl: number; usl: number; basis: 'spec' | 'test' }
+
+/** Spec limits when both are given, else the test limits when both are, else none. */
+function capabilityLimits(def: TestDef): CapabilityLimits | undefined {
+  if (def.specLow !== undefined && def.specHigh !== undefined && def.specHigh > def.specLow) {
+    return { lsl: def.specLow, usl: def.specHigh, basis: 'spec' };
+  }
+  if (def.limitLow !== undefined && def.limitHigh !== undefined && def.limitHigh > def.limitLow) {
+    return { lsl: def.limitLow, usl: def.limitHigh, basis: 'test' };
+  }
+  return undefined;
 }
 
 /** Parametric defs by test number, and the full spec (both limits, usl > lsl) where one exists. */
 function capabilityDefs(testDefs: TestDef[]): CapabilityDefs {
-  const specByTest = new Map<number, { lsl: number; usl: number }>();
+  const specByTest = new Map<number, CapabilityLimits>();
   const defByTestNumber = new Map<number, TestDef>();
   for (const def of testDefs) {
     const testNumber = def.testNumber;
     if (testNumber === undefined || !isParametricTest(def)) continue;
     defByTestNumber.set(testNumber, def);
-    const lsl = def.limitLow;
-    const usl = def.limitHigh;
-    if (lsl !== undefined && usl !== undefined && usl > lsl) {
-      specByTest.set(testNumber, { lsl, usl });
-    }
+    const limits = capabilityLimits(def);
+    if (limits) specByTest.set(testNumber, limits);
   }
   return { defByTestNumber, specByTest };
 }
@@ -225,7 +239,7 @@ function accumulateMoments(
 function capabilityFromMoments(
   testNumber: number,
   def: TestDef,
-  spec: { lsl: number; usl: number } | undefined,
+  spec: CapabilityLimits | undefined,
   m: CapabilityMoments,
 ): TestCapability {
   const { n, sum, sumSq, withinNumerator, withinDenominator } = m;
@@ -246,6 +260,7 @@ function capabilityFromMoments(
     testNumber, label: testLabel(def, testNumber), unit: def.unit,
     ...derivedFields(def),
     hasSpec: spec !== undefined, lsl: spec?.lsl, usl: spec?.usl,
+    ...(spec ? { limitBasis: spec.basis } : {}),
     mean, stdOverall, stdWithin, n, cp, cpk, pp, ppk,
   };
 }
@@ -310,8 +325,8 @@ export interface PooledTestStats {
   /**
    * Per test, how many pooled values fell outside the test's own spec limits —
    * the spec-yield tally, counted off the sorted values this pass already held.
-   * Only tests carrying at least one limit appear. `fail` counts `v < limitLow`
-   * or `v > limitHigh`, matching the per-die judgement everywhere else.
+   * Only tests carrying at least one limit appear. `fail` is
+   * `countOutOfSpecSorted` — the same rule as the per-die `classifySpec`.
    *
    * This is here rather than the sorted arrays themselves because the result is
    * memoised: a tally is a handful of numbers per test, whereas the values are
@@ -357,26 +372,12 @@ function pooledCacheKey(items: CapabilityItem[], testDefs: TestDef[]): string {
   // Every field the pass reads off a def, so a changed limit cannot hit a
   // cached tally computed against the old one.
   const defs = testDefs.map(d =>
-    `${d.testNumber}${d.testType ?? 'P'}${d.limitLow ?? ''}${d.limitHigh ?? ''}${d.name ?? ''}${d.unit ?? ''}`);
+    `${d.testNumber}${d.testType ?? 'P'}${d.limitLow ?? ''}${d.limitHigh ?? ''}${d.specLow ?? ''}${d.specHigh ?? ''}${d.name ?? ''}${d.unit ?? ''}`);
   return `${ids.join(',')}${defs.join('')}`;
 }
 
 /** @internal Test seam — `tests/pooledTestStatsCache.test.mjs`. */
 export function clearPooledTestStatsCache(): void { pooledCache.clear(); }
-
-/** Index of the first value >= `x` in an ascending array. */
-function lowerBound(sorted: ArrayLike<number>, x: number): number {
-  let lo = 0, hi = sorted.length;
-  while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < x) lo = mid + 1; else hi = mid; }
-  return lo;
-}
-
-/** Index of the first value > `x` in an ascending array. */
-function upperBound(sorted: ArrayLike<number>, x: number): number {
-  let lo = 0, hi = sorted.length;
-  while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] <= x) lo = mid + 1; else hi = mid; }
-  return lo;
-}
 
 /**
  * @internal Per-test descriptive statistics AND capability indices for a pooled
@@ -441,10 +442,8 @@ export function* pooledTestStatsSteps(
 
     // The spec-limit tally, by binary search on the array we just sorted — the
     // panel used to get this from a second full scan of every pooled die.
-    if (def.limitLow !== undefined || def.limitHigh !== undefined) {
-      const below = def.limitLow !== undefined ? lowerBound(allValues, def.limitLow) : 0;
-      const above = def.limitHigh !== undefined ? allValues.length - upperBound(allValues, def.limitHigh) : 0;
-      specTally.set(testNumber, { n: allValues.length, fail: below + above });
+    if (hasSpecLimits(def)) {
+      specTally.set(testNumber, { n: allValues.length, fail: countOutOfSpecSorted(allValues, def) });
     }
 
     const spec = specByTest.get(testNumber);

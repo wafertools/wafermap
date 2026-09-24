@@ -255,7 +255,7 @@ export interface StatsSummary {
     /** Number of wafers in the lot stack. Present only when isLotStack is true. */
     lotSize?: number;
     /**
-     * Per-test spec yield for each test that has at least one limit defined.
+     * Per-test yield against the test limits, for each test that has at least one limit defined.
      * Only populated when testDefs with limitLow/limitHigh are provided.
      */
     testSpecYield?: Array<{
@@ -315,7 +315,7 @@ export interface StatsSummary {
     capability?: TestCapability[];
     /**
      * Per-test pass rate by the tester's recorded verdict, for parametric tests
-     * with recorded verdicts — the counterpart of `testSpecYield` (spec limits)
+     * with recorded verdicts — the counterpart of `testSpecYield` (test limits)
      * and `functionalYield` (functional tests). Worst first.
      */
     testFlagYield?: TestVerdictYield[];
@@ -362,10 +362,16 @@ export interface TestCapability {
   derived?:   true;
   /** The expression a `derived` test was computed from, for display. */
   expression?: string;
-  /** Both `limitLow` and `limitHigh` defined. When false, `lsl`/`usl` are absent and every index is null. */
+  /**
+   * Limits to judge capability against exist: both spec limits (`specLow`/
+   * `specHigh`), or failing that both test limits (`limitLow`/`limitHigh`). When
+   * false, `lsl`/`usl` are absent and every index is null.
+   */
   hasSpec:    boolean;
   lsl?:       number;
   usl?:       number;
+  /** `'spec'` when `lsl`/`usl` are the spec limits, `'test'` when they are the test limits. */
+  limitBasis?: 'spec' | 'test';
   mean:       number;
   /** Sample stddev (ddof = 1) over every value. */
   stdOverall: number;

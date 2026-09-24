@@ -240,7 +240,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
         'vertical', theme.limitLine, v => fmt(v, def?.unit));
 
       // Spec limits first, so data draws over them.
-      for (const [limit, label] of [[def?.limitLow, 'LSL'], [def?.limitHigh, 'USL']] as const) {
+      for (const [limit, label] of [[def?.limitLow, 'Lo limit'], [def?.limitHigh, 'Hi limit']] as const) {
         if (limit === undefined || limit < lo || limit > hi) continue;
         const y = yOf(limit);
         ctx.save();

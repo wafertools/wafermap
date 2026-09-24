@@ -42,7 +42,7 @@ number repeated in six places is a number that will be wrong in five of them.
 
 | Entry point | gzipped | When it is downloaded |
 | --- | --- | --- |
-| `@wafertools/wafermap` — the data and stats layer, no DOM | **~59 KB** | Always, if you import it |
+| `@wafertools/wafermap` — the data and stats layer, no DOM | **~61 KB** | Always, if you import it |
 | `@wafertools/wafermap/render` — the interactive renderer | **~127 KB** | Always, if you render |
 | Insights chart suite | +~34 KB | On first open, only if `insights: { enabled: true }` |
 | In-app user guide | +~39 KB | On first open of the guide |

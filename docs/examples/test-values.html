@@ -24,9 +24,9 @@
   <div class="demo-intro">
     Continuous parametric data stored in <code>die.testValues</code> as a <code>testNumber → value</code> map.
     <code>testDefs</code> gives each test a name and unit — the toolbar mode menu, tooltips, and colorbar all update automatically.
-    Vth has spec limits defined (<code>limitLow</code> / <code>limitHigh</code>): in <strong>Test Value</strong> mode out-of-spec dies keep the gradient fill and are flagged with a ▽/△ triangle marker (in either colorbar range).
-    Enable <strong>Spec pass/fail</strong> (via the Overlays menu or the button below) to replace the gradient with categorical pass·fail-low·fail-high colouring — reads <code>passFailDisplay: 'spec'</code>. The button is disabled for tests without limits.
-    Use the toolbar bracket button to switch the colorbar between the spec window and the full data range.
+    Vth has test limits defined (<code>limitLow</code> / <code>limitHigh</code>): in <strong>Test Value</strong> mode dies outside them keep the gradient fill and are flagged with a ▽/△ triangle marker (in either colorbar range).
+    Enable <strong>Limit pass/fail</strong> (via the Overlays menu or the button below) to replace the gradient with categorical pass·fail-low·fail-high colouring — reads <code>passFailDisplay: 'spec'</code>. The button is disabled for tests without limits.
+    Use the toolbar bracket button to switch the colorbar between the limit window and the full data range.
     Continuity is a <strong>functional</strong> test (<code>testType: 'F'</code>) — it has no measured value, only a recorded verdict in <code>die.testPass</code>. Selecting it always renders as <strong>Test pass/fail</strong> (<code>passFailDisplay: 'test'</code>), forced regardless of the requested display, since a functional test has nothing to show on a gradient.
   </div>
 
@@ -45,7 +45,7 @@
     <div class="ctrl-group">
       <span class="ctrl-label">Mode</span>
       <button class="toggle-btn active" id="btn-value">Test Value</button>
-      <button class="toggle-btn"        id="btn-speclimit">Spec pass/fail</button>
+      <button class="toggle-btn"        id="btn-speclimit">Limit pass/fail</button>
       <button class="toggle-btn"        id="btn-testpassfail">Test pass/fail</button>
     </div>
   </div>
@@ -74,18 +74,18 @@
         <div class="section-divider"></div>
 
         <div class="section" id="spec-section" style="display:none">
-          <div class="section-heading">Spec limits</div>
+          <div class="section-heading">Test limits</div>
           <table class="kv">
-            <tr><td>LSL</td>        <td id="spec-lsl">—</td></tr>
-            <tr><td>USL</td>        <td id="spec-usl">—</td></tr>
+            <tr><td>Lo limit</td>   <td id="spec-lsl">—</td></tr>
+            <tr><td>Hi limit</td>   <td id="spec-usl">—</td></tr>
             <tr><td>Fail low</td>   <td id="spec-fail-low" style="color:#3498db; font-weight:600">—</td></tr>
             <tr><td>Fail high</td>  <td id="spec-fail-high" style="color:#e74c3c; font-weight:600">—</td></tr>
-            <tr><td>In spec</td>    <td id="spec-pass" style="color:#27ae60; font-weight:600">—</td></tr>
-            <tr><td>Spec yield</td> <td id="spec-yield" style="font-weight:600">—</td></tr>
+            <tr><td>Within limits</td> <td id="spec-pass" style="color:#27ae60; font-weight:600">—</td></tr>
+            <tr><td>Limit yield</td> <td id="spec-yield" style="font-weight:600">—</td></tr>
           </table>
           <div style="margin-top:6px; font-size:11px; color:var(--muted); line-height:1.5">
-            Out-of-spec dies keep the gradient fill and are flagged with a triangle marker —
-            <span style="font-weight:600">▽</span> below LSL, <span style="font-weight:600">△</span> above USL — in both colorbar ranges.
+            Dies outside the limits keep the gradient fill and are flagged with a triangle marker —
+            <span style="font-weight:600">▽</span> below the low limit, <span style="font-weight:600">△</span> above the high limit — in both colorbar ranges.
           </div>
         </div>
         <div id="spec-divider" class="section-divider" style="display:none"></div>
@@ -129,7 +129,7 @@
 
     // TEST_DEFS includes limitLow/limitHigh for Vth (1060) — the toolbar shows a colorbar-range
     // toggle button. Out-of-spec dies keep the gradient fill and are flagged with a ▽/△ triangle
-    // marker (▽ below LSL, △ above USL) in either colorbar range.
+    // marker (▽ below the low limit, △ above the high limit) in either colorbar range.
     // FUNCTIONAL_TEST_DEF (1080, Continuity) has no measured value — only a recorded
     // die.testPass verdict — so selecting it always renders as Test pass/fail.
     const ALL_TEST_DEFS = [...TEST_DEFS, FUNCTIONAL_TEST_DEF];
@@ -144,7 +144,7 @@
 
     const patterns = [
       'Peaks at the wafer centre (~1.5 mA), falls toward the edge. Lower toward the NE corner, where the higher Vth makes weaker silicon.',
-      'A smooth NE→SW process tilt across the wafer: high toward the NE corner (a few dies climb above the USL of 0.57 V → △ fail-high markers) and low toward the SW corner (a few dip below the LSL of 0.44 V → ▽ fail-low markers), over a gentle centre-to-edge rise.',
+      'A smooth NE→SW process tilt across the wafer: high toward the NE corner (a few dies climb above the high limit of 0.57 V → △ fail-high markers) and low toward the SW corner (a few dip below the low limit of 0.44 V → ▽ fail-low markers), over a gentle centre-to-edge rise.',
       'Exponential growth toward the edge. Elevated toward the NE corner, correlating with the higher Vth there.',
       'Probe-contact quality degrades toward the wafer edge: ~97.5% pass rate over the interior, dropping to ~80% in the outer ring.',
     ];
@@ -227,10 +227,10 @@
       document.getElementById('pattern-box').textContent = patterns[idx];
     }
 
-    const VTH_TEST = 1060; // only test with spec limits — start here so the demo is self-explanatory
+    const VTH_TEST = 1060; // only test with limits — start here so the demo is self-explanatory
 
     // Mount in value mode on Vth so out-of-spec dies (▽/△ markers) are visible immediately.
-    // The Overlays menu exposes "Spec pass/fail" (limits) and "Test pass/fail" (recorded
+    // The Overlays menu exposes "Limit pass/fail" (limits) and "Test pass/fail" (recorded
     // verdict, always on for a functional active test) toggles when applicable.
     const ctrl = renderWaferMap(document.getElementById('map'), result, {
       viewOptions: {
@@ -257,7 +257,7 @@
 
     // Reflects the library's own resolution rules (buildView) rather than duplicating
     // them: a functional active test always renders as 'test', so the Test Value and
-    // Spec pass/fail buttons are moot there, and Test pass/fail can't be turned off.
+    // Limit pass/fail buttons are moot there, and Test pass/fail can't be turned off.
     function syncButtons(testNumber, passFailDisplay) {
       const def = findDef(testNumber);
       const functional = !!def && isFunctional(def);
@@ -272,7 +272,7 @@
       const specBtn = document.getElementById('btn-speclimit');
       specBtn.disabled = !hasLimits;
       specBtn.style.opacity = hasLimits ? '' : '0.38';
-      specBtn.title = hasLimits ? '' : 'No spec limits defined for this test';
+      specBtn.title = hasLimits ? '' : 'No limits defined for this test';
       specBtn.classList.toggle('active', display === 'spec');
 
       const testBtn = document.getElementById('btn-testpassfail');

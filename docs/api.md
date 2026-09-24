@@ -231,12 +231,13 @@ A single die record from wafer test equipment.
   hbin?:       number                      // hard bin assignment (physical sort result; STDF V4 range 0–32767)
   sbin?:       number                      // soft bin assignment (test-program failure category; independent 0–32767 space)
   siteNum?:    number                      // STDF site_num — which parallel test site tested this die
-                                           // enables test-site analysis in analyzeWaferMap when ��2 distinct
+                                           // enables test-site analysis in analyzeWaferMap when ≥2 distinct
                                            // values each appear on ≥3 dies (indicating a multi-site probe card)
-  partId?:     number                      // STDF pir.part_id — tester-assigned identifier for this unit
-                                           // at most fabs this encodes probe sequence (the step order across the wafer)
-                                           // but the field is semantically neutral — its meaning is fab-specific
-                                           // note: STDF part_id is 1-based; camelCase follows the library convention
+  partId?:     number | string             // STDF PRR PART_ID — text in STDF; a number is accepted too.
+                                           // Data about the part, not an identifier (a die's identity is its
+                                           // position). Fab-specific; at many fabs it encodes probe sequence
+  supersedes?: 'partId' | 'position'       // the tester marked this record as replacing an earlier one
+                                           // (same part ID / same position); it always wins over retestPolicy
 }
 ```
 
@@ -394,11 +395,16 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
                        // pre-scaled unit like "mA" or "µV"
   logScale?:   boolean // when true, value normalization and the colorbar use log₁₀ scale for this test
                        // silently falls back to linear when any die value is ≤ 0; default false
-  limitLow?:   number  // lower specification limit in the same units as the test value
-                       // values below this are out-of-spec; drives out-of-spec coloring and spec yield stats
-  limitHigh?:  number  // upper specification limit in the same units as the test value
-                       // values above this are out-of-spec
+  limitLow?:   number  // lower test limit (STDF LO_LIMIT) in the same units as the test value
+                       // values below this fail; drives the ▽/△ markers, limit pass/fail and yield
+  limitHigh?:  number  // upper test limit (STDF HI_LIMIT) in the same units as the test value
+                       // values above this fail
                        // both limits are optional independently — one-sided limits are valid
+  limitLowInclusive?:  boolean // a value equal to limitLow passes; default true (STDF PARM_FLG bit 6)
+  limitHighInclusive?: boolean // a value equal to limitHigh passes; default true (STDF PARM_FLG bit 7)
+  specLow?:    number  // lower spec limit (STDF LO_SPEC), distinct from the test limit
+  specHigh?:   number  // upper spec limit (STDF HI_SPEC). Process capability uses the spec limits
+                       // when both are given, otherwise limitLow/limitHigh; nothing else reads them
   testType?:   'P' | 'F'  // 'P' = parametric (continuous measured value, the default),
                        // 'F' = functional (pass/fail outcome ONLY, no measured value —
                        // e.g. an STDF FTR; the verdict lives in DieResult.testPass).
@@ -769,6 +775,8 @@ The library's one warning vocabulary. Raised by geometry inference on
 | `bin-colors-shared` | `warning` | Raised by the renderers (not `buildWaferMap`) for the bin map on screen: some bins are drawn in a colour another bin also has — more bins than the bin colour scheme has distinct colours, or a `BinDef.color` repeats one. Every die is drawn correctly; colour alone cannot separate those bins. A gallery states it once for all its wafers. |
 | `pass-bins-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different pass bins, and some hard bins pass on one wafer and fail on another. Every wafer's own verdicts and yield are correct; a bin has one colour and one legend row, so the named bins are shown as failing there. |
 | `ring-count-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different `ringCount`s. Each card and each wafer's findings use their own; the lot-level ring figures (Summary panel, report, Insights) use the count the message names. |
+| `input-values-outside-stdf` | `warning` | Raised by `buildWaferMap`: bins, coordinates, test numbers or site numbers outside the STDF V4 ranges (bins 0–32767, coordinates −32767…32767, test numbers 0–4294967295, sites 0–255), test values that are not finite, or a `waferConfig.orientation` other than 0, 90, 180 or 270. The values are used as given; a future release treats them as missing. A `NaN` bin is already treated as no bin and is counted here. |
+| `retests-by-part-id` | `info` | Raised by `buildWaferMap`: dies with no position that share a part ID were treated as retests of one die, resolved by `retestPolicy`. Blank part IDs never match, and part IDs are not used on a wafer where one value covers more than 20% of the unpositioned records. |
 | `input-values-not-numbers` | `error` | Raised by `buildWaferMap`: bins or test values were given as text, or pass/fail verdicts as something other than `true`/`false` — what a CSV parser produces unless each field is converted. They are **not** converted, so those dies are judged and plotted wrongly: a bin of `"1"` is not pass bin `1`, so they count as fails and yield is wrong. The message counts each kind and shows an example; it is also logged to the console. (String `x`/`y` throw instead.) |
 | `derived-test-invalid` | `warning` | Raised by `buildWaferMap`: a `derivedTests` entry (§4.1.9) could not be compiled or applied, and was **dropped** — a rejected derived test is never half-applied, because a half-working expression plots wrong numbers rather than no numbers. The message names the test and the character position within its `expr`. Causes: a parse or type error, a `testNumber` colliding with measured data (measured values are never overwritten), a `testType` mismatch, `t[n]` on a functional test, `specPass[n]` on a test with no limits, an undeclared test number, or an unknown function or name. Every other derived test in the same input still applies, so a map missing one derived test is the expected shape of this warning. |
 | `input-field-removed` | `error` | Raised by `buildWaferMap`: the input used a name removed in an earlier release — `data`, `die`, `stack`, `values`, `TestDef.index`, `dieConfig.origin`, `waferConfig.flat`, `reticleConfig.anchor` or `lotStack.aggr`. It is **not** honoured, so what it described is missing from the map (for `data` and `values`, the data itself). The message names each one and its replacement; it is also logged to the console, for a caller that does not read `result.warnings`. |
@@ -1080,7 +1088,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `useDefinedBinColors` | `boolean` | `true` | Honour `BinDef.color` where a bin definition supplies one. The Palette menu offers it as **Use colours from bin definitions**, only when some definition carries a colour. |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.12) |
-| `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Spec pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
+| `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Limit pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
 | `highlightBin` | `number` | — | Dim all bins except this one. Clicking a bin/soft-bin legend swatch toggles it. |
 | `highlightMetadataValue` | `string` | — | `'metadata'` mode's analogue of `highlightBin` — dim every die except this metadata value. Clicking a metadata legend swatch toggles it. |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the view auto-scales — use this to safely fix a range computed for a specific test. |
@@ -1437,7 +1445,7 @@ Three sections carry a header selector, and each derives its default rather than
 
 Bin bars are ordered pass-bins-first, then failing bins by descending count — the order every bin list in the library uses, including the Insights bin chart — and are labelled "% of dies (N=…)" to distinguish them from the lot card's "Mean wafer yield", which is an *unweighted* mean of per-wafer yields. The two are different statistics over different denominators and agree only when die counts are even across the lot.
 
-The on-screen test table carries Test / Mean / **Ppk** / Spec yield only; the full descriptive statistics (min, quartiles, median, max, σ, both limits) stay in the CSV export and the summary report. Ppk rather than Cpk because Cp/Cpk use the pooled *within-wafer* stddev — on a single-wafer panel there is exactly one subgroup, so `cpk === ppk` identically and the "Cpk" label would name an index the data does not contain; across a lot, Cpk excludes the wafer-to-wafer shift that Ppk includes. The Cpk/Ppk pair is a drift diagnostic and lives in the summary report, which prints all four indices. A test's `N` is hoisted into the section title when every test shares it.
+The on-screen test table carries Test / Mean / **Ppk** / Limit yield only; the full descriptive statistics (min, quartiles, median, max, σ, both limits) stay in the CSV export and the summary report. Ppk rather than Cpk because Cp/Cpk use the pooled *within-wafer* stddev — on a single-wafer panel there is exactly one subgroup, so `cpk === ppk` identically and the "Cpk" label would name an index the data does not contain; across a lot, Cpk excludes the wafer-to-wafer shift that Ppk includes. The Cpk/Ppk pair is a drift diagnostic and lives in the summary report, which prints all four indices. A test's `N` is hoisted into the section title when every test shares it.
 
 #### 5.4.3 `InsightsOptions`
 
@@ -1447,6 +1455,10 @@ The on-screen test table carries Test / Mean / **Ppk** / Spec yield only; the fu
   defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps'  // sub-tab shown first; default 'overview'.
                                                                       // 'sweeps' with no sweeps defined falls back to 'overview'
   defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
+  sweeps?:      SweepSpec[]                                      // parametric sweeps, one card each on a Sweeps tab (below)
+  onRemoveSweeps?: (ids: string[]) => void                       // adds a Remove button to the Sweeps tab's notice about
+                                                                      // sweeps that name no test in the data; the host drops
+                                                                      // those ids and re-renders
 }
 ```
 
@@ -1750,7 +1762,7 @@ Insights has three sub-tabs, and a fourth, **Sweeps**, when `insights.sweeps` de
 The two parametric modes can legitimately disagree — guard bands, dynamic or per-site limits, criteria the exported limits do not describe, or a limits/data mismatch. They are therefore kept as separate views rather than collapsed into one "parametric pass rate", and the chart counts the dies the two sources judge differently — the same figure as `stats.specVerdictDisagreementDies`. The chart surfaces that count rather than resolving it, since only the reader can tell an expected guard band from a real mismatch.
 
 Only the modes the data supports are offered, judged from the dies for `'testFlag'`, since every parametric test *could* carry a verdict and a definition-only check would offer a mode that renders empty. Bars are *rates* on a fixed 0–100% axis rather than counts, so splits with different wafer counts compare fairly. A parametric test with neither limits nor a recorded verdict is genuinely unjudgeable and is omitted rather than reported as 100%.
-- **Distributions** — process capability (Cp/Cpk/Pp/Ppk per test, the same figures as `stats.capability` in §7.4.1; a test without both spec limits is drawn on its own observed range, with no indices), a test-value boxplot, a value histogram, and a **wafer-to-wafer trend** (per-wafer mean with ±1σ whiskers, the die-weighted lot mean as a dashed centre line, and spec limits). The trend is always in slot order and has no sort control: a drift or a bad cassette position is only visible in the physical sequence, so sorting it would remove the only signal it carries.
+- **Distributions** — process capability (Cp/Cpk/Pp/Ppk per test, the same figures as `stats.capability` in §7.4.1; normalised to the spec limits where both are given and the test limits otherwise; a test without both limits is drawn on its own observed range, with no indices), a test-value boxplot, a value histogram, and a **wafer-to-wafer trend** (per-wafer mean with ±1σ whiskers, the die-weighted lot mean as a dashed centre line, and spec limits). The trend is always in slot order and has no sort control: a drift or a bad cassette position is only visible in the physical sequence, so sorting it would remove the only signal it carries.
 - **Correlation** — a Pearson-r correlation matrix (stating the median pairwise `n`, with the exact per-pair `n` in each cell's tooltip) and a die-level X/Y scatter that reports `r` and `n` for the pair it is showing, recomputed when the legend filters the points. Clicking a capability box drives the boxplot, histogram and trend onto that same test in place; clicking a correlation matrix cell drives the scatter panel's X/Y in place.
 
 For a single wafer there is no "Group by" control (grouping needs more than one wafer to be meaningful — see §6.10) and no click-to-open-wafer action (the map you're looking at already *is* the only wafer there is to open). Everything else — the wafer picker on histogram/correlation/scatter, the capability↔boxplot/histogram cross-link, the correlation↔scatter cross-link — behaves the same as the gallery version.
@@ -1831,6 +1843,9 @@ series: [
 A plain number that is not declared still keeps its place in the curve with no data, and is reported — naming a test explicitly asserts that it should be there.
 
 A crossing is measured only where both series share an x value, and a multiple crossing is reported as such rather than presenting the first as if it were the only one. A width level that either curve never reaches reads "not measurable", naming which series — never `0`. Tests missing from `testDefs`, functional tests inside a sweep, and series measuring different units are reported in the card footer.
+
+**Sweeps that name no test in the data.** A sweep whose tests are all absent — typically one a host kept from another test program — draws an empty card saying so, and the Sweeps tab shows a notice listing such sweeps. With `insights.onRemoveSweeps`, the notice carries a **Remove** button that hands the host those sweeps' ids.
+
 
 **The chart suite is loaded on demand.** It is a separate chunk (size in [Performance → Download size](performance.md#download-size)), fetched
 the first time Insights is opened and never downloaded by a page that only renders maps —
@@ -2719,9 +2734,10 @@ Added in 0.30.1. These replace calling the chart-data builders (§7.16) yourself
   testNumber: number
   label:      string
   unit?:      string
-  hasSpec:    boolean        // both limitLow and limitHigh defined; when false lsl/usl are absent and every index is null
+  hasSpec:    boolean        // both limits of one pair defined; when false lsl/usl are absent and every index is null
   lsl?:       number
   usl?:       number
+  limitBasis?: 'spec' | 'test' // which pair lsl/usl are: specLow/specHigh when both are given, else limitLow/limitHigh
   mean:       number
   stdOverall: number         // sample stddev (ddof = 1) over every value
   stdWithin:  number         // pooled within-wafer sample stddev; NaN when no wafer contributed ≥ 2 values
@@ -3511,7 +3527,7 @@ interface ToCanvasOptions {
 | Mode | Title (primary · secondary) |
 | --- | --- |
 | `value` | `Vth (mV)` |
-| `value` + `passFailDisplay: 'spec'` | `Vth (mV) · #1050` · `Spec pass/fail` |
+| `value` + `passFailDisplay: 'spec'` | `Vth (mV) · #1050` · `Limit pass/fail` |
 | `value` + `passFailDisplay: 'test'` | `Vth (mV) · #1050` · `Tester pass/fail` — or `Functional pass/fail` for a functional test |
 | `stackedValues` | `Vth (mV) · mean` · `stacked (6 wafers)` |
 | `hardBin` / `softBin` | `Hard Bin` / `Soft Bin` |
@@ -4119,7 +4135,7 @@ buildMapTitle(
 
 `note` is `"† Derived, not measured"` when the map shows a derived test (§4.1.9); `primary` then carries the `†` in front of the test name, and `toCanvas` draws `note` on its own line below `secondary`. Absent for a measured test.
 
-Builds the on-canvas map title for any plot mode, derived from the `View`. Returns a primary/secondary split so the renderer can place the key identifier above the colorbar/legend and supporting context (stack/wafer-count, or `Spec pass/fail`) below it. `toCanvas` calls this automatically when `showTitle` is true; exported so custom pipelines can render the same title. See the title table under §9.1.
+Builds the on-canvas map title for any plot mode, derived from the `View`. Returns a primary/secondary split so the renderer can place the key identifier above the colorbar/legend and supporting context (stack/wafer-count, or `Limit pass/fail`) below it. `toCanvas` calls this automatically when `showTitle` is true; exported so custom pipelines can render the same title. See the title table under §9.1.
 
 `View` → §11.15 · `BinDef` → §4.1.9
 

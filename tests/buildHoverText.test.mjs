@@ -36,7 +36,7 @@ test('value mode — out-of-spec active test is flagged in the tooltip', () => {
   const testDefs = [{ testNumber: 1010, name: 'Vth', unit: 'V', limitLow: 0.2, limitHigh: 0.5 }];
   const html = buildHoverText(die, 'value', { testDefs, activeTest: 1010 });
   assert.match(html, /<b>Vth: [^<]*<\/b>/, 'active test leads');
-  assert.match(html, /out of spec/i, 'out-of-spec active test must be flagged');
+  assert.match(html, /outside test limits/i, 'out-of-spec active test must be flagged');
 });
 
 test('value mode — degrades gracefully when activeTest is missing/unresolvable', () => {

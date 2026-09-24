@@ -49,7 +49,7 @@ export interface TestPassRatePanelHandle {
 }
 
 const KIND_LABEL: Record<TestPassKind, string> = {
-  spec:       'Spec limits',
+  spec:       'Test limits',
   testFlag:   'Tester flag',
   functional: 'Functional',
 };
@@ -58,7 +58,7 @@ const KIND_LABEL: Record<TestPassKind, string> = {
  *  screenshot of the card is never ambiguous about which of the two parametric
  *  questions it answers. */
 const KIND_TITLE: Record<TestPassKind, string> = {
-  spec:       'Parametric pass rate · spec limits',
+  spec:       'Parametric pass rate · test limits',
   testFlag:   'Parametric pass rate · tester flag',
   functional: 'Functional test pass rate',
 };
@@ -105,7 +105,7 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
 
     if (available.length === 0) {
       hint.textContent = '';
-      renderEmptyState(body, 'No tests with a pass/fail verdict — parametric tests need spec limits, functional tests need recorded results.');
+      renderEmptyState(body, 'No tests with a pass/fail verdict — parametric tests need test limits, functional tests need recorded results.');
       return;
     }
 
@@ -113,7 +113,7 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
     if (data.rows.length === 0) {
       hint.textContent = '';
       renderEmptyState(body,
-        kind === 'spec'     ? 'No parametric test has spec limits to judge against.'
+        kind === 'spec'     ? 'No parametric test has test limits to judge against.'
         : kind === 'testFlag' ? 'No parametric test has a recorded tester verdict.'
         : 'No functional test has recorded results.');
       return;
@@ -121,7 +121,7 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
 
     const grouped = data.groups.length > 1;
     const basis =
-      kind === 'spec'     ? 'Dies within spec limits, per test'
+      kind === 'spec'     ? 'Dies within test limits, per test'
       : kind === 'testFlag' ? "Dies the tester marked pass, per test"
       : 'Dies passing the recorded verdict, per test';
     hint.textContent = basis + (grouped ? ' · one bar per group' : '') + ' · worst first';
@@ -172,7 +172,7 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
         // Fail direction is parametric-only and belongs on the specific test's
         // own row: "failing high" and "failing low" are different process stories.
         const dir = (kind === 'spec' && !grouped && (row.failLowDies || row.failHighDies))
-          ? `<br>${row.failLowDies ?? 0} below LSL · ${row.failHighDies ?? 0} above USL`
+          ? `<br>${row.failLowDies ?? 0} below the low limit · ${row.failHighDies ?? 0} above the high limit`
           : '';
         return `<strong>${escHtml(row.label)}</strong>${who}<br>`
           + `${value.passRatePercent.toFixed(1)}% pass<br>`

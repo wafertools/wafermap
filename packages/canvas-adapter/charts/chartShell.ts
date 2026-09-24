@@ -1647,7 +1647,7 @@ export interface AxisRange {
   /** Limits that fall OUTSIDE [lo, hi] and so cannot be drawn in place — the
    *  caller should mark them at the axis edge instead. Without this a limit that
    *  is merely off-screen is indistinguishable from a test having no limit. */
-  offAxis: Array<{ value: number; label: 'LSL' | 'USL'; side: 'lo' | 'hi' }>;
+  offAxis: Array<{ value: number; label: 'Lo limit' | 'Hi limit'; side: 'lo' | 'hi' }>;
   /** Values excluded by the robust fence, when clipping is on. */
   clippedCount: number;
 }
@@ -1697,10 +1697,10 @@ export function resolveAxisRange(opts: {
   if (lo === hi) { lo -= 1; hi += 1; }
 
   const offAxis: AxisRange['offAxis'] = [];
-  if (limitLow  !== undefined && limitLow  < lo) offAxis.push({ value: limitLow,  label: 'LSL', side: 'lo' });
-  if (limitLow  !== undefined && limitLow  > hi) offAxis.push({ value: limitLow,  label: 'LSL', side: 'hi' });
-  if (limitHigh !== undefined && limitHigh > hi) offAxis.push({ value: limitHigh, label: 'USL', side: 'hi' });
-  if (limitHigh !== undefined && limitHigh < lo) offAxis.push({ value: limitHigh, label: 'USL', side: 'lo' });
+  if (limitLow  !== undefined && limitLow  < lo) offAxis.push({ value: limitLow,  label: 'Lo limit', side: 'lo' });
+  if (limitLow  !== undefined && limitLow  > hi) offAxis.push({ value: limitLow,  label: 'Lo limit', side: 'hi' });
+  if (limitHigh !== undefined && limitHigh > hi) offAxis.push({ value: limitHigh, label: 'Hi limit', side: 'hi' });
+  if (limitHigh !== undefined && limitHigh < lo) offAxis.push({ value: limitHigh, label: 'Hi limit', side: 'lo' });
 
   return { lo, hi, offAxis, clippedCount };
 }

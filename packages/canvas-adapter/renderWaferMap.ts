@@ -1154,6 +1154,7 @@ export function renderWaferMapCard(
       onSaveText: exportHooks.onSaveText,
       defaultView: insightsOpts?.defaultView,
       sweeps: insightsOpts?.sweeps,
+      onRemoveSweeps: insightsOpts?.onRemoveSweeps,
       // Both of these are FALLBACKS, passed only when the toolbar cannot carry
       // them. The toolbar now stays visible while Insights is open, so its own
       // toggle and Help are permanently reachable in a fixed corner; passing
@@ -1979,7 +1980,7 @@ export function renderWaferMapCard(
           const td = findTestDef(testDefs, resolvedTest);
           return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
         };
-        const btnColorbarRange = makeBtn('specRange', 'Colorbar range: spec limits', () => {
+        const btnColorbarRange = makeBtn('specRange', 'Colorbar range: test limits', () => {
           const next = viewOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
           applyOpts({ colorbarRangeMode: next });
         });
@@ -1991,8 +1992,8 @@ export function renderWaferMapCard(
           const isSpec = (viewOpts.colorbarRangeMode ?? 'spec') === 'spec';
           setActive(btnColorbarRange, isSpec);
           btnColorbarRange.ariaLabel = isSpec
-            ? 'Colorbar range: spec limits (click for data range)'
-            : 'Colorbar range: data range (click for spec limits)';
+            ? 'Colorbar range: test limits (click for data range)'
+            : 'Colorbar range: data range (click for test limits)';
         };
         syncColorbarRangeBtnFn();
 
