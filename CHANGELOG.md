@@ -24,6 +24,8 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.30.4] — 2026-09-25
+
 ### Added
 
 - **`input-values-outside-stdf` warning** from `buildWaferMap`: bins, coordinates, test
