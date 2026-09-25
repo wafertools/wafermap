@@ -596,6 +596,36 @@ test('saved files are named for the lot and wafer on screen, whichever export sa
   }
 });
 
+test('a hidden Summary panel is rendered when it is opened, not before', () => {
+  // Every gallery card carries a hidden panel; rendering them all (per-test
+  // statistics over each wafer's dies, again on every plot-mode change) was most
+  // of a large gallery's mount time. A hidden panel is only marked out of date.
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+    const wafer = buildWaferMap({
+      results: [0, 1, 2, 3].flatMap(x => [0, 1, 2].map(y => ({ x, y, hbin: 1, testValues: { 1010: x + y } }))),
+      dieConfig: { width: 10, height: 10 },
+      testDefs: [{ testNumber: 1010, name: 'Vth', unit: 'V' }],
+    });
+    // With a toolbar and no placement, the panel mounts closed.
+    const ctrl = renderWaferMap(container, wafer, { statsSummary: analyzeWaferMap(wafer) });
+    const panelText = () => [...root.querySelectorAll('div')].map(d => d.textContent).join(' ');
+    assert.ok(!/Vth/.test(panelText()), 'nothing is rendered into the closed panel');
+
+    ctrl.setOptions({ plotMode: 'value', activeTest: 1010 });
+    assert.ok(!/Vth/.test(panelText()), 'an option change does not render it either');
+
+    const open = [...root.querySelectorAll('button')].find(b => b.ariaLabel === 'Summary panel' || b.title === 'Summary panel');
+    assert.ok(open, 'the Summary panel button exists');
+    click(window, open);
+    assert.ok(/Vth/.test(panelText()), 'opening the panel renders it, with the current data');
+  } finally {
+    cleanup();
+  }
+});
+
 test('a host downloadFilename prefixes every file the map saves, PNG and CSV alike', () => {
   const { window, root, cleanup } = setupDom();
   try {

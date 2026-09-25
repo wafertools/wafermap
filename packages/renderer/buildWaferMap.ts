@@ -827,9 +827,10 @@ function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: 
 /** The input with its STDF-illegal values removed, and what was found. */
 interface CheckedInput {
   warnings: WaferWarning[];
-  /** Replacements for the input's results and lot-stack wafers; absent when nothing changed. */
+  /** Replacements for the input's results, lot-stack wafers and pre-built dies; absent when nothing changed. */
   results?: DieResult[];
   stackResults?: DieResult[][];
+  dies?: Die[];
   /** The orientation to build with, normalised to 0/90/180/270. */
   orientation?: 0 | 90 | 180 | 270;
   /** `testDefs` without definitions whose test number STDF cannot store; absent when none were dropped. */
@@ -840,12 +841,11 @@ interface CheckedInput {
  * Input values that are the wrong type or outside STDF V4's ranges — one pass over
  * the input for both.
  *
- * Wrong type: bins, test values and verdicts. CSV parsers hand every field
- * over as text, and string x/y are caught (buildWaferMap throws), but a string
- * bin or test value built a map that looked fine and was wrong: a bin of "1" is
- * not pass bin 1, so every such die counted as a fail and yield read 0 %, and a
- * test value of "0.5" is not a number to colour or analyse. Reported, not
- * converted — the same rule as removed input names: the caller fixes the data.
+ * Wrong type: bins, sites, test values and verdicts. CSV parsers hand every
+ * field over as text, and string x/y are caught (buildWaferMap throws). A bin of
+ * "1" is not pass bin 1 and a test value of "0.5" is not a measurement, so each
+ * is treated as missing and reported — never converted, the same rule as removed
+ * input names: the caller fixes the data.
  *
  * Outside STDF V4's ranges (`core/stdf.ts`): treated as missing, and reported.
  * Every value wmap holds must be storable in STDF, and a value that is not cannot
@@ -856,6 +856,9 @@ interface CheckedInput {
  * test value is dropped. The caller's objects are never modified: a row that
  * needs a change is copied.
  *
+ * The same rules apply to `results`, every lot-stack wafer and pre-built `dies`.
+ * A pre-built die that loses its position is carried as an unpositioned die.
+ *
  * Bins, positions and sites are checked on every die. Test values and verdicts are
  * checked on every die too, for the test numbers found on a sample of dies (the
  * first 50 and every 100th): walking every die's own keys cost more than the rest
@@ -864,9 +867,9 @@ interface CheckedInput {
  */
 function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
   const top = (Array.isArray(input) ? {} : input) as {
-    results?: unknown; lotStack?: { results?: unknown }; waferConfig?: { orientation?: unknown }; testDefs?: unknown;
+    results?: unknown; lotStack?: { results?: unknown }; dies?: unknown; waferConfig?: { orientation?: unknown }; testDefs?: unknown;
   };
-  const counts = { hbin: 0, sbin: 0, testValues: 0, testPass: 0 };
+  const counts = { hbin: 0, sbin: 0, siteNum: 0, testValues: 0, testPass: 0 };
   let example: string | undefined;
   const note = (field: keyof typeof counts, value: unknown) => {
     counts[field]++;
@@ -877,15 +880,16 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
   let binsNaN = 0;
 
   type Row = DieResult & Record<string, unknown>;
-  /** A bin to keep, or undefined to drop it. Wrong-type bins are kept (reported, not converted). */
+  /** Whether to keep a bin. A wrong-type bin is dropped (and reported by the caller). */
   const binOk = (v: unknown): boolean => {
-    if (typeof v !== 'number') return true;
+    if (v == null) return true;
+    if (typeof v !== 'number') return false;
     if (Number.isNaN(v)) { binsNaN++; return false; }
     if (!isStdfBin(v)) { outside.bins++; return false; }
     return true;
   };
 
-  function cleanWafer(wafer: unknown[]): DieResult[] | undefined {
+  function cleanWafer<T extends DieResult | Die>(wafer: readonly unknown[]): T[] | undefined {
     const valueKeys = new Set<string>();
     const verdictKeys = new Set<string>();
     for (let i = 0; i < wafer.length; i += i < 50 ? 1 : 100) {
@@ -899,7 +903,7 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
     const legalKey = (k: string) => isStdfTestNumber(Number(k));
     for (const k of new Set([...vKeys, ...pKeys])) if (!legalKey(k)) badTestNumbers.add(k);
 
-    let out: DieResult[] | undefined;
+    let out: T[] | undefined;
     for (let i = 0; i < wafer.length; i++) {
       const d = wafer[i];
       if (d === null || typeof d !== 'object') continue;
@@ -917,7 +921,8 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
         outside.positions += (xBad ? 1 : 0) + (yBad ? 1 : 0);
         const e = edit(); e.x = undefined; e.y = undefined;
       }
-      if (typeof r.siteNum === 'number' && !isStdfSite(r.siteNum)) { outside.sites++; edit().siteNum = undefined; }
+      if (r.siteNum != null && typeof r.siteNum !== 'number') { note('siteNum', r.siteNum); edit().siteNum = undefined; }
+      else if (typeof r.siteNum === 'number' && !isStdfSite(r.siteNum)) { outside.sites++; edit().siteNum = undefined; }
 
       const tv = r.testValues as Record<string, unknown> | undefined;
       if (tv && typeof tv === 'object') {
@@ -927,7 +932,7 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
           const v = tv[k];
           if (v == null) continue;
           if (!legalKey(k)) { (values ??= { ...tv }); delete values[k]; continue; }
-          if (typeof v !== 'number') note('testValues', v);
+          if (typeof v !== 'number') { note('testValues', v); (values ??= { ...tv }); delete values[k]; }
           else if (!Number.isFinite(v)) { outside.values++; (values ??= { ...tv }); delete values[k]; }
         }
         if (values) edit().testValues = values as DieResult['testValues'];
@@ -940,11 +945,11 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
           const v = tp[k];
           if (v == null) continue;
           if (!legalKey(k)) { (verdicts ??= { ...tp }); delete verdicts[k]; continue; }
-          if (typeof v !== 'boolean') note('testPass', v);
+          if (typeof v !== 'boolean') { note('testPass', v); (verdicts ??= { ...tp }); delete verdicts[k]; }
         }
         if (verdicts) edit().testPass = verdicts as DieResult['testPass'];
       }
-      if (row) (out ??= wafer.slice() as DieResult[])[i] = row;
+      if (row) (out ??= wafer.slice() as T[])[i] = row as unknown as T;
     }
     return out;
   }
@@ -954,6 +959,7 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
     checked.results = cleanWafer(input);
   } else {
     if (Array.isArray(top.results)) checked.results = cleanWafer(top.results);
+    if (Array.isArray(top.dies)) checked.dies = cleanWafer(top.dies);
     const stacked = top.lotStack?.results;
     if (Array.isArray(stacked)) {
       const cleaned = stacked.map(w => (Array.isArray(w) ? cleanWafer(w) : undefined));
@@ -981,13 +987,14 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
   const parts: string[] = [];
   if (counts.hbin)       parts.push(plural(counts.hbin, 'hard bin'));
   if (counts.sbin)       parts.push(plural(counts.sbin, 'soft bin'));
+  if (counts.siteNum)    parts.push(plural(counts.siteNum, 'site number'));
   if (counts.testValues) parts.push(plural(counts.testValues, 'test value'));
   if (counts.testPass)   parts.push(plural(counts.testPass, 'pass/fail verdict'));
   if (parts.length) {
-    const message = `buildWaferMap received ${parts.join(', ')} of the wrong type (for example ${example}). `
-      + 'Bins and test values must be numbers and verdicts true/false — a bin of "1" is not pass bin 1, so those dies '
-      + 'count as fails and yield is wrong, and a test value given as text is not plotted or analysed correctly. '
-      + 'Convert them with Number() (and verdicts to booleans) and rebuild.';
+    const message = `buildWaferMap received ${parts.join(', ')} of the wrong type (for example ${example}), `
+      + 'treated as missing. Bins, sites and test values must be numbers and verdicts true/false — a bin of "1" is '
+      + 'not pass bin 1 — so those dies have no bin, no site, no value or no verdict, and yield and every chart '
+      + 'leave them out. Convert them with Number() (and verdicts to booleans) and rebuild.';
     console.warn(`[wafermap] ${message}`);
     checked.warnings.push({ code: 'input-values-not-numbers', message, severity: 'error' });
   }
@@ -1114,7 +1121,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     waferOpts:        checked.orientation === undefined || input.waferConfig === undefined
       ? input.waferConfig : { ...input.waferConfig, orientation: checked.orientation },
     dieOpts:          input.dieConfig,
-    explicitDies:     input.dies,
+    explicitDies:     checked.dies ?? input.dies,
     reticleOpts:      input.reticleConfig,
     lotStackOpts:     checked.stackResults && input.lotStack
       ? { ...input.lotStack, results: checked.stackResults } : input.lotStack,
@@ -1964,7 +1971,11 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   // ── Explicit dies path ─────────────────────────────────────────────────────
 
   if (norm.explicitDies) {
-    let dies = norm.explicitDies;
+    // A pre-built die whose coordinates STDF cannot store has lost its position
+    // (checkInputValues) — it is carried with the unpositioned dies, never cast
+    // as positioned.
+    let dies = norm.explicitDies.filter(hasPosition);
+    const unplacedDies = norm.explicitDies.filter(d => !hasPosition(d));
 
     // Pre-built dies always carry their own position (they're a caller-supplied
     // layout) — only `results` (the data to attach) can include unpositioned
@@ -2015,7 +2026,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
       attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt),
     );
-    const allDies = [...dies, ...unpositionedDies];
+    const allDies = [...dies, ...unplacedDies, ...unpositionedDies];
 
     return {
       wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,

@@ -1514,9 +1514,18 @@ export function renderWaferMapCard(
   // panel elements this controller owns — so the map never grows.
   const panelRuns = new Map<HTMLDivElement, ChunkedRun>();
 
+  // A hidden panel is not rendered, only marked out of date, and is rendered when
+  // it is opened (`setSummaryPanelOpen`). Every gallery card carries a hidden
+  // panel, and rendering all of them — per-test statistics pooled over each
+  // wafer's dies, again on every plot-mode change — was most of the gallery's
+  // mount time on a large lot.
+  const stalePanels = new WeakSet<HTMLDivElement>();
+
   function renderSummaryPanelInto(el: HTMLDivElement): void {
     panelRuns.get(el)?.cancel();
     panelRuns.delete(el);
+    if (el.style.display === 'none') { stalePanels.add(el); return; }
+    stalePanels.delete(el);
     const run = runChunked(renderWaferSummaryContentSteps(el, {
       wafer, dies: currentDies,
       yieldSummary: currentResult.yield,
@@ -1686,6 +1695,7 @@ export function renderWaferMapCard(
     const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
     if (!panelEl) return;
     panelEl.style.display = open ? 'block' : 'none';
+    if (open && stalePanels.has(panelEl)) renderSummaryPanelInto(panelEl);
     if (btnSummary) setButtonActive?.(btnSummary, open);
     refreshSummaryButton();
   }

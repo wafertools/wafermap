@@ -140,6 +140,18 @@ export function getDieKey(die: { x?: number; y?: number; id?: string }): string 
   return `id:${die.id}`;
 }
 
+/**
+ * A number identifying grid position (`x`, `y`), for neighbour lookups inside
+ * the library: cluster detection and connected components probe up to 25 cells
+ * per die, and building a `getDieKey` string for each probe was most of their
+ * cost. Exact and collision-free for integer coordinates with |x| < 2^20 and
+ * |y| < 2^31, which covers STDF's ±32767 many times over. Never shown and
+ * never stored — findings carry `getDieKey` strings.
+ */
+export function gridKey(x: number, y: number): number {
+  return x * 4294967296 + y;
+}
+
 export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}): boolean {
   if (die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;

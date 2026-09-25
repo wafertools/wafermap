@@ -1,7 +1,6 @@
-// Bins and test values of the wrong type. A CSV parser gives every field as
-// text; string x/y throw, but string bins and test values used to build a map
-// that looked fine and was wrong — a bin of "1" is not pass bin 1, so yield
-// read 0 %. buildWaferMap now reports them as 'input-values-not-numbers'.
+// Bins, sites, test values and verdicts of the wrong type. A CSV parser gives
+// every field as text; string x/y throw, and the rest are treated as missing —
+// a bin of "1" is not pass bin 1 — and reported as 'input-values-not-numbers'.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,6 +16,13 @@ test('string bins are reported, with counts and an example', () => {
   assert.equal(w.severity, 'error');
   assert.match(w.message, /2 hard bins, 1 soft bin/);
   assert.match(w.message, /hbin "1"/);
+  assert.match(w.message, /treated as missing/);
+  const [d0, d1] = [r.dies.find(d => d.x === 0), r.dies.find(d => d.x === 1)];
+  assert.equal(d0.hbin, undefined, 'a text bin is no bin, never a fail');
+  assert.equal(d0.sbin, undefined);
+  assert.equal(d1.sbin, 20, 'a numeric bin beside a text one is kept');
+  // Die 0 has no bin at all (no verdict); die 1's text hard bin is dropped, so its soft bin 20 judges it.
+  assert.equal(r.yield.failDies, 1, 'only the die with a real bin is judged');
 });
 
 test('string test values and non-boolean verdicts are reported', () => {
@@ -25,6 +31,40 @@ test('string test values and non-boolean verdicts are reported', () => {
     { x: 1, y: 0, hbin: 1, testValues: { 10: 0.7 },   testPass: { 20: false } },
   ] }));
   assert.match(r.warnings.find(w => w.code === 'input-values-not-numbers').message, /1 test value, 1 pass\/fail verdict/);
+  const d0 = r.dies.find(d => d.x === 0);
+  assert.equal(d0.testValues[10], undefined, 'a text value is missing, not a reading');
+  assert.equal(d0.testPass[20], undefined, 'a non-boolean verdict is no verdict');
+});
+
+test('a text site number is no site, and reported', () => {
+  const results = [{ x: 0, y: 0, hbin: 1, siteNum: '3' }, { x: 1, y: 0, hbin: 1, siteNum: 2 }];
+  const before = JSON.stringify(results);
+  const r = quiet(() => buildWaferMap({ results }));
+  assert.equal(JSON.stringify(results), before, 'the caller\'s input is not modified');
+  assert.match(r.warnings.find(w => w.code === 'input-values-not-numbers').message, /1 site number/);
+  assert.equal(r.dies.find(d => d.x === 0).siteNum, undefined);
+  assert.equal(r.dies.find(d => d.x === 1).siteNum, 2);
+});
+
+test('pre-built dies get the same checks; one that loses its position is kept, unpositioned', () => {
+  const dies = [
+    { id: '0_0', x: 0, y: 0, physX: 0, physY: 0, width: 1, height: 1, hbin: '1', testValues: { 10: 'x', 11: 2 } },
+    { id: '1_0', x: 1, y: 0, physX: 1, physY: 0, width: 1, height: 1, hbin: 40000 },
+    { id: 'far', x: 99999, y: 0, physX: 2, physY: 0, width: 1, height: 1, hbin: 1 },
+  ];
+  const before = JSON.stringify(dies);
+  const r = quiet(() => buildWaferMap({ dies, waferConfig: { diameter: 10 } }));
+  assert.equal(JSON.stringify(dies), before, 'the caller\'s dies are not modified');
+  assert.equal(r.dies.length, 3, 'no die is lost');
+  const d0 = r.dies.find(d => d.id === '0_0');
+  assert.equal(d0.hbin, undefined);
+  assert.deepEqual(d0.testValues, { 11: 2 });
+  assert.equal(r.dies.find(d => d.id === '1_0').hbin, undefined, 'bin 40000 is no bin');
+  const far = r.dies.find(d => d.id === 'far');
+  assert.ok(far.x === undefined && far.y === undefined, 'coordinate 99999 is no position');
+  assert.equal(r.dataCoverage.unpositionedDies, 1);
+  assert.ok(codeOf(r).includes('input-values-not-numbers'));
+  assert.ok(codeOf(r).includes('input-values-outside-stdf'));
 });
 
 test('a column that turns to text part-way through a large file is still reported', () => {

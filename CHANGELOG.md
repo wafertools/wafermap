@@ -22,6 +22,30 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Breaking
+
+- **Input values of the wrong type are treated as missing.** A bin, site number or test value
+  that is not a number, or a pass/fail verdict that is not `true`/`false`, is left out of the
+  die — the same rule as a value outside the STDF V4 ranges — and still reported as
+  `input-values-not-numbers`. A die whose only bin was text therefore has no verdict rather
+  than a fail, which can change `yield` for such input. The input objects are not modified.
+- **Pre-built `dies` get the same input checks as `results`.** Wrong-type and out-of-range
+  values are treated as missing, and a die whose coordinates STDF cannot store is kept as an
+  unpositioned die.
+
+### Performance
+
+- **`analyzeWaferMap` is about five times faster on large wafers** (a 25-wafer, 266k-die lot:
+  32 s → 6.5 s in Chrome). Region membership, die keys and cluster neighbour lookups are each
+  computed once per analysis, not once per finding builder. Findings are unchanged.
+- **A hidden Summary panel is rendered when it is opened**, not on every mount and option
+  change. Every gallery card has one, so a large gallery mounts faster (266k-die lot: 7.3 s →
+  5.0 s) and switches plot mode faster (3.4 s → 1.4 s).
+
+---
+
 ## [0.31.0] — 2026-09-25
 
 ### Breaking

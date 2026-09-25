@@ -52,12 +52,11 @@ worth reporting, not a pattern to build on.
   pre-multiply. The geometry inputs are `waferConfig` (type `WaferConfig`) and
   `dieConfig` (type `DieConfig`) — both optional, both inferred when omitted.
 - **Bins and test values must be numbers, and verdicts booleans.** Every parser —
-  CSV, JSON, a spreadsheet export — hands you `"1"`, and `"1"` is not pass bin 1: those
-  dies count as fails and the yield is wrong, while a test value left as text is not
-  plotted or analysed correctly. Convert with `Number()` at parse time. `buildWaferMap`
-  samples the input and reports `input-values-not-numbers` (severity `'error'`) rather
-  than coercing behind your back, so a build that "works" can still be wrong — read the
-  warnings.
+  CSV, JSON, a spreadsheet export — hands you `"1"`, and `"1"` is not pass bin 1.
+  `buildWaferMap` never converts them: each is treated as missing and reported as
+  `input-values-not-numbers` (severity `'error'`), so those dies have no bin or no value
+  and a build that "works" can be mostly empty — read the warnings. Convert with
+  `Number()` at parse time.
 - **`passBins` and `ringCount` are set once, on `buildWaferMap`, and travel on the
   result.** Neither is an option on `analyzeWaferMap`, `analyzeWaferLot`,
   `renderWaferMap` or `renderWaferGallery` — passing one there is a type error in

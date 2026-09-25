@@ -6,7 +6,7 @@
 
 ## Bins or test values from a CSV are strings
 
-**Cause:** a CSV parser gives every field as a string. String **coordinates** make `buildWaferMap` throw (`x and y must be numbers, received strings`). String **bins and test values** are not converted: a bin of `"1"` is not the pass bin `1`, so those dies read as fails and yield is wrong, and a test value of `"0.5"` is not a number to colour or analyse. Since 0.30.1 the map reports this as an `input-values-not-numbers` warning — a red ⛔ in the toolbar and an entry in `result.warnings` — counting each kind.
+**Cause:** a CSV parser gives every field as a string. String **coordinates** make `buildWaferMap` throw (`x and y must be numbers, received strings`). String **bins, site numbers and test values** are not converted: a bin of `"1"` is not the pass bin `1`, and a test value of `"0.5"` is not a measurement, so each is treated as missing — those dies show as no-data and are left out of yield and every chart. The map reports this as an `input-values-not-numbers` warning — a red ⛔ in the toolbar and an entry in `result.warnings` — counting each kind.
 
 **Fix:** cast every numeric field with `+` or `Number()` before passing it to `buildWaferMap`:
 
@@ -21,7 +21,7 @@ buildWaferMap({
 });
 ```
 
-**How to confirm:** look for `input-values-not-numbers` in `result.warnings`, or check `typeof result.dies[0].hbin` — it should be `'number'`.
+**How to confirm:** look for `input-values-not-numbers` in `result.warnings`, or check `typeof` a bin in your own input rows before the build — it should be `'number'`. (On `result.dies` a text bin is already absent, so it shows as `'undefined'`.)
 
 ---
 

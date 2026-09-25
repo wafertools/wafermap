@@ -17,7 +17,7 @@
 // carry `physX`/`physY` — a duplicated type reproducing, in miniature, exactly
 // the problem this file exists to remove.
 import type { PositionedDie } from '../core/dies.js';
-import { getDieKey } from '../core/dies.js';
+import { gridKey } from '../core/dies.js';
 
 /**
  * Group `failing` into 8-connected components on the integer die grid.
@@ -33,14 +33,14 @@ import { getDieKey } from '../core/dies.js';
 export function findConnectedComponents(failing: readonly PositionedDie[]): PositionedDie[][] {
   if (failing.length === 0) return [];
 
-  const byKey = new Map<string, PositionedDie>();
-  for (const d of failing) byKey.set(getDieKey(d), d);
+  const byKey = new Map<number, PositionedDie>();
+  for (const d of failing) byKey.set(gridKey(d.x, d.y), d);
 
-  const visited = new Set<string>();
+  const visited = new Set<number>();
   const components: PositionedDie[][] = [];
 
   for (const seed of failing) {
-    const seedKey = getDieKey(seed);
+    const seedKey = gridKey(seed.x, seed.y);
     if (visited.has(seedKey)) continue;
 
     const component: PositionedDie[] = [];
@@ -53,7 +53,7 @@ export function findConnectedComponents(failing: readonly PositionedDie[]): Posi
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
-          const key = `${current.x + dx},${current.y + dy}`;
+          const key = gridKey(current.x + dx, current.y + dy);
           if (visited.has(key)) continue;
           const candidate = byKey.get(key);
           if (!candidate) continue;

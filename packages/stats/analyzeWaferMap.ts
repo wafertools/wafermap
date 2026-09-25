@@ -511,25 +511,40 @@ function labelForTest(
   return { label: markedTestLabel(def, testNumber), unit: def?.unit, ...derivedFields(def) };
 }
 
+// Die keys and region buckets, computed once per die list (and region family)
+// rather than once per builder. One analysis buckets the same two populations
+// into the same five region families for yield, hard bins, soft bins, functional
+// tests and spec limits. Keyed on array identity: the lists and families are
+// built once per analysis and never changed afterwards, and a WeakMap lets them
+// go with the analysis.
+const keysCache = new WeakMap<readonly Die[], string[]>();
+const bucketsCache = new WeakMap<readonly Die[], { members: Set<Die>; byFamily: WeakMap<StatsRegion[], Map<string, Die[]>> }>();
+
+/** `getDieKey` of every die in `dies`, in order. */
+function dieKeysOf(dies: readonly Die[]): string[] {
+  let keys = keysCache.get(dies);
+  if (!keys) keysCache.set(dies, keys = dies.map(getDieKey));
+  return keys;
+}
+
 /**
- * Assign each eligible die to its region's bucket. Regions are non-overlapping,
- * so a "rest of the map" comparison is simply the sum of all other buckets.
- * Shared preamble of every proportion-findings builder (yield, bin, functional).
+ * Each region's members that are in `dies`. Regions are non-overlapping, so a
+ * "rest of the map" comparison is simply the sum of all other buckets. Shared
+ * preamble of every regional findings builder. The result is cached: callers
+ * read the buckets and never change them.
  */
-function bucketDiesByRegion(
-  eligibleDies: EligibleDie[],
-  regionFamily: StatsRegion[],
-): Map<string, EligibleDie[]> {
-  const dieMap = new Map(eligibleDies.map((die) => [getDieKey(die), die]));
-  const buckets = new Map<string, EligibleDie[]>();
+function bucketDiesByRegion<D extends Die>(dies: readonly D[], regionFamily: StatsRegion[]): Map<string, D[]> {
+  let entry = bucketsCache.get(dies);
+  if (!entry) bucketsCache.set(dies, entry = { members: new Set(dies), byFamily: new WeakMap() });
+  const cached = entry.byFamily.get(regionFamily);
+  if (cached) return cached as Map<string, D[]>;
+
+  const { members } = entry;
+  const buckets = new Map<string, D[]>();
   for (const region of regionFamily) {
-    const bucket: EligibleDie[] = [];
-    for (const key of region.dieKeys) {
-      const d = dieMap.get(key);
-      if (d) bucket.push(d);
-    }
-    buckets.set(region.key, bucket);
+    buckets.set(region.key, region.dies.filter(d => members.has(d)) as D[]);
   }
+  entry.byFamily.set(regionFamily, buckets);
   return buckets;
 }
 
@@ -1083,21 +1098,11 @@ function buildSpecLimitFindings(
 
   const allFindings: RawFinding[] = [];
 
-  const dieMap = new Map(dies.map(d => [getDieKey(d), d]));
-
   for (const td of limited) {
     const tn = td.testNumber;
 
     for (const regionFamily of regionFamilies) {
-      const buckets = new Map<string, Die[]>();
-      for (const region of regionFamily) {
-        const bucket: Die[] = [];
-        for (const key of region.dieKeys) {
-          const d = dieMap.get(key);
-          if (d) bucket.push(d);
-        }
-        buckets.set(region.key, bucket);
-      }
+      const buckets = bucketDiesByRegion(dies, regionFamily);
       const findings: RawFinding[] = [];
 
       for (const region of regionFamily) {
@@ -1351,8 +1356,10 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     kind === 'softBin' ? ctx.softEligibleDies :
     kind === 'test'    ? ctx.testDies :
     ctx.eligibleDies;
-  const leftDies = pool.filter(d => leftKeySet.has(getDieKey(d)));
-  const rightDies = pool.filter(d => !leftKeySet.has(getDieKey(d)));
+  const poolKeys = dieKeysOf(pool);
+  const leftDies: Die[] = [];
+  const rightDies: Die[] = [];
+  for (let i = 0; i < pool.length; i++) (leftKeySet.has(poolKeys[i]) ? leftDies : rightDies).push(pool[i]);
 
   let effect: RawFinding['effect'];
   let stats: RawFinding['stats'];

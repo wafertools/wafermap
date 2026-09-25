@@ -9,7 +9,14 @@ export interface StatsRegion {
   family: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector';
   key: string;
   label: string;
+  /** `getDieKey` of each member — what findings carry, for highlighting. */
   dieKeys: string[];
+  /**
+   * The member dies themselves, parallel to `dieKeys`. Analysis reads these:
+   * finding a region's dies again by key string cost more than a quarter of a
+   * large wafer's analysis.
+   */
+  dies: Die[];
 }
 
 function dieKey(die: Die): string {
@@ -55,19 +62,15 @@ export function buildRegionYieldData(
     if (!wDies?.length) continue;
     const passSet = new Set(typeof passBins === 'function' ? passBins(wi) : passBins);
     // Ring/quadrant (the only regionBuilders this is ever called with) are
-    // spatial — unpositioned dies never enter a region, but dieByKey below
-    // still looks results up against the full population so a positioned
-    // die's yield tally is unaffected either way.
+    // spatial — unpositioned dies never enter a region.
     // isPositionedDie (not hasPosition) narrows physX/physY too, which is what
     // a regionBuilder's PositionedDie[] needs — no cast required.
     const regions = regionBuilder(wDies.filter(isPositionedDie), allWafers[wi], ringCount);
-    const dieByKey = new Map(wDies.map(d => [dieKey(d), d]));
     for (const region of regions) {
       if (!order.includes(region.key)) order.push(region.key);
       const acc = totals.get(region.key) ?? { label: region.label, pass: 0, total: 0 };
-      for (const key of region.dieKeys) {
-        const d = dieByKey.get(key);
-        if (!d || d.partial || d.edgeExcluded) continue;
+      for (const d of region.dies) {
+        if (d.partial || d.edgeExcluded) continue;
         const verdict = diePassStatus(d, passSet);
         if (verdict === undefined) continue;
         acc.total++;
@@ -150,8 +153,10 @@ export function buildRingRegions(dies: PositionedDie[], wafer: Wafer, ringCount:
       key,
       label: getRingLabel(ring, ringCount),
       dieKeys: [],
+      dies: [],
     };
     existing.dieKeys.push(dieKey(die));
+    existing.dies.push(die);
     regions.set(key, existing);
   }
 
@@ -169,8 +174,10 @@ export function buildQuadrantRegions(dies: PositionedDie[], wafer: Wafer, ringCo
       key,
       label: quadrant,
       dieKeys: [],
+      dies: [],
     };
     existing.dieKeys.push(dieKey(die));
+    existing.dies.push(die);
     regions.set(key, existing);
   }
 
@@ -194,8 +201,10 @@ export function buildReticlePositionRegions(
       key,
       label: `Reticle cell (${column}, ${row})`,
       dieKeys: [],
+      dies: [],
     };
     existing.dieKeys.push(dieKey(die));
+    existing.dies.push(die);
     regions.set(key, existing);
   }
 
@@ -217,31 +226,32 @@ const MIN_DIES_PER_SITE = 3;
  * validated the data).
  */
 export function buildTestSiteRegions(dies: Die[], forceEnable = false): StatsRegion[] {
-  const siteCounts = new Map<number, string[]>();
+  const siteDies = new Map<number, Die[]>();
 
   for (const die of dies) {
     if (die.siteNum === undefined) continue;
-    const keys = siteCounts.get(die.siteNum) ?? [];
-    keys.push(dieKey(die));
-    siteCounts.set(die.siteNum, keys);
+    const members = siteDies.get(die.siteNum) ?? [];
+    members.push(die);
+    siteDies.set(die.siteNum, members);
   }
 
   if (!forceEnable) {
     // Count how many sites meet the minimum population threshold.
     let qualifyingSites = 0;
-    for (const keys of siteCounts.values()) {
-      if (keys.length >= MIN_DIES_PER_SITE) qualifyingSites++;
+    for (const members of siteDies.values()) {
+      if (members.length >= MIN_DIES_PER_SITE) qualifyingSites++;
     }
     if (qualifyingSites < 2) return [];
   }
 
-  return [...siteCounts.entries()]
+  return [...siteDies.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([siteNum, keys]) => ({
+    .map(([siteNum, members]) => ({
       family: 'test-site' as const,
       key: `test-site:${siteNum}`,
       label: `Site ${siteNum}`,
-      dieKeys: keys,
+      dieKeys: members.map(dieKey),
+      dies: members,
     }));
 }
 
@@ -274,8 +284,10 @@ export function buildSectorRegions(dies: PositionedDie[], wafer: Wafer, sectorCo
       key,
       label: `Sector ${label}`,
       dieKeys: [],
+      dies: [],
     };
     existing.dieKeys.push(dieKey(die));
+    existing.dies.push(die);
     regions.set(key, existing);
   }
 

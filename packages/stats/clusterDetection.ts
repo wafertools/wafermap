@@ -2,7 +2,7 @@ import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { normalCdf } from './math.js';
-import { getDieKey } from '../core/dies.js';
+import { getDieKey, gridKey } from '../core/dies.js';
 import { findConnectedComponents } from './connectedComponents.js';
 
 // 16-point compass for edge-arc bearing labels.
@@ -82,8 +82,8 @@ export function buildClusterFindings(
 
   // Grid index for O(1) neighbour lookups by integer grid coordinate.
   // Adjacency uses the die's integer x,y grid position (8-connected: |dx|<=1, |dy|<=1).
-  const allByKey = new Map<string, PositionedDie>();
-  for (const d of dies) allByKey.set(getDieKey(d), d);
+  const allByKey = new Map<number, PositionedDie>();
+  for (const d of dies) allByKey.set(gridKey(d.x, d.y), d);
 
   // Neighbourhood radius in grid steps (ceil to cover the physical radius).
   const neighStepsX = Math.ceil(neighbourRadius / pitchX);
@@ -103,12 +103,11 @@ export function buildClusterFindings(
 
     // Neighbourhood: all eligible dies within neighbourRadius of any cluster member.
     // Use grid-step window around each cluster member for O(component × window) lookup.
-    const clusterKeySet = new Set(component.map(d => getDieKey(d)));
-    const neighbourKeySet = new Set<string>(clusterKeySet);
+    const neighbourKeySet = new Set<number>(component.map(d => gridKey(d.x, d.y)));
     for (const m of component) {
       for (let dy = -neighStepsY; dy <= neighStepsY; dy++) {
         for (let dx = -neighStepsX; dx <= neighStepsX; dx++) {
-          const ck = `${m.x + dx},${m.y + dy}`;
+          const ck = gridKey(m.x + dx, m.y + dy);
           if (neighbourKeySet.has(ck)) continue;
           const candidate = allByKey.get(ck);
           if (!candidate) continue;
@@ -170,7 +169,7 @@ export function buildClusterFindings(
 
     const clusterFraction = k / dies.length;
     const severity = severityForCluster(pValue, delta, clusterFraction, relativeDelta);
-    const dieKeys = [...clusterKeySet];
+    const dieKeys = component.map(d => getDieKey(d));
 
     findings.push({
       id: `${family}:${closestDie.x},${closestDie.y}`,
