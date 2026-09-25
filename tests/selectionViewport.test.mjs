@@ -13,7 +13,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-import { buildWaferMap, clipDiesToWafer, createWafer, generateDies } from '../dist/index.js';
+import { buildWaferMap } from '../dist/index.js';
+import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+import { generateDies } from '../dist/packages/core/dies.js';
 import { renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
 
 /** Canvas stub that records the draw transform and every rect() emitted.

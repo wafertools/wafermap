@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { generateReticleGrid } from '../dist/packages/core/reticle.js';
 import { createWafer } from '../dist/packages/core/wafer.js';
 import { buildWaferMap } from '../dist/index.js';
+import { withView } from './fixtures/withView.mjs';
 
 const wafer = createWafer({ diameter: 300 }); // radius 150, center (0,0)
 
@@ -256,12 +257,12 @@ function asymmetricRowResults() {
 }
 
 function buildWithConfig(dieConfigExtra, waferConfigExtra, viewOptionsExtra, anchorDie = { x: 0, y: 0 }) {
-  return buildWaferMap({
+  return withView(buildWaferMap({
     results: asymmetricRowResults(),
     dieConfig: { width: 5, height: 5, ...dieConfigExtra },
     waferConfig: { diameter: 300, ...waferConfigExtra },
     reticleConfig: { width: 3, height: 1, anchorDie },
-  }, viewOptionsExtra);
+  }), viewOptionsExtra);
 }
 
 test('reticle overlay field grouping is invariant to xAxisDirection/yAxisDirection/coordinateOrigin/orientation', () => {

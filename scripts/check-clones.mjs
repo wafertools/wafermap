@@ -34,7 +34,7 @@ const MIN_RUN = 150;
  *  to admit a new one. */
 const BUDGET = 0;
 
-// `deprecated.ts` holds each package's temporary deprecation wrappers (gone in 0.31.0): one
+// `deprecated.ts` holds a package's temporary deprecation wrappers, when it has any: one
 // deliberately uniform line per deprecated export, which is repetition by design.
 const SKIP = /(\.test\.ts|userGuideHtml\.ts|icons\.ts|version\.ts|guideExtension\.ts|deprecated\.ts)$/;
 

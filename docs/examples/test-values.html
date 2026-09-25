@@ -255,7 +255,7 @@
       return !!(def?.limitLow != null || def?.limitHigh != null);
     }
 
-    // Reflects the library's own resolution rules (buildView) rather than duplicating
+    // Reflects the library's own resolution rules rather than duplicating
     // them: a functional active test always renders as 'test', so the Test Value and
     // Limit pass/fail buttons are moot there, and Test pass/fail can't be turned off.
     function syncButtons(testNumber, passFailDisplay) {

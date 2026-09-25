@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateValues, aggregateBinCounts } from '../dist/index.js';
+import { aggregateValues, aggregateBinCounts } from '../dist/packages/core/aggregates.js';
 
 const die = (x, y, extra) => ({ id: `${x}_${y}`, x, y, width: 10, height: 10, physX: x * 10, physY: y * 10, ...extra });
 

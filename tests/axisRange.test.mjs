@@ -2,8 +2,13 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { robustFence, shouldIncludeLimitsByDefault, resolveAxisRange , limitLabelSide }
-  from '../dist/packages/canvas-adapter/charts/chartShell.js';
+import {
+  robustFence, shouldIncludeLimitsByDefault, resolveAxisRange, limitLabelSide,
+  limitLines, limitExtent, hasBothLimitKinds, stackLabelRows,
+} from '../dist/packages/canvas-adapter/charts/chartShell.js';
+
+/** A test's test limits, as the limit lines a chart draws. */
+const testLimits = (lo, hi) => limitLines({ limitLow: lo, limitHigh: hi }, 'test');
 
 test('the fence sits next to the data, not next to the outlier', () => {
   // 20 readings around 10, plus one of 1e6. This is why the rule is Tukey and not
@@ -54,7 +59,7 @@ test('limits are included by default only when they leave the data room', () => 
 });
 
 test('an off-axis limit is reported so it can be marked, not silently dropped', () => {
-  const r = resolveAxisRange({ dataMin: 9, dataMax: 11, limitLow: 0, limitHigh: 100, includeLimits: false });
+  const r = resolveAxisRange({ dataMin: 9, dataMax: 11, limits: testLimits(0, 100), includeLimits: false });
   assert.deepEqual(r.offAxis.map(o => o.label).sort(), ['Hi limit', 'Lo limit']);
   assert.equal(r.offAxis.find(o => o.label === 'Lo limit').side, 'lo');
   assert.equal(r.offAxis.find(o => o.label === 'Hi limit').side, 'hi');
@@ -64,7 +69,7 @@ test('an off-axis limit is reported so it can be marked, not silently dropped', 
 });
 
 test('including the limits puts them on the axis and clears the off-axis list', () => {
-  const r = resolveAxisRange({ dataMin: 9, dataMax: 11, limitLow: 0, limitHigh: 100, includeLimits: true });
+  const r = resolveAxisRange({ dataMin: 9, dataMax: 11, limits: testLimits(0, 100), includeLimits: true });
   assert.equal(r.lo, 0);
   assert.equal(r.hi, 100);
   assert.deepEqual(r.offAxis, []);
@@ -83,7 +88,7 @@ test('clipping narrows the axis and counts what fell outside', () => {
 test('clipping never widens past the data, and limits still win when included', () => {
   const values = [...Array(20).keys()].map(i => 10 + i * 0.1);
   const r = resolveAxisRange({
-    dataMin: 10, dataMax: 11.9, limitLow: 0, limitHigh: 100,
+    dataMin: 10, dataMax: 11.9, limits: testLimits(0, 100),
     includeLimits: true, clipOutliers: true, values,
   });
   // An explicit "include limits" is a user instruction; clipping must not override it.
@@ -118,4 +123,63 @@ test('limitLabelSide — a label that exactly fits is not flipped', () => {
   // here would flip labels that had room, which is the defect being fixed.
   assert.equal(limitLabelSide(127, 24, 100, 900, true), -1);
   assert.equal(limitLabelSide(873, 24, 100, 900, false), 1);
+});
+
+// ── Limit lines: test and spec limits ───────────────────────────────────────
+
+const both = { limitLow: 1, limitHigh: 9, specLow: 0, specHigh: 10 };
+
+test('limitLines — both kinds by default, each labelled as its own kind', () => {
+  assert.deepEqual(limitLines(both).map(l => `${l.kind}:${l.end}:${l.label}:${l.value}`), [
+    'test:lo:Lo limit:1', 'test:hi:Hi limit:9', 'spec:lo:LSL:0', 'spec:hi:USL:10',
+  ]);
+  assert.deepEqual(limitLines(both, 'test').map(l => l.label), ['Lo limit', 'Hi limit']);
+  assert.deepEqual(limitLines(both, 'spec').map(l => l.label), ['LSL', 'USL']);
+  assert.deepEqual(limitLines(both, 'none'), []);
+});
+
+test('limitLines — a test without the chosen kind still shows the kind it has', () => {
+  // Choosing spec limits for one test must not make another test look unlimited.
+  assert.deepEqual(limitLines({ limitLow: 1, limitHigh: 9 }, 'spec').map(l => l.label), ['Lo limit', 'Hi limit']);
+  assert.deepEqual(limitLines({ specLow: 0 }, 'test').map(l => l.label), ['LSL']);
+  assert.deepEqual(limitLines(undefined), []);
+});
+
+test('hasBothLimitKinds — true only when a test has at least one limit of each kind', () => {
+  assert.equal(hasBothLimitKinds(both), true);
+  assert.equal(hasBothLimitKinds({ limitHigh: 9, specLow: 0 }), true);
+  assert.equal(hasBothLimitKinds({ limitLow: 1, limitHigh: 9 }), false);
+  assert.equal(hasBothLimitKinds(undefined), false);
+});
+
+test('limitExtent and the axis cover every line drawn, of either kind', () => {
+  assert.deepEqual(limitExtent(limitLines(both)), { lo: 0, hi: 10 });
+  const r = resolveAxisRange({ dataMin: 4, dataMax: 6, limits: limitLines(both), includeLimits: true });
+  assert.equal(r.lo, 0);
+  assert.equal(r.hi, 10);
+  const off = resolveAxisRange({ dataMin: 4, dataMax: 6, limits: limitLines(both), includeLimits: false });
+  assert.deepEqual(off.offAxis.map(o => `${o.label}:${o.side}`).sort(), ['Hi limit:hi', 'LSL:lo', 'Lo limit:lo', 'USL:hi']);
+});
+
+test('stackLabelRows — labels that do not overlap stay on row 0; overlapping ones stack', () => {
+  assert.deepEqual(stackLabelRows([{ start: 0, end: 10 }, { start: 20, end: 30 }]), [0, 0]);
+  assert.deepEqual(stackLabelRows([{ start: 0, end: 10 }, { start: 5, end: 15 }, { start: 8, end: 18 }]), [0, 1, 2]);
+  // Input order is preserved in the result, whatever order the spans arrive in.
+  assert.deepEqual(stackLabelRows([{ start: 5, end: 15 }, { start: 0, end: 10 }]), [1, 0]);
+  // A freed row is reused rather than always opening a new one.
+  assert.deepEqual(stackLabelRows([{ start: 0, end: 10 }, { start: 5, end: 15 }, { start: 20, end: 30 }]), [0, 1, 0]);
+});
+
+// ── Gridline colour ─────────────────────────────────────────────────────────
+
+test('withAlpha — scales the opacity of every colour form a computed token holds', async () => {
+  const { withAlpha } = await import('../dist/packages/canvas-adapter/charts/chartShell.js');
+  assert.equal(withAlpha('#808080', 0.4), 'rgba(128, 128, 128, 0.4)');
+  assert.equal(withAlpha('#fff', 0.5), 'rgba(255, 255, 255, 0.5)');
+  assert.equal(withAlpha('#00000080', 0.5), 'rgba(0, 0, 0, 0.251)');
+  assert.equal(withAlpha('rgb(10, 20, 30)', 0.4), 'rgba(10, 20, 30, 0.4)');
+  assert.equal(withAlpha('rgba(0, 0, 0, 0.12)', 0.5), 'rgba(0, 0, 0, 0.06)');
+  assert.equal(withAlpha('rgb(10 20 30 / 50%)', 0.5), 'rgba(10, 20, 30, 0.25)');
+  // Anything else is returned unchanged rather than guessed at.
+  assert.equal(withAlpha('var(--x)', 0.4), 'var(--x)');
 });

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   lerpKp,
   VIRIDIS,
-  valueToViridis,
   valueToGreyscale,
   contrastTextColor,
   metadataValueColor,
@@ -59,14 +58,6 @@ test('lerpKp — VIRIDIS t=1 is yellow (high r, high g, low b)', () => {
   assert.ok(+m[1] > 200, 'viridis t=1 should have high red');
   assert.ok(+m[2] > 200, 'viridis t=1 should have high green');
   assert.ok(+m[3] < 100, 'viridis t=1 should have low blue');
-});
-
-// ── valueToViridis ────────────────────────────────────────────────────────────
-
-test('valueToViridis — delegates to lerpKp(VIRIDIS)', () => {
-  assert.equal(valueToViridis(0), lerpKp(VIRIDIS, 0));
-  assert.equal(valueToViridis(0.5), lerpKp(VIRIDIS, 0.5));
-  assert.equal(valueToViridis(1), lerpKp(VIRIDIS, 1));
 });
 
 // ── valueToGreyscale ──────────────────────────────────────────────────────────

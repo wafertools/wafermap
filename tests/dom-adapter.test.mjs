@@ -5,7 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildWaferMap, analyzeWaferMap, classifyDie, clipDiesToWafer, createWafer, generateDies, binColorsForMaps } from '../dist/index.js';
+import { buildWaferMap, analyzeWaferMap, binColorsForMaps } from '../dist/index.js';
+import { classifyDie } from '../dist/packages/core/classify.js';
+import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+import { generateDies } from '../dist/packages/core/dies.js';
 import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
 import { renderWaferMapCard } from '../dist/packages/canvas-adapter/renderWaferMap.js';
 
@@ -485,7 +489,7 @@ test('renderWaferMap onSaveImage hook intercepts the PNG download', () => {
 
       assert.equal(saved.length, 1, 'onSaveImage should be called exactly once');
       assert.ok(saved[0].blob instanceof window.Blob, 'hook receives a Blob');
-      assert.equal(saved[0].name, 'my-wafer.png', 'suggestedName uses downloadFilename + .png');
+      assert.match(saved[0].name, /^my-wafer_.+\.png$/, 'suggestedName leads with downloadFilename');
       assert.equal(anchorClicks, 0, 'default <a download> path is bypassed when onSaveImage is set');
     } finally {
       window.HTMLAnchorElement.prototype.click = origClick;
@@ -592,22 +596,7 @@ test('saved files are named for the lot and wafer on screen, whichever export sa
   }
 });
 
-test('a host downloadFilename still names the map PNG exactly, and nothing else, until 0.31.0', () => {
-  // Making it a prefix is a change of meaning, so it waits for a minor release.
-  //
-  // Release gate: this behaviour is announced as changing in 0.31.0. Checked
-  // against CHANGELOG headings as well as package.json because `npm version`
-  // runs the tests before it bumps the version, so this fails while 0.31.0 is
-  // being prepared rather than after it is tagged.
-  const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const pkgVersion = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
-  const headings = [...fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8').matchAll(/^## \[(\d+)\.(\d+)\.\d+\]/gm)];
-  const reached = [pkgVersion.split('.').slice(0, 2).map(Number), ...headings.map(m => [Number(m[1]), Number(m[2])])]
-    .some(([major, minor]) => major > 0 || minor >= 31);
-  assert.ok(!reached,
-    'Preparing 0.31.0: downloadFilename must become a prefix for every saved file, as announced in 0.30.1. '
-    + 'This test is replaced as part of that change.');
-
+test('a host downloadFilename prefixes every file the map saves, PNG and CSV alike', () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -634,8 +623,9 @@ test('a host downloadFilename still names the map PNG exactly, and nothing else,
     const buttons = [...root.querySelectorAll('button')];
     click(window, buttons.find((b) => b.ariaLabel === 'Download PNG'));
     click(window, buttons.find((b) => /CSV$/.test(b.textContent)));
-    assert.deepEqual(images, ['LOT123_sort.png'], 'the PNG keeps the documented name');
-    assert.deepEqual(texts, ['LOT123_W05_test-values.csv'], 'CSVs never read downloadFilename, and are not prefixed yet');
+    assert.equal(images.length, 1);
+    assert.match(images[0], /^LOT123_sort_W05_.+\.png$/, 'the PNG: prefix, then the wafer — the lot is already in the prefix');
+    assert.deepEqual(texts, ['LOT123_sort_W05_test-values.csv'], 'CSVs take the prefix too');
   } finally {
     cleanup();
   }
@@ -668,17 +658,17 @@ test('the gallery names its own files for the lot, and each card names its files
     assert.equal(images.at(-1), 'LOT123_W02_hard-bin.png', 'card PNG: its own wafer, lot named once');
     ctrl.destroy();
 
-    // A host downloadFilename still names only the composite PNG; cards never read it.
+    // A host downloadFilename prefixes the gallery's files and every card's.
     const ctrl2 = renderWaferGallery(container, [build('W01'), build('W02')], {
       viewOptions: { plotMode: 'hardBin' },
       downloadFilename: 'lot-overview',
       onSaveImage: (_blob, name) => { images.push(name); },
     });
     click(window, [...container.querySelectorAll('button')].find((b) => b.ariaLabel === 'Download gallery PNG'));
-    assert.equal(images.at(-1), 'lot-overview.png');
+    assert.equal(images.at(-1), 'lot-overview_LOT123_2-wafers_gallery-hard-bin.png');
     const card2 = container.querySelectorAll('.wmap-gallery-card')[0];
     click(window, [...card2.querySelectorAll('button')].find((b) => b.ariaLabel === 'Download PNG'));
-    assert.equal(images.at(-1), 'LOT123_W01_hard-bin.png');
+    assert.equal(images.at(-1), 'lot-overview_LOT123_W01_hard-bin.png');
     ctrl2.destroy();
   } finally {
     cleanup();
@@ -2329,6 +2319,28 @@ test('gallery bin legend names the bin space, and follows the plot mode', () => 
     // the swatches are reading the same bin space.
     assert.match(soft, /Vt low/);
     assert.doesNotMatch(soft, /Fail A/);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a saved showPartialDies preference (removed in 0.31.0) is harmless', () => {
+  // Hosts persist WaferViewOptions; one saved before 0.31.0 can still carry the key.
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+    const result = buildWaferMap({
+      results: [{ x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+    const ctrl = renderWaferMap(container, result, { viewOptions: { showPartialDies: false } });
+    assert.doesNotThrow(() => ctrl.setOptions({ showPartialDies: true, plotMode: 'hardBin' }));
+    assert.equal(ctrl.getOptions().plotMode, 'hardBin');
+    assert.ok(container.querySelector('canvas'), 'the map still renders');
+    ctrl.destroy();
   } finally {
     cleanup();
   }

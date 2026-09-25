@@ -28,7 +28,7 @@ let seed = 20260901;
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
 const gauss = (mu, sd) => mu + sd * Math.sqrt(-2 * Math.log(rnd() || 1e-9)) * Math.cos(2 * Math.PI * rnd());
 
-const rows = [['lot','wafer','x','y','siteId','hbin','sbin','testdate','temp','testA','testB','testC']];
+const rows = [['lot','wafer','x','y','probeSeq','hbin','sbin','testdate','temp','testA','testB','testC']];
 for (const wafer of WAFERS) {
   let site = 0;
   for (let y = -Math.ceil(R); y <= Math.ceil(R); y++) {

@@ -26,7 +26,7 @@ loudly over guessing.
 
 ### Entry points
 
-- `@wafertools/wafermap` — `buildWaferMap()`, geometry, `registerBinColorScheme()` / `registerValueColorScheme()`. Pure, no DOM, server-safe.
+- `@wafertools/wafermap` — `buildWaferMap()`, `registerBinColorScheme()` / `registerValueColorScheme()`. Pure, no DOM, server-safe.
 - `@wafertools/wafermap/render` — `renderWaferMap()`, `renderWaferGallery()`. Needs the DOM.
 - `@wafertools/wafermap/stats` — `analyzeWaferMap()`, `analyzeWaferLot()`. Pure analysis.
 - `@wafertools/wafermap/worker` — `createWafermapWorker()` for off-main-thread builds.
@@ -34,22 +34,13 @@ loudly over guessing.
 Default path: `buildWaferMap()` once when data loads, then `renderWaferMap()` for a
 single wafer or `renderWaferGallery()` for several.
 
-**The types still export a large deprecated surface that is removed in 0.31.0 — do not
-reach into it just because autocomplete offers it.** Four groups, all replaced by the
-default path above:
+**There is no low-level drawing pipeline, chart-data builder or region builder to reach
+for.** The library draws through the renderers, and every figure it shows (yield, bin
+counts, region yield, per-test statistics, capability) comes back from
+`analyzeWaferMap()` / `analyzeWaferLot()`.
 
-- the low-level drawing pipeline — `buildView()`, `toCanvas()`, `createWafer()`,
-  `generateDies()`, and the geometry and transform helpers around them;
-- the chart-data builders — `buildYieldData()`, `buildCorrelationMatrix()`,
-  `buildTestBoxplotData()` and the rest: these were the internals of the Insights tab,
-  which the renderers now mount for you (see below);
-- the region builders — `buildRingRegions()`, `buildQuadrantRegions()` and friends:
-  region yield comes back from `analyzeWaferMap()`;
-- per-die and per-colour helpers — `getDieTestValue()`, `buildHoverText()`,
-  `resolveBinColors()`, `getValueColorScheme()`, `valueToViridis()`.
-
-If the only way to do something is through one of these, that is a library gap worth
-reporting, not a pattern to build on.
+If the only way to do something is to rebuild one of those pieces, that is a library gap
+worth reporting, not a pattern to build on.
 
 ### Traps that produce silently wrong maps
 
@@ -131,9 +122,8 @@ reporting, not a pattern to build on.
   `insights: { enabled: true }` and it mounts the chart suite (yield, bin pareto,
   boxplot, histogram, correlation, scatter, capability, and one card per
   `insights.sweeps` entry). `renderWaferGallery` takes the same option across a whole
-  lot. Supply or replace the analysis later with `setStatsSummary()`. Hand-building
-  those charts is what the deprecated chart-data builders were for, and they go in
-  0.31.0. Charting a selection or one wafer (right-click → histogram, capability,
+  lot. Supply or replace the analysis later with `setStatsSummary()`. There is no
+  chart-data API to hand-build them from. Charting a selection or one wafer (right-click → histogram, capability,
   sweeps) is built in too, with no wiring.
 - **A value computed from other tests is a derived test, not a host-side column.** Pass
   `derivedTests` (a `TestDef` plus an `expression`, e.g. `'abs(t[1020] - t[1010])'`) to

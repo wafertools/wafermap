@@ -1,9 +1,8 @@
-// Deprecated exports are imported from their defining modules, never through core/index.js,
-// whose wrappers would log a notice the host did not cause.
 import { classifyDie, getRingLabel } from '../core/classify.js';
 import { getReticleCell } from '../core/reticle.js';
 import { isPositionedDie, diePassStatus, getDieKey } from '../core/dies.js';
-import type { Die, PositionedDie, Wafer } from '../core/index.js';
+import type { Die, PositionedDie } from '../core/dies.js';
+import type { Wafer } from '../core/wafer.js';
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
 
 export interface StatsRegion {

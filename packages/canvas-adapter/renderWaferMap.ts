@@ -10,7 +10,7 @@ import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
-import { withExportContext, noticeDownloadFilenameChange } from './exportName.js';
+import { withExportContext } from './exportName.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContentSteps } from './summaryPanel.js';
@@ -119,12 +119,6 @@ export interface WaferPreferences {
    * `'data'`: colorbar spans actual data min/max; out-of-spec coloring still applies.
    */
   colorbarRangeMode?:      'spec' | 'data';
-  /**
-   * When true (default), partial (edge) dies are rendered in muted grey.
-   * Set to false to hide them entirely, matching real prober behaviour where
-   * positions outside the wafer circle are never tested.
-   */
-  showPartialDies?:        boolean;
 }
 
 /**
@@ -186,26 +180,18 @@ export interface WaferDisplayState {
 export type WaferViewOptions = WaferPreferences & WaferDisplayState;
 
 /**
- * The drawing parameters `renderWaferMap` forwards to the canvas. Declared
- * explicitly rather than inherited from `ToCanvasOptions`, which is what this
- * interface used to do.
+ * The drawing parameters `renderWaferMap` forwards to the canvas, listed
+ * explicitly rather than inherited from `ToCanvasOptions`.
  *
- * That inheritance leaked 16 low-level fields onto the top-level render API, and
- * five of them were **accepted and silently ignored** — `renderWaferMap` computes
- * or overrides them on every draw (`topClearance` was always 0, and has since been removed from `toCanvas` too;
- * `minRightReserve` is derived from the legend, and `markFailingDies`/`activeBin`/
- * `hoverBin` are read from `viewOptions` and internal hover state instead). An
- * option that is typed, documented and ignored costs a caller a debugging session
- * to discover the API lied, so they are gone rather than merely undocumented.
+ * `renderWaferMap` sets the rest of `ToCanvasOptions` itself on every draw
+ * (`markFailingDies`, `legendPosition` and `fallbackFormat` from `viewOptions`,
+ * `viewport` from zoom and pan, the bin definitions from the result), so
+ * exposing them here would type and document options that are ignored. Listing the fields also stops a
+ * future `ToCanvasOptions` addition arriving on the render API by accident.
  *
- * Listing the fields also stops future `ToCanvasOptions` additions arriving here
- * by accident: `toCanvas` is the low-level surface and is free to grow, and a
- * caller who genuinely needs that level of control should call it directly.
- *
- * These stay at the top level of `RenderOptions` rather than moving under a
- * nested `draw` key. Grouping would read better, but it would break every caller
- * of the ten options that DO work in exchange for tidiness alone, and the defect
- * here was the five that don't.
+ * They stay at the top level of `RenderOptions` rather than under a nested
+ * `draw` key: grouping would read better, but would break every caller of the
+ * options that work, for tidiness alone.
  */
 type ForwardedDrawOptions = Pick<ToCanvasOptions,
   | 'padding'
@@ -260,12 +246,9 @@ export interface RenderOptions extends ForwardedDrawOptions {
   /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
   /**
-   * Name for the map's PNG download, without extension. When omitted, the PNG
-   * is named for its lot, wafer and map title (`LOT123_W05_hard-bin.png`); CSV
-   * exports are always named that way. See docs/api.md §5.4.5.
-   *
-   * **Changes in 0.31.0:** this becomes a prefix for every file the map saves,
-   * with the lot, wafer and content appended. Passing it logs a one-time notice.
+   * A prefix for every file the map saves — PNGs and CSVs alike. The lot,
+   * wafer and content follow it (`<prefix>_W05_hard-bin.png`), except any the
+   * prefix already names. See docs/api.md §5.4.5.
    */
   downloadFilename?: string;
   /**
@@ -431,7 +414,7 @@ export interface WaferMapController {
 // Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
   'binColorScheme', 'valueColorScheme', 'reverseValueScheme', 'useDefinedBinColors', 'rotation', 'flipX', 'flipY',
-  'showDieLabels', 'showPartialDies', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
+  'showDieLabels', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
   'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies', 'fallbackFormat',
 ]);
 
@@ -529,6 +512,8 @@ export interface CardController extends WaferMapController {
   setExpandVisible(visible: boolean): void;
   /** The map's title as a file-name content part — the gallery names its composite PNG by it. */
   getExportTitle(): string;
+  /** This map's save hook, naming files for its own wafer — for a save the gallery starts on a card's behalf. */
+  getSaveImageHook(): SaveImageHandler;
 }
 
 /** @internal The public view of a card's options: everything but the gallery's shared state. */
@@ -578,13 +563,13 @@ export function renderWaferMapCard(
   const exportHooks = withExportContext(() => {
     const lot = metadataDisplayValue(wafer.metadata?.lot);
     return {
+      prefix: options.downloadFilename,
       lots:   lot !== undefined ? [lot] : [],
       ...(currentResult.isLotStack
         ? { stackedWafers: currentView?.lotSize ?? true }
         : { wafer: mapIdentity() }),
     };
   }, options.onSaveImage, options.onSaveText);
-  noticeDownloadFilenameChange(options.downloadFilename);
 
   /**
    * The map's title as drawn beside its legend (`buildMapTitle`) — the content
@@ -1112,7 +1097,6 @@ export function renderWaferMapCard(
   let viewOpts: CardViewOptions = {
     plotMode:               'hardBin',
     showDieLabels:               false,
-    showPartialDies:        true,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
     showReticle:            false,
@@ -1451,7 +1435,6 @@ export function renderWaferMapCard(
       // yield figure beside it.
       passBins,
       showDieLabels:               so.showDieLabels,
-      showPartialDies:        so.showPartialDies,
       showRingBoundaries:     so.showRingBoundaries,
       showQuadrantBoundaries: so.showQuadrantBoundaries,
       showReticle:            so.showReticle,
@@ -2482,10 +2465,7 @@ export function renderWaferMapCard(
   function downloadPng(): void {
     canvas.toBlob(blob => {
       if (!blob) return;
-      // A host-set downloadFilename keeps its documented meaning until 0.31.0 —
-      // the whole PNG name — so it bypasses the generated name.
-      if (options.downloadFilename != null) saveImageBlob(blob, options.downloadFilename, options.onSaveImage);
-      else saveImageBlob(blob, mapExportTitle(), exportHooks.onSaveImage);
+      saveImageBlob(blob, mapExportTitle(), exportHooks.onSaveImage);
     });
   }
 
@@ -3216,6 +3196,10 @@ export function renderWaferMapCard(
 
     getExportTitle(): string {
       return mapExportTitle();
+    },
+
+    getSaveImageHook(): SaveImageHandler {
+      return exportHooks.onSaveImage;
     },
 
     getBinColors(): BinColors {

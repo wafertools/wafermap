@@ -8,9 +8,10 @@ test('isYieldEligibleDie — excludes partial and edge-excluded dies by default'
   assert.equal(isYieldEligibleDie({ x: 0, y: 0, edgeExcluded: true }), false);
 });
 
-test('isYieldEligibleDie — options can opt back in', () => {
-  assert.equal(isYieldEligibleDie({ x: 0, y: 0, partial: true }, { includePartial: true }), true);
+test('isYieldEligibleDie — edge-excluded dies can be opted back in; partial dies cannot', () => {
   assert.equal(isYieldEligibleDie({ x: 0, y: 0, edgeExcluded: true }, { includeEdgeExcluded: true }), true);
+  // includePartial was removed in 0.31.0; a caller still passing it gets the default.
+  assert.equal(isYieldEligibleDie({ x: 0, y: 0, partial: true }, { includePartial: true }), false);
 });
 
 test('hasPosition — true only when both x and y are present', () => {

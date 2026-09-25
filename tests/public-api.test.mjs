@@ -1,32 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  aggregateBinCounts,
-  aggregateValues,
-  applyOrientation,
-  applyProbeSequence,
-  buildHoverText,
-  classifyDie,
-  clipDiesToWafer,
-  contrastTextColor,
-  createWafer,
-  generateDies,
-  generateReticleGrid,
-  getBinColorScheme,
-  getValueColorScheme,
-  getDieKey,
-  getRingLabel,
-  getUniqueBins,
-  listBinColorSchemes,
-  listValueColorSchemes,
-  mapDataToDies,
-  registerValueColorScheme,
-  resolveBinColors,
-  transformDies,
-  valueToGreyscale,
-  valueToViridis,
-} from '../dist/index.js';
+import { getDieKey, listBinColorSchemes, listValueColorSchemes, registerValueColorScheme } from '../dist/index.js';
+import { aggregateBinCounts, aggregateValues } from '../dist/packages/core/aggregates.js';
+import { applyOrientation, clipDiesToWafer, transformDies } from '../dist/packages/core/transforms.js';
+import { applyProbeSequence } from '../dist/packages/core/probe.js';
+import { buildHoverText } from '../dist/packages/renderer/buildView.js';
+import { classifyDie, getRingLabel } from '../dist/packages/core/classify.js';
+import { contrastTextColor, valueToGreyscale } from '../dist/packages/renderer/colorMap.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+import { generateDies } from '../dist/packages/core/dies.js';
+import { generateReticleGrid } from '../dist/packages/core/reticle.js';
+import { getBinColorScheme, getValueColorScheme } from '../dist/packages/renderer/colorSchemes.js';
+import { resolveBinColors } from '../dist/packages/renderer/binColors.js';
 import { buildView } from '../dist/packages/renderer/buildView.js';
 import { fmt, fmtColorbarAxis } from '../dist/packages/renderer/fmt.js';
 import {
@@ -67,19 +53,6 @@ test('core geometry, data mapping, sequencing, and reticle helpers stay stable',
   assert.ok(clipped.length < dies.length);
   assert.ok(clipped.every((die) => die.insideWafer === true));
   assert.ok(clipped.some((die) => die.partial));
-
-  const mapped = mapDataToDies(clipped, [
-    { x: 0, y: 0, value: 0.97 },
-    { x: 1, y: 0, value: 0.88 },
-    { x: 1, y: 0, value: 0.91 },
-  ], { valueField: 'value', matchBy: 'ij' });
-  assert.deepEqual(mapped.find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 0.97 });
-  assert.deepEqual(mapped.find((die) => die.x === 1 && die.y === 0)?.testValues, { 0: 0.91 });
-
-  const mappedXY = mapDataToDies(clipped, [
-    { x: 0, y: 0, value: 0.97 },
-  ], { valueField: 'value' });
-  assert.deepEqual(mappedXY.find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 0.97 });
 
   const oriented = applyOrientation([
     { id: '1_0', x: 1, y: 0, physX: 10, physY: 0, width: 10, height: 10 },
@@ -150,7 +123,6 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   assert.deepEqual(aggregateValues(diesByWafer, 'min').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 1 });
   assert.deepEqual(aggregateValues(diesByWafer, 'max').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 5 });
   assert.deepEqual(aggregateValues(diesByWafer, 'count').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 3 });
-  assert.deepEqual(getUniqueBins(diesByWafer[0]), [1, 2]);
   assert.deepEqual(aggregateBinCounts(diesByWafer, 2).find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 2 });
 
   assert.deepEqual(classifyDie({ id: '1_1', x: 1, y: 1, physX: 9, physY: 9, width: 1, height: 1 }, createWafer({ diameter: 20 })), { ring: 4, quadrant: 'NE' });
@@ -249,7 +221,6 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   const binColors = resolveBinColors([{ hbin: 1 }, { hbin: 2 }, { hbin: 2 }]);
   assert.equal(binColors.hard.get(1), getBinColorScheme('default').pass[0]);
   assert.equal(binColors.hard.get(2), getBinColorScheme('default').fail[0]);
-  assert.equal(valueToViridis(-1), 'rgb(68,1,84)');
   assert.equal(valueToGreyscale(1), 'rgb(230,230,230)');
   assert.equal(contrastTextColor('#ffffff'), '#000000');
   assert.equal(contrastTextColor('#000000'), '#ffffff');

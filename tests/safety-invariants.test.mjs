@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildWaferMap, buildHoverText, createWafer } from '../dist/index.js';
+import { buildWaferMap } from '../dist/index.js';
+import { buildHoverText } from '../dist/packages/renderer/buildView.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
 import { buildView } from '../dist/packages/renderer/buildView.js';
 
 // ── Coordinate correctness ────────────────────────────────────────────────────

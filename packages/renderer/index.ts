@@ -4,34 +4,22 @@
 // from './buildView.js'. Keeping them off the public surface is what stops the API
 // growing by accident — add them back only with docs and a reason a host needs them.
 export { getDieKey } from './buildView.js';
+export type { PlotMode } from './buildView.js';
+export { buildWaferMap, getTestPassStatus } from './buildWaferMap.js';
 export type {
-  View,
-  MapTitleParts,
-  PlotMode,
-  ViewRect,
-  ViewText,
-  ViewHoverPoint,
-  ViewOverlay,
-  ViewOptions,
-} from './buildView.js';
-export * from './buildWaferMap.js';
+  DerivedTestDef, DieResult, WaferConfig, DieConfig, ReticleConfig, LotStackConfig, TestDef, BinDef,
+  MetadataFieldDef, WaferMapInputBase, WaferMapInputSingle, WaferMapInputLotStack, WaferMapInputLayout,
+  WaferMapInput, YieldSummary, WaferWarning, WaferMapResult,
+} from './buildWaferMap.js';
 // WaferMetadata/DieMetadata are renderer concepts (WaferConfig.metadata,
 // DieResult.metadata) — re-export them here so consumers building renderer input
 // don't have to reach into /core for the types.
 export type { WaferMetadata, DieMetadata } from '../core/metadata.js';
-export * from './colorSchemes.js';
-export type { BinColors, BinColorOptions, BinColorSource, MapBinColorOptions } from './binColors.js';
+export { registerValueColorScheme, listValueColorSchemes, resolveValueColorFn, registerBinColorScheme, listBinColorSchemes } from './colorSchemes.js';
+export type { ValueColorScheme, BinColorScheme } from './colorSchemes.js';
+export type { BinColors, BinColorSource, MapBinColorOptions } from './binColors.js';
 export { binColorsForMaps } from './binColors.js';
 // The derived-test mark and its key, for a host that lists tests in its own UI
 // (tsmap's test selector) — so it marks them exactly as the library does,
 // rather than keeping a copy of the glyph and the words that can drift.
 export { DERIVED_MARK, DERIVED_KEY } from './testLabel.js';
-
-// Deprecated in 0.30.0, removed in 0.31.0. Each is wrapped in ./deprecated.ts, whose
-// declarations carry the `@deprecated` tags; this named re-export shadows any `export *` above.
-export {
-  valueToViridis, valueToGreyscale, getValueColorScheme, buildView,
-  buildHoverText, buildMapTitle, resolveBinColors, getBinColorScheme,
-  contrastTextColor, dieHasTestData, isParametricTest, getDieTestValue,
-  STANDARD_WAFER_DIAMETERS_MM,
-} from './deprecated.js';

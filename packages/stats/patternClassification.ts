@@ -1,4 +1,5 @@
-import type { PositionedDie, Wafer } from '../core/index.js';
+import type { PositionedDie } from '../core/dies.js';
+import type { Wafer } from '../core/wafer.js';
 import { findConnectedComponents } from './connectedComponents.js';
 import { clamp01 } from '../core/utils.js';
 

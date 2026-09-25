@@ -15,7 +15,7 @@
  * and held to by tests/deprecations.test.mjs, which fails once the changelog or
  * package.json reaches an export's removal release with it still here.
  */
-export const DEPRECATED_REMOVAL_VERSION = '0.31.0';
+export const DEPRECATED_REMOVAL_VERSION = '0.32.0';
 
 /**
  * @internal The release that removes each deprecated name. A name deprecated

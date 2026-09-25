@@ -1955,11 +1955,7 @@ fs.writeFileSync('lot-report.html', html);           // or openReportModal(html)
 
 The Summary panel's "Summary report" button in `renderWaferMap` and `renderWaferGallery` uses the same builders — you only need to call them yourself for a custom export flow.
 
-> `renderFindingsReportHtml`, the findings-only report, is deprecated — removed in 0.31.0. The wafer and lot reports above contain the same findings table, with the population and yield it was found in.
->
-> `renderSummaryReportHtml`, `renderLotSummaryReportHtml` and `openHtmlReport` are deprecated — removed in 0.31.0. The first two took loose pieces with `passBins` and `ringCount` defaulting to `[1]` and `4`; the builders above read them from the map.
-
-**Embedded hosts (Tauri, Electron, WebView2).** In hosts where `window.open` is blocked, register a custom opener once at startup:
+**Embedded hosts (Tauri, Electron, WebView2).** The report modal's "Open as full page" link uses `window.open`. In hosts where that is blocked, register a custom opener once at startup:
 
 ```ts
 import { setReportOpener } from '@wafertools/wafermap/stats';
@@ -1970,7 +1966,7 @@ setReportOpener(html => {
 });
 ```
 
-All `openHtmlReport` calls — including the summary panel buttons — then route through your opener automatically.
+That link then routes through your opener.
 
 ![Wafer summary report](images/report-wafer-summary.png)
 
@@ -1988,9 +1984,8 @@ LOT123_25-wafers_yield-by-wafer.png    an Insights chart from a gallery
 ```
 
 A part the data doesn't have is left out, never invented. Your `onSaveImage` and `onSaveText`
-hooks receive this name as `suggestedName`. `downloadFilename` still names a map's or gallery's PNG
-outright; from 0.31.0 it becomes a prefix for every saved file — see the
-[API reference](api.md#545-saved-file-names).
+hooks receive this name as `suggestedName`. Set `downloadFilename` to put your own prefix in front
+of every saved file — see the [API reference](api.md#545-saved-file-names).
 
 
 ## Reticle overlays
@@ -2519,15 +2514,21 @@ limits are defined, cluster detection is skipped automatically.
 **→ [Demo: Standalone stacked map with spatial analysis](examples/statistics.html#lot-stack)**
 
 
-## Advanced: the rendering pipeline
+## Die layouts with no test data
 
-> **Deprecated — removed in 0.31.0.** The manual pipeline (`createWafer`, `generateDies`, `clipDiesToWafer`,
-> `applyOrientation`, `applyProbeSequence`, `transformDies`, `generateReticleGrid`, `buildView`, `toCanvas` and their
-> helpers) is being withdrawn. Nothing known uses it, and it doubled the API a host had to read. Build with
-> `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`, which handle geometry, orientation, probe
-> paths, reticles and interaction. If you depend on the pipeline, say so at
-> https://github.com/wafertools/wafermap/issues.
->
-> For a die layout with no test data — gross die per wafer, reticle planning — use
-> `buildWaferMap({ layout: true, waferConfig: { diameter }, dieConfig: { width, height } })`, which replaces
-> `createWafer` + `generateDies` + `clipDiesToWafer` and keeps every site fully on the wafer.
+For a gross-die-per-wafer count, reticle or step planning, or the expected map before any data
+exists, build a layout instead of passing results:
+
+```ts
+const layout = buildWaferMap({
+  layout: true,
+  waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+  dieConfig:   { width: 10, height: 10 },
+});
+
+layout.dies.length;                 // gross die per wafer: every site lying fully on the wafer
+renderWaferMap(container, layout);  // drawn like any other map, every die as no data
+```
+
+It needs the diameter and the die size. Orientation, edge exclusion and `reticleConfig` apply
+as they do to a map of results. See the [API reference](api.md#41-input) for the details.

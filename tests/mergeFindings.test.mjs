@@ -1,14 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  analyzeWaferMap,
-  buildWaferMap,
-  classifyDie,
-  clipDiesToWafer,
-  createWafer,
-  generateDies,
-} from '../dist/index.js';
+import { analyzeWaferMap, buildWaferMap } from '../dist/index.js';
+import { classifyDie } from '../dist/packages/core/classify.js';
+import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+import { generateDies } from '../dist/packages/core/dies.js';
 
 import {
   parseRegionKey,

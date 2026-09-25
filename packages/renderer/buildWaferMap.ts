@@ -15,7 +15,8 @@ import { applyDerivedTests, type DerivedTestDef } from './derivedTests/apply.js'
 // Hosts construct `WaferMapInput.derivedTests`, so the type is part of the public
 // input surface and is re-exported through this module's `export *` in index.ts.
 export type { DerivedTestDef } from './derivedTests/apply.js';
-import { buildView, type View, type ViewOptions, type PlotMode } from './buildView.js';
+import { buildView, type View, type PlotMode } from './buildView.js';
+import { isStdfBin, isStdfCoord, isStdfTestNumber, isStdfSite, STDF_BIN_MAX, STDF_COORD_MAX, STDF_TEST_NUM_MAX, STDF_SITE_MAX } from '../core/stdf.js';
 import { maxOf, minOf, modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 
@@ -124,9 +125,11 @@ export interface WaferConfig {
    * clockwise.  The notch/flat position is set by `notch.type` and is not
    * affected by this value — `orientation` rotates the *die grid* on the display.
    *
-   * Common values: 0 (default), 90, 180, 270.
+   * One of 0 (default), 90, 180 or 270 — the angles STDF can record. An
+   * equivalent angle such as −90 is read as 270; any other is treated as
+   * missing (built at 0) and reported as `input-values-outside-stdf`.
    */
-  orientation?: number;
+  orientation?: 0 | 90 | 180 | 270;
   metadata?: WaferMetadata;
   /**
    * Physical edge exclusion zone in mm measured from the wafer edge inward.
@@ -369,12 +372,11 @@ export interface WaferMapInputBase {
   ringCount?: number;
   /**
    * Wafer diameters (mm) treated as standard when sanity-checking an *inferred*
-   * diameter — see {@link STANDARD_WAFER_DIAMETERS_MM} for the default
-   * (100/125/150/200/300) and the measurements behind it.
+   * diameter. Default `[100, 125, 150, 200, 300]`.
    *
-   * **Replaces** the default rather than adding to it, so spread it to extend:
-   * `standardDiameters: [...STANDARD_WAFER_DIAMETERS_MM, 76.2]` for a line that
-   * also runs 3-inch. Pass `[]` to disable the check entirely, for genuinely
+   * **Replaces** the default rather than adding to it, so list the defaults to
+   * extend it: `standardDiameters: [100, 125, 150, 200, 300, 76.2]` for a line
+   * that also runs 3-inch. Pass `[]` to disable the check entirely, for genuinely
    * non-standard substrates (panels, reclaim, odd R&D shapes) — that is the
    * intended opt-out, rather than suppressing every geometry advisory.
    *
@@ -514,11 +516,6 @@ export interface WaferMapInputLayout extends WaferMapInputBase {
  */
 export type WaferMapInput = WaferMapInputSingle | WaferMapInputLotStack | WaferMapInputLayout;
 
-/** Options forwarded to {@link buildView}. */
-export interface WaferMapOptions extends ViewOptions {
-  debug?: boolean;
-}
-
 // ── Output types ──────────────────────────────────────────────────────────────
 
 export interface YieldSummary {
@@ -613,9 +610,10 @@ export interface WaferWarning {
    *   plotted wrongly — a bin of "1" is not pass bin 1. The message counts them.
    * - `'input-values-outside-stdf'` — raised by `buildWaferMap`: bins, coordinates,
    *   test numbers, site numbers or `waferConfig.orientation` outside the STDF V4
-   *   ranges, or test values that are not finite. Used as given for now; a future
-   *   release treats them as missing. A `NaN` bin is already treated as no bin, and
-   *   is counted here too.
+   *   ranges, or test values that are not finite. Each is treated as missing: the
+   *   bin or site is absent, the die has no position, the test is left out, the
+   *   value is dropped, the map is built at orientation 0. A `NaN` bin is no bin,
+   *   and is counted here too.
    * - `'retests-by-part-id'` — raised by `buildWaferMap` (severity `'info'`): dies
    *   with no position that share a part ID were treated as retests of one die.
    *   Blank part IDs never match, and part IDs are not used on a wafer where one
@@ -682,19 +680,13 @@ export interface WaferMapResult {
   /** `true` when the result was built from a `lotStack` aggregation. */
   isLotStack: boolean;
   /**
-   * @internal Renderer-agnostic draw list consumed by `renderWaferMap` and `toCanvas`.
-   * Not part of the public API — access the named fields on `WaferMapResult` instead.
-   */
-  /**
    * @internal The initial draw list. Kept on the result because `analyzeWaferMap`
    * discriminates its input on `'view' in input`, and because `renderWaferMap`
-   * reads `dataAxisFlip` from it — not because a host should.
+   * reads `dataAxisFlip` from it — not for a host to read.
    *
    * Read the promoted top-level fields instead (`plotMode`, `metadata`,
-   * `isLotStack`, `hbinDefs`, `sbinDefs`, `testDefs`): this one is rebuilt on
-   * every option change, so anything you cache from it goes stale immediately.
-   * Hosts driving the low-level pipeline should call `buildView` themselves,
-   * which is the supported way to hold a {@link View}.
+   * `isLotStack`, `hbinDefs`, `sbinDefs`, `testDefs`): the renderers rebuild the
+   * draw list on every option change, so anything cached from this goes stale.
    */
   view: View;
   /** Reticle configuration used to generate the overlay and reticle-local groupings. */
@@ -832,13 +824,18 @@ function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: 
   return whole === raw ? { ringCount: raw, ringCountWarning: undefined } : corrected(whole, 'is not a whole number of at least 1');
 }
 
-/**
- * Input names removed in earlier releases. A typed caller cannot pass them; an
- * untyped one still can, and each used to vanish without a trace — `data` in place
- * of `results` built an empty map, `values` in place of `testValues` a map with no
- * test data. Neither looks broken, so every one found is reported. None is
- * honoured: this reports, it never translates.
- */
+/** The input with its STDF-illegal values removed, and what was found. */
+interface CheckedInput {
+  warnings: WaferWarning[];
+  /** Replacements for the input's results and lot-stack wafers; absent when nothing changed. */
+  results?: DieResult[];
+  stackResults?: DieResult[][];
+  /** The orientation to build with, normalised to 0/90/180/270. */
+  orientation?: 0 | 90 | 180 | 270;
+  /** `testDefs` without definitions whose test number STDF cannot store; absent when none were dropped. */
+  testDefs?: TestDef[];
+}
+
 /**
  * Input values that are the wrong type or outside STDF V4's ranges — one pass over
  * the input for both.
@@ -849,42 +846,46 @@ function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: 
  * not pass bin 1, so every such die counted as a fail and yield read 0 %, and a
  * test value of "0.5" is not a number to colour or analyse. Reported, not
  * converted — the same rule as removed input names: the caller fixes the data.
- * Bins are checked on every die. Test values and verdicts are checked on every die
- * too, for the test numbers found on a sample of dies (the first 50 and every
- * 100th): walking every die's own keys cost more than the rest of the build, and a
- * parser that leaves a column as text does so for the whole column, so the sample
- * always sees it.
+ *
+ * Outside STDF V4's ranges (`core/stdf.ts`): treated as missing, and reported.
+ * Every value wmap holds must be storable in STDF, and a value that is not cannot
+ * be a real measurement — a bin of 40000, a coordinate of 1.5, a test number of
+ * −5, a site of 300, an infinite reading. A bin or site becomes absent; a die with
+ * an illegal coordinate loses its position (both x and y, never one); an illegal
+ * test number drops that test from every die and from `testDefs`; a non-finite
+ * test value is dropped. The caller's objects are never modified: a row that
+ * needs a change is copied.
+ *
+ * Bins, positions and sites are checked on every die. Test values and verdicts are
+ * checked on every die too, for the test numbers found on a sample of dies (the
+ * first 50 and every 100th): walking every die's own keys cost more than the rest
+ * of the build, and a parser writes the same test columns for the whole wafer, so
+ * the sample always sees them.
  */
-function inputValueWarnings(input: DieResult[] | WaferMapInput): WaferWarning[] {
+function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
   const top = (Array.isArray(input) ? {} : input) as {
-    results?: unknown; lotStack?: { results?: unknown }; waferConfig?: { orientation?: unknown };
+    results?: unknown; lotStack?: { results?: unknown }; waferConfig?: { orientation?: unknown }; testDefs?: unknown;
   };
-  const stacked = Array.isArray(top.lotStack?.results) ? top.lotStack!.results as unknown[] : [];
-  const wafers = (Array.isArray(input) ? [input] : [top.results, ...stacked])
-    .filter((w): w is unknown[] => Array.isArray(w));
   const counts = { hbin: 0, sbin: 0, testValues: 0, testPass: 0 };
   let example: string | undefined;
   const note = (field: keyof typeof counts, value: unknown) => {
     counts[field]++;
     example ??= `${field} ${JSON.stringify(value)}`;
   };
-  // STDF V4 ranges — reported only; the values are used as given.
-  const outside = { bins: 0, positions: 0, testNumbers: 0, values: 0, sites: 0, orientation: 0 };
+  const outside = { bins: 0, positions: 0, values: 0, sites: 0, orientation: 0 };
+  const badTestNumbers = new Set<string>();
   let binsNaN = 0;
-  const isBin = (v: number) => Number.isInteger(v) && v >= 0 && v <= STDF_BIN_MAX;
-  const checkBin = (v: unknown) => {
-    if (typeof v !== 'number') return;
-    if (Number.isNaN(v)) binsNaN++;
-    else if (!isBin(v)) outside.bins++;
+
+  type Row = DieResult & Record<string, unknown>;
+  /** A bin to keep, or undefined to drop it. Wrong-type bins are kept (reported, not converted). */
+  const binOk = (v: unknown): boolean => {
+    if (typeof v !== 'number') return true;
+    if (Number.isNaN(v)) { binsNaN++; return false; }
+    if (!isStdfBin(v)) { outside.bins++; return false; }
+    return true;
   };
-  const checkCoord = (v: unknown) => {
-    if (typeof v === 'number' && !(Number.isInteger(v) && Math.abs(v) <= STDF_COORD_MAX)) outside.positions++;
-  };
-  type Row = {
-    hbin?: unknown; sbin?: unknown; x?: unknown; y?: unknown; siteNum?: unknown;
-    testValues?: Record<string, unknown>; testPass?: Record<string, unknown>;
-  };
-  for (const wafer of wafers) {
+
+  function cleanWafer(wafer: unknown[]): DieResult[] | undefined {
     const valueKeys = new Set<string>();
     const verdictKeys = new Set<string>();
     for (let i = 0; i < wafer.length; i += i < 50 ? 1 : 100) {
@@ -895,41 +896,86 @@ function inputValueWarnings(input: DieResult[] | WaferMapInput): WaferWarning[] 
     }
     const vKeys = [...valueKeys];
     const pKeys = [...verdictKeys];
-    for (const k of new Set([...vKeys, ...pKeys])) {
-      const n = Number(k);
-      if (!(Number.isInteger(n) && n >= 0 && n <= STDF_TEST_NUM_MAX)) outside.testNumbers++;
-    }
-    for (const d of wafer) {
+    const legalKey = (k: string) => isStdfTestNumber(Number(k));
+    for (const k of new Set([...vKeys, ...pKeys])) if (!legalKey(k)) badTestNumbers.add(k);
+
+    let out: DieResult[] | undefined;
+    for (let i = 0; i < wafer.length; i++) {
+      const d = wafer[i];
       if (d === null || typeof d !== 'object') continue;
       const r = d as Row;
+      let row: Row | undefined;   // this die's copy, made on the first change
+      const edit = (): Row => (row ??= { ...r });
+
       if (r.hbin != null && typeof r.hbin !== 'number') note('hbin', r.hbin);
       if (r.sbin != null && typeof r.sbin !== 'number') note('sbin', r.sbin);
-      checkBin(r.hbin);
-      checkBin(r.sbin);
-      checkCoord(r.x);
-      checkCoord(r.y);
-      if (typeof r.siteNum === 'number' && !(Number.isInteger(r.siteNum) && r.siteNum >= 0 && r.siteNum <= 255)) outside.sites++;
-      const tv = r.testValues;
+      if (!binOk(r.hbin)) edit().hbin = undefined;
+      if (!binOk(r.sbin)) edit().sbin = undefined;
+      const xBad = typeof r.x === 'number' && !isStdfCoord(r.x);
+      const yBad = typeof r.y === 'number' && !isStdfCoord(r.y);
+      if (xBad || yBad) {
+        outside.positions += (xBad ? 1 : 0) + (yBad ? 1 : 0);
+        const e = edit(); e.x = undefined; e.y = undefined;
+      }
+      if (typeof r.siteNum === 'number' && !isStdfSite(r.siteNum)) { outside.sites++; edit().siteNum = undefined; }
+
+      const tv = r.testValues as Record<string, unknown> | undefined;
       if (tv && typeof tv === 'object') {
-        for (let i = 0; i < vKeys.length; i++) {
-          const v = tv[vKeys[i]];
+        let values: Record<string, unknown> | undefined;
+        for (let j = 0; j < vKeys.length; j++) {
+          const k = vKeys[j];
+          const v = tv[k];
           if (v == null) continue;
+          if (!legalKey(k)) { (values ??= { ...tv }); delete values[k]; continue; }
           if (typeof v !== 'number') note('testValues', v);
-          else if (!Number.isFinite(v)) outside.values++;
+          else if (!Number.isFinite(v)) { outside.values++; (values ??= { ...tv }); delete values[k]; }
         }
+        if (values) edit().testValues = values as DieResult['testValues'];
       }
-      const tp = r.testPass;
+      const tp = r.testPass as Record<string, unknown> | undefined;
       if (tp && typeof tp === 'object') {
-        for (let i = 0; i < pKeys.length; i++) { const v = tp[pKeys[i]]; if (v != null && typeof v !== 'boolean') note('testPass', v); }
+        let verdicts: Record<string, unknown> | undefined;
+        for (let j = 0; j < pKeys.length; j++) {
+          const k = pKeys[j];
+          const v = tp[k];
+          if (v == null) continue;
+          if (!legalKey(k)) { (verdicts ??= { ...tp }); delete verdicts[k]; continue; }
+          if (typeof v !== 'boolean') note('testPass', v);
+        }
+        if (verdicts) edit().testPass = verdicts as DieResult['testPass'];
       }
+      if (row) (out ??= wafer.slice() as DieResult[])[i] = row;
     }
-  }
-  const orientation = top.waferConfig?.orientation;
-  if (typeof orientation === 'number' && ![0, 90, 180, 270].includes(((orientation % 360) + 360) % 360)) {
-    outside.orientation++;
+    return out;
   }
 
-  const warnings: WaferWarning[] = [];
+  const checked: CheckedInput = { warnings: [] };
+  if (Array.isArray(input)) {
+    checked.results = cleanWafer(input);
+  } else {
+    if (Array.isArray(top.results)) checked.results = cleanWafer(top.results);
+    const stacked = top.lotStack?.results;
+    if (Array.isArray(stacked)) {
+      const cleaned = stacked.map(w => (Array.isArray(w) ? cleanWafer(w) : undefined));
+      if (cleaned.some(Boolean)) checked.stackResults = cleaned.map((c, i) => c ?? stacked[i]);
+    }
+  }
+
+  // Test definitions for a number STDF cannot store describe a test no die can carry.
+  if (Array.isArray(top.testDefs)) {
+    const defs = top.testDefs as TestDef[];
+    const kept = defs.filter(d => d == null || typeof d.testNumber !== 'number' || isStdfTestNumber(d.testNumber));
+    for (const d of defs) if (!kept.includes(d)) badTestNumbers.add(String(d.testNumber));
+    if (kept.length !== defs.length) checked.testDefs = kept;
+  }
+
+  const orientation = top.waferConfig?.orientation;
+  if (typeof orientation === 'number') {
+    const turned = Number.isFinite(orientation) ? ((orientation % 360) + 360) % 360 : NaN;
+    if (turned === 0 || turned === 90 || turned === 180 || turned === 270) checked.orientation = turned;
+    else { outside.orientation++; checked.orientation = 0; }
+  }
+
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
   const parts: string[] = [];
@@ -943,35 +989,34 @@ function inputValueWarnings(input: DieResult[] | WaferMapInput): WaferWarning[] 
       + 'count as fails and yield is wrong, and a test value given as text is not plotted or analysed correctly. '
       + 'Convert them with Number() (and verdicts to booleans) and rebuild.';
     console.warn(`[wafermap] ${message}`);
-    warnings.push({ code: 'input-values-not-numbers', message, severity: 'error' });
+    checked.warnings.push({ code: 'input-values-not-numbers', message, severity: 'error' });
   }
 
   const range: string[] = [];
-  if (outside.bins)        range.push(`${plural(outside.bins, 'bin')} (legal: whole numbers 0–${STDF_BIN_MAX})`);
-  if (outside.positions)   range.push(`${plural(outside.positions, 'coordinate')} (legal: whole numbers −${STDF_COORD_MAX} to ${STDF_COORD_MAX})`);
-  if (outside.testNumbers) range.push(`${plural(outside.testNumbers, 'test number')} (legal: whole numbers 0–${STDF_TEST_NUM_MAX})`);
-  if (outside.values)      range.push(`${plural(outside.values, 'test value')} that ${outside.values === 1 ? 'is' : 'are'} not finite`);
-  if (outside.sites)       range.push(`${plural(outside.sites, 'site number')} (legal: 0–255)`);
-  if (outside.orientation) range.push('a waferConfig.orientation other than 0, 90, 180 or 270');
+  if (outside.bins)        range.push(`${plural(outside.bins, 'bin')} (legal: whole numbers 0–${STDF_BIN_MAX}) — those dies have no bin`);
+  if (outside.positions)   range.push(`${plural(outside.positions, 'coordinate')} (legal: whole numbers −${STDF_COORD_MAX} to ${STDF_COORD_MAX}) — those dies have no position`);
+  if (badTestNumbers.size) range.push(`${plural(badTestNumbers.size, 'test number')} (legal: whole numbers 0–${STDF_TEST_NUM_MAX}) — those tests are left out`);
+  if (outside.values)      range.push(`${plural(outside.values, 'test value')} that ${outside.values === 1 ? 'is' : 'are'} not finite — left out`);
+  if (outside.sites)       range.push(`${plural(outside.sites, 'site number')} (legal: 0–${STDF_SITE_MAX}) — those dies have no site`);
+  if (outside.orientation) range.push('a waferConfig.orientation other than 0, 90, 180 or 270 — the map is built at 0');
   if (range.length || binsNaN) {
     const sentences: string[] = [];
-    if (range.length) {
-      sentences.push(`buildWaferMap received values outside the STDF V4 ranges: ${range.join('; ')}. `
-        + 'They are used as given for now; a future release treats them as missing.');
-    }
+    if (range.length) sentences.push(`buildWaferMap received values outside the STDF V4 ranges, treated as missing: ${range.join('; ')}.`);
     if (binsNaN) sentences.push(`${plural(binsNaN, 'bin was', 'bins were')} NaN and ${binsNaN === 1 ? 'is' : 'are'} treated as no bin.`);
     const message = sentences.join(' ');
     console.warn(`[wafermap] ${message}`);
-    warnings.push({ code: 'input-values-outside-stdf', message, severity: 'warning' });
+    checked.warnings.push({ code: 'input-values-outside-stdf', message, severity: 'warning' });
   }
-  return warnings;
+  return checked;
 }
 
-/** STDF V4 legal ranges: PRR HARD_BIN/SOFT_BIN, X_COORD/Y_COORD, and TEST_NUM (U*4). */
-const STDF_BIN_MAX = 32_767;
-const STDF_COORD_MAX = 32_767;
-const STDF_TEST_NUM_MAX = 4_294_967_295;
-
+/**
+ * Input names removed in earlier releases. A typed caller cannot pass them; an
+ * untyped one still can, and each used to vanish without a trace — `data` in place
+ * of `results` built an empty map, `values` in place of `testValues` a map with no
+ * test data. Neither looks broken, so every one found is reported. None is
+ * honoured: this reports, it never translates.
+ */
 function removedInputWarning(input: DieResult[] | WaferMapInput): WaferWarning | undefined {
   const set = (o: unknown, key: string): boolean =>
     o !== null && typeof o === 'object' && (o as Record<string, unknown>)[key] !== undefined;
@@ -1041,9 +1086,10 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
   if (!Array.isArray(input) && 'results' in input && input.results !== undefined && 'lotStack' in input && input.lotStack !== undefined) {
     throw new Error('buildWaferMap: pass either `results` or `lotStack`, not both.');
   }
+  const checked = checkInputValues(input);
   if (Array.isArray(input)) {
     return {
-      results:          input as DieResult[],
+      results:          checked.results ?? input as DieResult[],
       waferOpts:        undefined,
       dieOpts:          undefined,
       explicitDies:     undefined,
@@ -1053,7 +1099,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       ringCount:        4,
       ringCountWarning: undefined,
       removedFieldWarning: removedInputWarning(input),
-      inputValueWarnings: inputValueWarnings(input),
+      inputValueWarnings: checked.warnings,
       standardDiameters: undefined,
       testDefs:         undefined,
       hbinDefs:         undefined,
@@ -1064,16 +1110,18 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       edgeDieYieldMode: 'exclude' };
   }
   return {
-    results:          input.results   ?? [],
-    waferOpts:        input.waferConfig,
+    results:          checked.results ?? input.results ?? [],
+    waferOpts:        checked.orientation === undefined || input.waferConfig === undefined
+      ? input.waferConfig : { ...input.waferConfig, orientation: checked.orientation },
     dieOpts:          input.dieConfig,
     explicitDies:     input.dies,
     reticleOpts:      input.reticleConfig,
-    lotStackOpts:     input.lotStack,
+    lotStackOpts:     checked.stackResults && input.lotStack
+      ? { ...input.lotStack, results: checked.stackResults } : input.lotStack,
     passBins:         input.passBins ?? [1],
     ...resolveRingCount(input.ringCount),
     removedFieldWarning: removedInputWarning(input),
-    inputValueWarnings: inputValueWarnings(input),
+    inputValueWarnings: checked.warnings,
     standardDiameters: input.standardDiameters,
     // An empty array from a HOST means "I described no tests", which is the same
     // statement as not passing the field — so it is normalised to `undefined`
@@ -1087,7 +1135,7 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     // normalisation the two meanings collided on the one input a host actually
     // writes: `buildWaferMap({ results, testDefs: [] })` silently lost every
     // value plot mode and every die-list test column.
-    testDefs:         input.testDefs?.length ? input.testDefs : undefined,
+    testDefs:         (checked.testDefs ?? input.testDefs)?.length ? checked.testDefs ?? input.testDefs : undefined,
     hbinDefs:         input.hbinDefs,
     sbinDefs:         input.sbinDefs,
     metadataFields:   input.metadataFields,
@@ -1651,8 +1699,7 @@ function attachData<D extends Die>(die: D, pt: DieResult): D {
   return { ...die, ...base };
 }
 
-function autoPlotMode(results: DieResult[], opts: ViewOptions): PlotMode {
-  if (opts.plotMode) return opts.plotMode;
+function autoPlotMode(results: DieResult[]): PlotMode {
   return results.some(dieHasTestData) ? 'value' : 'hardBin';
 }
 
@@ -1848,12 +1895,8 @@ function resolveStandardDiameters(supplied: number[] | undefined): readonly numb
   return supplied.filter(d => Number.isFinite(d) && d > 0);
 }
 
-export function buildWaferMap(
-  input: DieResult[] | WaferMapInput,
-  options?: WaferMapOptions,
-): WaferMapResult {
+export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResult {
   const norm = normalizeInput(!Array.isArray(input) && input.layout ? expandLayout(input) : input);
-  const { debug: _debug, ...viewOpts } = options ?? {};
 
   // Derived tests are computed on the RAW probe records — before lot stacking and
   // before retest resolution — so every derived value comes from one real
@@ -1956,13 +1999,12 @@ export function buildWaferMap(
     if (wafer.orientation !== 0) dies = applyOrientation(dies as PositionedDie[], wafer);
 
     const reticles    = buildReticles(norm.reticleOpts, wafer, dies as PositionedDie[], 1, 1, 0, 0, 0, 0, wafer.orientation);
-    const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
+    const showReticle = norm.reticleOpts !== undefined;
 
     const view = buildView(wafer, dies as PositionedDie[], {
-      ...viewOpts,
       reticles,
       showReticle,
-      plotMode:   autoPlotMode(results, viewOpts),
+      plotMode:   autoPlotMode(results),
       testDefs:   norm.testDefs,
       // The yield's own pass bins — without this the view resolved bin colours
       // and failing-die marks against buildView's `[1]` default.
@@ -2239,13 +2281,12 @@ export function buildWaferMap(
   }
 
   const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY, offsetX, offsetY, colMidX, colMidY, wafer.orientation, flipX, flipY);
-  const showReticle = viewOpts.showReticle ?? (norm.reticleOpts !== undefined);
+  const showReticle = norm.reticleOpts !== undefined;
 
   const view = buildView(wafer, dies, {
-    ...viewOpts,
     reticles,
     showReticle,
-    plotMode:     autoPlotMode(results, viewOpts),
+    plotMode:     autoPlotMode(results),
     testDefs:     norm.testDefs,
     passBins:     norm.passBins,
     ringCount:    norm.ringCount,

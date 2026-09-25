@@ -1,4 +1,3 @@
-import type { Die } from './dies.js';
 import { minOf, maxOf } from './utils.js';
 import { getDieKey } from './dies.js';
 
@@ -92,19 +91,6 @@ export function aggregateValues(
   }
 
   return result;
-}
-
-/**
- * Return all unique bin values present in dies, sorted ascending.
- * `binSpace` selects whether to inspect `die.hbin` (default) or `die.sbin`.
- */
-export function getUniqueBins(dies: Die[], binSpace: 'hard' | 'soft' = 'hard'): number[] {
-  const seen = new Set<number>();
-  for (const die of dies) {
-    const b = binSpace === 'soft' ? die.sbin : die.hbin;
-    if (b !== undefined) seen.add(b);
-  }
-  return [...seen].sort((a, b) => a - b);
 }
 
 /**

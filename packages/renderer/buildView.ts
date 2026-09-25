@@ -164,8 +164,7 @@ export interface View {
   /**
    * Transformed centre of each die, index-parallel with {@link dies}. Separate
    * from `rectangles` because a die always has a centre for hit-testing and
-   * viewport fitting even when it is not drawn (a partial die with
-   * `showPartialDies: false`).
+   * viewport fitting, however many rectangles it draws as.
    */
   hoverPoints: ViewHoverPoint[];
   /** Text to draw — die labels and any axis/indicator strings the view generated. */
@@ -449,13 +448,6 @@ export interface ViewOptions {
    * regardless of this option — it has no value to plot.
    */
   passFailDisplay?: 'off' | 'spec' | 'test';
-  /**
-   * When true (default), partial (edge) dies — positions that only partially
-   * overlap the wafer circle — are rendered in a muted grey.
-   * Set to false to hide them entirely, matching real prober behaviour where
-   * edge positions are never tested.
-   */
-  showPartialDies?: boolean;
 }
 
 
@@ -1404,7 +1396,6 @@ export function buildView(
     logScale: logScaleOption,
     colorbarRangeMode: colorbarRangeModeOpt = 'spec' as const,
     passFailDisplay: passFailDisplayOpt,
-    showPartialDies = true,
   } = options;
 
   const requestedPassFail: 'off' | 'spec' | 'test' = passFailDisplayOpt ?? 'off';
@@ -1680,7 +1671,7 @@ export function buildView(
     const physX = txCoords ? txCoords[i * 2]     : die.physX;
     const physY = txCoords ? txCoords[i * 2 + 1] : die.physY;
     // Always add to hoverPoints so dieBounds covers the full die extent —
-    // the viewport must fit the whole wafer regardless of showPartialDies.
+    // the viewport must fit the whole wafer.
     hoverPoints.push({ x: physX, y: physY });
     // Legend tallies must exclude both partial AND edge-excluded dies: those are
     // drawn as no-data grey (not their bin/spec colour), so counting them would
@@ -1704,7 +1695,6 @@ export function buildView(
       const value = getDieMetadataValue(die, activeMetadataKey);
       if (value !== undefined) metadataCounts.set(value, (metadataCounts.get(value) ?? 0) + 1);
     }
-    if (die.partial && !showPartialDies) continue;
     pushDieRectangles(rectangles, die, physX, physY, plotMode, dieSwapAxes, gap, colorFns, highlightBin, normalize, activeTestNumber, binDefMap, passBinSet, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValue);
   }
 
@@ -1731,8 +1721,8 @@ export function buildView(
 
   // Pre-compute bounding box for viewport fitting.
   // Use the wafer circle (center ± radius) rather than die extents so the viewport
-  // is always sized to the drawn boundary, regardless of showPartialDies or how
-  // many partial dies are present. This keeps the wafer consistently sized on screen.
+  // is always sized to the drawn boundary, however many dies are present. This
+  // keeps the wafer consistently sized on screen.
   const dieBounds: View['dieBounds'] = hoverPoints.length > 0 ? {
     minX: wafer.center.x - wafer.radius,
     maxX: wafer.center.x + wafer.radius,

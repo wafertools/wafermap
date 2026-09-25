@@ -23,6 +23,7 @@ nav = [
     { "AI coding agents" = "agents.md"          },
     { "Performance"      = "performance.md"     },
     { "Troubleshooting"  = "troubleshooting.md" },
+    { "Upgrading"        = "upgrading.md"       },
   ]},
   { "Deep Dives" = [
     { "Architecture"       = "architecture.md"       },

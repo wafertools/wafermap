@@ -11,7 +11,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildWaferMap, buildView } from '../dist/index.js';
+import { buildWaferMap } from '../dist/index.js';
+import { buildView } from '../dist/packages/renderer/buildView.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dts = (rel) => fs.readFileSync(path.join(root, 'dist', rel), 'utf8');

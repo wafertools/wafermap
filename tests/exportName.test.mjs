@@ -63,20 +63,3 @@ test('names stay bounded, and never empty or a Windows device name', () => {
   assert.equal(buildExportFilename({ lots: [] }, '.png'), 'wafermap.png');
   assert.equal(buildExportFilename({ lots: [] }, 'con.csv'), 'wafermap-con.csv');
 });
-
-test('passing downloadFilename logs one notice that it becomes a prefix in 0.31.0; omitting it logs nothing', async () => {
-  const { noticeDownloadFilenameChange } = await import('../dist/packages/canvas-adapter/exportName.js');
-  const warned = [];
-  const realWarn = console.warn;
-  console.warn = (...args) => { warned.push(args.join(' ')); };
-  try {
-    noticeDownloadFilenameChange(undefined);
-    assert.equal(warned.length, 0);
-    noticeDownloadFilenameChange('lot-overview');
-    noticeDownloadFilenameChange('something-else');
-    assert.equal(warned.length, 1, 'once per page, however many maps pass it');
-    assert.match(warned[0], /downloadFilename becomes a prefix in 0\.31\.0/);
-  } finally {
-    console.warn = realWarn;
-  }
-});

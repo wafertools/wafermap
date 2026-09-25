@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildWaferMap, aggregateValues, createWafer } from '../dist/index.js';
+import { buildWaferMap } from '../dist/index.js';
+import { aggregateValues } from '../dist/packages/core/aggregates.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
 import { buildView } from '../dist/packages/renderer/buildView.js';
 
 function approxEqual(actual, expected, epsilon = 1e-9) {
@@ -342,7 +344,7 @@ test('getTestPassStatus — recorded verdict, legacy 0/1 fallback for F tests on
 });
 
 test('lot aggregation never carries per-wafer testPass into aggregated dies', async () => {
-  const { aggregateBinCounts } = await import('../dist/index.js');
+  const { aggregateBinCounts } = await import('../dist/packages/core/aggregates.js');
   const w1 = [
     { id: '0_0', x: 0, y: 0, testValues: { 0: 10 }, testPass: { 0: true }, width: 10, height: 10, physX: 0, physY: 0 },
     { id: '1_0', x: 1, y: 0, testPass: { 2001: false }, hbin: 5, width: 10, height: 10, physX: 10, physY: 0 },

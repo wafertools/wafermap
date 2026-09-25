@@ -1,20 +1,5 @@
 import type { Wafer } from './wafer.js';
 import type { Die, DieSpec, PositionedDie } from './dies.js';
-import { getDieKey } from './dies.js';
-
-export interface DataRow {
-  [key: string]: string | number;
-}
-
-export interface MapOptions {
-  xField?: string;
-  yField?: string;
-  iField?: string;
-  jField?: string;
-  valueField: string;
-  /** 'xy' matches by wafer coordinates; 'ij' matches by grid indices (default: 'xy') */
-  matchBy?: 'xy' | 'ij';
-}
 
 export interface TransformOptions {
   /** Additional rotation in degrees, applied on top of existing die coordinates. */
@@ -90,11 +75,6 @@ export interface Affine<From extends CoordFrame = CoordFrame, To extends CoordFr
  *   `View.hoverPoints` holds and what hit-testing compares against.
  */
 export type CoordFrame = 'physical' | 'grid' | 'baked' | 'screen';
-
-/** The identity transform. */
-export function affineIdentity<F extends CoordFrame>(): Affine<F, F> {
-  return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-}
 
 /**
  * Clockwise rotation by `angleDegrees` about (cx, cy) — the same convention as
@@ -272,37 +252,4 @@ export function transformDies(
     const p = affinePoint(m, d.physX, d.physY);
     return { ...d, physX: p.x, physY: p.y };
   });
-}
-
-/**
- * Attach data values to dies.
- * matchBy='xy'  — matches by wafer coordinates (v0.1 behaviour)
- * matchBy='ij'  — matches by grid indices
- *
- * Note: duplicate rows with the same coordinate produce last-wins behaviour.
- * Deduplicate `data` upstream if needed.
- */
-export function mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions): Die[] {
-  const { valueField, matchBy = 'xy' } = options;
-  const lookup = new Map<string, number>();
-
-  // Each call appends one more mapped value, keyed by how many are already
-  // present — so the first call lands at testValues[0], which is the key
-  // `plotMode: 'value'` selects by default when no testDefs are supplied.
-  const attach = (d: Die): Die => {
-    const v = lookup.get(getDieKey(d));
-    if (v === undefined) return { ...d };
-    const existing = d.testValues ?? {};
-    return { ...d, testValues: { ...existing, [Object.keys(existing).length]: v } };
-  };
-
-  if (matchBy === 'ij') {
-    const iField = options.iField ?? 'x', jField = options.jField ?? 'y';
-    for (const row of data) lookup.set(`${+row[iField]},${+row[jField]}`, +row[valueField]);
-    return dies.map(attach);
-  }
-
-  const xField = options.xField ?? 'x', yField = options.yField ?? 'y';
-  for (const row of data) lookup.set(`${+row[xField]},${+row[yField]}`, +row[valueField]);
-  return dies.map(attach);
 }

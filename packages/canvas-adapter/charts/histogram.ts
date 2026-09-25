@@ -20,13 +20,43 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { niceStep, fitTicks } from '../../renderer/axisTicks.js';
 import { QUANTITY, categorical } from './palette.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, horizontalTickSpacing, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeLinkedTestSelect, makeWaferSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, applyCanvasFlow, makeAxisFormat, horizontalTickSpacing, PADDING, type SaveImageHandler, robustFence, shouldIncludeLimitsByDefault, drawOffAxisLimits, resolveAxisRange, type AxisPrefs, limitLines, limitExtent, hasBothLimitKinds, stackLabelRows, strokeLimitLine, type LimitLine, chartSwatchCss, makeSeriesLegendItem, prepareCanvas } from './chartShell.js';
 import { escHtml, maxOf } from '../../core/utils.js';
 // Quantity/series colours are fixed (palette.ts), not the map's colours.
 
 const HIST_HEIGHT = 230;
 const HIST_AXIS_HEIGHT = 36;
 const HIST_TOP_MARGIN = 18;
+
+/** Room above the plot for the limit labels: one row, plus a second when test
+ *  and spec limits are both drawn and their labels may need to stack. */
+function histTopMargin(lines: readonly LimitLine[]): number {
+  const kinds = new Set(lines.map(l => l.kind)).size;
+  return HIST_TOP_MARGIN + Math.max(0, kinds - 1) * (fontPx(-1) + 2);
+}
+
+/** Every limit line not already marked off-axis, labelled above the plot. A
+ *  label that would overlap another moves up a row (`stackLabelRows`). */
+function drawHistLimitLines(
+  ctx: CanvasRenderingContext2D, lines: readonly LimitLine[], offAxisValues: ReadonlySet<number>,
+  xForVal: (v: number) => number, plotTop: number, plotBottom: number, color: string,
+): void {
+  ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+  const placed = lines.filter(l => !offAxisValues.has(l.value)).map(l => {
+    const x = xForVal(l.value);
+    const w = ctx.measureText(l.label).width;
+    return { l, x, start: x - w / 2, end: x + w / 2 };
+  });
+  const rows = stackLabelRows(placed);
+  const rowH = fontPx(-1) + 2;
+  placed.forEach(({ l, x }, k) => {
+    strokeLimitLine(ctx, l, color, x, plotTop, x, plotBottom);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(l.label, x, plotTop - 2 - rows[k] * rowH);
+  });
+}
 
 /** Draw a numbered count axis (Y) at the left of the plot, with ~`targetTicks` "nice" gridlines from 0 to maxCount. */
 function drawCountAxis(
@@ -168,9 +198,18 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   // the shared selection unambiguous on this card too.
   let emphasizedGroup: string | null = null;
 
-  function testMeta(testNumber: number): { unit?: string; limitLow?: number; limitHigh?: number } {
+  /** The active test's unit and the limit lines chosen for it; `limitLow`/
+   *  `limitHigh` are the span those lines cover, for the axis decisions. */
+  function testMeta(testNumber: number): {
+    unit?: string; lines: LimitLine[]; limitLow?: number; limitHigh?: number; hasLimits: boolean; hasBothKinds: boolean;
+  } {
     const def = testDefs.find(d => d.testNumber === testNumber);
-    return { unit: def?.unit, limitLow: def?.limitLow, limitHigh: def?.limitHigh };
+    const lines = limitLines(def, axisCtl.get().limits);
+    const { lo, hi } = limitExtent(lines);
+    return {
+      unit: def?.unit, lines, limitLow: lo, limitHigh: hi,
+      hasLimits: limitLines(def).length > 0, hasBothKinds: hasBothLimitKinds(def),
+    };
   }
 
   function rebuildBody(): void {
@@ -230,11 +269,11 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       // with "Group by" active the card lost BOTH checkboxes: the reader could
       // not see the current setting, could not change it, and the derived
       // include-limits default silently applied with nothing saying so.
-      const { limitLow: fLow, limitHigh: fHigh } = testMeta(activeTest);
+      const { hasLimits: fHas, hasBothKinds: fBoth } = testMeta(activeTest);
       // The state actually in force, which is now the same rule the non-faceted
       // branch uses (see `facetedIncludeLimits` above) rather than this branch's
       // old "unset means off".
-      axisCtl.sync(facetedIncludeLimits, fLow !== undefined || fHigh !== undefined);
+      axisCtl.sync(facetedIncludeLimits, fHas, fBoth);
       if (faceted.series.length === 0) {
         renderEmptyState(body, 'No parametric test data available for a histogram.');
         return;
@@ -244,7 +283,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     }
 
     const scopedItems = activeItem !== null ? [items[activeItem]] : items;
-    const { unit, limitLow, limitHigh } = testMeta(activeTest);
+    const { unit, lines, limitLow, limitHigh, hasLimits, hasBothKinds } = testMeta(activeTest);
     const allValues = collectTestValues(scopedItems, activeTest);
     // Not `Math.min(...allValues)`: the spread passes every die value as its own
     // argument and overflows on a real lot (25 × ~10k dies), taking the whole
@@ -252,7 +291,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const { min: dataMin, max: dataMax } = testValueExtent(scopedItems, activeTest);
     const resolvedIncludeLimits = axisIncludesLimits
       ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
-    axisCtl.sync(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
+    axisCtl.sync(resolvedIncludeLimits, hasLimits, hasBothKinds);
 
     const fence = clipOutliers ? robustFence(allValues) : null;
     const clip = fence ? { lo: Math.max(dataMin, fence.lo), hi: Math.min(dataMax, fence.hi) } : undefined;
@@ -297,8 +336,9 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     function plotRect(height: number) {
       const plotX = PADDING + 36;
       const plotMaxWidth = canvas.clientWidth - plotX - PADDING;
-      const plotMaxHeight = height - HIST_AXIS_HEIGHT - HIST_TOP_MARGIN;
-      return { plotX, plotMaxWidth: Math.max(10, plotMaxWidth), plotMaxHeight, plotTop: HIST_TOP_MARGIN };
+      const top = histTopMargin(lines);
+      const plotMaxHeight = height - HIST_AXIS_HEIGHT - top;
+      return { plotX, plotMaxWidth: Math.max(10, plotMaxWidth), plotMaxHeight, plotTop: top };
     }
 
     function barAt(offsetX: number): number {
@@ -323,7 +363,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       const barWidth = plotMaxWidth / buckets.length;
 
       drawCountAxis(ctx, plotX, plotTop, plotBottom, plotMaxWidth, maxCount,
-        { text: theme.textMuted, axis: theme.border, grid: theme.border });
+        { text: theme.textMuted, axis: theme.border, grid: theme.grid });
 
       buckets.forEach((bucket, i) => {
         const barHeight = (bucket.count / maxCount) * plotMaxHeight;
@@ -353,27 +393,12 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       // has no limits" render identically. The bucket range IS this chart's axis,
       // so it is what the limits are tested against.
       const { offAxis } = resolveAxisRange({
-        dataMin: bucketMin, dataMax: bucketMax, limitLow, limitHigh, includeLimits: false });
+        dataMin: bucketMin, dataMax: bucketMax, limits: lines, includeLimits: false });
       drawOffAxisLimits(ctx, offAxis,
         { left: plotX, right: plotX + plotMaxWidth, top: plotTop, bottom: plotBottom },
         // A limit is a data value, not a grid value: size-based decimals, as before.
         'horizontal', theme.limitLine, makeAxisFormat(axisRef, unit).tick);
-      const offAxisValues = new Set(offAxis.map(o => o.value));
-      for (const [limit, label] of [[limitLow, 'Lo limit'], [limitHigh, 'Hi limit']] as const) {
-        if (limit === undefined || offAxisValues.has(limit)) continue;
-        const x = xForVal(limit);
-        ctx.strokeStyle = theme.limitLine;
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, plotTop); ctx.lineTo(x, plotBottom);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = theme.limitLine;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(label, x, plotTop - 2);
-      }
+      drawHistLimitLines(ctx, lines, new Set(offAxis.map(o => o.value)), xForVal, plotTop, plotBottom, theme.limitLine);
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       ctx.strokeStyle = theme.border;
@@ -427,7 +452,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
   // ── Faceted overlay: one coloured series per group + clickable legend ─────
   function renderFacetedSeries(facet: HistogramSeriesData): void {
-    const { unit, limitLow, limitHigh } = testMeta(activeTest!);
+    const { unit, lines } = testMeta(activeTest!);
     const ranges = facet.ranges;
     const series = facet.series;
 
@@ -511,14 +536,14 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       const { ctx, theme } = prep;
       const plotX = PADDING + 36;
       const plotMaxWidth = Math.max(10, width - plotX - PADDING);
-      const plotTop = HIST_TOP_MARGIN;
-      const plotMaxHeight = height - HIST_AXIS_HEIGHT - HIST_TOP_MARGIN;
+      const plotTop = histTopMargin(lines);
+      const plotMaxHeight = height - HIST_AXIS_HEIGHT - plotTop;
       const plotBottom = plotTop + plotMaxHeight;
       const barWidth = plotMaxWidth / ranges.length;
       facetGeom = { plotX, plotMaxWidth, barWidth };
 
       drawCountAxis(ctx, plotX, plotTop, plotBottom, plotMaxWidth, maxCount,
-        { text: theme.textMuted, axis: theme.border, grid: theme.border });
+        { text: theme.textMuted, axis: theme.border, grid: theme.grid });
 
       if (hoveredBucket >= 0) {
         ctx.fillStyle = theme.bgHover;
@@ -564,21 +589,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
       const xForVal = (v: number) => plotX + ((v - bucketMin) / bucketSpan) * plotMaxWidth;
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-      for (const [limit, label] of [[limitLow, 'Lo limit'], [limitHigh, 'Hi limit']] as const) {
-        if (limit === undefined) continue;
-        const x = xForVal(limit);
-        ctx.strokeStyle = theme.limitLine;
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, plotTop); ctx.lineTo(x, plotBottom);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = theme.limitLine;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(label, x, plotTop - 2);
-      }
+      drawHistLimitLines(ctx, lines, new Set(), xForVal, plotTop, plotBottom, theme.limitLine);
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       ctx.strokeStyle = theme.border;

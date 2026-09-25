@@ -111,7 +111,7 @@ export function commonMetadata(items: Array<{ metadata?: WaferMetadata }>): Wafe
 }
 
 export interface BuildFacetTableOptions {
-  /** Extra/override curation entries layered on top of `DEFAULT_FACET_CURATION` — a caller's own app-specific keys (or a relabel of a default one) without losing wmap's built-in defaults. */
+  /** Extra/override curation entries layered on top of wmap's default curation — a caller's own app-specific keys (or a relabel of a default one) without losing wmap's built-in defaults. */
   curation?: Record<string, FacetCuration>;
   /** Restrict to fields curated `facet: true` (the default) plus any uncurated key. Pass `false` to include curated-but-`facet:false` fields too. */
   facetableOnly?: boolean;

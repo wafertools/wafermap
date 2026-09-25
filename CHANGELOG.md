@@ -24,6 +24,98 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Breaking
+
+- **The 74 deprecated exports are removed**: the 73 deprecated in 0.30.0 (the low-level drawing
+  pipeline, the chart-data builders, the region builders and the helpers exported by accident)
+  and `renderFindingsReportHtml`, deprecated in 0.30.3. Each named its replacement in a console
+  notice. [Upgrading](https://wafertools.github.io/wafermap/upgrading/) lists every name with
+  what to use instead; the main replacements:
+
+  | Removed | Use instead |
+  |---|---|
+  | `resolveBinColors`, `getBinColorScheme` | `binColorsForMaps(results)`, or `getBinColors()` on a map or gallery controller |
+  | `valueToViridis`, `valueToGreyscale`, `getValueColorScheme` | `resolveValueColorFn(name, reversed)` |
+  | `buildYieldData`, `buildYieldDataCombined` | `lotYieldSeries` on `analyzeWaferLot`'s result |
+  | `buildBinParetoData`, `buildBinClusterData` | `stats.hardBinCounts`, `stats.softBinCounts` |
+  | `buildCapabilityData`, `buildTestBoxplotData`, `buildTestTrendData`, `trendCentre` | `stats.capability`, `stats.perTestStats`, `perWaferTestStats` (with `computePerTestStats`) |
+  | `buildTestPassRateData`, `hasJudgeableTests`, `computeFunctionalYield` | `stats.testSpecYield`, `stats.testFlagYield`, `stats.functionalYield` |
+  | `buildRegionYieldData`, `buildRingRegions`, `buildQuadrantRegions`, `classifyDie`, `getRingLabel` | `stats.regionYield` |
+  | `classifyPattern` | `stats.spatialPattern` |
+  | `renderSummaryReportHtml`, `renderLotSummaryReportHtml`, `renderFindingsReportHtml` | `renderWaferReportHtml(result, summary?)`, `renderLotReportHtml(results)` |
+  | `openHtmlReport` | `openReportModal(html)`, `setReportOpener` |
+  | `createWafer`, `generateDies`, `clipDiesToWafer` | `buildWaferMap({ layout: true, waferConfig, dieConfig })` |
+  | `aggregateValues`, `aggregateBinCounts`, `getUniqueBins` | `buildWaferMap`'s `lotStack` |
+  | `STANDARD_WAFER_DIAMETERS_MM`, `resolveGridPitch` | `buildWaferMap`'s `standardDiameters`; each die's `width`/`height` |
+  | `getDieTestValue`, `isParametricTest`, `isPositionedDie`, `metadataCategoricalValue` | `die.testValues?.[n]`, `testType !== 'F'`, `hasPosition`, `metadataDisplayValue` |
+
+  `buildView`, `toCanvas`, `buildHoverText`, `buildMapTitle`, the transform and `affine*`
+  helpers, the histogram, scatter and correlation data builders, the sector, reticle and
+  test-site region builders, `parseRegionKey`, `contrastTextColor`, `dieHasTestData`,
+  `resolveMetadataColumns`, `discoverDieMetadataKeys`, `buildDieListSection` and
+  `DEFAULT_FACET_CURATION` have no public replacement: the renderers and the analysis do that
+  work themselves.
+- **63 types that belonged only to removed functions are removed with them**, among them the
+  chart-data types, the draw-list types (`View`, `ViewOptions`, `ViewRect` and the rest),
+  `PitchResult`, `ToCanvasResult`, `HitTarget`, `DieListOptions` and the geometry inputs
+  `WaferSpec`, `DieSpec` and `ReticleSpec`. Upgrading lists them all. `PlotMode` stays.
+- **`buildWaferMap` takes one argument.** The second (`WaferMapOptions`) set only the starting
+  `result.plotMode`, which the Web Worker never passed, so a build on and off the main thread
+  could start in different modes. Set the starting mode with `renderWaferMap`'s or
+  `renderWaferGallery`'s `viewOptions.plotMode`.
+- **`downloadFilename` is a prefix for every saved file**, on `renderWaferMap` and
+  `renderWaferGallery`: `<downloadFilename>_W05_hard-bin.png`, `<downloadFilename>_W05_die-list.csv`.
+  It applies to CSVs, charts, gallery cards and detached windows as well as the map's or gallery's
+  PNG, which it no longer names outright. Parts the prefix already names are not repeated. A host
+  that matched the exact name its `onSaveImage` receives should match on the prefix.
+- **Values outside the STDF V4 ranges are treated as missing.** 0.30.4 reported them with the
+  `input-values-outside-stdf` warning and used them as given; `buildWaferMap` now leaves them out,
+  and the warning says what it did:
+  - a bin outside 0–32767 or not a whole number: the die has no bin (so it is neither pass nor fail);
+  - a coordinate outside ±32767 or not a whole number: the die has no position, in either axis;
+  - a test number outside 0–4294967295: that test is left out of every die and of `testDefs`;
+  - a test value that is not finite: that value is left out;
+  - a site number outside 0–255: the die has no site;
+  - a `waferConfig.orientation` other than 0, 90, 180 or 270 (or an equivalent such as −90): the
+    map is built at 0. `WaferConfig.orientation` is typed `0 | 90 | 180 | 270`.
+
+  The caller's input objects are not modified. A derived test whose `testNumber` is outside
+  0–4294967295 is dropped with a `derived-test-invalid` warning.
+- **`WaferViewOptions.showPartialDies` and `isYieldEligibleDie`'s `includePartial` are removed.**
+  No map `buildWaferMap` builds has partial dies, so neither had anything to act on. A saved
+  preference that still carries `showPartialDies` is ignored. Partial dies a host supplies
+  itself are drawn in muted grey and always left out of yield.
+
+### Added
+
+- **Insights charts draw spec limits as well as test limits.** The boxplot, histogram,
+  wafer-to-wafer trend and scatter show a test's spec limits (`specLow`/`specHigh`, labelled
+  LSL/USL, long dashes) beside its test limits (Lo/Hi limit, short dashes). When a test has
+  both, a **Limits** choice (Test + spec, the default; Test limits; Spec limits; None) applies to
+  all four charts. Labels that would overlap move to a second row, **Axis includes limits**
+  covers every limit shown, and the scatter marks limits outside its plotted range at the edge,
+  as the other charts do. The wafer map still judges pass/fail by the test limits.
+- **Chart gridlines are lighter** (the border colour at 40% opacity), so the data and the limit
+  lines stand out from the grid in every theme. The scatter draws its limits in the same amber
+  as the other charts, and its limit labels sit on a panel-coloured backing where lines cross
+  them.
+
+### Changed
+
+- **The data-and-stats layer is ~49 KB gzipped**, from ~61 KB, with the removed exports gone.
+
+### Fixed
+
+- **Charts opened from a gallery card's right-click menu are saved under the card's lot and
+  wafer**, as they are from a single map.
+
+### Documentation
+
+- **New page, [Upgrading](https://wafertools.github.io/wafermap/upgrading/)**: what to change
+  for each breaking release, starting with 0.31.0.
+- **Every version has a GitHub release**, created when its tag is pushed, with that version's
+  changelog section as its notes.
+
 ## [0.30.4] — 2026-09-25
 
 ### Added

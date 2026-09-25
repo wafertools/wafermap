@@ -11,7 +11,7 @@
 // different things whenever a host is linked to a local checkout.
 export { WMAP_VERSION, WMAP_BUILD_TIME } from './version.js';
 
-export type { ToCanvasOptions, ToCanvasResult, HitTarget, ViewportTransform } from './toCanvas.js';
+export type { ToCanvasOptions, ViewportTransform } from './toCanvas.js';
 
 export { renderWaferMap } from './renderWaferMap.js';
 export type { RenderOptions, WaferMapController, WaferViewOptions, WaferPreferences, WaferDisplayState } from './renderWaferMap.js';
@@ -26,7 +26,7 @@ export type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 // unpositioned" footer, and exported here so a host can also build its own
 // lot-level combined view (concatenating every wafer's `dies` with its own
 // wafer-id column) rather than reimplementing the same table/CSV logic.
-export type { DieListOptions, DieListDisplayOptions } from './dieList.js';
+export type { DieListDisplayOptions } from './dieList.js';
 // Warning surfacing — `WarningsOptions` configures the built-in indicator and
 // the `onWarning` stream; `collectWarnings` is exported so a host that turns the
 // UI off can reproduce exactly the set the library would have shown.
@@ -68,9 +68,3 @@ export type { OverlayHandle } from './toolbar.js';
 // Shows report HTML in wmap's own modal — the partner of setReportOpener, for a
 // host whose opener saves or logs a report and still wants to show it here.
 export { openReportModal } from './toolbar.js';
-
-// Deprecated in 0.30.0, removed in 0.31.0. Each is wrapped in ./deprecated.ts, whose
-// declarations carry the `@deprecated` tags; this named re-export shadows any `export *` above.
-export {
-  toCanvas, buildDieListSection,
-} from './deprecated.js';

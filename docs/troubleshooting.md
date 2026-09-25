@@ -78,7 +78,7 @@ renderWaferMap(container, result, { statsSummary: summary });
 
 ## Stacked plot modes missing from the toolbar
 
-**Cause:** `stackedValues`, `stackedBins`, and `stackedSoftBins` only appear in the toolbar when `result.isLotStack` is `true`. This flag is only set when `lotStack` was passed to `buildWaferMap` — it is not set when you call `aggregateValues` manually and feed the result to a single-wafer `buildWaferMap`.
+**Cause:** `stackedValues`, `stackedBins`, and `stackedSoftBins` only appear in the toolbar when `result.isLotStack` is `true`. This flag is only set when `lotStack` was passed to `buildWaferMap` — not when you stack the wafers yourself and pass the result as a single wafer's `results`.
 
 **Fix:** use the `lotStack` input:
 

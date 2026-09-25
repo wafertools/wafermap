@@ -6,7 +6,8 @@ asks why something went, and before restoring, deprecating or removing anything.
 
 - **Part 1** covers the **0.30.0 removals** (below).
 - **Part 2** reviews the **78 exports deprecated in 0.30.0**: which were withdrawn, which were
-  replaced in 0.30.1 before their 0.31.0 removal, and which are removed as planned.
+  replaced in 0.30.1, and the **74 removed in 0.31.0**. What to use instead of each is also on
+  the docs site's Upgrading page (`docs/upgrading.md`).
 
 # Part 1: removed in 0.30.0
 
@@ -433,7 +434,7 @@ asks why something went, and before restoring, deprecating or removing anything.
 
 ---
 
-# Part 2: deprecated in 0.30.0, due for removal in 0.31.0
+# Part 2: deprecated in 0.30.0, removed in 0.31.0
 
 Reviewed 2026-09-16. The 0.30.0 deprecations were chosen mainly by measuring what tsmap and the
 examples call. That is evidence that nothing *known* depends on an export, not that no app
@@ -458,19 +459,25 @@ replacement, but it already takes a summary alone, so it was withdrawn rather th
 |---|---|
 | **Keep** | Deprecation withdrawn in 0.30.1. It's useful, low-risk and cheap, and it is the library's single copy of a rule a host would otherwise re-implement. |
 | **Replace before removal** | The need is real and nothing else met it, but the export was the wrong shape (unsafe defaults, tied to internals). A supported replacement shipped in 0.30.1, the deprecation notice names it, and the old export is removed in 0.31.0 as planned. |
-| **Remove as planned** | A duplicate of a supported path, trivial, tied to the withdrawn drawing pipeline, or unsafe to call directly. |
+| **Remove as planned** | A duplicate of a supported path, trivial, tied to the withdrawn drawing pipeline, or unsafe to call directly. Removed in 0.31.0. |
 
 ### Summary
 
 | Verdict | Count | Items |
 |---|---|---|
-| **Keep** (withdrawn 0.30.1) | 5 | `visibleFindings`, `openReportModal`, `metadataDisplayValue`, `getReticleCell`, `renderFindingsReportHtml` (deprecated again in 0.31.0 — see its entry) |
+| **Keep** (withdrawn 0.30.1) | 5 | `visibleFindings`, `openReportModal`, `metadataDisplayValue`, `getReticleCell`, `renderFindingsReportHtml` (deprecated again in 0.30.3 and removed in 0.31.0 — see its entry) |
 | **Replace before removal** (replaced 0.30.1) | 12 | `resolveBinColors`; `buildCapabilityData`; `buildTestPassRateData`, `hasJudgeableTests`; `buildRegionYieldData`, `buildRingRegions`, `buildQuadrantRegions`; `renderSummaryReportHtml`, `renderLotSummaryReportHtml`; `createWafer`, `generateDies`, `clipDiesToWafer` |
 | **Remove as planned** | 61 | everything else, below |
 
-**Timing.** Every replacement shipped in 0.30.1, so all 73 remaining deprecations are still due
-in 0.31.0. `tests/deprecations.test.mjs` enforces that, and lists the five withdrawn names among
-the exports that must stay.
+**Removed in 0.31.0.** Every replacement shipped in 0.30.1, and all 73 remaining deprecations
+were removed in 0.31.0, together with `renderFindingsReportHtml`: 74 exports. The types that
+belonged only to them went too (listed on the Upgrading page), with three leftovers of the
+pipeline found during the removal — see "Removed in 0.31.0 without deprecation" below. Most of the implementations stay
+as library internals, because the renderers, Insights and the analysis still use them; the five
+with no internal use were deleted (`affineIdentity`, `mapDataToDies`, `getUniqueBins`,
+`valueToViridis`, `renderFindingsReportHtml`). `tests/deprecations.test.mjs` fails if any of the
+74 is exported again, so a restoration has to be recorded here first, and it lists the five
+withdrawn names among the exports that must stay.
 
 ---
 
@@ -551,11 +558,11 @@ the exports that must stay.
 
 ---
 
-## Replace before removal
+## Replace before removal (all removed in 0.31.0)
 
 ### `resolveBinColors` (renderer)
 
-**Replaced in 0.30.1 by** `binColorsForMaps(results)` and `getBinColors()` on both controllers.
+**Removed in 0.31.0; replaced in 0.30.1 by** `binColorsForMaps(results)` and `getBinColors()` on both controllers.
 
 - **What it does:** resolves the bin colours a map draws.
 - **Why deprecated:** "the maps resolve bin colours themselves".
@@ -572,7 +579,7 @@ the exports that must stay.
 
 ### `buildCapabilityData` (stats)
 
-**Replaced in 0.30.1 by** `stats.capability` on wafer and lot summaries.
+**Removed in 0.31.0; replaced in 0.30.1 by** `stats.capability` on wafer and lot summaries.
 
 - **What it does:** Cp/Cpk (pooled within-wafer sigma) and Pp/Ppk (overall sigma) for every
   parametric test.
@@ -586,7 +593,7 @@ the exports that must stay.
 
 ### `buildTestPassRateData`, `hasJudgeableTests` (stats)
 
-**Replaced in 0.30.1 by** `stats.testFlagYield` and `stats.specVerdictDisagreementDies`, alongside the existing `testSpecYield` and `functionalYield`, on wafer and lot summaries. The review had assumed spec and functional pass rates were also missing; they were already there.
+**Removed in 0.31.0; replaced in 0.30.1 by** `stats.testFlagYield` and `stats.specVerdictDisagreementDies`, alongside the existing `testSpecYield` and `functionalYield`, on wafer and lot summaries. The review had assumed spec and functional pass rates were also missing; they were already there.
 
 - **What they do:** per-test pass rates using spec limits, the tester's recorded verdict, or
   functional pass/fail, including a count of dies where spec and tester disagree.
@@ -598,7 +605,7 @@ the exports that must stay.
 
 ### `buildRegionYieldData`, `buildRingRegions`, `buildQuadrantRegions` (stats)
 
-**Replaced in 0.30.1 by** `stats.regionYield` on wafer and lot summaries.
+**Removed in 0.31.0; replaced in 0.30.1 by** `stats.regionYield` on wafer and lot summaries.
 
 - **What they do:** yield per ring and per quadrant, each wafer judged by its own pass bins.
 - **The gap:** edge-versus-centre yield is a standard engineering export. The Summary panel,
@@ -611,7 +618,7 @@ the exports that must stay.
 
 ### `renderSummaryReportHtml`, `renderLotSummaryReportHtml` (stats)
 
-**Replaced in 0.30.1 by** `renderWaferReportHtml(result, summary?)` and `renderLotReportHtml(results)`. `renderFindingsReportHtml`, first listed here, was kept instead (see Keep). Building these exposed a real bug: the lot report analysed empty wafers when no precomputed summary was given, which the new path fixes.
+**Removed in 0.31.0; replaced in 0.30.1 by** `renderWaferReportHtml(result, summary?)` and `renderLotReportHtml(results)`. `renderFindingsReportHtml`, first listed here, was kept instead (see Keep). Building these exposed a real bug: the lot report analysed empty wafers when no precomputed summary was given, which the new path fixes.
 
 - **What they do:** produce the wafer, lot and findings reports as standalone HTML.
 - **Why deprecated:** reports open from the Summary panel; `setReportOpener` routes them.
@@ -626,7 +633,7 @@ the exports that must stay.
 
 ### `createWafer`, `generateDies`, `clipDiesToWafer` (core)
 
-**Replaced in 0.30.1 by** `buildWaferMap({ layout: true, waferConfig, dieConfig })`.
+**Removed in 0.31.0; replaced in 0.30.1 by** `buildWaferMap({ layout: true, waferConfig, dieConfig })`.
 
 - **What they do:** build wafer geometry and a full die grid clipped to it, with no test data.
 - **Why deprecated:** part of the low-level drawing pipeline.
@@ -642,7 +649,7 @@ the exports that must stay.
 
 ---
 
-## Remove as planned
+## Remove as planned (all removed in 0.31.0)
 
 ### The drawing pipeline: 18 names
 
@@ -727,6 +734,50 @@ already have a real single read-path in `getTestPassStatus`, which stays.
   applies each one itself.
 
 18 + 11 + 3 + 13 + 16 = 61.
+
+---
+
+## Removed in 0.31.0 without deprecation
+
+Found while removing the pipeline (2026-09-25): options and types whose only purpose was to feed
+it, left with nothing to act on. Removed in the same breaking release rather than deprecated
+for a later one, since each either does nothing or does something inconsistent.
+
+| Item | Verdict |
+|---|---|
+| `buildWaferMap`'s second argument (`WaferMapOptions`) | Keep removed: duplicate |
+| `View`, `ViewOptions`, `ViewRect`, `ViewText`, `ViewOverlay`, `ViewHoverPoint` (type exports) | Keep removed: internal |
+| `WaferViewOptions.showPartialDies`, `isYieldEligibleDie`'s `includePartial` | Keep removed: superseded |
+
+### `buildWaferMap(input, options?)` — the second argument
+
+- **What it did:** passed view options into the draw list `buildWaferMap` builds for its own
+  result. Its only visible effect was the starting `result.plotMode`.
+- **Why removed:** a second way to set the starting plot mode, beside the renderers'
+  `viewOptions.plotMode`, and not honoured everywhere: the Web Worker calls
+  `buildWaferMap(input)`, so the same input could start in different modes on and off the main
+  thread. Undocumented; tsmap never passed it.
+- **Danger of restoring it:** two paths to one setting, one of which the worker drops.
+
+### The View types
+
+- **What they were:** the shape of the draw list `buildView` produced and `toCanvas` drew.
+- **Why removed:** with both functions gone, nothing public produces or consumes a `View`. The
+  only remaining reference is `WaferMapResult.view`, already `@internal`. Exporting the types
+  froze an internal structure, the reason the pipeline was removed. `PlotMode` stays: it is a
+  public vocabulary (tsmap uses it).
+- **Danger of restoring them:** hosts come to depend on the draw list's shape.
+
+### `showPartialDies`, `includePartial`
+
+- **What they did:** hid partial (edge-straddling) dies on the map; counted them in yield.
+- **Why removed:** only `clipDiesToWafer` ever produced partial dies. With it internal, and the
+  layout option building only sites fully on the wafer, no map `buildWaferMap` builds has any
+  — so both options did nothing, and `includePartial: true` would cost a caller a debugging
+  session to discover that. `Die.partial` itself stays: a host supplying its own dies can set it,
+  and such a die is drawn muted and left out of yield. A saved `showPartialDies` preference is
+  ignored (`tests/dom-adapter.test.mjs`).
+- **Restore if:** a public path to partial dies returns.
 
 ---
 

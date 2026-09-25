@@ -88,7 +88,7 @@
     "verify": "npm run check && npm test",
     "preversion": "npm run verify",
     "version": "node scripts/check-changelog.mjs && node scripts/check-bundle-size.mjs --write && node scripts/check-api-claims.mjs --write && git add README.md docs/performance.md docs/api.md",
-    "postversion": "echo \"\\nTagged v$npm_package_version. Next:\\n  git push && git push origin v$npm_package_version\\n  npm publish\\n\"",
+    "postversion": "echo \"\\nTagged v$npm_package_version. Next:\\n  git push && git push origin v$npm_package_version   (the tag push creates the GitHub release)\\n  npm publish\\n\"",
     "postpublish": "echo \"\\ndist/ was minified for publish — run 'npm run build' to restore the readable dev build.\\n\"",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "screenshots:list": "node scripts/capture-screenshots.mjs --list",

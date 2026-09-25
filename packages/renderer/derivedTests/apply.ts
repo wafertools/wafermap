@@ -21,6 +21,7 @@
  * with no further change.
  */
 
+import { isStdfTestNumber, STDF_TEST_NUM_MAX } from '../../core/stdf.js';
 import { diePassStatus } from '../../core/dies.js';
 import type { DieResult, TestDef, WaferWarning } from '../buildWaferMap.js';
 import { getTestPassStatus, isParametricTest } from '../buildWaferMap.js';
@@ -183,8 +184,8 @@ function compile(
   const taken = new Set<number>();
   for (const raw of derivedTests) {
     const label = labelOf(raw);
-    if (!Number.isInteger(raw.testNumber)) {
-      warnings.push(warn(`Derived test ${label} was dropped: \`testNumber\` must be an integer.`));
+    if (!isStdfTestNumber(raw.testNumber)) {
+      warnings.push(warn(`Derived test ${label} was dropped: \`testNumber\` must be a whole number from 0 to ${STDF_TEST_NUM_MAX}, as STDF stores it.`));
       continue;
     }
     // Measured data is ground truth and is never overwritten by a computed

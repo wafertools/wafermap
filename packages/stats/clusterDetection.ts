@@ -1,4 +1,5 @@
-import type { Die, PositionedDie, Wafer } from '../core/index.js';
+import type { Die, PositionedDie } from '../core/dies.js';
+import type { Wafer } from '../core/wafer.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { normalCdf } from './math.js';
 import { getDieKey } from '../core/dies.js';

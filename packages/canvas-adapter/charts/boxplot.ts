@@ -25,7 +25,7 @@ import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt as fmtUnit } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, fitRowsHeight, setChartGrow, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, fitRowsHeight, setChartGrow, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, limitLines, limitExtent, hasBothLimitKinds, stackLabelRows, strokeLimitLine, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
 import { escHtml, maxOf, minOf } from '../../core/utils.js';
 
 const BOX_ROW_HEIGHT = 24;
@@ -244,7 +244,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
 
   function rebuildBody(): void {
     // Read once per rebuild from the shared control, which owns this state.
-    const { includeLimits: axisIncludesLimits, clipOutliers } = axisCtl.get();
+    const { includeLimits: axisIncludesLimits, clipOutliers, limits: limitsShown } = axisCtl.get();
     syncHint();
     body.innerHTML = '';
     if (testOptions.length === 0 || activeTest === null) {
@@ -256,8 +256,8 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     const data = buildTestBoxplotData(rowItems, activeTest);
     const def = testDefs.find(d => d.testNumber === activeTest);
     const unit = def?.unit;
-    const limitLow = def?.limitLow;
-    const limitHigh = def?.limitHigh;
+    const lines = limitLines(def, limitsShown);
+    const { lo: limitLow, hi: limitHigh } = limitExtent(lines);
 
     if (data.every(d => d.count === 0)) {
       renderEmptyState(body, 'No parametric test data available for box plots.');
@@ -290,13 +290,13 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
     const dataMax = maxOf(finite.map(d => d.max));
     const resolvedIncludeLimits = axisIncludesLimits
       ?? shouldIncludeLimitsByDefault(dataMin, dataMax, limitLow, limitHigh);
-    axisCtl.sync(resolvedIncludeLimits, limitLow !== undefined || limitHigh !== undefined);
+    axisCtl.sync(resolvedIncludeLimits, limitLines(def).length > 0, hasBothLimitKinds(def));
 
     // Clipping uses each box's own min/max as the value population — the raw dies
     // are not held here. It clips the AXIS only; every box's statistics are
     // untouched, and no reported number changes.
     const range = resolveAxisRange({
-      dataMin, dataMax, limitLow, limitHigh,
+      dataMin, dataMax, limits: lines,
       includeLimits: resolvedIncludeLimits,
       clipOutliers,
       values: finite.flatMap(d => [d.min, d.q1, d.median, d.q3, d.max]) });
@@ -471,37 +471,40 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
         { left: plotX, right: plotX + plotMaxWidth, top: 0, bottom: axisY },
         'horizontal', theme.limitLine, v => fmtUnit(v, unit, 'engineering'));
       const offAxisValues = new Set(range.offAxis.map(o => o.value));
-      for (const [limit, limLabel] of [[limitLow, 'Lo limit'], [limitHigh, 'Hi limit']] as const) {
-        if (limit === undefined || offAxisValues.has(limit)) continue;
-        const x = xFor(limit, plotX, plotMaxWidth);
-        ctx.strokeStyle = theme.limitLine;
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, 0); ctx.lineTo(x, axisY);
-        ctx.stroke();
-        ctx.setLineDash([]);
+      const drawn = lines.filter(l => !offAxisValues.has(l.value));
+      // BESIDE the line, not centred on it. This rule runs the full plot
+      // height (0 → axisY) with the label inside that span, so a centred
+      // label had the dashed line struck through its glyphs — an `S` with a
+      // vertical stroke through it reads as `$`, which is how this was
+      // spotted. The histogram's label needs no such offset: it sits above
+      // `plotTop`, clear of where its own line begins.
+      //
+      // OUTWARD — a low limit to the left of its line, a high limit to the
+      // right — because that is the side each limit means. A low limit bounds
+      // the low out-of-limit region and a high limit the high one, so a label
+      // placed on the far side sits in the in-limit region and reads as
+      // belonging to the data rather than to the boundary. An earlier version offset inward purely to keep the
+      // text off the plot edge; that is a layout worry overriding what the
+      // mark says, which is the wrong way round.
+      //
+      // Test and spec labels can meet near each other; a label that would
+      // overlap another moves up one row (`stackLabelRows`).
+      const placed = drawn.map(l => {
+        const x = xFor(l.value, plotX, plotMaxWidth);
+        const w = ctx.measureText(l.label).width;
+        const dir = limitLabelSide(x, w, plotX, plotX + plotMaxWidth, l.end === 'lo');
+        const start = dir < 0 ? x - 3 - w : x + 3;
+        return { l, x, dir, start, end: start + w };
+      });
+      const rows = stackLabelRows(placed);
+      const rowH = fontPx(-1) + 2;
+      placed.forEach(({ l, x, dir }, k) => {
+        strokeLimitLine(ctx, l, theme.limitLine, x, 0, x, axisY);
         ctx.fillStyle = theme.limitLine;
-        // BESIDE the line, not centred on it. This rule runs the full plot
-        // height (0 → axisY) with the label inside that span, so a centred
-        // label had the dashed line struck through its glyphs — an `S` with a
-        // vertical stroke through it reads as `$`, which is how this was
-        // spotted. The histogram's label needs no such offset: it sits above
-        // `plotTop`, clear of where its own line begins.
-        //
-        // OUTWARD — LSL to the left of its line, USL to the right — because
-        // that is the side each limit means. LSL bounds the low out-of-spec
-        // region and USL the high one, so a label placed on the far side sits
-        // in the in-spec region and reads as belonging to the data rather than
-        // to the boundary. An earlier version offset inward purely to keep the
-        // text off the plot edge; that is a layout worry overriding what the
-        // mark says, which is the wrong way round.
-        const dir = limitLabelSide(
-          x, ctx.measureText(limLabel).width, plotX, plotX + plotMaxWidth, limLabel === 'Lo limit');
         ctx.textAlign = dir < 0 ? 'right' : 'left';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(limLabel, x + dir * 3, axisY - 1);
-      }
+        ctx.fillText(l.label, x + dir * 3, axisY - 1 - rows[k] * rowH);
+      });
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
 
       ctx.strokeStyle = theme.border;

@@ -10,49 +10,23 @@ import * as canvasApi       from '../dist/packages/canvas-adapter/index.js';
 // Any addition or removal breaks this test — update deliberately when the surface changes.
 
 const SNAPSHOTS = {
+  // 0.31.0 removed the 74 exports deprecated in 0.30.0 and 0.30.3 (API_REMOVALS.md, Part 2).
   '.' : [
     // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
     'binColorsForMaps', 'renderLotReportHtml', 'renderWaferReportHtml',
     // Added in 0.30.3 so a host marks derived tests in its own UI exactly as the
     // library does (tsmap's test selector).
     'DERIVED_KEY', 'DERIVED_MARK',
-    'affineCompose', 'affineIdentity', 'affineInvert', 'affineMirror',
-    'affinePoint', 'affineRotation', 'affineSwapsAxes', 'affineVector',
-    'aggregateBinCounts', 'aggregateValues', 'analyzeWaferLot', 'analyzeWaferMap',
-    'applyOrientation', 'applyProbeSequence', 'areQuadrantsAdjacent',
-    'buildBinClusterData', 'buildBinParetoData',
-    'buildCapabilityData', 'buildCorrelationMatrix', 'buildFacetTable', 'buildHoverText', 'buildMapTitle',
-    'buildQuadrantRegions', 'buildRegionYieldData', 'buildReticlePositionRegions', 'buildRingRegions',
-    'buildScatterData', 'buildScatterDataGrouped',
-    'buildSectorRegions', 'buildTestBoxplotData', 'buildTestHistogramData', 'buildTestHistogramSeries',
-    'buildTestPassRateData', 'buildTestSiteRegions', 'buildTestTrendData', 'hasJudgeableTests', 'trendCentre', 'buildView', 'buildWaferMap',
-    'buildYieldData', 'buildYieldDataCombined',
-    'classifyDie', 'classifyPattern', 'clipDiesToWafer', 'computeFunctionalYield', 'contrastTextColor', 'createWafer',
-    'DEFAULT_FACET_CURATION', 'facetValueOf', 'FACET_NONE_VALUE', 'filterCorrelationMatrix',
-    'dieHasTestData',
-    'filterFindings', 'visibleFindings', 'generateDies', 'generateReticleGrid',
-    'parseRegionKey', 'resolveGridPitch', 'sectorCompassNames',
-    'diePassStatus',
-    'getBinColorScheme', 'getValueColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
-    'getReticleCell', 'getRingLabel', 'getUniqueBins', 'hasPosition',
-    'isInsideWafer', 'isParametricTest', 'isPositionedDie', 'isYieldEligibleDie',
-    'listBinColorSchemes', 'listValueColorSchemes',
-    'mapDataToDies', 'mergeTestDefs', 'metadataCategoricalValue', 'metadataDisplayValue',
-    'openHtmlReport', 'registerBinColorScheme', 'registerValueColorScheme', 'resolveBinColors',
-    'resolveValueColorFn',
-    'resolveMetadataColumns', 'discoverDieMetadataKeys', 'setReportOpener',
-    'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
-    'STANDARD_WAFER_DIAMETERS_MM', 'transformDies', 'valueToGreyscale', 'valueToViridis',
+    'analyzeWaferLot', 'analyzeWaferMap', 'buildFacetTable', 'buildWaferMap',
+    'diePassStatus', 'facetValueOf', 'FACET_NONE_VALUE', 'filterFindings',
+    'getDieKey', 'getReticleCell', 'getTestPassStatus', 'hasPosition', 'isYieldEligibleDie',
+    'listBinColorSchemes', 'listValueColorSchemes', 'mergeTestDefs', 'metadataDisplayValue',
+    'registerBinColorScheme', 'registerValueColorScheme', 'resolveValueColorFn',
+    'setReportOpener', 'visibleFindings',
   ],
   './core': [
-    'affineCompose', 'affineIdentity', 'affineInvert', 'affineMirror',
-    'affinePoint', 'affineRotation', 'affineSwapsAxes', 'affineVector',
-    'aggregateBinCounts', 'aggregateValues',
-    'applyOrientation', 'applyProbeSequence',
-    'classifyDie', 'clipDiesToWafer', 'createWafer', 'diePassStatus',
-    'generateDies', 'generateReticleGrid', 'getDieKey', 'getReticleCell', 'getRingLabel', 'getUniqueBins',
-    'hasPosition', 'isInsideWafer', 'isPositionedDie', 'isYieldEligibleDie', 'mapDataToDies',
-    'metadataCategoricalValue', 'metadataDisplayValue', 'resolveGridPitch', 'transformDies',
+    'diePassStatus', 'getDieKey', 'getReticleCell', 'hasPosition', 'isYieldEligibleDie',
+    'metadataDisplayValue',
   ],
   // findTestDef / generateTextOverlay / getUniqueTestNumbers / resolveTestNumber were
   // removed from the public surface in 0.22.0 — internal view-pipeline helpers with no
@@ -62,32 +36,18 @@ const SNAPSHOTS = {
     'binColorsForMaps',
     // Added in 0.30.3 — see the root entry above.
     'DERIVED_KEY', 'DERIVED_MARK',
-    'buildHoverText', 'buildMapTitle', 'buildView', 'buildWaferMap',
-    'contrastTextColor', 'dieHasTestData',
-    'getBinColorScheme', 'getValueColorScheme', 'getDieKey', 'getDieTestValue', 'getTestPassStatus',
-    'isParametricTest',
+    'buildWaferMap', 'getDieKey', 'getTestPassStatus',
     'listBinColorSchemes', 'listValueColorSchemes', 'registerBinColorScheme', 'registerValueColorScheme',
-    'resolveBinColors', 'resolveValueColorFn', 'valueToGreyscale', 'valueToViridis',
-    'STANDARD_WAFER_DIAMETERS_MM',
+    'resolveValueColorFn',
   ],
   './stats': [
     // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
     'renderLotReportHtml', 'renderWaferReportHtml',
-    'analyzeWaferLot', 'analyzeWaferMap', 'areQuadrantsAdjacent',
-    'buildBinClusterData', 'buildBinParetoData',
-    'buildCapabilityData', 'buildCorrelationMatrix', 'buildFacetTable',
-    'buildQuadrantRegions', 'buildRegionYieldData', 'buildReticlePositionRegions',
-    'buildRingRegions', 'buildScatterData', 'buildScatterDataGrouped',
-    'buildSectorRegions', 'buildTestBoxplotData', 'buildTestHistogramData',
-    'buildTestHistogramSeries', 'buildTestPassRateData', 'buildTestSiteRegions', 'buildTestTrendData', 'hasJudgeableTests', 'trendCentre',
-    'buildYieldData', 'buildYieldDataCombined',
-    'classifyPattern', 'computeFunctionalYield', 'DEFAULT_FACET_CURATION',
-    'facetValueOf', 'FACET_NONE_VALUE', 'filterCorrelationMatrix',
-    'filterFindings', 'visibleFindings', 'mergeTestDefs', 'openHtmlReport', 'parseRegionKey', 'resolveMetadataColumns', 'discoverDieMetadataKeys', 'sectorCompassNames', 'setReportOpener',
-    'renderFindingsReportHtml', 'renderLotSummaryReportHtml', 'renderSummaryReportHtml',
+    'analyzeWaferLot', 'analyzeWaferMap', 'buildFacetTable', 'facetValueOf', 'FACET_NONE_VALUE',
+    'filterFindings', 'mergeTestDefs', 'setReportOpener', 'visibleFindings',
   ],
   './render': [
-    'renderWaferMap', 'renderWaferGallery', 'setDetachWindowOpener', 'toCanvas',
+    'renderWaferMap', 'renderWaferGallery', 'setDetachWindowOpener',
     // Which build is actually running, for a host to show in its own About
     // dialog — the numbers previously only reached a console line, which is not
     // an answer you can give a fab engineer asking why a map looks wrong.
@@ -97,11 +57,6 @@ const SNAPSHOTS = {
     // set the library would have shown, rather than re-deriving it from two
     // separate sources and getting the de-duplication subtly different.
     'collectWarnings', 'severityOf',
-    // General-purpose die-list table + CSV export (position/site/bins/per-test
-    // values) — used internally for coordinate-less wafers, and exposed so a
-    // host (tsmap's lot-level "Die list…" toolbar button) can build its own
-    // combined view.
-    'buildDieListSection',
     // The toolbar's own icon set — exposed so a host rendering its own chrome
     // alongside wmap's can match wmap's iconography instead of copy-pasting
     // SVGs that silently drift on the next redesign.

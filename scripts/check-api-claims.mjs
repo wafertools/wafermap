@@ -209,7 +209,9 @@ if (ts === null) {
   } else {
     for (const m of snapshot.slice(snapStart, snapEnd).matchAll(/'([A-Za-z_][A-Za-z0-9_]*)'/g)) names.add(m[1]);
   }
-  if (snapStart !== -1 && names.size < 50) {
+  // 37 distinct names since 0.31.0 removed the deprecated exports; the floor only has
+  // to catch a parse that has silently stopped reading the snapshot.
+  if (snapStart !== -1 && names.size < 30) {
     problems.push(`tests/export-surface.test.mjs: only ${names.size} export names parsed out of the snapshot — that is far too few, so the undocumented-export check is not really checking.`);
   }
   const undocumented = [...names].filter(n => !apiText.includes(n)).sort();

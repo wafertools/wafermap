@@ -1,4 +1,4 @@
-lot,wafer,x,y,siteId,hbin,sbin,testdate,temp,testA,testB,testC
+lot,wafer,x,y,probeSeq,hbin,sbin,testdate,temp,testA,testB,testC
 LOT123,W01,-2,-14,0,1,10,2026-04-22,25,0.962,0.491,55.787
 LOT123,W01,-1,-14,1,1,10,2026-04-22,25,0.978,0.507,45.655
 LOT123,W01,0,-14,2,1,10,2026-04-22,25,0.873,0.468,54.818

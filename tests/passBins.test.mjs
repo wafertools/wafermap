@@ -40,7 +40,9 @@ proto.focus = noop; proto.setPointerCapture = noop; proto.releasePointerCapture 
 Object.defineProperty(proto, 'clientWidth', { configurable: true, get() { return 400; } });
 Object.defineProperty(proto, 'clientHeight', { configurable: true, get() { return 400; } });
 
-const { buildWaferMap, analyzeWaferMap, buildYieldData, buildRegionYieldData, buildRingRegions } = await import('../dist/index.js');
+const { buildWaferMap, analyzeWaferMap } = await import('../dist/index.js');
+  const { buildYieldData } = await import('../dist/packages/stats/yield.js');
+  const { buildRegionYieldData, buildRingRegions } = await import('../dist/packages/stats/regions.js');
 const { renderWaferMap, renderWaferGallery } = await import('../dist/packages/canvas-adapter/index.js');
 const { resolveBinColors, resolveBinColorsByWafer, binPassSetsByWafer } = await import('../dist/packages/renderer/binColors.js');
 const { passBinsLabel } = await import('../dist/packages/core/passBins.js');

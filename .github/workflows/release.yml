@@ -1,0 +1,28 @@
+name: Release
+
+# A GitHub release for every version tag, with that version's changelog section
+# as its notes. `npm version` tags the release commit; pushing the tag runs this.
+# Publishing to npm stays a manual step (see postversion in package.json).
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Create or update the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/release-notes.mjs "$GITHUB_REF_NAME" > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --repo "$GITHUB_REPOSITORY" || \
+          gh release edit "$GITHUB_REF_NAME" --notes-file notes.md --repo "$GITHUB_REPOSITORY"

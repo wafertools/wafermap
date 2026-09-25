@@ -7,6 +7,7 @@
 
 import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
+import { minOf, maxOf } from '../../core/utils.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 import { markedTestLabel, DERIVED_LANE_PAD } from '../../renderer/testLabel.js';
 
@@ -130,9 +131,40 @@ export interface ChartCanvasColors {
    * limit line and its label need.
    */
   limitLine: string;
+  /**
+   * Gridlines: `border` at `GRID_ALPHA`. A gridline is a reading aid behind the
+   * data; drawn at full `border` strength (the axis colour) it competed with the
+   * points and with the limit lines, which in a theme with a strong border were
+   * hard to pick out from the grid at all.
+   */
+  grid: string;
 }
 
-const CHART_COLOR_FALLBACKS: Record<keyof ChartCanvasColors, string> = {
+/** Opacity of gridlines relative to the border colour. */
+export const GRID_ALPHA = 0.4;
+
+/** `color` at `alpha` × its own opacity. Understands the forms a computed
+ *  custom property holds — `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()` —
+ *  and returns anything else unchanged rather than guessing. */
+export function withAlpha(color: string, alpha: number): string {
+  const c = color.trim();
+  let r: number, g: number, b: number, a = 1;
+  const hex = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  const fn = c.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i);
+  if (hex) {
+    const h = hex[1].length === 3 ? hex[1].split('').map(ch => ch + ch).join('') : hex[1];
+    [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+    if (h.length === 8) a = parseInt(h.slice(6, 8), 16) / 255;
+  } else if (fn) {
+    [r, g, b] = [fn[1], fn[2], fn[3]].map(Number);
+    if (fn[4] !== undefined) a = fn[4].endsWith('%') ? parseFloat(fn[4]) / 100 : Number(fn[4]);
+  } else {
+    return color;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${+(a * alpha).toFixed(3)})`;
+}
+
+const CHART_COLOR_FALLBACKS: Record<Exclude<keyof ChartCanvasColors, 'grid'>, string> = {
   text: '#333',
   textMuted: '#66788a',
   border: 'rgba(0,0,0,0.12)',
@@ -145,7 +177,7 @@ const CHART_COLOR_FALLBACKS: Record<keyof ChartCanvasColors, string> = {
   limitLine: '#b45309',
 };
 
-const CHART_COLOR_TOKEN: Record<keyof ChartCanvasColors, string> = {
+const CHART_COLOR_TOKEN: Record<Exclude<keyof ChartCanvasColors, 'grid'>, string> = {
   text: 'text',
   textMuted: 'text-muted',
   border: 'border',
@@ -163,10 +195,11 @@ const CHART_COLOR_TOKEN: Record<keyof ChartCanvasColors, string> = {
 export function resolveChartCanvasColors(el: HTMLElement): ChartCanvasColors {
   const cs = getComputedStyle(el);
   const out = {} as ChartCanvasColors;
-  for (const key of Object.keys(CHART_COLOR_TOKEN) as Array<keyof ChartCanvasColors>) {
+  for (const key of Object.keys(CHART_COLOR_TOKEN) as Array<keyof typeof CHART_COLOR_TOKEN>) {
     const v = cs.getPropertyValue(`--wmap-${CHART_COLOR_TOKEN[key]}`).trim();
     out[key] = v || CHART_COLOR_FALLBACKS[key];
   }
+  out.grid = withAlpha(out.border, GRID_ALPHA);
   return out;
 }
 
@@ -1191,16 +1224,17 @@ export function makeTestSelect(
 /** The two axis toggles plus the state behind them. */
 export interface LinkedAxisPrefs {
   /** Current prefs — read these where the panel used its own locals. */
-  get(): { includeLimits: boolean | undefined; clipOutliers: boolean };
+  get(): { includeLimits: boolean | undefined; clipOutliers: boolean; limits: LimitsShown };
   /**
    * Rebuild the toggles for the state the panel has just RESOLVED.
    *
    * Called from the redraw, because `includeLimits` is a tri-state: undefined
    * means "decide from the data" (`shouldIncludeLimitsByDefault`), and the
    * resolved answer is only known once the data range is. `hasLimits` decides
-   * whether the limits toggle is offered at all.
+   * whether the limits toggle is offered at all, and `hasBothKinds` whether the
+   * "Limits:" choice between test and spec limits is.
    */
-  sync(resolvedIncludeLimits: boolean, hasLimits: boolean): void;
+  sync(resolvedIncludeLimits: boolean, hasLimits: boolean, hasBothKinds?: boolean): void;
   /**
    * Adopt prefs chosen elsewhere. Returns false — changing nothing — when they
    * already match. Deliberately does NOT fire `onUserChange`, the same
@@ -1233,13 +1267,17 @@ export function makeLinkedAxisPrefs(
 ): LinkedAxisPrefs {
   let includeLimits: boolean | undefined = initial?.includeLimits;
   let clipOutliers = initial?.clipOutliers ?? false;
+  let limits: LimitsShown = initial?.limits ?? 'both';
 
-  const fire = () => onUserChange({ includeLimits, clipOutliers });
+  const fire = () => onUserChange({ includeLimits, clipOutliers, limits });
 
   return {
-    get: () => ({ includeLimits, clipOutliers }),
-    sync(resolvedIncludeLimits, hasLimits) {
+    get: () => ({ includeLimits, clipOutliers, limits }),
+    sync(resolvedIncludeLimits, hasLimits, hasBothKinds = false) {
       row.innerHTML = '';
+      if (hasBothKinds) {
+        row.appendChild(makeLimitsSelect(limits, v => { limits = v; fire(); }, ownerDocument));
+      }
       if (hasLimits) {
         row.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
           includeLimits = v;
@@ -1252,9 +1290,11 @@ export function makeLinkedAxisPrefs(
       }, ownerDocument));
     },
     set(prefs) {
-      if (prefs.includeLimits === includeLimits && prefs.clipOutliers === clipOutliers) return false;
+      const nextLimits = prefs.limits ?? 'both';
+      if (prefs.includeLimits === includeLimits && prefs.clipOutliers === clipOutliers && nextLimits === limits) return false;
       includeLimits = prefs.includeLimits;
       clipOutliers = prefs.clipOutliers;
+      limits = nextLimits;
       return true;
     },
   };
@@ -1578,6 +1618,149 @@ export function positionChartTooltip(tooltip: HTMLElement, card: HTMLElement, cl
 export interface AxisPrefs {
   includeLimits?: boolean;
   clipOutliers: boolean;
+  /** Which limits the charts draw. Undefined = `'both'`. */
+  limits?: LimitsShown;
+}
+
+// ── Limit lines ─────────────────────────────────────────────────────────────
+//
+// The one rule for which limit lines a chart draws and how each is labelled and
+// styled. Test limits (what dies are judged pass/fail by) and spec limits (the
+// process specification capability is measured against) are different numbers;
+// a chart showing both must never let one be read as the other, so each kind has
+// its own label and its own dash pattern — never colour alone.
+
+export type LimitKind = 'test' | 'spec';
+/** The Insights "Limits" choice. */
+export type LimitsShown = 'test' | 'spec' | 'both' | 'none';
+
+export interface LimitLine {
+  value: number;
+  kind: LimitKind;
+  /** Which end of its pair: the low limit or the high one. */
+  end: 'lo' | 'hi';
+  label: string;
+}
+
+export const LIMIT_LABEL: Readonly<Record<LimitKind, { lo: string; hi: string }>> = {
+  test: { lo: 'Lo limit', hi: 'Hi limit' },
+  spec: { lo: 'LSL', hi: 'USL' },
+};
+
+/** Canvas dash pattern per kind: short dashes for test limits, long for spec. */
+export const LIMIT_DASH: Readonly<Record<LimitKind, number[]>> = {
+  test: [3, 3],
+  spec: [10, 4],
+};
+
+export const LIMITS_SHOWN_OPTIONS: ReadonlyArray<{ value: LimitsShown; label: string }> = [
+  { value: 'both', label: 'Test + spec' },
+  { value: 'test', label: 'Test limits' },
+  { value: 'spec', label: 'Spec limits (LSL/USL)' },
+  { value: 'none', label: 'None' },
+];
+
+type LimitSource = { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number } | undefined;
+
+function linesOfKind(def: LimitSource, kind: LimitKind): LimitLine[] {
+  const [lo, hi] = kind === 'test' ? [def?.limitLow, def?.limitHigh] : [def?.specLow, def?.specHigh];
+  const out: LimitLine[] = [];
+  if (lo !== undefined && Number.isFinite(lo)) out.push({ value: lo, kind, end: 'lo', label: LIMIT_LABEL[kind].lo });
+  if (hi !== undefined && Number.isFinite(hi)) out.push({ value: hi, kind, end: 'hi', label: LIMIT_LABEL[kind].hi });
+  return out;
+}
+
+/** Whether a test has both kinds of limit — the only case with a choice to make. */
+export function hasBothLimitKinds(def: LimitSource): boolean {
+  return linesOfKind(def, 'test').length > 0 && linesOfKind(def, 'spec').length > 0;
+}
+
+/**
+ * The limit lines to draw for a test.
+ *
+ * `'none'` draws nothing. Otherwise the chosen kinds are drawn — and when the
+ * test has none of the chosen kind but does have the other, the other is drawn
+ * rather than nothing: a test with only test limits must not look unlimited
+ * because another test's spec limits were chosen. Each line carries its own
+ * label, so which kind is on screen is never in doubt.
+ */
+export function limitLines(def: LimitSource, shown: LimitsShown = 'both'): LimitLine[] {
+  if (shown === 'none') return [];
+  const test = linesOfKind(def, 'test');
+  const spec = linesOfKind(def, 'spec');
+  const chosen = shown === 'test' ? test : shown === 'spec' ? spec : [...test, ...spec];
+  return chosen.length ? chosen : [...test, ...spec];
+}
+
+/** The span the lines cover, for axis-range decisions. */
+export function limitExtent(lines: readonly LimitLine[]): { lo?: number; hi?: number } {
+  if (!lines.length) return {};
+  const values = lines.map(l => l.value);
+  return { lo: minOf(values), hi: maxOf(values) };
+}
+
+/**
+ * Stack labels into rows so none overlaps another in the same row. Each label
+ * is an interval along the axis it is placed on; returns a row index per label
+ * (0 = the chart's usual label position), in input order. Greedy by position,
+ * so it is stable: labels that never collide all stay on row 0.
+ */
+export function stackLabelRows(spans: ReadonlyArray<{ start: number; end: number }>, gap = 4): number[] {
+  const order = spans.map((sp, i) => ({ ...sp, i })).sort((a, b) => a.start - b.start);
+  const rowEnds: number[] = [];
+  const rows = new Array<number>(spans.length).fill(0);
+  for (const sp of order) {
+    let r = rowEnds.findIndex(end => sp.start >= end + gap);
+    if (r === -1) { r = rowEnds.length; rowEnds.push(sp.end); } else rowEnds[r] = sp.end;
+    rows[sp.i] = r;
+  }
+  return rows;
+}
+
+/**
+ * `fillText` on a backing of `halo` (the panel colour), so a label stays
+ * readable where a gridline, a limit line or data runs under it. Uses the
+ * current font, alignment and baseline; `halo` undefined draws plain text.
+ */
+export function fillTextOnHalo(
+  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, halo?: string,
+): void {
+  if (halo) {
+    const m = ctx.measureText(text);
+    const pad = 2;
+    const saved = ctx.fillStyle;
+    ctx.fillStyle = halo;
+    ctx.fillRect(
+      x - m.actualBoundingBoxLeft - pad, y - m.actualBoundingBoxAscent - pad,
+      m.actualBoundingBoxLeft + m.actualBoundingBoxRight + 2 * pad,
+      m.actualBoundingBoxAscent + m.actualBoundingBoxDescent + 2 * pad,
+    );
+    ctx.fillStyle = saved;
+  }
+  ctx.fillText(text, x, y);
+}
+
+/** Stroke one limit line in its kind's dash pattern. */
+export function strokeLimitLine(
+  ctx: CanvasRenderingContext2D, line: LimitLine, color: string,
+  x0: number, y0: number, x1: number, y1: number,
+): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash(LIMIT_DASH[line.kind]);
+  ctx.beginPath();
+  ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** The "Limits:" dropdown, offered only where a test has both kinds. */
+export function makeLimitsSelect(
+  current: LimitsShown, onChange: (v: LimitsShown) => void, ownerDocument: Document = document,
+): HTMLLabelElement {
+  return makeLabeledSelect('Limits:', LIMITS_SHOWN_OPTIONS, current, v => onChange(v as LimitsShown),
+    { maxWidth: '170px', hook: 'limits-shown', ownerDocument });
 }
 
 // ── Value-axis range ────────────────────────────────────────────────────────
@@ -1647,7 +1830,7 @@ export interface AxisRange {
   /** Limits that fall OUTSIDE [lo, hi] and so cannot be drawn in place — the
    *  caller should mark them at the axis edge instead. Without this a limit that
    *  is merely off-screen is indistinguishable from a test having no limit. */
-  offAxis: Array<{ value: number; label: 'Lo limit' | 'Hi limit'; side: 'lo' | 'hi' }>;
+  offAxis: Array<{ value: number; label: string; side: 'lo' | 'hi' }>;
   /** Values excluded by the robust fence, when clipping is on. */
   clippedCount: number;
 }
@@ -1664,14 +1847,14 @@ export interface AxisRange {
 export function resolveAxisRange(opts: {
   dataMin: number;
   dataMax: number;
-  limitLow?: number;
-  limitHigh?: number;
+  /** The limit lines the chart draws (`limitLines`). */
+  limits?: readonly LimitLine[];
   includeLimits: boolean;
   clipOutliers?: boolean;
   /** Raw values, needed only when `clipOutliers` is set. */
   values?: number[];
 }): AxisRange {
-  const { dataMin, dataMax, limitLow, limitHigh, includeLimits, clipOutliers, values } = opts;
+  const { dataMin, dataMax, limits = [], includeLimits, clipOutliers, values } = opts;
 
   let lo = dataMin;
   let hi = dataMax;
@@ -1691,16 +1874,15 @@ export function resolveAxisRange(opts: {
   }
 
   if (includeLimits) {
-    if (limitLow  !== undefined) lo = Math.min(lo, limitLow);
-    if (limitHigh !== undefined) hi = Math.max(hi, limitHigh);
+    for (const l of limits) { lo = Math.min(lo, l.value); hi = Math.max(hi, l.value); }
   }
   if (lo === hi) { lo -= 1; hi += 1; }
 
   const offAxis: AxisRange['offAxis'] = [];
-  if (limitLow  !== undefined && limitLow  < lo) offAxis.push({ value: limitLow,  label: 'Lo limit', side: 'lo' });
-  if (limitLow  !== undefined && limitLow  > hi) offAxis.push({ value: limitLow,  label: 'Lo limit', side: 'hi' });
-  if (limitHigh !== undefined && limitHigh > hi) offAxis.push({ value: limitHigh, label: 'Hi limit', side: 'hi' });
-  if (limitHigh !== undefined && limitHigh < lo) offAxis.push({ value: limitHigh, label: 'Hi limit', side: 'lo' });
+  for (const l of limits) {
+    if (l.value < lo) offAxis.push({ value: l.value, label: l.label, side: 'lo' });
+    else if (l.value > hi) offAxis.push({ value: l.value, label: l.label, side: 'hi' });
+  }
 
   return { lo, hi, offAxis, clippedCount };
 }
@@ -1753,23 +1935,31 @@ export function drawOffAxisLimits(
   orient: 'horizontal' | 'vertical',
   color: string,
   format: (v: number) => string,
+  /** Panel colour to back each marker with (`fillTextOnHalo`), for charts
+   *  where lines can run under the markers. */
+  halo?: string,
 ): void {
   if (!offAxis.length) return;
   ctx.save();
   ctx.fillStyle = color;
   ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+  // Two kinds of limit can both lie off one edge; each further marker on the
+  // same side goes one text row further in, so none is drawn over another.
+  const rowOnSide = { lo: 0, hi: 0 };
+  const rowH = fontPx(-1) + 2;
   for (const { value, label, side } of offAxis) {
+    const dy = rowOnSide[side]++ * rowH;
     // The arrow points OUT of the plot, toward where the limit actually lies.
     const arrow = orient === 'horizontal' ? (side === 'lo' ? '←' : '→') : (side === 'lo' ? '↓' : '↑');
     const text = side === 'lo' ? `${arrow} ${label} ${format(value)}` : `${label} ${format(value)} ${arrow}`;
     if (orient === 'horizontal') {
       ctx.textBaseline = 'top';
       ctx.textAlign = side === 'lo' ? 'left' : 'right';
-      ctx.fillText(text, side === 'lo' ? axis.left + 2 : axis.right - 2, axis.top + 2);
+      fillTextOnHalo(ctx, text, side === 'lo' ? axis.left + 2 : axis.right - 2, axis.top + 2 + dy, halo);
     } else {
       ctx.textBaseline = side === 'lo' ? 'bottom' : 'top';
       ctx.textAlign = 'left';
-      ctx.fillText(text, axis.left + 4, side === 'lo' ? axis.bottom - 2 : axis.top + 2);
+      fillTextOnHalo(ctx, text, axis.left + 4, side === 'lo' ? axis.bottom - 2 - dy : axis.top + 2 + dy, halo);
     }
   }
   ctx.restore();

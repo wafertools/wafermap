@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
+import { withView } from './fixtures/withView.mjs';
 import {
-  affineIdentity, affineRotation, affineMirror, affineCompose,
+  affineRotation, affineMirror, affineCompose,
   affineInvert, affinePoint, affineVector, affineSwapsAxes, rotatePoint,
 } from '../dist/packages/core/transforms.js';
 
@@ -53,12 +54,12 @@ function gridResults(min = -3, max = 3) {
 }
 
 function build(dieConfigExtra, waferConfigExtra, viewOpts, { pitch = { width: 5, height: 5 }, reticleConfig } = {}) {
-  return buildWaferMap({
+  return withView(buildWaferMap({
     results: gridResults(),
     dieConfig: { ...pitch, ...dieConfigExtra },
     waferConfig: { diameter: 300, ...waferConfigExtra },
     ...(reticleConfig ? { reticleConfig } : {}),
-  }, { showXYIndicator: true, showRingBoundaries: true, showQuadrantBoundaries: true, ...viewOpts });
+  }), { showXYIndicator: true, showRingBoundaries: true, showQuadrantBoundaries: true, ...viewOpts });
 }
 
 /** Screen position of a die, by die-grid index. */
@@ -115,7 +116,7 @@ test('rotation and mirroring do NOT commute — the reason a matrix is required'
 });
 
 test('affineSwapsAxes is true exactly for the 90°/270° class', () => {
-  assert.equal(affineSwapsAxes(affineIdentity()), false);
+  assert.equal(affineSwapsAxes(affineRotation(0)), false);
   assert.equal(affineSwapsAxes(affineRotation(90)), true);
   assert.equal(affineSwapsAxes(affineRotation(270)), true);
   assert.equal(affineSwapsAxes(affineRotation(180)), false);

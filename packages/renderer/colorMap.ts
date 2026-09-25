@@ -125,11 +125,6 @@ export const VIRIDIS: readonly [number, number, number][] = [
   [253, 231,  37],
 ];
 
-/** Map t ∈ [0, 1] to a Viridis RGB colour string. */
-export function valueToViridis(t: number): string {
-  return lerpKp(VIRIDIS, t);
-}
-
 /**
  * Ordered qualitative palette for the `'metadata'` plot mode's first ~10
  * distinct values. Deliberately NOT a bin palette's pass/fail-flavoured

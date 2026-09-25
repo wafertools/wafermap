@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { describeWaferPopulation, populationLabel, populationStat } from '../dist/packages/stats/population.js';
-import { analyzeWaferLot, renderFindingsReportHtml } from '../dist/packages/stats/index.js';
+import { analyzeWaferLot, renderLotReportHtml } from '../dist/packages/stats/index.js';
 import { buildWaferMap } from '../dist/index.js';
 
 // "Lot" only when every wafer records the same lot ID — see stats/population.ts.
@@ -36,14 +36,17 @@ test('no lot IDs at all, and a single wafer', () => {
 // sits far below the rest.
 const FAILS = [12, 2, 3, 1, 2];
 
-function lot(lotIds) {
-  const items = lotIds.map((id, i) => buildWaferMap({
+function maps(lotIds) {
+  return lotIds.map((id, i) => buildWaferMap({
     results: Array.from({ length: 20 }, (_, k) => ({ x: k % 5, y: Math.floor(k / 5), hbin: k < FAILS[i] ? 2 : 1 })),
     waferConfig: { diameter: 60, metadata: id ? { lot: id, wafer: `W${i}` } : { wafer: `W${i}` } },
     dieConfig: { width: 10, height: 10 },
     passBins: [1],
   }));
-  return analyzeWaferLot(items);
+}
+
+function lot(lotIds) {
+  return analyzeWaferLot(maps(lotIds));
 }
 
 test('yield outlier finding says "lot median" only for a single lot', () => {
@@ -56,7 +59,8 @@ test('yield outlier finding says "lot median" only for a single lot', () => {
   assert.equal(mixed.comparison.right, 'Median of all wafers');
 });
 
-test('findings report title names a lot only when there is one', () => {
-  assert.match(renderFindingsReportHtml(lot(['L1', 'L1', 'L1', 'L1', 'L1'])), /<title>Lot L1 Findings Report<\/title>/);
-  assert.match(renderFindingsReportHtml(lot(['L1', 'L2', 'L1', 'L2', 'L1'])), /<title>Findings Report — 5 wafers from 2 lots<\/title>/);
+test('lot report title names a lot only when there is one', () => {
+  assert.match(renderLotReportHtml(maps(['L1', 'L1', 'L1', 'L1', 'L1'])), /<title>Lot Summary — L1<\/title>/);
+  // Two lots are reported lot by lot, under a title that names neither.
+  assert.match(renderLotReportHtml(maps(['L1', 'L2', 'L1', 'L2', 'L1'])), /<title>Summary<\/title>/);
 });

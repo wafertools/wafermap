@@ -13,7 +13,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildWaferMap, analyzeWaferMap, createWafer, generateDies, clipDiesToWafer } from '../dist/index.js';
+import { buildWaferMap, analyzeWaferMap } from '../dist/index.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+import { generateDies } from '../dist/packages/core/dies.js';
+import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 

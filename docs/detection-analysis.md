@@ -10,7 +10,7 @@ and the design decisions that resulted from it.
 
 ## The two detection systems
 
-**Spatial pattern classifier** (`classifyPattern`, called by `analyzeWaferMap`) uses pure geometry — connected
+**Spatial pattern classifier** (inside `analyzeWaferMap`, reported as `stats.spatialPattern`) uses pure geometry — connected
 components, radial distance distributions, eccentricity, and linear scores —
 to label the whole-wafer failure signature as edge-ring, center, scratch, etc.
 It is rule-based with no trained model.
@@ -104,7 +104,7 @@ Per-label rescue breakdown (classifier misses only):
 > Center/donut/scratch shifted down by 1–3 points, consistent with a larger,
 > correctly-populated edge ring slightly diluting the statistical significance
 > of non-edge regional findings — not a regression, a more accurate population.
-> The classifier-alone numbers above (`classifyPattern`) are unaffected: that
+> The classifier-alone numbers above are unaffected: that
 > path doesn't filter on `partial`.
 
 ---

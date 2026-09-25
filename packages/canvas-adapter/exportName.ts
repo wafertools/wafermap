@@ -19,29 +19,10 @@
  */
 
 import { downloadBlob, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
-import { noticeOnce } from '../renderer/deprecate.js';
-
-/**
- * Tell a host that passes `downloadFilename` its meaning changes in 0.31.0.
- * Until then it keeps its documented meaning — the whole name of the map or
- * gallery PNG — and nothing else reads it; changing that in a patch release
- * would break hosts that match the name their `onSaveImage` receives.
- */
-export function noticeDownloadFilenameChange(downloadFilename: string | undefined): void {
-  if (downloadFilename == null) return;
-  noticeOnce('downloadFilename',
-    'downloadFilename becomes a prefix in 0.31.0: the library will append the lot, wafer and content '
-    + '(e.g. "<downloadFilename>_W05_hard-bin.png") and apply it to every saved file, CSVs included. '
-    + 'Until then it names only the map or gallery PNG, as before.');
-}
 
 /** What a renderer knows about the data behind an export. */
 export interface ExportContext {
-  /**
-   * Leads the name, and suppresses any context it already names. Reserved for
-   * `downloadFilename` from 0.31.0; no renderer sets it before then (see
-   * `noticeDownloadFilenameChange`).
-   */
+  /** The host's `downloadFilename`: leads the name, and suppresses any context it already names. */
   prefix?: string;
   /** Distinct lot IDs covered, in display order. */
   lots: string[];

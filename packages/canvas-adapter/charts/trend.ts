@@ -17,9 +17,10 @@ import { isParametricTest, type TestDef } from '../../renderer/buildWaferMap.js'
 import { fmt } from '../../renderer/fmt.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLines, limitExtent, hasBothLimitKinds, stackLabelRows, strokeLimitLine, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { escHtml } from '../../core/utils.js';
+import { maxOf } from '../../core/utils.js';
 
 const PLOT_H = 220;
 const AXIS_W = 56;
@@ -106,7 +107,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
 
   function rebuild(): void {
     // Read once per rebuild from the shared control, which owns this state.
-    const { includeLimits: axisIncludesLimits, clipOutliers } = axisCtl.get();
+    const { includeLimits: axisIncludesLimits, clipOutliers, limits: limitsShown } = axisCtl.get();
     body.innerHTML = '';
     resizeHandle?.disconnect();
     resizeHandle = null;
@@ -132,6 +133,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
     }
 
     const def = defOf(activeTest);
+    const lines = limitLines(def, limitsShown);
     const centre = trendCentre(data);
     // The clipped count is only known once `draw` has resolved the axis range,
     // so writing it here read the PREVIOUS render's value — the note was one
@@ -176,12 +178,12 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       if (!Number.isFinite(dataLo) || !Number.isFinite(dataHi)) return;
 
       const resolvedIncludeLimits = axisIncludesLimits
-        ?? shouldIncludeLimitsByDefault(dataLo, dataHi, def?.limitLow, def?.limitHigh);
-      axisCtl.sync(resolvedIncludeLimits, def?.limitLow !== undefined || def?.limitHigh !== undefined);
+        ?? shouldIncludeLimitsByDefault(dataLo, dataHi, limitExtent(lines).lo, limitExtent(lines).hi);
+      axisCtl.sync(resolvedIncludeLimits, limitLines(def).length > 0, hasBothLimitKinds(def));
 
       const range = resolveAxisRange({
         dataMin: dataLo, dataMax: dataHi,
-        limitLow: def?.limitLow, limitHigh: def?.limitHigh,
+        limits: lines,
         includeLimits: resolvedIncludeLimits,
         clipOutliers,
         values: extremes,
@@ -239,29 +241,31 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
         { left: plotLeft, right: plotRight, top: plotTop, bottom: plotBottom },
         'vertical', theme.limitLine, v => fmt(v, def?.unit));
 
-      // Spec limits first, so data draws over them.
-      for (const [limit, label] of [[def?.limitLow, 'Lo limit'], [def?.limitHigh, 'Hi limit']] as const) {
-        if (limit === undefined || limit < lo || limit > hi) continue;
-        const y = yOf(limit);
+      // Limits first, so data draws over them. Each label sits at the left end
+      // of its line; one that would overlap another (test and spec limits
+      // close together) moves one column right (`stackLabelRows`).
+      // theme.limitLine, not CLR.errText — `CLR.*` are `var(--wmap-…)` strings
+      // for CSS and canvas cannot resolve a custom property, so the assignment
+      // is silently ignored and the line keeps the previous colour. This is also
+      // the colour histogram and boxplot already draw their LSL/USL lines in.
+      const labelH = fontPx(-1);
+      const placed = lines.filter(l => l.value >= lo && l.value <= hi).map(l => {
+        const y = yOf(l.value);
+        return { l, y, start: y - 6 - labelH / 2, end: y - 6 + labelH / 2 };
+      });
+      const rows = stackLabelRows(placed, 1);
+      const colW = maxOf(placed.map(p => ctx.measureText(p.l.label).width)) + 8;
+      placed.forEach(({ l, y }, k) => {
         ctx.save();
-        // theme.limitLine, not CLR.errText — `CLR.*` are `var(--wmap-…)` strings
-        // for CSS and canvas cannot resolve a custom property, so the assignment
-        // is silently ignored and the line keeps the previous colour. This is also
-        // the colour histogram and boxplot already draw their LSL/USL lines in.
-        ctx.strokeStyle = theme.limitLine;
         ctx.globalAlpha = 0.7;
-        ctx.setLineDash([4, 3]);
-        ctx.beginPath();
-        ctx.moveTo(plotLeft, y);
-        ctx.lineTo(plotRight, y);
-        ctx.stroke();
+        strokeLimitLine(ctx, l, theme.limitLine, plotLeft, y, plotRight, y);
         ctx.restore();
         ctx.save();
         ctx.fillStyle = theme.limitLine;
         ctx.textAlign = 'left';
-        ctx.fillText(label, plotLeft + 3, y - 6);
+        ctx.fillText(l.label, plotLeft + 3 + rows[k] * colW, y - 6);
         ctx.restore();
-      }
+      });
 
       // Lot mean.
       if (centre !== null && centre >= lo && centre <= hi) {

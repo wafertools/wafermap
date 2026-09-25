@@ -46,12 +46,10 @@ the display to match your convention; die coordinates are unaffected.
 | Appearance              | Meaning                                                                            |
 | ----------------------- | ---------------------------------------------------------------------------------- |
 | Solid colour            | Active plot value — bin category or test measurement                               |
-| Muted grey at perimeter | Partial die — falls outside the wafer circle boundary                              |
 | Neutral grey (interior) | No data — die has no bin or test result in the loaded dataset                      |
 | Dimmed fill (interior)  | Edge-excluded die — falls within the edge exclusion band configured for this wafer |
 
-No-data grey and partial-die grey are visually distinct. A no-data die is not a
-fail; it simply has no result recorded. Edge-excluded dies are shown dimmed and are
+A no-data die is not a fail; it simply has no result recorded. Edge-excluded dies are shown dimmed and are
 not counted in yield calculations.
 
 ### 1.4 Legend and colorbar
@@ -611,16 +609,26 @@ the application has defined any sweeps (see *Sweep cards* below):
   onto their own range and sorted by variability), a test-value box plot, a
   value histogram, and a **wafer-to-wafer trend** — one point per wafer at its
   mean, ±1σ whiskers, the mean of all wafers dashed across (labelled the "lot
-  mean" when they all come from one lot), and test limits where the
-  test has them. The trend is always in slot order, deliberately: drift across
+  mean" when they all come from one lot), and the test's limits. The trend is always in slot order, deliberately: drift across
   a cassette only reads in the physical sequence, so there is no sort control
   to destroy it. Clicking a capability box drives the box plot, histogram and
   trend onto that same test automatically.
 
+  The box plot, histogram, trend and the Correlation tab's scatter draw the
+  test's limits as dashed lines. A test can have two kinds: **test limits**
+  (labelled *Lo limit* / *Hi limit*, short dashes) — what each die was judged
+  pass/fail by — and **spec limits** (labelled *LSL* / *USL*, long dashes) —
+  the process specification that capability is measured against. When a test
+  has both, a **Limits** choice appears — *Test + spec* (the default), *Test
+  limits*, *Spec limits* or *None* — and it applies to all four charts at
+  once. A test that lacks the kind you chose shows the kind it has, so it
+  never looks as if it had no limits; a limit that falls outside the plotted
+  range is marked at the edge of the chart with an arrow.
+
   The box plot, histogram and trend share one row of axis controls, kept in
   sync across all three so switching between them never re-reads the same
   data on a different scale: **Axis includes limits** widens the axis to cover
-  the low and high limits even where the data sits well clear of them (on by default only when
+  every limit shown even where the data sits well clear of them (on by default only when
   doing so still leaves the data at least a third of the axis — otherwise a
   generous limit window would squash a perfectly capable distribution into a
   sliver), and **Clip outliers** narrows the axis to a robust range (the

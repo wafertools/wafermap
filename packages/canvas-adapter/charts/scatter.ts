@@ -22,7 +22,7 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas, drawOffAxisLimits, limitLines, hasBothLimitKinds, makeLimitsSelect, stackLabelRows, strokeLimitLine, fillTextOnHalo, type AxisPrefs } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -73,6 +73,14 @@ export interface ScatterPanelOptions {
    * ignored for point data when `groups` is provided.
    */
   groups?: { key: string; items: ScatterPanelItem[] }[];
+  /**
+   * The Insights tab's shared axis preferences. Scatter reads only `limits`
+   * (which limit lines to draw), and offers the "Limits:" choice when either
+   * axis's test has both test and spec limits.
+   */
+  axisPrefs?: AxisPrefs;
+  /** Called when the user changes the "Limits:" choice here. */
+  onAxisPrefsChange?: (prefs: AxisPrefs) => void;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -84,6 +92,8 @@ export interface ScatterPanelHandle {
   card: HTMLElement;
   /** Cross-panel link (e.g. from the correlation matrix): switch X/Y in place. */
   setXY: (xTestNumber: number, yTestNumber: number) => void;
+  /** Adopt axis preferences chosen in another panel (only `limits` applies). */
+  setAxisPrefs: (prefs: AxisPrefs) => void;
   destroy: () => void;
 }
 
@@ -120,6 +130,20 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   const { wrap: xWrap, select: xSel } = makeLabeledTestSelect('X:', activeX, n => { activeX = n; rebuildBody(); });
   const { wrap: yWrap, select: ySel } = makeLabeledTestSelect('Y:', activeY, n => { activeY = n; rebuildBody(); });
   controlsRow.append(xWrap, yWrap);
+  let axisPrefs: AxisPrefs = options.axisPrefs ?? { clipOutliers: false };
+  // Refilled on each rebuild: the choice is offered only when a plotted test has both kinds.
+  const limitsSlot = card.ownerDocument.createElement('span');
+  controlsRow.appendChild(limitsSlot);
+  function syncLimitsControl(): void {
+    const defs = [activeX, activeY].map(n => testDefs.find(d => d.testNumber === n));
+    limitsSlot.replaceChildren(...(defs.some(hasBothLimitKinds)
+      ? [makeLimitsSelect(axisPrefs.limits ?? 'both', v => {
+          axisPrefs = { ...axisPrefs, limits: v };
+          options.onAxisPrefsChange?.(axisPrefs);
+          draw();
+        }, card.ownerDocument)]
+      : []));
+  }
   if (!byGroup && items.length > 1) {
     controlsRow.appendChild(makeWaferSelect(items, activeWaferIndex, i => { activeWaferIndex = i; rebuildBody(); }, { ownerDocument: card.ownerDocument }));
   }
@@ -201,9 +225,9 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   let points: ScatterPoint[] = [];
   let xLo = 0, xHi = 1, yLo = 0, yHi = 1;
 
-  function testMeta(testNumber: number): { unit?: string; limitLow?: number; limitHigh?: number } {
+  function testMeta(testNumber: number): { unit?: string; lines: ReturnType<typeof limitLines> } {
     const def = testDefs.find(d => d.testNumber === testNumber);
-    return { unit: def?.unit, limitLow: def?.limitLow, limitHigh: def?.limitHigh };
+    return { unit: def?.unit, lines: limitLines(def, axisPrefs.limits) };
   }
 
   function dims() {
@@ -283,7 +307,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     const xAxisFmt = makeAxisFormat(Math.max(Math.abs(xLo), Math.abs(xHi)), activeX !== null ? testMeta(activeX).unit : undefined, xTicks.step || undefined);
     const yAxisFmt = makeAxisFormat(Math.max(Math.abs(yLo), Math.abs(yHi)), activeY !== null ? testMeta(activeY).unit : undefined, yTicks.step || undefined);
     ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-    ctx.strokeStyle = theme.border;
+    ctx.strokeStyle = theme.grid;
     ctx.lineWidth = 0.5;
     ctx.fillStyle = theme.textMuted;
 
@@ -330,36 +354,59 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     if (activeX !== null && activeY !== null) {
       const xMeta = testMeta(activeX);
       const yMeta = testMeta(activeY);
-      ctx.strokeStyle = theme.textMuted;
-      ctx.fillStyle = theme.textMuted;
+      // The same colour every other chart draws its limits in (`limitLine`),
+      // not the muted text grey, which sat on the grid at nearly its colour.
+      ctx.strokeStyle = theme.limitLine;
+      ctx.fillStyle = theme.limitLine;
       ctx.lineWidth = 1;
-      ctx.setLineDash([4, 3]);
       ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
       ctx.textBaseline = 'top';
 
-      for (const [lim, label] of [[xMeta.limitLow, 'Lo limit'], [xMeta.limitHigh, 'Hi limit']] as const) {
-        if (lim === undefined || lim < xLo || lim > xHi) continue;
-        const cx = SCATTER_LEFT + ((lim - xLo) / xSpan) * plotW;
-        ctx.beginPath();
-        ctx.moveTo(cx, SCATTER_TOP);
-        ctx.lineTo(cx, SCATTER_TOP + plotH);
-        ctx.stroke();
+      const rowH = fontPx(-1) + 2;
+      // X limits: vertical lines, labels along the top; a label that would
+      // overlap another moves down a row (`stackLabelRows`).
+      const xPlaced = xMeta.lines.filter(l => l.value >= xLo && l.value <= xHi).map(l => {
+        const cx = SCATTER_LEFT + ((l.value - xLo) / xSpan) * plotW;
+        return { l, cx, start: cx + 2, end: cx + 2 + ctx.measureText(l.label).width };
+      });
+      const xRows = stackLabelRows(xPlaced);
+      xPlaced.forEach(({ l, cx }, k) => {
+        strokeLimitLine(ctx, l, theme.limitLine, cx, SCATTER_TOP, cx, SCATTER_TOP + plotH);
         ctx.textAlign = 'left';
-        ctx.fillText(label, cx + 2, SCATTER_TOP + 2);
-      }
+        fillTextOnHalo(ctx, l.label, cx + 2, SCATTER_TOP + 2 + xRows[k] * rowH, theme.bg);
+      });
 
-      for (const [lim, label] of [[yMeta.limitLow, 'Lo limit'], [yMeta.limitHigh, 'Hi limit']] as const) {
-        if (lim === undefined || lim < yLo || lim > yHi) continue;
-        const cy = SCATTER_TOP + (1 - (lim - yLo) / ySpan) * plotH;
-        ctx.beginPath();
-        ctx.moveTo(SCATTER_LEFT, cy);
-        ctx.lineTo(SCATTER_LEFT + plotW, cy);
-        ctx.stroke();
-        // Label at the left end of the line, inside the plot — at the right
-        // end it collided with the card border / scrollbar gutter.
+      // Y limits: horizontal lines, labels at the left end, inside the plot —
+      // at the right end they collided with the card border / scrollbar gutter.
+      // Overlapping labels move one column right.
+      const yPlaced = yMeta.lines.filter(l => l.value >= yLo && l.value <= yHi).map(l => {
+        const cy = SCATTER_TOP + (1 - (l.value - yLo) / ySpan) * plotH;
+        return { l, cy, start: cy + 2, end: cy + 2 + fontPx(-1) };
+      });
+      const yRows = stackLabelRows(yPlaced, 1);
+      const colW = maxOf(yPlaced.map(p => ctx.measureText(p.l.label).width)) + 8;
+      yPlaced.forEach(({ l, cy }, k) => {
+        strokeLimitLine(ctx, l, theme.limitLine, SCATTER_LEFT, cy, SCATTER_LEFT + plotW, cy);
         ctx.textAlign = 'left';
-        ctx.fillText(label, SCATTER_LEFT + 3, cy + 2);
-      }
+        fillTextOnHalo(ctx, l.label, SCATTER_LEFT + 3 + yRows[k] * colW, cy + 2, theme.bg);
+      });
+
+      // A limit outside the plotted range gets an edge marker, as in the other
+      // charts — otherwise "off-screen" reads as "this test has no limits".
+      const offAxis = (lines: typeof xMeta.lines, lo: number, hi: number) => lines
+        .filter(l => l.value < lo || l.value > hi)
+        .map(l => ({ value: l.value, label: l.label, side: (l.value < lo ? 'lo' : 'hi') as 'lo' | 'hi' }));
+      // Everything along the top shares one strip, so each group starts below
+      // the last: the in-range X labels, then the off-axis X markers, then the
+      // off-axis Y markers that sit at the top-left.
+      const plotBox = { left: SCATTER_LEFT, right: SCATTER_LEFT + plotW, top: SCATTER_TOP, bottom: SCATTER_TOP + plotH };
+      const xOff = offAxis(xMeta.lines, xLo, xHi);
+      const xOffTop = SCATTER_TOP + (xPlaced.length ? (maxOf(xRows) + 1) * rowH : 0);
+      const xOffRows = Math.max(xOff.filter(o => o.side === 'lo').length, xOff.filter(o => o.side === 'hi').length);
+      drawOffAxisLimits(ctx, xOff, { ...plotBox, top: xOffTop }, 'horizontal', theme.limitLine,
+        v => makeAxisFormat(Math.abs(v), xMeta.unit).tick(v), theme.bg);
+      drawOffAxisLimits(ctx, offAxis(yMeta.lines, yLo, yHi), { ...plotBox, top: xOffTop + xOffRows * rowH }, 'vertical', theme.limitLine,
+        v => makeAxisFormat(Math.abs(v), yMeta.unit).tick(v), theme.bg);
 
       ctx.setLineDash([]);
     }
@@ -374,6 +421,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
 
   function rebuildBody(): void {
     syncMixedFieldsWarning();
+    syncLimitsControl();
     if (testOptions.length < 2 || activeX === null || activeY === null) {
       points = [];
       rebuildLegend([]);
@@ -418,5 +466,12 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     rebuildBody();
   }
 
-  return { card, setXY, destroy: () => resizeHandle.disconnect() };
+  function setAxisPrefs(prefs: AxisPrefs): void {
+    if ((prefs.limits ?? 'both') === (axisPrefs.limits ?? 'both')) { axisPrefs = prefs; return; }
+    axisPrefs = prefs;
+    syncLimitsControl();
+    draw();
+  }
+
+  return { card, setXY, setAxisPrefs, destroy: () => resizeHandle.disconnect() };
 }

@@ -1,16 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  analyzeWaferLot,
-  analyzeWaferMap,
-  buildWaferMap,
-  classifyDie,
-  clipDiesToWafer,
-  createWafer,
-  generateDies,
-  renderFindingsReportHtml,
-} from '../dist/index.js';
+import { analyzeWaferLot, analyzeWaferMap, buildWaferMap } from '../dist/index.js';
+import { classifyDie } from '../dist/packages/core/classify.js';
+import { findingsTableHtml } from '../dist/packages/stats/reportHtml.js';
+import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+import { generateDies } from '../dist/packages/core/dies.js';
 
 function makeBaseDies() {
   const wafer = createWafer({ diameter: 60 });
@@ -269,7 +265,7 @@ test('lot findings report uses the lot wafer count for coverage', () => {
     minimumEffectSize: 0.2,
   });
 
-  const html = renderFindingsReportHtml(lot);
+  const html = findingsTableHtml(lot.findings, lot.stats.waferCount);
 
   assert.match(html, /2\/6/);
   assert.doesNotMatch(html, /2\/4/);

@@ -189,5 +189,3 @@ suitable input for a trained classifier if you need more accuracy for your own p
 CNN-based classifiers reach 96–99% exact-match accuracy on WM-811K when trained on labelled
 examples; these features are a compact, interpretable alternative to pixel-level wafer images.
 
-> Calling `classifyPattern` directly is deprecated and removed in 0.31.0 — `stats.spatialPattern`
-> is the same measurement.

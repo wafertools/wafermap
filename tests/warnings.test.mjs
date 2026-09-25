@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { collectWarnings, severityOf } from '../dist/packages/canvas-adapter/warnings.js';
-import { buildWaferMap, STANDARD_WAFER_DIAMETERS_MM } from '../dist/index.js';
+import { buildWaferMap } from '../dist/index.js';
+import { STANDARD_WAFER_DIAMETERS_MM } from '../dist/packages/renderer/buildWaferMap.js';
 import { analyzeWaferMap } from '../dist/packages/stats/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

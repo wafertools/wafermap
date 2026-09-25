@@ -8,7 +8,7 @@ For the system-level overview and recommended entry points, see [Architecture](a
 **How to read this document.** §3 is the section map — find your entry point there.
 §4 (`buildWaferMap`, the data layer) plus §5 or §6 (the renderers) cover most
 applications; §7 adds the findings engine. Cross-references use §N.N notation
-throughout; shared types live in §12.
+throughout; shared types live in §11.
 
 ---
 
@@ -114,16 +114,10 @@ graph TD
 | Section | Description |
 |---|---|
 | [8 Web Worker](#8-web-worker) | Off-main-thread building, for very large lots |
-| [10 Package surface](#10-package-surface) | Which subpath exports what, and why the renderers aren't on the root |
-| [12 Important types](#12-important-types) | `Die`, `Wafer`, `TestDef` and friends |
-
-**Rarely needed — escape hatches. Skip unless something above can't do it:**
-
-| Section | Description |
-|---|---|
-| [9 Low-level canvas API](#9-low-level-canvas-api) | Deprecated: `toCanvas` — draw to a canvas you own, no toolbar |
-| [11 Advanced Pipeline](#11-advanced-manual-pipeline) | Deprecated: `buildView` and the manual pipeline |
-| [13 Limitations](#13-current-limitations) | Known constraints |
+| [9 Package surface](#9-package-surface) | Which subpath exports what, and why the renderers aren't on the root |
+| [10 Helper functions](#10-helper-functions) | `getDieKey`, `getTestPassStatus`, bin colours for your own surfaces, colour-scheme registration |
+| [11 Important types](#11-important-types) | `Die`, `Wafer`, `TestDef` and friends |
+| [12 Limitations](#12-current-limitations) | Known constraints |
 
 ---
 
@@ -210,7 +204,7 @@ type WaferMapInput = WaferMapInputSingle | WaferMapInputLotStack | WaferMapInput
 
 All fields are optional.  Supply what you know; the library handles the rest. Passing more than one of `results`, `lotStack` and `layout` on the same object is a type error and is rejected at runtime.
 
-**A die layout with no test data** — `buildWaferMap({ layout: true, waferConfig: { diameter }, dieConfig: { width, height } })` — builds every die site lying **fully** on the wafer, notch or flat included: the gross die count, and the sites a prober can step to. For gross-die-per-wafer calculations, reticle and step planning, or showing the expected map before data exists; `renderWaferMap` draws it like any other result (dies render as no-data). Die `(0, 0)` is the site centred on the wafer, and `x`/`y` count sites in the directions `dieConfig.xAxisDirection`/`yAxisDirection` give. `waferConfig.center` is ignored, since the layout defines the centre; `edgeExclusion`, `reticleConfig` and orientation apply as usual. Missing geometry throws. Added in 0.30.1, replacing `createWafer` + `generateDies` + `clipDiesToWafer`.
+**A die layout with no test data** — `buildWaferMap({ layout: true, waferConfig: { diameter }, dieConfig: { width, height } })` — builds every die site lying **fully** on the wafer, notch or flat included: the gross die count, and the sites a prober can step to. For gross-die-per-wafer calculations, reticle and step planning, or showing the expected map before data exists; `renderWaferMap` draws it like any other result (dies render as no-data). Die `(0, 0)` is the site centred on the wafer, and `x`/`y` count sites in the directions `dieConfig.xAxisDirection`/`yAxisDirection` give. `waferConfig.center` is ignored, since the layout defines the centre; `edgeExclusion`, `reticleConfig` and orientation apply as usual. Missing geometry throws.
 
 #### 4.1.1 `DieResult`
 
@@ -264,14 +258,14 @@ When a die position appears more than once in the `results` array (a retest), th
                   //   ≤ 100 mm → 32.5 mm orientation flat  (SEMI M1)
                   //   ≤ 150 mm → 57.5 mm orientation flat  (SEMI M1)
                   //   > 150 mm → V-notch ~3.5 mm wide, 1.25 mm deep  (SEMI M1)
-  orientation?:   number         // degrees CW to rotate the die grid on screen; default 0 (see note below)
+  orientation?:   0 | 90 | 180 | 270  // degrees CW to rotate the die grid on screen; default 0 (see note below)
   edgeExclusion?: number         // exclusion band width in mm measured inward from the wafer edge; dies in this band are dimmed
                                  // how these dies affect yield is controlled by the top-level edgeDieYieldMode option (§4.1.11)
   metadata?:      WaferMetadata  // arbitrary lot/wafer-level data attached to the view (lot ID, date, etc.)
 }
 ```
 
-**`orientation` note:** positive values rotate the die grid clockwise.  The notch/flat position is controlled by `notch.type` and is **not** affected by `orientation` — it stays fixed as the physical alignment mark.
+**`orientation` note:** positive values rotate the die grid clockwise.  The notch/flat position is controlled by `notch.type` and is **not** affected by `orientation` — it stays fixed as the physical alignment mark. Only the four angles STDF can record are used: an equivalent angle (−90 is 270) is read as that angle, and any other is built at 0 and reported as `input-values-outside-stdf` (§4.2.2).
 
 
 #### 4.1.3 `DieConfig`
@@ -428,9 +422,9 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
 
 **`derived` is on `TestDef`, not only on `DerivedTestDef`, deliberately.** `result.testDefs` is one homogeneous `TestDef[]` — a derived test is an ordinary test from the build onwards — so every surface that shows a test name reads its defs from there. Putting the flag only on the input type would mean each of those surfaces needed a cast to ask whether a value was measured or derived, and a display that cannot ask that question cannot mark it: an engineer reading a Cpk table would be left to assume the number came off the tester. `expression` travels for the same reason — it is what a tooltip or panel needs to answer *where did this number come from*, without the host holding its own `derivedTests` input alongside the result and joining the two by test number.
 
-`isParametricTest(def)` (exported; deprecated — removed in 0.31.0) returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric, so untyped callers are unaffected.
+A test with no `testType` is parametric, so untyped callers are unaffected.
 
-**Legacy functional encoding:** callers that predate `DieResult.testPass` encoded a functional outcome as a `testValues` entry of `1` (pass) / `0` (fail). That data keeps working everywhere — rendering, stats, and findings all read verdicts through `getTestPassStatus` (§10.1), which documents the fallback. New code should write `testPass` and leave functional tests out of `testValues` entirely.
+**Legacy functional encoding:** callers that predate `DieResult.testPass` encoded a functional outcome as a `testValues` entry of `1` (pass) / `0` (fail). That data keeps working everywhere — rendering, stats, and findings all read verdicts through `getTestPassStatus` (§10), which documents the fallback. New code should write `testPass` and leave functional tests out of `testValues` entirely.
 
 #### 4.1.9 `DerivedTestDef`
 
@@ -509,7 +503,7 @@ A set can **only** be produced by a range accessor and **only** consumed by a re
 
 **Unknown data.** If any input the expression needs is missing on a die, the derived value is **absent** for that die — it renders as no-data grey and is excluded from the stat populations. Never `0`, never `false`. A non-finite result (`0/0`, `ln(-1)`) is absent for the same reason. Reducers are the one exception: they skip unknown elements and reduce what is known, which is why `countKnown` exists to make the denominator explicit.
 
-**Validation.** Everything statically knowable is checked at build and reported as a `derived-test-invalid` warning on `result.warnings`, naming the test and the character position: parse and type errors, a `testNumber` that collides with measured data (measured values are never overwritten), a `testType` mismatch, `t[n]` on a functional test, `specPass[n]` on a test with no limits, an undeclared test number, an unknown function or name. **A rejected derived test is dropped, never half-applied** — a half-working expression plots wrong numbers rather than no numbers.
+**Validation.** Everything statically knowable is checked at build and reported as a `derived-test-invalid` warning on `result.warnings`, naming the test and the character position: parse and type errors, a `testNumber` that is not a whole number from 0 to 4294967295 (what STDF can store) or that collides with measured data (measured values are never overwritten), a `testType` mismatch, `t[n]` on a functional test, `specPass[n]` on a test with no limits, an undeclared test number, an unknown function or name. **A rejected derived test is dropped, never half-applied** — a half-working expression plots wrong numbers rather than no numbers.
 
 **Nesting.** A derived test may read another derived test — `t[900001]` resolves to a derived value just as it would a measured one. Evaluation follows dependency order, not declaration order, so the two can be listed either way round. A cycle, a self-reference, or a dependency on a test that was itself rejected drops the dependent with a warning naming the cause: an expression whose input never materialises would otherwise evaluate to no-data on every die and read as missing data.
 
@@ -525,7 +519,7 @@ Per STDF V4, hard bins and soft bins each range 0–32767.  Bin 1 in hard bin sp
 {
   bin:    number   // the numeric bin value this defines
   name:   string   // e.g. "Pass", "Contact Open", "Vth - Hi NMOS"
-  color?: string   // optional CSS colour, e.g. "#2ecc71" — wins over the bin colour scheme for this bin (§11.19)
+  color?: string   // optional CSS colour, e.g. "#2ecc71" — wins over the bin colour scheme for this bin (§10.6)
 }
 ```
 
@@ -625,10 +619,6 @@ buildWaferMap({ results, standardDiameters: [] });
 is not on the ladder — better than suppressing every geometry advisory to silence
 one that does not apply to your line.
 
-`STANDARD_WAFER_DIAMETERS_MM` (deprecated — removed in 0.31.0) is exported from the root entry point as a
-`readonly number[]`, so host code can read, extend or compare against the SEMI M1
-ladder without restating it.
-
 ### 4.2 Return value
 
 ```ts
@@ -689,7 +679,7 @@ ladder without restating it.
                                 // "how many dies does this wafer actually have"
     edgeExcludedDies: number   // dies whose centres fall within the edge exclusion band
     ratio:            number   // filledDies / totalDies ∈ [0, 1] — undefined/misleading when totalDies is 0
-    unpositionedDies: number   // dies with no reported x/y at all (see §12.1's coordinate-less note) —
+    unpositionedDies: number   // dies with no reported x/y at all (see §11.1's coordinate-less note) —
                                 // always present, 0 when every die has a position
   }
   passBins: number[]    // the pass bins given to buildWaferMap. renderWaferMap, renderWaferGallery (per wafer)
@@ -708,7 +698,7 @@ ladder without restating it.
   failDies:          number          // full dies inside wafer with a bin not in passBins
   edgeExcludedDies:  number          // dies within the edge exclusion zone
   partialDies:       number          // dies straddling the wafer boundary — always 0 for a
-                                     // `results`-based map (§12.1)
+                                     // `results`-based map (§11.1)
   totalDies:         number          // passDies + failDies (edge-excluded not included)
   yieldPercent:      number | null   // (passDies / totalDies) × 100 ∈ [0, 100]; null when no bin data
   yieldPercentGross: number | null   // (passDies / (passDies + failDies + edgeExcludedDies)) × 100 ∈ [0, 100];
@@ -775,10 +765,10 @@ The library's one warning vocabulary. Raised by geometry inference on
 | `bin-colors-shared` | `warning` | Raised by the renderers (not `buildWaferMap`) for the bin map on screen: some bins are drawn in a colour another bin also has — more bins than the bin colour scheme has distinct colours, or a `BinDef.color` repeats one. Every die is drawn correctly; colour alone cannot separate those bins. A gallery states it once for all its wafers. |
 | `pass-bins-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different pass bins, and some hard bins pass on one wafer and fail on another. Every wafer's own verdicts and yield are correct; a bin has one colour and one legend row, so the named bins are shown as failing there. |
 | `ring-count-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different `ringCount`s. Each card and each wafer's findings use their own; the lot-level ring figures (Summary panel, report, Insights) use the count the message names. |
-| `input-values-outside-stdf` | `warning` | Raised by `buildWaferMap`: bins, coordinates, test numbers or site numbers outside the STDF V4 ranges (bins 0–32767, coordinates −32767…32767, test numbers 0–4294967295, sites 0–255), test values that are not finite, or a `waferConfig.orientation` other than 0, 90, 180 or 270. The values are used as given; a future release treats them as missing. A `NaN` bin is already treated as no bin and is counted here. |
+| `input-values-outside-stdf` | `warning` | Raised by `buildWaferMap`: bins, coordinates, test numbers or site numbers outside the STDF V4 ranges (bins 0–32767, coordinates −32767…32767, test numbers 0–4294967295, sites 0–255), test values that are not finite, or a `waferConfig.orientation` other than 0, 90, 180 or 270. Each is **treated as missing**: the bin or site is absent, a die with an illegal coordinate has no position (in either axis), a test with an illegal number is left out of every die and of `testDefs`, a non-finite value is dropped, and the map is built at orientation 0. The input objects are not modified. A `NaN` bin is no bin and is counted here. |
 | `retests-by-part-id` | `info` | Raised by `buildWaferMap`: dies with no position that share a part ID were treated as retests of one die, resolved by `retestPolicy`. Blank part IDs never match, and part IDs are not used on a wafer where one value covers more than 20% of the unpositioned records. |
 | `input-values-not-numbers` | `error` | Raised by `buildWaferMap`: bins or test values were given as text, or pass/fail verdicts as something other than `true`/`false` — what a CSV parser produces unless each field is converted. They are **not** converted, so those dies are judged and plotted wrongly: a bin of `"1"` is not pass bin `1`, so they count as fails and yield is wrong. The message counts each kind and shows an example; it is also logged to the console. (String `x`/`y` throw instead.) |
-| `derived-test-invalid` | `warning` | Raised by `buildWaferMap`: a `derivedTests` entry (§4.1.9) could not be compiled or applied, and was **dropped** — a rejected derived test is never half-applied, because a half-working expression plots wrong numbers rather than no numbers. The message names the test and the character position within its `expr`. Causes: a parse or type error, a `testNumber` colliding with measured data (measured values are never overwritten), a `testType` mismatch, `t[n]` on a functional test, `specPass[n]` on a test with no limits, an undeclared test number, or an unknown function or name. Every other derived test in the same input still applies, so a map missing one derived test is the expected shape of this warning. |
+| `derived-test-invalid` | `warning` | Raised by `buildWaferMap`: a `derivedTests` entry (§4.1.9) could not be compiled or applied, and was **dropped** — a rejected derived test is never half-applied, because a half-working expression plots wrong numbers rather than no numbers. The message names the test and the character position within its `expr`. Causes: a parse or type error, a `testNumber` outside 0–4294967295 or colliding with measured data (measured values are never overwritten), a `testType` mismatch, `t[n]` on a functional test, `specPass[n]` on a test with no limits, an undeclared test number, or an unknown function or name. Every other derived test in the same input still applies, so a map missing one derived test is the expected shape of this warning. |
 | `input-field-removed` | `error` | Raised by `buildWaferMap`: the input used a name removed in an earlier release — `data`, `die`, `stack`, `values`, `TestDef.index`, `dieConfig.origin`, `waferConfig.flat`, `reticleConfig.anchor` or `lotStack.aggr`. It is **not** honoured, so what it described is missing from the map (for `data` and `values`, the data itself). The message names each one and its replacement; it is also logged to the console, for a caller that does not read `result.warnings`. |
 
 `severity` is about trust in what is on screen, not about how loud the message is:
@@ -1082,7 +1072,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` \| `'metadata'` |
-| `binColorScheme` | `string` | `'default'` | Bin palette for `hardBin`/`softBin`. Built-in: `'default'`, `'accessible'` (colour-blind safe). Custom palettes via `registerBinColorScheme()` (§11.19). Pass bins take the palette's pass (green) colours and fail bins its fail colours, each chosen by bin number so a bin is the same colour in every lot — see `resolveBinColors`. |
+| `binColorScheme` | `string` | `'default'` | Bin palette for `hardBin`/`softBin`. Built-in: `'default'`, `'accessible'` (colour-blind safe). Custom palettes via `registerBinColorScheme()` (§10.6). Pass bins take the palette's pass (green) colours and fail bins its fail colours, each chosen by bin number so a bin is the same colour in every lot — see §10.6. |
 | `valueColorScheme` | `string` | `'default'` | Value gradient for `value` and the stacked modes (a stacked-bin map is a value map: each position's occurrence rate). Built-in: `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'mako'`, `'traffic'`, `'jet'`. Every one but `'traffic'` and `'jet'` reads low = dark, high = light. Custom gradients via `registerValueColorScheme()`. Separate from `binColorScheme`, so switching plot mode never resets either. Neither applies in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.12). |
 | `reverseValueScheme` | `boolean` | `false` | Flip the value gradient so high values take its low-end colour. The Colour scheme menu offers it as **Reverse gradient**. Use it for a parameter whose *low* end is the notable one, or for monochrome print where more ink should mean more. Applies to the dies, the colorbar and the mapless summary together — resolve any gradient of your own through `resolveValueColorFn(name, reversed)` so it cannot disagree with them. |
 | `useDefinedBinColors` | `boolean` | `true` | Honour `BinDef.color` where a bin definition supplies one. The Palette menu offers it as **Use colours from bin definitions**, only when some definition carries a colour. |
@@ -1099,7 +1089,6 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `flipX` | `boolean` | `false` | |
 | `flipY` | `boolean` | `false` | |
 | `showDieLabels` | `boolean` | `false` | Die index labels |
-| `showPartialDies` | `boolean` | `true` | Render partial (edge) dies in muted grey. No-op for a `results`-based map — those never have any (§12.1) — relevant only for a synthesized grid built via `clipDiesToWafer`. |
 | `showRingBoundaries` | `boolean` | `false` | |
 | `showQuadrantBoundaries` | `boolean` | `false` | |
 | `showReticle` | `boolean` | `false` | Reticle field boundary overlay (requires `reticles` on the result) |
@@ -1134,15 +1123,31 @@ Use `=== 'preference'` (not `!== 'state'`) so that `'mixed'` events — which ma
 | `stackedBins` | Die (x, y) · bin number · bin name · count · percentage (e.g. "1 · Pass: 3 (75%)") |
 | `stackedSoftBins` | Same as `stackedBins` but uses `sbinDefs` for name lookup |
 
-The `aggregationMethod` and `lotSize` fields on `ViewOptions` (§11, `buildView`) populate the method label and percentage denominator respectively. `renderWaferMap` and `renderWaferGallery` set both for you — a map built with `lotStack` carries its own `lotSize`.
+The method label and the percentage denominator come from the map: `renderWaferMap` and `renderWaferGallery` set both, and a map built with `lotStack` carries its own lot size.
 
 ### 5.3 Axis labels
 
-When `showAxes: true`, tick labels show die grid indices (integer i/j values). `renderWaferMap` derives `diePitchMm` automatically from the view geometry, so axes always show grid indices. Only when calling `toCanvas` directly without supplying `diePitchMm` do axes fall back to mm values.
+When `showAxes: true`, tick labels show die grid indices (integer i/j values). `renderWaferMap` derives `diePitchMm` from the view geometry, so axes always show grid indices.
 
 ### 5.4 `RenderOptions`
 
-These `ToCanvasOptions` fields (§9.1) are accepted: `padding`, `background`, `showColorbar`, `colorbarWidth`, `showAxes`, `showTitle`, `legendOffset`, `diePitchMm` and `metadataFields`. Plus:
+Drawing options, forwarded to the canvas (the `ToCanvasOptions` type):
+
+```ts
+{
+  padding?:        number                      // CSS-px padding inside the canvas edge (default 16)
+  background?:     string                      // canvas background colour (default '#f5f5f5')
+  showColorbar?:   boolean                     // colorbar (value modes) or bin legend (bin modes) (default true)
+  colorbarWidth?:  number                      // CSS-px width of the colorbar strip (default 16)
+  showAxes?:       boolean                     // axis tick marks and labels (default false)
+  showTitle?:      boolean                     // the map title by the colorbar/legend (default true)
+  legendOffset?:   { x: number; y: number }    // floating legend offset in CSS px
+  diePitchMm?:     { x: number; y: number }    // derived from the map when omitted
+  metadataFields?: MetadataFieldDef[]          // labels and colours for the metadata legend
+}
+```
+
+Plus:
 
 ```ts
 {
@@ -1192,8 +1197,8 @@ These `ToCanvasOptions` fields (§9.1) are accepted: `padding`, `background`, `s
                                             // Electron, WebView2 — silently return null)
   userGuideExtension?:     UserGuideExtension  // insert a host app's own documentation into the guide window
                                             // (see "User guide extension" below) — only relevant when showHelpButton is true
-  downloadFilename?:       string    // name for the PNG download, without extension; omit to name it for the lot,
-                                            // wafer and map title (§5.4.5). Becomes a prefix for every saved file in 0.31.0
+  downloadFilename?:       string    // prefix for every file the map saves, PNGs and CSVs; the lot, wafer and
+                                            // content follow it (§5.4.5)
   onSaveImage?:            (blob: Blob, suggestedName: string) => void | Promise<void>
                                             // host hook for persisting the rendered PNG. When provided, the toolbar's save
                                             // button calls it instead of triggering a browser <a download>, letting
@@ -1427,7 +1432,7 @@ Every one of these matters: the six tokens that used to be left unset here — `
 }
 ```
 
-The Summary panel is a docked panel — metadata, yield, detected anomalies (`StatsSummary.findings`, with severity chips wired to `filterFindings`, §7.x; the Kind/Region dropdowns appear once there are at least 8 findings), bin breakdown, region yield, test values, and functional tests — plus one combined "Summary report" button that opens the full HTML report (`renderWaferReportHtml`/`renderLotReportHtml`, §7.6.1, which already include findings) in an in-app modal (`openReportModal`, §10.3) — no host wiring required. Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/region/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, including `regionYield` and `capability`), so the two surfaces can show overlapping numbers without ever disagreeing.
+The Summary panel is a docked panel — metadata, yield, detected anomalies (`StatsSummary.findings`, with severity chips wired to `filterFindings`, §7.11; the Kind/Region dropdowns appear once there are at least 8 findings), bin breakdown, region yield, test values, and functional tests — plus one combined "Summary report" button that opens the full HTML report (`renderWaferReportHtml`/`renderLotReportHtml`, §7.6, which already include findings) in an in-app modal (`openReportModal`, §9.2) — no host wiring required. Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/region/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, including `regionYield` and `capability`), so the two surfaces can show overlapping numbers without ever disagreeing.
 
 Findings render directly beneath the headline stats, above the bin/region/test detail. Every section collapses from its header, and the collapsed set is remembered per panel element across re-renders.
 
@@ -1471,12 +1476,10 @@ charts are its whole subject.
 
 #### 5.4.4 Die list & CSV export
 
-> Calling `buildDieListSection` directly is **deprecated — removed in 0.31.0**. The maps show the die list themselves (the `dieList` option).
-
-`buildDieListSection` (`@wafertools/wafermap/render`) is the general "show me the raw dies"
-table — one row per die, with an Export CSV button. It backs three built-in surfaces —
-the coordinate-less map replacement, the "+N dies without position" footer, and the "View die
-list" Summary panel link, below — and is also exported for standalone use.
+The die list is the general "show me the raw dies" table — one row per die, with an Export CSV
+button. It backs three built-in surfaces — the coordinate-less map replacement, the "+N dies
+without position" footer, and the "View die list" Summary panel link, below — all configured
+by the one `dieList` option (`DieListDisplayOptions`).
 
 **"View die list"** is a link inside the always-available Summary panel (§5.4.2/§6.5), not a
 new toolbar button — deliberately, since the toolbar already carries a dozen buttons and this
@@ -1501,15 +1504,8 @@ equivalent `GalleryOptions.dieList` opens **every wafer in the lot, pooled**, wi
 computed via `commonMetadata` — a field common to every wafer appears once; a field that
 varies across the lot (a mixed-lot pool) does not appear at all, rather than printing one
 wafer's value as if it applied to the whole export. Both open the same resizable modal wmap's
-toolbar already uses elsewhere (chart drilldown, wafer expand), with `buildDieListSection`
-mounted inside it — same metadata columns, same `maxRows`, same CSV export as every other
-die-list surface, all driven by the one shared `DieListDisplayOptions` object.
-
-```ts
-import { buildDieListSection } from '@wafertools/wafermap/render';
-
-buildDieListSection(dies, testDefs, options?);   // → HTMLDivElement | null
-```
+toolbar already uses elsewhere (chart drilldown, wafer expand), with the same metadata
+columns, the same `maxRows` and the same CSV export as every other die-list surface.
 
 Columns, in order: `[extraColumn?]` → X, Y `[→ Ring, Quadrant]` `[→ Edge excluded]` → Site,
 Hard bin, Soft bin → one column per test → die metadata → wafer metadata.
@@ -1518,11 +1514,10 @@ Hard bin, Soft bin → one column per test → die metadata → wafer metadata.
 fine on screen but forces an extra parsing step (or breaks outright) when the CSV is opened in
 Excel, pandas, or any other tool expecting one number per cell. Blank for an unpositioned die.
 
-**Ring/Quadrant** appear only when `getWafer` resolves at least one die to a `Wafer` — omitted
-entirely otherwise, not shown empty. Values match `classifyDie` (§7) exactly, using the same
-`ringCount` as the rest of this wafer/lot's analysis, so "Ring 2" here always names the same
-region a Ring finding does. Reached through `renderWaferMap`/`renderWaferGallery`, this is
-wired up automatically — a direct `buildDieListSection` call supplies `getWafer` itself.
+**Ring/Quadrant** appear for positioned dies, and are omitted entirely for a wafer with none,
+not shown empty. They use the map's own `ringCount`, the same rule as the ring and quadrant
+findings and `stats.regionYield` (§7.4.1), so "Ring 2" here always names the same region a
+Ring finding does.
 
 **Edge excluded** appears only when at least one die in the export has `edgeExcluded: true` —
 `buildWaferMap`'s edge exclusion (`waferConfig.edgeExclusion`) is opt-in and only ever stamps
@@ -1546,7 +1541,7 @@ self-describing enough to concatenate several exports and still know which wafer
 came from. Set `'both'` to also show it in the table, or `'none'` to omit it.
 
 A key present on **both** the wafer and a die produces exactly one column, scope `die`,
-carrying the die's value — the same shadowing rule the hover tooltip (§12.4) applies.
+carrying the die's value — the same shadowing rule the hover tooltip (§11.4) applies.
 
 **Column labels** resolve `metadataFields[].label` → `prettyKey(key)` → the raw key, matching
 every other column's human-readable header. A metadata key that collides with a built-in
@@ -1563,34 +1558,16 @@ only the CSV export.
 
 ```ts
 export interface DieListDisplayOptions {
+  enabled?:              boolean;                        // the "View die list" link (default true)
   metadataColumns?:      'auto' | 'none' | string[];   // default 'auto'
   waferMetadataColumns?: 'csv' | 'both' | 'none';        // default 'csv'
   maxRows?:               number;                        // default 50_000; CSV is never capped
   maxHeight?:             string;
 }
-
-export interface DieListOptions extends DieListDisplayOptions {
-  title?:          string;
-  note?:           string;
-  onSaveText?:     SaveTextHandler;
-  extraColumn?:    { label: string; get: (die: Die) => string | undefined };
-  getWafer?:       (die: Die) => Wafer | undefined;  // per-die wafer for Ring/Quadrant — see below
-  ringCount?:      number;              // default 4 — must match this wafer/lot's own ringCount
-  waferMetadata?:  WaferMetadata;       // e.g. WaferMapResult.metadata
-  metadataFields?: MetadataFieldDef[];  // e.g. WaferMapResult.metadataFields
-  ownerDocument?:  Document;            // default `document` — see below
-}
 ```
 
-When reached through `renderWaferMap`'s `RenderOptions.dieList`, `waferMetadata` and
-`metadataFields` are always supplied by the library from the current build result — never
-from the host option — so a standalone-caller mistake can't substitute the wrong identity
-data into an export. A direct `buildDieListSection` call supplies both itself.
-
-**`ownerDocument`** only matters for a host that might mount the table into a document other
-than the bare global — e.g. a popup window it opened itself. It's irrelevant for ordinary
-in-page use, including everywhere the library reaches this internally (the Summary panel's
-"View die list" link, the coordinate-less-wafer map replacement).
+The wafer metadata and metadata-field labels always come from the current build result, never
+from a host option, so an export cannot carry the wrong wafer's identity.
 
 #### 5.4.5 Saved file names
 
@@ -1598,11 +1575,12 @@ Every file the library saves — map, gallery and chart PNGs, and every CSV expo
 the data it came from, so exports from different wafers never collide or need renaming:
 
 ```text
-[lot]_[wafer]_[content].[ext]
+[prefix]_[lot]_[wafer]_[content].[ext]
 ```
 
 | Part | Where it comes from |
 |---|---|
+| prefix | `downloadFilename`, when the host sets it (below). |
 | lot | `wafer.metadata.lot`. A gallery covering several lots writes the count, e.g. `3-lots`. |
 | wafer | The item's `label`, else `wafer.metadata.waferId`. A gallery writes the wafer count (`25-wafers`); a lot-stacked map writes `stacked-25-wafers`. |
 | content | What was saved: the map's title as drawn beside its legend (`hard-bin`, `vth-mv`), `gallery-…`, a chart's title, `test-values`, `functional-tests`, `die-list`, `test-correlation`. |
@@ -1620,14 +1598,10 @@ Examples: `LOT123_W05_hard-bin.png`, `LOT123_W05_die-list.csv`, `LOT123_25-wafer
 
 `onSaveImage` and `onSaveText` receive this name as `suggestedName`.
 
-**`downloadFilename` (until 0.31.0).** When a host sets it, the map's PNG (`renderWaferMap`) or
-the composite gallery PNG (`renderWaferGallery`) is named `<downloadFilename>.png` exactly, as it
-always has been. Everything else, including gallery cards, uses the generated name.
-
-**`downloadFilename` from 0.31.0.** It becomes a prefix for every file a map or gallery saves:
-`[downloadFilename]_[lot]_[wafer]_[content].[ext]`. Parts the prefix already names are not
-repeated, so `downloadFilename: 'LOT123_sort'` gives `LOT123_sort_W05_hard-bin.png`. Passing
-`downloadFilename` in 0.30.x logs a one-time console notice about the change.
+**`downloadFilename`** is a prefix for every file a map or gallery saves, PNGs and CSVs alike —
+on a gallery, its cards and detached windows too. Parts the prefix already names are not
+repeated, so `downloadFilename: 'LOT123_sort'` gives `LOT123_sort_W05_hard-bin.png`, not
+`LOT123_sort_LOT123_W05_hard-bin.png`.
 
 ### 5.5 `WaferMapController`
 
@@ -1645,7 +1619,7 @@ Choose the right update method:
   resetZoom(): void                                  // return to fitted view
   setStatsSummary(summary: StatsSummary | undefined): void  // update the Summary panel at runtime
   closeSummaryPanel(): void  // close the Summary panel if open (e.g. on loading a new file); the user reopens it from the toolbar
-  getBinColors(): BinColors  // the bin colours this map draws, with the palette currently chosen — for a host surface (§11.19)
+  getBinColors(): BinColors  // the bin colours this map draws, with the palette currently chosen — for a host surface (§10.6)
 
   setInsightsOpen(open: boolean): void  // programmatically open/close the Insights tab; no-op if `insights.enabled` was not set
 
@@ -1762,7 +1736,8 @@ Insights has three sub-tabs, and a fourth, **Sweeps**, when `insights.sweeps` de
 The two parametric modes can legitimately disagree — guard bands, dynamic or per-site limits, criteria the exported limits do not describe, or a limits/data mismatch. They are therefore kept as separate views rather than collapsed into one "parametric pass rate", and the chart counts the dies the two sources judge differently — the same figure as `stats.specVerdictDisagreementDies`. The chart surfaces that count rather than resolving it, since only the reader can tell an expected guard band from a real mismatch.
 
 Only the modes the data supports are offered, judged from the dies for `'testFlag'`, since every parametric test *could* carry a verdict and a definition-only check would offer a mode that renders empty. Bars are *rates* on a fixed 0–100% axis rather than counts, so splits with different wafer counts compare fairly. A parametric test with neither limits nor a recorded verdict is genuinely unjudgeable and is omitted rather than reported as 100%.
-- **Distributions** — process capability (Cp/Cpk/Pp/Ppk per test, the same figures as `stats.capability` in §7.4.1; normalised to the spec limits where both are given and the test limits otherwise; a test without both limits is drawn on its own observed range, with no indices), a test-value boxplot, a value histogram, and a **wafer-to-wafer trend** (per-wafer mean with ±1σ whiskers, the die-weighted lot mean as a dashed centre line, and spec limits). The trend is always in slot order and has no sort control: a drift or a bad cassette position is only visible in the physical sequence, so sorting it would remove the only signal it carries.
+- **Distributions** — process capability (Cp/Cpk/Pp/Ppk per test, the same figures as `stats.capability` in §7.4.1; normalised to the spec limits where both are given and the test limits otherwise; a test without both limits is drawn on its own observed range, with no indices), a test-value boxplot, a value histogram, and a **wafer-to-wafer trend** (per-wafer mean with ±1σ whiskers, the die-weighted lot mean as a dashed centre line, and the limits). The trend is always in slot order and has no sort control: a drift or a bad cassette position is only visible in the physical sequence, so sorting it would remove the only signal it carries.
+- **Limits on the charts** — the boxplot, histogram, trend and scatter draw test limits (`limitLow`/`limitHigh`, labelled *Lo limit*/*Hi limit*, short dashes) and spec limits (`specLow`/`specHigh`, labelled *LSL*/*USL*, long dashes). When the test has both kinds, a **Limits** choice — *Test + spec* (default), *Test limits*, *Spec limits*, *None* — is shared by all four charts. A test without the chosen kind shows the kind it has; a limit outside the plotted range is marked at the chart edge. The wafer map's pass/fail colouring and out-of-limit markers always use the test limits.
 - **Correlation** — a Pearson-r correlation matrix (stating the median pairwise `n`, with the exact per-pair `n` in each cell's tooltip) and a die-level X/Y scatter that reports `r` and `n` for the pair it is showing, recomputed when the legend filters the points. Clicking a capability box drives the boxplot, histogram and trend onto that same test in place; clicking a correlation matrix cell drives the scatter panel's X/Y in place.
 
 For a single wafer there is no "Group by" control (grouping needs more than one wafer to be meaningful — see §6.10) and no click-to-open-wafer action (the map you're looking at already *is* the only wafer there is to open). Everything else — the wafer picker on histogram/correlation/scatter, the capability↔boxplot/histogram cross-link, the correlation↔scatter cross-link — behaves the same as the gallery version.
@@ -1926,7 +1901,7 @@ differs.
 
 `showHelpButton: true` (§5.4, §6.2) opens wmap's own built-in end-user guide — but a host application often has its own documentation too, and forcing the user to find two separate help buttons/documents is poor UX. `userGuideExtension` inserts the host's own content **before** wmap's guide content in the same window, so there's one help button and one combined document instead of two.
 
-A host's own help entry point often needs to work before anything is rendered too (an empty-state "Help" menu, say) — `renderWaferMap`/`renderWaferGallery`'s `userGuideExtension` option only takes effect once one of them has actually been called. For that gap, `openWaferMapGuide` (§10.4) opens the identical combined window directly, no live render required.
+A host's own help entry point often needs to work before anything is rendered too (an empty-state "Help" menu, say) — `renderWaferMap`/`renderWaferGallery`'s `userGuideExtension` option only takes effect once one of them has actually been called. For that gap, `openWaferMapGuide` (§9.3) opens the identical combined window directly, no live render required.
 
 ```ts
 import type { UserGuideExtension } from '@wafertools/wafermap/render';
@@ -2131,8 +2106,8 @@ to be pre-built.
                                             // It covers the cards only: after resolved === total the Summary panel is
                                             // still filling in with no card activity, and onItemsResolved marks the end
                                             // of that. Not called for an empty item list
-  downloadFilename?:       string             // name for the composite PNG, without extension; omit to name it for the
-                                            // lots, wafer count and mode (§5.4.5). Becomes a prefix in 0.31.0
+  downloadFilename?:       string             // prefix for every file the gallery, its cards and detached windows
+                                            // save; the lots, wafer count and content follow it (§5.4.5)
   onSaveImage?:            (blob: Blob, suggestedName: string) => void | Promise<void>
                                             // host hook for persisting the composite gallery PNG (and each card's own
                                             // save). Mirrors renderWaferMap's onSaveImage — see §5.4 for full semantics.
@@ -2174,7 +2149,7 @@ to be pre-built.
   getOptions(): WaferViewOptions
   setLotStatsSummary(summary: LotStatsSummary | undefined): void  // update the lot summary panel at runtime
   setColumns(columns: number | undefined): void  // fix the column count, as the toolbar's Columns control does; undefined = auto layout
-  getBinColors(): BinColors  // the bin colours every card draws, resolved over the whole gallery (§11.19)
+  getBinColors(): BinColors  // the bin colours every card draws, resolved over the whole gallery (§10.6)
   openUserGuide(): void   // opens the end-user guide window directly — the same action the help toolbar button
                                   // performs, but callable regardless of showHelpButton, so a host that hides
                                   // wmap's own help button (e.g. folding it into its own combined help menu) can
@@ -2211,7 +2186,7 @@ Per-card toolbars show only the map tools: download, zoom region, zoom +/−, re
 
 ### 6.5 Summary panel
 
-When `lotStatsSummary` is provided or any item carries `statsSummary`, a **Summary panel** toggle button appears in the control bar. Clicking it opens one panel (no tabs — see §5.5) alongside the grid. With `lotStatsSummary` it shows yield, bin breakdown and ring/quadrant yield across all the wafers, test value statistics, cross-wafer findings (repeated patterns, yield outliers), and a **Wafer Yield** list with each wafer badged by its own findings count; a "Summary report" button opens the full lot report (`renderLotReportHtml`, §7.6.1). Without `lotStatsSummary`, the panel lists the wafers that have findings of their own.
+When `lotStatsSummary` is provided or any item carries `statsSummary`, a **Summary panel** toggle button appears in the control bar. Clicking it opens one panel (no tabs — see §5.5) alongside the grid. With `lotStatsSummary` it shows yield, bin breakdown and ring/quadrant yield across all the wafers, test value statistics, cross-wafer findings (repeated patterns, yield outliers), and a **Wafer Yield** list with each wafer badged by its own findings count; a "Summary report" button opens the full lot report (`renderLotReportHtml`, §7.6). Without `lotStatsSummary`, the panel lists the wafers that have findings of their own.
 
 The header names the population: `Summary — Lot LOT123 · 13 wafers` when every wafer records the same lot ID, otherwise `Summary — 26 wafers from 2 lots` (or just `13 wafers` when none records a lot). Statistics taken across the set follow the same rule — "lot median" only for one lot, "median of all wafers" otherwise — so a gallery pooling several lots never reads as one.
 
@@ -2252,7 +2227,7 @@ keep working exactly as before, and it can only be closed manually from then on
 (there is no longer a slot to reattach to).
 
 **Embedded hosts where `window.open` is blocked (e.g. Tauri, Electron, WebView2).**
-Just like `openHtmlReport` (§7.9), a plain `window.open` call is blocked/returns
+As with reports (§7.7), a plain `window.open` call is blocked/returns
 `null` silently in these environments. Rather than leaving the detach button
 inert there, wmap automatically **falls back to the same in-page non-modal
 floating window the user guide uses** whenever `window.open` is unavailable and
@@ -2541,7 +2516,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options, and most anal
 > **Removed in 0.30.0 — the per-analysis switches** (`enableYieldAnalysis`, `enableHardBinAnalysis`, `enableSoftBinAnalysis`, `enableReticlePositionAnalysis`, `enableTestSiteAnalysis`, `enableClusterAnalysis`, `enableAngularAnalysis`, `enablePatternClassification`). Every analysis now runs: yield, hard and
 > soft bins, reticle positions (when `reticleConfig` is set), test sites (when the wafer has meaningful site
 > duplication), angular sectors, clusters and pattern classification. Each was cheap and on by default. To show
-> fewer findings, filter them with `filterFindings` (§7.14). Passing one from untyped JavaScript is ignored and
+> fewer findings, filter them with `filterFindings` (§7.11). Passing one from untyped JavaScript is ignored and
 > reported as an `analysis-option-corrected` warning.
 
 **Every numeric option here is validated.** A value outside the range that can
@@ -2726,7 +2701,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 
 #### 7.4.1 Capability, verdict pass rates and region yield
 
-Added in 0.30.1. These replace calling the chart-data builders (§7.16) yourself, and are computed by the same code the Insights charts and Summary panel use, so an export and a chart never disagree.
+These are computed by the same code the Insights charts and Summary panel use, so an export and a chart never disagree.
 
 ```ts
 // TestCapability
@@ -2814,23 +2789,7 @@ Added in 0.30.1. These replace calling the chart-data builders (§7.16) yourself
 }
 ```
 
-### 7.6 `renderFindingsReportHtml`
-
-> **Deprecated — removed in 0.31.0.** Use `renderWaferReportHtml`/`renderLotReportHtml` (§7.6.1): their Findings section is the same table, since 0.30.3 rendered by one shared builder, alongside the population and yield the findings were drawn from. (Deprecated in 0.30.0, withdrawn in 0.30.1 on the grounds that the Summary panel used it — which it had not since 0.20.0 — and deprecated again in 0.30.3.)
-
-```ts
-import { renderFindingsReportHtml } from '@wafertools/wafermap/stats';
-
-renderFindingsReportHtml(summary: StatsSummary | LotStatsSummary, options?: { title?: string }): string
-```
-
-Generates a standalone printable HTML **findings-only** report from a `StatsSummary` or `LotStatsSummary`. Includes wafer/lot identity fields, yield and die count stats, and a severity-coded findings table. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
-
-Findings that another finding absorbs as an exact restatement (§7.10, `absorbedIds`) are omitted, matching the Summary panel — the surviving row's text names what it absorbed, so printing both would state the same fact twice.
-
-`StatsSummary` → §7.4 · `LotStatsSummary` → §7.5
-
-### 7.6.1 `renderWaferReportHtml` / `renderLotReportHtml`
+### 7.6 `renderWaferReportHtml` / `renderLotReportHtml`
 
 ```ts
 import { renderWaferReportHtml, renderLotReportHtml } from '@wafertools/wafermap/stats';
@@ -2841,98 +2800,32 @@ renderLotReportHtml(results: ReportMap[], options?: { title?: string; analyzeOpt
 // plus optional label and statsSummary
 ```
 
-The full wafer and lot summary reports, as standalone HTML, from built maps — the supported way to produce a report without the UI: a nightly lot report, an archive of each wafer's report, an email. They read each map's own `passBins` and `ringCount`, so a report cannot judge by bin 1 or draw four rings for a map built with six. `renderWaferReportHtml` runs `analyzeWaferMap` when no `summary` is given; `renderLotReportHtml` merges bin and test definitions across the maps, groups wafers by lot identity (§7.8) and reuses any `statsSummary` a map carries. Neither needs the DOM, so both run in Node. The Summary panel's report buttons use them. Added in 0.30.1, replacing §7.7 and §7.8.
+The wafer and lot summary reports, as standalone printable HTML, from built maps — the way to produce a report without the UI: a nightly lot report, an archive of each wafer's report, an email. Neither needs the DOM, so both run in Node. The Summary panel's "Summary report" buttons use them and open the result in `openReportModal` (§9.2).
 
 ```ts
 const results = files.map(parse).map(buildWaferMap);
 fs.writeFileSync('lot-report.html', renderLotReportHtml(results));
 ```
 
-### 7.7 `renderSummaryReportHtml`
+They read each map's own `passBins` and `ringCount`, so a report cannot judge by bin 1 or draw four rings for a map built with six.
 
-> **Deprecated — removed in 0.31.0.** Use `renderWaferReportHtml(result, summary)` (§7.6.1), which reads pass bins and ring count from the built map.
+- **Wafer report.** Metadata, yield, bin breakdown, ring and quadrant yield, test value statistics (min/mean/median/stddev/max per test, labelled by `TestDef.name` or `Test {N}`), a **Process Capability** section (Cp/Cpk/Pp/Ppk for every test with both limits of a pair — omitted when none qualify), and the findings table. `renderWaferReportHtml` runs `analyzeWaferMap` when no `summary` is given.
+- **Lot report.** The lot equivalent: lot overview, per-wafer yield table, bin breakdown, ring and quadrant yield, test statistics across the lot, Process Capability, a **Splits** section (one row per wafer with a `metadata.split` — omitted when none has one), and the findings table. It merges bin and test definitions across the maps and reuses any `statsSummary` a map carries.
+- **Findings.** Both render the same findings table. Findings another finding absorbs as an exact restatement (§7.8, `absorbedIds`) are left out, as in the Summary panel.
 
-```ts
-import { renderSummaryReportHtml } from '@wafertools/wafermap/stats';
+**Lot grouping.** `renderLotReportHtml` never pools wafers that should not be averaged together. The maps are partitioned by whichever of `lot`/`product`/`testProgram`/`temperature` actually vary across their `wafer.metadata` (a `split` difference alone never splits the report — comparing splits within one report is what that field is for). One population produces one report titled for its lot; several produce side-by-side sections under a banner explaining the split. The on-screen lot Summary panel can legitimately show different numbers for such a load: it displays the host's own `lotStatsSummary` as one pooled view, while the report applies the split.
 
-renderSummaryReportHtml(params: SummaryReportParams, options?: { title?: string }): string
-```
+`StatsSummary` → §7.4 · `AnalyzeWaferMapOptions` → §7.3
 
-Generates a standalone printable HTML **full summary report** — a snapshot of everything shown in the summary panel: metadata, yield, bin breakdown, ring yield, quadrant yield, test value statistics (min/mean/median/stddev/max per test, labelled by `testDef.name` or `Test {N}` when `testDefs` is absent), a **Process Capability** section (Cp/Cpk/Pp/Ppk for every test in `testDefs` with both a lower and upper spec limit — omitted entirely when none qualify, same "appears automatically" convention as every other section), and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
-
-```ts
-// SummaryReportParams
-{
-  wafer:         Wafer
-  dies:          Die[]
-  yieldSummary:  YieldSummary
-  dataCoverage:  { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number }
-  hbinDefs?:     BinDef[]
-  sbinDefs?:     BinDef[]
-  testDefs?:     TestDef[]
-  statsSummary?: StatsSummary
-  passBins?:     number[]   // default [1]
-  ringCount?:    number     // default 4
-}
-```
-
-`Wafer` → §12.2 · `Die` → §12.1 · `YieldSummary` → §4.2.1 · `BinDef` → §4.1.10 · `TestDef` → §4.1.8 · `DerivedTestDef` → §4.1.9 · `StatsSummary` → §7.4
-
-The summary panel's "Summary report" button calls this automatically when `statsSummary` is provided, and opens the result via `openReportModal` (§10.3).
-
-### 7.8 `renderLotSummaryReportHtml`
-
-> **Deprecated — removed in 0.31.0.** Use `renderLotReportHtml(results)` (§7.6.1), which reads each wafer's pass bins and ring count from its built map. The grouping described below applies to both.
+### 7.7 `setReportOpener`
 
 ```ts
-import { renderLotSummaryReportHtml } from '@wafertools/wafermap/stats';
+import { setReportOpener } from '@wafertools/wafermap/stats';
 
-renderLotSummaryReportHtml(params: LotSummaryReportParams, options?: { title?: string }): string
-```
-
-Generates a standalone printable HTML **full lot summary report** — the lot-level equivalent of `renderSummaryReportHtml`. Covers lot overview stats, per-wafer yield table, bin breakdown, ring and quadrant yield, test value statistics across the lot, a **Process Capability** section (same rule as §7.7), a **Splits** section (one row per item with a `wafer.metadata.split` assigned — omitted when none do), and findings. Open the result in a new tab with `window.open('', '_blank')` for printing or saving as PDF.
-
-```ts
-// LotSummaryReportParams
-{
-  items: Array<{
-    label:          string
-    wafer?:         Wafer
-    dies?:          Die[]
-    passBins?:      number[]       // this wafer's own pass bins (WaferMapResult.passBins) — wins over the top-level fallback
-    statsSummary?:  StatsSummary   // reused directly as analyzeWaferLot's perWaferSummaries — avoids re-running analyzeWaferMap
-  }>
-  hbinDefs?:       BinDef[]
-  sbinDefs?:       BinDef[]
-  testDefs?:       TestDef[]
-  passBins?:       number[]   // fallback for items without their own passBins — default [1]
-  ringCount?:      number     // default 4
-  analyzeOptions?: AnalyzeWaferMapOptions  // passthrough to the internal per-group analyzeWaferLot call
-}
-```
-
-`Wafer` → §12.2 · `Die` → §12.1 · `BinDef` → §4.1.10 · `TestDef` → §4.1.8 · `DerivedTestDef` → §4.1.9 · `StatsSummary` → §7.4 · `AnalyzeWaferMapOptions` → §7.3
-
-There is no `lotSummary` parameter — grouping, per-group analysis (`analyzeWaferLot`), and rendering all happen internally from the flat `items` list, so callers never pre-compute a lot summary or pre-partition by lot identity themselves. `items` is partitioned by whichever of `lot`/`product`/`testProgram`/`temperature` actually vary across the wafers' `wafer.metadata` (a `split` difference alone never triggers a split — comparing splits *within* one report is the point of that field, not a reason to separate them into different documents). The common single-lot case produces one report identical to a plain single-lot call; a load that spans more than one lot/product/program/temperature is split into multiple side-by-side sections instead of silently pooling stats across populations that shouldn't be averaged together, with a banner explaining the split.
-
-The lot summary panel's "Summary report" button calls this automatically when `lotStatsSummary` is provided to `renderWaferGallery`, and opens the result via `openReportModal` (§10.3) (the on-screen panel and the generated report can legitimately show different numbers for a heterogeneous multi-lot load — the panel displays the host's own precomputed `lotStatsSummary` as a single pooled view, while the report always applies the identity-based split described above).
-
-### 7.9 `openHtmlReport` / `setReportOpener`
-
-> `openHtmlReport` is **deprecated — removed in 0.31.0**: show a report with `openReportModal(html)` (§10.3), or route it into your host with `setReportOpener`, which stays.
-
-```ts
-import { openHtmlReport, setReportOpener } from '@wafertools/wafermap/stats';
-
-openHtmlReport(html: string): void
 setReportOpener(opener: (html: string) => void): void
 ```
 
-`openHtmlReport` opens a rendered HTML report string (from `renderFindingsReportHtml`, `renderWaferReportHtml` or `renderLotReportHtml`) in a new browser tab.
-
-**The summary panel's "Summary report" button no longer calls this directly** — it opens through `openReportModal` (§10.3) instead, an in-app modal that needs no host wiring at all, in a plain browser tab or an embedded host (Tauri, Electron, WebView2) alike. `openHtmlReport`/`setReportOpener` are still very much alive: `openReportModal`'s own "Open as full page ↗" link and print button route through them, so a host that wants the report as a real separate page (to keep it open outside the modal, or as a platform-specific print fallback) still registers an opener exactly as below — it's just no longer required merely to *view* a report. `renderFindingsReportHtml` remains available for a caller that wants a findings-only document of its own, opened however it likes (`openHtmlReport`, `openReportModal`, or its own presentation).
-
-In embedded hosts where `window.open` is blocked (e.g. Tauri, Electron, WebView2), register a custom opener at startup if you want the "Open as full page" fallback to produce a real OS window/page instead of a console warning:
+Reports open in wmap's own modal (`openReportModal`, §9.2) with no wiring, in a plain browser tab or an embedded host (Tauri, Electron, WebView2) alike. The modal's "Open as full page ↗" link opens the report as a separate page, through `window.open` by default. In a host where `window.open` is blocked, register an opener at startup so that link produces a real window or page instead of a console warning:
 
 ```ts
 setReportOpener(html => {
@@ -2941,9 +2834,9 @@ setReportOpener(html => {
 });
 ```
 
-Once set, `openHtmlReport` routes through your opener instead of `window.open`.
+A host whose opener saves or logs a report and still wants to show it can call `openReportModal(html)` itself.
 
-### 7.10 `StatsFinding`
+### 7.8 `StatsFinding`
 
 ```ts
 {
@@ -3000,7 +2893,7 @@ Once set, `openHtmlReport` routes through your opener instead of `window.open`.
 }
 ```
 
-### 7.11 `HighlightTarget`
+### 7.9 `HighlightTarget`
 
 Describes what to visually emphasise when a finding is selected.
 
@@ -3027,7 +2920,7 @@ type HighlightTarget =
 | `edge-arc`           | `dies`           | exact failing die keys |
 | `wafer`              | `wafer`          | lot-level only |
 
-### 7.12 Integrating with `renderWaferMap`
+### 7.10 Integrating with `renderWaferMap`
 
 ```ts
 import { buildWaferMap } from '@wafertools/wafermap';
@@ -3050,74 +2943,7 @@ const lotSummary = analyzeWaferLot(waferResults);
 renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
-### 7.13 Region builder utilities
-
-> **Deprecated — removed in 0.31.0.** These are the analysis's own region builders, exported by accident; `analyzeWaferMap` applies them and each finding names its region. Ring and quadrant yield are now `stats.regionYield` on `analyzeWaferMap`'s and `analyzeWaferLot`'s results (§7.4.1). Region keys are identities, not to be parsed.
-
-These are exported from `@wafertools/wafermap/stats` for use in custom analysis pipelines. They are also called internally by `analyzeWaferMap`.
-
-```ts
-import {
-  buildRingRegions,
-  buildQuadrantRegions,
-  buildReticlePositionRegions,
-  buildSectorRegions,
-  buildTestSiteRegions,
-} from '@wafertools/wafermap/stats';
-
-buildRingRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[]
-// family: 'ring'; keys 'ring:1' ... 'ring:N'
-
-buildQuadrantRegions(dies: Die[], wafer: Wafer, ringCount: number): StatsRegion[]
-// family: 'quadrant'; keys 'quadrant:NE' etc.
-
-buildReticlePositionRegions(dies: Die[], reticleConfig: ReticleConfig | undefined): StatsRegion[]
-// family: 'reticle-position'; keys 'reticle-position:cell:C,R'
-// returns [] when reticleConfig is undefined
-
-buildSectorRegions(dies: Die[], wafer: Wafer, sectorCount: number): StatsRegion[]
-// family: 'sector'; keys 'sector:N', 'sector:NNE', etc.
-// sectorCount: 4 | 8 | 16 | 32 (default 16 if invalid value passed)
-// dies with normalised radius < 0.2 are excluded (too close to centre)
-
-buildTestSiteRegions(dies: Die[], forceEnable?: boolean): StatsRegion[]
-// family: 'test-site'; keys 'test-site:N' (one per distinct siteNum value)
-// groups dies by die.siteNum — no geometry required
-// auto-enable guard: returns [] unless ≥2 distinct siteNum values each appear on ≥3 dies
-//   (prevents spurious regions when siteNum is used as a monotonic counter rather
-//    than a true parallel-site identifier)
-// pass forceEnable=true to bypass the guard when you have already validated the data
-```
-
-`Die` → §12.1 · `Wafer` → §12.2 · `ReticleConfig` → §4.1.4
-
-Each `StatsRegion` has:
-
-```ts
-{
-  family:   'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector'
-  key:      string   // unique region identifier
-  label:    string   // human-readable (e.g. "Ring 4 (edge)", "Sector NNW", "Site 2")
-  dieKeys:  string[] // "x,y" keys of dies in this region
-}
-```
-
-Three region-ordering helpers are also exported from `@wafertools/wafermap/stats`. They are the
-single source of truth for sector and quadrant ordering, used by `buildSectorRegions` and by the
-internal adjacent-finding merge:
-
-```ts
-sectorCompassNames(sectorCount: number): string[]
-// CCW-from-East compass names for 4 | 8 | 16 | 32 (defaults to the 16-point set otherwise)
-
-areQuadrantsAdjacent(a: string, b: string): boolean
-// edge-sharing quadrants (NE–NW, NE–SE, NW–SW, SE–SW) are adjacent; diagonals are not
-
-parseRegionKey(key: string): { family, ring?, quadrant?, sector? }
-// parse a region key ('ring:2', 'quadrant:NE', 'sector:NNE') into its structured parts
-```
-
-### 7.14 `filterFindings(source, filter)`
+### 7.11 `filterFindings(source, filter)`
 
 ```ts
 filterFindings(source: StatsSummary | LotStatsSummary, filter: FindingsFilter): StatsFinding[]
@@ -3125,9 +2951,9 @@ filterFindings(source: StatsSummary | LotStatsSummary, filter: FindingsFilter): 
 
 Filters findings from a `StatsSummary` or `LotStatsSummary` by any combination of severity, kind, family, and level. All criteria are ANDed; each accepts a single value or an array.
 
-Operates on the **complete** findings list and deliberately does not apply the display de-duplication: a filter on `kind: 'softBin'` returns every soft-bin finding, including ones a hard-bin twin absorbed for display. If you are building a list for a human to read rather than querying, exclude `absorbedIds` as well — see [§7.10](#710-statsfinding) and the [Developer Guide](guide.md#de-duplicating-for-display).
+Operates on the **complete** findings list and deliberately does not apply the display de-duplication: a filter on `kind: 'softBin'` returns every soft-bin finding, including ones a hard-bin twin absorbed for display. If you are building a list for a human to read rather than querying, exclude `absorbedIds` as well — see [§7.8](#78-statsfinding) and the [Developer Guide](guide.md#de-duplicating-for-display).
 
-`StatsSummary` → §7.4 · `LotStatsSummary` → §7.5 · `StatsFinding` → §7.10
+`StatsSummary` → §7.4 · `LotStatsSummary` → §7.5 · `StatsFinding` → §7.8
 
 ```ts
 import { filterFindings } from '@wafertools/wafermap/stats';
@@ -3176,41 +3002,18 @@ for (const f of visibleFindings(summary.findings)) { /* … */ }
 Composes with `filterFindings` in either order — the two are independent, one dropping
 absorbed restatements and the other narrowing by severity/kind/family/level.
 
-### 7.15 `classifyPattern(dies, wafer, options?)`
+### 7.12 Spatial pattern classification — `stats.spatialPattern`
 
-> **Deprecated — removed in 0.31.0.** `analyzeWaferMap` returns the same classification, geometry features included, as `stats.spatialPattern` for every wafer (§7.4), and reports a detected pattern as a finding (`comparison.family === 'spatial-pattern'`).
-
-```ts
-classifyPattern(
-  dies:    Die[],
-  wafer:   Wafer,
-  options: {
-    passBins:   number[],
-    ringCount?: number,
-  }
-): PatternClassification | null
-```
-
-Classifies the spatial failure pattern of a wafer from its die data. Returns `null` when the number of failing dies is below the minimum threshold (auto-scaled, min 5).
-
-`Die` → §2.3 · `Wafer` → §2.1 · `PatternClassification` → below
-
-Called automatically by `analyzeWaferMap`. Call directly when you need the geometry features without the full analysis pipeline, or to use the raw `PatternFeatures` as input to your own classifier.
+`analyzeWaferMap` classifies the spatial failure pattern of every wafer and returns it as `stats.spatialPattern` (§7.4), with the geometry features it was judged on. A detected pattern is also reported as a finding (`comparison.family === 'spatial-pattern'`). `spatialPattern` is absent when too few dies fail to classify (auto-scaled, minimum 5).
 
 ```ts
-import { classifyPattern } from '@wafertools/wafermap/stats';
-
-const result = buildWaferMap({ results, waferConfig, dieConfig, passBins: [1] });
-const c = classifyPattern(result.dies, result.wafer, {
-  passBins:  result.passBins,    // what the map was built with — never restate them
-  ringCount: result.ringCount,
-});
-
+const summary = analyzeWaferMap(result);
+const c = summary.stats.spatialPattern;
 if (c) {
   console.log(c.pattern);     // 'edge-ring' | 'center' | 'scratch' | ...
   console.log(c.confidence);  // 'high' | 'medium' | 'low'
   console.log(c.note);        // advisory string when classification may be imprecise
-  console.log(c.features);    // raw geometry numbers — use as ML input if needed
+  console.log(c.features);    // raw geometry numbers — usable as input to your own classifier
 }
 ```
 
@@ -3231,8 +3034,6 @@ type PatternLabel =
 
 **`PatternFeatures`**
 
-The geometry numbers computed for every wafer — usable as input to a custom classifier:
-
 ```ts
 interface PatternFeatures {
   globalRdd:         number  // failing / total eligible dies
@@ -3252,66 +3053,17 @@ interface PatternFeatures {
 
 See [Pattern Detection](pattern-detection.md) for benchmark accuracy figures and known limitations.
 
-### 7.16 Chart-data builders
-
-Pure, DOM-free data builders for the chart types the Insights tab (§5.9, §6.10) draws internally. Each takes plain `{ dies?: Die[] }`-shaped items (or a `wafer.metadata`-carrying superset for the faceting ones) and returns plain data — no canvas, no rendering. **The chart-data builders are deprecated** and will be removed in 0.31.0. They were public so a host could draw these charts itself; the Insights tab (`insights: { enabled: true }`) now draws them. Each still works and logs one console notice on first use naming what to use instead. `computeFunctionalYield` (read `stats.functionalYield`) and `DEFAULT_FACET_CURATION` (which `buildFacetTable` applies by default) are deprecated too; `buildFacetTable`, `facetValueOf`, `FACET_NONE_VALUE` and `mergeTestDefs` are not. If you depend on a builder, say so at https://github.com/wafertools/wafermap/issues.
-
-**Where the numbers are now:**
-
-| Builder | Read instead |
-| --- | --- |
-| `buildCapabilityData` | `stats.capability` (§7.4.1) — wafer and lot |
-| `buildTestPassRateData`, `hasJudgeableTests` | `stats.testSpecYield`, `stats.testFlagYield`, `stats.functionalYield`, `stats.specVerdictDisagreementDies` (§7.4.1) |
-| `buildYieldData`, `buildYieldDataCombined` | `lotYieldSeries`, and each summary's `stats.yieldPercent` |
-| `buildBinParetoData`, `buildBinClusterData` | `stats.hardBinCounts` / `softBinCounts`, per wafer in `perWafer` |
-| `buildTestBoxplotData`, `buildTestTrendData`, `trendCentre` | `stats.perTestStats` and `perWaferTestStats` |
-| `buildTestHistogramData`/`Series`, `buildScatterData`/`Grouped`, `buildCorrelationMatrix`, `filterCorrelationMatrix` | No data replacement — the Insights tab draws these charts |
-
-All die-population rules match wmap's own conventions elsewhere: yield/bin builders exclude `partial`/`edgeExcluded` dies via the same `isYieldEligibleDie` rule `buildWaferMap`/`analyzeWaferMap` use (§11.20); a die with no `hbin`/`sbin` is never coerced into a real bin (bin `0` is reserved as the "no data" category everywhere in wmap, matching every registered colour scheme's palette).
+### 7.13 Metadata facets and test-definition merging
 
 ```ts
-import {
-  buildFacetTable, facetValueOf, FACET_NONE_VALUE,
-  mergeTestDefs,
-} from '@wafertools/wafermap/stats';
-
-// Deprecated — each logs one notice on first use:
-import {
-  buildYieldData, buildYieldDataCombined,
-  buildBinParetoData, buildBinClusterData,
-  buildCapabilityData,
-  buildTestBoxplotData,
-  buildTestTrendData, trendCentre,
-  buildTestPassRateData, hasJudgeableTests,
-  buildTestHistogramData, buildTestHistogramSeries,
-  buildCorrelationMatrix, filterCorrelationMatrix,
-  buildScatterData, buildScatterDataGrouped,
-  computeFunctionalYield, DEFAULT_FACET_CURATION,
-} from '@wafertools/wafermap/stats';
+import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, mergeTestDefs } from '@wafertools/wafermap/stats';
 ```
 
 | Function | Returns | Notes |
 | --- | --- | --- |
-| `buildYieldData(items, passBins?, sortBy?)` | `ChartDatum[]` | **Deprecated.** One row per item. Prefers each item's precomputed `yieldPercent` (e.g. from `LotStatsSummary.lotYieldSeries`) over recomputing from `dies`, so it agrees byte-for-byte with whatever else already reports that wafer's yield. `sortBy`: `'yield' \| 'label'` (default `'label'`). `ChartDatum.key`, when the input item carried one (`YieldItem.key`), is carried through unchanged — resolve a clicked row back to your own item by `key`, not `label` (two items can share a label, e.g. if neither supplies one). |
-| `buildYieldDataCombined(groups, passBins?, sortBy?)` | `ChartDatum[]` | **Deprecated.** One row per group — the mean of the group's per-item yields, weighted by each item's *yield-eligible* die count (excludes `partial`/`edgeExcluded` dies, matching what the yield rate itself was computed over) — not raw `dies.length`, which would let dies that never counted toward an item's own yield still skew the combined average. |
-| `buildBinParetoData(items, binType)` | `ChartDatum[]` | **Deprecated.** One row per bin (`binType: 'hbin' \| 'sbin'`), sorted by count descending. An item carrying `hardBinCounts`/`softBinCounts` (e.g. `StatsSummary.stats.hardBinCounts`) contributes those directly instead of re-walking its `dies`. |
-| `buildBinClusterData(groups, binType)` | `BinClusterData` | **Deprecated.** Every group's bin counts side by side — `{ groups: string[], bins: BinCluster[] }`, one `BinCluster` per bin with a `counts[]` aligned to `groups`. |
-| `buildCapabilityData(items, testDefs)` | `CapabilityDatum[]` | **Deprecated.** Cp/Cpk (pooled within-item stddev — each item is treated as the short-term subgroup) and Pp/Ppk (overall stddev), for every parametric test with at least one recorded value. Tests with both `limitLow` and `limitHigh` get `hasSpec: true`, full capability indices, and `min`/`q1`/`median`/`q3`/`max` normalized `(v - lsl) / (usl - lsl)`. Tests missing one or both limits still appear (`hasSpec: false`, `lsl`/`usl`/`cp`/`cpk`/`pp`/`ppk` all absent/null) normalized onto their own observed `[min, max]` instead — a lot with sparse spec coverage no longer renders empty. Sorted spec'd-first (worst-Ppk-first within that tier), then unspec'd (most-variable-first). |
-| `computeFunctionalYield(dies, testDefs)` | `StatsSummary['stats']['functionalYield']` | **Deprecated.** Per-test pass rate for every functional (`testType: 'F'`) test — pass/fail/verdict counts and `passRatePercent`. Verdicts read via `getTestPassStatus` (recorded `testPass` first, then the legacy 0/1 fallback); partial/edge-excluded dies excluded; dies with no verdict are never counted as fails. The same computation `analyzeWaferMap` uses for `stats.functionalYield` and the "Functional Tests" tables. |
-| `buildTestBoxplotData(items, testNumber)` | `BoxplotDatum[]` | **Deprecated.** One five-number summary (`min`/`q1`/`median`/`q3`/`max`/`count`) per item, for one test. Excludes partial/edge-excluded dies. An item carrying `testStats` with an entry for the requested test (e.g. from `StatsSummary.stats.perTestStats`) uses it directly instead of re-scanning `dies`. |
-| `buildTestTrendData(items, testNumber)` | `TrendDatum[]` | **Deprecated.** One point per item — `mean`, sample `stddev` (ddof=1), `count` — for one test, **in the order given and never sorted**. Slot order is the entire signal: a drift or a bad cassette position only reads on the population's own sequence, so sorting by value would destroy what the chart exists to show. Items with no values for the test are kept in place with `count: 0` and `mean: NaN` rather than dropped, so a gap in the sequence stays visible. Like `buildTestBoxplotData`, an item carrying `testStats` for the requested test (e.g. `StatsSummary.stats.perTestStats`) is used directly instead of re-scanning `dies`. `TrendDatum.key` carries the caller's own identity through for click-to-open. |
-| `trendCentre(data)` | `number \| null` | **Deprecated.** The population mean across every `TrendDatum` that has data, **n-weighted** — the mean of the pooled dies, not a mean of per-wafer means, so it does not let a short wafer count as much as a full one. `null` when nothing has data. This is the trend chart's dashed centre line. |
-| `buildTestPassRateData(groups, testDefs, kind)` | `TestPassRateData` | **Deprecated.** Per-test pass rate, one row per test (worst first) with a value per group. `kind` (`TestPassKind`) selects **which** pass/fail notion is measured, and the three are not interchangeable: `'spec'` judges a parametric value against its `limitLow`/`limitHigh`; `'testFlag'` reads the tester's own recorded verdict (`die.testPass` — STDF's PTR `TEST_FLG`, which exists whether or not limits do); `'functional'` covers pass/fail-only (`testType: 'F'`) tests. The two parametric modes can legitimately disagree (guard bands, dynamic or per-site limits, a limits/data mismatch), so `TestPassRateData.disagreementDies` **counts** the dies judged differently rather than resolving them — `null`, distinct from `0`, when only one source exists. Rates only, on a fixed 0–100% axis: groups routinely differ in wafer count, and a count axis would show the larger group failing more while failing at the same rate. A parametric test with neither limits nor a recorded verdict is unjudgeable and is omitted rather than reported as 100%; a group that never ran a test yields no value rather than a 0% one. |
-| `hasJudgeableTests(groups, testDefs, kind)` | `boolean` | **Deprecated.** Whether `kind` would produce anything — use it to offer only the modes the data supports. For `'testFlag'` it takes the **dies**, not just the definitions: every parametric test *could* carry a verdict, so a definition-only check would offer a mode that renders empty. |
-| `buildTestHistogramData(items, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramBucket[]` | **Deprecated.** Bucketed value counts across `items`, pooled. |
-| `buildTestHistogramSeries(groups, testNumber, bucketCount?, limitLow?, limitHigh?)` | `HistogramSeriesData` | **Deprecated.** Shared bucket ranges with one count series per group — `{ ranges, series: [{ groupKey, counts }] }`. |
-| `buildCorrelationMatrix(dies, testDefs)` | `CorrelationMatrix` | **Deprecated.** Pearson r for every parametric test pair. **Reads at most 25,000 dies.** Correlation is the only analysis here that is quadratic in tests *and* linear in dies (a 400,000-die, 50-test lot is 490 million pair updates), so above that budget the dies carrying test values are sampled by an even stride across the whole population — never a prefix, which on lot-ordered dies would describe the first few wafers rather than the lot. At 25,000 dies the standard error of `r` is under 0.007, so the coefficients are unchanged at the precision anything displays them to. A sampled matrix carries `sample` and **any surface showing it must say so** — an unlabelled sample estimate is a number the reader takes for the whole population. |
-| `filterCorrelationMatrix(matrix, options)` | `{ matrix, strongPairs, moderatePairs, hiddenWeakPairs, strongestPair }` | **Deprecated.** Caps matrix size (`options.maxTests`) and requires a minimum test count (`options.minTests`), keeping the pairs with the largest correlation magnitude. |
-| `buildScatterData(items, xTest, yTest)` | `ScatterPoint[]` | **Deprecated.** One point per die with valid values for both tests. |
-| `buildScatterDataGrouped(groups, xTest, yTest)` | `ScatterPoint[]` | **Deprecated.** Same, with each point tagged `group: string` — every group's points are returned together (this function never restricts to one group). |
-| `buildFacetTable(items, options?)` | `FacetField[]` | The distinct-values table over `wafer.metadata` — "what can I group/compare/split by?" One entry per metadata key present on at least one item, curated via `DEFAULT_FACET_CURATION` (`lot`, `product`, `testProgram`, `temperature`, `split`, `operator`, `testDate`; `waferId` is curated `facet: false` — present but not offered, since it's unique per item by definition). `options.facetableOnly` (default `true`) restricts to curated-`facet:true`-or-uncurated keys; pass `false` to include `waferId` too. |
+| `buildFacetTable(items, options?)` | `FacetField[]` | The distinct-values table over `wafer.metadata` — "what can I group/compare/split by?" One entry per metadata key present on at least one item, curated by default (`lot`, `product`, `testProgram`, `temperature`, `split`, `operator`, `testDate`; `waferId` is curated `facet: false` — present but not offered, since it's unique per item by definition), with `options.curation` layered over the defaults. `options.facetableOnly` (default `true`) restricts to curated-`facet:true`-or-uncurated keys; pass `false` to include `waferId` too. |
 | `facetValueOf(metadata, key, curation?)` | `string \| undefined` | The faceting value of one metadata key for one item — date-curated fields (`testDate`) truncate to date-only. |
-| `mergeTestDefs(items)` | `{ defs, conflicts, warnings }` | The ONE test list for a population of wafers. `TestDef.testNumber` identifies a test *within a test program*, so taking any single wafer's `testDefs` as the namespace for a multi-program load pools unrelated measurements under one number and normalises them against the wrong limits. This unions every test number across `items` and reconciles the defs describing each. **An absent field is "not stated", never a disagreement** — mixing a file that states limits with one that does not merges silently, the stated value winning. Only two *stated and different* values conflict, in two tiers. **Hard** (distinct names, distinct units, or `testType` `'P'` vs `'F'`): different measurements sharing a number, so the test is withheld from `defs` entirely — `warnings` carries code `test-def-collision`, severity `error`. **Soft** (same name and unit, both limits stated but different): the same measurement under different specs, so the test stays and its values still pool, but the merged def drops **both** limits — no Cp/Cpk/Pp/Ppk, no spec yield, no limit lines — with code `test-limit-conflict`, severity `warning`. Limits compare on a relative tolerance, not `===`, so a float32 STDF limit and a float64 CSV one cannot manufacture a conflict; names compare trimmed and case-insensitively. Hand `warnings` straight to `collectWarnings` (§10.x) to surface both through the toolbar indicator and Summary banner. `renderWaferGallery` and the Insights tab call this internally — hosts need it only when building their own cross-wafer surface. |
+| `mergeTestDefs(items)` | `{ defs, conflicts, warnings }` | The ONE test list for a population of wafers. `TestDef.testNumber` identifies a test *within a test program*, so taking any single wafer's `testDefs` as the namespace for a multi-program load pools unrelated measurements under one number and normalises them against the wrong limits. This unions every test number across `items` and reconciles the defs describing each. **An absent field is "not stated", never a disagreement** — mixing a file that states limits with one that does not merges silently, the stated value winning. Only two *stated and different* values conflict, in two tiers. **Hard** (distinct names, distinct units, or `testType` `'P'` vs `'F'`): different measurements sharing a number, so the test is withheld from `defs` entirely — `warnings` carries code `test-def-collision`, severity `error`. **Soft** (same name and unit, both limits stated but different): the same measurement under different specs, so the test stays and its values still pool, but the merged def drops **both** limits — no Cp/Cpk/Pp/Ppk, no spec yield, no limit lines — with code `test-limit-conflict`, severity `warning`. Limits compare on a relative tolerance, not `===`, so a float32 STDF limit and a float64 CSV one cannot manufacture a conflict; names compare trimmed and case-insensitively. Hand `warnings` straight to `collectWarnings` (§5.10) to surface both through the toolbar indicator and Summary banner. `renderWaferGallery` and the Insights tab call this internally — hosts need it only when building their own cross-wafer surface. |
 
 `FACET_NONE_VALUE` (`'(none)'`) is the residual bucket: `buildFacetTable` emits it as a
 `FacetValue.value` for items whose metadata has no value for that field, so the counts
@@ -3321,11 +3073,7 @@ and treat it as "field missing", not as a real metadata value, when labelling an
 user reads. A wafer genuinely carrying the string `"(none)"` is indistinguishable from a
 missing one, which is the one case where this bucket is ambiguous.
 
-`WaferMetadata` → §12.3
-
-### 7.17 `LotSummaryReportParams` grouping detail
-
-See §7.8 for the full `renderLotSummaryReportHtml` grouping behavior — items are partitioned by whichever of `lot`/`product`/`testProgram`/`temperature` actually vary, never by `split` alone.
+`WaferMetadata` → §11.3
 
 ---
 
@@ -3475,95 +3223,7 @@ Shuts down the underlying worker.  Any in-flight calls reject immediately.
 
 ---
 
-## 9 Low-level canvas API
-
-> **Deprecated — removed in 0.31.0**, with the whole low-level pipeline (§11). Draw maps with `renderWaferMap` or `renderWaferGallery`.
-
-`toCanvas` is the one-shot draw primitive that `renderWaferMap` is built on. You need it when:
-- building a custom rendering loop (custom zoom/pan, animation, non-standard hit-testing)
-- generating wafer map images server-side or in a headless environment
-
-For all other use cases, `renderWaferMap` is simpler and handles DPI, resize, and interaction automatically.
-
-### 9.1 `toCanvas(canvas, view, options?)`
-
-```ts
-toCanvas(canvas: HTMLCanvasElement, view: View, options?: ToCanvasOptions): { hitTarget: HitTarget; viewport: Viewport; binLegendRows: BinLegendRow[] }
-```
-
-`View` is returned by `buildView` (§11.15).
-
-Renders a view directly onto an HTML `<canvas>` element using the 2D Canvas API.
-No toolbar is provided — this is a one-shot draw call.
-
-```ts
-import { toCanvas } from '@wafertools/wafermap/render';
-```
-
-```ts
-interface ToCanvasOptions {
-  padding?:         number    // CSS-px padding inside canvas edge (default 16)
-  showColorbar?:    boolean   // draw colorbar / bin legend (default true)
-  colorbarWidth?:   number    // CSS-px width of the colorbar strip (default 16)
-  background?:      string    // canvas background colour (default '#f5f5f5')
-  showAxes?:        boolean   // draw axis tick marks and labels (default false)
-  showTitle?:       boolean   // draw the map title (test/mode name + stack context) by the colorbar/legend (default true)
-  diePitchMm?:      { x: number; y: number }  // when provided, axis labels show die grid indices; otherwise mm values
-  fallbackFormat?:  'si' | 'engineering'  // format for unitless values outside [0.1, 9999] (default 'engineering')
-}
-```
-
-**Legend behaviour by plot mode:**
-
-| Mode | Legend |
-| --- | --- |
-| `value` | Continuous colorbar (gradient with min/max ticks). Under `passFailDisplay: 'spec'` the colorbar is replaced by a **spec legend**: Pass / Fail high / Fail low swatches with per-category die counts, adaptive to the active test's limits (a one-sided spec omits the absent fail side). Under `passFailDisplay: 'test'` (always the case for a functional active test) it is replaced by a **Pass / Fail legend** with per-category die counts. |
-| `stackedValues` | Continuous colorbar. |
-| `stackedBins`, `stackedSoftBins` | Continuous colorbar (counts). |
-| `hardBin`, `softBin` | Bin legend: one swatch + label per unique bin; overflows show `"+ N more"`. |
-
-**Map title (`showTitle`, default true):** every mode draws a title naming what the map shows, placed by the colorbar/legend (never under the toolbar). The primary line sits above the scale, supporting context below it:
-
-| Mode | Title (primary · secondary) |
-| --- | --- |
-| `value` | `Vth (mV)` |
-| `value` + `passFailDisplay: 'spec'` | `Vth (mV) · #1050` · `Limit pass/fail` |
-| `value` + `passFailDisplay: 'test'` | `Vth (mV) · #1050` · `Tester pass/fail` — or `Functional pass/fail` for a functional test |
-| `stackedValues` | `Vth (mV) · mean` · `stacked (6 wafers)` |
-| `hardBin` / `softBin` | `Hard Bin` / `Soft Bin` |
-| `stackedBins` / `stackedSoftBins` | `Hard Bin 2 · Leakage` · `stacked (6 wafers)` |
-
-The colorbar also shows a scale note (`log₁₀`, or `linear — log n/a` when log was requested but the data range includes ≤ 0).
-
-Returns `{ hitTarget, viewport, binLegendRows }`:
-
-- `hitTarget.getDieAtPoint(x, y): Die | null` — hit-test a CSS-pixel position
-- `viewport` — the auto-fitted viewport transform (useful as initial state for custom zoom/pan)
-- `binLegendRows` — `{ bin, y, h }[]` for hit-testing legend row clicks (non-empty for hardBin/softBin; the spec legend also populates this, using negative sentinel `bin` keys for its Pass/Fail rows)
-
-```ts
-import { buildView } from '@wafertools/wafermap/renderer';
-
-const result  = buildWaferMap({ results, waferConfig, dieConfig });
-const view   = buildView(result.wafer, result.dies, { plotMode: 'hardBin' });
-const { hitTarget } = toCanvas(canvas, view);
-
-canvas.addEventListener('mousemove', e => {
-  const r   = canvas.getBoundingClientRect();
-  const die = hitTarget.getDieAtPoint(e.clientX - r.left, e.clientY - r.top);
-  if (die) showTooltip(die);
-});
-```
-
-> `hitTarget` is a `HitTarget` object.
-
-`toCanvas` reads `window.devicePixelRatio` automatically and snaps canvas dimensions to integer CSS pixels to prevent sub-pixel interpolation blur.  Set canvas size in CSS only; do not set `canvas.width`/`canvas.height` directly.
-
-`renderWaferMap` additionally watches for `devicePixelRatio` changes (browser zoom, moving between displays) via a `matchMedia` listener and re-renders automatically.
-
----
-
-## 10 Package surface
+## 9 Package surface
 
 ```ts
 import { buildWaferMap }                       from '@wafertools/wafermap';
@@ -3580,7 +3240,7 @@ import { buildWaferMap }   from '@wafertools/wafermap';
 import { analyzeWaferMap } from '@wafertools/wafermap/stats';
 ```
 
-Only `renderWaferMap` and `toCanvas` (both from `/render`) require a browser environment.
+Only the renderers, from `/render`, need a browser environment.
 
 ### Which build is running — `WMAP_VERSION` / `WMAP_BUILD_TIME`
 
@@ -3595,86 +3255,14 @@ checkout. Show them wherever your application reports its own version: when a ma
 the first question is which engine produced it, and "check the browser console" is not a useful
 answer for an end user. tsmap lists both in its **Help → About tsmap…** dialog.
 
-> **The renderers are not on the root entry point.** `renderWaferMap`, `renderWaferGallery`
-> and `toCanvas` are exported **only** from `@wafertools/wafermap/render` — so
+> **The renderers are not on the root entry point.** `renderWaferMap` and `renderWaferGallery`
+> are exported **only** from `@wafertools/wafermap/render` — so
 > `import { renderWaferMap } from '@wafertools/wafermap'` will fail. This is deliberate:
 > the root entry stays DOM-free (and therefore usable in Node and tree-shakeable) by
-> re-exporting only `core`, `renderer` and `stats`. Import the geometry/data layer from the
-> root and the renderer from `/render`.
+> re-exporting only `core`, `renderer` and `stats`. Import the data layer from the
+> root and the renderers from `/render`.
 
-> **`buildView` and `View`** are no longer exported from the root `@wafertools/wafermap` package. They are available from `@wafertools/wafermap/renderer` for advanced use (see §11 Manual Pipeline). If you were importing them from the root, update your import path.
-
-### 10.1 Helper exports
-
-> `getDieTestValue`, `dieHasTestData`, `isParametricTest`, `metadataCategoricalValue` and `discoverDieMetadataKeys` are **deprecated — removed in 0.31.0**. `getDieKey`, `getTestPassStatus` and `metadataDisplayValue` stay: they carry rules a host processing dies must match (`metadataDisplayValue`'s deprecation was withdrawn in 0.30.1 — it is the one rule for a metadata value's text in an export). Read a test value as `die.testValues[testNumber]`.
-
-```ts
-import { getDieKey, getDieTestValue, getTestPassStatus, dieHasTestData, isParametricTest } from '@wafertools/wafermap';
-```
-
-```ts
-getDieKey(die: { x: number; y: number }): string
-getDieTestValue(die: Die, testNumber: number): number | undefined
-getTestPassStatus(die: Die, testNumber: number, testDef?: TestDef): boolean | undefined
-dieHasTestData(die: Die): boolean
-isParametricTest(def: TestDef | undefined): boolean
-```
-
-`getDieKey` returns a stable `"x,y"` string for map lookups (see §11.17 for details). `Die` → §12.1
-
-`getDieTestValue` reads a test value from a die by test number:
-
-```ts
-const idsat = getDieTestValue(die, 1050);
-```
-
-Returns `undefined` when no value is present.  Use this in post-build code that reads test values from dies.
-
-`getTestPassStatus` is the single read-path for "did this die pass test N" (true = pass). Primary source: `die.testPass[testNumber]`. **Migration fallback — this is the only place the rule exists:** for a functional test (`testType: 'F'`) with no `testPass` entry but a `testValues` entry of exactly `0` or `1`, the legacy encoding is interpreted as `1` = pass / `0` = fail. The fallback is never applied to parametric tests. Returns `undefined` when no verdict is recorded — treat that as no-data, never as a fail.
-
-`dieHasTestData` is true when a die carries any per-test data — a test value or a recorded pass/fail verdict.
-
-`isParametricTest` returns `false` only for `testType: 'F'` — an undefined def or undefined `testType` counts as parametric.
-
-**Metadata helpers** — the same three functions the library uses internally to turn a raw
-`die.metadata` / `wafer.metadata` value into something displayable, exported so a host formats
-metadata the way the maps, tooltips, legends and CSV exports already do rather than reinventing
-the rules:
-
-```ts
-import { metadataDisplayValue, metadataCategoricalValue } from '@wafertools/wafermap';
-import { discoverDieMetadataKeys } from '@wafertools/wafermap/stats';
-```
-
-```ts
-metadataDisplayValue(raw: unknown): string | undefined
-metadataCategoricalValue(raw: unknown): string | undefined
-discoverDieMetadataKeys(
-  dies: Die[],
-  metadataFields?: MetadataFieldDef[],
-  limit?: number,                        // default 64
-): { keys: string[]; truncated: string[] }
-```
-
-`metadataDisplayValue` renders one value for display: strings, numbers and booleans stringify,
-a `Date` becomes an ISO string, anything else is JSON — and an unserialisable value (a circular
-structure, a `BigInt`) returns an honest marker rather than throwing out of a tooltip or an
-export. Empty string, `null` and `undefined` all return `undefined`, meaning "no value", which
-is not the same as `"undefined"`.
-
-`metadataCategoricalValue` is the same thing narrowed to values that can act as a *category* —
-it rejects objects and arrays, which cannot meaningfully colour a die or head a column. This is
-the derivation `'metadata'` plot mode and the gallery's metadata legend both use, so a host
-that groups or tallies by a metadata key gets the same buckets the map paints.
-
-`discoverDieMetadataKeys` (from `/stats`) returns the die-metadata keys actually present across
-a set of dies — what `metadataColumns: 'auto'` (§5.4.4) resolves to. Keys you declared in
-`metadataFields` come first, in the order you declared them, and the rest follow in natural
-order, so a host's own curation survives into the column layout. Anything past `limit` (default
-64) is returned separately as `truncated` rather than dropped silently, so a caller can say what
-it left out. `MetadataFieldDef` → §4.1.11
-
-### 10.2 `ICONS`
+### 9.1 `ICONS`
 
 ```ts
 import { ICONS } from '@wafertools/wafermap/render';
@@ -3686,9 +3274,7 @@ The toolbar's own icon set, keyed by name (`'download'`, `'expand'`, `'close'`, 
 
 Key names are stable once published — removing or renaming a key is a breaking change, same as any other public export; new keys may be added in a patch release. There is no separate "curated public subset" — the whole set is public, since it is just data (no behaviour to keep internal).
 
-### 10.3 `openReportModal`
-
-> Deprecated in 0.30.0 and **withdrawn in 0.30.1**: it stays. It is the partner of `setReportOpener` — a host whose opener saves or logs a report can still show it in wmap's modal.
+### 9.2 `openReportModal`
 
 ```ts
 import { openReportModal } from '@wafertools/wafermap/render';
@@ -3696,15 +3282,15 @@ import { openReportModal } from '@wafertools/wafermap/render';
 openReportModal(html: string, opts?: { anchor?: Element; ownerDocument?: Document }): OverlayHandle
 ```
 
-Opens report HTML (from `renderFindingsReportHtml`, `renderWaferReportHtml` or `renderLotReportHtml`) in an in-app modal. The Summary panel's "Summary report" button (§7.7, §7.8) calls this automatically — **no `setReportOpener` wiring is required just to view a report anymore**, in a plain browser tab or an embedded host (Tauri, Electron, WebView2) alike.
+Opens report HTML (from `renderWaferReportHtml` or `renderLotReportHtml`, §7.6) in an in-app modal. The Summary panel's "Summary report" button opens reports through it, so viewing a report needs no host wiring, in a plain browser tab or an embedded host (Tauri, Electron, WebView2) alike. It is the partner of `setReportOpener` (§7.7): a host whose opener saves or logs a report can still show it here.
 
-The modal's header includes a Print/Save-as-PDF button (`window.print()`, scoped to just the report — see below), and its content area has an "Open as full page ↗" link that falls back to `openHtmlReport`/`setReportOpener` (§7.9) for a host that wants the report as a real separate page instead — to keep it open outside the modal, or as a fallback if in-app printing misbehaves on a given platform. §7.9's `setReportOpener` registration, if a host has one, is what that link and any other `openHtmlReport` call route through; it is otherwise entirely optional now.
+The modal's header includes a Print/Save-as-PDF button (`window.print()`, scoped to just the report — see below), and its content area has an "Open as full page ↗" link that opens the report as a real separate page instead — to keep it open outside the modal, or as a fallback if in-app printing misbehaves on a given platform. That link goes through the opener registered with `setReportOpener` (§7.7), if a host has one, and `window.open` otherwise.
 
 The report HTML is a complete standalone document (own `<style>`, own `<!DOCTYPE html>`) rendered via `<iframe srcdoc>` — its stylesheet is isolated from the host page automatically, and the print button targets `iframe.contentWindow.print()`, so only the report prints, not the host app around it. This works identically in a plain browser tab and inside a Tauri/Electron/WebView2 webview — printing is native `window.print()` either way, so this needs no platform-specific host code.
 
 `opts.anchor`, when given, resolves the modal into the correct document/stacking root the same way every other overlay in this library does (e.g. a summary panel rendered inside a gallery card detached into its own window) — pass the triggering element (a button, the panel container) when in doubt.
 
-### 10.4 `openWaferMapGuide`
+### 9.3 `openWaferMapGuide`
 
 ```ts
 import { openWaferMapGuide } from '@wafertools/wafermap/render';
@@ -3721,427 +3307,13 @@ Opens the built-in guide window with **no live `WaferMapController`/`GalleryCont
 
 Available subpath exports: `@wafertools/wafermap`, `/core`, `/renderer`, `/render`, `/stats`, `/worker`, `/worker-script`
 
-> **The Insights tab's canvas chart panels are not a public subpath.** `insights.enabled` (§5.9, §6.10) is the supported way to get charts — the DOM/canvas rendering code behind it is internal to `/render` and not independently importable, so you cannot assemble your own page from wmap's chart panels the way you can compose `/render`'s other pieces. The pure data layer those panels are built on (§7.16) *is* public from `/stats`, if you want to drive your own chart library from the same computations.
+> **The Insights tab's canvas chart panels are not a public subpath.** `insights.enabled` (§5.9, §6.10) is the supported way to get charts — the DOM/canvas rendering code behind it is internal to `/render` and not independently importable, so you cannot assemble your own page from wmap's chart panels the way you can compose `/render`'s other pieces. The figures behind them come back from `analyzeWaferMap` and `analyzeWaferLot` (§7.4), if you want to drive your own chart library from the same computations.
 
 ---
 
-## 11 Advanced / Manual Pipeline
+## 10 Helper functions
 
-> **Deprecated — removed in 0.31.0.** The manual pipeline is being withdrawn: nothing known uses it, and it doubled the API a host had to read. Build with `buildWaferMap` and draw with `renderWaferMap` or `renderWaferGallery`. In this section `getDieKey` (§11.18), `isYieldEligibleDie` (§11.20), `getReticleCell` (§11.22, withdrawn from deprecation in 0.30.1), the colour-scheme registries, `resolveValueColorFn` and `binColorsForMaps` (§11.19) stay; everything else is deprecated, including `resolveBinColors`, `getBinColorScheme` and `contrastTextColor`. For a die layout with no test data, use `buildWaferMap({ layout: true, … })` (§4.1) instead of `createWafer` + `generateDies` + `clipDiesToWafer`. If you depend on any of it, say so at https://github.com/wafertools/wafermap/issues.
-
-You only need this section if you are building a custom rendering pipeline — for example, rendering to SVG or WebGL, generating images server-side, or inserting custom geometry processing steps between wafer creation and rendering. For everything else, use `buildWaferMap` + `renderWaferMap`.
-
-**Minimal working example:**
-
-```ts
-import { createWafer, generateDies, clipDiesToWafer } from '@wafertools/wafermap/core';
-import { buildView } from '@wafertools/wafermap/renderer';
-import { toCanvas } from '@wafertools/wafermap/render';
-
-const wafer = createWafer({ diameter: 300 });
-const dies  = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer);
-// attach your data: dies.forEach(d => { d.hbin = ...; })
-const view  = buildView(wafer, dies, { plotMode: 'hardBin' });
-toCanvas(canvas, view);
-```
-
-**Full pipeline** (with orientation and interactive transforms):
-
-```mermaid
-graph TD
-    cw["createWafer(spec)"]
-    gd["generateDies(wafer, dieSpec)"]
-    cd["clipDiesToWafer(dies, wafer, dieSpec)"]
-    av["attach values / hbin / sbin / metadata"]
-    ps["applyProbeSequence(dies, config)"]
-    ao["applyOrientation(dies, wafer)"]
-    td["transformDies(dies, interactiveTransform, wafer.center)"]
-    bv["buildView(wafer, dies, options)"]
-    tc["toCanvas(canvas, view)"]
-
-    cw --> gd --> cd --> av --> ao
-    av -. "optional" .-> ps --> ao
-    ao -. "on each redraw" .-> td
-    td --> bv --> tc
-```
-
-In the manual pipeline, `die.x` and `die.y` are integer grid indices centred at the wafer origin, computed by `generateDies`.
-
-### 11.1 `createWafer(spec)`
-
-```ts
-createWafer(spec: WaferSpec): Wafer
-```
-
-Creates a wafer model.  `diameter` is required.  Accepts a `WaferSpec`:
-
-```ts
-{
-  diameter:     number                     // required
-  center?:      { x: number; y: number }   // mm, default {0, 0}
-  notch?:       { type: 'top' | 'bottom' | 'left' | 'right' }
-  orientation?: number                     // degrees CW, default 0
-  metadata?:    WaferMetadata
-}
-```
-
-Returns `Wafer` with `diameter`, `radius`, `center`, `notch` (with computed `length`), `orientation`, `metadata`.
-
----
-
-### 11.2 `generateDies(wafer, spec)`
-
-```ts
-generateDies(wafer: Wafer, spec: DieSpec): Die[]
-```
-
-`Wafer` → §12.2 · `Die` → §12.1
-
-Creates a rectangular die grid centred on the wafer.  Accepts a `DieSpec`:
-
-```ts
-{
-  width:     number   // required
-  height:    number   // required
-  gridSize?: number
-  offset?:   { x: number; y: number }
-}
-```
-
-Returns `Die[]` with `id`, `x` (grid), `y` (grid), `physX` (mm), `physY` (mm), `width`, `height`.
-
----
-
-### 11.3 `clipDiesToWafer(dies, wafer, spec?)`
-
-```ts
-clipDiesToWafer(dies: Die[], wafer: Wafer, dieConfig?: DieSpec): Die[]
-```
-
-Clips dies to the wafer boundary (circle + optional notch/flat exclusion zone).
-
-- Removes dies entirely outside the wafer.
-- Sets `insideWafer: true` on included dies.
-- Sets `partial: true` on dies that straddle the boundary (requires `dieConfig` for 4-corner test).
-
-`Die` → §12.1 · `Wafer` → §12.2 · `DieSpec` → §11.2
-
----
-
-### 11.4 `isInsideWafer(x, y, wafer)`
-
-```ts
-isInsideWafer(x: number, y: number, wafer: Wafer): boolean
-```
-
-Returns `true` when the point (x, y) in physical mm falls inside the wafer boundary.
-
-`Wafer` → §12.2
-
----
-
-### 11.5 `mapDataToDies(dies, data, options)`
-
-```ts
-mapDataToDies(dies: Die[], data: DataRow[], options: MapOptions): Die[]
-```
-
-Maps row data onto dies by matching grid coordinates. `DataRow` is `Record<string, string | number>`.
-
-```ts
-// MapOptions
-{
-  matchBy?:    'xy' | 'ij'   // field pair to match on: x/y or i/j (default 'xy')
-  xField?:     string        // field name for x coordinate (default 'x')
-  yField?:     string        // field name for y coordinate (default 'y')
-  iField?:     string        // field name for i coordinate (used when matchBy = 'ij')
-  jField?:     string        // field name for j coordinate
-  valueField:  string        // field name for the value to attach
-}
-```
-
-`Die` → §12.1
-
----
-
-### 11.6 `applyOrientation(dies, wafer)`
-
-```ts
-applyOrientation(dies: Die[], wafer: Wafer): Die[]
-```
-
-Rotates die physical coordinates (`physX`, `physY`) by `wafer.orientation` (degrees CW) around `wafer.center`. Call once after `clipDiesToWafer` and before `transformDies`.
-
-`Die` → §12.1 · `Wafer` → §12.2
-
----
-
-### 11.7 `transformDies(dies, options, center?)`
-
-```ts
-transformDies(dies: Die[], options: TransformOptions, center?: { x: number; y: number }): Die[]
-```
-
-Applies interactive display transforms (rotation + flip) around `center` (defaults to `wafer.center`). Call on each redraw when the user rotates or flips.
-
-```ts
-// TransformOptions
-{
-  rotation?: number   // clockwise degrees: 0 | 90 | 180 | 270
-  flipX?:    boolean
-  flipY?:    boolean
-}
-```
-
-`Die` → §12.1
-
----
-
-### 11.8 `applyProbeSequence(dies, config)`
-
-```ts
-applyProbeSequence(dies: Die[], config: ProbeSequenceConfig): Die[]
-```
-
-Assigns `probeIndex` to each die according to the chosen scan strategy. Returns a new `Die[]` with `probeIndex` populated. Set `showProbePath: true` in `buildView` options to draw the path as an overlay.
-
-```ts
-// ProbeSequenceConfig
-{
-  type:          'row' | 'column' | 'snake' | 'custom'
-  //   row    — left→right, top→bottom
-  //   snake  — alternating direction per row (boustrophedon)
-  //   column — top→bottom, left→right
-  //   custom — explicit die ID ordering via customOrder
-  customOrder?:  string[]   // ordered die IDs — required when type = 'custom'
-}
-```
-
-`Die` → §12.1
-
----
-
-### 11.9 `generateReticleGrid(wafer, spec)`
-
-```ts
-generateReticleGrid(wafer: Wafer, spec: ReticleSpec): Reticle[]
-```
-
-`Wafer` → §12.2
-
-Generates reticle rectangles covering the wafer area.  Accepts a `ReticleSpec`:
-
-```ts
-{
-  width:       number
-  height:      number
-  diePitchX:   number
-  diePitchY:   number
-  anchorDie?:  { x: number; y: number }
-               // die index at the field's min-x/min-y corner (bottom-left,
-               // since +Y is up) — see §4.1.4
-  gridOrigin?: { x: number; y: number }
-               // physical position of die index (0,0). Default {0,0} (the
-               // wafer centre) — correct only when the die grid is itself
-               // centred on the wafer. `buildWaferMap` passes this
-               // automatically; pass it yourself only when calling
-               // generateReticleGrid directly against a die grid whose
-               // physical placement is offset from the wafer centre by a
-               // non-whole-die-pitch amount (e.g. partial/off-centre data),
-               // otherwise field boundaries silently drift off die edges.
-}
-```
-
-> Via `buildWaferMap`, pass `reticleConfig: ReticleConfig` instead — pitch is wired through automatically.
-
----
-
-### 11.10 `classifyDie(die, wafer, options?)`
-
-```ts
-classifyDie(die: Die, wafer: Wafer, options?: { ringCount?: number }): { ring: number; quadrant: 'NE' | 'NW' | 'SW' | 'SE' }
-```
-
-`ring` runs 1 (innermost) to `ringCount` (outermost/edge). Default `ringCount` is 4.
-
-`Die` → §12.1 · `Wafer` → §12.2
-
----
-
-### 11.11 `getRingLabel(ring, ringCount)`
-
-```ts
-getRingLabel(ring: number, ringCount: number): string
-```
-
-Returns a human-readable label for a ring index, e.g. `"Ring 1 (centre)"`, `"Ring 4 (edge)"`.
-
----
-
-### 11.12 `getUniqueBins(dies, binSpace?)`
-
-```ts
-getUniqueBins(dies: Die[], binSpace?: 'hard' | 'soft'): number[]
-```
-
-Returns all distinct bin values present in `dies`, sorted ascending. `binSpace` selects which field to read: `'hard'` reads `die.hbin` (default), `'soft'` reads `die.sbin`.
-
-`Die` → §12.1
-
----
-
-### 11.13 `aggregateBinCounts(diesByWafer, targetBin, binSpace?)`
-
-```ts
-aggregateBinCounts(diesByWafer: Die[][], targetBin: number, binSpace?: 'hard' | 'soft'): Die[]
-```
-
-Stacks multiple wafers and counts, per die position, how many wafers had a specific bin value.
-
-Returns one `Die` per unique `(x, y)` with `testValues[0]` = count, and `hbin: targetBin` (for `'hard'`) or `sbin: targetBin` (for `'soft'`).
-
-- Pass `binSpace: 'hard'` (default) for hard bins → use with `plotMode: 'stackedBins'`
-- Pass `binSpace: 'soft'` for soft bins → use with `plotMode: 'stackedSoftBins'`
-
-Set `valueRange: [0, diesByWafer.length]` and `lotSize: diesByWafer.length` for correct colorbar and percentage tooltips.
-
-`Die` → §12.1
-
----
-
-### 11.14 `aggregateValues(diesByWafer, method, paramIndex?)`
-
-```ts
-aggregateValues(diesByWafer: Die[][], method: 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count', paramIndex?: number): Die[]
-```
-
-`paramIndex` — the `testValues` key to read from each source die (e.g. a `testNumber` like `1050`). Defaults to `0`.
-
-Returns one `Die` per unique `(x, y)` with the aggregated scalar stored at `testValues[0]`, ready for `buildView` in `stackedValues` mode.
-
-`Die` → §12.1
-
----
-
-### 11.15 `buildView(wafer, dies, options?)`
-
-```ts
-buildView(wafer: Wafer, dies: Die[], options?: ViewOptions): View
-```
-
-Builds the renderer-agnostic view. `Wafer` → §12.2 · `Die` → §12.1
-
-```ts
-interface ViewOptions {
-  plotMode?:               'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'metadata'
-  passFailDisplay?:        'off' | 'spec' | 'test'  // solid pass/fail display: 'spec' = limits judgement, 'test' = recorded verdict (die.testPass);
-                                             // library-resolved — degrades to 'off' when invalid; functional tests always render as 'test'
-  showDieLabels?:          boolean
-  showPartialDies?:        boolean   // default true; set false to hide edge dies outside the wafer circle
-  showReticle?:            boolean
-  showProbePath?:          boolean
-  showRingBoundaries?:     boolean
-  showQuadrantBoundaries?: boolean
-  showXYIndicator?:        boolean
-  ringCount?:              number    // default 4
-  binColorScheme?:         string    // bin palette for hardBin/softBin, default 'default' — §11.19
-  valueColorScheme?:       string    // value gradient for value/stacked modes, default 'default'
-  reverseValueScheme?:     boolean   // flip that gradient end-for-end, default false
-  useDefinedBinColors?:    boolean   // honour BinDef.color, default true
-  binColors?:              BinColors // colours resolved over a wider population (every wafer in a gallery); ignored unless it covers every bin here
-  highlightBin?:           number
-  highlightMetadataValue?: string    // 'metadata' mode's analogue of highlightBin
-  valueRange?:             [number, number] | { test: number; range: [number, number] }
-  interactiveTransform?:   { rotation?: number; flipX?: boolean; flipY?: boolean }
-  reticles?:               Reticle[]
-  testDefs?:               TestDef[]   // named test definitions — drives mode dropdown and tooltip labels
-  hbinDefs?:               BinDef[]    // named hard bin definitions (hbin, 0–32767 space)
-  sbinDefs?:               BinDef[]    // named soft bin definitions (sbin, 0–32767 space — independent)
-  metadataFields?:         MetadataFieldDef[]  // opts die.metadata keys into 'metadata' plot mode — §4.1.12
-  activeTest?:              number      // testNumber to display in 'value' mode (matches testDef.testNumber, NOT a positional index); defaults to first available test
-  activeMetadataKey?:      string      // die.metadata key to display in 'metadata' mode (matches a metadataFields[].key)
-  logScale?:               boolean     // override log₁₀ scale for the active test; takes precedence over TestDef.logScale
-  colorbarRangeMode?:      'spec' | 'data'  // sets colorbar range only: 'spec' (default) spans [limitLow, limitHigh],
-                                            // 'data' spans actual data min/max. In both, dies keep the gradient fill and
-                                            // out-of-spec dies get a triangle marker (▽ below limit, △ above)
-  aggregationMethod?:      string      // aggregation method label for 'stackedValues' hover tooltips (e.g. 'mean', 'median')
-  lotSize?:                number      // total wafers in lot — for 'stackedBins'/'stackedSoftBins' hover percentage computation
-}
-```
-
-Returns `View` with `rectangles`, `texts`, `overlays`, `hoverPoints`, `plotMode`, `binColorScheme`, `valueColorScheme`, `binColors` (every bin's resolved colour, both bin types — read this for any legend or chart, never re-derive a colour), `metadata`, `dies`, `valueRange`, `testDefs`, `hbinDefs`, `sbinDefs`, `activeTest`, `logScale`, `aggregationMethod`, `lotSize`, and (for `'metadata'` mode) `metadataFields`, `activeMetadataKey`, `metadataCounts` (`Map<string, number>` — value → die count, mirroring `binCounts`).
-
-Display-transform fields:
-
-- **`gridToScreen`** (`Affine<'grid','screen'>`, §11.21) — the authoritative die-grid → screen transform. Use this (or `affineInvert` of it) for anything positional; it is composed from the real pipeline in order and stays correct for every combination of wafer orientation, data-axis flip and interactive rotate/flip.
-- **`dataAxisFlip`** — the data-pipeline flip alone (from `xAxisDirection`/`yAxisDirection`/`coordinateOrigin`), with no interactive flip mixed in.
-- **`axisFlip`** / **`rotation`** — a *lossy* summary (total flip as an XOR, total rotation as a sum). These cannot represent `rotate → mirror → rotate` and are only exact while `wafer.orientation` is `0`; they remain for coarse orientation hints. Prefer `gridToScreen` for coordinate maths.
-
-`hoverPoints` is `{ x, y }[]` — one entry per die, in physical mm coordinates. Used internally by `renderWaferMap` for hit-testing; you rarely need it directly when using `toCanvas` (use `hitTarget.getDieAtPoint` instead).
-
----
-
-### 11.16 `buildHoverText(die, plotMode, opts?)`
-
-```ts
-buildHoverText(
-  die:      Die,
-  plotMode: PlotMode,
-  opts?: {
-    testDefs?:       TestDef[]
-    hbinDefs?:       BinDef[]
-    sbinDefs?:       BinDef[]
-    fallbackFormat?: 'si' | 'engineering'
-    aggrMethod?:     string                 // lot-stack aggregation method name
-    lotSize?:        number                 // wafers in the stack — annotates a count with its lot share
-    activeTest?:     number                 // active test number (value mode) — leads the tooltip
-    reticleConfig?:  ReticleConfig          // when set, adds "Reticle (column, row)" below "Die (x, y)"
-  },
-): string
-```
-
-Builds the HTML tooltip string for a single die. Exported so custom `toCanvas` pipelines can generate the same tooltip content as `renderWaferMap` without re-implementing the formatting logic.
-
-The tooltip is **compact and mode-aware**, so it never becomes an unwieldy block on dies with many tests:
-
-- **`value` mode** — leads with the **active test** (`activeTest`) value, in bold, with an `(out of spec)` note when it fails its limits; the remaining tests are summarised as `+N more tests`.
-- **`hardBin` / `softBin` mode** — shows the bin verdict (`HBin` / `SBin`), then a `N test values recorded` count rather than listing individual tests (no single test is privileged in bin mode).
-- **stacked modes** — show the single aggregated value.
-
-When `reticleConfig` is passed, a `Reticle (column, row)` line is inserted immediately after `Die (x, y)`, computed via `getReticleCell` (§11.21) — the same function `buildReticlePositionRegions` (§7) uses for reticle-position findings, so the tooltip and findings labels always agree. Omitted entirely when `reticleConfig` is not passed. `renderWaferMap`/`renderWaferGallery` pass this automatically from `result.reticleConfig` whenever a reticle was configured on `buildWaferMap` — no action needed for the built-in tooltip.
-
-`Die` → §12.1 · `TestDef` → §4.1.8 · `BinDef` → §4.1.9 · `ReticleConfig` → §4.1.4
-
-```ts
-import { buildHoverText } from '@wafertools/wafermap/renderer';
-
-const html = buildHoverText(die, 'hardBin', { testDefs, hbinDefs, sbinDefs });
-tooltipEl.innerHTML = html;
-```
-
-Called automatically by `renderWaferMap` on hover. Only needed when building a custom rendering pipeline with `toCanvas`.
-
----
-
-### 11.17 `buildMapTitle(view, fallbackFormat?, binDefs?)`
-
-```ts
-buildMapTitle(
-  view:            View,
-  fallbackFormat?: 'si' | 'engineering',   // default 'engineering'
-  binDefs?:        BinDef[],               // active bin defs — names a single-bin stacked card's bin
-): MapTitleParts   // { primary: string; secondary: string; note?: string }
-```
-
-`note` is `"† Derived, not measured"` when the map shows a derived test (§4.1.9); `primary` then carries the `†` in front of the test name, and `toCanvas` draws `note` on its own line below `secondary`. Absent for a measured test.
-
-Builds the on-canvas map title for any plot mode, derived from the `View`. Returns a primary/secondary split so the renderer can place the key identifier above the colorbar/legend and supporting context (stack/wafer-count, or `Limit pass/fail`) below it. `toCanvas` calls this automatically when `showTitle` is true; exported so custom pipelines can render the same title. See the title table under §9.1.
-
-`View` → §11.15 · `BinDef` → §4.1.9
-
----
-
-### 11.18 `getDieKey(die)`
+### 10.1 `getDieKey(die)`
 
 ```ts
 getDieKey(die: { x: number; y: number }): string
@@ -4156,13 +3328,77 @@ const die = map.get(getDieKey({ x: 3, y: -2 }));
 
 ---
 
-### 11.19 Color helpers
+### 10.2 Pass/fail verdicts — `diePassStatus`, `getTestPassStatus`
 
-| Signature | Returns | Description |
-| --------- | ------- | ----------- |
-| `valueToViridis(t: number)` | `string` | **Deprecated.** Use `resolveValueColorFn('default')`, which returns the same colours. |
-| `valueToGreyscale(t: number)` | `string` | **Deprecated.** Use `resolveValueColorFn('greyscale')`, which returns the same colours. |
-| `contrastTextColor(cssColor: string)` | `'#000000' \| '#ffffff'` | Returns the WCAG-contrast text colour for a given background |
+```ts
+import { diePassStatus, getTestPassStatus } from '@wafertools/wafermap';
+
+diePassStatus(die: { hbin?: number; sbin?: number }, passBins: ReadonlySet<number>): boolean | undefined
+getTestPassStatus(die: Die, testNumber: number, testDef?: TestDef): boolean | undefined
+```
+
+`diePassStatus` is the per-die pass rule: the die's hard bin (else its soft bin) is in `passBins`. Yield, the failing-die hatch and bin colouring all judge a die through it, so a host that counts passing dies itself gets the same answer as the yield figure. Pass the map's own pass bins, `new Set(result.passBins)`. Returns `undefined` for a die with no bin — no verdict, never a fail.
+
+`getTestPassStatus` is the single read-path for "did this die pass test N" (true = pass). Primary source: `die.testPass[testNumber]`. **Legacy fallback — this is the only place the rule exists:** for a functional test (`testType: 'F'`) with no `testPass` entry but a `testValues` entry of exactly `0` or `1`, the value is read as `1` = pass / `0` = fail. The fallback never applies to parametric tests. Returns `undefined` when no verdict is recorded — treat that as no data, never as a fail.
+
+A test value itself needs no helper: read `die.testValues?.[testNumber]`, which is `undefined` when the die has none.
+
+`Die` → §11.1 · `TestDef` → §4.1.8
+
+---
+
+### 10.3 `metadataDisplayValue(raw)`
+
+```ts
+import { metadataDisplayValue } from '@wafertools/wafermap';
+
+metadataDisplayValue(raw: unknown): string | undefined
+```
+
+The one rule for turning a `die.metadata` or `wafer.metadata` value into text, as the maps, tooltips, legends, die list and CSV exports show it — use it in a host's own export or labels so they match wmap's exactly. Strings, numbers and booleans stringify, a `Date` becomes an ISO string, anything else is JSON, and an unserialisable value (a circular structure, a `BigInt`) returns an honest marker rather than throwing. Empty string, `null` and `undefined` all return `undefined`, meaning "no value", which is not the same as `"undefined"`; `0` and `false` are kept.
+
+---
+
+### 10.4 `isYieldEligibleDie(die, options?)`
+
+```ts
+import { isYieldEligibleDie } from '@wafertools/wafermap';
+// also available from '@wafertools/wafermap/core'
+
+isYieldEligibleDie(die: Die, options?: { includeEdgeExcluded?: boolean }): boolean
+```
+
+Whether a die counts toward yield/rollup calculations, per wmap's standard fab-reporting convention: `partial` (boundary-straddling) and `edgeExcluded` dies are skipped, even though they may carry real measured values — many fabs exclude them from yield/bin reporting specifically, not from other per-die analysis (their test values still belong in distributions, correlations, and scatter plots). `includeEdgeExcluded: true` counts edge-excluded dies, which exist wherever the caller set `waferConfig.edgeExclusion`. Partial dies are always excluded; no map `buildWaferMap` builds has any, so they come only from dies a host supplies itself (§11.1).
+
+This is the single source of truth for the rule — `buildWaferMap`'s yield calculation, `analyzeWaferMap`'s eligible-die filter, the Summary panel and the Insights charts all call it, so they never drift apart on which dies count.
+
+`Die` → §11.1
+
+---
+
+### 10.5 `getReticleCell(die, config)`
+
+```ts
+import { getReticleCell } from '@wafertools/wafermap';
+// also available from '@wafertools/wafermap/core'
+
+getReticleCell(
+  die:    { x: number; y: number },
+  config: { width: number; height: number; anchorDie?: { x: number; y: number } },
+): { column: number; row: number }
+```
+
+The field-local `(column, row)` a die occupies within its reticle field, per the `anchorDie` convention of `ReticleConfig` (§4.1.4): `anchorDie` is the field's min-x/min-y (bottom-left) corner, so a die's local position is `die − anchorDie`, wrapped to the field dimensions. Both `column` and `row` are `0`-indexed.
+
+This is the single source of truth for "which reticle cell is this die in" — the reticle-position findings (§7) and the tooltip's `Reticle (column, row)` line both call it, so field geometry, findings labels and tooltip text can never drift apart.
+
+Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by any display convention — `xAxisDirection`, `coordinateOrigin`, wafer orientation, and interactive rotate/flip change only where a die is *drawn*, never which reticle cell it belongs to.
+
+`ReticleConfig` → §4.1.4
+
+---
+
+### 10.6 Colours
 
 #### Bin colours for a host surface — `binColorsForMaps(maps, options?)`
 
@@ -4173,22 +3409,6 @@ binColorsForMaps(
   maps: BinColorSource | BinColorSource[],   // a WaferMapResult is one: { dies, passBins?, hbinDefs?, sbinDefs? }
   options?: { binColorScheme?: string; useDefinedBinColors?: boolean },
 ): BinColors
-```
-
-The colours `renderWaferMap` and `renderWaferGallery` draw bins in, for a surface of your own — a table swatch, a PDF, a chart in another library. It takes the maps rather than dies and a pass-bin list, so each map's dies are judged by that map's own `passBins`; bin definitions are merged across the maps, first definition of a bin winning, as the gallery does. For a live map, including the palette the user picked, read `WaferMapController.getBinColors()` (§5.5) or `GalleryController.getBinColors()` (§6.3). Added in 0.30.1, replacing `resolveBinColors`.
-
-#### Bin colours — `resolveBinColors(dies, options?)`
-
-> **Deprecated — removed in 0.31.0.** Use `binColorsForMaps` or a controller's `getBinColors()`, above: `resolveBinColors` defaults `passBins` to `[1]`, so a caller that omits it colours a map with other pass bins wrongly.
-
-```ts
-resolveBinColors(dies: Iterable<Die>, options?: {
-  passBins?:            number[]    // default [1] — must match the passBins behind the yield figure
-  binColorScheme?:      string      // registered bin palette, default 'default'
-  hbinDefs?:            BinDef[]
-  sbinDefs?:            BinDef[]
-  useDefinedBinColors?: boolean     // honour BinDef.color, default true
-}): BinColors
 
 // BinColors
 {
@@ -4199,15 +3419,17 @@ resolveBinColors(dies: Iterable<Die>, options?: {
 }
 ```
 
-The one rule for bin colour, used by the map, its legends, the summary panels and the Insights charts. A bin's colour depends on its number and its pass/fail verdict — never on how many dies it has — so a bin is the same colour in every lot and every screenshot of a program:
+The colours `renderWaferMap` and `renderWaferGallery` draw bins in, for a surface of your own — a table swatch, a PDF, a chart in another library. It takes the maps rather than dies and a pass-bin list, so each map's dies are judged by that map's own `passBins`; bin definitions are merged across the maps, first definition of a bin winning, as the gallery does. For a live map, including the palette the user picked, read `WaferMapController.getBinColors()` (§5.5) or `GalleryController.getBinColors()` (§6.3).
 
-- **Pass/fail follows `passBins`.** Passing bins take the palette's `pass` colours (greens) and failing bins its `fail` colours, so with `passBins: [1, 3]` bin 3 is green and a failing bin 1 is not. A soft bin passes when every die carrying it passes (by the same per-die rule as yield, `diePassStatus`); otherwise, or when no die says, it takes a fail colour.
+The one rule for bin colour, used by the map, its legends, the summary panels, the Insights charts and this function. A bin's colour depends on its number and its pass/fail verdict — never on how many dies it has — so a bin is the same colour in every lot and every screenshot of a program:
+
+- **Pass/fail follows `passBins`.** Passing bins take the palette's `pass` colours (greens) and failing bins its `fail` colours, so with `passBins: [1, 3]` bin 3 is green and a failing bin 1 is not. A soft bin passes when every die carrying it passes (by the same per-die rule as yield); otherwise, or when no die says, it takes a fail colour.
 - **Keyed by bin number.** A pass bin takes `pass[(bin − 1) mod n]` and a fail bin `fail[(bin − 2) mod n]`, so bin 1 takes the first pass colour and bin 2 the first fail colour (red, in `'default'`). The slot comes from the number alone, not the bin's position among the pass or fail bins, so changing `passBins` recolours only the bins whose verdict changed.
 - **Soft bins read the palette shifted by half its length**, so hard bin *n* and soft bin *n* are different colours.
-- **`BinDef.color` wins** over the palette for that bin.
-- **`shared`** lists bins that cannot be told apart by colour — two bins present whose numbers are a palette-length apart (fail bins 2 and 21 in `'default'`), or a defined colour that repeats one. The renderers raise a `bin-colors-shared` warning (§4.4) when the bin map on screen has any.
+- **`BinDef.color` wins** over the palette for that bin, unless `useDefinedBinColors: false`.
+- **`shared`** lists bins that cannot be told apart by colour — two bins present whose numbers are a palette-length apart (fail bins 2 and 21 in `'default'`), or a defined colour that repeats one. The renderers raise a `bin-colors-shared` warning (§4.2.2) when the bin map on screen has any.
 
-`renderWaferMap` resolves over its own dies; `renderWaferGallery` resolves once over every wafer it shows and passes the result to every card as `ViewOptions.binColors`, so a bin is the same colour on every wafer. The result is exposed as `View.binColors` — read it rather than resolving again.
+`renderWaferGallery` resolves once over every wafer it shows, so a bin is the same colour on every card.
 
 #### Colour scheme registries
 
@@ -4215,11 +3437,9 @@ Bin palettes and value gradients are separate registries, chosen by `binColorSch
 
 ```ts
 registerBinColorScheme(name: string, scheme: BinColorScheme): void      // throws on an empty pass or fail list
-getBinColorScheme(name?: string): BinColorScheme                        // falls back to 'default'
 listBinColorSchemes(): Array<{ name: string; label: string }>
 
 registerValueColorScheme(name: string, scheme: ValueColorScheme): void
-getValueColorScheme(name?: string): ValueColorScheme                    // deprecated — see below
 listValueColorSchemes(): Array<{ name: string; label: string }>
 resolveValueColorFn(name?: string, reversed?: boolean): (t: number) => string
 ```
@@ -4230,13 +3450,10 @@ bright end: on a stacked map the healthy bulk of the wafer sits back as dark
 ground while an edge ring or scratch lights up. `'traffic'` and `'jet'` are the
 exceptions, and are not lightness ramps at all.
 
-**Use `resolveValueColorFn`, not `getValueColorScheme().forValue`, anywhere you
-colour by value.** It is the one place `reverseValueScheme` is applied, so a
-legend, chart or export built on it can never show a reading as a different
-colour than the map does. Pass `View.valueColorScheme` and
-`View.reverseValueScheme` together — they always travel as a pair. `getValueColorScheme`,
-`valueToViridis` and `valueToGreyscale` are deprecated for this reason and will be removed in 0.31.0; each still works and
-logs one console notice on first use. Use `listValueColorSchemes()` for scheme names and labels.
+**Colour by value with `resolveValueColorFn`.** It is the one place `reverseValueScheme` is
+applied, so a legend, chart or export built on it shows a reading in the same colour as the
+map. Pass the map's `valueColorScheme` and `reverseValueScheme` (`WaferViewOptions`, §5.1)
+together — they always travel as a pair. Unknown names fall back to `'default'`.
 
 ```ts
 // BinColorScheme
@@ -4256,142 +3473,11 @@ logs one console notice on first use. Use `listValueColorSchemes()` for scheme n
 
 A registered scheme appears in the matching toolbar menu automatically. Register once at startup, before rendering; the registries are global for the life of the page. The two built-in bin palettes were selected by measurement: `'default'` keeps every pair of its 3 pass and 19 fail colours at least 16 ΔE00 apart, and `'accessible'` keeps its 2 pass and 14 fail colours at least 8.8 ΔE00 apart under simulated deuteranopia, protanopia and tritanopia together (`tests/binPalettes.test.mjs` re-measures both).
 
-### 11.20 `isYieldEligibleDie(die, options?)`
-
-```ts
-import { isYieldEligibleDie } from '@wafertools/wafermap';
-// also available from '@wafertools/wafermap/core'
-
-isYieldEligibleDie(die: Die, options?: { includePartial?: boolean; includeEdgeExcluded?: boolean }): boolean
-```
-
-Whether a die counts toward yield/rollup calculations, per wmap's standard fab-reporting convention: `partial` (boundary-straddling) and `edgeExcluded` dies are skipped by default, even though they may carry real measured values — many fabs exclude them from yield/bin reporting specifically, not from other per-die analysis (a partial/edge-excluded die's test values still belong in distributions, correlations, and scatter plots). Both options default to `false` (excluded). The two are not equally common in practice: `edgeExcluded` is live for any `results`-based map where the caller opted into `waferConfig.edgeExclusion`, while `partial` is only ever set on a synthesized grid built via `clipDiesToWafer` — a `results`-based map has none, so `includePartial` is a no-op there (§12.1).
-
-This is the single source of truth for the rule — `buildWaferMap`'s yield calculation, `analyzeWaferMap`'s eligible-die filter, and the §7.16 chart-data builders' yield/bin-pareto functions all call it, so they never silently drift apart on which dies count.
-
-`Die` → §12.1
-
 ---
 
-### 11.21 Affine display transforms
+## 11 Important types
 
-```ts
-import {
-  affineIdentity, affineRotation, affineMirror, affineCompose,
-  affineInvert, affinePoint, affineVector, affineSwapsAxes,
-} from '@wafertools/wafermap';
-// also available from '@wafertools/wafermap/core'
-
-interface Affine<From extends CoordFrame, To extends CoordFrame> {
-  a: number; b: number; c: number; d: number; e: number; f: number
-}
-// applied as:  x' = a·x + c·y + e     y' = b·x + d·y + f
-
-type CoordFrame = 'physical' | 'grid' | 'baked' | 'screen'
-```
-
-Every rotation and mirror in the library is composed through this one type. It exists because **rotation and mirroring do not commute**: the real display pipeline is `rotate → mirror → rotate → mirror` (wafer orientation → data-axis flip → interactive rotation → interactive flip), and
-
-```text
-mirror ∘ rot(θ) = rot(−θ) ∘ mirror
-```
-
-so collapsing that sequence into a single summed angle plus XOR'd flip flags is valid **only** when the first rotation is zero. Matrices compose associatively and get it right by construction.
-
-| function | purpose |
-| --- | --- |
-| `affineIdentity()` | the identity transform |
-| `affineRotation(deg, cx?, cy?)` | clockwise rotation about a centre — matches `rotatePoint` |
-| `affineMirror(flipX, flipY, cx?, cy?)` | mirror through a centre on each requested axis |
-| `affineCompose(outer, inner)` | `inner` first, then `outer`; frame tags must meet |
-| `affineInvert(m)` | inverse — e.g. screen → grid for axis labels |
-| `affinePoint(m, x, y)` | transform a **position** (translation applies) |
-| `affineVector(m, dx, dy)` | transform a **direction** (translation ignored) |
-| `affineSwapsAxes(m)` | whether an axis-aligned rect must exchange width/height |
-
-The `From`/`To` tags are **phantom** (type-level only; the runtime value is a plain 6-number object). They make composing in the wrong order, or applying a matrix to a point from the wrong frame, a compile error. The frames are:
-
-- **`physical`** — wafer-local mm for a *physical wafer feature* (boundary outline, notch, ring/quadrant borders). Follows `wafer.orientation` but **not** the data-axis flip: that flip exists to make the render physically truthful for a prober convention (`yAxisDirection: 'down'` puts row 1 at the top), so the wafer holds still while the die grid moves relative to it.
-- **`grid`** — wafer-local mm for geometry *aligned to the die grid* (reticle fields, the +X/+Y indicator). **Does** follow the data-axis flip, so it stays locked to the dies.
-- **`baked`** — what `Die.physX`/`physY` holds after `buildWaferMap`.
-- **`screen`** — final display mm after the interactive rotate/flip; what `View.hoverPoints` holds.
-
-Use these when a custom `toCanvas` pipeline draws its own overlays: take `view.gridToScreen` (§11.15) and transform your geometry through it rather than re-deriving rotation and flip by hand.
-
-```ts
-import { affinePoint, affineInvert } from '@wafertools/wafermap';
-
-// place a marker that must sit on a specific die-grid position
-const p = affinePoint(view.gridToScreen, gridX, gridY);
-
-// go the other way: screen mm → die-grid mm
-const back = affinePoint(affineInvert(view.gridToScreen), p.x, p.y);
-```
-
----
-
-### 11.22 `getReticleCell(die, config)`
-
-```ts
-import { getReticleCell } from '@wafertools/wafermap';
-// also available from '@wafertools/wafermap/core'
-
-getReticleCell(
-  die:    { x: number; y: number },
-  config: { width: number; height: number; anchorDie?: { x: number; y: number } },
-): { column: number; row: number }
-```
-
-The field-local `(column, row)` a die occupies within its reticle field, per the `anchorDie` convention documented on `generateReticleGrid` (§11.9): `anchorDie` is the field's min-x/min-y (bottom-left) corner, so a die's local position is `die − anchorDie`, wrapped to the field dimensions. Both `column` and `row` are `0`-indexed.
-
-This is the single source of truth for "which reticle cell is this die in" — `buildReticlePositionRegions` (§7) and `buildHoverText`'s (§11.16) `Reticle (column, row)` tooltip line both call it, so field geometry, findings labels, and tooltip text can never drift apart.
-
-Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by any display convention — `xAxisDirection`, `coordinateOrigin`, wafer orientation, and interactive rotate/flip change only where a die is *drawn* (see §11.21), never which reticle cell it belongs to.
-
-`ReticleConfig` → §4.1.4
-
----
-
-### 11.23 `resolveGridPitch(gridPoints, dieOpts?, waferDiameter?)`
-
-```ts
-import { resolveGridPitch } from '@wafertools/wafermap';
-// also available from '@wafertools/wafermap/core'
-
-resolveGridPitch(
-  gridPoints:     Array<{ x: number; y: number }>,
-  dieOpts?:       { width?: number; height?: number },
-  waferDiameter?: number,
-): {
-  pitchX:     number
-  pitchY:     number
-  units:      'mm' | 'normalized'   // 'normalized' when no physical dimension was known
-  confidence: number
-}
-```
-
-The exact pitch derivation `buildWaferMap` uses internally, exposed so a host doing its
-own pre-flight on prober coordinates gets the same answer rather than re-deriving it (a
-host-side re-derivation is how grid geometry silently diverges from what the map renders).
-
-`gridPoints` are integer prober step coordinates, not mm — physical position is
-`grid_pos × pitch`. When both die dimensions are supplied the result is exact and in `mm`.
-Otherwise nearest-neighbour step analysis is tried first (reliable for regular grids with
-≥ 4 points), falling back to the circular-wafer aspect-ratio constraint; when no physical
-dimension is known at all, `units` is `'normalized'` and `confidence` drops accordingly.
-
-Check `confidence` before trusting the result, and prefer `result.warnings` (§4.2) for
-judging whether the geometry wmap actually built is sound — this helper answers "what pitch
-do these coordinates imply", not "is my configuration valid", which the library owns.
-
-This is the one deliberate exception to `inference/` being internal; nothing else from that
-directory is public.
-
----
-
-## 12 Important types
-
-### 12.1 `Die`
+### 11.1 `Die`
 
 ```ts
 {
@@ -4407,8 +3493,8 @@ directory is public.
   sbin?:         number    // soft bin (test-program failure category; independent 0–32767 space)
   metadata?:     DieMetadata
   insideWafer?:  boolean
-  partial?:      boolean   // straddles the wafer boundary — always false for dies
-                           // built from `results` (see note below)
+  partial?:      boolean   // straddles the wafer boundary — never set by buildWaferMap;
+                           // only on dies a host supplies itself (see note below)
   edgeExcluded?: boolean   // centre falls within the edge exclusion zone
   probeIndex?:   number
   retestCount?:  number    // set when this position appeared more than once in input results
@@ -4417,15 +3503,15 @@ directory is public.
 
 > **A die with test results is always fully on the wafer.** A prober can only step to sites that lie entirely on the wafer, so a prober map never contains edge-straddling dies. `buildWaferMap` therefore never sets `partial` on a die built from `results`, and floors the *inferred* wafer diameter so it always contains every die.
 >
-> It follows that a die falling outside the wafer boundary is proof the **geometry** is wrong, not the die — the measured positions are ground truth and the inferred diameter/pitch is the guess. If you supply `waferConfig.diameter` and it cannot contain the probed dies, wmap does not silently resize it (you asserted it); it adds an entry to `result.inference.warnings` naming the shortfall and the likely cause. The most common cause is supplying `diameter` **without** `dieConfig.width`/`height`: the pitch is then derived as `diameter ÷ gridSpan`, which assumes your data spans the full wafer — wrong whenever edge dies are absent. Supply the die pitch, which is the value that actually matters.
+> It follows that a die falling outside the wafer boundary is proof the **geometry** is wrong, not the die — the measured positions are ground truth and the inferred diameter/pitch is the guess. If you supply `waferConfig.diameter` and it cannot contain the probed dies, wmap does not silently resize it (you asserted it); it adds an entry to `result.warnings` naming the shortfall and the likely cause. The most common cause is supplying `diameter` **without** `dieConfig.width`/`height`: the pitch is then derived as `diameter ÷ gridSpan`, which assumes your data spans the full wafer — wrong whenever edge dies are absent. Supply the die pitch, which is the value that actually matters.
 >
-> `partial` remains meaningful for a synthesized die grid clipped to a wafer — see `clipDiesToWafer` (§11.3), where straddling dies legitimately arise.
+> A layout map (`layout: true`, §4.1) holds only sites lying fully on the wafer, so it has no `partial` dies either. The flag is therefore set only on dies a host supplies itself, such as a gallery item's `dies`; such a die is drawn in muted grey and left out of yield.
 
-> **A die can have no reported position at all.** `x`/`y`/`physX`/`physY` are optional for exactly this case — real-world data sometimes has no spatial layout (wafer-number-only logs), or a lot where some wafers have positions and others don't, including a single wafer mixing both. A die is either fully positioned or fully unpositioned, never half (`buildWaferMap` throws if only one of `x`/`y` is supplied). Use the `isPositionedDie(die)` type guard (`@wafertools/wafermap/core`) to narrow to `PositionedDie` (the same shape, `x`/`y`/`physX`/`physY` required) before calling anything that assumes a position — its looser sibling `hasPosition(die)` narrows only `x`/`y`, for inputs such as a raw `DieResult` that have no `physX`/`physY` to narrow — every spatial function in this library (region builders, cluster/pattern detection, `buildView`) already takes `PositionedDie[]`, not `Die[]`, so the type system catches a missing filter at compile time. `getDieKey(die)` falls back to `` `id:${die.id}` `` for an unpositioned die, so two of them never collide on the same key. Non-spatial consumers (yield, bin counts, per-test stats) are unaffected — they never read position and see coordinate-less dies like any other.
+> **A die can have no reported position at all.** `x`/`y`/`physX`/`physY` are optional for exactly this case — real-world data sometimes has no spatial layout (wafer-number-only logs), or a lot where some wafers have positions and others don't, including a single wafer mixing both. A die is either fully positioned or fully unpositioned, never half (`buildWaferMap` throws if only one of `x`/`y` is supplied). Use `hasPosition(die)` to test for a position before your own spatial code; it narrows `x`/`y` to numbers. `getDieKey(die)` falls back to `` `id:${die.id}` `` for an unpositioned die, so two of them never collide on the same key. Non-spatial consumers (yield, bin counts, per-test stats) are unaffected — they never read position and see coordinate-less dies like any other.
 >
 > `renderWaferMap`/`renderWaferGallery` render a coordinate-less wafer as a die-list table or a compact bin/value summary **in place of the map**, never as a wafer-shaped mosaic with fabricated positions — see the end-user guide's "Dies with no reported position" section for what a host actually sees, and `dataCoverage.unpositionedDies` (§7) below for how a card's build result reports how many.
 
-### 12.2 `Wafer`
+### 11.2 `Wafer`
 
 ```ts
 {
@@ -4439,7 +3525,7 @@ directory is public.
 }
 ```
 
-### 12.3 `WaferMetadata`
+### 11.3 `WaferMetadata`
 
 Named fields with an open index signature — any extra key is accepted and displayed alongside the named fields in the summary panel header.
 
@@ -4455,7 +3541,7 @@ Named fields with an open index signature — any extra key is accepted and disp
   split?:       string          // user-assigned experiment/process-corner tag (e.g. "TT", "FF"),
                                  // distinct from any parser-derived field — a first-class slot so hosts that
                                  // support wafer-split assignment get it picked up by the Insights tab's
-                                 // "Group by" (§6.10) and lot summary reports' Splits section (§7.8) automatically
+                                 // "Group by" (§6.10) and lot summary reports' Splits section (§7.6) automatically
   [key: string]: unknown        // custom fields — shown in summary panel header
 }
 ```
@@ -4472,9 +3558,9 @@ waferConfig: {
 }
 ```
 
-Since 0.15.0, `WaferMetadata` is also the home for lot/wafer facts shown in **die hover tooltips** — they merge in as the tooltip base, with any per-die [`DieMetadata`](#124-diemetadata) key overriding the wafer value.
+Since 0.15.0, `WaferMetadata` is also the home for lot/wafer facts shown in **die hover tooltips** — they merge in as the tooltip base, with any per-die [`DieMetadata`](#114-diemetadata) key overriding the wafer value.
 
-### 12.4 `DieMetadata`
+### 11.4 `DieMetadata`
 
 An open index signature for annotations that **genuinely vary die-to-die**. Any key is accepted and rendered automatically in die hover tooltips.
 
@@ -4484,7 +3570,7 @@ An open index signature for annotations that **genuinely vary die-to-die**. Any 
 }
 ```
 
-> **Changed in 0.15.0:** the named wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were **removed** from `DieMetadata`. They are properties of the wafer, not the die — set them once on [`WaferMetadata`](#123-wafermetadata) (`waferConfig.metadata`). Storing them per die replicated identical values across every die for no benefit.
+> **Changed in 0.15.0:** the named wafer-level fields (`lotId`, `waferId`, `deviceType`, `testProgram`, `temperature`) were **removed** from `DieMetadata`. They are properties of the wafer, not the die — set them once on [`WaferMetadata`](#113-wafermetadata) (`waferConfig.metadata`). Storing them per die replicated identical values across every die for no benefit.
 
 The tooltip merges the wafer's `WaferMetadata` (base) with the die's `DieMetadata`; a per-die key overrides the wafer value of the same name. Both render as `Label: value` lines, skipping `null`/`undefined` — the label is `metadataFields[].label` when declared, else a Title-Cased version of the key (`prettyKey`), matching the die-list/CSV column labels (§5.4.4) rather than the raw key. wmap renders whatever keys the host supplies — it has no opinion on which fields belong in a tooltip, so control over tooltip content lives in the host-provided metadata.
 
@@ -4509,76 +3595,33 @@ onClick: (die) => {
 }
 ```
 
-### 12.5 Other exported type names
+### 11.5 Other exported type names
 
 Every type below is reachable from a function documented above — these are the names
 to `import type` when you need to annotate a variable rather than let inference do it.
 Their shapes are described at the function that produces or consumes them; this table
 exists so the name is discoverable, not to restate the shape.
 
-The `*Item` types are **input** shapes for the §7.16 chart builders (what you pass in);
-the `*Datum` / `*Data` types they return are documented there. All accept `dies?: Die[]`
-and, where noted, precomputed statistics that are used in preference to re-walking `dies`.
-
 | Type | Subpath | Role |
 | --- | --- | --- |
-| `WaferNotch` | `/core` | `{ type: 'top' \| 'bottom' \| 'left' \| 'right' }` — `WaferConfig.notch`. |
-| `Quadrant` | `/core` | `'NE' \| 'NW' \| 'SW' \| 'SE'`. |
-| `DieClassification` | `/core` | `classifyDie` result — `{ ring, quadrant }`. |
-| `ClassifyOptions` | `/core` | `classifyDie` options — `{ ringCount? }`. |
-| `DieEligibilityOptions` | `/core` | `isYieldEligibleDie` options — `includePartial?` / `includeEdgeExcluded?`. |
-| `DieLike` | `/core` | Minimal die shape the aggregation helpers accept — satisfied by both `Die` and `DieResult`. |
-| `AggregationMethod` | `/core` | `'mean' \| 'median' \| 'stddev' \| 'min' \| 'max' \| 'count'`. |
-| `PitchResult` | `/core` | `resolveGridPitch` return — §11.23. |
-| `WaferMapOptions` | `/renderer` | `buildWaferMap`'s second argument — `ViewOptions` plus `debug?`. |
-| `ViewRect` | `/renderer` | One drawn die rectangle on `View.rects`. |
-| `ViewText` | `/renderer` | One positioned text run on the `View`. |
-| `ViewOverlay` | `/renderer` | One overlay polyline set — wafer boundary, reticle, probe path, ring/quadrant boundary, XY indicator. |
-| `ViewHoverPoint` | `/renderer` | `{ x, y }` hover probe point. |
-| `ToCanvasResult` | `/render` | `toCanvas` return — `hitTarget`, fitted `viewport`, `binLegendRows`. |
+| `DieEligibilityOptions` | `/core` | `isYieldEligibleDie` options — `includeEdgeExcluded?`. |
 | `ViewportTransform` | `/render` | Pan/zoom state — `{ originX, originY, ppm, snapDist }`. Usable as `renderWaferMap`'s initial viewport. |
-| `InsightsView` | `/render` | `'overview' \| 'distributions' \| 'correlation'`. |
+| `InsightsView` | `/render` | `'overview' \| 'distributions' \| 'correlation' \| 'sweeps'`. |
 | `DetachWindowOpener` | `/render` | `(label) => Window \| null` — `setDetachWindowOpener`, for hosts where `window.open` is blocked. |
-| `DieListOptions` | `/render` | `buildDieListSection` options — §5.4.4. |
-| `DieListDisplayOptions` | `/render` | Subset of `DieListOptions` reachable via `RenderOptions.dieList` / `GalleryOptions.dieList` — §5.4.4. |
+| `DieListDisplayOptions` | `/render` | `RenderOptions.dieList` / `GalleryOptions.dieList` — §5.4.4. |
 | `AnalyzeWaferMapInput` | `/stats` | `WaferMapInput \| WaferMapResult`. |
 | `AnalyzeWaferLotInput` | `/stats` | `Array<WaferMapInput \| WaferMapResult>`. |
 | `HighlightRegionTarget` | `/stats` | `StatsFinding.highlight` variant `kind: 'region'`. |
 | `HighlightBinTarget` | `/stats` | Variant `kind: 'bin'`. |
 | `HighlightWaferTarget` | `/stats` | Variant `kind: 'wafer'`. |
 | `HighlightDieTarget` | `/stats` | Variant `kind: 'dies'`. |
-| `MetadataColumn` | `/stats` | `resolveMetadataColumns` result element — one table/CSV column. |
-| `MetadataColumnScope` | `/stats` | `'die' \| 'wafer'` — where a `MetadataColumn`'s value comes from. |
 | `MetadataKeySelection` | `/stats` | `'auto' \| 'none' \| string[]` — `DieListDisplayOptions.metadataColumns`. |
-| `ResolveMetadataColumnsOptions` | `/stats` | `resolveMetadataColumns` options. |
-| `ParsedRegionKey` | `/stats` | `parseRegionKey` return — `{ family, ring?, quadrant?, sector? }`. |
-| `BinItem` | `/stats` | Input to `buildBinParetoData` / `buildBinClusterData`; may carry precomputed `hardBinCounts`/`softBinCounts`. |
-| `BinType` | `/stats` | `'hbin' \| 'sbin'`. |
-| `BoxplotItem` | `/stats` | Input to `buildTestBoxplotData`; may carry precomputed `testStats`. |
-| `CapabilityItem` | `/stats` | Input to `buildCapabilityData` — one item is the short-term subgroup for Cp/Cpk. |
-| `BoxplotDatum` | `/stats` | `buildTestBoxplotData` row — the five-number summary plus `count`. |
-| `TrendItem` | `/stats` | Input to `buildTestTrendData`; like `BoxplotItem`, may carry precomputed `testStats`. |
-| `TrendDatum` | `/stats` | One trend point — `{ label, mean, stddev, count, key? }`. `mean` is `NaN` when `count` is `0`. |
-| `TestPassRateItem` | `/stats` | Input to `buildTestPassRateData` — one item within a group. |
-| `TestPassRateData` | `/stats` | `buildTestPassRateData` return — `{ groups, rows, disagreementDies }`. `disagreementDies` is `null`, not `0`, when only one pass/fail source exists. |
-| `TestPassRateRow` | `/stats` | One test's row across the groups. |
-| `TestPassRateValue` | `/stats` | One group's cell in a row — absent where that group never ran the test. |
-| `TestPassKind` | `/stats` | `'spec' \| 'testFlag' \| 'functional'` — which pass/fail notion `buildTestPassRateData` measures. |
-| `HistogramItem` | `/stats` | Input to `buildTestHistogramData`. |
-| `HistogramSeries` | `/stats` | One group's counts in `HistogramSeriesData`, aligned to the shared `ranges`. |
-| `ScatterItem` | `/stats` | Input to `buildScatterData` / `buildScatterDataGrouped`. |
-| `RegionYieldDatum` | `/stats` | `buildRegionYieldData` row. Deprecated with it; read `RegionYield` instead. |
 | `RegionYield` | `/stats` | One region's yield on `stats.regionYield` — `{ key, label, yieldPercent, n, passDies }`. `key` is an identity; do not parse it (§7.4.1). |
 | `RegionYieldFigures` | `/stats` | `stats.regionYield` — `{ ring?, quadrant }` (§7.4.1). |
 | `TestCapability` | `/stats` | One test's Cp/Cpk/Pp/Ppk on `stats.capability` (§7.4.1). |
 | `TestVerdictYield` | `/stats` | One test's pass rate by recorded verdict on `stats.testFlagYield` (§7.4.1). |
-| `ReportMap` | `/stats` | A built map as `renderWaferReportHtml`/`renderLotReportHtml` read it (§7.6.1). |
-| `BinColorSource` / `MapBinColorOptions` | root, `/renderer` | `binColorsForMaps` input and options (§11.19). |
-| `YieldSortBy` | `/stats` | `'yield' \| 'label'`. |
-| `CorrelationCell` | `/stats` | One matrix cell — `{ xIndex, yIndex, r, n }` (`r` is `null` on insufficient data). `n` is the dies carrying a finite value for **both** tests, which is not the population size when the two tests have different coverage — an `r` without its own `n` is not interpretable. |
-| `CorrelationTestInfo` | `/stats` | A matrix axis entry — `{ testNumber, label, unit? }`. |
-| `CorrelationMatrix` | `/stats` | `buildCorrelationMatrix` return — `{ tests, cells, sample? }`. `sample` is present **only** when the matrix was computed from a sample: `of` is the population that carried test values, `used` how many were read (see `buildCorrelationMatrix` above). Absent means every die was read. |
-| `CorrelationSummary` | `/stats` | `filterCorrelationMatrix` return. |
+| `ReportMap` | `/stats` | A built map as `renderWaferReportHtml`/`renderLotReportHtml` read it (§7.6). |
+| `BinColorSource` / `MapBinColorOptions` | root, `/renderer` | `binColorsForMaps` input and options (§10.6). |
 | `FacetItem` | `/stats` | Input to `buildFacetTable` — `{ metadata?, dieCount? }`. |
 | `FacetValue` | `/stats` | One distinct value — `{ value, waferCount, dieCount }`. |
 | `FacetCuration` | `/stats` | One curation entry — `label`, `facet?`, `date?`. |
@@ -4586,6 +3629,6 @@ and, where noted, precomputed statistics that are used in preference to re-walki
 
 ---
 
-## 13 Current limitations
+## 12 Current limitations
 
 - Ring segmentation uses equal-width radial bands.  Configurable breakpoints are planned.

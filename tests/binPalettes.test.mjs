@@ -11,7 +11,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getBinColorScheme } from '../dist/index.js';
+import { getBinColorScheme } from '../dist/packages/renderer/colorSchemes.js';
 import { NO_DATA_FILL } from '../dist/packages/renderer/colorMap.js';
 
 // ── Colour maths (sRGB → CIELAB, CIEDE2000, Machado 2009 CVD simulation) ─────

@@ -38,7 +38,7 @@ export interface DieListDisplayOptions {
    * Show a "View die list" link inside the Summary panel (`renderWaferMap`)
    * / lot Summary panel (`renderWaferGallery`) that opens this wafer's — or,
    * in the gallery, the whole lot's — dies as a table in a modal, with the
-   * same "Export CSV" button `buildDieListSection` always has. **Default
+   * same "Export CSV" button every die list has. **Default
    * `true`** — set `enabled: false` to hide it. Requires a Summary panel to
    * be reachable at all (`RenderOptions.summaryPanel` / `GalleryOptions.summaryPanel`),
    * since that panel is this link's only home; irrelevant otherwise.

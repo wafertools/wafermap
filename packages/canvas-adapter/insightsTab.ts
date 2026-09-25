@@ -421,7 +421,20 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // `includeLimits: undefined` is not "off" — it means each panel derives the
   // default from its own data (shouldIncludeLimitsByDefault). It only becomes a
   // boolean once the user actually picks, and then it sticks across tests.
-  let axisPrefs: AxisPrefs = { includeLimits: undefined, clipOutliers: false };
+  let axisPrefs: AxisPrefs = { includeLimits: undefined, clipOutliers: false, limits: 'both' };
+  // Every panel that follows `axisPrefs`, by section — the distribution panels
+  // and the correlation section's scatter both draw limit lines, and the
+  // "Limits:" choice made in either must reach the other. A section registers
+  // its panels when it is built, replacing any earlier ones.
+  type AxisPrefsPanel = { setAxisPrefs: (p: AxisPrefs) => void };
+  const axisPrefsPanels = new Map<string, ReadonlyArray<AxisPrefsPanel>>();
+  /** Adopt `prefs` everywhere except `from`, which has already applied the
+   *  change and rebuilt — re-entering its own rebuild would discard the
+   *  interaction in progress. */
+  const broadcastAxisPrefs = (prefs: AxisPrefs, from: AxisPrefsPanel | null) => {
+    axisPrefs = prefs;
+    for (const panels of axisPrefsPanels.values()) for (const p of panels) if (p !== from) p.setAxisPrefs(prefs);
+  };
 
   /**
    * Narrow every view to one group, or back to all of them.
@@ -1074,15 +1087,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // Trend is deliberately excluded, as it already is from `groups` entirely:
     // its x axis is the population's own slot order, and restricting it would
     // remove the drift signal that is the whole point of the chart.
-    const broadcastAxisPrefs = (prefs: AxisPrefs) => {
-      axisPrefs = prefs;
-      // Skip the originator: it has already applied the change and rebuilt, and
-      // re-entering its own rebuild would discard the interaction in progress.
-      for (const p of [boxplot, histogram, trend]) if (p !== originator) p?.setAxisPrefs(prefs);
-    };
-    let originator: { setAxisPrefs: (p: AxisPrefs) => void } | null = null;
-    const axisHandler = (self: () => { setAxisPrefs: (p: AxisPrefs) => void } | null) =>
-      (prefs: AxisPrefs) => { originator = self(); broadcastAxisPrefs(prefs); originator = null; };
+    const axisHandler = (self: () => AxisPrefsPanel | null) =>
+      (prefs: AxisPrefs) => broadcastAxisPrefs(prefs, self());
 
     // Threads each item's already-computed StatsSummary per-test five-number
     // summaries through (stats/boxplot.ts's `BoxplotItem.testStats`) so
@@ -1173,6 +1179,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // that could not say which test its siblings were displaying.
       capability.setTest(testNumber);
     };
+
+    axisPrefsPanels.set('distribution', [boxplot, histogram, trend]);
 
     const capability = renderCapabilityPanel({
       title: 'Process capability',
@@ -1266,8 +1274,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const scatter = renderScatterPanel({
       title: 'Test scatter',
       items, testDefs, groups, binColors: getBinColors().hard, onSaveImage,
+      axisPrefs, onAxisPrefsChange: prefs => broadcastAxisPrefs(prefs, scatter),
       ownerDocument: doc,
     });
+    axisPrefsPanels.set('correlation', [scatter]);
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
       items, testDefs, onSaveImage, onSaveText,

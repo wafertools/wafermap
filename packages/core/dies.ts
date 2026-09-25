@@ -54,8 +54,6 @@ export interface Die {
 }
 
 export interface DieEligibilityOptions {
-  /** Include dies that straddle the wafer boundary (`die.partial`). Default: excluded. */
-  includePartial?: boolean;
   /** Include dies inside the edge-exclusion zone (`die.edgeExcluded`). Default: excluded. */
   includeEdgeExcluded?: boolean;
 }
@@ -143,7 +141,7 @@ export function getDieKey(die: { x?: number; y?: number; id?: string }): string 
 }
 
 export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}): boolean {
-  if (!options.includePartial && die.partial) return false;
+  if (die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
   return true;
 }

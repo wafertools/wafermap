@@ -10,7 +10,7 @@ import { ICONS } from './icons.js';
 import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
-import { withExportContext, noticeDownloadFilenameChange } from './exportName.js';
+import { withExportContext } from './exportName.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import { diePassStatus, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
@@ -168,13 +168,10 @@ export interface GalleryOptions {
    */
   perCardLegend?:        boolean;
   /**
-   * Name for the composite gallery PNG, without extension. When omitted, it is
-   * named for its lots, wafer count and plot mode
-   * (`LOT123_25-wafers_gallery-hard-bin.png`); cards, CSV exports and charts are
-   * always named that way. See docs/api.md §5.4.5.
-   *
-   * **Changes in 0.31.0:** this becomes a prefix for every file the gallery and
-   * its cards save. Passing it logs a one-time notice.
+   * A prefix for every file the gallery, its cards and their detached windows
+   * save — PNGs and CSVs alike. The lots, wafer or wafer count, and content
+   * follow it (`<prefix>_25-wafers_gallery-hard-bin.png`), except any the prefix
+   * already names. See docs/api.md §5.4.5.
    */
   downloadFilename?:     string;
   /**
@@ -646,11 +643,11 @@ export function renderWaferGallery(
     const lots = [...new Set(shown.map(it => metadataDisplayValue(it.wafer.metadata?.lot)).filter((l): l is string => l !== undefined))]
       .sort(compareNatural);
     return {
+      prefix: options.downloadFilename,
       lots,
       ...(shown.length === 1 ? { wafer: waferIdentityLabel(shown[0]) } : { waferCount: shown.length }),
     };
   }, options.onSaveImage, options.onSaveText);
-  noticeDownloadFilenameChange(options.downloadFilename);
   // Per-wafer source items; null = factory not yet resolved. Populated from `items`
   // immediately (not lazily before buildCards) so findings-gated UI decided during
   // this function's own setup — e.g. the Lot Summary button/panel's "any item
@@ -3125,7 +3122,8 @@ export function renderWaferGallery(
       });
       const at = { x: e.clientX, y: e.clientY };
       void import('./drilldown.js').then(({ openDrilldownMenu }) => {
-        if (card.isConnected) openDrilldownMenu(at, card, source, { sweeps, onSaveImage: options.onSaveImage });
+        // The card's own hook, so the charts are named for its wafer, as on a single map.
+        if (card.isConnected) openDrilldownMenu(at, card, source, { sweeps, onSaveImage: ctrl.getSaveImageHook() });
       });
     });
 
@@ -3141,6 +3139,7 @@ export function renderWaferGallery(
       statsSummary:    item.statsSummary,
       onSaveImage:     options.onSaveImage,
       onSaveText:      options.onSaveText,
+      downloadFilename: options.downloadFilename,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
       // Sweep definitions only — the card is not an Insights host (`enabled`
@@ -3654,6 +3653,7 @@ export function renderWaferGallery(
       statsSummary:    item.statsSummary,
       onSaveImage:     options.onSaveImage,
       onSaveText:      options.onSaveText,
+      downloadFilename: options.downloadFilename,
       onClick:         item.onClick,
       onSelect:        item.onSelect,
       insights:        cardInsights,
@@ -3778,11 +3778,6 @@ export function renderWaferGallery(
     off.toBlob(blob => {
       if (!blob) return;
       // Cards share one plot mode, so any rendered card's title names them all.
-      // A host-set downloadFilename keeps its documented meaning until 0.31.0.
-      if (options.downloadFilename != null) {
-        saveImageBlob(blob, options.downloadFilename, options.onSaveImage);
-        return;
-      }
       const title = cardControllers.find(c => c != null)?.getExportTitle();
       saveImageBlob(blob, ['gallery', title].filter(Boolean).join(' '), exportHooks.onSaveImage);
     });

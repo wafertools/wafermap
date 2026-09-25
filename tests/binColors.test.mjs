@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  resolveBinColors,
-  getBinColorScheme,
-  listBinColorSchemes,
-  listValueColorSchemes,
-  registerBinColorScheme,
-  buildView,
-  createWafer,
-  generateDies,
-} from '../dist/index.js';
+import { listBinColorSchemes, listValueColorSchemes, registerBinColorScheme } from '../dist/index.js';
+import { resolveBinColors } from '../dist/packages/renderer/binColors.js';
+import { getBinColorScheme } from '../dist/packages/renderer/colorSchemes.js';
+import { buildView } from '../dist/packages/renderer/buildView.js';
+import { createWafer } from '../dist/packages/core/wafer.js';
+import { generateDies } from '../dist/packages/core/dies.js';
 
 const PAL = getBinColorScheme('default');
 const dies = (spec) => spec.flatMap(([hbin, sbin, n = 1]) => Array.from({ length: n }, () => ({ hbin, sbin })));

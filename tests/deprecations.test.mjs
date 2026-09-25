@@ -3,6 +3,10 @@
 // in a TypeScript caller's editor. The library's own code must never go through
 // the wrappers, or every host would see a notice it did not cause. And the
 // removal they announce must actually happen, in the release they name.
+//
+// Nothing is deprecated at present: 0.31.0 removed everything deprecated in
+// 0.30.0 and 0.30.3. The generic checks below hold the next deprecation to the
+// same rules; REMOVED keeps the removed names from coming back unnoticed.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -43,20 +47,32 @@ const exportedFrom = (name) => ENTRIES.filter(entry => name in entry);
 
 // ── What is deprecated ───────────────────────────────────────────────────────
 
-const GRADIENT_HELPERS = ['valueToViridis', 'valueToGreyscale', 'getValueColorScheme'];
-const CHART_BUILDERS_NAMES = [
+// Names deprecated now, each removed in DEPRECATED_REMOVAL_VERSION. Empty since 0.31.0.
+const EXPECTED = [];
+// A name deprecated after REMOVAL was scheduled goes here with its own later
+// removal version: a removal must follow a release in which the name shipped
+// deprecated.
+const LATER = {};
+const ALL = [...EXPECTED, ...Object.keys(LATER)];
+const removalOf = (name) => LATER[name] ?? REMOVAL;
+const VALUES = [];
+
+// Removed in 0.31.0 (API_REMOVALS.md, Part 2). Restoring one is a decision to
+// record there first, with the reason a host needs it — not a snapshot refresh.
+const REMOVED = [
+  // Value-gradient helpers
+  'valueToViridis', 'valueToGreyscale', 'getValueColorScheme',
+  // Chart-drawing preparation
   'buildYieldData', 'buildYieldDataCombined', 'buildBinParetoData', 'buildBinClusterData', 'buildCapabilityData',
   'buildTestBoxplotData', 'buildTestTrendData', 'trendCentre', 'buildTestPassRateData', 'hasJudgeableTests',
   'buildTestHistogramData', 'buildTestHistogramSeries', 'buildCorrelationMatrix', 'filterCorrelationMatrix',
   'buildScatterData', 'buildScatterDataGrouped',
-];
-const PIPELINE = [
+  // The low-level drawing pipeline
   'buildView', 'toCanvas', 'createWafer', 'generateDies', 'clipDiesToWafer', 'applyOrientation', 'transformDies',
   'applyProbeSequence', 'generateReticleGrid', 'mapDataToDies', 'isInsideWafer', 'resolveGridPitch',
   'classifyDie', 'getRingLabel', 'aggregateValues', 'aggregateBinCounts', 'getUniqueBins', 'buildHoverText', 'buildMapTitle',
   'affineIdentity', 'affineRotation', 'affineMirror', 'affineCompose', 'affineInvert', 'affinePoint', 'affineVector', 'affineSwapsAxes',
-];
-const ACCIDENTAL = [
+  // Exported by accident
   'buildRingRegions', 'buildQuadrantRegions', 'buildSectorRegions', 'buildReticlePositionRegions', 'buildTestSiteRegions',
   'buildRegionYieldData', 'areQuadrantsAdjacent', 'parseRegionKey', 'sectorCompassNames',
   'classifyPattern', 'computeFunctionalYield', 'resolveMetadataColumns', 'discoverDieMetadataKeys',
@@ -66,15 +82,6 @@ const ACCIDENTAL = [
   'buildDieListSection', 'DEFAULT_FACET_CURATION', 'STANDARD_WAFER_DIAMETERS_MM',
   'renderFindingsReportHtml',
 ];
-const EXPECTED = [...GRADIENT_HELPERS, ...CHART_BUILDERS_NAMES, ...PIPELINE, ...ACCIDENTAL];
-// A name deprecated after REMOVAL was scheduled goes here with its own later
-// removal version: a removal must follow a release in which the name shipped
-// deprecated. Empty since renderFindingsReportHtml ships deprecated in 0.30.3,
-// ahead of 0.31.0 — it is in ACCIDENTAL above.
-const LATER = {};
-const ALL = [...EXPECTED, ...Object.keys(LATER)];
-const removalOf = (name) => LATER[name] ?? REMOVAL;
-const VALUES = ['DEFAULT_FACET_CURATION', 'STANDARD_WAFER_DIAMETERS_MM'];
 
 // Exports a host needs, which must NOT be swept up by a deprecation.
 const KEPT = [
@@ -83,8 +90,8 @@ const KEPT = [
   'resolveValueColorFn', 'FACET_NONE_VALUE', 'setReportOpener', 'setDetachWindowOpener',
   'buildFacetTable', 'facetValueOf', 'mergeTestDefs', 'collectWarnings', 'severityOf',
   'registerBinColorScheme', 'registerValueColorScheme', 'listBinColorSchemes', 'listValueColorSchemes',
+  'binColorsForMaps', 'renderWaferReportHtml', 'renderLotReportHtml',
   // Deprecated in 0.30.0, withdrawn in 0.30.1 on review (API_REMOVALS.md, Part 2).
-  // renderFindingsReportHtml was withdrawn too, then deprecated again in 0.31.0 — see LATER.
   'visibleFindings', 'openReportModal', 'metadataDisplayValue', 'getReticleCell',
 ];
 
@@ -102,78 +109,10 @@ test('every deprecated name is still exported, and nothing a host needs was swep
   }
 });
 
-// ── Wrappers are pass-throughs ───────────────────────────────────────────────
-
-const SAMPLES = [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
-
-test('the deprecated gradient helpers return exactly what their replacement does', () => {
-  for (const [name, scheme] of [['valueToViridis', 'default'], ['valueToGreyscale', 'greyscale']]) {
-    const fn = api.resolveValueColorFn(scheme);
-    for (const t of SAMPLES) assert.equal(api[name](t), fn(t), `${name}(${t})`);
-  }
-  assert.equal(api.getValueColorScheme('greyscale').forValue(0.5), api.resolveValueColorFn('greyscale')(0.5));
-  assert.equal(api.getValueColorScheme('no-such-scheme').label, api.getValueColorScheme('default').label);
-});
-
-const testDefs = [
-  { testNumber: 1, name: 'Idsat', limitLow: 0.2, limitHigh: 0.8 },
-  { testNumber: 2, name: 'Vth' },
-];
-const results = [];
-for (let x = -3; x <= 3; x++) {
-  for (let y = -3; y <= 3; y++) {
-    const i = results.length;
-    results.push({ x, y, hbin: i % 5 === 0 ? 3 : 1, sbin: i % 7 === 0 ? 12 : 10,
-      testValues: { 1: (i % 10) / 10, 2: 1 + ((i * 7) % 13) / 13 } });
-  }
-}
-const map = api.buildWaferMap({ results, testDefs });
-const item = { dies: map.dies, label: 'W01', key: 'W01' };
-const groups = [{ key: 'lot', items: [item, { ...item, label: 'W02', key: 'W02' }] }];
-
-const impls = {
-  ...await import('../dist/packages/stats/yield.js'),
-  ...await import('../dist/packages/stats/binPareto.js'),
-  ...await import('../dist/packages/stats/capability.js'),
-  ...await import('../dist/packages/stats/boxplot.js'),
-  ...await import('../dist/packages/stats/trend.js'),
-  ...await import('../dist/packages/stats/testPassRate.js'),
-  ...await import('../dist/packages/stats/histogram.js'),
-  ...await import('../dist/packages/stats/correlation.js'),
-  ...await import('../dist/packages/stats/scatter.js'),
-  ...await import('../dist/packages/core/transforms.js'),
-};
-
-/** Deprecated functions with arguments that produce real output from the fixture. */
-const WITH_ARGS = {
-  buildYieldData:           () => [[item], map.passBins],
-  buildYieldDataCombined:   () => [groups, map.passBins],
-  buildBinParetoData:       () => [[item], 'hbin'],
-  buildBinClusterData:      () => [groups, 'sbin'],
-  buildCapabilityData:      () => [[item], testDefs],
-  buildTestBoxplotData:     () => [[item], 1],
-  buildTestTrendData:       () => [[item], 1],
-  trendCentre:              () => [impls.buildTestTrendData([item], 1)],
-  buildTestPassRateData:    () => [groups, testDefs, 'spec'],
-  hasJudgeableTests:        () => [testDefs, 'spec', map.dies],
-  buildTestHistogramData:   () => [[item], 1],
-  buildTestHistogramSeries: () => [groups, 2],
-  buildCorrelationMatrix:   () => [map.dies, testDefs],
-  filterCorrelationMatrix:  () => [impls.buildCorrelationMatrix(map.dies, testDefs), { minTests: 2 }],
-  buildScatterData:         () => [[item], 1, 2],
-  buildScatterDataGrouped:  () => [groups, 1, 2],
-  // A generic one: the wrapper must keep affineCompose's frame-typed signature and behaviour.
-  affineCompose:            () => [impls.affineRotation(90), impls.affineMirror(true, false)],
-};
-
-test('a deprecated function returns exactly what its implementation does', () => {
-  for (const [name, argsOf] of Object.entries(WITH_ARGS)) {
-    const [wrapper] = exportedFrom(name).map(entry => entry[name]);
-    assert.notEqual(wrapper, impls[name], `${name} is exported through its deprecation wrapper`);
-    const args = argsOf();
-    assert.deepEqual(wrapper(...args), impls[name](...args), name);
-  }
-  assert.ok(impls.buildBinParetoData([item], 'hbin').length >= 2, 'the fixture is not trivially empty');
+test('the names removed in 0.31.0 stay removed', () => {
+  assert.equal(REMOVED.length, 74);
+  const back = REMOVED.filter(name => exportedFrom(name).length > 0);
+  assert.deepEqual(back, [], 'record a restoration in API_REMOVALS.md, with the host need, before exporting one again');
 });
 
 // ── Notices, declarations, and the library's own imports ─────────────────────
@@ -193,39 +132,10 @@ test('each deprecated function gives one notice, naming the release that removes
     assert.equal(mine.length, 1, `${name}: ${mine.length} notices`);
     assert.ok(mine[0].includes(`will be removed in ${removalOf(name)}.`), `${name} names ${removalOf(name)}: ${mine[0]}`);
   }
-  for (const name of GRADIENT_HELPERS) {
-    assert.match(notices.find(n => n.includes(`] ${name} is deprecated`)), /resolveValueColorFn/, `${name} names its replacement`);
-  }
-  for (const name of [...CHART_BUILDERS_NAMES, ...PIPELINE, ...ACCIDENTAL.filter(n => !VALUES.includes(n))]) {
+  for (const name of functions) {
     assert.match(notices.find(n => n.includes(`] ${name} is deprecated`)), /github\.com\/wafertools\/wafermap\/issues/,
       `${name}'s notice says where to object`);
   }
-});
-
-test('an editor strikes deprecated names through at a host import, and nothing else', async () => {
-  // The claim the @deprecated tags exist for, checked the way an editor makes it:
-  // TypeScript's language service, on a consumer importing from the published entries.
-  const ts = (await import('typescript')).default;
-  const consumer = path.join(root, 'tests', '__deprecation_probe__.ts');
-  const source = [
-    "import { buildView, createWafer, buildYieldData, valueToViridis, STANDARD_WAFER_DIAMETERS_MM, getDieKey, analyzeWaferMap } from '../dist/index.js';",
-    "import { toCanvas, renderWaferMap } from '../dist/packages/canvas-adapter/index.js';",
-    'export const used = [buildView, createWafer, buildYieldData, valueToViridis, STANDARD_WAFER_DIAMETERS_MM, getDieKey, analyzeWaferMap, toCanvas, renderWaferMap];',
-  ].join('\n');
-  const options = { module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, target: ts.ScriptTarget.ES2022, strict: true, skipLibCheck: true, types: [] };
-  const host = {
-    getScriptFileNames: () => [consumer], getScriptVersion: () => '0',
-    getScriptSnapshot: (f) => f === consumer ? ts.ScriptSnapshot.fromString(source) : fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined,
-    getCurrentDirectory: () => root, getCompilationSettings: () => options, getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
-    fileExists: (f) => f === consumer || ts.sys.fileExists(f), readFile: (f) => f === consumer ? source : ts.sys.readFile(f),
-    readDirectory: ts.sys.readDirectory, directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories,
-  };
-  const ls = ts.createLanguageService(host);
-  const errors = ls.getSemanticDiagnostics(consumer).map(d => ts.flattenDiagnosticMessageText(d.messageText, ' '));
-  assert.deepEqual(errors, [], 'the probe type-checks against the published declarations');
-  const flagged = new Set(ls.getSuggestionDiagnostics(consumer).filter(d => d.reportsDeprecated)
-    .map(d => /'(\w+)' is deprecated/.exec(ts.flattenDiagnosticMessageText(d.messageText, ' '))?.[1]));
-  assert.deepEqual([...flagged].sort(), ['STANDARD_WAFER_DIAMETERS_MM', 'buildView', 'buildYieldData', 'createWafer', 'toCanvas', 'valueToViridis']);
 });
 
 test('no library module imports from a deprecated.ts — only each index re-exports it', () => {
@@ -244,7 +154,9 @@ test('no library module imports from a deprecated.ts — only each index re-expo
 
 test('the published declarations tag each one "@deprecated Removed in <version>."', () => {
   const dts = ['packages/core', 'packages/renderer', 'packages/stats', 'packages/canvas-adapter']
-    .map(dir => fs.readFileSync(path.join(root, 'dist', dir, 'deprecated.d.ts'), 'utf8')).join('\n');
+    .map(dir => path.join(root, 'dist', dir, 'deprecated.d.ts'))
+    .filter(file => fs.existsSync(file))
+    .map(file => fs.readFileSync(file, 'utf8')).join('\n');
   for (const name of ALL) {
     const version = removalOf(name).replace(/\./g, '\\.');
     const decl = new RegExp(`/\\*\\*(?:(?!\\*/)[\\s\\S])*@deprecated Removed in ${version}\\.(?:(?!\\*/)[\\s\\S])*\\*/\\s*export declare const ${name}\\b`);

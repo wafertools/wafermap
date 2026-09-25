@@ -24,7 +24,7 @@
   <div class="demo-intro">
     Loads <code>dummy-fulldata.csv</code> (lot, wafer, x, y, hbin, sbin, test columns) and maps each row to a <code>DieResult</code>.
     Select a wafer from the dropdown — the map re-renders instantly. Metadata about the CSV file appears in the sidebar.
-    Each die carries a <code>siteId</code> metadata field — the prober sequence index from the CSV, assigned in a snake pattern (LL corner, alternating column direction). Hover any die to see it in the tooltip.
+    Each die carries a <code>probeSeq</code> metadata field — the prober sequence index from the CSV, assigned in a snake pattern (LL corner, alternating column direction). Hover any die to see it in the tooltip.
     The toolbar notebook icon opens the built-in summary panel showing yield, bin breakdown, and wafer-level custom metadata.
   </div>
 
@@ -125,7 +125,7 @@
           1030: Number(r.testC),
         },
         metadata: {
-          siteId: Number(r.siteId),  // prober sequence index, snake pattern LL→TR (from CSV)
+          probeSeq: Number(r.probeSeq),  // prober sequence index, snake pattern LL→TR (from CSV)
         },
       }));
 
@@ -186,7 +186,7 @@
         ctrl.setStatsSummary(summary);
       } else {
         ctrl = renderWaferMap(canvasEl, result, {
-          viewOptions: { plotMode: 'hardBin', showPartialDies: false },
+          viewOptions: { plotMode: 'hardBin' },
           statsSummary: summary,
           showHelpButton: true,
         });
