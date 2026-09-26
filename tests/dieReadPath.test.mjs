@@ -21,7 +21,6 @@ const ACCESS = /\.(testValues|testPass)\b|\[['"](testValues|testPass)['"]\]/g;
 const ALLOWED = {
   'core/dieTable.ts': 'the read-path itself',
   'renderer/buildWaferMap.ts': 21,          // input cleaning and its warning counts, lot-stack collapse, attachData
-  'renderer/derivedTests/apply.ts': 7,      // derived tests evaluate input records
   'renderer/derivedTests/evaluate.ts': 2,   // `ctx.testPass(...)`, the expression context
 };
 

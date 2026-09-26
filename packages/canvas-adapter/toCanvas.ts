@@ -514,12 +514,20 @@ export function drawMapCanvas(
       ctx.fillStyle = fill;
       ctx.fill();
     }
-    // Single stroke pass over all rects (constant color and width for all dies).
+    // Single stroke pass over all die outlines (constant color and width). The
+    // outlines are stroked as their merged edges, not as one rectangle per die:
+    // the pixels are the same, and WebKit's canvas (the desktop app on Linux)
+    // took ~5 s to stroke a 266k-die gallery rectangle by rectangle. Square caps
+    // fill each corner exactly as a rectangle's mitred corner did.
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 0.5 * devicePx;
+    ctx.lineCap = 'square';
     ctx.beginPath();
-    for (const r of view.rectangles) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
+    const outline = outlineCache.get(view.rectangles) ?? outlineSegments(view.rectangles);
+    outlineCache.set(view.rectangles, outline);
+    for (let i = 0; i < outline.length; i += 4) { ctx.moveTo(outline[i], outline[i + 1]); ctx.lineTo(outline[i + 2], outline[i + 3]); }
     ctx.stroke();
+    ctx.lineCap = 'butt';
 
     // Out-of-spec markers (value mode, 'data' colorbar range): the die keeps its
     // gradient fill, so flag out-of-spec dies with a triangle glyph — down = below
@@ -1536,3 +1544,50 @@ function logTicks(
 }
 
 export { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
+
+/** Outline segments per rectangle list: a redraw of the same view (hover, resize) reuses them. */
+const outlineCache = new WeakMap<readonly ViewRect[], Float64Array>();
+
+/**
+ * The union of the rectangles' edges as the fewest straight segments, four
+ * numbers each (`x0, y0, x1, y1`): each rectangle contributes its four edges, edges on the
+ * same line are sorted, and overlapping or touching ones merge. A die grid's
+ * outline becomes a few long lines per row and column instead of four sides per
+ * die. Works for any axis-aligned rectangles, gridded or not.
+ */
+export function outlineSegments(rects: readonly { x: number; y: number; width: number; height: number }[]): Float64Array {
+  // Edges on one line, keyed by the line's coordinate. Keys are rounded so the
+  // shared edge of two neighbours (computed as one's right and the other's
+  // left) lands on the same line despite floating-point noise.
+  const key = (v: number) => Math.round(v * 1e6);
+  const horizontal = new Map<number, { at: number; spans: number[][] }>();
+  const vertical = new Map<number, { at: number; spans: number[][] }>();
+  const add = (lines: typeof horizontal, at: number, a: number, b: number) => {
+    const k = key(at);
+    let line = lines.get(k);
+    if (!line) lines.set(k, line = { at, spans: [] });
+    line.spans.push([a, b]);
+  };
+  for (const r of rects) {
+    const x0 = r.x - r.width / 2, x1 = r.x + r.width / 2;
+    const y0 = r.y - r.height / 2, y1 = r.y + r.height / 2;
+    add(horizontal, y0, x0, x1); add(horizontal, y1, x0, x1);
+    add(vertical, x0, y0, y1); add(vertical, x1, y0, y1);
+  }
+  const out: number[] = [];
+  const merge = (lines: typeof horizontal, emit: (at: number, a: number, b: number) => void) => {
+    for (const { at, spans } of lines.values()) {
+      spans.sort((p, q) => p[0] - q[0]);
+      let [a, b] = spans[0];
+      for (let i = 1; i < spans.length; i++) {
+        const [c, d] = spans[i];
+        if (key(c) <= key(b)) { if (d > b) b = d; }
+        else { emit(at, a, b); a = c; b = d; }
+      }
+      emit(at, a, b);
+    }
+  };
+  merge(horizontal, (y, a, b) => out.push(a, y, b, y));
+  merge(vertical, (x, a, b) => out.push(x, a, x, b));
+  return Float64Array.from(out);
+}

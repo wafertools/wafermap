@@ -6,8 +6,9 @@ import { createWafer } from '../core/wafer.js';
 import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
 import { applyOrientation, transformDies, clipDiesToWafer } from '../core/transforms.js';
 import { generateDies } from '../core/dies.js';
-import { dieHasAnyTestData, finaliseDie, linkDie, recordedVerdict, tableFromRows, testValue } from '../core/dieTable.js';
-import type { DieTable } from '../core/dieTable.js';
+import { dieHasAnyTestData, dieLink, finaliseDie, linkDie, recordedVerdict, tableFromRows, testValue, testsPresent } from '../core/dieTable.js';
+import { isDieColumns, linkColumns, linkRows, relink } from './columnarInput.js';
+import type { ColumnFindings, DieColumns } from './columnarInput.js';
 import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
@@ -477,8 +478,11 @@ export interface WaferMapInputBase {
 
 /** Single-wafer input — pass one wafer's die results directly. */
 export interface WaferMapInputSingle extends WaferMapInputBase {
-  /** Per-die test results from the prober. */
-  results?: DieResult[];
+  /**
+   * Per-die test results from the prober: one object per record, or the same
+   * records as columns (`DieColumns`), for a host that already holds columns.
+   */
+  results?: DieResult[] | DieColumns;
   lotStack?: never;
   layout?: never;
 }
@@ -867,7 +871,7 @@ interface CheckedInput {
  * of the build, and a parser writes the same test columns for the whole wafer, so
  * the sample always sees them.
  */
-function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
+function checkInputValues(input: DieResult[] | WaferMapInput, columns?: ColumnFindings): CheckedInput {
   const top = (Array.isArray(input) ? {} : input) as {
     results?: unknown; lotStack?: { results?: unknown }; dies?: unknown; waferConfig?: { orientation?: unknown }; testDefs?: unknown;
   };
@@ -880,6 +884,14 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
   const outside = { bins: 0, positions: 0, values: 0, sites: 0, orientation: 0 };
   const badTestNumbers = new Set<string>();
   let binsNaN = 0;
+  // Test data in columns was checked as it was read (`linkColumns`).
+  if (columns) {
+    counts.testValues += columns.wrongValues;
+    counts.testPass += columns.wrongVerdicts;
+    if (columns.example !== undefined) example ??= columns.example;
+    outside.values += columns.nonFinite;
+    for (const k of columns.badTestNumbers) badTestNumbers.add(k);
+  }
 
   type Row = DieResult & Record<string, unknown>;
   /** Whether to keep a bin. A wrong-type bin is dropped (and reported by the caller). */
@@ -1096,14 +1108,21 @@ function expandLayout(input: WaferMapInput): WaferMapInput {
   };
 }
 
-function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
-  if (!Array.isArray(input) && 'results' in input && input.results !== undefined && 'lotStack' in input && input.lotStack !== undefined) {
+function normalizeInput(rawInput: DieResult[] | WaferMapInput): Normalized {
+  if (!Array.isArray(rawInput) && 'results' in rawInput && rawInput.results !== undefined && 'lotStack' in rawInput && rawInput.lotStack !== undefined) {
     throw new Error('buildWaferMap: pass either `results` or `lotStack`, not both.');
   }
-  const checked = checkInputValues(input);
+  // Columns become linked record shells first, so the input checks below see
+  // their positions, bins and sites like any row's. Rows are linked after the
+  // checks, from the cleaned rows.
+  const findings: ColumnFindings = { wrongVerdicts: 0, wrongValues: 0, nonFinite: 0, badTestNumbers: [] };
+  const input: DieResult[] | WaferMapInput = !Array.isArray(rawInput) && isDieColumns(rawInput.results)
+    ? { ...rawInput, results: linkColumns(rawInput.results, findings).records } as WaferMapInputSingle
+    : rawInput;
+  const checked = checkInputValues(input, findings);
   if (Array.isArray(input)) {
     return {
-      results:          checked.results ?? input as DieResult[],
+      results:          linked(checked.results ?? input as DieResult[]),
       waferOpts:        undefined,
       dieOpts:          undefined,
       explicitDies:     undefined,
@@ -1124,14 +1143,14 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
       edgeDieYieldMode: 'exclude' };
   }
   return {
-    results:          checked.results ?? input.results ?? [],
+    results:          linked(checked.results ?? (input.results as DieResult[] | undefined) ?? []),
     waferOpts:        checked.orientation === undefined || input.waferConfig === undefined
       ? input.waferConfig : { ...input.waferConfig, orientation: checked.orientation },
     dieOpts:          input.dieConfig,
     explicitDies:     checked.dies ?? input.dies,
     reticleOpts:      input.reticleConfig,
-    lotStackOpts:     checked.stackResults && input.lotStack
-      ? { ...input.lotStack, results: checked.stackResults } : input.lotStack,
+    lotStackOpts:     input.lotStack
+      ? { ...input.lotStack, results: (checked.stackResults ?? input.lotStack.results).map(linked) } : undefined,
     passBins:         input.passBins ?? [1],
     ...resolveRingCount(input.ringCount),
     removedFieldWarning: removedInputWarning(input),
@@ -1156,6 +1175,11 @@ function normalizeInput(input: DieResult[] | WaferMapInput): Normalized {
     derivedTests:     input.derivedTests?.length ? input.derivedTests : undefined,
     retestPolicy:     input.retestPolicy ?? 'last',
     edgeDieYieldMode: input.edgeDieYieldMode ?? 'exclude' };
+}
+
+/** A wafer's records as linked shells: rows are linked here; shells from columns already are. */
+function linked(records: DieResult[]): DieResult[] {
+  return records.length > 0 && dieLink(records[0]) !== undefined ? records : linkRows(records).records;
 }
 
 // ── Grid origin & axis helpers ────────────────────────────────────────────────
@@ -1319,14 +1343,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
     );
     const testKeys = new Set<number>();
     for (const wafer of waferResults) {
-      for (const die of wafer) {
-        if (die.testValues) {
-          for (const k of Object.keys(die.testValues)) {
-            const key = Number(k);
-            if (!functionalKeys.has(key)) testKeys.add(key);
-          }
-        }
-      }
+      for (const key of testsPresent(wafer, 'values')) if (!functionalKeys.has(key)) testKeys.add(key);
     }
 
     // No test values on any wafer — stack the positions alone; every die comes back with no value.
@@ -1697,10 +1714,7 @@ function inputBin(bin: number | undefined): number | undefined {
   return bin === undefined || Number.isNaN(bin) ? undefined : bin;
 }
 
-/** A map's value table, and each surviving record's row in it. */
-interface DieRows { table: DieTable; rowOf: Map<DieResult, number> }
-
-function attachData<D extends Die>(die: D, pt: DieResult, rows: DieRows): D {
+function attachData<D extends Die>(die: D, pt: DieResult): D {
   const base: Partial<Die> = {};
   const hbin = inputBin(pt.hbin);
   const sbin = inputBin(pt.sbin);
@@ -1710,9 +1724,10 @@ function attachData<D extends Die>(die: D, pt: DieResult, rows: DieRows): D {
   if (pt.siteNum     !== undefined) base.siteNum     = pt.siteNum;
   if (pt.partId      !== undefined) base.partId      = pt.partId;
   if (pt.metadata    !== undefined) base.metadata    = pt.metadata;
-  // Test values and verdicts stay in the table: `finaliseDie` gives the die
-  // read-only getters over its row.
-  return linkDie({ ...die, ...base }, rows.table, rows.rowOf.get(pt)!);
+  // Test values and verdicts stay in the record's table row: the die is linked
+  // to the same row, and `finaliseDie` gives it read-only getters over it.
+  const link = dieLink(pt)!;
+  return linkDie({ ...die, ...base }, link.table, link.row);
 }
 
 function autoPlotMode(results: DieResult[]): PlotMode {
@@ -1922,23 +1937,24 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   const derivedWarnings: WaferWarning[] = [];
   if (norm.derivedTests) {
     const passBinSet = new Set(norm.passBins);
-    if (norm.lotStackOpts) {
-      const perWafer = norm.lotStackOpts.results.map(
-        wafer => applyDerivedTests(wafer, norm.testDefs, norm.derivedTests, passBinSet));
-      norm.lotStackOpts = { ...norm.lotStackOpts, results: perWafer.map(r => r.results) };
-      // Every wafer in the stack compiles the same specs against the same defs,
-      // so the warnings are identical per wafer — report them once.
-      norm.testDefs = perWafer[0]?.testDefs ?? norm.testDefs;
-      derivedWarnings.push(...(perWafer[0]?.warnings ?? []));
-    } else {
-      const applied = applyDerivedTests(norm.results, norm.testDefs, norm.derivedTests, passBinSet);
-      norm.results  = applied.results;
-      norm.testDefs = applied.testDefs;
-      derivedWarnings.push(...applied.warnings);
-    }
+    // Each wafer's table gains a column per derived test; its records are
+    // pointed at the extended table.
+    const derive = (records: DieResult[]) => {
+      const link = records.length > 0 ? dieLink(records[0]) : undefined;
+      const applied = applyDerivedTests(records, link?.table ?? tableFromRows([]), norm.testDefs, norm.derivedTests, passBinSet);
+      if (link) relink(records, applied.table);
+      return applied;
+    };
+    const wafers = norm.lotStackOpts ? norm.lotStackOpts.results : [norm.results];
+    const perWafer = wafers.map(derive);
+    // Every wafer compiles the same specs against the same defs, so the defs and
+    // warnings are identical per wafer: report them once.
+    norm.testDefs = perWafer[0]?.testDefs ?? norm.testDefs;
+    derivedWarnings.push(...(perWafer[0]?.warnings ?? []));
   }
 
-  const rawResults = norm.lotStackOpts ? collapseLotStack(norm.lotStackOpts, norm.testDefs) : norm.results;
+  // A lot stack collapses to one wafer of new records, linked to their own table.
+  const rawResults = norm.lotStackOpts ? linkRows(collapseLotStack(norm.lotStackOpts, norm.testDefs)).records : norm.results;
 
   // Fail fast on string coordinates — common mistake when piping CSV without numeric casting
   for (let i = 0; i < Math.min(5, rawResults.length); i++) {
@@ -1969,8 +1985,6 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   }
 
   const { results, warning: retestWarning } = applyRetestPolicy(rawResults, norm.retestPolicy, norm.passBins);
-  // One table per map, one row per record that survived retest resolution.
-  const rows: DieRows = { table: tableFromRows(results), rowOf: new Map(results.map((r, i) => [r, i])) };
 
   const inference: WaferMapResult['inference'] = {
     wafer:    { confidence: 1.0, method: 'provided' },
@@ -2000,7 +2014,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       const lookup = new Map(positionedResults.map(d => [getDieKey(d), d]));
       dies = dies.map(die => {
         const pt = lookup.get(getDieKey(die));
-        return pt ? attachData(die, pt, rows) : die;
+        return pt ? attachData(die, pt) : die;
       });
     }
 
@@ -2037,7 +2051,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       isLotStack: false }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
     const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
-      finaliseDie(attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt, rows)),
+      finaliseDie(attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt)),
     );
     const allDies = [...dies, ...unplacedDies, ...unpositionedDies];
 
@@ -2274,7 +2288,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       width: pitchX, height: pitchY,
       insideWafer: true,
       partial: false };
-    return attachData(base, pt, rows);
+    return attachData(base, pt);
   });
 
   // Shift x/y from centred grid indices to original input coordinates.
@@ -2327,7 +2341,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   // (the render draw list) reflect positioned dies only, while the returned
   // `dies` and every stat computed below sees the full population.
   const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
-    finaliseDie(attachData({ id: `unpositioned_${i}`, width: pitchX, height: pitchY }, pt, rows)),
+    finaliseDie(attachData({ id: `unpositioned_${i}`, width: pitchX, height: pitchY }, pt)),
   );
   const allDies = [...dies, ...unpositionedDies];
 

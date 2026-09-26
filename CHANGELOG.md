@@ -57,6 +57,23 @@ under `### Breaking`.
 - **A hidden Summary panel is rendered when it is opened**, not on every mount and option
   change. Every gallery card has one, so a large gallery mounts faster (266k-die lot: 7.3 s →
   5.0 s) and switches plot mode faster (3.4 s → 1.4 s).
+- **Test values are held as one column per test**, not as an object on each die, so a map
+  holds a small fraction of the memory it did: on a 266k-die, 51-test lot in Chrome, about 330 MB
+  where it was 1.1 GB. A result from `createWafermapWorker` moves its columns to the page without
+  copying them.
+- **Die outlines are drawn as merged lines**, one per run of shared edges instead of four sides
+  per die. Galleries draw 10–17% faster in WebKit (the desktop app on Linux), where stroking each
+  die was most of the drawing time. Every outline is now the same weight in every browser: Chrome
+  drew the edge two dies share slightly darker than the wafer's outer edge, WebKit did not.
+
+### Added
+
+- **`results` can be columns (`DieColumns`).** A host that already holds its results as columns
+  (a parser, Arrow, Parquet) passes one array per field and, for test values and verdicts, the
+  indices of the records that have one with their values. The map is built with no object per
+  record or die. Retests, derived tests, input checks and warnings behave exactly as for rows.
+  Missing entries are `NaN` or STDF's missing values (−32768 for coordinates, 65535 for bins and
+  sites). Mismatched lengths or out-of-range and repeated indices throw.
 
 ---
 

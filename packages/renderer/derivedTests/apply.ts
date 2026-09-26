@@ -28,6 +28,10 @@ import { getTestPassStatus, isParametricTest } from '../buildWaferMap.js';
 import { classifySpec } from '../spec.js';
 import { parseExpression, type ExprNode, type ParseContext } from './parser.js';
 import { evaluate, type EvalContext } from './evaluate.js';
+import type { DieTable } from '../../core/dieTable.js';
+import {
+  extendTable, rowView, testValue, HAS_VALUES, HAS_VERDICTS, VERDICT_FAIL, VERDICT_NONE, VERDICT_PASS,
+} from '../../core/dieTable.js';
 
 /**
  * A test whose values are computed from other tests on the same die, rather than
@@ -90,7 +94,8 @@ interface Compiled {
 }
 
 export interface ApplyResult {
-  results: DieResult[];
+  /** The wafer's table with the derived columns added (the input table when nothing was derived). */
+  table: DieTable;
   testDefs: TestDef[] | undefined;
   warnings: WaferWarning[];
 }
@@ -331,59 +336,60 @@ function compile(
 }
 
 /**
- * Apply `derivedTests` to `results`, returning new records that carry the
- * derived values and a `testDefs` array extended with the derived defs.
- *
- * Input records are not mutated — the caller's array is its own.
+ * Apply `derivedTests` to a wafer's records: `records[i]` is row `i` of
+ * `table` (its bins give `diePass()`). Returns a copy of the table with a
+ * column per derived test, and `testDefs` extended with the derived defs.
+ * Neither the records nor the table passed in are changed.
  */
 export function applyDerivedTests(
-  results: DieResult[],
+  records: readonly DieResult[],
+  table: DieTable,
   testDefs: TestDef[] | undefined,
   derivedTests: DerivedTestDef[] | undefined,
   passBins: ReadonlySet<number>,
 ): ApplyResult {
   if (derivedTests === undefined || derivedTests.length === 0) {
-    return { results, testDefs, warnings: [] };
+    return { table, testDefs, warnings: [] };
   }
 
   const measured = new Set<number>();
-  for (const r of results) {
-    for (const k of Object.keys(r.testValues ?? {})) measured.add(Number(k));
-    for (const k of Object.keys(r.testPass   ?? {})) measured.add(Number(k));
-  }
+  for (const [tn, col] of table.values) if (col.some(v => !Number.isNaN(v))) measured.add(tn);
+  for (const [tn, col] of table.verdicts) if (col.some(v => v !== VERDICT_NONE)) measured.add(tn);
 
   const { compiled, warnings } = compile(derivedTests, testDefs, measured);
-  if (compiled.length === 0) return { results, testDefs, warnings };
+  if (compiled.length === 0) return { table, testDefs, warnings };
 
   // Includes the derived defs, in dependency order, so a nested derived test's
   // `specPass[n]` is judged against the limits declared on the test it reads.
   const defsByNumber = new Map<number, TestDef>((testDefs ?? []).map(d => [d.testNumber, d]));
   for (const c of compiled) defsByNumber.set(c.def.testNumber, c.def);
 
-  const out = results.map(record => {
-    // Values and verdicts accumulated during THIS die's pass. `compiled` is in
-    // dependency order, so a nested derived test reads the result computed a
-    // moment ago rather than the raw record, which is what makes nesting work.
-    let values:   Record<number, number>  | undefined;
-    let verdicts: Record<number, boolean> | undefined;
+  // A column per derived test, written row by row. `compiled` is in dependency
+  // order, so a nested derived test reads the value computed for this row a
+  // moment ago, which is what makes nesting work.
+  const n = table.rows;
+  const newValues = new Map<number, Float64Array>();
+  const newVerdicts = new Map<number, Int8Array>();
+  for (const c of compiled) {
+    if (c.boolean) newVerdicts.set(c.def.testNumber, new Int8Array(n).fill(VERDICT_NONE));
+    else newValues.set(c.def.testNumber, new Float64Array(n).fill(NaN));
+  }
+  const out = extendTable(table, newValues, newVerdicts);
+  const at = rowView(out);
 
-    const readValue = (t: number): number | undefined =>
-      values?.[t] ?? record.testValues?.[t];
-    const readVerdict = (t: number): boolean | undefined =>
-      verdicts?.[t] ?? getTestPassStatus(
-        { testValues: values ?? record.testValues, testPass: verdicts ?? record.testPass },
-        t, defsByNumber.get(t));
-
+  for (let i = 0; i < n; i++) {
+    const row = at(i);
+    const readValue = (t: number): number | undefined => testValue(row, t);
     const ctx: EvalContext = {
       value:    readValue,
-      testPass: readVerdict,
+      testPass: t => getTestPassStatus(row, t, defsByNumber.get(t)),
       specPass: t => {
         const cat = classifySpec(readValue(t), defsByNumber.get(t));
         return cat === null ? undefined : cat === 'pass';
       },
       // THE per-die pass rule, not a copy of it: `diePass()` in an expression
       // must agree with yield and the failing-die hatch on every die.
-      diePass: () => diePassStatus(record, passBins),
+      diePass: () => diePassStatus(records[i], passBins),
     };
 
     for (const c of compiled) {
@@ -394,24 +400,17 @@ export function applyDerivedTests(
       // it gets `undefined` and goes absent too, by the same rule.
       if (v === undefined) continue;
       if (c.boolean) {
-        verdicts ??= { ...record.testPass };
-        verdicts[c.def.testNumber] = v as boolean;
+        newVerdicts.get(c.def.testNumber)![i] = v ? VERDICT_PASS : VERDICT_FAIL;
+        out.fields[i] |= HAS_VERDICTS;
       } else {
-        values ??= { ...record.testValues };
-        values[c.def.testNumber] = v as number;
+        newValues.get(c.def.testNumber)![i] = v as number;
+        out.fields[i] |= HAS_VALUES;
       }
     }
-
-    if (values === undefined && verdicts === undefined) return record;
-    return {
-      ...record,
-      ...(values   !== undefined ? { testValues: values }  : {}),
-      ...(verdicts !== undefined ? { testPass:   verdicts } : {}),
-    };
-  });
+  }
 
   return {
-    results: out,
+    table: out,
     testDefs: [...(testDefs ?? []), ...compiled.map(c => c.def)],
     warnings,
   };

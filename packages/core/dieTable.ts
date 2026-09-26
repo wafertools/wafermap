@@ -34,8 +34,8 @@ export const VERDICT_FAIL = 0;
 export const VERDICT_PASS = 1;
 
 /** `DieTable.fields` bits: the record carried a `testValues` / `testPass` object. */
-const HAS_VALUES = 1;
-const HAS_VERDICTS = 2;
+export const HAS_VALUES = 1;
+export const HAS_VERDICTS = 2;
 
 export interface DieTable {
   /** Number of rows. A die's row is an index below this. */
@@ -66,7 +66,7 @@ type LinkedDie = { [TABLE]?: DieTable; [ROW]?: number };
 export type DieData = Pick<Die, 'testValues' | 'testPass'>;
 
 /** Marks a die being built as `row` of `table`, in place. `finaliseDie` completes it. */
-export function linkDie<D extends Die>(die: D, table: DieTable, row: number): D {
+export function linkDie<D extends object>(die: D, table: DieTable, row: number): D {
   (die as LinkedDie)[TABLE] = table;
   (die as LinkedDie)[ROW] = row;
   return die;
@@ -139,6 +139,37 @@ function columnsFor<C>(byKey: Map<string, C>, make: () => C): (obj: object) => C
 /** Keyed by test number, ascending (as integer object keys enumerate): maps iterate in insertion order. */
 function byTestNumber<V>(m: Map<string, V>): Map<number, V> {
   return new Map([...m].map(([k, v]): [number, V] => [Number(k), v]).sort((a, b) => a[0] - b[0]));
+}
+
+/**
+ * A copy of `table` with more columns: `values` / `verdicts` are added (a test
+ * number already present is replaced), and `fields` is copied, so the caller
+ * can mark rows that gained data. The original table is never changed.
+ */
+export function extendTable(
+  table: DieTable,
+  values: ReadonlyMap<number, Float32Array | Float64Array>,
+  verdicts: ReadonlyMap<number, Int8Array>,
+): DieTable & { fields: Uint8Array } {
+  const v = new Map(table.values), p = new Map(table.verdicts);
+  for (const [tn, col] of values) v.set(tn, col);
+  for (const [tn, col] of verdicts) p.set(tn, col);
+  return {
+    rows: table.rows,
+    values: new Map([...v].sort((a, b) => a[0] - b[0])),
+    verdicts: new Map([...p].sort((a, b) => a[0] - b[0])),
+    fields: table.fields.slice(),
+  };
+}
+
+/**
+ * One reusable die-shaped view over `table`: `at(row)` points it at a row and
+ * returns it, so a rule that takes a die (`getTestPassStatus`) can be applied
+ * row by row without an object per row. Valid until the next `at`.
+ */
+export function rowView(table: DieTable): (row: number) => DieData {
+  const view = linkDie({} as Die, table, 0) as Die & LinkedDie;
+  return (row) => { view[ROW] = row; return view; };
 }
 
 // ── The die the host receives ───────────────────────────────────────────────
@@ -247,8 +278,9 @@ export function copyDie<D extends DieData>(die: D, patch: Partial<D>): D {
     if (k !== 'testValues' && k !== 'testPass') out[k] = die[k];
   }
   if ('testValues' in patch || 'testPass' in patch) {
-    if (fields & HAS_VALUES) out.testValues = materialiseValues(table, row);
-    if (fields & HAS_VERDICTS) out.testPass = materialiseVerdicts(table, row);
+    // Build only what the patch leaves: the stacked modes replace both.
+    if (fields & HAS_VALUES && !('testValues' in patch)) out.testValues = materialiseValues(table, row);
+    if (fields & HAS_VERDICTS && !('testPass' in patch)) out.testPass = materialiseVerdicts(table, row);
     return Object.assign(out, patch);
   }
   Object.assign(out, patch);
@@ -257,6 +289,68 @@ export function copyDie<D extends DieData>(die: D, patch: Partial<D>): D {
   if (fields & HAS_VALUES) Object.defineProperty(out, 'testValues', VALUES_ACCESSOR);
   if (fields & HAS_VERDICTS) Object.defineProperty(out, 'testPass', VERDICTS_ACCESSOR);
   return out;
+}
+
+// ── Across a worker boundary ────────────────────────────────────────────────
+
+/** What `detachTables` sends beside the dies: their tables, and each die's table and row. */
+export interface DetachedTables {
+  tables: DieTable[];
+  /** Per die, in order across every die array: its table's index in `tables` (−1 unlinked), then its row. */
+  links: Int32Array;
+}
+
+/**
+ * Prepares linked dies to be posted from a worker without their values being
+ * built and copied: takes their `testValues` / `testPass` getters off (a
+ * structured clone would call them), and returns their tables and links. Post
+ * the dies, and the result with `transfer` as the transfer list, which moves
+ * the columns without a copy; the other side calls `attachTables`.
+ *
+ * **Changes the dies in place**, and transferring empties the columns: only
+ * for dies the sender discards once they are posted.
+ */
+export function detachTables(dieArrays: ReadonlyArray<readonly Die[]>): DetachedTables & { transfer: ArrayBuffer[] } {
+  const tables: DieTable[] = [];
+  const indexOf = new Map<DieTable, number>();
+  const total = dieArrays.reduce((n, a) => n + a.length, 0);
+  const links = new Int32Array(total * 2);
+  let k = 0;
+  for (const dies of dieArrays) {
+    for (const die of dies) {
+      const link = dieLink(die);
+      if (link === undefined) { links[k++] = -1; links[k++] = 0; continue; }
+      let t = indexOf.get(link.table);
+      if (t === undefined) { indexOf.set(link.table, t = tables.length); tables.push(link.table); }
+      links[k++] = t; links[k++] = link.row;
+      delete (die as Partial<Die>).testValues;
+      delete (die as Partial<Die>).testPass;
+    }
+  }
+  const transfer = new Set<ArrayBuffer>();
+  for (const t of tables) {
+    for (const col of t.values.values()) transfer.add(col.buffer as ArrayBuffer);
+    for (const col of t.verdicts.values()) transfer.add(col.buffer as ArrayBuffer);
+    transfer.add(t.fields.buffer as ArrayBuffer);
+  }
+  return { tables, links, transfer: [...transfer] };
+}
+
+/** The receiving half of `detachTables`: links the posted dies to their tables again, in place. */
+export function attachTables(dieArrays: ReadonlyArray<readonly Die[]>, detached: DetachedTables): void {
+  let k = 0;
+  for (const dies of dieArrays) {
+    for (const die of dies) {
+      const t = detached.links[k++], row = detached.links[k++];
+      if (t < 0) continue;
+      const table = detached.tables[t];
+      const fields = table.fields[row];
+      Object.defineProperty(die, TABLE, hidden(table));
+      Object.defineProperty(die, ROW, hidden(row));
+      if (fields & HAS_VALUES) Object.defineProperty(die, 'testValues', VALUES_ACCESSOR);
+      if (fields & HAS_VERDICTS) Object.defineProperty(die, 'testPass', VERDICTS_ACCESSOR);
+    }
+  }
 }
 
 // ── Reading ─────────────────────────────────────────────────────────────────
@@ -330,6 +424,38 @@ export function dieVerdictEntries(die: DieData): Array<[number, boolean]> {
     if (v !== VERDICT_NONE) out.push([tn, v === VERDICT_PASS]);
   }
   return out;
+}
+
+/**
+ * A reader of tests `testNumbers` for die after die: `read(die, out)` writes
+ * test `testNumbers[k]`'s value to `out[k]` (`NaN` when none) and returns
+ * `out`. For a linked die it is one indexed read per test: the columns are
+ * looked up once per table, not once per die. The bulk path for statistics
+ * that walk many dies × many tests.
+ */
+export function testValuesReader(testNumbers: readonly number[]): (die: DieData, out: Float64Array) => Float64Array {
+  let lastTable: DieTable | undefined;
+  let cols: Array<Float32Array | Float64Array | undefined> = [];
+  return (die, out) => {
+    const link = dieLink(die);
+    if (link === undefined) {
+      const own = die.testValues;
+      for (let k = 0; k < testNumbers.length; k++) {
+        const v = own?.[testNumbers[k]];
+        out[k] = v === undefined ? NaN : v;
+      }
+      return out;
+    }
+    if (link.table !== lastTable) {
+      lastTable = link.table;
+      cols = testNumbers.map(tn => link.table.values.get(tn));
+    }
+    for (let k = 0; k < cols.length; k++) {
+      const col = cols[k];
+      out[k] = col === undefined ? NaN : col[link.row];
+    }
+    return out;
+  };
 }
 
 /**

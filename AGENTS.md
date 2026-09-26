@@ -179,9 +179,10 @@ it is handed, because it has no way to know which tests anyone will look at.
   `computePerTestStats` is modest; `enableTestValueAnalysis` is the expensive one
   (roughly 10× the base analysis on a large wafer) and exists to find spatial
   patterns automatically — do not enable it by default just because it sounds good.
-- **A Web Worker buys responsiveness, not speed.** `createWafermapWorker` copies data
-  across `postMessage`, so total time goes *up*. Use it when a build would otherwise
-  visibly freeze the page, not for small datasets.
+- **A Web Worker buys responsiveness, not speed.** `createWafermapWorker` moves a
+  result's test values to the page without copying them, but still copies the dies and the
+  input, so total time goes *up*. Use it when a build would otherwise visibly freeze the
+  page, not for small datasets.
 - **Capability, pass rates, region yield and the spatial-pattern label come back from
   the analysis** — `stats.capability` (with `computePerTestStats`), `stats.testSpecYield`,
   `stats.testFlagYield`, `stats.functionalYield`, `stats.regionYield` and

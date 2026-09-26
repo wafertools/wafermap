@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 
 import { buildWaferMap } from '../dist/index.js';
 import { createWafermapWorker } from '../dist/packages/worker/index.js';
+import { detachTables, dieLink, testValue, recordedVerdict } from '../dist/packages/core/dieTable.js';
+
+/** What the worker posts for a built result, through a real structured clone with its transfer list. */
+function posted(result) {
+  const { transfer, ...tables } = detachTables([result.dies]);
+  return structuredClone({ type: 'result', result, tables }, { transfer });
+}
 
 class FakeWorker {
   constructor() {
@@ -38,7 +45,7 @@ test('createWafermapWorker forwards requests, resolves results, and rejects fail
   assert.equal(worker.messages[0].type, 'run');
   assert.equal(worker.messages[0].id, 0);
 
-  worker.onmessage?.({ data: { type: 'result', id: 0, result: expected } });
+  worker.onmessage?.({ data: { ...posted(buildWaferMap(input)), id: 0 } });
   await assert.doesNotReject(promise);
   const resolved = await promise;
   assert.equal(resolved.wafer.diameter, expected.wafer.diameter);
@@ -74,7 +81,7 @@ test('createWafermapWorker handles malformed messages', async () => {
   assert.equal(worker.messages.length, 1);
 
   // Send proper message
-  worker.onmessage?.({ data: { type: 'result', id: 0, result: buildWaferMap(input) } });
+  worker.onmessage?.({ data: { ...posted(buildWaferMap(input)), id: 0 } });
   await assert.doesNotReject(promise);
 });
 
@@ -89,9 +96,43 @@ test('createWafermapWorker handles out-of-order responses', async () => {
   const promise2 = wrapper.run(input2);
 
   // Send responses out of order
-  worker.onmessage?.({ data: { type: 'result', id: 1, result: buildWaferMap(input2) } });
-  worker.onmessage?.({ data: { type: 'result', id: 0, result: buildWaferMap(input1) } });
+  worker.onmessage?.({ data: { ...posted(buildWaferMap(input2)), id: 1 } });
+  worker.onmessage?.({ data: { ...posted(buildWaferMap(input1)), id: 0 } });
 
   await assert.doesNotReject(promise1);
   await assert.doesNotReject(promise2);
+});
+
+test('a result crosses the worker boundary with its columns moved, not its values copied', async () => {
+  const input = {
+    results: [
+      { x: 0, y: 0, hbin: 1, testValues: { 7: 1.5, 8: 2 }, testPass: { 9: true } },
+      { x: 1, y: 0, hbin: 2, testValues: { 7: 2.5 } },
+      { hbin: 1, testValues: { 8: 4 } },
+    ],
+  };
+  const reference = buildWaferMap(input);
+  const sent = buildWaferMap(input);
+  const table = dieLink(sent.dies[0]).table;
+  const message = posted(sent);
+  assert.equal(table.values.get(7).length, 0, 'the sender\'s columns were transferred, not copied');
+  assert.equal(message.result.dies.every(d => !('testValues' in d) && !('testPass' in d)), true,
+    'no value objects were built for the clone');
+
+  const worker = new FakeWorker();
+  const wrapper = createWafermapWorker(worker);
+  const promise = wrapper.run(input);
+  worker.onmessage?.({ data: { ...message, id: 0 } });
+  const got = await promise;
+  got.dies.forEach((d, i) => {
+    const want = reference.dies[i];
+    assert.ok(dieLink(d), `die ${d.id} is linked again`);
+    for (const tn of [7, 8, 9]) {
+      assert.equal(testValue(d, tn), testValue(want, tn));
+      assert.equal(recordedVerdict(d, tn), recordedVerdict(want, tn));
+    }
+    assert.deepEqual(d.testValues, want.testValues);
+    assert.deepEqual(d.testPass, want.testPass);
+  });
+  assert.equal(got.view.dies[0], got.dies[0], 'the view holds the same die objects as the result');
 });

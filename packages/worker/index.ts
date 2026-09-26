@@ -1,6 +1,7 @@
 import type { WaferMapInput, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { AnalyzeWaferMapOptions, LotStatsSummary, StatsSummary } from '../stats/index.js';
 import type { WorkerRequest, WorkerResponse } from './wafermap.worker.js';
+import { attachTables } from '../core/dieTable.js';
 
 export interface WafermapWorker {
   /** Run buildWaferMap in the worker thread. Returns a promise that resolves with the result. */
@@ -58,10 +59,12 @@ export function createWafermapWorker(worker: Worker): WafermapWorker {
     if (msg.type === 'error') {
       entry.reject(new Error(msg.message));
     } else if (msg.type === 'result') {
+      attachTables([msg.result.dies], msg.tables);
       entry.resolve(msg.result);
     } else if (msg.type === 'analyzed') {
       entry.resolve({ waferSummaries: msg.waferSummaries, lotSummary: msg.lotSummary });
     } else if (msg.type === 'resultWithAnalysis') {
+      attachTables(msg.results.map(r => r.dies), msg.tables);
       entry.resolve({ results: msg.results, waferSummaries: msg.waferSummaries, lotSummary: msg.lotSummary });
     }
   };

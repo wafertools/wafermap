@@ -38,7 +38,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
-import { dieValueEntries, testValue } from '../core/dieTable.js';
+import { testValuesReader } from '../core/dieTable.js';
 import { type Chunked, drain } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { countOutOfSpecSorted, hasSpecLimits } from '../renderer/spec.js';
@@ -159,17 +159,16 @@ function* accumulateMomentsSteps(
 ): Chunked<Map<number, CapabilityMoments>> {
   // Flat arrays indexed by test slot, not a Map entry per test: this pass runs
   // once per die per test, and per-entry lookups and allocations dominated it.
-  const slotOf = new Map<number, number>();
-  const testNumbers: number[] = [];
-  for (const tn of defByTestNumber.keys()) { slotOf.set(tn, testNumbers.length); testNumbers.push(tn); }
+  const testNumbers = [...defByTestNumber.keys()];
   const T = testNumbers.length;
   const n = new Float64Array(T), sum = new Float64Array(T), sumSq = new Float64Array(T);
   const withinNum = new Float64Array(T), withinDen = new Float64Array(T);
   const wn = new Float64Array(T), wsum = new Float64Array(T), wsumSq = new Float64Array(T);
   const lists: (number[] | undefined)[] = values ? new Array(T) : [];
-  // Reading each test off every die beats walking every die's keys until the
-  // test list is wide enough that most reads would miss.
-  const directRead = T <= 64;
+  // Every test of a die in one read: for a die built by buildWaferMap that is
+  // one indexed read per test from its table's columns.
+  const read = testValuesReader(testNumbers);
+  const row = new Float64Array(T);
   // Yield on a VALUE budget, not a die budget: this pass costs dies x tests, so
   // "every 20,000 dies" is a short step at 5 tests and a multi-second one at
   // 100. The floor keeps a very wide program making real progress per step.
@@ -183,21 +182,9 @@ function* accumulateMomentsSteps(
       // within-wafer roll-up below only reads `wn`/`wsum`/`wsumSq`.
       if (++sinceYield >= diesPerStep) { sinceYield = 0; yield; }
       if (!isYieldEligibleDie(die)) continue;
-      if (directRead) {
-        // Few tests: read each one straight off the die.
-        for (let slot = 0; slot < T; slot++) {
-          const v = testValue(die, testNumbers[slot]);
-          if (v === undefined || !Number.isFinite(v)) continue;
-          n[slot]++; sum[slot] += v; sumSq[slot] += v * v;
-          wn[slot]++; wsum[slot] += v; wsumSq[slot] += v * v;
-          if (values) (lists[slot] ??= []).push(v);
-        }
-        continue;
-      }
-      // Many tests: walk the die's own values, so a die carrying few of them costs little.
-      for (const [tn, v] of dieValueEntries(die)) {
-        const slot = slotOf.get(tn);
-        if (slot === undefined) continue;
+      read(die, row);
+      for (let slot = 0; slot < T; slot++) {
+        const v = row[slot];
         if (!Number.isFinite(v)) continue;
         n[slot]++; sum[slot] += v; sumSq[slot] += v * v;
         wn[slot]++; wsum[slot] += v; wsumSq[slot] += v * v;

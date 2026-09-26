@@ -11,6 +11,9 @@ export type {
   MetadataFieldDef, WaferMapInputBase, WaferMapInputSingle, WaferMapInputLotStack, WaferMapInputLayout,
   WaferMapInput, YieldSummary, WaferWarning, WaferMapResult,
 } from './buildWaferMap.js';
+// The columnar form of `results`, for a host that already holds columns (tsmap's
+// parser output): the same map without an object per die.
+export type { DieColumns } from './columnarInput.js';
 // WaferMetadata/DieMetadata are renderer concepts (WaferConfig.metadata,
 // DieResult.metadata) — re-export them here so consumers building renderer input
 // don't have to reach into /core for the types.

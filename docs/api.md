@@ -32,7 +32,7 @@ throughout; shared types live in §11.
 > for most integrations.
 >
 > For scale: **tsmap**, a complete cross-platform desktop application built on
-> this library, imports **17** of its ~100 exports. `RenderOptions` has 22
+> this library, imports **16** of its ~100 exports. `RenderOptions` has 22
 > fields; a typical integration sets a handful. Everything else here is depth
 > that stays out of your way until you go looking for it.
 >
@@ -182,7 +182,7 @@ type WaferMapInputBase = {
 
 // Single-wafer variant (WaferMapInputSingle):
 type WaferMapInputSingle = WaferMapInputBase & {
-  results?:  DieResult[]   // per-die measurements from the prober
+  results?:  DieResult[] | DieColumns   // per-die measurements from the prober, as rows or as columns (§4.1.1)
   lotStack?: never          // passing both results and lotStack is a type error
 }
 
@@ -240,6 +240,37 @@ A single test result: `testValues: { 1050: 0.95 }`
 When a die position appears more than once in the `results` array (a retest), the
 `retestPolicy` field on `WaferMapInput` controls which result is kept.  The
 `die.retestCount` field always records how many times that position appeared.
+
+**Results as columns (`DieColumns`).** A host that already holds its results as columns (a parser, Arrow or Parquet) can pass them as `results` instead of an object per die, and the map is built without one: on a large lot this is most of the memory. **You need this only if you already have columns** — if you have rows, pass rows; converting them yourself gains nothing.
+
+```ts
+{
+  count:       number                          // number of records (retests included: wmap resolves them)
+  x?, y?:      ArrayLike<number>               // one entry per record
+  hbin?, sbin?, siteNum?: ArrayLike<number>
+  partId?:     ArrayLike<number | string | undefined>
+  supersedes?: ArrayLike<'partId' | 'position' | undefined>
+  metadata?:   ArrayLike<DieMetadata | undefined>
+  testValues?: Record<number, { indices: ArrayLike<number>; values: ArrayLike<number> }>
+  testPass?:   Record<number, { indices: ArrayLike<number>; values: ArrayLike<boolean | number> }>
+}
+```
+
+Every per-record column has `count` entries. A missing entry is `NaN`, or STDF V4's missing value in an integer column: −32768 for `x`/`y`, 65535 for `hbin`, `sbin` and `siteNum`. Other values follow the same rules as rows: outside STDF's ranges they are treated as missing and reported in `warnings`.
+
+Test values and verdicts are **sparse**: for each test number, the indices of the records that have one, and their values. A record a test did not run on is not listed at all, so a missing value cannot be mistaken for a reading and nothing can shift out of line. Indices are whole numbers in `[0, count)`, at most once per test, and `indices` and `values` have the same length; `buildWaferMap` throws otherwise, because a misaligned column would draw a plausible, wrong map. Values are kept as supplied (a `Float32Array` stays 32-bit); verdicts are `true`/`1` for pass and `false`/`0` for fail.
+
+```ts
+buildWaferMap({
+  results: {
+    count: 3,
+    x: Int16Array.of(0, 1, 2), y: Int16Array.of(0, 0, 0),
+    hbin: Uint16Array.of(1, 1, 5),
+    testValues: { 1050: { indices: Int32Array.of(0, 2), values: Float32Array.of(0.95, 1.21) } },  // record 1 skipped the test
+  },
+  testDefs,
+});
+```
 
 #### 4.1.2 `WaferConfig`
 
