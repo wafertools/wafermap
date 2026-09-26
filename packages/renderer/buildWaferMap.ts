@@ -6,6 +6,8 @@ import { createWafer } from '../core/wafer.js';
 import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
 import { applyOrientation, transformDies, clipDiesToWafer } from '../core/transforms.js';
 import { generateDies } from '../core/dies.js';
+import { dieHasAnyTestData, finaliseDie, linkDie, recordedVerdict, tableFromRows, testValue } from '../core/dieTable.js';
+import type { DieTable } from '../core/dieTable.js';
 import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
 import { inferWaferFromXY } from '../core/inference/wafer.js';
 import { resolveGridPitch } from '../core/inference/pitch.js';
@@ -17,7 +19,7 @@ import { applyDerivedTests, type DerivedTestDef } from './derivedTests/apply.js'
 export type { DerivedTestDef } from './derivedTests/apply.js';
 import { buildView, type View, type PlotMode } from './buildView.js';
 import { isStdfBin, isStdfCoord, isStdfTestNumber, isStdfSite, STDF_BIN_MAX, STDF_COORD_MAX, STDF_TEST_NUM_MAX, STDF_SITE_MAX } from '../core/stdf.js';
-import { maxOf, minOf, modeOf } from '../core/utils.js';
+import { hasAnyKey, maxOf, minOf, modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
@@ -902,6 +904,11 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
     const pKeys = [...verdictKeys];
     const legalKey = (k: string) => isStdfTestNumber(Number(k));
     for (const k of new Set([...vKeys, ...pKeys])) if (!legalKey(k)) badTestNumbers.add(k);
+    // Per key, once per wafer — not per die: the loops below visit every die for
+    // every key, and a string key costs a conversion on each read (13.6M on a
+    // 266k-die, 51-test lot, most of this function's time in WebKit).
+    const vLegal = vKeys.map(legalKey), pLegal = pKeys.map(legalKey);
+    const vIdx = vKeys.map(Number), pIdx = pKeys.map(Number);
 
     let out: T[] | undefined;
     for (let i = 0; i < wafer.length; i++) {
@@ -929,9 +936,9 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
         let values: Record<string, unknown> | undefined;
         for (let j = 0; j < vKeys.length; j++) {
           const k = vKeys[j];
-          const v = tv[k];
+          const v = tv[vIdx[j]];
           if (v == null) continue;
-          if (!legalKey(k)) { (values ??= { ...tv }); delete values[k]; continue; }
+          if (!vLegal[j]) { (values ??= { ...tv }); delete values[k]; continue; }
           if (typeof v !== 'number') { note('testValues', v); (values ??= { ...tv }); delete values[k]; }
           else if (!Number.isFinite(v)) { outside.values++; (values ??= { ...tv }); delete values[k]; }
         }
@@ -942,9 +949,9 @@ function checkInputValues(input: DieResult[] | WaferMapInput): CheckedInput {
         let verdicts: Record<string, unknown> | undefined;
         for (let j = 0; j < pKeys.length; j++) {
           const k = pKeys[j];
-          const v = tp[k];
+          const v = tp[pIdx[j]];
           if (v == null) continue;
-          if (!legalKey(k)) { (verdicts ??= { ...tp }); delete verdicts[k]; continue; }
+          if (!pLegal[j]) { (verdicts ??= { ...tp }); delete verdicts[k]; continue; }
           if (typeof v !== 'boolean') { note('testPass', v); (verdicts ??= { ...tp }); delete verdicts[k]; }
         }
         if (verdicts) edit().testPass = verdicts as DieResult['testPass'];
@@ -1346,7 +1353,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
 
     return [...mergedMap.values()].map(({ template, testValues }) => ({
       ...template,
-      testValues: Object.keys(testValues).length > 0 ? testValues : undefined })) as DieResult[];
+      testValues: hasAnyKey(testValues) ? testValues : undefined })) as DieResult[];
   }
 
   // 2. Bin occurrence aggregations: countBin, percent.
@@ -1398,7 +1405,8 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
   const totalDies = positioned.length;
   const edgeExcludedDies = positioned.filter(d => d.edgeExcluded).length;
   const filledDies = positioned.filter(
-    d => dieHasTestData(d) || d.hbin !== undefined || d.sbin !== undefined,
+    // Bins first: the same answer, and most dies have one, so the key walk is skipped.
+    d => d.hbin !== undefined || d.sbin !== undefined || dieHasTestData(d),
   ).length;
   return {
     filledDies,
@@ -1642,7 +1650,7 @@ function applyRetestPolicy(
 
 /** Read a test value from a die by test number. */
 export function getDieTestValue(die: Die, testNumber: number): number | undefined {
-  return die.testValues?.[testNumber];
+  return testValue(die, testNumber);
 }
 
 /**
@@ -1663,10 +1671,10 @@ export function getTestPassStatus(
   testNumber: number,
   testDef?: TestDef,
 ): boolean | undefined {
-  const recorded = die.testPass?.[testNumber];
+  const recorded = recordedVerdict(die, testNumber);
   if (recorded !== undefined) return recorded;
   if (testDef !== undefined && !isParametricTest(testDef)) {
-    const v = die.testValues?.[testNumber];
+    const v = testValue(die, testNumber);
     if (v === 0 || v === 1) return v === 1;
   }
   return undefined;
@@ -1679,8 +1687,7 @@ export function getTestPassStatus(
  * availability checks.
  */
 export function dieHasTestData(die: Pick<Die, 'testValues' | 'testPass'>): boolean {
-  return (die.testValues !== undefined && Object.keys(die.testValues).length > 0) ||
-         (die.testPass   !== undefined && Object.keys(die.testPass).length > 0);
+  return dieHasAnyTestData(die);
 }
 
 // ── Data attachment ───────────────────────────────────────────────────────────
@@ -1690,7 +1697,10 @@ function inputBin(bin: number | undefined): number | undefined {
   return bin === undefined || Number.isNaN(bin) ? undefined : bin;
 }
 
-function attachData<D extends Die>(die: D, pt: DieResult): D {
+/** A map's value table, and each surviving record's row in it. */
+interface DieRows { table: DieTable; rowOf: Map<DieResult, number> }
+
+function attachData<D extends Die>(die: D, pt: DieResult, rows: DieRows): D {
   const base: Partial<Die> = {};
   const hbin = inputBin(pt.hbin);
   const sbin = inputBin(pt.sbin);
@@ -1700,10 +1710,9 @@ function attachData<D extends Die>(die: D, pt: DieResult): D {
   if (pt.siteNum     !== undefined) base.siteNum     = pt.siteNum;
   if (pt.partId      !== undefined) base.partId      = pt.partId;
   if (pt.metadata    !== undefined) base.metadata    = pt.metadata;
-  if (pt.testPass    !== undefined) base.testPass    = pt.testPass;
-  if (pt.testValues  !== undefined) base.testValues  = pt.testValues;
-
-  return { ...die, ...base };
+  // Test values and verdicts stay in the table: `finaliseDie` gives the die
+  // read-only getters over its row.
+  return linkDie({ ...die, ...base }, rows.table, rows.rowOf.get(pt)!);
 }
 
 function autoPlotMode(results: DieResult[]): PlotMode {
@@ -1960,6 +1969,8 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   }
 
   const { results, warning: retestWarning } = applyRetestPolicy(rawResults, norm.retestPolicy, norm.passBins);
+  // One table per map, one row per record that survived retest resolution.
+  const rows: DieRows = { table: tableFromRows(results), rowOf: new Map(results.map((r, i) => [r, i])) };
 
   const inference: WaferMapResult['inference'] = {
     wafer:    { confidence: 1.0, method: 'provided' },
@@ -1989,7 +2000,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       const lookup = new Map(positionedResults.map(d => [getDieKey(d), d]));
       dies = dies.map(die => {
         const pt = lookup.get(getDieKey(die));
-        return pt ? attachData(die, pt) : die;
+        return pt ? attachData(die, pt, rows) : die;
       });
     }
 
@@ -2008,6 +2019,8 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     // explicitDies is a caller-supplied pre-built layout, always positioned
     // by convention (not part of the coordinate-less data path).
     if (wafer.orientation !== 0) dies = applyOrientation(dies as PositionedDie[], wafer);
+    // The build copies no die after this: finalise them before the view holds them.
+    dies = dies.map(finaliseDie);
 
     const reticles    = buildReticles(norm.reticleOpts, wafer, dies as PositionedDie[], 1, 1, 0, 0, 0, 0, wafer.orientation);
     const showReticle = norm.reticleOpts !== undefined;
@@ -2024,7 +2037,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       isLotStack: false }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
     const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
-      attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt),
+      finaliseDie(attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt, rows)),
     );
     const allDies = [...dies, ...unplacedDies, ...unpositionedDies];
 
@@ -2261,7 +2274,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       width: pitchX, height: pitchY,
       insideWafer: true,
       partial: false };
-    return attachData(base, pt);
+    return attachData(base, pt, rows);
   });
 
   // Shift x/y from centred grid indices to original input coordinates.
@@ -2291,6 +2304,9 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     }
   }
 
+  // The build copies no die after this: finalise them before the view holds them.
+  dies = dies.map(finaliseDie);
+
   const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY, offsetX, offsetY, colMidX, colMidY, wafer.orientation, flipX, flipY);
   const showReticle = norm.reticleOpts !== undefined;
 
@@ -2311,7 +2327,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   // (the render draw list) reflect positioned dies only, while the returned
   // `dies` and every stat computed below sees the full population.
   const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
-    attachData({ id: `unpositioned_${i}`, width: pitchX, height: pitchY }, pt),
+    finaliseDie(attachData({ id: `unpositioned_${i}`, width: pitchX, height: pitchY }, pt, rows)),
   );
   const allDies = [...dies, ...unpositionedDies];
 

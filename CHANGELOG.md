@@ -31,6 +31,15 @@ under `### Breaking`.
   die — the same rule as a value outside the STDF V4 ranges — and still reported as
   `input-values-not-numbers`. A die whose only bin was text therefore has no verdict rather
   than a fail, which can change `yield` for such input. The input objects are not modified.
+- **Test values on dies from `buildWaferMap` are read-only snapshots.** A map holds test values and
+  verdicts as one column per test. `die.testValues` and `die.testPass` on a built die build a frozen
+  object from those columns on each read, keeping nothing on the die, so `die.testValues !==
+  die.testValues`. Assigning to either field, or changing a key of the object, throws a
+  `TypeError`: pass the values to `buildWaferMap`, or copy the die with your own object
+  (`{ ...die, testValues: mine }`). A spread, `structuredClone` or `JSON.stringify` of a built die
+  gives plain objects with the same values. A die no longer shares the input record's
+  `testValues`/`testPass` objects, so changing the input after the build does not change the map.
+  Dies a host builds itself keep ordinary objects.
 - **Pre-built `dies` get the same input checks as `results`.** Wrong-type and out-of-range
   values are treated as missing, and a die whose coordinates STDF cannot store is kept as an
   unpositioned die.
@@ -40,6 +49,11 @@ under `### Breaking`.
 - **`analyzeWaferMap` is about five times faster on large wafers** (a 25-wafer, 266k-die lot:
   32 s → 6.5 s in Chrome). Region membership, die keys and cluster neighbour lookups are each
   computed once per analysis, not once per finding builder. Findings are unchanged.
+- **Faster building and analysis in WebKit** (the desktop app on Linux and macOS, and Safari).
+  Checks that asked whether a die holds any test data read the die's keys one at a time and stop
+  at the first; the coverage count checks bins before test data; input checking decides each
+  test number's legality once per wafer instead of once per die. On a 266k-die lot in WebKitGTK,
+  building fell from 2.5 s to 1.1 s and analysis from 14 s to 7 s. Results are unchanged.
 - **A hidden Summary panel is rendered when it is opened**, not on every mount and option
   change. Every gallery card has one, so a large gallery mounts faster (266k-die lot: 7.3 s →
   5.0 s) and switches plot mode faster (3.4 s → 1.4 s).

@@ -12,6 +12,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 import { isParametricTest } from '../renderer/buildWaferMap.js';
 import { buildSweepData, type SweepSpec } from '../stats/sweep.js';
 import { renderSweepPanel } from './charts/sweep.js';
@@ -58,7 +59,7 @@ function testsWithValues(source: DrilldownSource, dies: Die[], min: number): num
   return (source.testDefs ?? []).filter(isParametricTest).map(d => d.testNumber).filter(tn => {
     let n = 0;
     for (const d of dies) {
-      const v = d.testValues?.[tn];
+      const v = testValue(d, tn);
       if (v !== undefined && Number.isFinite(v) && ++n >= min) return true;
     }
     return false;

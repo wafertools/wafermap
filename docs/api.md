@@ -3341,7 +3341,7 @@ getTestPassStatus(die: Die, testNumber: number, testDef?: TestDef): boolean | un
 
 `getTestPassStatus` is the single read-path for "did this die pass test N" (true = pass). Primary source: `die.testPass[testNumber]`. **Legacy fallback — this is the only place the rule exists:** for a functional test (`testType: 'F'`) with no `testPass` entry but a `testValues` entry of exactly `0` or `1`, the value is read as `1` = pass / `0` = fail. The fallback never applies to parametric tests. Returns `undefined` when no verdict is recorded — treat that as no data, never as a fail.
 
-A test value itself needs no helper: read `die.testValues?.[testNumber]`, which is `undefined` when the die has none.
+A test value itself needs no helper: read `die.testValues?.[testNumber]`, which is `undefined` when the die has none. On a die `buildWaferMap` returns, each read of `die.testValues` builds a new frozen object (§11.1), so in a loop over many tests read it once per die: `const tv = die.testValues;`.
 
 `Die` → §11.1 · `TestDef` → §4.1.8
 
@@ -3488,7 +3488,8 @@ A registered scheme appears in the matching toolbar menu automatically. Register
   physY?:        number    // physical Y in mm (or normalized units)
   width:         number    // die width in mm (or normalized units)
   height:        number    // die height in mm (or normalized units)
-  testValues?:   Record<number, number>  // test measurements keyed by test number
+  testValues?:   Record<number, number>  // test measurements keyed by test number (read-only, see below)
+  testPass?:     Record<number, boolean> // recorded pass/fail verdicts keyed by test number (read-only)
   hbin?:         number    // hard bin (physical sort result; STDF V4 range 0–32767)
   sbin?:         number    // soft bin (test-program failure category; independent 0–32767 space)
   metadata?:     DieMetadata
@@ -3500,6 +3501,8 @@ A registered scheme appears in the matching toolbar menu automatically. Register
   retestCount?:  number    // set when this position appeared more than once in input results
 }
 ```
+
+> **Test values on a built die are read-only snapshots.** A map holds its test values and verdicts as one column per test, not as an object per die. On a die `buildWaferMap` returns, `testValues` and `testPass` build a frozen object from those columns each time they are read, and keep nothing on the die: read one die's values freely, and hold on to the object if you read it repeatedly. The objects are the map's data, so they cannot be changed: assigning to `die.testValues` or changing a key throws a `TypeError`. To show different values, pass them to `buildWaferMap`, or copy the die with your own object (`{ ...die, testValues: mine }`). A spread, `structuredClone` or `JSON.stringify` of a die gives plain objects with the same values. Dies you build yourself keep ordinary objects.
 
 > **A die with test results is always fully on the wafer.** A prober can only step to sites that lie entirely on the wafer, so a prober map never contains edge-straddling dies. `buildWaferMap` therefore never sets `partial` on a die built from `results`, and floors the *inferred* wafer diameter so it always contains every die.
 >

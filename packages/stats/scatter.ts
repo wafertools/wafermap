@@ -8,6 +8,7 @@
 // raw `Die[]`.
 
 import type { Die } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 
 export interface ScatterPoint {
   x: number;
@@ -23,8 +24,8 @@ export interface ScatterItem {
 
 function scatterPointsForDies(dies: Die[] | undefined, xTest: number, yTest: number, group: string | undefined, out: ScatterPoint[]): void {
   for (const die of dies ?? []) {
-    const x = die.testValues?.[xTest];
-    const y = die.testValues?.[yTest];
+    const x = testValue(die, xTest);
+    const y = testValue(die, yTest);
     if (x !== undefined && y !== undefined && Number.isFinite(x) && Number.isFinite(y)) {
       out.push(group === undefined ? { x, y, hbin: die.hbin } : { x, y, hbin: die.hbin, group });
     }

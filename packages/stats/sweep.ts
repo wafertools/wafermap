@@ -23,6 +23,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 import { parseTestReference } from '../renderer/derivedTests/parser.js';
@@ -442,7 +443,7 @@ export function buildSweepData(
       const values: number[] = [];
       if (def !== undefined && isParametricTest(def)) {
         for (const die of eligible) {
-          const v = die.testValues?.[tn];
+          const v = testValue(die, tn);
           if (v !== undefined && Number.isFinite(v)) values.push(v);
         }
       }

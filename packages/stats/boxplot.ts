@@ -10,6 +10,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 import { quantile } from './math.js';
 
 export interface BoxplotDatum {
@@ -53,7 +54,7 @@ export function buildTestBoxplotData(items: BoxplotItem[], testNumber: number): 
 
     const values = (item.dies ?? [])
       .filter(d => isYieldEligibleDie(d))
-      .map(d => d.testValues?.[testNumber])
+      .map(d => testValue(d, testNumber))
       .filter((v): v is number => v !== undefined && Number.isFinite(v))
       .sort((a, b) => a - b);
     if (values.length === 0) {

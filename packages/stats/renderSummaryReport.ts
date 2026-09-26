@@ -19,6 +19,7 @@ import { buildTestPassRateData, hasJudgeableTests , poolFunctionalYield } from '
 import { buildCapabilityData } from './capability.js';
 import { fmt } from '../renderer/fmt.js';
 import { getDieKey, isPositionedDie, diePassStatus } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 import {
   findingsTableHtml,
   renderMetadataSection,
@@ -139,7 +140,7 @@ function testSection(
       ({ min, max, mean } = precomputed);
     } else {
       const vals = active
-        .map(d => d.testValues?.[tn])
+        .map(d => testValue(d, tn))
         .filter((v): v is number => v !== undefined && isFinite(v));
       if (!vals.length) continue;
       vals.sort((a, b) => a - b);

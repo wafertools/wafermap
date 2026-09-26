@@ -20,6 +20,7 @@
 // raw `Die[]` and always will.
 
 import type { Die } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 
 export interface HistogramBucket {
   rangeLow: number;
@@ -57,7 +58,7 @@ export function collectTestValues(items: HistogramItem[], testNumber: number): n
   const values: number[] = [];
   for (const item of items) {
     for (const die of item.dies ?? []) {
-      const v = die.testValues?.[testNumber];
+      const v = testValue(die, testNumber);
       if (v !== undefined && Number.isFinite(v)) values.push(v);
     }
   }
@@ -77,7 +78,7 @@ export function testValueExtent(items: HistogramItem[], testNumber: number): { m
   let min = Infinity, max = -Infinity;
   for (const item of items) {
     for (const die of item.dies ?? []) {
-      const v = die.testValues?.[testNumber];
+      const v = testValue(die, testNumber);
       if (v !== undefined && Number.isFinite(v)) {
         if (v < min) min = v;
         if (v > max) max = v;
@@ -157,7 +158,7 @@ export function buildTestHistogramSeries(
     const vals: number[] = [];
     for (const item of g.items) {
       for (const die of item.dies ?? []) {
-        const v = die.testValues?.[testNumber];
+        const v = testValue(die, testNumber);
         if (v !== undefined && Number.isFinite(v)) {
           if (clip && (v < clip.lo || v > clip.hi)) continue;
           vals.push(v);

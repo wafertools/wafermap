@@ -1,6 +1,7 @@
 import type { Wafer } from '../core/wafer.js';
 import type { Die, PositionedDie } from '../core/dies.js';
 import { hasPosition } from '../core/dies.js';
+import { dieValueEntries, dieVerdictEntries, recordedVerdict, testsPresent } from '../core/dieTable.js';
 import type { Reticle } from '../core/reticle.js';
 import { getReticleCell } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
@@ -23,7 +24,7 @@ export { classifySpec };
 export type { SpecCategory };
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 import { metadataValueColor } from './colorMap.js';
-import { clamp01, compareNatural, escHtml, minOf } from '../core/utils.js';
+import { clamp01, compareNatural, escHtml } from '../core/utils.js';
 import { prettyKey } from '../core/utils.js';
 import { testLabel, markedTestLabel, derivedTestNote, isDerivedTest, DERIVED_MARK, DERIVED_KEY } from './testLabel.js';
 
@@ -71,7 +72,7 @@ export function findTestDef(testDefs: TestDef[] | undefined, testNumber: number)
 
 /** Return sorted unique test numbers present across a set of dies (from testValues keys). */
 export function getUniqueTestNumbers(dies: Die[]): number[] {
-  return [...new Set(dies.flatMap(d => d.testValues ? Object.keys(d.testValues).map(Number) : []))].sort((a, b) => a - b);
+  return testsPresent(dies, 'values');
 }
 
 export type PlotMode = 'value' | 'hardBin' | 'softBin' | 'stackedValues' | 'stackedBins' | 'stackedSoftBins' | 'metadata';
@@ -628,19 +629,21 @@ function collectTestRows(
       }
       const v = getDieTestValue(die, key);
       if (v === undefined) return [];
-      return [{ key, label: markedTestLabel(def, key), value: fmt(v, def.unit, fallbackFormat), recordedFail: die.testPass?.[key] === false }];
+      return [{ key, label: markedTestLabel(def, key), value: fmt(v, def.unit, fallbackFormat), recordedFail: recordedVerdict(die, key) === false }];
     });
     if (rows.length) return rows;
   }
-  if (die.testValues && Object.keys(die.testValues).length > 0) {
-    return Object.entries(die.testValues).map(([k, v]) => ({
-      key: Number(k), label: testLabel(undefined, Number(k)), value: fmt(v, undefined, fallbackFormat),
+  const values = dieValueEntries(die);
+  if (values.length) {
+    return values.map(([k, v]) => ({
+      key: k, label: testLabel(undefined, k), value: fmt(v, undefined, fallbackFormat),
     }));
   }
   // Verdict-only dies with no matching defs: a recorded pass/fail is still a result.
-  if (die.testPass && Object.keys(die.testPass).length > 0) {
-    return Object.entries(die.testPass).map(([k, p]) => ({
-      key: Number(k), label: testLabel(undefined, Number(k)), value: p ? 'Pass' : 'Fail',
+  const verdicts = dieVerdictEntries(die);
+  if (verdicts.length) {
+    return verdicts.map(([k, p]) => ({
+      key: k, label: testLabel(undefined, k), value: p ? 'Pass' : 'Fail',
     }));
   }
   return [];
@@ -1440,18 +1443,8 @@ export function buildView(
   // If the resolved testNumber doesn't exist in any die (e.g. default activeTest=0 but data
   // uses keys like 1010), fall back to the lowest key actually present in the dies.
   if (!testDefs?.length && plotMode === 'value') {
-    const hasKey = dies.some(d => d.testValues && activeTestNumber in d.testValues);
-    if (!hasKey) {
-      const firstKey = dies.reduce<number | undefined>((min, d) => {
-        if (!d.testValues) return min;
-        const keys = Object.keys(d.testValues).map(Number);
-        const lo = keys.length ? minOf(keys) : undefined;
-        return lo !== undefined && (min === undefined || lo < min) ? lo : min;
-      }, undefined);
-      if (firstKey !== undefined) {
-        activeTestNumber = firstKey;
-      }
-    }
+    const present = testsPresent(dies, 'values');
+    if (!present.includes(activeTestNumber) && present.length) activeTestNumber = present[0];
   }
 
   // Resolve the explicit value range from the ViewOptions union.

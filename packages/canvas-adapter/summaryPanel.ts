@@ -14,6 +14,7 @@
 
 import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
 import { itemPassBins, passBinsLabel } from '../core/passBins.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
@@ -1360,7 +1361,7 @@ export function* buildTestSectionSteps(
 
   const entriesWithData = entries.filter(e =>
     activeDies.some(d => {
-      const v = d.testValues?.[e.testNumber];
+      const v = testValue(d, e.testNumber);
       return v !== undefined && isFinite(v);
     })
   );
@@ -1413,7 +1414,7 @@ export function* buildTestSectionSteps(
     // One scan of the dies for this test — the last resort, for a test no
     // precomputed summary and no pooled pass covered.
     const scanValues = (): number[] => activeDies
-      .map(d => d.testValues?.[entry.testNumber])
+      .map(d => testValue(d, entry.testNumber))
       .filter((v): v is number => v !== undefined && isFinite(v));
 
     let stats: TestStatRow;

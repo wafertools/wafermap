@@ -2,6 +2,7 @@ import type { Die } from '../core/dies.js';
 import { normalizeInput } from './normalizeInput.js';
 import { computeCapability, computeTestFlagYield, computeRegionYield } from './summaryFigures.js';
 import { isYieldEligibleDie, getDieKey, isPositionedDie } from '../core/dies.js';
+import { dieHasValues, dieValueEntries, testsPresent, testValue } from '../core/dieTable.js';
 import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
@@ -189,7 +190,7 @@ function isEligibleDie(die: Die): die is EligibleDie {
   return (
     die.hbin !== undefined ||
     die.sbin !== undefined ||
-    (die.testValues !== undefined && Object.keys(die.testValues).length > 0)
+    dieHasValues(die)
   );
 }
 
@@ -205,7 +206,7 @@ function makeClusterFailurePredicate(
   if (limited.length === 0) return undefined;
   return (die: Die): boolean => {
     for (const td of limited) {
-      if (isOutOfSpec(classifySpec(die.testValues?.[td.testNumber], td))) return true;
+      if (isOutOfSpec(classifySpec(testValue(die, td.testNumber), td))) return true;
     }
     return false;
   };
@@ -218,13 +219,8 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
   const hardBinCounts = new Map<number, number>();
   const softBinCounts = new Map<number, number>();
 
+  for (const tn of testsPresent(dies)) testSet.add(tn);
   for (const die of dies) {
-    if (die.testValues) {
-      for (const k of Object.keys(die.testValues)) testSet.add(Number(k));
-    }
-    if (die.testPass) {
-      for (const k of Object.keys(die.testPass)) testSet.add(Number(k));
-    }
     if (die.hbin !== undefined) hardBinSet.add(die.hbin);
     if (die.sbin !== undefined) softBinSet.add(die.sbin);
     // Counts (not just "which bins appear") are only meaningful over the
@@ -261,7 +257,7 @@ function computeTestSpecYield(
     let passDies = 0, failLowDies = 0, failHighDies = 0, totalDies = 0;
     for (const die of dies) {
       if (die.partial || die.edgeExcluded) continue;
-      const category = classifySpec(die.testValues?.[tn], td);
+      const category = classifySpec(testValue(die, tn), td);
       if (category === null) continue;
       totalDies++;
       if (category === 'failLow') failLowDies++;
@@ -329,7 +325,7 @@ function computePerTestStats(
     const values: number[] = [];
     for (const die of dies) {
       if (die.partial || die.edgeExcluded) continue;
-      const v = die.testValues?.[tn];
+      const v = testValue(die, tn);
       // `Number.isFinite`, not just `!== undefined`, which is what every other
       // per-test collection in this library screens on (the pooled pass, the
       // boxplot, the report). Without it one NaN reading made `mean` and
@@ -914,8 +910,7 @@ function discoverTestNumbers(
   const testNumberSet = new Set<number>();
   let capped = false;
   outer: for (const die of dies) {
-    for (const k of Object.keys(die.testValues ?? {})) {
-      const n = Number(k);
+    for (const [n] of dieValueEntries(die)) {
       if (!testNumberSet.has(n)) {
         testNumberSet.add(n);
         if (testNumberSet.size > TEST_COUNT_WARN_THRESHOLD) { capped = true; break outer; }
@@ -1004,7 +999,7 @@ function buildTestValueFindings(
     let shift: number | undefined;
     for (let i = 0; i < regionDies.length; i++) {
       const die = regionDies[i];
-      const raw = die.testValues?.[testNumber];
+      const raw = testValue(die, testNumber);
       if (raw === undefined) continue;
       if (shift === undefined) shift = raw;
       const v = raw - shift;
@@ -1112,8 +1107,8 @@ function buildSpecLimitFindings(
           if (key !== region.key) for (const d of bucket) rightDies.push(d);
         }
 
-        const hasValue = (d: Die) => (d.testValues?.[tn]) !== undefined;
-        const isSpecFail = (d: Die) => isOutOfSpec(classifySpec(d.testValues?.[tn], td));
+        const hasValue = (d: Die) => testValue(d, tn) !== undefined;
+        const isSpecFail = (d: Die) => isOutOfSpec(classifySpec(testValue(d, tn), td));
 
         const leftValid = leftDies.filter(hasValue);
         const rightValid = rightDies.filter(hasValue);
@@ -1369,7 +1364,7 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
 
   if (kind === 'test') {
     const testNumber = template.variable.index!;
-    const read = (d: Die) => d.testValues?.[testNumber];
+    const read = (d: Die) => testValue(d, testNumber);
     const leftValues = leftDies.map(read).filter((v): v is number => v !== undefined);
     const rightValues = rightDies.map(read).filter((v): v is number => v !== undefined);
     const { pValue, effectSize, delta } = welchPValue(leftValues, rightValues);

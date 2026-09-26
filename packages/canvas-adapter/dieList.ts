@@ -14,6 +14,7 @@
 
 import type { Die } from '../core/dies.js';
 import { hasPosition, isPositionedDie } from '../core/dies.js';
+import { testsPresent, testValue } from '../core/dieTable.js';
 import { classifyDie } from '../core/classify.js';
 import type { Wafer } from '../core/index.js';
 import { isParametricTest, getTestPassStatus, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
@@ -229,14 +230,7 @@ function resolveTestColumns(dies: Die[], testDefs: TestDef[] | undefined): TestD
   if (testDefs !== undefined) {
     return testDefs.filter(d => d.testNumber !== undefined);
   }
-  const seen = new Map<number, TestDef>();
-  for (const die of dies) {
-    for (const key of Object.keys(die.testValues ?? {})) {
-      const tn = Number(key);
-      if (!seen.has(tn)) seen.set(tn, { testNumber: tn, name: testLabel(undefined, tn) });
-    }
-  }
-  return [...seen.values()].sort((a, b) => a.testNumber - b.testNumber);
+  return testsPresent(dies, 'values').map(tn => ({ testNumber: tn, name: testLabel(undefined, tn) }));
 }
 
 /**
@@ -393,7 +387,7 @@ export function buildDieListSection(
             const p = getTestPassStatus(d, td.testNumber, td);
             return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
           }
-          const v = d.testValues?.[td.testNumber];
+          const v = testValue(d, td.testNumber);
           if (v !== undefined) return fmtValue(v, td.unit);
           const p = getTestPassStatus(d, td.testNumber, td);
           return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
@@ -403,7 +397,7 @@ export function buildDieListSection(
             const p = getTestPassStatus(d, td.testNumber, td);
             return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
           }
-          const v = d.testValues?.[td.testNumber];
+          const v = testValue(d, td.testNumber);
           if (v !== undefined) return fmtValue(v, undefined, 'engineering');
           const p = getTestPassStatus(d, td.testNumber, td);
           return p === undefined ? '' : (p ? 'PASS' : 'FAIL');

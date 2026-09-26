@@ -32,6 +32,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { dieHasVerdicts, testValue } from '../core/dieTable.js';
 import { isParametricTest, getTestPassStatus, type TestDef } from '../renderer/buildWaferMap.js';
 import { classifySpec } from '../renderer/spec.js';
 import { testLabel, derivedFields } from '../renderer/testLabel.js';
@@ -159,7 +160,7 @@ export function buildTestPassRateData(
         if (!isYieldEligibleDie(die)) continue;
         for (const def of wanted) {
           const tn = def.testNumber!;
-          const specCat = classifySpec(die.testValues?.[tn], def);
+          const specCat = classifySpec(testValue(die, tn), def);
           const flagVerdict = getTestPassStatus(die, tn, def);
 
           if (comparingParametric && specCat !== null && flagVerdict !== undefined) {
@@ -223,7 +224,7 @@ export function buildTestPassRateData(
  *  carries recorded verdicts, so the spec/flag comparison needs the raw dies the
  *  precomputed `testSpecYield` aggregate cannot supply. */
 function comparingParametricNeedsDies(item: TestPassRateItem): boolean {
-  return (item.dies ?? []).some(d => d.testPass !== undefined && Object.keys(d.testPass).length > 0);
+  return (item.dies ?? []).some(dieHasVerdicts);
 }
 
 function testMatchesKind(d: TestDef, kind: TestPassKind): boolean {

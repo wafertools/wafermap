@@ -36,6 +36,17 @@ export function prettyKey(key: string): string {
 
 /** Clamp `v` into [0, 1] — the normalization range every colour scale expects. */
 /**
+ * Whether `obj` has an own key. The per-die form of `Object.keys(obj).length > 0`
+ * without building the key array: on a 266k-die lot that allocation, once per
+ * die, cost seconds in WebKit's engine (the desktop app on Linux and macOS).
+ */
+export function hasAnyKey<T extends object>(obj: T | null | undefined): obj is T {
+  if (obj == null) return false;
+  for (const k in obj) if (Object.hasOwn(obj, k)) return true;
+  return false;
+}
+
+/**
  * Smallest / largest of `values`, by iteration rather than `Math.min(...values)`.
  *
  * **Never spread a per-die array into `Math.min`/`Math.max`.** Spread passes one

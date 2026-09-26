@@ -40,6 +40,7 @@ import type { MergedTestDefs } from '../stats/mergeTestDefs.js';
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
 import type { DieListDisplayOptions } from './dieList.js';
 import { getDieKey, hasPosition } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 import { runChunked, type ChunkedRun } from './chunked.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -1296,7 +1297,7 @@ export function renderWaferGallery(
       if (testNumber === undefined) return waferCount;
       let n = 0;
       for (const it of originalItems) {
-        if (it?.dies?.some(d => getTestPassStatus(d, testNumber) !== undefined || d.testValues?.[testNumber] !== undefined)) n++;
+        if (it?.dies?.some(d => getTestPassStatus(d, testNumber) !== undefined || testValue(d, testNumber) !== undefined)) n++;
       }
       return n;
     };

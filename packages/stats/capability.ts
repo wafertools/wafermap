@@ -38,6 +38,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { dieValueEntries, testValue } from '../core/dieTable.js';
 import { type Chunked, drain } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { countOutOfSpecSorted, hasSpecLimits } from '../renderer/spec.js';
@@ -182,12 +183,10 @@ function* accumulateMomentsSteps(
       // within-wafer roll-up below only reads `wn`/`wsum`/`wsumSq`.
       if (++sinceYield >= diesPerStep) { sinceYield = 0; yield; }
       if (!isYieldEligibleDie(die)) continue;
-      const dieValues = die.testValues;
-      if (!dieValues) continue;
       if (directRead) {
         // Few tests: read each one straight off the die.
         for (let slot = 0; slot < T; slot++) {
-          const v = dieValues[testNumbers[slot]];
+          const v = testValue(die, testNumbers[slot]);
           if (v === undefined || !Number.isFinite(v)) continue;
           n[slot]++; sum[slot] += v; sumSq[slot] += v * v;
           wn[slot]++; wsum[slot] += v; wsumSq[slot] += v * v;
@@ -195,12 +194,11 @@ function* accumulateMomentsSteps(
         }
         continue;
       }
-      // Many tests: walk the die's own keys, so a die carrying few of them costs little.
-      for (const key in dieValues) {
-        const slot = slotOf.get(+key);
+      // Many tests: walk the die's own values, so a die carrying few of them costs little.
+      for (const [tn, v] of dieValueEntries(die)) {
+        const slot = slotOf.get(tn);
         if (slot === undefined) continue;
-        const v = dieValues[+key];
-        if (v === undefined || !Number.isFinite(v)) continue;
+        if (!Number.isFinite(v)) continue;
         n[slot]++; sum[slot] += v; sumSq[slot] += v * v;
         wn[slot]++; wsum[slot] += v; wsumSq[slot] += v * v;
         if (values) (lists[slot] ??= []).push(v);

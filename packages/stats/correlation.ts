@@ -11,6 +11,7 @@
 // contributed which pair — so this module always reads raw `Die[]`.
 
 import type { Die } from '../core/dies.js';
+import { dieHasValues, testValue } from '../core/dieTable.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 
@@ -170,9 +171,7 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
 
   // With test values, and in a stable order, so the sample can stride across the
   // whole population rather than over dies that may carry nothing.
-  const withValues = dies.filter(
-    (d): d is Die & { testValues: NonNullable<Die['testValues']> } => d.testValues !== undefined,
-  );
+  const withValues = dies.filter(dieHasValues);
   const sampling = withValues.length > CORRELATION_DIE_BUDGET;
   const read = sampling
     ? strideIndices(withValues.length, CORRELATION_DIE_BUDGET).map(i => withValues[i])
@@ -187,7 +186,7 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
   for (const die of read) {
     valid.fill(0);
     for (let i = 0; i < n; i++) {
-      const v = die.testValues[nums[i]];
+      const v = testValue(die, nums[i]);
       if (v !== undefined && Number.isFinite(v)) { vals[i] = v; valid[i] = 1; }
     }
     for (let xi = 0; xi < n; xi++) {

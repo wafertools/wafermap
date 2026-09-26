@@ -15,6 +15,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 
 export interface TrendDatum {
   label: string;
@@ -55,7 +56,7 @@ export function buildTestTrendData(items: TrendItem[], testNumber: number): Tren
 
     const values = (item.dies ?? [])
       .filter(d => isYieldEligibleDie(d))
-      .map(d => d.testValues?.[testNumber])
+      .map(d => testValue(d, testNumber))
       .filter((v): v is number => v !== undefined && Number.isFinite(v));
     if (values.length === 0) return { label, mean: NaN, stddev: 0, count: 0, key: item.key };
 

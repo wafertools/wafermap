@@ -4,6 +4,7 @@
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
+import { dieHasValues } from '../core/dieTable.js';
 import type { TestDef, MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { dieHasTestData } from '../renderer/buildWaferMap.js';
 import { testLabel, isDerivedTest, DERIVED_MARK, DERIVED_KEY } from '../renderer/testLabel.js';
@@ -1215,7 +1216,7 @@ export function buildDataModeEntries(
   // Value modes need a numeric measurement or a recorded verdict (functional
   // tests); stacked values need numeric values specifically.
   const hasTestData = dies.some(dieHasTestData);
-  const hasValues = dies.some(d => d.testValues !== undefined && Object.keys(d.testValues).length > 0);
+  const hasValues = dies.some(dieHasValues);
   const hasHbin = dies.some(d => d.hbin != null);
   const hasSbin = dies.some(d => d.sbin != null);
 
