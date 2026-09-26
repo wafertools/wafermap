@@ -11,6 +11,7 @@ import { JSDOM } from 'jsdom';
 
 import { buildWaferMap } from '../dist/index.js';
 import { drawMapCanvas } from '../dist/packages/canvas-adapter/toCanvas.js';
+import { withView } from './fixtures/withView.mjs';
 
 /** Canvas stub recording each stroke's width in device pixels: lineWidth times
  *  the x-scale of the transform in force when stroke() is called. */
@@ -46,7 +47,7 @@ function strokesAt(dpr) {
     if (Math.hypot(Math.abs(x) + 0.5, Math.abs(y) + 0.5) * 10 < 95) results.push({ x, y, hbin: 1 });
   }
   const map = buildWaferMap({ results, waferConfig: { diameter: 200 }, dieConfig: { width: 10, height: 10 } });
-  drawMapCanvas(canvas, map.view);
+  drawMapCanvas(canvas, withView(map).view);
   dom.window.close();
   return strokes;
 }

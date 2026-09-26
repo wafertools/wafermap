@@ -3,7 +3,7 @@ import type { Wafer } from '../core/wafer.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
 import { binPassSets, binPassSetsByWafer, mergeBinDefs, type BinPassGroup } from '../renderer/binColors.js';
 import { itemPassBins, passBinsLabel } from '../core/passBins.js';
-import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type WaferMapResult } from '../renderer/buildWaferMap.js';
+import { isParametricTest, isBuiltMap, type BinDef, type TestDef, type YieldSummary, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
 import { openHtmlReport } from './renderFindingsReport.js';
@@ -909,7 +909,7 @@ export function renderWaferReportHtml(
     hbinDefs:     map.hbinDefs,
     sbinDefs:     map.sbinDefs,
     testDefs:     map.testDefs,
-    statsSummary: summary ?? map.statsSummary ?? ('view' in map ? analyzeWaferMap(map as unknown as WaferMapResult) : undefined),
+    statsSummary: summary ?? map.statsSummary ?? (isBuiltMap(map) ? analyzeWaferMap(map) : undefined),
     passBins:     [...map.passBins],
     ringCount:    map.ringCount,
   }, options);
@@ -935,9 +935,8 @@ export function renderLotReportHtml(
       dies:         m.dies,
       passBins:     [...m.passBins],
       statsSummary: m.statsSummary,
-      // A built map carries `view`; a hand-assembled ReportMap does not, and is
-      // then analysed from its pieces as before.
-      source:       'view' in m ? (m as unknown as WaferMapResult) : undefined,
+      // A hand-assembled ReportMap is analysed from its pieces.
+      source:       isBuiltMap(m) ? m : undefined,
     })),
     hbinDefs: hbinDefs.length ? hbinDefs : undefined,
     sbinDefs: sbinDefs.length ? sbinDefs : undefined,

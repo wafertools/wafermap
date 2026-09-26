@@ -43,6 +43,11 @@ under `### Breaking`.
 - **Pre-built `dies` get the same input checks as `results`.** Wrong-type and out-of-range
   values are treated as missing, and a die whose coordinates STDF cannot store is kept as an
   unpositioned die.
+- **`WaferMapResult.view` is removed.** It was marked `@internal`: the renderers build their own
+  draw list whenever they draw, so a result no longer carries one. Read the result's own fields
+  (`plotMode`, `metadata`, `isLotStack`, `hbinDefs`, `sbinDefs`, `testDefs`). This makes each
+  result smaller (about 86 bytes less per die) and roughly halves the copy the Web Worker makes of
+  a result. The internal `dataAxisFlip` field takes its place.
 
 ### Performance
 

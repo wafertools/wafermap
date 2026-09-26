@@ -65,24 +65,7 @@ const serOnly = timeit('v8.serialize(result)   [send half]', () => v8.serialize(
 const deserOnly = timeit('v8.deserialize(buf)    [recv half]', () => v8.deserialize(buf));
 console.log(`serialized payload size                ${(buf.length / 1024 / 1024).toFixed(2)} MB`);
 
-// ── 4. what the duplication costs: result.dies vs result.view.dies vs rectangles
-const dieCount = result.dies.length;
-const viewDieCount = result.view.dies.length;
-const rectCount = result.view.rectangles.length;
-const hoverCount = result.view.hoverPoints.length;
-console.log(`\npayload contains die data N times:`);
-console.log(`  result.dies          = ${dieCount}`);
-console.log(`  result.view.dies     = ${viewDieCount}  (duplicate of result.dies)`);
-console.log(`  result.view.rectangles = ${rectCount}`);
-console.log(`  result.view.hoverPoints = ${hoverCount}`);
-
-// Clone with view.dies stripped, to see what removing the duplicate saves.
-const stripped = { ...result, view: { ...result.view, dies: [] } };
-const bufStripped = v8.serialize(stripped);
-const cloneStripped = timeit('structuredClone(result w/o view.dies)', () => structuredClone(stripped));
-console.log(`stripped payload size                  ${(bufStripped.length / 1024 / 1024).toFixed(2)} MB`);
-
-// ── 5. run + runAnalysis (old) vs runWithAnalysis (new) clone accounting ───────
+// ── 4. run + runAnalysis (old) vs runWithAnalysis (new) clone accounting ───────
 // Model the structured-clone crossings each pattern pays for the BIG result.
 // input clone is the same for both; we focus on the result object crossings.
 //
@@ -104,4 +87,3 @@ console.log(`clone cost per crossing:           ${roundTrip.toFixed(1)} ms`);
 console.log(`worker total ≈ compute + 2 crossings (in+out) for run():`);
 console.log(`   ≈ ${compute.toFixed(1)} + 2×(input clone) + ${roundTrip.toFixed(1)} (result)`);
 console.log(`clone / compute ratio:             ${(roundTrip / compute).toFixed(1)}×`);
-console.log(`removing view.dies duplicate saves: ${(cloneFull - cloneStripped).toFixed(1)} ms/crossing (${(100*(buf.length-bufStripped.length)/buf.length).toFixed(0)}% smaller)`);

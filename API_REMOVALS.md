@@ -781,6 +781,21 @@ for a later one, since each either does nothing or does something inconsistent.
 
 ---
 
+## Removed in 0.32.0
+
+### `WaferMapResult.view`
+
+- **What it was:** the draw list `buildWaferMap` built for the result's starting plot mode,
+  marked `@internal`.
+- **Why removed:** nothing drew it. Every renderer builds its own view when it mounts and on each
+  option change. Inside the library it was read for one thing, the data's axis flip, which is now
+  the result's own internal `dataAxisFlip`, and as the "is this a built map" test, now
+  `isBuiltMap`. It cost about 86 bytes per die for the life of each result, and it was the
+  largest part of the Web Worker's copy of a result (113 of 190 ms on a 5-wafer, 53k-die lot).
+  tsmap never read it.
+- **Danger of restoring it:** a second, stale copy of the draw list that hosts could read,
+  and the memory and worker cost above.
+
 ## Found during this review: unescaped HTML in tooltips (not a deprecation issue)
 
 **Fixed in 0.30.1** (CHANGELOG, Security).

@@ -143,9 +143,9 @@ worth reporting, not a pattern to build on.
   but `'traffic'` and `'jet'` reads low = dark, high = light; if you draw your own
   colorbar or swatch, resolve the colour through `resolveValueColorFn(name, reversed)`
   so it cannot disagree with the dies.
-- `result.view` is internal. Use the promoted fields: `result.plotMode`,
-  `result.metadata`, `result.isLotStack`, `result.hbinDefs`, `result.sbinDefs`,
-  `result.testDefs`.
+- What a map was built with is on the result: `result.plotMode`, `result.metadata`,
+  `result.isLotStack`, `result.hbinDefs`, `result.sbinDefs`, `result.testDefs`. The renderers
+  read them; pass nothing again.
 - Die keys come from `getDieKey(die)`. A hand-rolled `` `${x},${y}` `` breaks
   click-to-highlight silently, because findings carry `dieKeys` in that exact format.
 - `stats.warnings` is `WaferWarning[]` (it was `string[]` before 0.22.0). Read

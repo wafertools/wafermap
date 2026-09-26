@@ -295,6 +295,7 @@
     ],
     "WaferMapResult": [
       "aggrMethod",
+      "dataAxisFlip",
       "dataCoverage",
       "dies",
       "hbinDefs",
@@ -311,7 +312,6 @@
       "sbinDefs",
       "testDefs",
       "units",
-      "view",
       "wafer",
       "warnings",
       "yield"
@@ -394,6 +394,7 @@
     ],
     "WaferMapDisplayItem": [
       "aggrMethod",
+      "dataAxisFlip",
       "dataCoverage",
       "dies",
       "hbinDefs",
@@ -414,7 +415,6 @@
       "statsSummary",
       "testDefs",
       "units",
-      "view",
       "viewOptions",
       "wafer",
       "warnings",

@@ -12,7 +12,7 @@ export function withView(result, viewOpts = {}) {
     ringCount:    result.ringCount,
     reticles:     result.reticles,
     showReticle:  (result.reticles?.length ?? 0) > 0,
-    dataAxisFlip: result.view.dataAxisFlip,
+    dataAxisFlip: result.dataAxisFlip,
     ...viewOpts,
   }, { hbinDefs: result.hbinDefs, sbinDefs: result.sbinDefs });
   return { ...result, view };

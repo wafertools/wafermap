@@ -134,5 +134,5 @@ test('a result crosses the worker boundary with its columns moved, not its value
     assert.deepEqual(d.testValues, want.testValues);
     assert.deepEqual(d.testPass, want.testPass);
   });
-  assert.equal(got.view.dies[0], got.dies[0], 'the view holds the same die objects as the result');
+  assert.deepEqual(got.dataAxisFlip, reference.dataAxisFlip);
 });

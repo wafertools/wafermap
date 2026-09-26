@@ -235,10 +235,11 @@ function pointInPolygon(pt, poly) {
 // drawn reticle overlay is transformed all the way to on-screen coordinates
 // (baked + interactive), so the die position it's tested against must be too.
 function fieldPartition(result) {
-  const reticleOverlays = result.view.overlays.filter(o => o.kind === 'reticle');
+  const view = result.view ?? withView(result).view;
+  const reticleOverlays = view.overlays.filter(o => o.kind === 'reticle');
   const groups = new Map();
   result.dies.forEach((die, i) => {
-    const pt = result.view.hoverPoints[i];
+    const pt = view.hoverPoints[i];
     const idx = reticleOverlays.findIndex(o => pointInPolygon(pt, o.points[0]));
     assert.notEqual(idx, -1, `die (${die.x},${die.y}) is not covered by any drawn reticle field`);
     if (!groups.has(idx)) groups.set(idx, []);

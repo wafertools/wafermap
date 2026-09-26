@@ -985,10 +985,10 @@ export function renderWaferMapCard(
   let metadataFields: MetadataFieldDef[] | undefined = result.metadataFields;
   let reticles: Reticle[]   | undefined = result.reticles?.length ? result.reticles : undefined;
   let reticleConfig: ReticleConfig | undefined = result.reticleConfig;
-  // view.dataAxisFlip, NOT view.axisFlip: axisFlip is data XOR interactive, and this
+  // The data's own flip, NOT a view's axisFlip: axisFlip is data XOR interactive, and this
   // value is fed straight back into buildView as `dataAxisFlip` on every rebuild —
   // reading the XOR'd form would double-count any interactive flip already applied.
-  let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.view?.dataAxisFlip;
+  let dataAxisFlip: { x: boolean; y: boolean } | undefined = result.dataAxisFlip;
   // Lot-stack context is the library's own derived truth — sourced from the result, never the
   // caller's viewOptions. Drives the stacked-mode availability and the map title's stack qualifier.
   // `?? false`: absent on a WaferMapDisplayItem that isn't a stacked card,
@@ -3138,7 +3138,7 @@ export function renderWaferMapCard(
       metadataFields = newResult.metadataFields;
       reticles      = newResult.reticles?.length ? newResult.reticles : undefined;
       reticleConfig = newResult.reticleConfig;
-      dataAxisFlip  = newResult.view?.dataAxisFlip;
+      dataAxisFlip  = newResult.dataAxisFlip;
       resultIsLotStack = newResult.isLotStack;
       resultAggrMethod = newResult.aggrMethod;
       resultLotSize    = newResult.lotSize;

@@ -6,6 +6,17 @@ release first. Each release's full list of changes is in the
 each removal, and whether it could come back, are in
 [API_REMOVALS.md](https://github.com/wafertools/wafermap/blob/main/API_REMOVALS.md).
 
+## 0.32.0
+
+### `WaferMapResult.view` is removed
+
+`view` was marked `@internal`, and the renderers build their own draw list whenever they draw.
+If your code read `result.view.plotMode`, `result.view.metadata` or similar, read the same field
+on the result itself: `result.plotMode`, `result.metadata`, `result.isLotStack`,
+`result.hbinDefs`, `result.sbinDefs`, `result.testDefs`. There is no replacement for the draw
+list itself (`rectangles`, `hoverPoints`, `overlays`): draw with `renderWaferMap` or
+`renderWaferGallery`.
+
 ## 0.31.0
 
 ### Removed exports

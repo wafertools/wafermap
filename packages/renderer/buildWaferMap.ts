@@ -18,7 +18,7 @@ import { applyDerivedTests, type DerivedTestDef } from './derivedTests/apply.js'
 // Hosts construct `WaferMapInput.derivedTests`, so the type is part of the public
 // input surface and is re-exported through this module's `export *` in index.ts.
 export type { DerivedTestDef } from './derivedTests/apply.js';
-import { buildView, type View, type PlotMode } from './buildView.js';
+import type { PlotMode } from './buildView.js';
 import { isStdfBin, isStdfCoord, isStdfTestNumber, isStdfSite, STDF_BIN_MAX, STDF_COORD_MAX, STDF_TEST_NUM_MAX, STDF_SITE_MAX } from '../core/stdf.js';
 import { hasAnyKey, maxOf, minOf, modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
@@ -686,15 +686,11 @@ export interface WaferMapResult {
   /** `true` when the result was built from a `lotStack` aggregation. */
   isLotStack: boolean;
   /**
-   * @internal The initial draw list. Kept on the result because `analyzeWaferMap`
-   * discriminates its input on `'view' in input`, and because `renderWaferMap`
-   * reads `dataAxisFlip` from it — not for a host to read.
-   *
-   * Read the promoted top-level fields instead (`plotMode`, `metadata`,
-   * `isLotStack`, `hbinDefs`, `sbinDefs`, `testDefs`): the renderers rebuild the
-   * draw list on every option change, so anything cached from this goes stale.
+   * @internal The data's own axis flip (`dieConfig.xAxisDirection` / `yAxisDirection` /
+   * `coordinateOrigin`), which the renderers feed back into every view they build.
+   * Its presence also marks a map as built by `buildWaferMap` (`isBuiltMap`).
    */
-  view: View;
+  dataAxisFlip: { x: boolean; y: boolean };
   /** Reticle configuration used to generate the overlay and reticle-local groupings. */
   reticleConfig?: ReticleConfig;
   /**
@@ -786,6 +782,15 @@ export interface WaferMapResult {
    * `undefined` for single-wafer results.
    */
   lotSize?: number;
+}
+
+/**
+ * @internal Whether `map` was built by `buildWaferMap`, rather than being an input
+ * or a map a host assembled from its own pieces. Survives a spread and a worker's
+ * structured clone, which is why it tests a field and not object identity.
+ */
+export function isBuiltMap(map: object): map is WaferMapResult {
+  return 'wafer' in map && 'dies' in map && 'dataAxisFlip' in map;
 }
 
 // ── Internal normalized model ─────────────────────────────────────────────────
@@ -1076,7 +1081,7 @@ function removedInputWarning(input: DieResult[] | WaferMapInput): WaferWarning |
 /**
  * Turn a layout request into ordinary results: one data-less result per die site
  * lying fully on the wafer, anchored so site (0, 0) is the wafer centre. Every
- * later step — orientation, axis flips, edge exclusion, reticles, the view — is
+ * later step — orientation, axis flips, edge exclusion, reticles — is
  * then the same code a map built from test data runs, and the invariant that a
  * result die is always fully on the wafer holds by construction.
  */
@@ -2033,22 +2038,11 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     // explicitDies is a caller-supplied pre-built layout, always positioned
     // by convention (not part of the coordinate-less data path).
     if (wafer.orientation !== 0) dies = applyOrientation(dies as PositionedDie[], wafer);
-    // The build copies no die after this: finalise them before the view holds them.
+    // The build copies no die after this: finalise them before the result holds them.
     dies = dies.map(finaliseDie);
 
     const reticles    = buildReticles(norm.reticleOpts, wafer, dies as PositionedDie[], 1, 1, 0, 0, 0, 0, wafer.orientation);
-    const showReticle = norm.reticleOpts !== undefined;
 
-    const view = buildView(wafer, dies as PositionedDie[], {
-      reticles,
-      showReticle,
-      plotMode:   autoPlotMode(results),
-      testDefs:   norm.testDefs,
-      // The yield's own pass bins — without this the view resolved bin colours
-      // and failing-die marks against buildView's `[1]` default.
-      passBins:   norm.passBins,
-      ringCount:  norm.ringCount,
-      isLotStack: false }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
     const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
       finaliseDie(attachData({ id: `unpositioned_${i}`, width: dies[0]?.width ?? 1, height: dies[0]?.height ?? 1 }, pt)),
@@ -2056,10 +2050,10 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     const allDies = [...dies, ...unplacedDies, ...unpositionedDies];
 
     return {
-      wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units: 'mm', inference,
+      wafer, dies: allDies, dataAxisFlip: { x: false, y: false }, reticleConfig: norm.reticleOpts, units: 'mm', inference,
       warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...norm.inputValueWarnings, ...(retestWarning ? [retestWarning] : []), ...buildWarnings(advisories, inference), ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
-      plotMode: view.plotMode,
-      metadata: view.metadata,
+      plotMode: autoPlotMode(results),
+      metadata: wafer.metadata ?? null,
       isLotStack: false,
       dataCoverage: computeCoverage(allDies),
       passBins: norm.passBins,
@@ -2077,7 +2071,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   // Geometry inference (pitch, origin, grid, wafer diameter, orientation,
   // edge-exclusion, reticle assignment) runs only on positioned dies —
   // unpositioned ones have no coordinates to infer from and are folded back
-  // in at the very end, after `dies`/`view`/`reticles` are all built from
+  // in at the very end, after `dies`/`reticles` are built from
   // the positioned subset only.
   const positionedResults = results.filter(hasPosition);
   const unpositionedResults = results.filter(r => !hasPosition(r));
@@ -2318,27 +2312,14 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     }
   }
 
-  // The build copies no die after this: finalise them before the view holds them.
+  // The build copies no die after this: finalise them before the result holds them.
   dies = dies.map(finaliseDie);
 
   const reticles    = buildReticles(norm.reticleOpts, wafer, dies, pitchX, pitchY, offsetX, offsetY, colMidX, colMidY, wafer.orientation, flipX, flipY);
-  const showReticle = norm.reticleOpts !== undefined;
-
-  const view = buildView(wafer, dies, {
-    reticles,
-    showReticle,
-    plotMode:     autoPlotMode(results),
-    testDefs:     norm.testDefs,
-    passBins:     norm.passBins,
-    ringCount:    norm.ringCount,
-    dataAxisFlip: { x: flipX, y: flipY },
-    isLotStack:   norm.lotStackOpts !== undefined,
-    aggregationMethod: norm.lotStackOpts?.method,
-    lotSize:      norm.lotStackOpts?.results.length }, { hbinDefs: norm.hbinDefs, sbinDefs: norm.sbinDefs, metadataFields: norm.metadataFields });
 
   // Unpositioned dies never went through grid/geometry inference above (no
-  // coordinates to infer from) — folded in only now, so `view`/`reticles`
-  // (the render draw list) reflect positioned dies only, while the returned
+  // coordinates to infer from) — folded in only now, so `reticles`
+  // reflect positioned dies only, while the returned
   // `dies` and every stat computed below sees the full population.
   const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
     finaliseDie(attachData({ id: `unpositioned_${i}`, width: pitchX, height: pitchY }, pt)),
@@ -2346,10 +2327,10 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   const allDies = [...dies, ...unpositionedDies];
 
   return {
-    wafer, dies: allDies, view, reticleConfig: norm.reticleOpts, units, inference,
+    wafer, dies: allDies, dataAxisFlip: { x: flipX, y: flipY }, reticleConfig: norm.reticleOpts, units, inference,
     warnings: [...(norm.removedFieldWarning ? [norm.removedFieldWarning] : []), ...norm.inputValueWarnings, ...(retestWarning ? [retestWarning] : []), ...buildWarnings(advisories, inference), ...extraWarnings, ...derivedWarnings, ...(norm.ringCountWarning ? [norm.ringCountWarning] : [])],
-    plotMode: view.plotMode,
-    metadata: view.metadata,
+    plotMode: autoPlotMode(results),
+    metadata: wafer.metadata ?? null,
     isLotStack: norm.lotStackOpts !== undefined,
     dataCoverage: computeCoverage(allDies),
     passBins: norm.passBins,
@@ -2360,6 +2341,6 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     sbinDefs: norm.sbinDefs,
     testDefs: norm.testDefs,
     metadataFields: norm.metadataFields,
-    aggrMethod: view.aggrMethod,
-    lotSize: view.lotSize };
+    aggrMethod: norm.lotStackOpts?.method,
+    lotSize: norm.lotStackOpts?.results.length };
 }

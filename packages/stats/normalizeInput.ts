@@ -1,4 +1,4 @@
-import { buildWaferMap, type WaferMapResult } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, isBuiltMap, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { AnalyzeWaferMapInput } from './types.js';
 
 /**
@@ -8,5 +8,5 @@ import type { AnalyzeWaferMapInput } from './types.js';
  * so its lot figures and each wafer's analysis read the same dies.
  */
 export function normalizeInput(input: AnalyzeWaferMapInput): WaferMapResult {
-  return 'wafer' in input && 'dies' in input && 'view' in input ? input : buildWaferMap(input);
+  return isBuiltMap(input) ? input : buildWaferMap(input);
 }

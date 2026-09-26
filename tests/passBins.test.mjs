@@ -69,11 +69,6 @@ test('buildWaferMap — the result carries the pass bins it was built with', () 
   assert.deepEqual(wafer('A').passBins, [1], '[1] only where the input states none');
 });
 
-test('buildWaferMap — the result\'s own view judges pass with them, not buildView\'s default', () => {
-  const r = wafer('A', [1, 2]);
-  assert.ok(r.view.binColors.pass.hard.has(2), 'bin 2 passes on the internal view too');
-});
-
 test('analyzeWaferMap — defaults to the result\'s pass bins', () => {
   const r = wafer('A', [1, 2]);
   assert.equal(r.yield.yieldPercent, 50);
