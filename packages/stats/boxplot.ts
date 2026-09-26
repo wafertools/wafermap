@@ -11,7 +11,7 @@
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
-import { quantile } from './math.js';
+import { fiveNumberSummary } from './math.js';
 
 export interface BoxplotDatum {
   label: string;
@@ -52,22 +52,16 @@ export function buildTestBoxplotData(items: BoxplotItem[], testNumber: number): 
       return { label, min, q1, median, q3, max, count };
     }
 
-    const values = (item.dies ?? [])
-      .filter(d => isYieldEligibleDie(d))
-      .map(d => testValue(d, testNumber))
-      .filter((v): v is number => v !== undefined && Number.isFinite(v))
-      .sort((a, b) => a - b);
+    const values: number[] = [];
+    for (const d of item.dies ?? []) {
+      if (!isYieldEligibleDie(d)) continue;
+      const v = testValue(d, testNumber);
+      if (v !== undefined && Number.isFinite(v)) values.push(v);
+    }
     if (values.length === 0) {
       return { label, min: NaN, q1: NaN, median: NaN, q3: NaN, max: NaN, count: 0 };
     }
-    return {
-      label,
-      min: values[0],
-      q1: quantile(values, 0.25),
-      median: quantile(values, 0.5),
-      q3: quantile(values, 0.75),
-      max: values[values.length - 1],
-      count: values.length,
-    };
+    // The five numbers by selection — the same order statistics a sort gives.
+    return { label, ...fiveNumberSummary(Float64Array.from(values)), count: values.length };
   });
 }

@@ -65,6 +65,12 @@ under `### Breaking`.
   colour, which WebKit rasterises far faster. On a 25-wafer, 266k-die lot the gallery opens in
   4.0 s (was 7.0 s) and a switch to value or stacked mode takes 1.8–2.3 s (was 3.8–4.4 s).
   Chrome draws identical pixels; in WebKit only anti-aliased edge pixels differ.
+- **The lot Summary report opens about five times faster on a large lot.** Its Test Values table
+  finds each test's minimum, mean and maximum in one pass instead of sorting every die's value.
+  On a 25-wafer, 266k-die lot the "Summary report" button takes 0.4 s in Chrome (was 6.0 s) and
+  0.9 s from click to report in WebKit (was 4.7 s). The report is unchanged (compared as HTML).
+  Boxplot quartiles and the histogram's outlier range are found the same way as the Summary
+  panel's, by selection, with the same figures.
 - **Test-value analysis (`enableTestValueAnalysis`) is two to three times faster on large lots.**
   Spec-limit findings count each region's dies in one pass instead of re-reading every die for
   every region, the test list is read column by column, and per-test statistics find their

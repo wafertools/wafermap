@@ -139,14 +139,21 @@ function testSection(
     if (precomputed) {
       ({ min, max, mean } = precomputed);
     } else {
-      const vals = active
-        .map(d => testValue(d, tn))
-        .filter((v): v is number => v !== undefined && isFinite(v));
-      if (!vals.length) continue;
-      vals.sort((a, b) => a - b);
-      min = vals[0];
-      max = vals[vals.length - 1];
-      mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      // One pass: min, max and the sum. No array of every value and no sort —
+      // for a lot's report that was every die of every wafer, per test.
+      let n = 0, sum = 0;
+      min = Infinity;
+      max = -Infinity;
+      for (const d of active) {
+        const v = testValue(d, tn);
+        if (v === undefined || !isFinite(v)) continue;
+        n++;
+        sum += v;
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      if (n === 0) continue;
+      mean = sum / n;
     }
 
     rows.push([
