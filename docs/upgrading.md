@@ -35,6 +35,15 @@ text now has no verdict instead of counting as a fail, which can change `yield`.
 `dies` get the same checks as `results`, and a pre-built die whose coordinates STDF cannot store
 becomes an unpositioned die.
 
+### Gallery cards off screen are drawn when needed
+
+`renderWaferGallery` now draws a card's canvas only while the card is on (or near) the
+screen; the rest are drawn as they scroll into view. The gallery's own PNG, printing and a
+card's own PNG draw every card first, so they always show the whole gallery. If your app
+captures the cards itself — reading a card's `<canvas>` with `toDataURL`, or screenshotting
+the page with a tool such as `html2canvas` — cards that have not been on screen are blank:
+scroll them into view first, or use the gallery's own PNG export.
+
 ### `WaferMapResult.view` is removed
 
 `view` was marked `@internal`, and the renderers build their own draw list whenever they draw.
