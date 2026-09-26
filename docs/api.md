@@ -3114,33 +3114,39 @@ missing one, which is the one case where this bucket is ambiguous.
 large build does not freeze the UI.  The `@wafertools/wafermap/worker` subpackage
 provides a thin wrapper around a pre-built worker script.
 
-**The worker is a responsiveness tool, not a speed tool.** The worker runs the
-*same* code as the main thread, then pays an additional cost: every `WaferMapInput`
-sent in and every `WaferMapResult` sent back is deep-copied by the structured-clone
-algorithm behind `postMessage`. For a result this copy can cost **~2× the build
-itself**, and the deserialize half of it lands back on the main thread. So in
-total wall-clock time the worker is **always slower** than calling `buildWaferMap`
-directly. What you buy is that most of the work happens off-thread, so the page
-stays interactive instead of locking up.
+**The worker is a responsiveness tool, not a speed tool.** It runs the *same* code as
+the main thread, plus the cost of moving data across `postMessage`. The input is copied
+into the worker. On the way back, the built maps' test values are *transferred* (moved,
+not copied) and only the die objects are copied. So in total wall-clock time the worker
+is **always slower** than calling `buildWaferMap` directly. What you buy is that the page
+stays interactive while it works.
+
+**Pass results as columns if you already have them** (`DieColumns`, §4.1.1). Copying typed
+columns into the worker is fast, so the page does not freeze at all. Rows are copied one
+object at a time, and that copy runs on the page: with rows the worker still freezes the
+page for about half as long as doing the work there.
 
 **When to use it:** only when a *single synchronous build would block the UI long
-enough to notice* — roughly tens of thousands of dies, or many wafers built in one
-batch. Indicative figures (vary by machine and data):
+enough to notice*: roughly tens of thousands of dies, or many wafers built in one
+batch. Indicative figures for build + analysis of one wafer, three tests, the worker
+created once and reused (Chrome; they vary by machine and data):
 
-| dies per wafer | main-thread build+analyze (blocks UI) | worker wall-clock | verdict |
-|---|---|---|---|
-| ~500 | ~7 ms | ~12 ms | **don't use the worker** — nothing to unblock |
-| ~20,000 | ~275 ms | ~370 ms | use it if a ~¼s freeze matters |
-| ~50,000 | ~810 ms | ~1130 ms | use it — a ~0.8s freeze is very visible |
+| dies per wafer | input | on the main thread (page frozen) | worker, total | worker, longest page freeze |
+|---|---|---|---|---|
+| ~440 | rows or columns | ~15 ms | ~16–25 ms | none: don't use the worker |
+| ~20,000 | rows | ~140 ms | ~300 ms | ~75 ms |
+| ~20,000 | columns | ~80 ms | ~140 ms | under 50 ms |
+| ~50,000 | rows | ~330 ms | ~740 ms | ~170 ms |
+| ~50,000 | columns | ~190 ms | ~300 ms | under 50 ms |
 
 Below a few thousand dies the build is fast enough that the worker only adds
 latency. Don't reach for it by default. `renderWaferMap` always runs on the main
 thread regardless.
 
-**If you need both the result and its analysis, use `runWithAnalysis` (§8.5), not
-`run` followed by `runAnalysis`.** The latter ships the large result out of the
-worker and clones it straight back in for analysis — three crossings of the big
-object instead of one.
+**If you need both the result and its analysis, use `runWithAnalysis` (§8.4), not
+`run` followed by `runAnalysis`.** `runAnalysis` copies the results you pass back into
+the worker, test values included, so the combination moves each map three times
+instead of once.
 
 ### 8.1 Setup
 

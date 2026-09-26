@@ -32,8 +32,8 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
-import { dieHasVerdicts, testValue } from '../core/dieTable.js';
-import { isParametricTest, getTestPassStatus, type TestDef } from '../renderer/buildWaferMap.js';
+import { dieHasVerdicts, testValuesReader } from '../core/dieTable.js';
+import { isParametricTest, getTestPassStatus, testPassStatusReader, type TestDef } from '../renderer/buildWaferMap.js';
 import { classifySpec } from '../renderer/spec.js';
 import { testLabel, derivedFields } from '../renderer/testLabel.js';
 import type { StatsSummary } from './types.js';
@@ -128,6 +128,12 @@ export function buildTestPassRateData(
     }
   };
 
+  const readValues = testValuesReader(wanted.map(d => d.testNumber!));
+  const values = new Float64Array(wanted.length);
+  // `getTestPassStatus`'s rule, read for every wanted test of a die at once.
+  const readVerdicts = testPassStatusReader(wanted);
+  const verdicts = new Int8Array(wanted.length);
+
   // Only meaningful while comparing the two parametric sources, and only once
   // some die has actually carried both — otherwise it stays null, which is a
   // different statement from "0 disagreements".
@@ -135,7 +141,7 @@ export function buildTestPassRateData(
   let comparableDies = 0;
   let disagreements = 0;
 
-  groups.forEach((group, gi) => {
+  groups.forEach(function tallyGroup(group, gi) {
     for (const item of group.items) {
       // `testSpecYield` IS the spec-limit judgement, already computed per wafer —
       // so it is a fast path for 'spec' only. There is no precomputed equivalent
@@ -156,26 +162,38 @@ export function buildTestPassRateData(
         continue;
       }
 
+      // Die by die is dies × tests reads, so values and verdicts come through
+      // the bulk readers (columns looked up once per table) and each test's two tallies
+      // are resolved once per item, not once per die.
+      // Plain arrays and direct increments, no destructuring or per-count
+      // helper: this loop runs dies × tests times, and WebKit (the desktop app)
+      // ran those constructs several times slower than V8 does.
+      const overallAcc = wanted.map(def => byTest.get(def.testNumber!)!.overall);
+      const groupAcc = wanted.map(def => byTest.get(def.testNumber!)!.perGroup[gi]);
       for (const die of item.dies ?? []) {
         if (!isYieldEligibleDie(die)) continue;
-        for (const def of wanted) {
-          const tn = def.testNumber!;
-          const specCat = classifySpec(testValue(die, tn), def);
-          const flagVerdict = getTestPassStatus(die, tn, def);
+        readValues(die, values);
+        readVerdicts(die, verdicts);
+        for (let k = 0; k < wanted.length; k++) {
+          const def = wanted[k];
+          const specCat = classifySpec(values[k], def);
+          const flagVerdict = verdicts[k] === -1 ? undefined : verdicts[k] === 1;
 
           if (comparingParametric && specCat !== null && flagVerdict !== undefined) {
             comparableDies++;
             if ((specCat === 'pass') !== flagVerdict) disagreements++;
           }
 
+          const overall = overallAcc[k], group = groupAcc[k];
           if (kind === 'spec') {
             if (specCat === null) continue;
-            if (specCat === 'pass') add(tn, gi, { pass: 1 });
-            else if (specCat === 'failLow') add(tn, gi, { fail: 1, failLow: 1 });
-            else add(tn, gi, { fail: 1, failHigh: 1 });
+            if (specCat === 'pass') { overall.pass++; group.pass++; continue; }
+            overall.fail++; group.fail++;
+            if (specCat === 'failLow') { overall.failLow++; group.failLow++; }
+            else { overall.failHigh++; group.failHigh++; }
           } else {
             if (flagVerdict === undefined) continue;
-            add(tn, gi, flagVerdict ? { pass: 1 } : { fail: 1 });
+            if (flagVerdict) { overall.pass++; group.pass++; } else { overall.fail++; group.fail++; }
           }
         }
       }

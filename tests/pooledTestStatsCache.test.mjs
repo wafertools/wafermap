@@ -96,6 +96,15 @@ test('a second call over the same dies arrays returns the identical memoised res
   assert.equal(second, first, 'same population must hit the memo, not recompute');
 });
 
+test('a functional test in one caller\'s list and not another\'s still hits — the pass never reads it', () => {
+  clearPooledTestStatsCache();
+  const items = [{ dies: makeWafer() }];
+  // The lot panel's list carries the functional tests; the Insights Overview's does not.
+  const first = pooled(items, [...defs(), { testNumber: 2001, name: 'Continuity', testType: 'F' }]);
+  const second = pooled([{ dies: items[0].dies }], defs());
+  assert.equal(second, first, 'a def the pass skips must not split the cache');
+});
+
 test('a memo hit costs no steps — the die pass does not run again', () => {
   clearPooledTestStatsCache();
   const items = [{ dies: makeWafer(400) }];
@@ -190,4 +199,78 @@ test('partial and edge-excluded dies are outside the population, in the tally as
   assert.deepEqual(out.specTally.get(1050), { n: 1, fail: 0 },
     'the two excluded dies would each have been a spec failure had they counted');
   assert.equal(out.stats.get(1050).count, 1);
+});
+
+// ── Sharing a pass that is still under way ────────────────────────────────────
+// The lot panel builds its table in slices; Insights, opened meanwhile, asks
+// for the same population. They must share the one pass, not run two.
+
+/** Steps a caller took, and its result. */
+function stepAll(gen) {
+  let steps = 0, r = gen.next();
+  while (!r.done) { steps++; r = gen.next(); }
+  return { steps, value: r.value };
+}
+/** A lot with 20 tests, so a pass takes enough steps to share and cancel part-way. */
+const TESTS = 20;
+const manyDefs = () => Array.from({ length: TESTS }, (_, i) => ({ testNumber: 2000 + i, name: `T${i}`, unit: 'V', limitLow: 0.1, limitHigh: 0.9 }));
+function lot() {
+  let seed = 5;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  return Array.from({ length: 4 }, () => ({
+    dies: Array.from({ length: 500 }, (_, i) => {
+      const testValues = {};
+      for (let t = 0; t < TESTS; t++) testValues[2000 + t] = rnd();
+      return { x: i % 25, y: (i / 25) | 0, hbin: 1, sbin: 1, testValues };
+    }),
+  }));
+}
+
+test('two callers advancing at once share one pass: together they take the steps of one', () => {
+  clearPooledTestStatsCache();
+  const items = lot();
+  const alone = stepAll(pooledTestStatsSteps(items, manyDefs()));
+  assert.ok(alone.steps > 4, `the pass needs several steps to test sharing (${alone.steps})`);
+
+  clearPooledTestStatsCache();
+  const a = pooledTestStatsSteps(items, manyDefs());
+  const b = pooledTestStatsSteps([...items.map(it => ({ dies: it.dies }))], manyDefs());
+  let steps = 0, ra = a.next(), rb = b.next();
+  while (!ra.done || !rb.done) {
+    if (!ra.done) { steps++; ra = a.next(); }
+    if (!rb.done) { steps++; rb = b.next(); }
+  }
+  assert.equal(ra.value, rb.value, 'both callers get the one result');
+  assert.ok(steps <= alone.steps + 2, `shared pass took ${steps} steps, one pass takes ${alone.steps}`);
+  assert.deepEqual(ra.value.capability, alone.value.capability);
+});
+
+test('a caller cancelled part-way leaves the pass to the others, who finish it correctly', () => {
+  clearPooledTestStatsCache();
+  const items = lot();
+  const expected = stepAll(pooledTestStatsSteps(items, manyDefs())).value;
+  clearPooledTestStatsCache();
+
+  const a = pooledTestStatsSteps(items, manyDefs());
+  const b = pooledTestStatsSteps(items, manyDefs());
+  a.next(); b.next(); a.next();
+  a.return();                       // the panel re-renders and cancels its run
+  const { value } = stepAll(b);
+  assert.deepEqual(value.capability, expected.capability);
+  assert.deepEqual([...value.stats], [...expected.stats]);
+  assert.deepEqual([...value.specTally], [...expected.specTally]);
+});
+
+test('when every caller is cancelled the pass is abandoned: the next caller starts afresh', () => {
+  clearPooledTestStatsCache();
+  const items = lot();
+  const alone = stepAll(pooledTestStatsSteps(items, manyDefs()));
+  clearPooledTestStatsCache();
+
+  const a = pooledTestStatsSteps(items, manyDefs());
+  a.next(); a.next(); a.next();
+  a.return();
+  const again = stepAll(pooledTestStatsSteps(items, manyDefs()));
+  assert.equal(again.steps, alone.steps, 'a new caller runs the whole pass, not the remains of the abandoned one');
+  assert.deepEqual(again.value.capability, alone.value.capability);
 });

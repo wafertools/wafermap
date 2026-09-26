@@ -2125,10 +2125,12 @@ For lots with many wafers or high die counts, `buildWaferMap` can be moved off t
 main thread to avoid blocking the UI.
 
 > **Use the worker for responsiveness, not speed.** The worker runs the same code
-> as the main thread, then pays extra to copy the input in and the result out
-> across `postMessage` (structured clone). In total wall-clock time it is **always
-> slower** than calling `buildWaferMap` directly — what you gain is that the page
-> stays interactive instead of freezing during a big build. Only reach for it when
+> as the main thread, then pays extra to copy the input in and the built dies out
+> across `postMessage` (the test values are moved, not copied). In total wall-clock
+> time it is **always slower** than calling `buildWaferMap` directly — what you gain
+> is that the page stays interactive instead of freezing during a big build. Results
+> passed as columns (`DieColumns`) cross without freezing the page; rows are copied
+> on the page, which still freezes it for part of the time. Only reach for it when
 > a single synchronous build is large enough to cause a visible freeze (roughly
 > tens of thousands of dies). Below a few thousand dies it just adds latency; build
 > on the main thread. See [§8 in the API reference](api.md#8-web-worker) for

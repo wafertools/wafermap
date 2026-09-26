@@ -6,7 +6,7 @@
 // raw Die[]" dedup pattern used elsewhere in this package (boxplot.ts,
 // binPareto.ts, summaryPanel.ts, etc.): this module needs the five-number
 // summary (min/q1/median/q3/max) of every wafer's values *pooled together*
-// into one combined, exactly-sorted array — quantiles of a pooled
+// into one combined population — quantiles of a pooled
 // population cannot be reconstructed from each wafer's own quartiles
 // (`perTestStats`/`perWaferTestStats`) without either raw values or an
 // accuracy-losing approximation, and this library's correctness rules out
@@ -41,9 +41,9 @@ import { isYieldEligibleDie } from '../core/dies.js';
 import { testValuesReader } from '../core/dieTable.js';
 import { type Chunked, drain } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
-import { countOutOfSpecSorted, hasSpecLimits } from '../renderer/spec.js';
+import { countOutOfSpec, hasSpecLimits } from '../renderer/spec.js';
 import { testLabel, derivedFields } from '../renderer/testLabel.js';
-import { type DescriptiveStats, describeSorted, quantile } from './math.js';
+import { type DescriptiveStats, describeValues } from './math.js';
 import type { TestCapability } from './types.js';
 
 export interface CapabilityDatum {
@@ -286,9 +286,9 @@ export function buildCapabilityData(items: CapabilityItem[], testDefs: TestDef[]
 /**
  * @internal {@link buildCapabilityData} as a {@link Chunked} computation, for a
  * caller rendering on the main thread — a lot-sized call walks every die of
- * every wafer once per test and then sorts every value of every test, which is
- * seconds of uninterruptible work at lot scale. Steps are one slice of the die
- * pass, or one test's sort. Same result, same order; the synchronous entry
+ * every wafer once per test and then finds the quartiles of every test's values,
+ * which is seconds of uninterruptible work at lot scale. Steps are one slice of
+ * the die pass, or one test's quartiles. Same result, same order; the synchronous entry
  * above is this function drained.
  */
 export function* buildCapabilityDataSteps(items: CapabilityItem[], testDefs: TestDef[]): Chunked<CapabilityDatum[]> {
@@ -309,9 +309,9 @@ export interface PooledTestStats {
   stats: Map<number, DescriptiveStats>;
   /**
    * Per test, how many pooled values fell outside the test's own spec limits —
-   * the spec-yield tally, counted off the sorted values this pass already held.
+   * the spec-yield tally, counted off the values this pass already held.
    * Only tests carrying at least one limit appear. `fail` is
-   * `countOutOfSpecSorted` — the same rule as the per-die `classifySpec`.
+   * `countOutOfSpec` — the per-die `classifySpec` rule, counted.
    *
    * This is here rather than the sorted arrays themselves because the result is
    * memoised: a tally is a handful of numbers per test, whereas the values are
@@ -355,14 +355,21 @@ function pooledCacheKey(items: CapabilityItem[], testDefs: TestDef[]): string {
     ids.push(id);
   }
   // Every field the pass reads off a def, so a changed limit cannot hit a
-  // cached tally computed against the old one.
-  const defs = testDefs.map(d =>
+  // cached tally computed against the old one — and only the defs it reads
+  // (`capabilityDefs`' filter): the lot panel's list carries the functional
+  // tests and the Insights Overview's does not, and keying on those would give
+  // one population two entries, computed twice.
+  const defs = testDefs.filter(d => d.testNumber !== undefined && isParametricTest(d)).map(d =>
     `${d.testNumber}${d.testType ?? 'P'}${d.limitLow ?? ''}${d.limitHigh ?? ''}${d.specLow ?? ''}${d.specHigh ?? ''}${d.name ?? ''}${d.unit ?? ''}`);
   return `${ids.join(',')}${defs.join('')}`;
 }
 
 /** @internal Test seam — `tests/pooledTestStatsCache.test.mjs`. */
-export function clearPooledTestStatsCache(): void { pooledCache.clear(); }
+export function clearPooledTestStatsCache(): void {
+  pooledCache.clear();
+  for (const run of pooledInFlight.values()) run.work.return(undefined as never);
+  pooledInFlight.clear();
+}
 
 /**
  * @internal Per-test descriptive statistics AND capability indices for a pooled
@@ -373,8 +380,8 @@ export function clearPooledTestStatsCache(): void { pooledCache.clear(); }
  * third time inside `buildCapabilityData` for the Ppk column beside them — all
  * reading the same values off the same dies and all of them O(dies × tests).
  * On a 50-wafer lot of 4,000 dies × 100 tests that was 40 s of a 41 s panel
- * render. One pass collects the values, one sort per test serves the quantiles
- * of both the table and the chart, and the spec tally reads the sorted array.
+ * render. One pass collects the values, one quartile selection per test serves
+ * both the table and the chart, and the spec tally counts the same values.
  *
  * {@link Chunked}: one step per slice of the die pass, one per test thereafter.
  */
@@ -388,6 +395,54 @@ export function* pooledTestStatsSteps(
   // lot panel and Insights read the same entry repeatedly across a session.
   if (hit) { pooledCache.delete(key); pooledCache.set(key, hit); return hit; }
 
+  // Not finished yet: join the pass already under way for this population, if
+  // any, rather than starting a second one. Every caller advances the SAME
+  // pass, one step per yield of its own, so two callers running at once (the
+  // lot panel and Insights, opened while the panel is still working) finish it
+  // together instead of computing it twice side by side. A caller cancelled
+  // part-way leaves it to the others; the last one to leave abandons it, so a
+  // half-finished pass — every value in the lot — never outlives its callers.
+  let run = pooledInFlight.get(key);
+  if (!run) {
+    run = { work: computePooledTestStats(items, testDefs, key), callers: 0 };
+    pooledInFlight.set(key, run);
+  }
+  const shared = run;
+  shared.callers++;
+  try {
+    for (;;) {
+      if (shared.result) return shared.result;
+      const step = shared.work.next();
+      if (step.done) {
+        shared.result = step.value;
+        pooledInFlight.delete(key);
+        return step.value;
+      }
+      yield;
+    }
+  } finally {
+    shared.callers--;
+    if (!shared.result && shared.callers === 0) {
+      shared.work.return(undefined as never);
+      if (pooledInFlight.get(key) === shared) pooledInFlight.delete(key);
+    }
+  }
+}
+
+/** A pooled pass under way, shared by every caller asking for its population. */
+interface PooledRun {
+  work: Chunked<PooledTestStats>;
+  callers: number;
+  result?: PooledTestStats;
+}
+const pooledInFlight = new Map<string, PooledRun>();
+
+/** The pooled pass itself — {@link pooledTestStatsSteps} is how callers reach it. */
+function* computePooledTestStats(
+  items: CapabilityItem[],
+  testDefs: TestDef[],
+  key: string,
+): Chunked<PooledTestStats> {
   const empty: PooledTestStats = { stats: new Map(), specTally: new Map(), capability: [] };
   const { defByTestNumber, specByTest } = capabilityDefs(testDefs);
   if (defByTestNumber.size === 0) return empty;
@@ -403,33 +458,24 @@ export function* pooledTestStatsSteps(
     if (testNumber === undefined) continue;
     const acc = accs.get(testNumber);
     if (!acc || acc.n === 0 || !defByTestNumber.has(testNumber)) continue;
-    // Sorted as a `Float64Array`, NOT as the plain array the pass collected
-    // into. This one line is the whole per-test step, and the per-test step is
-    // the longest task this library runs: measured in Chrome on a 50-wafer lot
-    // of 8,000 dies x 50 tests, `array.sort((a, b) => a - b)` over one test's
-    // 400,000 pooled values was 486 ms of a 497 ms step and 10.9 s of a 13.3 s
-    // panel. A typed array sorts numerically in the engine with no comparator
-    // callback per comparison: the same 400,000 values, including the copy in,
-    // are 45 ms on the same machine — 4.4x, and it is what puts the longest
-    // step back under the ~500 ms at which the browser starts offering to kill
-    // the page.
+    // Copied into a `Float64Array` for `describeValues`, which finds the
+    // quartiles by selection rather than sorting: this is the whole per-test
+    // step, and the longest task the panel runs. At 266k pooled values a
+    // typed-array sort is ~24 ms per test in Chrome; selection is a few ms.
     //
     // The plain array is dropped from `values` as it is copied, so the extra
     // copy is one test's values (~3 MB at 400k), never the lot's.
     const raw = values.get(testNumber)!;
     values.delete(testNumber);
     const allValues = Float64Array.from(raw);
-    // No comparator: `TypedArray.prototype.sort` is numeric ascending by
-    // definition, which is exactly what `(a, b) => a - b` asked for. Every
-    // value here passed `Number.isFinite`, so there are no NaNs to order.
-    allValues.sort();
-    stats.set(testNumber, describeSorted(allValues));
-
-    // The spec-limit tally, by binary search on the array we just sorted — the
-    // panel used to get this from a second full scan of every pooled die.
+    // Every value here passed `Number.isFinite`, so there are no NaNs to order.
+    // The spec tally reads the values before `describeValues` reorders them —
+    // though order does not matter to a count.
     if (hasSpecLimits(def)) {
-      specTally.set(testNumber, { n: allValues.length, fail: countOutOfSpecSorted(allValues, def) });
+      specTally.set(testNumber, { n: allValues.length, fail: countOutOfSpec(allValues, def) });
     }
+    const described = describeValues(allValues);
+    stats.set(testNumber, described);
 
     const spec = specByTest.get(testNumber);
     const figures = capabilityFromMoments(testNumber, def, spec, acc);
@@ -439,17 +485,17 @@ export function* pooledTestStatsSteps(
       const span = spec.usl - spec.lsl;
       norm = (v: number) => (v - spec.lsl) / span;
     } else {
-      const dataMin = allValues[0];
-      const dataSpan = allValues[allValues.length - 1] - dataMin;
+      const dataMin = described.min;
+      const dataSpan = described.max - dataMin;
       norm = dataSpan > 0 ? (v: number) => (v - dataMin) / dataSpan : () => 0.5;
     }
     out.push({
       ...figures,
-      min: norm(allValues[0]),
-      q1: norm(quantile(allValues, 0.25)),
-      median: norm(quantile(allValues, 0.5)),
-      q3: norm(quantile(allValues, 0.75)),
-      max: norm(allValues[allValues.length - 1]),
+      min: norm(described.min),
+      q1: norm(described.q1),
+      median: norm(described.median),
+      q3: norm(described.q3),
+      max: norm(described.max),
     });
   }
   const result: PooledTestStats = { stats, specTally, capability: sortCapability(out) };

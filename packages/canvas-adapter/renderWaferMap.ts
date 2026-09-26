@@ -498,6 +498,14 @@ export interface CardRenderOptions extends Omit<RenderOptions, 'viewOptions'> {
   chromeInset?: string;
   /** Replaces the expand action for both the expand button and the E key. */
   onExpand?: () => void;
+  /**
+   * Draw the canvas only while it is on screen (or near it). An off-screen card
+   * keeps its view up to date and is drawn when it scrolls into view, or by
+   * `drawPendingNow()` — which anything capturing the canvas (the gallery PNG,
+   * printing) must call first. For gallery grid cards: a large lot's gallery
+   * spent most of a mode switch drawing cards nobody could see.
+   */
+  drawWhenVisible?: boolean;
 }
 
 /** @internal */
@@ -514,6 +522,8 @@ export interface CardController extends WaferMapController {
   getExportTitle(): string;
   /** This map's save hook, naming files for its own wafer — for a save the gallery starts on a card's behalf. */
   getSaveImageHook(): SaveImageHandler;
+  /** Draw now if a `drawWhenVisible` card skipped drawing while off screen. */
+  drawPendingNow(): void;
 }
 
 /** @internal The public view of a card's options: everything but the gallery's shared state. */
@@ -1378,7 +1388,10 @@ export function renderWaferMapCard(
   if (insightsEnabled && insightsOpts?.defaultOpen) queueMicrotask(() => setInsightsOpen(true));
 
   let currentView:   View;
-  let dieKeyIndex:    Map<string, number>;
+  /** Die key → index into `currentView.dies`, for the selection overlay. Built
+   *  on first use after each rebuild: a key per die is real work on a large
+   *  gallery, and nothing needs it until dies are selected. */
+  let dieKeyIndex:    Map<string, number> | undefined;
   let fittedViewport: ViewportTransform | null = null;
   let viewport:       ViewportTransform | null = null;
   let binLegendRows:  BinLegendRow[] = [];
@@ -1460,7 +1473,7 @@ export function renderWaferMapCard(
         rotation: so.rotation ?? 0,
         flipX:    so.flipX   ?? false,
         flipY:    so.flipY   ?? false } } satisfies ViewOptions, { hbinDefs, sbinDefs, metadataFields });
-    dieKeyIndex = new Map(currentView.dies.map((d, i) => [getDieKey(d), i]));
+    dieKeyIndex = undefined;
     // Only for colours this map resolved itself. Supplied colours belong to a
     // wider population (a gallery), whose owner states the advisory once —
     // repeating it on every card would bury it, and name bins a card lacks.
@@ -2309,6 +2322,19 @@ export function renderWaferMapCard(
   // ── Render ─────────────────────────────────────────────────────────────────
   let rafPending = false;
 
+  // `drawWhenVisible`: until the observer's first report the card counts as off
+  // screen, so a card below the fold is never drawn at mount. Without an
+  // IntersectionObserver (a test DOM, an old engine) every card draws as before.
+  const visibilityObserver = options.drawWhenVisible && ownerWindow.IntersectionObserver
+    ? new ownerWindow.IntersectionObserver(entries => {
+      onScreen = entries[entries.length - 1].isIntersecting;
+      if (onScreen && drawPending) render();
+    }, { rootMargin: '25%' })
+    : null;
+  let onScreen = visibilityObserver === null;
+  let drawPending = false;
+  visibilityObserver?.observe(canvas);
+
   function scheduleRender(): void {
     if (rafPending) return;
     rafPending = true;
@@ -2316,6 +2342,8 @@ export function renderWaferMapCard(
   }
 
   function render(): void {
+    if (!onScreen) { drawPending = true; return; }
+    drawPending = false;
     const vp = viewport ?? undefined;
     // Derive die pitch from the first die so axis labels show die grid indices.
     const firstDie = currentView.dies[0];
@@ -2396,13 +2424,14 @@ export function renderWaferMapCard(
     // Inset slightly so the ring sits just inside the die edge.
     const inset = Math.max(1, Math.min(3, dieHalfW * 0.08));
 
-    // Collect selected die screen rects — O(selected) via pre-built key→index map.
+    // Collect selected die screen rects — O(selected) via the key→index map.
     const hw = dieHalfW - inset;
     const hh = dieHalfH - inset;
     type SelRect = { sx: number; sy: number };
     const selRects: SelRect[] = [];
+    if (selectedKeys.size > 0) dieKeyIndex ??= new Map(currentView.dies.map((d, i) => [getDieKey(d), i]));
     for (const key of selectedKeys) {
-      const idx = dieKeyIndex.get(key);
+      const idx = dieKeyIndex!.get(key);
       if (idx === undefined) continue;
       selRects.push({ sx: vp.originX + pts[idx].x * vp.ppm, sy: vp.originY - pts[idx].y * vp.ppm });
     }
@@ -2471,8 +2500,18 @@ export function renderWaferMapCard(
     ctx.restore();
   }
 
+  /** Draw now if this card skipped drawing while off screen (`drawWhenVisible`). */
+  function drawPendingNow(): void {
+    if (!drawPending) return;
+    const wasOnScreen = onScreen;
+    onScreen = true;
+    render();
+    onScreen = wasOnScreen;
+  }
+
   // ── Download PNG ───────────────────────────────────────────────────────────
   function downloadPng(): void {
+    drawPendingNow();
     canvas.toBlob(blob => {
       if (!blob) return;
       saveImageBlob(blob, mapExportTitle(), exportHooks.onSaveImage);
@@ -3212,6 +3251,8 @@ export function renderWaferMapCard(
       return exportHooks.onSaveImage;
     },
 
+    drawPendingNow,
+
     getBinColors(): BinColors {
       return currentView.binColors;
     },
@@ -3266,6 +3307,7 @@ export function renderWaferMapCard(
       closeDrilldownMenu?.();
       canvas.removeEventListener('click',        onCanvasClick);
       resizeObserver.disconnect();
+      visibilityObserver?.disconnect();
       dprMediaQuery.removeEventListener('change', onDprChange);
       schemeMediaQuery.removeEventListener('change', onSchemeChange);
       ownerWindow.removeEventListener('blur', onWindowBlur);

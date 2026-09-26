@@ -52,7 +52,8 @@ import { QUANTITY } from './charts/palette.js';
 import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
 import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../stats/yield.js';
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
-import { buildLotTestSection, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
+import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
+import { runChunked } from './chunked.js';
 import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
@@ -887,11 +888,37 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // Full column set and a Ppk column: this card is a full-width sibling of
       // the grid, not the 260px docked panel, so it carries the descriptive
       // statistics the panel's compact variant leaves to the report/CSV.
-      const testValues = buildLotTestSection(
+      //
+      // Built in slices, like the panel's own copy: on a large lot the pooled
+      // statistics behind it are seconds of work when Insights opens before the
+      // panel has finished them. It then joins the panel's pass (see
+      // `pooledTestStatsSteps`) rather than repeating it, and the rest of the
+      // Overview is usable meanwhile. Already computed, it is built in the
+      // first slice, before this function returns, with no placeholder.
+      const card = plainCard();
+      let built: HTMLElement | null = null;
+      const run = runChunked(buildLotTestSectionSteps(
         allDies, testDefs, undefined, perWaferSummaries, onSaveText,
         diesByWafer.map(d => ({ dies: d })), undefined, 'full',
-      );
-      if (testValues) { const c = plainCard(); c.appendChild(testValues); testValuesCard = c; }
+      ), {
+        onDone: section => {
+          built = section;
+          card.removeAttribute('aria-busy');
+          if (section) card.replaceChildren(section);
+          else card.remove();
+        },
+      });
+      if (run.done) {
+        if (built) testValuesCard = card;
+      } else {
+        const note = doc.createElement('div');
+        note.textContent = 'Computing test statistics…';
+        Object.assign(note.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
+        card.setAttribute('aria-busy', 'true');
+        card.appendChild(note);
+        testValuesCard = card;
+        destroyFns.push(() => run.cancel());
+      }
     }
     // Functional tests get their own pass-rate card — they are excluded from the
     // parametric test-values table above (mean/σ of a pass/fail outcome is

@@ -152,6 +152,21 @@ export function gridKey(x: number, y: number): number {
   return x * 4294967296 + y;
 }
 
+/**
+ * A die's `getDieKey` identity as a value that is cheap to hash: two dies get
+ * equal position keys exactly when their `getDieKey` strings are equal. Integer
+ * coordinates in STDF's range map one-to-one to {@link gridKey}; anything else
+ * keeps its `getDieKey` string. For sets and maps over many dies (stacked cards,
+ * analysis), where building a string per die was most of the work. Never shown
+ * and never stored — findings carry `getDieKey` strings.
+ */
+export function positionKey(die: { x?: number; y?: number; id?: string }): number | string {
+  const { x, y } = die;
+  return Number.isInteger(x) && Number.isInteger(y) && Math.abs(x!) <= 32767 && Math.abs(y!) <= 32767
+    ? gridKey(x!, y!)
+    : getDieKey(die);
+}
+
 export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}): boolean {
   if (die.partial) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;

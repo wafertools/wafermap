@@ -31,7 +31,15 @@ const {
 } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
 const { runChunked } = await import('../dist/packages/canvas-adapter/chunked.js');
 const { drain } = await import('../dist/packages/core/utils.js');
-const { describeSorted } = await import('../dist/packages/stats/math.js');
+
+/** The reference: sort, then read the order statistics directly. */
+function describeBySorting(vals) {
+  const s = [...vals].sort((a, b) => a - b);
+  const q = (p) => { const pos = p * (s.length - 1), lo = Math.floor(pos), hi = Math.ceil(pos); return s[lo] + (s[hi] - s[lo]) * (pos - lo); };
+  const mean = s.reduce((a, b) => a + b, 0) / s.length;
+  const stddev = Math.sqrt(s.reduce((a, v) => a + (v - mean) ** 2, 0) / s.length);
+  return { count: s.length, min: s[0], max: s[s.length - 1], mean, stddev, median: q(0.5), q1: q(0.25), q3: q(0.75) };
+}
 
 const TESTS = [
   { testNumber: 1050, name: 'Idsat', unit: 'A', limitLow: -2, limitHigh: 2 },
@@ -112,7 +120,7 @@ test('pooled pass — every displayed statistic matches a naive per-test computa
     const cols = line.split(',');
     const col = (name) => Number(cols[header.indexOf(name)]);
     const vals = allDies.map(d => d.testValues[def.testNumber]).filter(v => Number.isFinite(v));
-    const expected = describeSorted([...vals].sort((a, b) => a - b));
+    const expected = describeBySorting(vals);
     assert.equal(col('N'), expected.count, `${def.name} N`);
     // Formatted to a few significant digits on the way out, so compare
     // relatively rather than demanding the full double back.

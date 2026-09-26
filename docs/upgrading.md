@@ -8,6 +8,33 @@ each removal, and whether it could come back, are in
 
 ## 0.32.0
 
+### Test values on built dies are read-only
+
+`die.testValues` and `die.testPass` on a die from `buildWaferMap` are now built from the map's
+columns each time you read them, as a frozen object. Three things follow:
+
+- **Writing fails.** `die.testValues = …` throws a `TypeError`. The objects are frozen, so
+  `die.testValues[1050] = …` or `delete` throws in strict-mode code (ES modules, TypeScript
+  output) and is silently ignored in a classic script. Put the values in the input to `buildWaferMap`, or make your own copy of the die:
+  `{ ...die, testValues: { ...die.testValues, 1050: v } }`.
+- **Each read is a new object**, so `die.testValues !== die.testValues`. Compare values, not
+  objects, and read the object once into a local variable inside a loop over tests.
+- **The map no longer shares your input's objects.** Changing a record's `testValues` after the
+  build does not change the map; build again.
+
+A spread, `structuredClone` or `JSON.stringify` of a built die gives ordinary objects with the
+same values. Dies you build yourself keep ordinary objects.
+
+### Input values of the wrong type are left out
+
+A bin, site number or test value that is not a number (for example the string `"3"`), or a
+verdict that is not `true`/`false`, is now treated as missing, the same as a value outside the
+STDF V4 ranges. It is still reported as the `input-values-not-numbers` warning. If your data can
+carry numbers as strings, convert them before calling `buildWaferMap`: a die whose only bin was
+text now has no verdict instead of counting as a fail, which can change `yield`. Pre-built
+`dies` get the same checks as `results`, and a pre-built die whose coordinates STDF cannot store
+becomes an unpositioned die.
+
 ### `WaferMapResult.view` is removed
 
 `view` was marked `@internal`, and the renderers build their own draw list whenever they draw.

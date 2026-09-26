@@ -6,7 +6,7 @@ import { createWafer } from '../core/wafer.js';
 import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
 import { applyOrientation, transformDies, clipDiesToWafer } from '../core/transforms.js';
 import { generateDies } from '../core/dies.js';
-import { dieHasAnyTestData, dieLink, finaliseDie, linkDie, recordedVerdict, tableFromRows, testValue, testsPresent } from '../core/dieTable.js';
+import { dieHasAnyTestData, dieLink, finaliseDie, linkDie, recordedVerdict, recordedVerdictsReader, tableFromRows, testValue, testsPresent, VERDICT_FAIL, VERDICT_NONE, VERDICT_PASS } from '../core/dieTable.js';
 import { isDieColumns, linkColumns, linkRows, relink } from './columnarInput.js';
 import type { ColumnFindings, DieColumns } from './columnarInput.js';
 import { affineRotation, affineMirror, affineCompose, affinePoint } from '../core/transforms.js';
@@ -1695,11 +1695,38 @@ export function getTestPassStatus(
 ): boolean | undefined {
   const recorded = recordedVerdict(die, testNumber);
   if (recorded !== undefined) return recorded;
-  if (testDef !== undefined && !isParametricTest(testDef)) {
-    const v = testValue(die, testNumber);
-    if (v === 0 || v === 1) return v === 1;
-  }
-  return undefined;
+  return testDef !== undefined && !isParametricTest(testDef)
+    ? legacyFunctionalVerdict(testValue(die, testNumber))
+    : undefined;
+}
+
+/** The migration fallback of {@link getTestPassStatus}, in its one place: a
+ *  functional test's value of exactly 1 is a pass, 0 a fail, anything else none. */
+function legacyFunctionalVerdict(value: number | undefined): boolean | undefined {
+  return value === 0 || value === 1 ? value === 1 : undefined;
+}
+
+/**
+ * @internal {@link getTestPassStatus} for many dies × tests: `read(die, out)`
+ * writes each of `testDefs`' verdicts for `die` to `out` — `1` pass, `0` fail,
+ * `-1` none — and returns `out`. The same rule, the same fallback: the recorded
+ * verdicts come through a bulk column reader (looked up once per table, not once
+ * per die and test), which is what a lot-wide chart walking every die needs.
+ * `tests/testPassStatusReader.test.mjs` holds the two to the same answers.
+ */
+export function testPassStatusReader(testDefs: readonly TestDef[]): (die: Die, out: Int8Array) => Int8Array {
+  const numbers = testDefs.map(d => d.testNumber);
+  const readRecorded = recordedVerdictsReader(numbers);
+  const functional = testDefs.map(d => !isParametricTest(d));
+  return function readTestPassStatus(die, out) {
+    readRecorded(die, out);
+    for (let k = 0; k < out.length; k++) {
+      if (out[k] !== VERDICT_NONE || !functional[k]) continue;
+      const legacy = legacyFunctionalVerdict(testValue(die, numbers[k]));
+      if (legacy !== undefined) out[k] = legacy ? VERDICT_PASS : VERDICT_FAIL;
+    }
+    return out;
+  };
 }
 
 /**

@@ -70,31 +70,12 @@ export function isOutOfSpec(category: SpecCategory | null): boolean {
   return category === 'failLow' || category === 'failHigh';
 }
 
-/**
- * How many values in an ascending, finite array `classifySpec` would judge out of
- * spec — the same rule, counted by binary search instead of one call per value,
- * for callers that already hold the values sorted. `tests/specLimits.test.mjs`
- * holds the two in agreement.
- */
-export function countOutOfSpecSorted(sorted: ArrayLike<number>, limits: SpecLimits): number {
-  let below = 0, above = 0;
-  if (limits.limitLow !== undefined) {
-    const low = limits.limitLow;
-    const failsLow = limits.limitLowInclusive === false ? (v: number) => v <= low : (v: number) => v < low;
-    let lo = 0, hi = sorted.length;
-    while (lo < hi) { const mid = (lo + hi) >> 1; if (failsLow(sorted[mid])) lo = mid + 1; else hi = mid; }
-    below = lo;
-  }
-  if (limits.limitHigh !== undefined) {
-    const high = limits.limitHigh;
-    const passesHigh = limits.limitHighInclusive === false ? (v: number) => v < high : (v: number) => v <= high;
-    let lo = 0, hi = sorted.length;
-    while (lo < hi) { const mid = (lo + hi) >> 1; if (passesHigh(sorted[mid])) lo = mid + 1; else hi = mid; }
-    // Not below `below`: with both limits exclusive and equal, a value on them
-    // fails low AND high, and it is one out-of-spec value, not two.
-    above = sorted.length - Math.max(lo, below);
-  }
-  return below + above;
+/** How many of `values` are out of spec: exactly the per-value
+ *  {@link classifySpec} judgement, counted. Any order. */
+export function countOutOfSpec(values: ArrayLike<number>, limits: SpecLimits): number {
+  let fail = 0;
+  for (let i = 0; i < values.length; i++) if (isOutOfSpec(classifySpec(values[i], limits))) fail++;
+  return fail;
 }
 
 /** True when `limits` can produce a verdict at all — i.e. at least one limit is

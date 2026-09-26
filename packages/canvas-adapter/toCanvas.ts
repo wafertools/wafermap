@@ -508,25 +508,42 @@ export function drawMapCanvas(
       if (!group) { group = []; byColor.set(fill, group); }
       group.push(rect);
     }
+    // At most PATH_SHAPES rectangles per path. WebKit's canvas (the desktop
+    // app on Linux) slows down faster than linearly with a path's size: one
+    // path per colour made a hard-bin gallery of 10 × 10k dies take 377 ms to
+    // fill, and paths of 256 take 43 ms. Chrome is unaffected (78 → 69 ms).
     for (const [fill, group] of byColor) {
-      ctx.beginPath();
-      for (const r of group) ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
       ctx.fillStyle = fill;
-      ctx.fill();
+      for (let i = 0; i < group.length; i += PATH_SHAPES) {
+        ctx.beginPath();
+        const end = Math.min(group.length, i + PATH_SHAPES);
+        for (let j = i; j < end; j++) {
+          const r = group[j];
+          ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
+        }
+        ctx.fill();
+      }
     }
-    // Single stroke pass over all die outlines (constant color and width). The
-    // outlines are stroked as their merged edges, not as one rectangle per die:
-    // the pixels are the same, and WebKit's canvas (the desktop app on Linux)
+    // Die outlines (constant colour and width), stroked as their merged edges,
+    // not one rectangle per die: WebKit's canvas (the desktop app on Linux)
     // took ~5 s to stroke a 266k-die gallery rectangle by rectangle. Square caps
-    // fill each corner exactly as a rectangle's mitred corner did.
+    // fill each corner exactly as a rectangle's mitred corner did. Stroked
+    // PATH_SHAPES edges to a path, not all in one: WebKit rasterises one
+    // path of every edge far more slowly than many small ones (a 25-card
+    // gallery's switch to value mode, 3.8 s → 1.8 s). Chrome draws the same
+    // pixels either way.
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 0.5 * devicePx;
     ctx.lineCap = 'square';
-    ctx.beginPath();
     const outline = outlineCache.get(view.rectangles) ?? outlineSegments(view.rectangles);
     outlineCache.set(view.rectangles, outline);
-    for (let i = 0; i < outline.length; i += 4) { ctx.moveTo(outline[i], outline[i + 1]); ctx.lineTo(outline[i + 2], outline[i + 3]); }
-    ctx.stroke();
+    const perPath = PATH_SHAPES * 4;
+    for (let s = 0; s < outline.length; s += perPath) {
+      ctx.beginPath();
+      const end = Math.min(outline.length, s + perPath);
+      for (let i = s; i < end; i += 4) { ctx.moveTo(outline[i], outline[i + 1]); ctx.lineTo(outline[i + 2], outline[i + 3]); }
+      ctx.stroke();
+    }
     ctx.lineCap = 'butt';
 
     // Out-of-spec markers (value mode, 'data' colorbar range): the die keeps its
@@ -1544,6 +1561,9 @@ function logTicks(
 }
 
 export { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
+
+/** Die rectangles, or outline edges, per canvas path — see the fill and outline loops in `drawMapCanvas`. */
+const PATH_SHAPES = 256;
 
 /** Outline segments per rectangle list: a redraw of the same view (hover, resize) reuses them. */
 const outlineCache = new WeakMap<readonly ViewRect[], Float64Array>();

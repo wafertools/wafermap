@@ -3157,7 +3157,10 @@ export function renderWaferGallery(
       // the small one — a second full gutter inside the card stacks two, which
       // is a toolbar standing well off the card's side. The detached-window
       // path below deliberately keeps the default: there the map IS the region.
-      chromeInset: MAP_CHROME_INSET });
+      chromeInset: MAP_CHROME_INSET,
+      // A card is drawn once it is on (or near) the screen. Anything that
+      // captures the cards' canvases calls drawAllCards() first.
+      drawWhenVisible: true });
     // In-gallery: hide scene controls (gallery bar owns them) and summary button.
     ctrl.setViewControlsVisible(false);
     ctrl.setSummaryVisible(false);
@@ -3738,7 +3741,18 @@ export function renderWaferGallery(
 
   // ── Gallery PNG download ───────────────────────────────────────────────────
 
+  /** Draw every card that skipped drawing while off screen. Anything that
+   *  captures the cards' canvases (the PNG below, printing) calls this first,
+   *  or it would capture blank cards. */
+  function drawAllCards(): void {
+    for (const ctrl of cardControllers) ctrl?.drawPendingNow();
+  }
+  // Printing captures each canvas as it is, so the whole grid is drawn first.
+  const printWindow = container.ownerDocument.defaultView ?? window;
+  printWindow.addEventListener('beforeprint', drawAllCards);
+
   function downloadGalleryPng(): void {
+    drawAllCards();
     const canvases = [...gridEl.querySelectorAll<HTMLCanvasElement>('canvas')];
     if (!canvases.length) return;
     const N      = canvases.length;
@@ -3841,6 +3855,7 @@ export function renderWaferGallery(
 
     destroy(): void {
       buildGeneration++; // cancel any pending factory resolvers
+      printWindow.removeEventListener('beforeprint', drawAllCards);
       // Same reason as the queued resize frame below: a staged lot-panel render
       // would otherwise keep waking up and appending to a torn-down panel.
       lotPanelRun?.cancel();

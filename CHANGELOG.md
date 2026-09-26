@@ -34,9 +34,9 @@ under `### Breaking`.
 - **Test values on dies from `buildWaferMap` are read-only snapshots.** A map holds test values and
   verdicts as one column per test. `die.testValues` and `die.testPass` on a built die build a frozen
   object from those columns on each read, keeping nothing on the die, so `die.testValues !==
-  die.testValues`. Assigning to either field, or changing a key of the object, throws a
-  `TypeError`: pass the values to `buildWaferMap`, or copy the die with your own object
-  (`{ ...die, testValues: mine }`). A spread, `structuredClone` or `JSON.stringify` of a built die
+  die.testValues`. Assigning to either field throws a `TypeError`; changing a key of the frozen
+  object throws in strict-mode code and is ignored otherwise. Pass the values to `buildWaferMap`,
+  or copy the die with your own object (`{ ...die, testValues: mine }`). A spread, `structuredClone` or `JSON.stringify` of a built die
   gives plain objects with the same values. A die no longer shares the input record's
   `testValues`/`testPass` objects, so changing the input after the build does not change the map.
   Dies a host builds itself keep ordinary objects.
@@ -51,6 +51,44 @@ under `### Breaking`.
 
 ### Performance
 
+- **Insights no longer blocks while its test statistics are computed.** The Overview's Test Values
+  table is built in slices, showing "Computing test statistics…" until it is ready, and when the
+  gallery's summary panel is computing the same statistics at the time, the two share the one
+  calculation instead of each doing it.
+- **Gallery cards are drawn only when on screen.** A card below the fold keeps its map up to date
+  and is drawn as it scrolls into view. Printing and the gallery PNG draw every card first, so
+  both still show the whole gallery. On a 25-wafer, 266k-die lot, with 4 cards on screen:
+  switching to value mode takes 0.4 s in Chrome (was 1.1 s) and 0.5 s in WebKit (was 2.0 s);
+  the gallery opens in 1.8 s and 2.0 s.
+- **The gallery draws about twice as fast in WebKit** (the desktop app on Linux and macOS, and
+  Safari). Die fills and outlines are drawn as many small canvas paths rather than one per
+  colour, which WebKit rasterises far faster. On a 25-wafer, 266k-die lot the gallery opens in
+  4.0 s (was 7.0 s) and a switch to value or stacked mode takes 1.8–2.3 s (was 3.8–4.4 s).
+  Chrome draws identical pixels; in WebKit only anti-aliased edge pixels differ.
+- **Test-value analysis (`enableTestValueAnalysis`) is two to three times faster on large lots.**
+  Spec-limit findings count each region's dies in one pass instead of re-reading every die for
+  every region, the test list is read column by column, and per-test statistics find their
+  quartiles by selection. Findings are unchanged (compared byte for byte on a 266k-die lot with
+  5,289 findings). On that lot: 18.9 s → 7.2 s in Chrome, 25.6 s → 10.7 s in WebKit.
+- **Analysis is about a third faster in Chrome on large lots.** Merging findings in adjacent
+  regions, pairing hard and soft bins that cover the same dies, and assigning dies to regions
+  now compare die positions as numbers rather than as a text key per die. Findings are
+  unchanged (compared byte for byte on a 266k-die lot). On that lot, load-time analysis takes
+  2.5 s in Chrome (was 3.7 s).
+- **Stacked modes and mode switches in the gallery are faster.** Stacked cards key die positions by
+  number rather than by a string per die, and a map no longer rebuilds a key for every die on
+  each redraw unless dies are selected. On a 25-wafer, 266k-die lot in Chrome: switching to
+  stacked bins 2.0 s → 1.6 s, to value mode 1.3 s → 1.1 s.
+- **The lot summary panel's test statistics are computed about three times faster.** The
+  quartiles of each test's pooled values are found by selection instead of sorting every value
+  (the same order statistics, so the same figures). On a 25-wafer, 266k-die lot the gallery
+  with its panel opens in 3.1 s in Chrome (was 3.9 s) and about 3.5 s in WebKit (was 4.0 s).
+- **Insights opens several times faster on a large lot** (25 wafers, 266k dies: the Overview
+  2.7 s → 0.65 s in Chrome, 0.9 s in WebKit). The Overview's Test Values table reuses the
+  pooled statistics the gallery's summary panel has already computed, whether or not the lot
+  has functional tests, and the pass-rate chart reads each die's values and recorded verdicts
+  in one pass per die.
+  Figures are unchanged.
 - **`analyzeWaferMap` is about five times faster on large wafers** (a 25-wafer, 266k-die lot:
   32 s → 6.5 s in Chrome). Region membership, die keys and cluster neighbour lookups are each
   computed once per analysis, not once per finding builder. Findings are unchanged.

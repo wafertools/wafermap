@@ -1,8 +1,8 @@
 import type { Die } from '../core/dies.js';
 import { normalizeInput } from './normalizeInput.js';
 import { computeCapability, computeTestFlagYield, computeRegionYield } from './summaryFigures.js';
-import { isYieldEligibleDie, getDieKey, isPositionedDie } from '../core/dies.js';
-import { dieHasValues, dieValueEntries, testsPresent, testValue } from '../core/dieTable.js';
+import { isYieldEligibleDie, getDieKey, isPositionedDie, positionKey } from '../core/dies.js';
+import { dieHasValues, testsPresent, testValue } from '../core/dieTable.js';
 import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
@@ -20,8 +20,7 @@ import {
   type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
 import { classifyPattern, type PatternClassification } from './patternClassification.js';
-import { normalCdf } from './math.js';
-import { quantile } from './math.js';
+import { fiveNumberSummary, normalCdf } from './math.js';
 import { mean, clamp01 } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 
@@ -337,26 +336,22 @@ function computePerTestStats(
     if (values.length < minimumSampleSize) continue;
     const avg = mean(values);
     const stddev = Math.sqrt(sampleVariance(values, avg));
-    // Sorted as a `Float64Array` — see `pooledTestStatsSteps`, which found this
-    // cost first. This is the same shape (one test's values across every die)
-    // and the same measurement: in Chrome on a 400,000-die wafer of 50 tests,
-    // the 50 comparator sorts here were 11.4 s of a 21.3 s `analyzeWaferMap`
-    // call, and are 2.7 s as typed sorts — the call as a whole 21.3 s -> 12.2 s
-    // with every figure it reports unchanged.
-    const sorted = Float64Array.from(values);
-    sorted.sort();
+    // Min, quartiles and max by selection, not by sorting every value — the
+    // same order statistics (see `fiveNumberSummary`), for one test's values
+    // across every die of the wafer.
+    const five = fiveNumberSummary(Float64Array.from(values));
     const label = testDefs?.find(td => td.testNumber === tn)?.name ?? String(tn);
     result.push({
       testNumber: tn,
       label,
       count:  values.length,
-      min:    sorted[0],
-      max:    sorted[sorted.length - 1],
+      min:    five.min,
+      max:    five.max,
       mean:   avg,
       stddev,
-      median: quantile(sorted, 0.5),
-      q1:     quantile(sorted, 0.25),
-      q3:     quantile(sorted, 0.75) });
+      median: five.median,
+      q1:     five.q1,
+      q3:     five.q3 });
   }
   return result.length ? result : undefined;
 }
@@ -517,6 +512,35 @@ const keysCache = new WeakMap<readonly Die[], string[]>();
 const bucketsCache = new WeakMap<readonly Die[], { members: Set<Die>; byFamily: WeakMap<StatsRegion[], Map<string, Die[]>> }>();
 
 /** `getDieKey` of every die in `dies`, in order. */
+/**
+ * The region each single-region finding was built for. A merge of adjacent
+ * findings then works from those regions' dies by position key, rather than
+ * hashing every die-key string of every constituent — on a large lot that
+ * string work was most of the merge. Kept beside the finding, never on it, so
+ * the published finding is unchanged. Keyed by the finding's own `dieKeys`
+ * array, which the builders create per finding: later passes hand findings on
+ * as shallow copies (`{ ...finding }`), which keep that array but not the
+ * finding object itself.
+ */
+const findingRegion = new WeakMap<readonly string[], StatsRegion>();
+function ofRegion(region: StatsRegion, finding: RawFinding): RawFinding {
+  const keys = (finding.highlight as { dieKeys?: string[] }).dieKeys;
+  if (keys) findingRegion.set(keys, region);
+  return finding;
+}
+function regionOfFinding(f: RawFinding): StatsRegion | undefined {
+  const keys = (f.highlight as { dieKeys?: string[] }).dieKeys;
+  return keys ? findingRegion.get(keys) : undefined;
+}
+
+/** `positionKey` of each die — equal exactly when the `getDieKey` strings are. Cached like {@link dieKeysOf}. */
+const positionKeysCache = new WeakMap<readonly Die[], Array<number | string>>();
+function positionKeysOf(dies: readonly Die[]): Array<number | string> {
+  let keys = positionKeysCache.get(dies);
+  if (!keys) positionKeysCache.set(dies, keys = dies.map(positionKey));
+  return keys;
+}
+
 function dieKeysOf(dies: readonly Die[]): string[] {
   let keys = keysCache.get(dies);
   if (!keys) keysCache.set(dies, keys = dies.map(getDieKey));
@@ -618,7 +642,7 @@ function buildYieldFindings(
     const delta = leftRate - rightRate;
     const pValue = twoProportionPValue(leftPass, leftSize, rightPass, rightSize);
 
-    findings.push({
+    findings.push(ofRegion(region, {
       id: `yield:${region.key}`,
       level: 'wafer',
       severity: 'info',
@@ -644,7 +668,7 @@ function buildYieldFindings(
         kind: 'region',
         regionFamily: region.family,
         regionKeys: [region.key],
-        dieKeys: [...region.dieKeys] } });
+        dieKeys: [...region.dieKeys] } }));
   }
 
   return finalizeProportionFindings(findings, options);
@@ -703,7 +727,7 @@ function buildBinFindings(
       const pValue = twoProportionPValue(leftHits, leftSize, rightHits, rightSize);
       const binLabel = labelForBin(bin, defs, prefix);
 
-      findings.push({
+      findings.push(ofRegion(region, {
         id: `${variableKind}:${bin}:${region.key}`,
         level: 'wafer',
         severity: 'info',
@@ -730,7 +754,7 @@ function buildBinFindings(
           kind: 'bin',
           bin,
           regionKeys: [region.key],
-          dieKeys: [...region.dieKeys] } });
+          dieKeys: [...region.dieKeys] } }));
     }
   }
 
@@ -800,7 +824,7 @@ function buildFunctionalPassFindings(
       const pValue = twoProportionPValue(leftPass, leftSize, rightPass, rightSize);
       const testNumber = testNumbers[i];
 
-      findings.push({
+      findings.push(ofRegion(region, {
         id: `functional:${testNumber}:${region.key}`,
         level: 'wafer',
         severity: 'info',
@@ -828,7 +852,7 @@ function buildFunctionalPassFindings(
           kind: 'region',
           regionFamily: region.family,
           regionKeys: [region.key],
-          dieKeys: [...region.dieKeys] } });
+          dieKeys: [...region.dieKeys] } }));
     }
   }
 
@@ -907,16 +931,10 @@ function discoverTestNumbers(
     numbers.filter(tn => isParametricTest(testDefs?.find(td => td.testNumber === tn)));
   if (explicit) return { testNumbers: parametricOnly(explicit.slice().sort((a, b) => a - b)) };
 
-  const testNumberSet = new Set<number>();
-  let capped = false;
-  outer: for (const die of dies) {
-    for (const [n] of dieValueEntries(die)) {
-      if (!testNumberSet.has(n)) {
-        testNumberSet.add(n);
-        if (testNumberSet.size > TEST_COUNT_WARN_THRESHOLD) { capped = true; break outer; }
-      }
-    }
-  }
+  // Column by column for built dies, not a key walk per die: this runs once
+  // per region family, over every die of the wafer.
+  const present = testsPresent(dies, 'values');
+  const capped = present.length > TEST_COUNT_WARN_THRESHOLD;
 
   if (capped) {
     // Deliberately explicit that the OUTCOME is "no test findings at all", not
@@ -931,7 +949,7 @@ function discoverTestNumbers(
       testNumbers: [],
       warning: { code: 'test-count-capped', message, severity: 'warning' } };
   }
-  return { testNumbers: parametricOnly([...testNumberSet].sort((a, b) => a - b)) };
+  return { testNumbers: parametricOnly(present) };
 }
 
 /**
@@ -966,16 +984,17 @@ function buildTestValueFindings(
   const activeTestNumbers = discovered.testNumbers;
 
   // Assign each die to its region index once (−1 = not in this family).
-  const keyToRegion = new Map<string, number>();
+  // By position key, from the regions' own dies (parallel to their `dieKeys`).
+  const keyToRegion = new Map<number | string, number>();
   for (let r = 0; r < regionFamily.length; r++) {
-    for (const key of regionFamily[r].dieKeys) keyToRegion.set(key, r);
+    for (const key of positionKeysOf(regionFamily[r].dies)) keyToRegion.set(key, r);
   }
   const nRegions = regionFamily.length;
   // Dies that belong to some region in this family, paired with their region idx.
   const regionDies: Die[] = [];
   const regionIdx: number[] = [];
   for (const die of dies) {
-    const r = keyToRegion.get(getDieKey(die));
+    const r = keyToRegion.get(positionKey(die));
     if (r !== undefined) { regionDies.push(die); regionIdx.push(r); }
   }
 
@@ -1030,7 +1049,7 @@ function buildTestValueFindings(
       const { label, unit, ...derivation } = labelForTest(testNumber, defs);
       const relativeDelta = rightMean !== 0 ? delta / Math.abs(rightMean) : undefined;
 
-      findings.push({
+      findings.push(ofRegion(region, {
         id: `test:${testNumber}:${region.key}`,
         level: 'wafer',
         severity: 'info',
@@ -1059,7 +1078,7 @@ function buildTestValueFindings(
           kind: 'region',
           regionFamily: region.family,
           regionKeys: [region.key],
-          dieKeys: [...region.dieKeys] } });
+          dieKeys: [...region.dieKeys] } }));
     }
   }
 
@@ -1100,29 +1119,38 @@ function buildSpecLimitFindings(
       const buckets = bucketDiesByRegion(dies, regionFamily);
       const findings: RawFinding[] = [];
 
-      for (const region of regionFamily) {
-        const leftDies = buckets.get(region.key)!;
-        const rightDies: Die[] = [];
-        for (const [key, bucket] of buckets) {
-          if (key !== region.key) for (const d of bucket) rightDies.push(d);
+      // Each region's dies with a value, and of those the out-of-spec ones, in
+      // one read per die; "the rest of the wafer" is the family's total less
+      // the region (regions do not overlap). The same counts as filtering the
+      // region and the rest separately, which read every die twice per region.
+      const counts = new Map<string, { valid: number; fail: number }>();
+      let totalValid = 0, totalFail = 0;
+      for (const [key, bucket] of buckets) {
+        let valid = 0, fail = 0;
+        for (const d of bucket) {
+          const v = testValue(d, tn);
+          if (v === undefined) continue;
+          valid++;
+          if (isOutOfSpec(classifySpec(v, td))) fail++;
         }
+        counts.set(key, { valid, fail });
+        totalValid += valid;
+        totalFail += fail;
+      }
 
-        const hasValue = (d: Die) => testValue(d, tn) !== undefined;
-        const isSpecFail = (d: Die) => isOutOfSpec(classifySpec(testValue(d, tn), td));
+      for (const region of regionFamily) {
+        const own = counts.get(region.key)!;
+        const leftN = own.valid, rightN = totalValid - own.valid;
+        if (leftN < options.minimumSampleSize || rightN < options.minimumSampleSize) continue;
 
-        const leftValid = leftDies.filter(hasValue);
-        const rightValid = rightDies.filter(hasValue);
-
-        if (leftValid.length < options.minimumSampleSize || rightValid.length < options.minimumSampleSize) continue;
-
-        const leftFail = leftValid.filter(isSpecFail).length;
-        const rightFail = rightValid.filter(isSpecFail).length;
-        const leftRate = leftFail / leftValid.length;
-        const rightRate = rightFail / rightValid.length;
+        const leftFail = own.fail;
+        const rightFail = totalFail - own.fail;
+        const leftRate = leftFail / leftN;
+        const rightRate = rightFail / rightN;
         const delta = leftRate - rightRate;
-        const pValue = twoProportionPValue(leftFail, leftValid.length, rightFail, rightValid.length);
+        const pValue = twoProportionPValue(leftFail, leftN, rightFail, rightN);
 
-        findings.push({
+        findings.push(ofRegion(region, {
           id: `specLimit:${tn}:${region.key}`,
           level: 'wafer',
           severity: 'info',
@@ -1144,14 +1172,14 @@ function buildSpecLimitFindings(
           stats: {
             method: 'two-proportion-z',
             pValue,
-            sampleSizeLeft: leftValid.length,
-            sampleSizeRight: rightValid.length },
+            sampleSizeLeft: leftN,
+            sampleSizeRight: rightN },
           summary: `${region.label} limit fail rate for ${markedTestLabel(td, tn)} is ${(Math.abs(delta) * 100).toFixed(1)} pp ${delta > 0 ? 'higher' : 'lower'} than the rest of the wafer`,
           highlight: {
             kind: 'region',
             regionFamily: region.family,
             regionKeys: [region.key],
-            dieKeys: [...region.dieKeys] } });
+            dieKeys: [...region.dieKeys] } }));
       }
 
       adjustPValues(findings);
@@ -1195,6 +1223,13 @@ interface MergeContext {
   hbinDefs?: BinDef[];
   sbinDefs?: BinDef[];
   testDefs?: TestDef[];
+}
+
+/** The die pool the original builder used for a finding of this kind. */
+function poolOf(kind: RawFinding['variable']['kind'], ctx: MergeContext): readonly Die[] {
+  return kind === 'softBin' ? ctx.softEligibleDies
+    : kind === 'test' ? ctx.testDies
+    : ctx.eligibleDies;
 }
 
 /** Region keys this finding covers (e.g. `["ring:1","ring:2"]`); empty for non-region targets. */
@@ -1337,24 +1372,43 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
   const family = template.comparison.family as RegionFamily;
   const kind = template.variable.kind;
 
-  const unionDieKeys = uniqueKeys(run.flatMap(f => (f.highlight as { dieKeys?: string[] }).dieKeys ?? []));
   const unionRegionKeys = uniqueKeys(run.flatMap(regionKeysOf));
-  const leftKeySet = new Set(unionDieKeys);
+  // The union of the run's die keys, first occurrence first, and the test for
+  // "is this pool die in the union". From the regions' dies by position key
+  // when every finding came from one region (always, for the builders above);
+  // otherwise from the key strings. Both give the same keys and the same test.
+  let unionDieKeys: string[];
+  let inUnion: (poolIndex: number) => boolean;
+  const regions = run.map(regionOfFinding);
+  if (regions.every((r): r is StatsRegion => r !== undefined)) {
+    const union = new Set<number | string>();
+    unionDieKeys = [];
+    for (const region of regions) {
+      const keys = positionKeysOf(region.dies);
+      for (let i = 0; i < keys.length; i++) {
+        if (union.has(keys[i])) continue;
+        union.add(keys[i]);
+        unionDieKeys.push(region.dieKeys[i]);
+      }
+    }
+    const poolPositions = positionKeysOf(poolOf(template.variable.kind, ctx));
+    inUnion = (i) => union.has(poolPositions[i]);
+  } else {
+    unionDieKeys = uniqueKeys(run.flatMap(f => (f.highlight as { dieKeys?: string[] }).dieKeys ?? []));
+    const leftKeySet = new Set(unionDieKeys);
+    const poolKeys = dieKeysOf(poolOf(template.variable.kind, ctx));
+    inUnion = (i) => leftKeySet.has(poolKeys[i]);
+  }
 
   const label =
     family === 'ring' ? mergeRingLabel(run, ctx.ringCount) :
     family === 'sector' ? mergeSectorLabel(run, ctx.sectorCount) :
     mergeQuadrantLabel(run);
 
-  // Pick the die pool the original builder used for this kind.
-  const pool =
-    kind === 'softBin' ? ctx.softEligibleDies :
-    kind === 'test'    ? ctx.testDies :
-    ctx.eligibleDies;
-  const poolKeys = dieKeysOf(pool);
+  const pool = poolOf(kind, ctx);
   const leftDies: Die[] = [];
   const rightDies: Die[] = [];
-  for (let i = 0; i < pool.length; i++) (leftKeySet.has(poolKeys[i]) ? leftDies : rightDies).push(pool[i]);
+  for (let i = 0; i < pool.length; i++) (inUnion(i) ? leftDies : rightDies).push(pool[i]);
 
   let effect: RawFinding['effect'];
   let stats: RawFinding['stats'];
@@ -1558,10 +1612,12 @@ function mergeAdjacentFindings(findings: RawFinding[], ctx: MergeContext): RawFi
  * Only such pairs may be presented as one finding.
  */
 function coincidentBinPairs(dies: EligibleDie[]): Set<string> {
-  const hard = new Map<number, Set<string>>();
-  const soft = new Map<number, Set<string>>();
+  // Position keys, not `getDieKey` strings: equal exactly when the strings are,
+  // so the sets compare the same, without a string per die.
+  const hard = new Map<number, Set<number | string>>();
+  const soft = new Map<number, Set<number | string>>();
   for (const d of dies) {
-    const key = getDieKey(d);
+    const key = positionKey(d);
     if (d.hbin !== undefined && d.hbin !== null) {
       (hard.get(d.hbin) ?? hard.set(d.hbin, new Set()).get(d.hbin)!).add(key);
     }

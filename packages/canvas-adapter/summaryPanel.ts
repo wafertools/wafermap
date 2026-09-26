@@ -38,7 +38,7 @@ export { buildWarningsBanner };
 import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
-import { describeSorted, quantile } from '../stats/math.js';
+import { describeValues, quantile } from '../stats/math.js';
 import { pooledTestStatsSteps, type CapabilityItem } from '../stats/capability.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import { poolFunctionalYield } from '../stats/testPassRate.js';
@@ -1206,7 +1206,7 @@ interface TestStatRow {
 }
 
 function computeDescriptive(vals: number[]): Omit<TestStatRow, 'testNumber'> {
-  return describeSorted([...vals].sort((a, b) => a - b));
+  return describeValues(Float64Array.from(vals));
 }
 
 /**

@@ -1,6 +1,6 @@
 import { copyDie, testValue } from './dieTable.js';
 import { minOf, maxOf } from './utils.js';
-import { getDieKey } from './dies.js';
+import { positionKey } from './dies.js';
 
 export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count';
 
@@ -14,6 +14,7 @@ export interface DieLike {
   hbin?: number;
   sbin?: number;
 }
+
 
 /**
  * Aggregate a per-test-parameter numeric value across a lot of wafers.
@@ -40,12 +41,12 @@ export function aggregateValues(
 ): DieLike[] {
   if (!diesByWafer.length) return [];
 
-  const valuesMap = new Map<string, number[]>();
-  const dieTemplate = new Map<string, DieLike>();
+  const valuesMap = new Map<number | string, number[]>();
+  const dieTemplate = new Map<number | string, DieLike>();
 
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
-      const key = getDieKey(die);
+      const key = positionKey(die);
       const v = testValue(die, paramIndex);
       if (v !== undefined) {
         if (!valuesMap.has(key)) {
@@ -117,19 +118,19 @@ export function aggregateBinCounts(
 ): DieLike[] {
   if (!diesByWafer.length) return [];
 
-  const countMap = new Map<string, number>();
+  const countMap = new Map<number | string, number>();
   for (const waferDies of diesByWafer) {
     for (const die of waferDies) {
       const b = binSpace === 'soft' ? die.sbin : die.hbin;
       if (b === targetBin) {
-        const key = getDieKey(die);
+        const key = positionKey(die);
         countMap.set(key, (countMap.get(key) ?? 0) + 1);
       }
     }
   }
 
   return (diesByWafer[0] ?? []).map((die) => copyDie(die, {
-    testValues: { 0: countMap.get(getDieKey(die)) ?? 0 },
+    testValues: { 0: countMap.get(positionKey(die)) ?? 0 },
     testPass: undefined,
     ...(binSpace === 'soft' ? { sbin: targetBin } : { hbin: targetBin }),
   }));

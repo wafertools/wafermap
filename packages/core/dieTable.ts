@@ -436,7 +436,7 @@ export function dieVerdictEntries(die: DieData): Array<[number, boolean]> {
 export function testValuesReader(testNumbers: readonly number[]): (die: DieData, out: Float64Array) => Float64Array {
   let lastTable: DieTable | undefined;
   let cols: Array<Float32Array | Float64Array | undefined> = [];
-  return (die, out) => {
+  return function readTestValues(die, out) {
     const link = dieLink(die);
     if (link === undefined) {
       const own = die.testValues;
@@ -453,6 +453,38 @@ export function testValuesReader(testNumbers: readonly number[]): (die: DieData,
     for (let k = 0; k < cols.length; k++) {
       const col = cols[k];
       out[k] = col === undefined ? NaN : col[link.row];
+    }
+    return out;
+  };
+}
+
+/**
+ * {@link testValuesReader} for recorded verdicts: `read(die, out)` writes test
+ * `testNumbers[k]`'s recorded verdict to `out[k]` — `VERDICT_PASS`,
+ * `VERDICT_FAIL` or `VERDICT_NONE` — and returns `out`. The raw record only, as
+ * {@link recordedVerdict}: `testPassStatusReader` adds the functional-test
+ * fallback and is what callers use.
+ */
+export function recordedVerdictsReader(testNumbers: readonly number[]): (die: DieData, out: Int8Array) => Int8Array {
+  let lastTable: DieTable | undefined;
+  let cols: Array<Int8Array | undefined> = [];
+  return function readRecordedVerdicts(die, out) {
+    const link = dieLink(die);
+    if (link === undefined) {
+      const own = die.testPass;
+      for (let k = 0; k < testNumbers.length; k++) {
+        const v = own?.[testNumbers[k]];
+        out[k] = v === undefined ? VERDICT_NONE : v ? VERDICT_PASS : VERDICT_FAIL;
+      }
+      return out;
+    }
+    if (link.table !== lastTable) {
+      lastTable = link.table;
+      cols = testNumbers.map(tn => link.table.verdicts.get(tn));
+    }
+    for (let k = 0; k < cols.length; k++) {
+      const col = cols[k];
+      out[k] = col === undefined ? VERDICT_NONE : col[link.row];
     }
     return out;
   };

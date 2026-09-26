@@ -502,11 +502,11 @@ test('specCounts — undefined outside spec mode', () => {
   assert.equal(view.specCounts, undefined);
 });
 
-// ── One limit rule: the sorted tally agrees with the per-value judgement ────────
+// ── One limit rule: the tally agrees with the per-value judgement ───────────────
 
-test('countOutOfSpecSorted agrees with classifySpec, including values on a limit', async () => {
-  const { classifySpec, countOutOfSpecSorted, isOutOfSpec } = await import('../dist/packages/renderer/spec.js');
-  const values = Float64Array.from([-2, -1, -1, 0, 0.5, 1, 1, 1, 2, 3, 3, 4]).sort();
+test('countOutOfSpec agrees with classifySpec, including values on a limit', async () => {
+  const { classifySpec, countOutOfSpec, isOutOfSpec } = await import('../dist/packages/renderer/spec.js');
+  const values = Float64Array.from([3, -1, 0.5, 1, -2, 4, 1, 0, 3, -1, 2, 1]);
   for (const limits of [
     { limitLow: -1, limitHigh: 3 }, { limitLow: 1 }, { limitHigh: 1 },
     { limitLow: 5, limitHigh: 6 }, { limitLow: -5, limitHigh: -3 },
@@ -515,7 +515,7 @@ test('countOutOfSpecSorted agrees with classifySpec, including values on a limit
     { limitLow: 1, limitHigh: 1, limitLowInclusive: false, limitHighInclusive: false },
   ]) {
     const expected = [...values].filter(v => isOutOfSpec(classifySpec(v, limits))).length;
-    assert.equal(countOutOfSpecSorted(values, limits), expected, JSON.stringify(limits));
+    assert.equal(countOutOfSpec(values, limits), expected, JSON.stringify(limits));
   }
 });
 
