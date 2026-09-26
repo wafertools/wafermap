@@ -10,10 +10,11 @@ can pick features by what they *do*, not out of worry about what they cost —
 but if you're curious, or you're working with very large lots, here are the
 actual numbers.
 
-**How to read the numbers below:** timings were measured on a
-3-year-old mini-desktop running Ubuntu — not tuned, not
-server-grade hardware. If anything, expect *better* numbers on a typical
-dev machine or a user's browser. Percentages are included alongside the
+**How to read the numbers below:** timings were measured on ordinary
+machines, not tuned or server-grade hardware: the analysis tables on a
+ThinkPad T14s Gen 2i laptop (Core i5-1145G7, Node 22), the Insights table on a
+3-year-old SER5-Pro mini-desktop, both running Ubuntu. Expect similar or better
+numbers on a typical dev machine or a user's browser. Percentages are included alongside the
 milliseconds purely as a size comparison between features, not as a warning
 sign — a feature going from 4ms to 9ms is still 9ms.
 
@@ -27,8 +28,9 @@ on a full production-density wafer. There's exactly one feature worth
 knowing about before you flip it on for every wafer in a large lot:
 automatic spatial finding detection (`enableTestValueAnalysis`), which is
 the most powerful option (it finds statistical anomalies for you) and also
-the priciest — still comfortably under 110ms on the largest wafer we tested,
-but the one to reach for deliberately rather than as a default. Everything
+the priciest — about 30ms on the largest wafer we tested, but the one to
+reach for deliberately rather than as a default, because it scales with the
+whole lot. Everything
 else — the Summary panel, distribution charts, all of the Insights tab — is
 cheap enough to enable freely. Two Insights panels even get *faster* for
 free if the Summary panel already ran first.
@@ -99,20 +101,19 @@ reference point — it's mandatory, everything else is opt-in on top of it.
 
 | Wafer size | `buildWaferMap` | `analyzeWaferMap()` (Summary panel) | `+ computePerTestStats` | `+ enableTestValueAnalysis` |
 |---|---|---|---|---|
-| Small (~150 dies) | 1.0ms | 1.2ms *(+117% total)* | 1.7ms *(+165% total)* | 4.8ms *(+475% total)* |
-| Medium (~1,000 dies) | 4.4ms | 5.1ms *(+114% total)* | 10.5ms *(+236% total)* | 33.6ms *(+759% total)* |
-| Large (~4,200 dies) | 12.2ms | 18.4ms *(+151% total)* | 37.6ms *(+308% total)* | 129.4ms *(+1060% total)* |
+| Small (~150 dies) | 2.2ms | 2.5ms *(+113%)* | 2.7ms *(+122%)* | 5.2ms *(+232%)* |
+| Medium (~1,000 dies) | 9.9ms | 4.5ms *(+45%)* | 6.0ms *(+61%)* | 9.7ms *(+98%)* |
+| Large (~4,300 dies) | 37.7ms | 13.5ms *(+36%)* | 19.7ms *(+52%)* | 31.4ms *(+83%)* |
 
-("total" % is the combined `buildWaferMap` + `analyzeWaferMap` pipeline cost
-relative to `buildWaferMap` alone — included for scale comparison, not as a
-target to avoid.)
+(Each analysis column is the `analyzeWaferMap` call alone, with its cost as a
+percentage of `buildWaferMap` in brackets — included for scale comparison, not
+as a target to avoid.)
 
-Every number in the first three columns is small enough to not think about —
-low double-digit milliseconds even at 4,200 dies × 15 tests.
-`enableTestValueAnalysis` is the one to be deliberate about: it compares
-every region against every other region *for every test*, so it scales with
-both die count and test count, and on the largest, densest wafer with 15
-tests it reaches ~130ms. Still fast for a one-off computation — just not
+Every number here is small enough to not think about — low double-digit
+milliseconds even at 4,300 dies × 15 tests. `enableTestValueAnalysis` is the
+one to be deliberate about: it compares every region against the rest of the
+wafer *for every test*, so it scales with both die count and test count, and
+on the largest, densest wafer with 15 tests it reaches ~30ms. Still fast for a one-off computation — just not
 something you'd want re-running on every frame of an animation, and worth
 knowing it grows with how many tests you hand it (more on that below).
 
@@ -124,27 +125,28 @@ The table above is **per wafer**, and that is not the unit anyone decides at. A
 host runs analysis over a whole lot, so the figure a user waits for is that cost
 multiplied by the wafer count — and `enableTestValueAnalysis` is the one column
 where the multiplication takes you somewhere different in kind, not just in
-degree. "130ms, still fast" becomes several seconds without anything about the
+degree. "30ms, still fast" becomes seconds on a large lot without anything about the
 option changing.
 
 Measured over whole lots, on synthetic wafers with a real edge effect so the
-findings pass is doing genuine work:
+findings pass is doing genuine work (Node, median of 3):
 
 | Lot | analysis without | with `enableTestValueAnalysis` | added |
 |---|---|---|---|
-| 5 wafers × 10.7k dies × 30 tests | 299ms | 2.2s | **+1.9s** |
-| 5 × 10.7k × 100 tests | 392ms | 7.0s | **+6.7s** |
-| 25 × 10.7k × 30 tests | 1.4s | 11.1s | **+9.7s** |
-| 25 × 10.7k × 500 tests | — | did not finish inside two minutes | — |
+| 5 wafers × 10.5k dies × 30 tests | 172ms | 629ms | **+457ms** |
+| 5 × 10.5k × 100 tests | 225ms | 1.6s | **+1.3s** |
+| 25 × 10.5k × 30 tests | 684ms | 3.0s | **+2.3s** |
 
-Both tables describe the same linear scan, so one coefficient spans them:
-roughly **1–2µs per (wafer × die × test)** — 1.76µs from the large-wafer row
-above, 1.2µs from the lot runs, the spread being machine and data. That is
+The added cost is a linear scan, so one coefficient spans these rows: about
+**0.3µs per (wafer × die × test)** in Node and Chrome. The engine matters
+here: WebKit — Safari, and the desktop webviews on Linux and macOS — runs it at
+about **0.65µs**, measured on a real 25-wafer, 266k-die, 51-test lot. That is
 enough to predict "instant or not" before you run it, which is the only
-question you actually need answered:
+question you actually need answered. Size the estimate for the slowest engine
+your users have:
 
 ```ts
-const estimateMs = waferCount * diesPerWafer * testCount * 1.5 / 1000;
+const estimateMs = waferCount * diesPerWafer * testCount * 0.7 / 1000;
 ```
 
 Calibrate the coefficient on your own target hardware if you are going to
@@ -167,7 +169,7 @@ the Summary panel's Findings section, so the offer appears where the reader is
 already looking rather than in a menu they have no reason to open:
 
 ```ts
-const estimateMs = waferCount * diesPerWafer * testCount * 1.5 / 1000;
+const estimateMs = waferCount * diesPerWafer * testCount * 0.7 / 1000;
 const runIt = estimateMs <= 1000;          // your budget, your call
 
 const summary = analyzeWaferMap(result, { enableTestValueAnalysis: runIt });
@@ -206,10 +208,10 @@ since it compares every test against every other test:
 
 | Tests passed | `computePerTestStats` | `enableTestValueAnalysis` | Insights test correlation (pairs) |
 |---|---|---|---|
-| 6 | 8.7ms | 25.1ms | 0.2ms (15 pairs) |
-| 15 | 10.7ms | 36.5ms | 1.2ms (105 pairs) |
-| 30 | 14.7ms | 49.5ms | 4.1ms (435 pairs) |
-| 60 | 16.8ms | 90.6ms | 16.4ms (1,770 pairs) |
+| 6 | 4.7ms | 5.5ms | 0.3ms (15 pairs) |
+| 15 | 5.1ms | 7.9ms | 1.3ms (105 pairs) |
+| 30 | 5.8ms | 12.4ms | 4.4ms (435 pairs) |
+| 60 | 8.2ms | 16.4ms | 17.0ms (1,770 pairs) |
 
 (medium/~1,000-die wafer, held constant — only the test count changes)
 
@@ -314,6 +316,9 @@ synthetic data. Each number is the **median**
 of many repeated runs (9–41, more reps for smaller/faster operations) to
 cancel out timer jitter and GC pauses — a single-shot timing at this scale
 isn't trustworthy. Every function measured is a real, unmodified library
-export, run against the actual built `dist/` output, on a 3-year-old
-SER5-Pro desktop (Ubuntu) — nothing exotic, and a typical modern machine
-should do at least as well.
+export, run against the actual built `dist/` output in Node 22: the analysis
+and test-count tables on a ThinkPad T14s Gen 2i (Core i5-1145G7), the Insights
+table on a 3-year-old SER5-Pro desktop, both on Ubuntu — nothing exotic, and a
+typical modern machine should do at least as well. The WebKit coefficient comes
+from the same lot run in WebKitGTK, the engine of the desktop webviews on
+Linux.

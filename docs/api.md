@@ -2565,7 +2565,7 @@ Every analysis runs except two, which cost real time and are yours to decide:
 | Option | Cost | Decide it |
 |---|---|---|
 | `computePerTestStats` | cheap — a quartile scan | Once, for your whole app. On if you show distribution or box-plot charts. |
-| `enableTestValueAnalysis` | **~1–2µs per (wafer × die × test)** | **Per lot, not once.** Milliseconds on one wafer; seconds on a lot. |
+| `enableTestValueAnalysis` | **~0.3µs per (wafer × die × test)** in Chrome, **~0.65µs** in WebKit | **Per lot, not once.** Milliseconds on one wafer; seconds on a lot. |
 
 `enableTestValueAnalysis` is off by default because it is the only option whose
 cost changes kind with lot size — see [Performance](performance.md#the-number-that-matters-is-the-lot-not-the-wafer)
@@ -2576,9 +2576,11 @@ enables it ships a Findings list that silently omits a whole category.
 Estimate before you decide:
 
 ```ts
-const estimateMs = waferCount * diesPerWafer * testCount * 1.5 / 1000;
+const estimateMs = waferCount * diesPerWafer * testCount * 0.7 / 1000;
 ```
 
+The coefficient is sized for WebKit (Safari, and the desktop webviews on Linux
+and macOS), the slower engine here; Chrome runs the analysis in about half that.
 Below roughly a second, just run it — the user will not notice it against the
 parse and render that just happened, and asking is pure friction. Above that,
 run the analysis without it and pass a [`FindingsNotice`](#54-renderoptions) so

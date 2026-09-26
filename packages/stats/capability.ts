@@ -155,7 +155,7 @@ function capabilityDefs(testDefs: TestDef[]): CapabilityDefs {
 function* accumulateMomentsSteps(
   items: CapabilityItem[],
   defByTestNumber: Map<number, TestDef>,
-  values: Map<number, number[]> | null,
+  values: Map<number, Float64Array> | null,
 ): Chunked<Map<number, CapabilityMoments>> {
   // Flat arrays indexed by test slot, not a Map entry per test: this pass runs
   // once per die per test, and per-entry lookups and allocations dominated it.
@@ -164,7 +164,12 @@ function* accumulateMomentsSteps(
   const n = new Float64Array(T), sum = new Float64Array(T), sumSq = new Float64Array(T);
   const withinNum = new Float64Array(T), withinDen = new Float64Array(T);
   const wn = new Float64Array(T), wsum = new Float64Array(T), wsumSq = new Float64Array(T);
-  const lists: (number[] | undefined)[] = values ? new Array(T) : [];
+  // One typed array per test, sized for every die: values land in place, with
+  // no growing array per test and no copy afterwards. The same memory a list
+  // of every value held; trimmed to each test's count at the end.
+  let capacity = 0;
+  if (values) for (const item of items) capacity += item.dies?.length ?? 0;
+  const lists: Float64Array[] = values ? Array.from({ length: T }, () => new Float64Array(capacity)) : [];
   // Every test of a die in one read: for a die built by buildWaferMap that is
   // one indexed read per test from its table's columns.
   const read = testValuesReader(testNumbers);
@@ -188,7 +193,7 @@ function* accumulateMomentsSteps(
         if (!Number.isFinite(v)) continue;
         n[slot]++; sum[slot] += v; sumSq[slot] += v * v;
         wn[slot]++; wsum[slot] += v; wsumSq[slot] += v * v;
-        if (values) (lists[slot] ??= []).push(v);
+        if (values) lists[slot][n[slot] - 1] = v;
       }
     }
     for (let slot = 0; slot < T; slot++) {
@@ -206,7 +211,7 @@ function* accumulateMomentsSteps(
     if (n[slot] === 0) continue;
     const tn = testNumbers[slot];
     accs.set(tn, { n: n[slot], sum: sum[slot], sumSq: sumSq[slot], withinNumerator: withinNum[slot], withinDenominator: withinDen[slot] });
-    if (values && lists[slot]) values.set(tn, lists[slot]!);
+    if (values) values.set(tn, lists[slot].subarray(0, n[slot]));
   }
   return accs;
 }
@@ -215,7 +220,7 @@ function* accumulateMomentsSteps(
 function accumulateMoments(
   items: CapabilityItem[],
   defByTestNumber: Map<number, TestDef>,
-  values: Map<number, number[]> | null,
+  values: Map<number, Float64Array> | null,
 ): Map<number, CapabilityMoments> {
   return drain(accumulateMomentsSteps(items, defByTestNumber, values));
 }
@@ -446,7 +451,7 @@ function* computePooledTestStats(
   const empty: PooledTestStats = { stats: new Map(), specTally: new Map(), capability: [] };
   const { defByTestNumber, specByTest } = capabilityDefs(testDefs);
   if (defByTestNumber.size === 0) return empty;
-  const values = new Map<number, number[]>();
+  const values = new Map<number, Float64Array>();
   const accs = yield* accumulateMomentsSteps(items, defByTestNumber, values);
 
   const stats = new Map<number, DescriptiveStats>();
@@ -458,16 +463,13 @@ function* computePooledTestStats(
     if (testNumber === undefined) continue;
     const acc = accs.get(testNumber);
     if (!acc || acc.n === 0 || !defByTestNumber.has(testNumber)) continue;
-    // Copied into a `Float64Array` for `describeValues`, which finds the
-    // quartiles by selection rather than sorting: this is the whole per-test
-    // step, and the longest task the panel runs. At 266k pooled values a
-    // typed-array sort is ~24 ms per test in Chrome; selection is a few ms.
-    //
-    // The plain array is dropped from `values` as it is copied, so the extra
-    // copy is one test's values (~3 MB at 400k), never the lot's.
-    const raw = values.get(testNumber)!;
+    // The pass collected each test's values into a `Float64Array`, which
+    // `describeValues` reorders in place while finding the quartiles by
+    // selection — this is the whole per-test step, and the longest task the
+    // panel runs. Dropped from `values` as it is used, so each test's array
+    // is freed as the steps go.
+    const allValues = values.get(testNumber)!;
     values.delete(testNumber);
-    const allValues = Float64Array.from(raw);
     // Every value here passed `Number.isFinite`, so there are no NaNs to order.
     // The spec tally reads the values before `describeValues` reorders them —
     // though order does not matter to a count.
