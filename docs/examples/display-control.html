@@ -326,14 +326,12 @@
       testDefs: TEST_DEFS,
       passBins: [1],
     });
-    const { view } = result;
 
     // onViewOptionsChange fires when the TOOLBAR changes options.
     // Calling ctrl.setOptions() does NOT re-fire it, preventing feedback loops.
     const ctrl = renderWaferMap(document.getElementById('map'), result, {
       viewOptions: {
         plotMode: 'hardBin',
-        testDefs: view.testDefs,
       },
       // The panel follows the toolbar: switching plot mode re-opens the bin
       // breakdown on the matching bin type, which is the behaviour this page is
