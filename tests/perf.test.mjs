@@ -276,12 +276,17 @@ test('analyzeWaferLot — does not re-run analyzeWaferMap when perWaferSummaries
     return buildWaferMap({ results, passBins: [1] });
   });
   const waferSummaries = waferMapResults.map(r => analyzeWaferMap(r));
-  const tPerWafer = time(() => analyzeWaferMap(waferMapResults[0]));
-  const tLot = time(() => analyzeWaferLot(waferMapResults, { perWaferSummaries: waferSummaries }));
+  const runPerWafer = () => analyzeWaferMap(waferMapResults[0]);
+  const runLot = () => analyzeWaferLot(waferMapResults, { perWaferSummaries: waferSummaries });
+  // Warmup
+  runPerWafer();
+  runLot();
+  const tPerWafer = fastest(runPerWafer);
+  const tLot = fastest(runLot);
   // Lot should be well under 1 full wafer analysis (not 4×).
   assert.ok(
     tLot < tPerWafer,
-    `analyzeWaferLot (${tLot.toFixed(0)}ms) should be faster than a single analyzeWaferMap (${tPerWafer.toFixed(0)}ms) when perWaferSummaries is provided`,
+    `analyzeWaferLot (${tLot.toFixed(2)}ms) should be faster than a single analyzeWaferMap (${tPerWafer.toFixed(2)}ms) when perWaferSummaries is provided`,
   );
 });
 
