@@ -22,7 +22,7 @@ under `### Breaking`.
 
 ---
 
-## [Unreleased]
+## [0.32.0] — 2026-09-27
 
 ### Breaking
 
