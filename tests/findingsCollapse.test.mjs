@@ -187,7 +187,7 @@ test('collapse is idempotent — re-analysing the same wafer gives the same clai
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('absorbed findings do not reappear as their own lot-level rows', async () => {
-  const { analyzeWaferLot } = await import('../dist/packages/stats/index.js');
+  const { analyzeWaferLot, visibleFindings } = await import('../dist/packages/stats/index.js');
 
   const results = Array.from({ length: 6 }, () => edgeFailWafer());
   const perWaferSummaries = results.map(r => analyse(r));
@@ -204,18 +204,21 @@ test('absorbed findings do not reappear as their own lot-level rows', async () =
       s.findings.filter(f => absorbedPerWafer.has(f.id)).map(f => `${f.variable.label}|${f.comparison.left}`)),
   );
 
-  for (const f of lot.findings) {
+  // What a reader sees: the lot list, like a wafer's, keeps absorbed findings
+  // and marks them with the absorbing finding's `absorbedIds`.
+  const shown = visibleFindings(lot.findings);
+  for (const f of shown) {
     const key = `${f.variable.label}|${f.comparison.left}`;
     assert.ok(!absorbedLabels.has(key),
       `lot row "${f.variable.label}" (${f.comparison.left}) restates a finding absorbed at wafer level`);
   }
 
   // The merged label carries through to the lot list rather than being lost.
-  const merged = lot.findings.filter(f => /same dies/.test(f.variable.label));
+  const merged = shown.filter(f => /same dies/.test(f.variable.label));
   assert.ok(merged.length > 0, 'expected the merged hard+soft label at lot level');
 
   // And a bare soft-bin row must not survive alongside it.
-  const bareSoft = lot.findings.filter(f => f.variable.kind === 'softBin');
+  const bareSoft = shown.filter(f => f.variable.kind === 'softBin');
   assert.equal(bareSoft.length, 0,
     `soft-bin twins should not produce lot rows: ${bareSoft.map(f => f.variable.label)}`);
 });

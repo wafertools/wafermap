@@ -44,6 +44,11 @@ export interface HighlightBinTarget {
 export interface HighlightWaferTarget {
   kind: 'wafer';
   waferIndices: number[];
+  /**
+   * For a lot finding about a region, that region's dies on each counted wafer,
+   * keyed by wafer index — what to highlight on each wafer's map.
+   */
+  dieKeysByWafer?: Record<number, string[]>;
 }
 
 export interface HighlightDieTarget {

@@ -96,14 +96,14 @@ export interface PatternThresholds {
  * | Pattern    | Recall | Notes                                      |
  * |------------|--------|--------------------------------------------|
  * | Near-full  | 100%   |                                            |
- * | Edge-ring  |  74%   |                                            |
+ * | Edge-ring  |  75%   |                                            |
  * | Edge-local |  65%   |                                            |
  * | Center     |  60%   |                                            |
  * | Random     |  59%   |                                            |
- * | Scratch    |  26%   | Fragmented patterns harder to detect       |
+ * | Scratch    |  24%   | Fragmented patterns harder to detect       |
  * | Donut      |  15%   | Geometrically similar to center with noise |
  *
- * Overall accuracy: 64% exact match, 86% detection rate (any pattern flagged).
+ * Overall accuracy: 64% exact match, 86.4% detection rate (any pattern flagged).
  */
 export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
   // Calibrated against WM-811K (25,519 labelled wafers)
@@ -285,6 +285,20 @@ function classify(
   // A 5-die cluster is meaningful on a small wafer but noise on a 2500-die wafer.
   const minSalience = Math.max(5, Math.round(dieCount * 0.003));
   const salienceOk = f.salienceSize >= minSalience;
+
+  // edge-ring from the failing dies' positions alone: most fails at the rim and
+  // spread round it. A ring is often fragmented — scattered fails with no
+  // connected component big enough to be "salient" — so it must not depend on
+  // one, and must be tested before the no-dominant-cluster exit and before the
+  // scratch rule (a short run along the rim is not a scratch).
+  if (
+    f.globalRdd < t.nearFullGlobalRdd &&
+    f.p25DistNorm >= t.edgeLocalCentroidDist &&
+    f.edgeAngularSpread >= t.edgeRingAngularSpread &&
+    f.edgeRdd >= t.edgeLocalEdgeRdd
+  ) {
+    return { pattern: 'edge-ring', confidence: f.edgeRdd >= t.edgeRingEdgeRddHigh ? 'high' : 'medium' };
+  }
 
   // If the salient region covers less than 10% of failing dies there is no
   // dominant spatial cluster — treat as random.

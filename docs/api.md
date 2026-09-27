@@ -620,7 +620,7 @@ renderWaferMap(container, result, { viewOptions: { plotMode: 'metadata', activeM
 - **Coexists with test/bin data** — a die can carry `hbin`/`testValues` *and* a metadata classification at the same time; `'metadata'` is just another selectable toolbar view of the same underlying die, the same way `hardBin`/`softBin`/`value` already are. `die.metadata` already renders in every tooltip regardless of plot mode, so switching into `'metadata'` mode changes the map's colour/legend without changing what the tooltip shows.
 - **No lot-stacking.** `'metadata'` is deliberately excluded from the stacked/lot-aggregation modes (`stackedValues`/`stackedBins`/`stackedSoftBins`) — a die's layout classification is a constant of the design, not a per-wafer measurement, so there is nothing meaningful to aggregate across a lot.
 - **Never affects yield.** `die.metadata` was never part of the yield-eligibility pipeline, so a `'metadata'`-classified die's yield/pass-fail status (if it has one) is entirely unaffected by this mode.
-- **Click-to-highlight in the legend**, exactly like `hardBin`/`softBin`: clicking a legend swatch dims every die except that value (`highlightMetadataValue`, the string-keyed analogue of `highlightBin`); clicking the same swatch again clears it.
+- **Click-to-highlight in the legend**, exactly like `hardBin`/`softBin`: clicking a legend swatch dims every die except that value (`highlightMetadataValue`, the string-keyed analogue of `highlightBin`); Ctrl/Cmd+click adds or removes values; clicking the only value shown again clears it.
 - Reuses wafer geometry, tooltip, selection, zoom, and PNG export unchanged — none of those are plot-mode-aware. The one thing genuinely new is the colour fill, the legend, and the toolbar entry.
 
 #### 4.1.13 `standardDiameters`
@@ -1110,8 +1110,8 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.12) |
 | `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Limit pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
-| `highlightBin` | `number` | — | Dim all bins except this one. Clicking a bin/soft-bin legend swatch toggles it. |
-| `highlightMetadataValue` | `string` | — | `'metadata'` mode's analogue of `highlightBin` — dim every die except this metadata value. Clicking a metadata legend swatch toggles it. |
+| `highlightBin` | `number \| number[]` | — | Dim all bins except this one, or these. Clicking a bin/soft-bin legend swatch shows only it (or clears it when it is the only one shown); Ctrl/Cmd+click adds or removes it. A clicked finding about a bin sets it to that bin. |
+| `highlightMetadataValue` | `string \| string[]` | — | `'metadata'` mode's analogue of `highlightBin` — dim every die except this metadata value, or these. Legend clicks work as for `highlightBin`. |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the view auto-scales — use this to safely fix a range computed for a specific test. |
 | `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored under `passFailDisplay: 'spec'` (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
@@ -1670,8 +1670,8 @@ Choose the right update method:
 | --- | --- |
 | Camera | Export current view as PNG |
 | Zoom region | Drag to draw a zoom rectangle |
-| Pan | Drag to pan the map (default mode) |
-| Box select | Draw selection rectangle — fires `onSelect` callback if provided |
+| Pan | Drag to pan the map |
+| Box select | Draw selection rectangle — fires `onSelect` callback if provided. The mode a map opens in. |
 | Chart | Drilldown menu (§5.12) for the selected dies, or for the whole wafer when nothing is selected — the same menu right-click opens. Shown only when there is something to chart: a parametric test in the data, or a sweep in `insights.sweeps`. |
 | Zoom + | Zoom in centred on canvas |
 | Zoom − | Zoom out centred on canvas |
@@ -1702,17 +1702,21 @@ Choose the right update method:
 | Gesture | Mode | Action |
 | --- | --- | --- |
 | Scroll wheel | Zoom mode | Zoom in/out centred on cursor |
-| Drag | Pan mode (default) | Pan the map |
+| Drag | Select mode (default) | Box-select dies |
+| Drag | Pan mode | Pan the map |
 | Drag | Zoom mode | Draw zoom rectangle |
-| Drag | Select mode | Box-select dies |
-| Click on die | Any | `onClick` callback; selects die if `onSelect` provided |
+| Space+drag | Any | Pan without leaving the current mode |
+| Click on die | Any | `onClick` callback; selects just that die. Clicking the only selected die again clears the selection |
 | Ctrl/Cmd+click | Any | Toggle die in/out of selection |
 | Ctrl/Cmd+drag | Select mode | Additive box-select |
 | Hover over die | Any | Tooltip + `onHover` callback |
-| Click bin legend entry | Any | Toggle `highlightBin` — dims all non-matching bins |
+| Click bin legend entry | Any | Show only that bin (`highlightBin`), or clear it when it is the only one shown — dims all non-matching bins. Releases an active finding |
+| Ctrl/Cmd+click bin legend entry | Any | Add or remove that bin from `highlightBin` |
 | Double-click | Any | Reset to fitted view |
 | Right-click | Any | Drilldown menu (§5.12): on an unselected die, selects it first; on a selected die or empty space, keeps the selection; with nothing selected, charts the whole wafer. Left to the browser (or host) when there is nothing to chart |
 | Menu key / Shift+F10 | Any (focus on canvas) | The same menu, from the keyboard |
+
+The selection is drawn with every unselected die faded towards the map background and an outline round the selected dies, which keep their full colour. A finding highlighted from the Summary panel, and `setSelection`, draw the same way. Changing the selection on the map (click, box select, right-click, Esc) releases a finding the Summary panel shows as active, along with its bin highlight.
 | Esc | Any | Clear selection; also closes the expand modal |
 | `E` key | Any (focus on canvas) | Open / close the expand modal |
 
@@ -2347,9 +2351,10 @@ hardBin mode, `sbinDefs` for softBin mode. Because hard and soft bin number
 spaces are independent (STDF V4: both 0–32767), the two arrays are kept separate
 and never merged.
 
-Clicking a bin entry calls `setOptions({ highlightBin: bin })`, which dims all
-non-matching bins on every card simultaneously. Clicking the active entry clears
-the highlight. The active entry is indicated with a bold label and a blue swatch
+Clicking a bin entry sets `highlightBin` to that bin, which dims all non-matching
+bins on every card simultaneously; Ctrl/Cmd+click (or Ctrl/Cmd+Enter/Space) adds or
+removes a bin, and clicking the only active entry clears the highlight. A clicked lot
+finding about a bin sets it to that bin; a legend click releases the finding. The active entry is indicated with a bold label and a blue swatch
 border. The strip rebuilds automatically whenever the mode, colour scheme,
 highlight, or item set changes.
 
@@ -2499,7 +2504,8 @@ const lotSummary   = analyzeWaferLot(waferResults);
 // Per-wafer findings:
 console.log(lotSummary.perWafer[0].summary.findings);
 
-// Lot-level findings (repeated patterns + outliers):
+// Lot-level findings (regional patterns tested on all wafers combined, repeated
+// clusters/edge arcs/spatial patterns, and yield outliers):
 console.log(lotSummary.findings);
 
 // Pass to renderWaferGallery to add a lot summary panel to the gallery bar:
@@ -2611,7 +2617,11 @@ A finding is kept when it passes the significance test AND satisfies at least on
 - absolute `|delta| ≥ minimumEffectSize` (0.20 by default), **or**
 - relative `|delta / background| ≥ minimumRelativeEffect` (1.0 by default)
 
-The relative criterion catches meaningful signals on low-failure-rate wafers where the absolute delta is small but still represents a large deviation from background. For example, with a 3% background failure rate a 4 percentage-point increase is a 133% relative elevation — it clears `minimumRelativeEffect` even though 0.04 is well under the 0.20 absolute gate. Note the converse: a 2 percentage-point increase on the same background is only a 67% elevation, which clears *neither* gate and produces no finding.
+The relative criterion catches meaningful signals on low-failure-rate wafers where the absolute delta is small but still represents a large deviation from background. For example, with a 3% background failure rate a 4 percentage-point increase is a 133% relative elevation — it clears `minimumRelativeEffect` even though 0.04 is well under the 0.20 absolute gate. Note the converse: a 2 percentage-point increase on the same background is only a 67% elevation, which clears *neither* gate and produces no finding. A zero background — a bin found in the region and nowhere else on the wafer — is the largest relative change there is and always clears the relative gate; the finding's `relativeDelta` is then `undefined`, since the ratio has no finite value, and significance still has to be met.
+
+The gate's relative effect is always measured on the adverse outcome. For a pass rate — yield, a functional test's pass rate — that is the failure rate: a yield of 98% against 94% is failures of 2% against 6%, a tripling, and reaches the same verdict as the bin rate of the same dies. (`relativeDelta` on the finding itself stays the relative change in the pass rate.)
+
+A region compared with the rest of the wafer looks deviant in the opposite direction whenever the rest contains a stronger deviation — an edge rich in a bin makes the inner rings look poor in it. So a finding opposite in direction to a stronger finding for the same variable and region family is re-tested against the rest of the wafer without that region (same test, same Benjamini–Hochberg multiplier, same gates) and dropped unless it still holds. This applies to rate findings and to test-value findings alike.
 
 **Effect size gate for test-value findings:**
 
@@ -2935,7 +2945,7 @@ type HighlightTarget =
   | { kind: 'region';  regionFamily: 'ring' | 'quadrant' | 'reticle-position' | 'test-site' | 'sector';
                         regionKeys: string[]; dieKeys?: string[] }
   | { kind: 'bin';     bin: number; regionKeys?: string[]; dieKeys?: string[] }
-  | { kind: 'wafer';   waferIndices: number[] }
+  | { kind: 'wafer';   waferIndices: number[]; dieKeysByWafer?: Record<number, string[]> }  // a lot regional finding names each counted wafer's region dies
   | { kind: 'dies';    dieKeys: string[] }
 ```
 

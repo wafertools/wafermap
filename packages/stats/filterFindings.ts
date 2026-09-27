@@ -64,3 +64,14 @@ export function visibleFindings<T extends { id: string; absorbedIds?: string[] }
   const claimed = new Set(findings.flatMap(f => f.absorbedIds ?? []));
   return findings.filter(f => !claimed.has(f.id));
 }
+
+/**
+ * What makes two findings "the same pattern" on different wafers. One key for
+ * the lot's wafer count and the gallery's per-card highlight of a lot finding.
+ */
+export function findingPatternKey(f: StatsFinding): string {
+  return [
+    f.variable.kind, f.variable.index ?? '', f.variable.bin ?? '',
+    f.comparison.family, f.comparison.left, f.effect.direction,
+  ].join('|');
+}

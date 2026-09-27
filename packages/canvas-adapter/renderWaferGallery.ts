@@ -18,14 +18,15 @@ import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
 import { hasDrilldownTargets, waferPopulation } from './chartPopulation.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
-import { classifyChanged, COLOR_KEYS } from './renderWaferMap.js';
+import { classifyChanged, COLOR_KEYS, findingBin } from './renderWaferMap.js';
+import { findingPatternKey } from '../stats/filterFindings.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest, getDieTestValue } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
-import { compareNatural, arrayEqual } from '../core/utils.js';
+import { asList, compareNatural, arrayEqual, toggleHighlight } from '../core/utils.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContentSteps, reportMapsFromItems } from './summaryPanel.js';
 import { renderLotReportHtml } from '../stats/renderSummaryReport.js';
@@ -459,7 +460,9 @@ function countLegendPopulation<K>(
 function renderLegendSwatchRow(
   container: HTMLElement,
   opts: {
-    color: string; label: string; isActive: boolean; onClick: () => void;
+    color: string; label: string; isActive: boolean;
+    /** `additive` is a Ctrl/Cmd click (or Ctrl/Cmd+Enter/Space): add or remove, not replace. */
+    onClick: (additive: boolean) => void;
     /** Dies in this category, over the same population the map paints — see
      *  `countLegendPopulation`. Omitted only when there is genuinely nothing to
      *  count. */
@@ -522,9 +525,9 @@ function renderLegendSwatchRow(
   entry.addEventListener('mouseleave', () => { entry.style.background = 'transparent'; });
   entry.addEventListener('focus', () => { entry.style.background = CLR.bgHover; });
   entry.addEventListener('blur',  () => { entry.style.background = 'transparent'; });
-  entry.addEventListener('click', opts.onClick);
+  entry.addEventListener('click', e => opts.onClick(e.ctrlKey || e.metaKey));
   entry.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opts.onClick(); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opts.onClick(e.ctrlKey || e.metaKey); }
   });
 
   container.appendChild(entry);
@@ -798,8 +801,26 @@ export function renderWaferGallery(
     applyFindingHighlight([]);
   }
 
+  // True while the gallery itself sets card selections for a lot finding, so
+  // the cards' selection callbacks are not mistaken for the user's.
+  let settingFindingSelection = false;
+
   function clearDieZoneHighlight(): void {
+    settingFindingSelection = true;
     for (const ctrl of cardControllers) if (ctrl) ctrl.clearSelection();
+    settingFindingSelection = false;
+  }
+
+  /** A card's selection callback: the user's own selection change releases the
+   *  active lot finding, as it does a single map's, then reaches the host. */
+  function cardOnSelect(item: WaferMapDisplayItem): (dies: Die[]) => void {
+    return (dies) => {
+      if (!settingFindingSelection && activeLotFindingId !== null) {
+        clearLotFindingHighlight();
+        renderGallerySummaryPanel();
+      }
+      item.onSelect?.(dies);
+    };
   }
 
   function applyDieZoneHighlight(dieKeys: string[], cardIndices?: number[]): void {
@@ -1074,16 +1095,6 @@ export function renderWaferGallery(
     return h?.kind === 'wafer' && h.waferIndices?.length ? h.waferIndices : null;
   }
 
-  function findingFingerprint(f: StatsFinding): string {
-    return [
-      f.variable.kind,
-      f.variable.index ?? '',
-      f.variable.bin ?? '',
-      f.comparison.family,
-      f.comparison.left,
-      f.effect.direction,
-    ].join('|');
-  }
 
   /** Cards a finding put into value mode on a WITHHELD test, so it can be
    *  taken back off it. See `applyLotFindingHighlight`. */
@@ -1110,6 +1121,14 @@ export function renderWaferGallery(
     updateShared({ highlightBin: undefined }, { fireCallback: false });
   }
 
+  /** A legend click releases the active lot finding: the user has changed what
+   *  the map shows, so the finding no longer describes it. */
+  function releaseLotFindingForLegend(): void {
+    if (activeLotFindingId === null) return;
+    clearLotFindingHighlight();
+    renderGallerySummaryPanel();
+  }
+
   function applyLotFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
     // Toggle off if already active.
     if (activeLotFindingId === finding.id) {
@@ -1121,9 +1140,9 @@ export function renderWaferGallery(
     row.style.background = CLR.bgActive;
     row.style.fontWeight = '600';
 
-    // Switch to the mode that makes this finding's data visible.
-    // Don't set highlightBin — the die zone selection overlay already shows the affected
-    // dies, and highlightBin dims everything else making the map look empty.
+    // Switch to the mode that makes this finding's data visible, with the legend
+    // filtered to the finding's own bin (none for a yield or test finding), so
+    // the legend never names a different bin from the finding.
     restoreFindingScopedCards();
     const { kind, index } = finding.variable;
     if (kind === 'test') {
@@ -1170,10 +1189,8 @@ export function renderWaferGallery(
           findingScopedCards = [...scopeTo];
         }
       }
-    } else if (kind === 'softBin') {
-      updateShared({ plotMode: 'softBin', highlightBin: undefined }, { fireCallback: false });
     } else {
-      updateShared({ plotMode: 'hardBin', highlightBin: undefined }, { fireCallback: false });
+      updateShared({ plotMode: kind === 'softBin' ? 'softBin' : 'hardBin', highlightBin: findingBin(finding) }, { fireCallback: false });
     }
 
     // Clear all card outlines and die zone selections before applying new ones.
@@ -1183,15 +1200,15 @@ export function renderWaferGallery(
     const h = finding.highlight;
     if (h.kind === 'wafer') {
       applyFindingHighlight(h.waferIndices);
-      // For repeated-pattern findings, highlight the actual die zones on the
-      // affected cards using each card's matching per-wafer finding's dieKeys.
-      const fp = findingFingerprint(finding);
+      // Highlight the die zone on each card: a regional lot finding names each
+      // wafer's region dies; a repeated pattern takes them from the card's own
+      // matching wafer finding.
+      const fp = findingPatternKey(finding);
       for (const ci of h.waferIndices) {
-        const item = currentItems[ci];
-        const perWaferFinding = item?.statsSummary?.findings.find(
-          f => findingFingerprint(f) === fp,
-        );
-        const dieKeys = (perWaferFinding?.highlight as { dieKeys?: string[] } | undefined)?.dieKeys;
+        const perWaferFinding = h.dieKeysByWafer ? undefined
+          : currentItems[ci]?.statsSummary?.findings.find(f => findingPatternKey(f) === fp);
+        const dieKeys = h.dieKeysByWafer?.[ci]
+          ?? (perWaferFinding?.highlight as { dieKeys?: string[] } | undefined)?.dieKeys;
         if (dieKeys?.length) applyDieZoneHighlight(dieKeys, [ci]);
       }
     } else if (h.kind === 'bin') {
@@ -2535,7 +2552,7 @@ export function renderWaferGallery(
       maxHeight: '86px', overflowY: 'auto', overflowX: 'hidden' } as Partial<CSSStyleDeclaration>);
     legendEl.appendChild(binsRow);
 
-    const activeBin = sharedOpts.highlightBin;
+    const activeBins = asList(sharedOpts.highlightBin);
     const activeMetadataFieldDef = currentItems.flatMap(it => it?.metadataFields ?? []).find(f => f.key === activeMetadataKey);
 
     // What this row of swatches is keyed on. Hard and soft bins are INDEPENDENT
@@ -2596,9 +2613,9 @@ export function renderWaferGallery(
     }
 
     if (isMetadataMode) {
-      const activeMetadataValue = sharedOpts.highlightMetadataValue;
+      const activeMetadataValues = asList(sharedOpts.highlightMetadataValue);
       metadataValues.forEach((value, index) => {
-        const isActive = activeMetadataValue === value;
+        const isActive = activeMetadataValues.includes(value);
         const valueDef = activeMetadataFieldDef?.values?.find(v => v.value === value);
         const color = valueDef?.color ?? metadataValueColor(index);
         const count = metaTally.counts.get(value) ?? 0;
@@ -2606,8 +2623,9 @@ export function renderWaferGallery(
           color, isActive, label: valueDef?.label ?? value,
           count,
           percent: metaTally.total > 0 ? (count / metaTally.total) * 100 : undefined,
-          onClick: () => {
-            const next = sharedOpts.highlightMetadataValue === value ? undefined : value;
+          onClick: (additive) => {
+            const next = toggleHighlight(sharedOpts.highlightMetadataValue, value, additive);
+            releaseLotFindingForLegend();
             updateShared({ highlightMetadataValue: next });
           } });
       });
@@ -2634,7 +2652,7 @@ export function renderWaferGallery(
     const binColorFor = (bin: number): string => activeColors.get(bin) ?? NO_DATA_FILL;
 
     for (const bin of bins) {
-      const isActive = activeBin === bin;
+      const isActive = activeBins.includes(bin);
       const binDef   = binDefMap?.get(bin);
       const count    = binTally.counts.get(bin) ?? 0;
       renderLegendSwatchRow(binsRow, {
@@ -2642,8 +2660,9 @@ export function renderWaferGallery(
         label: binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`,
         count,
         percent: binTally.total > 0 ? (count / binTally.total) * 100 : undefined,
-        onClick: () => {
-          const next = sharedOpts.highlightBin === bin ? undefined : bin;
+        onClick: (additive) => {
+          const next = toggleHighlight(sharedOpts.highlightBin, bin, additive);
+          releaseLotFindingForLegend();
           updateShared({ highlightBin: next });
         } });
     }
@@ -3142,7 +3161,7 @@ export function renderWaferGallery(
       onSaveText:      options.onSaveText,
       downloadFilename: options.downloadFilename,
       onClick:         item.onClick,
-      onSelect:        item.onSelect,
+      onSelect:        cardOnSelect(item),
       // Sweep definitions only — the card is not an Insights host (`enabled`
       // stays off); it needs them to offer a sweep of its selected dies.
       insights:        cardInsights,
@@ -3659,7 +3678,7 @@ export function renderWaferGallery(
       onSaveText:      options.onSaveText,
       downloadFilename: options.downloadFilename,
       onClick:         item.onClick,
-      onSelect:        item.onSelect,
+      onSelect:        cardOnSelect(item),
       insights:        cardInsights,
       // This view is already detached into its own window (a real popup or
       // the in-page fallback) — there is nowhere sensible for it to "expand"

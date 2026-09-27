@@ -262,3 +262,22 @@ export function drain<T>(work: Chunked<T>): T {
   while (!step.done) step = work.next();
   return step.value;
 }
+
+/** A highlight option (one value or several) as a list; `undefined` is none. */
+export function asList<T>(value: T | readonly T[] | undefined): readonly T[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : [value as T];
+}
+
+/**
+ * The highlight after a click on `value`. A plain click shows only that value,
+ * or clears the highlight when it was the only one; an additive click
+ * (Ctrl/Cmd) adds or removes it. One value stays a plain value.
+ */
+export function toggleHighlight<T>(current: T | readonly T[] | undefined, value: T, additive: boolean): T | T[] | undefined {
+  const list = asList(current);
+  const next = additive
+    ? (list.includes(value) ? list.filter(v => v !== value) : [...list, value])
+    : (list.length === 1 && list[0] === value ? [] : [value]);
+  return next.length === 0 ? undefined : next.length === 1 ? next[0] : next;
+}

@@ -80,7 +80,9 @@ Every map also shows a short **title** by the colorbar or legend naming what is
 displayed — the test name (and number, in limit pass/fail mode), the bin type, or the stacked
 wafer count.
 
-Clicking a bin swatch in the legend filters the display to that bin
+Clicking a bin swatch in the legend filters the display to that bin: every other bin is
+greyed out. **Ctrl / Cmd + click** adds or removes further bins, so several can be shown
+together. Clicking the only bin shown again clears the filter
 (see [Highlight bin](#3-toolbar-controls)).
 
 ### 1.5 Wafers and dies with no position data
@@ -208,7 +210,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/zoomOut.svg" width="20" height="20">   | Zoom out           | Zooms out one step.                                                                                                                                                                                                                                                                                    |
 | <img src="images/icons/reset.svg" width="20" height="20">     | Reset zoom         | Returns the map to the default fitted view.                                                                                                                                                                                                                                                            |
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
-| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)).                                                                                                                                                                                                              |
+| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)). This is the mode a map opens in.                                                                                                                                                                             |
 | <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
 | <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it.                                                                                                                |
 | <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
@@ -326,23 +328,31 @@ The rest depends on the active plot mode:
 
 ### 4.2 Zoom and pan
 
-Scroll to zoom in and out. Click and drag to pan when in Pan mode. The toolbar
-also provides dedicated **Zoom mode** (drag to draw a zoom region), **Zoom in**,
+Scroll to zoom in and out. To pan, hold **Space** and drag, use the arrow keys,
+or choose Pan mode in the toolbar so that a plain drag pans. The toolbar also
+provides dedicated **Zoom mode** (drag to draw a zoom region), **Zoom in**,
 **Zoom out**, and **Reset zoom** buttons. Tooltips and die selection remain
 accurate at all zoom levels.
 
 ### 4.3 Box select
 
-Switch to Box select mode in the toolbar, then click and drag to draw a selection
-rectangle. The application may display statistics or details for the selected
-dies. This is useful for comparing a sub-region against the full wafer.
-Use **Ctrl / Cmd + click** to add individual dies to the current selection.
-Press **Esc** to clear.
+Click and drag on the map to draw a selection rectangle — Box select is the mode
+a map opens in. Click a die to select just that die, and click it again to clear
+it. The application may display statistics or details for the selected dies.
+This is useful for comparing a sub-region against the full wafer.
+
+Selected dies keep their full colour and every other die is faded, with an
+outline round the selection, so it is clear which dies are selected whatever
+their shape — a block, a ring or scattered dies. A finding highlighted from the
+Summary panel is shown the same way.
+
+Use **Ctrl / Cmd + click** to add or remove individual dies. Press **Esc**, or
+click outside the wafer, to clear the selection.
 
 <div data-wmap-demo="box-select" class="wmap-demo"></div>
 
-*A block of dies near the centre is shown pre-selected. Choose Box select in the
-toolbar and drag to make your own selection, or Ctrl/Cmd + click individual dies.*
+*A block of dies near the centre is shown pre-selected. Drag on the map to make
+your own selection, or Ctrl/Cmd + click individual dies.*
 
 ### 4.4 Charting dies and wafers
 
@@ -402,8 +412,10 @@ Each finding shows:
 
 - **Severity** — Unusual, Notable, or Info (ordered most to least significant)
 - **Description** — plain-language summary of what was detected and where
-- **Click to highlight** — clicking a finding highlights the affected dies on
-  the map with a black-and-white outline, visible against every colour scheme
+- **Click to highlight** — clicking a finding fades the rest of the wafer and outlines the
+  affected dies. A finding about a bin also filters the legend to that bin, so the legend
+  always names what the finding describes; a finding about yield or a test clears the
+  filter. Changing the selection or the legend filter yourself releases the finding.
 
 **Severity** reflects how strong the statistical evidence is. *Unusual* findings
 have both a very low adjusted p-value and a large effect size — they are reliably
@@ -418,7 +430,7 @@ highlight the affected dies on the map.*
 
 ![Cluster finding highlighted on map](images/guide-findings-cluster-highlight.png)
 
-*A failure cluster finding: affected dies highlighted with a white-and-black outline.*
+*A failure cluster finding: the rest of the wafer is faded, so the affected dies stand out, with an outline round them.*
 
 ### Finding types
 

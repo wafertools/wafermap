@@ -9,7 +9,7 @@ import { buildWaferMap, analyzeWaferMap, binColorsForMaps } from '../dist/index.
 import { classifyDie } from '../dist/packages/core/classify.js';
 import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
 import { createWafer } from '../dist/packages/core/wafer.js';
-import { generateDies } from '../dist/packages/core/dies.js';
+import { generateDies, getDieKey } from '../dist/packages/core/dies.js';
 import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
 import { renderWaferMapCard } from '../dist/packages/canvas-adapter/renderWaferMap.js';
 
@@ -383,6 +383,82 @@ test('renderWaferMap mounts toolbar controls and supports option/controller upda
     assert.equal(window.document.body.querySelector('[data-wmap-toolbar="1"]'), null);
     assert.equal(clickCalls.length >= 0, true);
     assert.equal(selectCalls.length >= 0, true);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a map opens in select mode, and clicking the only selected die again clears the selection', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+    const wafer = buildWaferMap({
+      results: [
+        { x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 }, { x: 0, y: 1, hbin: 1 },
+      ],
+      waferConfig: { diameter: 40 },
+      dieConfig: { width: 10, height: 10 },
+    });
+    const hovered = [];
+    const selections = [];
+    const ctrl = renderWaferMap(container, wafer, {
+      onHover: (die) => hovered.push(die),
+      onSelect: (dies) => selections.push(dies.map((die) => getDieKey(die))),
+    });
+    const canvas = container.querySelector('canvas');
+    const selectBtn = [...root.querySelectorAll('button')].find((btn) => btn.ariaLabel === 'Select (drag to select dies)');
+    assert.equal(selectBtn.dataset.active, '1', 'select is the starting mode');
+    assert.equal(canvas.style.cursor, 'crosshair');
+
+    let at = null;
+    for (let y = 0; y < 400 && !at; y += 5) {
+      for (let x = 0; x < 400 && !at; x += 5) {
+        canvas.dispatchEvent(pointerEvent(window, 'pointermove', { clientX: x, clientY: y }));
+        if (hovered.at(-1)) at = { clientX: x, clientY: y };
+      }
+    }
+    const die = hovered.at(-1);
+    assert.ok(die, 'fixture should have a die under the pointer');
+    const clickAt = () => {
+      canvas.dispatchEvent(pointerEvent(window, 'pointerdown', at));
+      canvas.dispatchEvent(pointerEvent(window, 'pointerup', at));
+    };
+
+    clickAt();
+    assert.deepEqual(selections.at(-1), [getDieKey(die)], 'a click selects the die');
+    clickAt();
+    assert.deepEqual(selections.at(-1), [], 'clicking the only selected die again clears it');
+
+    ctrl.setSelection(wafer.dies);
+    clickAt();
+    assert.deepEqual(selections.at(-1), [getDieKey(die)], 'inside a larger selection a click selects just that die');
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('a bin finding filters the legend to its bin, and changing the selection releases it', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '900px', height: '600px' });
+    root.appendChild(container);
+    const { wafer, statsSummary } = buildWaferWithFinding();
+    const binFinding = statsSummary.findings.find((f) => f.variable.kind === 'hardBin' && f.variable.bin === 2);
+    assert.ok(binFinding, 'fixture should produce a hard-bin finding');
+    const ctrl = renderWaferMap(container, wafer, { statsSummary, summaryPanel: { defaultOpen: true } });
+
+    const row = [...root.querySelectorAll('button[data-wmap-finding]')].find((b) => b.dataset.wmapFinding === binFinding.id);
+    assert.ok(row, 'the finding row should render');
+    click(window, row);
+    assert.equal(ctrl.getOptions().highlightBin, binFinding.variable.bin, 'the legend follows the finding');
+
+    ctrl.clearSelection();
+    assert.equal(ctrl.getOptions().highlightBin, undefined, 'a selection change releases the finding and its filter');
+    ctrl.destroy();
   } finally {
     cleanup();
   }

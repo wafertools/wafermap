@@ -68,16 +68,16 @@ wafers from real-world production, collected across 46,393 lots
 | Pattern | Recall | Precision |
 |---|---|---|
 | Near-full | 100% | 40% |
-| Edge-ring | 74% | 93% |
+| Edge-ring | 75% | 92% |
 | Edge-local | 65% | 51% |
 | Center | 60% | 85% |
 | Random | 59% | 47% |
-| Scratch | 26% | 33% |
+| Scratch | 24% | 33% |
 | Donut | 15% | 7% |
 
 **Overall exact-match accuracy: 64%**
 
-**Detection rate: 86.2%** — the more operationally useful number. This means
+**Detection rate: 86.4%** — the more operationally useful number. This means
 that for 86 out of 100 wafers with a genuine spatial pattern, the library
 correctly flags *some* pattern (even if the specific label is occasionally
 wrong). Only 14% of patterned wafers are missed entirely (returned as random).
@@ -106,7 +106,7 @@ discrimination matters for your analysis, treat these two labels together as
 "symmetric centre/annular pattern" and use the wafer map visually to distinguish
 them.
 
-**Scratch recall is limited (~26%).** Real scratch patterns often fragment into
+**Scratch recall is limited (~24%).** Real scratch patterns often fragment into
 many disconnected die-sized pieces along the scratch path, particularly at
 typical semiconductor die pitches (5–15mm). The geometry features work best
 on clean, contiguous scratches — fragmented or faint scratches tend to fall

@@ -49,6 +49,70 @@ under `### Breaking`.
   result smaller (about 86 bytes less per die) and roughly halves the copy the Web Worker makes of
   a result. The internal `dataAxisFlip` field takes its place.
 
+### Changed
+
+- **The legend filters to several bins or metadata values at once.** Ctrl/Cmd+click on a legend
+  entry — the map's legend or the gallery's strip, where Ctrl/Cmd+Enter/Space works from the
+  keyboard — adds or removes a value; a plain click shows only that value, or clears the
+  filter when it is the only one shown. `highlightBin` accepts `number | number[]` and
+  `highlightMetadataValue` accepts `string | string[]`.
+- **A finding and the legend filter agree.** Clicking a finding about a bin filters the legend
+  to that bin, and one about yield or a test clears the filter — in a single map and in the
+  gallery alike. Changing the legend filter releases the finding, as changing the selection
+  does, including a selection made on a gallery card while a lot finding is active.
+- **Lot regional findings are tested on all wafers' data together.** A yield, bin,
+  functional pass-rate, limit-fail or test-value difference in a region is combined across
+  every wafer (Stouffer's Z over each wafer's own test, weighted by die count) and reported
+  with the wafer analysis's gates, redundancy collapse and opposite-region re-test, instead of
+  by counting wafers whose own analysis reported it — a pattern present on every wafer but
+  too faint on some to pass alone is the lot's pattern. The sentence gives the lot's figure
+  and "higher/lower on N/M wafers, all wafers' data combined", N counting the wafers whose
+  region differs in that direction; `stats.method` is `'stouffer-z'`. Clusters, edge arcs and
+  spatial-pattern labels are still counted by the wafers that report them. Lot findings keep
+  absorbed restatements in the list, marked by `absorbedIds`, as wafer findings do.
+- **Selected dies are shown by fading the rest of the map.** Every unselected die is faded
+  towards the map background and the selection is outlined, so selected dies keep their full
+  colour and it is clear which dies are selected whatever the selection's shape — a block, a
+  ring, an edge arc. A finding highlighted from the Summary panel, a gallery lot finding and
+  `setSelection` are drawn the same way. The fade and outline sit under the axes and legend.
+- **A map opens in select mode.** A drag draws a selection box; hold Space and drag, use the
+  arrow keys, or choose Pan in the toolbar to pan.
+- **Clicking the only selected die again clears the selection.** Clicking a die inside a
+  larger selection still selects just that die.
+- **Changing the selection on the map releases an active finding.** A click, box select,
+  right-click, Esc or `clearSelection` clears the Summary panel's active finding and its bin
+  highlight, so the panel never shows a finding the map no longer highlights.
+
+### Fixed
+
+- **Regional findings report patterns confined to one region.** A bin, limit-fail or
+  functional-fail rate that is zero in the rest of the wafer and raised in a region (a bin
+  found only at the edge) counts as the largest relative change for the effect gate and for
+  severity, for every region family: rings, quadrants, sectors, reticle positions and test
+  sites. On a lot whose wafers carry bin 2 only at the edge, the lot finding reads "seen on
+  8/8 wafers".
+- **Yield and functional pass-rate findings are judged by their failure rate.** The relative
+  effect of a pass rate is measured on its failures: yield 98% → 94% is failures 2% → 6%, and
+  reaches the same verdict as the bin rate of the same dies.
+- **A region is not reported as deviating only because another region deviates more.** A
+  finding opposite in direction to a stronger finding for the same variable and region family
+  must still hold when compared with the rest of the wafer without that region, so an edge
+  rich in a bin, a limit fail or high test values no longer makes the inner rings read as low
+  in it (or high in yield).
+- **The soft bin that restates yield is absorbed into the yield finding**, as the hard pass bin
+  is: the one soft bin every passing die carries and no failing die does.
+- **An edge ring made of scattered fails is classified as an edge ring.** The spatial-pattern
+  classifier recognises an edge ring from the failing dies' positions — most fails at the rim
+  and spread round at least 60% of it — when no connected group of fails is large enough to
+  judge shape by, and before the scratch rule, so a short run along the rim is not a scratch.
+  Against WM-811K: detection 86.4%, edge-ring recall 75% (precision 92%), scratch recall 24%.
+- **Lot spatial-pattern rows count related labels together and state the lot's figures.**
+  Edge-ring and edge-local wafers count as one edge pattern, and centre and donut as one,
+  naming each label's wafer count ("Spatial pattern: edge (edge-ring on 5, edge-local on 2) —
+  seen on 7/13 wafers"); the sentence gives the lot's count, not any one wafer's confidence or figures.
+  The gallery highlights each counted wafer's failing dies.
+- Findings, their severities and "seen on N wafers" counts can change.
+
 ### Performance
 
 - **Insights no longer blocks while its test statistics are computed.** The Overview's Test Values
@@ -116,6 +180,10 @@ under `### Breaking`.
   drew the edge two dies share slightly darker than the wafer's outer edge, WebKit did not.
 
 ### Added
+
+- **`HighlightWaferTarget.dieKeysByWafer`** — a lot regional finding names its region's dies
+  on each counted wafer, keyed by wafer index; the gallery highlights the region on every
+  counted card from it.
 
 - **`results` can be columns (`DieColumns`).** A host that already holds its results as columns
   (a parser, Arrow, Parquet) passes one array per field and, for test values and verdicts, the

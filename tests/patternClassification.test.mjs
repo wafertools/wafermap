@@ -86,6 +86,15 @@ test('edge-ring pattern — high confidence', () => {
   assert.ok(c.features.edgeRdd > 0.70, `edgeRdd should be high, got ${c.features.edgeRdd}`);
 });
 
+test('a fragmented edge ring — scattered fails all round the rim — is an edge ring', () => {
+  // One in five rim dies fails, spread round the whole circumference, so no
+  // connected group of failing dies is large enough to be "salient".
+  let k = 0;
+  const c = classify(buildResult((i, j) => Math.hypot(i * pitchX, j * pitchY) / waferRadius >= 0.8 && k++ % 5 === 0));
+  assert.ok(c.features.salienceSize < 5, `fixture must be fragmented, got a ${c.features.salienceSize}-die group`);
+  assert.equal(c.pattern, 'edge-ring');
+});
+
 test('center pattern — high confidence', () => {
   const result = makeCenter();
   const c = classify(result);

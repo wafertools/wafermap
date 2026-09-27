@@ -53,20 +53,27 @@ Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 > **Re-run 2026-09-16 (0.30.1).** Every figure on this page was re-measured against the 0.30.1
 > build and reproduced exactly: classifier recall and exact match, the 86.2% detection rate,
 > the combined 99.3% / 99.1% rates and per-label rescue, and both false-positive tables.
+>
+> **Re-run 2026-09-27.** The classifier alone, which recognises an edge ring from the failing
+> dies' positions when no large connected group exists: edge-ring recall 75%
+> (precision 92%), scratch 24%, detection 86.4%, exact match 64%; other classes unchanged. The
+> combined 99.3% / 99.1% rates, the WM-811K false-positive table and the synthetic sweep were
+> re-run with this release's regional analysis: all unchanged except the synthetic 2% cell
+> (14.2%). The miss and rescue counts below are this classifier's.
 
 ### Classifier alone
 
 | Pattern | Recall | Notes |
 |---|---|---|
 | Near-full | 100% | |
-| Edge-ring | 74% | |
+| Edge-ring | 75% | |
 | Edge-local | 65% | |
 | Center | 60% | |
 | Random | 59% | |
-| Scratch | 26% | Fragmented patterns miss |
+| Scratch | 24% | Fragmented patterns miss |
 | Donut | 15% | Geometric overlap with center |
 
-**Overall exact-match: 64% · Detection rate (any pattern flagged): 86.2%**
+**Overall exact-match: 64% · Detection rate (any pattern flagged): 86.4%**
 
 ### Combined (classifier + regional analysis)
 
@@ -74,8 +81,8 @@ Of the 2,915 wafers the classifier missed, the regional analysis recovered:
 
 | Measure | Rate |
 |---|---|
-| Any regional finding fired | 94.7% of misses |
-| Semantically matched finding | 93.7% of misses |
+| Any regional finding fired | 94.6% of misses |
+| Semantically matched finding | 93.6% of misses |
 
 **Combined detection rate: 99.3%** (any) / **99.1%** (semantically matched)
 
@@ -86,11 +93,11 @@ Per-label rescue breakdown (classifier misses only):
 
 | Label | Misses | Any rescue | Match rescue |
 |---|---|---|---|
-| center | 690 | 97.8% | 97.8% |
+| center | 689 | 97.8% | 97.8% |
 | donut | 238 | 97.5% | 95.0% |
-| edge-local | 940 | 94.3% | 94.3% |
-| edge-ring | 488 | 94.7% | 93.2% |
-| scratch | 559 | 90.3% | 87.3% |
+| edge-local | 933 | 94.2% | 94.2% |
+| edge-ring | 456 | 94.3% | 92.8% |
+| scratch | 558 | 90.3% | 87.3% |
 
 > **Re-run 2026-07-28 (v0.20.9).** Numbers above were re-measured after the fix
 > that stopped `buildWaferMap` from mislabelling real probed edge dies as
@@ -131,7 +138,7 @@ WM-811K's range):
 
 | Fail rate | Regional FP rate |
 |---|---|
-| 2% | 13.7% |
+| 2% | 14.2% |
 | 5% | 15.1% |
 | 10% | 49.5% ← known issue |
 | 20% | 2.4% |
@@ -162,7 +169,7 @@ globally) is a larger refactor; this spike is documented as a known limitation.
 | Method | Accuracy on WM-811K | Notes |
 |---|---|---|
 | Our classifier (exact match) | 64% | Rule-based, no training |
-| Our system (any detection) | 86.2% / 99.3% combined | |
+| Our system (any detection) | 86.4% / 99.3% combined | |
 | Decision tree + Radon features | >98% | 59 handcrafted features, trained ensemble |
 | CNN-based (various) | 96–99.9% | Trained on balanced/oversampled subsets |
 
@@ -174,7 +181,7 @@ findings, and functions on any wafer regardless of diameter or die pitch.
 
 The most relevant comparison is the Decision Tree + Radon transform approach.
 The recall gap (64% vs >98%) is largely in the hard classes (donut 15%, scratch
-26%) which benefit from global frequency-domain information (Radon transform)
+24%) which benefit from global frequency-domain information (Radon transform)
 that local geometry cannot capture.
 
 **Our unique strength:** the combined 99% detection rate is competitive as a

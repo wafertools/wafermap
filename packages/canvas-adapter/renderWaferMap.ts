@@ -2,7 +2,7 @@ import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
 import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
-import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
+import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, PATH_SHAPES, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import { buildWaferMap, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
@@ -34,6 +34,7 @@ import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
 import { INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
+import { toggleHighlight } from '../core/utils.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -145,9 +146,9 @@ export interface WaferDisplayState {
    * when the result has `metadataFields`.
    */
   activeMetadataKey?: string;
-  highlightBin?: number;
-  /** Dim every die except this metadata value in `'metadata'` mode — the analogue of `highlightBin`. */
-  highlightMetadataValue?: string;
+  highlightBin?: number | number[];
+  /** Dim every die except these metadata values in `'metadata'` mode — the analogue of `highlightBin`. */
+  highlightMetadataValue?: string | string[];
   /**
    * Explicit value colour normalization range.
    *
@@ -527,6 +528,13 @@ export interface CardController extends WaferMapController {
 }
 
 /** @internal The public view of a card's options: everything but the gallery's shared state. */
+/** The bin a finding is about — what the legend filter shows while the finding
+ *  is active — or `undefined` for a yield, test or functional finding. */
+export function findingBin(finding: StatsFinding): number | undefined {
+  const { kind, bin } = finding.variable;
+  return kind === 'hardBin' || kind === 'softBin' ? bin : undefined;
+}
+
 export function toPublicViewOptions(opts: CardViewOptions): WaferViewOptions {
   const { metadataValueOrder: _order, binColors: _colors, lotSize: _lotSize, ...rest } = opts;
   return rest;
@@ -1416,8 +1424,8 @@ export function renderWaferMapCard(
   // Interaction mode: 'pan' | 'zoom' | 'select'
   // 'pan'    — drag pans; plain scroll pans; Ctrl+scroll zooms
   // 'zoom'   — drag draws a zoom-box; plain scroll pans; Ctrl+scroll zooms
-  // 'select' — drag draws a selection box (only available when onSelect provided)
-  let interactMode: 'pan' | 'zoom' | 'select' = 'pan';
+  // 'select' — drag draws a selection box (the default; Space+drag still pans)
+  let interactMode: 'pan' | 'zoom' | 'select' = 'select';
   let panStart        = { x: 0, y: 0 };
   let panOrigin       = { x: 0, y: 0 };
   let boxStart        = { x: 0, y: 0 };
@@ -1505,19 +1513,12 @@ export function renderWaferMapCard(
     const { kind, index } = finding.variable;
     if (kind === 'test') {
       applyOpts({ plotMode: 'value', activeTest: index ?? 0, highlightBin: undefined });
-    } else if (kind === 'softBin') {
-      applyOpts({ plotMode: 'softBin', highlightBin: undefined });
     } else {
-      applyOpts({ plotMode: 'hardBin', highlightBin: undefined });
+      applyOpts({ plotMode: kind === 'softBin' ? 'softBin' : 'hardBin', highlightBin: findingBin(finding) });
     }
 
     const h = finding.highlight;
-    if (h.kind === 'bin') {
-      selectionFromKeys(h.dieKeys);
-      applyOpts({ highlightBin: h.bin });
-    } else if (h.kind === 'region' || h.kind === 'dies') {
-      selectionFromKeys(h.dieKeys);
-    }
+    if (h.kind === 'bin' || h.kind === 'region' || h.kind === 'dies') selectionFromKeys(h.dieKeys);
   }
 
   // One in-flight staged render per panel element, cancelled before the next
@@ -1675,6 +1676,17 @@ export function renderWaferMapCard(
   let syncLogScaleBtnFn: (() => void) | null = null;
   // Called after every option change to keep the colorbar range mode button in sync.
   let syncColorbarRangeBtnFn: (() => void) | null = null;
+
+  /** The user changed the selection or the legend filter themselves, so a
+   *  finding the panel shows as active no longer describes the map: release it,
+   *  and the half of its view the user did not just replace. */
+  function releaseActiveFinding(changed: 'selection' | 'legend' = 'selection'): void {
+    if (summaryActiveFindingId === null) return;
+    summaryActiveFindingId = null;
+    if (changed === 'selection') applyOpts({ highlightBin: undefined });
+    else { selectedKeys = new Set(); onSelect?.([]); }
+    renderSummaryPanel();
+  }
 
   function selectionFromKeys(keys: string[] | undefined): void {
     selectedKeys = new Set(keys ?? []);
@@ -1838,8 +1850,7 @@ export function renderWaferMapCard(
         mapToolsEl.appendChild(btn);
       }
 
-      // Set initial active state — pan is default
-      setActive(btnPanMode, true);
+      setInteractMode(interactMode);
 
       // View controls, wrapped in sceneControlsEl so setViewControlsVisible() can
       // hide/show the whole group at once (a gallery card hides them: the gallery
@@ -2385,6 +2396,7 @@ export function renderWaferMapCard(
       viewport: vp,
       activeBin: viewOpts.plotMode === 'metadata' ? viewOpts.highlightMetadataValue : viewOpts.highlightBin,
       hoverBin: hoveredLegendBin,
+      afterDies: selectedKeys.size > 0 ? drawSelectionOverlay : undefined,
       hbinDefs,
       sbinDefs,
       metadataFields });
@@ -2393,8 +2405,8 @@ export function renderWaferMapCard(
     legendBoxRect = result.legendBox ?? null;
 
     // Track the auto-fit viewport on EVERY fitted draw, not just the first.
-    // `fittedViewport` is the geometry drawSelectionOverlay, hit-testing and
-    // hover all read back (`currentViewport()`), while the drawn map uses the
+    // `fittedViewport` is the geometry hit-testing, hover and box select all
+    // read back (`currentViewport()`), while the drawn map uses the
     // viewport toCanvas just computed. Those two must never diverge. The fit
     // origin/ppm depend on the colorbar/bin-legend reserve, legend position,
     // axis gutter and legend row count — none of which resize the canvas, so
@@ -2406,71 +2418,92 @@ export function renderWaferMapCard(
     // clobber the zoom clamp's baseline (clampedPpm).
     if (viewport === null) fittedViewport = result.viewport;
 
-    if (selectedKeys.size > 0) drawSelectionOverlay();
     if (isBoxSelecting) drawBoxOverlay();
     syncDrilldownBtn();
   }
 
   // ── Selection highlight overlay ────────────────────────────────────────────
-  function drawSelectionOverlay(): void {
-    const vp = currentViewport();
-    if (!vp) return;
-    const ctx = canvas.getContext('2d')!;
+  // Fades the unselected dies towards the map background, so the selected dies
+  // (a click, a box, or a finding's region) are the only ones in full colour,
+  // then outlines the outer edge of the selection. Selections and findings are
+  // drawn the same way.
+  function drawSelectionOverlay(
+    ctx: CanvasRenderingContext2D,
+    vp: Pick<ViewportTransform, 'originX' | 'originY' | 'ppm'>,
+    colours: { background: string; text: string },
+  ): void {
     const pts = currentView.hoverPoints;
 
     const firstRect = currentView.rectangles[0];
-    const dieHalfW  = firstRect ? (firstRect.width  / 2) * vp.ppm : vp.ppm * 0.5;
-    const dieHalfH  = firstRect ? (firstRect.height / 2) * vp.ppm : vp.ppm * 0.5;
-    // Inset slightly so the ring sits just inside the die edge.
-    const inset = Math.max(1, Math.min(3, dieHalfW * 0.08));
+    const hw = firstRect ? (firstRect.width  / 2) * vp.ppm : vp.ppm * 0.5;
+    const hh = firstRect ? (firstRect.height / 2) * vp.ppm : vp.ppm * 0.5;
 
-    // Collect selected die screen rects — O(selected) via the key→index map.
-    const hw = dieHalfW - inset;
-    const hh = dieHalfH - inset;
-    type SelRect = { sx: number; sy: number };
-    const selRects: SelRect[] = [];
+    const selected = new Set<number>();
     if (selectedKeys.size > 0) dieKeyIndex ??= new Map(currentView.dies.map((d, i) => [getDieKey(d), i]));
     for (const key of selectedKeys) {
       const idx = dieKeyIndex!.get(key);
-      if (idx === undefined) continue;
-      selRects.push({ sx: vp.originX + pts[idx].x * vp.ppm, sy: vp.originY - pts[idx].y * vp.ppm });
+      if (idx !== undefined) selected.add(idx);
     }
-    if (!selRects.length) return;
+    if (!selected.size) return;
 
     ctx.save();
     ctx.setLineDash([]);
 
-    // Neutral dark tint — one batched fill pass. A hue-based tint (the
-    // previous amber wash) reads fine on cool schemes but nearly vanishes on
-    // any scheme with an amber/yellow/orange region of its own (inferno,
-    // plasma, traffic, jet, default/thermal's yellow midpoint, accessible's
-    // orange). A neutral darkening has no hue to collide with.
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillStyle   = colours.background;
+    ctx.globalAlpha = 0.7;
+    let inPath = 0;
     ctx.beginPath();
-    for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
-    ctx.fill();
+    for (let i = 0; i < pts.length; i++) {
+      if (selected.has(i)) continue;
+      ctx.rect(vp.originX + pts[i].x * vp.ppm - hw, vp.originY - pts[i].y * vp.ppm - hh, hw * 2, hh * 2);
+      if (++inPath === PATH_SHAPES) { ctx.fill(); ctx.beginPath(); inPath = 0; }
+    }
+    if (inPath) ctx.fill();
+    ctx.globalAlpha = 1;
 
-    // White halo — one batched stroke pass.
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.lineWidth   = 3;
+    // Outer edge only: an edge two selected cells share is added twice and
+    // cancels. Cells are die pitch, not die size, so neighbours' edges meet
+    // across the street; keys are rounded so both copies match.
+    const { cw, ch } = cellHalfSize(vp, hw, hh);
+    const edges = new Map<string, [number, number, number, number]>();
+    const r = (v: number): number => Math.round(v * 100);
+    const toggle = (x1: number, y1: number, x2: number, y2: number): void => {
+      const k = `${r(x1)},${r(y1)},${r(x2)},${r(y2)}`;
+      if (edges.has(k)) edges.delete(k);
+      else edges.set(k, [x1, y1, x2, y2]);
+    };
+    for (const i of selected) {
+      const sx = vp.originX + pts[i].x * vp.ppm, sy = vp.originY - pts[i].y * vp.ppm;
+      const x0 = sx - cw, x1 = sx + cw, y0 = sy - ch, y1 = sy + ch;
+      toggle(x0, y0, x1, y0); toggle(x0, y1, x1, y1);
+      toggle(x0, y0, x0, y1); toggle(x1, y0, x1, y1);
+    }
+    ctx.strokeStyle = colours.text;
+    ctx.lineWidth   = 2;
+    ctx.lineCap     = 'square';
     ctx.beginPath();
-    for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
+    for (const [x1, y1, x2, y2] of edges.values()) { ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); }
     ctx.stroke();
-
-    // Black inner stroke — one batched stroke pass. White-halo-plus-black-core
-    // is the classic "marching ants" selection pattern: white and black sit at
-    // opposite ends of the luminance range, so at least one of the two always
-    // has strong contrast against any die fill colour, regardless of the
-    // active colour scheme's hue. A single coloured stroke (the previous
-    // amber) can only guarantee that for schemes that don't already use that
-    // hue — this doesn't depend on hue at all.
-    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
-    ctx.lineWidth   = 1.5;
-    ctx.beginPath();
-    for (const { sx, sy } of selRects) ctx.rect(sx - hw, sy - hh, hw * 2, hh * 2);
-    ctx.stroke();
-
     ctx.restore();
+  }
+
+  /** Half the die pitch on screen, measured from grid neighbours (so rotation
+   *  is covered); the drawn die's half-size when a die has no neighbour. */
+  function cellHalfSize(vp: Pick<ViewportTransform, 'ppm'>, hw: number, hh: number): { cw: number; ch: number } {
+    const pts = currentView.hoverPoints;
+    const dies = currentView.dies;
+    let cw = 0, ch = 0;
+    for (let i = 0; i < dies.length && (!cw || !ch); i++) {
+      const d = dies[i];
+      if (d.x == null || d.y == null) continue;
+      for (const n of [dieKeyIndex!.get(`${d.x + 1},${d.y}`), dieKeyIndex!.get(`${d.x},${d.y + 1}`)]) {
+        if (n === undefined) continue;
+        const dx = Math.abs(pts[n].x - pts[i].x) * vp.ppm, dy = Math.abs(pts[n].y - pts[i].y) * vp.ppm;
+        if (dx > dy) cw ||= dx / 2;
+        else ch ||= dy / 2;
+      }
+    }
+    return { cw: cw || hw, ch: ch || hh };
   }
 
   // ── Box select overlay ─────────────────────────────────────────────────────
@@ -2777,6 +2810,7 @@ export function renderWaferMapCard(
         } else {
           selectedKeys = new Set(boxDies.map(d => getDieKey(d)));
         }
+        releaseActiveFinding();
         onSelect?.(selectionAsDies());
       }
       render();
@@ -2817,12 +2851,11 @@ export function renderWaferMapCard(
     // (string key) toggle its string analogue, highlightMetadataValue.
     for (const row of binLegendRows) {
       if (cssPx >= row.x && cssPx < row.x + row.w && cssPy >= row.y && cssPy < row.y + row.h) {
+        releaseActiveFinding('legend');
         if (typeof row.bin === 'number') {
-          const next = viewOpts.highlightBin === row.bin ? undefined : row.bin;
-          applyOpts({ highlightBin: next });
+          applyOpts({ highlightBin: toggleHighlight(viewOpts.highlightBin, row.bin, multi) });
         } else {
-          const next = viewOpts.highlightMetadataValue === row.bin ? undefined : row.bin;
-          applyOpts({ highlightMetadataValue: next });
+          applyOpts({ highlightMetadataValue: toggleHighlight(viewOpts.highlightMetadataValue, row.bin, multi) });
         }
         return;
       }
@@ -2844,15 +2877,20 @@ export function renderWaferMapCard(
         // Toggle this die.
         if (selectedKeys.has(key)) selectedKeys.delete(key);
         else selectedKeys.add(key);
+      } else if (selectedKeys.size === 1 && selectedKeys.has(key)) {
+        // Clicking the only selected die again clears the selection.
+        selectedKeys = new Set();
       } else {
         // Replace selection with just this die.
         selectedKeys = new Set([key]);
       }
+      releaseActiveFinding();
       onSelect?.(selectionAsDies());
       render();
     } else if (!multi) {
       // Click on empty space clears selection.
       selectedKeys = new Set();
+      releaseActiveFinding();
       onSelect?.([]);
       render();
     }
@@ -2924,6 +2962,7 @@ export function renderWaferMapCard(
       const die = vp ? hitTest((cssPx - vp.originX) / vp.ppm, (vp.originY - cssPy) / vp.ppm, vp.snapDist)?.die : undefined;
       if (die && !selectedKeys.has(getDieKey(die))) {
         selectedKeys = new Set([getDieKey(die)]);
+        releaseActiveFinding();
         onSelect?.(selectionAsDies());
         render();
       }
@@ -3064,6 +3103,7 @@ export function renderWaferMapCard(
     if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) keyboardMenuPending = true;
     if (e.key === 'Escape' && selectedKeys.size > 0) {
       selectedKeys = new Set();
+      releaseActiveFinding();
       onSelect?.([]);
       render();
     }
@@ -3117,7 +3157,7 @@ export function renderWaferMapCard(
     }
   }
 
-  canvas.style.cursor = 'grab';
+  canvas.style.cursor = 'crosshair';
   canvas.setAttribute('tabindex', '0'); // make canvas focusable for key events
   canvas.addEventListener('wheel',        onWheel,       { passive: false });
   canvas.addEventListener('pointerdown',  onPointerDown);
@@ -3204,6 +3244,7 @@ export function renderWaferMapCard(
 
     clearSelection(): void {
       selectedKeys = new Set();
+      releaseActiveFinding();
       onSelect?.([]);
       render();
     },

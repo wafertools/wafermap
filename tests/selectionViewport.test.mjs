@@ -1,7 +1,7 @@
-// The selection/finding highlight, click hit-testing and hover all read their
-// geometry back from `currentViewport()` (i.e. the cached `fittedViewport`),
-// while the map itself is drawn with the viewport toCanvas computes for that
-// draw. Those two must never diverge.
+// The selection/finding highlight must land on the dies it belongs to. Click
+// hit-testing and hover read their geometry back from `currentViewport()` (the
+// cached `fittedViewport`), while the map is drawn with the viewport toCanvas
+// computes for that draw; those two must never diverge.
 //
 // The auto-fit origin/ppm depend on the colorbar and bin-legend reserve, the
 // legend position, the axis gutter and the legend row count — none of which
@@ -19,19 +19,24 @@ import { createWafer } from '../dist/packages/core/wafer.js';
 import { generateDies } from '../dist/packages/core/dies.js';
 import { renderWaferMap } from '../dist/packages/canvas-adapter/index.js';
 
-/** Canvas stub that records the draw transform and every rect() emitted.
+/** Canvas stub that records the draw transform and every stroked path.
  *  Dies are drawn under `ctx.setTransform(ppm, 0, 0, -ppm, originX, originY)`;
- *  the selection overlay draws afterwards in raw screen space. */
+ *  the selection outline is stroked in raw screen space. */
 function makeRecordingContext(log) {
+  let path = [];
   return {
-    scale() {}, fillRect() {}, strokeRect() {}, clearRect() {}, beginPath() {},
-    moveTo() {}, lineTo() {}, closePath() {}, stroke() {}, fill() {}, save() {},
+    scale() {}, fillRect() {}, strokeRect() {}, clearRect() {},
+    beginPath() { path = []; },
+    moveTo(x, y) { path.push({ x, y }); },
+    lineTo(x, y) { path.push({ x, y }); },
+    stroke() { log.strokes.push({ points: path, lineWidth: this.lineWidth }); },
+    closePath() {}, fill() {}, save() {},
     restore() {}, fillText() {}, drawImage() {}, arc() {}, arcTo() {},
     setLineDash() {}, strokeText() {}, clip() {}, translate() {},
     setTransform(a, b, c, d, e, f) {
       if (a) log.transforms.push({ ppm: a, originX: e, originY: f });
     },
-    rect(x, y, w, h) { log.rects.push({ x, y, w, h }); },
+    rect() {},
     measureText(text) { return { width: String(text).length * 6 }; },
   };
 }
@@ -113,7 +118,7 @@ function buildTestWafer() {
 }
 
 test('the selection highlight tracks the map when the auto-fit geometry shifts', () => {
-  const log = { rects: [], transforms: [] };
+  const log = { strokes: [], transforms: [] };
   const dom = setupDom(log);
   try {
     const wafer = buildTestWafer();
@@ -129,16 +134,17 @@ test('the selection highlight tracks the map when the auto-fit geometry shifts',
     /** Redraw, then measure how far the selection overlay landed from where
      *  the map was actually drawn. */
     const offsetAfter = (mutate) => {
-      log.rects.length = 0;
+      log.strokes.length = 0;
       log.transforms.length = 0;
       mutate();
       assert.ok(log.transforms.length > 0, 'expected a map draw');
-      assert.ok(log.rects.length > 3, 'expected die rects plus a selection overlay');
+      // One selected die: its outline is one stroke of four edges (eight points).
+      const outlines = log.strokes.filter(s => s.lineWidth === 2 && s.points.length === 8);
+      assert.equal(outlines.length, 1, 'expected one selection outline');
       const { originX, originY } = log.transforms[0];
-      // The overlay's three batched passes (tint, white halo, black core) are
-      // the last rects emitted and are identical, so any one of them will do.
-      const sel = log.rects.at(-1);
-      return Math.hypot(sel.x + sel.w / 2 - originX, sel.y + sel.h / 2 - originY);
+      const xs = outlines[0].points.map(p => p.x), ys = outlines[0].points.map(p => p.y);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+      return Math.hypot(cx - originX, cy - originY);
     };
 
     // Each of these changes the fit without changing the canvas size.

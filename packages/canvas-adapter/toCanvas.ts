@@ -5,7 +5,7 @@ import { niceStep } from '../renderer/axisTicks.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
-import { compareNatural, maxOf, minOf } from '../core/utils.js';
+import { asList, compareNatural, maxOf, minOf } from '../core/utils.js';
 import { resolveValueColorFn } from '../renderer/colorSchemes.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH, contrastTextColor } from '../renderer/colorMap.js';
@@ -90,8 +90,8 @@ export interface ToCanvasOptions {
  * or mode-switch state to pass, so these are not on `ToCanvasOptions`.
  */
 export interface MapCanvasOptions extends ToCanvasOptions {
-  /** Currently highlighted bin (or metadata value) — drawn with an active indicator in the bin legend. */
-  activeBin?: number | string;
+  /** Currently highlighted bins (or metadata values) — drawn with an active indicator in the bin legend. */
+  activeBin?: number | string | readonly (number | string)[];
   /** Bin legend row under the pointer — drawn with a background fill, which is
    *  deliberately a different channel from `activeBin`'s accent border and bold
    *  label so "selected" and "pointed at" never look the same. The legend is
@@ -100,6 +100,10 @@ export interface MapCanvasOptions extends ToCanvasOptions {
   hoverBin?: number | string;
   /** Minimum right-side reserve in CSS pixels. Ensures the wafer draw width stays stable across plot mode switches. */
   minRightReserve?: number;
+  /** Drawn over the dies and their labels, under the axes and legend, in CSS
+   *  pixels with this draw's own geometry — the selection highlight. */
+  afterDies?: (ctx: CanvasRenderingContext2D, vp: Pick<ViewportTransform, 'originX' | 'originY' | 'ppm'>,
+    colours: { background: string; text: string }) => void;
 }
 
 /** Internal viewport state shared between toCanvas and renderWaferMap. */
@@ -219,6 +223,7 @@ export function drawMapCanvas(
     viewport: viewportOverride,
     activeBin,
     hoverBin,
+    afterDies,
     fallbackFormat,
     minRightReserve,
     hbinDefs,
@@ -226,6 +231,7 @@ export function drawMapCanvas(
     metadataFields,
     showTitle     = true,
   } = options;
+  const activeBins: readonly (number | string)[] = asList(activeBin);
 
   const cssW    = Math.floor(canvas.clientWidth  || canvas.width);
   const cssH    = Math.floor(canvas.clientHeight || canvas.height);
@@ -747,6 +753,8 @@ export function drawMapCanvas(
   }
   ctx.restore();
 
+  afterDies?.(ctx, { originX, originY, ppm }, { background, text: theme.text });
+
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
     drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.gridToScreen, view.rotation, theme);
@@ -1219,7 +1227,7 @@ export function drawMapCanvas(
         for (let col = 0; col < legendCols; col++) {
           const entry = legendEntries[idx++];
           if (!entry) break;
-          const isActive = entry.key === activeBin;
+          const isActive = activeBins.includes(entry.key);
           // Not both at once: an active row already reads as picked out, and
           // adding the hover fill on top would just make it noisier.
           const isHover = !isActive && entry.key === hoverBin;
@@ -1266,7 +1274,7 @@ export function drawMapCanvas(
       if (overflow > 0) visibleEntries = legendEntries.slice(0, maxRows - 1);
       let rowY = originYLegend;
       for (const entry of visibleEntries) {
-        const isActive = entry.key === activeBin;
+        const isActive = activeBins.includes(entry.key);
         // Same hover treatment as the grid legend above. Both blocks push into
         // `binLegendRows`, so both are hit-testable and both must answer the
         // pointer — the first version only handled the grid one, and this
@@ -1563,7 +1571,7 @@ function logTicks(
 export { fmt, fmtColorbarAxis } from '../renderer/fmt.js';
 
 /** Die rectangles, or outline edges, per canvas path — see the fill and outline loops in `drawMapCanvas`. */
-const PATH_SHAPES = 256;
+export const PATH_SHAPES = 256;
 
 /** Outline segments per rectangle list: a redraw of the same view (hover, resize) reuses them. */
 const outlineCache = new WeakMap<readonly ViewRect[], Float64Array>();

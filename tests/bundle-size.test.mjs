@@ -55,6 +55,13 @@
 //   resolved by `supersedes` and by part ID (with the default-part-ID rule),
 //   spec limits kept apart from test limits in capability and the test-def
 //   merge, and exclusive limit comparison. Legitimate library growth, not bloat.
+//   2026-09-27: render raised 130 KB -> 134 KB (measured 130,268 bytes; 127,182
+//   before). Lot regional findings tested on all wafers' data combined (Stouffer
+//   Z, with the wafer analysis's gates, collapse and opposite-region re-test,
+//   in analyzeWaferLot — which the gallery's lot panel and report already pull
+//   in), zero-background and pass-rate effect sizes, the selection fade/outline
+//   drawn under the legend, and multi-value legend highlighting. Legitimate
+//   library growth, not bloat.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -75,7 +82,7 @@ const THRESHOLDS = {
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
   'wafermap (root)':            66_000,   // gzipped bytes — baseline ~62.0 KB
-  'wafermap/render (initial)':  130_000,  // gzipped bytes — baseline ~104 KB, guide AND Insights excluded
+  'wafermap/render (initial)':  134_000,  // gzipped bytes — measured ~130.3 KB, guide AND Insights excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

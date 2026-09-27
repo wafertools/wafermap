@@ -1702,7 +1702,16 @@ See also: [Demo: Lot-level findings with stacked modes](examples/statistics.html
 
 `analyzeWaferLot` detects cross-wafer patterns across a lot:
 
-- **Repeated patterns** — ring, quadrant, or reticle findings that appear on ≥ 2 wafers
+- **Regional patterns across the lot** — a yield, bin, functional pass rate, limit-fail rate
+  or test value that differs in a ring, quadrant, sector, reticle position or test site. Each
+  comparison is tested on every wafer's data together (Stouffer's Z over each wafer's own
+  test, weighted by die count), with the same significance and effect gates as a single
+  wafer, so a pattern too faint on some wafers to be reported alone is still found. The
+  finding reads, for example, "Ring 4 (edge) has HBin 2 occurrence 11.2 percentage points
+  higher than the rest of the map — higher on 8/8 wafers, all wafers' data combined": the
+  figure is the lot's, and *N/M* counts the wafers whose region differs in that direction.
+- **Repeated patterns** — clusters, edge arcs and spatial-pattern labels reported on ≥ 2
+  wafers, counted by the wafers that report them
 - **Inter-wafer yield outliers** — individual wafers whose yield deviates from the median of
   the wafers analysed. The finding calls it the "lot median" only when every wafer records the
   same lot ID; a set pooled from several lots, or with no lot IDs, reads "median of all wafers".
@@ -1737,9 +1746,10 @@ population: `Lot LOT123 · 13 wafers` when every wafer records one lot ID, other
 
 ### What highlighting looks like
 
-- **Repeated pattern finding** (ring/quadrant seen across N wafers): the affected
-  wafer cards are outlined; the matching die zone is highlighted on each card using
-  that wafer's own per-wafer finding data
+- **Regional pattern finding**: the counted wafer cards are outlined and the region is
+  highlighted on each, from the finding's `highlight.dieKeysByWafer`
+- **Repeated pattern finding**: the affected wafer cards are outlined; the matching die
+  zone is highlighted on each card using that wafer's own finding
 - **Yield outlier** (single wafer): the outlier card is outlined
 - Clicking the active finding again clears all highlights
 

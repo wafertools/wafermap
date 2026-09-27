@@ -49,6 +49,137 @@ test('analyzeWaferMap detects ring-level yield loss', () => {
   assert.deepEqual(summary.stats.hardBinsConsidered, [1, 2]);
 });
 
+test('a bin found only in one region passes the relative-effect gate, however small its rate', () => {
+  // Bin 2 on every 8th edge die (~12%) and nowhere else: below the 20-point
+  // absolute gate, and with a zero rate in the rest of the wafer the relative
+  // change has no finite ratio — it is the largest there is, not none.
+  const wafer = createWafer({ diameter: 200 });
+  const dies = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer, { width: 10, height: 10 })
+    .filter((die) => !die.partial);
+  let edge = 0;
+  const enriched = dies.map((die) => {
+    const { ring } = classifyDie(die, wafer, { ringCount: 4 });
+    return { ...die, hbin: ring === 4 && edge++ % 8 === 0 ? 2 : 1 };
+  });
+  const summary = analyzeWaferMap(buildWaferMap({ dies: enriched, waferConfig: { diameter: 200 }, passBins: [1] }));
+  const finding = summary.findings.find((f) =>
+    f.variable.kind === 'hardBin' && f.variable.bin === 2 &&
+    f.comparison.left === 'Ring 4 (edge)' && f.effect.direction === 'higher');
+  assert.ok(finding, 'an edge-only bin must be reported');
+  assert.ok(finding.effect.absoluteDelta < 0.2, 'fixture must sit below the absolute gate');
+  assert.equal(finding.effect.relativeDelta, undefined, 'no finite ratio against a zero background');
+});
+
+/** A 200 mm wafer of 10 mm dies, each given `hbin`/`sbin`/`testValues` by `assign(die, ring, i)`. */
+function edgeFixture(assign, testDefs) {
+  const wafer = createWafer({ diameter: 200 });
+  const dies = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer, { width: 10, height: 10 })
+    .filter((die) => !die.partial)
+    .map((die, i) => ({ ...die, ...assign(die, classifyDie(die, wafer, { ringCount: 4 }).ring, i) }));
+  return buildWaferMap({ dies, waferConfig: { diameter: 200 }, passBins: [1], testDefs });
+}
+
+test('a ring is not reported as low in a bin only because the edge is high in it', () => {
+  // Bin 2 on a third of the edge and nowhere else: ring 3 matches the core, but
+  // compared with "the rest" (which includes the edge) it looked low.
+  let edge = 0;
+  const summary = analyzeWaferMap(edgeFixture((die, ring) => ({ hbin: ring === 4 && edge++ % 3 === 0 ? 2 : 1 })));
+  const bin2 = summary.findings.filter((f) => f.variable.kind === 'hardBin' && f.variable.bin === 2 && f.comparison.family === 'ring');
+  assert.ok(bin2.some((f) => f.comparison.left === 'Ring 4 (edge)' && f.effect.direction === 'higher'));
+  assert.deepEqual(bin2.filter((f) => f.effect.direction === 'lower').map((f) => f.comparison.left), [],
+    'no inner ring may be reported low in bin 2');
+  const yieldHigher = summary.findings.filter((f) => f.variable.kind === 'yield' && f.comparison.family === 'ring' && f.effect.direction === 'higher');
+  assert.deepEqual(yieldHigher.map((f) => f.comparison.left), [], 'nor high in yield');
+});
+
+test('inner rings are not reported low in a test only because the edge is high in it', () => {
+  let edge = 0;
+  const testDefs = [{ testNumber: 100, name: 'Idd' }];
+  const summary = analyzeWaferMap(
+    edgeFixture((die, ring) => ({ hbin: 1, testValues: { 100: ring === 4 && edge++ % 8 === 0 ? 2 : 0.5 } }), testDefs),
+    { testDefs, enableTestValueAnalysis: true });
+  const rings = summary.findings.filter((f) => f.variable.kind === 'test' && f.comparison.family === 'ring');
+  assert.ok(rings.some((f) => f.comparison.left === 'Ring 4 (edge)' && f.effect.direction === 'higher'));
+  assert.deepEqual(rings.filter((f) => f.effect.direction === 'lower').map((f) => f.comparison.left), []);
+});
+
+test('a yield loss is judged by its failure rate, as the bin rate of the same dies is', () => {
+  // Failures 1-in-30 inside, 1-in-8 at the edge: a yield drop under the 20-point
+  // gate, but a near-quadrupling of failures — the same verdict as the bin finding.
+  let n = 0;
+  const summary = analyzeWaferMap(edgeFixture((die, ring) => ({ hbin: n++ % (ring === 4 ? 8 : 30) === 0 ? 2 : 1 })));
+  const yieldLoss = summary.findings.find((f) => f.variable.kind === 'yield' && f.comparison.left === 'Ring 4 (edge)');
+  assert.ok(yieldLoss, 'the edge yield loss must be reported');
+  assert.ok(Math.abs(yieldLoss.effect.absoluteDelta) < 0.2, 'fixture must sit below the absolute gate');
+  assert.equal(yieldLoss.effect.direction, 'lower');
+});
+
+test('the one soft bin every passing die carries is absorbed into the yield finding', () => {
+  let edge = 0;
+  const summary = analyzeWaferMap(edgeFixture((die, ring) =>
+    ring === 4 && edge++ % 3 === 0 ? { hbin: 2, sbin: 21 } : { hbin: 1, sbin: 10 }));
+  const yieldF = summary.findings.find((f) => f.variable.kind === 'yield' && f.comparison.left === 'Ring 4 (edge)');
+  const sbin10 = summary.findings.find((f) => f.variable.kind === 'softBin' && f.variable.bin === 10 && f.comparison.left === 'Ring 4 (edge)');
+  assert.ok(yieldF && sbin10);
+  assert.ok(yieldF.absorbedIds?.includes(sbin10.id), 'SBin 10 restates yield and must be absorbed by it');
+});
+
+test('a test failing its limit only at the edge is reported', () => {
+  let edge = 0;
+  const testDefs = [{ testNumber: 100, name: 'Idd', limitHigh: 1 }];
+  const summary = analyzeWaferMap(
+    edgeFixture((die, ring) => ({ hbin: 1, testValues: { 100: ring === 4 && edge++ % 8 === 0 ? 2 : 0.5 } }), testDefs),
+    { testDefs, enableTestValueAnalysis: true });
+  const f = summary.findings.find((f) => f.id.startsWith('specLimit:100:') && f.comparison.left === 'Ring 4 (edge)');
+  assert.ok(f, 'an edge-only limit failure must be reported');
+  assert.ok(f.effect.absoluteDelta < 0.2);
+});
+
+test('a lot finding counts every wafer with the pattern, not only wafers that report it alone', () => {
+  // Bin 2 on the edge of every wafer; on half of them too sparse (1 in 40) for
+  // the wafer's own analysis to report. Tested on all wafers' data together,
+  // the lot reports the edge pattern on all eight.
+  const wafers = Array.from({ length: 8 }, (_, w) => {
+    let edge = 0;
+    return edgeFixture((die, ring) => ({ hbin: ring === 4 && edge++ % (w % 2 ? 40 : 6) === 0 ? 2 : 1 }));
+  });
+  const perWafer = wafers.map((m) => analyzeWaferMap(m));
+  const alone = perWafer.filter((s) => s.findings.some((f) =>
+    f.variable.bin === 2 && f.comparison.left === 'Ring 4 (edge)' && f.effect.direction === 'higher')).length;
+  assert.ok(alone < 8, 'fixture must leave some wafers below their own gate');
+
+  const lot = analyzeWaferLot(wafers, { perWaferSummaries: perWafer });
+  const f = lot.findings.find((f) => f.variable.kind === 'hardBin' && f.variable.bin === 2 &&
+    f.comparison.left === 'Ring 4 (edge)' && f.effect.direction === 'higher');
+  assert.ok(f, 'the lot must report the edge pattern');
+  assert.equal(f.highlight.kind, 'wafer');
+  assert.equal(f.highlight.waferIndices.length, 8);
+  assert.match(f.summary, /higher on 8\/8 wafers/);
+  assert.equal(Object.keys(f.highlight.dieKeysByWafer).length, 8, 'each counted wafer names its region dies');
+  // A summary that went through a structured clone has lost its comparisons; the
+  // lot analyses that wafer again and reaches the same finding.
+  const cloned = analyzeWaferLot(wafers, { perWaferSummaries: perWafer.map((s) => structuredClone(s)) });
+  assert.ok(cloned.findings.some((g) => g.id === f.id));
+});
+
+test('a lot counts edge-ring and edge-local wafers as one edge pattern', () => {
+  const wafers = Array.from({ length: 3 }, () => edgeFixture(() => ({ hbin: 1 })));
+  const pattern = (label, confidence, dieKeys) => ({
+    id: `spatial-pattern:${label}`, level: 'wafer', severity: 'notable',
+    variable: { kind: 'spatialPattern', label }, comparison: { family: 'spatial-pattern', left: label, right: 'Wafer' },
+    effect: { direction: 'different', effectSize: 0.2 }, stats: { method: 'geometry', sampleSizeLeft: 5, sampleSizeRight: 100 },
+    summary: `Spatial pattern: ${label.toLowerCase()} (${confidence} confidence) — 24% of edge dies failing`,
+    highlight: { kind: 'dies', dieKeys } });
+  const labels = ['Edge-ring', 'Edge-local', 'Edge-ring'];
+  const perWaferSummaries = wafers.map((m, i) => ({
+    ...analyzeWaferMap(m), findings: [pattern(labels[i], i ? 'medium' : 'high', [`${i},0`])] }));
+  const lot = analyzeWaferLot(wafers, { perWaferSummaries });
+  const edge = lot.findings.filter((f) => f.variable.kind === 'spatialPattern');
+  assert.equal(edge.length, 1, 'one lot row for the edge family');
+  assert.equal(edge[0].summary, 'Spatial pattern: edge (edge-ring on 2, edge-local on 1) — seen on 3/3 wafers (100%)');
+  assert.deepEqual(edge[0].highlight.dieKeysByWafer, { 0: ['0,0'], 1: ['1,0'], 2: ['2,0'] });
+});
+
 test('analyzeWaferMap populates hardBinCounts over the yield-eligible population', () => {
   const { wafer, dies } = makeBaseDies();
   const enriched = dies.map((die, i) => ({ ...die, hbin: i % 2 === 0 ? 1 : 2 }));

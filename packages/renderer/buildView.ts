@@ -24,7 +24,7 @@ export { classifySpec };
 export type { SpecCategory };
 import { fmt, fmtColorbarAxis, fmtAggregationMethod } from './fmt.js';
 import { metadataValueColor } from './colorMap.js';
-import { clamp01, compareNatural, escHtml } from '../core/utils.js';
+import { asList, clamp01, compareNatural, escHtml } from '../core/utils.js';
 import { prettyKey } from '../core/utils.js';
 import { testLabel, markedTestLabel, derivedTestNote, isDerivedTest, DERIVED_MARK, DERIVED_KEY } from './testLabel.js';
 
@@ -333,9 +333,9 @@ export interface ViewOptions {
    * bin present here: a stale assignment must never leave a real bin uncoloured.
    */
   binColors?: BinColors;
-  highlightBin?: number;
-  /** Dim every die except this metadata value, `'metadata'` mode's analogue of `highlightBin`. */
-  highlightMetadataValue?: string;
+  highlightBin?: number | number[];
+  /** Dim every die except these metadata values, `'metadata'` mode's analogue of `highlightBin`. */
+  highlightMetadataValue?: string | string[];
   interactiveTransform?: { rotation?: number; flipX?: boolean; flipY?: boolean };
   /**
    * Explicit value colour normalization range.
@@ -1189,7 +1189,7 @@ function pushDieRectangles(
   swapAxes: boolean,
   gap: number,
   colorFns: ColorFns,
-  highlightBin: number | undefined,
+  highlightBin: ReadonlySet<number> | undefined,
   normalize: (v: number) => number,
   testNumber: number,
   binDefMap: Map<number, BinDef> | null,
@@ -1199,7 +1199,7 @@ function pushDieRectangles(
   passFailDisplay: 'off' | 'spec' | 'test' = 'off',
   activeMetadataKey?: string,
   metadataColorMap?: Map<string, string> | null,
-  highlightMetadataValue?: string,
+  highlightMetadataValue?: ReadonlySet<string>,
 ): void {
   const rw = die.width - gap;
   const rh = die.height - gap;
@@ -1233,7 +1233,7 @@ function pushDieRectangles(
 
   if (highlightBin !== undefined &&
       (plotMode === 'hardBin' || plotMode === 'softBin') &&
-      getBin(die) !== highlightBin) {
+      !highlightBin.has(getBin(die)!)) {
     rectangles.push({
       x: physX, y: physY, width: sw, height: sh,
       fill: DIM_FILL, type: 'hardBin', metadata: die.metadata,
@@ -1243,7 +1243,7 @@ function pushDieRectangles(
 
   if (highlightMetadataValue !== undefined &&
       plotMode === 'metadata' &&
-      getMetadataValue(die) !== highlightMetadataValue) {
+      !highlightMetadataValue.has(getMetadataValue(die)!)) {
     rectangles.push({
       x: physX, y: physY, width: sw, height: sh,
       fill: DIM_FILL, type: 'metadata', metadata: die.metadata,
@@ -1659,6 +1659,8 @@ export function buildView(
     ]));
   }
 
+  const highlightBinSet = highlightBin === undefined ? undefined : new Set(asList(highlightBin));
+  const highlightMetadataValueSet = highlightMetadataValue === undefined ? undefined : new Set(asList(highlightMetadataValue));
   for (let i = 0; i < dies.length; i++) {
     const die = dies[i];
     const physX = txCoords ? txCoords[i * 2]     : die.physX;
@@ -1688,7 +1690,7 @@ export function buildView(
       const value = getDieMetadataValue(die, activeMetadataKey);
       if (value !== undefined) metadataCounts.set(value, (metadataCounts.get(value) ?? 0) + 1);
     }
-    pushDieRectangles(rectangles, die, physX, physY, plotMode, dieSwapAxes, gap, colorFns, highlightBin, normalize, activeTestNumber, binDefMap, passBinSet, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValue);
+    pushDieRectangles(rectangles, die, physX, physY, plotMode, dieSwapAxes, gap, colorFns, highlightBinSet, normalize, activeTestNumber, binDefMap, passBinSet, activeTestDef, passFailDisplay, activeMetadataKey, metadataColorMap, highlightMetadataValueSet);
   }
 
   const texts: ViewText[] = showDieLabels ? generateTextOverlay(dies, txCoords, {
