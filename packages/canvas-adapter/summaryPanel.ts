@@ -24,6 +24,7 @@ import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from '..
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 import { renderWaferReportHtml, renderLotReportHtml, type ReportMap } from '../stats/renderSummaryReport.js';
 import { buildFindingsNarrative } from '../stats/findingsNarrative.js';
+import { outlierWafers } from '../stats/analyzeWaferLot.js';
 import { formatFindingTooltip } from '../stats/reportHtml.js';
 import { filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
 import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
@@ -38,7 +39,7 @@ export { buildWarningsBanner };
 import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
-import { describeValues, quantile } from '../stats/math.js';
+import { describeValues } from '../stats/math.js';
 import { pooledTestStatsSteps, type CapabilityItem } from '../stats/capability.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import { poolFunctionalYield } from '../stats/testPassRate.js';
@@ -1084,12 +1085,9 @@ export function buildPerWaferYieldSection(
 
   const sortedYields = [...waferData.map(w => w.yieldPct)].sort((a, b) => a - b);
   const med = medianOfSorted(sortedYields);
-  // Tukey lower fence. Only meaningful with enough wafers to have quartiles at
-  // all — on 3 wafers Q1/Q3 are barely distinguishable from min/max and the
-  // fence degenerates into flagging the lowest wafer of every lot.
-  const q1  = quantile(sortedYields, 0.25);
-  const q3  = quantile(sortedYields, 0.75);
-  const lowFence = waferData.length >= 5 ? q1 - 1.5 * (q3 - q1) : -Infinity;
+  // The same rule as the lot's outlier-wafer findings, so a wafer this list
+  // calls an outlier is one the findings name, and vice versa.
+  const outlierAt = new Set(outlierWafers(waferData.map(w => w.yieldPct))?.outliers.map(o => o.index));
 
   const ui = panelUiState(panel);
 
@@ -1097,11 +1095,12 @@ export function buildPerWaferYieldSection(
     const rows = ui.waferSort === 'yield'
       ? [...waferData].sort((a, b) => a.yieldPct - b.yieldPct)
       : waferData;
-    for (const { waferIndex, label, yieldPct } of rows) {
-      const isOutlier = yieldPct < lowFence;
+    for (const w of rows) {
+      const { waferIndex, label, yieldPct } = w;
       // Stated in the label, not only in a colour — this is the whole reason the
       // muted-fill encoding was removed.
-      const rowLabel = isOutlier ? `${label} · low outlier` : label;
+      const rowLabel = !outlierAt.has(waferData.indexOf(w)) ? label
+        : `${label} · ${yieldPct < med ? 'low' : 'high'} outlier`;
       const row = progressRow(rowLabel, yieldPct, undefined, undefined, med);
       const f = findingsFor?.(waferIndex);
       if (f?.total) appendFindingsBadge(row, f);

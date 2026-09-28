@@ -22,6 +22,33 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Outlier wafers have one rule**, read by both the lot findings and the Summary panel's
+  Wafer Yield list, so they always name the same wafers. From 3 to 7 wafers it is Dixon's Q
+  test on the lowest and highest wafer (95% → `notable`, 99% → `unusual`); from 8 wafers,
+  Tukey's fences over per-wafer yield (1.5 × IQR → `notable`, 3 × IQR → `unusual`). Either
+  way the wafer must also be at least 3 yield points from the median. The
+  finding's `stats.method` is `'dixon-q'` or `'tukey-fence'`, and `effect.effectSize` is
+  that test's statistic (Q, or the distance from the median in IQR units). The Wafer Yield
+  list labels high outliers as well as low ones.
+
+### Fixed
+
+- The Summary panel's findings narrative lists each bin under the direction it moved. A
+  pass bin that fell in a region whose fail bins rose is left out of the "elevated" list.
+  Several findings on one edge ring are described as that ring ("Ring 4 (edge) shows…").
+- The spatial-pattern classifier calls a failing region a scratch only when it reaches beyond
+  the central zone (35% of the radius). An elongated cluster wholly inside it is a centre
+  cluster. On the WM-811K benchmark (25,519 wafers): centre recall 59.9% → 60.5%, scratch
+  precision 33.3% → 35.7%, scratch recall 24.3% → 24.1%, overall 64.0% → 64.1%.
+- A lot's repeated spatial pattern lists, as its `relatedIds`, the repeated findings that
+  each wafer's own pattern claimed on every wafer they appear on — so an edge arc that is part
+  of the edge ring on each of its wafers is shown under the lot's edge pattern, as at wafer
+  level, not as a separate lot finding.
+
 ## [0.32.0] — 2026-09-27
 
 ### Breaking

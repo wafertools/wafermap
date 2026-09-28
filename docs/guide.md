@@ -1712,8 +1712,11 @@ See also: [Demo: Lot-level findings with stacked modes](examples/statistics.html
   figure is the lot's, and *N/M* counts the wafers whose region differs in that direction.
 - **Repeated patterns** — clusters, edge arcs and spatial-pattern labels reported on ≥ 2
   wafers, counted by the wafers that report them
-- **Inter-wafer yield outliers** — individual wafers whose yield deviates from the median of
-  the wafers analysed. The finding calls it the "lot median" only when every wafer records the
+- **Inter-wafer yield outliers** — wafers whose yield stands apart from the rest, reported
+  against the median of the wafers analysed. 3–7 wafers: Dixon's Q test on the lowest and
+  highest wafer (95%: notable; 99%: unusual). 8 or more: Tukey's fences over the wafers'
+  yields (beyond 1.5 × IQR: notable; beyond 3 × IQR: unusual). Either way the wafer must also
+  be at least 3 yield points from the median. The finding calls it the "lot median" only when every wafer records the
   same lot ID; a set pooled from several lots, or with no lot IDs, reads "median of all wafers".
 
 It runs per-wafer analysis internally, so a single call gives you everything — no separate `analyzeWaferMap` per item is needed.

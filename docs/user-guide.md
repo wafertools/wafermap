@@ -491,7 +491,9 @@ Sections, top to bottom:
 - **Wafer yield** (several wafers only) — one bar per wafer with the median
   marked. Wafers are in slot order by default, since that is what makes a
   slot-correlated pattern visible; a **Slot / Yield** selector re-sorts. Wafers
-  far below the rest are labelled "low outlier".
+  well below or above the rest are labelled "low outlier" or "high outlier"
+  (3 or more wafers, and at least 3 points from the median — the same rule as the
+  outlier-wafer findings).
 - **Test values** — per test: mean, **Ppk**, and limit yield. Ppk (not Cpk)
   because it measures against the *overall* spread, including wafer-to-wafer
   variation, which is what the dies actually ship against. The full descriptive

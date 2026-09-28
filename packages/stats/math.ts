@@ -37,6 +37,31 @@ export function quantile(sorted: ArrayLike<number>, q: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
+/** Robust outlier fence over a value list: Tukey's `Q1 − k·IQR … Q3 + k·IQR`.
+ *
+ *  Deliberately NOT mean ± 3σ. σ is computed FROM the data including the
+ *  outlier, so a single reading of 1e30 inflates σ far enough that the fence no
+ *  longer excludes it — the classic masking failure, and it fails hardest exactly
+ *  when the outlier is worst. Quartiles are unmoved by the extreme tail.
+ *
+ *  The one outlier rule in the library: the histogram's outlier clip (per-die
+ *  values) and outlier wafers (per-wafer yields — `waferYieldFences` in
+ *  analyzeWaferLot.ts, read by the lot findings and the Summary panel's yield
+ *  bars) both go through it.
+ *
+ *  Returns null when there are fewer than `minCount` values — too few for
+ *  quartiles to mean anything — or when the IQR is zero. */
+export function robustFence(values: ArrayLike<number>, k = 1.5, minCount = 8): { lo: number; hi: number } | null {
+  // Quartiles by selection (`fiveNumberSummary`), not a sort: the histogram's
+  // outlier clip passes every value of the active test, one per die.
+  const finite = Float64Array.from(Array.from(values).filter(v => Number.isFinite(v)));
+  if (finite.length < minCount) return null;
+  const { q1, q3 } = fiveNumberSummary(finite);
+  const iqr = q3 - q1;
+  if (iqr === 0) return null;
+  return { lo: q1 - k * iqr, hi: q3 + k * iqr };
+}
+
 /** Descriptive statistics of one population of values — see {@link describeValues}. */
 export interface DescriptiveStats {
   min: number;

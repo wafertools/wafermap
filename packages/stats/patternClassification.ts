@@ -84,6 +84,10 @@ export interface PatternThresholds {
   scratchLinearScore: number;
   scratchLinearScoreHigh: number;
   scratchEccentricity: number;
+  /** A scratch's salient region must reach at least this far out (maxDistNorm): a
+   *  scratch is long, so an elongated blob wholly inside the central zone is a
+   *  centre cluster, not a scratch. */
+  scratchMinReach: number;
   minimumFailingDies: number;
 }
 
@@ -126,6 +130,9 @@ export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
   scratchLinearScore:      0.25,
   scratchLinearScoreHigh:  0.45,
   scratchEccentricity:     0.75,
+  // Elongated centre clusters (maxD 0.21–0.29) passed the linear/eccentricity
+  // gates and were called scratches.
+  scratchMinReach:         0.35,
   minimumFailingDies:      5,
 };
 
@@ -313,7 +320,8 @@ function classify(
   }
 
   // scratch: elongated linear pattern — includes diagonal runs
-  if (salienceOk && f.linearScore >= t.scratchLinearScore && f.eccentricity >= t.scratchEccentricity) {
+  if (salienceOk && f.linearScore >= t.scratchLinearScore && f.eccentricity >= t.scratchEccentricity &&
+      f.maxDistNorm >= t.scratchMinReach) {
     const confidence = f.linearScore >= t.scratchLinearScoreHigh ? 'high' : 'medium';
     const note = confidence === 'medium'
       ? 'Scratch detection is less reliable for fragmented or diagonal patterns'

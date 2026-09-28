@@ -67,6 +67,28 @@ test('narrative — all core rings → "The core ring shows"', () => {
   assert.match(result, /^The core ring shows/);
 });
 
+test('narrative — a pass bin that fell is never listed as elevated', () => {
+  // A region with no yield finding: the pass soft bin fell while three fail soft
+  // bins rose. The region's net direction is 'higher', and the fallen pass bin
+  // must not be swept into the "elevated" list with them.
+  const result = buildFindingsNarrative([
+    finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'lower',  kind: 'softBin', bin: 1,  label: 'SBin 1 (Pass)' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'higher', kind: 'softBin', bin: 10, label: 'SBin 10' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'higher', kind: 'softBin', bin: 11, label: 'SBin 11' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'higher', kind: 'softBin', bin: 20, label: 'SBin 20' }),
+  ]);
+  assert.match(result, /elevated/);
+  assert.doesNotMatch(result, /SBin 1\b/);
+});
+
+test('narrative — several findings on one edge ring read as that ring, not "the edge rings"', () => {
+  const result = buildFindingsNarrative([
+    finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'higher', kind: 'hardBin', bin: 2, label: 'HBin 2' }),
+    finding({ family: 'ring', left: 'Ring 4 (edge)', direction: 'higher', kind: 'hardBin', bin: 3, label: 'HBin 3' }),
+  ]);
+  assert.match(result, /^Ring 4 \(edge\) shows/);
+});
+
 test('narrative — single non-core non-edge ring → uses label directly', () => {
   const result = buildFindingsNarrative([
     finding({ family: 'ring', left: 'Ring 2', direction: 'lower' }),

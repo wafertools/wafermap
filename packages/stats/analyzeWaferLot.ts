@@ -10,6 +10,7 @@ import { mergeTestDefs } from './mergeTestDefs.js';
 import { findingPatternKey } from './filterFindings.js';
 import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import { median } from '../core/utils.js';
+import { robustFence } from './math.js';
 import { describeWaferPopulation, populationStat, type WaferPopulation } from './population.js';
 import type {
   AnalyzeWaferLotInput,
@@ -20,7 +21,80 @@ import type {
   StatsSummary,
 } from './types.js';
 
-const OUTLIER_THRESHOLD = 1.3;
+/** From this many wafers, Tukey's fences; below it, Dixon's Q test. With few
+ *  values the quartiles sit almost on the extremes, so a fence can flag nothing
+ *  (30/90/91: lower fence ≈ 14%) — Dixon's Q is the test built for small samples.
+ *  Tukey takes over because Dixon tests only the most extreme wafer on each side,
+ *  and on a large lot a second low wafer would mask the first. */
+const TUKEY_MIN_WAFERS = 8;
+
+/** Dixon's Q (r10) critical values at 95% and 99%, by wafer count 3–7
+ *  (Rorabacher, Anal. Chem. 63, 1991). */
+const DIXON_Q: Record<number, [number, number]> = {
+  3: [0.970, 0.994], 4: [0.829, 0.926], 5: [0.710, 0.821], 6: [0.625, 0.740], 7: [0.568, 0.680],
+};
+
+/** An outlier wafer must also be at least this many yield points from the median.
+ *  Both tests are relative to the wafers' own spread, so in a tight lot they flag
+ *  differences no engineer would act on (1.5 points above a 94–95% lot). */
+const OUTLIER_MIN_POINTS = 3;
+
+export interface WaferOutlier {
+  /** Position in the `yields` array passed in. */
+  index: number;
+  severity: 'notable' | 'unusual';
+  /** The test's own statistic: Dixon's Q, or the distance from the median in IQR units. */
+  statistic: number;
+}
+
+/**
+ * The one rule for "outlier wafer", over per-wafer yields — the lot findings and
+ * the Summary panel's yield bars both read it, so the list and the findings never
+ * disagree about a wafer.
+ *
+ * - 3–7 wafers: Dixon's Q test on the lowest and highest wafer — gap to its
+ *   nearest neighbour over the range. Beyond the 95% critical value is
+ *   `notable`, beyond 99% `unusual`.
+ * - 8 or more: Tukey's fences — beyond 1.5 × IQR from the quartiles is
+ *   `notable`, beyond 3 × IQR `unusual`.
+ * - Fewer than 3 wafers, or no spread: none — with two wafers there is no
+ *   telling which is the odd one.
+ *
+ * Both tests judge a wafer against the wafers' own spread, so either may also
+ * flag a trivially small difference in a tight lot; a wafer is an outlier only
+ * when it is also at least `OUTLIER_MIN_POINTS` yield points from the median.
+ */
+export function outlierWafers(yields: readonly number[]): { method: 'dixon-q' | 'tukey-fence'; outliers: WaferOutlier[] } | null {
+  const n = yields.length;
+  if (n < 3) return null;
+  const center = median([...yields]);
+  const bigEnough = (y: number) => Math.abs(y - center) >= OUTLIER_MIN_POINTS;
+  if (n >= TUKEY_MIN_WAFERS) {
+    const notable = robustFence(yields, 1.5, TUKEY_MIN_WAFERS);
+    const unusual = robustFence(yields, 3, TUKEY_MIN_WAFERS);
+    if (!notable || !unusual) return null;
+    const iqr = (notable.hi - notable.lo) / 4;  // the 1.5·IQR fences are 4·IQR apart
+    const outliers: WaferOutlier[] = [];
+    yields.forEach((y, index) => {
+      if ((y >= notable.lo && y <= notable.hi) || !bigEnough(y)) return;
+      const severity = y < unusual.lo || y > unusual.hi ? 'unusual' : 'notable';
+      outliers.push({ index, severity, statistic: (y - center) / iqr });
+    });
+    return { method: 'tukey-fence', outliers };
+  }
+  const order = yields.map((_, i) => i).sort((a, b) => yields[a] - yields[b]);
+  const range = yields[order[n - 1]] - yields[order[0]];
+  if (range === 0) return null;
+  const [q95, q99] = DIXON_Q[n];
+  const outliers: WaferOutlier[] = [];
+  const test = (index: number, neighbour: number) => {
+    const q = Math.abs(yields[index] - yields[neighbour]) / range;
+    if (q > q95 && bigEnough(yields[index])) outliers.push({ index, severity: q > q99 ? 'unusual' : 'notable', statistic: q });
+  };
+  test(order[0], order[1]);
+  test(order[n - 1], order[n - 2]);
+  return { method: 'dixon-q', outliers };
+}
 const REPEATED_PATTERN_MIN_WAFERS = 2;
 
 function maxSeverity(left: StatsSeverity, right: StatsSeverity): StatsSeverity {
@@ -226,10 +300,23 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
     /** Spatial patterns: each wafer's label, and its failing dies to highlight. */
     labels: Map<string, number>;
     dieKeysByWafer: Record<number, string[]>;
+    /** Pattern bucket key → wafers on which that wafer's spatial pattern claimed this finding. */
+    explainedBy: Map<string, number>;
   }>();
+  const keyOf = (finding: StatsFinding) => {
+    const family = finding.variable.kind === 'spatialPattern' ? PATTERN_FAMILY[finding.comparison.left] : undefined;
+    return family ? `spatialPattern|${family}` : findingPatternKey(finding);
+  };
 
   for (const entry of perWafer) {
     const seen = new Set<string>();
+    // This wafer's pattern claims (its `relatedIds`): an edge arc inside an edge
+    // ring is part of that ring, and the lot keeps that link — see below.
+    const claimedBy = new Map<string, string>();
+    for (const p of entry.summary.findings) {
+      if (p.variable.kind !== 'spatialPattern') continue;
+      for (const id of p.relatedIds ?? []) claimedBy.set(id, keyOf(p));
+    }
     // Skip findings that another finding in the SAME wafer already absorbs as an
     // exact restatement (a soft-bin twin over identical dies; the single pass
     // bin against the yield row). `summary.findings` is deliberately the full
@@ -240,8 +327,7 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
     const absorbed = new Set(entry.summary.findings.flatMap(f => f.absorbedIds ?? []));
     for (const finding of entry.summary.findings) {
       if (absorbed.has(finding.id) || isPooledKind(finding)) continue;
-      const family = finding.variable.kind === 'spatialPattern' ? PATTERN_FAMILY[finding.comparison.left] : undefined;
-      const key = family ? `spatialPattern|${family}` : findingPatternKey(finding);
+      const key = keyOf(finding);
       if (seen.has(key)) continue;
       seen.add(key);
 
@@ -251,8 +337,11 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
         severity: finding.severity,
         labels: new Map<string, number>(),
         dieKeysByWafer: {},
+        explainedBy: new Map<string, number>(),
       };
       bucket.waferIndices.push(entry.waferIndex);
+      const claimer = claimedBy.get(finding.id);
+      if (claimer) bucket.explainedBy.set(claimer, (bucket.explainedBy.get(claimer) ?? 0) + 1);
       if (finding.variable.kind === 'spatialPattern') {
         bucket.labels.set(finding.comparison.left, (bucket.labels.get(finding.comparison.left) ?? 0) + 1);
         const keys = (finding.highlight as { dieKeys?: string[] }).dieKeys;
@@ -297,6 +386,21 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
     });
   }
 
+  // A repeated finding that its wafer's pattern claimed on EVERY wafer it appears
+  // on is part of the lot's repeated pattern: listed under it (`relatedIds`), as
+  // at wafer level, not as a separate lot finding. Claimed on only some wafers,
+  // it is also a signal of its own, and stays separate.
+  const byId = new Map(findings.map(f => [f.id, f]));
+  for (const [key, bucket] of buckets) {
+    const child = byId.get(`lot-repeat:${key}`);
+    if (!child) continue;
+    for (const [patternKey, count] of bucket.explainedBy) {
+      const parent = byId.get(`lot-repeat:${patternKey}`);
+      if (!parent || count !== bucket.waferIndices.length) continue;
+      (parent.relatedIds ??= []).push(child.id);
+    }
+  }
+
   return findings;
 }
 
@@ -324,23 +428,20 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], popula
     }))
     .filter((entry): entry is { waferIndex: number; yieldPercent: number } => entry.yieldPercent !== null);
 
-  if (comparable.length < 3) return [];
-
   const values = comparable.map((entry) => entry.yieldPercent);
+  const result = outlierWafers(values);
+  if (!result) return [];
   const center = median(values);
-  const mad = median(values.map((value) => Math.abs(value - center)));
-  if (!Number.isFinite(mad) || mad === 0) return [];
 
   const findings: StatsFinding[] = [];
 
-  for (const entry of comparable) {
-    const zScore = 0.6745 * (entry.yieldPercent - center) / mad;
-    if (Math.abs(zScore) < OUTLIER_THRESHOLD) continue;
+  for (const { index, severity, statistic } of result.outliers) {
+    const entry = comparable[index];
     const delta = entry.yieldPercent - center;
     findings.push({
       id: `inter-wafer:yield:${entry.waferIndex}`,
       level: 'inter-wafer',
-      severity: Math.abs(zScore) >= 2 ? 'unusual' : 'notable',
+      severity,
       variable: {
         kind: 'yield',
         label: 'Yield',
@@ -354,10 +455,10 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], popula
         direction: delta > 0 ? 'higher' : 'lower',
         absoluteDelta: delta,
         relativeDelta: center === 0 ? undefined : delta / center,
-        effectSize: zScore,
+        effectSize: statistic,
       },
       stats: {
-        method: 'mad-z-score',
+        method: result.method,
         sampleSizeLeft: 1,
         sampleSizeRight: comparable.length - 1,
       },

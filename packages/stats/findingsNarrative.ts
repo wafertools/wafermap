@@ -100,8 +100,10 @@ function joinLabels(findings: StatsFinding[]): string {
 
 // Whether the subject phrase reads as singular (for verb agreement).
 function isSingularSubject(findings: StatsFinding[]): boolean {
-  // A single finding whose label names one region (no "Rings"/"Quadrants"/"Sectors" plural).
-  if (findings.length !== 1) return false;
+  // One region, named by a singular label (no "Rings"/"Quadrants"/"Sectors" plural) —
+  // however many findings (metrics) it carries.
+  const labels = new Set(findings.map(f => f.comparison.left));
+  if (labels.size !== 1) return false;
   return !/^(Rings|Quadrants|Sectors)\b/.test(findings[0].comparison.left);
 }
 
@@ -113,7 +115,7 @@ function ringSentence(findings: StatsFinding[]): string {
   let subject: string;
   let singular: boolean;
   if (allCore) { subject = 'The core ring'; singular = true; }
-  else if (allEdge && findings.length > 1) { subject = 'The edge rings'; singular = false; }
+  else if (allEdge && new Set(findings.map(f => f.comparison.left)).size > 1) { subject = 'The edge rings'; singular = false; }
   else { subject = joinLabels(findings); singular = isSingularSubject(findings); }
   return `${subject} show${singular ? 's' : ''} ${dirWord(dir)} ${metricsPhrase(findings)}.`;
 }
@@ -274,16 +276,19 @@ function directionalSentence(
   if (higher.length > 0 && lower.length > 0 && dedupedLower.length === 0) {
     return builder(higher);
   }
-  // Single-direction (after net-direction bucketing): if yield is present, let it
-  // define the wording and drop pass/fail bin findings that merely restate it in
-  // the opposite direction — otherwise the sentence reads "shifted" and lists a
-  // contradictory metric for what is one physical signal.
-  const yieldDir = regionNetDirection(findings);
-  if (yieldDir !== 'mixed' && findings.some(f => f.variable.kind === 'yield')) {
-    const coherent = findings.filter(f => f.effect.direction === yieldDir);
+  // Single-direction (after net-direction bucketing): describe only the bucket
+  // that has findings. Never fall back to the unfiltered set — it still holds the
+  // findings the bucketing dropped for disagreeing with their region, e.g. a pass
+  // bin that fell in a region whose fail bins rose, which would then be called
+  // "elevated". If yield is present, let it define the wording and drop pass/fail
+  // bin findings that merely restate it in the opposite direction.
+  const side = higher.length > 0 ? higher : lower.length > 0 ? lower : findings;
+  const yieldDir = regionNetDirection(side);
+  if (yieldDir !== 'mixed' && side.some(f => f.variable.kind === 'yield')) {
+    const coherent = side.filter(f => f.effect.direction === yieldDir);
     if (coherent.length > 0) return builder(coherent);
   }
-  return builder(findings);
+  return builder(side);
 }
 
 // Mean compass angle (degrees) of a set of region findings, or null if no

@@ -8,7 +8,7 @@
 import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { minOf, maxOf } from '../../core/utils.js';
-import { fiveNumberSummary } from '../../stats/math.js';
+import { robustFence } from '../../stats/math.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
 import { markedTestLabel, DERIVED_LANE_PAD } from '../../renderer/testLabel.js';
 
@@ -1770,24 +1770,8 @@ export function makeLimitsSelect(
 // behaviour — whether spec limits are in view, and whether a wild reading is
 // allowed to flatten the plot — is decided in one place rather than three.
 
-/** Robust outlier fence over a value list: Tukey's `Q1 − k·IQR … Q3 + k·IQR`.
- *
- *  Deliberately NOT mean ± 3σ. σ is computed FROM the data including the
- *  outlier, so a single reading of 1e30 inflates σ far enough that the fence no
- *  longer excludes it — the classic masking failure, and it fails hardest exactly
- *  when the outlier is worst. Quartiles are unmoved by the extreme tail.
- *
- *  Returns null when there are too few values for quartiles to mean anything. */
-export function robustFence(values: number[], k = 1.5): { lo: number; hi: number } | null {
-  // Quartiles by selection (`fiveNumberSummary`), not a sort: the histogram's
-  // outlier clip passes every value of the active test, one per die.
-  const finite = Float64Array.from(values.filter(v => Number.isFinite(v)));
-  if (finite.length < 8) return null;
-  const { q1, q3 } = fiveNumberSummary(finite);
-  const iqr = q3 - q1;
-  if (iqr === 0) return null;
-  return { lo: q1 - k * iqr, hi: q3 + k * iqr };
-}
+// `robustFence` lives in stats/math.ts — the same fence flags outlier wafers.
+export { robustFence };
 
 /**
  * Whether a panel should include the spec limits in its axis BY DEFAULT.

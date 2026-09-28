@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { analyzeWaferLot, analyzeWaferMap, buildWaferMap } from '../dist/index.js';
+import { outlierWafers } from '../dist/packages/stats/analyzeWaferLot.js';
 import { classifyDie } from '../dist/packages/core/classify.js';
 import { findingsTableHtml } from '../dist/packages/stats/reportHtml.js';
 import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
@@ -361,12 +362,6 @@ test('analyzeWaferLot emits repeated-pattern and inter-wafer findings', () => {
     finding.comparison.left === 'Ring 3 (edge)' &&
     finding.highlight.kind === 'wafer' &&
     finding.highlight.waferIndices.length === 2,
-  ));
-  assert.ok(lot.findings.some((finding) =>
-    finding.level === 'inter-wafer' &&
-    finding.variable.kind === 'yield' &&
-    finding.comparison.family === 'wafer' &&
-    finding.effect.direction === 'lower',
   ));
   assert.equal(lot.hasNotableFindings, true);
   assert.equal(lot.perWafer[0].summary.hasNotableFindings, true);
@@ -776,4 +771,59 @@ test('no functional findings or functionalYield without functional defs', () => 
   }, { enableTestValueAnalysis: true });
   assert.equal(summary.stats.functionalYield, undefined);
   assert.ok(!summary.findings.some(f => f.variable.kind === 'functionalTest'));
+});
+
+test('a repeated edge arc that is part of each wafer\'s edge ring is listed under the lot\'s pattern', () => {
+  const pattern = (relatedIds) => ({
+    id: 'spatial-pattern:edge-ring', level: 'wafer', severity: 'unusual',
+    variable: { kind: 'spatialPattern', label: 'Edge-ring' },
+    comparison: { family: 'spatial-pattern', left: 'Edge-ring', right: 'Wafer' },
+    effect: { direction: 'different' }, stats: { method: 'geometry' },
+    summary: 'Edge-ring', highlight: { kind: 'dies', dieKeys: [] }, relatedIds });
+  const arc = (id, bearing) => ({
+    id, level: 'wafer', severity: 'notable',
+    variable: { kind: 'yield', label: 'Yield' },
+    comparison: { family: 'edge-arc', left: `Edge arc near ${bearing}`, right: 'Background' },
+    effect: { direction: 'lower' }, stats: { method: 'arc' },
+    summary: `Edge arc near ${bearing}`, highlight: { kind: 'dies', dieKeys: [] } });
+  const perWaferFindings = [
+    [pattern(['ese']), arc('ese', 'ESE')],
+    [pattern(['ese']), arc('ese', 'ESE'), arc('nnw', 'NNW')],   // NNW not part of the ring here…
+    [arc('nnw', 'NNW')],                                          // …nor on a wafer without one
+  ];
+  const results = perWaferFindings.map((_, i) => buildWaferMap({
+    results: Array.from({ length: 20 }, (_, k) => ({ x: k % 5, y: Math.floor(k / 5), hbin: 1 })),
+    waferConfig: { diameter: 60, metadata: { lot: 'L1', wafer: `W${i}` } },
+    dieConfig: { width: 10, height: 10 }, passBins: [1] }));
+  const perWaferSummaries = results.map((r, i) => ({ ...analyzeWaferMap(r), findings: perWaferFindings[i] }));
+  const lot = analyzeWaferLot(results, { perWaferSummaries });
+  const lotPattern = lot.findings.find(f => f.variable.kind === 'spatialPattern');
+  const ese = lot.findings.find(f => f.comparison.left === 'Edge arc near ESE');
+  const nnw = lot.findings.find(f => f.comparison.left === 'Edge arc near NNW');
+  assert.ok(ese && nnw && lotPattern);
+  assert.deepEqual(lotPattern.relatedIds, [ese.id]);
+});
+
+test('outlier wafers: Dixon\'s Q below 8 wafers, Tukey\'s fences from 8', () => {
+  // Two wafers: no telling which is the odd one.
+  assert.equal(outlierWafers([30, 90]), null);
+  // Small lots are judged, not skipped: 30 against 90/91/92 is an outlier (Q = 60/62).
+  const small = outlierWafers([90, 30, 91, 92]);
+  assert.equal(small.method, 'dixon-q');
+  assert.deepEqual(small.outliers.map(o => [o.index, o.severity]), [[1, 'unusual']]);
+  // A steady decline (memory-ring's six wafers) has no outlier.
+  assert.deepEqual(outlierWafers([84.6, 82.7, 80.5, 78.8, 77.7, 74.0]).outliers, []);
+  // A tight lot with even spacing: nothing.
+  assert.deepEqual(outlierWafers([90.0, 90.2, 90.4, 90.6, 90.8]).outliers, []);
+  // From 8 wafers, Tukey — and a second low wafer does not mask the first.
+  const big = outlierWafers([90, 91, 92, 93, 94, 91, 92, 60, 62]);
+  assert.equal(big.method, 'tukey-fence');
+  assert.deepEqual(big.outliers.map(o => o.index).sort(), [7, 8]);
+  // No spread at all: nothing to call an outlier.
+  assert.equal(outlierWafers([90, 90, 90]), null);
+  // A tight 8-wafer lot: W04 stands apart statistically but is only 1.55 points
+  // above the median — below the 3-point minimum, so not an outlier.
+  assert.deepEqual(outlierWafers([95.2, 94.7, 94.6, 96.5, 94.8, 95.1, 95.4, 94.3]).outliers, []);
+  // power-device: W3 is 4.3 points below the median — an outlier.
+  assert.deepEqual(outlierWafers([89.1, 89.1, 84.8, 88.5, 89.4]).outliers.map(o => [o.index, o.severity]), [[2, 'notable']]);
 });
