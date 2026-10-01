@@ -1206,7 +1206,7 @@ By default the engine checks every combination of:
 
 For each spatial family the engine tests: yield, hard bin rate per bin, soft bin rate per bin, and mean test value per test.
 
-**Angular sectors in detail.** Sector analysis divides the wafer into compass-named angular slices — N, NNE, NE, ENE, E, … (16 sectors by default).  Each sector is compared to the rest of the wafer independently, giving finer directional resolution than quadrants: a drift pattern concentrated in the NE corner shows up as a sector finding even if the wider NE quadrant is diluted by clean dies elsewhere in that quarter.  Dies within 0.2 normalised radius of the wafer centre are excluded from sector analysis (they are too close to the centre to be meaningfully attributed to a direction).  The number of sectors is controlled by `sectorCount` (4, 8, 16, or 32).
+**Angular sectors in detail.** Sector analysis divides the wafer into compass-named angular slices — N, NNE, NE, ENE, E, … (8 sectors by default).  Each sector is compared to the rest of the wafer independently, giving finer directional resolution than quadrants: a drift pattern concentrated in the NE corner shows up as a sector finding even if the wider NE quadrant is diluted by clean dies elsewhere in that quarter.  Dies within 0.2 normalised radius of the wafer centre are excluded from sector analysis (they are too close to the centre to be meaningfully attributed to a direction).  The number of sectors is controlled by `sectorCount` (4, 8 or 16).
 
 Findings are suppressed unless they pass both an adjusted p-value threshold and an effect size gate. The effect size gate uses two complementary criteria — absolute and relative — so that meaningful patterns are not missed on wafers with either high or low background failure rates.
 
@@ -1264,7 +1264,7 @@ const summary = analyzeWaferMap(result, {
   // so silently. See "Interpreting findings and severity" above for the values.
   enableTestValueAnalysis:   true,   // default FALSE — opt in for regional test-value findings (expensive);
                                      // use computePerTestStats: true for box-plot stats without the Welch pass
-  sectorCount:               8,      // 4 | 8 | 16 | 32
+  sectorCount:               8,      // 4 | 8 | 16
 });
 ```
 

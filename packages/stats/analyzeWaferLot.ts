@@ -2,6 +2,7 @@ import {
   analyzeWaferMap, candidatesOf, describeRegional, resolveOptions, adjustPValues,
   twoProportionZ, zPValue, welchOfSums, rateRelativeEffect, passesRateGate,
   severityForFinding, severityForScore, collapseRedundantFindings,
+  findContiguousRuns, mergedRegionLabel, type MeanStats,
   type RegionCandidate, type ResolvedOptions, type RedundancyFacts, type WaferComparisons,
 } from './analyzeWaferMap.js';
 import { normalizeInput } from './normalizeInput.js';
@@ -11,6 +12,9 @@ import { findingPatternKey } from './filterFindings.js';
 import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import { median } from '../core/utils.js';
 import { robustFence } from './math.js';
+import { findLotPattern, type LotPattern } from './lotPattern.js';
+import { claimForPattern, weakestMultiplier } from './analyzeWaferMap.js';
+import { PATTERN_LABELS } from './patternClassification.js';
 import { describeWaferPopulation, populationStat, type WaferPopulation } from './population.js';
 import type {
   AnalyzeWaferLotInput,
@@ -103,6 +107,8 @@ function maxSeverity(left: StatsSeverity, right: StatsSeverity): StatsSeverity {
 }
 
 
+/** The region families whose adjacent regions merge into one lot finding. */
+const MERGEABLE_FAMILIES = new Set(['ring', 'quadrant', 'sector']);
 const REGION_FAMILIES = new Set(['ring', 'quadrant', 'sector', 'reticle-position', 'test-site']);
 const REGIONAL_KINDS = new Set(['yield', 'hardBin', 'softBin', 'functionalTest', 'test']);
 /** A regional rate or test-value finding: the lot reports these from all wafers' data
@@ -117,15 +123,16 @@ interface WaferCandidates { waferIndex: number; byKey: Map<string, RegionCandida
  * The redundancy facts that hold for the lot: a hard/soft pair coincides, a soft
  * bin is the yield, the pass bins agree — only where every wafer says so.
  */
-function lotRedundancyFacts(wafers: WaferComparisons[]): RedundancyFacts {
+function lotRedundancyFacts(wafers: WaferComparisons[], sectorCount: number): RedundancyFacts {
   const facts = wafers.map(w => w.facts);
-  if (!facts.length || facts.some(f => !f)) return { coincident: new Set(), yieldSoftBin: undefined, passBins: [] };
+  if (!facts.length || facts.some(f => !f)) return { coincident: new Set(), yieldSoftBin: undefined, passBins: [], sectorCount };
   const [first, ...rest] = facts as RedundancyFacts[];
   const samePass = rest.every(f => f.passBins.length === first.passBins.length && f.passBins.every(b => first.passBins.includes(b)));
   return {
     coincident: new Set([...first.coincident].filter(pair => rest.every(f => f.coincident.has(pair)))),
     yieldSoftBin: rest.every(f => f.yieldSoftBin === first.yieldSoftBin) ? first.yieldSoftBin : undefined,
     passBins: samePass ? first.passBins : [],
+    sectorCount,
   };
 }
 
@@ -191,7 +198,9 @@ function passesCombinedGate(c: RegionCandidate, adjustedP: number, combined: Com
  * stronger opposite regions are the wafer analysis's own. "N/M wafers" counts
  * the wafers whose region differs in the finding's direction.
  */
-function buildPooledRegionFindings(wafers: WaferCandidates[], options: ResolvedOptions, facts: RedundancyFacts): StatsFinding[] {
+function buildPooledRegionFindings(
+  wafers: WaferCandidates[], options: ResolvedOptions, facts: RedundancyFacts, ringCount: number,
+): StatsFinding[] {
   const byKey = new Map<string, { waferIndex: number; c: RegionCandidate }[]>();
   for (const { waferIndex, byKey: cands } of wafers) {
     for (const c of cands.values()) (byKey.get(c.key) ?? byKey.set(c.key, []).get(c.key)!).push({ waferIndex, c });
@@ -233,6 +242,7 @@ function buildPooledRegionFindings(wafers: WaferCandidates[], options: ResolvedO
   };
 
   const out: StatsFinding[] = [];
+  const reported = new Map<StatsFinding, Candidate>();
   for (const a of significant) {
     const rawP = a.finding.stats.pValue ?? 1;
     const opposites = significant.filter(b => b !== a && sameComparison(a, b) &&
@@ -268,17 +278,150 @@ function buildPooledRegionFindings(wafers: WaferCandidates[], options: ResolvedO
     const severity = maxSeverity(statSeverity, shown.length / m >= 0.6 ? 'unusual' : 'info');
     const dieKeysByWafer: Record<number, string[]> = {};
     for (const e of shown) dieKeysByWafer[e.waferIndex] = [...e.c.region.dieKeys];
-    out.push({
+    const finding: StatsFinding = {
       ...a.finding,
       severity,
       stats: { ...a.finding.stats, sampleSizeLeft: shown.length, sampleSizeRight: m - shown.length },
       summary: `${describeRegional(t, a.combined.delta, a.combined.relativeDelta)} — ${a.finding.effect.direction} on ${shown.length}/${m} wafers, all wafers' data combined`,
-      highlight: { kind: 'wafer', waferIndices: shown.map(e => e.waferIndex), dieKeysByWafer } });
+      highlight: { kind: 'wafer', waferIndices: shown.map(e => e.waferIndex), dieKeysByWafer } };
+    out.push(finding);
+    reported.set(finding, a);
   }
+  const merged = mergeAdjacentPooled(reported, perWafer, wafers.length, options, ringCount, ownRest);
+  out.splice(0, out.length, ...out.filter(f => !merged.replaced.has(f)), ...merged.findings);
   // The wafer analysis's own collapse: the pass bin and the soft bin that are the
   // yield, and hard/soft twins, restate another lot finding exactly.
   collapseRedundantFindings(out as Parameters<typeof collapseRedundantFindings>[0], facts);
   return out;
+}
+
+/**
+ * Lot findings for runs of adjacent regions that carry the same signal, as the
+ * wafer analysis merges them (`mergeAdjacentFindings`): "Sectors E–N", not a row
+ * per sector. The runs, their labels and the ring/sector/quadrant adjacency are
+ * the wafer merge's own. What differs is the statistic: each wafer's regions add
+ * up (counts or sums, the rest being the wafer's total less the run), and those
+ * per-wafer unions are combined across the wafers as the single regions are —
+ * Stouffer's Z, the same gates, and the Benjamini–Hochberg multiplier of the
+ * weakest constituent, so the run is graded no more leniently than its parts. A
+ * run that does not pass on its own keeps its separate rows.
+ *
+ * "N/M wafers" is the wafers where the merged region itself differs, in the
+ * finding's direction, at the analysis's significance level.
+ */
+function mergeAdjacentPooled(
+  reported: Map<StatsFinding, { key: string; entries: { waferIndex: number; c: RegionCandidate }[]; combined: Combined }>,
+  perWafer: Map<number, Map<string, RegionCandidate>>,
+  waferCount: number,
+  options: ResolvedOptions,
+  ringCount: number,
+  ownRest: Parameters<typeof combine>[1],
+): { findings: StatsFinding[]; replaced: Set<StatsFinding> } {
+  const groups = new Map<string, { finding: StatsFinding; c: RegionCandidate; key: string }[]>();
+  for (const [finding, a] of reported) {
+    const c = a.entries[0].c;
+    if (!MERGEABLE_FAMILIES.has(c.region.family)) continue;
+    const id = [c.source, c.variable.kind, c.variable.bin ?? '', c.variable.index ?? '', c.region.family, finding.effect.direction].join('|');
+    (groups.get(id) ?? groups.set(id, []).get(id)!).push({ finding, c, key: a.key });
+  }
+
+  const findings: StatsFinding[] = [];
+  const replaced = new Set<StatsFinding>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const family = group[0].c.region.family;
+    for (const run of findContiguousRuns(group, family, options.sectorCount, g => g.c.region.key)) {
+      if (run.length < 2) continue;
+      const merged = mergeRun(run, perWafer, waferCount, options, ringCount, ownRest);
+      if (!merged) continue;
+      findings.push(merged);
+      for (const g of run) replaced.add(g.finding);
+    }
+  }
+  return { findings, replaced };
+}
+
+function mergeRun(
+  run: { finding: StatsFinding; c: RegionCandidate; key: string }[],
+  perWafer: Map<number, Map<string, RegionCandidate>>,
+  waferCount: number,
+  options: ResolvedOptions,
+  ringCount: number,
+  ownRest: Parameters<typeof combine>[1],
+): StatsFinding | undefined {
+  const first = run[0].c;
+  const sign = run[0].finding.effect.direction === 'higher' ? 1 : -1;
+  const label = mergedRegionLabel(first.region.family, run.map(r => r.c.region.key), ringCount);
+
+  // Each wafer's run as one region: counts or sums added, the rest the wafer's total less the run.
+  const unions: { waferIndex: number; c: RegionCandidate; z: number; dieKeys: string[] }[] = [];
+  for (const [waferIndex, candidates] of perWafer) {
+    const parts = run.map(r => candidates.get(r.key));
+    if (parts.some(part => !part)) continue;
+    const cs = parts as RegionCandidate[];
+    const base = cs[0];
+    let union: RegionCandidate;
+    let z: number;
+    if (base.rate) {
+      const hits = cs.reduce((t, c) => t + c.rate!.hits, 0);
+      const n = cs.reduce((t, c) => t + c.rate!.n, 0);
+      const restHits = base.rate.hits + base.rate.restHits - hits;
+      const restN = base.rate.n + base.rate.restN - n;
+      if (n < options.minimumSampleSize || restN < options.minimumSampleSize) continue;
+      union = { ...base, rate: { hits, n, restHits, restN, passRate: base.rate.passRate } };
+      z = twoProportionZ(hits, n, restHits, restN);
+    } else {
+      const b = base.mean!;
+      const n = cs.reduce((t, c) => t + c.mean!.n, 0);
+      const sum = cs.reduce((t, c) => t + c.mean!.sum, 0);
+      const sq = cs.reduce((t, c) => t + c.mean!.sq, 0);
+      const restN = b.n + b.restN - n, restSum = b.sum + b.restSum - sum, restSq = b.sq + b.restSq - sq;
+      if (n < options.minimumSampleSize || restN < options.minimumSampleSize) continue;
+      const mean: MeanStats = { n, sum, sq, restN, restSum, restSq, shift: b.shift };
+      const t = welchOfSums(mean, restN, restSum, restSq);
+      const restMean = restSum / restN + b.shift;
+      union = { ...base, mean, relativeDelta: restMean !== 0 ? t.delta / Math.abs(restMean) : undefined };
+      z = t.z;
+    }
+    const dieKeys = [...new Set(cs.flatMap(c => [...c.region.dieKeys]))];
+    unions.push({ waferIndex, c: union, z, dieKeys });
+  }
+  if (unions.length < REPEATED_PATTERN_MIN_WAFERS) return undefined;
+
+  const combined = combine(unions, ownRest);
+  if (combined.z === 0 || Math.sign(combined.z) !== sign) return undefined;
+  const rawP = zPValue(combined.z);
+  const multiplier = weakestMultiplier(run.map(r => r.finding));
+  const adjusted = Math.min(1, rawP * multiplier);
+  if (!passesCombinedGate(first, adjusted, combined, options)) return undefined;
+
+  const shown = unions.filter(u => Math.sign(u.z) === sign && zPValue(u.z) <= options.significanceLevel);
+  if (!shown.length) return undefined;
+  const statSeverity = first.rate
+    ? severityForFinding(adjusted, combined.delta, combined.size)
+    : severityForScore(adjusted, combined.size);
+  const severity = maxSeverity(statSeverity, shown.length / waferCount >= 0.6 ? 'unusual' : 'info');
+  const dieKeysByWafer: Record<number, string[]> = {};
+  for (const u of shown) dieKeysByWafer[u.waferIndex] = u.dieKeys;
+
+  const regionIds = run.map(r => r.c.region.key.slice(r.c.region.key.indexOf(':') + 1)).join('-');
+  const described = { ...first, comparison: { ...first.comparison, left: label } };
+  const template = run[0].finding;
+  const direction = template.effect.direction;
+  return {
+    ...template,
+    id: `lot-region:${run[0].key.split('|').slice(0, -1).join('|')}|${first.region.family}:${regionIds}`,
+    severity,
+    comparison: { ...template.comparison, left: label },
+    effect: {
+      direction,
+      absoluteDelta: combined.delta,
+      relativeDelta: combined.relativeDelta,
+      effectSize: first.rate ? combined.delta : combined.size },
+    stats: { method: 'stouffer-z', pValue: rawP, adjustedPValue: adjusted, sampleSizeLeft: shown.length, sampleSizeRight: waferCount - shown.length },
+    summary: `${describeRegional(described, combined.delta, combined.relativeDelta)} — ${direction} on ${shown.length}/${waferCount} wafers, all wafers' data combined`,
+    highlight: { kind: 'wafer', waferIndices: shown.map(u => u.waferIndex), dieKeysByWafer },
+    relatedIds: run.map(r => r.finding.id) };
 }
 
 /**
@@ -292,7 +435,7 @@ const PATTERN_FAMILY: Record<string, string> = {
   'Center cluster': 'centre or donut', 'Donut': 'centre or donut',
 };
 
-function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): StatsFinding[] {
+function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer'], lotPattern: LotPattern | null): StatsFinding[] {
   const buckets = new Map<string, {
     finding: StatsFinding;
     waferIndices: number[];
@@ -327,6 +470,9 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
     const absorbed = new Set(entry.summary.findings.flatMap(f => f.absorbedIds ?? []));
     for (const finding of entry.summary.findings) {
       if (absorbed.has(finding.id) || isPooledKind(finding)) continue;
+      // A wafer that shows the lot's pattern is counted under the lot pattern
+      // (`buildLotPatternFinding`), whatever label its own classification gave it.
+      if (finding.variable.kind === 'spatialPattern' && lotPattern?.carriers.has(entry.waferIndex)) continue;
       const key = keyOf(finding);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -402,6 +548,42 @@ function buildRepeatedPatternFindings(perWafer: LotStatsSummary['perWafer']): St
   }
 
   return findings;
+}
+
+/**
+ * The lot's pattern as one finding: the classifier's reading of where failures
+ * recur across the stacked wafers, on every wafer that shows it. `claimForPattern`
+ * then lists under it the lot findings it explains (rings, edge arcs, clusters).
+ */
+function buildLotPatternFinding(lotPattern: LotPattern, waferCount: number): StatsFinding {
+  const { classification, carriers } = lotPattern;
+  const label = PATTERN_LABELS[classification.pattern];
+  const coverage = carriers.size / Math.max(1, waferCount);
+  const dieKeysByWafer: Record<number, string[]> = {};
+  for (const [index, keys] of carriers) dieKeysByWafer[index] = keys;
+  return {
+    id: 'lot-repeat:spatialPattern|lot',
+    level: 'lot',
+    severity: coverage >= 0.6 || classification.confidence === 'high' ? 'unusual' : 'notable',
+    variable: { kind: 'spatialPattern', label },
+    comparison: { family: 'spatial-pattern', left: label, right: 'Wafer' },
+    effect: { direction: 'different', effectSize: classification.features.globalRdd },
+    stats: {
+      method: 'wafer-finding-frequency',
+      sampleSizeLeft: carriers.size,
+      sampleSizeRight: waferCount - carriers.size,
+    },
+    summary: `Spatial pattern: ${label.toLowerCase()} — seen on ${carriers.size}/${waferCount} wafers (${Math.round(coverage * 100)}%)`,
+    highlight: { kind: 'wafer', waferIndices: [...carriers.keys()].sort((a, b) => a - b), dieKeysByWafer },
+  };
+}
+
+/** The ring numbers a lot ring finding covers, from its label ("Ring 4 (edge)", "Rings 2–3"). */
+function lotRingsOf(f: StatsFinding): number[] {
+  const m = /^Rings? (\d+)(?:\s*[–-]\s*(\d+))?/.exec(f.comparison.left);
+  if (!m) return [];
+  const first = +m[1], last = m[2] ? +m[2] : first;
+  return Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => first + i);
 }
 
 /**
@@ -490,11 +672,24 @@ export function analyzeWaferLot(
     candidatesOf(summary) ?? candidatesOf(analyzeWaferMap(results[waferIndex], options))!);
   const waferCandidates = comparisons.map((w, waferIndex) =>
     ({ waferIndex, byKey: new Map(w.candidates.map(c => [c.key, c])) }));
+  const resolved = resolveOptions(options).resolved;
+  // From this many wafers showing it, a recurring area is a lot pattern; fewer and
+  // the wafers keep their own classifications (the per-wafer counting below).
+  const stacked = findLotPattern(results, resolved);
+  const lotPattern = stacked && stacked.carriers.size >= REPEATED_PATTERN_MIN_WAFERS ? stacked : null;
   const findings = [
-    ...buildPooledRegionFindings(waferCandidates, resolveOptions(options).resolved, lotRedundancyFacts(comparisons)),
-    ...buildRepeatedPatternFindings(perWafer),
+    ...buildPooledRegionFindings(waferCandidates, resolved, lotRedundancyFacts(comparisons, resolved.sectorCount), results[0]?.ringCount ?? resolved.ringCount),
+    ...buildRepeatedPatternFindings(perWafer, lotPattern),
     ...buildYieldOutlierFindings(perWafer, describeWaferPopulation(perWafer.map(w => w.summary.wafer))),
-  ].sort((left, right) => {
+  ];
+  if (lotPattern) {
+    const pattern = buildLotPatternFinding(lotPattern, perWafer.length);
+    pattern.relatedIds = claimForPattern([lotPattern.classification.pattern], pattern.severity, findings,
+      lotRingsOf, resolved.ringCount);
+    if (!pattern.relatedIds.length) delete pattern.relatedIds;
+    findings.push(pattern);
+  }
+  findings.sort((left, right) => {
     const leftRank = left.severity === 'unusual' ? 2 : left.severity === 'notable' ? 1 : 0;
     const rightRank = right.severity === 'unusual' ? 2 : right.severity === 'notable' ? 1 : 0;
     if (leftRank !== rightRank) return rightRank - leftRank;

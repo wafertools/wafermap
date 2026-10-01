@@ -4,6 +4,15 @@ import { positionKey } from './dies.js';
 
 export type AggregationMethod = 'mean' | 'median' | 'stddev' | 'min' | 'max' | 'count';
 
+/**
+ * Whether a stack by this method holds measurements of the test, in its units.
+ * A mean, median, minimum or maximum does; a standard deviation is a spread and a
+ * count is a tally, so the test's limits say nothing about them.
+ */
+export function stackHoldsMeasurements(method: string): boolean {
+  return method !== 'stddev' && method !== 'count';
+}
+
 /** Minimal die shape required by aggregation functions — satisfied by both Die and DieResult. */
 export interface DieLike {
   x: number;

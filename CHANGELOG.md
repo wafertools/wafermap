@@ -24,8 +24,48 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Breaking
+
+- **`sectorCount` is 4, 8 or 16.** The compass names cover 16 bearings, so 32 has no names to give its sectors;
+  it is corrected to the default with an `'analysis-option-corrected'` warning, like any other unusable value.
+
 ### Changed
 
+- **A merged region on a wafer is graded with its constituents' multiple-testing correction.** The merged finding's
+  p-value is multiplied by the weakest constituent's adjusted-to-raw ratio before severity is assigned, the same rule the
+  lot merge applies, and `stats.adjustedPValue` is set. A merge can no longer grade more severe than the correction its
+  parts carry allows, so a few merged findings show a lower severity.
+- **A lot stack by standard deviation or count carries no test limits.** Its values are spreads and tallies, not
+  measurements of the test, so `result.testDefs` has the limits removed and nothing is judged against them: no
+  limit fail findings, limit yield, capability index or out-of-spec colouring. Stacks by mean, median, minimum
+  and maximum keep them.
+- **A sector run and a quadrant over the same part of the wafer are one finding.** "Sectors W–S" and
+  "Quadrant SW" make one statement, so the one with the smaller p-value is shown and the other is listed
+  under it (`absorbedIds`). They must be the same comparison (metric, variable and direction) and cover
+  angles that overlap by at least three fifths of their union, by geometry. A single sector inside a
+  quadrant, and a mean against a limit fail rate, stay separate. Wafer and lot findings follow the same rule.
+- **Lot findings merge adjacent regions.** A run of adjacent sectors, quadrants or rings that carries one
+  signal is one lot finding ("Sectors E–N", "Rings 1–2"), as on a single wafer. Each wafer's regions are
+  added up, the rest being the wafer's other regions, and those per-wafer figures are combined across the
+  wafers as the single regions are (Stouffer's Z, the same gates). The run is adjusted with the
+  Benjamini–Hochberg multiplier of its weakest region and is reported only if it passes on its own;
+  otherwise its separate rows stay. "N/M wafers" counts the wafers where the merged region itself differs at
+  the analysis's significance level.
+- **A merged run is compared with the rest of its region family.** As for each region on its own: sectors
+  leave out the centre dies, so a merged sector run's "rest of the map" is the other sectors' dies.
+- **Adjacent regions merge per metric.** A test's mean finding and its limit fail rate are kept apart when
+  adjacent sectors, quadrants and rings are merged, so a run such as sectors E, NE and N reads as one
+  finding ("Sectors E–N"), and a quadrant with both a mean and a limit finding lists both. A run of limit
+  fail rates merges too, recomputed over the union of its regions. A run of quadrants is named in order
+  round the wafer.
+- **A lot's spatial pattern is decided from the lot.** `analyzeWaferLot` stacks the lot's wafers by die
+  position, finds the positions where failures recur (an exact binomial test on each position's 3×3
+  neighbourhood, Benjamini–Hochberg across positions), classifies that area with the same classifier and
+  thresholds as a single wafer, and reports the pattern once, on every wafer whose failures are concentrated
+  in it. A pattern visible on every wafer is reported on every wafer under one label, with the ring, edge-arc
+  and cluster findings it explains listed under it. Wafers on a different grid, and lots too small for
+  failures to recur significantly, keep the per-wafer count. The wafer-level classifier and its thresholds
+  are unchanged (WM-811K: 64.1% overall).
 - **Outlier wafers have one rule**, read by both the lot findings and the Summary panel's
   Wafer Yield list, so they always name the same wafers. From 3 to 7 wafers it is Dixon's Q
   test on the lowest and highest wafer (95% → `notable`, 99% → `unusual`); from 8 wafers,

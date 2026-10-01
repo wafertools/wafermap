@@ -101,9 +101,12 @@ const COMPASS_4  = ['E', 'N', 'W', 'S'];
 
 /** Compass bearing names for a given sector count, ordered CCW from East. */
 export function sectorCompassNames(sectorCount: number): string[] {
-  const safe = [4, 8, 16, 32].includes(sectorCount) ? sectorCount : 16;
+  const safe = [4, 8, 16].includes(sectorCount) ? sectorCount : 16;
   return safe === 4 ? COMPASS_4 : safe === 8 ? COMPASS_8 : COMPASS_16;
 }
+
+/** Quadrants going round the wafer, counter-clockwise from the north-east. */
+export const QUADRANT_CYCLE = ['NE', 'NW', 'SW', 'SE'] as const;
 
 /** Adjacency on the 2×2 quadrant grid — edge-sharing only, no diagonals. */
 const QUADRANT_ADJACENCY: Record<string, string[]> = {
@@ -116,6 +119,35 @@ const QUADRANT_ADJACENCY: Record<string, string[]> = {
 /** True when two quadrants share an edge (NE–NW, NE–SE, NW–SW, SE–SW); diagonals are not adjacent. */
 export function areQuadrantsAdjacent(a: string, b: string): boolean {
   return QUADRANT_ADJACENCY[a]?.includes(b) ?? false;
+}
+
+/** The circle is cut into this many equal bins to compare angular regions; 16 sectors of 22.5° fall on whole bins. */
+const ANGLE_BINS = 1440;
+
+/**
+ * The angular extent of a sector or quadrant region as the set of bins it covers
+ * (counter-clockwise from East), for asking how much two regions overlap. Both
+ * are cuts of the same wafer by angle alone, so their dies overlap as their
+ * angles do. `undefined` for any other region, or a name outside the compass.
+ */
+export function regionAngleBins(key: string, sectorCount: number): Set<number> | undefined {
+  const parsed = parseRegionKey(key);
+  let start: number, width: number;
+  if (parsed.family === 'quadrant') {
+    const i = QUADRANT_CYCLE.indexOf(parsed.quadrant as typeof QUADRANT_CYCLE[number]);
+    if (i < 0) return undefined;
+    start = i * ANGLE_BINS / 4; width = ANGLE_BINS / 4;
+  } else if (parsed.family === 'sector') {
+    const safe = [4, 8, 16].includes(sectorCount) ? sectorCount : undefined;
+    const i = safe ? sectorCompassNames(safe).indexOf(parsed.sector ?? '') : -1;
+    if (!safe || i < 0) return undefined;
+    width = ANGLE_BINS / safe; start = i * width - width / 2;
+  } else {
+    return undefined;
+  }
+  const bins = new Set<number>();
+  for (let b = 0; b < width; b++) bins.add(((start + b) % ANGLE_BINS + ANGLE_BINS) % ANGLE_BINS);
+  return bins;
 }
 
 export interface ParsedRegionKey {
@@ -256,7 +288,7 @@ export function buildTestSiteRegions(dies: Die[], forceEnable = false): StatsReg
 }
 
 export function buildSectorRegions(dies: PositionedDie[], wafer: Wafer, sectorCount: number): StatsRegion[] {
-  const safe = [4, 8, 16, 32].includes(sectorCount) ? sectorCount : 16;
+  const safe = [4, 8, 16].includes(sectorCount) ? sectorCount : 16;
   const names = sectorCompassNames(safe);
   const regions = new Map<string, StatsRegion>();
   const cx = wafer.center.x;

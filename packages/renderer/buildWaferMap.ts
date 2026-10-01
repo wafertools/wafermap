@@ -21,7 +21,7 @@ export type { DerivedTestDef } from './derivedTests/apply.js';
 import type { PlotMode } from './buildView.js';
 import { isStdfBin, isStdfCoord, isStdfTestNumber, isStdfSite, STDF_BIN_MAX, STDF_COORD_MAX, STDF_TEST_NUM_MAX, STDF_SITE_MAX } from '../core/stdf.js';
 import { hasAnyKey, maxOf, minOf, modeOf } from '../core/utils.js';
-import { aggregateValues, aggregateBinCounts, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
+import { aggregateValues, aggregateBinCounts, stackHoldsMeasurements, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
@@ -1327,6 +1327,14 @@ function resolveAxisFlips(
 
 // ── Lot-stack aggregation ─────────────────────────────────────────────────────
 
+/** A test definition without its test and specification limits. */
+function withoutLimits(def: TestDef): TestDef {
+  const out = { ...def };
+  delete out.limitLow; delete out.limitHigh; delete out.limitLowInclusive; delete out.limitHighInclusive;
+  delete out.specLow; delete out.specHigh;
+  return out;
+}
+
 function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, testDefs?: TestDef[]): DieResult[] {
   const { method, targetBin } = lotStack;
   // Lot-stack aggregation combines multiple wafers' values at "the same
@@ -1983,6 +1991,12 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     // warnings are identical per wafer: report them once.
     norm.testDefs = perWafer[0]?.testDefs ?? norm.testDefs;
     derivedWarnings.push(...(perWafer[0]?.warnings ?? []));
+  }
+
+  // A stack of spreads or tallies is not a measurement, so the tests' limits do not
+  // apply to it: no limit fail, limit yield or capability, and no out-of-spec colouring.
+  if (norm.lotStackOpts && !stackHoldsMeasurements(norm.lotStackOpts.method)) {
+    norm.testDefs = norm.testDefs?.map(withoutLimits);
   }
 
   // A lot stack collapses to one wafer of new records, linked to their own table.

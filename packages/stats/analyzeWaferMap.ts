@@ -13,15 +13,16 @@ import type {
   StatsFinding,
   StatsSeverity,
   StatsSummary,
-  StatsComparisonFamily,
   HighlightTarget } from './types.js';
 import {
   buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, buildTestSiteRegions,
-  sectorCompassNames, areQuadrantsAdjacent, parseRegionKey,
+  sectorCompassNames, areQuadrantsAdjacent, parseRegionKey, QUADRANT_CYCLE, regionAngleBins,
   type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
-import { classifyPattern, type PatternClassification } from './patternClassification.js';
-import { fiveNumberSummary, normalCdf } from './math.js';
+import {
+  classifyPattern, patternExplains, patternFailVerdict, PATTERN_LABELS,
+  type PatternClassification, type PatternLabel } from './patternClassification.js';
+import { benjaminiHochberg, fiveNumberSummary, normalCdf } from './math.js';
 import { mean, clamp01 } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 
@@ -68,7 +69,7 @@ const OPTION_BOUNDS = {
   minimumRelativeEffect: { min: 0, max: Number.MAX_SAFE_INTEGER },
 } as const;
 
-const VALID_SECTOR_COUNTS = [4, 8, 16, 32] as const;
+const VALID_SECTOR_COUNTS = [4, 8, 16] as const;
 
 /**
  * Clamp the numeric options into ranges that can produce a meaningful analysis,
@@ -392,19 +393,9 @@ export function adjustPValues(findings: RawFinding[]): RawFinding[] {
   }
 
   for (const entries of families.values()) {
-    const sorted = [...entries]
-      .filter((entry) => entry.stats.pValue !== undefined)
-      .sort((left, right) => (left.stats.pValue ?? 1) - (right.stats.pValue ?? 1));
-    const total = sorted.length;
-    let runningMin = 1;
-
-    for (let index = total - 1; index >= 0; index--) {
-      const entry = sorted[index];
-      const raw = entry.stats.pValue ?? 1;
-      const adjusted = Math.min(1, Math.min(runningMin, (raw * total) / (index + 1)));
-      entry.stats.adjustedPValue = adjusted;
-      runningMin = adjusted;
-    }
+    const tested = entries.filter((entry) => entry.stats.pValue !== undefined);
+    const adjusted = benjaminiHochberg(tested.map((entry) => entry.stats.pValue!));
+    tested.forEach((entry, i) => { entry.stats.adjustedPValue = adjusted[i]; });
   }
 
   return findings;
@@ -477,8 +468,8 @@ function summarizeRegionLabel(label: string, family: RegionFamily): string {
 /**
  * The verb for a region as the subject of a finding sentence. A merged region
  * is plural — "Rings 1–2 have", "Quadrants NE & SE have" — and the merge
- * labels (`mergeRingLabel`, `mergeSectorLabel`, `mergeQuadrantLabel`) are the
- * only places a plural region word is produced, so their leading word decides.
+ * label (`mergedRegionLabel`) is the only place a plural region word is
+ * produced, so its leading word decides.
  */
 function regionHas(label: string): 'has' | 'have' {
   return /^(Rings|Sectors|Quadrants)\b/.test(label) ? 'have' : 'has';
@@ -715,6 +706,35 @@ export function passesRateGate(adjustedP: number, delta: number, relEffect: numb
 }
 
 /**
+ * The ids of the `candidates` a spatial pattern explains (`patternExplains`), for
+ * its `relatedIds` — the wafer's pattern over the wafer's findings, the lot's
+ * over the lot's. `patterns` holds more than one label for a lot row that
+ * counts a family together (edge-ring and edge-local wafers).
+ *
+ * A ring, quadrant or sector row the pattern claims is downgraded to info so it
+ * does not count twice towards the badge and `hasNotableFindings`; cluster and
+ * edge-arc rows keep their own severity — they carry their own evidence (a
+ * p-value, an exact die count) and are supporting detail, not a restatement.
+ */
+export function claimForPattern<F extends StatsFinding>(
+  patterns: PatternLabel[],
+  severity: StatsSeverity,
+  candidates: readonly F[],
+  ringsOf: (f: F) => number[],
+  ringCount: number,
+): string[] {
+  const ids: string[] = [];
+  for (const f of candidates) {
+    const family = f.comparison.family;
+    const rings = family === 'ring' ? ringsOf(f) : [];
+    if (!patterns.some(p => patternExplains(p, family, rings, ringCount))) continue;
+    ids.push(f.id);
+    if (severity !== 'info' && (family === 'ring' || family === 'quadrant' || family === 'sector')) f.severity = 'info';
+  }
+  return ids;
+}
+
+/**
  * A region compared with "the rest of the wafer" looks deviant in the opposite
  * direction whenever the rest contains a stronger deviation: an edge ring rich
  * in bin 2 makes ring 3 look poor in bin 2, though ring 3 matches the core. So a
@@ -754,7 +774,7 @@ function strongerOpposites(finding: RawFinding, significant: RawFinding[]): RawF
 }
 
 /** A test-value finding's per-region sums, in the builder's shifted space. */
-export interface MeanStats { n: number; sum: number; sq: number; restN: number; restSum: number; restSq: number }
+export interface MeanStats { n: number; sum: number; sq: number; restN: number; restSum: number; restSq: number; shift: number }
 const meanStats = new WeakMap<RawFinding, MeanStats>();
 
 /** Welch's test of a region's sums against a rest given as sums (one wafer's shifted space). */
@@ -1275,7 +1295,7 @@ function buildTestValueFindings(
           regionFamily: region.family,
           regionKeys: [region.key],
           dieKeys: [...region.dieKeys] } });
-      const stats: MeanStats = { n: leftN, sum: sum[r], sq: sq[r], restN: rightN, restSum: totSum - sum[r], restSq: totSq - sq[r] };
+      const stats: MeanStats = { n: leftN, sum: sum[r], sq: sq[r], restN: rightN, restSum: totSum - sum[r], restSq: totSq - sq[r], shift };
       meanStats.set(finding, stats);
       recordCandidate(finding, z, undefined, stats);
       findings.push(finding);
@@ -1405,6 +1425,10 @@ interface MergeContext {
   passBins: number[];
   ringCount: number;
   sectorCount: number;
+  /** Positions of the dies each region family covers. A region is compared with
+   *  the rest of ITS family (sectors leave out the centre dies), so a merged
+   *  run's rest is the family's dies outside the run, not every die. */
+  regionDies: Record<'ring' | 'quadrant' | 'sector', ReadonlySet<number | string>>;
   hbinDefs?: BinDef[];
   sbinDefs?: BinDef[];
   testDefs?: TestDef[];
@@ -1417,20 +1441,29 @@ function poolOf(kind: RawFinding['variable']['kind'], ctx: MergeContext): readon
     : ctx.eligibleDies;
 }
 
+/** A test's limit fail rate, as opposed to its mean: both are `variable.kind` 'test'. */
+function isLimitFail(f: RawFinding): boolean {
+  return f.id.startsWith('specLimit:');
+}
+
 /** Region keys this finding covers (e.g. `["ring:1","ring:2"]`); empty for non-region targets. */
 function regionKeysOf(f: RawFinding): string[] {
   return (f.highlight as { regionKeys?: string[] }).regionKeys ?? [];
 }
 
-/** Group key for findings that describe the same signal in different regions. */
+/**
+ * Group key for findings that describe the same signal in different regions. The
+ * metric is part of it (the id's first segment): a test's mean and its limit fail
+ * rate share a variable kind and index, and one region's two findings in a group
+ * split a run of adjacent regions in two.
+ */
 function mergeGroupKey(f: RawFinding): string {
   const variableKey = f.variable.bin ?? f.variable.index ?? '';
-  return `${f.comparison.family}\0${f.variable.kind}\0${variableKey}\0${f.effect.direction}`;
+  return `${f.comparison.family}\0${metricOf(f)}\0${f.variable.kind}\0${variableKey}\0${f.effect.direction}`;
 }
 
-/** Order findings within a ring/sector group so contiguous-run detection is linear. */
-function findingOrderIndex(f: RawFinding, sectorCount: number): number {
-  const key = regionKeysOf(f)[0] ?? '';
+/** Order of a ring or sector region within its family, so contiguous-run detection is linear. */
+function regionOrderIndex(key: string, sectorCount: number): number {
   const parsed = parseRegionKey(key);
   if (parsed.family === 'ring') return parsed.ring ?? 0;
   if (parsed.family === 'sector') {
@@ -1441,20 +1474,32 @@ function findingOrderIndex(f: RawFinding, sectorCount: number): number {
 }
 
 /**
+ * A connected set of quadrants in reading order round the wafer, starting after
+ * a gap when there is one ("NW, SW & SE", not whatever order the search met
+ * them in). All four quadrants have no gap and start at the north-east.
+ */
+export function inQuadrantOrder(quadrants: string[]): string[] {
+  const present = new Set(quadrants);
+  const start = QUADRANT_CYCLE.findIndex((q, i) => present.has(q) && !present.has(QUADRANT_CYCLE[(i + 3) % 4]));
+  const from = start < 0 ? 0 : start;
+  return Array.from({ length: 4 }, (_, i) => QUADRANT_CYCLE[(from + i) % 4]).filter(q => present.has(q));
+}
+
+/**
  * Partition a same-signal group into maximal runs of spatially adjacent regions.
  * Singletons (no adjacent same-signal neighbour) come back as length-1 runs.
  */
-function findContiguousRuns(group: RawFinding[], family: string, sectorCount: number): RawFinding[][] {
+export function findContiguousRuns<T>(group: T[], family: string, sectorCount: number, keyOf: (item: T) => string): T[][] {
   if (family === 'quadrant') {
     // Connected components in the quadrant adjacency graph.
-    const byQuadrant = new Map<string, RawFinding>();
-    for (const f of group) {
-      const q = parseRegionKey(regionKeysOf(f)[0] ?? '').quadrant;
-      if (q) byQuadrant.set(q, f);
+    const byQuadrant = new Map<string, T>();
+    for (const item of group) {
+      const q = parseRegionKey(keyOf(item)).quadrant;
+      if (q) byQuadrant.set(q, item);
     }
     const quadrants = [...byQuadrant.keys()];
     const seen = new Set<string>();
-    const runs: RawFinding[][] = [];
+    const runs: T[][] = [];
     for (const start of quadrants) {
       if (seen.has(start)) continue;
       const component: string[] = [];
@@ -1470,25 +1515,24 @@ function findContiguousRuns(group: RawFinding[], family: string, sectorCount: nu
           }
         }
       }
-      runs.push(component.map(q => byQuadrant.get(q)!));
+      runs.push(inQuadrantOrder(component).map(q => byQuadrant.get(q)!));
     }
     return runs;
   }
 
   // Ring (linear) and sector (cyclic) — sort by order index, then split where the
   // index gap exceeds 1. For sectors, also stitch the wrap-around (last↔first).
-  const sorted = [...group].sort(
-    (a, b) => findingOrderIndex(a, sectorCount) - findingOrderIndex(b, sectorCount),
-  );
-  const runs: RawFinding[][] = [];
-  let current: RawFinding[] = [];
+  const orderOf = (item: T) => regionOrderIndex(keyOf(item), sectorCount);
+  const sorted = [...group].sort((a, b) => orderOf(a) - orderOf(b));
+  const runs: T[][] = [];
+  let current: T[] = [];
   for (const f of sorted) {
     if (current.length === 0) {
       current.push(f);
       continue;
     }
-    const prev = findingOrderIndex(current[current.length - 1], sectorCount);
-    const next = findingOrderIndex(f, sectorCount);
+    const prev = orderOf(current[current.length - 1]);
+    const next = orderOf(f);
     if (next - prev === 1) {
       current.push(f);
     } else {
@@ -1503,8 +1547,8 @@ function findContiguousRuns(group: RawFinding[], family: string, sectorCount: nu
     // the last run continues into the first run.
     const names = sectorCompassNames(sectorCount);
     const n = names.length;
-    const firstIdx = findingOrderIndex(runs[0][0], sectorCount);
-    const lastIdx = findingOrderIndex(runs[runs.length - 1][runs[runs.length - 1].length - 1], sectorCount);
+    const firstIdx = orderOf(runs[0][0]);
+    const lastIdx = orderOf(runs[runs.length - 1][runs[runs.length - 1].length - 1]);
     if (firstIdx === 0 && lastIdx === n - 1) {
       const last = runs.pop()!;
       runs[0] = [...last, ...runs[0]];
@@ -1514,30 +1558,28 @@ function findContiguousRuns(group: RawFinding[], family: string, sectorCount: nu
   return runs;
 }
 
-/** Build the merged label for a run of ring findings. */
-function mergeRingLabel(run: RawFinding[], ringCount: number): string {
-  const rings = run
-    .map(f => parseRegionKey(regionKeysOf(f)[0] ?? '').ring)
-    .filter((r): r is number => r !== undefined)
-    .sort((a, b) => a - b);
-  const min = rings[0];
-  const max = rings[rings.length - 1];
-  // Attach a zone suffix only when the run is uniformly that zone.
-  let suffix = '';
-  if (min === max && min === 1 && ringCount > 1) suffix = ' (core)';
-  else if (min === max && min === ringCount && ringCount > 1) suffix = ' (edge)';
-  return min === max ? `Ring ${min}${suffix}` : `Rings ${min}–${max}`;
-}
-
-/** Build the merged label for a run of sector findings (contiguous arc). */
-function mergeSectorLabel(run: RawFinding[], sectorCount: number): string {
-  const sectors = run.map(f => parseRegionKey(regionKeysOf(f)[0] ?? '').sector ?? '');
-  return sectors.length === 1 ? `Sector ${sectors[0]}` : `Sectors ${sectors[0]}–${sectors[sectors.length - 1]}`;
-}
-
-/** Build the merged label for a run of quadrant findings, e.g. "Quadrants NW, SW & SE". */
-function mergeQuadrantLabel(run: RawFinding[]): string {
-  const quads = run.map(f => parseRegionKey(regionKeysOf(f)[0] ?? '').quadrant ?? '');
+/** The label of a run of adjacent regions, from their region keys in run order. */
+export function mergedRegionLabel(family: string, keys: string[], ringCount: number): string {
+  if (family === 'ring') {
+    const rings = keys
+      .map(k => parseRegionKey(k).ring)
+      .filter((r): r is number => r !== undefined)
+      .sort((a, b) => a - b);
+    const min = rings[0];
+    const max = rings[rings.length - 1];
+    // Attach a zone suffix only when the run is uniformly that zone.
+    let suffix = '';
+    if (min === max && min === 1 && ringCount > 1) suffix = ' (core)';
+    else if (min === max && min === ringCount && ringCount > 1) suffix = ' (edge)';
+    return min === max ? `Ring ${min}${suffix}` : `Rings ${min}–${max}`;
+  }
+  if (family === 'sector') {
+    // A contiguous arc, first to last.
+    const sectors = keys.map(k => parseRegionKey(k).sector ?? '');
+    return sectors.length === 1 ? `Sector ${sectors[0]}` : `Sectors ${sectors[0]}–${sectors[sectors.length - 1]}`;
+  }
+  // Quadrants, e.g. "Quadrants NW, SW & SE".
+  const quads = keys.map(k => parseRegionKey(k).quadrant ?? '');
   if (quads.length === 1) return quads[0];
   if (quads.length === 2) return `Quadrants ${quads[0]} & ${quads[1]}`;
   return `Quadrants ${quads.slice(0, -1).join(', ')} & ${quads[quads.length - 1]}`;
@@ -1545,6 +1587,22 @@ function mergeQuadrantLabel(run: RawFinding[]): string {
 
 function uniqueKeys(arr: string[]): string[] {
   return [...new Set(arr)];
+}
+
+/**
+ * The Benjamini–Hochberg multiplier (adjusted p over raw p) of the weakest finding
+ * in a merged run. A merged finding is graded on its own p-value times this, so a
+ * run is judged no more leniently than its parts. Wafer and lot merges both use it.
+ */
+export function weakestMultiplier(run: readonly RawFinding[]): number {
+  return Math.max(...run.map(f => {
+    const raw = f.stats.pValue ?? 1;
+    return raw > 0 ? (f.stats.adjustedPValue ?? raw) / raw : 1;
+  }));
+}
+
+function gradedP(pValue: number, multiplier: number): number {
+  return Math.min(1, pValue * multiplier);
 }
 
 /**
@@ -1585,23 +1643,58 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     inUnion = (i) => leftKeySet.has(poolKeys[i]);
   }
 
-  const label =
-    family === 'ring' ? mergeRingLabel(run, ctx.ringCount) :
-    family === 'sector' ? mergeSectorLabel(run, ctx.sectorCount) :
-    mergeQuadrantLabel(run);
+  const label = mergedRegionLabel(family, run.map(f => regionKeysOf(f)[0] ?? ''), ctx.ringCount);
 
   const pool = poolOf(kind, ctx);
+  const familyDies = ctx.regionDies[family as 'ring' | 'quadrant' | 'sector'];
+  const poolPositions = positionKeysOf(pool);
   const leftDies: Die[] = [];
   const rightDies: Die[] = [];
-  for (let i = 0; i < pool.length; i++) (inUnion(i) ? leftDies : rightDies).push(pool[i]);
+  for (let i = 0; i < pool.length; i++) {
+    if (!familyDies.has(poolPositions[i])) continue;
+    (inUnion(i) ? leftDies : rightDies).push(pool[i]);
+  }
 
+  const multiplier = weakestMultiplier(run);
   let effect: RawFinding['effect'];
   let stats: RawFinding['stats'];
   let severity: StatsSeverity;
   let summary: string;
   let idMetric: string;
 
-  if (kind === 'test') {
+  if (isLimitFail(template)) {
+    // The limit fail rate, recomputed over the merged region exactly as
+    // `buildSpecLimitFindings` computes it per region: dies with a value, of those
+    // the out-of-spec ones, against the rest of the wafer.
+    const testNumber = template.variable.index!;
+    const def = ctx.testDefs?.find(d => d.testNumber === testNumber);
+    const count = (dies: Die[]) => {
+      let valid = 0, fail = 0;
+      for (const d of dies) {
+        const v = testValue(d, testNumber);
+        if (v === undefined) continue;
+        valid++;
+        if (def && isOutOfSpec(classifySpec(v, def))) fail++;
+      }
+      return { valid, fail };
+    };
+    const left = count(leftDies), right = count(rightDies);
+    const leftRate = left.valid > 0 ? left.fail / left.valid : 0;
+    const rightRate = right.valid > 0 ? right.fail / right.valid : 0;
+    const delta = leftRate - rightRate;
+    const pValue = twoProportionPValue(left.fail, left.valid, right.fail, right.valid);
+    effect = {
+      direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
+      absoluteDelta: delta,
+      relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
+      effectSize: delta };
+    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: left.valid, sampleSizeRight: right.valid };
+    const graded = gradedP(pValue, multiplier);
+    severity = severityForFinding(graded, delta,
+      rateRelativeEffect({ hits: left.fail, n: left.valid, restHits: right.fail, restN: right.valid, passRate: false }));
+    summary = specLimitSummary(label, markedTestLabel(def, testNumber), delta);
+    idMetric = `specLimit:${testNumber}`;
+  } else if (kind === 'test') {
     const testNumber = template.variable.index!;
     const read = (d: Die) => testValue(d, testNumber);
     const leftValues = leftDies.map(read).filter((v): v is number => v !== undefined);
@@ -1615,7 +1708,8 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
       relativeDelta,
       effectSize };
     stats = { method: 'welch-z-approx', pValue, sampleSizeLeft: leftValues.length, sampleSizeRight: rightValues.length };
-    severity = severityForScore(pValue, effectSize);
+    const graded = gradedP(pValue, multiplier);
+    severity = severityForScore(graded, effectSize);
     summary = summarizeTestFinding(label, template.variable.label, delta, relativeDelta, family, template.variable.unit);
     idMetric = `test:${testNumber}`;
   } else if (kind === 'yield') {
@@ -1638,7 +1732,8 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta };
     stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
-    severity = severityForFinding(pValue, delta,
+    const graded = gradedP(pValue, multiplier);
+    severity = severityForFinding(graded, delta,
       rateRelativeEffect({ hits: leftPass, n: leftN, restHits: rightPass, restN: rightN, passRate: true }));
     summary = summarizeYieldFinding(label, delta, family);
     idMetric = 'yield';
@@ -1677,7 +1772,8 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta };
     stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
-    severity = severityForFinding(pValue, delta,
+    const graded = gradedP(pValue, multiplier);
+    severity = severityForFinding(graded, delta,
       rateRelativeEffect({ hits: leftPass, n: leftN, restHits: rightPass, restN: rightN, passRate: true }));
     summary = summarizeFunctionalFinding(label, markedTestLabel(def, testNumber), delta, family);
     idMetric = `functional:${testNumber}`;
@@ -1697,12 +1793,15 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta };
     stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftDies.length, sampleSizeRight: rightDies.length };
-    severity = severityForFinding(pValue, delta,
+    const graded = gradedP(pValue, multiplier);
+    severity = severityForFinding(graded, delta,
       rateRelativeEffect({ hits: leftHit, n: leftDies.length, restHits: rightHit, restN: rightDies.length, passRate: false }));
     const defs = kind === 'softBin' ? ctx.sbinDefs : ctx.hbinDefs;
     summary = summarizeBinFinding(label, labelForBin(bin, defs, kind === 'softBin' ? 'SBin' : 'HBin'), delta, family);
     idMetric = `${kind}:${bin}`;
   }
+
+  stats = { ...stats, adjustedPValue: gradedP(stats.pValue ?? 1, multiplier) };
 
   // Deterministic id from the sorted region keys (e.g. yield:ring:1-2).
   const regionIds = uniqueKeys(
@@ -1756,7 +1855,7 @@ function mergeAdjacentFindings(findings: RawFinding[], ctx: MergeContext): RawFi
       continue;
     }
     const family = group[0].comparison.family;
-    for (const run of findContiguousRuns(group, family, ctx.sectorCount)) {
+    for (const run of findContiguousRuns(group, family, ctx.sectorCount, f => regionKeysOf(f)[0] ?? '')) {
       merged.push(run.length === 1 ? run[0] : buildMergedFinding(run, ctx));
     }
   }
@@ -1858,9 +1957,37 @@ export interface RedundancyFacts {
   /** The soft bin whose rate is the yield, if one is. */
   yieldSoftBin: number | undefined;
   passBins: number[];
+  /** How the sectors divide the wafer, for comparing a sector run with a quadrant. */
+  sectorCount: number;
 }
-export function redundancyFacts(eligibleDies: EligibleDie[], passBins: number[]): RedundancyFacts {
-  return { coincident: coincidentBinPairs(eligibleDies), yieldSoftBin: soleYieldSoftBin(eligibleDies, passBins), passBins };
+export function redundancyFacts(eligibleDies: EligibleDie[], passBins: number[], sectorCount: number): RedundancyFacts {
+  return { coincident: coincidentBinPairs(eligibleDies), yieldSoftBin: soleYieldSoftBin(eligibleDies, passBins), passBins, sectorCount };
+}
+
+/** A sector run and a quadrant this much alike in extent (overlap over union) are one region to a reader. */
+const SAME_REGION_OVERLAP = 3 / 5;
+
+/** The metric a finding reports, from its id: `test`, `specLimit`, `yield`, … — a lot finding's id carries it after `lot-region:`. */
+function metricOf(f: RawFinding): string {
+  return /^(?:lot-region:)?([^:|]+)/.exec(f.id)?.[1] ?? f.id;
+}
+
+/** The region keys a finding covers: a wafer finding's own, a lot finding's from its id (`…|sector:E-NE-N`). */
+function regionKeysOfFinding(f: RawFinding): string[] {
+  const own = regionKeysOf(f);
+  if (own.length) return own;
+  const m = /(ring|sector|quadrant):([^:|]+)$/.exec(f.id);
+  return m ? m[2].split('-').map(name => `${m[1]}:${name}`) : [];
+}
+
+function angleBinsOfFinding(f: RawFinding, sectorCount: number): Set<number> | undefined {
+  const bins = new Set<number>();
+  for (const key of regionKeysOfFinding(f)) {
+    const part = regionAngleBins(key, sectorCount);
+    if (!part) return undefined;
+    for (const b of part) bins.add(b);
+  }
+  return bins.size ? bins : undefined;
 }
 
 export function collapseRedundantFindings(findings: RawFinding[], facts: RedundancyFacts): void {
@@ -1940,6 +2067,44 @@ export function collapseRedundantFindings(findings: RawFinding[], facts: Redunda
       for (const id of f.absorbedIds ?? []) {
         yieldF.absorbedIds = [...(yieldF.absorbedIds ?? []), id];
       }
+    }
+  }
+
+  // ── 3. A sector run and a quadrant over the same part of the wafer ────────
+  // "Sectors W–S" and "Quadrant SW" make one statement about one part of the
+  // wafer, in two region vocabularies, and the region merge runs within a family
+  // only. They are one finding when they are the same comparison (metric,
+  // variable, direction) and cover the same angles — overlap over union of at
+  // least 3/5, by geometry, never because the figures look alike. The one with
+  // the smaller p-value is kept (the sector run on a tie: it shows the extent).
+  const sameComparison = new Map<string, RawFinding[]>();
+  for (const f of findings) {
+    if (alreadyClaimed.has(f.id) || (f.comparison.family !== 'sector' && f.comparison.family !== 'quadrant')) continue;
+    const key = [metricOf(f), f.variable.kind, f.variable.bin ?? '', f.variable.index ?? '', f.effect.direction].join('\0');
+    (sameComparison.get(key) ?? sameComparison.set(key, []).get(key)!).push(f);
+  }
+  for (const group of sameComparison.values()) {
+    const pairs: { sector: RawFinding; quadrant: RawFinding; overlap: number }[] = [];
+    for (const sector of group.filter(f => f.comparison.family === 'sector')) {
+      const a = angleBinsOfFinding(sector, facts.sectorCount);
+      if (!a) continue;
+      for (const quadrant of group.filter(f => f.comparison.family === 'quadrant')) {
+        const b = angleBinsOfFinding(quadrant, facts.sectorCount);
+        if (!b) continue;
+        let both = 0;
+        for (const bin of a) if (b.has(bin)) both++;
+        const union = a.size + b.size - both;
+        if (both / union >= SAME_REGION_OVERLAP - 1e-9) pairs.push({ sector, quadrant, overlap: both / union });
+      }
+    }
+    pairs.sort((x, y) => y.overlap - x.overlap);
+    for (const { sector, quadrant } of pairs) {
+      if (alreadyClaimed.has(sector.id) || alreadyClaimed.has(quadrant.id)) continue;
+      const keepQuadrant = (quadrant.stats.pValue ?? 1) < (sector.stats.pValue ?? 1);
+      const [owner, claimed] = keepQuadrant ? [quadrant, sector] : [sector, quadrant];
+      claim(owner, claimed);
+      alreadyClaimed.add(claimed.id);
+      owner.absorbedIds = [...(owner.absorbedIds ?? []), ...(claimed.absorbedIds ?? [])];
     }
   }
 }
@@ -2084,6 +2249,10 @@ function analyzeWaferMapUncollected(
     passBins: resolved.passBins,
     ringCount: resolved.ringCount,
     sectorCount: resolved.sectorCount,
+    regionDies: {
+      ring: new Set(ringRegions.flatMap(r => positionKeysOf(r.dies))),
+      quadrant: new Set(quadrantRegions.flatMap(r => positionKeysOf(r.dies))),
+      sector: new Set(sectorRegions.flatMap(r => positionKeysOf(r.dies))) },
     hbinDefs: result.hbinDefs,
     sbinDefs: result.sbinDefs,
     testDefs: result.testDefs });
@@ -2099,14 +2268,7 @@ function analyzeWaferMapUncollected(
       ringCount: resolved.ringCount });
     spatialPattern = patternResult ?? undefined;
     if (patternResult !== null && patternResult.pattern !== 'random' && patternResult.pattern !== 'none') {
-      const LABEL_MAP: Record<string, string> = {
-        'center':     'Center cluster',
-        'donut':      'Donut',
-        'edge-ring':  'Edge-ring',
-        'edge-local': 'Edge-local',
-        'scratch':    'Scratch',
-        'near-full':  'Near-full' };
-      const label = LABEL_MAP[patternResult.pattern] ?? patternResult.pattern;
+      const label = PATTERN_LABELS[patternResult.pattern];
       const severity: StatsSeverity =
         patternResult.confidence === 'high'   ? 'unusual' :
         patternResult.confidence === 'medium' ? 'notable' : 'info';
@@ -2120,57 +2282,15 @@ function analyzeWaferMapUncollected(
           : patternResult.pattern === 'scratch'
           ? `linear score ${f.linearScore.toFixed(2)}, eccentricity ${f.eccentricity.toFixed(2)}`
           : `${pct(f.globalRdd)} of dies failing`;
-      const failingDies = eligibleDies.filter(d => {
-        const bin = d.hbin ?? d.sbin;
-        return bin !== undefined && !new Set(resolved.passBins).has(bin);
-      });
+      const passSet = new Set(resolved.passBins);
+      const failingDies = eligibleDies.filter(d => patternFailVerdict(d, passSet) === true);
 
-      // Find existing findings that are correlated with this spatial pattern.
-      // A finding is related when its comparison family is one the pattern explains.
-      const RELATED_FAMILIES: Record<string, StatsComparisonFamily[]> = {
-        'edge-ring':  ['ring', 'edge-arc'],
-        'edge-local': ['edge-arc', 'sector', 'quadrant'],
-        'center':     ['ring', 'cluster'],
-        'donut':      ['ring'],
-        'scratch':    ['cluster', 'sector', 'quadrant'],
-        'near-full':  ['ring'] };
-      const relatedFamilies = new Set<StatsComparisonFamily>(
-        RELATED_FAMILIES[patternResult.pattern] ?? [],
-      );
-
-      // For ring-based patterns, further filter to only rings that are relevant:
-      // edge patterns → outer ring; center → core ring; donut → middle rings.
-      // Parse ring indices from highlight.regionKeys (robust to merged labels
-      // like "Rings 3–4" which a substring match on the label would miss).
-      const detectedPattern = patternResult.pattern;
-      const ringCount = resolved.ringCount;
-      function isRingRelevant(existing: RawFinding): boolean {
-        const rings = regionKeysOf(existing)
-          .map(k => parseRegionKey(k).ring)
-          .filter((r): r is number => r !== undefined);
-        if (rings.length === 0) return true;
-        const includesEdge = rings.some(r => r === ringCount);
-        const includesCore = rings.some(r => r === 1);
-        if (detectedPattern === 'edge-ring' || detectedPattern === 'edge-local') return includesEdge;
-        if (detectedPattern === 'center') return includesCore;
-        if (detectedPattern === 'donut') return !includesEdge && !includesCore;
-        return true; // near-full: all rings
-      }
-
-      const relatedIds: string[] = [];
-      for (const existing of findings) {
-        if (!relatedFamilies.has(existing.comparison.family as StatsComparisonFamily)) continue;
-        if (existing.comparison.family === 'ring' && !isRingRelevant(existing as RawFinding)) continue;
-        relatedIds.push(existing.id);
-        // Downgrade ring-family findings to info so they don't double-count in the badge/hasNotable.
-        // Cluster and edge-arc findings carry their own statistical evidence (p-value, exact die count)
-        // and should keep their computed severity — they are supporting detail, not redundant.
-        const isRegionOnly = existing.comparison.family === 'ring' ||
-          existing.comparison.family === 'quadrant' || existing.comparison.family === 'sector';
-        if (severity !== 'info' && isRegionOnly) {
-          (existing as RawFinding).severity = 'info';
-        }
-      }
+      // The findings this pattern explains are listed under it (`relatedIds`).
+      // Ring rows are matched on their ring numbers from highlight.regionKeys
+      // (robust to merged labels like "Rings 3–4").
+      const relatedIds = claimForPattern([patternResult.pattern], severity, findings,
+        f => regionKeysOf(f as RawFinding).map(k => parseRegionKey(k).ring).filter((r): r is number => r !== undefined),
+        resolved.ringCount);
 
       findings.push({
         id: `spatial-pattern:${patternResult.pattern}`,
@@ -2232,7 +2352,7 @@ function analyzeWaferMapUncollected(
 
   // Runs last, over the complete list: the spatial-pattern pass above also
   // claims findings, and collapsing before it would leave those claims dangling.
-  const facts = redundancyFacts(eligibleDies, resolved.passBins);
+  const facts = redundancyFacts(eligibleDies, resolved.passBins, resolved.sectorCount);
   collapseRedundantFindings(findings, facts);
   if (collecting) collectedFacts = facts;
 

@@ -365,6 +365,11 @@ is present the top-level `results` field is ignored.
 }
 ```
 
+A `'stddev'` or `'count'` stack holds spreads and tallies, not measurements of the test, so the tests' limits
+(`limitLow`, `limitHigh` and the specification limits) do not apply to it: `result.testDefs` carries them
+removed, and there is no limit fail, limit yield, capability or out-of-spec colouring. The other methods are in
+the test's units and keep the limits.
+
 #### 4.1.6 `passBins`
 
 ```ts
@@ -2536,7 +2541,7 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options, and most anal
                             // warning indicator
 
   // ── Angular analysis ──────────────────────────────────────────────────────
-  sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 | 32 (default 8)
+  sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 (default 8)
 }
 ```
 
@@ -2559,8 +2564,8 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options, and most anal
 **Every numeric option here is validated.** A value outside the range that can
 produce a meaningful analysis is corrected to the nearest usable one and reported
 as an `'analysis-option-corrected'` `WaferWarning` in `summary.stats.warnings[]`
-(§4.2.2) — visible in the renderers' warning indicator. `sectorCount` must be 4, 8,
-16 or 32. `ringCount` is validated the same way but on `buildWaferMap`, where it is
+(§4.2.2) — visible in the renderers' warning indicator. `sectorCount` must be 4, 8
+or 16. `ringCount` is validated the same way but on `buildWaferMap`, where it is
 set, and reported in `result.warnings`; there is deliberately no upper bound on it,
 since a fine banding is still gated by the minimum region size.
 

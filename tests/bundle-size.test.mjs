@@ -62,6 +62,13 @@
 //   in), zero-background and pass-rate effect sizes, the selection fade/outline
 //   drawn under the legend, and multi-value legend highlighting. Legitimate
 //   library growth, not bloat.
+//   2026-09-30: render raised 134 KB -> 138 KB (measured 134,258 bytes; 130,268
+//   at the last entry). The lot's spatial pattern decided from the stacked wafers
+//   (stats/lotPattern.ts, with the binomial and Benjamini–Hochberg helpers), lot
+//   findings that merge adjacent sectors, quadrants and rings, and a sector run
+//   and quadrant over the same angles reported once — all in analyzeWaferLot,
+//   which the gallery's lot panel and report already pull in. Legitimate library
+//   growth, not bloat.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -82,7 +89,7 @@ const THRESHOLDS = {
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
   'wafermap (root)':            66_000,   // gzipped bytes — baseline ~62.0 KB
-  'wafermap/render (initial)':  134_000,  // gzipped bytes — measured ~130.3 KB, guide AND Insights excluded
+  'wafermap/render (initial)':  138_000,  // gzipped bytes — measured ~134.3 KB, guide AND Insights excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

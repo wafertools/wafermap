@@ -377,6 +377,57 @@ function classify(
   return { pattern: 'random', confidence: 'low' };
 }
 
+/** How each pattern is named to an engineer — the wafer's finding and the lot's. */
+export const PATTERN_LABELS: Record<PatternLabel, string> = {
+  'center':     'Center cluster',
+  'donut':      'Donut',
+  'edge-ring':  'Edge-ring',
+  'edge-local': 'Edge-local',
+  'scratch':    'Scratch',
+  'near-full':  'Near-full',
+  'random':     'Random',
+  'none':       'None',
+};
+
+/**
+ * Whether a die counts as failing for pattern classification: its hard bin, or
+ * failing that its soft bin, is not a pass bin. `undefined` for a die with no
+ * bin — no data, neither passing nor failing.
+ */
+export function patternFailVerdict(die: { hbin?: number; sbin?: number }, passSet: ReadonlySet<number>): boolean | undefined {
+  const bin = die.hbin ?? die.sbin;
+  return bin === undefined ? undefined : !passSet.has(bin);
+}
+
+/**
+ * The finding families a spatial pattern explains, and so lists under itself:
+ * the ring an edge or centre pattern lies in, the edge arcs of an edge pattern,
+ * the clusters of a centre cluster or a scratch. One rule for the wafer's
+ * pattern and the lot's.
+ *
+ * `rings` are the ring numbers a ring finding covers (none for other families);
+ * edge patterns explain the outer ring, a centre cluster the core ring, a donut
+ * the rings between.
+ */
+export function patternExplains(pattern: PatternLabel, family: string, rings: number[], ringCount: number): boolean {
+  const families: Partial<Record<PatternLabel, string[]>> = {
+    'edge-ring':  ['ring', 'edge-arc'],
+    'edge-local': ['edge-arc', 'sector', 'quadrant'],
+    'center':     ['ring', 'cluster'],
+    'donut':      ['ring'],
+    'scratch':    ['cluster', 'sector', 'quadrant'],
+    'near-full':  ['ring'],
+  };
+  if (!families[pattern]?.includes(family)) return false;
+  if (family !== 'ring' || rings.length === 0) return true;
+  const includesEdge = rings.includes(ringCount);
+  const includesCore = rings.includes(1);
+  if (pattern === 'edge-ring' || pattern === 'edge-local') return includesEdge;
+  if (pattern === 'center') return includesCore;
+  if (pattern === 'donut') return !includesEdge && !includesCore;
+  return true; // near-full: every ring
+}
+
 /**
  * Classify the spatial failure pattern of a wafer from its die data.
  *
@@ -395,14 +446,22 @@ export function classifyPattern(
     ringCount?: number;
   },
 ): PatternClassification | null {
-  const t: PatternThresholds = { ...DEFAULT_PATTERN_THRESHOLDS };
-  const ringCount = options.ringCount ?? 4;
-  const passSet   = new Set(options.passBins);
+  const passSet = new Set(options.passBins);
+  const failing = dies.filter(d => patternFailVerdict(d, passSet) === true);
+  return classifyFailingDies(failing, dies, wafer, options.ringCount ?? 4);
+}
 
-  const failing = dies.filter(d => {
-    const bin = d.hbin ?? d.sbin;
-    return bin !== undefined && !passSet.has(bin);
-  });
+/**
+ * {@link classifyPattern} over a failing set already chosen — a wafer's failing
+ * dies, or the positions at which a lot's failures recur (`findLotPattern`).
+ */
+export function classifyFailingDies(
+  failing: PositionedDie[],
+  dies: PositionedDie[],
+  wafer: Wafer,
+  ringCount: number,
+): PatternClassification | null {
+  const t: PatternThresholds = { ...DEFAULT_PATTERN_THRESHOLDS };
 
   // Adaptive minimum: 0.3% of wafer die count, floored at 5.
   const minFailingDies = Math.max(t.minimumFailingDies, Math.round(dies.length * 0.003));

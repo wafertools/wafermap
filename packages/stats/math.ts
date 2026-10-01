@@ -24,6 +24,46 @@ export function normalCdf(value: number): number {
   return 0.5 * (1 + errorFunction(value / Math.sqrt(2)));
 }
 
+/**
+ * Exact one-sided binomial tail P(X ≥ k) for X ~ Binomial(n, p). Exact rather
+ * than a normal approximation because it is asked about small n — how many of a
+ * lot's few wafers fail at one die position — where the approximation is poor.
+ */
+export function binomialUpperTail(k: number, n: number, p: number): number {
+  if (k <= 0) return 1;
+  if (k > n) return 0;
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  let logPmf = k * Math.log(p) + (n - k) * Math.log1p(-p);
+  for (let i = 0; i < k; i++) logPmf += Math.log(n - i) - Math.log(i + 1);
+  let pmf = Math.exp(logPmf);
+  let tail = 0;
+  const odds = p / (1 - p);
+  for (let i = k; i <= n; i++) {
+    tail += pmf;
+    pmf *= ((n - i) / (i + 1)) * odds;
+  }
+  return Math.min(1, tail);
+}
+
+/**
+ * Benjamini–Hochberg adjusted p-values, in the order given. The one
+ * false-discovery-rate rule in the library: findings (`adjustPValues`) and the
+ * die positions a lot's failures recur at (`findLotPattern`) both go through it.
+ */
+export function benjaminiHochberg(pValues: readonly number[]): number[] {
+  const m = pValues.length;
+  const order = pValues.map((_, i) => i).sort((a, b) => pValues[a] - pValues[b]);
+  const adjusted = new Array<number>(m);
+  let runningMin = 1;
+  for (let rank = m - 1; rank >= 0; rank--) {
+    const i = order[rank];
+    runningMin = Math.min(runningMin, (pValues[i] * m) / (rank + 1), 1);
+    adjusted[i] = runningMin;
+  }
+  return adjusted;
+}
+
 /** Linear-interpolation quantile of a pre-sorted array (`q` in [0, 1]).
  *
  *  `ArrayLike<number>`, not `number[]`, so a caller holding its values in a

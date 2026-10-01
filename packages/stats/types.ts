@@ -568,7 +568,7 @@ export interface AnalyzeWaferMapOptions {
    * Off by default. Implied by `enableTestValueAnalysis`.
    */
   computePerTestStats?: boolean;
-  /** Number of angular sectors for sector analysis. Must be 4, 8, 16, or 32. Default 8. */
+  /** Number of angular sectors for sector analysis. Must be 4, 8 or 16. Default 8. */
   sectorCount?: number;
   /**
    * Restrict test value analysis to a specific subset of test numbers.
