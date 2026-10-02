@@ -217,3 +217,54 @@ function selectKth(a: Float64Array, k: number, lo: number, hi: number): number {
   }
   return a[k];
 }
+
+// ── Trend across an ordered series ────────────────────────────────────────────
+
+export interface MannKendall {
+  /** Points in the series. */
+  n: number;
+  /** The Mann–Kendall statistic: concordant minus discordant pairs. */
+  s: number;
+  /** S with continuity correction over its tie-corrected standard deviation. */
+  z: number;
+  /** Two-sided p-value of `z` against no monotonic trend (normal approximation). */
+  pValue: number;
+  /** The Theil–Sen slope: the median of every pair's slope, per step. Robust to a few wild points. */
+  slope: number;
+  /** The Theil–Sen line's value at the first point, so `intercept + slope × i` is the fitted series. */
+  intercept: number;
+}
+
+/**
+ * The Mann–Kendall test for a monotonic trend, with the Theil–Sen slope that sizes it. Rank-based, so
+ * a trend need not be linear and one wild point cannot make or break it. The normal approximation is
+ * conservative at small n (n = 5, a perfect trend, p ≈ 0.028 where the exact value is ≈ 0.017), which is
+ * the right side to err on. `null` below three points or when every value is the same.
+ */
+export function mannKendall(values: readonly number[]): MannKendall | null {
+  const n = values.length;
+  if (n < 3) return null;
+  let s = 0;
+  const slopes: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const d = values[j] - values[i];
+      s += d > 0 ? 1 : d < 0 ? -1 : 0;
+      slopes.push(d / (j - i));
+    }
+  }
+  const ties = new Map<number, number>();
+  for (const v of values) ties.set(v, (ties.get(v) ?? 0) + 1);
+  let variance = (n * (n - 1) * (2 * n + 5)) / 18;
+  for (const t of ties.values()) if (t > 1) variance -= (t * (t - 1) * (2 * t + 5)) / 18;
+  if (variance <= 0) return null;
+  const z = s === 0 ? 0 : (s - Math.sign(s)) / Math.sqrt(variance);
+  const pValue = Math.min(1, 2 * (1 - normalCdf(Math.abs(z))));
+  slopes.sort((a, b) => a - b);
+  const mid = slopes.length >> 1;
+  const slope = slopes.length % 2 ? slopes[mid] : (slopes[mid - 1] + slopes[mid]) / 2;
+  const offsets = values.map((v, i) => v - slope * i).sort((a, b) => a - b);
+  const m = offsets.length >> 1;
+  const intercept = offsets.length % 2 ? offsets[m] : (offsets[m - 1] + offsets[m]) / 2;
+  return { n, s, z, pValue, slope, intercept };
+}

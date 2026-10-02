@@ -31,6 +31,44 @@ under `### Breaking`.
 
 ### Changed
 
+- **An expanded map's window widens for the Summary panel.** Opening the panel in a map's Expand modal, or in a wafer
+  opened from a gallery, makes the window wider by the room the panel needs, so the map keeps its size instead of
+  giving up more than half its width; closing the panel narrows it again. The window stays within the screen (a
+  floating window moves left if it would run off the edge), does nothing when maximised, and leaves a width the user
+  has dragged it to. A wafer opened in a separate browser window is resized the same way where the browser allows it.
+- **The report builders load when a report is opened.** The Summary panel's report button and the gallery's load
+  `renderSummaryReport` with a dynamic `import()` instead of with the map, which takes about 10 KB gzipped out of what
+  rendering a map downloads (core is ~143 KB with this release's additions); the first report opens a moment later while it loads.
+  `renderWaferReportHtml` and `renderLotReportHtml` are unchanged public exports.
+- **The Summary panel leads into the report, and the report acts on the map.** "What stands out" ends with a **Full
+  report** link that opens the same report the Summary report button does, which begins with that same section. In
+  a report opened from the panel, a click on a finding's row closes it and shows that finding on the map, as its
+  row in the panel does (on a lot report that is split into several groups, a finding the panel does not hold is
+  ignored). Opened on its own, the report is a plain page and its rows do nothing.
+- **The reports and the Summary panel count and order bins, findings and statistics the same way.** One count of dies
+  per bin (partial and edge-excluded dies left out) and one order (pass bins first, then fail bins by count) feed the
+  panel's bars and the reports' tables, under one title that states the population ("Hard Bin Breakdown — % of dies
+  (N=…)"); the reports show the soft-bin breakdown as well when the data has soft bins, in the same columns for a
+  wafer and a lot. The reports' findings table is arranged as the panel's list is: each spatial pattern with the
+  findings it explains beneath it, then the rest by region, most severe first. The wafer report's Test Values table
+  has the panel's full columns (N, min, quartiles, median, mean, max, σ) and the share of dies inside each test's
+  limits; a lot's has N, min, mean, max, σ (pooled exactly) and limit yield, and says why it has no quartiles. The
+  lot overview names the unweighted mean of wafer yields "Mean per-wafer yield" everywhere.
+- **The Summary panel and the HTML reports read yields the same way.** One computation gives each wafer's
+  difference from the lot median (with the lot's outlier rule naming the outliers) and each ring or quadrant's
+  difference from the wafer or lot it divides. The panel's wafer and region rows print that difference in points
+  and tint a shortfall of 1, 2 or 4 or more points, as the report's tables do; the report's wafer table says
+  "low outlier" in words, as the panel always has. The panel's findings mark severity as three dots filled by level
+  rather than a colour-only dot, as the reports do. The reports draw bin bars in the colour the map gives that bin
+  (the live colours when opened from a panel, the default palette otherwise).
+- **The Summary panel opens with "What stands out"**, the same synthesis the HTML reports open with (a headline, up to
+  three items ranked by the dies each costs, an "also" line, and what was compared), in place of the findings
+  narrative above the findings list. It is a section of its own, so a clean wafer or lot says "Nothing stands out"
+  where the findings list is absent. The names in it (a region, a bin) select that finding on the map; the Findings
+  section's Detail button opens the same sentences above the full list. Where the wafers in a lot were judged by
+  different pass bins, the items rest on yield alone and name no pass bins.
+- **The weakest finding severity is called "Minor" where it is shown** (the Summary panel's severity filter and the
+  reports); the value in `StatsFinding.severity` is unchanged.
 - **A merged region on a wafer is graded with its constituents' multiple-testing correction.** The merged finding's
   p-value is multiplied by the weakest constituent's adjusted-to-raw ratio before severity is assigned, the same rule the
   lot merge applies, and `stats.adjustedPValue` is set. A merge can no longer grade more severe than the correction its
@@ -75,11 +113,67 @@ under `### Breaking`.
   that test's statistic (Q, or the distance from the median in IQR units). The Wafer Yield
   list labels high outliers as well as low ones.
 
+### Added
+
+- **Compact layout for multi-project wafers.** A **Compact layout** row in the Overlays menu, on a single map and on the
+  gallery, draws the dies on a grid with the empty rows and columns removed and each group of dies outlined, so a
+  sparse layout fills the map instead of leaving each die a few pixels wide. It is offered when the occupied columns
+  and rows repeat at a regular pitch, or at the `reticleConfig` width and height, or a multiple of it (a product on
+  every second reticle), when every wafer supplies the same ones; `viewOptions: { compact: true }` applies it regardless. Only the layout changes:
+  every die is still drawn and counted, so legends, yield and statistics are the same, and hover text and axis
+  labels give original die coordinates. A die with no bin keeps its place. The notch marker follows rotation and
+  flips, and so does the XY indicator, which sits in a margin beside the grid. A gallery builds one layout from every
+  wafer shown, so its cards stay comparable. The wafer outline, ring, quadrant and reticle overlays describe the
+  physical wafer and are not drawn in this layout.
+- **Rotating or flipping a map switches the XY indicator on.** The first Rotate or Flip from the Orientation menu, on a
+  single map or a gallery, turns on the +X/+Y arrows in whatever layout is showing, so the reader can see which way
+  the die coordinates run. They stay on until switched off in the Overlays menu, and **Reset orientation** does not
+  change them.
+- **An Axis labels row in the Overlays menu.** The die-coordinate labels along the bottom and left edges appear when the
+  map is zoomed, as before; the row shows them always, or hides them, and **Clear overlays** returns it to that default.
+  `viewOptions: { showAxes }` is the same choice for a host. In the compact layout the labels name the first column
+  or row of each group of dies, which are the reticle boundaries, and every die once the cells are wide enough to
+  label them all.
+- **Gallery cards fit the compact layout.** With the compact layout on, a card is as tall as its map needs and as wide
+  as that layout calls for, rather than sized for the wafer it replaces, so more cards fit on screen. A quarter turn
+  swaps the card's width and height. Turning the layout off restores the square card.
+- **A multi-project wafer example and guide section.** The new Multi-project wafers example page shows the compact
+  layout on a synthetic wafer where two products share a reticle, and the guide's "Compact layout for multi-project
+  wafers" section covers the option, when it is offered, galleries, axis labels and the diagnostics.
+- **Layout diagnostics.** A **Layout diagnostics** row beside it shows what the compact layout's detector saw: counts,
+  periods and scores only, with no die positions, bins, test values or wafer identity. **Copy** and **Save as file**
+  let someone report why a layout was or was not recognised without sharing their data.
+- **A lot's yield or a test's mean can be reported as drifting across the wafers.** `analyzeWaferLot` runs a
+  Mann–Kendall trend test (with the Theil–Sen slope to size it) on the per-wafer yield, and on each test's per-wafer
+  mean when per-test statistics were computed, for lots of five or more wafers. The p-values are corrected together
+  (Benjamini–Hochberg), and a trend must also move far enough to matter: two points of yield, or half a within-wafer
+  σ of a test. A finding has id `drift:yield` or `drift:test:<number>`, level `'inter-wafer'`, family `'wafer'`,
+  method `'mann-kendall'`, and its summary says "(input order)": the wafers' order is a physical one only when the host
+  says so. The reports and the Summary panel list the strongest as a **Watch** line under "What stands out", with up to
+  one more for a test whose Ppk against its limits is under 1.0 and that costs no dies of its own. Watch is kept apart
+  from the items, which are ranked by dies lost.
+- **Both HTML reports open with a "What stands out" section.** A headline (the yield, and for a lot its
+  spread across wafers), up to three items ranked by the dies each costs, and a line saying what was
+  compared. An item is a region whose pass rate fell, a fail bin that rose, a wafer well below the lot, a
+  parametric test outside its limits on a share of the dies, or a functional test that fails;
+  findings standing on the same dies are one item, a repeated spatial pattern leads its item, and the fail
+  bins that make up a region's shortfall are named with their share. An item's impact (High, Moderate or Low) is the
+  higher of its share of the lot's dies (4% and 2%) and its share of the dies that fail (40% and 15%), so a small area that
+  is most of a good lot's loss reads as high impact. Only an item costing at least one
+  yield point of the analysed dies is listed; otherwise the section says nothing stands out. Each figure links
+  to its row in the Findings table, which now carries an anchor per row (a test item names the test and
+  has no row to link to).
+- **Both HTML reports have a new layout.** Severity is three dots and a word (Unusual, Notable, Minor) in place of
+  the coloured badge, so it reads in a black-and-white print and for colour-blind readers; findings rows and the
+  items in "What stands out" carry a light tint and a left edge. Yields, regions, wafers and bins are drawn with a
+  bar behind the figure, and a wafer or region is tinted only when it is 1, 2 or 4 or more points below its
+  reference, so a lot with nothing wrong has no tint. The key figures are tiles, pass bins are written in grey, and
+  a contents line leads the page (not printed). Items over the three shown go on one "Also over a yield point" line.
+
 ### Fixed
 
-- The Summary panel's findings narrative lists each bin under the direction it moved. A
-  pass bin that fell in a region whose fail bins rose is left out of the "elevated" list.
-  Several findings on one edge ring are described as that ring ("Ring 4 (edge) shows…").
+- An outlier wafer's finding reports its yield difference as a fraction in `effect.absoluteDelta`, like every
+  other yield finding, so the findings table shows "−4.3 pp" for a wafer 4.3 points below the lot median.
 - The spatial-pattern classifier calls a failing region a scratch only when it reaches beyond
   the central zone (35% of the radius). An elongated cluster wholly inside it is a centre
   cluster. On the WM-811K benchmark (25,519 wafers): centre recall 59.9% → 60.5%, scratch
@@ -1610,7 +1704,7 @@ export's notice names its replacement; the old names are still removed in 0.31.0
   placements take a fixed 180px band with `overflowY: hidden`, which most wafers' content
   exceeds, so the last visible row was cut mid-line with nothing indicating more existed. All
   placements now scroll, the way `'right'`/`'left'` already did. (Whether this content suits a
-  wide-short band at all is a separate open question — see TODO.md.)
+  wide-short band at all is a separate open question.)
 - **Closing and reopening Insights no longer discards the shared axis toggles.** `axisPrefs`
   ("axis includes limits" / "clip outliers") lived inside `renderDistributionsSection`, which
   `render()` rebuilds — so a scope change, or simply toggling Insights off and on, silently

@@ -52,7 +52,7 @@ const result = await esbuild.build({
   logLevel: 'silent',
 });
 
-// Two chunks are LAZY and must not be counted as what a consumer downloads to
+// Four chunks are LAZY (the report builders, loaded when a report is opened, are the newest) and must not be counted as what a consumer downloads to
 // render a wafer map: the in-app user guide, and the Insights chart suite
 // (opt-in, off by default, fetched on first open — see `ensureInsightsTab`).
 // Both are split out for real here (`splitting: true`), so this is attribution,
@@ -79,7 +79,7 @@ const rootKB = Math.round(gzipSync(Buffer.from(rootResult.outputFiles[0].content
 // from renderWaferMap's detach path) stay in core, as they always have: the
 // documented renderer figure means "what rendering a map costs", and a consumer
 // importing the /render entry gets the gallery statically.
-const LAZY_FEATURES = ['userGuideHtml', 'insightsTab', 'drilldown'];
+const LAZY_FEATURES = ['userGuideHtml', 'insightsTab', 'drilldown', 'renderSummaryReport'];
 const outputs = result.metafile.outputs;
 const base = (p) => p.split('/').pop();
 const gzipOf = new Map(result.outputFiles.map(f => [base(f.path), gzipSync(Buffer.from(f.contents)).length]));
@@ -106,6 +106,7 @@ const coreGzip = sumGzip(Object.keys(outputs).filter(k => !lazySet.has(k)));
 const guideGzip = sumGzip(featureOutputs('userGuideHtml'));
 const insightsGzip = sumGzip(featureOutputs('insightsTab'));
 const drilldownGzip = sumGzip(featureOutputs('drilldown'));
+const reportGzip = sumGzip(featureOutputs('renderSummaryReport'));
 // `WMAP_CHUNKS=1 node scripts/check-bundle-size.mjs` prints the per-chunk
 // breakdown — the quickest way to see what a size change actually landed in.
 if (process.env.WMAP_CHUNKS) {
@@ -228,5 +229,5 @@ if (problems.length) {
 }
 
 console.log(
-  `bundle size OK — core ~${coreKB} KB gzip (+~${insightsKB} KB Insights, +~${Math.round(drilldownGzip / 1024)} KB drilldown, +~${Math.round(guideGzip / 1024)} KB guide; ~${totalKB} KB all in)`
+  `bundle size OK — core ~${coreKB} KB gzip (+~${insightsKB} KB Insights, +~${Math.round(drilldownGzip / 1024)} KB drilldown, +~${Math.round(guideGzip / 1024)} KB guide, +~${Math.round(reportGzip / 1024)} KB report; ~${totalKB} KB all in)`
 );

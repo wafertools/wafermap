@@ -90,9 +90,9 @@ export function buildRegionYieldData(
 }
 
 // ── Shared ordering / adjacency utilities ──────────────────────────────────
-// Single source of truth for region ordering, consumed by buildSectorRegions,
-// the adjacent-finding merge pass (analyzeWaferMap.ts), and the narrative builder
-// (findingsNarrative.ts) — keep these here so the compass order is never duplicated.
+// Single source of truth for region ordering, consumed by buildSectorRegions
+// and the adjacent-finding merge pass (analyzeWaferMap.ts) — keep these here so the compass
+// order is never duplicated.
 
 // 16-point compass names, indexed by bucket going CCW from East.
 const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW', 'SW', 'SSW', 'S', 'SSE', 'SE', 'ESE'];

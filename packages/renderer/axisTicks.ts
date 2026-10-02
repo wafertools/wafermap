@@ -15,6 +15,36 @@
 // exactly the decimals that step needs.
 
 /**
+ * Which columns (or rows) of a compact layout get an axis label.
+ *
+ * Group starts when the cells are too narrow to label every one: each is the first column of
+ * a reticle group, so the labels name the boundaries, there are few of them, and they are
+ * spread out. Every cell once there is room for that, so a zoomed-in map labels each die.
+ * A layout with a single group has no boundaries to name, so it is thinned evenly instead.
+ *
+ * @param count     cells on the axis
+ * @param breaks    compact indices that start a group after the first (see `CompactMap`)
+ * @param cellPx    on-screen size of one cell along the axis
+ * @param minGapPx  least distance between two labels
+ */
+export function compactTickIndices(count: number, breaks: readonly number[], cellPx: number, minGapPx: number): number[] {
+  if (count <= 0) return [];
+  const every = Math.max(1, Math.ceil(minGapPx / Math.max(cellPx, 1e-9)));
+  if (every === 1) return Array.from({ length: count }, (_, i) => i);
+  if (breaks.length === 0) {
+    const evenly: number[] = [];
+    for (let i = 0; i < count; i += every) evenly.push(i);
+    return evenly;
+  }
+  const kept: number[] = [];
+  let last = -Infinity;
+  for (const start of [0, ...breaks]) {
+    if ((start - last) * cellPx >= minGapPx || kept.length === 0) { kept.push(start); last = start; }
+  }
+  return kept;
+}
+
+/**
  * Round a raw spacing to the nearest 1, 2 or 5 × 10ⁿ — THE rounding rule for
  * every tick grid in the library, the wafer map's own mm axes included.
  */

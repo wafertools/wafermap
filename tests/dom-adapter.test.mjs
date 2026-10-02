@@ -12,6 +12,9 @@ import { createWafer } from '../dist/packages/core/wafer.js';
 import { generateDies, getDieKey } from '../dist/packages/core/dies.js';
 import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
 import { renderWaferMapCard } from '../dist/packages/canvas-adapter/renderWaferMap.js';
+import { mpwDies } from './fixtures/mpwLayout.mjs';
+import { buildCompactMap } from '../dist/packages/core/compact.js';
+import { openModal, openFloatingWindow, roomForPanel } from '../dist/packages/canvas-adapter/toolbar.js';
 
 // A wafer with a clean ring-3 (edge) yield loss — triggers a real StatsFinding
 // from analyzeWaferMap (same fixture shape as tests/stats.test.mjs's
@@ -1782,7 +1785,7 @@ test('renderWaferMap: summaryPanel option renders a docked Summary panel with se
 
     // Severity filter chips (e.g. "Unusual 2") should be present in the
     // panel's findings section — toggle buttons with per-severity counts.
-    const chips = [...root.querySelectorAll('button')].filter((btn) => /^(Unusual|Notable|Info) \d+$/.test(btn.textContent ?? ''));
+    const chips = [...root.querySelectorAll('button')].filter((btn) => /^[●○]*(Unusual|Notable|Minor) \d+$/.test(btn.textContent ?? ''));
     assert.ok(chips.length >= 1, 'severity filter chips should render');
 
     // At least one finding row (a button with the finding's summary text) should render.
@@ -1960,7 +1963,7 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
   }
 });
 
-test('renderWaferGallery: the summary report opens an in-app modal, not window.open', () => {
+test('renderWaferGallery: the summary report opens an in-app modal, not window.open', async () => {
   const { window, root, cleanup } = setupDom();
   // No real popup available (Tauri/Electron/WebView2 shape) — the fix under
   // test is exactly that this no longer matters for viewing the report.
@@ -1984,7 +1987,9 @@ test('renderWaferGallery: the summary report opens an in-app modal, not window.o
     assert.ok(reportBtn, 'expected a "Summary report" button on the no-lot-stats path too');
     click(window, reportBtn);
 
-    const modal = window.document.querySelector('.wmap-modal-box');
+    // The report builders load on demand, so the report opens a tick after the click.
+    let modal = null;
+    for (let i = 0; i < 100 && !modal; i++) { modal = window.document.querySelector('.wmap-modal-box'); if (!modal) await new Promise((r) => setTimeout(r, 5)); }
     assert.ok(modal, 'expected an in-app modal to have been mounted, not a window.open() call');
     const iframe = modal.querySelector('iframe');
     assert.ok(iframe, 'expected the report HTML to be rendered via an iframe');
@@ -2447,6 +2452,271 @@ test('a saved showPartialDies preference (removed in 0.31.0) is harmless', () =>
     assert.equal(ctrl.getOptions().plotMode, 'hardBin');
     assert.ok(container.querySelector('canvas'), 'the map still renders');
     ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+// ── Compact layout and orientation, driven through the toolbar ────────────────
+
+function mpwWafer(seed = 1) {
+  return buildWaferMap({
+    results: mpwDies({ seed, dropout: 0.03 }).map((d, i) => ({ x: d.x, y: d.y, hbin: 1 + (i % 3) })),
+    dieConfig: { width: 2, height: 2.4 },
+    waferConfig: { diameter: 300 },
+  });
+}
+
+/** The menu row whose label is `text` (a row's text starts with its tick column, which is blank for actions). */
+function menuRow(window, text) {
+  return [...window.document.querySelectorAll('[role^="menuitem"]')].find(r => r.textContent.replace('✓', '') === text);
+}
+
+/** Open the menu behind the toolbar button named `label` and return a finder for its rows. */
+function openMenu(window, root, label) {
+  click(window, [...root.querySelectorAll('button')].find(b => b.ariaLabel === label));
+  return text => menuRow(window, text);
+}
+
+test('rotating or flipping from the toolbar switches the XY indicator on, and only the Overlays menu switches it off', () => {
+  for (const action of ['Rotate 90° clockwise', 'Flip horizontal', 'Flip vertical']) {
+    const { window, root, cleanup } = setupDom();
+    try {
+      const container = window.document.createElement('div');
+      Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+      root.appendChild(container);
+      const ctrl = renderWaferMap(container, mpwWafer(), {});
+      assert.ok(!ctrl.getOptions().showXYIndicator, 'off to begin with');
+
+      click(window, openMenu(window, root, 'Orientation')(action));
+      assert.equal(ctrl.getOptions().showXYIndicator, true, `${action} switches it on`);
+
+      // Resetting the orientation leaves it on: it is switched off by hand or not at all.
+      click(window, window.document.body);
+      click(window, openMenu(window, root, 'Orientation')('Reset orientation'));
+      assert.equal(ctrl.getOptions().showXYIndicator, true, 'reset does not switch it off');
+
+      click(window, window.document.body);
+      click(window, openMenu(window, root, 'Overlays')('XY indicator'));
+      assert.equal(ctrl.getOptions().showXYIndicator, false, 'the Overlays row switches it off');
+      ctrl.destroy();
+    } finally {
+      cleanup();
+    }
+  }
+});
+
+test('the XY indicator can be switched on in the compact layout, and the wafer-only overlays cannot', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+    const ctrl = renderWaferMap(container, mpwWafer(), {});
+
+    const find = openMenu(window, root, 'Overlays');
+    assert.ok(find('Compact layout'), 'offered for a repeating layout');
+    assert.notEqual(find('Compact layout').getAttribute('aria-disabled'), 'true');
+    click(window, find('Compact layout'));
+    assert.equal(ctrl.getOptions().compact, true);
+
+    const again = text => menuRow(window, text);
+    assert.equal(again('Ring boundaries').getAttribute('aria-disabled'), 'true');
+    assert.equal(again('Quadrant lines').getAttribute('aria-disabled'), 'true');
+    assert.notEqual(again('XY indicator').getAttribute('aria-disabled'), 'true');
+    click(window, again('XY indicator'));
+    assert.equal(ctrl.getOptions().showXYIndicator, true);
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('Layout diagnostics closes the menu and shows counts and scores only', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+    const ctrl = renderWaferMap(container, mpwWafer(), {});
+    const find = openMenu(window, root, 'Overlays');
+    click(window, find('Layout diagnostics'));
+    assert.equal(window.document.querySelectorAll('[role="menu"]').length, 0, 'the menu closed');
+    const text = window.document.querySelector('textarea[aria-label="Layout diagnostics"]')?.value;
+    assert.ok(text, 'the dialog shows the text');
+    assert.match(text, /^wafermap compact-layout diagnostics/);
+    assert.match(text, /compact layout offered: yes/);
+    assert.match(text, /columns: \d+ occupied of \d+/);
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('a gallery shares one compact layout, keeps it out of the public options, and rotating switches the indicator on', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { width: '800px', height: '600px' });
+    root.appendChild(container);
+    const changes = [];
+    const ctrl = renderWaferGallery(container, [mpwWafer(1), mpwWafer(2)], {
+      onViewOptionsChange: (opts, keys) => changes.push({ opts, keys }),
+    });
+    const toolbar = [...container.querySelectorAll('button')].filter(b => b.ariaLabel === 'Overlays')[0];
+    click(window, toolbar);
+    click(window, menuRow(window, 'Compact layout'));
+    const last = changes.at(-1);
+    assert.equal(last.opts.compact, true);
+    assert.ok(!('compactMap' in last.opts), 'the shared layout is internal state');
+    assert.ok(last.keys.includes('compact'));
+
+    click(window, window.document.body);
+    const orient = [...container.querySelectorAll('button')].filter(b => b.ariaLabel === 'Orientation')[0];
+    click(window, orient);
+    click(window, menuRow(window, 'Rotate 90° clockwise'));
+    assert.equal(changes.at(-1).opts.showXYIndicator, true);
+    assert.equal(changes.at(-1).opts.rotation, 90);
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('the Overlays menu has an Axis labels row: off until zoomed by default, then explicit, and Clear returns it to the default', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '400px', height: '400px' });
+    root.appendChild(container);
+    const ctrl = renderWaferMap(container, mpwWafer(), {});
+    assert.equal(ctrl.getOptions().showAxes, undefined, 'unset by default: labels follow the zoom');
+
+    click(window, openMenu(window, root, 'Overlays')('Axis labels'));
+    assert.equal(ctrl.getOptions().showAxes, true);
+
+    click(window, window.document.body);
+    click(window, openMenu(window, root, 'Overlays')('Axis labels'));
+    assert.equal(ctrl.getOptions().showAxes, false, 'a second click is an explicit off');
+
+    click(window, window.document.body);
+    click(window, openMenu(window, root, 'Overlays')('Axis labels'));
+    click(window, menuRow(window, 'Clear overlays'));
+    assert.equal(ctrl.getOptions().showAxes, undefined, 'Clear overlays returns to the default');
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('gallery cards take the shape of the compact layout, swap it when turned, and go back to square', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { width: '1200px', height: '800px' });
+    root.appendChild(container);
+    const wafers = [mpwWafer(1), mpwWafer(2)];
+    const ctrl = renderWaferGallery(container, wafers, {});
+    const cards = () => [...container.querySelectorAll('.wmap-gallery-card')];
+    const wrapper = card => card.children[1];
+    // A browser reports an aspect ratio as "w / h".
+    const ratio = el => { const [w, h = '1'] = el.style.aspectRatio.split('/'); return Number(w) / Number(h); };
+    const square = c => c.style.aspectRatio === '1' || c.style.aspectRatio === '1 / 1';
+    assert.ok(cards().every(square), 'square by default');
+
+    const map = buildCompactMap(wafers.flatMap(w => w.dies));
+    const across = map.columns.length, down = map.rows.length;
+    const cell = 2 / 2.4; // die width over die height
+
+    ctrl.setOptions({ compact: true });
+    for (const c of cards()) {
+      assert.equal(c.style.aspectRatio, 'auto', 'the card is as tall as its map needs');
+      assert.ok(Math.abs(ratio(wrapper(c)) - (across * cell) / down) < 1e-6, 'the map region has the layout\'s shape');
+    }
+
+    ctrl.setOptions({ rotation: 90 });
+    for (const c of cards()) {
+      assert.ok(Math.abs(ratio(wrapper(c)) - (down / cell) / across) < 1e-6, 'a quarter turn swaps width and height');
+    }
+
+    ctrl.setOptions({ compact: false });
+    for (const c of cards()) {
+      assert.ok(square(c));
+      assert.equal(wrapper(c).style.aspectRatio, '');
+      assert.ok(['1', '1 1 0%'].includes(wrapper(c).style.flex), 'the map region fills the card again');
+    }
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+// ── A box widens for a panel that opens beside its map ───────────────────────
+
+/** jsdom does no layout, so give the box the size and place a browser would report. */
+function withLayout(handle, { width, left }) {
+  handle.box.getBoundingClientRect = () => ({ width, left, right: left + width, top: 0, bottom: 0, height: 0, x: left, y: 0 });
+}
+
+test('a modal widens by the panel that opens beside its map and takes the room back when it closes', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const handle = openModal({ title: 'W01', onClose() {}, anchor: root, ownerDocument: window.document });
+    withLayout(handle, { width: 600, left: 100 });
+    const before = handle.box.style.width;
+    const room = roomForPanel(handle);
+
+    room(true, 300);
+    assert.equal(handle.box.style.width, '900px', 'wider by the panel');
+    room(false, 0);
+    assert.equal(handle.box.style.width, before, 'back to what it was');
+
+    // Not more than the screen has (jsdom is 1024px wide: 96% of that).
+    room(true, 5000);
+    assert.equal(handle.box.style.width, `${Math.round(window.innerWidth * 0.96)}px`);
+    room(false, 0);
+    handle.close();
+  } finally {
+    cleanup();
+  }
+});
+
+test('a box a person has resized is not put back, and a maximised one is left alone', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const handle = openModal({ title: 'W01', onClose() {}, anchor: root, ownerDocument: window.document });
+    withLayout(handle, { width: 700, left: 100 });
+    const room = roomForPanel(handle);
+    room(true, 300);
+    handle.box.style.width = '640px'; // dragged by hand with the panel open
+    room(false, 0);
+    assert.equal(handle.box.style.width, '640px', 'their size stands');
+
+    const maximise = [...handle.box.querySelectorAll('button')].find(b => b.ariaLabel?.startsWith('Maximize'));
+    click(window, maximise);
+    const maximised = handle.box.style.width;
+    roomForPanel(handle)(true, 300);
+    assert.equal(handle.box.style.width, maximised, 'already full screen: nothing to add');
+    handle.close();
+  } finally {
+    cleanup();
+  }
+});
+
+test('a floating window that would run off the screen is moved back as it widens', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const handle = openFloatingWindow({ title: 'W01', onClose() {}, anchor: root, ownerDocument: window.document });
+    handle.box.style.left = '300px';
+    withLayout(handle, { width: 600, left: 300 });
+    const room = roomForPanel(handle);
+    room(true, 300); // 300 + 900 = 1200 > 1024
+    assert.equal(handle.box.style.width, '900px');
+    const left = parseFloat(handle.box.style.left);
+    assert.ok(left + 900 <= window.innerWidth, `fully on screen (left ${left})`);
+    room(false, 0);
+    assert.equal(handle.box.style.left, '300px', 'and put back');
+    handle.close();
   } finally {
     cleanup();
   }

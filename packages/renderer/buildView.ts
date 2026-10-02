@@ -15,6 +15,9 @@ import { resolveValueColorFn } from './colorSchemes.js';
 import { resolveBinColors, binColorsCover, type BinColors } from './binColors.js';
 import { NO_DATA_FILL } from './colorMap.js';
 import { diePassStatus } from '../core/dies.js';
+import type { CompactMap } from '../core/compact.js';
+import { compactView } from './compactView.js';
+import { buildXYIndicator } from './xyIndicator.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig } from './buildWaferMap.js';
 // `classifySpec`/`SpecCategory` moved to ./spec.ts (one judgement, shared with stats);
 // re-exported here so existing importers of buildView.js keep working.
@@ -136,7 +139,7 @@ export interface ViewHoverPoint {
 }
 
 export interface ViewOverlay {
-  kind: 'wafer-boundary' | 'reticle' | 'probe-path' | 'ring-boundary' | 'quadrant-boundary' | 'xy-indicator';
+  kind: 'wafer-boundary' | 'reticle' | 'probe-path' | 'ring-boundary' | 'quadrant-boundary' | 'xy-indicator' | 'compact-group';
   points: Point[][];
   closed: boolean;
   lineColor: string;
@@ -296,6 +299,18 @@ export interface View {
    * Undefined outside test pass/fail display.
    */
   passFailCounts?: { pass: number; fail: number };
+  /**
+   * Present only on a compact view (see `ViewOptions.compact`): the original die coordinate of
+   * each compact column and row, and the compact index that sits at the display origin.
+   * Axis labels read this instead of inverting `gridToScreen`, so they stay original die
+   * coordinates, never compact indices.
+   */
+  compact?: {
+    columns: readonly number[]; rows: readonly number[];
+    /** Compact indices that start a group after the first, per axis: where the axis labels go. */
+    columnBreaks: readonly number[]; rowBreaks: readonly number[];
+    centreColumn: number; centreRow: number;
+  };
   /** Bounding box of all die centres in scene coordinates (mm). */
   dieBounds: { minX: number; maxX: number; minY: number; maxY: number } | null;
 }
@@ -337,6 +352,15 @@ export interface ViewOptions {
   /** Dim every die except these metadata values, `'metadata'` mode's analogue of `highlightBin`. */
   highlightMetadataValue?: string | string[];
   interactiveTransform?: { rotation?: number; flipX?: boolean; flipY?: boolean };
+  /**
+   * Draw the dies on this compact layout (see `buildCompactMap`) instead of at their physical
+   * positions: the empty columns and rows are gone, each group of dies is outlined, and the
+   * wafer outline, rings, quadrants, reticle grid and XY indicator are not drawn, because the
+   * dies no longer sit where they are. Every die is still drawn and still counts: only the
+   * layout changes. Rotation, flips and the notch marker follow the same transform as the
+   * physical view.
+   */
+  compact?: CompactMap;
   /**
    * Explicit value colour normalization range.
    *
@@ -1318,39 +1342,13 @@ function buildXYIndicatorOverlay(
   gridToScreen: Affine<'grid', 'screen'>,
   texts: ViewText[]
 ): ViewOverlay[] {
-  // Anchor is fixed at the bottom-left corner in data space (outside the wafer circle).
-  // 0.9 per axis → distance ≈ 1.27 × radius: outside the circle but inside the chart area.
-  // Do NOT transform the anchor — it stays in the corner regardless of wafer rotation/flip.
-  // Only the arrow directions rotate, so they still correctly indicate the data axes.
-  //
-  // These arrows name the DIE-GRID axes (+X = increasing die.x), so they must take
-  // `gridToScreen` — including the data-axis flip. Using a transform that omitted
-  // that flip previously made the arrows point opposite to the way the die indices
-  // actually run under xAxisDirection/yAxisDirection/a non-'center' coordinateOrigin,
-  // directly contradicting the axis tick labels on the same map. As directions rather
-  // than positions they go through `affineVector`, which ignores translation.
-  const len = wafer.radius * 0.15;
-  const xDir = affineVector(gridToScreen, len, 0);
-  const yDir = affineVector(gridToScreen, 0, len);
-  // Place anchor in the corner the arrows point away from, so they never clip.
-  const signX = (xDir.x + yDir.x) >= 0 ? -1 : 1;
-  const signY = (xDir.y + yDir.y) >= 0 ? -1 : 1;
-  const anchor = {
-    x: wafer.center.x + signX * wafer.radius * 0.9,
-    y: wafer.center.y + signY * wafer.radius * 0.9,
-  };
-  const xTip = { x: anchor.x + xDir.x, y: anchor.y + xDir.y };
-  const yTip = { x: anchor.x + yDir.x, y: anchor.y + yDir.y };
-
-  texts.push(
-    { x: xTip.x + xDir.x * 0.35, y: xTip.y + xDir.y * 0.35, text: '+X', fontSize: 10, color: '#cc3300', align: 'center', role: 'indicator' },
-    { x: yTip.x + yDir.x * 0.35, y: yTip.y + yDir.y * 0.35, text: '+Y', fontSize: 10, color: '#0044cc', align: 'center', role: 'indicator' },
-  );
-
-  return [
-    { kind: 'xy-indicator', ...polyline([anchor, xTip]), lineColor: '#cc3300', lineWidth: 2 },
-    { kind: 'xy-indicator', ...polyline([anchor, yTip]), lineColor: '#0044cc', lineWidth: 2 },
-  ];
+  // Anchored at a corner outside the wafer circle: 0.9 per axis puts it ~1.27 x radius from
+  // the centre, outside the circle but inside the chart area.
+  const r = wafer.radius;
+  return buildXYIndicator(gridToScreen, r * 0.15, (signX, signY) => ({
+    x: wafer.center.x + signX * r * 0.9,
+    y: wafer.center.y + signY * r * 0.9,
+  }), texts).overlays;
 }
 
 /**
@@ -1725,7 +1723,7 @@ export function buildView(
     maxY: wafer.center.y + wafer.radius,
   } : null;
 
-  return {
+  const view: View = {
     rectangles,
     hoverPoints,
     texts,
@@ -1765,6 +1763,7 @@ export function buildView(
     passFailCounts,
     dieBounds,
   };
+  return options.compact ? compactView(view, options.compact, { showXYIndicator }) : view;
 }
 
 // ── Die lookup helpers ────────────────────────────────────────────────────────

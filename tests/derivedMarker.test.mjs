@@ -17,7 +17,8 @@ import { buildWaferMap } from '../dist/index.js';
 import { buildView, buildMapTitle, buildHoverText } from '../dist/packages/renderer/buildView.js';
 import { analyzeWaferMap } from '../dist/packages/stats/analyzeWaferMap.js';
 import { poolFunctionalYield } from '../dist/packages/stats/testPassRate.js';
-import { formatFindingTooltip, derivedFindingsKeyHtml } from '../dist/packages/stats/reportHtml.js';
+import { derivedFindingsKeyHtml } from '../dist/packages/stats/reportHtml.js';
+import { formatFindingTooltip } from '../dist/packages/stats/findingText.js';
 import {
   markedTestLabel, unmarkedLabel, derivedKeyText, derivedCsvCell, derivedTestNote,
   DERIVED_MARK, DERIVED_KEY, DERIVED_LANE_PAD,
@@ -216,7 +217,7 @@ test('the wafer report renders its findings through the shared table', async () 
   const { findingsTableHtml } = await import('../dist/packages/stats/reportHtml.js');
   const { visibleFindings } = await import('../dist/packages/stats/filterFindings.js');
   const html = renderWaferReportHtml(RESULT, SUMMARY);
-  assert.ok(html.includes(findingsTableHtml(visibleFindings(SUMMARY.findings))), 'the same table, byte for byte');
+  assert.ok(html.includes(findingsTableHtml(visibleFindings(SUMMARY.findings), undefined, '')), 'the same table, byte for byte');
 });
 
 // ── Test pickers and lists: the mark in front, names aligned ─────────────────

@@ -34,6 +34,21 @@ export function sameBins(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
+ * The pass bins every wafer is judged by, or `undefined` when they differ (or there are none to
+ * ask). For a surface that must name one set — a headline, or which bins count as failures — and
+ * so says nothing rather than naming one wafer's set for a population judged several ways.
+ */
+export function commonPassBins(sets: Iterable<readonly number[] | undefined>): readonly number[] | undefined {
+  let first: readonly number[] | undefined;
+  for (const s of sets) {
+    if (s === undefined) return undefined;
+    if (first === undefined) first = s;
+    else if (!sameBins(first, s)) return undefined;
+  }
+  return first;
+}
+
+/**
  * Names the pass bins in use, for a yield label: "bin 1", "bins 1, 2", or —
  * when the wafers shown disagree — "per wafer: bin 1 · bins 1, 2". A label that
  * named one wafer's set while the figure pooled wafers judged differently would

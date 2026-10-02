@@ -23,7 +23,7 @@ import {
   classifyPattern, patternExplains, patternFailVerdict, PATTERN_LABELS,
   type PatternClassification, type PatternLabel } from './patternClassification.js';
 import { benjaminiHochberg, fiveNumberSummary, normalCdf } from './math.js';
-import { mean, clamp01 } from '../core/utils.js';
+import { mean, clamp01, maxOf } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 
 interface EligibleDie extends Die {
@@ -1595,7 +1595,7 @@ function uniqueKeys(arr: string[]): string[] {
  * run is judged no more leniently than its parts. Wafer and lot merges both use it.
  */
 export function weakestMultiplier(run: readonly RawFinding[]): number {
-  return Math.max(...run.map(f => {
+  return maxOf(run.map(f => {
     const raw = f.stats.pValue ?? 1;
     return raw > 0 ? (f.stats.adjustedPValue ?? raw) / raw : 1;
   }));

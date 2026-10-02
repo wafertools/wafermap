@@ -2061,6 +2061,42 @@ const items = waferResults.map((r, i) => ({ ...r, label: `W${i + 1}` }));
 
 ![Reticle grid overlay active](images/guide-reticle-overlay.png)
 
+## Compact layout for multi-project wafers
+
+On a multi-project wafer (MPW) each reticle holds only a few of one product's dies, so the wafer map is mostly empty and
+every die is a few pixels wide. The **compact layout** draws the dies on a grid with the empty columns and rows removed
+and each group of dies outlined, so the product fills the map.
+
+![A multi-project wafer in the wafer view](images/guide-compact-wafer.png)
+
+![The same wafer in the compact layout](images/guide-compact-layout.png)
+
+*The same synthetic wafer: each reticle holds two small groups of dies, so the wafer view is mostly empty. The compact
+layout removes the empty rows and columns and outlines each group.*
+
+```ts
+renderWaferMap(container, result, {
+  viewOptions: { compact: true },
+});
+```
+
+- **Only the layout changes.** Every die is still drawn and counted, so the legend, yield and every statistic are the
+  same as on the wafer view. Hover text and axis labels give original `die.x`/`die.y`.
+- **When the toolbar offers it.** The Overlays menu's **Compact layout** row is enabled when the occupied columns and
+  rows repeat at a regular pitch (random missing dies do not repeat, so a wafer that merely has holes is not offered
+  it). If you pass `reticleConfig`, the dies must repeat at its width and height or a multiple of it (a product on every second reticle repeats at twice the width). `compact: true` applies it regardless.
+- **Wafer overlays.** The wafer outline, ring, quadrant and reticle overlays describe the physical wafer and are not
+  drawn in this layout. The notch marker and the XY indicator are, and follow rotation and flips.
+- **Galleries.** All cards share one layout built from every wafer shown, so wafers compare cell for cell, and a card is
+  as tall as its map needs.
+- **Axis labels.** `viewOptions: { showAxes: true }` (the Overlays menu's **Axis labels** row) labels the first column
+  or row of each group of dies, which marks the reticle boundaries.
+- **Layout diagnostics.** The same menu's **Layout diagnostics** row shows what the detector saw as counts and scores
+  only (no die positions, bins, values or wafer names), with Copy and Save as file, so someone can report why a layout
+  was or was not recognised without sharing their data.
+
+See the [multi-project wafer example](examples/multi-project-wafer.html).
+
 ## Multi-site parallel testing
 
 Modern probers test multiple dies simultaneously using a multi-site probe card. Each

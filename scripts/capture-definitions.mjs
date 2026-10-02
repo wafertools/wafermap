@@ -604,6 +604,24 @@ export const CAPTURES = [
 
   },
 
+  // ── guide-compact-wafer.png / guide-compact-layout.png — compact layout, before and after ─
+  {
+    file: 'guide-compact-wafer',
+    group: 'maps',
+    page: '/examples/multi-project-wafer.html',
+    selector: '.demo-content',
+    wait: 1000,
+    setup: [['clickTab', 'Wafer', 'body'], ['wait', 600]],
+  },
+  {
+    file: 'guide-compact-layout',
+    group: 'maps',
+    page: '/examples/multi-project-wafer.html',
+    selector: '.demo-content',
+    wait: 1000,
+    setup: [],
+  },
+
   // ── guide-test-sites.png — §15 Multi-site parallel testing: map + site stats ──
   {
     file: 'guide-test-sites',

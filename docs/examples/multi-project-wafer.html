@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi-project wafers — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":                "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Multi-project wafers</span>
+    <span class="demo-desc">compact layout · repeating reticle groups · layout diagnostics</span>
+  </header>
+
+  <div class="demo-intro">
+    On a multi-project wafer each reticle holds only a few of one product's dies, so the physical map is mostly empty
+    and each die is a few pixels wide. When the occupied columns and rows repeat at a regular pitch, the
+    <strong>Overlays</strong> menu offers <strong>Compact layout</strong>: the empty rows and columns are removed and each
+    group of dies is outlined. Nothing is left out. Legends, yield and statistics are unchanged, and hover text and axis
+    labels still give the original die coordinates. This wafer is synthetic: two products share a 14 × 10 die reticle.
+    Try <strong>Axis labels</strong> in the same menu, rotate the map to see the XY indicator switch on, and open
+    <strong>Layout diagnostics</strong> to see what the detector saw, as counts and scores only.
+  </div>
+
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Layout</span>
+      <button class="toggle-btn"        id="btn-wafer">Wafer</button>
+      <button class="toggle-btn active" id="btn-compact">Compact</button>
+    </div>
+  </div>
+
+  <div class="demo-content">
+    <div class="canvas-card flex-1">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }  from 'wafermap';
+    import { renderWaferMap } from 'wafermap/render';
+
+    // Two products share one reticle, side by side: product A is a 4 x 3 block of dies and product B a 2 x 3 block,
+    // inside a reticle 14 dies wide and 10 tall. Only these positions hold dies. (Products that sat at different
+    // heights as well would leave empty blocks between them that no row or column removal can take out.)
+    const RETICLE = { width: 14, height: 10 };
+    const PRODUCTS = [
+      { x: 1, y: 2, w: 4, h: 3 },
+      { x: 8, y: 2, w: 2, h: 3 },
+    ];
+    const DIE = { width: 2.2, height: 2.6 };    // mm
+    const USABLE_MM = 140;                      // a die is probed only if it lies wholly on the 300 mm wafer; a little margin for the grid centring
+
+    let seed = 11;                             // a small seeded generator, so the demo is the same every load
+    const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+    const results = [];
+    const nx = Math.ceil(USABLE_MM / DIE.width), ny = Math.ceil(USABLE_MM / DIE.height);
+    for (let y = -ny; y <= ny; y++) {
+      for (let x = -nx; x <= nx; x++) {
+        // the die's far corner must be inside the circle
+        const fx = (Math.abs(x) + 0.5) * DIE.width, fy = (Math.abs(y) + 0.5) * DIE.height;
+        if (fx * fx + fy * fy > USABLE_MM * USABLE_MM) continue;
+        const col = ((x % RETICLE.width) + RETICLE.width) % RETICLE.width;
+        const row = ((y % RETICLE.height) + RETICLE.height) % RETICLE.height;
+        if (!PRODUCTS.some(p => col >= p.x && col < p.x + p.w && row >= p.y && row < p.y + p.h)) continue;
+        const r = rand();
+        results.push({ x, y, hbin: r < 0.84 ? 1 : r < 0.92 ? 2 : r < 0.97 ? 3 : 5 });
+      }
+    }
+
+    const result = buildWaferMap({
+      results,
+      waferConfig: { diameter: 300, notch: { type: 'bottom' } },
+      dieConfig:   DIE,
+      passBins:    [1],
+      hbinDefs: [
+        { bin: 1, label: 'Pass' },
+        { bin: 2, label: 'Fail (leakage)' },
+        { bin: 3, label: 'Fail (speed)' },
+        { bin: 5, label: 'Fail (open)' },
+      ],
+    });
+
+    // `compact` is a view option like any other: the Compact layout row in the Overlays menu sets it too.
+    // The menu offers the row because the dies repeat at a regular pitch; `compact: true` applies it regardless.
+    const ctrl = renderWaferMap(document.getElementById('map'), result, {
+      viewOptions: { plotMode: 'hardBin', compact: true },
+      showHelpButton: true,
+    });
+
+    const wafer = document.getElementById('btn-wafer');
+    const compact = document.getElementById('btn-compact');
+    function setLayout(on) {
+      ctrl.setOptions({ compact: on });
+      compact.classList.toggle('active', on);
+      wafer.classList.toggle('active', !on);
+    }
+    compact.addEventListener('click', () => setLayout(true));
+    wafer.addEventListener('click', () => setLayout(false));
+  </script>
+
+</body>
+</html>

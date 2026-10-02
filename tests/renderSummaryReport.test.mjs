@@ -222,7 +222,7 @@ test('renderLotSummaryReportHtml — the pooled bin table uses the same order', 
     passBins: [1],
   });
   // pooled: bin 1 ×3 (pass), bin 9 ×5, bin 4 ×3
-  const table = html.slice(html.indexOf('Hard Bin Breakdown (All Wafers)'));
+  const table = html.slice(html.indexOf('Hard Bin Breakdown — % of dies'));
   const order = ['Pass', 'Fail B', 'Fail A'].map(n => table.indexOf(n));
   assert.ok(order.every(i => i >= 0), `expected all three bins in the pooled table: ${order}`);
   assert.deepEqual([...order].sort((a, b) => a - b), order);
@@ -263,7 +263,7 @@ test('the summary report does not print a merged finding and the row it absorbed
 
   // Each merged row's label already names the soft bin it absorbed; printing the
   // absorbed row too states the same fact twice and contradicts the merge.
-  const rows = (html.match(/<tr title=/g) ?? []).length;
+  const rows = (html.match(/<tr class="tier-/g) ?? []).length;
   assert.equal(rows, statsSummary.findings.length - absorbed.size);
 });
 

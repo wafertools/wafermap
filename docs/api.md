@@ -1128,7 +1128,9 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `showRingBoundaries` | `boolean` | `false` | |
 | `showQuadrantBoundaries` | `boolean` | `false` | |
 | `showReticle` | `boolean` | `false` | Reticle field boundary overlay (requires `reticles` on the result) |
-| `showXYIndicator` | `boolean` | `false` | Axis-orientation arrows showing +X/+Y directions |
+| `showXYIndicator` | `boolean` | `false` | Axis-orientation arrows showing +X/+Y directions. The toolbar switches it on with the first rotate or flip; it stays on until switched off |
+| `showAxes` | `boolean` | zoom | Draw the die-coordinate axis labels along the bottom and left edges. Unset, they appear while the map is zoomed; `true` shows them always, `false` never. The Overlays menu's **Axis labels** row sets it. Showing them reserves room for the labels, so the map is a little smaller. |
+| `compact` | `boolean` | `false` | Draw the dies on a compact grid with the empty rows and columns removed and each group of dies outlined, instead of at their physical positions. For multi-project wafers, where each reticle holds only a few of your dies. The toolbar offers it when the occupied columns and rows repeat at a regular pitch (or at the `reticleConfig` width and height, or a multiple of it); setting it here applies it regardless. Only the layout changes: every die is still drawn and counted, and hover text and axis labels give original die coordinates. The wafer outline, rings, quadrants and reticle grid are not drawn in this layout; the XY indicator is. A gallery builds one layout from all its wafers. |
 | `legendPosition` | `'default' \| 'compact' \| 'left' \| 'top' \| 'bottom' \| 'floating'` | `'default'` | Bin legend position. `'default'` auto-adapts: compact below 280 px, floating below 180 px |
 
 #### Persisting user preferences
@@ -2793,7 +2795,7 @@ These are computed by the same code the Insights charts and Summary panel use, s
 {
   level: 'lot'
   hasNotableFindings: boolean
-  findings: StatsFinding[]             // lot-level findings (repeated patterns + inter-wafer outliers); sorted unusual → notable → info
+  findings: StatsFinding[]             // lot-level findings (repeated patterns, inter-wafer outliers, and a yield or test-mean trend across the wafers); sorted unusual → notable → info
   lot?: Record<string, unknown>        // identity fields EVERY wafer with identity data agrees on (lot ID, product, etc. —
                                         // wafer-specific keys excluded). A key where wafers disagree (e.g. items pooled
                                         // from more than one lot/program) is omitted here, not silently taken from the

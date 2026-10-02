@@ -300,8 +300,10 @@ test('lot overview states the die population, not just a wafer count and a perce
 
 function lotOf(yields) {
   return {
+    level: 'lot', hasNotableFindings: false, findings: [],
+    lotYieldSeries: yields.map((y, i) => ({ waferIndex: i, yieldPercent: y })),
     stats: { waferCount: yields.length },
-    perWafer: yields.map((y, i) => ({ waferIndex: i, summary: { stats: { yieldPercent: y } } })),
+    perWafer: yields.map((y, i) => ({ waferIndex: i, summary: { stats: { yieldPercent: y, totalDies: 100, analyzedDies: 100, testsConsidered: [], hardBinsConsidered: [] } } })),
   };
 }
 
@@ -366,7 +368,8 @@ function sectionTitlesOf(panel) {
 test('findings render above the bin/region/test detail, not below it', () => {
   const panel = panelDiv();
   const statsSummary = {
-    stats: { analyzedDies: 6, excludedDies: 0, yieldPercent: 50 },
+    level: 'wafer', hasNotableFindings: false,
+    stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0, yieldPercent: 50 },
     findings: [finding(1)],
   };
   renderWaferSummaryContent(panel, {
@@ -391,7 +394,8 @@ test('the Kind/Region filter dropdowns are withheld below the findings threshold
     renderWaferSummaryContent(panel, {
       wafer: wafer(), dies: dualBinDies(),
       statsSummary: {
-        stats: { analyzedDies: 6, excludedDies: 0 },
+        level: 'wafer', hasNotableFindings: false,
+        stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0 },
         findings: Array.from({ length: count }, (_, i) => finding(i)),
       },
       onFindingClick: () => {}, findingsFilter: {}, onFindingsFilterChange: () => {},
@@ -410,8 +414,8 @@ test('lot panel renders one region section and follows the gallery plot mode', (
   renderLotSummaryContent(panel, {
     lotSummary: lotOf([80, 90]),
     items: [
-      { label: 'W1', wafer: wafer(), dies, statsSummary: { stats: { analyzedDies: 6, excludedDies: 0 } } },
-      { label: 'W2', wafer: wafer(), dies, statsSummary: { stats: { analyzedDies: 6, excludedDies: 0 } } },
+      { label: 'W1', wafer: wafer(), dies, statsSummary: { level: 'wafer', hasNotableFindings: false, findings: [], stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0 } } },
+      { label: 'W2', wafer: wafer(), dies, statsSummary: { level: 'wafer', hasNotableFindings: false, findings: [], stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0 } } },
     ],
     plotMode: 'softBin',
   });
@@ -484,7 +488,7 @@ test('a wafer yield row says it opens the wafer, and names its findings count', 
 
 test('the lot panel offers one report, not a summary/findings pair', () => {
   const items = [
-    { label: 'W1', wafer: wafer(), dies: dualBinDies(), statsSummary: { stats: { analyzedDies: 6, excludedDies: 0 } } },
+    { label: 'W1', wafer: wafer(), dies: dualBinDies(), statsSummary: { level: 'wafer', hasNotableFindings: false, findings: [], stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0 } } },
   ];
   const panel = panelDiv();
   renderLotSummaryContent(panel, { lotSummary: lotOf([80]), items });
@@ -551,7 +555,7 @@ function fullPanel() {
   const panel = panelDiv();
   renderWaferSummaryContent(panel, {
     wafer: wafer(), dies: dualBinDies(),
-    statsSummary: { stats: { analyzedDies: 6, excludedDies: 0, yieldPercent: 50 }, findings: [finding(1)] },
+    statsSummary: { level: 'wafer', hasNotableFindings: false, findings: [], stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0, yieldPercent: 50 }, findings: [finding(1)] },
     plotMode: 'hardBin',
     onFindingClick: () => {},
     findingsFilter: {},
@@ -591,7 +595,7 @@ test('a default-collapsed section can be opened, and the choice survives a re-re
   // the next data update, which is the bug this direction can silently have.
   renderWaferSummaryContent(panel, {
     wafer: wafer(), dies: dualBinDies(),
-    statsSummary: { stats: { analyzedDies: 6, excludedDies: 0, yieldPercent: 50 }, findings: [finding(1)] },
+    statsSummary: { level: 'wafer', hasNotableFindings: false, findings: [], stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0, yieldPercent: 50 }, findings: [finding(1)] },
     plotMode: 'hardBin',
     onFindingClick: () => {}, findingsFilter: {}, onFindingsFilterChange: () => {},
   });
@@ -618,7 +622,7 @@ function waferParams(statsSummary, findingsNotice) {
     findingsNotice,
   };
 }
-const noFindings = { findings: [], stats: {} };
+const noFindings = { level: 'wafer', hasNotableFindings: false, findings: [], stats: { totalDies: 0, analyzedDies: 0, yieldPercent: null, testsConsidered: [], hardBinsConsidered: [] } };
 const findingsSectionOf = (panel) =>
   [...panel.querySelectorAll('*')].find(e => /^Findings \(/.test(e.textContent ?? ''));
 

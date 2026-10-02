@@ -226,6 +226,18 @@
       "dataFiles": []
     },
     {
+      "section": "Display and interaction",
+      "id": "multi-project-wafer",
+      "file": "multi-project-wafer.html",
+      "title": "Multi-project wafers",
+      "blurb": "compact layout for sparse reticles, with original coordinates, axis labels and layout diagnostics",
+      "guide": {
+        "label": "Guide: Compact layout for multi-project wafers",
+        "href": "../guide.md#compact-layout-for-multi-project-wafers"
+      },
+      "dataFiles": []
+    },
+    {
       "section": "Galleries and analysis",
       "id": "summary-panel",
       "file": "statistics.html",

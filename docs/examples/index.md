@@ -32,6 +32,7 @@ Some pages cover several related topics; those links point at the relevant secti
 - [Interaction API](interaction.html) — hover, click, box-select, controller methods · [Guide: Responding to user interaction](../guide.md#responding-to-user-interaction)
 - [Metadata / layout mode](metadata-mode.html) — generic categorical colouring from `die.metadata`, coexists with test/bin data · [Guide: Metadata / layout plot mode](../guide.md#metadata-layout-plot-mode)
 - [Reticle overlays](reticle.html) — photolithography field grid and reticle-position findings · [Guide: Reticle overlays](../guide.md#reticle-overlays)
+- [Multi-project wafers](multi-project-wafer.html) — compact layout for sparse reticles, with original coordinates, axis labels and layout diagnostics · [Guide: Compact layout for multi-project wafers](../guide.md#compact-layout-for-multi-project-wafers)
 
 ## Galleries and analysis
 

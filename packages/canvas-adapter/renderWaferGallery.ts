@@ -7,7 +7,7 @@ import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
@@ -27,9 +27,9 @@ import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { asList, compareNatural, arrayEqual, toggleHighlight } from '../core/utils.js';
+import { buildCompactMap, compactLayoutOffered, type CompactMap } from '../core/compact.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContentSteps, reportMapsFromItems } from './summaryPanel.js';
-import { renderLotReportHtml } from '../stats/renderSummaryReport.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { prettyKey } from '../stats/facets.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
@@ -883,7 +883,10 @@ export function renderWaferGallery(
    *  per-wafer findings section. Reached from the no-lot-stats fallback list
    *  below; the lot panel builds its own via `renderLotSummaryContent`. */
   function openLotSummaryReport(): void {
-    openReportModal(renderLotReportHtml(reportMapsFromItems(originalItems, INPUT_DEFAULT_PASS_BINS, lotRingCount())), { anchor: container });
+    // Loaded when opened, not with the gallery.
+    void import('../stats/renderSummaryReport.js').then(({ renderLotReportHtml }) => {
+      openReportModal(renderLotReportHtml(reportMapsFromItems(originalItems, INPUT_DEFAULT_PASS_BINS, lotRingCount())), { anchor: container });
+    });
   }
 
   function renderPerWaferIndexFallback(): void {
@@ -1468,7 +1471,7 @@ export function renderWaferGallery(
    *
    * Returns whether anything was pushed, for callers with follow-on work.
    */
-  function pushSharedOption<K extends 'binColors' | 'valueRange' | 'metadataValueOrder'>(
+  function pushSharedOption<K extends 'binColors' | 'valueRange' | 'metadataValueOrder' | 'compactMap'>(
     key: K,
     next: CardViewOptions[K],
     eq: (a: NonNullable<CardViewOptions[K]>, b: NonNullable<CardViewOptions[K]>) => boolean,
@@ -1546,7 +1549,7 @@ export function renderWaferGallery(
     sharedRangeSyncPending = true;
     const raf = container.ownerDocument.defaultView?.requestAnimationFrame
       ?? ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number);
-    raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); syncSharedMetadataOrder(); syncSharedBinColors(); });
+    raf(() => { sharedRangeSyncPending = false; syncSharedValueRange(); syncSharedMetadataOrder(); syncSharedBinColors(); syncSharedCompactMap(); });
   }
 
   /**
@@ -1606,6 +1609,31 @@ export function renderWaferGallery(
     return colors;
   }
 
+  /** The dies every card on screen holds, positioned or not; the population the shared layout is built over. */
+  function shownDies(): Die[] {
+    return currentItems.filter(it => it != null).flatMap(it => it.dies);
+  }
+
+  /** The one compact layout for the wafers shown, or undefined when compact is off. Built over
+   *  all of them so the cards share a grid; per-wafer layouts would make them disagree. */
+  function lotCompactMap(): CompactMap | undefined {
+    return sharedOpts.compact ? buildCompactMap(shownDies()) : undefined;
+  }
+
+  const compactMapsEqual = (a: CompactMap, b: CompactMap): boolean =>
+    arrayEqual(a.columns, b.columns) && arrayEqual(a.rows, b.rows);
+
+  /** Push the shared layout to every live card, on every change to the item set. */
+  function syncSharedCompactMap(): void {
+    if (pushSharedOption('compactMap', lotCompactMap(), compactMapsEqual)) refreshCardLayout();
+  }
+
+  /** Whether the compact layout applies to what is shown: the wafers together form a repeating
+   *  layout, or repeat at the one reticle size every item supplies. */
+  function compactOffered(): boolean {
+    return compactLayoutOffered(shownDies(), currentItems.filter(it => it != null).map(it => it.reticleConfig));
+  }
+
   /** Re-resolve the gallery-wide bin colours and push them to every live card —
    *  on every change to the item set, same trigger points as the value range. */
   function syncSharedBinColors(): void {
@@ -1629,6 +1657,8 @@ export function renderWaferGallery(
               || (sharedOpts.plotMode ?? 'hardBin') === 'softBin',
       },
       patch => updateShared(patch),
+      { on: !!sharedOpts.compact, offered: compactOffered(), onChange: on => updateShared({ compact: on }),
+        onDiagnostics: () => openCompactDiagnostics(shownDies(), currentItems.filter(it => it != null).map(it => it.reticleConfig), { anchor: container, onSaveText: exportHooks.onSaveText }) },
     ),
     () => anyOverlayActive(sharedOpts),
   );
@@ -2056,7 +2086,7 @@ export function renderWaferGallery(
         let ctrl: WaferMapController | null = null;
         const handle = openModal({ title, onClose: () => ctrl?.destroy(), anchor: container });
         augmentOverlayTitleWithMetadata(handle, title, item.wafer.metadata ?? undefined);
-        ctrl = buildDetachedController(handle.contentWrap, item, testNumber);
+        ctrl = buildDetachedController(handle.contentWrap, item, testNumber, undefined, roomForPanel(handle));
       } });
       insightsEl = insightsTab.el;
       // Hidden on arrival; setInsightsOpen reveals it once the load resolves.
@@ -2166,6 +2196,10 @@ export function renderWaferGallery(
   function cardPxForTargetDieSize(its: (WaferMapDisplayItem | null)[]): number | null {
     // card chrome: cardPadding on each side + bin legend reserve + 2px border
     const chrome = cardPadding * 2 + 110 + 2;
+    // The compact layout is far smaller than the wafer it replaces, so its cards need only the
+    // width its own cells call for: every wafer shares the one grid, so one answer serves all.
+    const compact = compactScreenCells();
+    if (compact) return Math.ceil(compact.across * TARGET_DIE_PX + chrome);
     let needed: number | null = null;
     for (const it of its) {
       if (it == null || !it.dies?.length) continue;
@@ -2199,6 +2233,65 @@ export function renderWaferGallery(
     if (next <= currentMaxCardPx) return false;
     currentMaxCardPx = next;
     return true;
+  }
+
+  /**
+   * The compact layout as it appears on screen: cells across and down after rotation, with the
+   * extra margin the XY indicator takes, and the width:height of one cell. Undefined while the
+   * layout is off. The single place the gallery asks "how big is the content", for both the
+   * width a card needs and the shape it takes.
+   */
+  function compactScreenCells(): { across: number; down: number; cellAspect: number } | undefined {
+    const map = sharedOpts.compact ? sharedOpts.compactMap : undefined;
+    const die = currentItems.find(it => it?.dies?.length)?.dies[0];
+    if (!map || !die || map.columns.length === 0 || map.rows.length === 0 || !(die.width > 0) || !(die.height > 0)) return undefined;
+    const turned = (sharedOpts.rotation ?? 0) % 180 !== 0;
+    const margin = sharedOpts.showXYIndicator ? 2.5 : 0;
+    return {
+      across: (turned ? map.rows.length : map.columns.length) + margin,
+      down:   (turned ? map.columns.length : map.rows.length) + margin,
+      cellAspect: turned ? die.height / die.width : die.width / die.height,
+    };
+  }
+
+  /**
+   * Give a card the shape of what it shows. A wafer fills a square, so cards stay square (the
+   * card's height includes its header, which the map region does not use). A compact layout is
+   * as wide as it is wide: the card is as tall as its map needs, with no empty bands above and below.
+   */
+  function shapeCard(card: HTMLElement, wrapper: HTMLElement): void {
+    const compact = compactScreenCells();
+    if (!compact) {
+      card.style.aspectRatio = '1';
+      wrapper.style.flex = '1';
+      wrapper.style.width = '';
+      wrapper.style.aspectRatio = '';
+      return;
+    }
+    card.style.aspectRatio = 'auto';
+    wrapper.style.flex = 'none';
+    wrapper.style.width = '100%';
+    wrapper.style.aspectRatio = String((compact.across * compact.cellAspect) / compact.down);
+  }
+
+  /** Re-shape every card already in the grid. */
+  function applyCardShape(): void {
+    for (const wrapper of cardContainers) {
+      if (wrapper?.parentElement) shapeCard(wrapper.parentElement, wrapper);
+    }
+  }
+
+  /**
+   * Size and shape the cards for what they show now. The size cap and minimum only ever grow (items
+   * arrive one at a time), so a change of content (the compact layout on or off, a turn that swaps
+   * its width and height) starts them over from what that content needs.
+   */
+  function refreshCardLayout(): void {
+    currentMaxCardPx = CARD_CAP_FLOOR_PX;
+    currentMinCardPx = MIN_CARD_PX;
+    applyGridColumns(currentItems.map(it => it ?? null));
+    applyCardSizeCap();
+    applyCardShape();
   }
 
   /**
@@ -2863,6 +2956,16 @@ export function renderWaferGallery(
       partial = { ...partial, binColors };
     }
 
+    // Turning the layout on or off rides along with the shared grid it needs, so each card
+    // rebuilds once and never draws on a layout of its own first.
+    if ('compact' in partial) {
+      const compactMap = lotCompactMap();
+      sharedOpts = { ...sharedOpts, compactMap };
+      partial = { ...partial, compactMap };
+    }
+    // What the cards show changed shape or size: the layout on or off, or a turn that swaps its width and height.
+    if ('compact' in partial || (sharedOpts.compact && ('rotation' in partial || 'showXYIndicator' in partial))) refreshCardLayout();
+
     if (partial.plotMode !== undefined) {
       if (nowStacked) {
         // Switching into a stacked mode — aggregate immediately unless some
@@ -3114,6 +3217,7 @@ export function renderWaferGallery(
       display:       'flex',
       flexDirection: 'column' });
     card.appendChild(canvasWrapper);
+    shapeCard(card, canvasWrapper);
     // metaPanel overlays the top of the canvas area (not the header, which
     // stays fixed-height) — an absolute overlay rather than in-flow growth,
     // so expanding it never shrinks canvasWrapper (flex:1) and therefore
@@ -3282,6 +3386,7 @@ export function renderWaferGallery(
     // (buildCards may have just replaced originalItems' dies entirely).
     syncSharedValueRange();
     syncSharedMetadataOrder();
+    syncSharedCompactMap();
 
     // Resolve factories one per task to keep the main thread responsive.
     // Capture the generation at the time buildCards was called — if buildCards runs
@@ -3584,7 +3689,13 @@ export function renderWaferGallery(
       if (metaPanel) mapContainer.appendChild(metaPanel);
       popupBody.appendChild(mapContainer);
 
-      const ctrl = buildDetachedController(mapContainer, item, undefined, liveOptions);
+      // A real window is sized by the operating system, but a script may resize one it opened: widen
+      // it by what the Summary panel takes, so the map keeps its size, and narrow it again on close.
+      let widened = 0;
+      const ctrl = buildDetachedController(mapContainer, item, undefined, liveOptions, (open, px) => {
+        const by = open ? px : -widened;
+        try { popupWin.resizeBy(by, 0); widened = open ? px : 0; } catch { /* a window that cannot be resized stays as it is */ }
+      });
 
       const closePollId = setInterval(() => { if (popupWin.closed) handlePopupClosed(id); }, 400);
       popupWin.addEventListener('pagehide', () => handlePopupClosed(id));
@@ -3611,7 +3722,7 @@ export function renderWaferGallery(
         anchor: container });
       handle.contentWrap.style.flexDirection = 'column';
       augmentOverlayTitleWithMetadata(handle, label, item.wafer.metadata ?? undefined);
-      const ctrl = buildDetachedController(handle.contentWrap, item, undefined, liveOptions);
+      const ctrl = buildDetachedController(handle.contentWrap, item, undefined, liveOptions, roomForPanel(handle));
 
       detachedWindows.set(id, {
         id, ctrl, cardIndex, label, closePollId: null,
@@ -3656,6 +3767,8 @@ export function renderWaferGallery(
      * uses the gallery's shared mode instead.
      */
     liveOptions?: Partial<CardViewOptions>,
+    /** Told when the Summary panel opens or closes, so the box can make room for it. */
+    onSummaryPanelChange?: (open: boolean, widthPx: number) => void,
   ): CardController {
     const baseViewOptions = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
     const withLive = liveOptions ? { ...baseViewOptions, ...liveOptions } : baseViewOptions;
@@ -3688,6 +3801,7 @@ export function renderWaferGallery(
       // shortcut (see renderWaferMap.ts's onKeyDown — it checks
       // showExpandButton, not the button's current visibility).
       showExpandButton: false,
+      onSummaryPanelChange,
       // Both callers (the real-popup path and the in-page floating-window
       // fallback, see openWindowForCard) now build their own persistent
       // expandable identity header before calling this function — the

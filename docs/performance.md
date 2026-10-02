@@ -44,17 +44,18 @@ number repeated in six places is a number that will be wrong in five of them.
 
 | Entry point | gzipped | When it is downloaded |
 | --- | --- | --- |
-| `@wafertools/wafermap` — the data and stats layer, no DOM | **~54 KB** | Always, if you import it |
-| `@wafertools/wafermap/render` — the interactive renderer | **~137 KB** | Always, if you render |
+| `@wafertools/wafermap` — the data and stats layer, no DOM | **~60 KB** | Always, if you import it |
+| `@wafertools/wafermap/render` — the interactive renderer | **~143 KB** | Always, if you render |
 | Insights chart suite | +~36 KB | On first open, only if `insights: { enabled: true }` |
-| In-app user guide | +~40 KB | On first open of the guide |
+| In-app user guide | +~42 KB | On first open of the guide |
+| Summary report builders | +~10 KB | When a report is opened from the Summary panel or the gallery |
 
 Two things worth reading off that table:
 
 - **The data layer runs without a DOM**, so a Node pipeline that builds and analyses wafer
   maps without drawing them pays only the first row, not the renderer's.
-- **The two largest optional pieces are lazy.** A page that renders maps but never opens
-  Insights or the guide never downloads those last two rows. They are separate chunks, fetched on
+- **The optional pieces are lazy.** A page that renders maps but never opens
+  Insights, the guide or a report never downloads those last three rows. They are separate chunks, fetched on
   first use — any bundler with dynamic `import()` splitting (Vite, Rollup, webpack, esbuild
   with `splitting: true`) does this by default.
 

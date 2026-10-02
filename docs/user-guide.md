@@ -32,7 +32,10 @@ display does not change the coordinate labels — a die at (3, −2) always read
 
 The notch (shown as a V-notch or flat edge) marks the physical reference edge of
 the wafer as configured. Use the **Orientation** toolbar controls to rotate or flip
-the display to match your convention; die coordinates are unaffected.
+the display to match your convention; die coordinates are unaffected. The first rotate
+or flip also switches on the **XY indicator** (the +X/+Y arrows in the Overlays menu), so
+you can see which way the die coordinates now run. It stays on until you switch it off
+there; **Reset orientation** leaves it as it is.
 
 <div data-wmap-demo="bin-map" class="wmap-demo"></div>
 
@@ -199,12 +202,12 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 |                                                               | Control            | Description                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Section 2](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                                                                                               |
-| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Limit pass/fail (Test Value mode with limits), Test pass/fail (Test Value mode, active test is functional or has recorded verdicts), and **Mark failing dies** (bin modes only). **Clear overlays** at the foot turns off everything in the menu at once, and is greyed when nothing is on — so the menu also answers "is anything active?" without you auditing every row. |
+| <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: axis labels, XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Limit pass/fail (Test Value mode with limits), Test pass/fail (Test Value mode, active test is functional or has recorded verdicts), and **Mark failing dies** (bin modes only). **Compact layout** and **Layout diagnostics** sit at the top of the menu (see [Compact layout](#compact-layout)). **Clear overlays** at the foot turns off everything in the menu at once, and is greyed when nothing is on — so the menu also answers "is anything active?" without you auditing every row. |
 | <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Picks the colours for the map on screen. In Hard Bin and Soft Bin modes it lists **bin colours** (Default, Colour-blind safe); in every other mode — including the stacked modes, which show values — it lists **value colours**. The two are separate choices, so changing one never resets the other. Value gradients run dark at the low end and bright at the high end, so on a stacked map the healthy wafer sits back and a defect ring or scratch stands out; **Reverse gradient** flips that when the low end is the one you care about. When bin definitions carry their own colours, **Use colours from bin definitions** turns them on or off. (**Mark failing dies** is in Overlays, beside the pass/fail display it belongs with.) |
 | <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive. Hidden whenever a pass/fail display is active or the active test is functional.                                                                       |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range     | Test Value mode with test limits only. Toggles the colorbar between the **limit range** (default — the colours mean the same thing on every wafer, so maps are comparable) and the **data range** (stretches the scale to the values actually present, which shows more contrast but is not comparable between wafers). |
 | <img src="images/icons/legend.svg" width="20" height="20">    | Legend style       | Bin modes only. Controls where the bin legend is positioned relative to the map: Default (right), Compact, Left, Top, Bottom, or Floating.                                                                                                                                                             |
-| <img src="images/icons/orient.svg" width="20" height="20">   | Orientation        | Menu of display transforms: **Rotate 90° clockwise** (applies cumulatively), **Flip horizontal**, **Flip vertical**, and **Reset orientation**. These change only how the wafer is drawn — die coordinates in tooltips and labels are always the original values, whatever the orientation. Reset is worth knowing about: rotation and mirroring do not combine in the order you applied them, so undoing a few clicks by clicking again does not reliably get you back — Reset does, and is greyed when you are already there. |
+| <img src="images/icons/orient.svg" width="20" height="20">   | Orientation        | Menu of display transforms: **Rotate 90° clockwise** (applies cumulatively), **Flip horizontal**, **Flip vertical**, and **Reset orientation**. The first rotate or flip also switches on the XY indicator (see Overlays), which stays on until you switch it off. These change only how the wafer is drawn — die coordinates in tooltips and labels are always the original values, whatever the orientation. Reset is worth knowing about: rotation and mirroring do not combine in the order you applied them, so undoing a few clicks by clicking again does not reliably get you back — Reset does, and is greyed when you are already there. |
 | <img src="images/icons/zoomMode.svg" width="20" height="20">  | Zoom mode          | Click and drag to draw a zoom region.                                                                                                                                                                                                                                                                  |
 | <img src="images/icons/zoomIn.svg" width="20" height="20">    | Zoom in            | Zooms in one step.                                                                                                                                                                                                                                                                                     |
 | <img src="images/icons/zoomOut.svg" width="20" height="20">   | Zoom out           | Zooms out one step.                                                                                                                                                                                                                                                                                    |
@@ -213,7 +216,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)). This is the mode a map opens in.                                                                                                                                                                             |
 | <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
 | <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it.                                                                                                                |
-| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
+| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
 | <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                                                                                           |
 | <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
@@ -248,6 +251,8 @@ highlighting one bin at a time.
 
 Use the **Overlays** menu to toggle optional display layers on and off:
 
+- **Axis labels** — the die coordinates along the bottom and left edges. They appear when you zoom; this row shows
+  them all the time, or hides them. **Clear overlays** returns to showing them on zoom
 - **XY axis indicator** — shows X and Y axis lines through the wafer centre
 - **Ring boundaries** — concentric ring divisions that match the spatial analysis zones
 - **Quadrant lines** — divides the wafer into N, S, E, W quadrants
@@ -259,6 +264,41 @@ Use the **Overlays** menu to toggle optional display layers on and off:
 <div data-wmap-demo="overlays" class="wmap-demo"></div>
 
 *Ring boundaries, quadrant lines, and XY indicator all active.*
+
+### Compact layout
+
+On a multi-project wafer, each reticle holds only a few of your dies, so the map is mostly empty and the dies you care
+about are small. When the occupied columns and rows repeat at a regular pitch, the Overlays menu offers
+**Compact layout**. Switch it on and the empty rows and columns disappear, so your dies are drawn as one grid at a
+much larger size, with each group of dies outlined so you can still see the reticles they came from.
+
+![A multi-project wafer in the wafer view](images/guide-compact-wafer.png)
+
+![The same wafer in the compact layout](images/guide-compact-layout.png)
+
+*The same synthetic wafer in the wafer view and in the compact layout.*
+
+- **Nothing is left out.** Only the arrangement changes. Every die is still drawn and counted, so the legend, yield
+  and statistics are the same as in the wafer view. A die that has no bin (for example one that carries metadata only)
+  keeps its place, shown in the no-data grey.
+- **Coordinates stay original.** Hovering a die and the axis labels give its real die coordinates, not its position
+  in the compact grid.
+- **Orientation.** The notch marker shows the wafer orientation and follows rotation and flips. The **XY indicator**
+  works as it does on the wafer view, drawn in a margin beside the grid.
+- **No wafer outline.** The wafer circle, ring boundaries, quadrant lines and reticle grid describe the physical
+  wafer, which the compact grid no longer follows, so those rows are greyed out while the layout is on.
+- **Galleries.** All cards share one layout, built from every wafer shown, so wafers can be compared cell for cell.
+  Each card is as tall as its map needs, so more of them fit on screen; a quarter turn swaps a card's width and height.
+- **Axis labels.** With the Axis labels row on, the first column of each group of dies is labelled with its real die
+  coordinate, which marks the reticle boundaries; zoom in far enough and every die is labelled.
+- **When it is offered.** The layout is offered when the occupied columns and rows repeat. If you supply
+  `reticleConfig`, it is offered when they repeat at the reticle width and height or a multiple of it (a product on every second reticle repeats at twice the width). Random missing dies do not repeat, so
+  a wafer that merely has holes is not offered it. Developers can switch it on regardless with
+  `viewOptions: { compact: true }`.
+
+**Layout diagnostics** (also in the Overlays menu) shows what the detector saw as counts and scores only: it holds no
+die positions, bins, test values or wafer names. If a layout is not recognised the way you expect, copy the text or save
+it as a file and send it to whoever supports this software.
 
 ### Keyboard shortcuts
 
@@ -410,7 +450,7 @@ detected patterns on the wafer. Open it from the toolbar.
 
 Each finding shows:
 
-- **Severity** — Unusual, Notable, or Info (ordered most to least significant)
+- **Severity** — Unusual, Notable, or Minor (ordered most to least significant)
 - **Description** — plain-language summary of what was detected and where
 - **Click to highlight** — clicking a finding fades the rest of the wafer and outlines the
   affected dies. A finding about a bin also filters the legend to that bin, so the legend
@@ -472,24 +512,44 @@ Sections, top to bottom:
   panel is computed over. For several wafers the heading names them: **Lot
   LOT123 · 13 wafers** when every wafer comes from that one lot, otherwise
   **26 wafers from 2 lots** (or just **13 wafers** when the data records no lot).
-  The panel only says "lot" when it really is one lot. "Mean wafer yield" is an
+  The panel only says "lot" when it really is one lot. "Mean per-wafer yield" is an
   *unweighted* mean of each wafer's own yield; it is deliberately not the same
   statistic as the bin breakdown's pass-bin share, which weights every die
   equally. The two agree only when die counts are even across the wafers.
-- **Findings** — detected anomalies, most severe first. Severity chips narrow
+- **What stands out** — the headline (the yield, and for a lot its spread across
+  wafers), then up to three items ranked by how many dies each costs, an "also"
+  line for any others over a yield point, and a line saying what was compared. An
+  item names a region, a wafer or a test and, for a region, the failing bins that make up
+  its shortfall; a test is an item when it is outside its limits (or a functional test
+  fails) on a share of the dies that clears the same floor. Its three dots and word (High, Moderate or Low impact) say how
+  much of the lot it costs: the higher of its share of all the dies (2% moderate, 4% high)
+  and its share of the dies that fail (15% moderate, 40% high), so a small area that is most
+  of a good lot's loss still reads as high. Click a name to highlight that finding on the map.
+  A **Watch** line (at most two) follows for things that cost no dies yet: a lot of five or more
+  wafers whose yield, or a test's mean, trends up or down across the wafers *in the order given*
+  (said as "input order": the order is only a physical one if you know it is), and a test whose
+  Ppk against its limits is under 1.0.
+  A wafer or lot with nothing over a yield point says so: "Nothing stands out".
+  The reports open with the same section, and **Full report** at the foot of it opens the
+  report; in a report opened from the panel, clicking a finding's row shows it on the map.
+- **Findings** — detected anomalies, most severe first, each group marked with
+  three dots filled by severity (Unusual, Notable, Minor). Severity chips narrow
   the list; Kind and Region dropdowns appear once there are enough findings to
-  be worth narrowing.
+  be worth narrowing. **Detail** opens the same sentences above a readable list.
 - **Bin breakdown** — bars as a share of dies, pass bins first and then failing
   bins by descending count, so the dominant failure mode is at the top. It
   follows the map's plot mode: a soft-bin map gets a soft-bin breakdown. When a
   wafer carries both bin types, a **Hard / Soft** selector in the section header
   overrides that.
 - **Region yield** — ring yield by default, with a **Ring / Quadrant** selector.
+  Each row prints its difference from the wafer's yield in points and is tinted
+  when it is 1, 2 or 4 or more points below it (nothing above is tinted).
   Ring is the default because edge roll-off is the pattern that dominates real
   wafer maps; a genuinely asymmetric quadrant is reported as a finding above,
   with a significance test behind it.
 - **Wafer yield** (several wafers only) — one bar per wafer with the median
-  marked. Wafers are in slot order by default, since that is what makes a
+  marked, each row's difference from the median in points, and a tint when it is
+  1, 2 or 4 or more points below it. Wafers are in slot order by default, since that is what makes a
   slot-correlated pattern visible; a **Slot / Yield** selector re-sorts. Wafers
   well below or above the rest are labelled "low outlier" or "high outlier"
   (3 or more wafers, and at least 3 points from the median — the same rule as the
@@ -498,7 +558,10 @@ Sections, top to bottom:
   because it measures against the *overall* spread, including wafer-to-wafer
   variation, which is what the dies actually ship against. The full descriptive
   statistics — min, quartiles, median, max, σ, both test limits, and all four
-  capability indices — are in the summary report and the CSV export.
+  capability indices — are in the CSV export, and the wafer summary report shows
+  N, min, quartiles, median, mean, max, σ and limit yield (a lot's report has N, min, mean,
+  max, σ and limit yield: quartiles cannot be combined from each wafer's own). Both reports
+  also carry the full Cp, Cpk, Pp and Ppk table.
 - **Functional tests** — pass/fail counts and pass rate per functional test.
 
 Every section header can be collapsed, and stays collapsed as the panel
@@ -507,7 +570,13 @@ re-renders.
 A **Summary report** button (when present) opens a printable full-detail
 report — yield, bin breakdown, ring and quadrant statistics, the full per-test
 table with Cp/Cpk/Pp/Ppk, and the findings list — and can be saved as a PDF
-from your browser's print dialog.
+from your browser's print dialog. It opens with **What stands out**: the yield,
+up to three regions, fail bins or wafers ranked by how many dies each costs, and a
+line saying what was compared. An item is listed only when it costs at least one
+yield point of the dies analysed; a lot with none says so. Each figure links to its
+row in the Findings table below. Severity is drawn as three dots and a word, so it reads in a
+black-and-white print; yields carry a bar, and a wafer or region is tinted only when it is
+at least a point below the rest.
 
 ![Wafer summary report](images/report-wafer-summary.png)
 

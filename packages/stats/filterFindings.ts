@@ -75,3 +75,50 @@ export function findingPatternKey(f: StatsFinding): string {
     f.comparison.family, f.comparison.left, f.effect.direction,
   ].join('|');
 }
+
+// ── How a findings list is arranged ───────────────────────────────────────────
+
+/** A findings list as the reader sees it: patterns with the findings they explain, then the rest grouped by region. */
+export interface ArrangedFindings {
+  /** Spatial-pattern findings, each with the findings in the list it names as supporting detail. */
+  patterns: Array<{ finding: StatsFinding; children: StatsFinding[] }>;
+  /** Everything else grouped by region (`family` and `left`), the most severe group first and within it too. */
+  groups: Array<{ family: string; left: string; worst: StatsSeverity; findings: StatsFinding[] }>;
+}
+
+const SEVERITY_ORDER: Record<StatsSeverity, number> = { unusual: 0, notable: 1, info: 2 };
+
+/**
+ * The one arrangement of a findings list, read by the Summary panel and both HTML reports, so a
+ * finding sits under the same heading and in the same order on every surface.
+ *
+ * A finding a pattern lists as supporting detail, or that another finding absorbed as an exact
+ * restatement, is not repeated among the groups: the first is shown under its pattern, the second
+ * is not shown (it stays in `summary.findings` for a host reading them programmatically). Not every
+ * finding's `relatedIds`: a run-merge records the constituents it replaced there, and those are gone.
+ */
+export function arrangeFindings(findings: readonly StatsFinding[]): ArrangedFindings {
+  const patternFindings = findings.filter((f) => f.comparison.family === 'spatial-pattern');
+  const claimed = new Set([
+    ...patternFindings.flatMap((f) => f.relatedIds ?? []),
+    ...findings.flatMap((f) => f.absorbedIds ?? []),
+  ]);
+  const patterns = patternFindings.map((finding) => ({
+    finding,
+    children: findings.filter((f) => finding.relatedIds?.includes(f.id)),
+  }));
+
+  const byRegion = new Map<string, StatsFinding[]>();
+  for (const f of findings) {
+    if (f.comparison.family === 'spatial-pattern' || claimed.has(f.id)) continue;
+    const key = `${f.comparison.family}\0${f.comparison.left}`;
+    byRegion.set(key, [...(byRegion.get(key) ?? []), f]);
+  }
+  const groups = [...byRegion.entries()].map(([key, members]) => {
+    const sorted = [...members].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+    const [family, left] = key.split('\0');
+    return { family, left, worst: sorted[0].severity, findings: sorted };
+  });
+  groups.sort((a, b) => SEVERITY_ORDER[a.worst] - SEVERITY_ORDER[b.worst]);
+  return { patterns, groups };
+}

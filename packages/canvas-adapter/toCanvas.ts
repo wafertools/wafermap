@@ -1,7 +1,7 @@
 import type { View, ViewRect } from '../renderer/buildView.js';
 import { fontPx } from './toolbar.js';
 import { findTestDef, buildMapTitle } from '../renderer/buildView.js';
-import { niceStep } from '../renderer/axisTicks.js';
+import { niceStep, compactTickIndices } from '../renderer/axisTicks.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
 import type { Die } from '../core/dies.js';
 import { type Affine, affineInvert, affineVector } from '../core/transforms.js';
@@ -757,7 +757,7 @@ export function drawMapCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.gridToScreen, view.rotation, theme);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.gridToScreen, view.rotation, theme, view.compact);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
@@ -1421,6 +1421,7 @@ function drawAxisTicks(
   gridToScreen: Affine<'grid', 'screen'>,
   rotation: number,
   theme: CanvasTheme,
+  compact?: View['compact'],
 ): void {
   ctx.save();
   ctx.font        = AXIS_TICK_FONT();
@@ -1451,15 +1452,32 @@ function drawAxisTicks(
   const CARDINAL = 1e-9;
 
   /** Resolve one screen axis to (grid pitch, sign), or null when not axis-separable. */
-  function axisSource(src: { x: number; y: number }): { pitch: number; sign: number } | null {
+  function axisSource(src: { x: number; y: number }): { pitch: number; sign: number; axis: 'x' | 'y' } | null {
     if (!diePitchMm) return null;
     if (Math.abs(src.y) < CARDINAL && Math.abs(src.x) > CARDINAL) {
-      return { pitch: diePitchMm.x, sign: Math.sign(src.x) };
+      return { pitch: diePitchMm.x, sign: Math.sign(src.x), axis: 'x' };
     }
     if (Math.abs(src.x) < CARDINAL && Math.abs(src.y) > CARDINAL) {
-      return { pitch: diePitchMm.y, sign: Math.sign(src.y) };
+      return { pitch: diePitchMm.y, sign: Math.sign(src.y), axis: 'y' };
     }
     return null;
+  }
+
+  // A compact view has no physical positions to invert: its dies sit one pitch apart about the
+  // grid centre, and the label of each column or row is the ORIGINAL die coordinate it stands
+  // for, read from the layout. Ticks sit on die centres (not on multiples of the pitch, which
+  // fall between dies when the count is even), at the start of each group of dies, or at every
+  // die once the cells are wide enough to label them all (see `compactTickIndices`).
+  function compactTicks(
+    src: { pitch: number; sign: number; axis: 'x' | 'y' } | null,
+    minGapPx: number,
+  ): { mm: number; label: string }[] | null {
+    if (!compact || !src) return null;
+    const values = src.axis === 'x' ? compact.columns : compact.rows;
+    const breaks = src.axis === 'x' ? compact.columnBreaks : compact.rowBreaks;
+    const centre = src.axis === 'x' ? compact.centreColumn : compact.centreRow;
+    return compactTickIndices(values.length, breaks, src.pitch * ppm, minGapPx)
+      .map(k => ({ mm: src.sign * (k - centre) * src.pitch, label: String(values[k]) }));
   }
 
   const xAxisSrc = axisSource(srcOfScreenX);
@@ -1498,14 +1516,15 @@ function drawAxisTicks(
   ctx.textBaseline = 'top';
   const xStartMm = Math.ceil(((padding - originX) / ppm) / tickStepX) * tickStepX;
   const xEndMm   = (cssW - padding - originX) / ppm;
-  for (let mm = xStartMm; mm <= xEndMm; mm += tickStepX) {
+  // Labels along the bottom need their width; labels down the side only their height.
+  const xTicks = compactTicks(xAxisSrc, 36) ?? stepTicks(xStartMm, xEndMm, tickStepX, mm => diePitchMm ? String(dieIndexForDisplayX(mm)) : fmt(mm));
+  for (const { mm, label } of xTicks) {
     const sx = originX + mm * ppm;
     if (sx < padding || sx > cssW - padding) continue;
     ctx.beginPath();
     ctx.moveTo(sx, axisY - AXIS_TICK_LEN);
     ctx.lineTo(sx, axisY);
     ctx.stroke();
-    const label = diePitchMm ? String(dieIndexForDisplayX(mm)) : fmt(mm);
     ctx.fillText(label, sx, axisY + 2);
   }
 
@@ -1514,14 +1533,14 @@ function drawAxisTicks(
   ctx.textBaseline = 'middle';
   const yStartMm = Math.ceil(((originY - (cssH - padding)) / ppm) / tickStepY) * tickStepY;
   const yEndMm   = (originY - padding) / ppm;
-  for (let mm = yStartMm; mm <= yEndMm; mm += tickStepY) {
+  const yTicks = compactTicks(yAxisSrc, 16) ?? stepTicks(yStartMm, yEndMm, tickStepY, mm => diePitchMm ? String(dieIndexForDisplayY(mm)) : fmt(mm));
+  for (const { mm, label } of yTicks) {
     const sy = originY - mm * ppm;
     if (sy < padding || sy > cssH - padding) continue;
     ctx.beginPath();
     ctx.moveTo(axisX, sy);
     ctx.lineTo(axisX + AXIS_TICK_LEN, sy);
     ctx.stroke();
-    const label = diePitchMm ? String(dieIndexForDisplayY(mm)) : fmt(mm);
     ctx.fillText(label, axisX - 2, sy);
   }
 
@@ -1529,6 +1548,13 @@ function drawAxisTicks(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Ticks at every `step` mm from `start` to `end`, labelled by `labelFor`. */
+function stepTicks(start: number, end: number, step: number, labelFor: (mm: number) => string): { mm: number; label: string }[] {
+  const ticks: { mm: number; label: string }[] = [];
+  for (let mm = start; mm <= end; mm += step) ticks.push({ mm, label: labelFor(mm) });
+  return ticks;
+}
 
 function logTicks(
   vMin: number, vMax: number,

@@ -48,6 +48,7 @@ nav = [
       { "Interaction API"                = "examples/interaction.html"     },
       { "Metadata / layout mode"         = "examples/metadata-mode.html"   },
       { "Reticle overlays"               = "examples/reticle.html"         },
+      { "Multi-project wafers"           = "examples/multi-project-wafer.html" },
     ]},
     { "Galleries and analysis" = [
       { "Findings, Summary panel and galleries" = "examples/statistics.html" },

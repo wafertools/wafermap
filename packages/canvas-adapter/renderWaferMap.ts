@@ -7,7 +7,7 @@ import { buildWaferMap, getTestPassStatus, isParametricTest } from '../renderer/
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
@@ -35,6 +35,7 @@ import { buildMaplessSummary } from './maplessSummary.js';
 import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
 import { INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
 import { toggleHighlight } from '../core/utils.js';
+import { buildCompactMap, compactLayoutOffered, type CompactMap } from '../core/compact.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -75,6 +76,23 @@ export interface WaferPreferences {
   showQuadrantBoundaries?: boolean;
   showReticle?:            boolean;
   showXYIndicator?:        boolean;
+  /**
+   * Draw the axis labels (original die coordinates along the bottom and left edges). Unset, they
+   * appear while the map is zoomed and not otherwise; `true` shows them always, `false` never.
+   * The Overlays menu's **Axis labels** row sets it. Showing them reserves room for the labels,
+   * so the map is a little smaller.
+   */
+  showAxes?:               boolean;
+  /**
+   * Draw the dies on a compact grid with the empty rows and columns removed and each group of
+   * dies outlined, instead of at their physical positions. Default false. The toolbar offers
+   * the toggle when the occupied rows and columns repeat at a regular pitch (a multi-project
+   * wafer), or at the supplied `reticleConfig` width and height; setting it here applies it
+   * regardless. Only the layout changes: every die is still drawn and counted, and axis labels
+   * stay original die coordinates. The wafer outline, rings, quadrants, reticle grid and XY
+   * indicator are not drawn in this layout.
+   */
+  compact?:                boolean;
   /** Legend position for bin modes. Default 'default'. */
   legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /**
@@ -415,7 +433,7 @@ export interface WaferMapController {
 // Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
 const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
   'binColorScheme', 'valueColorScheme', 'reverseValueScheme', 'useDefinedBinColors', 'rotation', 'flipX', 'flipY',
-  'showDieLabels', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator',
+  'showDieLabels', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator', 'compact', 'showAxes',
   'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies', 'fallbackFormat',
 ]);
 
@@ -477,6 +495,11 @@ export interface CardSharedState {
    * `stackedBins`/`stackedSoftBins` hover tooltips.
    */
   lotSize?: number;
+  /**
+   * The compact layout to draw when `compact` is on, built over every die the gallery shows,
+   * so all cards share one grid and stay comparable. A lone map builds its own from its dies.
+   */
+  compactMap?: CompactMap;
 }
 
 /** @internal */
@@ -507,6 +530,13 @@ export interface CardRenderOptions extends Omit<RenderOptions, 'viewOptions'> {
    * spent most of a mode switch drawing cards nobody could see.
    */
   drawWhenVisible?: boolean;
+  /**
+   * Told when the Summary panel opens or closes beside the map, with the width it took from the
+   * map when it opened. For a host that owns the box this map sits in and can widen it by that
+   * much, so the map keeps its size (`renderWaferGallery` does this for its detached windows).
+   * Without it a map expanded by its own Expand button does the same for its own modal.
+   */
+  onSummaryPanelChange?: (open: boolean, widthPx: number) => void;
 }
 
 /** @internal */
@@ -536,7 +566,7 @@ export function findingBin(finding: StatsFinding): number | undefined {
 }
 
 export function toPublicViewOptions(opts: CardViewOptions): WaferViewOptions {
-  const { metadataValueOrder: _order, binColors: _colors, lotSize: _lotSize, ...rest } = opts;
+  const { metadataValueOrder: _order, binColors: _colors, lotSize: _lotSize, compactMap: _compactMap, ...rest } = opts;
   return rest;
 }
 
@@ -1119,6 +1149,7 @@ export function renderWaferMapCard(
     showQuadrantBoundaries: false,
     showReticle:            false,
     showXYIndicator:        false,
+    compact:                false,
     rotation:               0,
     flipX:                  false,
     flipY:                  false,
@@ -1438,7 +1469,9 @@ export function renderWaferMapCard(
     const so = viewOpts;
     // The canvas draw list only ever shows positioned dies — an unpositioned
     // die is never placed on the map, only surfaced via the die-list.
-    currentView = buildView(wafer, currentDies.filter(isPositionedDie), {
+    const positioned = currentDies.filter(isPositionedDie);
+    currentView = buildView(wafer, positioned, {
+      compact:                viewOpts.compact ? (viewOpts.compactMap ?? buildCompactMap(positioned)) : undefined,
       plotMode:               so.plotMode,
       binColorScheme:         so.binColorScheme,
       valueColorScheme:       so.valueColorScheme,
@@ -1494,6 +1527,16 @@ export function renderWaferMapCard(
   }
 
   rebuildView();
+
+  /** Whether the axis labels are showing: the explicit choice, else the host's, else whether the map is zoomed. */
+  function effectiveShowAxes(): boolean {
+    return viewOpts.showAxes ?? drawOptions.showAxes ?? (viewport !== null);
+  }
+
+  /** Whether the compact layout applies: a repeating multi-project layout, or one repeating at the reticle size the host supplied. */
+  function compactOffered(): boolean {
+    return compactLayoutOffered(currentDies, [reticleConfig]);
+  }
 
   // ── Summary panel ──────────────────────────────────────────────────────────
   let summaryPanelEl: HTMLDivElement | null = null;
@@ -1719,7 +1762,14 @@ export function renderWaferMapCard(
   function setSummaryPanelOpen(open: boolean): void {
     const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
     if (!panelEl) return;
+    // The room the panel takes is what the map loses, so it is read off the map: before and after.
+    const wasOpen = panelEl.style.display !== 'none';
+    const mapWidthBefore = canvasWrap.getBoundingClientRect().width;
     panelEl.style.display = open ? 'block' : 'none';
+    if (open !== wasOpen) {
+      const taken = mapWidthBefore - canvasWrap.getBoundingClientRect().width;
+      (options.onSummaryPanelChange ?? modalRoom)?.(open, open ? taken : 0);
+    }
     if (open && stalePanels.has(panelEl)) renderSummaryPanelInto(panelEl);
     if (btnSummary) setButtonActive?.(btnSummary, open);
     refreshSummaryButton();
@@ -1961,12 +2011,14 @@ export function renderWaferMapCard(
             const hasRecorded   = isValueMode && !functionalActive &&
               currentView.dies.some(d => getTestPassStatus(d, resolvedTest, activeTestDef) !== undefined);
             return overlayMenuRows(
-              viewOpts,
+              { ...viewOpts, showAxes: effectiveShowAxes() },
               hasReticleNow,
               { functionalActive, hasLimits, hasRecorded,
                 binMode: (viewOpts.plotMode ?? 'hardBin') === 'hardBin'
                       || (viewOpts.plotMode ?? 'hardBin') === 'softBin' },
               patch => applyOpts(patch),
+              { on: !!viewOpts.compact, offered: compactOffered(), onChange: on => applyOpts({ compact: on }),
+                onDiagnostics: () => openCompactDiagnostics(currentDies, [reticleConfig], { anchor: canvas, onSaveText: exportHooks.onSaveText }) },
             );
           },
           () => anyOverlayActive(viewOpts),
@@ -2157,6 +2209,8 @@ export function renderWaferMapCard(
 
   // ── Expand modal ──────────────────────────────────────────────────────────
   let modalHandle: OverlayHandle | null = null;
+  /** Widens this map's own Expand modal for the Summary panel; null while not expanded. */
+  let modalRoom: ((open: boolean, widthPx: number) => void) | null = null;
 
   function openExpandModal(): void {
     if (modalHandle) { modalHandle.close(); modalHandle = null; }
@@ -2238,6 +2292,7 @@ export function renderWaferMapCard(
         : undefined,
       onClosed: () => {
         modalHandle = null;
+        modalRoom = null;
         // Unconditional: Expand is valid in both views now that the modal can
         // carry the Insights suite, so restoring it must not depend on which
         // view happens to be showing when the modal closes.
@@ -2265,6 +2320,16 @@ export function renderWaferMapCard(
     if (roots.length > 1) handle.contentWrap.style.flexDirection = 'column';
 
     modalHandle = handle;
+    modalRoom = roomForPanel(handle);
+    // Expanded with the panel already open: the map is already sharing the box with it, so widen
+    // the box by the panel and the gap beside it.
+    const openPanel = summaryPanelEl ?? autoSummaryPanelEl;
+    const openWrapper = summaryPanelWrapper ?? autoSummaryPanelWrapper;
+    if (openPanel && openWrapper && openPanel.style.display !== 'none') {
+      const gap = parseFloat(ownerDocument.defaultView?.getComputedStyle(openWrapper).columnGap ?? '') || 0;
+      const taken = openPanel.getBoundingClientRect().width + gap;
+      if (taken > 0) modalRoom(true, taken);
+    }
     if (btnExpand) btnExpand.style.display = 'none';
   }
 
@@ -2288,6 +2353,8 @@ export function renderWaferMapCard(
     }
     const prevMode = viewOpts.plotMode;
     viewOpts = { ...viewOpts, ...partial };
+    // The layout's extent is nothing like the wafer's, so a zoom made on one means nothing on the other.
+    if ('compact' in partial || 'compactMap' in partial) { fittedViewport = null; viewport = null; }
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
       // No fittedViewport invalidation here: a plot-mode change shifts the
       // auto-fit originX (colorbar vs bin-legend width), but so do half a dozen
@@ -2301,7 +2368,7 @@ export function renderWaferMapCard(
     // ViewRect.binFail is set on every build regardless of the flag — the flag
     // only decides whether toCanvas draws the hatch.
     const onlyLegendStyle = Object.keys(partial).every(
-      k => k === 'legendPosition' || k === 'showLegend' || k === 'markFailingDies');
+      k => k === 'legendPosition' || k === 'showLegend' || k === 'markFailingDies' || k === 'showAxes');
     if (!onlyLegendStyle) rebuildView();
     syncLegendStyleBtnFn?.();
     syncPaletteBtnFn?.();
@@ -2392,7 +2459,7 @@ export function renderWaferMapCard(
       legendOffset,
       diePitchMm,
       fallbackFormat: viewOpts.fallbackFormat,
-      showAxes:  drawOptions.showAxes ?? (viewport !== null),
+      showAxes:  effectiveShowAxes(),
       viewport: vp,
       activeBin: viewOpts.plotMode === 'metadata' ? viewOpts.highlightMetadataValue : viewOpts.highlightBin,
       hoverBin: hoveredLegendBin,

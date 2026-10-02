@@ -3,11 +3,16 @@
 Convert LSWMD.pkl (WM-811K) to a benchmark JSON file for classifier evaluation.
 Only includes labelled wafers (failureType != 'none' and not NaN).
 
+Usage: python3 scripts/prepare-benchmark.py [path/to/LSWMD.pkl]
+The input defaults to the LSWMD_PKL environment variable, then to ./LSWMD.pkl.
+
 Output: tests/fixtures/wm811k-benchmark.json
 Format: array of { failureType, gridRows, gridCols, results: [{x, y, hbin}] }
 """
+import os
 import sys
 import json
+from pathlib import Path
 import numpy as np
 
 # Compat shim for old pandas pickle
@@ -15,8 +20,8 @@ import pandas.core.indexes
 sys.modules['pandas.indexes'] = pandas.core.indexes
 import pickle
 
-PICKLE_PATH = '/home/paul/projects/LSWMD.pkl'
-OUTPUT_PATH = '/home/paul/projects/wafermap/tests/fixtures/wm811k-benchmark.json'
+PICKLE_PATH = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('LSWMD_PKL', 'LSWMD.pkl')
+OUTPUT_PATH = str(Path(__file__).resolve().parent.parent / 'tests' / 'fixtures' / 'wm811k-benchmark.json')
 
 print('Loading LSWMD.pkl...', flush=True)
 with open(PICKLE_PATH, 'rb') as f:

@@ -1,8 +1,8 @@
 import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
-import { binPassSets, binPassSetsByWafer, mergeBinDefs, type BinPassGroup } from '../renderer/binColors.js';
-import { itemPassBins, passBinsLabel } from '../core/passBins.js';
+import { binPassSets, binPassSetsByWafer, mergeBinDefs, resolveBinColors, resolveBinColorsByWafer, type BinColors, type BinPassGroup } from '../renderer/binColors.js';
+import { commonPassBins, itemPassBins, passBinsLabel } from '../core/passBins.js';
 import { isParametricTest, isBuiltMap, type BinDef, type TestDef, type YieldSummary, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
@@ -10,18 +10,28 @@ import { openHtmlReport } from './renderFindingsReport.js';
 import { analyzeWaferLot } from './analyzeWaferLot.js';
 import { computeFunctionalYield, analyzeWaferMap } from './analyzeWaferMap.js';
 import { mergeTestDefs } from './mergeTestDefs.js';
-import { sortBinsForDisplay } from './binPareto.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE } from './facets.js';
 import { visibleFindings } from './filterFindings.js';
 import { buildYieldDataCombined } from './yield.js';
 import { describeWaferPopulation, populationLabel } from './population.js';
 import { buildTestPassRateData, hasJudgeableTests , poolFunctionalYield } from './testPassRate.js';
 import { buildCapabilityData } from './capability.js';
+import { buildSynthesis } from './synthesis.js';
+import { binBreakdownRows, binBreakdownTitle, binCountsFrom, pooledBinCounts, totalOf } from './binRows.js';
+import { MEAN_WAFER_YIELD_LABEL, shortfallLegend } from './presentation.js';
+import { regionYieldRows, waferYieldRows } from './yieldRows.js';
+import { describeValues } from './math.js';
 import { fmt } from '../renderer/fmt.js';
 import { getDieKey, isPositionedDie, diePassStatus } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
 import {
   findingsTableHtml,
+  synthesisSectionHtml,
+  LIVE_FINDINGS_SCRIPT,
+  barCell,
+  deltaCell,
+  withSectionNav,
+  type TableCell,
   renderMetadataSection,
   renderMetricGrid,
   renderSection,
@@ -41,6 +51,10 @@ export interface SummaryReportParams {
   statsSummary?: StatsSummary;
   passBins?:    number[];
   ringCount?:   number;
+  /** @internal The map's own bin colours, so a bar here is the colour of that bin on the map. Resolved with the default palette when omitted. */
+  binColors?:   BinColors;
+  /** @internal Shown inside the app: a click on a finding's row selects it on the map (see `LIVE_FINDINGS_SCRIPT`). */
+  live?:        boolean;
 }
 
 function pct(n: number, d: number): string {
@@ -58,36 +72,42 @@ function titleFromMeta(meta?: Record<string, unknown>): string {
 // ── Section renderers ─────────────────────────────────────────────────────────
 
 
-function binSection(
-  dies: Die[],
+/**
+ * One bin breakdown table, for a wafer or (with `passing` from every wafer's own pass bins) a lot: the
+ * same rows the Summary panel draws as bars, in its order, with the map's colour behind each share.
+ */
+function binTable(
+  counts: ReadonlyMap<number, number>,
   binDefs: BinDef[] | undefined,
   mode: 'hard' | 'soft',
-  /** Precomputed `StatsSummary.stats.{hard,soft}BinCounts`, used directly instead of re-walking `dies` when supplied. */
-  precomputedCounts?: Record<number, number>,
-  passBins: number[] = [1],
+  passing: ReadonlySet<number>,
+  colors: ReadonlyMap<number, string> | undefined,
 ): string {
-  const counts = new Map<number, number>();
-  if (precomputedCounts) {
-    for (const [binStr, count] of Object.entries(precomputedCounts)) counts.set(Number(binStr), count);
-  } else {
-    for (const d of dies) {
-      if (d.partial || d.edgeExcluded) continue;
-      const b = mode === 'hard' ? d.hbin : d.sbin;
-      if (b != null) counts.set(b, (counts.get(b) ?? 0) + 1);
-    }
-  }
   if (!counts.size) return '';
-  const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  const defMap = binDefs ? new Map(binDefs.map(d => [d.bin, d])) : null;
-  // Pass status per bin TYPE: `passBins` are hard-bin numbers.
-  const rows = sortBinsForDisplay(counts.entries(), binPassSets(dies, passBins)[mode])
-    .map(([bin, count]) => {
-      const def  = defMap?.get(bin);
-      const name = def?.name ?? '—';
-      return [String(bin), name, String(count), pct(count, total)];
-    });
-  const title = mode === 'hard' ? 'Hard Bin Breakdown' : 'Soft Bin Breakdown';
-  return renderSection(title, renderTable(['Bin', 'Name', 'Count', '%'], rows, { className: 'compact' }));
+  const rows = binBreakdownRows(counts, binDefs, passing).map((r): TableCell[] => {
+    // Pass bins are written in grey so the fail bins, which are the point, carry the weight.
+    const quiet = r.passing ? 'muted-row' : '';
+    const cell = (text: string): TableCell => ({ html: escHtml(text), className: quiet });
+    return [cell(String(r.bin)), cell(r.name ?? '—'), cell(String(r.count)), barCell(r.percent, `${r.percent.toFixed(1)}%`, quiet, colors?.get(r.bin))];
+  });
+  return renderSection(binBreakdownTitle(mode, totalOf(counts)), renderTable(['Bin', 'Name', 'Dies', 'Share'], rows, { className: 'compact' }));
+}
+
+/** Both bin types when the data has both, as the panel's Hard / Soft selector offers. */
+function binSection(
+  dies: Die[],
+  hbinDefs: BinDef[] | undefined,
+  sbinDefs: BinDef[] | undefined,
+  /** Precomputed `StatsSummary.stats.{hard,soft}BinCounts`, used directly instead of re-walking `dies` when supplied. */
+  precomputed: { hard?: Record<number, number>; soft?: Record<number, number> },
+  passBins: number[],
+  colors: BinColors,
+): string {
+  const passing = binPassSets(dies, passBins);
+  return (['hard', 'soft'] as const).map((mode) => binTable(
+    binCountsFrom(dies, mode, mode === 'hard' ? precomputed.hard : precomputed.soft),
+    mode === 'hard' ? hbinDefs : sbinDefs, mode, passing[mode], colors[mode],
+  )).join('\n');
 }
 
 function regionYieldSection(
@@ -101,7 +121,7 @@ function regionYieldSection(
   const hasBins  = dies.some(d => d.hbin != null || d.sbin != null);
   if (!hasBins || !regions.length) return '';
 
-  const rows: string[][] = [];
+  const tallies: Array<{ label: string; pass: number; total: number }> = [];
   for (const region of regions) {
     let pass = 0, total = 0;
     for (const key of region.dieKeys) {
@@ -113,58 +133,98 @@ function regionYieldSection(
       if (verdict) pass++;
     }
     if (!total) continue;
-    rows.push([region.label, String(pass), String(total), pct(pass, total)]);
+    tallies.push({ label: region.label, pass, total });
   }
-  return rows.length ? renderSection(title, renderTable(['Region', 'Pass', 'Total', 'Yield'], rows, { className: 'compact' })) : '';
+  if (!tallies.length) return '';
+  // The regions partition the wafer, so each is read against the wafer's own yield.
+  const { rows: read } = regionYieldRows(tallies.map((r) => ({
+    key: r.label, label: r.label, n: r.total, passDies: r.pass, yieldPercent: (r.pass / r.total) * 100,
+  })));
+  const rows: TableCell[][] = read.map((r) => [
+    escHtml(r.label), String(r.passDies), String(r.n), barCell(r.yieldPercent, pct(r.passDies, r.n)), deltaCell(r.delta),
+  ]);
+  return renderSection(title, renderTable(['Region', 'Pass', 'Total', 'Yield', 'vs wafer'], rows, { className: 'compact' })
+    + `<p class="report-legend">${shortfallLegend('the wafer')}</p>`);
 }
 
+/** What a Test Values row shows. The optional fields are absent where they cannot be had (a lot has no pooled quartiles). */
+interface TestRowStats {
+  testNumber: number;
+  count: number;
+  min: number;
+  mean: number;
+  max: number;
+  q1?: number;
+  median?: number;
+  q3?: number;
+  stddev?: number;
+}
+
+type SpecYieldRow = { testNumber: number; yieldPercent: number | null };
+
+/** One test's statistics from the dies: the same `describeValues` the Summary panel's table uses. */
+function describeTestFromDies(active: Die[], testNumber: number): TestRowStats | undefined {
+  const values = new Float64Array(active.length);
+  let n = 0;
+  for (const d of active) {
+    const v = testValue(d, testNumber);
+    if (v !== undefined && Number.isFinite(v)) values[n++] = v;
+  }
+  if (n === 0) return undefined;
+  const { count, min, mean, max, q1, median, q3, stddev } = describeValues(values.subarray(0, n));
+  return { testNumber, count, min, mean, max, q1, median, q3, stddev };
+}
+
+/**
+ * The Test Values table, with the columns of the Summary panel's full table that the data supports:
+ * N, min, quartiles and median, mean, max, σ, and the share of dies inside the test's limits. A column
+ * appears only when every row has it, so a table is never half-filled. Functional tests are not here
+ * (every column is a parametric statistic) and have their own table.
+ */
 function testSection(
   dies: Die[],
   testDefs: TestDef[],
-  /** Precomputed `StatsSummary.stats.perTestStats`, used directly instead of re-walking `dies` per-test when a test is present. */
-  precomputedPerTestStats?: Array<{ testNumber: number; min: number; max: number; mean: number }>,
+  /** Precomputed `StatsSummary.stats.perTestStats` (or its lot pooling); a test it lacks is described from `dies`. */
+  precomputed?: readonly TestRowStats[],
+  /** `StatsSummary.stats.testSpecYield`: the share of dies inside each test's limits. */
+  specYield?: readonly SpecYieldRow[],
+  /** Said under the table when the lot's statistics are pooled, so the missing columns are explained. */
+  note?: string,
 ): string {
   if (!testDefs.length) return '';
   const active = dies.filter(d => !d.partial && !d.edgeExcluded);
-  const precomputedByNumber = new Map((precomputedPerTestStats ?? []).map(s => [s.testNumber, s]));
-  const rows: string[][] = [];
+  const known = new Map((precomputed ?? []).map(s => [s.testNumber, s]));
+  const yields = new Map((specYield ?? []).map(y => [y.testNumber, y.yieldPercent]));
 
-  // Min/mean/max are parametric statistics — functional (pass/fail) tests are excluded.
+  const rows: Array<{ name: string; unit?: string; stats: TestRowStats; limitYield?: number | null }> = [];
   for (const def of testDefs.filter(isParametricTest)) {
-    const tn = def.testNumber;
-    const unit = def.unit || undefined;
-
-    const precomputed = precomputedByNumber.get(tn);
-    let min: number, max: number, mean: number;
-    if (precomputed) {
-      ({ min, max, mean } = precomputed);
-    } else {
-      // One pass: min, max and the sum. No array of every value and no sort —
-      // for a lot's report that was every die of every wafer, per test.
-      let n = 0, sum = 0;
-      min = Infinity;
-      max = -Infinity;
-      for (const d of active) {
-        const v = testValue(d, tn);
-        if (v === undefined || !isFinite(v)) continue;
-        n++;
-        sum += v;
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-      if (n === 0) continue;
-      mean = sum / n;
-    }
-
-    rows.push([
-      escHtml(def.name),
-      fmt(min,    unit),
-      fmt(mean,   unit),
-      fmt(max,    unit),
-    ]);
+    const stats = known.get(def.testNumber) ?? describeTestFromDies(active, def.testNumber);
+    if (!stats) continue;
+    rows.push({ name: def.name, unit: def.unit || undefined, stats, limitYield: yields.get(def.testNumber) });
   }
   if (!rows.length) return '';
-  return renderSection('Test Values', renderTable(['Test', 'Min', 'Mean', 'Max'], rows, { className: 'compact' }));
+
+  const all = (field: keyof TestRowStats): boolean => rows.every(r => r.stats[field] !== undefined);
+  const hasQuartiles = all('q1') && all('median') && all('q3');
+  const hasSigma = all('stddev');
+  const hasLimitYield = rows.some(r => r.limitYield !== undefined && r.limitYield !== null);
+  const value = (v: number | undefined, unit?: string): string => v === undefined ? '—' : fmt(v, unit);
+
+  const headers = ['Test', 'N', 'Min', ...(hasQuartiles ? ['Q1', 'Median'] : []), 'Mean', ...(hasQuartiles ? ['Q3'] : []), 'Max',
+    ...(hasSigma ? ['StdDev'] : []), ...(hasLimitYield ? ['Limit yield'] : [])];
+  const body: TableCell[][] = rows.map(({ name, unit, stats: s, limitYield }) => [
+    escHtml(name),
+    { html: String(s.count), className: 'numeric' },
+    value(s.min, unit),
+    ...(hasQuartiles ? [value(s.q1, unit), value(s.median, unit)] : []),
+    value(s.mean, unit),
+    ...(hasQuartiles ? [value(s.q3, unit)] : []),
+    value(s.max, unit),
+    ...(hasSigma ? [value(s.stddev, unit)] : []),
+    ...(hasLimitYield ? [limitYield === undefined || limitYield === null ? '—' : `${limitYield.toFixed(1)}%`] : []),
+  ]);
+  return renderSection('Test Values', renderTable(headers, body, { className: 'compact' })
+    + `<p class="report-legend">${hasSigma ? 'StdDev is the population standard deviation. ' : ''}${note ?? ''}</p>`);
 }
 
 /**
@@ -214,13 +274,19 @@ function capabilitySection(items: Array<{ dies?: Die[] }>, testDefs: TestDef[]):
 
 /** The findings table alone, for callers that supply their own heading — the
  *  per-wafer section renders one per wafer under a single section. */
-function findingsSection(allFindings: StatsFinding[], totalWafers?: number): string {
+function findingsSection(allFindings: StatsFinding[], totalWafers?: number, scope = '', live = false): string {
   // Absorbed restatements dropped, matching the Summary panel and the findings
   // report. Without this a wafer with 8 merged hard/soft twins printed 16 rows —
   // each merged row immediately followed by the bare row it had just absorbed.
   const findings = visibleFindings(allFindings);
   if (!findings.length) return '';
-  return renderSection('Findings', findingsTableHtml(findings, totalWafers));
+  return renderSection('Findings', findingsTableHtml(findings, totalWafers, scope, live));
+}
+
+/** The synthesis, linked to the rows `findingsSection` anchors for the same summary. */
+function synthesisSection(summary: StatsSummary | LotStatsSummary, passBins: readonly number[] | undefined, scope = ''): string {
+  const anchorIds = new Set(visibleFindings(summary.findings).map((f) => f.id));
+  return synthesisSectionHtml(buildSynthesis(summary, { passBins: passBins ? [...passBins] : undefined }), anchorIds, scope);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -236,14 +302,13 @@ export function renderSummaryReportHtml(
     statsSummary,
     passBins  = [1],
     ringCount = 4 } = params;
+  // The map's own colours when the caller has them; the default palette otherwise.
+  const binColorsFor = params.binColors ?? resolveBinColors(dies, { passBins, hbinDefs, sbinDefs });
 
   const meta   = wafer.metadata as Record<string, unknown> | undefined;
   const suffix = titleFromMeta(meta);
   const title  = options.title ?? `Wafer Summary${suffix}`;
   const now    = new Date().toLocaleString();
-
-  const hasHbin = dies.some(d => d.hbin != null);
-  const hasSbin = dies.some(d => d.sbin != null);
 
   // physX/physY are always set alongside x/y by construction.
   const positionedDies = dies.filter(isPositionedDie);
@@ -276,14 +341,14 @@ export function renderSummaryReportHtml(
     renderSection('Summary', [
       renderMetricGrid(summaryMetrics),
     ].filter(Boolean).join('\n')),
-    hasHbin ? binSection(dies, hbinDefs, 'hard', statsSummary?.stats.hardBinCounts, passBins)
-            : hasSbin ? binSection(dies, sbinDefs, 'soft', statsSummary?.stats.softBinCounts, passBins) : '',
+    statsSummary ? synthesisSection(statsSummary, passBins) : '',
+    binSection(dies, hbinDefs, sbinDefs, { hard: statsSummary?.stats.hardBinCounts, soft: statsSummary?.stats.softBinCounts }, passBins, binColorsFor),
     regionYieldSection('Ring Yield', ringRegions, dies, passBins),
     regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins),
-    testSection(dies, testDefs, statsSummary?.stats.perTestStats),
+    testSection(dies, testDefs, statsSummary?.stats.perTestStats, statsSummary?.stats.testSpecYield),
     functionalSection(dies, testDefs, statsSummary?.stats.functionalYield),
     capabilitySection([{ dies }], testDefs),
-    statsSummary ? findingsSection(statsSummary.findings) : '',
+    statsSummary ? findingsSection(statsSummary.findings, undefined, '', params.live) : '',
   ].filter(Boolean).join('\n');
 
   return `<!DOCTYPE html>
@@ -301,9 +366,10 @@ ${reportStyles()}
     <h1>${escHtml(title)}</h1>
     <p class="report-subtitle">Generated ${escHtml(now)}</p>
   </header>
-  ${sections}
+  ${withSectionNav(sections)}
   <p class="footer">Generated ${escHtml(now)}</p>
 </main>
+${params.live ? LIVE_FINDINGS_SCRIPT : ''}
 </body>
 </html>`;
 }
@@ -340,15 +406,25 @@ export interface LotSummaryReportParams {
   ringCount?: number;
   /** Passthrough to the internal per-group `analyzeWaferLot` call, e.g. `{ enableTestValueAnalysis: true }`. */
   analyzeOptions?: AnalyzeWaferMapOptions;
+  /** @internal The gallery's bin colours, so a bar here is the colour of that bin on the cards. Resolved per group with the default palette when omitted. */
+  binColors?: BinColors;
+  /** @internal Shown inside the app: a click on a finding's row selects it on the map. */
+  live?: boolean;
 }
 
 function lotWaferYieldTable(lotSummary: LotStatsSummary, items: LotSummaryReportParams['items']): string {
-  const rows = lotSummary.perWafer.map((pw) => {
-    const label = waferDisplayLabel(items[pw.waferIndex], pw.waferIndex);
-    const yld = pw.summary.stats.yieldPercent;
-    return [label, yld !== null ? `${yld.toFixed(1)}%` : 'N/A'];
+  const yielded = lotSummary.perWafer.flatMap((pw) => {
+    const y = pw.summary.stats.yieldPercent;
+    return y === null ? [] : [{ waferIndex: pw.waferIndex, yieldPercent: y }];
   });
-  return renderTable(['Wafer', 'Yield'], rows, { className: 'compact' });
+  const readBy = new Map(waferYieldRows(yielded).rows.map((r) => [r.waferIndex, r]));
+  const rows = lotSummary.perWafer.map((pw): TableCell[] => {
+    const label = escHtml(waferDisplayLabel(items[pw.waferIndex], pw.waferIndex));
+    const r = readBy.get(pw.waferIndex);
+    return r ? [r.outlier ? `${label} · ${r.outlier} outlier` : label, barCell(r.yieldPercent, `${r.yieldPercent.toFixed(1)}%`), deltaCell(r.delta)] : [label, 'N/A', ''];
+  });
+  return renderTable(['Wafer', 'Yield', 'vs lot median'], rows, { className: 'compact' })
+    + `<p class="report-legend">${shortfallLegend('the lot median')}</p>`;
 }
 
 /** One row per item with a `wafer.metadata.split` assigned; items with no split are omitted. */
@@ -491,46 +567,21 @@ function splitsSection(
  * When every wafer's `StatsSummary.stats.{hard,soft}BinCounts` is available
  * (`perWaferSummaries`), sums those directly instead of re-walking `allDies`.
  */
-function lotAggregateBinTable(
+/** The lot's bin breakdowns, hard and soft where the data has both, each wafer judged by its own pass bins. */
+function lotBinSections(
   allDies: Die[],
-  binDefs: BinDef[] | undefined,
-  mode: 'hard' | 'soft',
+  hbinDefs: BinDef[] | undefined,
+  sbinDefs: BinDef[] | undefined,
   perWaferSummaries: StatsSummary[] | undefined,
   /** Each wafer's dies with its own pass bins — a lot can mix programs. */
   passGroups: BinPassGroup[],
+  colors: BinColors,
 ): string {
-  const counts = new Map<number, number>();
-  const field = mode === 'hard' ? 'hardBinCounts' as const : 'softBinCounts' as const;
-  if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats[field] !== undefined)) {
-    for (const s of perWaferSummaries) {
-      for (const [binStr, count] of Object.entries(s.stats[field]!)) {
-        const bin = Number(binStr);
-        counts.set(bin, (counts.get(bin) ?? 0) + count);
-      }
-    }
-  } else {
-    for (const d of allDies) {
-      if (d.partial || d.edgeExcluded) continue;
-      const bin = mode === 'hard' ? d.hbin : d.sbin;
-      if (bin != null) counts.set(bin, (counts.get(bin) ?? 0) + 1);
-    }
-  }
-  if (!counts.size) return '';
-
-  const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  const defs = binDefs ? new Map(binDefs.map((d) => [d.bin, d])) : null;
-  // Pass status per bin TYPE: `passBins` are hard-bin numbers.
-  const rows = sortBinsForDisplay(counts.entries(), binPassSetsByWafer(passGroups)[mode])
-    .map(([bin, count]) => {
-      const def = defs?.get(bin);
-      const label = def?.name ? `Bin ${bin} · ${def.name} (${count})` : `Bin ${bin} (${count})`;
-      return [label, pct(count, total)];
-    });
-
-  return renderSection(
-    mode === 'hard' ? 'Hard Bin Breakdown (All Wafers)' : 'Soft Bin Breakdown (All Wafers)',
-    renderTable(['Bin', 'Yield'], rows, { className: 'compact' }),
-  );
+  const passing = binPassSetsByWafer(passGroups);
+  return (['hard', 'soft'] as const).map((mode) => binTable(
+    pooledBinCounts(perWaferSummaries, allDies, mode),
+    mode === 'hard' ? hbinDefs : sbinDefs, mode, passing[mode], colors[mode],
+  )).join('\n');
 }
 
 function lotRegionYieldTable(
@@ -545,9 +596,14 @@ function lotRegionYieldTable(
   // The shared computation (stats/regions.ts), not a copy of it: this table
   // used to re-implement the same per-region pass/total tally, with its own
   // `hbin ?? sbin` verdict and one lot-wide pass-bin list.
-  const rows = buildRegionYieldData(diesByWafer, allWafers, ringCount, (wi) => passBinsByWafer[wi], regionFn)
-    .map((d) => [d.label, `${d.yieldPercent.toFixed(1)}%`]);
-  return rows.length ? renderSection(title, renderTable(['Region', 'Yield'], rows, { className: 'compact' })) : '';
+  const data = buildRegionYieldData(diesByWafer, allWafers, ringCount, (wi) => passBinsByWafer[wi], regionFn);
+  if (!data.length) return '';
+  // The regions partition the lot's wafers, so each is read against the lot's own yield.
+  const rows = regionYieldRows(data).rows.map((d): TableCell[] => [
+    escHtml(d.label), barCell(d.yieldPercent, `${d.yieldPercent.toFixed(1)}%`), deltaCell(d.delta),
+  ]);
+  return renderSection(title, renderTable(['Region', 'Yield', 'vs lot'], rows, { className: 'compact' })
+    + `<p class="report-legend">${shortfallLegend('the lot')}</p>`);
 }
 
 /**
@@ -555,26 +611,39 @@ function lotRegionYieldTable(
  * (`perWaferSummaries`), pools mean (n-weighted)/min/max directly from those
  * instead of re-walking `allDies` — see `testSection`'s doc comment.
  */
-function lotTestTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: StatsSummary[]): string {
-  let pooled: Array<{ testNumber: number; min: number; max: number; mean: number }> | undefined;
+function lotTestTable(
+  allDies: Die[],
+  testDefs: TestDef[],
+  perWaferSummaries?: StatsSummary[],
+  /** `LotStatsSummary.stats.testSpecYield`. */
+  specYield?: readonly SpecYieldRow[],
+): string {
+  let pooled: TestRowStats[] | undefined;
   if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.perTestStats !== undefined)) {
-    const byTest = new Map<number, { n: number; sum: number; min: number; max: number }>();
+    // Count, min, max and mean combine exactly across wafers, and so does the population variance
+    // (the sum of each wafer's own variance and its mean's distance from the pooled mean). Quartiles
+    // do not combine from per-wafer quartiles, so a lot has none.
+    const byTest = new Map<number, { n: number; sum: number; min: number; max: number; parts: Array<{ n: number; mean: number; sd?: number }> }>();
     for (const s of perWaferSummaries) {
       for (const t of s.stats.perTestStats ?? []) {
-        const acc = byTest.get(t.testNumber);
-        if (!acc) byTest.set(t.testNumber, { n: t.count, sum: t.mean * t.count, min: t.min, max: t.max });
-        else {
-          acc.n += t.count;
-          acc.sum += t.mean * t.count;
-          acc.min = Math.min(acc.min, t.min);
-          acc.max = Math.max(acc.max, t.max);
-        }
+        const acc = byTest.get(t.testNumber) ?? { n: 0, sum: 0, min: Infinity, max: -Infinity, parts: [] };
+        acc.n += t.count;
+        acc.sum += t.mean * t.count;
+        acc.min = Math.min(acc.min, t.min);
+        acc.max = Math.max(acc.max, t.max);
+        acc.parts.push({ n: t.count, mean: t.mean, sd: t.stddev });
+        byTest.set(t.testNumber, acc);
       }
     }
-    pooled = [...byTest.entries()].map(([testNumber, acc]) => ({
-      testNumber, min: acc.min, max: acc.max, mean: acc.sum / acc.n }));
+    pooled = [...byTest.entries()].map(([testNumber, acc]) => {
+      const mean = acc.sum / acc.n;
+      const exact = acc.parts.every(p => p.sd !== undefined);
+      const variance = exact ? acc.parts.reduce((v, p) => v + p.n * (p.sd! ** 2 + (p.mean - mean) ** 2), 0) / acc.n : undefined;
+      return { testNumber, count: acc.n, min: acc.min, max: acc.max, mean, ...(variance !== undefined ? { stddev: Math.sqrt(variance) } : {}) };
+    });
   }
-  return testSection(allDies, testDefs, pooled);
+  return testSection(allDies, testDefs, pooled, specYield,
+    pooled ? 'Quartiles are not shown for a lot: they cannot be combined from each wafer\u2019s own.' : undefined);
 }
 
 /**
@@ -643,6 +712,11 @@ function renderLotGroupSections(
   passBins: readonly number[],
   ringCount: number,
   analyzeOptions: AnalyzeWaferMapOptions | undefined,
+  /** The map's own bin colours, when the caller has them; resolved over this group's wafers otherwise. */
+  binColors: BinColors | undefined,
+  /** Prefix for ids, so several groups in one document cannot share one. */
+  scope = '',
+  live = false,
 ): { lotSummary: LotStatsSummary; sections: string } {
   const lotSummary = analyzeWaferLot(items.map((it) => it.source ?? (it as unknown as WaferMapResult)), {
     // Index-aligned; analyzeWaferLot falls back to computing analyzeWaferMap
@@ -677,6 +751,7 @@ function renderLotGroupSections(
   }
   // Every item's dies with its own pass bins, including items without a wafer.
   const passGroups: BinPassGroup[] = items.map((it) => ({ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }));
+  const binColorsFor = binColors ?? resolveBinColorsByWafer(passGroups, { hbinDefs, sbinDefs }).colors;
 
   const hasHbin = allDies.some((die) => die.hbin != null);
   const hasSbin = allDies.some((die) => die.sbin != null);
@@ -727,7 +802,7 @@ function renderLotGroupSections(
     ] : []),
     ...(edgeExcludedDies > 0 ? [{ label: 'Edge excluded', value: String(edgeExcludedDies) }] : []),
     ...(partialDies > 0 ? [{ label: 'Partial dies', value: String(partialDies) }] : []),
-    ...(meanWaferYield !== null ? [{ label: 'Mean wafer yield', value: `${meanWaferYield.toFixed(1)}%` }] : []),
+    ...(meanWaferYield !== null ? [{ label: MEAN_WAFER_YIELD_LABEL, value: `${meanWaferYield.toFixed(1)}%` }] : []),
     ...(totalYieldPercent !== null ? [{ label: 'Total yield', value: `${totalYieldPercent.toFixed(1)}%` }] : []),
   ];
 
@@ -737,25 +812,22 @@ function renderLotGroupSections(
   const waferYieldSection = renderSection('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
   const splitsSectionHtml = splitsSection(items, testDefs, passBins);
   const perWaferSummaries = lotSummary.perWafer.map((pw) => pw.summary);
-  const binSection = hasBins
-    ? (hasHbin
-        ? lotAggregateBinTable(allDies, hbinDefs, 'hard', perWaferSummaries, passGroups)
-        : lotAggregateBinTable(allDies, sbinDefs, 'soft', perWaferSummaries, passGroups))
-    : '';
+  const binSection = hasBins ? lotBinSections(allDies, hbinDefs, sbinDefs, perWaferSummaries, passGroups, binColorsFor) : '';
   const ringSection = hasBins && allWafers.length
     ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, diesByWafer, allWafers, ringCount, passBinsByWafer)
     : '';
   const quadSection = hasBins && allWafers.length
     ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBinsByWafer)
     : '';
-  const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries) : '';
+  const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries, lotSummary.stats.testSpecYield) : '';
   const functionalSectionHtml = testDefs.length ? lotFunctionalTable(allDies, testDefs, perWaferSummaries) : '';
   const capabilitySectionHtml = testDefs.length ? capabilitySection(items, testDefs) : '';
-  const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount) : '';
+  const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount, scope, live) : '';
   const perWaferFindingsHtml = perWaferFindingsSection(lotSummary);
 
   const sections = [
     summarySection,
+    synthesisSection(lotSummary, commonPassBins(passGroups.map((g) => g.passBins)), scope),
     metadataSection,
     waferYieldSection,
     splitsSectionHtml,
@@ -772,13 +844,13 @@ function renderLotGroupSections(
   return { lotSummary, sections };
 }
 
-function reportMain(title: string, sections: string, now: string): string {
+function reportMain(title: string, sections: string, now: string, scope = ''): string {
   return `<main class="report">
   <header class="report-header">
     <h1>${escHtml(title)}</h1>
     <p class="report-subtitle">Generated ${escHtml(now)}</p>
   </header>
-  ${sections}
+  ${withSectionNav(sections, scope)}
   <p class="footer">Generated ${escHtml(now)}</p>
 </main>`;
 }
@@ -809,7 +881,7 @@ export function renderLotSummaryReportHtml(
   const groups = groupByIdentity(items);
 
   if (groups.length === 1) {
-    const { lotSummary, sections } = renderLotGroupSections(groups[0].items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions);
+    const { lotSummary, sections } = renderLotGroupSections(groups[0].items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions, params.binColors, '', params.live);
     // "Lot Summary — LOT123" only when every wafer records that lot; otherwise
     // the title names the wafers, so a pooled or unlabelled set never reads as
     // one lot. (`lotSummary.lot` is not enough: it keeps a key that the wafers
@@ -829,6 +901,7 @@ ${reportStyles()}
 </head>
 <body>
 ${reportMain(title, sections, now)}
+${params.live ? LIVE_FINDINGS_SCRIPT : ''}
 </body>
 </html>`;
   }
@@ -839,8 +912,9 @@ ${reportMain(title, sections, now)}
   // Several groups: the set as a whole is not one lot, so the base title does
   // not claim to be; each group's heading names its own lot where it has one.
   const baseTitle = options.title ?? 'Summary';
-  const mains = groups.map((g) => {
-    const { lotSummary, sections } = renderLotGroupSections(g.items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions);
+  const mains = groups.map((g, gi) => {
+    const scope = `g${gi + 1}-`;
+    const { lotSummary, sections } = renderLotGroupSections(g.items, hbinDefs, sbinDefs, testDefs, passBins, ringCount, analyzeOptions, params.binColors, scope, params.live);
     // `label` already names every field that varies BETWEEN groups (e.g.
     // "85" when only temperature splits them) — but if `lot` itself doesn't
     // vary, it's constant across every group and would otherwise never
@@ -849,7 +923,7 @@ ${reportMain(title, sections, now)}
     // visible anywhere in that group's section.
     const lotTag = !g.varying.includes('lot') ? (lotSummary.lot?.['lot'] ?? lotSummary.lot?.['lotId']) : undefined;
     const heading = lotTag ? `${g.label} · Lot ${String(lotTag)}` : g.label;
-    return reportMain(`${baseTitle} — ${heading}`, sections, now);
+    return reportMain(`${baseTitle} — ${heading}`, sections, now, scope);
   });
 
   const banner = `<p style="max-width:1080px;margin:0 auto 8px;padding:8px 12px;background:var(--report-surface);border:1px solid var(--report-line);border-radius:4px;font-size:12px;color:var(--report-muted);">This load spans ${groups.length} groups by identity — shown separately below so stats are never pooled across them.</p>`;
@@ -873,6 +947,7 @@ ${reportStyles()}
 ${banner}
 </div>
 ${sectionsHtml}
+${params.live ? LIVE_FINDINGS_SCRIPT : ''}
 </body>
 </html>`;
 }
@@ -906,7 +981,7 @@ export type ReportMap = Pick<WaferMapResult, 'wafer' | 'dies' | 'passBins' | 'ri
 export function renderWaferReportHtml(
   map: ReportMap & { yield: YieldSummary; dataCoverage: SummaryReportParams['dataCoverage'] },
   summary?: StatsSummary,
-  options: { title?: string } = {},
+  options: { title?: string; /** @internal */ binColors?: BinColors; /** @internal */ live?: boolean } = {},
 ): string {
   return renderSummaryReportHtml({
     wafer:        map.wafer,
@@ -919,6 +994,8 @@ export function renderWaferReportHtml(
     statsSummary: summary ?? map.statsSummary ?? (isBuiltMap(map) ? analyzeWaferMap(map) : undefined),
     passBins:     [...map.passBins],
     ringCount:    map.ringCount,
+    binColors:    options.binColors,
+    live:         options.live,
   }, options);
 }
 
@@ -930,7 +1007,7 @@ export function renderWaferReportHtml(
  */
 export function renderLotReportHtml(
   maps: readonly ReportMap[],
-  options: { title?: string; analyzeOptions?: AnalyzeWaferMapOptions } = {},
+  options: { title?: string; analyzeOptions?: AnalyzeWaferMapOptions; /** @internal */ binColors?: BinColors; /** @internal */ live?: boolean } = {},
 ): string {
   const hbinDefs = mergeBinDefs(maps.map(m => m.hbinDefs));
   const sbinDefs = mergeBinDefs(maps.map(m => m.sbinDefs));
@@ -950,5 +1027,7 @@ export function renderLotReportHtml(
     testDefs,
     ringCount: maps[0]?.ringCount,
     analyzeOptions: options.analyzeOptions,
+    binColors: options.binColors,
+    live: options.live,
   }, { title: options.title });
 }

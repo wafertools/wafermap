@@ -69,6 +69,18 @@
 //   and quadrant over the same angles reported once — all in analyzeWaferLot,
 //   which the gallery's lot panel and report already pull in. Legitimate library
 //   growth, not bloat.
+//   2026-10-01: render raised 138 KB -> 143 KB (measured 139,101 bytes; 134,258
+//   at the last entry). The results synthesis (stats/synthesis.ts) and the report
+//   layer that draws it — severity meters, tinted and barred table cells, the
+//   contents line — in the report builders the gallery's lot panel and the Summary
+//   panel's report button already pull in. Legitimate library growth, not bloat.
+//   2026-10-01 (later): render threshold lowered 143 KB -> 130 KB (measured 124,119
+//   bytes; 139,101 at the entry above). The report builders (renderSummaryReport.ts
+//   and the markup and stylesheet behind it) are loaded when a report is opened, by
+//   a dynamic import in the Summary panel's report button and the gallery's, not
+//   with the map. `stubReport` models the split here, and 'the report builders are
+//   not statically imported' holds it in place. The root bundle still contains them:
+//   `renderWaferReportHtml` and `renderLotReportHtml` are public exports.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -89,7 +101,7 @@ const THRESHOLDS = {
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
   'wafermap (root)':            66_000,   // gzipped bytes — baseline ~62.0 KB
-  'wafermap/render (initial)':  138_000,  // gzipped bytes — measured ~134.3 KB, guide AND Insights excluded
+  'wafermap/render (initial)':  130_000,  // gzipped bytes — measured ~124.1 KB, guide, Insights, drilldown AND report builders excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {
@@ -141,6 +153,20 @@ const stubDrilldown = {
   },
 };
 
+// The report builders (renderSummaryReport.ts) are loaded when a report is opened, from the Summary
+// panel's report button and the gallery's. Stubbed so the threshold measures the map a consumer
+// downloads up front; the static-import test below holds the deferral.
+const stubReport = {
+  name: 'stub-report',
+  setup(b) {
+    b.onResolve({ filter: /\/renderSummaryReport\.js$/ }, () => ({ path: 'report', namespace: 'report' }));
+    b.onLoad({ filter: /.*/, namespace: 'report' }, () => ({
+      contents: 'export const renderWaferReportHtml = () => ""; export const renderLotReportHtml = () => "";',
+      loader: 'js',
+    }));
+  },
+};
+
 const stubGuide = {
   name: 'stub-guide',
   setup(b) {
@@ -161,7 +187,7 @@ test('wafermap (root) bundle size is within threshold', async () => {
 });
 
 test('wafermap/render initial chunk size is within threshold', async () => {
-  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown]);
+  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubReport]);
   assert.ok(
     gz <= THRESHOLDS['wafermap/render (initial)'],
     `wafermap/render initial chunk too large: ${gz} bytes gzipped (threshold ${THRESHOLDS['wafermap/render (initial)']}). Check for new static imports of heavy modules.`,
@@ -187,6 +213,18 @@ test('insightsTab is not statically imported by renderWaferMap or renderWaferGal
     !staticImportRe.test(gallerySrc),
     'renderWaferGallery.js has a static import of insightsTab — must use dynamic import() instead.',
   );
+});
+
+test('the report builders are not statically imported by the Summary panel or the gallery', async () => {
+  // renderSummaryReport.ts, with the report markup and stylesheet behind it, is ~17 KB gzipped — 12% of the
+  // initial chunk — and is needed only when someone opens a report. A static import would make every
+  // consumer pay for it; the panel's report button and the gallery's load it with dynamic import().
+  const { readFile } = await import('fs/promises');
+  const staticImportRe = /^import\s+(?!type\b).*(renderSummaryReport|reportHtml)\.js/m;
+  for (const file of ['summaryPanel', 'renderWaferGallery', 'renderWaferMap', 'toolbar', 'maplessSummary']) {
+    const src = await readFile(resolve(dist, `packages/canvas-adapter/${file}.js`), 'utf8');
+    assert.ok(!staticImportRe.test(src), `${file}.js has a static import of the report builders — must use dynamic import() instead.`);
+  }
 });
 
 test('userGuideHtml is not statically imported by renderWaferMap or renderWaferGallery', async () => {

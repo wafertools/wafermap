@@ -1,8 +1,14 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
+import type { Synthesis } from './synthesis.js';
+import { formatFindingTooltip } from './findingText.js';
+import { arrangeFindings } from './filterFindings.js';
+import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, shortfallColor, shortfallStep, formatPoints, barPercent, type MeterTier } from './presentation.js';
+
+export type { MeterTier };
 import { fmt, plainBinTerms } from '../renderer/fmt.js';
 import { buildFacetTable, prettyKey, type FacetItem } from './facets.js';
 import { escHtml } from '../core/utils.js';
-import { derivedTestNote, derivedKeyText, derivedFields } from '../renderer/testLabel.js';
+import { derivedKeyText, derivedFields } from '../renderer/testLabel.js';
 
 export interface MetricItem {
   label: string;
@@ -75,9 +81,12 @@ ${nodes}
 </dl>`;
 }
 
+/** A table cell: raw HTML (the caller escapes), or HTML with a class for the `<td>`. */
+export type TableCell = string | { html: string; className?: string };
+
 export function renderTable(
   headers: string[],
-  rows: string[][],
+  rows: TableCell[][],
   options: { className?: string; emptyMessage?: string } = {},
 ): string {
   if (!rows.length) {
@@ -85,16 +94,64 @@ export function renderTable(
   }
   const className = ['report-table', options.className].filter(Boolean).join(' ');
   const head = headers.map((header) => `<th>${escHtml(header)}</th>`).join('');
-  const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('\n');
+  const td = (cell: TableCell): string =>
+    typeof cell === 'string' ? `<td>${cell}</td>` : `<td${cell.className ? ` class="${cell.className}"` : ''}>${cell.html}</td>`;
+  const body = rows.map((row) => `<tr>${row.map(td).join('')}</tr>`).join('\n');
   return `<table class="${className}">
   <thead><tr>${head}</tr></thead>
   <tbody>${body}</tbody>
 </table>`;
 }
 
-export function renderSeverityBadge(severity: StatsSeverity): string {
-  const label = severity.charAt(0).toUpperCase() + severity.slice(1);
-  return `<span class="badge badge-${severity}">${label}</span>`;
+/**
+ * Three dots filled by level, with the word beneath. Colour only reinforces it: the dots and the
+ * word survive a black-and-white print and colour-blind reading (WCAG 1.4.1), which a bare coloured
+ * badge did not. The dots are decoration, hidden from a screen reader that reads the word.
+ */
+export function renderMeter(tier: MeterTier, word: string): string {
+  const filled = filledDots(tier);
+  return `<span class="meter"><span class="meter-dots" aria-hidden="true">${'●'.repeat(filled)}${'○'.repeat(METER_DOTS - filled)}</span><span class="meter-word">${escHtml(word)}</span></span>`;
+}
+
+export function renderSeverityMeter(severity: StatsSeverity): string {
+  const { tier, word } = SEVERITY_MARK[severity];
+  return renderMeter(tier, word);
+}
+
+export const severityTier = (severity: StatsSeverity): MeterTier => SEVERITY_MARK[severity].tier;
+
+/**
+ * A value with a bar behind it, for scanning a column of yields or shares. The figure is always
+ * printed; the bar is a second way to read it, scaled 0–100 (so a yield bar is never stretched
+ * to its own column's range).
+ */
+export function barCell(percent: number, text: string, className = '', color?: string): TableCell {
+  const fill = color ? `;background:${escHtml(color)}` : '';
+  return { html: `<span class="cellbar"><i style="width:${barPercent(percent).toFixed(1)}%${fill}"></i><span>${escHtml(text)}</span></span>`, className: ['barcell', className].filter(Boolean).join(' ') };
+}
+
+/** A signed difference in yield points, tinted by `shortfallStep` (only a shortfall of a point or more). */
+export function deltaCell(points: number): TableCell {
+  const step = shortfallStep(points);
+  return { html: escHtml(formatPoints(points)), className: ['numeric', step ? `low-${step}` : ''].filter(Boolean).join(' ') };
+}
+
+/**
+ * Section ids and a contents line for a report body. Every section is produced by `renderSection`,
+ * so its `<h2>` is the title; the ids carry `scope` so several reports in one document cannot clash.
+ * Under four sections there is nothing to navigate and the body is returned unchanged.
+ */
+export function withSectionNav(sectionsHtml: string, scope = ''): string {
+  const titles: Array<{ id: string; title: string }> = [];
+  let n = 0;
+  const body = sectionsHtml.replace(/<section class="(report-section[^"]*)">(\s*<h2>)(.*?)(<\/h2>)/g, (_m, cls, mid, title, end) => {
+    const id = `sec-${scope}${++n}`;
+    titles.push({ id, title });
+    return `<section class="${cls}" id="${id}">${mid}${title}${end}`;
+  });
+  if (titles.length < 4) return sectionsHtml;
+  const links = titles.map((s) => `<a href="#${s.id}">${s.title}</a>`).join('');
+  return `<nav class="report-toc" aria-label="Sections">${links}</nav>\n${body}`;
 }
 
 export function formatFindingDelta(finding: Pick<StatsFinding, 'effect' | 'variable'>): string {
@@ -114,17 +171,6 @@ export function formatFindingDelta(finding: Pick<StatsFinding, 'effect' | 'varia
   }
 
   return `${sign}${fmt(Math.abs(delta), finding.variable.unit)}`;
-}
-
-/**
- * A finding's hover text, for the Summary panel and both HTML reports alike —
- * the one rule for it. The sentence already carries the `†` for a finding about
- * a derived test; the tooltip adds the words for it and the expression, on a
- * line of their own.
- */
-export function formatFindingTooltip(finding: StatsFinding): string {
-  const note = derivedTestNote(finding.variable);
-  return note ? `${finding.summary}\n${note}` : finding.summary;
 }
 
 /**
@@ -151,10 +197,31 @@ export function derivedFindingsKeyHtml(findings: StatsFinding[]): string {
  * `totalWafers` switches the coverage column from "N (region/rest)" to a count
  * of wafers, for lot-level findings.
  */
-export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number): string {
-  const rows = findings.length
-    ? findings.map((f) => `<tr title="${escHtml(formatFindingTooltip(f))}">
-      <td class="tight">${renderSeverityBadge(f.severity)}</td>
+/**
+ * The anchor a finding's table row carries when the table is the page's one table for that
+ * summary. Injective (every character outside A–Z a–z 0–9 becomes `_` and its hex code), so two
+ * finding ids can never share an anchor, and valid in an `id` attribute whatever the id holds.
+ */
+export function findingAnchor(id: string, scope = ''): string {
+  return `finding-${scope}` + id.replace(/[^A-Za-z0-9]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`);
+}
+
+/**
+ * `anchorScope`: give each row an `id` so the synthesis can link to it, prefixed so two summaries in
+ * one document cannot share one. Only for the page's one table per summary — a per-wafer table
+ * repeats ids that another wafer's table also carries — so it is left out there.
+ */
+export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number, anchorScope?: string, live = false): string {
+  // The panel's arrangement: each pattern with the findings it explains beneath it, then the rest
+  // by region, most severe first. The same finding sits in the same place on both surfaces.
+  const arranged = arrangeFindings(findings);
+  const ordered: Array<{ f: StatsFinding; nested: boolean }> = [
+    ...arranged.patterns.flatMap((p) => [{ f: p.finding, nested: false }, ...p.children.map((f) => ({ f, nested: true }))]),
+    ...arranged.groups.flatMap((g) => g.findings.map((f) => ({ f, nested: false }))),
+  ];
+  const rows = ordered.length
+    ? ordered.map(({ f, nested }) => `<tr class="tier-${severityTier(f.severity)}${nested ? ' nested' : ''}${live ? ' live' : ''}"${anchorScope !== undefined ? ` id="${findingAnchor(f.id, anchorScope)}"` : ''}${live ? ` data-finding="${escHtml(f.id)}"` : ''} title="${escHtml(formatFindingTooltip(f))}${live ? '\nClick to show it on the map' : ''}">
+      <td class="tight">${renderSeverityMeter(f.severity)}</td>
       <td class="tight">${escHtml(f.comparison.left)}</td>
       <td>${escHtml(plainBinTerms(f.variable.label))}</td>
       <td class="numeric">${escHtml(formatFindingDelta(f))}</td>
@@ -178,6 +245,38 @@ export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number
 </table>${derivedFindingsKeyHtml(findings)}`;
 }
 
+/**
+ * The synthesis as a section: the headline, the loss items each linked to the finding rows that
+ * carry their figures, and what was compared. A part links only when its row is on the page
+ * (`anchorIds`), so a sentence never points at nothing.
+ */
+export function synthesisSectionHtml(synthesis: Synthesis, anchorIds: ReadonlySet<string>, scope = ''): string {
+  const run = (parts: Synthesis['headline']): string => parts.map((p) =>
+    p.target && anchorIds.has(p.target.id)
+      ? `<a href="#${findingAnchor(p.target.id, scope)}">${escHtml(p.text)}</a>`
+      : escHtml(p.text)).join('');
+  const items = synthesis.items.length
+    ? `<ol class="synthesis-items">\n${synthesis.items.map((it) => `<li class="tier-${it.impact}">${renderMeter(it.impact, impactWord(it.impact))}<span>${run(it.parts)}</span></li>`).join('\n')}\n</ol>`
+    : `<p class="synthesis-none">${escHtml(synthesis.nothing ?? 'Nothing stands out.')}</p>`;
+  return renderSection('What stands out', `<p class="synthesis-headline">${run(synthesis.headline)}</p>
+  ${items}
+  ${synthesis.also ? `<p class="synthesis-also">${run(synthesis.also)}</p>` : ''}
+  ${synthesis.watch ? `<ul class="synthesis-watch">${synthesis.watch.map((w) => `<li><strong>Watch</strong> ${run(w.parts)}</li>`).join('')}</ul>` : ''}
+  <p class="synthesis-checked">${escHtml(synthesis.checked)}</p>`, 'synthesis');
+}
+
+/**
+ * For a report shown inside the app (the panel's modal): a click on a finding's row tells the page that
+ * holds the report, which selects that finding on the map. Inert when the report is opened on its own
+ * (no parent window) or where scripts are blocked, and the rows stay a plain table either way.
+ */
+export const LIVE_FINDINGS_SCRIPT = `<script>
+document.addEventListener('click', function (e) {
+  var row = e.target.closest && e.target.closest('[data-finding]');
+  if (row && window.parent !== window) window.parent.postMessage({ wmapFinding: row.getAttribute('data-finding') }, '*');
+});
+</script>`;
+
 export function formatFindingCoverage(
   finding: Pick<StatsFinding, 'stats'>,
   total?: number,
@@ -199,9 +298,18 @@ export function reportStyles(): string {
     --report-line-strong: #c7ced8;
     --report-surface: #f7f8fa;
     --report-surface-alt: #fbfcfd;
-    --report-severity-unusual: #8b3f35;
-    --report-severity-notable: #8b6428;
-    --report-severity-info: #446883;
+    /* A tint says "look here"; the dots and the word say what. Text on a tint is always full ink:
+       the muted grey is 3.3:1 on the strongest pastel, below AA. */
+    --report-tier-high-bg: #fbe4e2;
+    --report-tier-high-edge: #b4372f;
+    --report-tier-medium-bg: #fdf0d5;
+    --report-tier-medium-edge: #a8741a;
+    --report-tier-low-bg: #edf2f7;
+    --report-tier-low-edge: #5f7f9f;
+    --report-low-1: ${shortfallColor(1)};
+    --report-low-2: ${shortfallColor(2)};
+    --report-low-3: ${shortfallColor(3)};
+    --report-bar: #9db8d3;
   }
 
   html {
@@ -248,6 +356,29 @@ export function reportStyles(): string {
 
   /* Sub-headings and notes inside a section — used by the split comparison,
      which nests one block per facet under a single section heading. */
+  .synthesis-headline { font-weight: 600; margin: 0 0 8px; }
+  .synthesis-items { list-style: none; margin: 0 0 8px; padding: 0; }
+  .synthesis-items li {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 10px;
+    align-items: start;
+    margin: 0 0 8px;
+    padding: 9px 12px;
+    border-left: 4px solid var(--report-tier-low-edge);
+    border-radius: 0 4px 4px 0;
+    background: var(--report-tier-low-bg);
+    line-height: 1.45;
+  }
+  .synthesis-items li.tier-high { border-color: var(--report-tier-high-edge); background: var(--report-tier-high-bg); }
+  .synthesis-items li.tier-medium { border-color: var(--report-tier-medium-edge); background: var(--report-tier-medium-bg); }
+  .synthesis-also { margin: 0 0 6px; }
+  .synthesis-watch { list-style: none; margin: 0 0 6px; padding: 0; }
+  .synthesis-watch li { margin: 0 0 3px; }
+  .synthesis-watch strong { margin-right: 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--report-muted); }
+  .synthesis-checked, .synthesis-none { color: var(--report-muted); margin: 0; }
+  .synthesis a { color: inherit; text-decoration: underline dotted; }
+
   .report-subheading {
     margin: 14px 0 6px;
     font-size: 13px;
@@ -290,14 +421,6 @@ export function reportStyles(): string {
     margin: 0;
     color: var(--report-muted);
     font-style: italic;
-  }
-
-  .findings-narrative {
-    margin: 0 0 14px;
-    color: var(--report-muted);
-    font-size: 13px;
-    font-style: italic;
-    line-height: 1.6;
   }
 
   .definition-item {
@@ -421,39 +544,83 @@ export function reportStyles(): string {
     font-size: 12px;
   }
 
-  .badge {
+  /* Tiles for the key figures, so they read as a row of facts and not a line of the list. */
+  .metric-grid .metric {
+    padding: 10px 12px;
+    background: var(--report-surface);
+    border: 1px solid var(--report-line);
+    border-radius: 6px;
+  }
+
+  .report-toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 0 0 18px;
+    padding: 8px 0;
+    border-top: 1px solid var(--report-line);
+    border-bottom: 1px solid var(--report-line);
+    font-size: 12px;
+  }
+
+  .report-toc a { color: var(--report-muted); text-decoration: none; }
+  .report-toc a:hover { color: var(--report-text); text-decoration: underline; }
+
+  /* The value is always printed; the bar behind it is for scanning a column. */
+  table.report-table td.barcell { min-width: 150px; }
+  .cellbar { position: relative; display: block; }
+  .cellbar i {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 12px;
+    transform: translateY(-50%);
+    background: var(--report-bar);
+    border-radius: 0 2px 2px 0;
+  }
+  .cellbar span { position: relative; padding-left: 4px; }
+
+  /* Shortfall below the reference, light to strong. Full ink on every tint (see the tier tokens). */
+  table.report-table td.low-1 { background: var(--report-low-1); }
+  table.report-table td.low-2 { background: var(--report-low-2); }
+  table.report-table td.low-3 { background: var(--report-low-3); }
+  table.report-table td.muted-row, table.report-table td.muted-row .cellbar { color: var(--report-muted); }
+  .report-legend { margin: 6px 0 0; color: var(--report-muted); font-size: 11px; }
+
+  .meter {
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 58px;
-    padding: 1px 6px;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    font-size: 11px;   /* print floor — see the table-header note above */
-    font-weight: 600;
-    line-height: 1.35;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    line-height: 1.2;
     white-space: nowrap;
   }
 
-  .badge-unusual {
-    color: var(--report-severity-unusual);
-    background: #f4eeec;
-    border-color: #d9c0bb;
+  .meter-dots {
+    font-size: 12px;
+    letter-spacing: 2px;
   }
 
-  .badge-notable {
-    color: var(--report-severity-notable);
-    background: #f5f0e6;
-    border-color: #ddcfb5;
+  .meter-word {
+    color: var(--report-text);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
   }
 
-  .badge-info {
-    color: var(--report-severity-info);
-    background: #eef4f8;
-    border-color: #cfdae4;
-  }
+  /* In the app, a row shows its finding on the map. */
+  table.findings-table tr.live { cursor: pointer; }
+  table.findings-table tr.live:hover td { box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.04); }
+
+  /* A finding a pattern explains sits beneath it, indented. */
+  table.findings-table tr.nested td:first-child { padding-left: 22px; }
+  table.findings-table tr.nested td { font-size: 12px; }
+
+  /* Findings table: the row carries the tier as a tint and a left edge; the meter carries it in words. */
+  table.findings-table tr.tier-high td { background: var(--report-tier-high-bg); }
+  table.findings-table tr.tier-medium td { background: var(--report-tier-medium-bg); }
+  table.findings-table tr.tier-high td:first-child { box-shadow: inset 4px 0 0 var(--report-tier-high-edge); }
+  table.findings-table tr.tier-medium td:first-child { box-shadow: inset 4px 0 0 var(--report-tier-medium-edge); }
 
   .footer {
     margin-top: 14px;
@@ -477,6 +644,8 @@ export function reportStyles(): string {
       max-width: none;
       padding: 0;
     }
+
+    .report-toc { display: none; }
 
     section.report-section,
     tr {

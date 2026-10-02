@@ -13,6 +13,7 @@ import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import { median } from '../core/utils.js';
 import { robustFence } from './math.js';
 import { findLotPattern, type LotPattern } from './lotPattern.js';
+import { buildDriftFindings } from './lotDrift.js';
 import { claimForPattern, weakestMultiplier } from './analyzeWaferMap.js';
 import { PATTERN_LABELS } from './patternClassification.js';
 import { describeWaferPopulation, populationStat, type WaferPopulation } from './population.js';
@@ -635,7 +636,8 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], popula
       },
       effect: {
         direction: delta > 0 ? 'higher' : 'lower',
-        absoluteDelta: delta,
+        // A fraction, like every yield finding (`delta` is in percentage points).
+        absoluteDelta: delta / 100,
         relativeDelta: center === 0 ? undefined : delta / center,
         effectSize: statistic,
       },
@@ -681,6 +683,7 @@ export function analyzeWaferLot(
     ...buildPooledRegionFindings(waferCandidates, resolved, lotRedundancyFacts(comparisons, resolved.sectorCount), results[0]?.ringCount ?? resolved.ringCount),
     ...buildRepeatedPatternFindings(perWafer, lotPattern),
     ...buildYieldOutlierFindings(perWafer, describeWaferPopulation(perWafer.map(w => w.summary.wafer))),
+    ...buildDriftFindings(perWafer, resolved.significanceLevel),
   ];
   if (lotPattern) {
     const pattern = buildLotPatternFinding(lotPattern, perWafer.length);

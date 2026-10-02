@@ -9,6 +9,7 @@ import type { TestDef, MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { dieHasTestData } from '../renderer/buildWaferMap.js';
 import { testLabel, isDerivedTest, DERIVED_MARK, DERIVED_KEY } from '../renderer/testLabel.js';
 import { prettyKey } from '../core/utils.js';
+import { diagnoseMpwLayout, formatMpwDiagnostics } from '../core/compact.js';
 import { listBinColorSchemes, listValueColorSchemes } from '../renderer/colorSchemes.js';
 import { ICONS } from './icons.js';
 import { WMAP_VERSION, WMAP_BUILD_TIME } from './version.js';
@@ -703,6 +704,89 @@ export function downloadBlob(blob: Blob, filename: string): void {
  * `suggestedName` (already includes its extension), and the `mimeType`.
  */
 export type SaveTextHandler = (text: string, suggestedName: string, mimeType: string) => void | Promise<void>;
+
+/**
+ * A callback for "a panel just opened or closed beside the map in this box": widens the box by the
+ * room the panel took when it opens, and gives it back when it closes. Pass it to whatever
+ * renders the map inside `handle`. Only changes of state call it, since the room is measured at
+ * the moment the map loses it.
+ */
+export function roomForPanel(handle: OverlayHandle): (open: boolean, widthPx: number) => void {
+  let release: (() => void) | null = null;
+  return (open, widthPx) => {
+    release?.();
+    release = open ? handle.reserveWidth(widthPx) : null;
+  };
+}
+
+/**
+ * Show what the compact-layout detector saw, for a person to read and send back: counts and
+ * scores only (see `diagnoseMpwLayout`), in a box they can read first, copy, or save as a
+ * file. Saving goes through the host's `onSaveText`, the one route that works in a desktop
+ * webview; the clipboard may not, so a failed copy says so and leaves the text selectable.
+ */
+export function openCompactDiagnostics(
+  dies: readonly { x?: number | null; y?: number | null }[],
+  reticles: readonly ({ width: number; height: number } | undefined)[],
+  opts: { anchor: HTMLElement; onSaveText?: SaveTextHandler },
+): OverlayHandle {
+  const text = formatMpwDiagnostics(diagnoseMpwLayout(dies, reticles), WMAP_VERSION);
+  const doc = opts.anchor.ownerDocument;
+  const handle = openModal({
+    title: 'Layout diagnostics', anchor: opts.anchor, ownerDocument: doc, onClose: () => {},
+    boxSize: { width: 'min(680px, 94vw)', height: 'min(480px, 90vh)' },
+  });
+  const wrap = handle.contentWrap;
+  Object.assign(wrap.style, { flexDirection: 'column', padding: '14px 16px', gap: '10px', boxSizing: 'border-box' });
+
+  const note = doc.createElement('p');
+  note.textContent = 'This is everything the compact layout looked at. It holds counts and scores only: no die positions, bins, test values or wafer names. If the layout was not detected the way you expect, send it to whoever supports this software.';
+  Object.assign(note.style, { margin: '0', fontSize: FONT.body, color: CLR.text, lineHeight: '1.4' });
+
+  const area = doc.createElement('textarea');
+  area.value = text;
+  area.readOnly = true;
+  area.setAttribute('aria-label', 'Layout diagnostics');
+  Object.assign(area.style, {
+    flex: '1', minHeight: '0', resize: 'none', fontFamily: 'ui-monospace, monospace', fontSize: FONT.body,
+    padding: '8px', border: `1px solid ${CLR.separator}`, borderRadius: RADIUS.control, color: CLR.text, background: CLR.menuBg,
+  });
+
+  const row = doc.createElement('div');
+  Object.assign(row.style, { display: 'flex', gap: '8px', alignItems: 'center' });
+  const status = doc.createElement('span');
+  status.setAttribute('role', 'status');
+  Object.assign(status.style, { fontSize: FONT.body, color: CLR.text });
+  const button = (label: string, onClick: () => void): HTMLButtonElement => {
+    const b = doc.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    Object.assign(b.style, controlStyle('outlined'), { padding: '5px 12px', color: CLR.text });
+    wireControlHover(b, 'outlined');
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  const copy = button('Copy', () => {
+    const win = doc.defaultView;
+    const fallback = (): void => {
+      area.focus(); area.select();
+      let ok = false;
+      try { ok = doc.execCommand('copy'); } catch { ok = false; }
+      status.textContent = ok ? 'Copied' : 'Copying is not available here. Select the text, or save it as a file.';
+    };
+    if (win?.navigator.clipboard) win.navigator.clipboard.writeText(text).then(() => { status.textContent = 'Copied'; }, fallback);
+    else fallback();
+  });
+  const save = button('Save as file', () => {
+    saveTextFile(text, 'wafermap-layout-diagnostics.txt', 'text/plain', opts.onSaveText);
+    status.textContent = opts.onSaveText ? '' : 'Saved';
+  });
+  row.append(copy, save, status);
+  wrap.append(note, area, row);
+  area.focus();
+  area.select();
+  return handle;
+}
 
 /**
  * Persist a text file (e.g. a CSV export). Routes through the host
@@ -1661,6 +1745,12 @@ export type CheckMenuRow =
        */
       disabledHint?: string;
       /**
+       * Close the menu after this row is clicked. For an action that opens something of its own
+       * (a dialog), which the menu would otherwise stay open on top of. Toggles keep the menu open
+       * so several can be set in one visit.
+       */
+      closeMenu?: boolean;
+      /**
        * Marks a row that *does* something rather than holding a state — "Clear
        * overlays", "Reset orientation". Rendered as a plain `menuitem` with no
        * tick: every other row here is a checkbox, and an action wearing an
@@ -2003,6 +2093,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
           return {
             ...row,
             onClick: (e: MouseEvent) => {
+              if (row.closeMenu) closeMenu();
               row.onClick(e);
               onSync(btn);
               const current = openMenu;
@@ -2162,6 +2253,14 @@ export interface OverlayHandle {
   /** Replace the box's natural height (see `OverlayOptions.boxSize`) — applied
    *  now unless maximized or minimized, and restored to from either. */
   setNaturalHeight: (height: string) => void;
+  /**
+   * Make room for `px` of extra content beside what the box already holds, by widening it, and
+   * return the function that takes that room back. Capped so the box stays on screen (a window is
+   * moved left if it would run off the edge), so it may give less than asked. Does nothing while
+   * maximised or collapsed, and releasing leaves a width the user has dragged the box to since.
+   * For a panel that opens beside a map, so the map keeps its size instead of giving it up.
+   */
+  reserveWidth: (px: number) => () => void;
 }
 
 // Window mode needs its own incrementing stacking band, above the (dynamic,
@@ -2252,7 +2351,7 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   // un-maximize restore, and the un-minimize fallback — so a box opened at any
   // other size silently snapped back to 700px square the first time it was
   // maximized or minimized and restored.
-  const naturalWidth  = opts.boxSize?.width  ?? 'min(90vw, 700px)';
+  let naturalWidth  = opts.boxSize?.width  ?? 'min(90vw, 700px)';
   // `let`: content that knows its own height only once it is laid out (a
   // chart of rows) resets it through `setNaturalHeight`, so the size it fits
   // to is also the size maximize and minimize restore to.
@@ -2784,7 +2883,34 @@ body>*:not(.wmap-overlay-box):not(#wmap-modal-backdrop):not(.wmap-overlay-ancest
     if (!maximized && !minimized) box.style.height = height;
   }
 
-  return { backdrop, box, contentWrap, close, bringToFront, setNaturalHeight };
+  function reserveWidth(px: number): () => void {
+    const nothing = (): void => {};
+    if (maximized || minimized || !(px > 0)) return nothing;
+    const rect = box.getBoundingClientRect();
+    const target = Math.min(rect.width + px, win.innerWidth * 0.96);
+    if (!(target > rect.width + 0.5)) return nothing;
+    const widthBefore = box.style.width, naturalBefore = naturalWidth, leftBefore = box.style.left;
+    const widthSet = `${Math.round(target)}px`;
+    box.style.width = widthSet;
+    naturalWidth = widthSet;
+    // A floating window is placed by its left edge, so growing it can push it off screen; slide it back.
+    let leftSet: string | null = null;
+    if (!isModal) {
+      const overflow = rect.left + target - win.innerWidth;
+      if (overflow > 0) {
+        leftSet = `${Math.max(0, Math.round(rect.left - overflow - 8))}px`;
+        box.style.left = leftSet;
+      }
+    }
+    return () => {
+      // Leave a size or place the user has since dragged the box to.
+      if (box.style.width === widthSet && !maximized && !minimized) box.style.width = widthBefore;
+      if (naturalWidth === widthSet) naturalWidth = naturalBefore;
+      if (leftSet !== null && box.style.left === leftSet) box.style.left = leftBefore;
+    };
+  }
+
+  return { backdrop, box, contentWrap, close, bringToFront, setNaturalHeight, reserveWidth };
 }
 
 /** Create and open a resizable, maximizable, exclusive expand modal — dims and
@@ -2999,6 +3125,8 @@ export interface OverlayFlags {
   showDieLabels?: boolean;
   showReticle?: boolean;
   showXYIndicator?: boolean;
+  /** Unset means "while zoomed", the default; see `WaferViewOptions.showAxes`. */
+  showAxes?: boolean;
   passFailDisplay?: 'off' | 'spec' | 'test';
   /**
    * Moved here from the Colour scheme menu, where it had been the one entry
@@ -3032,18 +3160,38 @@ export function overlayMenuRows(
   reticleEnabled: boolean,
   passFail: { functionalActive: boolean; hasLimits: boolean; hasRecorded: boolean; binMode: boolean },
   apply: (patch: OverlayFlags) => void,
+  /** The compact layout toggle, for a host that offers it (a single map). */
+  compact?: { on: boolean; offered: boolean; onChange: (on: boolean) => void; onDiagnostics: () => void },
 ): CheckMenuRow[] {
+  // The compact layout draws no wafer, so the overlays that describe the wafer's geometry have
+  // nothing to sit on: show them off rather than let a ticked row do nothing. The XY indicator
+  // names the die-grid axes, not the wafer, so it stays.
+  const physicalOnly = compact?.on
+    ? { enabled: false, disabledHint: 'Not drawn in the compact layout' }
+    : undefined;
   return [
-    { label: 'Ring boundaries', active: !!flags.showRingBoundaries,
+    ...(compact ? [
+      { label: 'Compact layout', active: compact.on, enabled: compact.offered || compact.on,
+        disabledHint: 'Needs a repeating multi-project layout',
+        onClick: () => compact.onChange(!compact.on) },
+      // Always available, offered or not: the person whose layout was not detected is the one who needs it.
+      { label: 'Layout diagnostics', active: false, action: true, closeMenu: true, onClick: () => compact.onDiagnostics() },
+      { section: '' },
+    ] : []),
+    { label: 'Ring boundaries', active: !!flags.showRingBoundaries, ...physicalOnly,
       onClick: () => apply({ showRingBoundaries: !flags.showRingBoundaries }) },
-    { label: 'Quadrant lines', active: !!flags.showQuadrantBoundaries,
+    { label: 'Quadrant lines', active: !!flags.showQuadrantBoundaries, ...physicalOnly,
       onClick: () => apply({ showQuadrantBoundaries: !flags.showQuadrantBoundaries }) },
     { label: 'Die labels', active: !!flags.showDieLabels,
       onClick: () => apply({ showDieLabels: !flags.showDieLabels }) },
-    { label: 'Reticle grid', active: !!flags.showReticle, enabled: reticleEnabled,
+    { label: 'Reticle grid', active: !!flags.showReticle,
+      enabled: compact?.on ? false : reticleEnabled,
+      ...(physicalOnly ? { disabledHint: physicalOnly.disabledHint } : {}),
       onClick: () => apply({ showReticle: !flags.showReticle }) },
     { label: 'XY indicator', active: !!flags.showXYIndicator,
       onClick: () => apply({ showXYIndicator: !flags.showXYIndicator }) },
+    { label: 'Axis labels', active: !!flags.showAxes,
+      onClick: () => apply({ showAxes: !flags.showAxes }) },
     ...passFailMenuRows(
       { ...passFail, display: requestedPassFailDisplay(flags) },
       d => apply({ passFailDisplay: d }),
@@ -3075,6 +3223,8 @@ export function overlayMenuRows(
         showDieLabels: false,
         showReticle: false,
         showXYIndicator: false,
+        // Back to the default (labels while zoomed), not to "never".
+        showAxes: undefined,
         passFailDisplay: 'off',
         markFailingDies: false,
       }),
@@ -3086,7 +3236,7 @@ export function overlayMenuRows(
  *  the same reason as the rows: it enumerates the same five flags. */
 export function anyOverlayActive(flags: OverlayFlags): boolean {
   return !!(flags.showRingBoundaries || flags.showQuadrantBoundaries || flags.showDieLabels
-    || flags.showReticle || flags.showXYIndicator || flags.markFailingDies
+    || flags.showReticle || flags.showXYIndicator || flags.showAxes === true || flags.markFailingDies
     || requestedPassFailDisplay(flags) !== 'off');
 }
 
@@ -3234,19 +3384,24 @@ export function makeOverlaysBtn(
 export function makeOrientationBtn(
   helpers: ToolbarHelpers,
   getOpts: () => { rotation?: number; flipX?: boolean; flipY?: boolean },
-  setOpts: (patch: { rotation?: 0 | 90 | 180 | 270; flipX?: boolean; flipY?: boolean }) => void,
+  setOpts: (patch: { rotation?: 0 | 90 | 180 | 270; flipX?: boolean; flipY?: boolean; showXYIndicator?: boolean }) => void,
 ): HTMLButtonElement {
+  // Once a map has been turned or mirrored, which way X and Y run is no longer what the reader
+  // expects, so the +X/+Y arrows come on with the first rotate or flip, in any layout. They stay
+  // until switched off in the Overlays menu: resetting the orientation does not take them away.
+  const turn = (patch: { rotation?: 0 | 90 | 180 | 270; flipX?: boolean; flipY?: boolean }): void =>
+    setOpts({ ...patch, showXYIndicator: true });
   return helpers.makeCheckMenuBtn(
     'orient', 'Orientation',
     () => [
       { section: 'Rotate' },
       { label: 'Rotate 90° clockwise', active: false, onClick: () => {
         const r = (getOpts().rotation ?? 0) as 0 | 90 | 180 | 270;
-        setOpts({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] });
+        turn({ rotation: ROTATIONS[(ROTATIONS.indexOf(r) + 1) % 4] });
       }},
       { section: 'Flip' },
-      { label: 'Flip horizontal', active: !!getOpts().flipX, onClick: () => setOpts({ flipX: !getOpts().flipX }) },
-      { label: 'Flip vertical',   active: !!getOpts().flipY, onClick: () => setOpts({ flipY: !getOpts().flipY }) },
+      { label: 'Flip horizontal', active: !!getOpts().flipX, onClick: () => turn({ flipX: !getOpts().flipX }) },
+      { label: 'Flip vertical',   active: !!getOpts().flipY, onClick: () => turn({ flipY: !getOpts().flipY }) },
       { section: '' },
       {
         // Getting back to the shipped orientation by eye is genuinely hard, not
@@ -3888,7 +4043,19 @@ export function openWaferMapGuide(extension?: UserGuideExtension, anchor?: Eleme
  * for content that lives directly in the host document, like the guide) isn't
  * needed here and wouldn't reach into the iframe's own document anyway.
  */
-export function openReportModal(html: string, opts?: { anchor?: Element; ownerDocument?: Document }): OverlayHandle {
+export function openReportModal(
+  html: string,
+  opts?: {
+    anchor?: Element;
+    ownerDocument?: Document;
+    /**
+     * A report built with `live` tells this page which finding a click on its row meant. Called with that
+     * finding's id and the modal's handle, so the host can close the modal and show the finding on the map.
+     * Only messages from this report's own frame are heeded.
+     */
+    onFinding?: (findingId: string, handle: OverlayHandle) => void;
+  },
+): OverlayHandle {
   const doc = opts?.ownerDocument ?? document;
   const iframe = doc.createElement('iframe');
   iframe.srcdoc = html;
@@ -3914,12 +4081,20 @@ export function openReportModal(html: string, opts?: { anchor?: Element; ownerDo
   openFullPageBtn.addEventListener('click', () => openHtmlReport(html));
   toolbarStrip.appendChild(openFullPageBtn);
 
+  const win = doc.defaultView ?? window;
+  const onMessage = (ev: MessageEvent): void => {
+    if (ev.source !== iframe.contentWindow) return;
+    const id = (ev.data as { wmapFinding?: unknown } | null)?.wmapFinding;
+    if (typeof id === 'string') opts?.onFinding?.(id, handle);
+  };
+  if (opts?.onFinding) win.addEventListener('message', onMessage);
+
   const handle = openModal({
     title: 'Summary report',
     anchor: opts?.anchor,
     ownerDocument: doc,
     printable: () => iframe.contentWindow?.print(),
-    onClose: () => {},
+    onClose: () => win.removeEventListener('message', onMessage),
   });
   handle.contentWrap.style.flexDirection = 'column';
   handle.contentWrap.appendChild(toolbarStrip);

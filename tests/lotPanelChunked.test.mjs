@@ -70,13 +70,16 @@ function makeLot(wafers = 3, diesPerWafer = 40) {
 }
 
 const lotSummaryFor = (items) => ({
+  level: 'lot',
+  hasNotableFindings: false,
+  lotYieldSeries: items.map((_, i) => ({ waferIndex: i, yieldPercent: 90 + i })),
   stats: { waferCount: items.length },
   perWafer: items.map((it, i) => ({
     waferIndex: i,
     summary: {
       wafer: it.wafer.metadata,
       yield: { yieldPercent: 90, totalDies: it.dies.length, passDies: 36, failDies: 4 },
-      stats: { warnings: [], yieldPercent: 90 + i },
+      stats: { warnings: [], yieldPercent: 90 + i, totalDies: it.dies.length, analyzedDies: it.dies.length, testsConsidered: [], hardBinsConsidered: [] },
     },
   })),
   findings: [],

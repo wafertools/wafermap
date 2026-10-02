@@ -24,6 +24,7 @@
 import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { LotStatsSummary, StatsSummary } from '../stats/types.js';
+import { MEAN_WAFER_YIELD_LABEL } from '../stats/presentation.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from '../stats/facets.js';
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
@@ -1025,7 +1026,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const differs = combined !== undefined && combined.toFixed(1) !== mean.toFixed(1);
       card.appendChild(tile(
         `${mean.toFixed(1)}%`,
-        `Mean per-wafer yield · pass: ${passBinsLabel}`,
+        `${MEAN_WAFER_YIELD_LABEL} · pass: ${passBinsLabel}`,
         differs ? `${combined.toFixed(1)}% by dies` : undefined,
       ));
     }

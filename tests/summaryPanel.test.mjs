@@ -339,7 +339,7 @@ test('renderWaferSummaryContent — "View die list" opens a modal with this wafe
 test('renderLotSummaryContent — "View die list" pools every wafer\'s dies with a Wafer column', () => {
   const panel = panelDiv();
   document.body.innerHTML = '';
-  const lotSummary = { stats: { waferCount: 2 }, perWafer: [] };
+  const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 2 }, perWafer: [] };
   const items = [
     { label: 'W1', wafer: wafer({ metadata: { lot: 'L1', waferId: 'W1' } }), dies: [die({ hbin: 1 })] },
     { label: 'W2', wafer: wafer({ metadata: { lot: 'L1', waferId: 'W2' } }), dies: [die({ hbin: 2 }), die({ hbin: 1 })] },
@@ -359,7 +359,13 @@ test('renderLotSummaryContent — "View die list" pools every wafer\'s dies with
 // ── "Summary report": opens in an in-app modal by default —
 // no setReportOpener/window.open required just to view a report. ─────────────
 
-test('renderWaferSummaryContent — "Summary report" opens an in-app modal with the report as an iframe, not window.open', () => {
+/** The report builders load on demand, so a report opens a tick after its button is clicked. */
+const until = async (find, tries = 100) => {
+  for (let i = 0; i < tries; i++) { const v = find(); if (v) return v; await new Promise(r => setTimeout(r, 5)); }
+  return find();
+};
+
+test('renderWaferSummaryContent — "Summary report" opens an in-app modal with the report as an iframe, not window.open', async () => {
   const panel = panelDiv();
   document.body.innerHTML = '';
   renderWaferSummaryContent(panel, {
@@ -370,7 +376,7 @@ test('renderWaferSummaryContent — "Summary report" opens an in-app modal with 
   });
   clickLink(panel, 'Summary report');
 
-  const modal = document.body.querySelector('.wmap-modal-box');
+  const modal = await until(() => document.body.querySelector('.wmap-modal-box'));
   assert.ok(modal, 'expected an in-app modal to have been mounted, not a window.open() call');
   const iframe = modal.querySelector('iframe');
   assert.ok(iframe, 'expected the report HTML to be rendered via an iframe');
@@ -380,15 +386,15 @@ test('renderWaferSummaryContent — "Summary report" opens an in-app modal with 
   assert.ok([...modal.querySelectorAll('button')].some(b => b.textContent.includes('Open as full page')), 'expected the "open as full page" fallback link');
 });
 
-test('renderLotSummaryContent — "Summary report" opens an in-app modal too', () => {
+test('renderLotSummaryContent — "Summary report" opens an in-app modal too', async () => {
   const panel = panelDiv();
   document.body.innerHTML = '';
-  const lotSummary = { stats: { waferCount: 1 }, perWafer: [] };
+  const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 1 }, perWafer: [] };
   const items = [{ label: 'W1', wafer: wafer({ metadata: { lot: 'L1' } }), dies: [die({ hbin: 1 })] }];
   renderLotSummaryContent(panel, { lotSummary, items });
   clickLink(panel, 'Summary report');
 
-  const modal = document.body.querySelector('.wmap-modal-box');
+  const modal = await until(() => document.body.querySelector('.wmap-modal-box'));
   assert.ok(modal, 'expected an in-app modal to have been mounted');
   assert.ok(modal.querySelector('iframe'), 'expected the lot report HTML to be rendered via an iframe');
 });
@@ -396,7 +402,7 @@ test('renderLotSummaryContent — "Summary report" opens an in-app modal too', (
 test('renderLotSummaryContent — "View die list" CSV carries only metadata common to every wafer', () => {
   const panel = panelDiv();
   document.body.innerHTML = '';
-  const lotSummary = { stats: { waferCount: 2 }, perWafer: [] };
+  const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 2 }, perWafer: [] };
   const items = [
     // 'lot' is common to both, 'product' is not — the mixed-lot "no false claim" case.
     { label: 'W1', wafer: wafer({ metadata: { lot: 'L1', product: 'A' } }), dies: [die({ hbin: 1 })] },
@@ -419,7 +425,7 @@ test('renderLotSummaryContent — "View die list" CSV carries only metadata comm
 
 test('renderLotSummaryContent — "View die list" is present by default (no dieListOptions at all)', () => {
   const panel = panelDiv();
-  const lotSummary = { stats: { waferCount: 1 }, perWafer: [] };
+  const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 1 }, perWafer: [] };
   const items = [{ label: 'W1', wafer: wafer({ metadata: {} }), dies: [die({ hbin: 1 })] }];
   renderLotSummaryContent(panel, { lotSummary, items });
   assert.ok([...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
@@ -427,7 +433,7 @@ test('renderLotSummaryContent — "View die list" is present by default (no dieL
 
 test('renderLotSummaryContent — "View die list" is absent when explicitly disabled', () => {
   const panel = panelDiv();
-  const lotSummary = { stats: { waferCount: 1 }, perWafer: [] };
+  const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 1 }, perWafer: [] };
   const items = [{ label: 'W1', wafer: wafer({ metadata: {} }), dies: [die({ hbin: 1 })] }];
   renderLotSummaryContent(panel, { lotSummary, items, dieListOptions: { enabled: false } });
   assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
