@@ -25,8 +25,8 @@ import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 // The report builders are loaded when a report is opened, not with the map (see `openReportModal`'s callers):
 // they are most of the report's markup and stylesheet, and a panel that is never exported to a report never needs them.
 import type { ReportMap } from '../stats/renderSummaryReport.js';
-import { buildSynthesis, synthesisText, type SynthesisPart } from '../stats/synthesis.js';
-import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWord, formatPoints, shortfallColor, type MeterTier } from '../stats/presentation.js';
+import { buildSynthesis, synthesisText, synthesisRowShare, SYNTHESIS_SMALLER_HEADING, type SynthesisPart } from '../stats/synthesis.js';
+import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWord, impactShortWord, formatPoints, shortfallColor, type MeterTier } from '../stats/presentation.js';
 import { regionYieldRows, waferYieldRows } from '../stats/yieldRows.js';
 import { formatFindingTooltip } from '../stats/findingText.js';
 import { arrangeFindings, filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
@@ -561,12 +561,16 @@ export function buildFacetSummaryChips(
 
   const makeChip = (field: { key: string; values: Array<{ value: string }> }) => {
     const chip = el('span', { whiteSpace: 'nowrap' });
-    const label = el('span', { color: LABEL_COLOR }, `${prettyKey(field.key)}: `);
-    chip.appendChild(label);
     const shown = field.values.slice(0, maxValuesPerField);
     const remaining = field.values.length - shown.length;
+    // The distinct-value count goes in the label, not in a trailing "+N more":
+    // the strip's one real disclosure button reads "N more fields", and two
+    // adjacent "more" phrases read as one control. This part is plain text.
+    const label = el('span', { color: LABEL_COLOR },
+      `${prettyKey(field.key)}${remaining > 0 ? ` (${field.values.length})` : ''}: `);
+    chip.appendChild(label);
     let text = shown.map(v => v.value).join(', ');
-    if (remaining > 0) text += ` +${remaining} more`;
+    if (remaining > 0) text += ', \u2026';
     chip.appendChild(document.createTextNode(text));
     return chip;
   };
@@ -587,7 +591,7 @@ export function buildFacetSummaryChips(
     wireControlHover(toggle, 'bare');
     const sync = (open: boolean) => {
       rest.style.display = open ? 'contents' : 'none';
-      toggle.textContent = open ? 'less' : `+${secondary.length} more`;
+      toggle.textContent = open ? 'fewer fields' : `${secondary.length} more field${secondary.length === 1 ? '' : 's'}`;
       toggle.setAttribute('aria-expanded', String(open));
     };
     sync(false);
@@ -2293,19 +2297,41 @@ export function buildSynthesisSection(
   if (synthesis.nothing) {
     content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text, marginBottom: SPACE.sm }, synthesis.nothing));
   }
-  for (const item of synthesis.items) {
+  // The top item gets the tinted box and its full sentence. The rest are one compact list: a
+  // marker, the item in a few words, its share of the dies. Three boxes of equal weight read as
+  // three alarms; the list lets the eye find the one that matters and still see the others.
+  const [lead, ...others] = synthesis.items;
+  if (lead) {
     const box = el('div', {
-      borderLeft: `3px solid ${sevColor(TIER_SEVERITY[item.impact])}`,
-      background: TIER_TINT[item.impact] || CLR.bgActive,
+      borderLeft: `3px solid ${sevColor(TIER_SEVERITY[lead.impact])}`,
+      background: TIER_TINT[lead.impact] || CLR.bgActive,
       borderRadius: `0 ${RADIUS.container} ${RADIUS.container} 0`,
       padding: `${SPACE.sm} ${SPACE.md}`,
       marginBottom: SPACE.sm,
     });
-    box.appendChild(meterEl(item.impact, impactWord(item.impact)));
-    box.appendChild(line(item.parts, { marginTop: SPACE.xxs }));
+    box.appendChild(meterEl(lead.impact, impactWord(lead.impact)));
+    box.appendChild(line(lead.parts, { marginTop: SPACE.xxs }));
     content.appendChild(box);
   }
-  if (synthesis.also) content.appendChild(line(synthesis.also, { marginBottom: SPACE.sm }));
+  const smaller = [...others, ...(synthesis.also?.items ?? [])];
+  if (smaller.length) {
+    content.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR, marginBottom: SPACE.xxs }, SYNTHESIS_SMALLER_HEADING));
+    const list = el('div', { marginBottom: SPACE.sm });
+    list.setAttribute('role', 'list');
+    for (const it of smaller) {
+      const row = el('div', { display: 'flex', alignItems: 'baseline', gap: SPACE.sm, fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text });
+      row.setAttribute('role', 'listitem');
+      row.appendChild(meterEl(it.impact, impactShortWord(it.impact)));
+      const label = el('span', { flex: '1', minWidth: '0' });
+      appendParts(label, [it.brief]);
+      row.appendChild(label);
+      row.appendChild(el('span', { color: LABEL_COLOR, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }, synthesisRowShare(it)));
+      list.appendChild(row);
+    }
+    const more = synthesis.also?.more ?? 0;
+    if (more > 0) list.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR }, `and ${more} more`));
+    content.appendChild(list);
+  }
   for (const w of synthesis.watch ?? []) {
     const row = line(w.parts, { marginBottom: SPACE.xs });
     row.insertBefore(el('span', { fontSize: FONT.meta, fontWeight: '600', letterSpacing: TRACKING, textTransform: 'uppercase', color: LABEL_COLOR, marginRight: SPACE.sm }, 'Watch'), row.firstChild);

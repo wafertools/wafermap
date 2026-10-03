@@ -25,6 +25,9 @@ export const SEVERITY_MARK: Readonly<Record<StatsSeverity, { tier: MeterTier; wo
 export const impactWord = (tier: MeterTier): string =>
   `${tier === 'medium' ? 'Moderate' : tier === 'high' ? 'High' : 'Low'} impact`;
 
+/** The same tier as one word, for a compact list row where "impact" is already the heading's subject. */
+export const impactShortWord = (tier: MeterTier): string => (tier === 'medium' ? 'Moderate' : tier === 'high' ? 'High' : 'Low');
+
 /** Points below the reference at which a figure is tinted, strongest first. Above the reference nothing is tinted. */
 const SHORTFALL_STEPS: ReadonlyArray<{ points: number; step: 1 | 2 | 3 }> = [
   { points: 4, step: 3 }, { points: 2, step: 2 }, { points: 1, step: 1 },

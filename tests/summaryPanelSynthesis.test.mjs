@@ -73,10 +73,12 @@ test('without a click handler the names are plain text', () => {
   assert.equal(section.querySelectorAll('button[data-wmap-finding]').length, 0);
 });
 
-test('items over the cap go on the "also" line', () => {
+test('items beyond the top one are a compact list with their share of the dies', () => {
   const regions = Array.from({ length: 5 }, (_, i) => ({ name: `R${i}`, dies: 1000, drop: 0.3 - i * 0.03 }));
   const text = buildSynthesisSection(lot(regions), [1], undefined, null).textContent;
-  assert.match(text, /Also over a yield point: R3: pass rate, [\d,]+ dies; R4: pass rate, [\d,]+ dies\./);
+  assert.match(text, /Smaller, each costing at least 1% of the dies/);
+  assert.match(text, /R3: pass rate, [\d,]+ dies\d+\.\d%/);
+  assert.doesNotMatch(text, /Also over a yield point/);
 });
 
 test('wafers judged by different pass bins: no bin is called a failure, and the headline names no bins', () => {

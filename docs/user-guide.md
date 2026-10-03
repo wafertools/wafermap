@@ -215,7 +215,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)). This is the mode a map opens in.                                                                                                                                                                             |
 | <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
-| <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it.                                                                                                                |
+| <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Shown unless the application has turned it off.                                                                                                                |
 | <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
 | <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                                                                                           |
@@ -334,7 +334,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | **Legend on each map** adds a legend to every card as well as the shared one above the grid (off by default). While it is on, bin modes also let you choose where that legend sits on each card. |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with test limits only. Toggles all cards between the limit range and the data range. Leave it on the test limits when comparing wafers — the data range rescales per view. |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Opens or closes the Summary panel covering every wafer in the gallery.                                                                                                           |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a chart suite covering every wafer — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Only shown when the application has enabled it. |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a chart suite covering every wafer — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Shown unless the application has turned it off. |
 | <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the wafers shown. Collected across every wafer and de-duplicated, so a problem affecting all of them is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
 
@@ -499,7 +499,8 @@ supporting detail.
 
 The Summary panel docks next to the map and gives you the wafer or lot at a
 glance, with findings sitting directly under the headline numbers so a clicked
-finding can highlight the affected dies right there. Open it from the toolbar.
+finding can highlight the affected dies right there. Open it from the toolbar, or from
+the **Summary** tab on the edge of the map area, which shows while the panel is closed.
 
 <div data-wmap-demo="summary-panel" class="wmap-demo"></div>
 
@@ -517,9 +518,10 @@ Sections, top to bottom:
   statistic as the bin breakdown's pass-bin share, which weights every die
   equally. The two agree only when die counts are even across the wafers.
 - **What stands out** — the headline (the yield, and for a lot its spread across
-  wafers), then up to three items ranked by how many dies each costs, an "also"
-  line for any others over a yield point, and a line saying what was compared. An
-  item names a region, a wafer or a test and, for a region, the failing bins that make up
+  wafers), then the items ranked by how many dies each costs: the largest in a tinted
+  box with its full sentence, the others as a compact list (impact, name, and share of the dies).
+  Anything costing less than 1% of the dies is left to the findings list. A line says what
+  was compared. An item names a region, a wafer or a test and, for a region, the failing bins that make up
   its shortfall; a test is an item when it is outside its limits (or a functional test
   fails) on a share of the dies that clears the same floor. Its three dots and word (High, Moderate or Low impact) say how
   much of the lot it costs: the higher of its share of all the dies (2% moderate, 4% high)
@@ -751,7 +753,7 @@ yield/box-plot rows.*
 
 *Gallery Insights, Overview sub-tab: lot-wide yield by wafer (click a bar to
 open that wafer's map), hard/soft bin pareto, ring and quadrant yield, and
-pooled per-test statistics. The "‹ Gallery" tab returns to the card grid.*
+pooled per-test statistics. The **Maps | Insights** switch at the top left (it does not move between the two views) returns to the card grid.*
 
 ![Gallery Insights — Distributions sub-tab](images/guide-insights-distributions.png)
 

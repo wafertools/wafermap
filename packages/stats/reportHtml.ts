@@ -1,8 +1,8 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
-import type { Synthesis } from './synthesis.js';
+import { SYNTHESIS_SMALLER_HEADING, synthesisRowShare, type Synthesis } from './synthesis.js';
 import { formatFindingTooltip } from './findingText.js';
 import { arrangeFindings } from './filterFindings.js';
-import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, shortfallColor, shortfallStep, formatPoints, barPercent, type MeterTier } from './presentation.js';
+import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, impactShortWord, shortfallColor, shortfallStep, formatPoints, barPercent, type MeterTier } from './presentation.js';
 
 export type { MeterTier };
 import { fmt, plainBinTerms } from '../renderer/fmt.js';
@@ -255,12 +255,23 @@ export function synthesisSectionHtml(synthesis: Synthesis, anchorIds: ReadonlySe
     p.target && anchorIds.has(p.target.id)
       ? `<a href="#${findingAnchor(p.target.id, scope)}">${escHtml(p.text)}</a>`
       : escHtml(p.text)).join('');
-  const items = synthesis.items.length
-    ? `<ol class="synthesis-items">\n${synthesis.items.map((it) => `<li class="tier-${it.impact}">${renderMeter(it.impact, impactWord(it.impact))}<span>${run(it.parts)}</span></li>`).join('\n')}\n</ol>`
+  const [lead, ...others] = synthesis.items;
+  // The top item gets the full sentence in a tinted box; everything else is a compact row (marker, the
+  // item in a few words, its share of the dies) so three equal boxes never compete for the eye.
+  const smaller = [...others, ...(synthesis.also?.items ?? [])];
+  const more = synthesis.also?.more ?? 0;
+  const items = lead
+    ? `<ol class="synthesis-items">\n<li class="tier-${lead.impact}">${renderMeter(lead.impact, impactWord(lead.impact))}<span>${run(lead.parts)}</span></li>\n</ol>`
     : `<p class="synthesis-none">${escHtml(synthesis.nothing ?? 'Nothing stands out.')}</p>`;
+  const rows = smaller.length
+    ? `<p class="synthesis-smaller">${escHtml(SYNTHESIS_SMALLER_HEADING)}</p>
+  <ul class="synthesis-more">
+${smaller.map((it) => `<li>${renderMeter(it.impact, impactShortWord(it.impact))}<span>${run([it.brief])}</span><span class="synthesis-share">${escHtml(synthesisRowShare(it))}</span></li>`).join('\n')}${more ? `\n<li class="synthesis-rest"><span></span><span>and ${more} more</span><span></span></li>` : ''}
+  </ul>`
+    : '';
   return renderSection('What stands out', `<p class="synthesis-headline">${run(synthesis.headline)}</p>
   ${items}
-  ${synthesis.also ? `<p class="synthesis-also">${run(synthesis.also)}</p>` : ''}
+  ${rows}
   ${synthesis.watch ? `<ul class="synthesis-watch">${synthesis.watch.map((w) => `<li><strong>Watch</strong> ${run(w.parts)}</li>`).join('')}</ul>` : ''}
   <p class="synthesis-checked">${escHtml(synthesis.checked)}</p>`, 'synthesis');
 }
@@ -372,7 +383,10 @@ export function reportStyles(): string {
   }
   .synthesis-items li.tier-high { border-color: var(--report-tier-high-edge); background: var(--report-tier-high-bg); }
   .synthesis-items li.tier-medium { border-color: var(--report-tier-medium-edge); background: var(--report-tier-medium-bg); }
-  .synthesis-also { margin: 0 0 6px; }
+  .synthesis-smaller { margin: 0 0 4px; color: var(--report-muted); }
+  .synthesis-more { list-style: none; margin: 0 0 8px; padding: 0; }
+  .synthesis-more li { display: grid; grid-template-columns: 96px 1fr auto; gap: 10px; align-items: baseline; margin: 0 0 3px; }
+  .synthesis-share { font-variant-numeric: tabular-nums; color: var(--report-muted); }
   .synthesis-watch { list-style: none; margin: 0 0 6px; padding: 0; }
   .synthesis-watch li { margin: 0 0 3px; }
   .synthesis-watch strong { margin-right: 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--report-muted); }

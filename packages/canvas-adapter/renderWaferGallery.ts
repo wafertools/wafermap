@@ -1,3 +1,5 @@
+import { createViewSwitch, type ViewSwitch } from './viewSwitch.js';
+import { createSummaryRail, type SummaryRail } from './summaryRail.js';
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
 import { metadataCategoricalValue } from '../core/metadata.js';
@@ -545,10 +547,10 @@ export function renderWaferGallery(
   let currentColumns         = normalizeColumns(options.columns);
   const showHelpButton       = options.showHelpButton       ?? false;
   const userGuideExtension   = options.userGuideExtension;
-  const insightsEnabled      = options.insights?.enabled ?? false;
+  const insightsEnabled      = options.insights?.enabled ?? true;
   /** What each card's own map gets of `insights`: the sweep definitions, for
    *  drilldown on that card's selection, and nothing that makes it an Insights host. */
-  const cardInsights = options.insights?.sweeps ? { sweeps: options.insights.sweeps } : undefined;
+  const cardInsights = { enabled: false, sweeps: options.insights?.sweeps };
   // Host-supplied overlay stacking (no-op when undefined; safe high default
   // applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ      = applyOverlayZ(options.zIndex);
@@ -1221,6 +1223,17 @@ export function renderWaferGallery(
     }
   }
 
+  // The labelled edge tab that opens the panel while it is closed: it clicks the toolbar's own
+  // Summary button, so the open/close logic stays in one place. Created with `bodyEl`, below.
+  let summaryRail: SummaryRail | null = null;
+  function syncSummaryRail(): void {
+    if (!summaryRail) return;
+    const open = gallerySummaryPanelEl ? gallerySummaryPanelEl.style.display !== 'none' : true;
+    const shown = !!btnLotSummary && btnLotSummary.style.display !== 'none';
+    const notable = !!(currentLotStats?.hasNotableFindings || originalItems.some(it => it?.statsSummary?.hasNotableFindings));
+    summaryRail.sync(shown && !open, notable);
+  }
+
   function refreshLotSummaryButton(): void {
     if (!btnLotSummary) return;
     const hasSummaryPanel = !!gallerySummaryPanelEl;
@@ -1235,6 +1248,7 @@ export function renderWaferGallery(
     } else if (!btnLotSummary.dataset.active) {
       btnLotSummary.style.color = CLR.icon;
     }
+    syncSummaryRail();
   }
 
   // ── Gallery control bar ────────────────────────────────────────────────────
@@ -2047,12 +2061,6 @@ export function renderWaferGallery(
       defaultView: options.insights?.defaultView,
       sweeps: options.insights?.sweeps,
       onRemoveSweeps: options.insights?.onRemoveSweeps,
-      // No back tab. The bar now stays visible in Insights and carries the
-      // toggle, and unlike renderWaferMap's toolbar this one is unconditional —
-      // there is no option to suppress it, and `btnInsights` exists whenever
-      // `insightsEnabled` is true, which is the only way this tab is ever
-      // reachable. So a "‹ Gallery" tab could only ever be a second control
-      // doing what the bar's toggle already does, two inches to the left.
       // Never. The bar stays visible in Insights and carries Help whenever the
       // host asked for it, so the tab row has nothing to fall back for. The
       // condition here was inverted — it passed the guide through precisely
@@ -2103,10 +2111,12 @@ export function renderWaferGallery(
   // Insights; only the bin-legend row (meaningless once the grid of cards is
   // replaced by the chart suite) is dropped when Insights is open.
   let insightsOpen = false;
+  let viewSwitch: ViewSwitch | null = null;
 
   function setInsightsOpen(open: boolean): void {
     if (!insightsEnabled) return;
     insightsOpen = open;
+    viewSwitch?.setInsightsOpen(open);
     // Chrome first, synchronously, so the view responds to the click while the
     // chart suite is still being fetched; only revealing the tab has to wait.
     if (insightsEl) insightsEl.style.display = open ? 'flex' : 'none';
@@ -2483,6 +2493,11 @@ export function renderWaferGallery(
     bodyEl.appendChild(gridEl);
     if (gallerySummaryPanelEl) bodyEl.appendChild(gallerySummaryPanelEl);
   }
+  if (placement === 'left' || placement === 'right') {
+    summaryRail = createSummaryRail(container.ownerDocument, placement, () => btnLotSummary?.click());
+    bodyEl.appendChild(summaryRail.el);
+    syncSummaryRail();
+  }
 
   // Toolbar + legend stick to the top of whatever scrolls this gallery. Both
   // used to scroll away with the grid (position: static, the default) — on
@@ -2544,6 +2559,11 @@ export function renderWaferGallery(
     background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
   chromeRowEl.appendChild(metaPillEl);
   chromeRowEl.appendChild(barEl);
+  // Maps | Insights, first in the row and in the same place in both views.
+  if (insightsEnabled) {
+    viewSwitch = createViewSwitch(container.ownerDocument, 'Maps', 'lot', open => setInsightsOpen(open));
+    chromeRowEl.appendChild(viewSwitch.el);
+  }
   stickyHeaderEl.appendChild(chromeRowEl);
   stickyHeaderEl.appendChild(legendEl);
   container.appendChild(stickyHeaderEl);

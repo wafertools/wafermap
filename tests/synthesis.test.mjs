@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap, analyzeWaferMap, analyzeWaferLot } from '../dist/index.js';
-import { buildSynthesis, synthesisText } from '../dist/packages/stats/synthesis.js';
+import { buildSynthesis, synthesisText, synthesisRowShare } from '../dist/packages/stats/synthesis.js';
 import { renderLotReportHtml, renderWaferReportHtml } from '../dist/packages/stats/renderSummaryReport.js';
 import { findingAnchor } from '../dist/packages/stats/reportHtml.js';
 
@@ -163,9 +163,10 @@ test('items over the cap go on one "also" line, so nothing material is dropped',
     { name: 'D', dies: 1000, drop: 0.15 }, { name: 'E', dies: 1000, drop: 0.11 }, { name: 'F', dies: 1000, drop: 0.05 },
   ]));
   assert.deepEqual(s.items.map(i => i.brief.text.split(':')[0]), ['A', 'B', 'C']);
-  const also = s.also.map(p => p.text).join('');
-  assert.match(also, /^Also over a yield point: D: pass rate, 150 dies; E: pass rate, 110 dies\.$/);
-  assert.ok(!also.includes('F:'), 'a region below the floor is not mentioned');
+  assert.deepEqual(s.also.items.map(i => i.brief.text), ['D: pass rate, 150 dies', 'E: pass rate, 110 dies']);
+  assert.deepEqual(s.also.items.map(i => synthesisRowShare(i)), ['1.5%', '1.1%']);
+  assert.equal(s.also.more, 0);
+  assert.ok(!synthesisText(s).includes('F:'), 'a region below the floor is not mentioned');
   assert.match(s.checked, /1 smaller finding not listed above/, 'the floor-and-below finding is the only one left');
 });
 
@@ -173,7 +174,8 @@ test('a long "also" line names five and counts the rest', () => {
   const regions = Array.from({ length: 10 }, (_, i) => ({ name: `R${i}`, dies: 1000, drop: 0.2 - i * 0.01 }));
   const s = buildSynthesis(fakeLot(regions));
   assert.equal(s.items.length, 3);
-  assert.match(s.also.map(p => p.text).join(''), /; and 2 more\.$/);
+  assert.equal(s.also.items.length, 5);
+  assert.equal(s.also.more, 2);
 });
 
 test('impact tiers follow the share of dies lost: under 2% low, 2–4% medium, 4% and over high', () => {
@@ -280,7 +282,7 @@ test('test items go on the "also" line like any other, with a short form', () =>
   const l = withTests([1, 2, 3, 4].map(i => ({ label: `T${i}`, failLowDies: 600 - i * 50, failHighDies: 0, totalDies: 10000 })));
   const s = buildSynthesis(l);
   assert.equal(s.items.length, 3);
-  assert.match(s.also.map(p => p.text).join(''), /^Also over a yield point: T4: 400 dies outside limits\.$/);
+  assert.deepEqual(s.also.items.map(i => i.brief.text), ['T4: 400 dies outside limits']);
 });
 
 // ── Impact is the higher of the share of dies and the share of the lot's loss ─────

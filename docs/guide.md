@@ -963,7 +963,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary | Only when `statsSummary` is provided | Toggles the Summary panel (metadata, yield, bins, ring/quadrant, test values, findings) |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the map for this wafer's own chart suite — see [The Insights tab](#the-insights-tab) |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Unless `insights: { enabled: false }` | Swaps the map for this wafer's own chart suite — see [The Insights tab](#the-insights-tab) |
 | <img src="images/icons/expand.svg" width="20" height="20"> | Expand | Unless `showExpandButton: false` | Opens the map in an enlarged modal overlay; canvas reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). `E` key shortcut (also disabled when `showExpandButton: false`). Hidden (and `E` disabled) while the Insights tab is open — see below. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#511-user-guide-extension) |
 
@@ -997,7 +997,7 @@ The gallery control bar is always visible above the card grid.
 | <img src="images/icons/columns.svg" width="20" height="20"> | Columns | Always | Dropdown: fix the column count to 1–5, or choose **Auto** to let the gallery size columns based on die pitch. Cards are size-capped and pack from the left rather than stretching to fill the width |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Download all | Always | Exports all cards as a single tiled PNG |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Only when `lotStatsSummary` is provided | Toggles the summary and findings panel covering every wafer in the gallery |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Only when `insights: { enabled: true }` | Swaps the grid for a chart suite covering every wafer — see [The Insights tab](#the-insights-tab) |
+| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights | Unless `insights: { enabled: false }` | Swaps the grid for a chart suite covering every wafer — see [The Insights tab](#the-insights-tab) |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide | Only when `showHelpButton: true` | Opens the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Callable directly via `openUserGuide()` regardless of `showHelpButton`. `userGuideExtension` inserts a host app's own documentation into it, see [API reference](api.md#511-user-guide-extension) |
 
 **While the Insights tab is open**, every button above except Insights and User guide is hidden
@@ -1773,7 +1773,7 @@ ctrl.setLotStatsSummary(newLotSummary);
 
 ## The Insights tab
 
-`renderWaferMap` and `renderWaferGallery` both support an opt-in **Insights** tab — a chart suite covering per-test pass rates, process capability, value distributions, wafer-to-wafer drift, and test correlation, computed from the same dies already on screen. Enable it with one option; there's no per-chart wiring and no host-computed grouping to set up.
+`renderWaferMap` and `renderWaferGallery` both include an **Insights** tab, on by default — a chart suite covering per-test pass rates, process capability, value distributions, wafer-to-wafer drift, and test correlation, computed from the same dies already on screen. Turn it off with `insights: { enabled: false }`; there's no per-chart wiring and no host-computed grouping to set up. The examples below name the option explicitly.
 
 ```ts
 renderWaferMap(container, result, { insights: { enabled: true } });

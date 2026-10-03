@@ -24,8 +24,31 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Breaking
+
+- **Insights is on by default.** `insights.enabled` now defaults to `true` wherever there is a toolbar: always
+  for `renderWaferGallery`, and for `renderWaferMap` unless `showToolbar` is `false` (a chromeless map stays a
+  plain map). Hosts that do not want it pass `insights: { enabled: false }`. Gallery cards are never Insights
+  hosts. The chart code still downloads only when Insights is first opened.
+
 ### Changed
 
+- **The identity strip has one overflow control.** A field with many distinct values shows its count in the
+  label and an ellipsis (`Lot (5): LOT-A, LOT-B, LOT-C, …`); the only button is `N more fields`, which
+  reveals the remaining metadata fields.
+- **A Map | Insights switch leads the chrome row.** With `insights.enabled`, the first control in the row
+  above the map (single map: Map | Insights; gallery: Maps | Insights) is a labelled two-tab switch that stays
+  in the same place in both views, so it works as a toggle and makes Insights easy to find. It replaces the
+  back tab at the start of the Insights tab row, which now holds only Overview · Distributions · Correlation.
+  The toolbar's Insights button is unchanged. Hosts waiting for the Insights chunk should poll
+  `button[data-wmap-insights-tab]`, not `button[role="tab"]`.
+- **A labelled "Summary" tab opens the Summary panel while it is closed.** A slim vertical tab on the outer
+  edge of the map area (single map and gallery, left or right placement) shows only while the panel is closed
+  and a Summary exists, tints like the toolbar icon when there are notable findings, and opens the panel. The
+  toolbar's Summary button is unchanged.
+- **"What stands out" gives the top item the emphasis.** The largest item keeps its tinted box and full
+  sentence; the others are one compact list (impact marker, the item in a few words, share of the dies),
+  in the panel and the report alike. The summary's `also` line is replaced by that list.
 - **One σ rule: the sample standard deviation (n−1).** The Test Values table, per-test statistics, the
   lot trend, the lot drift σ and the report's pooled σ all divide by n−1, as the capability indices
   already did, so a cell shows the same σ whichever path filled it. Displayed σ rises by a factor of

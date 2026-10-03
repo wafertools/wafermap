@@ -110,10 +110,10 @@ worth reporting, not a pattern to build on.
   map that is already mounted goes through `setResult()` — do not `destroy()` and
   remount.
 - **The analysis surfaces are already built — do not reimplement them.** Pass
-  `statsSummary` to `renderWaferMap` and it mounts the Summary panel; pass
-  `insights: { enabled: true }` and it mounts the chart suite (yield, bin pareto,
+  `statsSummary` to `renderWaferMap` and it mounts the Summary panel. The
+  chart suite (Insights) is on by default (`insights: { enabled: false }` removes it): yield, bin pareto,
   boxplot, histogram, correlation, scatter, capability, and one card per
-  `insights.sweeps` entry). `renderWaferGallery` takes the same option across a whole
+  `insights.sweeps` entry. `renderWaferGallery` takes the same option across a whole
   lot. Supply or replace the analysis later with `setStatsSummary()`. There is no
   chart-data API to hand-build them from. Charting a selection or one wafer (right-click → histogram, capability,
   sweeps) is built in too, with no wiring.

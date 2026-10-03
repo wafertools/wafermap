@@ -1,3 +1,5 @@
+import { createViewSwitch, type ViewSwitch } from './viewSwitch.js';
+import { createSummaryRail, type SummaryRail } from './summaryRail.js';
 import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
 import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
@@ -950,7 +952,17 @@ export function renderWaferMapCard(
     viewOptions: initialViewOptions = {},
     ...drawOptions
   } = options;
-  const insightsEnabled = insightsOpts?.enabled ?? false;
+  // On by default wherever there is a toolbar to carry it; a chromeless embed (`showToolbar: false`)
+  // stays a plain map unless the host asks. `enabled: false` opts out.
+  const insightsEnabled = insightsOpts?.enabled ?? showToolbar;
+
+  // Maps | Insights, first in the row and in the same place in both views. Present whenever
+  // Insights is, with or without the toolbar: it is how a user finds Insights and how they leave it.
+  let viewSwitch: ViewSwitch | null = null;
+  if (insightsEnabled) {
+    viewSwitch = createViewSwitch(ownerDocument, 'Map', 'wafer', open => setInsightsOpen(open));
+    chromeRowEl.appendChild(viewSwitch.el);
+  }
   // Zoom bounds, relative to the fitted view.
   const minZoom = 0.4;
   const maxZoom = 20;
@@ -1054,10 +1066,6 @@ export function renderWaferMapCard(
   // still hides it while Insights is open, purely because the Insights tab
   // already shows this wafer's metadata in its own strip, so showing it twice
   // would be redundant.
-  // Mirrors the conditions the Insights toggle button is actually built under
-  // (see the toolbar block): a real toolbar, not restricted to `view-only`,
-  // with Insights enabled. When true the toolbar owns the way out of Insights.
-  const toolbarHasInsightsToggle = showToolbar && insightsEnabled;
 
   let metadataBadge: IdentityHeaderController | null = null;
   let headerBar: HTMLDivElement | null = null;
@@ -1202,9 +1210,6 @@ export function renderWaferMapCard(
       // Same inset the chrome row above uses, so the tab bar and the identity
       // start on one column. The gallery passes its own (larger) region gutter.
       contentInset: chromeInset,
-      backTab: toolbarHasInsightsToggle
-        ? undefined
-        : { label: 'Map', onBack: () => setInsightsOpen(false) },
       // Only when Help is WANTED but the toolbar cannot show it. The condition
       // was inverted: with `showHelpButton: false` it passed the guide through,
       // so a host that had deliberately switched Help off got one anyway the
@@ -1320,6 +1325,7 @@ export function renderWaferMapCard(
     if (!insightsEnabled) return;
     const wasOpen = insightsOpen;
     insightsOpen = open;
+    viewSwitch?.setInsightsOpen(open);
     // Chrome first, and synchronously: every toggle below acts on toolbar
     // elements that already exist, so the view responds to the click even
     // while the chart suite is still being fetched. Only revealing the tab
@@ -1637,6 +1643,22 @@ export function renderWaferMapCard(
 
 
 
+  // The labelled edge tab that opens the panel while it is closed. It only proxies
+  // `setSummaryPanelOpen`; `syncSummaryRail` (from the button's own refresh) decides when it shows.
+  let summaryRail: SummaryRail | null = null;
+  function mountSummaryRail(wrapper: HTMLElement, placement: 'right' | 'left' | 'top' | 'bottom'): void {
+    if (placement !== 'right' && placement !== 'left') return;
+    summaryRail = createSummaryRail(ownerDocument, placement, () => setSummaryPanelOpen(true));
+    wrapper.appendChild(summaryRail.el);
+  }
+  function syncSummaryRail(): void {
+    if (!summaryRail) return;
+    const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
+    const open = panelEl ? panelEl.style.display !== 'none' : true;
+    const shown = !!btnSummary && btnSummary.style.display !== 'none';
+    summaryRail.sync(shown && !open, !!currentStatsSummary?.hasNotableFindings);
+  }
+
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
     summaryPanelEl = createSummaryPanelEl(placement, chromeInset, ownerDocument);
@@ -1644,6 +1666,7 @@ export function renderWaferMapCard(
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
     summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
+    mountSummaryRail(summaryPanelWrapper, placement);
     parent?.insertBefore(summaryPanelWrapper, next);
     renderSummaryPanel();
   } else if (currentStatsSummary) {
@@ -1658,6 +1681,7 @@ export function renderWaferMapCard(
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
     autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
+    mountSummaryRail(autoSummaryPanelWrapper, 'right');
     parent?.insertBefore(autoSummaryPanelWrapper, next);
     renderAutoSummaryPanel();
   }
@@ -1748,6 +1772,7 @@ export function renderWaferMapCard(
     } else if (!btnSummary.dataset.active) {
       btnSummary.style.color = CLR.icon;
     }
+    syncSummaryRail();
   }
 
   // The toolbar helpers are created with the toolbar; kept here so the Summary
@@ -3341,6 +3366,7 @@ export function renderWaferMapCard(
         const parent = canvasWrap.parentElement;
         const next = canvasWrap.nextSibling;
         autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
+        mountSummaryRail(autoSummaryPanelWrapper, 'right');
         parent?.insertBefore(autoSummaryPanelWrapper, next);
         renderAutoSummaryPanel();
       }
@@ -3367,6 +3393,7 @@ export function renderWaferMapCard(
 
     setSummaryVisible(visible: boolean): void {
       if (btnSummary) btnSummary.style.display = visible ? 'flex' : 'none';
+      syncSummaryRail();
     },
 
     setViewControlsVisible(visible: boolean): void {

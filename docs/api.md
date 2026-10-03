@@ -1494,7 +1494,7 @@ The on-screen test table carries Test / Mean / **Ppk** / Limit yield only; the f
 
 ```ts
 {
-  enabled?:     boolean                                          // show the Insights toolbar button; default false
+  enabled?:     boolean                                          // show the Insights toolbar button and the Maps | Insights switch; default true with a toolbar (single map: `showToolbar`), always true for a gallery; `false` opts out
   defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps'  // sub-tab shown first; default 'overview'.
                                                                       // 'sweeps' with no sweeps defined falls back to 'overview'
   defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
@@ -1697,7 +1697,7 @@ Choose the right update method:
 | Flip H | Mirror horizontally |
 | Flip V | Mirror vertically |
 | Summary | Toggle the Summary panel — only shown when `statsSummary` is provided |
-| Insights | Toggle the Insights tab — swaps the map for this wafer's chart suite. Only shown when `insights.enabled: true`. See §5.9. |
+| Insights | Toggle the Insights tab — swaps the map for this wafer's chart suite. Shown unless `insights.enabled` is `false`. See §5.9. |
 | User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
 **Expand** opens the map in an enlarged modal overlay; the map box is reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. It works in the **Insights** view too, where it expands the whole chart suite into a wide modal — those charts interact, and reading them side by side is the case the modal exists for; individual chart panels keep their own expand button for enlarging just one. Hidden inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window.
@@ -1761,7 +1761,7 @@ ctrl.destroy();
 
 ### 5.9 Insights tab
 
-Passing `insights: { enabled: true }` adds an **Insights** toolbar button. Clicking it swaps the map for a chart suite computed from this wafer's own dies — the same panels a gallery's Insights tab shows (§6.10), scoped to one wafer. Clicking the button again (or the toolbar's Insights button) returns to the map view; the toolbar itself stays visible and usable the whole time so the Insights button is always reachable to close the tab.
+Insights is on by default wherever the toolbar is shown (pass `insights: { enabled: false }` to remove it; a map with `showToolbar: false` stays a plain map unless `enabled: true`). It adds an **Insights** toolbar button and a **Map | Insights** switch at the start of the chrome row. Clicking either swaps the map for a chart suite computed from this wafer's own dies — the same panels a gallery's Insights tab shows (§6.10), scoped to one wafer. Clicking the button again (or the toolbar's Insights button) returns to the map view; the toolbar itself stays visible and usable the whole time so the Insights button is always reachable to close the tab.
 
 **Separate from the Summary panel (§5.4.2) on purpose.** A finding's entire value is click-to-highlight-on-map, which can't work inside a full takeover of the map — so the Summary panel (which includes findings) stays docked, always co-visible with the map, while Insights takes over the full view for chart-heavy content that doesn't reference specific dies. The two toggle independently; opening one never hides the other's toolbar button. Insights' Overview numbers and the Summary panel's compact bin/ring/quadrant/test-value rows read the same underlying computation, so they never disagree even though both can be on screen in principle.
 
@@ -1870,7 +1870,7 @@ the same treatment the in-app user guide gets. Two consequences worth knowing:
 
 - `WaferMapController.setInsightsOpen(true)` returns before the tab's DOM exists. The
   toolbar responds immediately, but code that asserts on the chart DOM straight after the
-  call must wait for it to appear — polling for `button[role="tab"]` is the cheapest
+  call must wait for it to appear — polling for `button[data-wmap-insights-tab]` is the cheapest
   reliable signal. Closing is synchronous, and toggling back to the map while the chunk is
   still in flight is honoured rather than overridden.
 - A host that bundles wmap itself needs a bundler that supports dynamic `import()`
@@ -2217,7 +2217,7 @@ to be pre-built.
 | Columns | Dropdown: fix the column count to 1–5, or restore **Auto** (default). Auto sizes columns so dies are at least 4 px wide; its cards are capped by die density and pack from the left rather than stretching to fill the width. A fixed count divides the full width between that many columns, with no cap. |
 | Download gallery | Composite PNG of all cards at full HiDPI resolution |
 | Summary | Toggle the Summary panel — shown when `lotStatsSummary` is provided or any item carries `statsSummary` |
-| Insights | Toggle the Insights tab — swaps the grid for a lot-wide chart suite. Only shown when `insights.enabled: true`. See §6.10. |
+| Insights | Toggle the Insights tab — swaps the grid for a lot-wide chart suite. Shown unless `insights.enabled` is `false`. See §6.10. |
 | User guide | Open the built-in end-user guide — a real, separate window when available, falling back to an in-page non-modal floating window when `window.open` is blocked (some embedded WebViews). Only shown when `showHelpButton: true`; callable directly via `openUserGuide()` regardless. |
 
 Per-card toolbars show only the map tools: download, zoom region, zoom +/−, reset, pan, box-select and **Chart** (§5.12, when there is something to chart).
@@ -2333,8 +2333,10 @@ two independent pieces of content:
   takes (`Lot: LOT123, LOT456`) — never `analyzeWaferLot`'s first-wafer-wins
   `lotIdentity`, and never silently dropped just because a gallery spans
   multiple lots. A field with many distinct values truncates to the top few
-  (by wafer coverage) plus a `+N more` suffix, matching the die-hover
-  tooltip's own `+N more tests` convention, so it never grows unbounded.
+  (by wafer coverage), with the distinct-value count in the label and a
+  trailing ellipsis (`Lot (5): LOT-A, LOT-B, LOT-C, …`), so it never grows
+  unbounded. Fields beyond the primary four sit behind one button
+  (`N more fields`).
   `waferId` stays excluded from this strip by default (unique per wafer,
   never a useful summary value — the same curation `buildFacetTable` already
   applies for the Insights "Group by" control). In a stacked mode, also leads
@@ -2416,7 +2418,7 @@ ctrl.destroy();
 
 ### 6.10 Insights tab
 
-Passing `insights: { enabled: true }` adds an **Insights** toolbar button. Clicking it swaps the grid for a lot-wide chart suite, computed from every gallery item's `dies` — mutually exclusive with the grid view, since the chart suite wants the full body's room, not a side panel. The gallery grid's own state (mode, columns, etc.) is preserved underneath and restored when you switch back. Independent of the Summary panel (§6.5, opened separately) — the two toggle independently and neither hides the other's toolbar button, since the Summary panel's click-to-highlight has nothing to act on while Insights has replaced the grid.
+Insights is on by default (pass `insights: { enabled: false }` to remove it). It adds an **Insights** toolbar button and a **Maps | Insights** switch at the start of the chrome row. Clicking either swaps the grid for a lot-wide chart suite, computed from every gallery item's `dies` — mutually exclusive with the grid view, since the chart suite wants the full body's room, not a side panel. The gallery grid's own state (mode, columns, etc.) is preserved underneath and restored when you switch back. Independent of the Summary panel (§6.5, opened separately) — the two toggle independently and neither hides the other's toolbar button, since the Summary panel's click-to-highlight has nothing to act on while Insights has replaced the grid.
 
 Insights has the same three sub-tabs as the single-wafer version (§5.9) — **Overview**, **Distributions**, **Correlation** — plus:
 

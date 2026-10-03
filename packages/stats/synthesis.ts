@@ -33,13 +33,15 @@ export type ImpactTier = 'high' | 'medium' | 'low';
 export interface SynthesisItem {
   /** From the share of analysed dies lost, the same quantity the items are ranked by. */
   impact: ImpactTier;
+  /** Dies lost as a fraction (0–1) of the analysed dies; set once the items are costed. */
+  shareOfDies: number;
   /** Estimated dies lost to this item (pass-rate shortfall × dies in the region). */
   diesLost: number;
   severity: StatsSeverity;
   parts: SynthesisPart[];
   /** The leading finding, then the others that stand on the same dies. */
   findingIds: string[];
-  /** The item in a few words, for the "also" line: `Ring 2 (hard bin 4 (Short), 62 dies)`. */
+  /** The item in a few words, for the compact list: `Ring 2: hard bin 4 (Short), 62 dies`. */
   brief: SynthesisPart;
 }
 
@@ -57,10 +59,11 @@ export interface Synthesis {
   headline: SynthesisPart[];
   items: SynthesisItem[];
   /**
-   * Items that clear the floor but not the cap, in a few words each, so nothing material goes
-   * unmentioned. Absent when the cap shows them all.
+   * Items that clear the floor but not the cap, so nothing material goes unmentioned: the ones named
+   * (each shown in a few words, from its `brief`) and how many more were left out. Absent when the cap
+   * shows them all.
    */
-  also?: SynthesisPart[];
+  also?: { items: SynthesisItem[]; more: number };
   /** At most two things to keep an eye on, after the items. Absent when there are none. */
   watch?: SynthesisWatch[];
   /** Said instead of the items when none is material, so a good lot reads as one rather than as an empty list. */
@@ -248,6 +251,7 @@ function lossItem(
   const what = leadIsBin ? nameOf(lead) : 'pass rate';
   return {
     impact: 'low',
+    shareOfDies: 0,
     diesLost: diesLostBy(lead),
     severity: lead.severity,
     parts,
@@ -289,6 +293,7 @@ function outlierItems(lot: LotStatsSummary): SynthesisItem[] {
     if (dies === undefined) continue;
     items.push({
       impact: 'low',
+    shareOfDies: 0,
       diesLost: shortfall(f) * dies,
       severity: f.severity,
       parts: [
@@ -318,6 +323,7 @@ function testLossItems(summary: StatsSummary | LotStatsSummary, named: Set<numbe
     const share = (failDies / totalDies) * 100;
     items.push({
       impact: 'low',
+    shareOfDies: 0,
       diesLost: failDies,
       severity: 'info',
       parts: [
@@ -457,6 +463,7 @@ export function buildSynthesis(summary: StatsSummary | LotStatsSummary, ctx: Syn
   const failing = failingDies(summary);
   const material = items.filter(it => total > 0 && it.diesLost / total >= MIN_SHARE_OF_DIES);
   for (const it of material) {
+    it.shareOfDies = it.diesLost / total;
     it.impact = impactTier(it.diesLost / total, failing > 0 ? it.diesLost / failing : 0);
   }
   material.sort((a, b) => b.diesLost - a.diesLost);
@@ -464,16 +471,9 @@ export function buildSynthesis(summary: StatsSummary | LotStatsSummary, ctx: Syn
   const rest = material.slice(MAX_LOSS_ITEMS);
   for (const item of [...top, ...rest]) for (const id of item.findingIds) shown.add(id);
 
-  let also: SynthesisPart[] | undefined;
-  if (rest.length > 0) {
-    also = [{ text: 'Also over a yield point: ' }];
-    rest.slice(0, MAX_ALSO_NAMED).forEach((it, i) => {
-      if (i > 0) also!.push({ text: '; ' });
-      also!.push(it.brief);
-    });
-    if (rest.length > MAX_ALSO_NAMED) also.push({ text: `; and ${rest.length - MAX_ALSO_NAMED} more` });
-    also.push({ text: '.' });
-  }
+  const also = rest.length > 0
+    ? { items: rest.slice(0, MAX_ALSO_NAMED), more: Math.max(0, rest.length - MAX_ALSO_NAMED) }
+    : undefined;
 
   const watch = watchItems(summary, lossTests);
   for (const w of watch) for (const id of w.findingIds) shown.add(id);
@@ -485,8 +485,14 @@ export function buildSynthesis(summary: StatsSummary | LotStatsSummary, ctx: Syn
   return { headline: headlineOf(summary, ctx), items: top, ...(also ? { also } : {}), ...(watch.length ? { watch } : {}), ...(nothing ? { nothing } : {}), checked: checkedLine(summary, shown) };
 }
 
+/** The heading over the compact list of smaller items: the floor is the same one that admits an item at all. */
+export const SYNTHESIS_SMALLER_HEADING = `Smaller, each costing at least ${(MIN_SHARE_OF_DIES * 100).toFixed(0)}% of the dies`;
+
+/** A compact-list row: the item in a few words, then its share of the analysed dies. Plain text. */
+export const synthesisRowShare = (it: SynthesisItem): string => `${(it.shareOfDies * 100).toFixed(1)}%`;
+
 /** A synthesis as plain text, one line per part, for tests and for any surface that is not HTML. */
 export function synthesisText(s: Synthesis): string {
   const line = (parts: SynthesisPart[]): string => parts.map(p => p.text).join('');
-  return [line(s.headline), ...(s.nothing ? [s.nothing] : []), ...s.items.map((it, i) => `${i + 1}. ${line(it.parts)}`), ...(s.also ? [line(s.also)] : []), ...(s.watch ? s.watch.map(w => `Watch: ${line(w.parts)}`) : []), s.checked].join('\n');
+  return [line(s.headline), ...(s.nothing ? [s.nothing] : []), ...s.items.map((it, i) => `${i + 1}. ${line(it.parts)}`), ...(s.also ? [`${SYNTHESIS_SMALLER_HEADING}: ${s.also.items.map(it => `${it.brief.text} (${synthesisRowShare(it)})`).join('; ')}${s.also.more ? `; and ${s.also.more} more` : ''}.`] : []), ...(s.watch ? s.watch.map(w => `Watch: ${line(w.parts)}`) : []), s.checked].join('\n');
 }

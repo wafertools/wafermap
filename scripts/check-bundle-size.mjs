@@ -54,7 +54,7 @@ const result = await esbuild.build({
 
 // Four chunks are LAZY (the report builders, loaded when a report is opened, are the newest) and must not be counted as what a consumer downloads to
 // render a wafer map: the in-app user guide, and the Insights chart suite
-// (opt-in, off by default, fetched on first open — see `ensureInsightsTab`).
+// (on by default with a toolbar, fetched on first open — see `ensureInsightsTab`).
 // Both are split out for real here (`splitting: true`), so this is attribution,
 // not estimation.
 // The DOM-free root entry, quoted separately from the renderer because they are

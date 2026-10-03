@@ -63,11 +63,12 @@ export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweep
 /** Public option shape for `RenderOptions.insights`/`GalleryOptions.insights`. */
 export interface InsightsOptions {
   /**
-   * Show an "Insights" tab in the toolbar. Selecting it replaces the canvas/
+   * Show an "Insights" tab in the toolbar and a Maps | Insights switch. Selecting it replaces the canvas/
    * grid with wmap's own chart suite across three sub-tabs — Overview
    * (yield, bins, ring/quadrant yield, test values), Distributions
    * (process capability, boxplot, histogram), and Correlation (matrix +
-   * scatter) — plus a fourth, Sweeps, when `sweeps` defines any. Default false.
+   * scatter) — plus a fourth, Sweeps, when `sweeps` defines any. Default true with a toolbar
+   * (a gallery always has one); `false` opts out.
    */
   enabled?: boolean;
   /** Which sub-tab is shown first. Default 'overview'. `'sweeps'` with no
@@ -190,13 +191,6 @@ export interface InsightsTabDeps {
   sweeps?: SweepSpec[];
   /** See `InsightsOptions.onRemoveSweeps`. */
   onRemoveSweeps?: (ids: string[]) => void;
-  /**
-   * When provided, the tab bar gets a leading "‹ Map"/"‹ Gallery" tab that
-   * exits Insights back to the host's normal view — one visible navigation
-   * model (a tab row) instead of relying on the host toolbar's icon-swap
-   * toggle alone, whose "way back" is discoverable only via tooltip.
-   */
-  backTab?: { label: string; onBack: () => void };
   /** Opens the user guide. Rendered as an icon at the end of the tab row —
    *  while Insights is showing, the map toolbar is hidden (it held only a
    *  back-to-gallery button, which the back tab already provides, and this
@@ -363,8 +357,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // sub-tab switches (only its children are torn down and rebuilt), so this
   // would otherwise accumulate a duplicate listener on every switch. Left/
   // Right roving focus per the APG Tabs pattern; only targets `[role="tab"]`
-  // children, so the leading "‹ Map"/"‹ Gallery" back button (a plain
-  // button, not part of this tablist) is never included.
+  // children.
   tabBar.addEventListener('keydown', e => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const tabs = Array.from(tabBar.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
@@ -574,17 +567,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // `keepSections`: a tab switch changes nothing the sections were built from,
     // so reuse whichever views have already been built (see `sectionCache`).
     btn.addEventListener('click', () => { if (activeView !== view) { activeView = view; render({ keepSections: true }); } });
-    return btn;
-  }
-
-  /** Leading "‹ Map"/"‹ Gallery" tab — exits Insights via `deps.backTab`. */
-  function makeBackTabButton(back: { label: string; onBack: () => void }): HTMLButtonElement {
-    const btn = doc.createElement('button');
-    btn.type = 'button';
-    btn.textContent = `‹ ${back.label}`;
-    styleTabButton(btn, false);
-    btn.dataset.wmapInsightsBack = '1';
-    btn.addEventListener('click', back.onBack);
     return btn;
   }
 
@@ -1329,7 +1311,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     bodyEl.innerHTML = '';
     tabBar.innerHTML = '';
 
-    if (deps.backTab) tabBar.appendChild(makeBackTabButton(deps.backTab));
     for (const v of views) tabBar.appendChild(makeTabButton(v.key, v.label));
 
     const allItems = facetItems();

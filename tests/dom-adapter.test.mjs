@@ -310,7 +310,7 @@ function click(window, target) {
 async function waitForInsights(root, timeoutMs = 2000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if ([...root.querySelectorAll('button[role="tab"]')].length > 0) return true;
+    if ([...root.querySelectorAll('button[data-wmap-insights-tab]')].length > 0) return true;
     await new Promise((r) => setTimeout(r, 5));
   }
   return false;
@@ -1059,7 +1059,7 @@ test('renderWaferGallery legend strip: a field with one value shows it plainly; 
   }
 });
 
-test('renderWaferGallery legend strip: a field with many distinct values truncates to "+N more" rather than growing unbounded', () => {
+test('renderWaferGallery legend strip: a field with many distinct values truncates to "(N): a, b, c, …" rather than growing unbounded', () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -1071,7 +1071,7 @@ test('renderWaferGallery legend strip: a field with many distinct values truncat
 
     renderWaferGallery(container, items, { viewOptions: { plotMode: 'hardBin' } });
     const metaEl = container.querySelector('[data-wmap-gallery-meta]');
-    assert.match(metaEl.textContent, /Lot: LOT-A, LOT-B, LOT-C \+2 more/, 'shows the top values by coverage then a +N more summary');
+    assert.match(metaEl.textContent, /Lot \(5\): LOT-A, LOT-B, LOT-C, \u2026/, 'shows the top values by coverage, with the distinct count in the label');
   } finally {
     cleanup();
   }
@@ -1830,7 +1830,18 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.ok(subTabLabels.includes('Distributions'), 'Distributions sub-tab should render');
     assert.ok(subTabLabels.includes('Correlation'), 'Correlation sub-tab should render');
 
-    const tabButtons = [...root.querySelectorAll('button[role="tab"]')];
+    const tabButtons = [...root.querySelectorAll('button[role="tab"]')].filter((b) => b.dataset.wmapInsightsTab);
+    const sw = root.querySelector('[data-wmap-view-switch]');
+    assert.ok(sw, 'a Map | Insights switch is in the chrome row');
+    const [mapsTab, insTab] = sw.querySelectorAll('[role="tab"]');
+    assert.equal(mapsTab.textContent, 'Map');
+    assert.equal(insTab.getAttribute('aria-selected'), 'true', 'Insights is selected while it is open');
+    mapsTab.click();
+    assert.equal(mapsTab.getAttribute('aria-selected'), 'true', 'clicking Map leaves Insights');
+    assert.equal(ctrl.isInsightsOpen?.() ?? false, false);
+    insTab.click();
+    assert.equal(insTab.getAttribute('aria-selected'), 'true', 'clicking Insights opens it again');
+    assert.ok(await waitForInsights(root));
     assert.deepEqual(
       tabButtons.map((b) => b.dataset.wmapInsightsTab).sort(),
       ['correlation', 'distributions', 'overview'],
@@ -2717,6 +2728,28 @@ test('a floating window that would run off the screen is moved back as it widens
     room(false, 0);
     assert.equal(handle.box.style.left, '300px', 'and put back');
     handle.close();
+  } finally {
+    cleanup();
+  }
+});
+
+test('Insights is on by default with a toolbar, off without one, and a gallery card is never an Insights host', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const mount = (render, opts) => {
+      const container = window.document.createElement('div');
+      Object.assign(container.style, { position: 'relative', width: '900px', height: '600px' });
+      root.appendChild(container);
+      render(container, opts);
+      return container.querySelectorAll('[data-wmap-view-switch]').length;
+    };
+    const { wafer } = buildWaferWithFinding();
+    const item = { wafer: wafer.wafer, dies: wafer.dies, hbinDefs: wafer.hbinDefs, label: 'W01' };
+    assert.equal(mount((c, o) => renderWaferMap(c, wafer, o), {}), 1, 'a map with a toolbar offers Insights');
+    assert.equal(mount((c, o) => renderWaferMap(c, wafer, o), { insights: { enabled: false } }), 0, 'enabled: false opts out');
+    assert.equal(mount((c, o) => renderWaferMap(c, wafer, o), { showToolbar: false }), 0, 'a chromeless map stays a plain map');
+    assert.equal(mount((c, o) => renderWaferGallery(c, [item, item], o), {}), 1, 'one switch for the gallery, none on its cards');
+    assert.equal(mount((c, o) => renderWaferGallery(c, [item], o), { insights: { enabled: false } }), 0, 'a gallery can opt out');
   } finally {
     cleanup();
   }
