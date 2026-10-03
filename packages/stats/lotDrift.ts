@@ -60,8 +60,9 @@ function candidates(perWafer: PerWafer): Candidate[] {
     if (rows.length < DRIFT_MIN_WAFERS) continue;
     const mk = mannKendall(rows.map((r) => r.mean));
     if (!mk) continue;
-    const dies = rows.reduce((n, r) => n + r.n, 0);
-    const sigma = Math.sqrt(rows.reduce((v, r) => v + r.n * r.sd ** 2, 0) / dies);
+    // The pooled within-wafer σ: each wafer's sample variance weighted by its degrees of freedom.
+    const dof = rows.reduce((n, r) => n + Math.max(0, r.n - 1), 0);
+    const sigma = dof > 0 ? Math.sqrt(rows.reduce((v, r) => v + Math.max(0, r.n - 1) * r.sd ** 2, 0) / dof) : 0;
     out.push({ kind: 'test', testNumber, label, values: rows.map((r) => r.mean), waferIndices: rows.map((r) => r.waferIndex), sigma, mk });
   }
   return out;

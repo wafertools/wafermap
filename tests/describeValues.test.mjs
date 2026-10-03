@@ -6,14 +6,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { describeValues, quantile } = await import('../dist/packages/stats/math.js');
+const { describeValues, quantile, sampleVariance } = await import('../dist/packages/stats/math.js');
 
 function bySorting(values) {
   const s = Float64Array.from(values).sort();
   let sum = 0; for (const v of s) sum += v;
   const mean = sum / s.length;
   let sq = 0; for (const v of s) sq += (v - mean) ** 2;
-  return { min: s[0], max: s[s.length - 1], q1: quantile(s, 0.25), median: quantile(s, 0.5), q3: quantile(s, 0.75), mean, stddev: Math.sqrt(sq / s.length), count: s.length };
+  return { min: s[0], max: s[s.length - 1], q1: quantile(s, 0.25), median: quantile(s, 0.5), q3: quantile(s, 0.75), mean, stddev: s.length < 2 ? 0 : Math.sqrt(sq / (s.length - 1)), count: s.length };
 }
 
 function check(values, label) {
@@ -53,4 +53,14 @@ test('describeValues of nothing is NaN quartiles, not a crash', () => {
   const got = describeValues(new Float64Array(0));
   assert.equal(got.count, 0);
   assert.ok(Number.isNaN(got.median) && Number.isNaN(got.q1) && Number.isNaN(got.q3));
+});
+
+test('σ is the sample σ (n−1) everywhere: pinned on a small n', () => {
+  // 2, 4, 4, 4, 5, 5, 7, 9: mean 5, Σ(x−mean)² = 32 → 32/7 sample, 32/8 population.
+  const v = [2, 4, 4, 4, 5, 5, 7, 9];
+  assert.equal(sampleVariance(v), 32 / 7);
+  assert.equal(sampleVariance(Float64Array.from(v), 5), 32 / 7);
+  assert.equal(describeValues(Float64Array.from(v)).stddev, Math.sqrt(32 / 7));
+  assert.equal(sampleVariance([3]), 0);
+  assert.equal(describeValues(Float64Array.of(3)).stddev, 0);
 });

@@ -22,7 +22,7 @@ import { buildClusterFindings } from './clusterDetection.js';
 import {
   classifyPattern, patternExplains, patternFailVerdict, PATTERN_LABELS,
   type PatternClassification, type PatternLabel } from './patternClassification.js';
-import { benjaminiHochberg, fiveNumberSummary, normalCdf } from './math.js';
+import { benjaminiHochberg, fiveNumberSummary, normalCdf, sampleVariance } from './math.js';
 import { mean, clamp01, maxOf } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 
@@ -1072,11 +1072,6 @@ function buildFunctionalPassFindings(
   }
 
   return finalizeProportionFindings(findings, options);
-}
-
-function sampleVariance(values: number[], avg: number): number {
-  if (values.length < 2) return 0;
-  return values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (values.length - 1);
 }
 
 /**

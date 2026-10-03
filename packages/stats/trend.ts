@@ -16,6 +16,7 @@
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
+import { sampleVariance } from './math.js';
 
 export interface TrendDatum {
   label: string;
@@ -61,10 +62,7 @@ export function buildTestTrendData(items: TrendItem[], testNumber: number): Tren
     if (values.length === 0) return { label, mean: NaN, stddev: 0, count: 0, key: item.key };
 
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const variance = values.length > 1
-      ? values.reduce((a, v) => a + (v - mean) ** 2, 0) / (values.length - 1)
-      : 0;
-    return { label, mean, stddev: Math.sqrt(variance), count: values.length, key: item.key };
+    return { label, mean, stddev: Math.sqrt(sampleVariance(values, mean)), count: values.length, key: item.key };
   });
 }
 

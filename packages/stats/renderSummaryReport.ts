@@ -224,7 +224,7 @@ function testSection(
     ...(hasLimitYield ? [limitYield === undefined || limitYield === null ? '—' : `${limitYield.toFixed(1)}%`] : []),
   ]);
   return renderSection('Test Values', renderTable(headers, body, { className: 'compact' })
-    + `<p class="report-legend">${hasSigma ? 'StdDev is the population standard deviation. ' : ''}${note ?? ''}</p>`);
+    + `<p class="report-legend">${hasSigma ? 'StdDev is the sample standard deviation (n−1). ' : ''}${note ?? ''}</p>`);
 }
 
 /**
@@ -638,7 +638,10 @@ function lotTestTable(
     pooled = [...byTest.entries()].map(([testNumber, acc]) => {
       const mean = acc.sum / acc.n;
       const exact = acc.parts.every(p => p.sd !== undefined);
-      const variance = exact ? acc.parts.reduce((v, p) => v + p.n * (p.sd! ** 2 + (p.mean - mean) ** 2), 0) / acc.n : undefined;
+      // Exact sample variance of the pooled values from each wafer's (n, mean, sample σ).
+      const variance = exact && acc.n > 1
+        ? acc.parts.reduce((v, p) => v + Math.max(0, p.n - 1) * p.sd! ** 2 + p.n * (p.mean - mean) ** 2, 0) / (acc.n - 1)
+        : exact ? 0 : undefined;
       return { testNumber, count: acc.n, min: acc.min, max: acc.max, mean, ...(variance !== undefined ? { stddev: Math.sqrt(variance) } : {}) };
     });
   }

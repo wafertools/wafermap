@@ -37,7 +37,7 @@ function describeBySorting(vals) {
   const s = [...vals].sort((a, b) => a - b);
   const q = (p) => { const pos = p * (s.length - 1), lo = Math.floor(pos), hi = Math.ceil(pos); return s[lo] + (s[hi] - s[lo]) * (pos - lo); };
   const mean = s.reduce((a, b) => a + b, 0) / s.length;
-  const stddev = Math.sqrt(s.reduce((a, v) => a + (v - mean) ** 2, 0) / s.length);
+  const stddev = Math.sqrt(s.reduce((a, v) => a + (v - mean) ** 2, 0) / Math.max(1, s.length - 1));
   return { count: s.length, min: s[0], max: s[s.length - 1], mean, stddev, median: q(0.5), q1: q(0.25), q3: q(0.75) };
 }
 

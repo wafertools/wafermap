@@ -102,13 +102,30 @@ export function robustFence(values: ArrayLike<number>, k = 1.5, minCount = 8): {
   return { lo: q1 - k * iqr, hi: q3 + k * iqr };
 }
 
+/** The one variance rule: the sample variance, Σ(x − mean)² / (n − 1); 0 for fewer than two values.
+ *  `mean` is the values' mean when the caller already has it. Two-pass, not `Σx² − n·x̄²`: the moments
+ *  form loses most of its significant digits when the variance is small beside the mean, which is the
+ *  normal shape of a passing parametric test. */
+export function sampleVariance(values: ArrayLike<number>, mean?: number): number {
+  const n = values.length;
+  if (n < 2) return 0;
+  if (mean === undefined) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += values[i];
+    mean = sum / n;
+  }
+  let sqDiff = 0;
+  for (let i = 0; i < n; i++) sqDiff += (values[i] - mean) ** 2;
+  return sqDiff / (n - 1);
+}
+
 /** Descriptive statistics of one population of values — see {@link describeValues}. */
 export interface DescriptiveStats {
   min: number;
   max: number;
   mean: number;
   count: number;
-  /** Population standard deviation (divide by n) — see {@link describeValues}. */
+  /** Sample standard deviation (divide by n−1; 0 for fewer than two values) — see {@link sampleVariance}. */
   stddev: number;
   median: number;
   q1: number;
@@ -125,20 +142,17 @@ export interface DescriptiveStats {
  *  up almost all of a large lot panel's time. The mean and σ sum in whatever
  *  order `values` arrives in.
  *
- *  σ is the POPULATION standard deviation (divide by n), which is what this
- *  table has always shown; the capability indices next to it deliberately use
- *  the sample form (n−1) and say so. Two-pass, not `Σx² − n·x̄²`: the moments
- *  form loses most of its significant digits when the variance is small beside
- *  the mean, which is the normal shape of a passing parametric test. */
+ *  σ is the sample standard deviation (divide by n−1), the same rule as the
+ *  capability indices and every other σ in the library — see
+ *  {@link sampleVariance}. */
 export function describeValues(values: Float64Array): DescriptiveStats {
   const n = values.length;
   let sum = 0;
   for (let i = 0; i < n; i++) sum += values[i];
   const mean = sum / n;
-  let sqDiff = 0;
-  for (let i = 0; i < n; i++) sqDiff += (values[i] - mean) ** 2;
+  const stddev = Math.sqrt(sampleVariance(values, mean));
   const { min, q1, median, q3, max } = fiveNumberSummary(values);
-  return { min, max, mean, count: n, stddev: Math.sqrt(sqDiff / n), median, q1, q3 };
+  return { min, max, mean, count: n, stddev, median, q1, q3 };
 }
 
 /** Min, quartiles and max of `values` — what sorting them and reading the
