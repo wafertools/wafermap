@@ -8,7 +8,7 @@ Some features depend on what data the application has loaded (bin names, test
 definitions, test limits, reticle geometry). Where this applies it is noted.
 
 **Getting oriented.** The wafer map is an interactive viewer. A toolbar is always
-present at the top-right of the map — use it to change what the colours represent,
+present above the map, at the right of its title row — use it to change what the colours represent,
 toggle overlays, rotate or flip the wafer, zoom, select dies, and open the summary
 panel. Hover any die for a tooltip; the panels and tooltips always report the
 original die grid coordinates, never the on-screen position after a rotate or flip.
@@ -191,7 +191,7 @@ appears in a **Derived from** column instead.
 
 ## 3. Toolbar controls
 
-The toolbar sits at the top-right of the map and is always visible. Controls that
+The toolbar sits above the map, at the right of its title row (each card in a gallery has its own), and is always visible. Controls that
 are not applicable to the current mode are hidden automatically. (Hovering the map
 shows die tooltips — a separate thing from the toolbar, which is always present.)
 
