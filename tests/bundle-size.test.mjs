@@ -108,7 +108,7 @@ const THRESHOLDS = {
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
   'wafermap (root)':            66_000,   // gzipped bytes — baseline ~62.0 KB
-  'wafermap/render (initial)':  134_000,  // gzipped bytes — measured ~132.2 KB, guide, Insights, drilldown AND report builders excluded
+  'wafermap/render (initial)':  136_000,  // gzipped bytes — measured ~134.0 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

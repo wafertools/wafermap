@@ -473,6 +473,95 @@ export const CAPTURES = [
     ],
   },
 
+  // ── The Plot tab (§8): the cards, the editor window, and the saved plots in the right-click menu. Driven by the
+  //    real UI, from "Add examples", so each picture shows what the library builds. ─────────────────────────────
+  {
+    file: 'guide-plot-tab',
+    group: 'plots',
+    page: '/examples/statistics.html#lot-gallery',
+    wait: 2000,
+    viewport: { width: 1280, height: 1000 },
+    screenshotFn: async (page, outFile) => {
+      await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
+      await page.locator('[data-wmap-insights-tab="plot"]').click();
+      await page.locator('[data-wmap-plot-examples]').click();
+      await page.waitForSelector('[data-wmap-plot-id] canvas');
+      await page.waitForTimeout(1200);
+      await page.mouse.move(2, 2);
+      const host = page.locator('#wmap-host');
+      const top = await page.locator('[data-wmap-plot-tab]').boundingBox();
+      await host.scrollIntoViewIfNeeded();
+      // The toolbar and the first row of cards: enough to show what the tab is.
+      const cards = await page.locator('[data-wmap-plot-id]').evaluateAll(els => els.slice(0, 2).map(e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
+      const tb = await page.locator('[data-wmap-plot-new]').evaluate(e => { const r = e.parentElement.getBoundingClientRect(); return { x: r.x, y: r.y, h: r.height }; });
+      void top;
+      const x = Math.min(tb.x, cards[0].x) - 8;
+      const y = tb.y - 8;
+      await page.screenshot({ path: outFile, clip: {
+        x, y, width: Math.max(...cards.map(c => c.x + c.w)) - x + 8, height: Math.max(...cards.map(c => c.y + c.h)) - y + 8,
+      } });
+    },
+  },
+  {
+    file: 'guide-plot-editor',
+    group: 'plots',
+    page: '/examples/statistics.html#lot-gallery',
+    wait: 2000,
+    viewport: { width: 1280, height: 900 },
+    screenshotFn: async (page, outFile) => {
+      await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
+      await page.locator('[data-wmap-insights-tab="plot"]').click();
+      await page.locator('[data-wmap-plot-examples]').click();
+      await page.waitForSelector('[data-wmap-plot-id] canvas');
+      await page.locator('[data-wmap-plot-edit]').first().click();
+      await page.waitForSelector('[data-wmap-plot-window] canvas');
+      await page.waitForTimeout(1200);
+      await page.mouse.move(2, 2);
+      // The window opens with focus on its close button, which shows that button's tooltip: leave it out of the picture.
+      await page.evaluate(() => document.activeElement?.blur?.());
+      await page.waitForTimeout(300);
+      // The box is a fixed height; the picture is the title bar and what is in it.
+      const box = await page.locator('.wmap-overlay-box').first().boundingBox();
+      const chart = await page.locator('[data-wmap-plot-window] [data-wmap-chart-card]').first().boundingBox();
+      await page.screenshot({ path: outFile, clip: { x: box.x, y: box.y, width: box.width, height: chart.y + chart.height - box.y + 24 } });
+    },
+  },
+  {
+    file: 'guide-plot-drilldown',
+    group: 'plots',
+    page: '/examples/statistics.html#lot-gallery',
+    wait: 2000,
+    viewport: { width: 1280, height: 900 },
+    screenshotFn: async (page, outFile) => {
+      // Save the examples, then come back to the maps and pick out some dies.
+      await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
+      await page.locator('[data-wmap-insights-tab="plot"]').click();
+      await page.locator('[data-wmap-plot-examples]').click();
+      await page.waitForSelector('[data-wmap-plot-id] canvas');
+      await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Maps' }).click();
+      await page.waitForTimeout(800);
+      const canvas = page.locator('#wmap-host canvas').first();
+      await canvas.scrollIntoViewIfNeeded();
+      const b = await canvas.boundingBox();
+      await page.getByRole('button', { name: 'Select (drag to select dies)' }).first().click();
+      await page.mouse.move(b.x + b.width * 0.30, b.y + b.height * 0.30);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width * 0.55, b.y + b.height * 0.55, { steps: 8 });
+      await page.mouse.up();
+      await page.mouse.click(b.x + b.width * 0.40, b.y + b.height * 0.40, { button: 'right' });
+      await page.waitForSelector('[data-wmap-drilldown-menu]');
+      await page.locator('[data-wmap-drilldown-menu] [role="menuitem"]').first().hover();
+      await page.waitForTimeout(300);
+      const menu = await page.locator('[data-wmap-drilldown-menu]').boundingBox();
+      // The card the dies were picked on, and the menu over it: not the page around them.
+      const card = await canvas.locator('xpath=ancestor::div[.//button[@data-wmap-expand-btn]][1]').boundingBox();
+      const x = Math.min(card.x, menu.x) - 8, y = Math.min(card.y, menu.y) - 8;
+      await page.screenshot({ path: outFile, clip: {
+        x, y, width: Math.max(card.x + card.width, menu.x + menu.width) - x + 8, height: Math.max(card.y + card.height, menu.y + menu.height) - y + 8,
+      } });
+    },
+  },
+
   // ── guide-theming.png — Developer Guide §Theming: 2-col gallery, Nord theme,
   //    summary panel open. Page starts Nord via ?theme=nord (deterministic).
   //    Panel + columns set via setup steps (matching guide-summary-panel /

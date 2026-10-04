@@ -867,6 +867,14 @@ first lot field that divides the wafers, and a line over wafer order), to start 
 or to see what each type is for; pressing it again adds only what is missing. Every change you make there is drawn at once; there is no Apply
 button, and the plot is kept as you go.
 
+![The Plot tab: example plots, one card each](images/guide-plot-tab.png)
+
+*The Plot tab after **Add examples**: each card is a plot, with Edit, Duplicate and Delete.*
+
+![The plot editor: the chart beside its Setup tab](images/guide-plot-editor.png)
+
+*Edit opens the plot large, beside its settings. Every change is drawn at once.*
+
 In **Setup**, choose the **chart type**, then the field for each role:
 
 | Chart type | What it shows | Fields |
@@ -944,7 +952,9 @@ questions:
 
 **Plots in the right-click menu.** Every saved plot is also a row in the menu that
 opens on a selection or a wafer (**Plots** section), drawn over just those dies and
-captioned with them. **New plot…** in the same menu starts a draft on the selection;
+captioned with them.
+
+![The right-click menu on a selection, with the Plots section](images/guide-plot-drilldown.png) **New plot…** in the same menu starts a draft on the selection;
 a draft is kept only if you press **Add to my plots**.
 
 ### Sweep cards

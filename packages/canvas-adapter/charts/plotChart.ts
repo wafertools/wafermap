@@ -114,6 +114,8 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   let resolved: ResolvedPlot | undefined;
   let canvas: HTMLCanvasElement | undefined;
   let legend: HTMLElement | undefined;
+  /** Everything above the canvas (the statement of what it shows, notes, the colour key): the canvas starts below it. */
+  let above: HTMLElement | undefined;
   let pointer: { destroy: () => void } | undefined;
   let chips: SeriesLegendItem[] = [];
   const active = new Set<number>();          // legend filter: group indexes, empty = all
@@ -218,7 +220,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
 
   function drawScatter(): void {
     if (!resolved || !canvas || resolved.marks?.type !== 'scatter' || !resolved.x || !resolved.y) return;
-    applyCanvasFlow(canvas, legend ?? 0);
+    applyCanvasFlow(canvas, above ?? 0);
     const theme = resolveChartCanvasColors(card);
     const { w, h, plotW, plotH } = dims();
     const prep = prepareCanvas(canvas, card, w, h);
@@ -291,7 +293,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
 
   function drawHistogram(): void {
     if (!resolved || !canvas || !histogram || !resolved.x || !resolved.y) return;
-    applyCanvasFlow(canvas, legend ?? 0);
+    applyCanvasFlow(canvas, above ?? 0);
     const theme = resolveChartCanvasColors(card);
     const { w, h, plotW, plotH } = dims();
     const prep = prepareCanvas(canvas, card, w, h);
@@ -329,7 +331,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   function drawCategorical(): void {
     const m = resolved?.marks;
     if (!resolved || !canvas || !resolved.x || !resolved.y || !m || (m.type !== 'box' && m.type !== 'bar')) return;
-    applyCanvasFlow(canvas, legend ?? 0);
+    applyCanvasFlow(canvas, above ?? 0);
     const theme = resolveChartCanvasColors(card);
     // Slant the labels when flat ones would collide. Measured before the canvas is sized, since it sets the margin.
     const probe = canvas.getContext('2d');
@@ -427,7 +429,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   function drawLine(): void {
     const m = resolved?.marks;
     if (!resolved || !canvas || !resolved.x || !resolved.y || !m || m.type !== 'line') return;
-    applyCanvasFlow(canvas, legend ?? 0);
+    applyCanvasFlow(canvas, above ?? 0);
     const theme = resolveChartCanvasColors(card);
     const { w, h, plotW, plotH } = dims();
     const prep = prepareCanvas(canvas, card, w, h);
@@ -539,7 +541,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   function rebuild(): void {
     pointer?.destroy(); pointer = undefined;
     body.innerHTML = '';
-    canvas = undefined; legend = undefined; chips = []; hovered = null; hoveredBin = -1; drawn = []; geometry = undefined;
+    canvas = undefined; legend = undefined; above = undefined; chips = []; hovered = null; hoveredBin = -1; drawn = []; geometry = undefined;
     cat = undefined; hoveredCell = null; lineX = []; hoveredLine = -1; bottomMargin = BOTTOM;
     active.clear(); selected.clear();
     const r = resolved;
@@ -563,13 +565,16 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       : '';
     hint.textContent = plotFootnote(r) + interact;
     markNoPrint(hint);   // on paper the card's print block says this, without the instructions to click
-    body.appendChild(hint);
+    above = doc.createElement('div');
+    above.style.display = 'flow-root';   // keeps the legend's margin inside, so the canvas starts below it
+    body.appendChild(above);
+    above.appendChild(hint);
     for (const note of r.notes) {
       const n = doc.createElement('div');
       markNoPrint(n);
       n.textContent = note;
       Object.assign(n.style, { color: CLR.warnText, fontSize: FONT.body, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
-      body.appendChild(n);
+      above.appendChild(n);
     }
     if (r.plotted === 0) { renderEmptyState(body, 'Nothing to plot: no mark has every value this plot needs.'); return; }
 
@@ -587,12 +592,12 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         chips.push(chip);
         legend!.appendChild(chip.el);
       });
-      body.appendChild(legend);
+      above.appendChild(legend);
     }
 
     if (r.colorScale) {
       legend = colorbar(r.colorScale);
-      body.appendChild(legend);
+      above.appendChild(legend);
     }
 
     canvas = doc.createElement('canvas');

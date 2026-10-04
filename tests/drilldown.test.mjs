@@ -310,6 +310,19 @@ test('right-click on a gallery card outside the map charts that wafer', async ()
   gallery.destroy();
 });
 
+test("a gallery's saved plots are in the right-click menu on each card's own map, not only on the header", async () => {
+  const host = document.getElementById('root');
+  host.innerHTML = '';
+  const plot = { id: 'p', title: 'Step 0 vs Step 1', mark: 'scatter', encoding: { x: { test: 1000 }, y: { test: 1001 }, color: { none: true } } };
+  const gallery = renderWaferGallery(host, [wafer(), wafer()], { insights: { enabled: true, plots: [plot] } });
+  assert.equal(rightClick(host.querySelector('canvas')), true);
+  await tick(); await tick();
+  assert.ok(rows().some(r => r.textContent === 'Step 0 vs Step 1'), rows().map(r => r.textContent).join(' | '));
+  assert.ok(rows().some(r => r.textContent === 'New plot…'));
+  menus()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  gallery.destroy();
+});
+
 test("a chart's wafer row hands its wafer to the right-click handler; a group row does not", () => {
   const calls = [];
   const panel = renderBarPanel({

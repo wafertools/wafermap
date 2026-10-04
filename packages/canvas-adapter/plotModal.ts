@@ -46,7 +46,7 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
   const layout = doc.createElement('div');
   layout.dataset.wmapPlotWindow = '1';
   Object.assign(layout.style, {
-    display: 'flex', flexWrap: 'wrap', gap: SPACE.xxl, alignItems: 'flex-start', width: '100%', boxSizing: 'border-box',
+    display: 'flex', flexWrap: 'wrap', gap: SPACE.xxl, alignItems: 'flex-start', width: '100%', boxSizing: 'border-box', padding: SPACE.xl,
   } as Partial<CSSStyleDeclaration>);
 
   const left = doc.createElement('div');

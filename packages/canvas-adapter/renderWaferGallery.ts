@@ -20,7 +20,7 @@ import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
 import { waferPopulation, LOT_STACK_REASON, type DrilldownSource } from './chartPopulation.js';
 import type { DrilldownContext } from './drilldown.js';
-import { createPlotStore } from './plotStore.js';
+import { createPlotStore, type WithPlotStore } from './plotStore.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS, findingBin } from './renderWaferMap.js';
 import { findingPatternKey } from '../stats/filterFindings.js';
@@ -552,9 +552,9 @@ export function renderWaferGallery(
   const insightsEnabled      = options.insights?.enabled ?? true;
   /** What each card's own map gets of `insights`: the sweep definitions, for
    *  drilldown on that card's selection, and nothing that makes it an Insights host. */
-  const cardInsights = { enabled: false, sweeps: options.insights?.sweeps };
-  // The reader's saved plots, one list for the Plot tab and for every drilldown menu.
+  // The reader's saved plots, one list for the Plot tab and for every drilldown menu, including each card's own.
   const plotStore = createPlotStore(options.insights?.plots, options.insights?.onPlotsChange);
+  const cardInsights: InsightsOptions & WithPlotStore = { enabled: false, sweeps: options.insights?.sweeps, plotStore };
   // Host-supplied overlay stacking (no-op when undefined; safe high default
   // applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ      = applyOverlayZ(options.zIndex);

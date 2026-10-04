@@ -98,3 +98,10 @@ export function createPlotStore(
     flush: send,
   };
 }
+
+/**
+ * How a gallery hands its own store to the maps it draws on its cards. Not a public option: a card's map would
+ * otherwise build a store of its own from nothing, and the plots saved on the Plot tab would be missing from the
+ * right-click menu on every card.
+ */
+export interface WithPlotStore { plotStore?: PlotStore }
