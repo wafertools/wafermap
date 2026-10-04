@@ -18,7 +18,8 @@ import { diePassStatus, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
-import { waferPopulation } from './chartPopulation.js';
+import { waferPopulation, LOT_STACK_REASON, type DrilldownSource } from './chartPopulation.js';
+import type { DrilldownContext } from './drilldown.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS, findingBin } from './renderWaferMap.js';
 import { findingPatternKey } from '../stats/filterFindings.js';
@@ -821,8 +822,85 @@ export function renderWaferGallery(
         clearLotFindingHighlight();
         renderGallerySummaryPanel();
       }
+      if (selectAcrossWafers && !propagatingSelection && !settingFindingSelection) propagateSelection(item, dies);
       item.onSelect?.(dies);
     };
+  }
+
+  // ── Select the same dies on every wafer ──────────────────────────────────
+  // Off by default: each card selects on its own. On, a selection made on any card
+  // (a box, a click, the clear) is applied to every other card at the same die
+  // positions, so a region — the edge ring, a scratch zone, a reticle corner — is
+  // read lot-wide, and the drilldown menu opens on those dies across all the wafers.
+  let selectAcrossWafers = false;
+  let propagatingSelection = false;
+  /** The positions picked, while `selectAcrossWafers` is on. */
+  let acrossKeys = new Set<string>();
+
+  function propagateSelection(origin: WaferMapDisplayItem, dies: Die[]): void {
+    propagatingSelection = true;
+    try {
+      acrossKeys = new Set(dies.map(d => getDieKey(d)));
+      currentItems.forEach((it, i) => {
+        const ctrl = cardControllers[i];
+        if (!ctrl || !it || it === origin) return;
+        ctrl.setSelection(it.dies.filter(d => acrossKeys.has(getDieKey(d))));
+      });
+    } finally {
+      propagatingSelection = false;
+    }
+    syncSelectAcrossBtn();
+  }
+
+  /** Clear the selection on every card, each as the user's own clear. */
+  function clearAllCardSelections(): void {
+    acrossKeys = new Set();
+    propagatingSelection = true;
+    try {
+      for (const ctrl of cardControllers) ctrl?.clearSelection();
+    } finally {
+      propagatingSelection = false;
+    }
+    syncSelectAcrossBtn();
+  }
+
+  /**
+   * The drilldown population for the dies selected across wafers: one item per wafer the positions
+   * fall on, in lot order. `undefined` when the mode is off or nothing is selected, so a card falls
+   * back to its own selection or wafer. Files go through the gallery's own hooks, named for the lot.
+   */
+  function acrossSelectionSource(): { source: DrilldownSource; ctx: Partial<DrilldownContext> } | undefined {
+    if (!selectAcrossWafers || acrossKeys.size === 0) return undefined;
+    const picked: DrilldownSource['items'] = [];
+    let stacked = false;
+    currentItems.forEach((it, i) => {
+      if (!it) return;
+      const dies = it.dies.filter(d => acrossKeys.has(getDieKey(d)));
+      if (dies.length === 0) return;
+      if (it.isLotStack) stacked = true;
+      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
+    });
+    if (picked.length === 0) return undefined;
+    const merged = mergedTestDefs();
+    const view = sharedOpts;
+    return {
+      source: {
+        items: picked,
+        population: picked.length === 1 ? `selected on ${picked[0].label}` : `selected at the same die positions on ${picked.length} wafers`,
+        testDefs: merged.defs,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
+        notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
+      },
+      ctx: { sweeps: options.insights?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText },
+    };
+  }
+
+  function setSelectAcrossWafers(on: boolean): void {
+    // Switching it off ends the lot-wide selection: with propagation gone the cards could only be
+    // cleared one at a time.
+    if (!on) clearAllCardSelections();
+    selectAcrossWafers = on;
+    syncSelectAcrossBtn();
   }
 
   function applyDieZoneHighlight(dieKeys: string[], cardIndices?: number[]): void {
@@ -1745,6 +1823,35 @@ export function renderWaferGallery(
   );
   const btnDownloadAll = makeBtn('downloadAll', 'Download gallery PNG', downloadGalleryPng);
 
+  // Select the same dies on every wafer — a toggle; see `selectAcrossWafers`.
+  const btnSelectAcross = makeBtn('boxSelect', 'Select the same dies on every wafer', () => {
+    // With a selection showing, a click clears it (and stays on); another click turns the mode off.
+    if (selectAcrossWafers && acrossKeys.size > 0) clearAllCardSelections();
+    else setSelectAcrossWafers(!selectAcrossWafers);
+  });
+  btnSelectAcross.style.position = 'relative';
+  // How much is selected, on the button that clears it.
+  const selectAcrossBadge = container.ownerDocument.createElement('span');
+  selectAcrossBadge.dataset.wmapSelectAcrossCount = '1';
+  Object.assign(selectAcrossBadge.style, {
+    position: 'absolute', top: '-3px', right: '-3px', minWidth: '14px', height: '14px', boxSizing: 'border-box',
+    padding: '0 3px', borderRadius: '7px', background: CLR.iconActive, color: CLR.menuBg,
+    fontSize: '10px', lineHeight: '14px', fontWeight: '700', textAlign: 'center', pointerEvents: 'none', display: 'none',
+  } as Partial<CSSStyleDeclaration>);
+  btnSelectAcross.appendChild(selectAcrossBadge);
+  function syncSelectAcrossBtn(): void {
+    setActive(btnSelectAcross, selectAcrossWafers);
+    const n = selectAcrossWafers ? acrossKeys.size : 0;
+    selectAcrossBadge.style.display = n > 0 ? 'block' : 'none';
+    selectAcrossBadge.textContent = n > 99 ? '99+' : String(n);
+    btnSelectAcross.ariaLabel = !selectAcrossWafers
+      ? 'Select the same dies on every wafer: off (click to turn on)'
+      : n > 0
+        ? `Select the same dies on every wafer: on, ${n.toLocaleString()} die position${n === 1 ? '' : 's'} selected (click to clear the selection)`
+        : 'Select the same dies on every wafer: on (click to turn off)';
+    btnSelectAcross.setAttribute('aria-pressed', String(selectAcrossWafers));
+  }
+
   type ColsValue = '1' | '2' | '3' | '4' | '5' | 'auto';
   const btnColumns = makeDropdown(
     'columns', 'Columns',
@@ -1783,7 +1890,9 @@ export function renderWaferGallery(
   galleryViewControlsEl.appendChild(makeSep());
   galleryViewControlsEl.appendChild(btnColumns);
   galleryViewControlsEl.appendChild(makeSep());
+  galleryViewControlsEl.appendChild(btnSelectAcross);
   galleryViewControlsEl.appendChild(btnDownloadAll);
+  syncSelectAcrossBtn();
 
   // Summary button — toggles the gallery Summary panel. Left unwrapped
   // in barEl (not grouped with galleryViewControlsEl), but still hidden
@@ -3259,14 +3368,20 @@ export function renderWaferGallery(
       e.preventDefault();
       const view = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
       // Snapshotted now, before the lazy import — see chartPopulation.ts.
-      const source = waferPopulation(item.dies, {
+      // With "same dies on every wafer" on and dies selected, the whole selection, not just this wafer.
+      const across = acrossSelectionSource();
+      const source = across?.source ?? waferPopulation(item.dies, {
         waferLabel: waferIdentityLabel(item), testDefs: item.testDefs, isLotStack: item.isLotStack,
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: cardIndex, wafer: item.wafer,
       });
       const at = { x: e.clientX, y: e.clientY };
       void import('./drilldown.js').then(({ openDrilldownMenu }) => {
         // The card's own hook, so the charts are named for its wafer, as on a single map.
-        if (card.isConnected) openDrilldownMenu(at, card, source, { sweeps, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook() });
+        if (card.isConnected) {
+          openDrilldownMenu(at, card, source, across
+            ? { sweeps, ...across.ctx }
+            : { sweeps, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook() });
+        }
       });
     });
 
@@ -3285,6 +3400,7 @@ export function renderWaferGallery(
       downloadFilename: options.downloadFilename,
       onClick:         item.onClick,
       onSelect:        cardOnSelect(item),
+      drilldownSourceOverride: acrossSelectionSource,
       // Sweep definitions only — the card is not an Insights host (`enabled`
       // stays off); it needs them to offer a sweep of its selected dies.
       insights:        cardInsights,

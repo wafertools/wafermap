@@ -39,7 +39,7 @@ export interface DrilldownSource {
   notMeasuredReason?: string;
 }
 
-const LOT_STACK_REASON = 'This map stacks a lot: its dies are per-position aggregates, not measured dies';
+export const LOT_STACK_REASON = 'This map stacks a lot: its dies are per-position aggregates, not measured dies';
 
 interface WaferFacts {
   /** The wafer's real identity, if it has one — never a positional stand-in,

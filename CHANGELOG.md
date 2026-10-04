@@ -40,6 +40,13 @@ under `### Breaking`.
   panel describes — Statistics and Dies, plus Wafers for a lot — each with Export CSV and Copy, and it works with Insights
   turned off. The Dies table is virtual, so `dieList.maxRows` no longer limits it (it still limits the coordinate-less map
   replacement and the "+N dies without position" footer). `dieList.enabled` gates the button as before.
+- **A gallery can select the same dies on every wafer.** A new toolbar toggle, **Select on every wafer** (off by default),
+  applies a box, a click or a clear made on any card at the same die positions on every card, so a region (the edge ring, a
+  scratch zone, a reticle corner) is read lot-wide. Right-click, the Menu key or the Chart button on any card or its header
+  then opens the drilldown menu on those dies across all the wafers: the charts, plus Dies, Test statistics and Wafers
+  ("selected at the same die positions on N wafers"), saved under the gallery's own file names. There is no option for it:
+  it is a toolbar toggle only. The button carries a count of the selected die positions; clicking it with a selection
+  showing clears the selection and stays on, and turning it off clears the selection on every card.
 - **The Insights scatter is interactive.** Hovering a point names its wafer and die and its two values; clicking it opens that wafer
   on the X test (a single-wafer host shows the test on its map); dragging a rectangle selects the dies inside it, across any
   number of wafers, ringed until the X/Y test changes or empty space is clicked, and opens the drilldown menu for them —

@@ -86,6 +86,7 @@ Controls:
   · Legend style  [opens menu]
   · Orientation  [opens menu]
   · Columns  [opens menu]
+  · 0  [aria="Select the same dies on every wafer: off (click to turn on)"]
   · Download gallery PNG
   · Summary panel
   · Insights   (×2)

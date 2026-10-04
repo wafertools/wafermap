@@ -328,6 +328,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Picks bin colours (bin modes) or value colours (other modes) for all cards, including **Reverse gradient**.                                                                                                         |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
 | <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns. **Auto** fits as many cards as stay readable; a number divides the full width between that many columns.                                             |
+| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Select on every wafer | A toggle. Off (the default), each card selects on its own. A badge counts the selected die positions; clicking the button while something is selected clears it. On, a box, a click or a clear on any card applies to every card at the same die positions, so a region is read lot-wide; right-click then opens charts and tables of those dies across all the wafers (see [Section 4.3](#43-box-select)). |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
@@ -388,6 +389,19 @@ Summary panel is shown the same way.
 
 Use **Ctrl / Cmd + click** to add or remove individual dies. Press **Esc**, or
 click outside the wafer, to clear the selection.
+
+**In a gallery**, each card selects on its own unless you turn on **Select on every
+wafer** in the toolbar. Then a selection made on one card is made at the same die
+positions on every card — draw a box round the edge ring, a scratch zone or a
+reticle corner once, and see that region on all the wafers. Right-click (or use
+the **Chart** menu) and the charts and tables open on those dies across the whole
+lot: **Dies**, **Test statistics** and a **Wafers** table with one row per wafer,
+each stating "selected at the same die positions on N wafers".
+
+The button shows how many die positions are selected. **Clear it** by clicking an
+empty part of any map, pressing **Esc**, or clicking the button itself (it clears
+the selection and stays on); a second click turns the mode off. Turning it off
+always clears the selection on every card.
 
 <div data-wmap-demo="box-select" class="wmap-demo"></div>
 

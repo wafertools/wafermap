@@ -84,6 +84,10 @@
 //   2026-10-03: render raised 130 KB -> 132 KB (measured 130,250 bytes; ~129.8 KB at the entry above). The
 //   Map | Insights switch (viewSwitch.ts), the Summary edge tab (summaryRail.ts) and the compact "What stands
 //   out" list. Legitimate library growth, not bloat.
+//   2026-10-04: render raised 132 KB -> 134 KB (measured 132,193 bytes; 130,250 at the last entry). The Summary
+//   panel's Data tables button and the fitted metadata strip, the card selection override and the gallery's
+//   "select the same dies on every wafer" toggle. The tables themselves (dataTab.ts, the virtual table, the CSV
+//   writer) are lazy and stubbed here. Legitimate library growth, not bloat.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -104,7 +108,7 @@ const THRESHOLDS = {
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
   'wafermap (root)':            66_000,   // gzipped bytes — baseline ~62.0 KB
-  'wafermap/render (initial)':  132_000,  // gzipped bytes — measured ~130.3 KB, guide, Insights, drilldown AND report builders excluded
+  'wafermap/render (initial)':  134_000,  // gzipped bytes — measured ~132.2 KB, guide, Insights, drilldown AND report builders excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

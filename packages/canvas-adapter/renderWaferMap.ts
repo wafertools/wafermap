@@ -525,6 +525,12 @@ export interface CardRenderOptions extends Omit<RenderOptions, 'viewOptions'> {
   /** Replaces the expand action for both the expand button and the E key. */
   onExpand?: () => void;
   /**
+   * A host that owns a wider selection than this map's (the gallery, selecting the same die positions
+   * on every wafer) supplies the drilldown population and context here. Returns `undefined` to fall back
+   * to this map's own selection or wafer.
+   */
+  drilldownSourceOverride?: () => { source: DrilldownSource; ctx?: Partial<DrilldownContext> } | undefined;
+  /**
    * Draw the canvas only while it is on screen (or near it). An off-screen card
    * keeps its view up to date and is drawn when it scrolls into view, or by
    * `drawPendingNow()` — which anything capturing the canvas (the gallery PNG,
@@ -3024,10 +3030,12 @@ export function renderWaferMapCard(
 
   function openDrilldown(at: { x: number; y: number }, anchor: HTMLElement): void {
     if (!drilldownOffered()) return;
-    const source = drilldownSource();
+    const over = (options as CardRenderOptions).drilldownSourceOverride?.();
+    const source = over?.source ?? drilldownSource();
+    const ctx: DrilldownContext = over?.ctx ? { ...drilldownCtx, ...over.ctx } : drilldownCtx;
     void import('./drilldown.js').then(({ openDrilldownMenu }) => {
       if (destroyed) return;
-      closeDrilldownMenu = openDrilldownMenu(at, anchor, source, drilldownCtx);
+      closeDrilldownMenu = openDrilldownMenu(at, anchor, source, ctx);
     });
   }
 
