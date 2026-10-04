@@ -80,7 +80,6 @@ Controls:
   · Lot stack
   · Open
   · Closed
-  · 1 more field
   · Plot mode  [opens menu]
   · Colour scheme  [opens menu]
   · Overlays  [opens menu]
@@ -202,7 +201,6 @@ Menu — Charts and tables for this wafer (or right-click):
 ## Insights tab
 
 Controls:
-  · 1 more field
   · Back to gallery view
   · User guide
   · Maps

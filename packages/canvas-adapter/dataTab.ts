@@ -135,7 +135,7 @@ export function renderDataSection(deps: DataSectionDeps): { card: HTMLElement; d
 
   let refreshNote: () => void = () => {};
   if (deps.view === 'dies') {
-    const layout = segmented(doc, 'Export layout', [
+    const layout = segmented(doc, 'Export format', [
       { key: 'wide', label: 'Wide' }, { key: 'long', label: 'Long' },
     ], deps.diesLayout, 'wmapDataLayout', l => {
       layout.set(l);
@@ -144,7 +144,14 @@ export function renderDataSection(deps: DataSectionDeps): { card: HTMLElement; d
       refreshNote();
     });
     wireTooltip(layout.el, 'Wide: a column per test. Long: a row per die per test, for tools that want tidy data. The table on screen is always wide.');
-    bar.appendChild(layout.el);
+    // Named, so it is clear this changes the file and Copy, not the table on screen.
+    const group = doc.createElement('span');
+    Object.assign(group.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm } as Partial<CSSStyleDeclaration>);
+    const caption = doc.createElement('span');
+    caption.textContent = 'Export format:';
+    Object.assign(caption.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
+    group.append(caption, layout.el);
+    bar.appendChild(group);
   }
 
   if (result.actions) {

@@ -797,7 +797,7 @@ same "Group by" and "Show" scope as the charts.
 in full, as plain numbers, not as the formatted text on screen (`0.5123457`, not
 `512 mV`), with the unit in the column heading. **Copy** puts the table on the
 clipboard as tab-separated text, ready to paste into a spreadsheet; it is offered
-for tables up to about 200,000 cells. For the Dies table, **Wide | Long** chooses
+for tables up to about 200,000 cells. For the Dies table, **Export format** (Wide | Long) chooses
 the layout of the file: wide has a column per test, long has a row per die per
 test (a die with no result for a test has no row), the shape statistics tools
 prefer. The note under the buttons says how many rows the file will have, and

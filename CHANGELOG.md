@@ -76,6 +76,10 @@ under `### Breaking`.
   is still that value (`0.5123457`, not `0.51234567165374756`); anything else keeps up to 15 significant digits. Percentages keep one decimal, Ppk three, and
   correlation r six. A non-finite value is an empty cell. All four exports are written by one function
   (`core/tableCsv.ts`), so quoting and number format are the same in each.
+- **The metadata fields strip fills the width it has.** On the gallery legend and the Insights strip, fields are taken in
+  priority order and each lists as many of its values as fit (up to 12), instead of three; a field that cannot fit even
+  one value, and those after it, move behind `N more fields`, so the button appears only when something is hidden. The
+  strip re-fits when its width changes. The Data tab's Wide | Long choice is labelled **Export format**.
 - **The identity strip has one overflow control.** A field with many distinct values shows its count in the
   label and an ellipsis (`Lot (5): LOT-A, LOT-B, LOT-C, …`); the only button is `N more fields`, which
   reveals the remaining metadata fields.

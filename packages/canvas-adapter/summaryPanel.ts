@@ -540,12 +540,20 @@ const stripFieldRank = (key: string): number => {
   return i === -1 ? Number.MAX_SAFE_INTEGER : i;
 };
 
+/** The resize observers behind each strip, held weakly by the strip itself. */
+const stripObservers = new WeakMap<HTMLElement, ResizeObserver>();
+
+/** Most values one field lists on the strip, however much room there is. */
+const STRIP_MAX_VALUES = 12;
+
 export function buildFacetSummaryChips(
   table: Array<{ key: string; values: Array<{ value: string }> }>,
+  /** How many values a field lists before it has been laid out (no width yet: first paint, a hidden parent). */
   maxValuesPerField = 3,
 ): HTMLDivElement | null {
   if (!table.length) return null;
 
+  const gap = SPACE.lg;
   const row = el('div', {
     // No `fontSize`: it INHERITS from whatever mounts the strip, so the host
     // decides the tier. It used to pin `FONT.body` here, two levels below the
@@ -553,53 +561,117 @@ export function buildFacetSummaryChips(
     // raising the gallery's identity strip appeared to do nothing at all until
     // this was found. There is one caller (`buildMetadataStripRow`), so the
     // size has no business being decided here.
-    display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: `${SPACE.xs} ${SPACE.lg}`,
+    //
+    // `flex: 1 1 0%` takes the width the strip's own row has left, which is the
+    // width the layout below measures against. It does not depend on its content,
+    // so re-laying out cannot change it and feed the observer.
+    display: 'flex', flexWrap: 'nowrap', alignItems: 'baseline', gap: `${SPACE.xs} ${gap}`,
+    flex: '1 1 0%', minWidth: '0', overflow: 'hidden', position: 'relative',
   });
   // Primary fields first, in the order above; everything else keeps its
   // existing relative order behind them.
   const ordered = [...table].sort((a, b) => stripFieldRank(a.key) - stripFieldRank(b.key));
-  const primary = ordered.filter(f => stripFieldRank(f.key) !== Number.MAX_SAFE_INTEGER);
-  const secondary = ordered.filter(f => stripFieldRank(f.key) === Number.MAX_SAFE_INTEGER);
 
-  const makeChip = (field: { key: string; values: Array<{ value: string }> }) => {
-    const chip = el('span', { whiteSpace: 'nowrap' });
-    const shown = field.values.slice(0, maxValuesPerField);
-    const remaining = field.values.length - shown.length;
-    // The distinct-value count goes in the label, not in a trailing "+N more":
-    // the strip's one real disclosure button reads "N more fields", and two
-    // adjacent "more" phrases read as one control. This part is plain text.
-    const label = el('span', { color: LABEL_COLOR },
-      `${prettyKey(field.key)}${remaining > 0 ? ` (${field.values.length})` : ''}: `);
-    chip.appendChild(label);
-    let text = shown.map(v => v.value).join(', ');
-    if (remaining > 0) text += ', \u2026';
-    chip.appendChild(document.createTextNode(text));
-    return chip;
+  /** A field's text when it lists its first `k` values. The distinct-value count goes in the label, not
+   *  in a trailing "+N more": the strip's one real disclosure button reads "N more fields", and two
+   *  adjacent "more" phrases read as one control. */
+  const labelFor = (f: { key: string; values: unknown[] }, k: number): string =>
+    `${prettyKey(f.key)}${k < f.values.length ? ` (${f.values.length})` : ''}: `;
+  const valuesFor = (f: { values: Array<{ value: string }> }, k: number): string =>
+    f.values.slice(0, k).map(v => v.value).join(', ') + (k < f.values.length ? ', \u2026' : '');
+
+  const chips = ordered.map(field => {
+    const chip = el('span', { whiteSpace: 'nowrap', minWidth: '0' });
+    const label = el('span', { color: LABEL_COLOR });
+    const value = document.createTextNode('');
+    chip.append(label, value);
+    const setValues = (k: number) => {
+      label.textContent = labelFor(field, k);
+      value.data = valuesFor(field, k);
+    };
+    return { field, chip, setValues, max: Math.min(field.values.length, STRIP_MAX_VALUES) };
+  });
+  for (const c of chips) row.appendChild(c.chip);
+
+  const toggle = el('button', {
+    background: 'none', border: 'none', padding: '0', cursor: 'pointer',
+    color: CLR.iconActive, fontSize: FONT.body, whiteSpace: 'nowrap', flexShrink: '0',
+  }) as HTMLButtonElement;
+  toggle.type = 'button';
+  wireControlHover(toggle, 'bare');
+  row.appendChild(toggle);
+
+  // Measures text in the strip's own font without disturbing its layout.
+  const measurer = el('span', { position: 'absolute', visibility: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none', left: '0', top: '0' });
+  row.appendChild(measurer);
+  const widthOf = (text: string): number => {
+    measurer.textContent = text;
+    return measurer.getBoundingClientRect().width;
   };
 
-  for (const field of primary) row.appendChild(makeChip(field));
+  let expanded = false;
 
-  if (secondary.length) {
-    // The rest stay in the DOM, hidden — so the strip stays one line by default
-    // and nothing is lost. A disclosure, not a truncation.
-    const rest = el('span', { display: 'none', flexWrap: 'wrap', alignItems: 'baseline', gap: `${SPACE.xs} ${SPACE.lg}` });
-    for (const field of secondary) rest.appendChild(makeChip(field));
+  /**
+   * Fill the width the strip has, and overflow only when it must. Fields are taken in priority order;
+   * each lists as many values as fit (down to one), and the first field that cannot fit even one
+   * value, and every field after it, goes behind "N more fields". Asked of the layout, not predicted
+   * from character counts. With no width yet (not mounted, or an ancestor is hidden) the earlier fixed
+   * rule applies: the primary fields with `maxValuesPerField` values, the rest behind the button.
+   */
+  function layout(): void {
+    const px = row.clientWidth;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    if (expanded) {
+      Object.assign(row.style, { flexWrap: 'wrap', overflow: 'visible' });
+      for (const c of chips) { c.setValues(c.max); c.chip.style.display = ''; }
+      toggle.textContent = 'fewer fields';
+      toggle.style.display = '';
+      return;
+    }
+    Object.assign(row.style, { flexWrap: 'nowrap', overflow: 'hidden' });
+    let shown = 0;
+    if (!px) {
+      for (const c of chips) {
+        const primary = stripFieldRank(c.field.key) !== Number.MAX_SAFE_INTEGER;
+        c.chip.style.display = primary ? '' : 'none';
+        if (primary) { c.setValues(Math.min(c.field.values.length, maxValuesPerField)); shown++; }
+      }
+    } else {
+      const gapPx = parseFloat(getComputedStyle(row).columnGap) || 0;
+      toggle.textContent = `${chips.length} more fields`;
+      const toggleW = toggle.getBoundingClientRect().width + gapPx;
+      let used = 0;
+      let full = false;
+      chips.forEach((c, i) => {
+        if (full) { c.chip.style.display = 'none'; return; }
+        const lead = shown > 0 ? gapPx : 0;
+        const reserve = i < chips.length - 1 ? toggleW : 0;
+        const budget = px - used - lead - reserve;
+        let k = c.max;
+        while (k > 1 && widthOf(labelFor(c.field, k) + valuesFor(c.field, k)) > budget) k--;
+        const w = widthOf(labelFor(c.field, k) + valuesFor(c.field, k));
+        if (w > budget && shown > 0) { full = true; c.chip.style.display = 'none'; return; }
+        // The first field is always shown, clipped if it must be, rather than an empty strip.
+        c.setValues(k);
+        c.chip.style.display = '';
+        if (shown === 0) Object.assign(c.chip.style, { overflow: 'hidden', textOverflow: 'ellipsis' });
+        used += lead + w;
+        shown++;
+      });
+    }
+    const hidden = chips.length - shown;
+    toggle.textContent = `${hidden} more field${hidden === 1 ? '' : 's'}`;
+    toggle.style.display = hidden > 0 ? '' : 'none';
+  }
 
-    const toggle = el('button', {
-      background: 'none', border: 'none', padding: '0', cursor: 'pointer',
-      color: CLR.iconActive, fontSize: FONT.body, whiteSpace: 'nowrap',
-    }) as HTMLButtonElement;
-    toggle.type = 'button';
-    wireControlHover(toggle, 'bare');
-    const sync = (open: boolean) => {
-      rest.style.display = open ? 'contents' : 'none';
-      toggle.textContent = open ? 'fewer fields' : `${secondary.length} more field${secondary.length === 1 ? '' : 's'}`;
-      toggle.setAttribute('aria-expanded', String(open));
-    };
-    sync(false);
-    toggle.addEventListener('click', () => sync(toggle.getAttribute('aria-expanded') !== 'true'));
-    row.appendChild(rest);
-    row.appendChild(toggle);
+  toggle.addEventListener('click', () => { expanded = !expanded; layout(); });
+  layout();
+  // Re-fit when the strip's width changes (a resized window, a panel opening beside it).
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => layout());
+    observer.observe(row);
+    // Kept alive by the row it watches: an observer nothing references can be collected before it ever fires.
+    stripObservers.set(row, observer);
   }
   return row;
 }
@@ -634,7 +706,8 @@ export function buildMetadataStripRow(
   const chips = buildFacetSummaryChips(facetTable);
   if (!chips && !stacked) return null;
 
-  const row = el('div', { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 14px' });
+  // `width: 100%`, not shrink-to-fit: the fields strip inside fills this row and measures itself against it.
+  const row = el('div', { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 14px', width: '100%', minWidth: '0' });
   if (stacked) {
     const span = el('span', { fontWeight: '500', whiteSpace: 'nowrap' },
       stacked.aggrMethod ? `${stacked.lotSize} wafers stacked · ${stacked.aggrMethod}` : `${stacked.lotSize} wafers stacked`);

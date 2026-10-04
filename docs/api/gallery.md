@@ -320,11 +320,13 @@ two independent pieces of content:
   plainly (`Lot: LOT123`); a field that varies shows every distinct value it
   takes (`Lot: LOT123, LOT456`) — never `analyzeWaferLot`'s first-wafer-wins
   `lotIdentity`, and never silently dropped just because a gallery spans
-  multiple lots. A field with many distinct values truncates to the top few
-  (by wafer coverage), with the distinct-value count in the label and a
-  trailing ellipsis (`Lot (5): LOT-A, LOT-B, LOT-C, …`), so it never grows
-  unbounded. Fields beyond the primary four sit behind one button
-  (`N more fields`).
+  multiple lots. The strip fills the width it has, on one line: fields are
+  taken in priority order (lot, product, program, split, then the rest), each
+  listing as many of its distinct values (by wafer coverage) as fit, up to 12,
+  with the count in the label and a trailing ellipsis when it is cut
+  (`Lot (5): LOT-A, LOT-B, …`). Only when a field cannot fit even one value do it
+  and the fields after it move behind one button (`N more fields`), which opens
+  them all. It re-fits as the width changes.
   `waferId` stays excluded from this strip by default (unique per wafer,
   never a useful summary value — the same curation `buildFacetTable` already
   applies for the Insights "Group by" control). In a stacked mode, also leads
