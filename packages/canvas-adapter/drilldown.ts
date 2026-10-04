@@ -21,7 +21,7 @@ import { renderCapabilityPanel } from './charts/capability.js';
 import { openChartExpandModal, populationPhrase } from './charts/chartShell.js';
 import {
   buildCheckMenuEl, createToolbarHelpers, getTooltip, menuLayerFor, wireMenuA11y, CLR, FONT, SPACE,
-  type CheckMenuRow, type SaveImageHandler,
+  openReparentedModal, type CheckMenuRow, type SaveImageHandler, type SaveTextHandler,
 } from './toolbar.js';
 import type { DrilldownSource, DrilldownItem } from './chartPopulation.js';
 
@@ -31,6 +31,8 @@ export type { DrilldownSource, DrilldownItem };
 export interface DrilldownContext {
   sweeps?: SweepSpec[];
   onSaveImage?: SaveImageHandler;
+  /** The host's CSV save hook, for the tables' Export CSV. */
+  onSaveText?: SaveTextHandler;
 }
 
 interface Target {
@@ -156,16 +158,49 @@ function distributionTargets(source: DrilldownSource, ctx: DrilldownContext, anc
   return [histogram, capability];
 }
 
-/** Every chart this context can open, for `source`. A target that needs more
- *  than one wafer (the boxplot, the trend) is not listed for a one-wafer
+/** The population as tables — Dies and Statistics, in a modal. Loaded on first
+ *  use: the tables, the virtual table under them and the CSV writer are not part
+ *  of the chart chunk. A source of aggregates (a lot stack) has no dies to list. */
+function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: Element): Target[] {
+  const dies = allDies(source);
+  const none = source.notMeasuredReason ?? (dies.length === 0 ? 'Nothing is selected' : null);
+  const n = dies.length;
+  const phrase = populationPhrase(n, n, source.population);
+  const open = (view: 'dies' | 'statistics', title: string) => () => {
+    void import('./dataTab.js').then(({ renderSelectionTables }) => {
+      const doc = anchor.ownerDocument;
+      const tables = renderSelectionTables({
+        doc, items: source.items, testDefs: source.testDefs, population: source.population,
+        view, onSaveText: ctx.onSaveText,
+      });
+      const handle = openReparentedModal([tables.el], {
+        title: `${title} — ${phrase}`, anchor, ownerDocument: doc,
+        boxSize: { width: 'min(96vw, 1200px)', height: 'min(92vh, 780px)' },
+        onClosed: tables.destroy,
+      });
+      if (!handle) tables.destroy();
+    });
+  };
+  return [
+    { section: 'Tables', label: 'Dies', unavailable: none, open: open('dies', 'Dies') },
+    {
+      section: 'Tables', label: 'Test statistics',
+      unavailable: none ?? (testsWithValues(source, dies, 1).length > 0 ? null : 'These dies have no parametric test values'),
+      open: open('statistics', 'Test statistics'),
+    },
+  ];
+}
+
+/** Every chart and table this context can open, for `source`. A target that needs
+ *  more than one wafer (the boxplot, the trend) is not listed for a one-wafer
  *  source at all — its subject does not exist there, which is different from
- *  being temporarily unavailable. Whether to offer the menu at all is decided
- *  without loading this chunk, by `hasDrilldownTargets` (chartPopulation.ts) —
- *  a new kind of target must be reflected there. */
+ *  being temporarily unavailable. The menu is always offered: the tables need
+ *  only dies, so a bins-only map has Dies to open. */
 function targetsFor(source: DrilldownSource, ctx: DrilldownContext, anchor: Element): Target[] {
   return [
     ...distributionTargets(source, ctx, anchor),
     ...(ctx.sweeps ?? []).map(spec => sweepTarget(spec, source, ctx, anchor)),
+    ...tableTargets(source, ctx, anchor),
   ];
 }
 
@@ -208,7 +243,7 @@ export function openDrilldownMenu(
   const menu = buildCheckMenuEl(new DOMRect(at.x, at.y - 4, 0, 0), rows, { makeMenuSection }, win);
   const n = allDies(source).length;
   menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', `Open a chart of ${populationPhrase(n, n, source.population)}`);
+  menu.setAttribute('aria-label', `Open a chart or table of ${populationPhrase(n, n, source.population)}`);
   menu.dataset.wmapDrilldownMenu = '1';
   menuLayerFor(anchor).appendChild(menu);
 

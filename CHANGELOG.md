@@ -33,9 +33,17 @@ under `### Breaking`.
   which writes the table as shown in the order shown, and **Copy** (tab-separated, up to 200,000 cells). The Dies
   export can be **Wide** (a column per test) or **Long** (a row per die per test). `InsightsOptions.defaultView`
   accepts `'data'`, and the tab button carries `data-wmap-insights-tab="data"`.
+- **Drilldown can open the selection as a table.** The right-click menu on a map selection, a wafer or a chart mark gains
+  **Dies** and **Test statistics**: the Data tab's tables over just those dies, in a modal that names the population,
+  with Export CSV and Copy (a saved file is named for the selection and carries a Wafer column). On a bins-only
+  map the charts and Test statistics are greyed with the reason.
 
 ### Breaking
 
+- **Right-click on a map, a gallery card or a chart mark always opens the drilldown menu.** It used to open only where there
+  was something to chart (a parametric test or a sweep) and was otherwise left to the browser or the host. The menu now
+  always has **Dies**, so a host's own context menu on those surfaces no longer appears. The toolbar's Chart button is
+  always shown and is labelled "Charts and tables for …".
 - **`onSaveText` can receive a `Blob`.** `SaveTextHandler`'s first argument is now `string | Blob`. A table of a million
   cells or more (a lot's die list, 400k dies × 50 tests being 20 million) is written in slices and handed over as a
   `Blob`, so no single string holds the whole file. Smaller tables are still a string, saved before the call returns.

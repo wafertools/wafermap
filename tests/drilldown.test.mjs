@@ -95,8 +95,8 @@ function closeModal() {
 test('the menu names its population and lists the distribution charts and each sweep', () => {
   const src = selectionPopulation(wafer().dies.slice(0, 5), facts);
   const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { sweeps: [SWEEP] });
-  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart of 5 dies selected on W07');
-  assert.deepEqual(rows().map(i => i.textContent), ['Value histogram', 'Process capability', 'Drive sweep']);
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 5 dies selected on W07');
+  assert.deepEqual(rows().map(i => i.textContent), ['Value histogram', 'Process capability', 'Drive sweep', 'Dies', 'Test statistics']);
   assert.ok(rows().every(i => i.getAttribute('aria-disabled') === null));
   close();
   assert.equal(menus().length, 0);
@@ -104,7 +104,7 @@ test('the menu names its population and lists the distribution charts and each s
 
 test('a whole wafer is named as one', () => {
   const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), waferPopulation(wafer().dies, facts), {});
-  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart of 24 dies on W07');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 24 dies on W07');
   close();
 });
 
@@ -172,6 +172,65 @@ test('capability on a small population says its Ppk is a rough estimate', () => 
   closeModal();
 });
 
+// ── Tables ───────────────────────────────────────────────────────────────────
+
+const waitFor = async (cond, what) => { for (let i = 0; i < 100 && !cond(); i++) await tick(); assert.ok(cond(), what); };
+
+test('Dies opens the selected dies as a table, in a modal that names the population', async () => {
+  const dies = wafer().dies.slice(0, 5);
+  let saved;
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(dies, facts), { onSaveText: (c, n) => { saved = { c, n }; } });
+  rows().find(r => r.textContent === 'Dies').click();
+  await waitFor(() => document.querySelector('.wmap-overlay-box [data-wmap-data-tab]'), 'the table opened');
+  const box = document.querySelector('.wmap-overlay-box');
+  assert.match(box.textContent, /Dies — 5 dies selected on W07/);
+  assert.match(box.querySelector('[data-wmap-data-note]').textContent, /^5 dies selected on W07\./);
+  // Only Dies and Statistics are offered for a selection: there is no lot to tabulate by wafer.
+  assert.deepEqual([...box.querySelectorAll('[data-wmap-data-view]')].map(b => b.dataset.wmapDataView), ['statistics', 'dies']);
+  assert.equal(box.querySelectorAll('tbody tr[aria-rowindex]').length, 5);
+  // The wafer column and the file name both say it is a selection.
+  assert.ok([...box.querySelectorAll('th')].some(th => th.textContent === 'Wafer'));
+  box.querySelector('[data-wmap-data-export]').click();
+  assert.equal(saved.n, 'die-list-selection.csv');
+  assert.equal(saved.c.split('\n').length, 6, 'a header and the five selected dies, no others');
+  closeModal();
+});
+
+test('Dies carries ring and quadrant when the gesture knew the wafer', async () => {
+  const w = wafer();
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(w.dies.slice(0, 5), { ...facts, wafer: w.wafer }), {});
+  rows().find(r => r.textContent === 'Dies').click();
+  await waitFor(() => document.querySelector('.wmap-overlay-box [data-wmap-data-tab]'), 'the table opened');
+  const heads = [...document.querySelectorAll('.wmap-overlay-box th')].map(th => th.textContent);
+  assert.ok(heads.includes('Ring') && heads.includes('Quadrant'), heads.join(' | '));
+  closeModal();
+});
+
+test('Test statistics opens the Test Values table over just the selection, stamped with it', async () => {
+  const dies = wafer().dies.slice(0, 6);
+  let saved;
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(dies, facts), { onSaveText: (c, n) => { saved = { c, n }; } });
+  rows().find(r => r.textContent === 'Test statistics').click();
+  await waitFor(() => document.querySelector('.wmap-overlay-box [data-wmap-data-tab]'), 'the table opened');
+  const box = document.querySelector('.wmap-overlay-box');
+  assert.match(box.textContent, /Test Values/);
+  assert.match(box.textContent, /N=6/);
+  [...box.querySelectorAll('button')].find(b => /Test values CSV$/i.test(b.textContent)).click();
+  const [header, first] = saved.c.split('\n');
+  assert.match(header, /Population/);
+  assert.match(first, /6 dies selected on W07/);
+  closeModal();
+});
+
+test('Test statistics is unavailable, with the reason, where the dies carry no test values', () => {
+  const src = selectionPopulation(binsOnlyWafer().dies.slice(0, 5), { waferLabel: 'W08', testDefs: undefined });
+  const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, {});
+  const byLabel = Object.fromEntries(rows().map(i => [i.textContent, i.getAttribute('aria-disabled')]));
+  assert.equal(byLabel['Dies'], null, 'the dies can always be listed');
+  assert.equal(byLabel['Test statistics'], 'true');
+  close();
+});
+
 function mount(options = {}) {
   const host = document.getElementById('root');
   host.innerHTML = '';
@@ -187,11 +246,16 @@ function rightClick(target) {
   return e.defaultPrevented;
 }
 
-test('right-click on a bins-only map with no sweeps is left to the browser', () => {
+test('a bins-only map still offers its dies as a table, and not the charts it cannot draw', async () => {
   const ctrl = mount({ result: binsOnlyWafer() });
-  assert.equal(rightClick(document.querySelector('#root canvas')), false);
-  const btn = document.querySelector('button[aria-label^="Chart"]');
-  assert.equal(btn.style.display, 'none', 'no toolbar button when nothing could be charted');
+  assert.equal(rightClick(document.querySelector('#root canvas')), true);
+  await tick(); await tick();
+  const byLabel = Object.fromEntries(rows().map(i => [i.textContent, i.getAttribute('aria-disabled')]));
+  assert.equal(byLabel['Dies'], null, 'the dies can be listed');
+  assert.equal(byLabel['Test statistics'], 'true', 'but there are no test values to summarise');
+  assert.equal(byLabel['Value histogram'], 'true');
+  const btn = document.querySelector('button[aria-label*="tables"]');
+  assert.notEqual(btn.style.display, 'none', 'the toolbar button is there too');
   ctrl.destroy();
 });
 
@@ -199,7 +263,7 @@ test('right-click on empty map space with nothing selected charts the whole wafe
   const ctrl = mount();
   assert.equal(rightClick(document.querySelector('#root canvas')), true);
   await tick(); await tick();
-  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart of 24 dies on W07');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 24 dies on W07');
   ctrl.destroy();
   assert.equal(menus().length, 0, 'destroy closes an open menu');
 });
@@ -213,20 +277,20 @@ test('right-click with a selection charts the selection, keeping it', async () =
   assert.equal(rightClick(document.querySelector('#root canvas')), true);
   assert.equal(selected, null, 'right-click on empty space must not change the selection');
   await tick(); await tick();
-  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart of 3 dies selected on W07');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 3 dies selected on W07');
   ctrl.destroy();
 });
 
 test('the toolbar button charts the selection when there is one, else the wafer', () => {
   const result = wafer();
   const ctrl = mount({ result });
-  const btn = document.querySelector('button[aria-label^="Chart"]');
+  const btn = document.querySelector('button[aria-label^="Charts and tables"]');
   assert.equal(btn.style.display, 'flex');
-  assert.match(btn.getAttribute('aria-label'), /^Chart this wafer/);
+  assert.match(btn.getAttribute('aria-label'), /^Charts and tables for this wafer/);
   ctrl.setSelection(result.dies.slice(0, 2));
-  assert.match(btn.getAttribute('aria-label'), /^Chart the selected dies/);
+  assert.match(btn.getAttribute('aria-label'), /^Charts and tables for the selected dies/);
   ctrl.setSelection([]);
-  assert.match(btn.getAttribute('aria-label'), /^Chart this wafer/);
+  assert.match(btn.getAttribute('aria-label'), /^Charts and tables for this wafer/);
   ctrl.destroy();
 });
 
@@ -241,7 +305,7 @@ test('right-click on a gallery card outside the map charts that wafer', async ()
   const header = host.querySelectorAll('[data-wmap-expand-btn]')[1].parentElement;
   assert.equal(rightClick(header), true);
   await tick(); await tick();
-  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart of 12 dies on W09');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 12 dies on W09');
   menus()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   gallery.destroy();
 });
@@ -284,13 +348,13 @@ test('a map known only by its host label is named by it, never by a positional s
   const ctrl = mount({ result: { ...unnamed, label: 'Lot7-W12' } });
   rightClick(document.querySelector('#root canvas'));
   await tick(); await tick();
-  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart of 12 dies on Lot7-W12');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 12 dies on Lot7-W12');
   ctrl.destroy();
   // No label and no wafer ID: "this wafer", not "Wafer 1 (no ID)".
   const ctrl2 = mount({ result: unnamed });
   rightClick(document.querySelector('#root canvas'));
   await tick(); await tick();
-  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart of 12 dies on this wafer');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 12 dies on this wafer');
   ctrl2.destroy();
 });
 

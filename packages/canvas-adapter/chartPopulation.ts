@@ -7,8 +7,8 @@
 // a snapshot, before the lazy import resolves and the selection can change.
 
 import type { Die } from '../core/dies.js';
-import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
-import type { SweepSpec } from '../stats/sweep.js';
+import type { Wafer } from '../core/wafer.js';
+import type { TestDef } from '../renderer/buildWaferMap.js';
 
 /** One wafer's share of a population. */
 export interface DrilldownItem {
@@ -16,6 +16,9 @@ export interface DrilldownItem {
   label: string;
   dies: Die[];
   waferIndex?: number;
+  /** The wafer's geometry and metadata, when the gesture knew it — a table of these dies
+   *  uses it for ring/quadrant and for the lot and product columns. */
+  wafer?: Wafer;
 }
 
 /** A population a chart can be opened on. */
@@ -34,17 +37,6 @@ export interface DrilldownSource {
   notMeasuredReason?: string;
 }
 
-/**
- * Whether any drilldown chart could exist for this data — decides whether a
- * right-click is taken over at all, without loading the drilldown chunk. The
- * distribution charts need a parametric test, a sweep needs to be defined;
- * with neither (a bins-only map) right-click stays the browser's or host's.
- * `targetsFor` in drilldown.ts is the list this summarises.
- */
-export function hasDrilldownTargets(testDefs: readonly TestDef[] | undefined, sweeps: readonly SweepSpec[] | undefined): boolean {
-  return (sweeps?.length ?? 0) > 0 || (testDefs ?? []).some(isParametricTest);
-}
-
 const LOT_STACK_REASON = 'This map stacks a lot: its dies are per-position aggregates, not measured dies';
 
 interface WaferFacts {
@@ -55,11 +47,12 @@ interface WaferFacts {
   isLotStack?: boolean;
   activeTest?: number;
   waferIndex?: number;
+  wafer?: Wafer;
 }
 
 function make(dies: Die[], population: string, f: WaferFacts): DrilldownSource {
   return {
-    items: [{ label: f.waferLabel ?? 'this wafer', dies, waferIndex: f.waferIndex }],
+    items: [{ label: f.waferLabel ?? 'this wafer', dies, waferIndex: f.waferIndex, wafer: f.wafer }],
     population,
     testDefs: f.testDefs,
     activeTest: f.activeTest,

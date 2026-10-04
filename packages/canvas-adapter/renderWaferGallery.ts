@@ -18,7 +18,7 @@ import { diePassStatus, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
-import { hasDrilldownTargets, waferPopulation } from './chartPopulation.js';
+import { waferPopulation } from './chartPopulation.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS, findingBin } from './renderWaferMap.js';
 import { findingPatternKey } from '../stats/filterFindings.js';
@@ -3256,18 +3256,17 @@ export function renderWaferGallery(
     card.addEventListener('contextmenu', (e) => {
       if (e.defaultPrevented) return;
       const sweeps = options.insights?.sweeps;
-      if (!hasDrilldownTargets(item.testDefs, sweeps)) return;
       e.preventDefault();
       const view = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
       // Snapshotted now, before the lazy import — see chartPopulation.ts.
       const source = waferPopulation(item.dies, {
         waferLabel: waferIdentityLabel(item), testDefs: item.testDefs, isLotStack: item.isLotStack,
-        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: cardIndex,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: cardIndex, wafer: item.wafer,
       });
       const at = { x: e.clientX, y: e.clientY };
       void import('./drilldown.js').then(({ openDrilldownMenu }) => {
         // The card's own hook, so the charts are named for its wafer, as on a single map.
-        if (card.isConnected) openDrilldownMenu(at, card, source, { sweeps, onSaveImage: ctrl.getSaveImageHook() });
+        if (card.isConnected) openDrilldownMenu(at, card, source, { sweeps, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook() });
       });
     });
 

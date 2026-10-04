@@ -29,7 +29,7 @@ import { ICONS } from './icons.js';
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
 // TYPE-ONLY, for the same reason: drilldown opens chart panels, loaded on first use.
 import type { DrilldownContext } from './drilldown.js';
-import { hasDrilldownTargets, selectionPopulation, waferPopulation, type DrilldownSource } from './chartPopulation.js';
+import { selectionPopulation, waferPopulation, type DrilldownSource } from './chartPopulation.js';
 import { createIdentityHeader, collapsedLabel, type IdentityHeaderController } from './identityHeader.js';
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
@@ -555,6 +555,8 @@ export interface CardController extends WaferMapController {
   getExportTitle(): string;
   /** This map's save hook, naming files for its own wafer — for a save the gallery starts on a card's behalf. */
   getSaveImageHook(): SaveImageHandler;
+  /** The same for CSV: names files for this map's own wafer. */
+  getSaveTextHook(): SaveTextHandler;
   /** Draw now if a `drawWhenVisible` card skipped drawing while off screen. */
   drawPendingNow(): void;
 }
@@ -1027,9 +1029,9 @@ export function renderWaferMapCard(
   // Drilldown: a chart opened on the selected dies, or on the whole wafer.
   // Offered only when there is a chart to open (`drilldownOffered`) — with
   // none, right-click stays the browser's (or host's).
-  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, onSaveImage: exportHooks.onSaveImage };
+  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText };
   /** Read live: `testDefs` changes with `setData`. */
-  const drilldownOffered = (): boolean => !isMapless && hasDrilldownTargets(testDefs, insightsOpts?.sweeps);
+  const drilldownOffered = (): boolean => !isMapless;
   let closeDrilldownMenu: (() => void) | null = null;
   let btnDrilldown: HTMLButtonElement | null = null;
   /** Set by the ContextMenu key / Shift+F10, so the `contextmenu` event that
@@ -3002,7 +3004,7 @@ export function renderWaferMapCard(
   function syncDrilldownBtn(): void {
     if (!btnDrilldown) return;
     btnDrilldown.style.display = drilldownOffered() ? 'flex' : 'none';
-    btnDrilldown.ariaLabel = selectedKeys.size > 0 ? 'Chart the selected dies (or right-click)' : 'Chart this wafer (or right-click)';
+    btnDrilldown.ariaLabel = selectedKeys.size > 0 ? 'Charts and tables for the selected dies (or right-click)' : 'Charts and tables for this wafer (or right-click)';
   }
 
   /** What a drilldown opened now would chart: the selection if there is one,
@@ -3012,6 +3014,7 @@ export function renderWaferMapCard(
       waferLabel: mapIdentity(),
       testDefs,
       isLotStack: currentResult.isLotStack,
+      wafer: currentResult.wafer,
       activeTest: viewOpts.plotMode === 'value' ? viewOpts.activeTest : undefined,
     };
     return selectedKeys.size > 0
@@ -3383,6 +3386,10 @@ export function renderWaferMapCard(
 
     getSaveImageHook(): SaveImageHandler {
       return exportHooks.onSaveImage;
+    },
+
+    getSaveTextHook(): SaveTextHandler {
+      return exportHooks.onSaveText;
     },
 
     drawPendingNow,

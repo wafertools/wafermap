@@ -1008,6 +1008,6 @@ A chart that cannot be drawn stays in the menu, **disabled, with the reason** as
 
 **What the chart says.** The modal title and a line on the card state how many dies are plotted and from which wafer — "12 dies selected on W03", "2,644 dies on W03". Partial and edge-excluded dies are left out, as in every chart, and then counted: "10 of 12 dies selected on W03 (partial and edge-excluded dies left out)". The wafer is named by the item's `label`, else `metadata.waferId`; with neither it reads "this wafer" — never a positional "Wafer 3 (no ID)", which would read as an ID.
 
-**Right-click is taken over only when there is something to chart** — a parametric test in the data, or a sweep defined. A bins-only map with no sweeps leaves right-click to the browser, or to a host's own context menu. The map canvas owns right-click on itself: a right-click it declines (the bin legend, a mapless map) never reaches a gallery card or a host handler around it.
+**Right-click on the map opens the drilldown menu whatever the data holds** — there are always dies to list, so a bins-only map offers **Dies** (the charts and **Test statistics** are listed greyed, with the reason). A host's own context menu on the map therefore no longer appears; the canvas owns right-click on itself. The map canvas owns right-click on itself: a right-click it declines (the bin legend, a mapless map) never reaches a gallery card or a host handler around it.
 
 The menu and its charts are a separate chunk, loaded on the first right-click — a page that never uses it never downloads it.

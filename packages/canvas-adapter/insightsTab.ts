@@ -30,7 +30,7 @@ import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
-import { hasDrilldownTargets, waferPopulation } from './chartPopulation.js';
+import { waferPopulation } from './chartPopulation.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { INPUT_DEFAULT_PASS_BINS, itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
@@ -497,20 +497,19 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    * Right-click on one wafer's bar, box or point → the drilldown menu for that
    * whole wafer. Resolved by `waferIndex` against the items the chart was
    * built from, never by label (two wafers can share a fallback label).
-   * Undefined when nothing could be charted, so the charts neither take over
-   * the right-click nor advertise one in their tooltips.
+   * Always offered: there are always dies to tabulate, even where nothing
+   * could be charted.
    */
   function waferContextMenu(items: Item[]): WaferContextMenuHandler | undefined {
-    if (!items.some(it => hasDrilldownTargets(it.testDefs, deps.sweeps))) return undefined;
     return (waferIndex, testNumber, e) => {
       const it = items.find(i => i.waferIndex === waferIndex);
-      if (!it || !hasDrilldownTargets(it.testDefs, deps.sweeps)) return;
+      if (!it) return;
       e.preventDefault();
       const source = waferPopulation(it.dies, {
         waferLabel: it.identity, testDefs: it.testDefs,
-        activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex,
+        activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex, wafer: it.wafer,
       });
-      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, onSaveImage });
+      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, onSaveImage, onSaveText });
     };
   }
 
@@ -1132,7 +1131,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       ringCount: getRingCount?.() ?? 4,
       yieldByWaferIndex: new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent])),
       onSaveText,
-      buildStatistics: its => buildStatisticsCards(its, testDefs.filter(d => its.some(it => it.testDefs?.some(x => x.testNumber === d.testNumber) ?? true)), allTestDefs),
+      // These are this tab's own items, handed back by the section.
+      buildStatistics: its => buildStatisticsCards(its as Item[], testDefs, allTestDefs),
       view: dataView,
       onViewChange: v => { dataView = v; rebuild(); },
       diesLayout,

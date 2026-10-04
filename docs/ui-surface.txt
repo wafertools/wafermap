@@ -21,7 +21,7 @@ Controls:
   · Reset zoom (double-click)
   · Pan (drag to move)
   · Select (drag to select dies)
-  · Chart this wafer (or right-click)  [opens menu]
+  · Charts and tables for this wafer (or right-click)  [opens menu]
   · Plot mode  [opens menu]
   · Colour scheme  [opens menu]
   · Overlays  [opens menu]
@@ -30,9 +30,11 @@ Controls:
   · Expand (E)
   · User guide
 
-Menu — Chart this wafer (or right-click):
+Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · Dies
+    · Test statistics
 
 Menu — Plot mode:
     · Idsat (A)  [unchecked]
@@ -103,7 +105,7 @@ Controls:
   · Reset zoom (double-click)   (×6)
   · Pan (drag to move)   (×6)
   · Select (drag to select dies)   (×6)
-  · Chart this wafer (or right-click)  [opens menu]   (×6)
+  · Charts and tables for this wafer (or right-click)  [opens menu]   (×6)
   · W02 · 93.2%▾  [aria="Wafer info for W02 · 93.2%. Click to expand."]
   · W03 · 86.2%▾  [aria="Wafer info for W03 · 86.2%. Click to expand."]
   · W04 · 86.7%▾  [aria="Wafer info for W04 · 86.7%. Click to expand."]
@@ -161,29 +163,41 @@ Menu — Columns:
     · 4 columns  [unchecked]
     · 5 columns  [unchecked]
 
-Menu — Chart this wafer (or right-click):
+Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · Dies
+    · Test statistics
 
-Menu — Chart this wafer (or right-click):
+Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · Dies
+    · Test statistics
 
-Menu — Chart this wafer (or right-click):
+Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · Dies
+    · Test statistics
 
-Menu — Chart this wafer (or right-click):
+Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · Dies
+    · Test statistics
 
-Menu — Chart this wafer (or right-click):
+Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · Dies
+    · Test statistics
 
-Menu — Chart this wafer (or right-click):
+Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · Dies
+    · Test statistics
 
 ## Insights tab
 

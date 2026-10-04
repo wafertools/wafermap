@@ -28,10 +28,22 @@ import { resolveDieColumns } from './dieList.js';
 import { createVirtualTable, type VirtualColumn } from './virtualTable.js';
 import { exportCsv } from './tableExport.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip, type SaveTextHandler } from './toolbar.js';
+import { buildTestSection, buildFunctionalTestSection } from './summaryPanel.js';
 import type { InsightsItem } from './insightsTab.js';
 import type { Wafer } from '../core/wafer.js';
 
 export type DataView = 'statistics' | 'dies' | 'wafers';
+
+/** What a table needs of a wafer. An `InsightsItem` fits; so does one wafer's share
+ *  of a drilldown population, which has no `Wafer` object or stats of its own. */
+export interface DataItem {
+  label: string;
+  dies: Die[];
+  waferIndex: number;
+  wafer?: Wafer;
+  passBins?: readonly number[];
+  statsSummary?: InsightsItem['statsSummary'];
+}
 
 export const DATA_VIEWS: ReadonlyArray<{ key: DataView; label: string }> = [
   { key: 'statistics', label: 'Statistics' },
@@ -48,13 +60,13 @@ export const WAFER_TEST_COLUMNS = 50;
 
 export interface DataSectionDeps {
   doc: Document;
-  items: InsightsItem[];
+  items: DataItem[];
   /** Parametric tests of the scope. */
   testDefs: TestDef[];
   /** Every test of the scope, functional ones included. */
   allTestDefs: TestDef[];
   /** Active grouping, when any: Statistics then shows one block per group. */
-  groups?: { key: string; items: InsightsItem[] }[];
+  groups?: { key: string; items: DataItem[] }[];
   groupLabelText?: string;
   ringCount: number;
   /** Lot yield per wafer index (the figure every other yield display uses). */
@@ -62,7 +74,12 @@ export interface DataSectionDeps {
   onSaveText?: SaveTextHandler;
   /** The Statistics view's tables, built by the Insights tab (they are the
    *  test-values and functional cards that used to sit in Overview). */
-  buildStatistics: (items: InsightsItem[]) => { cards: HTMLElement[]; destroy: () => void };
+  buildStatistics: (items: DataItem[]) => { cards: HTMLElement[]; destroy: () => void };
+  /** Which views to offer. Default all three. */
+  views?: readonly DataView[];
+  /** Set when the tables describe part of a population (a drilldown selection): what to say after the
+   *  counts ("selected on W03"), and a wafer column and file-name tag so a file says so too. */
+  population?: { phrase: string; fileTag: string };
   view: DataView;
   onViewChange: (view: DataView) => void;
   /** The Dies view's Wide | Long choice. */
@@ -101,7 +118,8 @@ export function renderDataSection(deps: DataSectionDeps): { card: HTMLElement; d
   Object.assign(body.style, { display: 'flex', flexDirection: 'column', gap: SPACE.md, minWidth: '0' } as Partial<CSSStyleDeclaration>);
   outer.appendChild(body);
 
-  const switcher = segmented(doc, 'Table', DATA_VIEWS, deps.view, 'wmapDataView', v => deps.onViewChange(v as DataView));
+  const offered = DATA_VIEWS.filter(v => !deps.views || deps.views.includes(v.key));
+  const switcher = segmented(doc, 'Table', offered, deps.view, 'wmapDataView', v => deps.onViewChange(v as DataView));
   bar.appendChild(switcher.el);
 
   let result: ViewResult;
@@ -213,20 +231,22 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
   const waferLabelByDie = new WeakMap<Die, string>();
   const waferByDie = new WeakMap<Die, Wafer>();
   const dies: Die[] = [];
+  let anyWafer = false;
   for (const item of items) {
+    if (item.wafer) anyWafer = true;
     for (const d of item.dies) {
       waferLabelByDie.set(d, item.label);
-      waferByDie.set(d, item.wafer);
+      if (item.wafer) waferByDie.set(d, item.wafer);
       dies.push(d);
     }
   }
   if (dies.length === 0) return emptyView(doc, 'No dies to show.');
 
   const { columns, visibleColumns } = resolveDieColumns(dies, deps.allTestDefs, {
-    extraColumn: items.length > 1 ? { label: 'Wafer', get: d => waferLabelByDie.get(d) } : undefined,
-    getWafer: d => waferByDie.get(d),
+    extraColumn: items.length > 1 || deps.population ? { label: 'Wafer', get: d => waferLabelByDie.get(d) } : undefined,
+    getWafer: anyWafer ? (d => waferByDie.get(d)) : undefined,
     ringCount: deps.ringCount,
-    waferMetadata: commonMetadata(items.map(it => ({ metadata: it.wafer?.metadata }))),
+    waferMetadata: items.some(it => it.wafer) ? commonMetadata(items.map(it => ({ metadata: it.wafer?.metadata }))) : undefined,
     ownerDocument: doc,
   });
 
@@ -244,6 +264,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
   table.el.style.maxHeight = '70vh';
   table.el.style.minHeight = '240px';
 
+  const tag = deps.population ? `-${deps.population.fileTag}` : '';
   const testCols = columns.filter(c => c.test !== undefined);
   const plainCols = columns.filter(c => c.test === undefined);
   const wideCells = dies.length * columns.length;
@@ -279,11 +300,11 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
     el: table.el,
     destroy: () => table.destroy(),
     actions: {
-      note: () => `${plural(dies.length, 'die')} on ${plural(items.length, 'wafer')}. ${layoutNote()} Export follows the order shown.`,
+      note: () => `${plural(dies.length, 'die')} ${deps.population?.phrase ?? `on ${plural(items.length, 'wafer')}`}. ${layoutNote()} Export follows the order shown.`,
       setLayout: (l) => { long = l === 'long' && testCols.length > 0; },
       exportCsv: () => long
-        ? exportCsv(longColumns(), longRows(), 'die-list-long.csv', deps.onSaveText, { rowCount: longRowsMax })
-        : exportCsv(wideColumns(), table.orderedRows(), 'die-list.csv', deps.onSaveText, { rowCount: dies.length }),
+        ? exportCsv(longColumns(), longRows(), `die-list-long${tag}.csv`, deps.onSaveText, { rowCount: longRowsMax })
+        : exportCsv(wideColumns(), table.orderedRows(), `die-list${tag}.csv`, deps.onSaveText, { rowCount: dies.length }),
       copyText: wideCells <= COPY_CELL_LIMIT ? () => tableToTsv(wideColumns(), table.orderedRows()) : null,
     },
   };
@@ -291,7 +312,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
 
 // ── Wafers ───────────────────────────────────────────────────────────────────
 
-interface WaferRow { item: InsightsItem; yieldPercent: number | null }
+interface WaferRow { item: DataItem; yieldPercent: number | null }
 interface WaferColumn { header: string; cell: (r: WaferRow) => CsvCell; show?: (r: WaferRow) => string; numeric?: boolean }
 
 function buildWafersView(deps: DataSectionDeps): ViewResult {
@@ -302,7 +323,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
     const pre = deps.yieldByWaferIndex.get(item.waferIndex);
     const percent = buildYieldData([{
       label: item.label, dies: item.dies, passBins: item.passBins, yieldPercent: pre, key: item.waferIndex,
-    }], item.passBins)[0]?.percent;
+    }], item.passBins ?? [1])[0]?.percent;
     return { item, yieldPercent: item.dies.length ? (percent ?? null) : null };
   });
 
@@ -310,7 +331,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
   const keys: string[] = [];
   for (const { item } of rows) {
     for (const k of Object.keys(item.wafer?.metadata ?? {})) {
-      if (!keys.includes(k) && metadataDisplayValue((item.wafer.metadata as Record<string, unknown>)[k]) !== undefined) keys.push(k);
+      if (!keys.includes(k) && metadataDisplayValue((item.wafer?.metadata as Record<string, unknown>)[k]) !== undefined) keys.push(k);
     }
   }
 
@@ -445,4 +466,62 @@ function segmented(
     next.focus();
   });
   return { el, set: key => { selected = key; paint(); } };
+}
+
+// ── A drilldown selection as tables ──────────────────────────────────────────
+
+export interface SelectionTablesInput {
+  doc: Document;
+  /** One entry per wafer the population spans. */
+  items: ReadonlyArray<{ label: string; dies: Die[]; waferIndex?: number; wafer?: Wafer }>;
+  testDefs: TestDef[] | undefined;
+  /** Who the dies are, in words: "selected on W03". */
+  population: string;
+  view: 'dies' | 'statistics';
+  onSaveText?: SaveTextHandler;
+}
+
+/**
+ * The Dies and Statistics tables for a population picked out by drilldown (a map
+ * selection, or one wafer), in the same controls as the Data tab — for a modal.
+ * Statistics is the Test Values and Functional Tests tables over just those dies,
+ * stamped with the population so a saved file says what it covers.
+ */
+export function renderSelectionTables(input: SelectionTablesInput): { el: HTMLElement; destroy: () => void } {
+  const { doc } = input;
+  const host = doc.createElement('div');
+  Object.assign(host.style, { display: 'flex', flexDirection: 'column', minWidth: '0', minHeight: '0', flex: '1', padding: SPACE.md } as Partial<CSSStyleDeclaration>);
+  const items: DataItem[] = input.items.map((it, i) => ({ label: it.label, dies: it.dies, waferIndex: it.waferIndex ?? i, wafer: it.wafer }));
+  const allDies = items.flatMap(it => it.dies);
+  const allDefs = input.testDefs ?? [];
+  const parametric = allDefs.filter(isParametricTest);
+  const phrase = `${plural(allDies.length, 'die')} ${input.population}`;
+
+  let view = input.view;
+  let layout: 'wide' | 'long' = 'wide';
+  let current: { card: HTMLElement; destroy: () => void } | null = null;
+  const draw = (): void => {
+    current?.destroy();
+    current = renderDataSection({
+      doc, items, testDefs: parametric, allTestDefs: allDefs, ringCount: 4,
+      yieldByWaferIndex: new Map(), onSaveText: input.onSaveText,
+      views: ['dies', 'statistics'], view,
+      population: { phrase: input.population, fileTag: 'selection' },
+      buildStatistics: its => {
+        const dies = its.flatMap(it => it.dies);
+        const csv = { populationLabel: phrase };
+        const cards: HTMLElement[] = [];
+        const values = buildTestSection(dies, parametric, undefined, undefined, input.onSaveText, csv, its.map(it => ({ dies: it.dies })), undefined, 'full');
+        if (values) cards.push(values);
+        const functional = buildFunctionalTestSection(dies, allDefs, undefined, input.onSaveText, csv);
+        if (functional) cards.push(functional);
+        return { cards, destroy: () => {} };
+      },
+      onViewChange: v => { view = v as 'dies' | 'statistics'; draw(); },
+      diesLayout: layout, onDiesLayoutChange: l => { layout = l; },
+    });
+    host.replaceChildren(current.card);
+  };
+  draw();
+  return { el: host, destroy: () => current?.destroy() };
 }

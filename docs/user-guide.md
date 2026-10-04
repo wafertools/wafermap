@@ -396,8 +396,8 @@ your own selection, or Ctrl/Cmd + click individual dies.*
 
 ### 4.4 Charting dies and wafers
 
-**Right-click** a population to open a menu of charts drawn from just those
-dies. Picking one opens it in a window over the map. This is how you look at a
+**Right-click** a population to open a menu of charts and tables drawn from just
+those dies. Picking one opens it in a window over the map. This is how you look at a
 cluster, a scratch or an edge region on its own, or at one wafer out of a lot.
 
 What you right-click decides the population:
@@ -424,6 +424,11 @@ The menu offers:
   Ppk. Below 30 dies the chart says each Ppk is a rough estimate: a Ppk from a
   handful of dies can be far from the process's real capability.
 - **Sweeps** your application has defined (see [Sweep cards](#sweep-cards)).
+- **Dies** and **Test statistics** — the same tables as Insights' Data tab (see
+  [Data tables](#data-tables)), over just these dies: every die as a row, or the
+  Test Values and Functional Tests tables. Each has Export CSV and Copy, and a
+  saved file carries the population ("selected on W03") in its name and in a
+  Wafer column, so it cannot be mistaken for the whole lot.
 
 What every chart opened this way does:
 
@@ -438,8 +443,8 @@ What every chart opened this way does:
   or when the map is a lot stack, whose dies are averages across wafers rather
   than measured dies.
 
-A map with only bin data and no sweeps has nothing to chart, and right-click
-there does what it normally does.
+A map with only bin data has no charts to draw, but its menu still opens with
+**Dies**: the selected dies, or the whole wafer, as a table.
 
 ---
 
