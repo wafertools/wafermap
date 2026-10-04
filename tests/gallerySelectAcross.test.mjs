@@ -244,3 +244,114 @@ test('clearing on a card (empty space) clears the count too', async () => {
   assert.equal(badge(host).style.display, 'none');
   gallery.destroy();
 });
+
+test('the count badge sits inside the button, so the toolbar cannot clip it', async () => {
+  const { host, gallery } = await mount();
+  const s = badge(host).style;
+  // The toolbar scrolls and clips what overflows it, so a badge hung off the corner is cut off at the top.
+  for (const side of [s.top, s.right]) assert.ok(!side.startsWith('-'), `an offset of ${side} would overhang the button`);
+  assert.equal(s.top, '0px');
+  assert.equal(s.right, '0px');
+  gallery.destroy();
+});
+
+// ── Picking whole wafers: Ctrl/Cmd+click a card header ───────────────────────
+
+const headers = (host) => [...host.querySelectorAll('.wmap-gallery-card')].map(c => c.querySelector('[data-wmap-expand-btn]').parentElement);
+const cardsOf = (host) => [...host.querySelectorAll('.wmap-gallery-card')];
+const chip = (host) => host.querySelector('[data-wmap-picked-wafers]');
+const ctrlClick = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+
+test('Ctrl+click on a header picks that wafer: outlined, counted, and a plain click does nothing of the kind', async () => {
+  const { host, gallery } = await mount();
+  assert.equal(chip(host).style.display, 'none');
+  headers(host)[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  assert.equal(cardsOf(host)[1].style.outline, '', 'a plain click picks nothing');
+  ctrlClick(headers(host)[1]);
+  assert.match(cardsOf(host)[1].style.outline, /2px solid/);
+  assert.equal(cardsOf(host)[0].style.outline, '');
+  assert.equal(chip(host).style.display, '');
+  assert.equal(chip(host).textContent, '1 wafer picked ✕');
+  ctrlClick(headers(host)[2]);
+  assert.equal(chip(host).textContent, '2 wafers picked ✕');
+  ctrlClick(headers(host)[1]);                         // toggles off
+  assert.equal(cardsOf(host)[1].style.outline, '');
+  assert.equal(chip(host).textContent, '1 wafer picked ✕');
+  gallery.destroy();
+});
+
+test('Cmd+click works too', async () => {
+  const { host, gallery } = await mount();
+  headers(host)[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+  assert.match(cardsOf(host)[0].style.outline, /2px solid/);
+  gallery.destroy();
+});
+
+test('right-click on a picked card opens the menu on every die of every picked wafer, with a Wafers table', async () => {
+  const { host, gallery, canvases } = await mount();
+  ctrlClick(headers(host)[0]);
+  ctrlClick(headers(host)[2]);
+  assert.equal(rightClick(canvases[0]), true);
+  await waitFor(() => menus().length > 0, 'the menu opened');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 48 dies on 2 picked wafers');
+  [...menus()[0].querySelectorAll('[role="menuitem"]')].find(i => i.textContent === 'Wafers').click();
+  await waitFor(() => document.querySelector('.wmap-overlay-box [data-wmap-data-view="wafers"]'), 'the Wafers table opened');
+  const box = document.querySelector('.wmap-overlay-box');
+  assert.deepEqual([...box.querySelectorAll('tbody tr[aria-rowindex]')].map(r => r.querySelector('td').textContent).sort(), ['W1', 'W3']);
+  box.querySelector('button[aria-label^="Close"]')?.click();
+  gallery.destroy();
+});
+
+test('right-click on a header of a picked card uses the picks too', async () => {
+  const { host, gallery } = await mount();
+  ctrlClick(headers(host)[1]);
+  ctrlClick(headers(host)[2]);
+  rightClick(headers(host)[1]);
+  await waitFor(() => menus().length > 0, 'the menu opened');
+  assert.match(menus()[0].getAttribute('aria-label'), /48 dies on 2 picked wafers/);
+  closeMenu();
+  gallery.destroy();
+});
+
+test('right-click on a card that is not picked is about that card alone', async () => {
+  const { host, gallery, canvases } = await mount();
+  ctrlClick(headers(host)[0]);
+  ctrlClick(headers(host)[1]);
+  rightClick(canvases[2]);
+  await waitFor(() => menus().length > 0, 'the menu opened');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 24 dies on W3');
+  closeMenu();
+  gallery.destroy();
+});
+
+test('dies selected on a map win over a pick', async () => {
+  const { host, gallery, canvases, selections } = await mount();
+  ctrlClick(headers(host)[0]);
+  ctrlClick(headers(host)[1]);
+  await selectADie(canvases[0], selections, 'W1');       // across is off: only W1's own selection
+  rightClick(canvases[0]);
+  await waitFor(() => menus().length > 0, 'the menu opened');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 1 die selected on W1');
+  closeMenu();
+  gallery.destroy();
+});
+
+test('the chip clears the picks', async () => {
+  const { host, gallery } = await mount();
+  ctrlClick(headers(host)[0]);
+  ctrlClick(headers(host)[1]);
+  chip(host).click();
+  assert.equal(chip(host).style.display, 'none');
+  assert.ok(cardsOf(host).every(c => c.style.outline === ''));
+  gallery.destroy();
+});
+
+test('new items discard the picks, which belonged to the cards just replaced', async () => {
+  const { host, gallery } = await mount();
+  ctrlClick(headers(host)[0]);
+  gallery.setItems(['A1', 'A2'].map(id => ({ ...wafer(id) })));
+  await tick(); await tick();
+  assert.equal(chip(host).style.display, 'none');
+  assert.ok(cardsOf(host).every(c => c.style.outline === ''));
+  gallery.destroy();
+});

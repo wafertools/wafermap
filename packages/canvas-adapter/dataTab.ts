@@ -81,6 +81,8 @@ export interface DataSectionDeps {
   dieListOptions?: DieListDisplayOptions;
   /** Label/order hints for die metadata columns, e.g. `WaferMapResult.metadataFields`. */
   metadataFields?: MetadataFieldDef[];
+  /** A die row was clicked: show that die on its map. When set, Dies rows are clickable and say so. */
+  onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
   /** Set when the tables describe part of a population (a drilldown selection): what to say after the
    *  counts ("selected on W03"), and a wafer column and file-name tag so a file says so too. */
   population?: { phrase: string; fileTag: string };
@@ -241,12 +243,14 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
   const { doc, items } = deps;
   const waferLabelByDie = new WeakMap<Die, string>();
   const waferByDie = new WeakMap<Die, Wafer>();
+  const waferIndexByDie = new WeakMap<Die, number>();
   const dies: Die[] = [];
   let anyWafer = false;
   for (const item of items) {
     if (item.wafer) anyWafer = true;
     for (const d of item.dies) {
       waferLabelByDie.set(d, item.label);
+      waferIndexByDie.set(d, item.waferIndex);
       if (item.wafer) waferByDie.set(d, item.wafer);
       dies.push(d);
     }
@@ -273,6 +277,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
   }));
   const table = createVirtualTable<Die>({
     columns: vcols, rows: dies, ariaLabel: `Dies (${dies.length})`, ownerDocument: doc,
+    onRowClick: deps.onLocateDie ? (die) => deps.onLocateDie!(die, waferIndexByDie.get(die)) : undefined,
   });
   table.el.style.maxHeight = '70vh';
   table.el.style.minHeight = '240px';
@@ -313,7 +318,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
     el: table.el,
     destroy: () => table.destroy(),
     actions: {
-      note: () => `${plural(dies.length, 'die')} ${deps.population?.phrase ?? `on ${plural(items.length, 'wafer')}`}. ${layoutNote()} Export follows the order shown.`,
+      note: () => `${plural(dies.length, 'die')} ${deps.population?.phrase ?? `on ${plural(items.length, 'wafer')}`}. ${layoutNote()} Export follows the order shown.${deps.onLocateDie ? ' Click a row to show that die on the map.' : ''}`,
       setLayout: (l) => { long = l === 'long' && testCols.length > 0; },
       exportCsv: () => long
         ? exportCsv(longColumns(), longRows(), `die-list-long${tag}.csv`, deps.onSaveText, { rowCount: longRowsMax })
@@ -497,6 +502,8 @@ export interface DataTablesInput {
   views?: readonly DataView[];
   ringCount?: number;
   metadataFields?: MetadataFieldDef[];
+  /** A die row clicked: show that die on its map. The caller closes the table around it. */
+  onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
   dieListOptions?: DieListDisplayOptions;
   onSaveText?: SaveTextHandler;
 }
@@ -534,7 +541,7 @@ export function renderDataTables(input: DataTablesInput): { el: HTMLElement; des
     current = renderDataSection({
       doc, items, testDefs: parametric, allTestDefs: allDefs, ringCount: input.ringCount ?? 4,
       yieldByWaferIndex: new Map(), onSaveText: input.onSaveText,
-      views, view, dieListOptions: input.dieListOptions, metadataFields: input.metadataFields,
+      views, view, dieListOptions: input.dieListOptions, metadataFields: input.metadataFields, onLocateDie: input.onLocateDie,
       population: input.population ? { phrase: input.population, fileTag: 'selection' } : undefined,
       buildStatistics: its => {
         const dies = its.flatMap(it => it.dies);
@@ -562,6 +569,7 @@ export function renderSelectionTables(input: {
   population: string;
   view: DataView;
   onSaveText?: SaveTextHandler;
+  onLocateDie?: DataTablesInput['onLocateDie'];
 }): { el: HTMLElement; destroy: () => void } {
   // One row per wafer only means something when the population spans more than one.
   return renderDataTables({ ...input, views: input.items.length > 1 ? ['statistics', 'dies', 'wafers'] : ['statistics', 'dies'] });

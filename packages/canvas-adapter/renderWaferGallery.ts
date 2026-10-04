@@ -822,9 +822,18 @@ export function renderWaferGallery(
         clearLotFindingHighlight();
         renderGallerySummaryPanel();
       }
+      cardSelectionCounts.set(item, dies.length);
       if (selectAcrossWafers && !propagatingSelection && !settingFindingSelection) propagateSelection(item, dies);
       item.onSelect?.(dies);
     };
+  }
+
+  /** Ring `die` on the card of wafer `waferIndex` (and no other), scrolled into view. */
+  function locateOnCard(waferIndex: number | undefined, die: Die): void {
+    if (waferIndex === undefined) return;
+    cardControllers.forEach((ctrl, i) => { if (ctrl && i !== waferIndex) ctrl.locateDie(null); });
+    cardControllers[waferIndex]?.locateDie(die);
+    gridEl.querySelectorAll<HTMLElement>('.wmap-gallery-card')[waferIndex]?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }
 
   // ── Select the same dies on every wafer ──────────────────────────────────
@@ -891,7 +900,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { sweeps: options.insights?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText },
+      ctx: { sweeps: options.insights?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -913,6 +922,61 @@ export function renderWaferGallery(
       const matched = item.dies.filter(d => keySet.has(getDieKey(d)));
       ctrl.setSelection(matched);
     }
+  }
+
+  // ── Picking whole wafers ──────────────────────────────────────────────────
+  // Ctrl/Cmd+click a card's header to add or remove that wafer. Picked cards are outlined, counted in the
+  // toolbar, and a right-click on one of them opens the drilldown menu on every die of every picked wafer
+  // (with a Wafers table). Dies selected on a map take precedence: the pick is for when nothing is.
+  const pickedCards = new Set<number>();
+  /** Each card's own selection size, from its `onSelect`; a pick yields to a die selection. */
+  const cardSelectionCounts = new Map<WaferMapDisplayItem, number>();
+
+  function syncPickedCards(): void {
+    const cards = [...gridEl.querySelectorAll<HTMLElement>('.wmap-gallery-card')];
+    cards.forEach((el, i) => {
+      el.style.outline = pickedCards.has(i) ? `2px solid ${CLR.iconActive}` : '';
+      el.style.outlineOffset = pickedCards.has(i) ? '-2px' : '';
+    });
+    const n = pickedCards.size;
+    btnPicked.style.display = n > 0 ? '' : 'none';
+    btnPicked.textContent = `${n} wafer${n === 1 ? '' : 's'} picked ✕`;
+    btnPicked.ariaLabel = `${n} wafer${n === 1 ? '' : 's'} picked. Click to clear.`;
+  }
+  function togglePickedCard(index: number): void {
+    if (index < 0) return;
+    if (pickedCards.has(index)) pickedCards.delete(index); else pickedCards.add(index);
+    syncPickedCards();
+  }
+  function clearPickedCards(): void {
+    pickedCards.clear();
+    syncPickedCards();
+  }
+
+  /** Every die of the picked wafers as a drilldown population — when `cardIndex`, the card asked, is one of them. */
+  function pickedWafersSource(cardIndex: number): { source: DrilldownSource; ctx: Partial<DrilldownContext> } | undefined {
+    if (pickedCards.size === 0 || !pickedCards.has(cardIndex)) return undefined;
+    for (const n of cardSelectionCounts.values()) if (n > 0) return undefined;
+    const picked: DrilldownSource['items'] = [];
+    let stacked = false;
+    [...pickedCards].sort((a, b) => a - b).forEach(i => {
+      const it = currentItems[i];
+      if (!it) return;
+      if (it.isLotStack) stacked = true;
+      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies: it.dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
+    });
+    if (picked.length === 0) return undefined;
+    const view = sharedOpts;
+    return {
+      source: {
+        items: picked,
+        population: picked.length === 1 ? `on ${picked[0].label}` : `on ${picked.length} picked wafers`,
+        testDefs: mergedTestDefs().defs,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
+        notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
+      },
+      ctx: { sweeps: options.insights?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+    };
   }
 
   // ── Gallery summary panel ──────────────────────────────────────────────────
@@ -1161,7 +1225,7 @@ export function renderWaferGallery(
         // payoff for a click, and a promise the label did not keep.
         onWaferClick: openWindowForCardIndex,
         findingsFor: findingsTallyFor,
-        dieListOptions: options.dieList }), {
+        dieListOptions: options.dieList, onLocateDie: (die, wi) => locateOnCard(wi, die) }), {
         // The panel is the last lot-wide surface to settle, so finishing it is
         // what makes `onItemsResolved` true — see `panelSettleEmit`.
         onDone: () => { const emit = panelSettleEmit; panelSettleEmit = null; emit?.(); },
@@ -1834,9 +1898,10 @@ export function renderWaferGallery(
   const selectAcrossBadge = container.ownerDocument.createElement('span');
   selectAcrossBadge.dataset.wmapSelectAcrossCount = '1';
   Object.assign(selectAcrossBadge.style, {
-    position: 'absolute', top: '-3px', right: '-3px', minWidth: '14px', height: '14px', boxSizing: 'border-box',
-    padding: '0 3px', borderRadius: '7px', background: CLR.iconActive, color: CLR.menuBg,
-    fontSize: '10px', lineHeight: '14px', fontWeight: '700', textAlign: 'center', pointerEvents: 'none', display: 'none',
+    // Inside the button's own box, not hanging off its corner: the toolbar clips what overflows it.
+    position: 'absolute', top: '0', right: '0', minWidth: '13px', height: '13px', boxSizing: 'border-box',
+    padding: '0 2px', borderRadius: '7px', background: CLR.iconActive, color: CLR.menuBg,
+    fontSize: '9px', lineHeight: '13px', fontWeight: '700', textAlign: 'center', pointerEvents: 'none', display: 'none',
   } as Partial<CSSStyleDeclaration>);
   btnSelectAcross.appendChild(selectAcrossBadge);
   function syncSelectAcrossBtn(): void {
@@ -1851,6 +1916,16 @@ export function renderWaferGallery(
         : 'Select the same dies on every wafer: on (click to turn off)';
     btnSelectAcross.setAttribute('aria-pressed', String(selectAcrossWafers));
   }
+
+  // How many wafers are picked (Ctrl/Cmd+click a card header), and the way to clear them.
+  const btnPicked = container.ownerDocument.createElement('button');
+  btnPicked.type = 'button';
+  btnPicked.dataset.wmapPickedWafers = '1';
+  Object.assign(btnPicked.style, {
+    display: 'none', border: 'none', background: CLR.bgActive, color: CLR.iconActive, borderRadius: RADIUS.control,
+    padding: `${SPACE.xs} ${SPACE.md}`, fontSize: FONT.body, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0',
+  } as Partial<CSSStyleDeclaration>);
+  btnPicked.addEventListener('click', clearPickedCards);
 
   type ColsValue = '1' | '2' | '3' | '4' | '5' | 'auto';
   const btnColumns = makeDropdown(
@@ -1891,6 +1966,7 @@ export function renderWaferGallery(
   galleryViewControlsEl.appendChild(btnColumns);
   galleryViewControlsEl.appendChild(makeSep());
   galleryViewControlsEl.appendChild(btnSelectAcross);
+  galleryViewControlsEl.appendChild(btnPicked);
   galleryViewControlsEl.appendChild(btnDownloadAll);
   syncSelectAcrossBtn();
 
@@ -2197,6 +2273,8 @@ export function renderWaferGallery(
       // into value mode on that same test, instead of always landing on
       // whatever plot mode the gallery currently shares — see
       // `buildDetachedController`'s own doc comment.
+      // A die row in a table: back to the grid, with that die ringed on its card.
+      locateDie: (die, waferIndex) => { setInsightsOpen(false); locateOnCard(waferIndex, die); },
       openWafer: (waferIndex, title, testNumber) => {
         const item = originalItems[waferIndex];
         if (!item) return;
@@ -3334,6 +3412,13 @@ export function renderWaferGallery(
       height:          '22px' });
     wireControlHover(expandBtn);
     header.appendChild(expandBtn);
+    // Ctrl/Cmd+click picks the wafer instead of what a click on the header does (opening its details).
+    header.addEventListener('click', (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      togglePickedCard(currentItems.indexOf(item));
+    }, true);
     card.appendChild(header);
 
     // Container div for renderWaferMap — the function creates the canvas inside it.
@@ -3369,7 +3454,7 @@ export function renderWaferGallery(
       const view = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
       // Snapshotted now, before the lazy import — see chartPopulation.ts.
       // With "same dies on every wafer" on and dies selected, the whole selection, not just this wafer.
-      const across = acrossSelectionSource();
+      const across = acrossSelectionSource() ?? pickedWafersSource(cardIndex);
       const source = across?.source ?? waferPopulation(item.dies, {
         waferLabel: waferIdentityLabel(item), testDefs: item.testDefs, isLotStack: item.isLotStack,
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: cardIndex, wafer: item.wafer,
@@ -3380,7 +3465,7 @@ export function renderWaferGallery(
         if (card.isConnected) {
           openDrilldownMenu(at, card, source, across
             ? { sweeps, ...across.ctx }
-            : { sweeps, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook() });
+            : { sweeps, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
         }
       });
     });
@@ -3400,7 +3485,7 @@ export function renderWaferGallery(
       downloadFilename: options.downloadFilename,
       onClick:         item.onClick,
       onSelect:        cardOnSelect(item),
-      drilldownSourceOverride: acrossSelectionSource,
+      drilldownSourceOverride: () => acrossSelectionSource() ?? pickedWafersSource(cardIndex),
       // Sweep definitions only — the card is not an Insights host (`enabled`
       // stays off); it needs them to offer a sweep of its selected dies.
       insights:        cardInsights,
@@ -3459,6 +3544,10 @@ export function renderWaferGallery(
     getOpenMenu()?.remove(); setOpenMenu(null);
     clearLotFindingHighlight();
     currentItems = [];
+    // Picks and selection sizes belong to the cards just discarded.
+    pickedCards.clear();
+    cardSelectionCounts.clear();
+    btnPicked.style.display = 'none';
     // Detached cards' grid-slot controller is already null (destroyed at detach
     // time — its popup window has its own independent controller instead), so
     // this loop only ever destroys controllers that are actually still live in

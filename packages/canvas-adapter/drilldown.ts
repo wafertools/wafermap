@@ -33,6 +33,8 @@ export interface DrilldownContext {
   onSaveImage?: SaveImageHandler;
   /** The host's CSV save hook, for the tables' Export CSV. */
   onSaveText?: SaveTextHandler;
+  /** A die row clicked in a table: show that die on the map it belongs to. The table steps aside first. */
+  onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
 }
 
 interface Target {
@@ -169,9 +171,12 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
   const open = (view: 'dies' | 'statistics' | 'wafers', title: string) => () => {
     void import('./dataTab.js').then(({ renderSelectionTables }) => {
       const doc = anchor.ownerDocument;
+      // A row click closes the table and rings that die on the map behind it (the table covers the map).
+      let close: (() => void) | undefined;
       const tables = renderSelectionTables({
         doc, items: source.items, testDefs: source.testDefs, population: source.population,
         view, onSaveText: ctx.onSaveText,
+        onLocateDie: ctx.onLocateDie ? (die, waferIndex) => { close?.(); ctx.onLocateDie!(die, waferIndex); } : undefined,
       });
       const handle = openReparentedModal([tables.el], {
         title: `${title} — ${phrase}`, anchor, ownerDocument: doc,
@@ -179,6 +184,7 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
         onClosed: tables.destroy,
       });
       if (!handle) tables.destroy();
+      else close = () => handle.close();
     });
   };
   return [

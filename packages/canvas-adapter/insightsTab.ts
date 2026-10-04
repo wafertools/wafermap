@@ -187,6 +187,11 @@ export interface InsightsTabDeps {
    * lands on this test), and only consulted for a leaf row of the sole item.
    */
   focusTest?: (testNumber: number) => void;
+  /**
+   * A die row clicked in a table (the Data tab, or a table opened from a chart): leave Insights and show
+   * that die on its map. Omit where there is no map to go back to; the rows are then not clickable.
+   */
+  locateDie?: (die: Die, waferIndex: number | undefined) => void;
   /** Default sub-tab shown on first render. Default 'overview'. */
   defaultView?: InsightsView;
   /** Sweep definitions to render in the Distributions view — see `InsightsOptions.sweeps`. */
@@ -273,7 +278,7 @@ const SWEEPS_VIEW: { key: InsightsView; label: string } = { key: 'sweeps', label
 const DATA_VIEW: { key: InsightsView; label: string } = { key: 'data', label: 'Data' };
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
-  const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
+  const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest, locateDie } = deps;
   const showMetadataStrip = deps.showMetadataStrip ?? true;
   const contentInset = deps.contentInset ?? EDGE_GUTTER;
   const doc = deps.ownerDocument ?? document;
@@ -509,7 +514,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         waferLabel: it.identity, testDefs: it.testDefs,
         activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex, wafer: it.wafer,
       });
-      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, onSaveImage, onSaveText });
+      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, onSaveImage, onSaveText, onLocateDie: locateDie });
     };
   }
 
@@ -1130,7 +1135,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       doc, items, testDefs, allTestDefs, groups, groupLabelText,
       ringCount: getRingCount?.() ?? 4,
       yieldByWaferIndex: new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent])),
-      onSaveText,
+      onSaveText, onLocateDie: locateDie,
       // These are this tab's own items, handed back by the section.
       buildStatistics: its => buildStatisticsCards(its as Item[], testDefs, allTestDefs),
       view: dataView,
@@ -1384,7 +1389,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
           ? `selected on ${picked[0].label} in the scatter`
           : `selected in the scatter, across ${picked.length} wafers`;
         openDrilldownMenu(at, anchor, { items: picked, population, testDefs, activeTest: xTest },
-          { sweeps: deps.sweeps, onSaveImage, onSaveText });
+          { sweeps: deps.sweeps, onSaveImage, onSaveText, onLocateDie: locateDie });
       },
       ownerDocument: doc,
     });

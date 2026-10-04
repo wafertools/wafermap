@@ -565,6 +565,8 @@ export interface CardController extends WaferMapController {
   getSaveTextHook(): SaveTextHandler;
   /** Draw now if a `drawWhenVisible` card skipped drawing while off screen. */
   drawPendingNow(): void;
+  /** Ring one die — a row clicked in a table — and bring it into view; `null` removes the ring. */
+  locateDie(die: Die | null): void;
 }
 
 /** @internal The public view of a card's options: everything but the gallery's shared state. */
@@ -1032,10 +1034,12 @@ export function renderWaferMapCard(
   let currentDies     = result.dies;
   // Selected die keys ("i,j") — key-based so references survive scene rebuilds.
   let selectedKeys    = new Set<string>();
+  /** The die a table row asked to show (see `locateDie`); ringed until the next click or Esc. */
+  let locatedKey: string | null = null;
   // Drilldown: a chart opened on the selected dies, or on the whole wafer.
   // Offered only when there is a chart to open (`drilldownOffered`) — with
   // none, right-click stays the browser's (or host's).
-  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText };
+  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
   /** Read live: `testDefs` changes with `setData`. */
   const drilldownOffered = (): boolean => !isMapless;
   let closeDrilldownMenu: (() => void) | null = null;
@@ -1237,6 +1241,8 @@ export function renderWaferMapCard(
         applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
         setInsightsOpen(false);
       },
+      // A die row in a table: back to the map, with that die ringed.
+      locateDie: (die) => { setInsightsOpen(false); locateDie(die); },
       ownerDocument });
     // Positioned sibling of canvasWrap covering the same area, `z-index: auto`.
     // That does NOT put it above canvasWrap's own z-indexed overlays (mapless
@@ -1625,6 +1631,7 @@ export function renderWaferMapCard(
       onSaveText: exportHooks.onSaveText,
       metadataFields,
       dieListOptions: options.dieList,
+      onLocateDie: (die) => locateDie(die),
       onFindingClick: (finding, _row) => {
         if (summaryActiveFindingId === finding.id) {
           summaryActiveFindingId = null;
@@ -2496,7 +2503,7 @@ export function renderWaferMapCard(
       viewport: vp,
       activeBin: viewOpts.plotMode === 'metadata' ? viewOpts.highlightMetadataValue : viewOpts.highlightBin,
       hoverBin: hoveredLegendBin,
-      afterDies: selectedKeys.size > 0 ? drawSelectionOverlay : undefined,
+      afterDies: selectedKeys.size > 0 || locatedKey !== null ? drawAfterDies : undefined,
       hbinDefs,
       sbinDefs,
       metadataFields });
@@ -2520,6 +2527,53 @@ export function renderWaferMapCard(
 
     if (isBoxSelecting) drawBoxOverlay();
     syncDrilldownBtn();
+  }
+
+  /** The selection fade and outline, then the located die's ring over them. */
+  function drawAfterDies(
+    ctx: CanvasRenderingContext2D,
+    vp: Pick<ViewportTransform, 'originX' | 'originY' | 'ppm'>,
+    colours: { background: string; text: string },
+  ): void {
+    if (selectedKeys.size > 0) drawSelectionOverlay(ctx, vp, colours);
+    if (locatedKey !== null) drawLocateRing(ctx, vp, colours);
+  }
+
+  // ── Located die ────────────────────────────────────────────────────────────
+  // A table row's die, ringed twice (a halo in the background colour under a heavier
+  // ring) so it reads on any die colour. Not a selection: nothing else fades.
+  function drawLocateRing(
+    ctx: CanvasRenderingContext2D,
+    vp: Pick<ViewportTransform, 'originX' | 'originY' | 'ppm'>,
+    colours: { background: string; text: string },
+  ): void {
+    dieKeyIndex ??= new Map(currentView.dies.map((d, i) => [getDieKey(d), i]));
+    const idx = locatedKey === null ? undefined : dieKeyIndex.get(locatedKey);
+    if (idx === undefined) return;
+    const pt = currentView.hoverPoints[idx];
+    const firstRect = currentView.rectangles[0];
+    const hw = firstRect ? (firstRect.width  / 2) * vp.ppm : vp.ppm * 0.5;
+    const hh = firstRect ? (firstRect.height / 2) * vp.ppm : vp.ppm * 0.5;
+    const cx = vp.originX + pt.x * vp.ppm, cy = vp.originY - pt.y * vp.ppm;
+    const r = Math.max(hw, hh) * 1.25 + 5;
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = colours.background; ctx.lineWidth = 6; ctx.stroke();
+    ctx.strokeStyle = colours.text;       ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Ring `die` and make sure it can be seen: a zoomed-in map returns to the fitted view. */
+  function locateDie(die: Die | null): void {
+    locatedKey = die === null ? null : getDieKey(die);
+    if (die !== null && viewport !== null) { resetZoom(); return; }
+    render();
+  }
+  function clearLocated(): void {
+    if (locatedKey === null) return;
+    locatedKey = null;
+    render();
   }
 
   // ── Selection highlight overlay ────────────────────────────────────────────
@@ -2700,6 +2754,7 @@ export function renderWaferMapCard(
   function onPointerDown(e: PointerEvent): void {
     keyboardMenuPending = false;
     if (e.button !== 0) return;
+    clearLocated();
     if (!currentViewport()) return;
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(e.pointerId);
@@ -3204,6 +3259,7 @@ export function renderWaferMapCard(
   // ── Wire canvas events ─────────────────────────────────────────────────────
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) keyboardMenuPending = true;
+    if (e.key === 'Escape') clearLocated();
     if (e.key === 'Escape' && selectedKeys.size > 0) {
       selectedKeys = new Set();
       releaseActiveFinding();
@@ -3395,6 +3451,8 @@ export function renderWaferMapCard(
     getSaveImageHook(): SaveImageHandler {
       return exportHooks.onSaveImage;
     },
+
+    locateDie,
 
     getSaveTextHook(): SaveTextHandler {
       return exportHooks.onSaveText;

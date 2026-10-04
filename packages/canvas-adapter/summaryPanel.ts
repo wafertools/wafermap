@@ -2979,8 +2979,15 @@ function openDataTablesModal(
   // window, and the table's injected styles must reach that document.
   const ownerDocument = anchor.ownerDocument;
   void import('./dataTab.js').then(({ renderDataTables }) => {
-    const tables = renderDataTables({ ...input, doc: ownerDocument, view: 'dies' });
+    // A row click closes the table and shows that die on the map it covers.
+    let close: (() => void) | undefined;
+    const locate = input.onLocateDie;
+    const tables = renderDataTables({
+      ...input, doc: ownerDocument, view: 'dies',
+      onLocateDie: locate ? (die, waferIndex) => { close?.(); locate(die, waferIndex); } : undefined,
+    });
     const handle = openModal({ title, onClose: () => tables.destroy(), anchor, ownerDocument, boxSize: { width: 'min(96vw, 1200px)', height: 'min(92vh, 780px)' } });
+    close = () => handle.close();
     handle.contentWrap.appendChild(tables.el);
   });
 }
@@ -3044,6 +3051,8 @@ export function* renderWaferSummaryContentSteps(
     metadataFields?: MetadataFieldDef[];
     /** See `RenderOptions.dieList` — gates the "View die list" link below. */
     dieListOptions?: DieListDisplayOptions;
+    /** A die row clicked in the Data tables: show that die on its map. */
+    onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
     /**
      * Suppress the "Wafer Info" metadata section because the caller already
      * renders this metadata elsewhere — `renderWaferMap` passes true whenever its
@@ -3069,7 +3078,7 @@ export function* renderWaferSummaryContentSteps(
     onFindingClick, activeFindingId = null,
     findingsFilter, onFindingsFilterChange,
     findingsNotice,
-    onSaveText, metadataFields, dieListOptions, metadataShownElsewhere,
+    onSaveText, metadataFields, dieListOptions, onLocateDie, metadataShownElsewhere,
   } = params;
 
   panel.appendChild(panelHeader('Wafer Summary'));
@@ -3098,7 +3107,7 @@ export function* renderWaferSummaryContentSteps(
     ? reportButton('Data tables', () => {
         openDataTablesModal(panel, {
           items: [{ label: wafer.metadata?.waferId !== undefined ? String(wafer.metadata.waferId) : 'this wafer', dies, wafer }],
-          testDefs, ringCount, metadataFields, dieListOptions, onSaveText,
+          testDefs, ringCount, metadataFields, dieListOptions, onSaveText, onLocateDie,
         }, `Data tables — ${dies.length.toLocaleString()} dies`);
       })
     : null;
@@ -3245,6 +3254,8 @@ export function* renderLotSummaryContentSteps(
     warnings?: WaferWarning[];
     /** See `RenderOptions.dieList` — gates the "View die list" link below. */
     dieListOptions?: DieListDisplayOptions;
+    /** A die row clicked in the Data tables: show that die on its map. */
+    onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
     /** Per-wafer findings tally badged onto the Wafer Yield rows — see
      *  `buildPerWaferYieldSection`. */
     findingsFor?: (waferIndex: number) => { total: number; unusual: number; notable: number } | undefined;
@@ -3262,7 +3273,7 @@ export function* renderLotSummaryContentSteps(
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
     findingsNotice,
-    onSaveText, dieListOptions, findingsFor,
+    onSaveText, dieListOptions, onLocateDie, findingsFor,
   } = params;
 
   // Names the population, not an assumed lot: "Lot LOT123 · 13 wafers" only
@@ -3341,7 +3352,7 @@ export function* renderLotSummaryContentSteps(
             passBins: itemPassBins(it, passBins), statsSummary: it.statsSummary,
           })),
           testDefs, ringCount, metadataFields: items.find(it => it?.metadataFields?.length)?.metadataFields,
-          dieListOptions, onSaveText,
+          dieListOptions, onSaveText, onLocateDie,
         }, `Data tables — ${allDies.length.toLocaleString()} dies across ${items.length} wafer${items.length === 1 ? '' : 's'}`);
       })
     : null;

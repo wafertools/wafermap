@@ -40,6 +40,13 @@ under `### Breaking`.
   panel describes — Statistics and Dies, plus Wafers for a lot — each with Export CSV and Copy, and it works with Insights
   turned off. The Dies table is virtual, so `dieList.maxRows` no longer limits it (it still limits the coordinate-less map
   replacement and the "+N dies without position" footer). `dieList.enabled` gates the button as before.
+- **A die row in a table shows that die on the map.** In the Dies table (the Data tab, a drilldown selection, the Summary panel's
+  Data tables), clicking a row steps the table aside (or leaves Insights) and rings that die on its map, on its own card in a
+  gallery, scrolled into view. The ring is not a selection: nothing else fades, and it goes with the next click on the map or Esc.
+  Rows are clickable only where the host has a map to show.
+- **A gallery can pick whole wafers.** Ctrl/Cmd+click a card's header to add or remove its wafer (outlined, counted in the
+  toolbar, cleared by clicking the count). Right-clicking a picked card opens the drilldown menu on every die of every picked
+  wafer, with a Wafers table; dies selected on a map take precedence.
 - **A gallery can select the same dies on every wafer.** A new toolbar toggle, **Select on every wafer** (off by default),
   applies a box, a click or a clear made on any card at the same die positions on every card, so a region (the edge ring, a
   scratch zone, a reticle corner) is read lot-wide. Right-click, the Menu key or the Chart button on any card or its header

@@ -398,6 +398,11 @@ the **Chart** menu) and the charts and tables open on those dies across the whol
 lot: **Dies**, **Test statistics** and a **Wafers** table with one row per wafer,
 each stating "selected at the same die positions on N wafers".
 
+**Pick whole wafers instead** with **Ctrl / Cmd + click** on a card's header: the card is
+outlined and the toolbar counts "N wafers picked ✕" (click it to clear). Right-click
+one of the picked cards and the charts and tables open on every die of every picked
+wafer, with a **Wafers** table. Dies selected on a map take precedence over a pick.
+
 The button shows how many die positions are selected. **Clear it** by clicking an
 empty part of any map, pressing **Esc**, or clicking the button itself (it clears
 the selection and stays on); a second click turns the mode off. Turning it off
@@ -813,6 +818,10 @@ same "Group by" and "Show" scope as the charts.
 - **Wafers** — one row per wafer: lot, split and any other metadata, the die
   counts, the yield (the same figure as the yield chart), and the mean of each
   test (the first 50).
+
+In the Dies table, **click a row** to show that die on its map: the table steps
+aside (or Insights closes) and the die is ringed, on its own card in a gallery. The
+ring goes with the next click on the map, or Esc.
 
 **Export CSV** saves the table as shown, in the order shown. Numbers are written
 in full, as plain numbers, not as the formatted text on screen (`0.5123457`, not
