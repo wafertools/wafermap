@@ -166,7 +166,7 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
   const none = source.notMeasuredReason ?? (dies.length === 0 ? 'Nothing is selected' : null);
   const n = dies.length;
   const phrase = populationPhrase(n, n, source.population);
-  const open = (view: 'dies' | 'statistics', title: string) => () => {
+  const open = (view: 'dies' | 'statistics' | 'wafers', title: string) => () => {
     void import('./dataTab.js').then(({ renderSelectionTables }) => {
       const doc = anchor.ownerDocument;
       const tables = renderSelectionTables({
@@ -188,6 +188,8 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
       unavailable: none ?? (testsWithValues(source, dies, 1).length > 0 ? null : 'These dies have no parametric test values'),
       open: open('statistics', 'Test statistics'),
     },
+    // One row per wafer, only where the population spans more than one.
+    ...(source.items.length > 1 ? [{ section: 'Tables', label: 'Wafers', unavailable: none, open: open('wafers', 'Wafers') }] : []),
   ];
 }
 

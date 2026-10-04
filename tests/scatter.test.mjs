@@ -20,7 +20,9 @@ test('buildScatterData — one point per die with valid values for both tests', 
   const items = [{ dies: [die(1, 10, 1), die(2, 20, 2)] }];
   const out = buildScatterData(items, 1, 2);
   assert.equal(out.length, 2);
-  assert.deepEqual(out[0], { x: 1, y: 10, hbin: 1 });
+  const { die: d, ...rest } = out[0];
+  assert.deepEqual(rest, { x: 1, y: 10, hbin: 1 });
+  assert.equal(d, items[0].dies[0], 'and the die it is');
 });
 
 test('buildScatterData — skips dies missing either test value', () => {

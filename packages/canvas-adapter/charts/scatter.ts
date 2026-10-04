@@ -14,7 +14,8 @@
 // helper, matching histogram's same trim.
 
 import { NO_DATA_FILL } from '../../renderer/colorMap.js';
-import { maxOf, minOf } from '../../core/utils.js';
+import { escHtml, maxOf, minOf } from '../../core/utils.js';
+import { fmt } from '../../renderer/fmt.js';
 import { categorical } from './palette.js';
 import { buildScatterData, buildScatterDataGrouped, type ScatterItem, type ScatterPoint } from '../../stats/scatter.js';
 import { pearsonOfPairs } from '../../stats/correlation.js';
@@ -22,7 +23,7 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas, drawOffAxisLimits, limitLines, hasBothLimitKinds, makeLimitsSelect, stackLabelRows, strokeLimitLine, fillTextOnHalo, type AxisPrefs } from './chartShell.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas, drawOffAxisLimits, limitLines, hasBothLimitKinds, makeLimitsSelect, stackLabelRows, strokeLimitLine, fillTextOnHalo, type AxisPrefs } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -81,6 +82,22 @@ export interface ScatterPanelOptions {
   axisPrefs?: AxisPrefs;
   /** Called when the user changes the "Limits:" choice here. */
   onAxisPrefsChange?: (prefs: AxisPrefs) => void;
+  /**
+   * Click a point to open its die's wafer, on the X test — the same
+   * `(waferIndex, testNumber)` the boxplot and trend use. Needs each item's
+   * `waferIndex`; a point without one is not clickable. Omit for no click action.
+   */
+  onOpen?: (waferIndex: number, testNumber: number) => void;
+  /** What a click does, in the reader's words, when it is not "open this wafer" (a single-wafer host
+   *  shows the X test on its map instead). Default `open this wafer`. */
+  openActionLabel?: string;
+  /**
+   * Drag a rectangle over the plot to select the dies inside it (only points the
+   * legend filter leaves visible). Called on release with those points, the
+   * pointer position and the canvas, so the host can open a menu there. The
+   * selection stays ringed until X/Y change or a click on empty space.
+   */
+  onSelect?: (points: ScatterPoint[], at: { x: number; y: number }, anchor: HTMLElement, xTestNumber: number) => void;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -182,9 +199,11 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
    * useful, number than the pooled one (see the Simpson's-paradox warning above).
    */
   function syncHint(): void {
-    const base = byGroup
+    const base = (byGroup
       ? 'One point per die · coloured by group · click legend to filter'
-      : 'One point per die across all wafers · coloured by hard bin · click legend to filter';
+      : 'One point per die across all wafers · coloured by hard bin · click legend to filter')
+      + (onOpen ? ` · click a point to ${openLabel}` : '')
+      + (onSelect ? (selected.size > 0 ? ` · ${selected.size.toLocaleString()} selected (click empty space to clear)` : ' · drag to select dies') : '');
     // Same visibility rule the draw loop uses (an empty activeCats means "no
     // filter", not "nothing shown").
     const visible = activeCats.size === 0 ? points : points.filter(p => activeCats.has(categoryOf(p)));
@@ -224,6 +243,17 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
 
   let points: ScatterPoint[] = [];
   let xLo = 0, xHi = 1, yLo = 0, yHi = 1;
+  /** The points as last drawn, with their pixel positions — what a mouse can land on. */
+  let drawn: Array<{ p: ScatterPoint; cx: number; cy: number }> = [];
+  let hovered: ScatterPoint | null = null;
+  const selected = new Set<ScatterPoint>();
+  const onSelect = options.onSelect;
+  const onOpen = options.onOpen;
+  const openLabel = options.openActionLabel ?? 'open this wafer';
+  const waferLabels = new Map<number, string>();
+  for (const it of [...items, ...(groups ?? []).flatMap(g => g.items)]) {
+    if (it.waferIndex !== undefined && it.label) waferLabels.set(it.waferIndex, it.label);
+  }
 
   function testMeta(testNumber: number): { unit?: string; lines: ReturnType<typeof limitLines> } {
     const def = testDefs.find(d => d.testNumber === testNumber);
@@ -289,6 +319,7 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     const { ctx } = prep;
 
     if (points.length === 0) {
+      drawn = [];
       ctx.font = `${fontPx()}px system-ui, sans-serif`;
       ctx.fillStyle = theme.textMuted;
       ctx.textAlign = 'center';
@@ -340,16 +371,42 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     const visible = activeCats.size === 0 ? points : points.filter(p => activeCats.has(categoryOf(p)));
     const step = visible.length > 5000 ? Math.ceil(visible.length / 5000) : 1;
     ctx.globalAlpha = Math.max(0.15, Math.min(0.7, 200 / (visible.length / step)));
+    drawn = [];
     for (let i = 0; i < visible.length; i += step) {
       const p = visible[i];
       const cx = SCATTER_LEFT + ((p.x - xLo) / xSpan) * plotW;
       const cy = SCATTER_TOP + (1 - (p.y - yLo) / ySpan) * plotH;
+      drawn.push({ p, cx, cy });
       ctx.beginPath();
       ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
       ctx.fillStyle = colorOfCategory(categoryOf(p));
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+    // The point under the mouse, ringed at full opacity so the one a click would open is plain.
+    const hot = hovered ? drawn.find(d => d.p === hovered) : undefined;
+    if (hot) {
+      ctx.beginPath();
+      ctx.arc(hot.cx, hot.cy, 5, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = theme.text;
+      ctx.stroke();
+    }
+    // The dragged-out selection: each member ringed (all of them, not just the sampled ones drawn above).
+    if (selected.size > 0) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = theme.text;
+      let n = 0;
+      for (const p of selected) {
+        if (activeCats.size > 0 && !activeCats.has(categoryOf(p))) continue;
+        if (++n > 5000) break;
+        const cx = SCATTER_LEFT + ((p.x - xLo) / xSpan) * plotW;
+        const cy = SCATTER_TOP + (1 - (p.y - yLo) / ySpan) * plotH;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
 
     if (activeX !== null && activeY !== null) {
       const xMeta = testMeta(activeX);
@@ -420,6 +477,8 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   }
 
   function rebuildBody(): void {
+    hovered = null;
+    selected.clear();
     syncMixedFieldsWarning();
     syncLimitsControl();
     if (testOptions.length < 2 || activeX === null || activeY === null) {
@@ -455,6 +514,127 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     draw();
   }
 
+  // ── Hover and click ──────────────────────────────────────────────────────
+  // A point is a die, so the tooltip names it and its wafer, and a click opens
+  // that wafer on the X test. Only the points actually drawn can be hit: past
+  // 5,000 the plot samples, and a hit on a point the reader cannot see would be
+  // a click on nothing.
+  const HIT_RADIUS = 7;
+  const pointAt = (e: MouseEvent): ScatterPoint | null => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let best: ScatterPoint | null = null;
+    let bestD = HIT_RADIUS * HIT_RADIUS;
+    for (const d of drawn) {
+      const dx = d.cx - mx, dy = d.cy - my;
+      const dist = dx * dx + dy * dy;
+      if (dist <= bestD) { bestD = dist; best = d.p; }
+    }
+    return best;
+  };
+  const clickable = (p: ScatterPoint): boolean => !!onOpen && p.waferIndex !== undefined;
+
+  function describe(p: ScatterPoint): string {
+    const xDef = testDefs.find(d => d.testNumber === activeX);
+    const yDef = testDefs.find(d => d.testNumber === activeY);
+    const wafer = p.waferIndex !== undefined ? waferLabels.get(p.waferIndex) : undefined;
+    const where = p.die && p.die.x !== undefined ? `die (${p.die.x}, ${p.die.y})` : '';
+    const head = [wafer, where].filter(Boolean).join(' · ');
+    return (head ? `<strong>${escHtml(head)}</strong><br>` : '')
+      + escHtml(`${xDef?.name ?? 'X'}: ${fmt(p.x, xDef?.unit)}`) + '<br>'
+      + escHtml(`${yDef?.name ?? 'Y'}: ${fmt(p.y, yDef?.unit)}`) + '<br>'
+      + escHtml(labelOfCategory(categoryOf(p)))
+      + (clickable(p) ? `<br><em>click to ${escHtml(openLabel)}</em>` : '');
+  }
+
+  canvas.addEventListener('mousemove', e => {
+    const p = pointAt(e);
+    canvas.style.cursor = p && clickable(p) ? 'pointer' : 'crosshair';
+    if (!p) {
+      tooltip.style.display = 'none';
+      if (hovered) { hovered = null; draw(); }
+      return;
+    }
+    tooltip.innerHTML = describe(p);
+    tooltip.style.display = 'block';
+    positionChartTooltip(tooltip, card, e.clientX, e.clientY);
+    if (hovered !== p) { hovered = p; draw(); }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+    if (hovered) { hovered = null; draw(); }
+  });
+  // A drag selects; a press that barely moves is a click. After a drag the browser still sends a
+  // click, which must not also open a wafer.
+  const DRAG_PX = 4;
+  let suppressClick = false;
+  const rubber = card.ownerDocument.createElement('div');
+  Object.assign(rubber.style, {
+    position: 'absolute', display: 'none', pointerEvents: 'none', zIndex: '40', boxSizing: 'border-box',
+    border: `1px dashed ${CLR.iconActive}`, background: 'rgba(120,150,200,0.15)',
+  } as Partial<CSSStyleDeclaration>);
+  card.appendChild(rubber);
+
+  if (onSelect) {
+    canvas.addEventListener('mousedown', down => {
+      if (down.button !== 0) return;
+      suppressClick = false;
+      const rect = canvas.getBoundingClientRect();
+      const x0 = down.clientX - rect.left, y0 = down.clientY - rect.top;
+      let dragging = false;
+      let x1 = x0, y1 = y0;
+      const doc = card.ownerDocument;
+      const onMove = (e: MouseEvent): void => {
+        x1 = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
+        y1 = Math.min(Math.max(e.clientY - rect.top, 0), rect.height);
+        if (!dragging && Math.hypot(x1 - x0, y1 - y0) < DRAG_PX) return;
+        dragging = true;
+        tooltip.style.display = 'none';
+        const cardRect = card.getBoundingClientRect();
+        Object.assign(rubber.style, {
+          display: 'block',
+          left: `${rect.left - cardRect.left + Math.min(x0, x1)}px`, top: `${rect.top - cardRect.top + Math.min(y0, y1)}px`,
+          width: `${Math.abs(x1 - x0)}px`, height: `${Math.abs(y1 - y0)}px`,
+        } as Partial<CSSStyleDeclaration>);
+      };
+      const onUp = (e: MouseEvent): void => {
+        doc.removeEventListener('mousemove', onMove);
+        doc.removeEventListener('mouseup', onUp);
+        rubber.style.display = 'none';
+        if (!dragging) return;
+        suppressClick = true;
+        const { plotW, plotH } = dims();
+        const xSpan = xHi - xLo, ySpan = yHi - yLo;
+        const inRect = (p: ScatterPoint): boolean => {
+          const cx = SCATTER_LEFT + ((p.x - xLo) / xSpan) * plotW;
+          const cy = SCATTER_TOP + (1 - (p.y - yLo) / ySpan) * plotH;
+          return cx >= Math.min(x0, x1) && cx <= Math.max(x0, x1) && cy >= Math.min(y0, y1) && cy <= Math.max(y0, y1);
+        };
+        const pool = activeCats.size === 0 ? points : points.filter(p => activeCats.has(categoryOf(p)));
+        const picked = pool.filter(inRect);
+        selected.clear();
+        for (const p of picked) selected.add(p);
+        syncHint();
+        draw();
+        if (picked.length > 0 && activeX !== null) onSelect(picked, { x: e.clientX, y: e.clientY }, canvas, activeX);
+      };
+      doc.addEventListener('mousemove', onMove);
+      doc.addEventListener('mouseup', onUp);
+    });
+  }
+
+  canvas.addEventListener('click', e => {
+    if (suppressClick) { suppressClick = false; return; }
+    const p = pointAt(e);
+    if (!p) {
+      // A click on empty space clears a selection.
+      if (selected.size > 0) { selected.clear(); syncHint(); draw(); }
+      return;
+    }
+    if (!clickable(p) || activeX === null) return;
+    onOpen!(p.waferIndex!, activeX);
+  });
+
   const resizeHandle = observeResize(card, () => draw());
   rebuildBody();
 
@@ -473,5 +653,5 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     draw();
   }
 
-  return { card, setXY, setAxisPrefs, destroy: () => resizeHandle.disconnect() };
+  return { card, setXY, setAxisPrefs, destroy: () => { resizeHandle.disconnect(); rubber.remove(); } };
 }

@@ -1364,6 +1364,28 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       title: 'Test scatter',
       items, testDefs, groups, binColors: getBinColors().hard, onSaveImage,
       axisPrefs, onAxisPrefsChange: prefs => broadcastAxisPrefs(prefs, scatter),
+      // A point is a die: click opens its wafer on the X test, as the boxplot and trend do.
+      onOpen: testLeafAction(items)?.open,
+      openActionLabel: testLeafAction(items)?.label,
+      onSelect: (pts, at, anchor, xTest) => {
+        // The dragged-out dies, per wafer, as a drilldown population: charts and tables of just these.
+        const byWafer = new Map<number, Die[]>();
+        for (const p of pts) {
+          if (p.waferIndex === undefined || !p.die) continue;
+          const list = byWafer.get(p.waferIndex);
+          if (list) list.push(p.die); else byWafer.set(p.waferIndex, [p.die]);
+        }
+        const picked = [...byWafer].flatMap(([waferIndex, dies]) => {
+          const it = items.find(i => i.waferIndex === waferIndex);
+          return it ? [{ label: it.identity ?? it.label, dies, waferIndex, wafer: it.wafer, passBins: it.passBins }] : [];
+        });
+        if (picked.length === 0) return;
+        const population = picked.length === 1
+          ? `selected on ${picked[0].label} in the scatter`
+          : `selected in the scatter, across ${picked.length} wafers`;
+        openDrilldownMenu(at, anchor, { items: picked, population, testDefs, activeTest: xTest },
+          { sweeps: deps.sweeps, onSaveImage, onSaveText });
+      },
       ownerDocument: doc,
     });
     axisPrefsPanels.set('correlation', [scatter]);

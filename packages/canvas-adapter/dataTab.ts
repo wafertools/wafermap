@@ -560,8 +560,9 @@ export function renderSelectionTables(input: {
   items: DataTablesInput['items'];
   testDefs: TestDef[] | undefined;
   population: string;
-  view: 'dies' | 'statistics';
+  view: DataView;
   onSaveText?: SaveTextHandler;
 }): { el: HTMLElement; destroy: () => void } {
-  return renderDataTables({ ...input, views: ['statistics', 'dies'] });
+  // One row per wafer only means something when the population spans more than one.
+  return renderDataTables({ ...input, views: input.items.length > 1 ? ['statistics', 'dies', 'wafers'] : ['statistics', 'dies'] });
 }

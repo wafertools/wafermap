@@ -40,6 +40,11 @@ under `### Breaking`.
   panel describes — Statistics and Dies, plus Wafers for a lot — each with Export CSV and Copy, and it works with Insights
   turned off. The Dies table is virtual, so `dieList.maxRows` no longer limits it (it still limits the coordinate-less map
   replacement and the "+N dies without position" footer). `dieList.enabled` gates the button as before.
+- **The Insights scatter is interactive.** Hovering a point names its wafer and die and its two values; clicking it opens that wafer
+  on the X test (a single-wafer host shows the test on its map); dragging a rectangle selects the dies inside it, across any
+  number of wafers, ringed until the X/Y test changes or empty space is clicked, and opens the drilldown menu for them —
+  the histogram, capability and sweep charts, and the Dies, Test statistics and, for more than one wafer, Wafers tables.
+  Scatter points now carry their `die` and `waferIndex` (`ScatterPoint`, `ScatterItem`).
 - **Drilldown can open the selection as a table.** The right-click menu on a map selection, a wafer or a chart mark gains
   **Dies** and **Test statistics**: the Data tab's tables over just those dies, in a modal that names the population,
   with Export CSV and Copy (a saved file is named for the selection and carries a Wafer column). On a bins-only

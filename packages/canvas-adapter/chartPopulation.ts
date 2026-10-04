@@ -19,6 +19,8 @@ export interface DrilldownItem {
   /** The wafer's geometry and metadata, when the gesture knew it — a table of these dies
    *  uses it for ring/quadrant and for the lot and product columns. */
   wafer?: Wafer;
+  /** This wafer's own pass bins, for the yield a Wafers table states. */
+  passBins?: readonly number[];
 }
 
 /** A population a chart can be opened on. */

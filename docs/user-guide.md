@@ -410,6 +410,8 @@ What you right-click decides the population:
   or one wafer's bar, box or point in an Insights chart (*Yield by wafer*,
   *Test value distribution*, *Wafer-to-wafer trend* — their tooltips say
   "right-click to chart this wafer").
+- **Dies dragged out of the Correlation scatter** — across any number of wafers.
+  The menu then also offers a **Wafers** table, one row per wafer the dies fall on.
 
 On the map you can also press the **Menu** key or **Shift + F10**, or use the
 **Chart** toolbar button, which charts the selection when there is one and the
@@ -737,7 +739,12 @@ application has defined any sweeps (see *Sweep cards* below), and a last
 - **Correlation** — a test-to-test correlation matrix and a die-level scatter
   plot, both stating the sample size the coefficients are computed over.
   Clicking a matrix cell drives the scatter plot onto that pair, where `r` and
-  `n` for that pair are printed and update as you filter the legend.
+  `n` for that pair are printed and update as you filter the legend. Hover a
+  point to see which wafer and die it is; **click** it to open that wafer on the
+  X test. **Drag** a rectangle over the plot to select the dies inside it — across
+  as many wafers as they fall on — and a menu opens with charts and tables of
+  just those dies (see [Section 4.4](#44-charting-dies-and-wafers)). The
+  selection stays ringed until you change the X or Y test or click empty space.
 
 In a gallery with more than one wafer, a **Group by** control appears whenever
 wafer metadata (lot, product, test program, temperature, split, or a custom
