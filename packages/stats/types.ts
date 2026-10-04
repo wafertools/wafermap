@@ -67,7 +67,7 @@ export type HighlightTarget =
  * found — the unit a host renders in its own findings UI.
  *
  * A finding is only emitted when it clears BOTH a significance gate and an
- * effect-size gate; see docs/api.md §7.3.2 for the exact thresholds and why a
+ * effect-size gate; see docs/api/stats.md §7.3.2 for the exact thresholds and why a
  * given pattern did or did not produce one. Everything here is already resolved
  * for display: `summary` is a written sentence, `variable.label` and
  * `comparison.left`/`right` are prose, and the numbers under `effect`/`stats`
@@ -536,7 +536,7 @@ export interface AnalyzeWaferMapOptions {
    * because it perturbs the multiple-comparison correction unpredictably. The
    * library was being more careful with itself than with its callers.
    *
-   * The gates are documented in docs/api.md §7.3.2, so a reader can still learn
+   * The gates are documented in docs/api/stats.md §7.3.2, so a reader can still learn
    * *why* a pattern did or did not produce a finding — which is what callers
    * actually wanted. Values passed by untyped (plain-JS) callers are now
    * validated and clamped rather than honoured; see `resolveOptions`.

@@ -12,14 +12,30 @@ repo_url    = "https://github.com/wafertools/wafermap"
 nav = [
   { "Home"              = "index.md"      },
   { "Quick Start"       = "quickstart.md" },
-  { "Developer Guide"   = "guide.md"      },
+  { "Developer Guide" = [
+    { "Overview"                         = "guide.md"            },
+    { "Bins, test values and metadata"   = "guide/data.md"       },
+    { "Display and interaction"          = "guide/display.md"    },
+    { "Findings and the Summary panel"   = "guide/findings.md"   },
+    { "Galleries, Insights and reports"  = "guide/galleries.md"  },
+    { "Layouts and scale"                = "guide/layouts.md"    },
+    { "Recipes"                          = "guide/recipes.md"    },
+  ]},
   { "Integration Guides" = [
     { "SvelteKit" = "sveltekit.md" },
     { "React"     = "react.md"     },
     { "Vue 3"     = "vue.md"       },
   ]},
   { "Reference" = [
-    { "API Reference"    = "api.md"             },
+    { "API Reference" = [
+      { "Overview"                      = "api.md"              },
+      { "buildWaferMap"                 = "api/core.md"         },
+      { "renderWaferMap"                = "api/render-map.md"   },
+      { "renderWaferGallery"            = "api/gallery.md"      },
+      { "Statistics and findings"       = "api/stats.md"        },
+      { "Web Worker"                    = "api/worker.md"       },
+      { "Package surface and types"     = "api/reference.md"    },
+    ]},
     { "AI coding agents" = "agents.md"          },
     { "Performance"      = "performance.md"     },
     { "Troubleshooting"  = "troubleshooting.md" },

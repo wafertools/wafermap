@@ -54,14 +54,14 @@ It gives you everything on this page's screenshots — plot modes, the findings 
 | --- | --- |
 | Render my first map | [Quick Start](quickstart.md) |
 | Load real CSV data | [Guide: Loading real data from a CSV](guide.md#loading-real-data-from-a-csv) |
-| Show bins, yield, and pass/fail colours | [Guide: Working with bins](guide.md#working-with-bins) |
-| Plot parametric test values with spec limits | [Guide: Working with test values](guide.md#working-with-test-values) |
-| Handle retests | [Guide: Retests and enriching dies after build](guide.md#retests-and-enriching-dies-after-build) |
-| React to hover, click, and die selection | [Guide: Responding to user interaction](guide.md#responding-to-user-interaction) |
-| Add statistical findings / pattern detection | [Guide: Adding statistical findings](guide.md#adding-statistical-findings) · [Pattern Detection](pattern-detection.md) |
-| Show a whole lot as a gallery | [Guide: Building a lot gallery](guide.md#building-a-lot-gallery) |
-| Add the Insights chart suite | [Guide: The Insights tab](guide.md#the-insights-tab) |
-| Keep the UI responsive on big lots | [Guide: Processing large datasets with a Web Worker](guide.md#processing-large-datasets-with-a-web-worker) · [Performance](performance.md) |
+| Show bins, yield, and pass/fail colours | [Guide: Working with bins](guide/data.md#working-with-bins) |
+| Plot parametric test values with spec limits | [Guide: Working with test values](guide/data.md#working-with-test-values) |
+| Handle retests | [Guide: Retests and enriching dies after build](guide/data.md#retests-and-enriching-dies-after-build) |
+| React to hover, click, and die selection | [Guide: Responding to user interaction](guide/display.md#responding-to-user-interaction) |
+| Add statistical findings / pattern detection | [Guide: Adding statistical findings](guide/findings.md#adding-statistical-findings) · [Pattern Detection](pattern-detection.md) |
+| Show a whole lot as a gallery | [Guide: Building a lot gallery](guide/galleries.md#building-a-lot-gallery) |
+| Add the Insights chart suite | [Guide: The Insights tab](guide/galleries.md#the-insights-tab) |
+| Keep the UI responsive on big lots | [Guide: Processing large datasets with a Web Worker](guide/layouts.md#processing-large-datasets-with-a-web-worker) · [Performance](performance.md) |
 | Use it in React / Vue / SvelteKit | [React](react.md) · [Vue 3](vue.md) · [SvelteKit](sveltekit.md) |
 | Fix a blank map or wrong yield | [Troubleshooting](troubleshooting.md) |
 | Understand the package layers | [Architecture](architecture.md) |

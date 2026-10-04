@@ -269,7 +269,7 @@ export interface RenderOptions extends ForwardedDrawOptions {
   /**
    * A prefix for every file the map saves — PNGs and CSVs alike. The lot,
    * wafer and content follow it (`<prefix>_W05_hard-bin.png`), except any the
-   * prefix already names. See docs/api.md §5.4.5.
+   * prefix already names. See docs/api/render-map.md §5.4.5.
    */
   downloadFilename?: string;
   /**

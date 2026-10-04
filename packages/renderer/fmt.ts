@@ -15,7 +15,7 @@ export const SI_PREFIX_SCALE: Record<string, number> = {
 
 // Base units test defs commonly carry (electrical + frequency). Used only to detect a caller
 // passing an already-prefixed unit (e.g. "MHz", "nA") despite the documented contract that
-// `unit` must be the bare base unit — see docs/api.md's TestDef.unit note.
+// `unit` must be the bare base unit — see the TestDef.unit note in docs/api/core.md.
 // Also read by `stats/sweepXFromName.ts`, to tell a prefix before a unit
 // (`12kΩ`, `10GHz`) from a letter that merely starts a word (`12Kangaroos`).
 export const KNOWN_BASE_UNITS = ['Hz', 'V', 'A', 'W', 'F', 'Ω', 'Ohm', 'ohm', 'S', 'H', 'J', 'C', 's'];

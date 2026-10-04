@@ -1,6 +1,6 @@
 // The statistical thresholds live in two places — the resolved defaults and the
 // severity ladder in `packages/stats/analyzeWaferMap.ts`, and the numbers quoted
-// throughout `docs/api.md` §7.3/§7.3.1. Nothing tied them together, and they
+// throughout `docs/api/stats.md` §7.3/§7.3.1. Nothing tied them together, and they
 // silently disagreed for three months: commit 955ebc9 (v0.12.8, 2026-06-02)
 // retuned every gate and the docs kept the old values, including a worked
 // example describing a finding the code rejects. A reader deciding whether their
@@ -16,11 +16,14 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const source = fs.readFileSync(path.join(root, 'packages/stats/analyzeWaferMap.ts'), 'utf8');
-const docs   = fs.readFileSync(path.join(root, 'docs/api.md'), 'utf8');
+// The reference and the guide are each a landing page plus one page per topic.
+const readPages = (landing, dir) => [landing, ...fs.readdirSync(path.join(root, dir)).filter(f => f.endsWith('.md')).sort().map(f => `${dir}/${f}`)]
+  .map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+const docs   = readPages('docs/api.md', 'docs/api');
 // guide.md restates the same ladder in its own words and drifted further than
 // api.md did — it still carried the pre-0.12.8 minimumRelativeEffect of 0.5.
 // Both documents are checked, or fixing one just moves the problem.
-const guide  = fs.readFileSync(path.join(root, 'docs/guide.md'), 'utf8');
+const guide  = readPages('docs/guide.md', 'docs/guide');
 
 /** The value the code actually resolves a default option to. */
 function codeDefault(name) {

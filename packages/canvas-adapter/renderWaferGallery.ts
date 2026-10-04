@@ -175,7 +175,7 @@ export interface GalleryOptions {
    * A prefix for every file the gallery, its cards and their detached windows
    * save — PNGs and CSVs alike. The lots, wafer or wafer count, and content
    * follow it (`<prefix>_25-wafers_gallery-hard-bin.png`), except any the prefix
-   * already names. See docs/api.md §5.4.5.
+   * already names. See docs/api/render-map.md §5.4.5.
    */
   downloadFilename?:     string;
   /**

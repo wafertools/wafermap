@@ -109,7 +109,7 @@
       "blurb": "named hard bins, pass/fail colours, yield label",
       "guide": {
         "label": "Guide: Working with bins",
-        "href": "../guide.md#working-with-bins"
+        "href": "../guide/data.md#working-with-bins"
       },
       "dataFiles": []
     },
@@ -121,7 +121,7 @@
       "blurb": "parametric measurements, spec limits, colorbar",
       "guide": {
         "label": "Guide: Working with test values",
-        "href": "../guide.md#working-with-test-values"
+        "href": "../guide/data.md#working-with-test-values"
       },
       "dataFiles": []
     },
@@ -133,7 +133,7 @@
       "blurb": "a four-wafer lot with 15 hard bins and 32 soft bins — how every bin keeps its colour, two pass grades, and what happens when soft bins outnumber the palette",
       "guide": {
         "label": "Guide: How bin colours are assigned",
-        "href": "../guide.md#how-bin-colours-are-assigned"
+        "href": "../guide/data.md#how-bin-colours-are-assigned"
       },
       "dataFiles": [
         "../data/showcase-bin-rich.csv",
@@ -148,7 +148,7 @@
       "blurb": "multi-touch probe sequences and retest policy",
       "guide": {
         "label": "Guide: Retests and enriching dies after build",
-        "href": "../guide.md#retests-and-enriching-dies-after-build"
+        "href": "../guide/data.md#retests-and-enriching-dies-after-build"
       },
       "dataFiles": []
     },
@@ -160,7 +160,7 @@
       "blurb": "rotation, flip, plot mode, colour scheme",
       "guide": {
         "label": "Guide: Controlling the display",
-        "href": "../guide.md#controlling-the-display"
+        "href": "../guide/display.md#controlling-the-display"
       },
       "dataFiles": []
     },
@@ -173,7 +173,7 @@
       "blurb": "register your own bin palette with `registerBinColorScheme` and value gradient with `registerValueColorScheme`",
       "guide": {
         "label": "Guide: Custom colour schemes",
-        "href": "../guide.md#custom-colour-schemes"
+        "href": "../guide/display.md#custom-colour-schemes"
       },
       "dataFiles": []
     },
@@ -185,7 +185,7 @@
       "blurb": "theme the chrome and canvas with `--wmap-*` custom properties (light, dark, Nord, Solarized, brand green)",
       "guide": {
         "label": "Guide: Controlling the display",
-        "href": "../guide.md#controlling-the-display"
+        "href": "../guide/display.md#controlling-the-display"
       },
       "dataFiles": []
     },
@@ -197,7 +197,7 @@
       "blurb": "hover, click, box-select, controller methods",
       "guide": {
         "label": "Guide: Responding to user interaction",
-        "href": "../guide.md#responding-to-user-interaction"
+        "href": "../guide/display.md#responding-to-user-interaction"
       },
       "dataFiles": []
     },
@@ -209,7 +209,7 @@
       "blurb": "generic categorical colouring from `die.metadata`, coexists with test/bin data",
       "guide": {
         "label": "Guide: Metadata / layout plot mode",
-        "href": "../guide.md#metadata-layout-plot-mode"
+        "href": "../guide/data.md#metadata-layout-plot-mode"
       },
       "dataFiles": []
     },
@@ -221,7 +221,7 @@
       "blurb": "photolithography field grid and reticle-position findings",
       "guide": {
         "label": "Guide: Reticle overlays",
-        "href": "../guide.md#reticle-overlays"
+        "href": "../guide/layouts.md#reticle-overlays"
       },
       "dataFiles": []
     },
@@ -233,7 +233,7 @@
       "blurb": "compact layout for sparse reticles, with original coordinates, axis labels and layout diagnostics",
       "guide": {
         "label": "Guide: Compact layout for multi-project wafers",
-        "href": "../guide.md#compact-layout-for-multi-project-wafers"
+        "href": "../guide/layouts.md#compact-layout-for-multi-project-wafers"
       },
       "dataFiles": []
     },
@@ -246,7 +246,7 @@
       "blurb": "persistent metadata and stats sidebar docked beside the map",
       "guide": {
         "label": "Guide: Summary panel",
-        "href": "../guide.md#summary-panel"
+        "href": "../guide/findings.md#summary-panel"
       },
       "dataFiles": []
     },
@@ -259,7 +259,7 @@
       "blurb": "ring, quadrant, cluster, edge-arc analysis on a single wafer",
       "guide": {
         "label": "Guide: Adding statistical findings",
-        "href": "../guide.md#adding-statistical-findings"
+        "href": "../guide/findings.md#adding-statistical-findings"
       },
       "dataFiles": []
     },
@@ -272,7 +272,7 @@
       "blurb": "card grid of multiple wafers with shared controls and stacked modes",
       "guide": {
         "label": "Guide: Building a lot gallery",
-        "href": "../guide.md#building-a-lot-gallery"
+        "href": "../guide/galleries.md#building-a-lot-gallery"
       },
       "dataFiles": []
     },
@@ -285,7 +285,7 @@
       "blurb": "cross-wafer trend detection with `analyzeWaferLot`",
       "guide": {
         "label": "Guide: Lot-level statistical findings",
-        "href": "../guide.md#lot-level-statistical-findings"
+        "href": "../guide/galleries.md#lot-level-statistical-findings"
       },
       "dataFiles": []
     },
@@ -298,7 +298,7 @@
       "blurb": "mean/median/stddev maps aggregated across a lot",
       "guide": {
         "label": "Guide: Recipes",
-        "href": "../guide.md#recipes"
+        "href": "../guide/recipes.md#recipes"
       },
       "dataFiles": []
     },
@@ -318,7 +318,7 @@
       "blurb": "the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add",
       "guide": {
         "label": "Guide: The Insights tab",
-        "href": "../guide.md#the-insights-tab"
+        "href": "../guide/galleries.md#the-insights-tab"
       },
       "dataFiles": []
     },
@@ -330,7 +330,7 @@
       "blurb": "tests computed per die from an expression, and an ordered run of tests read as a response curve with its crossing point and separation measured",
       "guide": {
         "label": "API: DerivedTestDef",
-        "href": "../api.md#419-derivedtestdef"
+        "href": "../api/core.md#419-derivedtestdef"
       },
       "dataFiles": []
     },
@@ -342,7 +342,7 @@
       "blurb": "five characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention, output drive, and an RRAM resistance distribution whose thresholds are read from the test names onto a log axis — each read as a pair of curves with the crossing and width measured",
       "guide": {
         "label": "Guide: Derived tests and sweeps",
-        "href": "../guide.md#derived-tests-and-sweeps"
+        "href": "../guide/galleries.md#derived-tests-and-sweeps"
       },
       "dataFiles": []
     },
@@ -354,7 +354,7 @@
       "blurb": "open dataset with 811 000 wafer records",
       "guide": {
         "label": "Guide: Adding statistical findings",
-        "href": "../guide.md#adding-statistical-findings"
+        "href": "../guide/findings.md#adding-statistical-findings"
       },
       "dataFiles": [
         "wm811k-sample.json"
@@ -382,7 +382,7 @@
       "blurb": "off-main-thread build for large datasets",
       "guide": {
         "label": "Guide: Processing large datasets with a Web Worker",
-        "href": "../guide.md#processing-large-datasets-with-a-web-worker"
+        "href": "../guide/layouts.md#processing-large-datasets-with-a-web-worker"
       },
       "dataFiles": []
     },

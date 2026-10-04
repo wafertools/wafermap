@@ -225,7 +225,7 @@ Use a dynamic import with `ssr: false`, or guard with `typeof window !== 'undefi
 
 **How to confirm:** in DevTools, find the tooltip/menu/modal element (search for `wmap-overlay-box` or the tooltip's inline `position: fixed` style) and check where it sits in the DOM — if it's a child of `document.body` while your own modal is a native `<dialog>` elsewhere in the tree, you're on a wmap version predating this fix.
 
-See also: [API Reference §5.4, "Overlay z-index"](api.md#54-renderoptions) for the full stacking model.
+See also: [API Reference §5.4, "Overlay z-index"](api/render-map.md#54-renderoptions) for the full stacking model.
 
 ---
 

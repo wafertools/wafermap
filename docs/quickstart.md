@@ -93,7 +93,7 @@ and with no build step.
 ## Next steps
 
 - **Load real CSV data** → [Guide: Loading real data from a CSV](guide.md#loading-real-data-from-a-csv)
-- **Add a statistical findings panel** → [Guide: Adding statistical findings](guide.md#adding-statistical-findings)
-- **Show multiple wafers as a gallery** → [Guide: Building a lot gallery](guide.md#building-a-lot-gallery)
+- **Add a statistical findings panel** → [Guide: Adding statistical findings](guide/findings.md#adding-statistical-findings)
+- **Show multiple wafers as a gallery** → [Guide: Building a lot gallery](guide/galleries.md#building-a-lot-gallery)
 
 For the full type and option reference see [api.md](api.md).

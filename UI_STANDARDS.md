@@ -178,7 +178,7 @@ still opens, just on bare `doc.body`, landing **behind** a host's own native
 `<dialog>` (`.showModal()`, browser top layer) regardless of z-index, no
 matter how high `--wmap-z`/`Z_ABOVE2` is set. This is a *different* failure
 from the `--wmap-z` stacking-value problem solved by the `zIndex` render
-option (see `docs/api.md` §5.4) —
+option (see `docs/api/render-map.md` §5.4) —
 that mechanism controls the stacking *value* once an overlay is a body-level
 sibling; `anchor` controls whether it lands inside the right subtree at all,
 which no `--wmap-z` value can fix. The die-list modal shipped in v0.24.0

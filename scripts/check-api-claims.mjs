@@ -48,22 +48,31 @@ function countTopLevelFields(file, interfaceName) {
 }
 
 const API = 'docs/api.md';
+// The reference is one landing page plus one page per entry point (docs/api/*.md);
+// a quoted figure or an export name can live on any of them.
+const API_FILES = [API, ...readdirSync(resolve(root, 'docs/api')).filter(f => f.endsWith('.md')).sort().map(f => `docs/api/${f}`)];
 
 /** Check (or rewrite) every place a count is quoted. `re` must capture the digits.
  *  `file` may live in a sibling repo — the figures are quoted on the org site and
- *  the org profile too, and those are the surfaces a stranger reads first. */
+ *  the org profile too, and those are the surfaces a stranger reads first.
+ *  Passing `API` (the default) looks in every page of the API reference. */
 function claim(re, expected, what, file = API) {
   if (expected === null) return;
-  const path = resolve(root, file);
-  if (!existsSync(path)) { skipped.add(file); return; }
-  const text = readFileSync(path, 'utf8');
-  const all = [...text.matchAll(re)];
-  if (all.length === 0) {
-    problems.push(`${API}: could not find the ${what} claim — has the wording changed? ` +
+  const files = file === API ? API_FILES : [file];
+  const hits = [];
+  for (const f of files) {
+    const path = resolve(root, f);
+    if (!existsSync(path)) { skipped.add(f); continue; }
+    for (const m of readFileSync(path, 'utf8').matchAll(re)) hits.push({ f, path, m });
+  }
+  if (hits.length === 0) {
+    if (files.every(f => skipped.has(f))) return;
+    problems.push(`${file}: could not find the ${what} claim — has the wording changed? ` +
                   `This check pins it, so the prose cannot drift from the interface.`);
     return;
   }
-  for (const m of all) {
+  for (const { f, path, m } of hits) {
+    const file = f;
     const quoted = Number(m[1]);
     if (quoted === expected) continue;
     if (WRITE) {
@@ -194,7 +203,7 @@ if (ts === null) {
 // the reference.
 {
   const snapshot = readFileSync(resolve(root, 'tests/export-surface.test.mjs'), 'utf8');
-  const apiText = existsSync(resolve(root, API)) ? readFileSync(resolve(root, API), 'utf8') : '';
+  const apiText = API_FILES.map(f => existsSync(resolve(root, f)) ? readFileSync(resolve(root, f), 'utf8') : '').join('\n');
   const names = new Set();
   // Only the quoted names inside the SNAPSHOTS object, not the whole file.
   const snapStart = snapshot.indexOf('const SNAPSHOTS');
