@@ -141,7 +141,7 @@ to be pre-built.
   onSaveImage?:            (blob: Blob, suggestedName: string) => void | Promise<void>
                                             // host hook for persisting the composite gallery PNG (and each card's own
                                             // save). Mirrors renderWaferMap's onSaveImage — see §5.4 for full semantics.
-  onSaveText?:             (text: string, suggestedName: string, mimeType: string) => void | Promise<void>
+  onSaveText?:             (text: string | Blob, suggestedName: string, mimeType: string) => void | Promise<void>
                                             // host hook for every CSV export in the gallery, its cards and its panels.
                                             // Mirrors onSaveImage — see §5.4 for full semantics.
   showHelpButton?:         boolean           // show a help button in the gallery bar that opens the built-in end-user

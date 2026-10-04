@@ -26,6 +26,11 @@ under `### Breaking`.
 
 ### Breaking
 
+- **`onSaveText` can receive a `Blob`.** `SaveTextHandler`'s first argument is now `string | Blob`. A table of a million
+  cells or more (a lot's die list, 400k dies × 50 tests being 20 million) is written in slices and handed over as a
+  `Blob`, so no single string holds the whole file. Smaller tables are still a string, saved before the call returns.
+  A host that writes the text to a file should write `blob.stream()` for a `Blob`; one that reads it uses
+  `await blob.text()`.
 - **Insights is on by default.** `insights.enabled` now defaults to `true` wherever there is a toolbar: always
   for `renderWaferGallery`, and for `renderWaferMap` unless `showToolbar` is `false` (a chromeless map stays a
   plain map). Hosts that do not want it pass `insights: { enabled: false }`. Gallery cards are never Insights
@@ -33,6 +38,16 @@ under `### Breaking`.
 
 ### Changed
 
+- **Large CSV exports stay responsive and use less memory.** A big table is built in slices of about 30 ms, with
+  progress on the die list's Export CSV button, instead of freezing the page. At 400k dies × 50 tests (201 MB) the
+  export completes within 250 MB of heap where a single string needs about 400 MB, and it is no longer limited by the
+  engine's maximum string length.
+- **CSV exports carry full-precision numbers.** The test-values, functional-test, die-list and correlation exports write
+  every measured value and statistic as a plain number (`452.123456789`, `1.5e-7`) instead of the screen's four-figure
+  formatting (`452.1`, `150E-9`). A value from a single-precision tester field is written as the shortest decimal that
+  is still that value (`0.5123457`, not `0.51234567165374756`); anything else keeps up to 15 significant digits. Percentages keep one decimal, Ppk three, and
+  correlation r six. A non-finite value is an empty cell. All four exports are written by one function
+  (`core/tableCsv.ts`), so quoting and number format are the same in each.
 - **The identity strip has one overflow control.** A field with many distinct values shows its count in the
   label and an ellipsis (`Lot (5): LOT-A, LOT-B, LOT-C, …`); the only button is `N more fields`, which
   reveals the remaining metadata fields.

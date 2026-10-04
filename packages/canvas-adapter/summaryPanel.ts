@@ -47,12 +47,13 @@ import { pooledTestStatsSteps, type CapabilityItem } from '../stats/capability.j
 import { binBreakdownRows, binBreakdownTitle, binCountsFrom, totalOf } from '../stats/binRows.js';
 import { poolFunctionalYield } from '../stats/testPassRate.js';
 import { makeLabeledSelect, makeSegmented } from './charts/chartShell.js';
-import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, openReportModal, saveTextFile, wireTooltip, type SaveTextHandler } from './toolbar.js';
+import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, openReportModal, wireTooltip, type SaveTextHandler } from './toolbar.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
+import { exportCsv, type CsvColumn } from './tableExport.js';
 // Re-exported from its original home so existing importers keep working; the
 // implementation now lives in core/utils.ts (see its comment).
 export { csvField } from '../core/utils.js';
-import { type Chunked, csvField, drain, maxOf, minOf } from '../core/utils.js';
+import { type Chunked, drain, maxOf, minOf } from '../core/utils.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import type { WaferMetadata } from '../core/metadata.js';
 
@@ -1501,57 +1502,54 @@ export function* buildTestSectionSteps(
   } as Partial<CSSStyleDeclaration>);
   wireControlHover(exportBtn);
   exportBtn.addEventListener('click', () => {
-    // wmap's own unitless "engineering" notation (fmt's fallbackFormat:
-    // 'engineering' — fixed decimal in [0.1, 9999], otherwise E±N in
-    // multiples of 3) — not raw floats, which print with misleading
-    // trailing-digit precision the underlying measurement never actually
-    // had (e.g. `0.001151199649817308`). Units are per-test (see the "Unit"
-    // column) rather than baked into each value, so every value column uses
-    // one consistent notation regardless of the test's own unit/magnitude.
-    const cols = ['Test', 'Unit', 'N', 'Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'StdDev'];
-    if (hasPpk) cols.push('Ppk');
+    // Values are written as plain numbers at full precision (tableCsv.ts), not in
+    // the screen's formatting. Units are per-test (the "Unit" column) rather than
+    // baked into each value, so every value column is one consistent kind of cell.
+    type Row = typeof rows[number];
+    const data: CsvColumn<Row>[] = [
+      { header: 'Test', get: r => r.entry.name },
+      { header: 'Unit', get: r => r.entry.unit ?? '' },
+      { header: 'N', get: r => r.stats.count },
+      { header: 'Min', get: r => r.stats.min },
+      { header: 'Q1', get: r => r.stats.q1 },
+      { header: 'Median', get: r => r.stats.median },
+      { header: 'Mean', get: r => r.stats.mean },
+      { header: 'Q3', get: r => r.stats.q3 },
+      { header: 'Max', get: r => r.stats.max },
+      { header: 'StdDev', get: r => r.stats.stddev },
+    ];
+    if (hasPpk) {
+      data.push({ header: 'Ppk', get: r => {
+        const ppk = ppkByTest.get(r.entry.testNumber);
+        return ppk === undefined || ppk === null ? '' : ppk.toFixed(3);
+      } });
+    }
     // `Spec Yield N` only when it can actually differ from the row's own `N` —
     // otherwise it repeated the same number in two adjacent columns on every row.
     // It CAN differ: a die with a value but no verdict counts toward N and not
     // toward the spec population, so the column is kept whenever that happens.
     const specNDiffers = rows.some(r => r.specYieldPct !== null && r.specN !== r.stats.count);
     if (hasAnyLimit) {
-      cols.push('Lo limit', 'Hi limit', 'Limit Yield %');
-      if (specNDiffers) cols.push('Limit Yield N');
+      data.push(
+        { header: 'Lo limit', get: r => r.entry.limitLow },
+        { header: 'Hi limit', get: r => r.entry.limitHigh },
+        { header: 'Limit Yield %', get: r => r.specYieldPct !== null ? r.specYieldPct.toFixed(1) : '' },
+      );
+      if (specNDiffers) {
+        data.push({ header: 'Limit Yield N', get: r => (r.entry.limitLow !== undefined || r.entry.limitHigh !== undefined) ? r.specN : '' });
+      }
     }
     // Derived tests are stated as data, not a glyph: a CSV has no key, and it
     // goes to tools that will otherwise treat the value as measured. Only when
     // some row is derived, so a measured-only export keeps its columns.
-    const anyDerived = rows.some(r => isDerivedTest(r.entry));
-    if (anyDerived) cols.push(DERIVED_CSV_HEADER);
-    const idCols = [...resolveCsvIdentityColumns(csv, cols), ...csvPopulationColumn(csv)];
-    const allCols = [...idCols.map(c => c.label), ...cols];
-    const lines = [allCols.map(csvField).join(',')];
-    const f = (n: number) => fmtValue(n, undefined, 'engineering');
-    for (const { entry, stats, specYieldPct, specN } of rows) {
-      const fields = [
-        ...idCols.map(c => c.constant ?? ''),
-        entry.name, entry.unit ?? '', String(stats.count), f(stats.min), f(stats.q1), f(stats.median),
-        f(stats.mean), f(stats.q3), f(stats.max), f(stats.stddev),
-      ];
-      if (hasPpk) {
-        const ppk = ppkByTest.get(entry.testNumber);
-        fields.push(ppk === undefined || ppk === null ? '' : ppk.toFixed(3));
-      }
-      if (hasAnyLimit) {
-        fields.push(
-          entry.limitLow !== undefined ? f(entry.limitLow) : '',
-          entry.limitHigh !== undefined ? f(entry.limitHigh) : '',
-          specYieldPct !== null ? specYieldPct.toFixed(1) : '',
-        );
-        if (specNDiffers) {
-          fields.push((entry.limitLow !== undefined || entry.limitHigh !== undefined) ? String(specN) : '');
-        }
-      }
-      if (anyDerived) fields.push(derivedCsvCell(entry));
-      lines.push(fields.map(csvField).join(','));
+    if (rows.some(r => isDerivedTest(r.entry))) {
+      data.push({ header: DERIVED_CSV_HEADER, get: r => derivedCsvCell(r.entry) });
     }
-    saveTextFile(lines.join('\n'), 'test-values.csv', 'text/csv', onSaveText);
+    const idCols = [...resolveCsvIdentityColumns(csv, data.map(c => c.header)), ...csvPopulationColumn(csv)];
+    exportCsv<Row>(
+      [...idCols.map(c => ({ header: c.label, get: () => c.constant ?? '' })), ...data],
+      rows, 'test-values.csv', onSaveText,
+    );
   });
   headerRow.appendChild(exportBtn);
   outer.appendChild(headerRow);
@@ -1720,21 +1718,21 @@ export function buildFunctionalTestSection(
   } as Partial<CSSStyleDeclaration>);
   wireControlHover(exportBtn);
   exportBtn.addEventListener('click', () => {
-    const cols = ['Test', 'N', 'Pass', 'Fail', 'Pass Rate %'];
+    type Row = typeof rows[number];
+    const data: CsvColumn<Row>[] = [
+      { header: 'Test', get: r => unmarkedLabel(r.label) },
+      { header: 'N', get: r => r.totalDies },
+      { header: 'Pass', get: r => r.passDies },
+      { header: 'Fail', get: r => r.failDies },
+      { header: 'Pass Rate %', get: r => r.passRatePercent !== null ? r.passRatePercent.toFixed(1) : '' },
+    ];
     // As the parametric export: plain names, and the derivation as a column.
-    const anyDerived = rows.some(r => isDerivedTest(r));
-    if (anyDerived) cols.push(DERIVED_CSV_HEADER);
-    const idCols = [...resolveCsvIdentityColumns(csv, cols), ...csvPopulationColumn(csv)];
-    const lines = [[...idCols.map(c => c.label), ...cols].map(csvField).join(',')];
-    for (const r of rows) {
-      lines.push([
-        ...idCols.map(c => c.constant ?? ''),
-        unmarkedLabel(r.label), String(r.totalDies), String(r.passDies), String(r.failDies),
-        r.passRatePercent !== null ? r.passRatePercent.toFixed(1) : '',
-        ...(anyDerived ? [derivedCsvCell(r)] : []),
-      ].map(csvField).join(','));
-    }
-    saveTextFile(lines.join('\n'), 'functional-tests.csv', 'text/csv', onSaveText);
+    if (rows.some(r => isDerivedTest(r))) data.push({ header: DERIVED_CSV_HEADER, get: r => derivedCsvCell(r) });
+    const idCols = [...resolveCsvIdentityColumns(csv, data.map(c => c.header)), ...csvPopulationColumn(csv)];
+    exportCsv<Row>(
+      [...idCols.map(c => ({ header: c.label, get: () => c.constant ?? '' })), ...data],
+      rows, 'functional-tests.csv', onSaveText,
+    );
   });
   headerRow.appendChild(exportBtn);
   outer.appendChild(headerRow);

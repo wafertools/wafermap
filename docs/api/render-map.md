@@ -238,12 +238,14 @@ Plus:
                                             // embedded hosts (Tauri, Electron, WebView2) route the image through a native
                                             // dialog. When omitted, the default download behaviour is unchanged.
                                             // suggestedName is the generated name, with extension (§5.4.5)
-  onSaveText?:             (text: string, suggestedName: string, mimeType: string) => void | Promise<void>
+  onSaveText?:             (text: string | Blob, suggestedName: string, mimeType: string) => void | Promise<void>
                                             // host hook for every built-in "Export CSV" button — Summary/Insights test-values
                                             // and functional-tests tables, and the die-list table (§5.4.1). Mirrors
                                             // onSaveImage — when provided, called instead of a browser <a download> (a
                                             // silent no-op in Tauri/Electron/WebView2). When omitted, the default
-                                            // download behaviour is unchanged.
+                                            // download behaviour is unchanged. `text` is a string, or a Blob for a
+                                            // table of a million cells or more (a lot's die list): write it with
+                                            // blob.stream() or read it with await blob.text() — a host handles both.
   zIndex?:                 number    // base z-index for wmap's transient overlays (menus, tooltip, expand/help modals).
                                             // Omit for a safe high default (above typical app modal layers); set it to
                                             // embed the map inside your own modal/overlay. See "Overlay z-index" below.

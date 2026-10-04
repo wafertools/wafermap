@@ -17,12 +17,13 @@
 // internally — same end-user behavior, one fewer indirection.
 
 import { buildCorrelationMatrix, filterCorrelationMatrix, correlationSampleNote, type CorrelationMatrix, type CorrelationTestInfo } from '../../stats/correlation.js';
-import { csvField, maxOf } from '../../core/utils.js';
+import { maxOf } from '../../core/utils.js';
 import { CORRELATION_POSITIVE, CORRELATION_NEGATIVE } from './palette.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, saveTextFile, type SaveTextHandler } from '../toolbar.js';
+import { wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, type SaveTextHandler } from '../toolbar.js';
+import { exportCsv } from '../tableExport.js';
 import { attachChartTip, cardShell, setChartGrow, isExpandedCard, bodyRoom, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
 import { escHtml } from '../../core/utils.js';
 import { unmarkedLabel, derivedCsvCell, DERIVED_CSV_HEADER, DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
@@ -181,22 +182,26 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       // A CSV has no key to explain a glyph, so a derived test is stated as data
       // — a "derived from" column per side, present only when one is derived.
       const anyDerived = m.tests.some(t => t.derived);
-      const lines = ['Test X,Test X number,Test Y,Test Y number,r,n'
-        + (anyDerived ? `,Test X ${DERIVED_CSV_HEADER.toLowerCase()},Test Y ${DERIVED_CSV_HEADER.toLowerCase()}` : '')];
+      type Pair = { x: (typeof m.tests)[number]; y: (typeof m.tests)[number]; r: number | null; n: number };
+      const pairs: Pair[] = [];
       for (let yi = 0; yi < m.tests.length; yi++) {
         for (let xi = yi + 1; xi < m.tests.length; xi++) {
           const cell = m.cells.find(c => c.xIndex === xi && c.yIndex === yi);
-          if (!cell) continue;
-          lines.push([
-            csvField(unmarkedLabel(m.tests[xi].label)), String(m.tests[xi].testNumber),
-            csvField(unmarkedLabel(m.tests[yi].label)), String(m.tests[yi].testNumber),
-            cell.r === null ? '' : cell.r.toFixed(6),
-            String(cell.n),
-            ...(anyDerived ? [csvField(derivedCsvCell(m.tests[xi])), csvField(derivedCsvCell(m.tests[yi]))] : []),
-          ].join(','));
+          if (cell) pairs.push({ x: m.tests[xi], y: m.tests[yi], r: cell.r, n: cell.n });
         }
       }
-      saveTextFile(lines.join('\n'), 'test-correlation.csv', 'text/csv', options.onSaveText);
+      exportCsv<Pair>([
+        { header: 'Test X', get: p => unmarkedLabel(p.x.label) },
+        { header: 'Test X number', get: p => p.x.testNumber },
+        { header: 'Test Y', get: p => unmarkedLabel(p.y.label) },
+        { header: 'Test Y number', get: p => p.y.testNumber },
+        { header: 'r', get: p => p.r === null ? '' : p.r.toFixed(6) },
+        { header: 'n', get: p => p.n },
+        ...(anyDerived ? [
+          { header: `Test X ${DERIVED_CSV_HEADER.toLowerCase()}`, get: (p: Pair) => derivedCsvCell(p.x) },
+          { header: `Test Y ${DERIVED_CSV_HEADER.toLowerCase()}`, get: (p: Pair) => derivedCsvCell(p.y) },
+        ] : []),
+      ], pairs, 'test-correlation.csv', options.onSaveText);
     });
     controlsRow.appendChild(exportBtn);
   }

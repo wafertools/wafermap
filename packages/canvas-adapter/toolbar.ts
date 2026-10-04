@@ -700,10 +700,16 @@ export function downloadBlob(blob: Blob, filename: string): void {
  * Host hook for saving a text file (CSV, etc). Mirrors `SaveImageHandler` —
  * when provided, `saveTextFile` calls this instead of triggering a browser
  * `<a download>`, letting embedded hosts (Tauri, Electron, WebView2) route
- * the text through a native save dialog. Receives the raw `text`, a
+ * the text through a native save dialog. Receives the content, a
  * `suggestedName` (already includes its extension), and the `mimeType`.
+ *
+ * **The content is a `string`, or a `Blob` for a large table.** A table of a
+ * few million cells or more is written in pieces and handed over as a `Blob`
+ * (see `exportCsv`), because one string that size can exceed the engine's
+ * string limit and doubles the memory in use while it is joined. A host must
+ * handle both: for a file, write `blob.stream()`; to read it, `await blob.text()`.
  */
-export type SaveTextHandler = (text: string, suggestedName: string, mimeType: string) => void | Promise<void>;
+export type SaveTextHandler = (text: string | Blob, suggestedName: string, mimeType: string) => void | Promise<void>;
 
 /**
  * A callback for "a panel just opened or closed beside the map in this box": widens the box by the
@@ -800,12 +806,12 @@ export function openCompactDiagnostics(
  * @param mimeType    e.g. `'text/csv'`
  * @param onSaveText  optional host hook; when present, bypasses `<a download>`
  */
-export function saveTextFile(text: string, filename: string, mimeType: string, onSaveText?: SaveTextHandler): void {
+export function saveTextFile(text: string | Blob, filename: string, mimeType: string, onSaveText?: SaveTextHandler): void {
   if (onSaveText) {
     void onSaveText(text, filename, mimeType);
     return;
   }
-  downloadBlob(new Blob([text], { type: mimeType }), filename);
+  downloadBlob(typeof text === 'string' ? new Blob([text], { type: mimeType }) : text, filename);
 }
 
 // ── Accessibility ──────────────────────────────────────────────────────────────

@@ -20,8 +20,8 @@ import type { Wafer } from '../core/index.js';
 import { isParametricTest, getTestPassStatus, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { resolveMetadataColumns, type MetadataKeySelection } from '../stats/metadataColumns.js';
-import { LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, saveTextFile, type SaveTextHandler } from './toolbar.js';
-import { csvField } from './summaryPanel.js';
+import { LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, type SaveTextHandler } from './toolbar.js';
+import { exportCsv, type CsvCell } from './tableExport.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
 import { testLabel, markedTestLabel, derivedFields, derivedKeyText, derivedTestSource, isDerivedTest, DERIVED_KEY } from '../renderer/testLabel.js';
 
@@ -349,7 +349,7 @@ export function buildDieListSection(
     get: (die: Die) => string;
     /** CSV rendering when it must differ from the on-screen cell — see the test
      *  columns, where the screen shows `300 mV` and the file a bare `300`. */
-    csvGet?: (die: Die) => string;
+    csvGet?: (die: Die) => CsvCell;
     csvOnly?: boolean;
   };
 
@@ -398,7 +398,9 @@ export function buildDieListSection(
             return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
           }
           const v = testValue(d, td.testNumber);
-          if (v !== undefined) return fmtValue(v, undefined, 'engineering');
+          // The stored number itself, at full precision (core/tableCsv.ts) — not
+          // the screen's four-figure formatting.
+          if (v !== undefined) return v;
           const p = getTestPassStatus(d, td.testNumber, td);
           return p === undefined ? '' : (p ? 'PASS' : 'FAIL');
         },
@@ -476,11 +478,26 @@ export function buildDieListSection(
   }
 
   exportBtn.addEventListener('click', () => {
-    const lines = [columns.map((c) => csvField(c.csvLabel ?? c.label)).join(',')];
-    for (const die of dies) {
-      lines.push(columns.map((c) => csvField((c.csvGet ?? c.get)(die))).join(','));
-    }
-    saveTextFile(lines.join('\n'), 'die-list.csv', 'text/csv', options.onSaveText);
+    if (exportBtn.disabled) return;
+    const idleText = exportBtn.textContent;
+    const pending = exportCsv(
+      columns.map((c) => ({ header: c.csvLabel ?? c.label, get: c.csvGet ?? c.get })),
+      dies, 'die-list.csv', options.onSaveText,
+      {
+        // A big lot takes seconds: say so on the button, and refuse a second click.
+        onProgress: (written, total) => {
+          exportBtn.textContent = total ? `Exporting ${Math.floor((100 * written) / total)}%` : `Exporting ${written.toLocaleString()} rows`;
+        },
+      },
+    );
+    if (!pending) return;
+    exportBtn.disabled = true;
+    exportBtn.setAttribute('aria-busy', 'true');
+    void pending.catch(() => { /* the host reports a failed save; the button just comes back */ }).finally(() => {
+      exportBtn.disabled = false;
+      exportBtn.removeAttribute('aria-busy');
+      exportBtn.textContent = idleText;
+    });
   });
 
   return outer;
