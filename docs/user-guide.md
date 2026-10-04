@@ -672,8 +672,9 @@ Any chart mark that stands for one wafer — a bar in *Yield by wafer*, a box in
 right-clicked to chart that wafer on its own (see
 [Section 4.4](#44-charting-dies-and-wafers)); its tooltip says so.
 
-Insights is organised into three sub-tabs, plus a fourth, **Sweeps**, when
-the application has defined any sweeps (see *Sweep cards* below):
+Insights is organised into three chart sub-tabs, plus **Sweeps** when the
+application has defined any sweeps (see *Sweep cards* below), and a last
+**Data** sub-tab holding the same numbers as tables (see *Data tables* below):
 
 - **Overview** — a **test pass rate** chart showing which test fails most (and,
   with "Group by" active, whether it fails more in one split than another). It
@@ -687,7 +688,7 @@ the application has defined any sweeps (see *Sweep cards* below):
   and for a lot the mean wafer yield — an *unweighted* mean of each wafer's own
   yield, not the die-weighted figure), a yield bar labelled with the pass bins
   actually in use and marked with the median, a hard/soft bin pareto, and
-  ring/quadrant regional yield plus the full per-test statistics table.
+  ring/quadrant regional yield.
 - **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
   lower and upper limit — spec limits where given, otherwise test limits; tests
   without both still appear, normalized
@@ -742,9 +743,8 @@ directly on the test you were looking at.
 
 <div data-wmap-demo="analysis" class="wmap-demo"></div>
 
-*Insights tab open on a single wafer, Overview sub-tab: yield and bin pareto,
-ring/quadrant yield, and per-test statistics — all computed from this wafer's
-own dies. The Distributions sub-tab has process capability, a test-value box
+*Insights tab open on a single wafer, Overview sub-tab: yield and bin pareto and
+ring/quadrant yield — all computed from this wafer's own dies. The Distributions sub-tab has process capability, a test-value box
 plot and histogram; Correlation has a correlation matrix with scatter plot.
 In a gallery, Overview also gains a "Group by" control and per-wafer
 yield/box-plot rows.*
@@ -752,8 +752,7 @@ yield/box-plot rows.*
 ![Gallery Insights — Overview sub-tab](images/guide-insights-overview.png)
 
 *Gallery Insights, Overview sub-tab: lot-wide yield by wafer (click a bar to
-open that wafer's map), hard/soft bin pareto, ring and quadrant yield, and
-pooled per-test statistics. The **Maps | Insights** switch at the top left (it does not move between the two views) returns to the card grid.*
+open that wafer's map), hard/soft bin pareto, and ring and quadrant yield. The **Maps | Insights** switch at the top left (it does not move between the two views) returns to the card grid.*
 
 ![Gallery Insights — Distributions sub-tab](images/guide-insights-distributions.png)
 
@@ -768,6 +767,34 @@ box drives the box plot and histogram onto that test.*
 positive, orange = negative; intensity = strength) and a die-level scatter
 plot coloured by hard bin. Clicking a matrix cell drives the scatter plot
 onto that pair.*
+
+### Data tables
+
+The **Data** sub-tab shows the wafers Insights is scoped to as tables, one at a
+time, chosen with the **Statistics | Dies | Wafers** control. It follows the
+same "Group by" and "Show" scope as the charts.
+
+- **Statistics** — the **Test Values** table (count, min, quartiles, mean, σ,
+  Ppk, limits and the limit yield for each test, with its N stated) and the
+  **Functional Tests** pass-rate table. With "Group by" active there is one set
+  per group.
+- **Dies** — one row per die: wafer, X, Y, ring, quadrant, site, bins, a column
+  for each test, and the wafer's metadata. Only the rows in view are drawn, so a
+  lot of hundreds of thousands of dies scrolls smoothly. Click a column heading
+  to sort by it (again to reverse; a die with no value sorts last).
+- **Wafers** — one row per wafer: lot, split and any other metadata, the die
+  counts, the yield (the same figure as the yield chart), and the mean of each
+  test (the first 50).
+
+**Export CSV** saves the table as shown, in the order shown. Numbers are written
+in full, as plain numbers, not as the formatted text on screen (`0.5123457`, not
+`512 mV`), with the unit in the column heading. **Copy** puts the table on the
+clipboard as tab-separated text, ready to paste into a spreadsheet; it is offered
+for tables up to about 200,000 cells. For the Dies table, **Wide | Long** chooses
+the layout of the file: wide has a column per test, long has a row per die per
+test (a die with no result for a test has no row), the shape statistics tools
+prefer. The note under the buttons says how many rows the file will have, and
+warns when that is more than a spreadsheet can open (1,048,576).
 
 ### Sweep cards
 

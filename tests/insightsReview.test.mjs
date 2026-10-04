@@ -393,10 +393,11 @@ test('every CSV button names what it exports', async () => {
   // and two of them sit on adjacent cards in the Insights Overview, where the
   // label was the only thing distinguishing them and distinguished nothing.
   const { items, lot } = lotItems(3);
-  const tab = mountInsights(items, lot, 'overview');
+  // The test tables are the Data tab's Statistics view (they were Overview cards).
+  const tab = mountInsights(items, lot, 'data');
   const overviewCsv = [...tab.el.querySelectorAll('button')]
     .map(b => b.textContent).filter(t => /CSV$/.test(t ?? ''));
-  assert.ok(overviewCsv.length >= 1, 'Overview has at least the test-values export');
+  assert.ok(overviewCsv.length >= 1, 'Statistics has at least the test-values export');
   assert.ok(!overviewCsv.includes('Export CSV'), `bare "Export CSV" is ambiguous: ${overviewCsv}`);
   for (const label of overviewCsv) {
     assert.match(label, /^(Test values|Functional) CSV$/, label);
@@ -586,9 +587,9 @@ const selectedTab = (tab) => tab.el.querySelector('button[role="tab"][aria-selec
 
 test('the Sweeps tab exists only when sweeps are defined', () => {
   const { items, lot } = lotItems(2);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), ['Overview', 'Distributions', 'Correlation']);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), ['Overview', 'Distributions', 'Correlation']);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), ['Overview', 'Distributions', 'Correlation', 'Sweeps']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), ['Overview', 'Distributions', 'Correlation', 'Data']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), ['Overview', 'Distributions', 'Correlation', 'Data']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), ['Overview', 'Distributions', 'Correlation', 'Sweeps', 'Data']);
 });
 
 test('sweep cards are in the Sweeps tab, not in Distributions', () => {

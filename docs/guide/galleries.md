@@ -301,6 +301,8 @@ renderWaferGallery(container, items, {
 });
 ```
 
+The **Data** sub-tab shows the same scope as tables — per-test statistics, every die, and one row per wafer — with **Export CSV** and **Copy** on each, and the Dies table can be written wide (a column per test) or long (a row per die per test). The export hook is the one you already pass: `onSaveText` receives a string, or a `Blob` for a table of a million cells or more, so write `blob.stream()` for that case. Details in the [API reference](../api/render-map.md#59-insights-tab).
+
 Passing `lotStatsSummary` (see [Lot-level statistical findings](#lot-level-statistical-findings)) also makes the yield panel reuse each wafer's already-computed yield instead of recomputing it — so the Insights tab's numbers always agree with the gallery's own Summary panel and any exported report. Each panel consumes an active grouping in whatever way suits that chart type: yield/bin-pareto/box-plot pool one row per group with click-to-drill; histogram overlays one series per group; capability and correlation restrict to one group at a time via their own "Group:" dropdown (pooling either would be statistically misleading); scatter never restricts, colouring every group's points instead. Full behavior for each panel is in the [API reference](../api/gallery.md#610-insights-tab).
 
 For a single wafer, or a gallery where nothing varies, there's simply no "Group by" control to show — every panel already displays that population directly.

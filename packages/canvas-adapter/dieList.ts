@@ -162,7 +162,7 @@ const stylesInjectedInto = new WeakSet<Document>();
  *  table already has no virtualisation. CLR's tokens are `var(--wmap-*, …)`
  *  strings, so they resolve identically in a stylesheet rule as inline.
  *  Injected into `doc` specifically — see `stylesInjectedInto`'s comment. */
-function ensureStylesInjected(doc: Document): void {
+export function ensureStylesInjected(doc: Document): void {
   if (stylesInjectedInto.has(doc)) return;
   stylesInjectedInto.add(doc);
   const style = doc.createElement('style');
@@ -256,60 +256,30 @@ function resolveClassifications(
   return byDie.size > 0 ? byDie : undefined;
 }
 
-/**
- * Build a scrollable die-list table + "Export CSV" button. Returns `null`
- * when `dies` is empty (nothing to show).
- */
-export function buildDieListSection(
+export type DieColumn = {
+  label: string;
+  /** CSV header when it must differ from the on-screen one — a derived test's
+   *  column, where the screen shows the † mark and the file, which has no key
+   *  to explain a glyph, states what it was derived from. */
+  csvLabel?: string;
+  get: (die: Die) => string;
+  /** CSV rendering when it must differ from the on-screen cell — see the test
+   *  columns, where the screen shows `300 mV` and the file a bare `300`. */
+  csvGet?: (die: Die) => CsvCell;
+  csvOnly?: boolean;
+  /** Set on a test's column — what the long-format export (one row per die per test) unpivots. */
+  test?: TestDef;
+};
+
+/** The columns of a die table — what the screen shows, and (where it differs)
+ *  what the file carries — for `dies`. Shared by the die-list modal and the Data
+ *  tab's Dies view, so the two cannot describe a die differently. */
+export function resolveDieColumns(
   dies: Die[],
   testDefs: TestDef[] | undefined,
   options: DieListOptions = {},
-): HTMLDivElement | null {
-  if (!dies.length) return null;
-  const doc = options.ownerDocument ?? document;
-  ensureStylesInjected(doc);
-
+): { columns: DieColumn[]; visibleColumns: DieColumn[]; testColumns: TestDef[]; truncatedKeys: string[] } {
   const testColumns = resolveTestColumns(dies, testDefs);
-  const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
-  const truncatedRowCount = Math.max(0, dies.length - maxRows);
-  const visibleDies = truncatedRowCount > 0 ? dies.slice(0, maxRows) : dies;
-
-  // flex:1;minHeight:0 (never height:100% — see the cross-platform CSS rules
-  // in tsmap's CLAUDE.md; WebView2 is strict where WebKitGTK is lenient) so
-  // this stretches when its parent is a definite-height flex column, and
-  // falls back to natural height otherwise.
-  // minWidth:0 alongside minHeight:0 — BOTH are required. A flex item's default
-  // `min-width: auto` refuses to shrink below its content's intrinsic minimum,
-  // and every cell here is `white-space: nowrap`, so with many/long test-name
-  // columns that minimum is the table's full width. Without this the section
-  // stretches past the modal (clipped by its overflow:hidden), which drags the
-  // scroll container's own vertical scrollbar off the right-hand edge — the
-  // table then looks unscrollable, showing only a stray horizontal scrollbar.
-  const outer = el(doc, 'div', {
-    display: 'flex', flexDirection: 'column', gap: SPACE.md,
-    flex: '1', minHeight: '0', minWidth: '0',
-  });
-
-  // flexShrink:0 on the fixed-height rows around the table, so the table is
-  // the only thing that absorbs (or gives up) space when the box resizes.
-  const headerRow = el(doc, 'div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: '0' });
-  headerRow.appendChild(el(doc, 'div', {
-    fontSize: FONT.meta, fontWeight: '700', letterSpacing: TRACKING, textTransform: 'uppercase', color: CLR.label,
-  }, options.title ?? `Die list (${dies.length})`));
-
-  const exportBtn = el(doc, 'button', {
-    fontSize: FONT.body, padding: '3px 8px', borderRadius: RADIUS.control,
-    ...controlStyle('outlined'), background: CLR.menuBg,
-  }, 'Export CSV');
-  exportBtn.type = 'button';
-  wireControlHover(exportBtn);
-  headerRow.appendChild(exportBtn);
-  outer.appendChild(headerRow);
-
-  if (options.note) {
-    outer.appendChild(el(doc, 'div', { fontSize: FONT.body, color: CLR.label, lineHeight: LEADING.base, flexShrink: '0' }, options.note));
-  }
-
   const classifications = resolveClassifications(dies, options.getWafer, options.ringCount ?? 4);
   // applyEdgeExclusion (buildWaferMap.ts) only ever stamps `edgeExcluded: true`
   // on the dies it excludes — an included die is left untouched, never set to
@@ -340,18 +310,6 @@ export function buildDieListSection(
     reservedLabels,
   });
 
-  type DieColumn = {
-    label: string;
-    /** CSV header when it must differ from the on-screen one — a derived test's
-     *  column, where the screen shows the † mark and the file, which has no key
-     *  to explain a glyph, states what it was derived from. */
-    csvLabel?: string;
-    get: (die: Die) => string;
-    /** CSV rendering when it must differ from the on-screen cell — see the test
-     *  columns, where the screen shows `300 mV` and the file a bare `300`. */
-    csvGet?: (die: Die) => CsvCell;
-    csvOnly?: boolean;
-  };
 
   const columns: DieColumn[] = [
     ...(options.extraColumn ? [{ label: options.extraColumn.label, get: (d: Die) => options.extraColumn!.get(d) ?? '' }] : []),
@@ -368,6 +326,7 @@ export function buildDieListSection(
     ...testColumns.map((td) => {
       const functional = !isParametricTest(td);
       return {
+        test: td,
         // Unit in the HEADER, not repeated in every cell of the CSV. The
         // on-screen cell keeps its SI-formatted value (`300 mV`), which reads
         // well; the CSV emits the bare stored number, because a column of
@@ -409,6 +368,63 @@ export function buildDieListSection(
     ...metaColumns.map((c) => ({ label: c.label, get: c.get, csvOnly: c.csvOnly })),
   ];
   const visibleColumns = columns.filter((c) => !c.csvOnly);
+  return { columns, visibleColumns, testColumns, truncatedKeys };
+}
+
+/**
+ * Build a scrollable die-list table + "Export CSV" button. Returns `null`
+ * when `dies` is empty (nothing to show).
+ */
+export function buildDieListSection(
+  dies: Die[],
+  testDefs: TestDef[] | undefined,
+  options: DieListOptions = {},
+): HTMLDivElement | null {
+  if (!dies.length) return null;
+  const doc = options.ownerDocument ?? document;
+  ensureStylesInjected(doc);
+
+  const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
+  const truncatedRowCount = Math.max(0, dies.length - maxRows);
+  const visibleDies = truncatedRowCount > 0 ? dies.slice(0, maxRows) : dies;
+
+  // flex:1;minHeight:0 (never height:100% — see the cross-platform CSS rules
+  // in tsmap's CLAUDE.md; WebView2 is strict where WebKitGTK is lenient) so
+  // this stretches when its parent is a definite-height flex column, and
+  // falls back to natural height otherwise.
+  // minWidth:0 alongside minHeight:0 — BOTH are required. A flex item's default
+  // `min-width: auto` refuses to shrink below its content's intrinsic minimum,
+  // and every cell here is `white-space: nowrap`, so with many/long test-name
+  // columns that minimum is the table's full width. Without this the section
+  // stretches past the modal (clipped by its overflow:hidden), which drags the
+  // scroll container's own vertical scrollbar off the right-hand edge — the
+  // table then looks unscrollable, showing only a stray horizontal scrollbar.
+  const outer = el(doc, 'div', {
+    display: 'flex', flexDirection: 'column', gap: SPACE.md,
+    flex: '1', minHeight: '0', minWidth: '0',
+  });
+
+  // flexShrink:0 on the fixed-height rows around the table, so the table is
+  // the only thing that absorbs (or gives up) space when the box resizes.
+  const headerRow = el(doc, 'div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: '0' });
+  headerRow.appendChild(el(doc, 'div', {
+    fontSize: FONT.meta, fontWeight: '700', letterSpacing: TRACKING, textTransform: 'uppercase', color: CLR.label,
+  }, options.title ?? `Die list (${dies.length})`));
+
+  const exportBtn = el(doc, 'button', {
+    fontSize: FONT.body, padding: '3px 8px', borderRadius: RADIUS.control,
+    ...controlStyle('outlined'), background: CLR.menuBg,
+  }, 'Export CSV');
+  exportBtn.type = 'button';
+  wireControlHover(exportBtn);
+  headerRow.appendChild(exportBtn);
+  outer.appendChild(headerRow);
+
+  if (options.note) {
+    outer.appendChild(el(doc, 'div', { fontSize: FONT.body, color: CLR.label, lineHeight: LEADING.base, flexShrink: '0' }, options.note));
+  }
+
+  const { columns, visibleColumns, testColumns, truncatedKeys } = resolveDieColumns(dies, testDefs, options);
 
   // The key for the † on any derived test column, with each one's expression.
   const derivedKey = derivedKeyText(testColumns.map(td => ({ label: markedTestLabel(td, td.testNumber), ...derivedFields(td) })));

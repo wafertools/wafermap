@@ -1829,6 +1829,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.ok(subTabLabels.includes('Overview'), 'Overview sub-tab should render');
     assert.ok(subTabLabels.includes('Distributions'), 'Distributions sub-tab should render');
     assert.ok(subTabLabels.includes('Correlation'), 'Correlation sub-tab should render');
+    assert.ok(subTabLabels.includes('Data'), 'Data sub-tab should render');
 
     const tabButtons = [...root.querySelectorAll('button[role="tab"]')].filter((b) => b.dataset.wmapInsightsTab);
     const sw = root.querySelector('[data-wmap-view-switch]');
@@ -1844,7 +1845,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.ok(await waitForInsights(root));
     assert.deepEqual(
       tabButtons.map((b) => b.dataset.wmapInsightsTab).sort(),
-      ['correlation', 'distributions', 'overview'],
+      ['correlation', 'data', 'distributions', 'overview'],
       'each Insights sub-tab carries data-wmap-insights-tab set to its view key',
     );
 

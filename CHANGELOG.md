@@ -24,6 +24,16 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **A Data tab in Insights.** The last Insights sub-tab shows the scope as tables, one at a time: **Statistics** (the
+  test-values and functional-tests tables, one set per group under Group by), **Dies** (one row per die, a column per
+  test, sortable, drawn as a virtual table so a lot of hundreds of thousands of dies scrolls smoothly) and **Wafers**
+  (one row per wafer: metadata, die counts, yield, and the mean of the first 50 tests). Each has **Export CSV**,
+  which writes the table as shown in the order shown, and **Copy** (tab-separated, up to 200,000 cells). The Dies
+  export can be **Wide** (a column per test) or **Long** (a row per die per test). `InsightsOptions.defaultView`
+  accepts `'data'`, and the tab button carries `data-wmap-insights-tab="data"`.
+
 ### Breaking
 
 - **`onSaveText` can receive a `Blob`.** `SaveTextHandler`'s first argument is now `string | Blob`. A table of a million
@@ -38,6 +48,9 @@ under `### Breaking`.
 
 ### Changed
 
+- **The Overview no longer carries the test-values and functional-tests tables.** They moved, unchanged, to the Data
+  tab's Statistics view; the Overview ends with a link to it. Hosts that read the "Test values CSV" or "Functional
+  CSV" button from the Overview should open the Data tab first. The Summary panel's own tables are unchanged.
 - **Large CSV exports stay responsive and use less memory.** A big table is built in slices of about 30 ms, with
   progress on the die list's Export CSV button, instead of freezing the page. At 400k dies × 50 tests (201 MB) the
   export completes within 250 MB of heap where a single string needs about 400 MB, and it is no longer limited by the

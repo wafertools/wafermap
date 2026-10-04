@@ -111,7 +111,8 @@ const state = (tab) => {
   };
 };
 
-const VIEWS = ['overview', 'distributions', 'correlation'];
+// The test tables live in the Data tab (Statistics); they were Overview cards.
+const VIEWS = ['data', 'distributions', 'correlation'];
 
 for (const view of VIEWS) {
   test(`${view}: a colliding test number is withheld over the whole load, and said so`, () => {

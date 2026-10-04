@@ -12,6 +12,8 @@ entries visible — they are invisible while each menu is only ever seen alone.
 
 Controls:
   · LOT-DEMO · W01▾Product: DEMO-DEVICE
+  · Map
+  · Insights   (×2)
   · Download PNG
   · Zoom (drag to zoom region)
   · Zoom in
@@ -25,7 +27,6 @@ Controls:
   · Overlays  [opens menu]
   · Legend style  [opens menu]
   · Orientation  [opens menu]
-  · Insights
   · Expand (E)
   · User guide
 
@@ -77,7 +78,7 @@ Controls:
   · Lot stack
   · Open
   · Closed
-  · +1 more
+  · 1 more field
   · Plot mode  [opens menu]
   · Colour scheme  [opens menu]
   · Overlays  [opens menu]
@@ -86,8 +87,9 @@ Controls:
   · Columns  [opens menu]
   · Download gallery PNG
   · Summary panel
-  · Insights
+  · Insights   (×2)
   · User guide
+  · Maps
   · 1 · Pass3,39485.6%
   · 2 · Contact Open2606.6%
   · 3 · Vth - Hi1584.0%
@@ -107,6 +109,7 @@ Controls:
   · W04 · 86.7%▾  [aria="Wafer info for W04 · 86.7%. Click to expand."]
   · W05 · 81.8%▾  [aria="Wafer info for W05 · 81.8%. Click to expand."]
   · W06 · 80.5%▾  [aria="Wafer info for W06 · 80.5%. Click to expand."]
+  · ◂ Summary
 
 Menu — Plot mode:
     · Idsat (A)  [unchecked]
@@ -185,17 +188,19 @@ Menu — Chart this wafer (or right-click):
 ## Insights tab
 
 Controls:
-  · +1 more
+  · 1 more field
   · Back to gallery view
   · User guide
+  · Maps
+  · Insights
   · Overview
   · Distributions
   · Correlation
+  · Data
   · None▾  [aria="Group by", opens menu]
   · Save as PNG   (×5)
   · Expand   (×5)
-  · Test values CSV
-  · Functional CSV
+  · Data tab
 
 Menu — Group by:
     · None

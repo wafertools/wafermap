@@ -100,3 +100,17 @@ export function* csvLines<R>(columns: readonly CsvColumn<R>[], rows: Iterable<R>
   yield csvLine(columns.map(c => c.header));
   for (const row of rows) yield csvLine(columns.map(c => c.get(row)));
 }
+
+/**
+ * The same table as tab-separated text, for the clipboard: what a spreadsheet or
+ * JMP pastes into cells. Numbers are written as in a file; a text cell has its
+ * tabs and line breaks turned into spaces, since either would start a new cell
+ * or row. No quoting — a paste does not parse it.
+ */
+export function tableToTsv<R>(columns: readonly CsvColumn<R>[], rows: Iterable<R>): string {
+  const cell = (v: CsvCell): string =>
+    v === null || v === undefined ? '' : typeof v === 'number' ? fileNumber(v) : v.replace(/[\t\r\n]+/g, ' ');
+  const lines = [columns.map(c => cell(c.header)).join('\t')];
+  for (const row of rows) lines.push(columns.map(c => cell(c.get(row))).join('\t'));
+  return lines.join('\n');
+}

@@ -56,18 +56,20 @@ import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
 import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
 import { runChunked } from './chunked.js';
 import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
+import { renderDataSection, type DataView } from './dataTab.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
-export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps';
+export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data';
 
 /** Public option shape for `RenderOptions.insights`/`GalleryOptions.insights`. */
 export interface InsightsOptions {
   /**
    * Show an "Insights" tab in the toolbar and a Maps | Insights switch. Selecting it replaces the canvas/
    * grid with wmap's own chart suite across three sub-tabs — Overview
-   * (yield, bins, ring/quadrant yield, test values), Distributions
+   * (yield, bins, ring/quadrant yield), Distributions
    * (process capability, boxplot, histogram), and Correlation (matrix +
-   * scatter) — plus a fourth, Sweeps, when `sweeps` defines any. Default true with a toolbar
+   * scatter) — plus Sweeps when `sweeps` defines any, and a last Data tab: the
+   * scope as tables (statistics, dies, wafers) with CSV export. Default true with a toolbar
    * (a gallery always has one); `false` opts out.
    */
   enabled?: boolean;
@@ -247,6 +249,9 @@ type Item = FacetItem & {
   identity?: string;
 };
 
+/** One wafer (or the lot's single stand-in) as the Insights views see it. */
+export type InsightsItem = Item;
+
 const VIEWS: Array<{ key: InsightsView; label: string }> = [
   { key: 'overview',      label: 'Overview' },
   { key: 'distributions', label: 'Distributions' },
@@ -263,6 +268,9 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
  * ignores the selected test and draws many tests as one curve.
  */
 const SWEEPS_VIEW: { key: InsightsView; label: string } = { key: 'sweeps', label: 'Sweeps' };
+
+/** Last, after the charts: the same scope as tables, with their exports (dataTab.ts). */
+const DATA_VIEW: { key: InsightsView; label: string } = { key: 'data', label: 'Data' };
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest } = deps;
@@ -395,11 +403,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   rootEl.appendChild(bodyEl);
 
   const hasSweeps = (deps.sweeps?.length ?? 0) > 0;
-  const views = hasSweeps ? [...VIEWS, SWEEPS_VIEW] : VIEWS;
+  const views = hasSweeps ? [...VIEWS, SWEEPS_VIEW, DATA_VIEW] : [...VIEWS, DATA_VIEW];
   let activeView: InsightsView = deps.defaultView === 'sweeps' && !hasSweeps
     ? 'overview'
     : deps.defaultView ?? 'overview';
   let analysisGroupKey: string | undefined;
+  // The Data tab's own choices live here for the same reason as the shared test
+  // below: `render()` rebuilds the section, and the choice must outlive that.
+  let dataView: DataView = 'statistics';
+  let diesLayout: 'wide' | 'long' = 'wide';
 
   // Distributions' shared selected test and group scope live HERE, not inside
   // `renderDistributionsSection`, because changing the scope now rebuilds the
@@ -810,13 +822,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
      *  experiment is run to compare). Ring/quadrant and the test tables stay
      *  pooled, as before. */
     groupsForPassRate?: { key: string; items: Item[] }[],
-  ): { elements: HTMLElement[]; testValuesCard: HTMLElement | null; functionalCard: HTMLElement | null; destroy: () => void } {
-    if (!items.length) return { elements: [], testValuesCard: null, functionalCard: null, destroy: () => {} };
+  ): { elements: HTMLElement[]; destroy: () => void } {
+    if (!items.length) return { elements: [], destroy: () => {} };
     const allWafers = items.map(it => it.wafer);
     const diesByWafer = items.map(it => it.dies);
-    const allDies = items.flatMap(it => it.dies);
-    const summaries = items.map(it => it.statsSummary);
-    const perWaferSummaries = summaries.every((s): s is StatsSummary => s !== undefined) ? summaries : undefined;
     const ringCount = getRingCount?.() ?? 4;
 
     const elements: HTMLElement[] = [];
@@ -861,11 +870,32 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       destroyFns.push(quadrant.destroy);
     }
 
+    return { elements, destroy: () => { for (const d of destroyFns) d(); } };
+  }
+
+  /**
+   * The test-values and functional-tests tables for `items` (the Data tab's
+   * Statistics view). They were Overview cards; the computation is unchanged.
+   */
+  function buildStatisticsCards(
+    items: Item[],
+    testDefs: TestDef[],
+    /** UNFILTERED defs: the functional table needs the `testType: 'F'` entries. */
+    allTestDefs: TestDef[],
+  ): { cards: HTMLElement[]; destroy: () => void } {
+    if (!items.length) return { cards: [], destroy: () => {} };
+    const diesByWafer = items.map(it => it.dies);
+    const allDies = items.flatMap(it => it.dies);
+    const summaries = items.map(it => it.statsSummary);
+    const perWaferSummaries = summaries.every((s): s is StatsSummary => s !== undefined) ? summaries : undefined;
+    const destroyFns: Array<() => void> = [];
+
     // Rendered as a table (one row per test, columns per stat) — reads far
     // better than a stacked kv-block per test, and a table with several
     // stat columns needs real width, so it's promoted to a full-width
     // sibling of the grid (like the metadata card) rather than a squeezed
     // grid item.
+    const cards: HTMLElement[] = [];
     let testValuesCard: HTMLElement | null = null;
     if (testDefs.length) {
       // Full column set and a Ppk column: this card is a full-width sibling of
@@ -911,7 +941,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const functional = buildLotFunctionalSection(allDies, allTestDefs, perWaferSummaries, onSaveText);
       if (functional) { const c = plainCard(); c.appendChild(functional); functionalCard = c; }
     }
-    return { elements, testValuesCard, functionalCard, destroy: () => { for (const d of destroyFns) d(); } };
+    if (testValuesCard) cards.push(testValuesCard);
+    if (functionalCard) cards.push(functionalCard);
+    return { cards, destroy: () => { for (const d of destroyFns) d(); } };
   }
 
   /**
@@ -1056,10 +1088,57 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // this wafer/lot look overall" summary.
     const details = renderOverviewDetailsCards(items, testDefs, allTestDefs, groups);
     for (const c of details.elements) yieldBins.card.appendChild(c);
-    if (details.testValuesCard) outer.appendChild(details.testValuesCard);
-    if (details.functionalCard) outer.appendChild(details.functionalCard);
+
+    outer.appendChild(dataTabLink());
 
     return { card: outer, destroy: () => { yieldBins.destroy(); details.destroy(); } };
+  }
+
+  /** The Overview's pointer to the tables that used to sit at its foot. */
+  function dataTabLink(): HTMLElement {
+    const row = doc.createElement('div');
+    Object.assign(row.style, { fontSize: FONT.body, color: CLR.label } as Partial<CSSStyleDeclaration>);
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Data tab';
+    btn.dataset.wmapOpenDataTab = '1';
+    Object.assign(btn.style, {
+      border: 'none', background: 'none', padding: '0', cursor: 'pointer', font: 'inherit',
+      color: CLR.iconActive, textDecoration: 'underline',
+    } as Partial<CSSStyleDeclaration>);
+    btn.addEventListener('click', () => { activeView = 'data'; render({ keepSections: true }); });
+    row.append('Test statistics, every die and every wafer as tables, with CSV export: see the ', btn, '.');
+    return row;
+  }
+
+  /** The Data tab's section for the current scope. Its table choice and the Dies layout
+   *  are held above (`dataView`, `diesLayout`) so a rebuild keeps them. */
+  function renderDataBlock(
+    items: Item[],
+    testDefs: TestDef[],
+    allTestDefs: TestDef[],
+    groups: { key: string; items: Item[] }[] | undefined,
+    groupLabelText: string | undefined,
+  ): { card: HTMLElement; destroy: () => void } {
+    const lotStats = getLotStats?.();
+    const rebuild = () => {
+      // Only this view's cached section is stale; the other tabs are unchanged.
+      sectionCache.get('data')?.destroy();
+      sectionCache.delete('data');
+      render({ keepSections: true });
+    };
+    return renderDataSection({
+      doc, items, testDefs, allTestDefs, groups, groupLabelText,
+      ringCount: getRingCount?.() ?? 4,
+      yieldByWaferIndex: new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent])),
+      onSaveText,
+      buildStatistics: its => buildStatisticsCards(its, testDefs.filter(d => its.some(it => it.testDefs?.some(x => x.testNumber === d.testNumber) ?? true)), allTestDefs),
+      view: dataView,
+      onViewChange: v => { dataView = v; rebuild(); },
+      diesLayout,
+      // Remembered only: the Dies table switches its export layout in place, keeping its sort.
+      onDiesLayoutChange: l => { diesLayout = l; },
+    });
   }
 
   /** Capability + boxplot + histogram + trend together, sharing ONE selected
@@ -1462,6 +1541,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       activeView === 'overview'      ? renderOverviewSection(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
       activeView === 'distributions' ? renderDistributionsSection(scopeItems, scopedTestDefs, scopeGroups, groupLabelText) :
       activeView === 'sweeps'        ? renderSweepsSection(scopeItems) :
+      activeView === 'data'          ? renderDataBlock(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
       renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups));
     if (!cached) sectionCache.set(activeView, section);
     // Say why the test list is short, and how to get the rest back — above
