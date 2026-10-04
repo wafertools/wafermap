@@ -803,6 +803,10 @@ onto that pair.*
 
 ### Data tables
 
+![Gallery Insights — Data sub-tab](images/guide-insights-data.png)
+
+*Data sub-tab, Statistics view: the Test Values and Functional Tests tables for the lot, each with its own CSV button; **Dies** and **Wafers** are one click away.*
+
 The **Data** sub-tab shows the wafers Insights is scoped to as tables, one at a
 time, chosen with the **Statistics | Dies | Wafers** control. It follows the
 same "Group by" and "Show" scope as the charts.

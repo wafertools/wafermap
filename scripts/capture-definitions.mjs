@@ -459,6 +459,20 @@ export const CAPTURES = [
     ],
   },
 
+  // ── guide-insights-data.png — §8 Insights: Data sub-tab (Statistics | Dies | Wafers) ──
+  {
+    file: 'guide-insights-data',
+    group: 'insights',
+    page: '/examples/statistics.html#lot-gallery',
+    selector: '#wmap-host',
+    wait: 2000,
+    setup: [
+      ['clickButton', 'Insights', '#wmap-host'],
+      ['clickTab', 'Data', '#wmap-host'],
+      ['wait', 800],
+    ],
+  },
+
   // ── guide-theming.png — Developer Guide §Theming: 2-col gallery, Nord theme,
   //    summary panel open. Page starts Nord via ?theme=nord (deterministic).
   //    Panel + columns set via setup steps (matching guide-summary-panel /

@@ -6,6 +6,48 @@ release first. Each release's full list of changes is in the
 each removal, and whether it could come back, are in
 [API_REMOVALS.md](https://github.com/wafertools/wafermap/blob/main/API_REMOVALS.md).
 
+## Next release
+
+### Insights is on by default
+
+`insights.enabled` now defaults to `true` wherever there is a toolbar: always for
+`renderWaferGallery`, and for `renderWaferMap` unless `showToolbar` is `false`. A chromeless map
+stays a plain map. If your app does not want the Insights button, or the Map | Insights switch, pass `insights: { enabled: false }`. Gallery cards are never
+Insights hosts, and the chart code is still downloaded only when Insights is first opened.
+
+### `onSaveText` can receive a `Blob`
+
+`SaveTextHandler`'s first argument is now `string | Blob`. A table of a million cells or more (a
+lot's die list at 400k dies × 50 tests is 20 million) is written in slices and handed over as a
+`Blob`, so no single string holds the whole file. Smaller tables are still a string, saved before
+the call returns. Handle both:
+
+```ts
+onSaveText: async (content, filename) => {
+  if (typeof content === 'string') return saveString(content, filename);
+  await pipeToFile(content.stream(), filename); // or: saveString(await content.text(), filename)
+}
+```
+
+A handler that only expects a string (calling `.length` or `.replace` on it) fails on a large
+export.
+
+### Right-click on a map always opens the drilldown menu
+
+Right-click on a map, a gallery card or a chart mark used to open the drilldown menu only where
+there was something to chart, and was otherwise left to the browser or your app. The menu now
+always has **Dies**, so your own context menu on those surfaces no longer appears. The toolbar's
+Chart button is always shown and is labelled "Charts and tables for …". To keep a context menu of
+your own, attach it to an element outside the map.
+
+### The Overview no longer carries the test-values and functional-tests tables
+
+They moved, unchanged, to the Data tab's Statistics view, and the Overview ends with a link to
+it. Code that clicks the "Test values CSV" or "Functional CSV" button on the Overview should open
+the Data tab first (`data-wmap-insights-tab="data"`). The Summary panel's own tables are
+unchanged, but its CSV buttons are gone: the **Data tables** button opens the same tables with
+Export CSV and Copy.
+
 ## 0.32.0
 
 ### Test values on built dies are read-only
